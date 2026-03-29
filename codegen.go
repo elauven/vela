@@ -340,16 +340,13 @@ func (g *CodeGen) walkElement(elem *ElementNode, varName, parentVar string, isRo
 	for _, attr := range elem.Attrs {
 		switch {
 		case attr.IsEvent:
-			handler := attr.Value
+			handler := g.rewriteHandlerAssignments(attr.Value)
 			if isSimpleIdent(handler) {
-				// Plain identifier — use directly: addEventListener('click', myFunc)
 				g.events.WriteString(fmt.Sprintf(
 					"  %s.addEventListener('%s', %s);\n", varName, attr.Name, handler))
 				g.cleanup.WriteString(fmt.Sprintf(
 					"      %s.removeEventListener('%s', %s);\n", varName, attr.Name, handler))
 			} else if isHandlerExpr(handler) {
-				// Already a function/arrow expression — assign to a const and use it
-				// so removeEventListener gets the same reference.
 				hv := varName + "_" + attr.Name + "_h"
 				g.create.WriteString(fmt.Sprintf("  const %s = %s;\n", hv, handler))
 				g.events.WriteString(fmt.Sprintf(
@@ -357,7 +354,6 @@ func (g *CodeGen) walkElement(elem *ElementNode, varName, parentVar string, isRo
 				g.cleanup.WriteString(fmt.Sprintf(
 					"      %s.removeEventListener('%s', %s);\n", varName, attr.Name, hv))
 			} else {
-				// Arbitrary expression (e.g. a method call) — wrap in an arrow
 				hv := varName + "_" + attr.Name + "_h"
 				g.create.WriteString(fmt.Sprintf(
 					"  const %s = ($event) => { %s; };\n", hv, handler))
@@ -469,8 +465,8 @@ func (g *CodeGen) walkText(node *TextNode, parentVar string) {
 // walkIfChain generates a single update function that evaluates each branch
 // condition in order and mounts/unmounts the correct DOM fragment.
 //
-//	$$ifchain_N($$branch) where $$branch is the index of the active branch,
-//	or -1 for "none" (all conditions false and no #else).
+//   $$ifchain_N($$branch) where $$branch is the index of the active branch,
+//   or -1 for "none" (all conditions false and no #else).
 //
 // Each branch's element is cached in a dedicated variable so it is created
 // at most once and re-used on subsequent re-evaluations.
@@ -525,8 +521,11 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 		// Attrs
 		for _, attr := range branch.Elem.Attrs {
 			if attr.IsEvent {
+				handler := attr.Value
+				// Rewrite any state assignments inside inline handlers
+				handler = g.rewriteHandlerAssignments(handler)
 				fnBuf.WriteString(fmt.Sprintf("        %s.addEventListener('%s', %s);\n",
-					ev, attr.Name, attr.Value))
+					ev, attr.Name, handler))
 			} else if attr.IsBind {
 				fnBuf.WriteString(bindAttrStmt(ev, attr.Name, attr.Value, "        ") + "\n")
 			} else {
@@ -535,33 +534,26 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 			}
 		}
 
-		// Children (text content for now; full nested codegen via emitBranchChildren)
-		innerExpr := g.buildChildrenExpr(branch.Children)
-		if innerExpr != "" {
-			fnBuf.WriteString(fmt.Sprintf("        %s.textContent = %s;\n", ev, innerExpr))
-		}
+		// Recursively emit branch children into the fnBuf
+		g.emitBranchChildren(&fnBuf, branch.Children, ev, "        ")
+
 		fnBuf.WriteString(fmt.Sprintf("        %s.parentNode.insertBefore(%s, %s);\n",
 			anchor, ev, anchor))
 		fnBuf.WriteString(fmt.Sprintf("      }"))
-
-		// Dynamic inner content update on re-evaluation
-		if innerExpr != "" {
-			fnBuf.WriteString(fmt.Sprintf(" else { %s.textContent = %s; }", ev, innerExpr))
-		}
 		fnBuf.WriteString("\n")
 		fnBuf.WriteString("    }\n")
 	}
 	fnBuf.WriteString("  }\n")
 	g.create.WriteString(fnBuf.String())
 
-	// Collect all deps: branch conditions + inner content
+	// Collect all deps: branch conditions + reactive vars inside branch children
 	allDeps := map[string]bool{}
 	for _, branch := range chain.Branches {
 		for _, d := range findDeps(branch.Cond, g.analysis.reactiveNames()) {
 			allDeps[d] = true
 		}
-		innerExpr := g.buildChildrenExpr(branch.Children)
-		for _, d := range findDeps(innerExpr, g.analysis.reactiveNames()) {
+		// Use collectFragDeps to find reactive vars in child nodes (not just text)
+		for d := range g.collectFragDeps(branch.Children) {
 			allDeps[d] = true
 		}
 	}
@@ -666,11 +658,11 @@ func (g *CodeGen) walkComponentEach(comp *ComponentNode, parentVar string) {
 		indexVar = "$$i"
 	}
 	keyExpr := comp.EachKey
-	varName := g.id()
-	anchor := varName + "_a"
-	keyMap := varName + "_km"
-	blocks := varName + "_bs"
-	fn := "$$ceach_" + varName
+	varName  := g.id()
+	anchor   := varName + "_a"
+	keyMap   := varName + "_km"
+	blocks   := varName + "_bs"
+	fn       := "$$ceach_" + varName
 
 	g.create.WriteString(fmt.Sprintf(
 		"  const %s = document.createComment('#each-comp');\n", anchor))
@@ -780,11 +772,11 @@ func (g *CodeGen) walkComponentEach(comp *ComponentNode, parentVar string) {
 
 // walkComponentIf handles <MyComp #if="cond" :prop="val" />
 func (g *CodeGen) walkComponentIf(comp *ComponentNode, parentVar string) {
-	varName := g.id()
-	anchor := varName + "_a"
-	instVar := varName + "_inst"
-	wrapVar := varName + "_wrap"
-	fn := "$$cif_" + varName
+	varName  := g.id()
+	anchor   := varName + "_a"
+	instVar  := varName + "_inst"
+	wrapVar  := varName + "_wrap"
+	fn       := "$$cif_" + varName
 
 	g.create.WriteString(fmt.Sprintf(
 		"  const %s = document.createComment('if-comp');\n", anchor))
@@ -1086,7 +1078,107 @@ func (g *CodeGen) collectFragDeps(nodes []Node) map[string]bool {
 	return deps
 }
 
-// emitEachChild is retained for backward-compat but now delegates to WalkNodes.
+// emitBranchChildren recursively emits DOM creation code for a node list
+// directly into a strings.Builder (used inside #if chain functions and similar
+// closures where we can't use the normal g.create/g.wire buffers).
+// parentVar is the JS variable that children should be appended to.
+// indent is the leading whitespace for each emitted line.
+func (g *CodeGen) emitBranchChildren(b *strings.Builder, nodes []Node, parentVar, indent string) {
+	for i, node := range nodes {
+		switch n := node.(type) {
+		case *TextNode:
+			expr := buildExpr(n.Parts)
+			b.WriteString(fmt.Sprintf("%s%s.appendChild(document.createTextNode(%s));\n",
+				indent, parentVar, expr))
+
+		case *ElementNode:
+			if n.EachExpr != "" || n.IfCond != "" {
+				// Nested directives inside if-branch: emit minimal placeholder comment
+				// (full nested compilation is handled via FragGen for #each;
+				//  simple #if via inline text is the common case here)
+				b.WriteString(fmt.Sprintf("%s// (nested directive on <%s> — mount after)\n", indent, n.Tag))
+				continue
+			}
+			subVar := fmt.Sprintf("$$ib%d_%s", i, g.scopeID[:4])
+			b.WriteString(fmt.Sprintf("%sconst %s = document.createElement('%s');\n", indent, subVar, n.Tag))
+			b.WriteString(fmt.Sprintf("%s%s.setAttribute('%s', '');\n", indent, subVar, g.scopeID))
+			for _, attr := range n.Attrs {
+				if attr.IsEvent {
+					handler := g.rewriteHandlerAssignments(attr.Value)
+					b.WriteString(fmt.Sprintf("%s%s.addEventListener('%s', %s);\n",
+						indent, subVar, attr.Name, handler))
+				} else if attr.IsBind {
+					b.WriteString(bindAttrStmt(subVar, attr.Name, attr.Value, indent) + "\n")
+				} else {
+					b.WriteString(fmt.Sprintf("%s%s.setAttribute('%s', '%s');\n",
+						indent, subVar, attr.Name, escapeAttr(attr.Value)))
+				}
+			}
+			// Recurse
+			g.emitBranchChildren(b, n.Children, subVar, indent)
+			b.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, subVar))
+
+		case *IfChainNode:
+			// Simple single-branch #if inside an #if: emit inline
+			if len(n.Branches) == 1 && n.Branches[0].Cond != "" {
+				b.WriteString(fmt.Sprintf("%sif (%s) {\n", indent, n.Branches[0].Cond))
+				g.emitBranchChildren(b, n.Branches[0].Children, parentVar, indent+"  ")
+				b.WriteString(fmt.Sprintf("%s}\n", indent))
+			}
+		}
+	}
+}
+
+// rewriteHandlerAssignments rewrites state-variable assignments inside an
+// inline event handler expression, e.g.:
+//
+//	"($e) => visible = $e.target.checked"
+//	→ "($e) => $$set_visible($e.target.checked)"
+//
+//	"($e) => { count = count + 1; step = 2; }"
+//	→ "($e) => { $$set_count(count + 1); $$set_step(2); }"
+//
+// The component-level RewriteAssignments pass never sees template attribute
+// strings, so this function handles them independently.
+func (g *CodeGen) rewriteHandlerAssignments(handler string) string {
+	if len(g.analysis.StateVars) == 0 && len(g.analysis.Props) == 0 {
+		return handler
+	}
+	ss := g.analysis.stateSet()
+
+	// Find the arrow (=>) and extract the body portion.
+	// This handles both concise bodies and block bodies.
+	arrowIdx := strings.Index(handler, "=>")
+	if arrowIdx < 0 {
+		return handler // not an arrow — call RewriteAssignments on the whole thing
+	}
+	body := strings.TrimSpace(handler[arrowIdx+2:])
+	params := handler[:arrowIdx+2] // everything up to and including =>
+
+	// Block body: ($e) => { stmts }
+	if strings.HasPrefix(body, "{") && strings.HasSuffix(strings.TrimSpace(body), "}") {
+		// Strip outer braces, rewrite statements inside, restore braces
+		inner := body[1 : len(body)-1]
+		prog := ParseJS(inner)
+		rewritten := RewriteAssignments(inner, prog, ss)
+		return params + " { " + strings.TrimSpace(rewritten) + " }"
+	}
+
+	// Concise body: ($e) => expr
+	// If it's a simple assignment `x = rhs`, rewrite it directly.
+	// Parse as a statement by appending semicolon.
+	bodyStmt := body + ";"
+	prog := ParseJS(bodyStmt)
+	rewritten := RewriteAssignments(bodyStmt, prog, ss)
+	if rewritten != bodyStmt {
+		// Strip trailing semicolon that RewriteAssignments or the original had
+		rewritten = strings.TrimSpace(rewritten)
+		rewritten = strings.TrimSuffix(rewritten, ";")
+		return params + " " + strings.TrimSpace(rewritten)
+	}
+
+	return handler
+}
 func (g *CodeGen) emitEachChild(b *strings.Builder, node Node, parentVar string) {
 	// Inline simple cases without full FragGen overhead (used in legacy paths)
 	switch n := node.(type) {
@@ -1270,9 +1362,9 @@ func isBoolAttr(name string) bool {
 // bindAttrStmt returns the JS statement that correctly sets a dynamic attribute
 // on elem (a JS variable name) to the value of expr.
 //
-//	Boolean attrs  →  elem.checked = !!(expr)
-//	class          →  elem.className = String(expr)   (also setAttribute for compat)
-//	everything else →  elem.setAttribute('attr', String(expr))
+//   Boolean attrs  →  elem.checked = !!(expr)
+//   class          →  elem.className = String(expr)   (also setAttribute for compat)
+//   everything else →  elem.setAttribute('attr', String(expr))
 func bindAttrStmt(elem, attr, expr, indent string) string {
 	if isBoolAttr(attr) {
 		return fmt.Sprintf("%s%s.%s = !!(%s);", indent, elem, attr, expr)
