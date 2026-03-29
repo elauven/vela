@@ -1084,7 +1084,7 @@ func (g *CodeGen) collectFragDeps(nodes []Node) map[string]bool {
 // parentVar is the JS variable that children should be appended to.
 // indent is the leading whitespace for each emitted line.
 func (g *CodeGen) emitBranchChildren(b *strings.Builder, nodes []Node, parentVar, indent string) {
-	for i, node := range nodes {
+	for _, node := range nodes {
 		switch n := node.(type) {
 		case *TextNode:
 			expr := buildExpr(n.Parts)
@@ -1093,13 +1093,12 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, nodes []Node, parentVar
 
 		case *ElementNode:
 			if n.EachExpr != "" || n.IfCond != "" {
-				// Nested directives inside if-branch: emit minimal placeholder comment
-				// (full nested compilation is handled via FragGen for #each;
-				//  simple #if via inline text is the common case here)
-				b.WriteString(fmt.Sprintf("%s// (nested directive on <%s> — mount after)\n", indent, n.Tag))
+				b.WriteString(fmt.Sprintf("%s// (nested directive on <%s> — skipped in branch)\n", indent, n.Tag))
 				continue
 			}
-			subVar := fmt.Sprintf("$$ib%d_%s", i, g.scopeID[:4])
+			// Use g.id() for globally unique variable names — never reuse the same
+			// name across branches or recursive calls, preventing redeclaration.
+			subVar := g.id()
 			b.WriteString(fmt.Sprintf("%sconst %s = document.createElement('%s');\n", indent, subVar, n.Tag))
 			b.WriteString(fmt.Sprintf("%s%s.setAttribute('%s', '');\n", indent, subVar, g.scopeID))
 			for _, attr := range n.Attrs {
@@ -1114,12 +1113,10 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, nodes []Node, parentVar
 						indent, subVar, attr.Name, escapeAttr(attr.Value)))
 				}
 			}
-			// Recurse
 			g.emitBranchChildren(b, n.Children, subVar, indent)
 			b.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, subVar))
 
 		case *IfChainNode:
-			// Simple single-branch #if inside an #if: emit inline
 			if len(n.Branches) == 1 && n.Branches[0].Cond != "" {
 				b.WriteString(fmt.Sprintf("%sif (%s) {\n", indent, n.Branches[0].Cond))
 				g.emitBranchChildren(b, n.Branches[0].Children, parentVar, indent+"  ")

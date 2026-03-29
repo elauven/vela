@@ -2524,3 +2524,162 @@ func TestGenerateCode_PlainComponentGuardsCustomEvent(t *testing.T) {
 			code[:min(600, len(code))])
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  #if branch children + inline handler rewriting
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestRewriteHandlerAssignments_ConciseArrow(t *testing.T) {
+	sfc := &SFC{
+		Script:   `let visible = $state(false);`,
+		Template: `<input type="checkbox" @change="($e) => visible = $e.target.checked" />`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("Comp", sfc, nodes, a, "vela-test")
+
+	// The handler must call $$set_visible, NOT do a raw assignment
+	if strings.Contains(code, "visible = $e.target.checked") && !strings.Contains(code, "$$set_visible") {
+		t.Errorf("concise arrow assignment not rewritten:\n%s", code)
+	}
+	if !strings.Contains(code, "$$set_visible") {
+		t.Errorf("expected $$set_visible in handler:\n%s", code[:min(600, len(code))])
+	}
+}
+
+func TestRewriteHandlerAssignments_BlockBody(t *testing.T) {
+	sfc := &SFC{
+		Script:   `let count = $state(0); let step = $state(1);`,
+		Template: `<button @click="($e) => { count = count + step; step = 2; }">go</button>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("Comp", sfc, nodes, a, "vela-test")
+
+	if !strings.Contains(code, "$$set_count") {
+		t.Errorf("block arrow count assignment not rewritten:\n%s", code[:min(500, len(code))])
+	}
+	if !strings.Contains(code, "$$set_step") {
+		t.Errorf("block arrow step assignment not rewritten:\n%s", code[:min(500, len(code))])
+	}
+}
+
+func TestRewriteHandlerAssignments_MultipleAssignments(t *testing.T) {
+	sfc := &SFC{
+		Script:   `let x = $state(0); let y = $state(0);`,
+		Template: `<button @click="() => { x = 1; y = 2; }">set</button>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("Comp", sfc, nodes, a, "vela-test")
+
+	if !strings.Contains(code, "$$set_x(1)") {
+		t.Errorf("x not rewritten: %s", code[:min(400, len(code))])
+	}
+	if !strings.Contains(code, "$$set_y(2)") {
+		t.Errorf("y not rewritten: %s", code[:min(400, len(code))])
+	}
+}
+
+func TestRewriteHandlerAssignments_NoFalsePositive(t *testing.T) {
+	// Non-state variables and method calls should not be touched
+	sfc := &SFC{
+		Script:   `let count = $state(0);`,
+		Template: `<button @click="($e) => { $e.preventDefault(); localVar = 5; }">go</button>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("Comp", sfc, nodes, a, "vela-test")
+
+	// localVar is not state — should NOT be rewritten
+	if strings.Contains(code, "$$set_localVar") {
+		t.Errorf("non-state var should not be rewritten: %s", code[:min(400, len(code))])
+	}
+	// preventDefault should be preserved
+	if !strings.Contains(code, "preventDefault") {
+		t.Errorf("preventDefault was removed from handler")
+	}
+}
+
+func TestGenerateCode_IfBranchHasChildren(t *testing.T) {
+	sfc := &SFC{
+		Script: `let visible = $state(false); let step = $state(1);`,
+		Template: `
+			<div>
+				<div #if="visible" class="step-row">
+					<label>Step:</label>
+					<input type="number" :value="step" @input="($e) => step = Number($e.target.value)" />
+				</div>
+			</div>
+		`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("Comp", sfc, nodes, a, "vela-test")
+
+	// The if-chain function must create the label and input inside the branch element
+	// NOT as siblings at the root level
+	chainFnStart := strings.Index(code, "function $$chain_")
+	if chainFnStart < 0 {
+		t.Fatal("no $$chain_ function found")
+	}
+	// Find end of chain function by counting braces
+	depth := 0; chainFnEnd := chainFnStart
+	for chainFnEnd < len(code) {
+		c := code[chainFnEnd]
+		if c == '{' { depth++ }
+		if c == '}' { depth--; if depth < 0 { break } }
+		chainFnEnd++
+	}
+	chainFn := code[chainFnStart:chainFnEnd]
+
+	// The label createElement must appear inside the chain function
+	if !strings.Contains(chainFn, "createElement('label')") {
+		t.Errorf("label not created inside #if chain function (branch body empty):\n%s", chainFn)
+	}
+	if !strings.Contains(chainFn, "createElement('input')") {
+		t.Errorf("input not created inside #if chain function (branch body empty):\n%s", chainFn)
+	}
+}
+
+func TestGenerateCode_IfBranchInlineHandlerRewritten(t *testing.T) {
+	// The full scenario from If.js: visible = $state, checkbox inside #if branch
+	// with inline handler @change="($e) => visible = $e.target.checked"
+	sfc := &SFC{
+		Script: `
+			let count = $state(0);
+			let visible = $state(false);
+			let step = $state(1);
+		`,
+		Template: `
+			<div>
+				<button @click="() => count = count + step">+</button>
+				<div #if="visible" class="step-row">
+					<label>Step:</label>
+					<input type="checkbox" @change="($e) => visible = $e.target.checked" />
+				</div>
+			</div>
+		`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("IfTest", sfc, nodes, a, "vela-test")
+
+	// Handler inside #if branch child must be rewritten
+	chainFnStart := strings.Index(code, "function $$chain_")
+	if chainFnStart < 0 {
+		t.Fatal("no $$chain_ function")
+	}
+	chainFnEnd := chainFnStart + strings.Index(code[chainFnStart:], "\n  function ")
+	if chainFnEnd <= chainFnStart {
+		chainFnEnd = len(code)
+	}
+	chainFn := code[chainFnStart:chainFnEnd]
+
+	if strings.Contains(chainFn, "visible = $e.target.checked") {
+		t.Errorf("raw assignment inside #if branch handler should be rewritten:\n%s", chainFn)
+	}
+	if !strings.Contains(code, "$$set_visible") {
+		t.Errorf("$$set_visible must appear in output:\n%s", code[:min(600, len(code))])
+	}
+}
