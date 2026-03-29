@@ -1,0 +1,93 @@
+<script>
+  import { readable } from 'vela/store';
+
+  const time = readable(new Date(), set => {
+    const id = setInterval(() => set(new Date()), 1000);
+    return () => clearInterval(id);
+  });
+
+  let hours   = $state('--');
+  let minutes = $state('--');
+  let seconds = $state('--');
+  let ampm    = $state('');
+  let dark    = $state(false);
+
+  onMount(() => {
+    time.subscribe(d => {
+      let h = d.getHours();
+      ampm    = h >= 12 ? 'PM' : 'AM';
+      h       = h % 12 || 12;
+      hours   = String(h).padStart(2, '0');
+      minutes = String(d.getMinutes()).padStart(2, '0');
+      seconds = String(d.getSeconds()).padStart(2, '0');
+    });
+  });
+
+  let wrapClass = $derived(dark ? 'clock-wrap dark' : 'clock-wrap light');
+  let btnLabel  = $derived(dark ? '☀️ Light' : '🌙 Dark');
+
+  function toggleDark() { dark = !dark; }
+</script>
+
+<style>
+  .clock-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2.5rem 3rem;
+    border-radius: 1rem;
+    transition: background 0.3s, color 0.3s;
+    font-family: 'Courier New', monospace;
+  }
+
+  .clock-wrap.dark {
+    background: #0f172a;
+    color: #e2e8f0;
+  }
+
+  .clock-wrap.light {
+    background: #f8fafc;
+    color: #1e293b;
+    border: 1px solid #e2e8f0;
+  }
+
+  .digits {
+    font-size: 4rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+
+  .sep { opacity: 0.3; }
+
+  .ampm {
+    font-size: 1.25rem;
+    margin-left: 0.5rem;
+    opacity: 0.5;
+    vertical-align: super;
+  }
+
+  .toggle {
+    margin-top: 1.5rem;
+    padding: 0.4rem 1.25rem;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    background: transparent;
+    color: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+  }
+
+  .toggle:hover { opacity: 1; }
+</style>
+
+<template>
+  <div :class="wrapClass">
+    <div class="digits">
+      {hours}<span class="sep">:</span>{minutes}<span class="sep">:</span>{seconds}<span class="ampm">{ampm}</span>
+    </div>
+    <button class="toggle" @click="toggleDark">{btnLabel}</button>
+  </div>
+</template>

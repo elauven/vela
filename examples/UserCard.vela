@@ -1,0 +1,180 @@
+<script>
+  export let name = $bindable('Anonymous');
+  export let role = 'Member';
+
+  let editMode = $state(false);
+  let nameEdit = $state('');
+  let online   = $state(false);
+
+  let initials = $derived(
+    name.split(' ')
+        .filter(w => w.length > 0)
+        .slice(0, 2)
+        .map(w => w[0].toUpperCase())
+        .join('')
+  );
+
+  let statusLabel = $derived(online ? 'Online' : 'Offline');
+  let dotClass    = $derived(online ? 'dot dot-online' : 'dot');
+  let cardClass   = $derived(editMode ? 'card editing' : 'card');
+
+  let pollId = null;
+
+  onMount(() => {
+    online = true;
+    pollId = setInterval(() => {
+      online = Math.random() > 0.3;
+    }, 5000);
+  });
+
+  onDestroy(() => {
+    if (pollId !== null) clearInterval(pollId);
+  });
+
+  $effect(() => {
+    document.title = `${name} (${online ? 'online' : 'offline'})`;
+  });
+
+  function startEdit() {
+    nameEdit = name;
+    editMode = true;
+  }
+
+  function saveEdit() {
+    name = nameEdit;
+    editMode = false;
+  }
+
+  function cancelEdit() {
+    editMode = false;
+  }
+</script>
+
+<style>
+  .card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.5rem 2rem;
+    border-radius: 1rem;
+    border: 1px solid #e5e7eb;
+    background: white;
+    font-family: system-ui, sans-serif;
+    transition: border-color 0.2s;
+    min-width: 240px;
+  }
+
+  .card.editing {
+    border-color: #7c3aed;
+  }
+
+  .avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: #ede9fe;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #7c3aed;
+  }
+
+  .name { font-size: 1.1rem; font-weight: 600; color: #111827; }
+  .role { font-size: 0.85rem; color: #6b7280; }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: #6b7280;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #d1d5db;
+    transition: background 0.3s;
+  }
+
+  .dot-online { background: #4ade80; }
+
+  input {
+    width: 100%;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input:focus { border-color: #7c3aed; }
+
+  .actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  button {
+    padding: 0.35rem 1rem;
+    border-radius: 0.5rem;
+    border: none;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  button:hover { opacity: 0.85; }
+
+  .btn-edit   { background: #ede9fe; color: #6d28d9; }
+  .btn-save   { background: #4ade80; color: #14532d; }
+  .btn-cancel { background: #f3f4f6; color: #374151; }
+
+  .footer-slot {
+    width: 100%;
+    padding-top: 0.5rem;
+    border-top: 1px solid #f3f4f6;
+    font-size: 0.8rem;
+    color: #9ca3af;
+    text-align: center;
+  }
+</style>
+
+<template>
+  <div :class="cardClass">
+    <div class="avatar">{initials}</div>
+
+    <div #if="!editMode">
+      <div class="name">{name}</div>
+      <div class="role">{role}</div>
+      <div class="status">
+        <span :class="dotClass"></span>
+        {statusLabel}
+      </div>
+    </div>
+
+    <div #elseif="editMode">
+      <input
+        type="text"
+        :value="nameEdit"
+        @input="($e) => nameEdit = $e.target.value"
+        placeholder="Display name"
+      />
+    </div>
+
+    <div class="actions">
+      <button class="btn-edit"   #if="!editMode" @click="startEdit">Edit</button>
+      <button class="btn-save"   #if="editMode"  @click="saveEdit">Save</button>
+      <button class="btn-cancel" #if="editMode"  @click="cancelEdit">Cancel</button>
+    </div>
+
+    <div class="footer-slot">
+      <slot name="footer">Card footer</slot>
+    </div>
+  </div>
+</template>
