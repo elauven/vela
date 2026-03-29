@@ -306,7 +306,13 @@ func (g *CodeGen) walkNodes(nodes []Node, parentVar string, isRootList bool) {
 		case *IfChainNode:
 			g.walkIfChain(n, parentVar)
 		case *ComponentNode:
-			g.walkComponent(n, parentVar)
+			if n.EachExpr != "" {
+				g.walkComponentEach(n, parentVar)
+			} else if n.IfCond != "" {
+				g.walkComponentIf(n, parentVar)
+			} else {
+				g.walkComponent(n, parentVar)
+			}
 		case *SlotNode:
 			g.walkSlot(n, parentVar)
 		case *TextNode:
@@ -406,7 +412,13 @@ func (g *CodeGen) walkChildren(children []Node, parentVar string) {
 		case *IfChainNode:
 			g.walkIfChain(c, parentVar)
 		case *ComponentNode:
-			g.walkComponent(c, parentVar)
+			if c.EachExpr != "" {
+				g.walkComponentEach(c, parentVar)
+			} else if c.IfCond != "" {
+				g.walkComponentIf(c, parentVar)
+			} else {
+				g.walkComponent(c, parentVar)
+			}
 		case *SlotNode:
 			g.walkSlot(c, parentVar)
 		case *TextNode:
@@ -627,23 +639,207 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 			g.addUpdate(dep, update)
 		}
 	}
-	// Event forwarding
+	// Event forwarding — guard with instanceof CustomEvent to prevent native
+	// DOM events (e.g. the built-in 'select' event on inputs) from being
+	// mishandled as component events when they share the same name.
 	for _, attr := range comp.Attrs {
 		if !attr.IsEvent {
 			continue
 		}
+		hv := wrapVar + "_" + attr.Name + "_ch"
 		g.events.WriteString(fmt.Sprintf(
-			"  %s.addEventListener('%s', %s);\n", wrapVar, attr.Name, attr.Value))
+			"  const %s = ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } };\n",
+			hv, attr.Value))
+		g.events.WriteString(fmt.Sprintf(
+			"  %s.addEventListener('%s', %s);\n", wrapVar, attr.Name, hv))
 		g.cleanup.WriteString(fmt.Sprintf(
-			"      %s.removeEventListener('%s', %s);\n", wrapVar, attr.Name, attr.Value))
+			"      %s.removeEventListener('%s', %s);\n", wrapVar, attr.Name, hv))
 	}
 
 	g.cleanup.WriteString(fmt.Sprintf("      if (%s) %s.destroy();\n", instanceVar, instanceVar))
 }
 
-// ──────────────────────────────────────────────
-//  <slot> rendering
-// ──────────────────────────────────────────────
+// walkComponentEach handles <MyComp #each="arr as item" #key="item.id" :prop="item.x" />
+func (g *CodeGen) walkComponentEach(comp *ComponentNode, parentVar string) {
+	array, itemVar, indexVar := parseEachExpr(comp.EachExpr)
+	if indexVar == "" {
+		indexVar = "$$i"
+	}
+	keyExpr := comp.EachKey
+	varName := g.id()
+	anchor := varName + "_a"
+	keyMap := varName + "_km"
+	blocks := varName + "_bs"
+	fn := "$$ceach_" + varName
+
+	g.create.WriteString(fmt.Sprintf(
+		"  const %s = document.createComment('#each-comp');\n", anchor))
+	g.wire.WriteString(fmt.Sprintf("  %s.appendChild(%s);\n", parentVar, anchor))
+
+	// Build initial props object expression using the loop variables.
+	var propsEntries []string
+	for _, attr := range comp.Attrs {
+		if attr.IsBind {
+			propsEntries = append(propsEntries, fmt.Sprintf("%s: %s", attr.Name, attr.Value))
+		} else if !attr.IsEvent {
+			propsEntries = append(propsEntries, fmt.Sprintf("%s: '%s'", attr.Name, escapeAttr(attr.Value)))
+		}
+	}
+	propsExpr := "{}"
+	if len(propsEntries) > 0 {
+		propsExpr = "{ " + strings.Join(propsEntries, ", ") + " }"
+	}
+
+	// Event listeners wired to the wrapper element.
+	// Guard every handler with `instanceof CustomEvent` so native DOM events
+	// (e.g. the built-in 'select' event on <input> / <textarea>) that happen to
+	// share the same event name don't trigger the handler with detail=null.
+	var evLines []string
+	for _, attr := range comp.Attrs {
+		if attr.IsEvent {
+			evLines = append(evLines, fmt.Sprintf(
+				"      $$wrap.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });",
+				attr.Name, attr.Value))
+		}
+	}
+
+	if keyExpr != "" {
+		// Keyed: Map<key, {wrap, comp}> — update existing instances in place.
+		g.create.WriteString(fmt.Sprintf("  const %s = new Map();\n", keyMap))
+		g.create.WriteString(fmt.Sprintf("  let %s = [];\n", blocks))
+
+		var fnBuf strings.Builder
+		fnBuf.WriteString(fmt.Sprintf("  function %s($$arr) {\n", fn))
+		fnBuf.WriteString("    const $$newKeys = new Set();\n")
+		fnBuf.WriteString("    const $$newBlks = [];\n")
+		fnBuf.WriteString(fmt.Sprintf("    ($$arr||[]).forEach(function(%s, %s) {\n", itemVar, indexVar))
+		fnBuf.WriteString(fmt.Sprintf("      const $$key = String(%s);\n", keyExpr))
+		fnBuf.WriteString("      $$newKeys.add($$key);\n")
+		fnBuf.WriteString(fmt.Sprintf("      let $$blk = %s.get($$key);\n", keyMap))
+		fnBuf.WriteString("      if ($$blk) {\n")
+		fnBuf.WriteString(fmt.Sprintf("        $$blk.comp.set(%s);\n", propsExpr))
+		fnBuf.WriteString("      } else {\n")
+		fnBuf.WriteString("        const $$wrap = document.createElement('div');\n")
+		fnBuf.WriteString(fmt.Sprintf("        $$wrap.setAttribute('%s','');\n", g.scopeID))
+		for _, ev := range evLines {
+			fnBuf.WriteString("  " + ev + "\n")
+		}
+		fnBuf.WriteString(fmt.Sprintf("        const $$c = %s($$wrap, %s, {});\n", comp.Name, propsExpr))
+		fnBuf.WriteString("        $$blk = { wrap: $$wrap, comp: $$c };\n")
+		fnBuf.WriteString(fmt.Sprintf("        %s.set($$key, $$blk);\n", keyMap))
+		fnBuf.WriteString("      }\n")
+		// Only move the element if it is not already in the correct position
+		// (i.e. immediately before the anchor). Moving DOM elements fires blur
+		// on any focused input inside them, breaking in-place editing.
+		fnBuf.WriteString(fmt.Sprintf(
+			"      if ($$blk.wrap.nextSibling !== %s) { %s.parentNode.insertBefore($$blk.wrap, %s); }\n",
+			anchor, anchor, anchor))
+		fnBuf.WriteString("      $$newBlks.push($$blk);\n")
+		fnBuf.WriteString("    });\n")
+		fnBuf.WriteString(fmt.Sprintf("    %s.forEach(($$blk, $$key) => {\n", keyMap))
+		fnBuf.WriteString(fmt.Sprintf(
+			"      if (!$$newKeys.has($$key)) { $$blk.comp.destroy(); %s.delete($$key); }\n", keyMap))
+		fnBuf.WriteString("    });\n")
+		fnBuf.WriteString(fmt.Sprintf("    %s = $$newBlks;\n", blocks))
+		fnBuf.WriteString("  }\n")
+		g.create.WriteString(fnBuf.String())
+	} else {
+		// Unkeyed: destroy all + rebuild.
+		g.create.WriteString(fmt.Sprintf("  let %s = [];\n", blocks))
+
+		var fnBuf strings.Builder
+		fnBuf.WriteString(fmt.Sprintf("  function %s($$arr) {\n", fn))
+		fnBuf.WriteString(fmt.Sprintf("    %s.forEach(b => b.comp.destroy()); %s = [];\n", blocks, blocks))
+		fnBuf.WriteString(fmt.Sprintf("    ($$arr||[]).forEach(function(%s, %s) {\n", itemVar, indexVar))
+		fnBuf.WriteString("      const $$wrap = document.createElement('div');\n")
+		fnBuf.WriteString(fmt.Sprintf("      $$wrap.setAttribute('%s','');\n", g.scopeID))
+		for _, ev := range evLines {
+			fnBuf.WriteString("  " + ev + "\n")
+		}
+		fnBuf.WriteString(fmt.Sprintf("      const $$c = %s($$wrap, %s, {});\n", comp.Name, propsExpr))
+		fnBuf.WriteString(fmt.Sprintf("      %s.parentNode.insertBefore($$wrap, %s);\n", anchor, anchor))
+		fnBuf.WriteString(fmt.Sprintf("      %s.push({ wrap: $$wrap, comp: $$c });\n", blocks))
+		fnBuf.WriteString("    });\n  }\n")
+		g.create.WriteString(fnBuf.String())
+	}
+
+	call := fmt.Sprintf("  %s(%s);", fn, array)
+	g.init.WriteString(call + "\n")
+	for _, dep := range findDeps(array, g.analysis.reactiveNames()) {
+		g.addUpdate(dep, call)
+	}
+	for _, attr := range comp.Attrs {
+		if attr.IsBind {
+			for _, dep := range findDeps(attr.Value, g.analysis.reactiveNames()) {
+				g.addUpdate(dep, call)
+			}
+		}
+	}
+	g.cleanup.WriteString(fmt.Sprintf("      %s.forEach(b => b.comp.destroy());\n", blocks))
+}
+
+// walkComponentIf handles <MyComp #if="cond" :prop="val" />
+func (g *CodeGen) walkComponentIf(comp *ComponentNode, parentVar string) {
+	varName := g.id()
+	anchor := varName + "_a"
+	instVar := varName + "_inst"
+	wrapVar := varName + "_wrap"
+	fn := "$$cif_" + varName
+
+	g.create.WriteString(fmt.Sprintf(
+		"  const %s = document.createComment('if-comp');\n", anchor))
+	g.wire.WriteString(fmt.Sprintf("  %s.appendChild(%s);\n", parentVar, anchor))
+	g.create.WriteString(fmt.Sprintf("  let %s = null, %s = null;\n", instVar, wrapVar))
+
+	var propsEntries []string
+	for _, attr := range comp.Attrs {
+		if attr.IsBind {
+			propsEntries = append(propsEntries, fmt.Sprintf("%s: %s", attr.Name, attr.Value))
+		} else if !attr.IsEvent {
+			propsEntries = append(propsEntries, fmt.Sprintf("%s: '%s'", attr.Name, escapeAttr(attr.Value)))
+		}
+	}
+	propsExpr := "{}"
+	if len(propsEntries) > 0 {
+		propsExpr = "{ " + strings.Join(propsEntries, ", ") + " }"
+	}
+
+	var fnBuf strings.Builder
+	fnBuf.WriteString(fmt.Sprintf("  function %s($$cond) {\n", fn))
+	fnBuf.WriteString("    if ($$cond) {\n")
+	fnBuf.WriteString(fmt.Sprintf("      if (!%s) {\n", instVar))
+	fnBuf.WriteString(fmt.Sprintf("        %s = document.createElement('div');\n", wrapVar))
+	fnBuf.WriteString(fmt.Sprintf("        %s.setAttribute('%s','');\n", wrapVar, g.scopeID))
+	for _, attr := range comp.Attrs {
+		if attr.IsEvent {
+			fnBuf.WriteString(fmt.Sprintf(
+				"        %s.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
+				wrapVar, attr.Name, attr.Value))
+		}
+	}
+	fnBuf.WriteString(fmt.Sprintf("        %s = %s(%s, %s, {});\n", instVar, comp.Name, wrapVar, propsExpr))
+	fnBuf.WriteString(fmt.Sprintf("        %s.parentNode.insertBefore(%s, %s);\n", anchor, wrapVar, anchor))
+	fnBuf.WriteString("      } else {\n")
+	fnBuf.WriteString(fmt.Sprintf("        %s.set(%s);\n", instVar, propsExpr))
+	fnBuf.WriteString("      }\n")
+	fnBuf.WriteString(fmt.Sprintf("    } else if (%s) {\n", instVar))
+	fnBuf.WriteString(fmt.Sprintf("      %s.destroy(); %s = null; %s = null;\n", instVar, instVar, wrapVar))
+	fnBuf.WriteString("    }\n  }\n")
+	g.create.WriteString(fnBuf.String())
+
+	call := fmt.Sprintf("  %s(%s);", fn, comp.IfCond)
+	g.init.WriteString(call + "\n")
+	allDeps := findDeps(comp.IfCond, g.analysis.reactiveNames())
+	for _, attr := range comp.Attrs {
+		if attr.IsBind {
+			allDeps = append(allDeps, findDeps(attr.Value, g.analysis.reactiveNames())...)
+		}
+	}
+	for _, dep := range allDeps {
+		g.addUpdate(dep, call)
+	}
+	g.cleanup.WriteString(fmt.Sprintf("      if (%s) %s.destroy();\n", instVar, instVar))
+}
 
 // walkSlot emits code that renders $$slots["name"](parent) if the slot is
 // filled by the parent, or falls back to the declared fallback children.

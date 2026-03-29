@@ -93,6 +93,10 @@ type ComponentNode struct {
 	Name     string      // component name, e.g. "MyComp"
 	Attrs    []*Attr     // :prop bindings and @event handlers
 	Slots    map[string][]Node // slot name → children (default slot keyed as "default")
+	// Directives (transferred from parseAttrs scratch element)
+	EachExpr string // #each="items as item, i"
+	EachKey  string // #key="expr"
+	IfCond   string // #if="expr"
 }
 
 // SlotNode represents a <slot> element — renders $$slots["name"] from parent.
@@ -396,7 +400,12 @@ func (p *parser) parseComponentNode(name string) (Node, error) {
 	if err := p.parseAttrs(scratch); err != nil {
 		return nil, err
 	}
-	comp.Attrs = scratch.Attrs
+	// Transfer directive fields from scratch — parseAttrs puts #each/#key/#if
+	// into the ElementNode fields, not into Attrs.
+	comp.Attrs    = scratch.Attrs
+	comp.EachExpr = scratch.EachExpr
+	comp.EachKey  = scratch.EachKey
+	comp.IfCond   = scratch.IfCond
 
 	if p.has("/>") {
 		p.pos += 2

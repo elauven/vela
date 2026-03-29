@@ -2328,3 +2328,199 @@ func TestFullPipeline_ClockTernaryInOnMount(t *testing.T) {
 		t.Errorf("codegen failed:\n%s", code[:min(300, len(code))])
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Component directive parsing regression tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestParseTemplate_ComponentWithEach(t *testing.T) {
+	html := `<div><MyCard #each="items as item" #key="item.id" :title="item.name" /></div>`
+	nodes, err := parseTemplate(html)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	div := nodes[0].(*ElementNode)
+	if len(div.Children) != 1 {
+		t.Fatalf("expected 1 child, got %d", len(div.Children))
+	}
+	comp, ok := div.Children[0].(*ComponentNode)
+	if !ok {
+		t.Fatalf("expected ComponentNode, got %T", div.Children[0])
+	}
+	if comp.EachExpr != "items as item" {
+		t.Errorf("EachExpr: want 'items as item', got %q", comp.EachExpr)
+	}
+	if comp.EachKey != "item.id" {
+		t.Errorf("EachKey: want 'item.id', got %q", comp.EachKey)
+	}
+	// :title should still be in Attrs
+	found := false
+	for _, a := range comp.Attrs {
+		if a.Name == "title" && a.IsBind {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected :title IsBind attr on component")
+	}
+}
+
+func TestParseTemplate_ComponentWithIf(t *testing.T) {
+	html := `<div><Modal #if="open" :title="header" /></div>`
+	nodes, err := parseTemplate(html)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	div := nodes[0].(*ElementNode)
+	comp, ok := div.Children[0].(*ComponentNode)
+	if !ok {
+		t.Fatalf("expected ComponentNode, got %T", div.Children[0])
+	}
+	if comp.IfCond != "open" {
+		t.Errorf("IfCond: want 'open', got %q", comp.IfCond)
+	}
+}
+
+func TestGenerateCode_ComponentEachRoutedCorrectly(t *testing.T) {
+	// The key regression: <MyCard #each="items as item" #key="item.id" />
+	// must produce a loop function, NOT a single mount at top-level.
+	sfc := &SFC{
+		Script:   `import { MyCard } from './MyCard.js'; let items = $state([]);`,
+		Template: `<ul><MyCard #each="items as item" #key="item.id" :title="item.name" @select="handleSelect" /></ul>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	// Must produce a loop function ($$ceach_)
+	if !strings.Contains(code, "$$ceach_") {
+		t.Errorf("expected component each loop ($$ceach_) in output:\n%s", code[:min(600, len(code))])
+	}
+	// The loop must reference item variables inside a forEach
+	if !strings.Contains(code, "forEach") {
+		t.Error("expected forEach loop for component #each")
+	}
+	// Must NOT reference 'item' outside the loop (top-level mount bug)
+	// Find position of the forEach and ensure item.name only appears inside it
+	forEachPos := strings.Index(code, "forEach(function(item")
+	if forEachPos < 0 {
+		t.Error("expected forEach(function(item, ...) in output")
+	}
+	// Check that no top-level 'item.name' exists before the loop
+	beforeLoop := code[:forEachPos]
+	if strings.Contains(beforeLoop, "item.name") || strings.Contains(beforeLoop, "item.id") {
+		t.Errorf("'item' variable used before the forEach loop — top-level mount bug:\n%s", beforeLoop[max(0, len(beforeLoop)-300):])
+	}
+}
+
+func TestGenerateCode_ComponentEachKeyedUpdates(t *testing.T) {
+	sfc := &SFC{
+		Script:   `import { Card } from './Card.js'; let notes = $state([]);`,
+		Template: `<div><Card #each="notes as note" #key="note.id" :title="note.title" :selected="selectedId === note.id" /></div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	// Keyed component each should use a Map
+	if !strings.Contains(code, "new Map()") {
+		t.Error("keyed component #each should use a Map for tracking instances")
+	}
+	// Existing instances should be updated via .set()
+	if !strings.Contains(code, ".set(") && !strings.Contains(code, "comp.set(") {
+		t.Error("keyed component #each should call .set() to update existing instances")
+	}
+	// Removed instances should be destroyed
+	if !strings.Contains(code, ".destroy()") {
+		t.Error("keyed component #each should call .destroy() for removed instances")
+	}
+}
+
+func TestGenerateCode_ComponentIfRoutedCorrectly(t *testing.T) {
+	sfc := &SFC{
+		Script:   `import { Modal } from './Modal.js'; let open = $state(false);`,
+		Template: `<div><Modal #if="open" :title="'Hello'" @close="() => open = false" /></div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	// Must use conditional component mount ($$cif_)
+	if !strings.Contains(code, "$$cif_") {
+		t.Errorf("expected conditional component mount ($$cif_) in output:\n%s", code[:min(500, len(code))])
+	}
+	// Component should be destroyed when condition becomes false
+	if !strings.Contains(code, ".destroy()") {
+		t.Error("conditional component must call .destroy() when unmounted")
+	}
+	// Must be re-checked when 'open' changes
+	if !strings.Contains(code, "function $$set_open") {
+		t.Error("expected $$set_open setter")
+	}
+}
+
+func max(a, b int) int {
+	if a > b { return a }
+	return b
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Regression: native 'select' event / focus loss bugs
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestGenerateCode_ComponentEachGuardsCustomEvent(t *testing.T) {
+	// Event handlers on component wrappers must guard with instanceof CustomEvent
+	// so native DOM events (e.g. the built-in 'select' event on <input>)
+	// that share the same name don't trigger with $e.detail === null.
+	sfc := &SFC{
+		Script:   `import { NoteCard } from './NoteCard.js'; let notes = $state([]);`,
+		Template: `<div><NoteCard #each="notes as note" #key="note.id" @select="($e) => handleSelect($e.detail.id)" @delete="($e) => handleDelete($e.detail.id)" /></div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	// All component event listeners must check instanceof CustomEvent
+	if !strings.Contains(code, "instanceof CustomEvent") {
+		t.Errorf("component event handlers must guard with instanceof CustomEvent:\n%s",
+			code[:min(800, len(code))])
+	}
+	// Must NOT wire the handler directly without the guard
+	if strings.Contains(code, `addEventListener('select', ($e) => handleSelect`) {
+		t.Error("event handler wired without instanceof CustomEvent guard")
+	}
+}
+
+func TestGenerateCode_ComponentEachNoUnnecessaryDOMMove(t *testing.T) {
+	// Keyed #each must not call insertBefore on elements already in correct position.
+	// The generated code must include a nextSibling position check.
+	sfc := &SFC{
+		Script:   `import { Card } from './Card.js'; let items = $state([]);`,
+		Template: `<div><Card #each="items as item" #key="item.id" :label="item.text" /></div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	// Must have the nextSibling guard before insertBefore
+	if !strings.Contains(code, "nextSibling") {
+		t.Errorf("keyed component #each must check nextSibling before insertBefore (to prevent focus loss):\n%s",
+			code[:min(800, len(code))])
+	}
+}
+
+func TestGenerateCode_PlainComponentGuardsCustomEvent(t *testing.T) {
+	// Even plain (non-#each) component wrappers must guard events.
+	sfc := &SFC{
+		Script:   `import { Modal } from './Modal.js';`,
+		Template: `<div><Modal @close="($e) => handleClose($e.detail)" @select="onSelect" /></div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	if !strings.Contains(code, "instanceof CustomEvent") {
+		t.Errorf("plain component event handlers must guard with instanceof CustomEvent:\n%s",
+			code[:min(600, len(code))])
+	}
+}

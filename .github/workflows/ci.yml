@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  test:
+    name: Go ${{ matrix.go }} · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        go: ['1.21', '1.22']
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.22'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+
+  build:
+    name: Build binaries
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Build all platforms
+        run: |
+          GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w" -o dist/vela-linux-amd64   .
+          GOOS=linux   GOARCH=arm64 go build -ldflags="-s -w" -o dist/vela-linux-arm64   .
+          GOOS=darwin  GOARCH=amd64 go build -ldflags="-s -w" -o dist/vela-darwin-amd64  .
+          GOOS=darwin  GOARCH=arm64 go build -ldflags="-s -w" -o dist/vela-darwin-arm64  .
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/vela-windows-amd64.exe .
+
+      - name: Compile example components
+        run: |
+          ./dist/vela-linux-amd64 --out dist/js \
+            examples/Counter.vela \
+            examples/TodoList.vela \
+            examples/Clock.vela
+
+      - name: Report sizes
+        run: |
+          echo "📦 Compiler binaries:"
+          ls -lh dist/vela-* | awk '{print "  " $5 "\t" $9}'
+          echo ""
+          echo "📦 Compiled JS:"
+          ls -lh dist/js/*.js | awk '{print "  " $5 "\t" $9}'
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vela-binaries
+          path: dist/vela-*
