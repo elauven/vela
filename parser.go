@@ -83,9 +83,10 @@ type IfChainNode struct {
 }
 
 type IfBranch struct {
-	Cond     string // empty string → #else branch
-	Children []Node // the branch body (children of the original element)
-	Elem     *ElementNode // original element (for attrs / tag)
+	Cond     string       // empty string → #else branch
+	Children []Node       // branch body (children of the original element)
+	Elem     *ElementNode // non-nil for element branches
+	Comp     *ComponentNode // non-nil for component branches (#if on a component)
 }
 
 // ComponentNode represents a child component invocation: <MyComp :prop="val" />
@@ -517,56 +518,92 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 
 // groupIfChains performs a second pass over a node list and merges consecutive
 // #if / #elseif / #else elements into IfChainNode groups.
+// Works for both ElementNode and ComponentNode.
 func groupIfChains(nodes []Node) []Node {
 	var out []Node
 	i := 0
 	for i < len(nodes) {
-		el, ok := nodes[i].(*ElementNode)
-		if !ok || el.IfCond == "" {
-			out = append(out, nodes[i])
+		// ── ElementNode #if ───────────────────────────────────────────────
+		el, isEl := nodes[i].(*ElementNode)
+		if isEl && el.IfCond != "" {
+			chain := &IfChainNode{}
+			chain.Branches = append(chain.Branches, &IfBranch{
+				Cond:     el.IfCond,
+				Children: groupIfChains(el.Children),
+				Elem:     el,
+			})
 			i++
+			for i < len(nodes) {
+				sib, ok := nodes[i].(*ElementNode)
+				if !ok {
+					break
+				}
+				if hasMarker(sib, "__elseif__") {
+					cond := markerVal(sib, "__elseif__")
+					removeMarker(sib, "__elseif__")
+					chain.Branches = append(chain.Branches, &IfBranch{
+						Cond:     cond,
+						Children: groupIfChains(sib.Children),
+						Elem:     sib,
+					})
+					i++
+				} else if hasMarker(sib, "__else__") {
+					removeMarker(sib, "__else__")
+					chain.Branches = append(chain.Branches, &IfBranch{
+						Cond:     "",
+						Children: groupIfChains(sib.Children),
+						Elem:     sib,
+					})
+					i++
+					break
+				} else {
+					break
+				}
+			}
+			out = append(out, chain)
 			continue
 		}
 
-		// Start an if-chain
-		chain := &IfChainNode{}
-		chain.Branches = append(chain.Branches, &IfBranch{
-			Cond:     el.IfCond,
-			Children: groupIfChains(el.Children),
-			Elem:     el,
-		})
-		i++
-
-		// Collect #elseif / #else siblings
-		for i < len(nodes) {
-			sib, ok := nodes[i].(*ElementNode)
-			if !ok {
-				break
+		// ── ComponentNode #if ─────────────────────────────────────────────
+		comp, isComp := nodes[i].(*ComponentNode)
+		if isComp && comp.IfCond != "" {
+			chain := &IfChainNode{}
+			chain.Branches = append(chain.Branches, &IfBranch{
+				Cond: comp.IfCond,
+				Comp: comp,
+			})
+			i++
+			for i < len(nodes) {
+				sib, ok := nodes[i].(*ComponentNode)
+				if !ok {
+					break
+				}
+				if hasCompMarker(sib, "__elseif__") {
+					cond := compMarkerVal(sib, "__elseif__")
+					removeCompMarker(sib, "__elseif__")
+					chain.Branches = append(chain.Branches, &IfBranch{
+						Cond: cond,
+						Comp: sib,
+					})
+					i++
+				} else if hasCompMarker(sib, "__else__") {
+					removeCompMarker(sib, "__else__")
+					chain.Branches = append(chain.Branches, &IfBranch{
+						Cond: "",
+						Comp: sib,
+					})
+					i++
+					break
+				} else {
+					break
+				}
 			}
-			if hasMarker(sib, "__elseif__") {
-				cond := markerVal(sib, "__elseif__")
-				removeMarker(sib, "__elseif__")
-				chain.Branches = append(chain.Branches, &IfBranch{
-					Cond:     cond,
-					Children: groupIfChains(sib.Children),
-					Elem:     sib,
-				})
-				i++
-			} else if hasMarker(sib, "__else__") {
-				removeMarker(sib, "__else__")
-				chain.Branches = append(chain.Branches, &IfBranch{
-					Cond:     "",
-					Children: groupIfChains(sib.Children),
-					Elem:     sib,
-				})
-				i++
-				break // #else is always last
-			} else {
-				break
-			}
+			out = append(out, chain)
+			continue
 		}
 
-		out = append(out, chain)
+		out = append(out, nodes[i])
+		i++
 	}
 	return out
 }
@@ -597,6 +634,35 @@ func removeMarker(el *ElementNode, marker string) {
 		}
 	}
 	el.Attrs = kept
+}
+
+// ComponentNode equivalents
+func hasCompMarker(c *ComponentNode, marker string) bool {
+	for _, a := range c.Attrs {
+		if a.Name == marker {
+			return true
+		}
+	}
+	return false
+}
+
+func compMarkerVal(c *ComponentNode, marker string) string {
+	for _, a := range c.Attrs {
+		if a.Name == marker {
+			return a.Value
+		}
+	}
+	return ""
+}
+
+func removeCompMarker(c *ComponentNode, marker string) {
+	var kept []*Attr
+	for _, a := range c.Attrs {
+		if a.Name != marker {
+			kept = append(kept, a)
+		}
+	}
+	c.Attrs = kept
 }
 
 func (p *parser) readAttrValue() string {

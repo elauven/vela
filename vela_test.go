@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -3008,5 +3009,152 @@ func TestGenerateCode_BranchEachHoistedToComponentScope(t *testing.T) {
 	setTagsFn := code[setTagsStart:setTagsEnd]
 	if !strings.Contains(setTagsFn, "$$bceach_") {
 		t.Errorf("$$set_tags must call $$bceach_ to re-render tags inside #if branch;\n$$set_tags:\n%s", setTagsFn)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Bug regressions: async, onMount order, component #if/#elseif chains
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestAnalyzeScript_AsyncFunctionPreserved(t *testing.T) {
+	a := analyzeScript(`
+		async function fetchData(url) {
+			const res = await fetch(url);
+			return res.json();
+		}
+		async function search() {
+			const data = await fetchData('/api');
+			return data;
+		}
+	`)
+	if !strings.Contains(a.CleanScript, "async function fetchData") {
+		t.Errorf("async keyword lost from fetchData:\n%s", a.CleanScript)
+	}
+	if !strings.Contains(a.CleanScript, "async function search") {
+		t.Errorf("async keyword lost from search:\n%s", a.CleanScript)
+	}
+}
+
+func TestGenerateCode_OnMountAfterMount(t *testing.T) {
+	// onMount callbacks must appear AFTER $$target.appendChild($$root)
+	sfc := &SFC{
+		Script:   `onMount(() => { document.getElementById('x').focus(); });`,
+		Template: `<div id="x">hi</div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	mountIdx := strings.Index(code, "$$target.appendChild($$root)")
+	onMountIdx := strings.Index(code, "// onMount")
+	if mountIdx < 0 {
+		t.Fatal("no mount call found")
+	}
+	if onMountIdx < 0 {
+		t.Fatal("no onMount section found")
+	}
+	if onMountIdx < mountIdx {
+		t.Errorf("onMount appears BEFORE $$target.appendChild — component not in DOM yet\nonMountIdx=%d mountIdx=%d", onMountIdx, mountIdx)
+	}
+}
+
+func TestParseTemplate_ComponentIfElseifChainGrouped(t *testing.T) {
+	// #if/#elseif/#else on ComponentNode siblings must be grouped into one IfChainNode
+	html := `
+		<div>
+			<SearchPage #if="route === 'search'" />
+			<FavoritesPage #elseif="route === 'favorites'" />
+			<UserPage #elseif="route === 'user'" :login="params.login" />
+		</div>
+	`
+	nodes, err := parseTemplate(html)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	div := nodes[0].(*ElementNode)
+	if len(div.Children) != 1 {
+		t.Fatalf("expected 1 IfChainNode, got %d children: %v", len(div.Children),
+			func() []string {
+				var ts []string
+				for _, c := range div.Children { ts = append(ts, fmt.Sprintf("%T", c)) }
+				return ts
+			}())
+	}
+	chain, ok := div.Children[0].(*IfChainNode)
+	if !ok {
+		t.Fatalf("expected *IfChainNode, got %T", div.Children[0])
+	}
+	if len(chain.Branches) != 3 {
+		t.Errorf("expected 3 branches, got %d", len(chain.Branches))
+	}
+	// Each branch must hold a Comp, not an Elem
+	for i, branch := range chain.Branches {
+		if branch.Comp == nil {
+			t.Errorf("branch[%d] has nil Comp — not a component branch", i)
+		}
+		if branch.Elem != nil {
+			t.Errorf("branch[%d] has unexpected Elem", i)
+		}
+	}
+	// No __elseif__ sentinel must remain
+	for i, branch := range chain.Branches {
+		if branch.Comp != nil {
+			for _, a := range branch.Comp.Attrs {
+				if a.Name == "__elseif__" || a.Name == "__else__" {
+					t.Errorf("branch[%d] still has sentinel attr %q", i, a.Name)
+				}
+			}
+		}
+	}
+}
+
+func TestGenerateCode_ComponentIfChainProducesChainFn(t *testing.T) {
+	sfc := &SFC{
+		Script: `
+			import { SearchPage } from './SearchPage.js';
+			import { FavoritesPage } from './FavoritesPage.js';
+			import { UserPage } from './UserPage.js';
+			let route = $state('search');
+			let login = $state('');
+		`,
+		Template: `
+			<div>
+				<SearchPage   #if="route === 'search'" />
+				<FavoritesPage #elseif="route === 'favorites'" />
+				<UserPage      #elseif="route === 'user'" :login="login" />
+			</div>
+		`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	// Must produce a single chain function
+	if !strings.Contains(code, "function $$chain_") {
+		t.Errorf("expected $$chain_ function for component if-chain:\n%s", code[:min(600, len(code))])
+	}
+	// All three components must be mounted conditionally (not always)
+	if !strings.Contains(code, "SearchPage(") {
+		t.Error("SearchPage not mounted")
+	}
+	if !strings.Contains(code, "FavoritesPage(") {
+		t.Error("FavoritesPage not mounted")
+	}
+	if !strings.Contains(code, "UserPage(") {
+		t.Error("UserPage not mounted")
+	}
+	// __elseif__ must NOT appear as a DOM attribute or prop
+	if strings.Contains(code, "__elseif__") {
+		t.Errorf("__elseif__ sentinel leaked into generated code:\n%s", code[:min(600, len(code))])
+	}
+	// When route changes, the chain function must be called
+	if !strings.Contains(code, "function $$set_route") {
+		t.Fatal("no $$set_route setter")
+	}
+	setRouteEnd := strings.Index(code, "function $$set_route")
+	setRouteEnd += strings.Index(code[setRouteEnd:], "\n  function ")
+	setRouteFn := code[strings.Index(code, "function $$set_route"):setRouteEnd]
+	if !strings.Contains(setRouteFn, "$$chain_") {
+		t.Errorf("$$set_route should call $$chain_ to re-evaluate route:\n%s", setRouteFn)
 	}
 }

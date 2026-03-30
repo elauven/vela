@@ -223,7 +223,18 @@ func (g *CodeGen) emit(nodes []Node) string {
 		out.WriteString("\n")
 	}
 
-	// ── onMount callbacks ─────────────────────
+	// ── Initial DOM hydration ─────────────────
+	if g.init.Len() > 0 {
+		out.WriteString("  // initial render\n")
+		out.WriteString(g.init.String())
+		out.WriteString("\n")
+	}
+
+	// ── Mount ────────────────────────────────
+	out.WriteString("  // mount\n")
+	out.WriteString("  $$target.appendChild($$root);\n\n")
+
+	// ── onMount callbacks (after DOM is inserted) ─────────────────────────
 	for _, lc := range g.analysis.Lifecycles {
 		if lc.Kind == "onMount" {
 			out.WriteString("  // onMount\n")
@@ -235,17 +246,6 @@ func (g *CodeGen) emit(nodes []Node) string {
 			out.WriteString("\n")
 		}
 	}
-
-	// ── Initial DOM hydration ─────────────────
-	if g.init.Len() > 0 {
-		out.WriteString("  // initial render\n")
-		out.WriteString(g.init.String())
-		out.WriteString("\n")
-	}
-
-	// ── Mount ────────────────────────────────
-	out.WriteString("  // mount\n")
-	out.WriteString("  $$target.appendChild($$root);\n\n")
 
 	// ── Return handle ─────────────────────────
 	out.WriteString("  return {\n")
@@ -471,6 +471,19 @@ func (g *CodeGen) walkText(node *TextNode, parentVar string) {
 // Each branch's element is cached in a dedicated variable so it is created
 // at most once and re-used on subsequent re-evaluations.
 func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
+	// If every branch has a Comp (ComponentNode), use walkComponentIfChain
+	allComp := true
+	for _, b := range chain.Branches {
+		if b.Comp == nil {
+			allComp = false
+			break
+		}
+	}
+	if allComp {
+		g.walkComponentIfChain(chain, parentVar)
+		return
+	}
+
 	anchor := g.id() + "_a"
 	fn := "$$chain_" + g.id()
 
@@ -879,6 +892,111 @@ func (g *CodeGen) walkSlot(slot *SlotNode, parentVar string) {
 	}
 	fnBuf.WriteString("  }\n")
 	g.init.WriteString(fnBuf.String()) // ← init, not create
+}
+
+// walkComponentIfChain handles an IfChainNode where every branch holds a
+// ComponentNode (#if / #elseif / #else on component tags).
+// It emits a single $$chain_N() function with one cached instance per branch.
+func (g *CodeGen) walkComponentIfChain(chain *IfChainNode, parentVar string) {
+	anchor := g.id() + "_a"
+	fn := "$$chain_" + g.id()
+
+	// One {inst, wrap} pair per branch
+	instVars := make([]string, len(chain.Branches))
+	wrapVars := make([]string, len(chain.Branches))
+	for i := range chain.Branches {
+		instVars[i] = fmt.Sprintf("%s_i%d", fn, i)
+		wrapVars[i] = fmt.Sprintf("%s_w%d", fn, i)
+	}
+
+	g.create.WriteString(fmt.Sprintf(
+		"  const %s = document.createComment('if-comp-chain');\n", anchor))
+	g.wire.WriteString(fmt.Sprintf("  %s.appendChild(%s);\n", parentVar, anchor))
+	for i := range chain.Branches {
+		g.create.WriteString(fmt.Sprintf(
+			"  let %s = null, %s = null;\n", instVars[i], wrapVars[i]))
+	}
+
+	var fnBuf strings.Builder
+	fnBuf.WriteString(fmt.Sprintf("  function %s() {\n", fn))
+	fnBuf.WriteString("    let $$active = -1;\n")
+	for i, branch := range chain.Branches {
+		if branch.Cond == "" {
+			fnBuf.WriteString(fmt.Sprintf("    if ($$active < 0) $$active = %d;\n", i))
+		} else {
+			fnBuf.WriteString(fmt.Sprintf("    if ($$active < 0 && (%s)) $$active = %d;\n", branch.Cond, i))
+		}
+	}
+
+	// Destroy any branch that is no longer active
+	for i := range chain.Branches {
+		fnBuf.WriteString(fmt.Sprintf(
+			"    if ($$active !== %d && %s) { %s.destroy(); %s = null; %s.remove(); %s = null; }\n",
+			i, instVars[i], instVars[i], instVars[i], wrapVars[i], wrapVars[i]))
+	}
+
+	// Mount the active branch (first time) or update (subsequent times)
+	for i, branch := range chain.Branches {
+		comp := branch.Comp
+		var propsEntries []string
+		for _, attr := range comp.Attrs {
+			if attr.IsBind {
+				propsEntries = append(propsEntries, fmt.Sprintf("%s: %s", attr.Name, attr.Value))
+			} else if !attr.IsEvent {
+				propsEntries = append(propsEntries, fmt.Sprintf("%s: '%s'", attr.Name, escapeAttr(attr.Value)))
+			}
+		}
+		propsExpr := "{}"
+		if len(propsEntries) > 0 {
+			propsExpr = "{ " + strings.Join(propsEntries, ", ") + " }"
+		}
+
+		fnBuf.WriteString(fmt.Sprintf("    if ($$active === %d) {\n", i))
+		fnBuf.WriteString(fmt.Sprintf("      if (!%s) {\n", instVars[i]))
+		fnBuf.WriteString(fmt.Sprintf("        %s = document.createElement('div');\n", wrapVars[i]))
+		fnBuf.WriteString(fmt.Sprintf("        %s.setAttribute('%s','');\n", wrapVars[i], g.scopeID))
+		for _, attr := range comp.Attrs {
+			if attr.IsEvent {
+				fnBuf.WriteString(fmt.Sprintf(
+					"        %s.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
+					wrapVars[i], attr.Name, attr.Value))
+			}
+		}
+		fnBuf.WriteString(fmt.Sprintf("        %s = %s(%s, %s, {});\n",
+			instVars[i], comp.Name, wrapVars[i], propsExpr))
+		fnBuf.WriteString(fmt.Sprintf("        %s.parentNode.insertBefore(%s, %s);\n",
+			anchor, wrapVars[i], anchor))
+		fnBuf.WriteString(fmt.Sprintf("      } else { %s.set(%s); }\n", instVars[i], propsExpr))
+		fnBuf.WriteString("    }\n")
+	}
+	fnBuf.WriteString("  }\n")
+	g.create.WriteString(fnBuf.String())
+
+	// Collect all deps from conditions and bound props
+	allDeps := map[string]bool{}
+	for _, branch := range chain.Branches {
+		for _, d := range findDeps(branch.Cond, g.analysis.reactiveNames()) {
+			allDeps[d] = true
+		}
+		for _, attr := range branch.Comp.Attrs {
+			if attr.IsBind {
+				for _, d := range findDeps(attr.Value, g.analysis.reactiveNames()) {
+					allDeps[d] = true
+				}
+			}
+		}
+	}
+
+	call := fmt.Sprintf("  %s();", fn)
+	g.init.WriteString(call + "\n")
+	for dep := range allDeps {
+		g.addUpdate(dep, call)
+	}
+
+	// Cleanup
+	for i := range chain.Branches {
+		g.cleanup.WriteString(fmt.Sprintf("      if (%s) %s.destroy();\n", instVars[i], instVars[i]))
+	}
 }
 
 // ──────────────────────────────────────────────

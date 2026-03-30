@@ -106,8 +106,12 @@ func (p *JSParser) parseStmt() JsStmt {
 		return p.parseFuncDecl(false)
 	case TokAsync:
 		if p.peek.Kind == TokFunction {
-			p.advance()
-			return p.parseFuncDecl(true)
+			pos := p.curPos() // capture position of 'async' keyword
+			p.advance()       // consume 'async'
+			fd := p.parseFuncDecl(true)
+			// Extend the node's start to include 'async'
+			fd.baseStmt.baseNode.Pos = pos
+			return fd
 		}
 		return p.parseExprStmt()
 	case TokClass:
