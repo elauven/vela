@@ -1139,9 +1139,10 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, nodes []Node, parentVar
 }
 
 // emitBranchComponent emits inline component mounting code inside a branch
-// function. Supports plain components, #each (keyed & unkeyed), and #if.
-// Because branch functions are self-contained closures, we emit the full
-// mount logic inline rather than writing to g.create/g.init/g.cleanup.
+// function. For plain and #if components, it writes directly into b.
+// For #each components, it hoists the key map and update function to the
+// component scope (via g.create/g.addUpdate) so the list re-renders when
+// the array or any bound prop expression changes — not just on branch mount.
 func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, parentVar, indent string) {
 	// Build props object expression
 	var propsEntries []string
@@ -1157,31 +1158,28 @@ func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, p
 		propsExpr = "{ " + strings.Join(propsEntries, ", ") + " }"
 	}
 
-	// Event listener snippets
-	var evSnippets []string
-	for _, attr := range comp.Attrs {
-		if attr.IsEvent {
-			evSnippets = append(evSnippets, fmt.Sprintf(
-				"%s  $$w.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
-				indent, attr.Name, attr.Value))
+	// Event listener snippets (CustomEvent-guarded)
+	evWire := func(wrapVar string, indentLevel string) string {
+		var s strings.Builder
+		for _, attr := range comp.Attrs {
+			if attr.IsEvent {
+				s.WriteString(fmt.Sprintf(
+					"%s%s.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
+					indentLevel, wrapVar, attr.Name, attr.Value))
+			}
 		}
-	}
-
-	mountSnippet := func(wrapVar, props string) {
-		b.WriteString(fmt.Sprintf("%sconst %s = document.createElement('div');\n", indent, wrapVar))
-		b.WriteString(fmt.Sprintf("%s%s.setAttribute('%s','');\n", indent, wrapVar, g.scopeID))
-		for _, ev := range evSnippets {
-			b.WriteString(ev)
-		}
-		b.WriteString(fmt.Sprintf("%s%s(%s, %s, {});\n", indent, comp.Name, wrapVar, props))
-		b.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, wrapVar))
+		return s.String()
 	}
 
 	if comp.IfCond != "" {
-		// <Comp #if="cond" />  inside a branch
+		// <Comp #if="cond" /> inside a branch — simple inline conditional mount
 		wrapVar := g.id()
 		b.WriteString(fmt.Sprintf("%sif (%s) {\n", indent, comp.IfCond))
-		mountSnippet(wrapVar, propsExpr)
+		b.WriteString(fmt.Sprintf("%s  const %s = document.createElement('div');\n", indent, wrapVar))
+		b.WriteString(fmt.Sprintf("%s  %s.setAttribute('%s','');\n", indent, wrapVar, g.scopeID))
+		b.WriteString(evWire(wrapVar, indent+"  "))
+		b.WriteString(fmt.Sprintf("%s  %s(%s, %s, {});\n", indent, comp.Name, wrapVar, propsExpr))
+		b.WriteString(fmt.Sprintf("%s  %s.appendChild(%s);\n", indent, parentVar, wrapVar))
 		b.WriteString(fmt.Sprintf("%s}\n", indent))
 		return
 	}
@@ -1189,66 +1187,127 @@ func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, p
 	if comp.EachExpr == "" {
 		// Plain single-mount component
 		wrapVar := g.id()
-		mountSnippet(wrapVar, propsExpr)
+		b.WriteString(fmt.Sprintf("%sconst %s = document.createElement('div');\n", indent, wrapVar))
+		b.WriteString(fmt.Sprintf("%s%s.setAttribute('%s','');\n", indent, wrapVar, g.scopeID))
+		b.WriteString(evWire(wrapVar, indent))
+		b.WriteString(fmt.Sprintf("%s%s(%s, %s, {});\n", indent, comp.Name, wrapVar, propsExpr))
+		b.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, wrapVar))
 		return
 	}
 
-	// #each component — keyed or unkeyed
+	// ── #each component inside a branch ──────────────────────────────────────
+	// Both the anchor AND the update function must live at component scope so
+	// that the hoisted $$bceach_ function can reference the anchor by name.
+	// If the anchor were declared inside the branch body (b), it would be
+	// undefined when $$bceach_ is called from dep-triggered updates.
 	array, itemVar, indexVar := parseEachExpr(comp.EachExpr)
 	if indexVar == "" {
 		indexVar = "$$i"
 	}
+
 	anchorVar := g.id() + "_a"
-	b.WriteString(fmt.Sprintf("%sconst %s = document.createComment('#each-comp');\n", indent, anchorVar))
+	fnVar := "$$bceach_" + g.id()
+	allNames := g.analysis.reactiveNames()
+
+	// Anchor: declared and wired at component scope.
+	// The branch body appends it to parentVar when the branch first mounts.
+	g.create.WriteString(fmt.Sprintf("  const %s = document.createComment('#each-comp');\n", anchorVar))
+	// Wire: appended to parentVar from the branch body (below) — not via g.wire
+	// because parentVar is a branch-local variable, not a fixed component element.
+	// Instead we write the appendChild into b (runs on first branch mount).
 	b.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, anchorVar))
 
 	if comp.EachKey != "" {
-		// Keyed: Map<key, {wrap, comp}> for update-in-place
+		// Keyed — hoist Map and update fn to component scope
 		kmVar := g.id() + "_km"
-		b.WriteString(fmt.Sprintf("%sconst %s = new Map();\n", indent, kmVar))
-		b.WriteString(fmt.Sprintf("%s(function($$arr) {\n", indent))
-		b.WriteString(fmt.Sprintf("%s  const $$newKeys = new Set();\n", indent))
-		b.WriteString(fmt.Sprintf("%s  ($$arr||[]).forEach(function(%s, %s) {\n", indent, itemVar, indexVar))
-		b.WriteString(fmt.Sprintf("%s    const $$key = String(%s);\n", indent, comp.EachKey))
-		b.WriteString(fmt.Sprintf("%s    $$newKeys.add($$key);\n", indent))
-		b.WriteString(fmt.Sprintf("%s    let $$blk = %s.get($$key);\n", indent, kmVar))
-		b.WriteString(fmt.Sprintf("%s    if ($$blk) { $$blk.comp.set(%s); } else {\n", indent, propsExpr))
+		bsVar := g.id() + "_bs"
+
+		// Component-scope declarations
+		g.create.WriteString(fmt.Sprintf("  const %s = new Map();\n", kmVar))
+		g.create.WriteString(fmt.Sprintf("  let %s = [];\n", bsVar))
+
+		// Component-scope update function — guarded so it's a no-op when the
+		// branch hasn't mounted yet (anchor has no parentNode).
+		var fn strings.Builder
+		fn.WriteString(fmt.Sprintf("  function %s($$arr) {\n", fnVar))
+		fn.WriteString(fmt.Sprintf("    if (!%s.parentNode) return;\n", anchorVar))
+		fn.WriteString("    const $$newKeys = new Set();\n")
+		fn.WriteString("    const $$newBlks = [];\n")
+		fn.WriteString(fmt.Sprintf("    ($$arr||[]).forEach(function(%s, %s) {\n", itemVar, indexVar))
+		fn.WriteString(fmt.Sprintf("      const $$key = String(%s);\n", comp.EachKey))
+		fn.WriteString("      $$newKeys.add($$key);\n")
+		fn.WriteString(fmt.Sprintf("      let $$blk = %s.get($$key);\n", kmVar))
+		fn.WriteString(fmt.Sprintf("      if ($$blk) { $$blk.comp.set(%s); } else {\n", propsExpr))
 		wrapVar := g.id()
-		b.WriteString(fmt.Sprintf("%s      const %s = document.createElement('div');\n", indent, wrapVar))
-		b.WriteString(fmt.Sprintf("%s      %s.setAttribute('%s','');\n", indent, wrapVar, g.scopeID))
+		fn.WriteString(fmt.Sprintf("        const %s = document.createElement('div');\n", wrapVar))
+		fn.WriteString(fmt.Sprintf("        %s.setAttribute('%s','');\n", wrapVar, g.scopeID))
+		fn.WriteString(evWire(wrapVar, "        "))
+		fn.WriteString(fmt.Sprintf("        const $$c = %s(%s, %s, {});\n", comp.Name, wrapVar, propsExpr))
+		fn.WriteString(fmt.Sprintf("        $$blk = { wrap: %s, comp: $$c };\n", wrapVar))
+		fn.WriteString(fmt.Sprintf("        %s.set($$key, $$blk);\n", kmVar))
+		fn.WriteString("      }\n")
+		fn.WriteString(fmt.Sprintf("      if ($$blk.wrap.nextSibling !== %s) { %s.parentNode.insertBefore($$blk.wrap, %s); }\n",
+			anchorVar, anchorVar, anchorVar))
+		fn.WriteString("      $$newBlks.push($$blk);\n")
+		fn.WriteString("    });\n")
+		fn.WriteString(fmt.Sprintf("    %s.forEach(($$blk, $$k) => { if (!$$newKeys.has($$k)) { $$blk.comp.destroy(); %s.delete($$k); } });\n", kmVar, kmVar))
+		fn.WriteString(fmt.Sprintf("    %s = $$newBlks;\n", bsVar))
+		fn.WriteString("  }\n")
+		g.create.WriteString(fn.String())
+
+		// Cleanup: destroy all blocks
+		g.cleanup.WriteString(fmt.Sprintf("      %s.forEach(b => b.comp.destroy());\n", bsVar))
+
+		// Call from branch (first mount or re-evaluation)
+		b.WriteString(fmt.Sprintf("%s%s(%s);\n", indent, fnVar, array))
+
+		// Register as dep update for array and any bound prop expressions
+		call := fmt.Sprintf("  %s(%s);", fnVar, array)
+		for _, dep := range findDeps(array, allNames) {
+			g.addUpdate(dep, call)
+		}
 		for _, attr := range comp.Attrs {
-			if attr.IsEvent {
-				b.WriteString(fmt.Sprintf(
-					"%s      %s.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
-					indent, wrapVar, attr.Name, attr.Value))
+			if attr.IsBind {
+				for _, dep := range findDeps(attr.Value, allNames) {
+					g.addUpdate(dep, call)
+				}
 			}
 		}
-		b.WriteString(fmt.Sprintf("%s      const $$c = %s(%s, %s, {});\n", indent, comp.Name, wrapVar, propsExpr))
-		b.WriteString(fmt.Sprintf("%s      $$blk = { wrap: %s, comp: $$c };\n", indent, wrapVar))
-		b.WriteString(fmt.Sprintf("%s      %s.set($$key, $$blk);\n", indent, kmVar))
-		b.WriteString(fmt.Sprintf("%s    }\n", indent))
-		b.WriteString(fmt.Sprintf("%s    if ($$blk.wrap.nextSibling !== %s) { %s.parentNode.insertBefore($$blk.wrap, %s); }\n",
-			indent, anchorVar, anchorVar, anchorVar))
-		b.WriteString(fmt.Sprintf("%s  });\n", indent))
-		b.WriteString(fmt.Sprintf("%s  %s.forEach(($$blk, $$key) => { if (!$$newKeys.has($$key)) { $$blk.comp.destroy(); %s.delete($$key); } });\n",
-			indent, kmVar, kmVar))
-		b.WriteString(fmt.Sprintf("%s})(%s);\n", indent, array))
 	} else {
-		// Unkeyed: simple rebuild
-		b.WriteString(fmt.Sprintf("%s((%s)||[]).forEach(function(%s, %s) {\n", indent, array, itemVar, indexVar))
+		// Unkeyed — hoist blocks slice and update fn to component scope
+		bsVar := g.id() + "_bs"
+		g.create.WriteString(fmt.Sprintf("  let %s = [];\n", bsVar))
+
+		var fn strings.Builder
+		fn.WriteString(fmt.Sprintf("  function %s($$arr) {\n", fnVar))
+		fn.WriteString(fmt.Sprintf("    if (!%s.parentNode) return;\n", anchorVar))
+		fn.WriteString(fmt.Sprintf("    %s.forEach(b => b.comp.destroy()); %s = [];\n", bsVar, bsVar))
+		fn.WriteString(fmt.Sprintf("    ((%s)||[]).forEach(function(%s, %s) {\n", array, itemVar, indexVar))
 		wrapVar := g.id()
-		b.WriteString(fmt.Sprintf("%s  const %s = document.createElement('div');\n", indent, wrapVar))
-		b.WriteString(fmt.Sprintf("%s  %s.setAttribute('%s','');\n", indent, wrapVar, g.scopeID))
+		fn.WriteString(fmt.Sprintf("      const %s = document.createElement('div');\n", wrapVar))
+		fn.WriteString(fmt.Sprintf("      %s.setAttribute('%s','');\n", wrapVar, g.scopeID))
+		fn.WriteString(evWire(wrapVar, "      "))
+		fn.WriteString(fmt.Sprintf("      const $$c = %s(%s, %s, {});\n", comp.Name, wrapVar, propsExpr))
+		fn.WriteString(fmt.Sprintf("      %s.parentNode.insertBefore(%s, %s);\n", anchorVar, wrapVar, anchorVar))
+		fn.WriteString(fmt.Sprintf("      %s.push({ wrap: %s, comp: $$c });\n", bsVar, wrapVar))
+		fn.WriteString("    });\n  }\n")
+		g.create.WriteString(fn.String())
+
+		g.cleanup.WriteString(fmt.Sprintf("      %s.forEach(b => b.comp.destroy());\n", bsVar))
+
+		b.WriteString(fmt.Sprintf("%s%s(%s);\n", indent, fnVar, array))
+
+		call := fmt.Sprintf("  %s(%s);", fnVar, array)
+		for _, dep := range findDeps(array, allNames) {
+			g.addUpdate(dep, call)
+		}
 		for _, attr := range comp.Attrs {
-			if attr.IsEvent {
-				b.WriteString(fmt.Sprintf(
-					"%s  %s.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
-					indent, wrapVar, attr.Name, attr.Value))
+			if attr.IsBind {
+				for _, dep := range findDeps(attr.Value, allNames) {
+					g.addUpdate(dep, call)
+				}
 			}
 		}
-		b.WriteString(fmt.Sprintf("%s  %s(%s, %s, {});\n", indent, comp.Name, wrapVar, propsExpr))
-		b.WriteString(fmt.Sprintf("%s  %s.parentNode.insertBefore(%s, %s);\n", indent, anchorVar, wrapVar, anchorVar))
-		b.WriteString(fmt.Sprintf("%s});\n", indent))
 	}
 }
 

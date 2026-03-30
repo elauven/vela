@@ -543,7 +543,11 @@ func (a *Analysis) derivedNames() []string {
 }
 
 func (a *Analysis) reactiveNames() []string {
-	return append(a.stateNames(), a.derivedNames()...)
+	names := append(a.stateNames(), a.derivedNames()...)
+	for _, p := range a.Props {
+		names = append(names, p.Name)
+	}
+	return names
 }
 
 // stateSet returns a set of all reactive variable names that need setter

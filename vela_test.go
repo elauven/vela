@@ -2862,3 +2862,151 @@ func TestGenerateCode_PlainComponentInsideIfBranch(t *testing.T) {
 		t.Errorf("Modal not mounted inside #if chain function:\n%s", chainFn[:min(400, len(chainFn))])
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Prop deps in derived vars + branch component re-render
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestReactiveNames_IncludesProps(t *testing.T) {
+	a := analyzeScript(`
+		export let pinned = false;
+		export let selected = false;
+		let editMode = $state(false);
+		let cardClass = $derived('card' + (pinned ? ' pinned' : '') + (selected ? ' selected' : '') + (editMode ? ' editing' : ''));
+	`)
+	names := a.reactiveNames()
+	nameSet := map[string]bool{}
+	for _, n := range names {
+		nameSet[n] = true
+	}
+	for _, want := range []string{"pinned", "selected", "editMode", "cardClass"} {
+		if !nameSet[want] {
+			t.Errorf("reactiveNames should include %q; got: %v", want, names)
+		}
+	}
+}
+
+func TestDerivedDeps_IncludesPropVars(t *testing.T) {
+	a := analyzeScript(`
+		export let pinned = false;
+		export let selected = false;
+		let editMode = $state(false);
+		let cardClass = $derived('card' + (pinned ? ' pinned' : '') + (selected ? ' selected' : '') + (editMode ? ' editing' : ''));
+	`)
+	if len(a.DerivedVars) == 0 {
+		t.Fatal("no derived vars found")
+	}
+	dv := a.DerivedVars[0] // cardClass
+	deps := map[string]bool{}
+	for _, d := range dv.Deps {
+		deps[d] = true
+	}
+	for _, want := range []string{"pinned", "selected", "editMode"} {
+		if !deps[want] {
+			t.Errorf("cardClass.Deps should include %q; got: %v", want, dv.Deps)
+		}
+	}
+}
+
+func TestGenerateCode_PropChangeTriggersDerivedUpdate(t *testing.T) {
+	// When a prop changes via set(), the derived vars that depend on it must update.
+	sfc := &SFC{
+		Script: `
+			export let pinned = false;
+			export let selected = false;
+			let editMode = $state(false);
+			let cardClass = $derived('card' + (pinned ? ' card-pinned' : '') + (selected ? ' card-selected' : '') + (editMode ? ' card-editing' : ''));
+		`,
+		Template: `<div :class="cardClass">content</div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("Card", sfc, nodes, a, "vela-test")
+
+	// $$set_pinned must call $$upd_cardClass
+	pinSetStart := strings.Index(code, "function $$set_pinned")
+	if pinSetStart < 0 {
+		t.Fatal("no $$set_pinned found")
+	}
+	pinSetEnd := pinSetStart + strings.Index(code[pinSetStart:], "\n  function ")
+	if pinSetEnd <= pinSetStart {
+		pinSetEnd = len(code)
+	}
+	pinSetter := code[pinSetStart:pinSetEnd]
+	if !strings.Contains(pinSetter, "$$upd_cardClass") {
+		t.Errorf("$$set_pinned must call $$upd_cardClass; setter:\n%s", pinSetter)
+	}
+
+	// $$set_selected must also call $$upd_cardClass
+	selSetStart := strings.Index(code, "function $$set_selected")
+	if selSetStart < 0 {
+		t.Fatal("no $$set_selected found")
+	}
+	selSetEnd := selSetStart + strings.Index(code[selSetStart:], "\n  function ")
+	if selSetEnd <= selSetStart {
+		selSetEnd = len(code)
+	}
+	selSetter := code[selSetStart:selSetEnd]
+	if !strings.Contains(selSetter, "$$upd_cardClass") {
+		t.Errorf("$$set_selected must call $$upd_cardClass; setter:\n%s", selSetter)
+	}
+}
+
+func TestGenerateCode_BranchEachHoistedToComponentScope(t *testing.T) {
+	// A #each component inside an #if branch must have its update function
+	// hoisted to component scope so it re-renders when the array changes.
+	sfc := &SFC{
+		Script: `
+			import { TagBadge } from './TagBadge.js';
+			let editMode = $state(false);
+			let tags = $state(['vela', 'demo']);
+		`,
+		Template: `
+			<div>
+				<div #if="editMode">
+					<TagBadge #each="tags as t" #key="t" :tag="t" :removable="true" @remove="($e) => removeTag($e.detail.tag)" />
+				</div>
+			</div>
+		`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("NoteCard", sfc, nodes, a, "vela-test")
+
+	// The $$bceach_ function must be at component scope (not inside the chain fn)
+	bceachPos := strings.Index(code, "$$bceach_")
+	chainPos := strings.Index(code, "function $$chain_")
+	if bceachPos < 0 {
+		t.Fatal("no $$bceach_ update function found — branch #each not hoisted")
+	}
+	// The function DEFINITION must appear before or outside the chain function
+	// (it's written to g.create which comes before chain functions)
+	if bceachPos > chainPos && chainPos > 0 {
+		// Find the end of the chain function
+		chainEnd := chainPos
+		depth := 0; started := false
+		for chainEnd < len(code) {
+			c := code[chainEnd]
+			if c == '{' { depth++; started = true }
+			if c == '}' && started { depth--; if depth == 0 { break } }
+			chainEnd++
+		}
+		// Check if bceach appears OUTSIDE (before) the chain fn
+		bceachFnDef := strings.Index(code, "function $$bceach_")
+		if bceachFnDef > chainEnd {
+			t.Errorf("$$bceach_ function defined AFTER chain function — not hoisted to component scope")
+		}
+	}
+
+	// When tags changes, $$set_tags must call the bceach update
+	setTagsStart := strings.Index(code, "function $$set_tags")
+	if setTagsStart < 0 {
+		t.Fatal("no $$set_tags found")
+	}
+	setTagsEnd := setTagsStart + strings.Index(code[setTagsStart:], "\n  function ")
+	if setTagsEnd <= setTagsStart { setTagsEnd = len(code) }
+	setTagsFn := code[setTagsStart:setTagsEnd]
+	if !strings.Contains(setTagsFn, "$$bceach_") {
+		t.Errorf("$$set_tags must call $$bceach_ to re-render tags inside #if branch;\n$$set_tags:\n%s", setTagsFn)
+	}
+}
