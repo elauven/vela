@@ -2781,3 +2781,84 @@ func TestParseTemplate_IfElseGroupedThreeLevelsDeep(t *testing.T) {
 		t.Errorf("expected 3 branches (if/elseif/else), got %d", len(chain.Branches))
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Component inside #if branch
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestGenerateCode_ComponentInsideIfBranch(t *testing.T) {
+	// TagBadge inside an #if branch must be rendered, not silently dropped.
+	sfc := &SFC{
+		Script:   `import { TagBadge } from './TagBadge.js'; let show = $state(true); let tags = $state(['vela','demo']);`,
+		Template: `<div #if="show"><TagBadge #each="tags as t" #key="t" :tag="t" :color="'purple'" :removable="false" /></div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	// TagBadge must appear somewhere in the generated code
+	if !strings.Contains(code, "TagBadge(") {
+		t.Errorf("TagBadge not mounted in #if branch — component dropped:\n%s",
+			code[:min(600, len(code))])
+	}
+	// The mount must be inside the chain function, not at top level after it
+	chainStart := strings.Index(code, "function $$chain_")
+	tagBadgePos := strings.Index(code, "TagBadge(")
+	if tagBadgePos < 0 {
+		t.Fatal("TagBadge( not found")
+	}
+	if tagBadgePos < chainStart {
+		t.Errorf("TagBadge mounted before the #if chain function — wrong scope")
+	}
+}
+
+func TestGenerateCode_ComponentEachInsideIfBranch(t *testing.T) {
+	// Keyed #each of component inside an #if branch must use a Map.
+	sfc := &SFC{
+		Script:   `import { Card } from './Card.js'; let visible = $state(true); let items = $state([]);`,
+		Template: `<div #if="visible"><Card #each="items as item" #key="item.id" :label="item.text" /></div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	chainStart := strings.Index(code, "function $$chain_")
+	if chainStart < 0 {
+		t.Fatal("no chain function")
+	}
+	// Find the chain function body
+	chainEnd := chainStart + strings.Index(code[chainStart:], "\n  function ")
+	if chainEnd <= chainStart {
+		chainEnd = len(code)
+	}
+	chainFn := code[chainStart:chainEnd]
+
+	if !strings.Contains(chainFn, "Card(") {
+		t.Errorf("Card component not mounted inside #if chain function:\n%s", chainFn[:min(500, len(chainFn))])
+	}
+	if !strings.Contains(chainFn, "new Map()") {
+		t.Errorf("keyed #each inside #if branch should use a Map:\n%s", chainFn[:min(500, len(chainFn))])
+	}
+}
+
+func TestGenerateCode_PlainComponentInsideIfBranch(t *testing.T) {
+	// A plain (non-#each) component inside an #if branch.
+	sfc := &SFC{
+		Script:   `import { Modal } from './Modal.js'; let open = $state(false);`,
+		Template: `<div><div #if="open"><Modal :title="'Hello'" /></div></div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	chainStart := strings.Index(code, "function $$chain_")
+	chainEnd := chainStart + strings.Index(code[chainStart:], "\n  function ")
+	if chainEnd <= chainStart {
+		chainEnd = len(code)
+	}
+	chainFn := code[chainStart:chainEnd]
+
+	if !strings.Contains(chainFn, "Modal(") {
+		t.Errorf("Modal not mounted inside #if chain function:\n%s", chainFn[:min(400, len(chainFn))])
+	}
+}
