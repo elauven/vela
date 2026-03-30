@@ -339,7 +339,7 @@ func (p *parser) parseElement() (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		elem.Children = children
+		elem.Children = groupIfChains(children)
 
 		// Consume </tag>
 		if p.has("</") {
@@ -392,7 +392,7 @@ func (p *parser) parseSlotNode() (Node, error) {
 			p.pos++
 		}
 	}
-	return &SlotNode{Name: name, Fallback: fallback}, nil
+	return &SlotNode{Name: name, Fallback: groupIfChains(fallback)}, nil
 }
 func (p *parser) parseComponentNode(name string) (Node, error) {
 	comp := &ComponentNode{Name: name, Slots: map[string][]Node{}}
@@ -420,6 +420,7 @@ func (p *parser) parseComponentNode(name string) (Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	children = groupIfChains(children)
 	closeTag := "</" + name
 	if p.has(closeTag) {
 		p.pos += len(closeTag)

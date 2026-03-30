@@ -198,7 +198,7 @@
 
     <ul class="todo-list">
       <li #each="visible as todo, i" #key="todo.id">
-        <input type="checkbox" @change="() => toggle(todo.id)" :checked="todo.done" />
+        <input type="checkbox" @change="() => toggle(todo.id)" />
         <span class="todo-text">{todo.text}</span>
         <button class="remove-btn" @click="() => remove(todo.id)">✕</button>
       </li>

@@ -118,7 +118,7 @@ input[type="number"][vela-c83ed0] {
   const $$n11 = document.createElement('input');
   $$n11.setAttribute('vela-c83ed0', '');
   $$n11.setAttribute('type', 'number');
-  const $$n11_input_h = ($e) => step = Number($e.target.value);
+  const $$n11_input_h = ($e) => $$set_step(Number($e.target.value));
   $$n1.appendChild($$n2);
   $$root.appendChild($$n1);
   $$n3.appendChild($$n4);

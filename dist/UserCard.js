@@ -151,46 +151,74 @@ button[vela-04e1a9]:hover {
   $$n1.setAttribute('vela-04e1a9', '');
   $$n1.setAttribute('class', 'avatar');
   const $$n2 = document.createTextNode('');
-  const $$n4_a = document.createComment('if-chain');
-  let $$chain_$$n5_b0 = null;
-  function $$chain_$$n5() {
+  const $$n3_a = document.createComment('if-chain');
+  let $$chain_$$n4_b0 = null;
+  let $$chain_$$n4_b1 = null;
+  function $$chain_$$n4() {
     let $$active = -1;
     if ($$active < 0 && (!editMode)) $$active = 0;
-    if ($$active !== 0 && $$chain_$$n5_b0) { $$chain_$$n5_b0.remove(); $$chain_$$n5_b0 = null; }
+    if ($$active < 0 && (editMode)) $$active = 1;
+    if ($$active !== 0 && $$chain_$$n4_b0) { $$chain_$$n4_b0.remove(); $$chain_$$n4_b0 = null; }
+    if ($$active !== 1 && $$chain_$$n4_b1) { $$chain_$$n4_b1.remove(); $$chain_$$n4_b1 = null; }
     if ($$active === 0) {
-      if (!$$chain_$$n5_b0) {
-        $$chain_$$n5_b0 = document.createElement('div');
-        $$chain_$$n5_b0.setAttribute('vela-04e1a9', '');
-        $$n4_a.parentNode.insertBefore($$chain_$$n5_b0, $$n4_a);
+      if (!$$chain_$$n4_b0) {
+        $$chain_$$n4_b0 = document.createElement('div');
+        $$chain_$$n4_b0.setAttribute('vela-04e1a9', '');
+        const $$n5 = document.createElement('div');
+        $$n5.setAttribute('vela-04e1a9', '');
+        $$n5.setAttribute('class', 'name');
+        $$n5.appendChild(document.createTextNode(String(name)));
+        $$chain_$$n4_b0.appendChild($$n5);
+        const $$n6 = document.createElement('div');
+        $$n6.setAttribute('vela-04e1a9', '');
+        $$n6.setAttribute('class', 'role');
+        $$n6.appendChild(document.createTextNode(String(role)));
+        $$chain_$$n4_b0.appendChild($$n6);
+        const $$n7 = document.createElement('div');
+        $$n7.setAttribute('vela-04e1a9', '');
+        $$n7.setAttribute('class', 'status');
+        const $$n8 = document.createElement('span');
+        $$n8.setAttribute('vela-04e1a9', '');
+        $$n8.className = String(dotClass);
+        $$n7.appendChild($$n8);
+        $$n7.appendChild(document.createTextNode(`${statusLabel} `));
+        $$chain_$$n4_b0.appendChild($$n7);
+        $$n3_a.parentNode.insertBefore($$chain_$$n4_b0, $$n3_a);
+      }
+    }
+    if ($$active === 1) {
+      if (!$$chain_$$n4_b1) {
+        $$chain_$$n4_b1 = document.createElement('div');
+        $$chain_$$n4_b1.setAttribute('vela-04e1a9', '');
+        const $$n9 = document.createElement('input');
+        $$n9.setAttribute('vela-04e1a9', '');
+        $$n9.setAttribute('type', 'text');
+        $$n9.setAttribute('value', String(nameEdit));
+        $$n9.addEventListener('input', ($e) => $$set_nameEdit($e.target.value));
+        $$n9.setAttribute('placeholder', 'Display name');
+        $$chain_$$n4_b1.appendChild($$n9);
+        $$n3_a.parentNode.insertBefore($$chain_$$n4_b1, $$n3_a);
       }
     }
   }
-  const $$n6 = document.createElement('div');
-  $$n6.setAttribute('vela-04e1a9', '');
-  $$n6.setAttribute('__elseif__', 'editMode');
-  const $$n7 = document.createElement('input');
-  $$n7.setAttribute('vela-04e1a9', '');
-  $$n7.setAttribute('type', 'text');
-  const $$n7_input_h = ($e) => nameEdit = $e.target.value;
-  $$n7.setAttribute('placeholder', 'Display name');
-  const $$n8 = document.createElement('div');
-  $$n8.setAttribute('vela-04e1a9', '');
-  $$n8.setAttribute('class', 'actions');
-  const $$n10_a = document.createComment('if-chain');
-  let $$chain_$$n11_b0 = null;
-  function $$chain_$$n11() {
+  const $$n10 = document.createElement('div');
+  $$n10.setAttribute('vela-04e1a9', '');
+  $$n10.setAttribute('class', 'actions');
+  const $$n11_a = document.createComment('if-chain');
+  let $$chain_$$n12_b0 = null;
+  function $$chain_$$n12() {
     let $$active = -1;
     if ($$active < 0 && (!editMode)) $$active = 0;
-    if ($$active !== 0 && $$chain_$$n11_b0) { $$chain_$$n11_b0.remove(); $$chain_$$n11_b0 = null; }
+    if ($$active !== 0 && $$chain_$$n12_b0) { $$chain_$$n12_b0.remove(); $$chain_$$n12_b0 = null; }
     if ($$active === 0) {
-      if (!$$chain_$$n11_b0) {
-        $$chain_$$n11_b0 = document.createElement('button');
-        $$chain_$$n11_b0.setAttribute('vela-04e1a9', '');
-        $$chain_$$n11_b0.setAttribute('class', 'btn-edit');
-        $$chain_$$n11_b0.addEventListener('click', startEdit);
-        $$chain_$$n11_b0.textContent = `Edit`;
-        $$n10_a.parentNode.insertBefore($$chain_$$n11_b0, $$n10_a);
-      } else { $$chain_$$n11_b0.textContent = `Edit`; }
+      if (!$$chain_$$n12_b0) {
+        $$chain_$$n12_b0 = document.createElement('button');
+        $$chain_$$n12_b0.setAttribute('vela-04e1a9', '');
+        $$chain_$$n12_b0.setAttribute('class', 'btn-edit');
+        $$chain_$$n12_b0.addEventListener('click', startEdit);
+        $$chain_$$n12_b0.appendChild(document.createTextNode(`Edit`));
+        $$n11_a.parentNode.insertBefore($$chain_$$n12_b0, $$n11_a);
+      }
     }
   }
   const $$n13_a = document.createComment('if-chain');
@@ -205,43 +233,41 @@ button[vela-04e1a9]:hover {
         $$chain_$$n14_b0.setAttribute('vela-04e1a9', '');
         $$chain_$$n14_b0.setAttribute('class', 'btn-save');
         $$chain_$$n14_b0.addEventListener('click', saveEdit);
-        $$chain_$$n14_b0.textContent = `Save`;
+        $$chain_$$n14_b0.appendChild(document.createTextNode(`Save`));
         $$n13_a.parentNode.insertBefore($$chain_$$n14_b0, $$n13_a);
-      } else { $$chain_$$n14_b0.textContent = `Save`; }
+      }
     }
   }
-  const $$n16_a = document.createComment('if-chain');
-  let $$chain_$$n17_b0 = null;
-  function $$chain_$$n17() {
+  const $$n15_a = document.createComment('if-chain');
+  let $$chain_$$n16_b0 = null;
+  function $$chain_$$n16() {
     let $$active = -1;
     if ($$active < 0 && (editMode)) $$active = 0;
-    if ($$active !== 0 && $$chain_$$n17_b0) { $$chain_$$n17_b0.remove(); $$chain_$$n17_b0 = null; }
+    if ($$active !== 0 && $$chain_$$n16_b0) { $$chain_$$n16_b0.remove(); $$chain_$$n16_b0 = null; }
     if ($$active === 0) {
-      if (!$$chain_$$n17_b0) {
-        $$chain_$$n17_b0 = document.createElement('button');
-        $$chain_$$n17_b0.setAttribute('vela-04e1a9', '');
-        $$chain_$$n17_b0.setAttribute('class', 'btn-cancel');
-        $$chain_$$n17_b0.addEventListener('click', cancelEdit);
-        $$chain_$$n17_b0.textContent = `Cancel`;
-        $$n16_a.parentNode.insertBefore($$chain_$$n17_b0, $$n16_a);
-      } else { $$chain_$$n17_b0.textContent = `Cancel`; }
+      if (!$$chain_$$n16_b0) {
+        $$chain_$$n16_b0 = document.createElement('button');
+        $$chain_$$n16_b0.setAttribute('vela-04e1a9', '');
+        $$chain_$$n16_b0.setAttribute('class', 'btn-cancel');
+        $$chain_$$n16_b0.addEventListener('click', cancelEdit);
+        $$chain_$$n16_b0.appendChild(document.createTextNode(`Cancel`));
+        $$n15_a.parentNode.insertBefore($$chain_$$n16_b0, $$n15_a);
+      }
     }
   }
-  const $$n18 = document.createElement('div');
-  $$n18.setAttribute('vela-04e1a9', '');
-  $$n18.setAttribute('class', 'footer-slot');
-  const $$n19_slot_a = document.createComment('slot:footer');
+  const $$n17 = document.createElement('div');
+  $$n17.setAttribute('vela-04e1a9', '');
+  $$n17.setAttribute('class', 'footer-slot');
+  const $$n18_slot_a = document.createComment('slot:footer');
   $$n1.appendChild($$n2);
   $$root.appendChild($$n1);
-  $$root.appendChild($$n4_a);
-  $$n6.appendChild($$n7);
-  $$root.appendChild($$n6);
-  $$n8.appendChild($$n10_a);
-  $$n8.appendChild($$n13_a);
-  $$n8.appendChild($$n16_a);
-  $$root.appendChild($$n8);
-  $$n18.appendChild($$n19_slot_a);
-  $$root.appendChild($$n18);
+  $$root.appendChild($$n3_a);
+  $$n10.appendChild($$n11_a);
+  $$n10.appendChild($$n13_a);
+  $$n10.appendChild($$n15_a);
+  $$root.appendChild($$n10);
+  $$n17.appendChild($$n18_slot_a);
+  $$root.appendChild($$n17);
 
   // component logic
   let pollId = null;
@@ -261,20 +287,21 @@ button[vela-04e1a9]:hover {
   function $$set_editMode($$v) {
     editMode = $$v;
     $$upd_cardClass();
-  $$chain_$$n5();
-  $$chain_$$n11();
+  $$chain_$$n4();
+  $$chain_$$n12();
   $$chain_$$n14();
-  $$chain_$$n17();
+  $$chain_$$n16();
   $$root.className = String(cardClass);
   }
   function $$set_nameEdit($$v) {
     nameEdit = $$v;
-  $$n7.setAttribute('value', String(nameEdit));
+  $$chain_$$n4();
   }
   function $$set_online($$v) {
     online = $$v;
     $$upd_statusLabel();
     $$upd_dotClass();
+  $$chain_$$n4();
     $$effect0();
   }
   function $$set_name($$v) {
@@ -284,10 +311,6 @@ button[vela-04e1a9]:hover {
   function $$set_role($$v) {
     role = $$v;
   }
-
-  // events
-  $$n7.addEventListener('input', ($e) => $$set_nameEdit($e.target.value));
-  $$n7.addEventListener('input', $$n7_input_h);
 
   // initialise derived
   $$upd_initials();
@@ -300,23 +323,22 @@ button[vela-04e1a9]:hover {
   // onMount
   $$set_online(true);
   pollId = setInterval(() => {
-    $$set_online(Math.random() > 0.3);
+    $$set_online((Math.random() > 0.3));
   }, 5000);
 
   // initial render
   $$root.className = String(cardClass);
   $$n2.data = String(initials);
-  $$chain_$$n5();
-  $$n7.setAttribute('value', String(nameEdit));
-  $$chain_$$n11();
+  $$chain_$$n4();
+  $$chain_$$n12();
   $$chain_$$n14();
-  $$chain_$$n17();
+  $$chain_$$n16();
   {
     const $$sf = $$slots["footer"];
     if ($$sf) {
-      const $$sn = $$sf(); $$n19_slot_a.parentNode.insertBefore($$sn, $$n19_slot_a);
+      const $$sn = $$sf(); $$n18_slot_a.parentNode.insertBefore($$sn, $$n18_slot_a);
     } else {
-      $$n19_slot_a.parentNode.insertBefore(document.createTextNode(`Card footer`), $$n19_slot_a);
+      $$n18_slot_a.parentNode.insertBefore(document.createTextNode(`Card footer`), $$n18_slot_a);
     }
   }
 
@@ -326,8 +348,6 @@ button[vela-04e1a9]:hover {
   return {
     destroy() {
       if ((pollId !== null)) clearInterval(pollId);
-      $$n7.removeEventListener('input', ($e) => $$set_nameEdit($e.target.value));
-      $$n7.removeEventListener('input', $$n7_input_h);
       $$style.remove();
       $$root.remove();
     },

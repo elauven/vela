@@ -1,122 +1,106 @@
 <script>
-  import { NoteCard } from "./NoteCard.js";
-  import { writable } from "./runtime.js";
+  import { NoteCard } from './NoteCard.js';
+  import { writable }  from './runtime.js';
 
   // ── Shared store (survives hot-reload in dev) ──────────────────────────
   const notesStore = writable([
-    {
-      id: 1,
-      title: "Welcome to Vela ⚡",
-      body: "This is a demo of the Vela framework. Click any card to select it, ✏️ to edit, 📌 to pin. Try adding tags!",
-      tags: ["vela", "demo"],
-      pinned: true,
-    },
-    {
-      id: 2,
-      title: "Reactive by default",
-      body: "$state, $derived, and $effect give you fine-grained reactivity with zero runtime overhead.",
-      tags: ["reactive", "state"],
-      pinned: false,
-    },
-    {
-      id: 3,
-      title: "Component composition",
-      body: "This app uses three Vela components: NotesApp, NoteCard, and TagBadge — each compiled to a tiny JS module.",
-      tags: ["components", "architecture"],
-      pinned: false,
-    },
+    { id: 1, title: 'Welcome to Vela ⚡',
+      body: 'This is a demo of the Vela framework. Click any card to select it, ✏️ to edit, 📌 to pin. Try adding tags!',
+      tags: ['vela', 'demo'], pinned: true },
+    { id: 2, title: 'Reactive by default',
+      body: '$state, $derived, and $effect give you fine-grained reactivity with zero runtime overhead.',
+      tags: ['reactive', 'state'], pinned: false },
+    { id: 3, title: 'Component composition',
+      body: 'This app uses three Vela components: NotesApp, NoteCard, and TagBadge — each compiled to a tiny JS module.',
+      tags: ['components', 'architecture'], pinned: false },
   ]);
 
   // ── Local state ────────────────────────────────────────────────────────
-  let notes = $state([]);
-  let nextId = $state(4);
-  let query = $state("");
-  let filterTag = $state("");
-  let darkMode = $state(false);
+  let notes      = $state([]);
+  let nextId     = $state(4);
+  let query      = $state('');
+  let filterTag  = $state('');
+  let darkMode   = $state(false);
   let selectedId = $state(null);
-  let showStats = $state(false);
-  let sortBy = $state("pinned"); // 'pinned' | 'alpha' | 'length'
+  let showStats  = $state(false);
+  let sortBy     = $state('pinned');   // 'pinned' | 'alpha' | 'length'
 
   // Sync store → state
-  notesStore.subscribe((v) => {
-    notes = v;
-  });
+  notesStore.subscribe(v => { notes = v; });
 
   // ── Derived ────────────────────────────────────────────────────────────
-  let allTags = $derived([...new Set(notes.flatMap((n) => n.tags))].sort());
+  let allTags = $derived(
+    [...new Set(notes.flatMap(n => n.tags))].sort()
+  );
 
   let filtered = $derived(
     notes
-      .filter((n) => {
+      .filter(n => {
         const q = query.toLowerCase();
-        const matchQuery =
-          !q ||
+        const matchQuery = !q ||
           n.title.toLowerCase().includes(q) ||
-          n.body.toLowerCase().includes(q) ||
-          n.tags.some((t) => t.includes(q));
+          n.body.toLowerCase().includes(q)  ||
+          n.tags.some(t => t.includes(q));
         const matchTag = !filterTag || n.tags.includes(filterTag);
         return matchQuery && matchTag;
       })
       .sort((a, b) => {
-        if (sortBy === "pinned") {
+        if (sortBy === 'pinned') {
           if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
           return b.id - a.id;
         }
-        if (sortBy === "alpha") return a.title.localeCompare(b.title);
-        if (sortBy === "length") return b.body.length - a.body.length;
+        if (sortBy === 'alpha') return a.title.localeCompare(b.title);
+        if (sortBy === 'length') return b.body.length - a.body.length;
         return 0;
-      }),
+      })
   );
 
   let stats = $derived({
-    total: notes.length,
-    pinned: notes.filter((n) => n.pinned).length,
-    words: notes.reduce(
-      (s, n) => s + (n.body.trim() ? n.body.trim().split(/\s+/).length : 0),
-      0,
-    ),
-    tags: allTags.length,
+    total:   notes.length,
+    pinned:  notes.filter(n => n.pinned).length,
+    words:   notes.reduce((s, n) => s + (n.body.trim() ? n.body.trim().split(/\s+/).length : 0), 0),
+    tags:    allTags.length,
   });
 
-  let appClass = $derived(darkMode ? "app dark" : "app");
+  let appClass = $derived(darkMode ? 'app dark' : 'app');
   let emptyMessage = $derived(
     query || filterTag
       ? `No notes match "${query || filterTag}"`
-      : "No notes yet — add one above!",
+      : 'No notes yet — add one above!'
   );
 
   // ── Actions ─────────────────────────────────────────────────────────
   function addNote() {
     const note = {
       id: nextId,
-      title: "New note",
-      body: "",
+      title: 'New note',
+      body: '',
       tags: [],
       pinned: false,
     };
-    notesStore.update((ns) => [note, ...ns]);
+    notesStore.update(ns => [note, ...ns]);
     nextId++;
     selectedId = note.id;
   }
 
   function deleteNote(id) {
-    notesStore.update((ns) => ns.filter((n) => n.id !== id));
+    notesStore.update(ns => ns.filter(n => n.id !== id));
     if (selectedId === id) selectedId = null;
   }
 
   function updateNote(updatedNote) {
-    notesStore.update((ns) =>
-      ns.map((n) => (n.id === updatedNote.id ? { ...n, ...updatedNote } : n)),
+    notesStore.update(ns =>
+      ns.map(n => n.id === updatedNote.id ? { ...n, ...updatedNote } : n)
     );
   }
 
   function selectNote(id) {
-    selectedId = selectedId === id ? null : id;
+    selectedId = (selectedId === id) ? null : id;
   }
 
   function clearFilter() {
-    query = "";
-    filterTag = "";
+    query     = '';
+    filterTag = '';
   }
 
   function toggleSort(s) {
@@ -125,15 +109,15 @@
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────
   function handleGlobalKey($event) {
-    if ($event.key === "n" && ($event.metaKey || $event.ctrlKey)) {
+    if ($event.key === 'n' && ($event.metaKey || $event.ctrlKey)) {
       $event.preventDefault();
       addNote();
     }
-    if ($event.key === "Escape") {
+    if ($event.key === 'Escape') {
       selectedId = null;
-      query = "";
+      query      = '';
     }
-    if ($event.key === "d" && ($event.metaKey || $event.ctrlKey)) {
+    if ($event.key === 'd' && ($event.metaKey || $event.ctrlKey)) {
       $event.preventDefault();
       darkMode = !darkMode;
     }
@@ -145,164 +129,29 @@
   });
 
   onMount(() => {
-    document.addEventListener("keydown", handleGlobalKey);
+    document.addEventListener('keydown', handleGlobalKey);
   });
 
   onDestroy(() => {
-    document.removeEventListener("keydown", handleGlobalKey);
+    document.removeEventListener('keydown', handleGlobalKey);
   });
 </script>
 
-<template>
-  <div :class="appClass">
-    <!-- ── Toolbar ──────────────────────────────────────── -->
-    <div class="toolbar">
-      <span class="brand">Notes</span>
-
-      <input
-        class="search-box"
-        type="text"
-        :value="query"
-        @input="($e) => query = $e.target.value"
-        placeholder="Search notes…"
-      />
-
-      <button class="toolbar-btn" @click="() => showStats = !showStats">
-        {showStats ? "Hide stats" : "Show stats"}
-      </button>
-      <button class="toolbar-btn" @click="() => darkMode = !darkMode">
-        {darkMode ? "☀️" : "🌙"}
-      </button>
-      <button class="toolbar-btn primary" @click="addNote"> + New (⌘N) </button>
-    </div>
-
-    <!-- ── Stats bar ────────────────────────────────────── -->
-    <div class="stats-bar" #if="showStats">
-      <div class="stat"><span>Notes:</span><strong>{stats.total}</strong></div>
-      <div class="stat">
-        <span>Pinned:</span><strong>{stats.pinned}</strong>
-      </div>
-      <div class="stat"><span>Words:</span><strong>{stats.words}</strong></div>
-      <div class="stat"><span>Tags:</span><strong>{stats.tags}</strong></div>
-    </div>
-
-    <!-- ── Main layout ──────────────────────────────────── -->
-    <div class="layout">
-      <!-- Sidebar -->
-      <div class="sidebar">
-        <div>
-          <div class="sidebar-section">Sort by</div>
-          <ul class="sort-list">
-            <li
-              class="sort-item"
-              :class="sortBy === 'pinned' ? 'active' : ''"
-              @click="() => toggleSort('pinned')"
-            >
-              📌 Pinned first
-            </li>
-            <li
-              class="sort-item"
-              :class="sortBy === 'alpha'  ? 'active' : ''"
-              @click="() => toggleSort('alpha')"
-            >
-              🔤 Alphabetical
-            </li>
-            <li
-              class="sort-item"
-              :class="sortBy === 'length' ? 'active' : ''"
-              @click="() => toggleSort('length')"
-            >
-              📏 Longest
-            </li>
-          </ul>
-        </div>
-
-        <div>
-          <div class="sidebar-section">Filter by tag</div>
-          <ul class="tag-list">
-            <li
-              class="tag-item"
-              :class="filterTag === '' ? 'active' : ''"
-              @click="() => filterTag = ''"
-            >
-              All notes<span class="tag-count">{notes.length}</span>
-            </li>
-            <li
-              #each="allTags as t"
-              #key="t"
-              class="tag-item"
-              :class="filterTag === t ? 'active' : ''"
-              @click="() => filterTag = t"
-            >
-              {t}<span class="tag-count"
-                >{notes.filter((n) => n.tags.includes(t)).length}</span
-              >
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- Notes grid -->
-      <div class="notes-area">
-        <div class="notes-header">
-          <span class="notes-count"
-            >{filtered.length} note{filtered.length === 1 ? "" : "s"}</span
-          >
-          <div class="active-filter" #if="query || filterTag">
-            Filtering: "{query || filterTag}"
-            <button class="clear-filter" @click="clearFilter">✕</button>
-          </div>
-        </div>
-
-        <div class="notes-grid">
-          <div #if="filtered.length === 0" class="empty-state">
-            <div class="empty-icon">🗒</div>
-            <div class="empty-msg">{emptyMessage}</div>
-          </div>
-
-          <NoteCard
-            #each="filtered as note"
-            #key="note.id"
-            :id="note.id"
-            :title="note.title"
-            :body="note.body"
-            :tags="note.tags"
-            :pinned="note.pinned"
-            :selected="selectedId === note.id"
-            @delete="($e) => deleteNote($e.detail.id)"
-            @change="($e) => updateNote($e.detail)"
-          />
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
-
 <style>
   :root {
-    --tag-purple-bg: #ede9fe;
-    --tag-purple-text: #5b21b6;
-    --tag-green-bg: #d1fae5;
-    --tag-green-text: #065f46;
-    --tag-blue-bg: #dbeafe;
-    --tag-blue-text: #1e40af;
-    --tag-amber-bg: #fef3c7;
-    --tag-amber-text: #92400e;
-    --tag-red-bg: #fee2e2;
-    --tag-red-text: #991b1b;
+    --tag-purple-bg:   #ede9fe; --tag-purple-text: #5b21b6;
+    --tag-green-bg:    #d1fae5; --tag-green-text:  #065f46;
+    --tag-blue-bg:     #dbeafe; --tag-blue-text:   #1e40af;
+    --tag-amber-bg:    #fef3c7; --tag-amber-text:  #92400e;
+    --tag-red-bg:      #fee2e2; --tag-red-text:    #991b1b;
   }
 
   .app {
     min-height: 100vh;
-    font-family:
-      system-ui,
-      -apple-system,
-      sans-serif;
+    font-family: system-ui, -apple-system, sans-serif;
     background: #f8fafc;
     color: #111827;
-    transition:
-      background 0.3s,
-      color 0.3s;
+    transition: background 0.3s, color 0.3s;
   }
 
   .app.dark {
@@ -324,9 +173,7 @@
     border-color: #334155;
   }
 
-  .app.dark .card-slot {
-    display: none;
-  }
+  .app.dark .card-slot { display: none; }
 
   /* Toolbar */
   .toolbar {
@@ -361,9 +208,7 @@
     outline: none;
     transition: border-color 0.2s;
   }
-  .search-box:focus {
-    border-color: #7c3aed;
-  }
+  .search-box:focus { border-color: #7c3aed; }
 
   .toolbar-btn {
     padding: 0.4rem 0.85rem;
@@ -375,22 +220,14 @@
     transition: all 0.15s;
     white-space: nowrap;
   }
-  .toolbar-btn:hover {
-    background: #f3f4f6;
-  }
+  .toolbar-btn:hover { background: #f3f4f6; }
   .toolbar-btn.primary {
     background: #7c3aed;
     color: white;
     border-color: #7c3aed;
   }
-  .toolbar-btn.primary:hover {
-    background: #5b21b6;
-  }
-  .toolbar-btn.active {
-    background: #ede9fe;
-    color: #5b21b6;
-    border-color: #c4b5fd;
-  }
+  .toolbar-btn.primary:hover { background: #5b21b6; }
+  .toolbar-btn.active { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
 
   /* Layout */
   .layout {
@@ -409,27 +246,11 @@
     gap: 1rem;
   }
 
-  .sidebar-section {
-    font-size: 0.7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #9ca3af;
-    margin-bottom: 0.4rem;
-  }
+  .sidebar-section { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #9ca3af; margin-bottom: 0.4rem; }
 
-  .sort-list,
-  .tag-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-  }
+  .sort-list, .tag-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.15rem; }
 
-  .sort-item,
-  .tag-item {
+  .sort-item, .tag-item {
     padding: 0.3rem 0.6rem;
     border-radius: 0.4rem;
     font-size: 0.8rem;
@@ -441,24 +262,10 @@
     justify-content: space-between;
     gap: 0.5rem;
   }
-  .sort-item:hover,
-  .tag-item:hover {
-    background: #f3f4f6;
-  }
-  .sort-item.active,
-  .tag-item.active {
-    background: #ede9fe;
-    color: #5b21b6;
-    font-weight: 600;
-  }
+  .sort-item:hover, .tag-item:hover { background: #f3f4f6; }
+  .sort-item.active, .tag-item.active { background: #ede9fe; color: #5b21b6; font-weight: 600; }
 
-  .tag-count {
-    font-size: 0.65rem;
-    color: #9ca3af;
-    background: #f3f4f6;
-    padding: 0.05rem 0.35rem;
-    border-radius: 999px;
-  }
+  .tag-count { font-size: 0.65rem; color: #9ca3af; background: #f3f4f6; padding: 0.05rem 0.35rem; border-radius: 999px; }
 
   /* Stats bar */
   .stats-bar {
@@ -470,18 +277,11 @@
     font-size: 0.75rem;
     color: #9ca3af;
   }
-  .stat {
-    display: flex;
-    gap: 0.35rem;
-  }
-  .stat strong {
-    color: #374151;
-  }
+  .stat { display: flex; gap: 0.35rem; }
+  .stat strong { color: #374151; }
 
   /* Notes grid */
-  .notes-area {
-    padding: 1.25rem;
-  }
+  .notes-area { padding: 1.25rem; }
 
   .notes-header {
     display: flex;
@@ -491,10 +291,7 @@
     gap: 1rem;
   }
 
-  .notes-count {
-    font-size: 0.8rem;
-    color: #9ca3af;
-  }
+  .notes-count { font-size: 0.8rem; color: #9ca3af; }
 
   .active-filter {
     display: flex;
@@ -531,13 +328,8 @@
     color: #9ca3af;
   }
 
-  .empty-icon {
-    font-size: 2.5rem;
-    margin-bottom: 0.75rem;
-  }
-  .empty-msg {
-    font-size: 0.9rem;
-  }
+  .empty-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+  .empty-msg { font-size: 0.9rem; }
 
   /* Selected note detail panel */
   .detail-panel {
@@ -557,3 +349,107 @@
     margin-bottom: 0.75rem;
   }
 </style>
+
+<template>
+  <div :class="appClass">
+
+    <!-- ── Toolbar ──────────────────────────────────────── -->
+    <div class="toolbar">
+      <span class="brand">Notes</span>
+
+      <input
+        class="search-box"
+        type="text"
+        :value="query"
+        @input="($e) => query = $e.target.value"
+        placeholder="Search notes…"
+      />
+
+      <button class="toolbar-btn" @click="() => showStats = !showStats">
+        {showStats ? 'Hide stats' : 'Show stats'}
+      </button>
+      <button class="toolbar-btn" @click="() => darkMode = !darkMode">
+        {darkMode ? '☀️' : '🌙'}
+      </button>
+      <button class="toolbar-btn primary" @click="addNote">
+        + New  (⌘N)
+      </button>
+    </div>
+
+    <!-- ── Stats bar ────────────────────────────────────── -->
+    <div class="stats-bar" #if="showStats">
+      <div class="stat"><span>Notes:</span><strong>{stats.total}</strong></div>
+      <div class="stat"><span>Pinned:</span><strong>{stats.pinned}</strong></div>
+      <div class="stat"><span>Words:</span><strong>{stats.words}</strong></div>
+      <div class="stat"><span>Tags:</span><strong>{stats.tags}</strong></div>
+    </div>
+
+    <!-- ── Main layout ──────────────────────────────────── -->
+    <div class="layout">
+
+      <!-- Sidebar -->
+      <div class="sidebar">
+        <div>
+          <div class="sidebar-section">Sort by</div>
+          <ul class="sort-list">
+            <li class="sort-item" :class="sortBy === 'pinned' ? 'active' : ''"  @click="() => toggleSort('pinned')">📌 Pinned first</li>
+            <li class="sort-item" :class="sortBy === 'alpha'  ? 'active' : ''"  @click="() => toggleSort('alpha')">🔤 Alphabetical</li>
+            <li class="sort-item" :class="sortBy === 'length' ? 'active' : ''"  @click="() => toggleSort('length')">📏 Longest</li>
+          </ul>
+        </div>
+
+        <div>
+          <div class="sidebar-section">Filter by tag</div>
+          <ul class="tag-list">
+            <li
+              class="tag-item"
+              :class="filterTag === '' ? 'active' : ''"
+              @click="() => filterTag = ''"
+            >All notes<span class="tag-count">{notes.length}</span></li>
+            <li
+              #each="allTags as t"
+              #key="t"
+              class="tag-item"
+              :class="filterTag === t ? 'active' : ''"
+              @click="() => filterTag = t"
+            >{t}<span class="tag-count">{notes.filter(n => n.tags.includes(t)).length}</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Notes grid -->
+      <div class="notes-area">
+        <div class="notes-header">
+          <span class="notes-count">{filtered.length} note{filtered.length === 1 ? '' : 's'}</span>
+          <div class="active-filter" #if="query || filterTag">
+            Filtering: "{query || filterTag}"
+            <button class="clear-filter" @click="clearFilter">✕</button>
+          </div>
+        </div>
+
+        <div class="notes-grid">
+          <div #if="filtered.length === 0" class="empty-state">
+            <div class="empty-icon">🗒</div>
+            <div class="empty-msg">{emptyMessage}</div>
+          </div>
+
+          <NoteCard
+            #each="filtered as note"
+            #key="note.id"
+            :id="note.id"
+            :title="note.title"
+            :body="note.body"
+            :tags="note.tags"
+            :pinned="note.pinned"
+            :selected="selectedId === note.id"
+            @select="($e) => selectNote($e.detail.id)"
+            @delete="($e) => deleteNote($e.detail.id)"
+            @change="($e) => updateNote($e.detail)"
+          />
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</template>

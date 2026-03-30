@@ -2683,3 +2683,101 @@ func TestGenerateCode_IfBranchInlineHandlerRewritten(t *testing.T) {
 		t.Errorf("$$set_visible must appear in output:\n%s", code[:min(600, len(code))])
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  #if/#elseif grouping in nested children
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestParseTemplate_IfElseifGroupedInsideElement(t *testing.T) {
+	// #if and #elseif INSIDE a parent element must be grouped into one IfChainNode.
+	// Previously groupIfChains was only called on top-level nodes, so nested
+	// #elseif elements were left as raw ElementNodes with a __elseif__ attr,
+	// which then got rendered unconditionally.
+	html := `
+		<div class="card">
+			<div #if="!editMode">View mode</div>
+			<div #elseif="editMode">Edit mode</div>
+		</div>
+	`
+	nodes, err := parseTemplate(html)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	div := nodes[0].(*ElementNode)
+
+	// The two divs should be merged into ONE IfChainNode, not two separate nodes
+	if len(div.Children) != 1 {
+		t.Fatalf("expected 1 child (IfChainNode), got %d children: %T, ...",
+			len(div.Children), div.Children[0])
+	}
+	chain, ok := div.Children[0].(*IfChainNode)
+	if !ok {
+		t.Fatalf("expected IfChainNode inside div, got %T", div.Children[0])
+	}
+	if len(chain.Branches) != 2 {
+		t.Errorf("expected 2 branches, got %d", len(chain.Branches))
+	}
+
+	// No element with raw __elseif__ attr should remain
+	for _, child := range div.Children {
+		if el, ok := child.(*ElementNode); ok {
+			for _, attr := range el.Attrs {
+				if attr.Name == "__elseif__" {
+					t.Errorf("__elseif__ sentinel left on element — groupIfChains not called on children")
+				}
+			}
+		}
+	}
+}
+
+func TestGenerateCode_IfElseifInsideElement(t *testing.T) {
+	// Codegen for nested #if/#elseif must not emit __elseif__ as a DOM attribute
+	sfc := &SFC{
+		Script: `let editMode = $state(false);`,
+		Template: `
+			<div>
+				<div #if="!editMode" class="view">View</div>
+				<div #elseif="editMode" class="edit">Edit</div>
+			</div>
+		`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("Card", sfc, nodes, a, "vela-test")
+
+	// Must NOT have __elseif__ as a setAttribute call
+	if strings.Contains(code, "__elseif__") {
+		t.Errorf("__elseif__ sentinel leaked into generated DOM code:\n%s",
+			code[:min(600, len(code))])
+	}
+	// Must have a chain function handling both branches
+	if !strings.Contains(code, "$$chain_") {
+		t.Error("expected $$chain_ if-chain function in output")
+	}
+	// Both branches must be in the same chain
+	if !strings.Contains(code, "$$active = 1") {
+		t.Error("expected two branches ($$active = 1) in if-chain")
+	}
+}
+
+func TestParseTemplate_IfElseGroupedThreeLevelsDeep(t *testing.T) {
+	// Verify grouping works at any nesting depth
+	html := `<outer><middle><p #if="a">A</p><p #elseif="b">B</p><p #else>C</p></middle></outer>`
+	nodes, err := parseTemplate(html)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	outer := nodes[0].(*ElementNode)
+	middle := outer.Children[0].(*ElementNode)
+
+	if len(middle.Children) != 1 {
+		t.Fatalf("expected 1 IfChainNode inside middle, got %d", len(middle.Children))
+	}
+	chain, ok := middle.Children[0].(*IfChainNode)
+	if !ok {
+		t.Fatalf("expected IfChainNode, got %T", middle.Children[0])
+	}
+	if len(chain.Branches) != 3 {
+		t.Errorf("expected 3 branches (if/elseif/else), got %d", len(chain.Branches))
+	}
+}

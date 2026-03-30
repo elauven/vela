@@ -158,7 +158,7 @@ li input[type="checkbox"][vela-f9c1b5] {
   $$n3.setAttribute('vela-f9c1b5', '');
   $$n3.setAttribute('type', 'text');
   $$n3.setAttribute('placeholder', 'What needs to be done?');
-  const $$n3_input_h = ($e) => newText = $e.target.value;
+  const $$n3_input_h = ($e) => $$set_newText($e.target.value);
   const $$n4 = document.createElement('button');
   $$n4.setAttribute('vela-f9c1b5', '');
   const $$n5 = document.createElement('div');
@@ -199,12 +199,10 @@ li input[type="checkbox"][vela-f9c1b5] {
     $$f0.appendChild($$f4);
     $$f1.addEventListener('change', $$f1_change_h);
     $$f4.addEventListener('click', $$f4_click_h);
-    $$f1.checked = !!(todo.done);
     $$f3.data = String(todo.text);
     return {
       el: $$f0,
       update(todo, i) {
-      $$f1.checked = !!(todo.done);
     $$f3.data = String(todo.text);
       },
       destroy() {
@@ -248,9 +246,9 @@ li input[type="checkbox"][vela-f9c1b5] {
         $$chain_$$n13_b0 = document.createElement('div');
         $$chain_$$n13_b0.setAttribute('vela-f9c1b5', '');
         $$chain_$$n13_b0.setAttribute('class', 'empty');
-        $$chain_$$n13_b0.textContent = `Nothing to do — enjoy the day ☀️`;
+        $$chain_$$n13_b0.appendChild(document.createTextNode(`Nothing to do — enjoy the day ☀️`));
         $$n12_a.parentNode.insertBefore($$chain_$$n13_b0, $$n12_a);
-      } else { $$chain_$$n13_b0.textContent = `Nothing to do — enjoy the day ☀️`; }
+      }
     }
   }
   const $$n15_a = document.createComment('if-chain');
@@ -264,6 +262,16 @@ li input[type="checkbox"][vela-f9c1b5] {
         $$chain_$$n16_b0 = document.createElement('div');
         $$chain_$$n16_b0.setAttribute('vela-f9c1b5', '');
         $$chain_$$n16_b0.setAttribute('class', 'footer');
+        const $$ib0_vela = document.createElement('span');
+        $$ib0_vela.setAttribute('vela-f9c1b5', '');
+        $$ib0_vela.appendChild(document.createTextNode(`${remaining}item${remaining === 1 ? '' : 's'}left`));
+        $$chain_$$n16_b0.appendChild($$ib0_vela);
+        const $$ib1_vela = document.createElement('button');
+        $$ib1_vela.setAttribute('vela-f9c1b5', '');
+        $$ib1_vela.setAttribute('class', 'clear-btn');
+        $$ib1_vela.addEventListener('click', clearDone);
+        $$ib1_vela.appendChild(document.createTextNode(`Clear done`));
+        $$chain_$$n16_b0.appendChild($$ib1_vela);
         $$n15_a.parentNode.insertBefore($$chain_$$n16_b0, $$n15_a);
       }
     }
