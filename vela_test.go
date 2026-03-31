@@ -3158,3 +3158,295 @@ func TestGenerateCode_ComponentIfChainProducesChainFn(t *testing.T) {
 		t.Errorf("$$set_route should call $$chain_ to re-evaluate route:\n%s", setRouteFn)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Effect infinite recursion prevention
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestFindWrittenVars(t *testing.T) {
+	prog := ParseJS(`
+		const unsub = store.subscribe(state => {
+			isAuthenticated = state.isAuthenticated;
+			theme = state.theme;
+		});
+		return unsub;
+	`)
+	written := findWrittenVars(prog)
+	if !written["isAuthenticated"] {
+		t.Error("isAuthenticated should be in written vars")
+	}
+	if !written["theme"] {
+		t.Error("theme should be in written vars")
+	}
+	// 'state' is only read, not written
+	if written["state"] {
+		t.Error("state is read, not written — should not be in written vars")
+	}
+	// 'unsub' is declared (not assigned via =), depends on parser treatment
+	// The key thing is the written vars are isAuthenticated and theme
+}
+
+func TestEffectDeps_ExcludeWrittenVars(t *testing.T) {
+	// This effect reads isAuthenticated from a store callback but also WRITES
+	// isAuthenticated — the dep should not include isAuthenticated, only the
+	// store-external deps, otherwise $$set_isAuthenticated → $$effect0 →
+	// $$set_isAuthenticated → ∞
+	a := analyzeScript(`
+		let isAuthenticated = $state(false);
+		$effect(() => {
+			const unsub = auth.subscribe(state => {
+				isAuthenticated = state.isAuthenticated;
+			});
+			return unsub;
+		});
+	`)
+	if len(a.Effects) == 0 {
+		t.Fatal("no effects found")
+	}
+	eff := a.Effects[0]
+	for _, dep := range eff.Deps {
+		if dep == "isAuthenticated" {
+			t.Errorf("isAuthenticated is WRITTEN in the effect body — must not be a dep (causes infinite recursion)")
+		}
+	}
+}
+
+func TestEffectDeps_SimpleSubscribePattern(t *testing.T) {
+	// The common store-subscribe pattern: writes x = value.x inside callback
+	// The effect should have NO reactive deps (it only reads from external stores)
+	a := analyzeScript(`
+		let count = $state(0);
+		let theme = $state('light');
+		$effect(() => {
+			const unsub = someStore.subscribe(s => {
+				count = s.count;
+				theme = s.theme;
+			});
+			return unsub;
+		});
+	`)
+	if len(a.Effects) == 0 {
+		t.Fatal("no effects")
+	}
+	eff := a.Effects[0]
+	for _, dep := range eff.Deps {
+		if dep == "count" || dep == "theme" {
+			t.Errorf("var %q is written inside the effect — should not be a dep", dep)
+		}
+	}
+}
+
+func TestGenerateCode_EffectDoesNotCallItsOwnSetter(t *testing.T) {
+	// When isAuthenticated is WRITTEN inside an effect,
+	// $$set_isAuthenticated must NOT call $$effect0 again.
+	sfc := &SFC{
+		Script: `
+			let isAuthenticated = $state(false);
+			$effect(() => {
+				const unsub = auth.subscribe(state => {
+					isAuthenticated = state.isAuthenticated;
+				});
+				return unsub;
+			});
+		`,
+		Template: `<div #if="isAuthenticated">logged in</div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	// Find $$set_isAuthenticated body
+	setIdx := strings.Index(code, "function $$set_isAuthenticated")
+	if setIdx < 0 {
+		t.Fatal("no $$set_isAuthenticated found")
+	}
+	setEnd := setIdx + strings.Index(code[setIdx:], "\n  function ")
+	if setEnd <= setIdx {
+		setEnd = len(code)
+	}
+	setter := code[setIdx:setEnd]
+
+	if strings.Contains(setter, "$$effect0()") {
+		t.Errorf("$$set_isAuthenticated must NOT call $$effect0 — infinite recursion:\n%s", setter)
+	}
+}
+
+func TestGenerateCode_EffectCleanupEmitted(t *testing.T) {
+	// Effects must emit $$cleanup variables and call them before re-running
+	sfc := &SFC{
+		Script: `
+			let x = $state(0);
+			$effect(() => {
+				const unsub = store.subscribe(v => { x = v; });
+				return unsub;
+			});
+		`,
+		Template: `<div>{x}</div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	if !strings.Contains(code, "$$cleanup0") {
+		t.Error("expected $$cleanup0 variable for effect cleanup")
+	}
+	if !strings.Contains(code, "$$cleanup0 = null") {
+		t.Error("expected $$cleanup0 = null initialization")
+	}
+	// Cleanup called in destroy()
+	destroyIdx := strings.Index(code, "destroy() {")
+	if destroyIdx < 0 {
+		t.Fatal("no destroy() found")
+	}
+	destroySection := code[destroyIdx:]
+	if !strings.Contains(destroySection, "$$cleanup0") {
+		t.Error("effect cleanup should be called in destroy()")
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Effect dep analysis — written vars excluded, cleanup support
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestEffectDeps_ExcludesWrittenVars(t *testing.T) {
+	// The effect WRITES isAuthenticated via $$set_isAuthenticated.
+	// isAuthenticated must NOT be in Deps — if it were, $$set_isAuthenticated
+	// would re-run the effect, which calls $$set_isAuthenticated again → infinite loop.
+	a := analyzeScript(`
+		let isAuthenticated = $state(false);
+		let theme = $state('light');
+		$effect(() => {
+			const unsub = auth.subscribe(state => {
+				isAuthenticated = state.isAuthenticated;
+			});
+			return unsub;
+		});
+	`)
+	if len(a.Effects) == 0 {
+		t.Fatal("no effects found")
+	}
+	eff := a.Effects[0]
+	for _, dep := range eff.Deps {
+		if dep == "isAuthenticated" {
+			t.Errorf("effect Deps must not include written var 'isAuthenticated' (causes infinite loop); got Deps=%v", eff.Deps)
+		}
+	}
+}
+
+func TestEffectDeps_KeepsReadVars(t *testing.T) {
+	// Variables only READ (not written) inside an effect must remain as deps.
+	a := analyzeScript(`
+		let count = $state(0);
+		let title = $state('');
+		$effect(() => {
+			document.title = title + ' - ' + count;
+		});
+	`)
+	if len(a.Effects) == 0 {
+		t.Fatal("no effects found")
+	}
+	eff := a.Effects[0]
+	deps := map[string]bool{}
+	for _, d := range eff.Deps {
+		deps[d] = true
+	}
+	for _, want := range []string{"title", "count"} {
+		if !deps[want] {
+			t.Errorf("effect should depend on read-only var %q; got Deps=%v", want, eff.Deps)
+		}
+	}
+}
+
+func TestEffectDeps_MixedReadWrite(t *testing.T) {
+	// An effect that reads 'source' and writes 'derived' should depend on 'source' only.
+	a := analyzeScript(`
+		let source = $state(0);
+		let derived = $state(0);
+		$effect(() => {
+			derived = source * 2;
+		});
+	`)
+	if len(a.Effects) == 0 {
+		t.Fatal("no effects found")
+	}
+	eff := a.Effects[0]
+	deps := map[string]bool{}
+	for _, d := range eff.Deps { deps[d] = true }
+
+	if !deps["source"] {
+		t.Errorf("effect should depend on 'source' (read); Deps=%v", eff.Deps)
+	}
+	if deps["derived"] {
+		t.Errorf("effect must NOT depend on 'derived' (written); Deps=%v", eff.Deps)
+	}
+}
+
+func TestGenerateCode_EffectHasCleanup(t *testing.T) {
+	sfc := &SFC{
+		Script: `
+			let x = $state(0);
+			$effect(() => {
+				const unsub = store.subscribe(v => { x = v; });
+				return unsub;
+			});
+		`,
+		Template: `<div>{x}</div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	// Cleanup variable must be declared
+	if !strings.Contains(code, "$$cleanup0") {
+		t.Errorf("effect cleanup var not emitted:\n%s", code[:min(400, len(code))])
+	}
+	// Effect must store return value via IIFE
+	if !strings.Contains(code, "$$cleanup0 = (function()") {
+		t.Errorf("effect return value not captured:\n%s", code[:min(600, len(code))])
+	}
+	// Cleanup must be called before re-run
+	if !strings.Contains(code, "if ($$cleanup0) { $$cleanup0()") {
+		t.Errorf("cleanup not called before effect re-runs:\n%s", code[:min(600, len(code))])
+	}
+	// Cleanup must be called in destroy()
+	destroyIdx := strings.Index(code, "destroy()")
+	if destroyIdx < 0 { t.Fatal("no destroy()") }
+	destroyBlock := code[destroyIdx : destroyIdx+200]
+	if !strings.Contains(destroyBlock, "$$cleanup0") {
+		t.Errorf("cleanup not called in destroy():\n%s", destroyBlock)
+	}
+}
+
+func TestGenerateCode_SubscribeEffectNoInfiniteLoop(t *testing.T) {
+	// The key regression: $$set_isAuthenticated must NOT call $$effect0 if
+	// isAuthenticated is only written (not read) inside the effect.
+	sfc := &SFC{
+		Script: `
+			let isAuthenticated = $state(false);
+			$effect(() => {
+				const unsub = auth.subscribe(state => {
+					isAuthenticated = state.isAuthenticated;
+				});
+				return unsub;
+			});
+		`,
+		Template: `<div>{isAuthenticated ? 'logged in' : 'logged out'}</div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	// Find $$set_isAuthenticated
+	setterStart := strings.Index(code, "function $$set_isAuthenticated")
+	if setterStart < 0 {
+		t.Fatal("no $$set_isAuthenticated found")
+	}
+	setterEnd := setterStart + strings.Index(code[setterStart:], "\n  function ")
+	if setterEnd <= setterStart { setterEnd = len(code) }
+	setter := code[setterStart:setterEnd]
+
+	// The setter must NOT call $$effect0 — that would cause infinite recursion
+	if strings.Contains(setter, "$$effect0()") {
+		t.Errorf("$$set_isAuthenticated calls $$effect0 — this causes infinite recursion!\nSetter:\n%s", setter)
+	}
+}

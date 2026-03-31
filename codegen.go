@@ -152,13 +152,20 @@ func (g *CodeGen) emit(nodes []Node) string {
 	if len(g.analysis.Effects) > 0 {
 		out.WriteString("  // effects\n")
 		for i, eff := range g.analysis.Effects {
+			// $$cleanupN stores the effect's return value (e.g. an unsubscribe
+			// function). It is called before the effect re-runs so stale
+			// subscriptions / listeners are torn down.
+			out.WriteString(fmt.Sprintf("  let $$cleanup%d = null;\n", i))
 			out.WriteString(fmt.Sprintf("  const $$effect%d = () => {\n", i))
+			out.WriteString(fmt.Sprintf("    if ($$cleanup%d) { $$cleanup%d(); $$cleanup%d = null; }\n", i, i, i))
+			out.WriteString(fmt.Sprintf("    $$cleanup%d = (function() {\n", i))
 			for _, line := range strings.Split(eff.Body, "\n") {
 				t := strings.TrimSpace(line)
 				if t != "" {
-					out.WriteString("    " + t + "\n")
+					out.WriteString("      " + t + "\n")
 				}
 			}
+			out.WriteString(fmt.Sprintf("    })();\n"))
 			out.WriteString("  };\n")
 		}
 		out.WriteString("\n")
@@ -250,7 +257,11 @@ func (g *CodeGen) emit(nodes []Node) string {
 	// ── Return handle ─────────────────────────
 	out.WriteString("  return {\n")
 	out.WriteString("    destroy() {\n")
-	// onDestroy callbacks first
+	// Run effect cleanups first (e.g. unsubscribe from stores)
+	for i := range g.analysis.Effects {
+		out.WriteString(fmt.Sprintf("      if ($$cleanup%d) { $$cleanup%d(); }\n", i, i))
+	}
+	// onDestroy callbacks
 	for _, lc := range g.analysis.Lifecycles {
 		if lc.Kind == "onDestroy" {
 			for _, line := range strings.Split(lc.Body, "\n") {
@@ -500,62 +511,77 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 		g.create.WriteString(fmt.Sprintf("  let %s = null;\n", ev))
 	}
 
-	// Build the chain update function
+	// Build the chain update function with a re-entrancy guard.
+	// Child components mounted inside a branch can synchronously trigger store
+	// subscriptions that re-invoke this same chain function before the current
+	// invocation has finished building its branch element. Without the guard,
+	// the second call would null out the branch variable that the first call is
+	// still working on, causing "$$chain_…_bN is null" TypeErrors.
+	// The guard records a pending re-run and defers it to after the first call
+	// completes so each invocation sees a fully-built DOM.
+	runningFlag := fn + "_running"
+	pendingFlag := fn + "_pending"
+	g.create.WriteString(fmt.Sprintf("  let %s = false, %s = false;\n", runningFlag, pendingFlag))
+
 	var fnBuf strings.Builder
 	fnBuf.WriteString(fmt.Sprintf("  function %s() {\n", fn))
+	fnBuf.WriteString(fmt.Sprintf("    if (%s) { %s = true; return; }\n", runningFlag, pendingFlag))
+	fnBuf.WriteString(fmt.Sprintf("    %s = true;\n", runningFlag))
+	fnBuf.WriteString(fmt.Sprintf("    try {\n"))
 
 	// Evaluate which branch is active
-	fnBuf.WriteString("    let $$active = -1;\n")
+	fnBuf.WriteString("      let $$active = -1;\n")
 	for i, branch := range chain.Branches {
 		if branch.Cond == "" {
-			// #else — always matches if we get here
-			fnBuf.WriteString(fmt.Sprintf("    if ($$active < 0) $$active = %d;\n", i))
+			fnBuf.WriteString(fmt.Sprintf("      if ($$active < 0) $$active = %d;\n", i))
 		} else {
-			fnBuf.WriteString(fmt.Sprintf("    if ($$active < 0 && (%s)) $$active = %d;\n",
+			fnBuf.WriteString(fmt.Sprintf("      if ($$active < 0 && (%s)) $$active = %d;\n",
 				branch.Cond, i))
 		}
 	}
 
 	// Remove any currently mounted branch that's no longer active
 	for i, ev := range elVars {
-		fnBuf.WriteString(fmt.Sprintf("    if ($$active !== %d && %s) { %s.remove(); %s = null; }\n",
+		fnBuf.WriteString(fmt.Sprintf("      if ($$active !== %d && %s) { %s.remove(); %s = null; }\n",
 			i, ev, ev, ev))
 	}
 
 	// Mount the active branch (create element on first mount)
 	for i, branch := range chain.Branches {
 		ev := elVars[i]
-		fnBuf.WriteString(fmt.Sprintf("    if ($$active === %d) {\n", i))
-		fnBuf.WriteString(fmt.Sprintf("      if (!%s) {\n", ev))
-		fnBuf.WriteString(fmt.Sprintf("        %s = document.createElement('%s');\n",
+		fnBuf.WriteString(fmt.Sprintf("      if ($$active === %d) {\n", i))
+		fnBuf.WriteString(fmt.Sprintf("        if (!%s) {\n", ev))
+		fnBuf.WriteString(fmt.Sprintf("          %s = document.createElement('%s');\n",
 			ev, branch.Elem.Tag))
-		fnBuf.WriteString(fmt.Sprintf("        %s.setAttribute('%s', '');\n", ev, g.scopeID))
+		fnBuf.WriteString(fmt.Sprintf("          %s.setAttribute('%s', '');\n", ev, g.scopeID))
 
 		// Attrs
 		for _, attr := range branch.Elem.Attrs {
 			if attr.IsEvent {
-				handler := attr.Value
-				// Rewrite any state assignments inside inline handlers
-				handler = g.rewriteHandlerAssignments(handler)
-				fnBuf.WriteString(fmt.Sprintf("        %s.addEventListener('%s', %s);\n",
+				handler := g.rewriteHandlerAssignments(attr.Value)
+				fnBuf.WriteString(fmt.Sprintf("          %s.addEventListener('%s', %s);\n",
 					ev, attr.Name, handler))
 			} else if attr.IsBind {
-				fnBuf.WriteString(bindAttrStmt(ev, attr.Name, attr.Value, "        ") + "\n")
+				fnBuf.WriteString(bindAttrStmt(ev, attr.Name, attr.Value, "          ") + "\n")
 			} else {
-				fnBuf.WriteString(fmt.Sprintf("        %s.setAttribute('%s', '%s');\n",
+				fnBuf.WriteString(fmt.Sprintf("          %s.setAttribute('%s', '%s');\n",
 					ev, attr.Name, escapeAttr(attr.Value)))
 			}
 		}
 
 		// Recursively emit branch children into the fnBuf
-		g.emitBranchChildren(&fnBuf, branch.Children, ev, "        ")
+		g.emitBranchChildren(&fnBuf, branch.Children, ev, "          ")
 
-		fnBuf.WriteString(fmt.Sprintf("        %s.parentNode.insertBefore(%s, %s);\n",
+		fnBuf.WriteString(fmt.Sprintf("          %s.parentNode.insertBefore(%s, %s);\n",
 			anchor, ev, anchor))
-		fnBuf.WriteString(fmt.Sprintf("      }"))
+		fnBuf.WriteString(fmt.Sprintf("        }"))
 		fnBuf.WriteString("\n")
-		fnBuf.WriteString("    }\n")
+		fnBuf.WriteString("      }\n")
 	}
+	fnBuf.WriteString(fmt.Sprintf("    } finally {\n"))
+	fnBuf.WriteString(fmt.Sprintf("      %s = false;\n", runningFlag))
+	fnBuf.WriteString(fmt.Sprintf("      if (%s) { %s = false; %s(); }\n", pendingFlag, pendingFlag, fn))
+	fnBuf.WriteString("    }\n")
 	fnBuf.WriteString("  }\n")
 	g.create.WriteString(fnBuf.String())
 
@@ -917,21 +943,28 @@ func (g *CodeGen) walkComponentIfChain(chain *IfChainNode, parentVar string) {
 			"  let %s = null, %s = null;\n", instVars[i], wrapVars[i]))
 	}
 
+	runningFlagC := fn + "_running"
+	pendingFlagC := fn + "_pending"
+	g.create.WriteString(fmt.Sprintf("  let %s = false, %s = false;\n", runningFlagC, pendingFlagC))
+
 	var fnBuf strings.Builder
 	fnBuf.WriteString(fmt.Sprintf("  function %s() {\n", fn))
-	fnBuf.WriteString("    let $$active = -1;\n")
+	fnBuf.WriteString(fmt.Sprintf("    if (%s) { %s = true; return; }\n", runningFlagC, pendingFlagC))
+	fnBuf.WriteString(fmt.Sprintf("    %s = true;\n", runningFlagC))
+	fnBuf.WriteString(fmt.Sprintf("    try {\n"))
+	fnBuf.WriteString("      let $$active = -1;\n")
 	for i, branch := range chain.Branches {
 		if branch.Cond == "" {
-			fnBuf.WriteString(fmt.Sprintf("    if ($$active < 0) $$active = %d;\n", i))
+			fnBuf.WriteString(fmt.Sprintf("      if ($$active < 0) $$active = %d;\n", i))
 		} else {
-			fnBuf.WriteString(fmt.Sprintf("    if ($$active < 0 && (%s)) $$active = %d;\n", branch.Cond, i))
+			fnBuf.WriteString(fmt.Sprintf("      if ($$active < 0 && (%s)) $$active = %d;\n", branch.Cond, i))
 		}
 	}
 
 	// Destroy any branch that is no longer active
 	for i := range chain.Branches {
 		fnBuf.WriteString(fmt.Sprintf(
-			"    if ($$active !== %d && %s) { %s.destroy(); %s = null; %s.remove(); %s = null; }\n",
+			"      if ($$active !== %d && %s) { %s.destroy(); %s = null; %s.remove(); %s = null; }\n",
 			i, instVars[i], instVars[i], instVars[i], wrapVars[i], wrapVars[i]))
 	}
 
@@ -951,24 +984,28 @@ func (g *CodeGen) walkComponentIfChain(chain *IfChainNode, parentVar string) {
 			propsExpr = "{ " + strings.Join(propsEntries, ", ") + " }"
 		}
 
-		fnBuf.WriteString(fmt.Sprintf("    if ($$active === %d) {\n", i))
-		fnBuf.WriteString(fmt.Sprintf("      if (!%s) {\n", instVars[i]))
-		fnBuf.WriteString(fmt.Sprintf("        %s = document.createElement('div');\n", wrapVars[i]))
-		fnBuf.WriteString(fmt.Sprintf("        %s.setAttribute('%s','');\n", wrapVars[i], g.scopeID))
+		fnBuf.WriteString(fmt.Sprintf("      if ($$active === %d) {\n", i))
+		fnBuf.WriteString(fmt.Sprintf("        if (!%s) {\n", instVars[i]))
+		fnBuf.WriteString(fmt.Sprintf("          %s = document.createElement('div');\n", wrapVars[i]))
+		fnBuf.WriteString(fmt.Sprintf("          %s.setAttribute('%s','');\n", wrapVars[i], g.scopeID))
 		for _, attr := range comp.Attrs {
 			if attr.IsEvent {
 				fnBuf.WriteString(fmt.Sprintf(
-					"        %s.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
+					"          %s.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
 					wrapVars[i], attr.Name, attr.Value))
 			}
 		}
-		fnBuf.WriteString(fmt.Sprintf("        %s = %s(%s, %s, {});\n",
+		fnBuf.WriteString(fmt.Sprintf("          %s = %s(%s, %s, {});\n",
 			instVars[i], comp.Name, wrapVars[i], propsExpr))
-		fnBuf.WriteString(fmt.Sprintf("        %s.parentNode.insertBefore(%s, %s);\n",
+		fnBuf.WriteString(fmt.Sprintf("          %s.parentNode.insertBefore(%s, %s);\n",
 			anchor, wrapVars[i], anchor))
-		fnBuf.WriteString(fmt.Sprintf("      } else { %s.set(%s); }\n", instVars[i], propsExpr))
-		fnBuf.WriteString("    }\n")
+		fnBuf.WriteString(fmt.Sprintf("        } else { %s.set(%s); }\n", instVars[i], propsExpr))
+		fnBuf.WriteString("      }\n")
 	}
+	fnBuf.WriteString(fmt.Sprintf("    } finally {\n"))
+	fnBuf.WriteString(fmt.Sprintf("      %s = false;\n", runningFlagC))
+	fnBuf.WriteString(fmt.Sprintf("      if (%s) { %s = false; %s(); }\n", pendingFlagC, pendingFlagC, fn))
+	fnBuf.WriteString("    }\n")
 	fnBuf.WriteString("  }\n")
 	g.create.WriteString(fnBuf.String())
 

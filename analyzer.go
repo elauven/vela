@@ -168,7 +168,20 @@ func analyzeScript(src string) *Analysis {
 	allNames = a.reactiveNames()
 	for _, eff := range a.Effects {
 		sub := ParseJS(eff.Body)
-		eff.Deps = FindDepsInNode(sub, allNames)
+		// Find all reactive names referenced in the effect body
+		allDeps := FindDepsInNode(sub, allNames)
+		// Exclude variables that are ASSIGNED inside the effect body.
+		// An effect that writes `x = y` should depend on y (the read) but
+		// NOT on x (the write) — otherwise $$set_x would re-run the effect,
+		// which re-runs $$set_x, causing infinite recursion.
+		writtenVars := findWrittenVars(sub)
+		var readDeps []string
+		for _, d := range allDeps {
+			if !writtenVars[d] {
+				readDeps = append(readDeps, d)
+			}
+		}
+		eff.Deps = readDeps
 	}
 
 	// ── Rewrite assignments inside lifecycle and effect bodies ───────────────
@@ -306,6 +319,30 @@ func extractEffect(expr JsExpr) (string, bool) {
 		stmts = append(stmts, printNode(s))
 	}
 	return strings.Join(stmts, "\n"), true
+}
+
+// findWrittenVars returns a set of all identifier names that appear on the
+// left-hand side of assignment expressions anywhere in the subtree.
+// This is used to exclude written variables from effect dependencies —
+// an effect should re-run when its *inputs* change, not when its *outputs* change.
+func findWrittenVars(node JsNode) map[string]bool {
+	written := map[string]bool{}
+	WalkNode(node, func(n JsNode) bool {
+		switch x := n.(type) {
+		case *JsAssignExpr:
+			if id, ok := x.L.(*JsIdent); ok {
+				written[id.Name] = true
+			}
+		case *JsUnaryExpr:
+			if x.Op == "++" || x.Op == "--" {
+				if id, ok := x.X.(*JsIdent); ok {
+					written[id.Name] = true
+				}
+			}
+		}
+		return true
+	})
+	return written
 }
 
 func identName(e JsExpr) string {
