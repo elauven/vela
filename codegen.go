@@ -643,15 +643,18 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 	for slotName, slotNodes := range comp.Slots {
 		var fragBuf strings.Builder
 		fragBuf.WriteString("() => { const $$f = document.createDocumentFragment(); ")
+		seIdx := 0 // unique index per element within this slot function
 		for _, child := range slotNodes {
 			switch c := child.(type) {
 			case *TextNode:
 				expr := buildExpr(c.Parts)
 				fragBuf.WriteString(fmt.Sprintf("$$f.appendChild(document.createTextNode(%s)); ", expr))
 			case *ElementNode:
+				sv := fmt.Sprintf("$$se%d", seIdx)
+				seIdx++
 				fragBuf.WriteString(fmt.Sprintf(
-					"const $$se = document.createElement('%s'); $$se.setAttribute('%s',''); $$f.appendChild($$se); ",
-					c.Tag, g.scopeID))
+					"const %s = document.createElement('%s'); %s.setAttribute('%s',''); $$f.appendChild(%s); ",
+					sv, c.Tag, sv, g.scopeID, sv))
 			}
 		}
 		fragBuf.WriteString("return $$f; }")
