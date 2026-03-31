@@ -1,0 +1,65 @@
+<script>
+  export let title    = '';
+  export let subtitle = '';
+  export let padding  = '1.25rem';
+  export let noPad    = false;
+</script>
+
+<style>
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    transition: background .3s, border-color .3s;
+  }
+
+  .card-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .header-left {}
+  .card-title { font-weight: 700; font-size: .95rem; }
+  .card-subtitle { font-size: .75rem; color: var(--text-muted); margin-top: .15rem; }
+
+  .header-actions { display: flex; gap: .5rem; flex-shrink: 0; }
+
+  .card-body { padding: var(--body-pad, 1.25rem); }
+  .card-body.no-pad { padding: 0; }
+
+  .card-footer {
+    padding: .75rem 1.25rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+</style>
+
+<template>
+  <div class="card">
+
+    {#if title}
+      <div class="card-header">
+        <div class="header-left">
+          <div class="card-title">{title}</div>
+          {#if subtitle}
+            <div class="card-subtitle">{subtitle}</div>
+          {/if}
+        </div>
+        <div class="header-actions">
+          <slot name="actions" />
+        </div>
+      </div>
+    {/if}
+
+    <div class="card-body" :class="noPad ? 'no-pad' : ''">
+      <slot />
+    </div>
+
+    <slot name="footer" />
+
+  </div>
+</template>

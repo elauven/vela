@@ -1,0 +1,165 @@
+<script>
+  import { login } from './stores/auth.js';
+
+  let username = $state('');
+  let password = $state('');
+  let loading  = $state(false);
+  let error    = $state('');
+  let showPass = $state(false);
+
+  let canSubmit = $derived(username.trim().length > 0 && password.length > 0 && !loading);
+  let btnLabel  = $derived(loading ? 'Signing in…' : 'Sign in');
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    loading = true;
+    error   = '';
+    try {
+      await login(username.trim(), password);
+    } catch (err) {
+      error = err.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  function handleKey($event) {
+    if ($event.key === 'Enter') handleSubmit($event);
+  }
+</script>
+
+<style>
+  .page {
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
+    padding: 1rem;
+  }
+
+  .card {
+    background: white;
+    border-radius: 1.25rem;
+    padding: 2.5rem;
+    width: 100%; max-width: 400px;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.25);
+  }
+
+  .logo { text-align: center; margin-bottom: 2rem; }
+  .logo-icon { font-size: 2.5rem; }
+  .logo-title {
+    font-size: 1.5rem; font-weight: 800;
+    color: #7c3aed; letter-spacing: -.03em;
+    margin-top: .5rem;
+  }
+  .logo-sub { font-size: .85rem; color: #64748b; margin-top: .25rem; }
+
+  .form-group { margin-bottom: 1.25rem; }
+  label { display: block; font-size: .8rem; font-weight: 600; color: #374151; margin-bottom: .4rem; }
+
+  .input-wrap { position: relative; }
+  .input-icon { position: absolute; left: .75rem; top: 50%; transform: translateY(-50%); font-size: .9rem; }
+
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: .6rem .75rem .6rem 2.25rem;
+    border: 1.5px solid #e5e7eb; border-radius: .5rem;
+    font-size: .9rem; outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  input:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
+
+  .pass-toggle {
+    position: absolute; right: .75rem; top: 50%; transform: translateY(-50%);
+    background: none; border: none; cursor: pointer; font-size: .85rem; color: #9ca3af;
+  }
+
+  .error-box {
+    background: #fef2f2; border: 1px solid #fca5a5; border-radius: .5rem;
+    padding: .6rem .85rem; font-size: .8rem; color: #dc2626;
+    margin-bottom: 1.25rem;
+    display: flex; align-items: center; gap: .5rem;
+  }
+
+  .submit-btn {
+    width: 100%; padding: .7rem;
+    background: #7c3aed; color: white;
+    border: none; border-radius: .5rem; cursor: pointer;
+    font-size: .95rem; font-weight: 600;
+    transition: opacity .15s, transform .1s;
+  }
+  .submit-btn:hover:not(:disabled) { opacity: .92; }
+  .submit-btn:active:not(:disabled) { transform: scale(.99); }
+  .submit-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+  .hint {
+    text-align: center; margin-top: 1.25rem;
+    font-size: .78rem; color: #9ca3af;
+    background: #f8fafc; border-radius: .5rem; padding: .6rem;
+  }
+  .hint code { background: #ede9fe; color: #5b21b6; padding: .1em .35em; border-radius: .25rem; }
+</style>
+
+<template>
+  <div class="page">
+    <div class="card">
+
+      <div class="logo">
+        <div class="logo-icon">⚡</div>
+        <div class="logo-title">Vela Dashboard</div>
+        <div class="logo-sub">Sign in to your account</div>
+      </div>
+
+      {#if error}
+        <div class="error-box">⚠️ {error}</div>
+      {/if}
+
+      <form @submit="handleSubmit">
+        <div class="form-group">
+          <label>Username</label>
+          <div class="input-wrap">
+            <span class="input-icon">👤</span>
+            <input
+              type="text"
+              :value="username"
+              @input="($e) => username = $e.target.value"
+              @keydown="handleKey"
+              placeholder="Enter username"
+              autocomplete="username"
+            />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Password</label>
+          <div class="input-wrap">
+            <span class="input-icon">🔒</span>
+            <input
+              :type="showPass ? 'text' : 'password'"
+              :value="password"
+              @input="($e) => password = $e.target.value"
+              @keydown="handleKey"
+              placeholder="Enter password"
+              autocomplete="current-password"
+            />
+            <button
+              type="button"
+              class="pass-toggle"
+              @click="() => showPass = !showPass"
+              :title="showPass ? 'Hide' : 'Show'"
+            >{showPass ? '🙈' : '👁'}</button>
+          </div>
+        </div>
+
+        <button class="submit-btn" type="submit" :disabled="!canSubmit">
+          {btnLabel}
+        </button>
+      </form>
+
+      <div class="hint">
+        Demo credentials: <code>admin</code> / <code>admin</code>
+        or <code>demo</code> / <code>demo</code>
+      </div>
+
+    </div>
+  </div>
+</template>

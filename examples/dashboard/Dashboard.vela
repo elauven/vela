@@ -1,0 +1,132 @@
+<script>
+  import { notifications, markAllRead } from './stores/data.js';
+  import { Sidebar }         from './Sidebar.js';
+  import { OverviewPage }    from './pages/OverviewPage.js';
+  import { OrdersPage }      from './pages/OrdersPage.js';
+  import { UsersPage }       from './pages/UsersPage.js';
+  import { SettingsPage }    from './pages/SettingsPage.js';
+  import { NotificationPanel } from './NotificationPanel.js';
+
+  export let sidebarOpen = $bindable(true);
+  export let user        = {};
+
+  let page              = $state('overview');
+  let notifOpen         = $state(false);
+  let unreadCount       = $state(0);
+  let allNotifications  = $state([]);
+
+  $effect(() => {
+    const unsub = notifications.subscribe(ns => {
+      allNotifications = ns;
+      unreadCount = ns.filter(n => !n.read).length;
+    });
+    return unsub;
+  });
+
+  const PAGES = [
+    { id: 'overview',  label: 'Overview',  icon: '📊' },
+    { id: 'orders',    label: 'Orders',    icon: '📦' },
+    { id: 'users',     label: 'Users',     icon: '👥' },
+    { id: 'settings',  label: 'Settings',  icon: '⚙️'  },
+  ];
+
+  function navigate(id) {
+    page = id;
+    notifOpen = false;
+  }
+
+  function toggleNotif() {
+    notifOpen = !notifOpen;
+  }
+</script>
+
+<style>
+  .layout {
+    display: flex;
+    min-height: 100vh;
+    padding-top: var(--nav-h);
+  }
+
+  .sidebar-col {
+    width: var(--sidebar-w);
+    flex-shrink: 0;
+    transition: width .25s ease;
+  }
+  .sidebar-col.collapsed { width: 0; overflow: hidden; }
+
+  .content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Floating notification badge */
+  .notif-fab {
+    position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 200;
+    background: var(--primary); color: white;
+    border: none; border-radius: 999px;
+    width: 3rem; height: 3rem;
+    font-size: 1.25rem; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(124,58,237,.4);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .15s;
+  }
+  .notif-fab:hover { transform: scale(1.08); }
+
+  .badge {
+    position: absolute; top: -.2rem; right: -.2rem;
+    background: var(--error); color: white;
+    border-radius: 999px; font-size: .65rem; font-weight: 700;
+    min-width: 1.1rem; height: 1.1rem;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 .2rem;
+    border: 2px solid white;
+  }
+</style>
+
+<template>
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <div class="sidebar-col" :class="sidebarOpen ? '' : 'collapsed'">
+      <Sidebar
+        :pages="PAGES"
+        :activePage="page"
+        :user="user"
+        @navigate="($e) => navigate($e.detail.page)"
+      />
+    </div>
+
+    <!-- Main content area -->
+    <div class="content">
+      {#if page === 'overview'}
+        <OverviewPage />
+      {:else if page === 'orders'}
+        <OrdersPage />
+      {:else if page === 'users'}
+        <UsersPage :currentUser="user" />
+      {:else if page === 'settings'}
+        <SettingsPage />
+      {/if}
+    </div>
+
+    <!-- Notification FAB -->
+    <button class="notif-fab" @click="toggleNotif" title="Notifications">
+      🔔
+      {#if unreadCount > 0}
+        <span class="badge">{unreadCount}</span>
+      {/if}
+    </button>
+
+    <!-- Notification panel slide-in -->
+    {#if notifOpen}
+      <NotificationPanel
+        :items="allNotifications"
+        @close="() => notifOpen = false"
+        @markAllRead="markAllRead"
+      />
+    {/if}
+
+  </div>
+</template>

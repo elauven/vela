@@ -1,0 +1,60 @@
+<script>
+  export let message = '';
+  export let type    = 'info';  // 'success' | 'error' | 'warning' | 'info'
+  export let duration = 3000;
+
+  let visible = $state(true);
+
+  const ICONS = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+
+  function dismiss() {
+    visible = false;
+    $$dispatch('dismiss');
+  }
+
+  onMount(() => {
+    if (duration > 0) {
+      const t = setTimeout(dismiss, duration);
+      return () => clearTimeout(t);
+    }
+  });
+</script>
+
+<style>
+  .toast {
+    display: flex; align-items: center; gap: .75rem;
+    padding: .75rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgba(0,0,0,.12);
+    font-size: .85rem; min-width: 260px; max-width: 380px;
+    animation: toastIn .2s ease;
+  }
+  .toast.success { border-left: 3px solid var(--success); }
+  .toast.error   { border-left: 3px solid var(--error); }
+  .toast.warning { border-left: 3px solid var(--warning); }
+  .toast.info    { border-left: 3px solid var(--info); }
+
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateY(8px) scale(.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .toast-icon { font-size: 1rem; flex-shrink: 0; }
+  .toast-msg  { flex: 1; }
+  .dismiss-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: .75rem; color: var(--text-muted); padding: .1rem;
+  }
+</style>
+
+<template>
+  {#if visible}
+    <div class="toast" :class="type">
+      <span class="toast-icon">{ICONS[type]}</span>
+      <span class="toast-msg">{message}</span>
+      <button class="dismiss-btn" @click="dismiss">✕</button>
+    </div>
+  {/if}
+</template>

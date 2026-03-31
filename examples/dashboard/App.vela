@@ -1,0 +1,156 @@
+<script>
+  import { auth, logout } from './stores/auth.js';
+  import { settings }     from './stores/data.js';
+  import { LoginPage }    from './LoginPage.js';
+  import { Dashboard }    from './Dashboard.js';
+
+  let isAuthenticated = $state(false);
+  let user            = $state(null);
+  let theme           = $state('light');
+  let sidebarOpen     = $state(true);
+
+  $effect(() => {
+    const unsub = auth.subscribe(s => {
+      isAuthenticated = s.isAuthenticated;
+      user = s.user;
+    });
+    return unsub;
+  });
+
+  $effect(() => {
+    const unsub = settings.subscribe(s => {
+      theme = s.theme;
+    });
+    return unsub;
+  });
+
+  $effect(() => {
+    document.body.className = theme === 'dark' ? 'dark' : '';
+  });
+
+  function toggleSidebar() {
+    sidebarOpen = !sidebarOpen;
+  }
+
+  function handleLogout() {
+    logout();
+  }
+
+  onMount(() => {
+    document.title = 'Vela Dashboard';
+  });
+</script>
+
+<style>
+  :root {
+    --bg:        #f1f5f9;
+    --bg-card:   #ffffff;
+    --border:    #e2e8f0;
+    --text:      #1e293b;
+    --text-muted:#64748b;
+    --primary:   #7c3aed;
+    --primary-l: #ede9fe;
+    --success:   #059669;
+    --warning:   #d97706;
+    --error:     #dc2626;
+    --info:      #2563eb;
+    --radius:    0.75rem;
+    --shadow:    0 1px 3px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.04);
+    --sidebar-w: 240px;
+    --nav-h:     56px;
+  }
+
+  :global(body.dark) {
+    --bg:        #0f172a;
+    --bg-card:   #1e293b;
+    --border:    #334155;
+    --text:      #e2e8f0;
+    --text-muted:#94a3b8;
+  }
+
+  :global(*, *::before, *::after) { box-sizing: border-box; margin: 0; padding: 0; }
+  :global(body) {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    transition: background .3s, color .3s;
+  }
+
+  .app { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* Top navbar (only when authenticated) */
+  .navbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    height: var(--nav-h);
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 1rem;
+    padding: 0 1.25rem;
+    transition: background .3s, border-color .3s;
+  }
+
+  .hamburger {
+    background: none; border: none; cursor: pointer;
+    font-size: 1.25rem; color: var(--text-muted);
+    padding: .25rem; border-radius: .375rem;
+    transition: background .15s;
+  }
+  .hamburger:hover { background: var(--primary-l); color: var(--primary); }
+
+  .brand {
+    font-weight: 800; font-size: 1.1rem; color: var(--primary);
+    letter-spacing: -.02em;
+  }
+
+  .navbar-right {
+    margin-left: auto; display: flex; align-items: center; gap: .75rem;
+  }
+
+  .user-chip {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .3rem .75rem;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 999px; font-size: .8rem;
+  }
+
+  .logout-btn {
+    padding: .35rem .85rem;
+    background: none; border: 1px solid var(--border);
+    border-radius: .375rem; cursor: pointer;
+    font-size: .8rem; color: var(--error);
+    transition: background .15s;
+  }
+  .logout-btn:hover { background: #fef2f2; }
+
+  .main {
+    margin-top: var(--nav-h);
+    flex: 1;
+  }
+</style>
+
+<template>
+  <div class="app">
+
+    <!-- Navbar — only when logged in -->
+    {#if isAuthenticated}
+      <nav class="navbar">
+        <button class="hamburger" @click="toggleSidebar" title="Toggle sidebar">☰</button>
+        <span class="brand">Vela Dashboard</span>
+        <div class="navbar-right">
+          <span class="user-chip">{user.avatar} {user.name}</span>
+          <button class="logout-btn" @click="handleLogout">Sign out</button>
+        </div>
+      </nav>
+    {/if}
+
+    <main class="main">
+      {#if isAuthenticated}
+        <Dashboard :sidebarOpen="sidebarOpen" :user="user" />
+      {:else}
+        <LoginPage />
+      {/if}
+    </main>
+
+  </div>
+</template>

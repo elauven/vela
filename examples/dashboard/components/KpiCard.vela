@@ -1,0 +1,98 @@
+<script>
+  export let label  = '';
+  export let value  = 0;
+  export let prev   = 0;
+  export let unit   = '';
+  export let icon   = '📊';
+  export let color  = '#7c3aed';
+
+  let delta      = $derived(prev > 0 ? ((value - prev) / prev * 100) : 0);
+  let deltaAbs   = $derived(Math.abs(delta).toFixed(1));
+  let isPositive = $derived(delta >= 0);
+  let trendIcon  = $derived(isPositive ? '↑' : '↓');
+  let trendClass = $derived(isPositive ? 'up' : 'down');
+
+  let displayValue = $derived(
+    unit === '$'
+      ? '$' + value.toLocaleString()
+      : unit === '%'
+        ? value.toFixed(2) + '%'
+        : value.toLocaleString()
+  );
+</script>
+
+<style>
+  .kpi {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    box-shadow: var(--shadow);
+    position: relative; overflow: hidden;
+    transition: background .3s, border-color .3s, transform .15s;
+  }
+  .kpi:hover { transform: translateY(-2px); }
+
+  .kpi-accent {
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+
+  .kpi-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: .75rem;
+  }
+
+  .kpi-icon {
+    width: 2.5rem; height: 2.5rem;
+    border-radius: .625rem;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.15rem;
+  }
+
+  .kpi-label {
+    font-size: .75rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--text-muted);
+  }
+
+  .kpi-value {
+    font-size: 1.75rem; font-weight: 800; line-height: 1;
+    letter-spacing: -.03em; margin: .35rem 0;
+  }
+
+  .kpi-foot { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+
+  .trend {
+    font-size: .75rem; font-weight: 700; display: flex; align-items: center; gap: .15rem;
+  }
+  .trend.up   { color: var(--success); }
+  .trend.down { color: var(--error); }
+
+  .trend-label { font-size: .7rem; color: var(--text-muted); }
+</style>
+
+<template>
+  <div class="kpi">
+    <div class="kpi-accent" :style="`background:${color}`"></div>
+
+    <div class="kpi-head">
+      <div class="kpi-label">{label}</div>
+      <div class="kpi-icon" :style="`background:${color}18`">
+        <span :style="`color:${color}`">{icon}</span>
+      </div>
+    </div>
+
+    <div class="kpi-value">{displayValue}</div>
+
+    <div class="kpi-foot">
+      <span class="trend" :class="trendClass">
+        {trendIcon} {deltaAbs}%
+      </span>
+      <span class="trend-label">vs last period</span>
+
+      <!-- Optional sparkline slot -->
+      <slot name="chart" />
+    </div>
+  </div>
+</template>

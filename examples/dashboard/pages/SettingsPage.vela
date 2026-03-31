@@ -1,0 +1,375 @@
+<script>
+  import { settings, updateSetting } from '../stores/data.js';
+  import { Card  } from '../components/Card.js';
+  import { Toast } from '../components/Toast.js';
+  import { Badge } from '../components/Badge.js';
+
+  let current = $state({
+    theme:       'light',
+    currency:    'USD',
+    dateFormat:  'MM/DD/YYYY',
+    autoRefresh: false,
+    refreshRate: 30,
+    compactMode: false,
+    language:    'en',
+  });
+
+  let dirty = $state(false);
+  let toast = $state(null);
+  let previewMode = $state(false);
+
+  $effect(() => {
+    const unsub = settings.subscribe(s => {
+      current = { ...s };
+      dirty = false;
+    });
+    return unsub;
+  });
+
+  // Live theme preview
+  $effect(() => {
+    if (previewMode) {
+      document.body.className = current.theme === 'dark' ? 'dark' : '';
+    }
+  });
+
+  function handleChange(key, value) {
+    current = { ...current, [key]: value };
+    dirty = true;
+  }
+
+  function save() {
+    Object.entries(current).forEach(([k, v]) => updateSetting(k, v));
+    dirty = false;
+    showToast('Settings saved successfully', 'success');
+  }
+
+  function reset() {
+    settings.update(() => ({
+      theme:       'light',
+      currency:    'USD',
+      dateFormat:  'MM/DD/YYYY',
+      autoRefresh: false,
+      refreshRate: 30,
+      compactMode: false,
+      language:    'en',
+    }));
+    showToast('Settings reset to defaults', 'info');
+  }
+
+  function showToast(message, type) {
+    toast = { message, type };
+    setTimeout(() => { toast = null; }, 3000);
+  }
+
+  const CURRENCIES  = ['USD', 'EUR', 'GBP', 'JPY', 'CAD'];
+  const DATE_FORMATS = ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD'];
+  const LANGUAGES   = [
+    { code: 'en', label: 'English' },
+    { code: 'de', label: 'Deutsch' },
+    { code: 'fr', label: 'Français' },
+    { code: 'es', label: 'Español' },
+  ];
+</script>
+
+<style>
+  .page { padding: 1.5rem; max-width: 720px; }
+  .page-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1.5rem;
+  }
+  .page-title { font-size: 1.35rem; font-weight: 800; }
+
+  .header-actions { display: flex; gap: .6rem; align-items: center; }
+
+  .btn-save {
+    padding: .45rem 1.2rem;
+    background: var(--primary); color: white;
+    border: none; border-radius: .5rem; cursor: pointer;
+    font-size: .85rem; font-weight: 600; transition: opacity .15s;
+  }
+  .btn-save:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-save:hover:not(:disabled) { opacity: .88; }
+
+  .btn-reset {
+    padding: .45rem 1rem;
+    background: none; border: 1px solid var(--border);
+    border-radius: .5rem; cursor: pointer; font-size: .85rem;
+    color: var(--text-muted); transition: all .15s;
+  }
+  .btn-reset:hover { border-color: var(--error); color: var(--error); }
+
+  .section { margin-bottom: 1.5rem; }
+  .section-title {
+    font-size: .7rem; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .1em; color: var(--text-muted);
+    margin-bottom: .75rem; padding-bottom: .5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .setting-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .75rem 0; gap: 1rem;
+  }
+  .setting-row + .setting-row { border-top: 1px solid var(--border); }
+
+  .setting-info { flex: 1; }
+  .setting-label { font-size: .875rem; font-weight: 500; }
+  .setting-desc  { font-size: .75rem; color: var(--text-muted); margin-top: .15rem; }
+
+  .setting-control { flex-shrink: 0; min-width: 160px; }
+
+  select.ctl, input[type="number"].ctl {
+    width: 100%; padding: .4rem .65rem;
+    border: 1px solid var(--border); border-radius: .5rem;
+    font-size: .875rem; background: var(--bg-card); color: var(--text);
+    outline: none; transition: border-color .2s;
+  }
+  select.ctl:focus, input[type="number"].ctl:focus { border-color: var(--primary); }
+
+  /* Toggle switch */
+  .toggle-wrap { display: flex; align-items: center; gap: .5rem; }
+  .toggle { position: relative; width: 2.5rem; height: 1.35rem; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0;
+    background: #d1d5db; border-radius: 999px;
+    cursor: pointer; transition: background .2s;
+  }
+  .slider::before {
+    content: ''; position: absolute;
+    width: 1rem; height: 1rem; border-radius: 50%;
+    background: white; left: .17rem; top: .17rem;
+    transition: transform .2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  }
+  .toggle input:checked + .slider { background: var(--primary); }
+  .toggle input:checked + .slider::before { transform: translateX(1.15rem); }
+
+  /* Theme selector */
+  .theme-group { display: flex; gap: .5rem; }
+  .theme-btn {
+    flex: 1; padding: .45rem;
+    border: 2px solid var(--border); border-radius: .5rem;
+    background: var(--bg); cursor: pointer;
+    font-size: .8rem; font-weight: 500; text-align: center;
+    transition: all .15s;
+  }
+  .theme-btn.active { border-color: var(--primary); background: var(--primary-l); color: var(--primary); }
+
+  /* Refresh rate slider */
+  .range-row { display: flex; align-items: center; gap: .75rem; }
+  input[type="range"] { flex: 1; cursor: pointer; accent-color: var(--primary); }
+  .range-val {
+    min-width: 3rem; text-align: center;
+    font-weight: 700; font-size: .85rem; color: var(--primary);
+  }
+
+  .dirty-banner {
+    padding: .65rem 1rem; margin-bottom: 1rem;
+    background: #fefce8; border: 1px solid #fde68a; border-radius: .5rem;
+    font-size: .8rem; color: #92400e;
+    display: flex; align-items: center; gap: .5rem;
+  }
+
+  .toast-area {
+    position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+    z-index: 999;
+  }
+</style>
+
+<template>
+  <div class="page">
+    <div class="page-head">
+      <div class="page-title">⚙️ Settings</div>
+      <div class="header-actions">
+        <button class="btn-reset" @click="reset">Reset defaults</button>
+        <button class="btn-save" :disabled="!dirty" @click="save">
+          {dirty ? 'Save changes' : 'Saved'}
+        </button>
+      </div>
+    </div>
+
+    {#if dirty}
+      <div class="dirty-banner">⚠️ You have unsaved changes.</div>
+    {/if}
+
+    <Card>
+      <!-- Appearance section -->
+      <div class="section">
+        <div class="section-title">Appearance</div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Theme</div>
+            <div class="setting-desc">Choose light or dark interface</div>
+          </div>
+          <div class="setting-control">
+            <div class="theme-group">
+              <button
+                class="theme-btn"
+                :class="current.theme === 'light' ? 'active' : ''"
+                @click="() => handleChange('theme', 'light')"
+              >☀️ Light</button>
+              <button
+                class="theme-btn"
+                :class="current.theme === 'dark' ? 'active' : ''"
+                @click="() => handleChange('theme', 'dark')"
+              >🌙 Dark</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Compact mode</div>
+            <div class="setting-desc">Reduce spacing and padding</div>
+          </div>
+          <div class="setting-control">
+            <div class="toggle-wrap">
+              <label class="toggle">
+                <input
+                  type="checkbox"
+                  :checked="current.compactMode"
+                  @change="($e) => handleChange('compactMode', $e.target.checked)"
+                />
+                <span class="slider"></span>
+              </label>
+              <span style="font-size:.8rem;color:var(--text-muted)">
+                {current.compactMode ? 'On' : 'Off'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Preview theme</div>
+            <div class="setting-desc">Apply theme changes in real-time</div>
+          </div>
+          <div class="setting-control">
+            <div class="toggle-wrap">
+              <label class="toggle">
+                <input
+                  type="checkbox"
+                  :checked="previewMode"
+                  @change="($e) => previewMode = $e.target.checked"
+                />
+                <span class="slider"></span>
+              </label>
+              <Badge :variant="previewMode ? 'success' : 'default'">
+                {previewMode ? 'Live' : 'Off'}
+              </Badge>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Localisation section -->
+      <div class="section">
+        <div class="section-title">Localisation</div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Currency</div>
+            <div class="setting-desc">Display currency for financial data</div>
+          </div>
+          <div class="setting-control">
+            <select
+              class="ctl"
+              :value="current.currency"
+              @change="($e) => handleChange('currency', $e.target.value)"
+            >
+              {#each CURRENCIES as c (c)}
+                <option :value="c">{c}</option>
+              {/each}
+            </select>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Date format</div>
+            <div class="setting-desc">How dates are displayed throughout</div>
+          </div>
+          <div class="setting-control">
+            <select
+              class="ctl"
+              :value="current.dateFormat"
+              @change="($e) => handleChange('dateFormat', $e.target.value)"
+            >
+              {#each DATE_FORMATS as f (f)}
+                <option :value="f">{f}</option>
+              {/each}
+            </select>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Language</div>
+          </div>
+          <div class="setting-control">
+            <select
+              class="ctl"
+              :value="current.language"
+              @change="($e) => handleChange('language', $e.target.value)"
+            >
+              {#each LANGUAGES as l (l.code)}
+                <option :value="l.code">{l.label}</option>
+              {/each}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data section -->
+      <div class="section">
+        <div class="section-title">Data & Refresh</div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Auto-refresh</div>
+            <div class="setting-desc">Automatically reload dashboard data</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle">
+              <input
+                type="checkbox"
+                :checked="current.autoRefresh"
+                @change="($e) => handleChange('autoRefresh', $e.target.checked)"
+              />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+        {#if current.autoRefresh}
+          <div class="setting-row">
+            <div class="setting-info">
+              <div class="setting-label">Refresh interval</div>
+              <div class="setting-desc">How often to reload data (seconds)</div>
+            </div>
+            <div class="setting-control">
+              <div class="range-row">
+                <input
+                  type="range"
+                  :value="current.refreshRate"
+                  min="10" max="300" step="10"
+                  @input="($e) => handleChange('refreshRate', Number($e.target.value))"
+                />
+                <span class="range-val">{current.refreshRate}s</span>
+              </div>
+            </div>
+          </div>
+        {/if}
+      </div>
+    </Card>
+
+    <div class="toast-area">
+      {#if toast}
+        <Toast :message="toast.message" :type="toast.type" />
+      {/if}
+    </div>
+  </div>
+</template>

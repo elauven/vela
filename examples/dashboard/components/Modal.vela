@@ -1,0 +1,110 @@
+<script>
+  export let open  = $bindable(false);
+  export let title = 'Modal';
+  export let size  = 'md';  // 'sm' | 'md' | 'lg'
+
+  let visible = $state(false);
+
+  $effect(() => {
+    visible = open;
+  });
+
+  function close() {
+    open = false;
+    $$dispatch('close');
+  }
+
+  function onBackdrop($event) {
+    if ($event.target === $event.currentTarget) close();
+  }
+
+  function onKey($event) {
+    if ($event.key === 'Escape') close();
+  }
+
+  onMount(() => {
+    document.addEventListener('keydown', onKey);
+  });
+
+  onDestroy(() => {
+    document.removeEventListener('keydown', onKey);
+  });
+</script>
+
+<style>
+  .overlay {
+    position: fixed; inset: 0; z-index: 300;
+    background: rgba(0,0,0,.5);
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+    animation: fadeIn .15s ease;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes popIn  { from { opacity: 0; transform: scale(.95) translateY(8px); }
+                      to   { opacity: 1; transform: scale(1)   translateY(0); } }
+
+  .modal {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    box-shadow: 0 25px 50px rgba(0,0,0,.25);
+    display: flex; flex-direction: column;
+    max-height: 90vh;
+    animation: popIn .2s ease;
+    width: 100%;
+  }
+  .modal.sm { max-width: 360px; }
+  .modal.md { max-width: 520px; }
+  .modal.lg { max-width: 720px; }
+
+  .modal-head {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .modal-title { font-weight: 700; font-size: 1rem; }
+  .close-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: 1.1rem; color: var(--text-muted);
+    padding: .25rem; border-radius: .375rem;
+    transition: background .15s;
+  }
+  .close-btn:hover { background: var(--bg); }
+
+  .modal-body { padding: 1.25rem; overflow-y: auto; flex: 1; }
+
+  .modal-foot {
+    padding: .875rem 1.25rem;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: flex-end; gap: .6rem;
+    flex-shrink: 0;
+  }
+</style>
+
+<template>
+  {#if visible}
+    <div class="overlay" @click="onBackdrop">
+      <div class="modal" :class="size">
+        <div class="modal-head">
+          <span class="modal-title">{title}</span>
+          <button class="close-btn" @click="close">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <slot />
+        </div>
+
+        <div class="modal-foot">
+          <slot name="footer">
+            <!-- Default footer: just a close button -->
+            <button
+              style="padding:.4rem 1rem;background:var(--bg);border:1px solid var(--border);border-radius:.375rem;cursor:pointer;"
+              @click="close"
+            >Close</button>
+          </slot>
+        </div>
+      </div>
+    </div>
+  {/if}
+</template>

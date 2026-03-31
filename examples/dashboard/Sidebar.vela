@@ -1,0 +1,100 @@
+<script>
+  export let pages      = [];
+  export let activePage = 'overview';
+  export let user       = {};
+
+  function navigate(id) {
+    $$dispatch('navigate', { page: id });
+  }
+</script>
+
+<style>
+  .sidebar {
+    position: fixed;
+    top: var(--nav-h); left: 0;
+    width: var(--sidebar-w);
+    height: calc(100vh - var(--nav-h));
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 1.25rem 0;
+    overflow-y: auto;
+    transition: background .3s, border-color .3s;
+    z-index: 90;
+  }
+
+  .section-label {
+    font-size: .65rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--text-muted);
+    padding: 0 1.25rem; margin-bottom: .5rem;
+  }
+
+  .nav-item {
+    display: flex; align-items: center; gap: .75rem;
+    padding: .6rem 1.25rem;
+    border: none; background: none;
+    width: 100%; text-align: left; cursor: pointer;
+    font-size: .875rem; color: var(--text-muted);
+    border-radius: 0;
+    transition: background .12s, color .12s;
+  }
+  .nav-item:hover { background: var(--bg); color: var(--text); }
+  .nav-item.active {
+    background: var(--primary-l); color: var(--primary); font-weight: 600;
+    position: relative;
+  }
+  .nav-item.active::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; background: var(--primary);
+    border-radius: 0 2px 2px 0;
+  }
+
+  .nav-icon { font-size: 1rem; }
+  .nav-label { flex: 1; }
+
+  .divider { height: 1px; background: var(--border); margin: .75rem 1.25rem; }
+
+  .user-card {
+    margin-top: auto; padding: 1rem 1.25rem;
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: .75rem;
+  }
+  .avatar {
+    width: 2rem; height: 2rem;
+    background: var(--primary-l); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+  }
+  .user-name { font-size: .8rem; font-weight: 600; }
+  .user-role { font-size: .7rem; color: var(--text-muted); text-transform: capitalize; }
+</style>
+
+<template>
+  <aside class="sidebar">
+    <div class="section-label">Navigation</div>
+
+    {#each pages as p (p.id)}
+      <button
+        class="nav-item"
+        :class="activePage === p.id ? 'active' : ''"
+        @click="() => navigate(p.id)"
+      >
+        <span class="nav-icon">{p.icon}</span>
+        <span class="nav-label">{p.label}</span>
+      </button>
+    {/each}
+
+    <div class="divider"></div>
+
+    {#if user}
+      <div class="user-card">
+        <div class="avatar">{user.avatar}</div>
+        <div>
+          <div class="user-name">{user.name}</div>
+          <div class="user-role">{user.role}</div>
+        </div>
+      </div>
+    {/if}
+  </aside>
+</template>

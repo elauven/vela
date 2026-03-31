@@ -1,0 +1,294 @@
+<script>
+  import { users } from '../stores/data.js';
+  import { Card }  from '../components/Card.js';
+  import { Badge } from '../components/Badge.js';
+  import { Modal } from '../components/Modal.js';
+  import { Toast } from '../components/Toast.js';
+  import { UserRow } from './UserRow.js';
+
+  export let currentUser = {};
+
+  let allUsers   = $state([]);
+  let search     = $state('');
+  let roleFilter = $state('all');
+  let editTarget = $state(null);
+  let editOpen   = $state(false);
+  let toast      = $state(null);
+
+  $effect(() => {
+    const unsub = users.subscribe(v => { allUsers = v; });
+    return unsub;
+  });
+
+  const ROLES = ['all', 'admin', 'editor', 'viewer'];
+
+  let filtered = $derived(
+    allUsers.filter(u => {
+      const q = search.toLowerCase();
+      const matchQ = !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+      const matchR = roleFilter === 'all' || u.role === roleFilter;
+      return matchQ && matchR;
+    })
+  );
+
+  let activeCount   = $derived(allUsers.filter(u => u.status === 'active').length);
+  let inactiveCount = $derived(allUsers.filter(u => u.status === 'inactive').length);
+
+  function openEdit(user) {
+    editTarget = { ...user };
+    editOpen   = true;
+  }
+
+  function saveEdit() {
+    users.update(us => us.map(u => u.id === editTarget.id ? { ...editTarget } : u));
+    showToast(`${editTarget.name} updated`, 'success');
+    editOpen = false;
+    editTarget = null;
+  }
+
+  function toggleStatus(id) {
+    users.update(us => us.map(u =>
+      u.id === id ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' } : u
+    ));
+    showToast('User status updated', 'info');
+  }
+
+  function showToast(message, type) {
+    toast = { message, type };
+    setTimeout(() => { toast = null; }, 3000);
+  }
+</script>
+
+<style>
+  .page { padding: 1.5rem; }
+  .page-head {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    margin-bottom: 1.5rem;
+  }
+  .page-title { font-size: 1.35rem; font-weight: 800; }
+
+  .stats-row { display: flex; gap: .75rem; margin-bottom: 1.5rem; }
+  .stat-chip {
+    padding: .5rem 1.1rem;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display: flex; align-items: center; gap: .5rem; font-size: .8rem;
+  }
+  .stat-num { font-weight: 800; font-size: 1.1rem; }
+
+  .toolbar {
+    display: flex; gap: .75rem; align-items: center;
+    padding: 1rem 1rem .5rem; flex-wrap: wrap;
+  }
+
+  .search-input {
+    flex: 1; min-width: 180px;
+    padding: .5rem .875rem;
+    border: 1px solid var(--border); border-radius: .5rem;
+    font-size: .875rem; background: var(--bg-card); color: var(--text);
+    outline: none; transition: border-color .2s;
+  }
+  .search-input:focus { border-color: var(--primary); }
+
+  .filter-group { display: flex; gap: .3rem; }
+  .filter-btn {
+    padding: .3rem .7rem; border-radius: 999px; border: none; cursor: pointer;
+    font-size: .75rem; background: var(--bg); color: var(--text-muted);
+  }
+  .filter-btn.active { background: var(--primary-l); color: var(--primary); font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+  th {
+    padding: .65rem 1rem; text-align: left;
+    font-size: .7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--text-muted);
+    border-bottom: 1px solid var(--border); background: var(--bg);
+  }
+  td { padding: .75rem 1rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: color-mix(in srgb, var(--bg) 60%, transparent); }
+
+  .user-cell { display: flex; align-items: center; gap: .75rem; }
+  .avatar-cell {
+    width: 2rem; height: 2rem; border-radius: 50%;
+    background: var(--primary-l); color: var(--primary);
+    display: flex; align-items: center; justify-content: center; font-size: 1rem;
+    flex-shrink: 0;
+  }
+  .user-name  { font-weight: 600; }
+  .user-email { font-size: .75rem; color: var(--text-muted); }
+
+  .action-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: .8rem; padding: .25rem .5rem; border-radius: .375rem;
+    color: var(--text-muted); transition: background .15s, color .15s;
+  }
+  .action-btn:hover { background: var(--bg); color: var(--text); }
+  .action-btn.edit:hover  { color: var(--primary); }
+  .action-btn.toggle:hover { color: var(--warning); }
+
+  /* Edit modal */
+  .form-row { margin-bottom: 1rem; }
+  .form-row label { display: block; font-size: .8rem; font-weight: 600; margin-bottom: .35rem; }
+  .form-row input, .form-row select {
+    width: 100%; padding: .5rem .75rem;
+    border: 1px solid var(--border); border-radius: .5rem;
+    font-size: .875rem; background: var(--bg-card); color: var(--text);
+    outline: none; transition: border-color .2s;
+  }
+  .form-row input:focus, .form-row select:focus { border-color: var(--primary); }
+
+  .modal-footer-btns { display: flex; justify-content: flex-end; gap: .5rem; }
+  .btn-save {
+    padding: .45rem 1.2rem;
+    background: var(--primary); color: white;
+    border: none; border-radius: .375rem; cursor: pointer;
+    font-size: .85rem; font-weight: 600;
+  }
+  .btn-cancel {
+    padding: .45rem 1.1rem;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: .375rem; cursor: pointer; font-size: .85rem;
+  }
+
+  .empty { text-align: center; padding: 2.5rem; color: var(--text-muted); }
+
+  .toast-area {
+    position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+    z-index: 999;
+  }
+</style>
+
+<template>
+  <div class="page">
+    <div class="page-head">
+      <div class="page-title">👥 Users</div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat-chip">
+        <span class="stat-num">{allUsers.length}</span> Total
+      </div>
+      <div class="stat-chip">
+        <span class="stat-num" style="color:var(--success)">{activeCount}</span> Active
+      </div>
+      <div class="stat-chip">
+        <span class="stat-num" style="color:var(--text-muted)">{inactiveCount}</span> Inactive
+      </div>
+    </div>
+
+    <Card :noPad="true">
+      <div class="toolbar">
+        <input
+          class="search-input"
+          type="text"
+          :value="search"
+          @input="($e) => search = $e.target.value"
+          placeholder="Search users…"
+        />
+        <div class="filter-group">
+          {#each ROLES as r (r)}
+            <button
+              class="filter-btn"
+              :class="roleFilter === r ? 'active' : ''"
+              @click="() => roleFilter = r"
+            >{r}</button>
+          {/each}
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Joined</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#if filtered.length === 0}
+            <tr>
+              <td colspan="5"><div class="empty">No users match your filters.</div></td>
+            </tr>
+          {:else}
+            {#each filtered as u (u.id)}
+              <tr>
+                <td>
+                  <div class="user-cell">
+                    <div class="avatar-cell">{u.avatar}</div>
+                    <div>
+                      <div class="user-name">{u.name}</div>
+                      <div class="user-email">{u.email}</div>
+                    </div>
+                  </div>
+                </td>
+                <td><Badge :variant="u.role === 'admin' ? 'purple' : 'default'">{u.role}</Badge></td>
+                <td><Badge :variant="u.status === 'active' ? 'success' : 'default'">{u.status}</Badge></td>
+                <td>{u.joined}</td>
+                <td>
+                  <button class="action-btn edit" @click="() => openEdit(u)" title="Edit">✏️ Edit</button>
+                  {#if currentUser.role === 'admin'}
+                    <button
+                      class="action-btn toggle"
+                      @click="() => toggleStatus(u.id)"
+                      title="Toggle status"
+                    >{u.status === 'active' ? '⊘ Deactivate' : '✓ Activate'}</button>
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+          {/if}
+        </tbody>
+      </table>
+    </Card>
+
+    <!-- Edit modal -->
+    <Modal :open="editOpen" title="Edit User">
+      {#if editTarget}
+        <div class="form-row">
+          <label>Name</label>
+          <input
+            type="text"
+            :value="editTarget.name"
+            @input="($e) => editTarget = { ...editTarget, name: $e.target.value }"
+          />
+        </div>
+        <div class="form-row">
+          <label>Email</label>
+          <input
+            type="email"
+            :value="editTarget.email"
+            @input="($e) => editTarget = { ...editTarget, email: $e.target.value }"
+          />
+        </div>
+        <div class="form-row">
+          <label>Role</label>
+          <select
+            :value="editTarget.role"
+            @change="($e) => editTarget = { ...editTarget, role: $e.target.value }"
+          >
+            <option value="admin">Admin</option>
+            <option value="editor">Editor</option>
+            <option value="viewer">Viewer</option>
+          </select>
+        </div>
+      {/if}
+
+      <svelte:fragment slot="footer">
+        <div class="modal-footer-btns">
+          <button class="btn-cancel" @click="() => editOpen = false">Cancel</button>
+          <button class="btn-save"   @click="saveEdit">Save changes</button>
+        </div>
+      </svelte:fragment>
+    </Modal>
+
+    <div class="toast-area">
+      {#if toast}
+        <Toast :message="toast.message" :type="toast.type" />
+      {/if}
+    </div>
+  </div>
+</template>

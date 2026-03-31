@@ -1,0 +1,304 @@
+<script>
+  import { orders, deleteOrder, updateOrderStatus } from '../stores/data.js';
+  import { Card }  from '../components/Card.js';
+  import { Badge } from '../components/Badge.js';
+  import { Modal } from '../components/Modal.js';
+  import { Toast } from '../components/Toast.js';
+
+  let allOrders  = $state([]);
+  let search     = $state('');
+  let statusFilter = $state('all');
+  let sortBy     = $state('date');
+  let sortDir    = $state('desc');
+  let deleteTarget = $state(null);
+  let confirmOpen  = $state(false);
+  let toast        = $state(null);
+
+  $effect(() => {
+    const unsub = orders.subscribe(v => { allOrders = v; });
+    return unsub;
+  });
+
+  const STATUSES = ['all', 'pending', 'completed', 'shipped', 'cancelled'];
+
+  const STATUS_VARIANT = {
+    completed: 'success', pending: 'warning', shipped: 'info', cancelled: 'error',
+  };
+
+  let filtered = $derived(
+    allOrders
+      .filter(o => {
+        const q = search.toLowerCase();
+        const matchQ = !q || o.id.toLowerCase().includes(q) || o.customer.toLowerCase().includes(q);
+        const matchS = statusFilter === 'all' || o.status === statusFilter;
+        return matchQ && matchS;
+      })
+      .sort((a, b) => {
+        let av = a[sortBy], bv = b[sortBy];
+        if (typeof av === 'string') av = av.toLowerCase(), bv = bv.toLowerCase();
+        const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+        return sortDir === 'asc' ? cmp : -cmp;
+      })
+  );
+
+  let totalAmount = $derived(filtered.reduce((s, o) => s + o.amount, 0));
+
+  function sort(col) {
+    if (sortBy === col) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortBy  = col;
+      sortDir = 'asc';
+    }
+  }
+
+  function sortIcon(col) {
+    if (sortBy !== col) return '↕';
+    return sortDir === 'asc' ? '↑' : '↓';
+  }
+
+  function promptDelete(order) {
+    deleteTarget = order;
+    confirmOpen  = true;
+  }
+
+  function confirmDelete() {
+    deleteOrder(deleteTarget.id);
+    showToast(`Order ${deleteTarget.id} deleted`, 'success');
+    confirmOpen  = false;
+    deleteTarget = null;
+  }
+
+  function handleStatusChange(id, $event) {
+    updateOrderStatus(id, $event.target.value);
+    showToast('Order status updated', 'info');
+  }
+
+  function showToast(message, type) {
+    toast = { message, type, key: Date.now() };
+    setTimeout(() => { toast = null; }, 3200);
+  }
+</script>
+
+<style>
+  .page { padding: 1.5rem; }
+  .page-title { font-size: 1.35rem; font-weight: 800; margin-bottom: 1.5rem; }
+
+  .toolbar {
+    display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap;
+  }
+
+  .search-input {
+    flex: 1; min-width: 200px;
+    padding: .5rem .875rem;
+    border: 1px solid var(--border); border-radius: .5rem;
+    font-size: .875rem; background: var(--bg-card); color: var(--text);
+    outline: none; transition: border-color .2s;
+  }
+  .search-input:focus { border-color: var(--primary); }
+
+  .filter-group { display: flex; gap: .3rem; flex-wrap: wrap; }
+  .filter-btn {
+    padding: .3rem .75rem; border-radius: 999px; border: none; cursor: pointer;
+    font-size: .75rem; background: var(--bg); color: var(--text-muted);
+    transition: all .15s;
+  }
+  .filter-btn.active { background: var(--primary-l); color: var(--primary); font-weight: 600; }
+
+  .count-pill {
+    margin-left: auto;
+    font-size: .78rem; color: var(--text-muted);
+  }
+  .count-pill strong { color: var(--text); }
+
+  table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+  th {
+    padding: .65rem 1rem; text-align: left;
+    font-size: .7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--text-muted);
+    border-bottom: 1px solid var(--border); background: var(--bg);
+    white-space: nowrap; cursor: pointer; user-select: none;
+  }
+  th:hover { color: var(--text); }
+  td {
+    padding: .75rem 1rem; border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: color-mix(in srgb, var(--bg) 60%, transparent); }
+
+  .order-id  { font-family: monospace; font-weight: 700; font-size: .82rem; }
+  .amount    { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .status-select {
+    padding: .2rem .5rem; border: 1px solid var(--border); border-radius: .375rem;
+    font-size: .75rem; background: var(--bg-card); color: var(--text);
+    cursor: pointer;
+  }
+
+  .del-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: .9rem; padding: .25rem; border-radius: .375rem;
+    color: var(--text-muted); opacity: .6; transition: opacity .15s, background .15s;
+  }
+  .del-btn:hover { opacity: 1; background: #fee2e2; color: var(--error); }
+
+  .summary-bar {
+    padding: .75rem 1rem;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    font-size: .8rem; color: var(--text-muted);
+    display: flex; gap: 1.5rem;
+  }
+  .summary-bar strong { color: var(--text); }
+
+  .empty {
+    text-align: center; padding: 3rem;
+    color: var(--text-muted); font-size: .875rem;
+  }
+
+  .confirm-msg { margin-bottom: 1.25rem; font-size: .9rem; line-height: 1.6; }
+  .order-highlight {
+    font-family: monospace; font-weight: 700;
+    background: var(--bg); padding: .15em .4em; border-radius: .25rem;
+  }
+  .confirm-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+  .btn-del {
+    padding: .45rem 1.1rem;
+    background: var(--error); color: white;
+    border: none; border-radius: .375rem; cursor: pointer; font-size: .85rem;
+    font-weight: 600;
+  }
+  .btn-cancel {
+    padding: .45rem 1.1rem;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: .375rem; cursor: pointer; font-size: .85rem;
+  }
+
+  /* Toast container */
+  .toast-area {
+    position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+    z-index: 999;
+  }
+</style>
+
+<template>
+  <div class="page">
+    <div class="page-title">📦 Orders</div>
+
+    <Card :noPad="true">
+      <svelte:fragment slot="actions">
+        <span style="font-size:.8rem;color:var(--text-muted)">
+          {allOrders.length} total
+        </span>
+      </svelte:fragment>
+
+      <!-- Toolbar -->
+      <div class="toolbar" style="padding:1rem 1rem .5rem">
+        <input
+          class="search-input"
+          type="text"
+          :value="search"
+          @input="($e) => search = $e.target.value"
+          placeholder="Search orders or customers…"
+        />
+        <div class="filter-group">
+          {#each STATUSES as s (s)}
+            <button
+              class="filter-btn"
+              :class="statusFilter === s ? 'active' : ''"
+              @click="() => statusFilter = s"
+            >{s}</button>
+          {/each}
+        </div>
+        <span class="count-pill">
+          Showing <strong>{filtered.length}</strong> orders
+        </span>
+      </div>
+
+      <!-- Table -->
+      <table>
+        <thead>
+          <tr>
+            <th @click="() => sort('id')">Order {sortIcon('id')}</th>
+            <th @click="() => sort('customer')">Customer {sortIcon('customer')}</th>
+            <th @click="() => sort('date')">Date {sortIcon('date')}</th>
+            <th @click="() => sort('amount')">Amount {sortIcon('amount')}</th>
+            <th @click="() => sort('items')">Items {sortIcon('items')}</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#if filtered.length === 0}
+            <tr>
+              <td colspan="7">
+                <div class="empty">
+                  {search || statusFilter !== 'all' ? 'No orders match your filters.' : 'No orders yet.'}
+                </div>
+              </td>
+            </tr>
+          {:else}
+            {#each filtered as o (o.id)}
+              <tr>
+                <td class="order-id">{o.id}</td>
+                <td>{o.customer}</td>
+                <td>{o.date}</td>
+                <td class="amount">${o.amount.toFixed(2)}</td>
+                <td>{o.items}</td>
+                <td>
+                  <select
+                    class="status-select"
+                    :value="o.status"
+                    @change="($e) => handleStatusChange(o.id, $e)"
+                  >
+                    <option value="pending">pending</option>
+                    <option value="completed">completed</option>
+                    <option value="shipped">shipped</option>
+                    <option value="cancelled">cancelled</option>
+                  </select>
+                </td>
+                <td>
+                  <button class="del-btn" @click="() => promptDelete(o)" title="Delete">🗑</button>
+                </td>
+              </tr>
+            {/each}
+          {/if}
+        </tbody>
+      </table>
+
+      <svelte:fragment slot="footer">
+        <div class="summary-bar">
+          <span>Filtered total: <strong>${totalAmount.toFixed(2)}</strong></span>
+          <span>Orders: <strong>{filtered.length}</strong></span>
+        </div>
+      </svelte:fragment>
+    </Card>
+
+    <!-- Delete confirm modal -->
+    <Modal :open="confirmOpen" title="Delete Order" size="sm">
+      {#if deleteTarget}
+        <p class="confirm-msg">
+          Are you sure you want to delete order
+          <span class="order-highlight">{deleteTarget.id}</span>
+          from <strong>{deleteTarget.customer}</strong>?
+          This action cannot be undone.
+        </p>
+      {/if}
+      <svelte:fragment slot="footer">
+        <div class="confirm-actions">
+          <button class="btn-cancel" @click="() => confirmOpen = false">Cancel</button>
+          <button class="btn-del"    @click="confirmDelete">Delete</button>
+        </div>
+      </svelte:fragment>
+    </Modal>
+
+    <!-- Toast -->
+    <div class="toast-area">
+      {#if toast}
+        <Toast :message="toast.message" :type="toast.type" />
+      {/if}
+    </div>
+
+  </div>
+</template>

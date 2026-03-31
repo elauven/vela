@@ -1,0 +1,27 @@
+<script>
+  export let variant = 'default';  // 'success' | 'warning' | 'error' | 'info' | 'default'
+  export let label   = '';
+</script>
+
+<style>
+  .badge {
+    display: inline-flex; align-items: center;
+    padding: .15rem .55rem;
+    border-radius: 999px;
+    font-size: .7rem; font-weight: 600;
+    text-transform: capitalize;
+    white-space: nowrap;
+  }
+  .badge.success  { background: #d1fae5; color: #065f46; }
+  .badge.warning  { background: #fef3c7; color: #92400e; }
+  .badge.error    { background: #fee2e2; color: #991b1b; }
+  .badge.info     { background: #dbeafe; color: #1e40af; }
+  .badge.default  { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+  .badge.purple   { background: var(--primary-l); color: var(--primary); }
+</style>
+
+<template>
+  <span class="badge" :class="variant">
+    <slot>{label}</slot>
+  </span>
+</template>

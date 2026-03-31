@@ -1,0 +1,188 @@
+<script>
+  import { markRead } from './stores/data.js';
+
+  export let items = [];
+
+  let filter = $state('all');  // 'all' | 'unread'
+
+  let filtered = $derived(
+    filter === 'unread' ? items.filter(n => !n.read) : items
+  );
+  let unreadCount = $derived(items.filter(n => !n.read).length);
+  let hasUnread   = $derived(unreadCount > 0);
+
+  function close() {
+    $$dispatch('close');
+  }
+
+  function handleMarkAll() {
+    $$dispatch('markAllRead');
+  }
+
+  function handleRead(id) {
+    markRead(id);
+  }
+
+  const TYPE_ICONS = {
+    success: '✅',
+    warning: '⚠️',
+    error:   '❌',
+    info:    'ℹ️',
+  };
+</script>
+
+<style>
+  .overlay {
+    position: fixed; inset: 0; z-index: 150;
+    background: rgba(0,0,0,.35);
+  }
+
+  .panel {
+    position: fixed; top: var(--nav-h); right: 0;
+    width: 340px; height: calc(100vh - var(--nav-h));
+    background: var(--bg-card);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    z-index: 160;
+    box-shadow: -8px 0 24px rgba(0,0,0,.1);
+    animation: slideIn .2s ease;
+  }
+
+  @keyframes slideIn {
+    from { transform: translateX(100%); }
+    to   { transform: translateX(0); }
+  }
+
+  .panel-head {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .panel-title {
+    font-weight: 700; font-size: .95rem; display: flex; align-items: center; gap: .5rem;
+  }
+
+  .unread-badge {
+    background: var(--primary); color: white;
+    border-radius: 999px; font-size: .65rem; font-weight: 700;
+    padding: .1rem .4rem;
+  }
+
+  .close-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: 1.1rem; color: var(--text-muted);
+    padding: .25rem; border-radius: .375rem;
+    transition: background .15s;
+  }
+  .close-btn:hover { background: var(--bg); }
+
+  .panel-toolbar {
+    padding: .6rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: .5rem;
+  }
+
+  .filter-btn {
+    padding: .25rem .65rem; border-radius: 999px; border: none; cursor: pointer;
+    font-size: .75rem; background: var(--bg); color: var(--text-muted);
+    transition: all .15s;
+  }
+  .filter-btn.active { background: var(--primary-l); color: var(--primary); font-weight: 600; }
+
+  .mark-all {
+    margin-left: auto; background: none; border: none; cursor: pointer;
+    font-size: .75rem; color: var(--primary); font-weight: 500;
+  }
+  .mark-all:disabled { opacity: .4; cursor: default; }
+
+  .list { flex: 1; overflow-y: auto; }
+
+  .item {
+    display: flex; gap: .75rem; align-items: flex-start;
+    padding: .85rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background .1s;
+  }
+  .item:hover { background: var(--bg); }
+  .item.unread { background: color-mix(in srgb, var(--primary-l) 40%, transparent); }
+
+  .item-icon { font-size: 1.1rem; margin-top: .1rem; flex-shrink: 0; }
+
+  .item-body { flex: 1; }
+  .item-msg { font-size: .83rem; line-height: 1.4; }
+  .item.unread .item-msg { font-weight: 600; }
+  .item-time { font-size: .7rem; color: var(--text-muted); margin-top: .2rem; }
+
+  .dot {
+    width: .45rem; height: .45rem; border-radius: 50%;
+    background: var(--primary); flex-shrink: 0; margin-top: .4rem;
+  }
+
+  .empty {
+    text-align: center; padding: 3rem 1.5rem;
+    color: var(--text-muted); font-size: .875rem;
+  }
+  .empty-icon { font-size: 2rem; margin-bottom: .75rem; }
+</style>
+
+<template>
+  <!-- Backdrop -->
+  <div class="overlay" @click="close"></div>
+
+  <!-- Panel -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">
+        Notifications
+        {#if hasUnread}
+          <span class="unread-badge">{unreadCount}</span>
+        {/if}
+      </div>
+      <button class="close-btn" @click="close">✕</button>
+    </div>
+
+    <div class="panel-toolbar">
+      <button
+        class="filter-btn"
+        :class="filter === 'all' ? 'active' : ''"
+        @click="() => filter = 'all'"
+      >All</button>
+      <button
+        class="filter-btn"
+        :class="filter === 'unread' ? 'active' : ''"
+        @click="() => filter = 'unread'"
+      >Unread</button>
+      <button class="mark-all" :disabled="!hasUnread" @click="handleMarkAll">
+        Mark all read
+      </button>
+    </div>
+
+    <div class="list">
+      {#if filtered.length === 0}
+        <div class="empty">
+          <div class="empty-icon">🎉</div>
+          {filter === 'unread' ? 'All caught up!' : 'No notifications'}
+        </div>
+      {:else}
+        {#each filtered as n (n.id)}
+          <div
+            class="item"
+            :class="n.read ? '' : 'unread'"
+            @click="() => handleRead(n.id)"
+          >
+            <span class="item-icon">{TYPE_ICONS[n.type]}</span>
+            <div class="item-body">
+              <div class="item-msg">{n.message}</div>
+              <div class="item-time">{n.time}</div>
+            </div>
+            {#if !n.read}
+              <div class="dot"></div>
+            {/if}
+          </div>
+        {/each}
+      {/if}
+    </div>
+  </div>
+</template>

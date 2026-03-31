@@ -1,0 +1,256 @@
+<script>
+  import { kpis, orders, chartData, settings } from '../stores/data.js';
+  import { KpiCard }  from '../components/KpiCard.js';
+  import { Card }     from '../components/Card.js';
+  import { Badge }    from '../components/Badge.js';
+
+  let allKpis    = $state([]);
+  let allOrders  = $state([]);
+  let chart      = $state({ labels: [], revenue: [], orders: [] });
+  let currency   = $state('USD');
+  let refreshing = $state(false);
+  let lastUpdated = $state('');
+
+  $effect(() => {
+    const unsub = kpis.subscribe(v => { allKpis = v; });
+    return unsub;
+  });
+
+  $effect(() => {
+    const unsub = orders.subscribe(v => { allOrders = v; });
+    return unsub;
+  });
+
+  $effect(() => {
+    const unsub = chartData.subscribe(v => { chart = v; });
+    return unsub;
+  });
+
+  $effect(() => {
+    const unsub = settings.subscribe(s => { currency = s.currency; });
+    return unsub;
+  });
+
+  let recentOrders = $derived(
+    allOrders.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5)
+  );
+
+  let totalRevenue = $derived(
+    allOrders.filter(o => o.status === 'completed').reduce((s, o) => s + o.amount, 0)
+  );
+
+  let completedCount = $derived(allOrders.filter(o => o.status === 'completed').length);
+  let pendingCount   = $derived(allOrders.filter(o => o.status === 'pending').length);
+
+  const STATUS_VARIANT = {
+    completed: 'success',
+    pending:   'warning',
+    shipped:   'info',
+    cancelled: 'error',
+  };
+
+  async function refresh() {
+    refreshing = true;
+    await new Promise(r => setTimeout(r, 800));
+    // Simulate small data nudge
+    kpis.update(ks => ks.map(k => ({
+      ...k,
+      prev: k.value,
+      value: Math.round(k.value * (0.97 + Math.random() * 0.06)),
+    })));
+    lastUpdated = new Date().toLocaleTimeString();
+    refreshing = false;
+  }
+
+  onMount(() => {
+    lastUpdated = new Date().toLocaleTimeString();
+  });
+</script>
+
+<style>
+  .page { padding: 1.5rem; }
+  .page-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1.5rem;
+  }
+  .page-title { font-size: 1.35rem; font-weight: 800; }
+  .page-sub   { font-size: .8rem; color: var(--text-muted); margin-top: .2rem; }
+
+  .refresh-btn {
+    display: flex; align-items: center; gap: .4rem;
+    padding: .45rem 1rem;
+    background: var(--primary); color: white;
+    border: none; border-radius: .5rem; cursor: pointer;
+    font-size: .8rem; font-weight: 600;
+    transition: opacity .15s;
+  }
+  .refresh-btn:hover { opacity: .88; }
+  .refresh-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .spin { animation: spin .7s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* Mini chart — simple bar chart drawn in CSS */
+  .bar-chart {
+    display: flex; align-items: flex-end; gap: 3px;
+    height: 60px; padding-top: .5rem;
+  }
+  .bar {
+    flex: 1; background: var(--primary); opacity: .7;
+    border-radius: 2px 2px 0 0;
+    transition: opacity .15s;
+  }
+  .bar:hover { opacity: 1; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th {
+    padding: .6rem 1rem; text-align: left;
+    font-size: .7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  td {
+    padding: .75rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg); }
+
+  .order-id { font-family: monospace; font-weight: 600; font-size: .8rem; }
+  .amount   { font-weight: 700; }
+
+  /* Summary pills */
+  .summary-row { display: flex; gap: .75rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .summary-pill {
+    display: flex; flex-direction: column; align-items: center;
+    padding: .75rem 1.5rem;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); min-width: 120px;
+  }
+  .pill-value { font-size: 1.25rem; font-weight: 800; }
+  .pill-label { font-size: .7rem; color: var(--text-muted); margin-top: .2rem; }
+</style>
+
+<template>
+  <div class="page">
+    <div class="page-head">
+      <div>
+        <div class="page-title">📊 Overview</div>
+        <div class="page-sub">
+          {#if lastUpdated}
+            Last updated: {lastUpdated}
+          {/if}
+        </div>
+      </div>
+      <button class="refresh-btn" :disabled="refreshing" @click="refresh">
+        {#if refreshing}
+          <span class="spin">⟳</span> Refreshing…
+        {:else}
+          ⟳ Refresh
+        {/if}
+      </button>
+    </div>
+
+    <!-- KPI grid -->
+    <div class="kpi-grid">
+      {#each allKpis as kpi (kpi.id)}
+        <KpiCard
+          :label="kpi.label"
+          :value="kpi.value"
+          :prev="kpi.prev"
+          :unit="kpi.unit"
+          :icon="kpi.icon"
+          :color="kpi.color"
+        />
+      {/each}
+    </div>
+
+    <!-- Summary pills -->
+    <div class="summary-row">
+      <div class="summary-pill">
+        <span class="pill-value">${totalRevenue.toLocaleString()}</span>
+        <span class="pill-label">Completed Revenue</span>
+      </div>
+      <div class="summary-pill">
+        <span class="pill-value">{completedCount}</span>
+        <span class="pill-label">Completed Orders</span>
+      </div>
+      <div class="summary-pill">
+        <span class="pill-value">{pendingCount}</span>
+        <span class="pill-label">Pending Orders</span>
+      </div>
+      <div class="summary-pill">
+        <span class="pill-value">{allOrders.length}</span>
+        <span class="pill-label">Total Orders</span>
+      </div>
+    </div>
+
+    <!-- Two-column section: chart + recent orders -->
+    <div class="two-col">
+
+      <!-- Revenue bar chart -->
+      <Card title="Revenue (12 months)" subtitle="Monthly totals">
+        <svelte:fragment slot="actions">
+          <Badge variant="purple">2024</Badge>
+        </svelte:fragment>
+
+        <div class="bar-chart">
+          {#each chart.revenue as val, i (i)}
+            <div
+              class="bar"
+              :style="`height:${Math.round(val / Math.max(...chart.revenue) * 100)}%`"
+              :title="`${chart.labels[i]}: $${val.toLocaleString()}`"
+            ></div>
+          {/each}
+        </div>
+      </Card>
+
+      <!-- Recent orders table -->
+      <Card title="Recent Orders" :noPad="true">
+        <svelte:fragment slot="actions">
+          <Badge variant="info">{recentOrders.length}</Badge>
+        </svelte:fragment>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Customer</th>
+              <th>Amount</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each recentOrders as o (o.id)}
+              <tr>
+                <td class="order-id">{o.id}</td>
+                <td>{o.customer}</td>
+                <td class="amount">${o.amount.toFixed(2)}</td>
+                <td>
+                  <Badge :variant="STATUS_VARIANT[o.status]">{o.status}</Badge>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </Card>
+
+    </div>
+  </div>
+</template>
