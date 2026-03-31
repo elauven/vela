@@ -12,13 +12,15 @@ import (
 
 // CompileOptions controls code generation behaviour.
 type CompileOptions struct {
-	Minify bool
+	Minify  bool
+	EmitAST bool // write <name>.ast.json alongside the compiled JS
 }
 
 func main() {
 	outDir  := flag.String("out",    "dist",  "output directory")
 	watch   := flag.Bool("watch",   false,   "watch files and recompile on change")
 	minify  := flag.Bool("minify",  false,   "minify output JS (removes comments, collapses whitespace)")
+	emitAST := flag.Bool("ast",     false,   "emit <name>.ast.json with the parsed template and script AST (for debugging)")
 	flag.Parse()
 
 	args := flag.Args()
@@ -38,7 +40,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	opts := CompileOptions{Minify: *minify}
+	opts := CompileOptions{Minify: *minify, EmitAST: *emitAST}
 	exitCode := 0
 
 	compile := func() {
@@ -73,6 +75,9 @@ func main() {
 				if opts.Minify {
 					suffix += " [minified]"
 				}
+				if opts.EmitAST {
+					suffix += " [+ast]"
+				}
 				fmt.Printf("  ✓  %-30s → %s%s\n", src, out, suffix)
 			}
 		}
@@ -90,7 +95,6 @@ func main() {
 		fmt.Println("\nWatching for changes... (Ctrl-C to stop)")
 		mtimes := map[string]time.Time{}
 
-		// Seed mtimes
 		for _, src := range args {
 			if info, err := os.Stat(src); err == nil {
 				mtimes[src] = info.ModTime()
@@ -154,6 +158,16 @@ func compileFile(src, outDir string, opts CompileOptions) ([]*Diagnostic, error)
 
 	// ── Analyse script ───────────────────────────────────────────────────
 	analysis := analyzeScript(sfc.Script)
+
+	// ── Emit AST (debug) ─────────────────────────────────────────────────
+	if opts.EmitAST {
+		// DumpAST re-parses internally, so just pass the raw source
+		astJSON, astErr := DumpAST(src, raw)
+		if astErr == nil {
+			astPath := filepath.Join(outDir, name+".ast.json")
+			_ = os.WriteFile(astPath, []byte(astJSON), 0644)
+		}
+	}
 
 	// ── Validate ─────────────────────────────────────────────────────────
 	prog := ParseJS(sfc.Script)

@@ -316,6 +316,8 @@ func (g *CodeGen) walkNodes(nodes []Node, parentVar string, isRootList bool) {
 			g.walkElement(n, varName, parentVar, isRootList && i == 0)
 		case *IfChainNode:
 			g.walkIfChain(n, parentVar)
+		case *EachBlockNode:
+			g.walkEachBlock(n, parentVar)
 		case *ComponentNode:
 			if n.EachExpr != "" {
 				g.walkComponentEach(n, parentVar)
@@ -418,6 +420,8 @@ func (g *CodeGen) walkChildren(children []Node, parentVar string) {
 			g.walkElement(c, cv, parentVar, false)
 		case *IfChainNode:
 			g.walkIfChain(c, parentVar)
+		case *EachBlockNode:
+			g.walkEachBlock(c, parentVar)
 		case *ComponentNode:
 			if c.EachExpr != "" {
 				g.walkComponentEach(c, parentVar)
@@ -551,12 +555,21 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 		ev := elVars[i]
 		fnBuf.WriteString(fmt.Sprintf("      if ($$active === %d) {\n", i))
 		fnBuf.WriteString(fmt.Sprintf("        if (!%s) {\n", ev))
-		fnBuf.WriteString(fmt.Sprintf("          %s = document.createElement('%s');\n",
-			ev, branch.Elem.Tag))
+
+		// Svelte-style {#if} blocks have no wrapper element (Elem == nil).
+		// Use a plain <div> as a transparent container.
+		tag := "div"
+		var elemAttrs []*Attr
+		if branch.Elem != nil {
+			tag = branch.Elem.Tag
+			elemAttrs = branch.Elem.Attrs
+		}
+
+		fnBuf.WriteString(fmt.Sprintf("          %s = document.createElement('%s');\n", ev, tag))
 		fnBuf.WriteString(fmt.Sprintf("          %s.setAttribute('%s', '');\n", ev, g.scopeID))
 
-		// Attrs
-		for _, attr := range branch.Elem.Attrs {
+		// Attrs (only present for attribute-syntax branches)
+		for _, attr := range elemAttrs {
 			if attr.IsEvent {
 				handler := g.rewriteHandlerAssignments(attr.Value)
 				fnBuf.WriteString(fmt.Sprintf("          %s.addEventListener('%s', %s);\n",
@@ -1052,6 +1065,39 @@ func (g *CodeGen) walkIf(elem *ElementNode, varName, parentVar string) {
 	g.walkIfChain(chain, parentVar)
 }
 
+// walkEachBlock handles Svelte-style {#each items as item (key)}...{/each}.
+// The block children become the row content. If there's a single ElementNode
+// child we use it as the row element directly (zero extra wrapper). Otherwise
+// we wrap all children in a synthetic <div>.
+func (g *CodeGen) walkEachBlock(block *EachBlockNode, parentVar string) {
+	// Determine the row element: use single-child element directly, else wrap.
+	var rowElem *ElementNode
+	if len(block.Children) == 1 {
+		if el, ok := block.Children[0].(*ElementNode); ok {
+			rowElem = el
+		}
+	}
+
+	if rowElem == nil {
+		// Multiple children or non-element: synthesize a wrapper div
+		rowElem = &ElementNode{
+			Tag:      "div",
+			Children: block.Children,
+		}
+	}
+
+	// Copy the each/key onto a fresh element and delegate to the existing walkEach
+	wrapper := &ElementNode{
+		Tag:      rowElem.Tag,
+		Attrs:    rowElem.Attrs,
+		Children: rowElem.Children,
+		EachExpr: block.EachExpr,
+		EachKey:  block.EachKey,
+	}
+	varName := g.id()
+	g.walkEach(wrapper, varName, parentVar)
+}
+
 // ──────────────────────────────────────────────
 //  #each blocks  (keyed + recursive via FragGen)
 // ──────────────────────────────────────────────
@@ -1226,6 +1272,11 @@ func (g *CodeGen) collectFragDeps(nodes []Node) map[string]bool {
 					}
 					walk(branch.Children)
 				}
+			case *EachBlockNode:
+				for _, d := range findDeps(parseEachExprArray(n.EachExpr), allNames) {
+					deps[d] = true
+				}
+				walk(n.Children)
 			}
 		}
 	}
@@ -1286,6 +1337,14 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, nodes []Node, parentVar
 			if len(n.Branches) > 0 {
 				b.WriteString(fmt.Sprintf("%s}\n", indent))
 			}
+
+		case *EachBlockNode:
+			// Simple unkeyed inline render for each blocks inside if-branches.
+			array, itemVar, indexVar := parseEachExpr(n.EachExpr)
+			if indexVar == "" { indexVar = "$$i" }
+			b.WriteString(fmt.Sprintf("%s((%s)||[]).forEach(function(%s, %s) {\n", indent, array, itemVar, indexVar))
+			g.emitBranchChildren(b, n.Children, parentVar, indent+"  ")
+			b.WriteString(fmt.Sprintf("%s});\n", indent))
 
 		case *ComponentNode:
 			g.emitBranchComponent(b, n, parentVar, indent)
@@ -1664,6 +1723,12 @@ func parseEachExpr(expr string) (array, item, index string) {
 		item = rest
 	}
 	return
+}
+
+// parseEachExprArray extracts just the array portion of an each expression.
+func parseEachExprArray(expr string) string {
+	arr, _, _ := parseEachExpr(expr)
+	return arr
 }
 
 func isSimpleIdent(s string) bool {

@@ -3450,3 +3450,270 @@ func TestGenerateCode_SubscribeEffectNoInfiniteLoop(t *testing.T) {
 		t.Errorf("$$set_isAuthenticated calls $$effect0 — this causes infinite recursion!\nSetter:\n%s", setter)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Svelte-style {#if} / {:else} / {/if} block syntax
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestSvelteBlock_ParseSimpleIf(t *testing.T) {
+	html := `<div>{#if show}<span>yes</span>{/if}</div>`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	div := nodes[0].(*ElementNode)
+	if len(div.Children) != 1 {
+		t.Fatalf("expected 1 child (IfChainNode), got %d", len(div.Children))
+	}
+	chain, ok := div.Children[0].(*IfChainNode)
+	if !ok { t.Fatalf("expected *IfChainNode, got %T", div.Children[0]) }
+	if len(chain.Branches) != 1 { t.Errorf("expected 1 branch, got %d", len(chain.Branches)) }
+	if chain.Branches[0].Cond != "show" { t.Errorf("cond want 'show', got %q", chain.Branches[0].Cond) }
+}
+
+func TestSvelteBlock_ParseIfElse(t *testing.T) {
+	html := `<div>
+		{#if logged}
+		  <p>Welcome</p>
+		{:else}
+		  <p>Login</p>
+		{/if}
+	</div>`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	div := nodes[0].(*ElementNode)
+	chain, ok := div.Children[0].(*IfChainNode)
+	if !ok { t.Fatalf("expected *IfChainNode, got %T", div.Children[0]) }
+	if len(chain.Branches) != 2 { t.Errorf("expected 2 branches, got %d", len(chain.Branches)) }
+	if chain.Branches[0].Cond != "logged" { t.Errorf("branch 0 cond want 'logged', got %q", chain.Branches[0].Cond) }
+	if chain.Branches[1].Cond != "" { t.Errorf("else branch should have empty cond, got %q", chain.Branches[1].Cond) }
+}
+
+func TestSvelteBlock_ParseIfElseIf(t *testing.T) {
+	html := `{#if a}<p>A</p>{:else if b}<p>B</p>{:else}<p>C</p>{/if}`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	chain, ok := nodes[0].(*IfChainNode)
+	if !ok { t.Fatalf("expected *IfChainNode at root, got %T", nodes[0]) }
+	if len(chain.Branches) != 3 { t.Fatalf("expected 3 branches, got %d", len(chain.Branches)) }
+	if chain.Branches[0].Cond != "a" { t.Errorf("branch 0 cond=%q", chain.Branches[0].Cond) }
+	if chain.Branches[1].Cond != "b" { t.Errorf("branch 1 cond=%q", chain.Branches[1].Cond) }
+	if chain.Branches[2].Cond != "" { t.Errorf("branch 2 (else) cond=%q", chain.Branches[2].Cond) }
+}
+
+func TestSvelteBlock_ParseIfRootLevel(t *testing.T) {
+	// {#if} at template root (no outer element)
+	html := `{#if x}<span>X</span>{/if}<p>always</p>`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	if len(nodes) != 2 { t.Fatalf("expected 2 root nodes, got %d", len(nodes)) }
+	if _, ok := nodes[0].(*IfChainNode); !ok { t.Errorf("node[0] want IfChainNode, got %T", nodes[0]) }
+	if _, ok := nodes[1].(*ElementNode); !ok { t.Errorf("node[1] want ElementNode, got %T", nodes[1]) }
+}
+
+func TestSvelteBlock_IfBranchChildren(t *testing.T) {
+	// Branch children should be parsed as proper nodes
+	html := `{#if show}<div class="a"><span>{msg}</span></div>{/if}`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	chain := nodes[0].(*IfChainNode)
+	children := chain.Branches[0].Children
+	if len(children) != 1 { t.Fatalf("expected 1 child in branch, got %d", len(children)) }
+	div, ok := children[0].(*ElementNode)
+	if !ok { t.Fatalf("branch child should be ElementNode, got %T", children[0]) }
+	if div.Tag != "div" { t.Errorf("tag want div, got %q", div.Tag) }
+	if len(div.Attrs) == 0 || div.Attrs[0].Value != "a" { t.Errorf("class attr not preserved") }
+}
+
+func TestSvelteBlock_CodeGen_SimpleIf(t *testing.T) {
+	sfc := &SFC{
+		Script:   `let show = $state(true);`,
+		Template: `<div>{#if show}<p>visible</p>{/if}</div>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("T", sfc, nodes, a, "vela-test")
+	if !strings.Contains(code, "$$chain_") {
+		t.Errorf("expected $$chain_ function in output:\n%s", code[:min(400,len(code))])
+	}
+	if strings.Contains(code, "__elseif__") || strings.Contains(code, "__else__") {
+		t.Errorf("sentinel attrs leaked into output")
+	}
+}
+
+func TestSvelteBlock_CodeGen_IfElse(t *testing.T) {
+	sfc := &SFC{
+		Script:   `let ok = $state(false);`,
+		Template: `{#if ok}<p>yes</p>{:else}<p>no</p>{/if}`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("T", sfc, nodes, a, "vela-test")
+	// Must have 2 branches (b0, b1)
+	if !strings.Contains(code, "_b1") {
+		t.Errorf("expected two branches (b0, b1):\n%s", code[:min(500,len(code))])
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Svelte-style {#each} block syntax
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestSvelteBlock_ParseEach(t *testing.T) {
+	html := `<ul>{#each items as item}<li>{item.name}</li>{/each}</ul>`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	ul := nodes[0].(*ElementNode)
+	if len(ul.Children) != 1 { t.Fatalf("expected 1 child (EachBlockNode), got %d", len(ul.Children)) }
+	each, ok := ul.Children[0].(*EachBlockNode)
+	if !ok { t.Fatalf("expected *EachBlockNode, got %T", ul.Children[0]) }
+	if each.EachExpr != "items as item" { t.Errorf("EachExpr want 'items as item', got %q", each.EachExpr) }
+	if each.EachKey != "" { t.Errorf("EachKey should be empty, got %q", each.EachKey) }
+}
+
+func TestSvelteBlock_ParseEachWithKey(t *testing.T) {
+	html := `{#each todos as todo (todo.id)}<div>{todo.text}</div>{/each}`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	each, ok := nodes[0].(*EachBlockNode)
+	if !ok { t.Fatalf("expected *EachBlockNode at root, got %T", nodes[0]) }
+	if each.EachExpr != "todos as todo" { t.Errorf("EachExpr=%q", each.EachExpr) }
+	if each.EachKey != "todo.id" { t.Errorf("EachKey want 'todo.id', got %q", each.EachKey) }
+}
+
+func TestSvelteBlock_ParseEachWithIndex(t *testing.T) {
+	html := `{#each items as item, i (item.id)}<p>{i}: {item.name}</p>{/each}`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	each := nodes[0].(*EachBlockNode)
+	if !strings.Contains(each.EachExpr, ", i") && !strings.Contains(each.EachExpr, ",i") {
+		t.Errorf("index variable not in EachExpr: %q", each.EachExpr)
+	}
+}
+
+func TestSvelteBlock_CodeGen_Each(t *testing.T) {
+	sfc := &SFC{
+		Script:   `let items = $state([]);`,
+		Template: `<ul>{#each items as item (item.id)}<li>{item.name}</li>{/each}</ul>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("T", sfc, nodes, a, "vela-test")
+	// Should use the existing keyed each logic
+	if !strings.Contains(code, "forEach") {
+		t.Errorf("expected forEach in output:\n%s", code[:min(400,len(code))])
+	}
+	if !strings.Contains(code, "item") {
+		t.Errorf("item variable not in output")
+	}
+}
+
+func TestSvelteBlock_OldSyntaxStillWorks(t *testing.T) {
+	// The old attribute-style syntax must continue to work alongside the new
+	html := `<div #if="show">old style</div>`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	// Should be grouped into an IfChainNode (via attribute path, not block path)
+	chain, ok := nodes[0].(*IfChainNode)
+	if !ok { t.Fatalf("expected IfChainNode, got %T", nodes[0]) }
+	if chain.Branches[0].Cond != "show" { t.Errorf("cond=%q", chain.Branches[0].Cond) }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  svelte:fragment slot syntax
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestSvelteFragment_ParsedAsElementWithTag(t *testing.T) {
+	// Inside a component, <svelte:fragment slot="footer"> should be parsed
+	html := `<div><Modal><svelte:fragment slot="footer"><button>OK</button><button>Cancel</button></svelte:fragment></Modal></div>`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	div := nodes[0].(*ElementNode)
+	modal, ok := div.Children[0].(*ComponentNode)
+	if !ok { t.Fatalf("expected ComponentNode, got %T", div.Children[0]) }
+	footerSlot, exists := modal.Slots["footer"]
+	if !exists { t.Fatal("'footer' slot not found") }
+	// The slot should contain the TWO buttons directly (no svelte:fragment wrapper)
+	if len(footerSlot) != 2 {
+		t.Errorf("footer slot should have 2 children (buttons), got %d", len(footerSlot))
+	}
+	for i, node := range footerSlot {
+		el, ok := node.(*ElementNode)
+		if !ok { t.Errorf("slot child %d should be ElementNode, got %T", i, node) }
+		if el != nil && el.Tag != "button" { t.Errorf("slot child %d tag=%q, want button", i, el.Tag) }
+	}
+}
+
+func TestSvelteFragment_NoWrapperInDOM(t *testing.T) {
+	// The svelte:fragment itself must NOT appear in the slot — only its children
+	html := `<Modal><svelte:fragment slot="header"><h1>Title</h1><span>Sub</span></svelte:fragment></Modal>`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	modal := nodes[0].(*ComponentNode)
+	header, exists := modal.Slots["header"]
+	if !exists { t.Fatal("header slot missing") }
+	for _, n := range header {
+		if el, ok := n.(*ElementNode); ok && el.Tag == "svelte:fragment" {
+			t.Errorf("svelte:fragment element must not appear in slot — only its children should")
+		}
+	}
+	if len(header) != 2 { t.Errorf("expected 2 header slot children, got %d", len(header)) }
+}
+
+func TestSvelteFragment_DefaultSlotUnchanged(t *testing.T) {
+	// Content without slot= goes to default slot as before
+	html := `<Modal><p>Body text</p></Modal>`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	modal := nodes[0].(*ComponentNode)
+	def, exists := modal.Slots["default"]
+	if !exists { t.Fatal("default slot missing") }
+	if len(def) != 1 { t.Errorf("expected 1 default slot child, got %d", len(def)) }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Mixed: Svelte blocks inside HTML elements and vice versa
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestSvelteBlock_NestedInsideHtmlElement(t *testing.T) {
+	html := `<section>
+		<h1>Title</h1>
+		{#if items.length > 0}
+			<ul>
+				{#each items as item (item.id)}
+					<li>{item.name}</li>
+				{/each}
+			</ul>
+		{:else}
+			<p>No items</p>
+		{/if}
+	</section>`
+	nodes, err := parseTemplate(html)
+	if err != nil { t.Fatalf("parse error: %v", err) }
+	section := nodes[0].(*ElementNode)
+	// section children: h1, IfChainNode
+	var foundChain, foundH1 bool
+	for _, c := range section.Children {
+		switch x := c.(type) {
+		case *ElementNode:
+			if x.Tag == "h1" { foundH1 = true }
+		case *IfChainNode:
+			foundChain = true
+			if len(x.Branches) != 2 { t.Errorf("if chain: expected 2 branches, got %d", len(x.Branches)) }
+			// First branch should have a ul with an EachBlockNode inside
+			ifChildren := x.Branches[0].Children
+			var foundUl bool
+			for _, child := range ifChildren {
+				if el, ok := child.(*ElementNode); ok && el.Tag == "ul" {
+					foundUl = true
+					var foundEach bool
+					for _, uc := range el.Children {
+						if _, ok := uc.(*EachBlockNode); ok { foundEach = true }
+					}
+					if !foundEach { t.Error("ul should contain EachBlockNode") }
+				}
+			}
+			if !foundUl { t.Error("if branch should contain ul") }
+		}
+	}
+	if !foundH1 { t.Error("section should contain h1") }
+	if !foundChain { t.Error("section should contain IfChainNode") }
+}
