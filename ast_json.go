@@ -15,25 +15,25 @@ import (
 
 // SFCJSON is the top-level debug dump emitted by --ast.
 type SFCJSON struct {
-	File     string        `json:"file"`
-	Script   ScriptJSON    `json:"script"`
-	Template []interface{} `json:"template"`
-	Style    string        `json:"style,omitempty"`
+	File     string          `json:"file"`
+	Script   ScriptJSON      `json:"script"`
+	Template []interface{}   `json:"template"`
+	Style    string          `json:"style,omitempty"`
 }
 
 type ScriptJSON struct {
-	StateVars   []StateVarJSON   `json:"stateVars"`
-	Props       []PropJSON       `json:"props"`
-	DerivedVars []DerivedVarJSON `json:"derivedVars"`
-	Effects     []EffectJSON     `json:"effects"`
-	Lifecycles  []LifecycleJSON  `json:"lifecycles"`
-	Imports     []string         `json:"imports,omitempty"`
-	CleanScript string           `json:"cleanScript,omitempty"`
+	StateVars    []StateVarJSON    `json:"stateVars"`
+	Props        []PropJSON        `json:"props"`
+	DerivedVars  []DerivedVarJSON  `json:"derivedVars"`
+	Effects      []EffectJSON      `json:"effects"`
+	Lifecycles   []LifecycleJSON   `json:"lifecycles"`
+	Imports      []string          `json:"imports,omitempty"`
+	CleanScript  string            `json:"cleanScript,omitempty"`
 }
 
 type StateVarJSON struct {
 	Name    string `json:"name"`
-	Default string `json:"default,omitempty"`
+	Initial string `json:"initial,omitempty"`
 }
 
 type PropJSON struct {
@@ -226,7 +226,7 @@ func analysisToJSON(a *Analysis) ScriptJSON {
 	for _, sv := range a.StateVars {
 		out.StateVars = append(out.StateVars, StateVarJSON{
 			Name:    sv.Name,
-			Default: sv.Initial,
+			Initial: sv.Initial,
 		})
 	}
 	for _, p := range a.Props {
