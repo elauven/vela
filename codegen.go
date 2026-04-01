@@ -172,7 +172,29 @@ func (g *CodeGen) emit(nodes []Node) string {
 	}
 
 	// ── Walk template → fill create/wire/events/init/cleanup ──
-	g.walkNodes(nodes, "$$root", true)
+	//
+	// $$root must always be declared because mount/destroy reference it.
+	// When the template's first node IS an ElementNode, walkNodes assigns
+	// varName="$$root" to it (zero extra wrapper).
+	// When the first node is NOT an ElementNode (e.g. the template starts
+	// with {#if ...} or {#each ...}), no element gets that name, causing
+	// "$$root is not defined". Fix: always emit a transparent wrapper div
+	// when the template root is non-element, and walk the nodes as its children.
+	needsWrapper := len(nodes) == 0
+	if !needsWrapper {
+		_, firstIsElem := nodes[0].(*ElementNode)
+		needsWrapper = !firstIsElem
+	}
+
+	if needsWrapper {
+		// Emit an invisible wrapper div as $$root; all template nodes become its children.
+		g.create.WriteString("  const $$root = document.createElement('div');\n")
+		g.create.WriteString(fmt.Sprintf("  $$root.setAttribute('%s', '');\n", g.scopeID))
+		g.create.WriteString("  $$root.style.display = 'contents';\n")
+		g.walkChildren(nodes, "$$root")
+	} else {
+		g.walkNodes(nodes, "$$root", true)
+	}
 
 	// ── Emit DOM creation ─────────────────────
 	out.WriteString("  // DOM\n")
@@ -197,6 +219,14 @@ func (g *CodeGen) emit(nodes []Node) string {
 	// ── Reactive setters (state + props) ─────────────────────────────────────
 	if len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0 {
 		out.WriteString("  // reactive setters\n")
+		// $$defer: runs fn immediately if not inside a store notification batch,
+		// otherwise queues it until all setters in the batch have completed.
+		// This prevents DOM updates from seeing partially-updated state when
+		// multiple state vars are set from the same store subscription callback.
+		out.WriteString("  function $$defer(fn) {\n")
+		out.WriteString("    const _b = globalThis[Symbol.for('vela.batch')];\n")
+		out.WriteString("    if (_b && _b.depth > 0) { _b.queue.push(fn); } else { fn(); }\n")
+		out.WriteString("  }\n")
 		for _, sv := range g.analysis.StateVars {
 			out.WriteString(g.genSetter(sv.Name))
 		}
@@ -242,15 +272,21 @@ func (g *CodeGen) emit(nodes []Node) string {
 	out.WriteString("  $$target.appendChild($$root);\n\n")
 
 	// ── onMount callbacks (after DOM is inserted) ─────────────────────────
-	for _, lc := range g.analysis.Lifecycles {
+	// The onMount body is wrapped in an IIFE. Any `return fn` inside the
+	// callback is the *cleanup return* (like an effect cleanup), NOT the
+	// component's { destroy, set } return. Without the IIFE the `return`
+	// exits the component factory function entirely, breaking e.g. Toast
+	// auto-dismiss where onMount returns `() => clearTimeout(t)`.
+	for i, lc := range g.analysis.Lifecycles {
 		if lc.Kind == "onMount" {
-			out.WriteString("  // onMount\n")
+			cleanupVar := fmt.Sprintf("$$mountCleanup%d", i)
+			out.WriteString(fmt.Sprintf("  const %s = (function() {\n", cleanupVar))
 			for _, line := range strings.Split(lc.Body, "\n") {
 				if strings.TrimSpace(line) != "" {
-					out.WriteString("  " + line + "\n")
+					out.WriteString("    " + line + "\n")
 				}
 			}
-			out.WriteString("\n")
+			out.WriteString("  })();\n\n")
 		}
 	}
 
@@ -260,6 +296,14 @@ func (g *CodeGen) emit(nodes []Node) string {
 	// Run effect cleanups first (e.g. unsubscribe from stores)
 	for i := range g.analysis.Effects {
 		out.WriteString(fmt.Sprintf("      if ($$cleanup%d) { $$cleanup%d(); }\n", i, i))
+	}
+	// Run onMount cleanup functions (e.g. clearTimeout from Toast auto-dismiss)
+	for i, lc := range g.analysis.Lifecycles {
+		if lc.Kind == "onMount" {
+			cleanupVar := fmt.Sprintf("$$mountCleanup%d", i)
+			out.WriteString(fmt.Sprintf(
+				"      if (typeof %s === 'function') { %s(); }\n", cleanupVar, cleanupVar))
+		}
 	}
 	// onDestroy callbacks
 	for _, lc := range g.analysis.Lifecycles {
@@ -639,24 +683,14 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 	}
 
 	// Build $$slots object: each slot is a function returning a DocumentFragment.
+	// Uses emitBranchChildren to recursively build the full DOM tree for every
+	// slot — previously only top-level elements were created, leaving their
+	// children (toolbars, tables, inputs, etc.) completely empty.
 	slotsEntries := []string{}
 	for slotName, slotNodes := range comp.Slots {
 		var fragBuf strings.Builder
 		fragBuf.WriteString("() => { const $$f = document.createDocumentFragment(); ")
-		seIdx := 0 // unique index per element within this slot function
-		for _, child := range slotNodes {
-			switch c := child.(type) {
-			case *TextNode:
-				expr := buildExpr(c.Parts)
-				fragBuf.WriteString(fmt.Sprintf("$$f.appendChild(document.createTextNode(%s)); ", expr))
-			case *ElementNode:
-				sv := fmt.Sprintf("$$se%d", seIdx)
-				seIdx++
-				fragBuf.WriteString(fmt.Sprintf(
-					"const %s = document.createElement('%s'); %s.setAttribute('%s',''); $$f.appendChild(%s); ",
-					sv, c.Tag, sv, g.scopeID, sv))
-			}
-		}
+		g.emitBranchChildren(&fragBuf, slotNodes, "$$f", "")
 		fragBuf.WriteString("return $$f; }")
 		slotsEntries = append(slotsEntries, fmt.Sprintf("%q: %s", slotName, fragBuf.String()))
 	}
@@ -1227,10 +1261,20 @@ func (g *CodeGen) walkEach(elem *ElementNode, varName, parentVar string) {
 		g.addUpdate(dep, call)
 	}
 
-	// Also re-run on changes to any variable referenced inside the row
-	// (item expressions reference outer state like `active`, `selectedId`, etc.)
-	// We do this by scanning the children for reactive deps.
-	innerDeps := g.collectFragDeps(elem.Children)
+	// Re-run on changes to any variable referenced inside the row:
+	// — bind attrs on the root element itself (e.g. :class="activePage === p.id")
+	// — any expression in the row's children
+	innerDeps := map[string]bool{}
+	for _, attr := range elem.Attrs {
+		if attr.IsBind {
+			for _, d := range findDeps(attr.Value, g.analysis.reactiveNames()) {
+				innerDeps[d] = true
+			}
+		}
+	}
+	for dep := range g.collectFragDeps(elem.Children) {
+		innerDeps[dep] = true
+	}
 	for dep := range innerDeps {
 		g.addUpdate(dep, call)
 	}
@@ -1351,6 +1395,20 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, nodes []Node, parentVar
 
 		case *ComponentNode:
 			g.emitBranchComponent(b, n, parentVar, indent)
+
+		case *SlotNode:
+			// Emit slot-filling code inside an if-branch function.
+			// We can't use a persistent anchor comment here (those are set up in
+			// g.create and positioned during initialisation). Instead, append slot
+			// content directly to the parent element at branch-mount time.
+			sv := fmt.Sprintf("$$sf_%s", g.id())
+			b.WriteString(fmt.Sprintf("%sconst %s = $$slots[%q];\n", indent, sv, n.Name))
+			b.WriteString(fmt.Sprintf("%sif (%s) { %s.appendChild(%s()); }\n", indent, sv, parentVar, sv))
+			if len(n.Fallback) > 0 {
+				b.WriteString(fmt.Sprintf("%selse {\n", indent))
+				g.emitBranchChildren(b, n.Fallback, parentVar, indent+"  ")
+				b.WriteString(fmt.Sprintf("%s}\n", indent))
+			}
 		}
 	}
 }
@@ -1630,11 +1688,15 @@ func (g *CodeGen) genSetter(name string) string {
 	}
 
 	// Collect DOM updates: direct + via derived
+	// All DOM-touching calls are wrapped in $$defer so that when multiple
+	// setters fire from the same store notification batch, DOM updates wait
+	// until every state variable has been assigned its new value.
 	seen := map[string]bool{}
 	writeUpdate := func(u string) {
 		if !seen[u] {
 			seen[u] = true
-			b.WriteString(u + "\n")
+			trimmed := strings.TrimSpace(u)
+			b.WriteString(fmt.Sprintf("    $$defer(() => { %s });\n", trimmed))
 		}
 	}
 

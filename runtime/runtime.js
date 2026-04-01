@@ -5,6 +5,36 @@
  */
 
 // ─────────────────────────────────────────────
+//  Batch update mechanism
+//
+//  When a store fires (set/update), all subscribers run inside _batchRun().
+//  Generated component setters call $$defer(fn) for DOM-touching work.
+//  $$defer pushes fn to the queue when depth > 0, or runs it immediately.
+//  After all subscribers finish the depth drops to 0 and the queue flushes —
+//  by which point every state variable in the notification is current.
+//
+//  The context is shared via Symbol.for so generated components can access it
+//  without needing an explicit import path to the runtime.
+// ─────────────────────────────────────────────
+
+const _B = Symbol.for('vela.batch');
+if (!globalThis[_B]) {
+  globalThis[_B] = { depth: 0, queue: [] };
+}
+
+function _batchRun(fn) {
+  const b = globalThis[_B];
+  b.depth++;
+  try { fn(); }
+  finally {
+    if (--b.depth === 0 && b.queue.length) {
+      const q = b.queue.splice(0);
+      for (const f of q) f();
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
 //  Stores
 // ─────────────────────────────────────────────
 
@@ -34,11 +64,15 @@ export function writable(value) {
     set(v) {
       if (v !== value) {
         value = v;
-        notify();
+        _batchRun(() => notify());
       }
     },
     update(fn) {
-      this.set(fn(value));
+      const next = fn(value);
+      if (next !== value) {
+        value = next;
+        _batchRun(() => notify());
+      }
     },
     get() {
       return value;
