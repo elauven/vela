@@ -682,17 +682,49 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 		propsObj = "{ " + strings.Join(propsEntries, ", ") + " }"
 	}
 
-	// Build $$slots object: each slot is a function returning a DocumentFragment.
-	// Uses emitBranchChildren to recursively build the full DOM tree for every
-	// slot — previously only top-level elements were created, leaving their
-	// children (toolbars, tables, inputs, etc.) completely empty.
+	// Build $$slots object.
+	//
+	// Each slot function returns a DocumentFragment of already-constructed DOM nodes.
+	// The nodes are declared in g.create (component scope) and wired into g.updates
+	// just like any other DOM, so reactive state changes update them live.
+	//
+	// Approach: temporarily redirect g.wire into a per-slot buffer, walk the slot
+	// nodes normally (which writes declarations into g.create and reactive updates
+	// into g.updates), then capture the wire output (the appendChild calls) and
+	// embed them in the slot arrow function.
 	slotsEntries := []string{}
 	for slotName, slotNodes := range comp.Slots {
-		var fragBuf strings.Builder
-		fragBuf.WriteString("() => { const $$f = document.createDocumentFragment(); ")
-		g.emitBranchChildren(&fragBuf, slotNodes, "$$f", "")
-		fragBuf.WriteString("return $$f; }")
-		slotsEntries = append(slotsEntries, fmt.Sprintf("%q: %s", slotName, fragBuf.String()))
+		// Each slot gets its own DocumentFragment variable name, unique per slot.
+		fragVar := fmt.Sprintf("$$sf_%s_%s", slotName, g.id())
+
+		// Redirect the wire buffer so we can capture just this slot's appends.
+		savedWire := g.wire
+		g.wire = strings.Builder{}
+
+		// Walk slot nodes through the normal pipeline:
+		//   – g.create gets const declarations (globally scoped in the component)
+		//   – g.updates gets reactive update registrations
+		//   – g.wire (our temp buffer) gets the appendChild calls
+		g.walkChildren(slotNodes, fragVar)
+
+		slotWire := g.wire.String()
+		g.wire = savedWire // restore
+
+		// Emit the slot function.  It creates the fragment, runs the appends
+		// (which reference the already-declared vars), and returns it.
+		// Inline all append statements on one line so the slot object stays
+		// as a single expression.
+		var fragFn strings.Builder
+		fragFn.WriteString(fmt.Sprintf("() => { const %s = document.createDocumentFragment(); ", fragVar))
+		for _, line := range strings.Split(slotWire, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" {
+				fragFn.WriteString(trimmed + " ")
+			}
+		}
+		fragFn.WriteString(fmt.Sprintf("return %s; }", fragVar))
+
+		slotsEntries = append(slotsEntries, fmt.Sprintf("%q: %s", slotName, fragFn.String()))
 	}
 	slotsObj := "{}"
 	if len(slotsEntries) > 0 {
