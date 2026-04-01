@@ -4,7 +4,6 @@
   import { Badge } from '../components/Badge.js';
   import { Modal } from '../components/Modal.js';
   import { Toast } from '../components/Toast.js';
-  import { UserRow } from './UserRow.js';
 
   export let currentUser = {};
 
