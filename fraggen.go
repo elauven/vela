@@ -243,14 +243,22 @@ func (f *FragGen) WalkIfChain(chain *IfChainNode, parentVar string) {
 	}
 	for i, branch := range chain.Branches {
 		ev := elVars[i]
-		fn.WriteString(fmt.Sprintf("      if ($$active === %d && !%s) {\n", i, ev))
-		fn.WriteString(fmt.Sprintf("        %s = document.createElement('%s');\n", ev, branch.Elem.Tag))
-		fn.WriteString(fmt.Sprintf("        %s.setAttribute('%s','');\n", ev, f.scopeID))
-		innerExpr := f.buildTextExpr(branch.Children)
-		if innerExpr != "" {
-			fn.WriteString(fmt.Sprintf("        %s.textContent = %s;\n", ev, innerExpr))
+		// branch.Elem is nil for Svelte-style {#if} blocks (no wrapper element).
+		// FragGen only handles simple attribute-syntax branches; use a plain div for Svelte-style.
+		tag := "div"
+		if branch.Elem != nil {
+			tag = branch.Elem.Tag
 		}
-		fn.WriteString(fmt.Sprintf("        %s.parentNode.insertBefore(%s, %s);\n", anchor, ev, anchor))
+		fn.WriteString(fmt.Sprintf("      if ($$active === %d && !%s) {\n", i, ev))
+		fn.WriteString(fmt.Sprintf("        %s = document.createElement('%s');\n", ev, tag))
+		fn.WriteString(fmt.Sprintf("        %s.setAttribute('%s','');\n", ev, f.scopeID))
+		if branch.Elem != nil {
+			innerExpr := f.buildTextExpr(branch.Children)
+			if innerExpr != "" {
+				fn.WriteString(fmt.Sprintf("        %s.textContent = %s;\n", ev, innerExpr))
+			}
+		}
+		fn.WriteString(fmt.Sprintf("        %s.before(%s);\n", anchor, ev))
 		fn.WriteString("      }\n")
 	}
 	fn.WriteString("    }\n")
@@ -283,7 +291,7 @@ func (f *FragGen) WalkEach(elem *ElementNode, parentVar string) {
 	for _, child := range elem.Children {
 		f.emitInlineChild(&fn, child, "$$el", 8)
 	}
-	fn.WriteString(fmt.Sprintf("        %s.parentNode.insertBefore($$el, %s);\n", anchor, anchor))
+	fn.WriteString(fmt.Sprintf("        %s.before($$el);\n", anchor, anchor))
 	fn.WriteString(fmt.Sprintf("        %s.push({ el: $$el, destroy() { $$el.remove(); } });\n", blocks))
 	fn.WriteString("      });\n    }\n")
 

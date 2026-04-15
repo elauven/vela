@@ -182,8 +182,20 @@ export function tick() {
 }
 
 // ─────────────────────────────────────────────
-//  Dev helpers (stripped in production builds)
+//  Component helper: $$defer
+//
+//  Registered on globalThis via Symbol so compiled components can use it
+//  without an explicit import path (components don't import runtime directly —
+//  they import stores, which import runtime, which registers $$defer first).
+//  Falls back to immediate execution if called before runtime loads.
 // ─────────────────────────────────────────────
+
+export function $$defer(fn) {
+  const _b = globalThis[Symbol.for('vela.batch')];
+  if (_b && _b.depth > 0) { _b.queue.push(fn); } else { fn(); }
+}
+globalThis[Symbol.for('vela.defer')] = $$defer;
+
 
 const DEV = typeof process !== 'undefined'
   ? process.env.NODE_ENV !== 'production'

@@ -219,14 +219,9 @@ func (g *CodeGen) emit(nodes []Node) string {
 	// ── Reactive setters (state + props) ─────────────────────────────────────
 	if len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0 {
 		out.WriteString("  // reactive setters\n")
-		// $$defer: runs fn immediately if not inside a store notification batch,
-		// otherwise queues it until all setters in the batch have completed.
-		// This prevents DOM updates from seeing partially-updated state when
-		// multiple state vars are set from the same store subscription callback.
-		out.WriteString("  function $$defer(fn) {\n")
-		out.WriteString("    const _b = globalThis[Symbol.for('vela.batch')];\n")
-		out.WriteString("    if (_b && _b.depth > 0) { _b.queue.push(fn); } else { fn(); }\n")
-		out.WriteString("  }\n")
+		// $$defer is registered in runtime.js on globalThis[Symbol.for('vela.defer')].
+		// Fallback to fn() keeps components functional even if runtime isn't loaded yet.
+		out.WriteString("  const $$defer = globalThis[Symbol.for('vela.defer')] ?? (fn => fn());\n")
 		for _, sv := range g.analysis.StateVars {
 			out.WriteString(g.genSetter(sv.Name))
 		}
@@ -252,18 +247,25 @@ func (g *CodeGen) emit(nodes []Node) string {
 		out.WriteString("\n")
 	}
 
-	// ── Run initial effects ───────────────────
+	// ── Initial DOM hydration ─────────────────
+	// Component constructors (Card, Modal, etc.) run here, which calls slot
+	// functions and inserts anchor comments into the DOM. Effects MUST run
+	// after this so that any immediately-firing subscribe callbacks can safely
+	// call $$each / $$chain functions whose anchors already have a parentNode.
+	if g.init.Len() > 0 {
+		out.WriteString("  // initial render\n")
+		out.WriteString(g.init.String())
+		out.WriteString("\n")
+	}
+
+	// ── Run initial effects ─────────────────────────────────────────────────
+	// Placed AFTER initial render so subscribe callbacks that fire immediately
+	// (e.g. chartData.subscribe → $$set_chart → $$each_N) find their anchor
+	// comments already parented inside the live DOM.
 	for i := range g.analysis.Effects {
 		out.WriteString(fmt.Sprintf("  $$effect%d();\n", i))
 	}
 	if len(g.analysis.Effects) > 0 {
-		out.WriteString("\n")
-	}
-
-	// ── Initial DOM hydration ─────────────────
-	if g.init.Len() > 0 {
-		out.WriteString("  // initial render\n")
-		out.WriteString(g.init.String())
 		out.WriteString("\n")
 	}
 
@@ -588,13 +590,23 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 		}
 	}
 
-	// Remove any currently mounted branch that's no longer active
+	// Remove any currently mounted branch that's no longer active.
+	// Also null out all component-scope vars declared for each branch's children
+	// so reactive updates guarded by `if (ev)` correctly skip inactive branches.
+	// branchDeclared[i] is populated by emitBranchChildren below.
+	branchDeclared := make([][]string, len(chain.Branches))
 	for i, ev := range elVars {
-		fnBuf.WriteString(fmt.Sprintf("      if ($$active !== %d && %s) { %s.remove(); %s = null; }\n",
+		fnBuf.WriteString(fmt.Sprintf("      if ($$active !== %d && %s) { %s.remove(); %s = null;",
 			i, ev, ev, ev))
+		// Null-outs appended after emitBranchChildren fills branchDeclared[i]
+		// — we'll fill in a placeholder and replace it once we know the vars.
+		fnBuf.WriteString(fmt.Sprintf(" /* __null_%d__ */ }\n", i))
 	}
 
-	// Mount the active branch (create element on first mount)
+	// Mount the active branch.
+	// Each branch is created once and cached.  When a cached branch's anchor
+	// regains a parentNode (e.g. Modal slot content re-entering the DOM), we
+	// re-insert it so the content appears.
 	for i, branch := range chain.Branches {
 		ev := elVars[i]
 		fnBuf.WriteString(fmt.Sprintf("      if ($$active === %d) {\n", i))
@@ -612,7 +624,7 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 		fnBuf.WriteString(fmt.Sprintf("          %s = document.createElement('%s');\n", ev, tag))
 		fnBuf.WriteString(fmt.Sprintf("          %s.setAttribute('%s', '');\n", ev, g.scopeID))
 
-		// Attrs (only present for attribute-syntax branches)
+		// Attrs on the branch container element (attribute-syntax branches).
 		for _, attr := range elemAttrs {
 			if attr.IsEvent {
 				handler := g.rewriteHandlerAssignments(attr.Value)
@@ -620,19 +632,28 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 					ev, attr.Name, handler))
 			} else if attr.IsBind {
 				fnBuf.WriteString(bindAttrStmt(ev, attr.Name, attr.Value, "          ") + "\n")
+				// Register reactive update for container bound attrs — guarded by ev (branch active)
+				updateStmt := fmt.Sprintf("  if (%s) %s", ev,
+					strings.TrimSpace(bindAttrStmt(ev, attr.Name, attr.Value, "")))
+				for _, dep := range findDeps(attr.Value, g.analysis.reactiveNames()) {
+					g.addUpdate(dep, updateStmt)
+				}
 			} else {
 				fnBuf.WriteString(fmt.Sprintf("          %s.setAttribute('%s', '%s');\n",
 					ev, attr.Name, escapeAttr(attr.Value)))
 			}
 		}
 
-		// Recursively emit branch children into the fnBuf
-		g.emitBranchChildren(&fnBuf, branch.Children, ev, "          ")
+		// Emit children — lifted vars land in g.create, attr/text updates in g.addUpdate.
+		// branchVar = ev so updates are guarded by the branch container being active.
+		branchDeclared[i] = g.emitBranchChildren(&fnBuf, ev, branch.Children, ev, "          ")
 
-		fnBuf.WriteString(fmt.Sprintf("          %s.parentNode.insertBefore(%s, %s);\n",
-			anchor, ev, anchor))
-		fnBuf.WriteString(fmt.Sprintf("        }"))
-		fnBuf.WriteString("\n")
+		fnBuf.WriteString(fmt.Sprintf("          %[1]s.before(%[2]s);\n", anchor, ev))
+		fnBuf.WriteString("        }\n")
+		// Re-insert if anchor has a live parent but the branch is in a different parent.
+		fnBuf.WriteString(fmt.Sprintf(
+			"        if (%[1]s.parentNode && %[2]s.parentNode !== %[1]s.parentNode) { %[1]s.before(%[2]s); }\n",
+			anchor, ev))
 		fnBuf.WriteString("      }\n")
 	}
 	fnBuf.WriteString(fmt.Sprintf("    } finally {\n"))
@@ -640,17 +661,35 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 	fnBuf.WriteString(fmt.Sprintf("      if (%s) { %s = false; %s(); }\n", pendingFlag, pendingFlag, fn))
 	fnBuf.WriteString("    }\n")
 	fnBuf.WriteString("  }\n")
-	g.create.WriteString(fnBuf.String())
 
-	// Collect all deps: branch conditions + reactive vars inside branch children
+	// Back-fill the null-out statements for each branch's declared vars.
+	fnStr := fnBuf.String()
+	for i, vars := range branchDeclared {
+		nullStmts := ""
+		for _, v := range vars {
+			nullStmts += fmt.Sprintf(" %s = null;", v)
+		}
+		fnStr = strings.Replace(fnStr, fmt.Sprintf(" /* __null_%d__ */", i), nullStmts, 1)
+	}
+	g.create.WriteString(fnStr)
+
+	// Chain function only re-runs when the CONDITION changes — not when inner
+	// content (attrs, text) changes. Content changes go directly to g.addUpdate
+	// via emitBranchChildren, so they update the DOM without re-running the chain.
 	allDeps := map[string]bool{}
 	for _, branch := range chain.Branches {
 		for _, d := range findDeps(branch.Cond, g.analysis.reactiveNames()) {
 			allDeps[d] = true
 		}
-		// Use collectFragDeps to find reactive vars in child nodes (not just text)
-		for d := range g.collectFragDeps(branch.Children) {
-			allDeps[d] = true
+		// Container element bound attrs also control visibility logic
+		if branch.Elem != nil {
+			for _, attr := range branch.Elem.Attrs {
+				if attr.IsBind {
+					for _, d := range findDeps(attr.Value, g.analysis.reactiveNames()) {
+						allDeps[d] = true
+					}
+				}
+			}
 		}
 	}
 
@@ -686,44 +725,63 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 	//
 	// Each slot function returns a DocumentFragment of already-constructed DOM nodes.
 	// The nodes are declared in g.create (component scope) and wired into g.updates
-	// just like any other DOM, so reactive state changes update them live.
+	// so reactive state changes update them live.
 	//
-	// Approach: temporarily redirect g.wire into a per-slot buffer, walk the slot
-	// nodes normally (which writes declarations into g.create and reactive updates
-	// into g.updates), then capture the wire output (the appendChild calls) and
-	// embed them in the slot arrow function.
+	// ORDERING CRITICAL: slot content walk emits g.init entries (e.g. the initial
+	// $$each_N(arr) call). These MUST run after the component constructor has been
+	// called, because the constructor calls the slot function which inserts the
+	// anchor comments into the DOM. If the each loop runs before the anchor has a
+	// parentNode, insertBefore crashes with "parentNode is null".
+	//
+	// Solution: redirect g.init to a temporary buffer during the slot content walk.
+	// Emit the component constructor to real g.init first, then append the deferred
+	// slot init calls after it.
 	slotsEntries := []string{}
+	type slotInitEntry struct{ buf strings.Builder }
+	slotInits := []slotInitEntry{}
+
 	for slotName, slotNodes := range comp.Slots {
-		// Each slot gets its own DocumentFragment variable name, unique per slot.
 		fragVar := fmt.Sprintf("$$sf_%s_%s", slotName, g.id())
 
-		// Redirect the wire buffer so we can capture just this slot's appends.
+		// Redirect wire to capture only this slot's appendChild calls.
 		savedWire := g.wire
 		g.wire = strings.Builder{}
 
-		// Walk slot nodes through the normal pipeline:
-		//   – g.create gets const declarations (globally scoped in the component)
-		//   – g.updates gets reactive update registrations
-		//   – g.wire (our temp buffer) gets the appendChild calls
+		// Redirect init so initial each/chain calls are deferred past the ctor.
+		savedInit := g.init
+		g.init = strings.Builder{}
+
 		g.walkChildren(slotNodes, fragVar)
 
 		slotWire := g.wire.String()
-		g.wire = savedWire // restore
+		g.wire = savedWire
 
-		// Emit the slot function.  It creates the fragment, runs the appends
-		// (which reference the already-declared vars), and returns it.
-		// Inline all append statements on one line so the slot object stays
-		// as a single expression.
+		var slotInitBuf strings.Builder
+		slotInitBuf.WriteString(g.init.String())
+		g.init = savedInit
+
+		slotInits = append(slotInits, slotInitEntry{slotInitBuf})
+
 		var fragFn strings.Builder
 		fragFn.WriteString(fmt.Sprintf("() => { const %s = document.createDocumentFragment(); ", fragVar))
+		// Move pre-declared anchor nodes into the fragment
 		for _, line := range strings.Split(slotWire, "\n") {
-			trimmed := strings.TrimSpace(line)
-			if trimmed != "" {
+			if trimmed := strings.TrimSpace(line); trimmed != "" {
+				fragFn.WriteString(trimmed + " ")
+			}
+		}
+		// Re-run chain/each init calls with anchors in the fragment so that:
+		//   (a) On initial open: branches/rows are created and inserted before the
+		//       fragment is appended to the component body.
+		//   (b) On reopen (e.g. Modal closed then re-opened): branches that exist
+		//       but are detached are re-inserted via the new "re-insert if detached"
+		//       logic in the chain function.
+		for _, line := range strings.Split(slotInitBuf.String(), "\n") {
+			if trimmed := strings.TrimSpace(line); trimmed != "" {
 				fragFn.WriteString(trimmed + " ")
 			}
 		}
 		fragFn.WriteString(fmt.Sprintf("return %s; }", fragVar))
-
 		slotsEntries = append(slotsEntries, fmt.Sprintf("%q: %s", slotName, fragFn.String()))
 	}
 	slotsObj := "{}"
@@ -736,6 +794,16 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 	g.create.WriteString(fmt.Sprintf("  %s.setAttribute('%s', '');\n", wrapVar, g.scopeID))
 	g.wire.WriteString(fmt.Sprintf("  %s.appendChild(%s);\n", parentVar, wrapVar))
 
+	// Emit component constructor FIRST so the slot function is called inside it,
+	// inserting anchor comments into the DOM before any slot init calls.
+	// The slot function body already contains the init calls ($$chain_X(), $$each_N()),
+	// so we do NOT emit them again here. Emitting them twice caused double-execution:
+	//   • For always-visible slots: slot fn is called during constructor, inits run once ✓
+	//   • For conditional slots (Modal starts closed): slot fn never called during constructor,
+	//     but the deferred init calls were no-ops anyway. Init calls run when slot fn is
+	//     first called (on modal open). ✓
+	// Removing the deferred duplicates eliminates spurious double-renders (e.g. duplicate
+	// filter buttons from $$each_$$n18 running twice).
 	g.init.WriteString(fmt.Sprintf(
 		"  const %s = %s(%s, %s, %s);\n",
 		instanceVar, comp.Name, wrapVar, propsObj, slotsObj))
@@ -845,7 +913,7 @@ func (g *CodeGen) walkComponentEach(comp *ComponentNode, parentVar string) {
 		// (i.e. immediately before the anchor). Moving DOM elements fires blur
 		// on any focused input inside them, breaking in-place editing.
 		fnBuf.WriteString(fmt.Sprintf(
-			"      if ($$blk.wrap.nextSibling !== %s) { %s.parentNode.insertBefore($$blk.wrap, %s); }\n",
+			"      if (%[2]s.parentNode && $$blk.wrap.nextSibling !== %[1]s) { %[2]s.before($$blk.wrap); }\n",
 			anchor, anchor, anchor))
 		fnBuf.WriteString("      $$newBlks.push($$blk);\n")
 		fnBuf.WriteString("    });\n")
@@ -870,7 +938,7 @@ func (g *CodeGen) walkComponentEach(comp *ComponentNode, parentVar string) {
 			fnBuf.WriteString("  " + ev + "\n")
 		}
 		fnBuf.WriteString(fmt.Sprintf("      const $$c = %s($$wrap, %s, {});\n", comp.Name, propsExpr))
-		fnBuf.WriteString(fmt.Sprintf("      %s.parentNode.insertBefore($$wrap, %s);\n", anchor, anchor))
+		fnBuf.WriteString(fmt.Sprintf("      %[1]s.before($$wrap);\n", anchor, anchor))
 		fnBuf.WriteString(fmt.Sprintf("      %s.push({ wrap: $$wrap, comp: $$c });\n", blocks))
 		fnBuf.WriteString("    });\n  }\n")
 		g.create.WriteString(fnBuf.String())
@@ -931,7 +999,7 @@ func (g *CodeGen) walkComponentIf(comp *ComponentNode, parentVar string) {
 		}
 	}
 	fnBuf.WriteString(fmt.Sprintf("        %s = %s(%s, %s, {});\n", instVar, comp.Name, wrapVar, propsExpr))
-	fnBuf.WriteString(fmt.Sprintf("        %s.parentNode.insertBefore(%s, %s);\n", anchor, wrapVar, anchor))
+	fnBuf.WriteString(fmt.Sprintf("        %[1]s.before(%[2]s);\n", anchor, wrapVar, anchor))
 	fnBuf.WriteString("      } else {\n")
 	fnBuf.WriteString(fmt.Sprintf("        %s.set(%s);\n", instVar, propsExpr))
 	fnBuf.WriteString("      }\n")
@@ -972,7 +1040,7 @@ func (g *CodeGen) walkSlot(slot *SlotNode, parentVar string) {
 	fnBuf.WriteString(fmt.Sprintf("    const $$sf = $$slots[%q];\n", slot.Name))
 	fnBuf.WriteString(fmt.Sprintf("    if ($$sf) {\n"))
 	fnBuf.WriteString(fmt.Sprintf(
-		"      const $$sn = $$sf(); %s.parentNode.insertBefore($$sn, %s);\n",
+		"      { const $$sn = $$sf(); %[1]s.before($$sn); }\n",
 		anchor, anchor))
 	fnBuf.WriteString(fmt.Sprintf("    }"))
 
@@ -983,7 +1051,7 @@ func (g *CodeGen) walkSlot(slot *SlotNode, parentVar string) {
 			case *TextNode:
 				expr := buildExpr(c.Parts)
 				fnBuf.WriteString(fmt.Sprintf(
-					"      %s.parentNode.insertBefore(document.createTextNode(%s), %s);\n",
+					"      %[1]s.before(document.createTextNode(%[2]s));\n",
 					anchor, expr, anchor))
 			case *ElementNode:
 				fnBuf.WriteString(fmt.Sprintf(
@@ -991,7 +1059,7 @@ func (g *CodeGen) walkSlot(slot *SlotNode, parentVar string) {
 				fnBuf.WriteString(fmt.Sprintf(
 					"      $$fb.setAttribute('%s','');\n", g.scopeID))
 				fnBuf.WriteString(fmt.Sprintf(
-					"      %s.parentNode.insertBefore($$fb, %s);\n", anchor, anchor))
+					"      %[1]s.before($$fb);\n", anchor, anchor))
 			}
 		}
 		fnBuf.WriteString("    }\n")
@@ -1079,8 +1147,8 @@ func (g *CodeGen) walkComponentIfChain(chain *IfChainNode, parentVar string) {
 		}
 		fnBuf.WriteString(fmt.Sprintf("          %s = %s(%s, %s, {});\n",
 			instVars[i], comp.Name, wrapVars[i], propsExpr))
-		fnBuf.WriteString(fmt.Sprintf("          %s.parentNode.insertBefore(%s, %s);\n",
-			anchor, wrapVars[i], anchor))
+		fnBuf.WriteString(fmt.Sprintf("          if (%[1]s.parentNode) %[1]s.before(%[2]s);\n",
+			anchor, wrapVars[i]))
 		fnBuf.WriteString(fmt.Sprintf("        } else { %s.set(%s); }\n", instVars[i], propsExpr))
 		fnBuf.WriteString("      }\n")
 	}
@@ -1261,7 +1329,7 @@ func (g *CodeGen) walkEach(elem *ElementNode, varName, parentVar string) {
 		fnBuf.WriteString(fmt.Sprintf("        %s.set($$key, $$blk);\n", keyMap))
 		fnBuf.WriteString(fmt.Sprintf("      }\n"))
 		// Move/insert into correct position before anchor
-		fnBuf.WriteString(fmt.Sprintf("      %s.parentNode.insertBefore($$blk.el, %s);\n", anchor, anchor))
+		fnBuf.WriteString(fmt.Sprintf("      %[1]s.before($$blk.el);\n", anchor))
 		fnBuf.WriteString(fmt.Sprintf("      $$newBlocks.push($$blk);\n"))
 		fnBuf.WriteString(fmt.Sprintf("    });\n"))
 		// Remove stale blocks
@@ -1281,7 +1349,7 @@ func (g *CodeGen) walkEach(elem *ElementNode, varName, parentVar string) {
 		fnBuf.WriteString(fmt.Sprintf("    %s = [];\n", blocks))
 		fnBuf.WriteString(fmt.Sprintf("    ($$arr||[]).forEach(function(%s, %s) {\n", itemVar, indexVar))
 		fnBuf.WriteString(fmt.Sprintf("      const $$blk = %s(%s, %s);\n", fragName, itemVar, indexVar))
-		fnBuf.WriteString(fmt.Sprintf("      %s.parentNode.insertBefore($$blk.el, %s);\n", anchor, anchor))
+		fnBuf.WriteString(fmt.Sprintf("      %[1]s.before($$blk.el);\n", anchor))
 		fnBuf.WriteString(fmt.Sprintf("      %s.push($$blk);\n", blocks))
 		fnBuf.WriteString(fmt.Sprintf("    });\n  }\n"))
 		g.create.WriteString(fnBuf.String())
@@ -1368,23 +1436,42 @@ func (g *CodeGen) collectFragDeps(nodes []Node) map[string]bool {
 // closures where we can't use the normal g.create/g.wire buffers).
 // parentVar is the JS variable that children should be appended to.
 // indent is the leading whitespace for each emitted line.
-func (g *CodeGen) emitBranchChildren(b *strings.Builder, nodes []Node, parentVar, indent string) {
+func (g *CodeGen) emitBranchChildren(b *strings.Builder, branchVar string, nodes []Node, parentVar, indent string) []string {
+	var declared []string
 	for _, node := range nodes {
 		switch n := node.(type) {
 		case *TextNode:
 			expr := buildExpr(n.Parts)
-			b.WriteString(fmt.Sprintf("%s%s.appendChild(document.createTextNode(%s));\n",
-				indent, parentVar, expr))
+			hasExpr := false
+			for _, p := range n.Parts {
+				if !p.Static { hasExpr = true; break }
+			}
+			if hasExpr && branchVar != "" {
+				tv := g.id()
+				g.create.WriteString(fmt.Sprintf("  let %s = null;\n", tv))
+				b.WriteString(fmt.Sprintf("%s%s = document.createTextNode(%s);\n", indent, tv, expr))
+				b.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, tv))
+				for _, dep := range findDeps(expr, g.analysis.reactiveNames()) {
+					g.addUpdate(dep, fmt.Sprintf("  if (%s) %s.data = %s;", branchVar, tv, expr))
+				}
+				declared = append(declared, tv)
+			} else {
+				b.WriteString(fmt.Sprintf("%s%s.appendChild(document.createTextNode(%s));\n",
+					indent, parentVar, expr))
+			}
 
 		case *ElementNode:
 			if n.EachExpr != "" || n.IfCond != "" {
 				b.WriteString(fmt.Sprintf("%s// (nested directive on <%s> — skipped in branch)\n", indent, n.Tag))
 				continue
 			}
-			// Use g.id() for globally unique variable names — never reuse the same
-			// name across branches or recursive calls, preventing redeclaration.
 			subVar := g.id()
-			b.WriteString(fmt.Sprintf("%sconst %s = document.createElement('%s');\n", indent, subVar, n.Tag))
+			if branchVar != "" {
+				g.create.WriteString(fmt.Sprintf("  let %s = null;\n", subVar))
+				b.WriteString(fmt.Sprintf("%s%s = document.createElement('%s');\n", indent, subVar, n.Tag))
+			} else {
+				b.WriteString(fmt.Sprintf("%sconst %s = document.createElement('%s');\n", indent, subVar, n.Tag))
+			}
 			b.WriteString(fmt.Sprintf("%s%s.setAttribute('%s', '');\n", indent, subVar, g.scopeID))
 			for _, attr := range n.Attrs {
 				if attr.IsEvent {
@@ -1393,16 +1480,26 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, nodes []Node, parentVar
 						indent, subVar, attr.Name, handler))
 				} else if attr.IsBind {
 					b.WriteString(bindAttrStmt(subVar, attr.Name, attr.Value, indent) + "\n")
+					if branchVar != "" {
+						upd := fmt.Sprintf("  if (%s) %s", branchVar,
+							strings.TrimSpace(bindAttrStmt(subVar, attr.Name, attr.Value, "")))
+						for _, dep := range findDeps(attr.Value, g.analysis.reactiveNames()) {
+							g.addUpdate(dep, upd)
+						}
+					}
 				} else {
 					b.WriteString(fmt.Sprintf("%s%s.setAttribute('%s', '%s');\n",
 						indent, subVar, attr.Name, escapeAttr(attr.Value)))
 				}
 			}
-			g.emitBranchChildren(b, n.Children, subVar, indent)
+			childDeclared := g.emitBranchChildren(b, branchVar, n.Children, subVar, indent)
 			b.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, subVar))
+			if branchVar != "" {
+				declared = append(declared, subVar)
+			}
+			declared = append(declared, childDeclared...)
 
 		case *IfChainNode:
-			// Multi-branch #if nested inside an #if branch — handle all branches
 			for i, branch := range n.Branches {
 				if i == 0 {
 					b.WriteString(fmt.Sprintf("%sif (%s) {\n", indent, branch.Cond))
@@ -1411,38 +1508,74 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, nodes []Node, parentVar
 				} else {
 					b.WriteString(fmt.Sprintf("%s} else if (%s) {\n", indent, branch.Cond))
 				}
-				g.emitBranchChildren(b, branch.Children, parentVar, indent+"  ")
+				g.emitBranchChildren(b, "", branch.Children, parentVar, indent+"  ")
 			}
 			if len(n.Branches) > 0 {
 				b.WriteString(fmt.Sprintf("%s}\n", indent))
 			}
 
 		case *EachBlockNode:
-			// Simple unkeyed inline render for each blocks inside if-branches.
-			array, itemVar, indexVar := parseEachExpr(n.EachExpr)
-			if indexVar == "" { indexVar = "$$i" }
-			b.WriteString(fmt.Sprintf("%s((%s)||[]).forEach(function(%s, %s) {\n", indent, array, itemVar, indexVar))
-			g.emitBranchChildren(b, n.Children, parentVar, indent+"  ")
-			b.WriteString(fmt.Sprintf("%s});\n", indent))
+			if eachChildrenNeedCodegen(n.Children) {
+				array, itemVar, indexVar := parseEachExpr(n.EachExpr)
+				if indexVar == "" { indexVar = "$$i" }
+				b.WriteString(fmt.Sprintf("%s((%s)||[]).forEach(function(%s, %s) {\n", indent, array, itemVar, indexVar))
+				g.emitBranchChildren(b, "", n.Children, parentVar, indent+"  ")
+				b.WriteString(fmt.Sprintf("%s});\n", indent))
+				break
+			}
+			savedWire := g.wire
+			savedInit := g.init
+			g.wire = strings.Builder{}
+			g.init = strings.Builder{}
+			g.walkEachBlock(n, parentVar)
+			eachWire := g.wire.String()
+			eachInit := g.init.String()
+			g.wire = savedWire
+			g.init = savedInit
+			for _, line := range strings.Split(eachWire, "\n") {
+				if t := strings.TrimSpace(line); t != "" { b.WriteString(indent + t + "\n") }
+			}
+			for _, line := range strings.Split(eachInit, "\n") {
+				if t := strings.TrimSpace(line); t != "" { b.WriteString(indent + t + "\n") }
+			}
 
 		case *ComponentNode:
 			g.emitBranchComponent(b, n, parentVar, indent)
 
 		case *SlotNode:
-			// Emit slot-filling code inside an if-branch function.
-			// We can't use a persistent anchor comment here (those are set up in
-			// g.create and positioned during initialisation). Instead, append slot
-			// content directly to the parent element at branch-mount time.
 			sv := fmt.Sprintf("$$sf_%s", g.id())
 			b.WriteString(fmt.Sprintf("%sconst %s = $$slots[%q];\n", indent, sv, n.Name))
 			b.WriteString(fmt.Sprintf("%sif (%s) { %s.appendChild(%s()); }\n", indent, sv, parentVar, sv))
 			if len(n.Fallback) > 0 {
 				b.WriteString(fmt.Sprintf("%selse {\n", indent))
-				g.emitBranchChildren(b, n.Fallback, parentVar, indent+"  ")
+				g.emitBranchChildren(b, "", n.Fallback, parentVar, indent+"  ")
 				b.WriteString(fmt.Sprintf("%s}\n", indent))
 			}
 		}
 	}
+	return declared
+}
+
+// eachChildrenNeedCodegen returns true when an {#each} block's children contain
+// node types that require the full codegen pipeline (IfChainNode, ComponentNode)
+// and therefore cannot safely be processed by FragGen inside walkEachBlock.
+// When true, emitBranchChildren falls back to an inline forEach instead.
+func eachChildrenNeedCodegen(nodes []Node) bool {
+	for _, n := range nodes {
+		switch c := n.(type) {
+		case *IfChainNode:
+			return true
+		case *ComponentNode:
+			return true
+		case *EachBlockNode:
+			return true
+		case *ElementNode:
+			if eachChildrenNeedCodegen(c.Children) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // emitBranchComponent emits inline component mounting code inside a branch
@@ -1553,7 +1686,7 @@ func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, p
 		fn.WriteString(fmt.Sprintf("        $$blk = { wrap: %s, comp: $$c };\n", wrapVar))
 		fn.WriteString(fmt.Sprintf("        %s.set($$key, $$blk);\n", kmVar))
 		fn.WriteString("      }\n")
-		fn.WriteString(fmt.Sprintf("      if ($$blk.wrap.nextSibling !== %s) { %s.parentNode.insertBefore($$blk.wrap, %s); }\n",
+		fn.WriteString(fmt.Sprintf("      if ($$blk.wrap.nextSibling !== %s) { %s.before($$blk.wrap); }\n",
 			anchorVar, anchorVar, anchorVar))
 		fn.WriteString("      $$newBlks.push($$blk);\n")
 		fn.WriteString("    });\n")
@@ -1595,7 +1728,7 @@ func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, p
 		fn.WriteString(fmt.Sprintf("      %s.setAttribute('%s','');\n", wrapVar, g.scopeID))
 		fn.WriteString(evWire(wrapVar, "      "))
 		fn.WriteString(fmt.Sprintf("      const $$c = %s(%s, %s, {});\n", comp.Name, wrapVar, propsExpr))
-		fn.WriteString(fmt.Sprintf("      %s.parentNode.insertBefore(%s, %s);\n", anchorVar, wrapVar, anchorVar))
+		fn.WriteString(fmt.Sprintf("      %[1]s.before(%[2]s);\n", anchorVar, wrapVar, anchorVar))
 		fn.WriteString(fmt.Sprintf("      %s.push({ wrap: %s, comp: $$c });\n", bsVar, wrapVar))
 		fn.WriteString("    });\n  }\n")
 		g.create.WriteString(fn.String())
@@ -1755,6 +1888,30 @@ func (g *CodeGen) genSetter(name string) string {
 }
 
 func (g *CodeGen) addUpdate(dep, code string) {
+	g.addUpdateSeen(dep, code, map[string]bool{})
+}
+
+// addUpdateSeen is the recursive helper for addUpdate. If dep is a DerivedVar,
+// it recursively registers the update for all of that derived var's own deps
+// (which may themselves be derived), eventually reaching state vars and props.
+// This ensures that e.g. {#each filtered as o} inside a Card slot correctly
+// re-renders when allOrders changes — even though the each expression uses the
+// derived name "filtered", not "allOrders" directly.
+func (g *CodeGen) addUpdateSeen(dep, code string, seen map[string]bool) {
+	if seen[dep] {
+		return // guard against circular deps
+	}
+	seen[dep] = true
+	for _, dv := range g.analysis.DerivedVars {
+		if dv.Name == dep {
+			// dep is a derived var — register for each of its source deps
+			for _, srcDep := range findDeps(dv.Expr, g.analysis.reactiveNames()) {
+				g.addUpdateSeen(srcDep, code, seen)
+			}
+			return
+		}
+	}
+	// dep is a state var or prop — register directly
 	g.updates[dep] = append(g.updates[dep], code)
 }
 
