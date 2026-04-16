@@ -204,11 +204,17 @@ func (g *CodeGen) emit(nodes []Node) string {
 	}
 	out.WriteString("\n")
 
-	// ── User script (reactive declarations stripped, assignments already rewritten) ──
+	// ── User script (component logic, functions, etc.) ─────────────────────────
 	if g.analysis.CleanScript != "" {
 		out.WriteString("  // component logic\n")
 		for _, line := range strings.Split(g.analysis.CleanScript, "\n") {
-			if strings.TrimSpace(line) == "" {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				continue
+			}
+			// Skip import lines — emitted at the top of the file before export function.
+			// They must NOT appear inside the function body (JS syntax error).
+			if strings.HasPrefix(trimmed, "import ") || strings.HasPrefix(trimmed, "import{") {
 				continue
 			}
 			out.WriteString("  " + line + "\n")
@@ -526,8 +532,8 @@ func (g *CodeGen) walkText(node *TextNode, parentVar string) {
 // walkIfChain generates a single update function that evaluates each branch
 // condition in order and mounts/unmounts the correct DOM fragment.
 //
-//   $$ifchain_N($$branch) where $$branch is the index of the active branch,
-//   or -1 for "none" (all conditions false and no #else).
+//	$$ifchain_N($$branch) where $$branch is the index of the active branch,
+//	or -1 for "none" (all conditions false and no #else).
 //
 // Each branch's element is cached in a dedicated variable so it is created
 // at most once and re-used on subsequent re-evaluations.
@@ -847,11 +853,11 @@ func (g *CodeGen) walkComponentEach(comp *ComponentNode, parentVar string) {
 		indexVar = "$$i"
 	}
 	keyExpr := comp.EachKey
-	varName  := g.id()
-	anchor   := varName + "_a"
-	keyMap   := varName + "_km"
-	blocks   := varName + "_bs"
-	fn       := "$$ceach_" + varName
+	varName := g.id()
+	anchor := varName + "_a"
+	keyMap := varName + "_km"
+	blocks := varName + "_bs"
+	fn := "$$ceach_" + varName
 
 	g.create.WriteString(fmt.Sprintf(
 		"  const %s = document.createComment('#each-comp');\n", anchor))
@@ -961,11 +967,11 @@ func (g *CodeGen) walkComponentEach(comp *ComponentNode, parentVar string) {
 
 // walkComponentIf handles <MyComp #if="cond" :prop="val" />
 func (g *CodeGen) walkComponentIf(comp *ComponentNode, parentVar string) {
-	varName  := g.id()
-	anchor   := varName + "_a"
-	instVar  := varName + "_inst"
-	wrapVar  := varName + "_wrap"
-	fn       := "$$cif_" + varName
+	varName := g.id()
+	anchor := varName + "_a"
+	instVar := varName + "_inst"
+	wrapVar := varName + "_wrap"
+	fn := "$$cif_" + varName
 
 	g.create.WriteString(fmt.Sprintf(
 		"  const %s = document.createComment('if-comp');\n", anchor))
@@ -1444,7 +1450,10 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, branchVar string, nodes
 			expr := buildExpr(n.Parts)
 			hasExpr := false
 			for _, p := range n.Parts {
-				if !p.Static { hasExpr = true; break }
+				if !p.Static {
+					hasExpr = true
+					break
+				}
 			}
 			if hasExpr && branchVar != "" {
 				tv := g.id()
@@ -1517,7 +1526,9 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, branchVar string, nodes
 		case *EachBlockNode:
 			if eachChildrenNeedCodegen(n.Children) {
 				array, itemVar, indexVar := parseEachExpr(n.EachExpr)
-				if indexVar == "" { indexVar = "$$i" }
+				if indexVar == "" {
+					indexVar = "$$i"
+				}
 				b.WriteString(fmt.Sprintf("%s((%s)||[]).forEach(function(%s, %s) {\n", indent, array, itemVar, indexVar))
 				g.emitBranchChildren(b, "", n.Children, parentVar, indent+"  ")
 				b.WriteString(fmt.Sprintf("%s});\n", indent))
@@ -1533,10 +1544,14 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, branchVar string, nodes
 			g.wire = savedWire
 			g.init = savedInit
 			for _, line := range strings.Split(eachWire, "\n") {
-				if t := strings.TrimSpace(line); t != "" { b.WriteString(indent + t + "\n") }
+				if t := strings.TrimSpace(line); t != "" {
+					b.WriteString(indent + t + "\n")
+				}
 			}
 			for _, line := range strings.Split(eachInit, "\n") {
-				if t := strings.TrimSpace(line); t != "" { b.WriteString(indent + t + "\n") }
+				if t := strings.TrimSpace(line); t != "" {
+					b.WriteString(indent + t + "\n")
+				}
 			}
 
 		case *ComponentNode:
@@ -1801,6 +1816,7 @@ func (g *CodeGen) rewriteHandlerAssignments(handler string) string {
 
 	return handler
 }
+
 func (g *CodeGen) emitEachChild(b *strings.Builder, node Node, parentVar string) {
 	// Inline simple cases without full FragGen overhead (used in legacy paths)
 	switch n := node.(type) {
@@ -2018,9 +2034,9 @@ func isBoolAttr(name string) bool {
 // bindAttrStmt returns the JS statement that correctly sets a dynamic attribute
 // on elem (a JS variable name) to the value of expr.
 //
-//   Boolean attrs  →  elem.checked = !!(expr)
-//   class          →  elem.className = String(expr)   (also setAttribute for compat)
-//   everything else →  elem.setAttribute('attr', String(expr))
+//	Boolean attrs  →  elem.checked = !!(expr)
+//	class          →  elem.className = String(expr)   (also setAttribute for compat)
+//	everything else →  elem.setAttribute('attr', String(expr))
 func bindAttrStmt(elem, attr, expr, indent string) string {
 	if isBoolAttr(attr) {
 		return fmt.Sprintf("%s%s.%s = !!(%s);", indent, elem, attr, expr)

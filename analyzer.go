@@ -9,14 +9,15 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Analysis struct {
-	StateVars   []*StateVar
-	DerivedVars []*DerivedVar
-	Effects     []*Effect
-	Functions   []*Function
-	Imports     []*Import
-	Props       []*Prop
-	Lifecycles  []*LifecycleHook
-	CleanScript string
+	StateVars     []*StateVar
+	DerivedVars   []*DerivedVar
+	Effects       []*Effect
+	Functions     []*Function
+	Imports       []*Import
+	Props         []*Prop
+	Lifecycles    []*LifecycleHook
+	CleanScript   string
+	ImportRecords []ImportRecord
 }
 
 // LifecycleHook represents an onMount or onDestroy call.
@@ -203,7 +204,7 @@ func analyzeScript(src string) *Analysis {
 		effProg := ParseJS(eff.Body)
 		eff.Body = RewriteAssignments(eff.Body, effProg, ss)
 	}
-
+	a.ImportRecords = ParseImportRecords(src, 0)
 	return a
 }
 
