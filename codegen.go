@@ -66,6 +66,8 @@ func (g *CodeGen) emit(nodes []Node) string {
 		src := imp.Source
 		if src == "vela/store" || src == "vela" {
 			src = "./runtime.js"
+		} else {
+			src = RewriteImportPath(src) // .vela → .js, extensionless → .js
 		}
 		out.WriteString(fmt.Sprintf("import %s from '%s';\n", imp.Spec, src))
 	}
@@ -669,11 +671,17 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 	fnBuf.WriteString("  }\n")
 
 	// Back-fill the null-out statements for each branch's declared vars.
+	// Component instance vars (suffix _comp) get .destroy() called before
+	// being nulled so their event listeners and styles are cleaned up.
 	fnStr := fnBuf.String()
 	for i, vars := range branchDeclared {
 		nullStmts := ""
 		for _, v := range vars {
-			nullStmts += fmt.Sprintf(" %s = null;", v)
+			if strings.HasSuffix(v, "_comp") {
+				nullStmts += fmt.Sprintf(" if (%s) { %s.destroy(); %s = null; }", v, v, v)
+			} else {
+				nullStmts += fmt.Sprintf(" %s = null;", v)
+			}
 		}
 		fnStr = strings.Replace(fnStr, fmt.Sprintf(" /* __null_%d__ */", i), nullStmts, 1)
 	}
@@ -747,7 +755,14 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 	slotInits := []slotInitEntry{}
 
 	for slotName, slotNodes := range comp.Slots {
-		fragVar := fmt.Sprintf("$$sf_%s_%s", slotName, g.id())
+		fragVar  := fmt.Sprintf("$$sf_%s_%s", slotName, g.id())
+		cacheVar := fmt.Sprintf("$$sc_%s_%s", slotName, g.id())
+
+		// Declare the cache variable at component scope (null = not yet built).
+		// Slot function builds the DocumentFragment ONCE and caches it so that
+		// child component state (scroll, form values, focus) is preserved across
+		// re-opens (e.g. Modal close → reopen).
+		g.create.WriteString(fmt.Sprintf("  let %s = null;\n", cacheVar))
 
 		// Redirect wire to capture only this slot's appendChild calls.
 		savedWire := g.wire
@@ -768,26 +783,33 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 
 		slotInits = append(slotInits, slotInitEntry{slotInitBuf})
 
+		// Build the slot function with caching:
+		//
+		//   First call  → build DocumentFragment, cache it, return it.
+		//   Reopen call → re-run chain/each inits (so detached branches
+		//                 re-insert into the now-live DOM), return cache.
+		//
+		// The re-insert logic in $$chain_N() moves existing DOM nodes from the
+		// old detached parent into the new fragment/live parent, so child component
+		// instances (and their local state) are reused rather than recreated.
 		var fragFn strings.Builder
-		fragFn.WriteString(fmt.Sprintf("() => { const %s = document.createDocumentFragment(); ", fragVar))
-		// Move pre-declared anchor nodes into the fragment
+		initiCalls := ""
+		for _, line := range strings.Split(slotInitBuf.String(), "\n") {
+			if trimmed := strings.TrimSpace(line); trimmed != "" {
+				initiCalls += trimmed + " "
+			}
+		}
+		// Reopen path: cache already populated, just re-run inits and return
+		fragFn.WriteString(fmt.Sprintf("() => { if (%s) { %sreturn %s; } ", cacheVar, initiCalls, cacheVar))
+		// First-open path: build fragment, populate, cache, return
+		fragFn.WriteString(fmt.Sprintf("const %s = document.createDocumentFragment(); ", fragVar))
 		for _, line := range strings.Split(slotWire, "\n") {
 			if trimmed := strings.TrimSpace(line); trimmed != "" {
 				fragFn.WriteString(trimmed + " ")
 			}
 		}
-		// Re-run chain/each init calls with anchors in the fragment so that:
-		//   (a) On initial open: branches/rows are created and inserted before the
-		//       fragment is appended to the component body.
-		//   (b) On reopen (e.g. Modal closed then re-opened): branches that exist
-		//       but are detached are re-inserted via the new "re-insert if detached"
-		//       logic in the chain function.
-		for _, line := range strings.Split(slotInitBuf.String(), "\n") {
-			if trimmed := strings.TrimSpace(line); trimmed != "" {
-				fragFn.WriteString(trimmed + " ")
-			}
-		}
-		fragFn.WriteString(fmt.Sprintf("return %s; }", fragVar))
+		fragFn.WriteString(initiCalls)
+		fragFn.WriteString(fmt.Sprintf("%s = %s; return %s; }", cacheVar, fragVar, cacheVar))
 		slotsEntries = append(slotsEntries, fmt.Sprintf("%q: %s", slotName, fragFn.String()))
 	}
 	slotsObj := "{}"
@@ -1525,13 +1547,10 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, branchVar string, nodes
 
 		case *EachBlockNode:
 			if eachChildrenNeedCodegen(n.Children) {
-				array, itemVar, indexVar := parseEachExpr(n.EachExpr)
-				if indexVar == "" {
-					indexVar = "$$i"
-				}
-				b.WriteString(fmt.Sprintf("%s((%s)||[]).forEach(function(%s, %s) {\n", indent, array, itemVar, indexVar))
-				g.emitBranchChildren(b, "", n.Children, parentVar, indent+"  ")
-				b.WriteString(fmt.Sprintf("%s});\n", indent))
+				// Children contain ComponentNode / IfChainNode — FragGen can't handle
+				// these, so we generate a keyed live reconciler here in codegen.
+				// This replaces the old static forEach (which never updated on re-render).
+				g.emitEachWithComponents(b, n, parentVar, branchVar, indent)
 				break
 			}
 			savedWire := g.wire
@@ -1555,7 +1574,8 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, branchVar string, nodes
 			}
 
 		case *ComponentNode:
-			g.emitBranchComponent(b, n, parentVar, indent)
+			compDeclared := g.emitBranchComponent(b, n, parentVar, indent)
+			declared = append(declared, compDeclared...)
 
 		case *SlotNode:
 			sv := fmt.Sprintf("$$sf_%s", g.id())
@@ -1569,6 +1589,254 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, branchVar string, nodes
 		}
 	}
 	return declared
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Live {#each} reconciler for complex children (components, {#if}, etc.)
+// ─────────────────────────────────────────────────────────────────────────
+
+// emitEachWithComponents generates a keyed live reconciler for an {#each}
+// block whose children contain ComponentNode, IfChainNode, or nested each
+// — node types that FragGen cannot handle.
+//
+// Unlike the old static forEach, this generates an $$each_N(arr) function
+// at component scope.  The function is:
+//   • Called immediately from the branch body to render on first mount.
+//   • Registered in g.addUpdate so it re-runs whenever the array changes.
+//   • Guarded by `if (!anchor.parentNode) return` so it no-ops when the
+//     enclosing {#if} branch is not currently mounted.
+//
+// Each row is represented as a { root, update(item), destroy() } block
+// stored in a Map<key, block>.  Existing rows call update(); new rows are
+// created; missing rows are destroyed.  This preserves component instance
+// state (focus, scroll, form values) across array mutations.
+func (g *CodeGen) emitEachWithComponents(
+	b *strings.Builder,
+	n *EachBlockNode,
+	parentVar, branchVar, indent string,
+) {
+	array, itemVar, indexVar := parseEachExpr(n.EachExpr)
+	if indexVar == "" {
+		indexVar = "$$i"
+	}
+	keyExpr := n.EachKey // may be "" for unkeyed
+
+	// All variables live at component scope so the update function
+	// can reference them even when called from a setter (outside the branch).
+	anchorVar := g.id() + "_a"
+	kmVar     := g.id() + "_km"
+	fnVar     := "$$each_" + g.id()
+
+	g.create.WriteString(fmt.Sprintf("  const %s = document.createComment('#each');\n", anchorVar))
+	if keyExpr != "" {
+		g.create.WriteString(fmt.Sprintf("  const %s = new Map();\n", kmVar))
+	} else {
+		g.create.WriteString(fmt.Sprintf("  let %s = [];\n", kmVar)) // array of blocks
+	}
+
+	// Build the reconciler function body
+	var fn strings.Builder
+
+	fn.WriteString(fmt.Sprintf("  function %s($$arr) {\n", fnVar))
+	// Guard: no-op when anchor is not in the DOM (branch not mounted yet)
+	fn.WriteString(fmt.Sprintf("    if (!%s.parentNode) return;\n", anchorVar))
+
+	if keyExpr != "" {
+		fn.WriteString("    const $$newKeys = new Set();\n")
+		fn.WriteString("    const $$newBlks = [];\n")
+		fn.WriteString(fmt.Sprintf("    ($$arr||[]).forEach(function(%s, %s) {\n", itemVar, indexVar))
+		fn.WriteString(fmt.Sprintf("      const $$key = String(%s);\n", keyExpr))
+		fn.WriteString("      $$newKeys.add($$key);\n")
+		fn.WriteString(fmt.Sprintf("      let $$blk = %s.get($$key);\n", kmVar))
+		fn.WriteString("      if ($$blk) {\n")
+		fn.WriteString("        $$blk.update(" + itemVar + ");\n")
+		fn.WriteString("      } else {\n")
+		// Create row
+		fn.WriteString("        $$blk = (() => {\n")
+		fn.WriteString("          const $$row = document.createElement('div');\n")
+		fn.WriteString(fmt.Sprintf("          $$row.setAttribute('%s','');\n", g.scopeID))
+		var createBuf, updateBuf, destroyBuf strings.Builder
+		g.emitEachRowBody(&createBuf, &updateBuf, &destroyBuf, n.Children, "$$row", itemVar, "          ")
+		fn.WriteString(createBuf.String())
+		fn.WriteString("          return {\n")
+		fn.WriteString("            root: $$row,\n")
+		fn.WriteString("            update(" + itemVar + ") {\n")
+		fn.WriteString(updateBuf.String())
+		fn.WriteString("            },\n")
+		fn.WriteString("            destroy() {\n")
+		fn.WriteString(destroyBuf.String())
+		fn.WriteString("              $$row.remove();\n")
+		fn.WriteString("            }\n")
+		fn.WriteString("          };\n")
+		fn.WriteString("        })();\n")
+		fn.WriteString(fmt.Sprintf("        %s.set($$key, $$blk);\n", kmVar))
+		fn.WriteString("      }\n")
+		// Position: insert before anchor if not already there
+		fn.WriteString(fmt.Sprintf(
+			"      if ($$blk.root.nextSibling !== %s) { %s.before($$blk.root); }\n",
+			anchorVar, anchorVar))
+		fn.WriteString("      $$newBlks.push($$blk);\n")
+		fn.WriteString("    });\n")
+		// Destroy removed rows
+		fn.WriteString(fmt.Sprintf(
+			"    %s.forEach(($$blk, $$k) => { if (!$$newKeys.has($$k)) { $$blk.destroy(); %s.delete($$k); } });\n",
+			kmVar, kmVar))
+	} else {
+		// Unkeyed: destroy all, then rebuild
+		fn.WriteString(fmt.Sprintf("    %s.forEach($$blk => $$blk.destroy());\n", kmVar))
+		fn.WriteString(fmt.Sprintf("    %s = [];\n", kmVar))
+		fn.WriteString(fmt.Sprintf("    ($$arr||[]).forEach(function(%s, %s) {\n", itemVar, indexVar))
+		fn.WriteString("      const $$row = document.createElement('div');\n")
+		fn.WriteString(fmt.Sprintf("      $$row.setAttribute('%s','');\n", g.scopeID))
+		var createBuf, updateBuf, destroyBuf strings.Builder
+		g.emitEachRowBody(&createBuf, &updateBuf, &destroyBuf, n.Children, "$$row", itemVar, "      ")
+		fn.WriteString(createBuf.String())
+		fn.WriteString(fmt.Sprintf("      %s.before($$row);\n", anchorVar))
+		fn.WriteString(fmt.Sprintf("      %s.push({ root: $$row, destroy() {\n", kmVar))
+		fn.WriteString(destroyBuf.String())
+		fn.WriteString("        $$row.remove();\n")
+		fn.WriteString("      }});\n")
+		fn.WriteString("    });\n")
+	}
+	fn.WriteString("  }\n")
+
+	g.create.WriteString(fn.String())
+
+	// Branch body: append anchor, call the reconciler once for initial render
+	b.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, anchorVar))
+	b.WriteString(fmt.Sprintf("%s%s(%s);\n", indent, fnVar, array))
+
+	// Register reactive update: fires whenever the array variable changes,
+	// even when the branch condition itself hasn't changed.
+	for _, dep := range findDeps(array, g.analysis.reactiveNames()) {
+		guard := ""
+		if branchVar != "" {
+			guard = fmt.Sprintf("  if (%s) ", branchVar)
+		}
+		g.addUpdate(dep, guard+fmt.Sprintf("%s(%s);", fnVar, array))
+	}
+}
+
+// emitEachRowBody generates the create / update / destroy snippets for one
+// row of an {#each} block.  It recursively handles elements, text, and
+// components.
+//
+//   createBuf  — statements that build DOM (run once per row creation)
+//   updateBuf  — statements that refresh bound values (run on each array update)
+//   destroyBuf — statements that clean up (run when row is removed)
+//   nodes      — the children of the {#each} block
+//   parentVar  — JS variable the row nodes are appended to ("$$row")
+//   itemVar    — the loop variable name (e.g. "order")
+//   indent     — leading whitespace
+func (g *CodeGen) emitEachRowBody(
+	createBuf, updateBuf, destroyBuf *strings.Builder,
+	nodes []Node,
+	parentVar, itemVar, indent string,
+) {
+	for _, node := range nodes {
+		switch n := node.(type) {
+
+		case *TextNode:
+			expr := buildExpr(n.Parts)
+			hasExpr := false
+			for _, p := range n.Parts {
+				if !p.Static { hasExpr = true; break }
+			}
+			if hasExpr {
+				tv := g.id()
+				createBuf.WriteString(fmt.Sprintf("%sconst %s = document.createTextNode(%s);\n", indent, tv, expr))
+				createBuf.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, tv))
+				// Only add to update if the expression references the item variable
+				if strings.Contains(expr, itemVar) {
+					updateBuf.WriteString(fmt.Sprintf("              %s.data = %s;\n", tv, expr))
+				}
+			} else {
+				createBuf.WriteString(fmt.Sprintf("%s%s.appendChild(document.createTextNode(%s));\n", indent, parentVar, expr))
+			}
+
+		case *ElementNode:
+			if n.EachExpr != "" || n.IfCond != "" {
+				// Nested directive — recurse children directly into same parent
+				g.emitEachRowBody(createBuf, updateBuf, destroyBuf, n.Children, parentVar, itemVar, indent)
+				continue
+			}
+			sv := g.id()
+			createBuf.WriteString(fmt.Sprintf("%sconst %s = document.createElement('%s');\n", indent, sv, n.Tag))
+			createBuf.WriteString(fmt.Sprintf("%s%s.setAttribute('%s','');\n", indent, sv, g.scopeID))
+			for _, attr := range n.Attrs {
+				if attr.IsEvent {
+					handler := g.rewriteHandlerAssignments(attr.Value)
+					createBuf.WriteString(fmt.Sprintf("%s%s.addEventListener('%s', %s);\n",
+						indent, sv, attr.Name, handler))
+				} else if attr.IsBind {
+					createBuf.WriteString(bindAttrStmt(sv, attr.Name, attr.Value, indent) + "\n")
+					if strings.Contains(attr.Value, itemVar) {
+						updateBuf.WriteString(fmt.Sprintf("              %s\n",
+							strings.TrimSpace(bindAttrStmt(sv, attr.Name, attr.Value, ""))))
+					}
+				} else {
+					createBuf.WriteString(fmt.Sprintf("%s%s.setAttribute('%s','%s');\n",
+						indent, sv, attr.Name, escapeAttr(attr.Value)))
+				}
+			}
+			g.emitEachRowBody(createBuf, updateBuf, destroyBuf, n.Children, sv, itemVar, indent)
+			createBuf.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, sv))
+
+		case *ComponentNode:
+			wv := g.id()
+			cv := g.id() + "_comp"
+			// Build props expression from bound attrs
+			var propsEntries []string
+			for _, attr := range n.Attrs {
+				if attr.IsBind {
+					propsEntries = append(propsEntries, fmt.Sprintf("%s: %s", attr.Name, attr.Value))
+				} else if !attr.IsEvent {
+					propsEntries = append(propsEntries, fmt.Sprintf("%s: '%s'", attr.Name, escapeAttr(attr.Value)))
+				}
+			}
+			propsExpr := "{}"
+			if len(propsEntries) > 0 {
+				propsExpr = "{ " + strings.Join(propsEntries, ", ") + " }"
+			}
+			createBuf.WriteString(fmt.Sprintf("%sconst %s = document.createElement('div');\n", indent, wv))
+			createBuf.WriteString(fmt.Sprintf("%s%s.setAttribute('%s','');\n", indent, wv, g.scopeID))
+			// Wire event listeners
+			for _, attr := range n.Attrs {
+				if attr.IsEvent {
+					createBuf.WriteString(fmt.Sprintf(
+						"%s%s.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
+						indent, wv, attr.Name, attr.Value))
+				}
+			}
+			createBuf.WriteString(fmt.Sprintf("%sconst %s = %s(%s, %s, {});\n",
+				indent, cv, n.Name, wv, propsExpr))
+			createBuf.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, wv))
+			// Update: call .set() with fresh props if any reference itemVar
+			if strings.Contains(propsExpr, itemVar) {
+				updateBuf.WriteString(fmt.Sprintf("              %s.set(%s);\n", cv, propsExpr))
+			}
+			// Destroy: call .destroy()
+			destroyBuf.WriteString(fmt.Sprintf("              %s.destroy();\n", cv))
+
+		case *IfChainNode:
+			// Inline if/else inside a row — static for now (condition evaluated at create time)
+			// TODO: make reactive by generating a per-row chain function
+			for i, branch := range n.Branches {
+				if i == 0 {
+					createBuf.WriteString(fmt.Sprintf("%sif (%s) {\n", indent, branch.Cond))
+				} else if branch.Cond == "" {
+					createBuf.WriteString(fmt.Sprintf("%s} else {\n", indent))
+				} else {
+					createBuf.WriteString(fmt.Sprintf("%s} else if (%s) {\n", indent, branch.Cond))
+				}
+				g.emitEachRowBody(createBuf, updateBuf, destroyBuf, branch.Children, parentVar, itemVar, indent+"  ")
+			}
+			if len(n.Branches) > 0 {
+				createBuf.WriteString(fmt.Sprintf("%s}\n", indent))
+			}
+		}
+	}
 }
 
 // eachChildrenNeedCodegen returns true when an {#each} block's children contain
@@ -1594,11 +1862,10 @@ func eachChildrenNeedCodegen(nodes []Node) bool {
 }
 
 // emitBranchComponent emits inline component mounting code inside a branch
-// function. For plain and #if components, it writes directly into b.
-// For #each components, it hoists the key map and update function to the
-// component scope (via g.create/g.addUpdate) so the list re-renders when
-// the array or any bound prop expression changes — not just on branch mount.
-func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, parentVar, indent string) {
+// and returns the names of component-scope variables it declared (instanceVar,
+// wrapVar) so walkIfChain can null them out when the branch is removed.
+func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, parentVar, indent string) []string {
+	var declared []string
 	// Build props object expression
 	var propsEntries []string
 	for _, attr := range comp.Attrs {
@@ -1627,27 +1894,67 @@ func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, p
 	}
 
 	if comp.IfCond != "" {
-		// <Comp #if="cond" /> inside a branch — simple inline conditional mount
-		wrapVar := g.id()
+		// <Comp #if="cond" /> inside a branch — lift vars to component scope so
+		// bound props can be updated reactively via g.addUpdate.
+		wrapVar  := g.id()
+		instVar  := g.id() + "_comp"
+		g.create.WriteString(fmt.Sprintf("  let %s = null;\n", wrapVar))
+		g.create.WriteString(fmt.Sprintf("  let %s = null;\n", instVar))
 		b.WriteString(fmt.Sprintf("%sif (%s) {\n", indent, comp.IfCond))
-		b.WriteString(fmt.Sprintf("%s  const %s = document.createElement('div');\n", indent, wrapVar))
+		b.WriteString(fmt.Sprintf("%s  %s = document.createElement('div');\n", indent, wrapVar))
 		b.WriteString(fmt.Sprintf("%s  %s.setAttribute('%s','');\n", indent, wrapVar, g.scopeID))
 		b.WriteString(evWire(wrapVar, indent+"  "))
-		b.WriteString(fmt.Sprintf("%s  %s(%s, %s, {});\n", indent, comp.Name, wrapVar, propsExpr))
+		b.WriteString(fmt.Sprintf("%s  %s = %s(%s, %s, {});\n", indent, instVar, comp.Name, wrapVar, propsExpr))
 		b.WriteString(fmt.Sprintf("%s  %s.appendChild(%s);\n", indent, parentVar, wrapVar))
 		b.WriteString(fmt.Sprintf("%s}\n", indent))
-		return
+		// Register reactive prop updates — guarded by instVar so they no-op when condition is false
+		for _, attr := range comp.Attrs {
+			if !attr.IsBind {
+				continue
+			}
+			update := fmt.Sprintf("  if (%s) %s.set({ %s: %s });", instVar, instVar, attr.Name, attr.Value)
+			for _, dep := range findDeps(attr.Value, g.analysis.reactiveNames()) {
+				g.addUpdate(dep, update)
+			}
+		}
+		declared = append(declared, wrapVar, instVar)
+		return declared
 	}
 
 	if comp.EachExpr == "" {
-		// Plain single-mount component
+		// Plain single-mount component inside a branch.
+		//
+		// wrapVar and instVar are lifted to COMPONENT SCOPE (let ... = null in g.create)
+		// so that:
+		//   (a) Reactive setters can call instVar.set({prop: val}) via g.addUpdate
+		//       registrations, updating the component when bound props change — even
+		//       when the branch condition hasn't changed.
+		//   (b) walkIfChain nulls them out (via branchDeclared) when the branch is
+		//       removed, which triggers the guard `if (instVar)` in update statements.
+		//   (c) The destroy() call fires on branch removal so the child component
+		//       cleans up its own event listeners and styles.
 		wrapVar := g.id()
-		b.WriteString(fmt.Sprintf("%sconst %s = document.createElement('div');\n", indent, wrapVar))
+		instVar := g.id() + "_comp"
+		g.create.WriteString(fmt.Sprintf("  let %s = null;\n", wrapVar))
+		g.create.WriteString(fmt.Sprintf("  let %s = null;\n", instVar))
+		b.WriteString(fmt.Sprintf("%s%s = document.createElement('div');\n", indent, wrapVar))
 		b.WriteString(fmt.Sprintf("%s%s.setAttribute('%s','');\n", indent, wrapVar, g.scopeID))
 		b.WriteString(evWire(wrapVar, indent))
-		b.WriteString(fmt.Sprintf("%s%s(%s, %s, {});\n", indent, comp.Name, wrapVar, propsExpr))
+		b.WriteString(fmt.Sprintf("%s%s = %s(%s, %s, {});\n", indent, instVar, comp.Name, wrapVar, propsExpr))
 		b.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, wrapVar))
-		return
+		// Register reactive prop updates — fire directly from setters, bypassing
+		// the chain function so the component gets fresh props without DOM recreation.
+		for _, attr := range comp.Attrs {
+			if !attr.IsBind {
+				continue
+			}
+			update := fmt.Sprintf("  if (%s) %s.set({ %s: %s });", instVar, instVar, attr.Name, attr.Value)
+			for _, dep := range findDeps(attr.Value, g.analysis.reactiveNames()) {
+				g.addUpdate(dep, update)
+			}
+		}
+		declared = append(declared, wrapVar, instVar)
+		return declared
 	}
 
 	// ── #each component inside a branch ──────────────────────────────────────
@@ -1764,6 +2071,7 @@ func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, p
 			}
 		}
 	}
+	return declared
 }
 
 // rewriteHandlerAssignments rewrites state-variable assignments inside an

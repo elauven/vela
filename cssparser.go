@@ -551,6 +551,12 @@ func scopeSelector(toks []CssTok, attr string) string {
 		return unwrapGlobal(rawStr)
 	}
 
+	// Second pass: skip inherently global selectors (:root, body, html, *)
+	// These must never receive a component scope attribute.
+	if isGlobalSelector(rawStr) {
+		return rawStr
+	}
+
 	// Find injection point: scan right-to-left for the position before
 	// any trailing pseudo-elements (::after, ::before, :hover, :focus etc.)
 	// but after the actual subject token.
@@ -650,4 +656,69 @@ func isCssIdentStart(c byte) bool {
 
 func isCssIdentChar(c byte) bool {
 	return isCssIdentStart(c) || isDigitByte(c)
+}
+
+// ── Scope helpers injected by patch_cssparser.py ─────────────────────────
+
+// isGlobalSelector returns true for selectors that must never be scoped.
+func isGlobalSelector(sel string) bool {
+	s := strings.TrimSpace(sel)
+	if s == "" || strings.HasPrefix(s, "@") { return true }
+	for _, pfx := range []string{":root", ":root ", ":root:", ":root.", ":root#", ":root[", ":root>", ":root+", ":root~"} {
+		if s == pfx || (len(pfx) > 5 && strings.HasPrefix(s, pfx)) { return true }
+	}
+	if s == ":root" { return true }
+	end := strings.IndexAny(s, " >+~.#[:(")
+	first := s; if end >= 0 { first = s[:end] }
+	return first == "html" || first == "body" || first == "*"
+}
+
+// insertScopeAttr inserts [id] before the first : pseudo, respecting ( ) [ ].
+func insertScopeAttr(sel, id string) string {
+	attr := "[" + id + "]"
+	d, b := 0, 0
+	for i, c := range sel {
+		switch c {
+		case '(': d++
+		case ')': d--
+		case '[': b++
+		case ']': b--
+		case ':':
+			if d == 0 && b == 0 { return sel[:i] + attr + sel[i:] }
+		}
+	}
+	return sel + attr
+}
+
+// scopeOneSel scopes a single selector token, handling :global() and globals.
+func scopeOneSel(sel, scopeID string) string {
+	s := strings.TrimSpace(sel)
+	if strings.HasPrefix(s, "@") { return s }
+	if strings.HasPrefix(s, ":global(") && strings.HasSuffix(s, ")") {
+		return strings.TrimSpace(s[8 : len(s)-1])
+	}
+	if isGlobalSelector(s) { return s }
+	if !strings.Contains(s, ":global(") { return insertScopeAttr(s, scopeID) }
+	// Inline :global() — scope parts outside it
+	var out strings.Builder
+	rem := s
+	for {
+		idx := strings.Index(rem, ":global(")
+		if idx < 0 {
+			if t := strings.TrimSpace(rem); t != "" {
+				if isGlobalSelector(t) { out.WriteString(t) } else { out.WriteString(insertScopeAttr(t, scopeID)) }
+			}
+			break
+		}
+		if before := strings.TrimSpace(rem[:idx]); before != "" {
+			if isGlobalSelector(before) { out.WriteString(before) } else { out.WriteString(insertScopeAttr(before, scopeID)) }
+			out.WriteString(" ")
+		}
+		rest := rem[idx+8:]; depth := 1; i := 0
+		for i < len(rest) {
+			if rest[i] == '(' { depth++ } else if rest[i] == ')' { depth--; if depth == 0 { break } }; i++
+		}
+		out.WriteString(rest[:i]); rem = rest[i+1:]
+	}
+	return strings.TrimSpace(out.String())
 }
