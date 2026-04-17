@@ -4,7 +4,6 @@
   export let padding  = '1.25rem';
   export let noPad    = false;
 </script>
-
 <style>
   .card {
     background: var(--bg-card);
@@ -13,6 +12,7 @@
     box-shadow: var(--shadow);
     overflow: hidden;
     transition: background .3s, border-color .3s;
+    padding: 1rem;
   }
 
   .card-header {
@@ -37,7 +37,6 @@
     background: var(--bg);
   }
 </style>
-
 <template>
   <div class="card">
 
@@ -45,21 +44,21 @@
       <div class="card-header">
         <div class="header-left">
           <div class="card-title">{title}</div>
-          {#if subtitle}
-            <div class="card-subtitle">{subtitle}</div>
-          {/if}
+            {#if subtitle}
+              <div class="card-subtitle">{subtitle}</div>
+              {/if}
+            </div>
+            <div class="header-actions">
+              <slot name="actions" />
+            </div>
+          </div>
+        {/if}
+
+        <div class="card-body" :class="noPad ? 'no-pad' : ''">
+          <slot />
         </div>
-        <div class="header-actions">
-          <slot name="actions" />
-        </div>
+
+        <slot name="footer" />
+
       </div>
-    {/if}
-
-    <div class="card-body" :class="noPad ? 'no-pad' : ''">
-      <slot />
-    </div>
-
-    <slot name="footer" />
-
-  </div>
 </template>

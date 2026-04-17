@@ -2,7 +2,7 @@
   import { auth, logout } from './stores/auth.js';
   import { settings }     from './stores/data.js';
   import { LoginPage }    from './LoginPage.js';
-  import { Dashboard }    from './Dashboard.js';
+  import { Dashboard }    from './Dashboard.vela';
 
   let isAuthenticated = $state(false);
   let user            = $state(null);
@@ -40,7 +40,6 @@
     document.title = 'Vela Dashboard';
   });
 </script>
-
 <style>
   :root {
     --bg:        #f1f5f9;
@@ -128,7 +127,6 @@
     flex: 1;
   }
 </style>
-
 <template>
   <div class="app">
 
@@ -136,21 +134,21 @@
     {#if isAuthenticated}
       <nav class="navbar">
         <button class="hamburger" @click="toggleSidebar" title="Toggle sidebar">☰</button>
-        <span class="brand">Vela Dashboard</span>
-        <div class="navbar-right">
-          <span class="user-chip">{user.avatar} {user.name}</span>
-          <button class="logout-btn" @click="handleLogout">Sign out</button>
+          <span class="brand">Vela Dashboard</span>
+            <div class="navbar-right">
+              <span class="user-chip">{user.avatar} {user.name}</span>
+                <button class="logout-btn" @click="handleLogout">Sign out</button>
+                </div>
+              </nav>
+            {/if}
+
+            <main class="main">
+              {#if isAuthenticated}
+                <Dashboard :sidebarOpen="sidebarOpen" :user="user" />
+              {:else}
+              <LoginPage />
+            {/if}
+          </main>
+
         </div>
-      </nav>
-    {/if}
-
-    <main class="main">
-      {#if isAuthenticated}
-        <Dashboard :sidebarOpen="sidebarOpen" :user="user" />
-      {:else}
-        <LoginPage />
-      {/if}
-    </main>
-
-  </div>
 </template>

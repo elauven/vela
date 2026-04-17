@@ -1,0 +1,14 @@
+<script>
+import {auth} from 'vela'
+$effect(() => {
+  const unsub = auth.sibscribe((item) => {
+    console.log('auth changed', item)
+  })
+  return unsub
+})
+</script>
+<template>
+<slot name="header"></slot>
+<slot></slot>
+<slot name="footer"></slot>
+</template>

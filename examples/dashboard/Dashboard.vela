@@ -39,7 +39,6 @@
     notifOpen = !notifOpen;
   }
 </script>
-
 <style>
   .layout {
     display: flex;
@@ -59,6 +58,7 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
+    margin-left: 250px;
   }
 
   /* Floating notification badge */
@@ -84,7 +84,6 @@
     border: 2px solid white;
   }
 </style>
-
 <template>
   <div class="layout">
 
@@ -95,27 +94,27 @@
         :activePage="page"
         :user="user"
         @navigate="($e) => navigate($e.detail.page)"
-      />
-    </div>
+        />
+      </div>
 
-    <!-- Main content area -->
-    <div class="content">
-      {#if page === 'overview'}
-        <OverviewPage />
-      {:else if page === 'orders'}
+      <!-- Main content area -->
+      <div class="content">
+        {#if page === 'overview'}
+          <OverviewPage />
+        {:else if page === 'orders'}
         <OrdersPage />
       {:else if page === 'users'}
-        <UsersPage :currentUser="user" />
-      {:else if page === 'settings'}
-        <SettingsPage />
-      {/if}
-    </div>
+      <UsersPage :currentUser="user" />
+    {:else if page === 'settings'}
+    <SettingsPage />
+  {/if}
+  </div>
 
-    <!-- Notification FAB -->
-    <button class="notif-fab" @click="toggleNotif" title="Notifications">
-      🔔
-      {#if unreadCount > 0}
-        <span class="badge">{unreadCount}</span>
+  <!-- Notification FAB -->
+  <button class="notif-fab" @click="toggleNotif" title="Notifications">
+    🔔
+    {#if unreadCount > 0}
+      <span class="badge">{unreadCount}</span>
       {/if}
     </button>
 
@@ -125,8 +124,8 @@
         :items="allNotifications"
         @close="() => notifOpen = false"
         @markAllRead="markAllRead"
-      />
-    {/if}
+        />
+      {/if}
 
-  </div>
+    </div>
 </template>
