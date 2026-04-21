@@ -27,6 +27,22 @@ type FragGen struct {
 	scopeID  string
 	analysis *Analysis
 
+	// itemVar / boxVar power the row-scoped "current item" indirection.
+	// At row creation the frag declares  let <boxVar> = <itemVar>;  and
+	// update(<itemVar>, $$i)  refreshes  <boxVar> = <itemVar>;  at the top.
+	// Event handlers captured during create close over boxVar (rewritten
+	// via rewriteItemRef) so a later forEach reconciliation that calls
+	// update() with a fresh item sees its click-handler reads refreshed.
+	// Without this, handlers stale-close over the forEach callback param
+	// and clicking a row passes the pre-update item to the handler — the
+	// same bug that was fixed in the emitEachRowBody path (turn 12).
+	//
+	// Both fields are empty when FragGen is used outside an {#each} row
+	// (e.g. fragment-capturing slot fallbacks), in which case no box is
+	// emitted and handler rewriting becomes a no-op.
+	itemVar string
+	boxVar  string
+
 	counter int
 
 	// Per-fragment code sections (analogous to CodeGen but local)
@@ -76,6 +92,13 @@ func (f *FragGen) Emit() string {
 	params := strings.Join(f.params, ", ")
 	b.WriteString(fmt.Sprintf("  function %s(%s) {\n", f.name, params))
 
+	// Row-scoped "current item" box — see FragGen struct comment.  Declared
+	// BEFORE any handler const (which may reference boxVar after rewrite) so
+	// the captured closures see the correct binding.
+	if f.itemVar != "" && f.boxVar != "" {
+		b.WriteString(fmt.Sprintf("    let %s = %s;\n", f.boxVar, f.itemVar))
+	}
+
 	if f.create.Len() > 0 {
 		b.WriteString(f.create.String())
 	}
@@ -95,8 +118,13 @@ func (f *FragGen) Emit() string {
 	// update() reruns dynamic assignments with new variable values
 	b.WriteString(fmt.Sprintf("    return {\n"))
 	b.WriteString(fmt.Sprintf("      el: %s,\n", rootVar))
-	if f.update.Len() > 0 {
+	if f.update.Len() > 0 || (f.itemVar != "" && f.boxVar != "") {
 		b.WriteString(fmt.Sprintf("      update(%s) {\n", params))
+		// Refresh the item box FIRST so any handler-closure read after this
+		// point sees the fresh item.
+		if f.itemVar != "" && f.boxVar != "" {
+			b.WriteString(fmt.Sprintf("        %s = %s;\n", f.boxVar, f.itemVar))
+		}
 		b.WriteString(f.update.String())
 		b.WriteString("      },\n")
 	}
@@ -153,6 +181,11 @@ func (f *FragGen) WalkElement(elem *ElementNode, parentVar string) {
 		switch {
 		case attr.IsEvent:
 			handler := attr.Value
+			// Rewrite bare row-item references so the handler closes over
+			// the row's mutable box instead of the stale forEach parameter.
+			// No-op when f.itemVar/f.boxVar aren't set (fragment not in an
+			// each-row context).
+			handler = rewriteItemRef(handler, f.itemVar, f.boxVar)
 			if isSimpleIdent(handler) {
 				f.events.WriteString(fmt.Sprintf(
 					"    %s.addEventListener('%s', %s);\n", v, attr.Name, handler))

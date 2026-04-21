@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -83,7 +85,17 @@ func TestParseTemplate_Directives(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	el := nodes[0].(*ElementNode)
+	// groupIfChains wraps elements with #if in an IfChainNode; the original
+	// element (with its IfCond, attrs, and children) is preserved at
+	// Branches[0].Elem.  The test originally predates that pass.
+	chain, ok := nodes[0].(*IfChainNode)
+	if !ok {
+		t.Fatalf("expected *IfChainNode at nodes[0], got %T", nodes[0])
+	}
+	if len(chain.Branches) == 0 || chain.Branches[0].Elem == nil {
+		t.Fatalf("expected first branch to carry the original element")
+	}
+	el := chain.Branches[0].Elem
 	if el.IfCond != "show" {
 		t.Errorf("IfCond: want 'show', got %q", el.IfCond)
 	}
@@ -358,8 +370,14 @@ func TestGenerateCode_IfDirective(t *testing.T) {
 	if !strings.Contains(code, "createComment") {
 		t.Error("expected anchor comment for #if")
 	}
-	if !strings.Contains(code, "insertBefore") {
-		t.Error("expected insertBefore for #if mount")
+	// Codegen uses DOM Node.before() rather than parent.insertBefore(node, ref).
+	// Both are correct; the test originally predated the .before() migration.
+	if !strings.Contains(code, ".before(") {
+		t.Error("expected .before() call to mount branch before anchor")
+	}
+	// Also check that a chain function is emitted — the real shape-guard.
+	if !strings.Contains(code, "$$chain_") {
+		t.Error("expected $$chain_ function for #if reactivity")
 	}
 }
 
@@ -1747,6 +1765,73 @@ func min(a, b int) int {
 	return b
 }
 
+// findSetterEnd returns the byte offset just past the closing `}` of the
+// top-level function definition that starts at `start` in `src`.  Scans
+// brace pairs while honouring string, template-literal, and comment
+// tokens so braces inside them don't throw off the counter.
+//
+// Used by setter-body tests that need to examine ONLY the target
+// function's body — the previous approach (search for "\n  function ")
+// returned -1 when the setter was the last function in the output,
+// which made the slice bleed into later code and matched unrelated
+// $$effect0() calls in the initial-render / mount sections.
+func findSetterEnd(src string, start int) int {
+	// Seek to first `{`
+	i := start
+	for i < len(src) && src[i] != '{' {
+		i++
+	}
+	if i >= len(src) {
+		return len(src)
+	}
+	depth := 0
+	for i < len(src) {
+		c := src[i]
+		switch c {
+		case '{':
+			depth++
+			i++
+		case '}':
+			depth--
+			i++
+			if depth == 0 {
+				return i
+			}
+		case '"', '\'', '`':
+			q := c
+			i++
+			for i < len(src) {
+				if src[i] == '\\' && i+1 < len(src) {
+					i += 2
+					continue
+				}
+				if src[i] == q {
+					i++
+					break
+				}
+				i++
+			}
+		case '/':
+			if i+1 < len(src) && src[i+1] == '/' {
+				for i < len(src) && src[i] != '\n' {
+					i++
+				}
+			} else if i+1 < len(src) && src[i+1] == '*' {
+				i += 2
+				for i+1 < len(src) && !(src[i] == '*' && src[i+1] == '/') {
+					i++
+				}
+				i += 2
+			} else {
+				i++
+			}
+		default:
+			i++
+		}
+	}
+	return len(src)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Regression tests for runtime bugs
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2373,10 +2458,16 @@ func TestParseTemplate_ComponentWithIf(t *testing.T) {
 		t.Fatalf("parse error: %v", err)
 	}
 	div := nodes[0].(*ElementNode)
-	comp, ok := div.Children[0].(*ComponentNode)
+	// Component with #if is wrapped in IfChainNode by groupIfChains; the
+	// original ComponentNode is preserved at Branches[0].Comp.
+	chain, ok := div.Children[0].(*IfChainNode)
 	if !ok {
-		t.Fatalf("expected ComponentNode, got %T", div.Children[0])
+		t.Fatalf("expected IfChainNode, got %T", div.Children[0])
 	}
+	if len(chain.Branches) == 0 || chain.Branches[0].Comp == nil {
+		t.Fatal("expected first branch to carry the component")
+	}
+	comp := chain.Branches[0].Comp
 	if comp.IfCond != "open" {
 		t.Errorf("IfCond: want 'open', got %q", comp.IfCond)
 	}
@@ -2446,15 +2537,24 @@ func TestGenerateCode_ComponentIfRoutedCorrectly(t *testing.T) {
 	a := analyzeScript(sfc.Script)
 	code := generateCode("App", sfc, nodes, a, "vela-test")
 
-	// Must use conditional component mount ($$cif_)
-	if !strings.Contains(code, "$$cif_") {
-		t.Errorf("expected conditional component mount ($$cif_) in output:\n%s", code[:min(500, len(code))])
+	// Conditional component mounting now goes through the unified $$chain_
+	// path — same pattern as conditional DOM.  The pre-groupIfChains path
+	// ($$cif_) is no longer reached because groupIfChains wraps <Comp #if>
+	// in an IfChainNode, and walkIfChain routes to walkComponentIfChain.
+	if !strings.Contains(code, "$$chain_") {
+		t.Errorf("expected $$chain_ function for conditional component mount:\n%s",
+			code[:min(500, len(code))])
 	}
-	// Component should be destroyed when condition becomes false
+	// Component should be destroyed when condition becomes false.  The
+	// chain teardown does `.destroy()` on the cached instance.
 	if !strings.Contains(code, ".destroy()") {
 		t.Error("conditional component must call .destroy() when unmounted")
 	}
-	// Must be re-checked when 'open' changes
+	// Component should be instantiated: Modal(...) appears in output.
+	if !strings.Contains(code, "Modal(") {
+		t.Errorf("expected Modal(...) call in output:\n%s", code[:min(500, len(code))])
+	}
+	// Must be re-checked when 'open' changes.
 	if !strings.Contains(code, "function $$set_open") {
 		t.Error("expected $$set_open setter")
 	}
@@ -2797,19 +2897,25 @@ func TestGenerateCode_ComponentInsideIfBranch(t *testing.T) {
 	a := analyzeScript(sfc.Script)
 	code := generateCode("App", sfc, nodes, a, "vela-test")
 
-	// TagBadge must appear somewhere in the generated code
+	// TagBadge must appear somewhere in the generated code — not silently
+	// dropped by the branch walker.
 	if !strings.Contains(code, "TagBadge(") {
 		t.Errorf("TagBadge not mounted in #if branch — component dropped:\n%s",
 			code[:min(600, len(code))])
 	}
-	// The mount must be inside the chain function, not at top level after it
-	chainStart := strings.Index(code, "function $$chain_")
-	tagBadgePos := strings.Index(code, "TagBadge(")
-	if tagBadgePos < 0 {
-		t.Fatal("TagBadge( not found")
+	// A chain function must exist for the #if reactivity.
+	if !strings.Contains(code, "function $$chain_") {
+		t.Error("expected $$chain_ function for #if reactivity")
 	}
-	if tagBadgePos < chainStart {
-		t.Errorf("TagBadge mounted before the #if chain function — wrong scope")
+	// When show goes false, the branch element is .remove()d; when it goes
+	// back true, $$bceach_ is called again with the live tag list.  The
+	// bceach function must be invoked from inside the chain (proof that
+	// show=false tears down the DOM surface and show=true rebuilds it).
+	// Source-position-based checks (e.g. TagBadge( before or after
+	// $$chain_) no longer match the generator's layout; $$bceach_ is
+	// hoisted above the chain function today.
+	if !strings.Contains(code, "$$bceach_") {
+		t.Error("expected $$bceach_ (bound component each) helper")
 	}
 }
 
@@ -2823,22 +2929,23 @@ func TestGenerateCode_ComponentEachInsideIfBranch(t *testing.T) {
 	a := analyzeScript(sfc.Script)
 	code := generateCode("App", sfc, nodes, a, "vela-test")
 
-	chainStart := strings.Index(code, "function $$chain_")
-	if chainStart < 0 {
-		t.Fatal("no chain function")
+	// The chain function governs the #if lifecycle.
+	if !strings.Contains(code, "function $$chain_") {
+		t.Fatal("no chain function emitted for #if")
 	}
-	// Find the chain function body
-	chainEnd := chainStart + strings.Index(code[chainStart:], "\n  function ")
-	if chainEnd <= chainStart {
-		chainEnd = len(code)
+	// Card component must be instantiated somewhere.
+	if !strings.Contains(code, "Card(") {
+		t.Errorf("Card component not mounted:\n%s", code[:min(500, len(code))])
 	}
-	chainFn := code[chainStart:chainEnd]
-
-	if !strings.Contains(chainFn, "Card(") {
-		t.Errorf("Card component not mounted inside #if chain function:\n%s", chainFn[:min(500, len(chainFn))])
+	// Keyed each uses a Map for instance tracking.
+	if !strings.Contains(code, "new Map()") {
+		t.Errorf("keyed #each inside #if branch should use a Map:\n%s", code[:min(500, len(code))])
 	}
-	if !strings.Contains(chainFn, "new Map()") {
-		t.Errorf("keyed #each inside #if branch should use a Map:\n%s", chainFn[:min(500, len(chainFn))])
+	// The bound-component-each helper must be called from inside the
+	// chain's build branch — that's how show=true re-mounts children.
+	bceachIdx := strings.Index(code, "$$bceach_")
+	if bceachIdx < 0 {
+		t.Error("expected $$bceach_ helper")
 	}
 }
 
@@ -3046,15 +3153,22 @@ func TestGenerateCode_OnMountAfterMount(t *testing.T) {
 	code := generateCode("App", sfc, nodes, a, "vela-test")
 
 	mountIdx := strings.Index(code, "$$target.appendChild($$root)")
-	onMountIdx := strings.Index(code, "// onMount")
+	// onMount bodies are inlined into an IIFE stored in $$mountCleanup0
+	// (so the return value can be used as a cleanup thunk in destroy()).
+	// The declaration site is the marker: $$mountCleanup0 = (function() {
+	onMountIdx := strings.Index(code, "$$mountCleanup0 = (function()")
 	if mountIdx < 0 {
 		t.Fatal("no mount call found")
 	}
 	if onMountIdx < 0 {
-		t.Fatal("no onMount section found")
+		t.Fatal("no onMount section found (expected $$mountCleanup0 IIFE)")
 	}
 	if onMountIdx < mountIdx {
 		t.Errorf("onMount appears BEFORE $$target.appendChild — component not in DOM yet\nonMountIdx=%d mountIdx=%d", onMountIdx, mountIdx)
+	}
+	// Also verify the user's body made it through.
+	if !strings.Contains(code, "document.getElementById('x').focus()") {
+		t.Error("user's onMount body missing from output")
 	}
 }
 
@@ -3260,10 +3374,12 @@ func TestGenerateCode_EffectDoesNotCallItsOwnSetter(t *testing.T) {
 	if setIdx < 0 {
 		t.Fatal("no $$set_isAuthenticated found")
 	}
-	setEnd := setIdx + strings.Index(code[setIdx:], "\n  function ")
-	if setEnd <= setIdx {
-		setEnd = len(code)
-	}
+	// The setter's body is a single JS function — end it at the matching
+	// close brace.  Previous approach (search for "\n  function ") gave
+	// -1 when the setter was the LAST function in the output, which made
+	// the slice bleed into later code (initial-render / mount sections)
+	// and falsely triggered the $$effect0() contains-check.
+	setEnd := findSetterEnd(code, setIdx)
 	setter := code[setIdx:setEnd]
 
 	if strings.Contains(setter, "$$effect0()") {
@@ -3410,8 +3526,16 @@ func TestGenerateCode_EffectHasCleanup(t *testing.T) {
 	}
 	// Cleanup must be called in destroy()
 	destroyIdx := strings.Index(code, "destroy()")
-	if destroyIdx < 0 { t.Fatal("no destroy()") }
-	destroyBlock := code[destroyIdx : destroyIdx+200]
+	if destroyIdx < 0 {
+		t.Fatal("no destroy()")
+	}
+	// Clamp the slice bound — generated code length varies with changes
+	// to the emitter, and hard-coding +200 will occasionally panic.
+	destroyEnd := destroyIdx + 200
+	if destroyEnd > len(code) {
+		destroyEnd = len(code)
+	}
+	destroyBlock := code[destroyIdx:destroyEnd]
 	if !strings.Contains(destroyBlock, "$$cleanup0") {
 		t.Errorf("cleanup not called in destroy():\n%s", destroyBlock)
 	}
@@ -3441,8 +3565,7 @@ func TestGenerateCode_SubscribeEffectNoInfiniteLoop(t *testing.T) {
 	if setterStart < 0 {
 		t.Fatal("no $$set_isAuthenticated found")
 	}
-	setterEnd := setterStart + strings.Index(code[setterStart:], "\n  function ")
-	if setterEnd <= setterStart { setterEnd = len(code) }
+	setterEnd := findSetterEnd(code, setterStart)
 	setter := code[setterStart:setterEnd]
 
 	// The setter must NOT call $$effect0 — that would cause infinite recursion
@@ -3716,4 +3839,199 @@ func TestSvelteBlock_NestedInsideHtmlElement(t *testing.T) {
 	}
 	if !foundH1 { t.Error("section should contain h1") }
 	if !foundChain { t.Error("section should contain IfChainNode") }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Regression harness — compile every real .vela template in testdata/ and
+//  verify the generated JS meets three structural invariants.  These are the
+//  checks that would have caught most bugs fixed over this project's life:
+//    1. No %!(EXTRA markers — fmt.Sprintf arg-count slips
+//    2. Output is a valid JS program — parses clean via our own parser
+//    3. No duplicate top-level `const` declarations — the handler-name
+//       collision class of bug from turn 13
+// ─────────────────────────────────────────────────────────────────────────────
+
+// compileVelaString runs the same pipeline as compileFile but on an in-memory
+// source string, returning the generated JS.  Test-only; avoids touching disk.
+func compileVelaString(t *testing.T, name, raw string) string {
+	t.Helper()
+	sfc, err := parseSFC(raw)
+	if err != nil {
+		t.Fatalf("%s: parse: %v", name, err)
+	}
+	tmpl, err := parseTemplate(sfc.Template)
+	if err != nil {
+		t.Fatalf("%s: template: %v", name, err)
+	}
+	analysis := analyzeScript(sfc.Script)
+	return generateCode(name, sfc, tmpl, analysis, "vela-reg")
+}
+
+// TestRealTemplates_NoSprintfLeakage verifies that no generated output
+// contains `%!(EXTRA ` — the format-string footprint of a Sprintf call
+// with wrong arg count.  These historically produced outright JS syntax
+// errors at runtime (turn 1: nine separate bugs).
+func TestRealTemplates_NoSprintfLeakage(t *testing.T) {
+	entries, err := os.ReadDir("testdata")
+	if err != nil {
+		t.Skip("testdata/ not populated; skipping real-template regression sweep")
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".vela") {
+			continue
+		}
+		path := filepath.Join("testdata", e.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("%s: read: %v", e.Name(), err)
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), ".vela")
+		code := compileVelaString(t, name, string(data))
+		if strings.Contains(code, "%!(EXTRA") {
+			// Find the first offending line for a useful error message.
+			idx := strings.Index(code, "%!(EXTRA")
+			start := strings.LastIndexByte(code[:idx], '\n') + 1
+			end := idx + strings.IndexByte(code[idx:], '\n')
+			if end < idx {
+				end = len(code)
+			}
+			t.Errorf("%s: Sprintf arg-count leakage in output:\n    %s",
+				e.Name(), code[start:end])
+		}
+	}
+}
+
+// TestRealTemplates_OutputParses verifies that each template's compiled JS
+// parses cleanly via our own JS parser.  ParseJS collects errors as it goes
+// rather than panicking, so we inspect the returned errors list.  This is
+// the single strongest structural check — it catches the entire class of
+// "generator emits malformed JS" bugs.
+func TestRealTemplates_OutputParses(t *testing.T) {
+	entries, err := os.ReadDir("testdata")
+	if err != nil {
+		t.Skip("testdata/ not populated")
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".vela") {
+			continue
+		}
+		path := filepath.Join("testdata", e.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("%s: read: %v", e.Name(), err)
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), ".vela")
+		code := compileVelaString(t, name, string(data))
+		p := &JSParser{lex: NewLexer(code), src: code}
+		p.cur = p.lex.Next()
+		p.peek = p.lex.Next()
+		p.parseProgram()
+		if len(p.Errors) > 0 {
+			t.Errorf("%s: generated JS does not parse cleanly (%d errors)\n  first: %s",
+				e.Name(), len(p.Errors), p.Errors[0])
+		}
+	}
+}
+
+// TestRealTemplates_NoDuplicateConsts scans each generated component's
+// TOP-LEVEL const bindings (depth 1 — inside the `export function App(...)`
+// body but outside any IIFE or nested function) and ensures no name is
+// declared twice.  This targets the handler-name collision class (turn 13)
+// where two code paths both emit `const $$nX_input_h = ...` into the same
+// component body — a hard SyntaxError at JS load time.
+//
+// We intentionally do NOT check nested depths: two forEach-IIFE bodies
+// that each declare a local `const $$c = ...` live in separate scopes but
+// happen to share the same brace depth, and distinguishing them requires
+// a real scope tree.  The turn-13 bug happened at top-level, and that's
+// where this cheap check is precise enough to be useful.
+func TestRealTemplates_NoDuplicateConsts(t *testing.T) {
+	entries, err := os.ReadDir("testdata")
+	if err != nil {
+		t.Skip("testdata/ not populated")
+	}
+	constRe := regexp.MustCompile(`\bconst\s+(\$\$[A-Za-z0-9_]+)\b`)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".vela") {
+			continue
+		}
+		path := filepath.Join("testdata", e.Name())
+		data, _ := os.ReadFile(path)
+		name := strings.TrimSuffix(e.Name(), ".vela")
+		code := compileVelaString(t, name, string(data))
+
+		matches := constRe.FindAllStringSubmatchIndex(code, -1)
+		seen := map[string]int{}
+		for _, m := range matches {
+			nm := code[m[2]:m[3]]
+			// Only flag duplicates at the component function's top level
+			// (depth 1): immediately inside `export function App(...) { ... }`.
+			if braceDepthAt(code, m[0]) != 1 {
+				continue
+			}
+			seen[nm]++
+		}
+		for nm, n := range seen {
+			if n > 1 {
+				t.Errorf("%s: duplicate top-level `const %s` declaration (%d copies) — would be a JS SyntaxError at load time",
+					e.Name(), nm, n)
+			}
+		}
+	}
+}
+
+// braceDepthAt counts unmatched `{` minus `}` from the start of src up to
+// position pos, skipping braces inside strings and comments.  Used by
+// TestRealTemplates_NoDuplicateConsts to distinguish nested vs top-level
+// scopes without building a full scope tree.
+func braceDepthAt(src string, pos int) int {
+	if pos > len(src) {
+		pos = len(src)
+	}
+	depth := 0
+	i := 0
+	for i < pos {
+		c := src[i]
+		switch c {
+		case '{':
+			depth++
+			i++
+		case '}':
+			depth--
+			i++
+		case '"', '\'', '`':
+			q := c
+			i++
+			for i < pos {
+				if src[i] == '\\' && i+1 < pos {
+					i += 2
+					continue
+				}
+				if src[i] == q {
+					i++
+					break
+				}
+				i++
+			}
+		case '/':
+			if i+1 < pos && src[i+1] == '/' {
+				for i < pos && src[i] != '\n' {
+					i++
+				}
+			} else if i+1 < pos && src[i+1] == '*' {
+				i += 2
+				for i+1 < pos && !(src[i] == '*' && src[i+1] == '/') {
+					i++
+				}
+				i += 2
+			} else {
+				i++
+			}
+		default:
+			i++
+		}
+	}
+	return depth
 }

@@ -212,14 +212,13 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 	// not in stateSet, stateSet, props, or known locals.
 	knownLocals := make(map[string]bool)
 	for _, imp := range a.Imports {
-		// Collect import bindings
-		sub := ParseJS("import " + imp.Spec + " from 'x';")
-		WalkNode(sub, func(n JsNode) bool {
-			if id, ok := n.(*JsIdent); ok {
-				knownLocals[id.Name] = true
-			}
-			return true
-		})
+		// Collect import bindings — use the pre-parsed Names list rather
+		// than re-parsing imp.Spec through a synthetic "import ... from 'x'"
+		// string.  The old approach failed for side-effect imports (empty
+		// Spec) and imposed a spurious ParseJS call per import.
+		for _, name := range imp.Names {
+			knownLocals[name] = true
+		}
 	}
 	for _, fn := range a.Functions {
 		knownLocals[fn.Name] = true
@@ -263,13 +262,9 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 func validateTemplate(nodes []Node, a *Analysis, ds *DiagSet) {
 	importedNames := make(map[string]bool)
 	for _, imp := range a.Imports {
-		sub := ParseJS("import " + imp.Spec + " from 'x';")
-		WalkNode(sub, func(n JsNode) bool {
-			if id, ok := n.(*JsIdent); ok {
-				importedNames[id.Name] = true
-			}
-			return true
-		})
+		for _, name := range imp.Names {
+			importedNames[name] = true
+		}
 	}
 
 	var walkNodes func([]Node)

@@ -49,6 +49,13 @@ type Function struct {
 type Import struct {
 	Spec   string
 	Source string
+	// Names is the list of local binding names introduced by this import.
+	// For `import Card from '...'` → ["Card"]; for `import { A, B as C } from
+	// '...'` → ["A", "C"]; for `import * as Ns from '...'` → ["Ns"]; for
+	// `import Def, { A } from '...'` → ["Def", "A"].  Side-effect imports
+	// (`import 'polyfill'`) contribute no names.  Populated once at parse
+	// time so downstream passes don't re-parse Spec to recover them.
+	Names []string
 }
 
 // Prop represents an `export let name = default` declaration.
@@ -236,7 +243,17 @@ func buildCleanScript(prog *JsProgram, src string, skipEnd map[int]bool, stateSe
 // ─────────────────────────────────────────────────────────────────────────────
 
 func importFromDecl(d *JsImportDecl) *Import {
-	return &Import{Spec: buildImportSpec(d), Source: d.Source}
+	var names []string
+	if d.DefaultName != "" {
+		names = append(names, d.DefaultName)
+	}
+	if d.Namespace != "" {
+		names = append(names, d.Namespace)
+	}
+	for _, s := range d.Specifiers {
+		names = append(names, s.Local)
+	}
+	return &Import{Spec: buildImportSpec(d), Source: d.Source, Names: names}
 }
 
 func buildImportSpec(d *JsImportDecl) string {

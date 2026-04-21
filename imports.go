@@ -9,7 +9,6 @@ package main
 
 import (
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -29,87 +28,63 @@ type ImportRecord struct {
 //  Parsing
 // ─────────────────────────────────────────────
 
-var (
-	// Named imports — separate patterns for single and double quotes (Go RE2 has no backreferences)
-	reImportNamedD      = regexp.MustCompile(`^(\s*)import\s*\{([^}]+)\}\s*from\s*"([^"]+)"`)
-	reImportNamedS      = regexp.MustCompile(`^(\s*)import\s*\{([^}]+)\}\s*from\s*'([^']+)'`)
-	reImportDefaultD    = regexp.MustCompile(`^(\s*)import\s+(\w+)\s+from\s*"([^"]+)"`)
-	reImportDefaultS    = regexp.MustCompile(`^(\s*)import\s+(\w+)\s+from\s*'([^']+)'`)
-	reImportStarD       = regexp.MustCompile(`^(\s*)import\s+\*\s+as\s+(\w+)\s+from\s*"([^"]+)"`)
-	reImportStarS       = regexp.MustCompile(`^(\s*)import\s+\*\s+as\s+(\w+)\s+from\s*'([^']+)'`)
-	reImportSideEffectD = regexp.MustCompile(`^(\s*)import\s+"([^"]+)"`)
-	reImportSideEffectS = regexp.MustCompile(`^(\s*)import\s+'([^']+)'`)
-)
-
 // ParseImportRecords extracts all import statements from a script string.
 // lineOffset is the 0-based line number where the script begins in the file.
+//
+// Uses the real JS parser (ParseJS) — this handles multi-line imports,
+// mixed default-and-named forms, aliases, and imports inside/following
+// comments, all of which the previous regex-based implementation either
+// missed silently or tagged with the wrong `Raw` content.
 func ParseImportRecords(script string, lineOffset int) []ImportRecord {
+	prog := ParseJS(script)
+	if prog == nil {
+		return nil
+	}
 	var recs []ImportRecord
-	lines := strings.Split(script, "\n")
-	for i, line := range lines {
-		absLine := lineOffset + i
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "import") {
+	for _, stmt := range prog.Body {
+		d, ok := stmt.(*JsImportDecl)
+		if !ok {
 			continue
 		}
 
-		// Named: import { Foo, Bar } from '...' or "..."
-		if m := reImportNamedD.FindStringSubmatch(line); m != nil {
-			recs = append(recs, ImportRecord{Raw: line, Names: parseNameList(m[2]), Path: m[3], Line: absLine})
-			continue
+		// Line number: count newlines in script before d.Pos.
+		line := lineOffset
+		for i := 0; i < d.Pos && i < len(script); i++ {
+			if script[i] == '\n' {
+				line++
+			}
 		}
-		if m := reImportNamedS.FindStringSubmatch(line); m != nil {
-			recs = append(recs, ImportRecord{Raw: line, Names: parseNameList(m[2]), Path: m[3], Line: absLine})
-			continue
+
+		// Raw text (for downstream passes that want the exact source).
+		end := d.End
+		if end > len(script) {
+			end = len(script)
 		}
-		// Default: import Foo from '...'
-		if m := reImportDefaultD.FindStringSubmatch(line); m != nil {
-			recs = append(recs, ImportRecord{Raw: line, Names: []string{m[2]}, Path: m[3], Line: absLine})
-			continue
+		raw := script[d.Pos:end]
+
+		// Build the Names list in the order the old implementation did:
+		// namespace imports get special "* as X" encoding so RewriteImportLine
+		// can still work from these records if it wants to.  Everyone else
+		// is a plain local binding name.
+		var names []string
+		if d.DefaultName != "" {
+			names = append(names, d.DefaultName)
 		}
-		if m := reImportDefaultS.FindStringSubmatch(line); m != nil {
-			recs = append(recs, ImportRecord{Raw: line, Names: []string{m[2]}, Path: m[3], Line: absLine})
-			continue
+		if d.Namespace != "" {
+			names = append(names, "* as "+d.Namespace)
 		}
-		// Namespace: import * as Ns from '...'
-		if m := reImportStarD.FindStringSubmatch(line); m != nil {
-			recs = append(recs, ImportRecord{Raw: line, Names: []string{"* as " + m[2]}, Path: m[3], Line: absLine})
-			continue
+		for _, s := range d.Specifiers {
+			names = append(names, s.Local)
 		}
-		if m := reImportStarS.FindStringSubmatch(line); m != nil {
-			recs = append(recs, ImportRecord{Raw: line, Names: []string{"* as " + m[2]}, Path: m[3], Line: absLine})
-			continue
-		}
-		// Side-effect: import '...'
-		if m := reImportSideEffectD.FindStringSubmatch(line); m != nil {
-			recs = append(recs, ImportRecord{Raw: line, Path: m[2], Line: absLine})
-			continue
-		}
-		if m := reImportSideEffectS.FindStringSubmatch(line); m != nil {
-			recs = append(recs, ImportRecord{Raw: line, Path: m[2], Line: absLine})
-			continue
-		}
+
+		recs = append(recs, ImportRecord{
+			Raw:   raw,
+			Names: names,
+			Path:  d.Source,
+			Line:  line,
+		})
 	}
 	return recs
-}
-
-func parseNameList(s string) []string {
-	var names []string
-	for _, part := range strings.Split(s, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		// Handle 'Foo as F' alias — use local alias name
-		fields := strings.Fields(part)
-		switch {
-		case len(fields) == 3 && fields[1] == "as":
-			names = append(names, fields[2])
-		case len(fields) > 0:
-			names = append(names, fields[0])
-		}
-	}
-	return names
 }
 
 // ─────────────────────────────────────────────
@@ -150,44 +125,122 @@ func RewriteImportPath(importPath string) string {
 
 // RewriteImportLine rewrites a single import source line.
 // Returns the rewritten line (unchanged if no path change is needed).
+//
+// For single-line inputs this is equivalent to RewriteScriptImports; kept
+// as a separate entry point for callers/tests that operate one line at a
+// time.  Multi-line import forms are fully supported — just pass the whole
+// statement text.
 func RewriteImportLine(line string) string {
-	// Try each pattern pair; path is always the last capture group
-	patterns := []*regexp.Regexp{
-		reImportNamedD, reImportNamedS,
-		reImportDefaultD, reImportDefaultS,
-		reImportStarD, reImportStarS,
-		reImportSideEffectD, reImportSideEffectS,
-	}
-	for _, re := range patterns {
-		groups := re.FindStringSubmatch(line)
-		if groups == nil {
-			continue
-		}
-		origPath := groups[len(groups)-1]
-		newPath := RewriteImportPath(origPath)
-		if newPath == origPath {
-			return line
-		}
-		// Replace first occurrence of the quoted path (try both quote styles)
-		for _, q := range []string{`"`, `'`} {
-			old := q + origPath + q
-			if strings.Contains(line, old) {
-				return strings.Replace(line, old, q+newPath+q, 1)
-			}
-		}
-		return line
-	}
-	return line
+	return RewriteScriptImports(line)
 }
 
-// RewriteScriptImports rewrites all import lines in a script section string.
+// RewriteScriptImports parses every import statement in the script and
+// rewrites its source path via RewriteImportPath.  Returns the script
+// with only the path strings changed — whitespace, comments, and line
+// breaks are preserved verbatim because we operate as a string splice
+// rather than parse→emit.
+//
+// Handles multi-line imports, mixed default+named forms, aliases, and
+// side-effect imports — all the shapes the old regex-based rewriter
+// could not reach.
 func RewriteScriptImports(script string) string {
-	lines := strings.Split(script, "\n")
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "import") {
-			lines[i] = RewriteImportLine(line)
+	prog := ParseJS(script)
+	if prog == nil {
+		return script
+	}
+	// Collect (start, end, replacement) tuples for every path that needs
+	// changing, then apply them right-to-left so earlier offsets stay
+	// valid after later splices.
+	type splice struct{ start, end int; text string }
+	var splices []splice
+	for _, stmt := range prog.Body {
+		d, ok := stmt.(*JsImportDecl)
+		if !ok {
+			continue
+		}
+		newPath := RewriteImportPath(d.Source)
+		if newPath == d.Source {
+			continue
+		}
+		// Find the source string literal within the statement's span.
+		// It's the last quoted string between d.Pos and d.End.
+		sPos, sEnd, ok := findLastStringLit(script, d.Pos, d.End)
+		if !ok {
+			continue // shouldn't happen for a well-formed import
+		}
+		quote := script[sPos : sPos+1] // preserve original quote style
+		splices = append(splices, splice{
+			start: sPos, end: sEnd,
+			text: quote + newPath + quote,
+		})
+	}
+	if len(splices) == 0 {
+		return script
+	}
+	// Apply from the end so earlier offsets stay valid.
+	var out strings.Builder
+	out.Grow(len(script) + 16)
+	prev := 0
+	for _, s := range splices {
+		out.WriteString(script[prev:s.start])
+		out.WriteString(s.text)
+		prev = s.end
+	}
+	out.WriteString(script[prev:])
+	return out.String()
+}
+
+// findLastStringLit scans script[start:end] for the last quoted string
+// literal and returns its full span (including the opening and closing
+// quote).  Respects single-quote, double-quote, and backtick strings,
+// plus backslash escapes.  Skips // line comments and /* block */
+// comments so an import whose path lives after a trailing comment is
+// still located correctly.
+//
+// Returns ok=false if no string literal is found in the span.
+func findLastStringLit(script string, start, end int) (int, int, bool) {
+	if end > len(script) {
+		end = len(script)
+	}
+	bestStart, bestEnd := -1, -1
+	i := start
+	for i < end {
+		c := script[i]
+		switch {
+		case c == '/' && i+1 < end && script[i+1] == '/':
+			// line comment — skip to newline
+			for i < end && script[i] != '\n' {
+				i++
+			}
+		case c == '/' && i+1 < end && script[i+1] == '*':
+			// block comment — skip to */
+			i += 2
+			for i+1 < end && !(script[i] == '*' && script[i+1] == '/') {
+				i++
+			}
+			i += 2
+		case c == '"' || c == '\'' || c == '`':
+			q := c
+			lit := i
+			i++
+			for i < end {
+				if script[i] == '\\' && i+1 < end {
+					i += 2
+					continue
+				}
+				if script[i] == q {
+					i++
+					bestStart, bestEnd = lit, i
+					break
+				}
+				i++
+			}
+		default:
+			i++
 		}
 	}
-	return strings.Join(lines, "\n")
+	if bestStart < 0 {
+		return 0, 0, false
+	}
+	return bestStart, bestEnd, true
 }

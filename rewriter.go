@@ -348,6 +348,30 @@ func collectRepls(root JsNode, src string, stateSet map[string]bool, out *[]repl
 
 		// ── Assignment expression:  x = …  x += …  x -= …  etc. ─────────────
 		if assign, ok := stmt.X.(*JsAssignExpr); ok {
+			// Destructuring-assignment LHS:  ({x} = obj)  [a, b] = pair
+			// Only plain `=` makes sense for patterns (compound ops are nonsense
+			// syntax in JS).  We rewrite the whole statement into:
+			//   const $$d<n> = <rhs>;  $$set_x($$d<n>.x);  $$set_y($$d<n>.y);
+			// and skip irrelevant idents in the pattern (non-state vars).
+			//
+			// Known limitation: default values inside the pattern (`{ x = 5 }`)
+			// aren't supported by our JS parser in pattern position, so they'll
+			// parse as two statements and this branch won't match.  In practice
+			// templates rarely use defaults; users will get a clear parse error
+			// via the existing unrewritten path.
+			if _, isObj := assign.L.(*JsObjectExpr); isObj && assign.Op == "=" {
+				if rewritten, ok := rewritePatternAssign(src, assign, stateSet); ok {
+					*out = append(*out, repl{stmt.Pos, stmt.End, rewritten})
+					return false
+				}
+			}
+			if _, isArr := assign.L.(*JsArrayExpr); isArr && assign.Op == "=" {
+				if rewritten, ok := rewritePatternAssign(src, assign, stateSet); ok {
+					*out = append(*out, repl{stmt.Pos, stmt.End, rewritten})
+					return false
+				}
+			}
+
 			id, ok := assign.L.(*JsIdent)
 			if !ok || !stateSet[id.Name] {
 				return true
@@ -447,4 +471,154 @@ func applyRepls(src string, repls []repl) string {
 // setter formats a reactive setter call.
 func setter(name, expr string) string {
 	return fmt.Sprintf("$$set_%s(%s)", name, expr)
+}
+
+// patternTempCounter produces fresh temp names across invocations of
+// rewritePatternAssign within a single compilation.  Not exported; reset
+// per compilation would require a CodeGen field, but the counter only
+// needs to yield *unique* names per script — a package-level counter
+// is fine because each call within one script appends a new temp name
+// to the rewritten output regardless of counter value.
+var patternTempCounter int
+
+// rewritePatternAssign converts a destructuring assignment like
+//
+//	({ count, name: n } = obj)       →   const $$d0 = obj; $$set_count($$d0.count); $$set_n($$d0.name);
+//	[a, , b] = pair                  →   const $$d1 = pair; $$set_a($$d1[0]); $$set_b($$d1[2]);
+//	({ nested: { x } } = obj)        →   const $$d2 = obj; $$set_x($$d2.nested.x);
+//
+// into a sequence of setter calls.  Non-reactive targets in the pattern
+// are silently dropped from the rewritten output (they didn't need a
+// setter; but note that the original non-reactive assignment is also
+// lost — users shouldn't mix reactive and non-reactive in the same
+// destructuring.  If this becomes a real problem we can emit the original
+// binding for non-reactive targets too).
+//
+// Returns ok=false if the pattern references zero reactive variables —
+// callers then leave the original statement intact.
+func rewritePatternAssign(src string, assign *JsAssignExpr, stateSet map[string]bool) (string, bool) {
+	// Collect (accessPath, reactiveName) pairs for every state-var ident
+	// inside the pattern.  accessPath is the suffix appended to the temp
+	// variable — e.g. ".count", "[0]", ".nested.x".
+	var targets []patternTarget
+	collectPatternTargets(assign.L, "", stateSet, &targets)
+	if len(targets) == 0 {
+		return "", false
+	}
+
+	// Extract the RHS source text using the existing helper.
+	rhsText := extractRHS(src, assign.L.nodeEnd(), assign.Op, assign.End)
+
+	patternTempCounter++
+	tmp := fmt.Sprintf("$$d%d", patternTempCounter)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "const %s = %s;", tmp, rhsText)
+	for _, t := range targets {
+		b.WriteString(" ")
+		b.WriteString(setter(t.name, tmp+t.path))
+		b.WriteString(";")
+	}
+	return b.String(), true
+}
+
+type patternTarget struct {
+	name string // reactive state variable name  (e.g. "count")
+	path string // access path from temp         (e.g. ".count", "[0]", ".a.b")
+}
+
+// collectPatternTargets walks a pattern-expression subtree (JsObjectExpr /
+// JsArrayExpr / JsIdent) and emits one patternTarget for every JsIdent
+// whose name is in stateSet.  Nested patterns extend the access path.
+//
+// The JsAssignExpr-inside-pattern case (default values, `{x = 5}`) is
+// currently unreachable because the parser doesn't represent it this way
+// — but we defensively handle it by descending through its L side anyway.
+func collectPatternTargets(node JsExpr, path string, stateSet map[string]bool, out *[]patternTarget) {
+	switch n := node.(type) {
+	case *JsIdent:
+		if stateSet[n.Name] {
+			*out = append(*out, patternTarget{name: n.Name, path: path})
+		}
+	case *JsObjectExpr:
+		for _, p := range n.Props {
+			if p.Spread {
+				// { ...rest } — can't map back to setters cleanly
+				// (rest captures whatever's left, we'd need Object.assign).
+				// Skip; leaves it unhandled (user gets original assignment
+				// via the non-rewrite path, which will then likely error
+				// because we DID rewrite the assignment).  Document this.
+				continue
+			}
+			var keyName string
+			if id, ok := p.Key.(*JsIdent); ok {
+				keyName = id.Name
+			} else if lit, ok := p.Key.(*JsLiteral); ok {
+				// String literal keys:  {"foo": x}
+				keyName = strings.Trim(lit.Raw, `"'`)
+			} else {
+				continue // computed keys: give up (can't build a static path)
+			}
+			var sub string
+			if isValidPropName(keyName) {
+				sub = path + "." + keyName
+			} else {
+				sub = path + "[" + quote(keyName) + "]"
+			}
+			collectPatternTargets(p.Value, sub, stateSet, out)
+		}
+	case *JsArrayExpr:
+		for i, el := range n.Elems {
+			if el == nil {
+				continue // hole: [, , x]
+			}
+			if sp, ok := el.(*JsSpreadExpr); ok {
+				// [...rest] — same issue as object rest. Skip.
+				_ = sp
+				continue
+			}
+			sub := fmt.Sprintf("%s[%d]", path, i)
+			collectPatternTargets(el, sub, stateSet, out)
+		}
+	case *JsAssignExpr:
+		// { x = 5 } default-value form (rare; parser may not reach here, but
+		// defensive).  The L side is the binding target.
+		if n.Op == "=" {
+			collectPatternTargets(n.L, path, stateSet, out)
+		}
+	}
+}
+
+// isValidPropName reports whether name can follow a dot without quoting.
+func isValidPropName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if i == 0 {
+			if !(c == '_' || c == '$' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+				return false
+			}
+		} else {
+			if !(c == '_' || c == '$' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func quote(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '"' || c == '\\' {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(c)
+	}
+	b.WriteByte('"')
+	return b.String()
 }
