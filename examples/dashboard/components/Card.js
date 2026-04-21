@@ -23,6 +23,7 @@ export function Card($$target, $$props, $$slots) {
   box-shadow: var(--shadow);
   overflow: hidden;
   transition: background .3s, border-color .3s;
+  padding: 1rem;
 }
 .card-header[vela-ef19f0] {
   padding: 1rem 1.25rem;
@@ -155,13 +156,13 @@ export function Card($$target, $$props, $$slots) {
   {
     const $$sf = $$slots["default"];
     if ($$sf) {
-      { const $$sn = $$sf(); $$n11_slot_a.before($$sn); }
+      { const $$sn = $$sf(); if ($$sn) $$n11_slot_a.before($$sn); }
     }
   }
   {
     const $$sf = $$slots["footer"];
     if ($$sf) {
-      { const $$sn = $$sf(); $$n12_slot_a.before($$sn); }
+      { const $$sn = $$sf(); if ($$sn) $$n12_slot_a.before($$sn); }
     }
   }
 

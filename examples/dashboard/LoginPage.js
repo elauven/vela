@@ -223,6 +223,7 @@ input[vela-047440]:focus {
   $$n15.setAttribute('vela-047440', '');
   $$n15.setAttribute('type', 'text');
   const $$n15_input_h = ($e) => $$set_username($e.target.value);
+  const $$n15_input_h = ($e) => $$set_username($e.target.value);
   $$n15.setAttribute('placeholder', 'Enter username');
   $$n15.setAttribute('autocomplete', 'username');
   const $$n16 = document.createElement('div');
@@ -238,6 +239,7 @@ input[vela-047440]:focus {
   $$n19.setAttribute('class', 'input-icon');
   const $$n20 = document.createElement('input');
   $$n20.setAttribute('vela-047440', '');
+  const $$n20_input_h = ($e) => $$set_password($e.target.value);
   const $$n20_input_h = ($e) => $$set_password($e.target.value);
   $$n20.setAttribute('placeholder', 'Enter password');
   $$n20.setAttribute('autocomplete', 'current-password');
@@ -358,10 +360,10 @@ input[vela-047440]:focus {
 
   // events
   $$n10.addEventListener('submit', handleSubmit);
-  $$n15.addEventListener('input', ($e) => $$set_username($e.target.value));
+  $$n15.addEventListener('input', $$n15_input_h);
   $$n15.addEventListener('input', $$n15_input_h);
   $$n15.addEventListener('keydown', handleKey);
-  $$n20.addEventListener('input', ($e) => $$set_password($e.target.value));
+  $$n20.addEventListener('input', $$n20_input_h);
   $$n20.addEventListener('input', $$n20_input_h);
   $$n20.addEventListener('keydown', handleKey);
   $$n21.addEventListener('click', $$n21_click_h);
@@ -386,10 +388,10 @@ input[vela-047440]:focus {
   return {
     destroy() {
       $$n10.removeEventListener('submit', handleSubmit);
-      $$n15.removeEventListener('input', ($e) => $$set_username($e.target.value));
+      $$n15.removeEventListener('input', $$n15_input_h);
       $$n15.removeEventListener('input', $$n15_input_h);
       $$n15.removeEventListener('keydown', handleKey);
-      $$n20.removeEventListener('input', ($e) => $$set_password($e.target.value));
+      $$n20.removeEventListener('input', $$n20_input_h);
       $$n20.removeEventListener('input', $$n20_input_h);
       $$n20.removeEventListener('keydown', handleKey);
       $$n21.removeEventListener('click', $$n21_click_h);

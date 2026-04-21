@@ -323,6 +323,7 @@ tr:hover td[vela-36b09a] {
   const $$n13_km = new Map();
   let $$n13_bs = [];
   function $$each_$$n13($$arr) {
+    if (!$$n13_a.parentNode) return;
     const $$newKeys = new Set();
     const $$newBlocks = [];
     ($$arr||[]).forEach(function(kpi, $$i) {
@@ -389,13 +390,16 @@ tr:hover td[vela-36b09a] {
   const $$n31 = document.createElement('div');
   $$n31.setAttribute('vela-36b09a', '');
   $$n31.setAttribute('class', 'two-col');
-  const $$n34_comp_wrap = document.createElement('div');
-  $$n34_comp_wrap.setAttribute('vela-36b09a', '');
-  const $$n37 = document.createElement('div');
-  $$n37.setAttribute('vela-36b09a', '');
-  $$n37.setAttribute('class', 'bar-chart');
-  const $$n38_a = document.createComment('#each');
-  function $$frag_$$n38(val, i) {
+  let $$sc_actions_$$n34 = null;
+  let $$sc_default_$$n37 = null;
+  const $$n35_comp_wrap = document.createElement('div');
+  $$n35_comp_wrap.setAttribute('vela-36b09a', '');
+  let $$sc_default_$$n39 = null;
+  const $$n40 = document.createElement('div');
+  $$n40.setAttribute('vela-36b09a', '');
+  $$n40.setAttribute('class', 'bar-chart');
+  const $$n41_a = document.createComment('#each');
+  function $$frag_$$n41(val, i) {
     const $$f0 = document.createElement('div');
     $$f0.setAttribute('vela-36b09a', '');
     $$f0.setAttribute('class', 'bar');
@@ -412,52 +416,56 @@ tr:hover td[vela-36b09a] {
       },
     };
   }
-  const $$n38_km = new Map();
-  let $$n38_bs = [];
-  function $$each_$$n38($$arr) {
+  const $$n41_km = new Map();
+  let $$n41_bs = [];
+  function $$each_$$n41($$arr) {
+    if (!$$n41_a.parentNode) return;
     const $$newKeys = new Set();
     const $$newBlocks = [];
     ($$arr||[]).forEach(function(val, i) {
       const $$key = String(i);
       $$newKeys.add($$key);
-      let $$blk = $$n38_km.get($$key);
+      let $$blk = $$n41_km.get($$key);
       if ($$blk) {
         if ($$blk.update) $$blk.update(val, i);
       } else {
-        $$blk = $$frag_$$n38(val, i);
-        $$n38_km.set($$key, $$blk);
+        $$blk = $$frag_$$n41(val, i);
+        $$n41_km.set($$key, $$blk);
       }
-      $$n38_a.before($$blk.el);
+      $$n41_a.before($$blk.el);
       $$newBlocks.push($$blk);
     });
-    $$n38_km.forEach(($$blk, $$key) => {
-      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n38_km.delete($$key); }
+    $$n41_km.forEach(($$blk, $$key) => {
+      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n41_km.delete($$key); }
     });
-    $$n38_bs = $$newBlocks;
+    $$n41_bs = $$newBlocks;
   }
   const $$n32_comp_wrap = document.createElement('div');
   $$n32_comp_wrap.setAttribute('vela-36b09a', '');
-  const $$n43 = document.createTextNode('');
-  const $$n41_comp_wrap = document.createElement('div');
-  $$n41_comp_wrap.setAttribute('vela-36b09a', '');
-  const $$n45 = document.createElement('table');
-  $$n45.setAttribute('vela-36b09a', '');
-  const $$n46 = document.createElement('thead');
-  $$n46.setAttribute('vela-36b09a', '');
-  const $$n47 = document.createElement('tr');
-  $$n47.setAttribute('vela-36b09a', '');
-  const $$n48 = document.createElement('th');
-  $$n48.setAttribute('vela-36b09a', '');
-  const $$n49 = document.createElement('th');
-  $$n49.setAttribute('vela-36b09a', '');
-  const $$n50 = document.createElement('th');
-  $$n50.setAttribute('vela-36b09a', '');
-  const $$n51 = document.createElement('th');
+  let $$sc_actions_$$n44 = null;
+  let $$sc_default_$$n47 = null;
+  const $$n48 = document.createTextNode('');
+  const $$n45_comp_wrap = document.createElement('div');
+  $$n45_comp_wrap.setAttribute('vela-36b09a', '');
+  let $$sc_default_$$n50 = null;
+  const $$n51 = document.createElement('table');
   $$n51.setAttribute('vela-36b09a', '');
-  const $$n52 = document.createElement('tbody');
+  const $$n52 = document.createElement('thead');
   $$n52.setAttribute('vela-36b09a', '');
-  const $$n53_a = document.createComment('#each');
-  function $$frag_$$n53(o, $$i) {
+  const $$n53 = document.createElement('tr');
+  $$n53.setAttribute('vela-36b09a', '');
+  const $$n54 = document.createElement('th');
+  $$n54.setAttribute('vela-36b09a', '');
+  const $$n55 = document.createElement('th');
+  $$n55.setAttribute('vela-36b09a', '');
+  const $$n56 = document.createElement('th');
+  $$n56.setAttribute('vela-36b09a', '');
+  const $$n57 = document.createElement('th');
+  $$n57.setAttribute('vela-36b09a', '');
+  const $$n58 = document.createElement('tbody');
+  $$n58.setAttribute('vela-36b09a', '');
+  const $$n59_a = document.createComment('#each');
+  function $$frag_$$n59(o, $$i) {
     const $$f0 = document.createElement('tr');
     $$f0.setAttribute('vela-36b09a', '');
     const $$f1 = document.createElement('td');
@@ -499,31 +507,32 @@ tr:hover td[vela-36b09a] {
       },
     };
   }
-  const $$n53_km = new Map();
-  let $$n53_bs = [];
-  function $$each_$$n53($$arr) {
+  const $$n59_km = new Map();
+  let $$n59_bs = [];
+  function $$each_$$n59($$arr) {
+    if (!$$n59_a.parentNode) return;
     const $$newKeys = new Set();
     const $$newBlocks = [];
     ($$arr||[]).forEach(function(o, $$i) {
       const $$key = String(o.id);
       $$newKeys.add($$key);
-      let $$blk = $$n53_km.get($$key);
+      let $$blk = $$n59_km.get($$key);
       if ($$blk) {
         if ($$blk.update) $$blk.update(o, $$i);
       } else {
-        $$blk = $$frag_$$n53(o, $$i);
-        $$n53_km.set($$key, $$blk);
+        $$blk = $$frag_$$n59(o, $$i);
+        $$n59_km.set($$key, $$blk);
       }
-      $$n53_a.before($$blk.el);
+      $$n59_a.before($$blk.el);
       $$newBlocks.push($$blk);
     });
-    $$n53_km.forEach(($$blk, $$key) => {
-      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n53_km.delete($$key); }
+    $$n59_km.forEach(($$blk, $$key) => {
+      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n59_km.delete($$key); }
     });
-    $$n53_bs = $$newBlocks;
+    $$n59_bs = $$newBlocks;
   }
-  const $$n39_comp_wrap = document.createElement('div');
-  $$n39_comp_wrap.setAttribute('vela-36b09a', '');
+  const $$n42_comp_wrap = document.createElement('div');
+  $$n42_comp_wrap.setAttribute('vela-36b09a', '');
   $$n3.appendChild(document.createTextNode(`📊 Overview`));
   $$n2.appendChild($$n3);
   $$n4.appendChild($$n5_a);
@@ -556,7 +565,7 @@ tr:hover td[vela-36b09a] {
   $$n14.appendChild($$n27);
   $$root.appendChild($$n14);
   $$n31.appendChild($$n32_comp_wrap);
-  $$n31.appendChild($$n39_comp_wrap);
+  $$n31.appendChild($$n42_comp_wrap);
   $$root.appendChild($$n31);
 
   // component logic
@@ -595,12 +604,12 @@ tr:hover td[vela-36b09a] {
     $$defer(() => { $$n21.data = String(completedCount); });
     $$defer(() => { $$n25.data = String(pendingCount); });
     $$defer(() => { $$n29.data = String(allOrders.length); });
-    $$defer(() => { $$n43.data = String(recentOrders.length); });
-    $$defer(() => { $$each_$$n53(recentOrders); });
+    $$defer(() => { $$n48.data = String(recentOrders.length); });
+    $$defer(() => { $$each_$$n59(recentOrders); });
   }
   function $$set_chart($$v) {
     chart = $$v;
-    $$defer(() => { $$each_$$n38(chart.revenue); });
+    $$defer(() => { $$each_$$n41(chart.revenue); });
   }
   function $$set_currency($$v) {
     currency = $$v;
@@ -634,8 +643,8 @@ tr:hover td[vela-36b09a] {
   $$n21.data = String(completedCount);
   $$n25.data = String(pendingCount);
   $$n29.data = String(allOrders.length);
-  const $$n32_comp = Card($$n32_comp_wrap, { title: 'Revenue (12 months)', subtitle: 'Monthly totals' }, { "actions": () => { const $$sf_actions_$$n33 = document.createDocumentFragment(); $$sf_actions_$$n33.appendChild($$n34_comp_wrap); const $$n34_comp = Badge($$n34_comp_wrap, { variant: 'purple' }, { "default": () => { const $$sf_default_$$n35 = document.createDocumentFragment(); $$sf_default_$$n35.appendChild(document.createTextNode(`2024`)); return $$sf_default_$$n35; } }); return $$sf_actions_$$n33; }, "default": () => { const $$sf_default_$$n36 = document.createDocumentFragment(); $$n37.appendChild($$n38_a); $$sf_default_$$n36.appendChild($$n37); $$each_$$n38(chart.revenue); return $$sf_default_$$n36; } });
-  const $$n39_comp = Card($$n39_comp_wrap, { title: 'Recent Orders', noPad: true }, { "actions": () => { const $$sf_actions_$$n40 = document.createDocumentFragment(); $$sf_actions_$$n40.appendChild($$n41_comp_wrap); const $$n41_comp = Badge($$n41_comp_wrap, { variant: 'info' }, { "default": () => { const $$sf_default_$$n42 = document.createDocumentFragment(); $$sf_default_$$n42.appendChild($$n43); $$n43.data = String(recentOrders.length); return $$sf_default_$$n42; } }); return $$sf_actions_$$n40; }, "default": () => { const $$sf_default_$$n44 = document.createDocumentFragment(); $$n48.appendChild(document.createTextNode(`Order`)); $$n47.appendChild($$n48); $$n49.appendChild(document.createTextNode(`Customer`)); $$n47.appendChild($$n49); $$n50.appendChild(document.createTextNode(`Amount`)); $$n47.appendChild($$n50); $$n51.appendChild(document.createTextNode(`Status`)); $$n47.appendChild($$n51); $$n46.appendChild($$n47); $$n45.appendChild($$n46); $$n52.appendChild($$n53_a); $$n45.appendChild($$n52); $$sf_default_$$n44.appendChild($$n45); $$each_$$n53(recentOrders); return $$sf_default_$$n44; } });
+  const $$n32_comp = Card($$n32_comp_wrap, { title: 'Revenue (12 months)', subtitle: 'Monthly totals' }, { "actions": () => { if ($$sc_actions_$$n34) { const $$n35_comp = Badge($$n35_comp_wrap, { variant: 'purple' }, { "default": () => { if ($$sc_default_$$n37) { return $$sc_default_$$n37; } const $$sf_default_$$n36 = document.createDocumentFragment(); $$sf_default_$$n36.appendChild(document.createTextNode(`2024`)); $$sc_default_$$n37 = $$sf_default_$$n36; return $$sc_default_$$n37; } }); return $$sc_actions_$$n34; } const $$sf_actions_$$n33 = document.createDocumentFragment(); $$sf_actions_$$n33.appendChild($$n35_comp_wrap); const $$n35_comp = Badge($$n35_comp_wrap, { variant: 'purple' }, { "default": () => { if ($$sc_default_$$n37) { return $$sc_default_$$n37; } const $$sf_default_$$n36 = document.createDocumentFragment(); $$sf_default_$$n36.appendChild(document.createTextNode(`2024`)); $$sc_default_$$n37 = $$sf_default_$$n36; return $$sc_default_$$n37; } }); $$sc_actions_$$n34 = $$sf_actions_$$n33; return $$sc_actions_$$n34; }, "default": () => { if ($$sc_default_$$n39) { $$each_$$n41(chart.revenue); return $$sc_default_$$n39; } const $$sf_default_$$n38 = document.createDocumentFragment(); $$n40.appendChild($$n41_a); $$sf_default_$$n38.appendChild($$n40); $$each_$$n41(chart.revenue); $$sc_default_$$n39 = $$sf_default_$$n38; return $$sc_default_$$n39; } });
+  const $$n42_comp = Card($$n42_comp_wrap, { title: 'Recent Orders', noPad: true }, { "actions": () => { if ($$sc_actions_$$n44) { const $$n45_comp = Badge($$n45_comp_wrap, { variant: 'info' }, { "default": () => { if ($$sc_default_$$n47) { $$n48.data = String(recentOrders.length); return $$sc_default_$$n47; } const $$sf_default_$$n46 = document.createDocumentFragment(); $$sf_default_$$n46.appendChild($$n48); $$n48.data = String(recentOrders.length); $$sc_default_$$n47 = $$sf_default_$$n46; return $$sc_default_$$n47; } }); return $$sc_actions_$$n44; } const $$sf_actions_$$n43 = document.createDocumentFragment(); $$sf_actions_$$n43.appendChild($$n45_comp_wrap); const $$n45_comp = Badge($$n45_comp_wrap, { variant: 'info' }, { "default": () => { if ($$sc_default_$$n47) { $$n48.data = String(recentOrders.length); return $$sc_default_$$n47; } const $$sf_default_$$n46 = document.createDocumentFragment(); $$sf_default_$$n46.appendChild($$n48); $$n48.data = String(recentOrders.length); $$sc_default_$$n47 = $$sf_default_$$n46; return $$sc_default_$$n47; } }); $$sc_actions_$$n44 = $$sf_actions_$$n43; return $$sc_actions_$$n44; }, "default": () => { if ($$sc_default_$$n50) { $$each_$$n59(recentOrders); return $$sc_default_$$n50; } const $$sf_default_$$n49 = document.createDocumentFragment(); $$n54.appendChild(document.createTextNode(`Order`)); $$n53.appendChild($$n54); $$n55.appendChild(document.createTextNode(`Customer`)); $$n53.appendChild($$n55); $$n56.appendChild(document.createTextNode(`Amount`)); $$n53.appendChild($$n56); $$n57.appendChild(document.createTextNode(`Status`)); $$n53.appendChild($$n57); $$n52.appendChild($$n53); $$n51.appendChild($$n52); $$n58.appendChild($$n59_a); $$n51.appendChild($$n58); $$sf_default_$$n49.appendChild($$n51); $$each_$$n59(recentOrders); $$sc_default_$$n50 = $$sf_default_$$n49; return $$sc_default_$$n50; } });
 
   $$effect0();
   $$effect1();
@@ -658,12 +667,12 @@ tr:hover td[vela-36b09a] {
       if (typeof $$mountCleanup0 === 'function') { $$mountCleanup0(); }
       $$n8.removeEventListener('click', refresh);
       $$n13_bs.forEach(b => b.destroy());
-      if ($$n34_comp) $$n34_comp.destroy();
-      $$n38_bs.forEach(b => b.destroy());
+      if ($$n35_comp) $$n35_comp.destroy();
+      $$n41_bs.forEach(b => b.destroy());
       if ($$n32_comp) $$n32_comp.destroy();
-      if ($$n41_comp) $$n41_comp.destroy();
-      $$n53_bs.forEach(b => b.destroy());
-      if ($$n39_comp) $$n39_comp.destroy();
+      if ($$n45_comp) $$n45_comp.destroy();
+      $$n59_bs.forEach(b => b.destroy());
+      if ($$n42_comp) $$n42_comp.destroy();
       $$style.remove();
       $$root.remove();
     },

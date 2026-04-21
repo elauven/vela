@@ -252,6 +252,76 @@ export function NotificationPanel($$target, $$props, $$slots) {
   let $$n16 = null;
   let $$n17 = null;
   let $$n18 = null;
+  const $$n19_a = document.createComment('#each');
+  const $$n20_km = new Map();
+  function $$each_$$n21($$arr) {
+    if (!$$n19_a.parentNode) return;
+    const $$newKeys = new Set();
+    const $$newBlks = [];
+    ($$arr||[]).forEach(function(n, $$i) {
+      const $$key = String(n.id);
+      $$newKeys.add($$key);
+      let $$blk = $$n20_km.get($$key);
+      if ($$blk) {
+        $$blk.update(n);
+      } else {
+        $$blk = (() => {
+          const $$row = document.createElement('div');
+          $$row.setAttribute('vela-59acf3','');
+          const $$n22 = document.createElement('div');
+          $$n22.setAttribute('vela-59acf3','');
+          $$n22.setAttribute('class','item');
+          $$n22.className = String(n.read ? '' : 'unread');
+          $$n22.addEventListener('click', () => handleRead(n.id));
+          const $$n23 = document.createElement('span');
+          $$n23.setAttribute('vela-59acf3','');
+          $$n23.setAttribute('class','item-icon');
+          const $$n24 = document.createTextNode(String(TYPE_ICONS[n.type]));
+          $$n23.appendChild($$n24);
+          $$n22.appendChild($$n23);
+          const $$n25 = document.createElement('div');
+          $$n25.setAttribute('vela-59acf3','');
+          $$n25.setAttribute('class','item-body');
+          const $$n26 = document.createElement('div');
+          $$n26.setAttribute('vela-59acf3','');
+          $$n26.setAttribute('class','item-msg');
+          const $$n27 = document.createTextNode(String(n.message));
+          $$n26.appendChild($$n27);
+          $$n25.appendChild($$n26);
+          const $$n28 = document.createElement('div');
+          $$n28.setAttribute('vela-59acf3','');
+          $$n28.setAttribute('class','item-time');
+          const $$n29 = document.createTextNode(String(n.time));
+          $$n28.appendChild($$n29);
+          $$n25.appendChild($$n28);
+          $$n22.appendChild($$n25);
+          if (!n.read) {
+            const $$n30 = document.createElement('div');
+            $$n30.setAttribute('vela-59acf3','');
+            $$n30.setAttribute('class','dot');
+            $$n22.appendChild($$n30);
+          }
+          $$row.appendChild($$n22);
+          return {
+            root: $$row,
+            update(n) {
+              $$n22.className = String(n.read ? '' : 'unread');
+              $$n24.data = String(TYPE_ICONS[n.type]);
+              $$n27.data = String(n.message);
+              $$n29.data = String(n.time);
+            },
+            destroy() {
+              $$row.remove();
+            }
+          };
+        })();
+        $$n20_km.set($$key, $$blk);
+      }
+      if ($$blk.root.nextSibling !== $$n19_a) { $$n19_a.before($$blk.root); }
+      $$newBlks.push($$blk);
+    });
+    $$n20_km.forEach(($$blk, $$k) => { if (!$$newKeys.has($$k)) { $$blk.destroy(); $$n20_km.delete($$k); } });
+  }
   function $$chain_$$n15() {
     if ($$chain_$$n15_running) { $$chain_$$n15_pending = true; return; }
     $$chain_$$n15_running = true;
@@ -284,39 +354,8 @@ export function NotificationPanel($$target, $$props, $$slots) {
         if (!$$chain_$$n15_b1) {
           $$chain_$$n15_b1 = document.createElement('div');
           $$chain_$$n15_b1.setAttribute('vela-59acf3', '');
-          ((filtered)||[]).forEach(function(n, $$i) {
-            const $$n19 = document.createElement('div');
-            $$n19.setAttribute('vela-59acf3', '');
-            $$n19.setAttribute('class', 'item');
-            $$n19.className = String(n.read ? '' : 'unread');
-            $$n19.addEventListener('click', () => handleRead(n.id));
-            const $$n20 = document.createElement('span');
-            $$n20.setAttribute('vela-59acf3', '');
-            $$n20.setAttribute('class', 'item-icon');
-            $$n20.appendChild(document.createTextNode(String(TYPE_ICONS[n.type])));
-            $$n19.appendChild($$n20);
-            const $$n21 = document.createElement('div');
-            $$n21.setAttribute('vela-59acf3', '');
-            $$n21.setAttribute('class', 'item-body');
-            const $$n22 = document.createElement('div');
-            $$n22.setAttribute('vela-59acf3', '');
-            $$n22.setAttribute('class', 'item-msg');
-            $$n22.appendChild(document.createTextNode(String(n.message)));
-            $$n21.appendChild($$n22);
-            const $$n23 = document.createElement('div');
-            $$n23.setAttribute('vela-59acf3', '');
-            $$n23.setAttribute('class', 'item-time');
-            $$n23.appendChild(document.createTextNode(String(n.time)));
-            $$n21.appendChild($$n23);
-            $$n19.appendChild($$n21);
-            if (!n.read) {
-              const $$n24 = document.createElement('div');
-              $$n24.setAttribute('vela-59acf3', '');
-              $$n24.setAttribute('class', 'dot');
-              $$n19.appendChild($$n24);
-            }
-            $$chain_$$n15_b1.appendChild($$n19);
-          });
+          $$chain_$$n15_b1.appendChild($$n19_a);
+          $$each_$$n21(filtered);
           $$n14_a.before($$chain_$$n15_b1);
         }
         if ($$n14_a.parentNode && $$chain_$$n15_b1.parentNode !== $$n14_a.parentNode) { $$n14_a.before($$chain_$$n15_b1); }
@@ -368,6 +407,7 @@ export function NotificationPanel($$target, $$props, $$slots) {
     $$defer(() => { $$n10.className = String(filter === 'all' ? 'active' : ''); });
     $$defer(() => { $$n11.className = String(filter === 'unread' ? 'active' : ''); });
     $$defer(() => { if ($$chain_$$n15_b0) $$n18.data = `${filter === 'unread' ? 'All caught up!' : 'No notifications'} `; });
+    $$defer(() => { if ($$chain_$$n15_b1) $$each_$$n21(filtered); });
     $$defer(() => { $$chain_$$n15(); });
   }
   function $$set_items($$v) {
@@ -377,6 +417,7 @@ export function NotificationPanel($$target, $$props, $$slots) {
     $$defer(() => { if ($$chain_$$n5_b0) $$n7.data = String(unreadCount); });
     $$defer(() => { $$chain_$$n5(); });
     $$defer(() => { $$n12.disabled = !!(!hasUnread); });
+    $$defer(() => { if ($$chain_$$n15_b1) $$each_$$n21(filtered); });
     $$defer(() => { $$chain_$$n15(); });
   }
 

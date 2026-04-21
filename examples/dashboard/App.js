@@ -15,7 +15,7 @@ export function App($$target, $$props, $$slots) {
 
   // scoped styles
   const $$style = document.createElement('style');
-  $$style.textContent = `[vela-351572]:root {
+  $$style.textContent = `:root {
   --bg: #f1f5f9;
   --bg-card: #ffffff;
   --border: #e2e8f0;
@@ -236,6 +236,10 @@ body {
   let $$chain_$$n12_b0 = null;
   let $$chain_$$n12_b1 = null;
   let $$chain_$$n12_running = false, $$chain_$$n12_pending = false;
+  let $$n13 = null;
+  let $$n14_comp = null;
+  let $$n15 = null;
+  let $$n16_comp = null;
   function $$chain_$$n12() {
     if ($$chain_$$n12_running) { $$chain_$$n12_pending = true; return; }
     $$chain_$$n12_running = true;
@@ -243,15 +247,15 @@ body {
       let $$active = -1;
       if ($$active < 0 && (isAuthenticated)) $$active = 0;
       if ($$active < 0) $$active = 1;
-      if ($$active !== 0 && $$chain_$$n12_b0) { $$chain_$$n12_b0.remove(); $$chain_$$n12_b0 = null; }
-      if ($$active !== 1 && $$chain_$$n12_b1) { $$chain_$$n12_b1.remove(); $$chain_$$n12_b1 = null; }
+      if ($$active !== 0 && $$chain_$$n12_b0) { $$chain_$$n12_b0.remove(); $$chain_$$n12_b0 = null; $$n13 = null; if ($$n14_comp) { $$n14_comp.destroy(); $$n14_comp = null; } }
+      if ($$active !== 1 && $$chain_$$n12_b1) { $$chain_$$n12_b1.remove(); $$chain_$$n12_b1 = null; $$n15 = null; if ($$n16_comp) { $$n16_comp.destroy(); $$n16_comp = null; } }
       if ($$active === 0) {
         if (!$$chain_$$n12_b0) {
           $$chain_$$n12_b0 = document.createElement('div');
           $$chain_$$n12_b0.setAttribute('vela-351572', '');
-          const $$n13 = document.createElement('div');
+          $$n13 = document.createElement('div');
           $$n13.setAttribute('vela-351572','');
-          Dashboard($$n13, { sidebarOpen: sidebarOpen, user: user }, {});
+          $$n14_comp = Dashboard($$n13, { sidebarOpen: sidebarOpen, user: user }, {});
           $$chain_$$n12_b0.appendChild($$n13);
           $$n11_a.before($$chain_$$n12_b0);
         }
@@ -261,10 +265,10 @@ body {
         if (!$$chain_$$n12_b1) {
           $$chain_$$n12_b1 = document.createElement('div');
           $$chain_$$n12_b1.setAttribute('vela-351572', '');
-          const $$n14 = document.createElement('div');
-          $$n14.setAttribute('vela-351572','');
-          LoginPage($$n14, {}, {});
-          $$chain_$$n12_b1.appendChild($$n14);
+          $$n15 = document.createElement('div');
+          $$n15.setAttribute('vela-351572','');
+          $$n16_comp = LoginPage($$n15, {}, {});
+          $$chain_$$n12_b1.appendChild($$n15);
           $$n11_a.before($$chain_$$n12_b1);
         }
         if ($$n11_a.parentNode && $$chain_$$n12_b1.parentNode !== $$n11_a.parentNode) { $$n11_a.before($$chain_$$n12_b1); }
@@ -296,6 +300,7 @@ body {
   function $$set_user($$v) {
     user = $$v;
     $$defer(() => { if ($$chain_$$n2_b0) $$n8.data = `${user.avatar} ${user.name}`; });
+    $$defer(() => { if ($$n14_comp) $$n14_comp.set({ user: user }); });
   }
   function $$set_theme($$v) {
     theme = $$v;
@@ -303,6 +308,7 @@ body {
   }
   function $$set_sidebarOpen($$v) {
     sidebarOpen = $$v;
+    $$defer(() => { if ($$n14_comp) $$n14_comp.set({ sidebarOpen: sidebarOpen }); });
   }
 
   // initial render

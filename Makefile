@@ -10,6 +10,7 @@ all: build compile
 
 build:
 	@echo "Building Vela compiler..."
+	@go vet ./...
 	@go build -ldflags="-s -w" -o $(BINARY) .
 	@echo "   → ./$(BINARY)"
 

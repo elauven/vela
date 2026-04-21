@@ -160,6 +160,7 @@ export function Sidebar($$target, $$props, $$slots) {
   const $$n2_km = new Map();
   let $$n2_bs = [];
   function $$each_$$n2($$arr) {
+    if (!$$n2_a.parentNode) return;
     const $$newKeys = new Set();
     const $$newBlocks = [];
     ($$arr||[]).forEach(function(p, $$i) {

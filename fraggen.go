@@ -176,8 +176,14 @@ func (f *FragGen) WalkElement(elem *ElementNode, parentVar string) {
 			}
 		case attr.IsBind:
 			stmt := bindAttrStmt(v, attr.Name, attr.Value, "    ")
+			if attr.IsTwoWay && attr.Name == "value" {
+				stmt = fmt.Sprintf("    %s.value = (%s);", v, attr.Value)
+			}
 			f.init.WriteString(stmt + "\n")
 			f.update.WriteString("  " + stmt + "\n")
+			if attr.IsTwoWay {
+				f.emitTwoWayListener(v, elem.Tag, attr)
+			}
 		default:
 			f.create.WriteString(fmt.Sprintf(
 				"    %s.setAttribute('%s', '%s');\n", v, attr.Name, escapeAttr(attr.Value)))
@@ -291,7 +297,7 @@ func (f *FragGen) WalkEach(elem *ElementNode, parentVar string) {
 	for _, child := range elem.Children {
 		f.emitInlineChild(&fn, child, "$$el", 8)
 	}
-	fn.WriteString(fmt.Sprintf("        %s.before($$el);\n", anchor, anchor))
+	fn.WriteString(fmt.Sprintf("        %s.before($$el);\n", anchor))
 	fn.WriteString(fmt.Sprintf("        %s.push({ el: $$el, destroy() { $$el.remove(); } });\n", blocks))
 	fn.WriteString("      });\n    }\n")
 
@@ -362,4 +368,38 @@ func (f *FragGen) buildTextExpr(children []Node) string {
 		return ""
 	}
 	return buildExpr(parts)
+}
+
+// emitTwoWayListener wires the event listener that powers the "write back
+// to state" half of a bind: attribute, inside a fragment.
+//
+// Same semantics as (*CodeGen).emitTwoWayListener but uses FragGen's own
+// buffers — handler declared in .create (alongside the element), listener
+// registered in .events, removal in .cleanup so the fragment's destroy()
+// can remove it explicitly.  (A FragGen row tears down via destroy() on
+// the row handle, which is why we emit the cleanup; this differs from the
+// inline-each case where the row's $$row.remove() is all that runs.)
+//
+// Supported combinations and restrictions mirror twoWayBindSpec; non-state
+// RHS values silently fall back to one-way (the .value/.checked write has
+// already been emitted by the caller).
+func (f *FragGen) emitTwoWayListener(v, tag string, attr *Attr) {
+	spec, ok := twoWayBindSpec(tag, attr.Name)
+	if !ok {
+		return
+	}
+	if !f.analysis.isStateName(attr.Value) {
+		return
+	}
+	sv := attr.Value
+	hv := v + "_bind_" + spec.event + "_h"
+	f.create.WriteString(fmt.Sprintf(
+		"    const %s = ($e) => $$set_%s($e.target.%s);\n",
+		hv, sv, spec.readProp))
+	f.events.WriteString(fmt.Sprintf(
+		"    %s.addEventListener('%s', %s);\n",
+		v, spec.event, hv))
+	f.cleanup.WriteString(fmt.Sprintf(
+		"        %s.removeEventListener('%s', %s);\n",
+		v, spec.event, hv))
 }

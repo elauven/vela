@@ -251,38 +251,42 @@ tr:hover td[vela-5a820d] {
   const $$n1 = document.createElement('div');
   $$n1.setAttribute('vela-5a820d', '');
   $$n1.setAttribute('class', 'page-title');
-  const $$n4 = document.createElement('span');
-  $$n4.setAttribute('vela-5a820d', '');
-  $$n4.setAttribute('style', 'font-size:.8rem;color:var(--text-muted)');
-  const $$n5 = document.createTextNode('');
-  const $$n7 = document.createElement('div');
-  $$n7.setAttribute('vela-5a820d', '');
-  $$n7.setAttribute('class', 'summary-bar');
-  const $$n8 = document.createElement('span');
-  $$n8.setAttribute('vela-5a820d', '');
-  const $$n9 = document.createElement('strong');
+  let $$sc_actions_$$n4 = null;
+  const $$n5 = document.createElement('span');
+  $$n5.setAttribute('vela-5a820d', '');
+  $$n5.setAttribute('style', 'font-size:.8rem;color:var(--text-muted)');
+  const $$n6 = document.createTextNode('');
+  let $$sc_footer_$$n8 = null;
+  const $$n9 = document.createElement('div');
   $$n9.setAttribute('vela-5a820d', '');
-  const $$n10 = document.createTextNode('');
-  const $$n11 = document.createElement('span');
+  $$n9.setAttribute('class', 'summary-bar');
+  const $$n10 = document.createElement('span');
+  $$n10.setAttribute('vela-5a820d', '');
+  const $$n11 = document.createElement('strong');
   $$n11.setAttribute('vela-5a820d', '');
-  const $$n12 = document.createElement('strong');
-  $$n12.setAttribute('vela-5a820d', '');
-  const $$n13 = document.createTextNode('');
-  const $$n15 = document.createElement('div');
-  $$n15.setAttribute('vela-5a820d', '');
-  $$n15.setAttribute('class', 'toolbar');
-  $$n15.setAttribute('style', 'padding:1rem 1rem .5rem');
-  const $$n16 = document.createElement('input');
-  $$n16.setAttribute('vela-5a820d', '');
-  $$n16.setAttribute('class', 'search-input');
-  $$n16.setAttribute('type', 'text');
-  const $$n16_input_h = ($e) => $$set_search($e.target.value);
-  $$n16.setAttribute('placeholder', 'Search orders or customers…');
-  const $$n17 = document.createElement('div');
-  $$n17.setAttribute('vela-5a820d', '');
-  $$n17.setAttribute('class', 'filter-group');
-  const $$n18_a = document.createComment('#each');
-  function $$frag_$$n18(s, $$i) {
+  const $$n12 = document.createTextNode('');
+  const $$n13 = document.createElement('span');
+  $$n13.setAttribute('vela-5a820d', '');
+  const $$n14 = document.createElement('strong');
+  $$n14.setAttribute('vela-5a820d', '');
+  const $$n15 = document.createTextNode('');
+  let $$sc_default_$$n17 = null;
+  const $$n18 = document.createElement('div');
+  $$n18.setAttribute('vela-5a820d', '');
+  $$n18.setAttribute('class', 'toolbar');
+  $$n18.setAttribute('style', 'padding:1rem 1rem .5rem');
+  const $$n19 = document.createElement('input');
+  $$n19.setAttribute('vela-5a820d', '');
+  $$n19.setAttribute('class', 'search-input');
+  $$n19.setAttribute('type', 'text');
+  const $$n19_input_h = ($e) => $$set_search($e.target.value);
+  const $$n19_input_h = ($e) => $$set_search($e.target.value);
+  $$n19.setAttribute('placeholder', 'Search orders or customers…');
+  const $$n20 = document.createElement('div');
+  $$n20.setAttribute('vela-5a820d', '');
+  $$n20.setAttribute('class', 'filter-group');
+  const $$n21_a = document.createComment('#each');
+  function $$frag_$$n21(s, $$i) {
     const $$f0 = document.createElement('button');
     $$f0.setAttribute('vela-5a820d', '');
     $$f0.setAttribute('class', 'filter-btn');
@@ -304,77 +308,78 @@ tr:hover td[vela-5a820d] {
       },
     };
   }
-  const $$n18_km = new Map();
-  let $$n18_bs = [];
-  function $$each_$$n18($$arr) {
+  const $$n21_km = new Map();
+  let $$n21_bs = [];
+  function $$each_$$n21($$arr) {
+    if (!$$n21_a.parentNode) return;
     const $$newKeys = new Set();
     const $$newBlocks = [];
     ($$arr||[]).forEach(function(s, $$i) {
       const $$key = String(s);
       $$newKeys.add($$key);
-      let $$blk = $$n18_km.get($$key);
+      let $$blk = $$n21_km.get($$key);
       if ($$blk) {
         if ($$blk.update) $$blk.update(s, $$i);
       } else {
-        $$blk = $$frag_$$n18(s, $$i);
-        $$n18_km.set($$key, $$blk);
+        $$blk = $$frag_$$n21(s, $$i);
+        $$n21_km.set($$key, $$blk);
       }
-      $$n18_a.before($$blk.el);
+      $$n21_a.before($$blk.el);
       $$newBlocks.push($$blk);
     });
-    $$n18_km.forEach(($$blk, $$key) => {
-      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n18_km.delete($$key); }
+    $$n21_km.forEach(($$blk, $$key) => {
+      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n21_km.delete($$key); }
     });
-    $$n18_bs = $$newBlocks;
+    $$n21_bs = $$newBlocks;
   }
-  const $$n19 = document.createElement('span');
-  $$n19.setAttribute('vela-5a820d', '');
-  $$n19.setAttribute('class', 'count-pill');
-  const $$n20 = document.createElement('strong');
-  $$n20.setAttribute('vela-5a820d', '');
-  const $$n21 = document.createTextNode('');
-  const $$n22 = document.createElement('table');
+  const $$n22 = document.createElement('span');
   $$n22.setAttribute('vela-5a820d', '');
-  const $$n23 = document.createElement('thead');
+  $$n22.setAttribute('class', 'count-pill');
+  const $$n23 = document.createElement('strong');
   $$n23.setAttribute('vela-5a820d', '');
-  const $$n24 = document.createElement('tr');
-  $$n24.setAttribute('vela-5a820d', '');
-  const $$n25 = document.createElement('th');
+  const $$n24 = document.createTextNode('');
+  const $$n25 = document.createElement('table');
   $$n25.setAttribute('vela-5a820d', '');
-  const $$n25_click_h = () => sort('id');
-  const $$n26 = document.createTextNode('');
-  const $$n27 = document.createElement('th');
+  const $$n26 = document.createElement('thead');
+  $$n26.setAttribute('vela-5a820d', '');
+  const $$n27 = document.createElement('tr');
   $$n27.setAttribute('vela-5a820d', '');
-  const $$n27_click_h = () => sort('customer');
-  const $$n28 = document.createTextNode('');
-  const $$n29 = document.createElement('th');
-  $$n29.setAttribute('vela-5a820d', '');
-  const $$n29_click_h = () => sort('date');
-  const $$n30 = document.createTextNode('');
-  const $$n31 = document.createElement('th');
-  $$n31.setAttribute('vela-5a820d', '');
-  const $$n31_click_h = () => sort('amount');
-  const $$n32 = document.createTextNode('');
-  const $$n33 = document.createElement('th');
-  $$n33.setAttribute('vela-5a820d', '');
-  const $$n33_click_h = () => sort('items');
-  const $$n34 = document.createTextNode('');
-  const $$n35 = document.createElement('th');
-  $$n35.setAttribute('vela-5a820d', '');
+  const $$n28 = document.createElement('th');
+  $$n28.setAttribute('vela-5a820d', '');
+  const $$n28_click_h = () => sort('id');
+  const $$n29 = document.createTextNode('');
+  const $$n30 = document.createElement('th');
+  $$n30.setAttribute('vela-5a820d', '');
+  const $$n30_click_h = () => sort('customer');
+  const $$n31 = document.createTextNode('');
+  const $$n32 = document.createElement('th');
+  $$n32.setAttribute('vela-5a820d', '');
+  const $$n32_click_h = () => sort('date');
+  const $$n33 = document.createTextNode('');
+  const $$n34 = document.createElement('th');
+  $$n34.setAttribute('vela-5a820d', '');
+  const $$n34_click_h = () => sort('amount');
+  const $$n35 = document.createTextNode('');
   const $$n36 = document.createElement('th');
   $$n36.setAttribute('vela-5a820d', '');
-  const $$n37 = document.createElement('tbody');
-  $$n37.setAttribute('vela-5a820d', '');
-  const $$n38_a = document.createComment('if-chain');
-  let $$chain_$$n39_b0 = null;
-  let $$chain_$$n39_b1 = null;
-  let $$chain_$$n39_running = false, $$chain_$$n39_pending = false;
-  let $$n40 = null;
-  let $$n41 = null;
-  let $$n42 = null;
+  const $$n36_click_h = () => sort('items');
+  const $$n37 = document.createTextNode('');
+  const $$n38 = document.createElement('th');
+  $$n38.setAttribute('vela-5a820d', '');
+  const $$n39 = document.createElement('th');
+  $$n39.setAttribute('vela-5a820d', '');
+  const $$n40 = document.createElement('tbody');
+  $$n40.setAttribute('vela-5a820d', '');
+  const $$n41_a = document.createComment('if-chain');
+  let $$chain_$$n42_b0 = null;
+  let $$chain_$$n42_b1 = null;
+  let $$chain_$$n42_running = false, $$chain_$$n42_pending = false;
   let $$n43 = null;
-  const $$n44_a = document.createComment('#each');
-  function $$frag_$$n44(o, $$i) {
+  let $$n44 = null;
+  let $$n45 = null;
+  let $$n46 = null;
+  const $$n47_a = document.createComment('#each');
+  function $$frag_$$n47(o, $$i) {
     const $$f0 = document.createElement('tr');
     $$f0.setAttribute('vela-5a820d', '');
     const $$f1 = document.createElement('td');
@@ -467,171 +472,176 @@ tr:hover td[vela-5a820d] {
       },
     };
   }
-  const $$n44_km = new Map();
-  let $$n44_bs = [];
-  function $$each_$$n44($$arr) {
+  const $$n47_km = new Map();
+  let $$n47_bs = [];
+  function $$each_$$n47($$arr) {
+    if (!$$n47_a.parentNode) return;
     const $$newKeys = new Set();
     const $$newBlocks = [];
     ($$arr||[]).forEach(function(o, $$i) {
       const $$key = String(o.id);
       $$newKeys.add($$key);
-      let $$blk = $$n44_km.get($$key);
+      let $$blk = $$n47_km.get($$key);
       if ($$blk) {
         if ($$blk.update) $$blk.update(o, $$i);
       } else {
-        $$blk = $$frag_$$n44(o, $$i);
-        $$n44_km.set($$key, $$blk);
+        $$blk = $$frag_$$n47(o, $$i);
+        $$n47_km.set($$key, $$blk);
       }
-      $$n44_a.before($$blk.el);
+      $$n47_a.before($$blk.el);
       $$newBlocks.push($$blk);
     });
-    $$n44_km.forEach(($$blk, $$key) => {
-      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n44_km.delete($$key); }
+    $$n47_km.forEach(($$blk, $$key) => {
+      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n47_km.delete($$key); }
     });
-    $$n44_bs = $$newBlocks;
+    $$n47_bs = $$newBlocks;
   }
-  function $$chain_$$n39() {
-    if ($$chain_$$n39_running) { $$chain_$$n39_pending = true; return; }
-    $$chain_$$n39_running = true;
+  function $$chain_$$n42() {
+    if ($$chain_$$n42_running) { $$chain_$$n42_pending = true; return; }
+    $$chain_$$n42_running = true;
     try {
       let $$active = -1;
       if ($$active < 0 && (filtered.length === 0)) $$active = 0;
       if ($$active < 0) $$active = 1;
-      if ($$active !== 0 && $$chain_$$n39_b0) { $$chain_$$n39_b0.remove(); $$chain_$$n39_b0 = null; $$n40 = null; $$n41 = null; $$n42 = null; $$n43 = null; }
-      if ($$active !== 1 && $$chain_$$n39_b1) { $$chain_$$n39_b1.remove(); $$chain_$$n39_b1 = null; }
+      if ($$active !== 0 && $$chain_$$n42_b0) { $$chain_$$n42_b0.remove(); $$chain_$$n42_b0 = null; $$n43 = null; $$n44 = null; $$n45 = null; $$n46 = null; }
+      if ($$active !== 1 && $$chain_$$n42_b1) { $$chain_$$n42_b1.remove(); $$chain_$$n42_b1 = null; }
       if ($$active === 0) {
-        if (!$$chain_$$n39_b0) {
-          $$chain_$$n39_b0 = document.createElement('div');
-          $$chain_$$n39_b0.setAttribute('vela-5a820d', '');
-          $$n40 = document.createElement('tr');
-          $$n40.setAttribute('vela-5a820d', '');
-          $$n41 = document.createElement('td');
-          $$n41.setAttribute('vela-5a820d', '');
-          $$n41.setAttribute('colspan', '7');
-          $$n42 = document.createElement('div');
-          $$n42.setAttribute('vela-5a820d', '');
-          $$n42.setAttribute('class', 'empty');
-          $$n43 = document.createTextNode(`${search || statusFilter !== 'all' ? 'No orders match your filters.' : 'No orders yet.'} `);
-          $$n42.appendChild($$n43);
-          $$n41.appendChild($$n42);
-          $$n40.appendChild($$n41);
-          $$chain_$$n39_b0.appendChild($$n40);
-          $$n38_a.before($$chain_$$n39_b0);
+        if (!$$chain_$$n42_b0) {
+          $$chain_$$n42_b0 = document.createElement('div');
+          $$chain_$$n42_b0.setAttribute('vela-5a820d', '');
+          $$n43 = document.createElement('tr');
+          $$n43.setAttribute('vela-5a820d', '');
+          $$n44 = document.createElement('td');
+          $$n44.setAttribute('vela-5a820d', '');
+          $$n44.setAttribute('colspan', '7');
+          $$n45 = document.createElement('div');
+          $$n45.setAttribute('vela-5a820d', '');
+          $$n45.setAttribute('class', 'empty');
+          $$n46 = document.createTextNode(`${search || statusFilter !== 'all' ? 'No orders match your filters.' : 'No orders yet.'} `);
+          $$n45.appendChild($$n46);
+          $$n44.appendChild($$n45);
+          $$n43.appendChild($$n44);
+          $$chain_$$n42_b0.appendChild($$n43);
+          $$n41_a.before($$chain_$$n42_b0);
         }
-        if ($$n38_a.parentNode && $$chain_$$n39_b0.parentNode !== $$n38_a.parentNode) { $$n38_a.before($$chain_$$n39_b0); }
+        if ($$n41_a.parentNode && $$chain_$$n42_b0.parentNode !== $$n41_a.parentNode) { $$n41_a.before($$chain_$$n42_b0); }
       }
       if ($$active === 1) {
-        if (!$$chain_$$n39_b1) {
-          $$chain_$$n39_b1 = document.createElement('div');
-          $$chain_$$n39_b1.setAttribute('vela-5a820d', '');
-          $$chain_$$n39_b1.appendChild($$n44_a);
-          $$each_$$n44(filtered);
-          $$n38_a.before($$chain_$$n39_b1);
+        if (!$$chain_$$n42_b1) {
+          $$chain_$$n42_b1 = document.createElement('div');
+          $$chain_$$n42_b1.setAttribute('vela-5a820d', '');
+          $$chain_$$n42_b1.appendChild($$n47_a);
+          $$each_$$n47(filtered);
+          $$n41_a.before($$chain_$$n42_b1);
         }
-        if ($$n38_a.parentNode && $$chain_$$n39_b1.parentNode !== $$n38_a.parentNode) { $$n38_a.before($$chain_$$n39_b1); }
+        if ($$n41_a.parentNode && $$chain_$$n42_b1.parentNode !== $$n41_a.parentNode) { $$n41_a.before($$chain_$$n42_b1); }
       }
     } finally {
-      $$chain_$$n39_running = false;
-      if ($$chain_$$n39_pending) { $$chain_$$n39_pending = false; $$chain_$$n39(); }
+      $$chain_$$n42_running = false;
+      if ($$chain_$$n42_pending) { $$chain_$$n42_pending = false; $$chain_$$n42(); }
     }
   }
   const $$n2_comp_wrap = document.createElement('div');
   $$n2_comp_wrap.setAttribute('vela-5a820d', '');
-  const $$n47 = document.createElement('div');
-  $$n47.setAttribute('vela-5a820d', '');
-  $$n47.setAttribute('class', 'confirm-actions');
-  const $$n48 = document.createElement('button');
-  $$n48.setAttribute('vela-5a820d', '');
-  $$n48.setAttribute('class', 'btn-cancel');
-  const $$n48_click_h = () => $$set_confirmOpen(false);
-  const $$n49 = document.createElement('button');
-  $$n49.setAttribute('vela-5a820d', '');
-  $$n49.setAttribute('class', 'btn-del');
-  const $$n51_a = document.createComment('if-chain');
-  let $$chain_$$n52_b0 = null;
-  let $$chain_$$n52_running = false, $$chain_$$n52_pending = false;
-  let $$n53 = null;
-  let $$n54 = null;
-  let $$n55 = null;
-  let $$n56 = null;
-  let $$n57 = null;
-  function $$chain_$$n52() {
-    if ($$chain_$$n52_running) { $$chain_$$n52_pending = true; return; }
-    $$chain_$$n52_running = true;
+  let $$sc_footer_$$n50 = null;
+  const $$n51 = document.createElement('div');
+  $$n51.setAttribute('vela-5a820d', '');
+  $$n51.setAttribute('class', 'confirm-actions');
+  const $$n52 = document.createElement('button');
+  $$n52.setAttribute('vela-5a820d', '');
+  $$n52.setAttribute('class', 'btn-cancel');
+  const $$n52_click_h = () => $$set_confirmOpen(false);
+  const $$n53 = document.createElement('button');
+  $$n53.setAttribute('vela-5a820d', '');
+  $$n53.setAttribute('class', 'btn-del');
+  let $$sc_default_$$n55 = null;
+  const $$n56_a = document.createComment('if-chain');
+  let $$chain_$$n57_b0 = null;
+  let $$chain_$$n57_running = false, $$chain_$$n57_pending = false;
+  let $$n58 = null;
+  let $$n59 = null;
+  let $$n60 = null;
+  let $$n61 = null;
+  let $$n62 = null;
+  function $$chain_$$n57() {
+    if ($$chain_$$n57_running) { $$chain_$$n57_pending = true; return; }
+    $$chain_$$n57_running = true;
     try {
       let $$active = -1;
       if ($$active < 0 && (deleteTarget)) $$active = 0;
-      if ($$active !== 0 && $$chain_$$n52_b0) { $$chain_$$n52_b0.remove(); $$chain_$$n52_b0 = null; $$n53 = null; $$n54 = null; $$n55 = null; $$n56 = null; $$n57 = null; }
+      if ($$active !== 0 && $$chain_$$n57_b0) { $$chain_$$n57_b0.remove(); $$chain_$$n57_b0 = null; $$n58 = null; $$n59 = null; $$n60 = null; $$n61 = null; $$n62 = null; }
       if ($$active === 0) {
-        if (!$$chain_$$n52_b0) {
-          $$chain_$$n52_b0 = document.createElement('div');
-          $$chain_$$n52_b0.setAttribute('vela-5a820d', '');
-          $$n53 = document.createElement('p');
-          $$n53.setAttribute('vela-5a820d', '');
-          $$n53.setAttribute('class', 'confirm-msg');
-          $$n53.appendChild(document.createTextNode(`Are you sure you want to delete order`));
-          $$n54 = document.createElement('span');
-          $$n54.setAttribute('vela-5a820d', '');
-          $$n54.setAttribute('class', 'order-highlight');
-          $$n55 = document.createTextNode(String(deleteTarget.id));
-          $$n54.appendChild($$n55);
-          $$n53.appendChild($$n54);
-          $$n53.appendChild(document.createTextNode(`from`));
-          $$n56 = document.createElement('strong');
-          $$n56.setAttribute('vela-5a820d', '');
-          $$n57 = document.createTextNode(String(deleteTarget.customer));
-          $$n56.appendChild($$n57);
-          $$n53.appendChild($$n56);
-          $$n53.appendChild(document.createTextNode(`?
+        if (!$$chain_$$n57_b0) {
+          $$chain_$$n57_b0 = document.createElement('div');
+          $$chain_$$n57_b0.setAttribute('vela-5a820d', '');
+          $$n58 = document.createElement('p');
+          $$n58.setAttribute('vela-5a820d', '');
+          $$n58.setAttribute('class', 'confirm-msg');
+          $$n58.appendChild(document.createTextNode(`Are you sure you want to delete order`));
+          $$n59 = document.createElement('span');
+          $$n59.setAttribute('vela-5a820d', '');
+          $$n59.setAttribute('class', 'order-highlight');
+          $$n60 = document.createTextNode(String(deleteTarget.id));
+          $$n59.appendChild($$n60);
+          $$n58.appendChild($$n59);
+          $$n58.appendChild(document.createTextNode(`from`));
+          $$n61 = document.createElement('strong');
+          $$n61.setAttribute('vela-5a820d', '');
+          $$n62 = document.createTextNode(String(deleteTarget.customer));
+          $$n61.appendChild($$n62);
+          $$n58.appendChild($$n61);
+          $$n58.appendChild(document.createTextNode(`?
           This action cannot be undone.`));
-          $$chain_$$n52_b0.appendChild($$n53);
-          $$n51_a.before($$chain_$$n52_b0);
+          $$chain_$$n57_b0.appendChild($$n58);
+          $$n56_a.before($$chain_$$n57_b0);
         }
-        if ($$n51_a.parentNode && $$chain_$$n52_b0.parentNode !== $$n51_a.parentNode) { $$n51_a.before($$chain_$$n52_b0); }
+        if ($$n56_a.parentNode && $$chain_$$n57_b0.parentNode !== $$n56_a.parentNode) { $$n56_a.before($$chain_$$n57_b0); }
       }
     } finally {
-      $$chain_$$n52_running = false;
-      if ($$chain_$$n52_pending) { $$chain_$$n52_pending = false; $$chain_$$n52(); }
+      $$chain_$$n57_running = false;
+      if ($$chain_$$n57_pending) { $$chain_$$n57_pending = false; $$chain_$$n57(); }
     }
   }
-  const $$n45_comp_wrap = document.createElement('div');
-  $$n45_comp_wrap.setAttribute('vela-5a820d', '');
-  const $$n58 = document.createElement('div');
-  $$n58.setAttribute('vela-5a820d', '');
-  $$n58.setAttribute('class', 'toast-area');
-  const $$n59_a = document.createComment('if-chain');
-  let $$chain_$$n60_b0 = null;
-  let $$chain_$$n60_running = false, $$chain_$$n60_pending = false;
-  function $$chain_$$n60() {
-    if ($$chain_$$n60_running) { $$chain_$$n60_pending = true; return; }
-    $$chain_$$n60_running = true;
+  const $$n48_comp_wrap = document.createElement('div');
+  $$n48_comp_wrap.setAttribute('vela-5a820d', '');
+  const $$n63 = document.createElement('div');
+  $$n63.setAttribute('vela-5a820d', '');
+  $$n63.setAttribute('class', 'toast-area');
+  const $$n64_a = document.createComment('if-chain');
+  let $$chain_$$n65_b0 = null;
+  let $$chain_$$n65_running = false, $$chain_$$n65_pending = false;
+  let $$n66 = null;
+  let $$n67_comp = null;
+  function $$chain_$$n65() {
+    if ($$chain_$$n65_running) { $$chain_$$n65_pending = true; return; }
+    $$chain_$$n65_running = true;
     try {
       let $$active = -1;
       if ($$active < 0 && (toast)) $$active = 0;
-      if ($$active !== 0 && $$chain_$$n60_b0) { $$chain_$$n60_b0.remove(); $$chain_$$n60_b0 = null; }
+      if ($$active !== 0 && $$chain_$$n65_b0) { $$chain_$$n65_b0.remove(); $$chain_$$n65_b0 = null; $$n66 = null; if ($$n67_comp) { $$n67_comp.destroy(); $$n67_comp = null; } }
       if ($$active === 0) {
-        if (!$$chain_$$n60_b0) {
-          $$chain_$$n60_b0 = document.createElement('div');
-          $$chain_$$n60_b0.setAttribute('vela-5a820d', '');
-          const $$n61 = document.createElement('div');
-          $$n61.setAttribute('vela-5a820d','');
-          Toast($$n61, { message: toast.message, type: toast.type }, {});
-          $$chain_$$n60_b0.appendChild($$n61);
-          $$n59_a.before($$chain_$$n60_b0);
+        if (!$$chain_$$n65_b0) {
+          $$chain_$$n65_b0 = document.createElement('div');
+          $$chain_$$n65_b0.setAttribute('vela-5a820d', '');
+          $$n66 = document.createElement('div');
+          $$n66.setAttribute('vela-5a820d','');
+          $$n67_comp = Toast($$n66, { message: toast.message, type: toast.type }, {});
+          $$chain_$$n65_b0.appendChild($$n66);
+          $$n64_a.before($$chain_$$n65_b0);
         }
-        if ($$n59_a.parentNode && $$chain_$$n60_b0.parentNode !== $$n59_a.parentNode) { $$n59_a.before($$chain_$$n60_b0); }
+        if ($$n64_a.parentNode && $$chain_$$n65_b0.parentNode !== $$n64_a.parentNode) { $$n64_a.before($$chain_$$n65_b0); }
       }
     } finally {
-      $$chain_$$n60_running = false;
-      if ($$chain_$$n60_pending) { $$chain_$$n60_pending = false; $$chain_$$n60(); }
+      $$chain_$$n65_running = false;
+      if ($$chain_$$n65_pending) { $$chain_$$n65_pending = false; $$chain_$$n65(); }
     }
   }
   $$n1.appendChild(document.createTextNode(`📦 Orders`));
   $$root.appendChild($$n1);
   $$root.appendChild($$n2_comp_wrap);
-  $$root.appendChild($$n45_comp_wrap);
-  $$n58.appendChild($$n59_a);
-  $$root.appendChild($$n58);
+  $$root.appendChild($$n48_comp_wrap);
+  $$n63.appendChild($$n64_a);
+  $$root.appendChild($$n63);
 
   // component logic
   const STATUSES = ['all', 'pending', 'completed', 'shipped', 'cancelled'];
@@ -674,87 +684,89 @@ tr:hover td[vela-5a820d] {
   function $$set_allOrders($$v) {
     allOrders = $$v;
     $$upd_filtered();
-    $$defer(() => { $$n5.data = `${allOrders.length}total`; });
-    $$defer(() => { $$n10.data = `$${totalAmount.toFixed(2)}`; });
-    $$defer(() => { $$n13.data = String(filtered.length); });
-    $$defer(() => { $$n21.data = String(filtered.length); });
-    $$defer(() => { $$each_$$n44(filtered); });
-    $$defer(() => { $$chain_$$n39(); });
+    $$defer(() => { $$n6.data = `${allOrders.length}total`; });
+    $$defer(() => { $$n12.data = `$${totalAmount.toFixed(2)}`; });
+    $$defer(() => { $$n15.data = String(filtered.length); });
+    $$defer(() => { $$n24.data = String(filtered.length); });
+    $$defer(() => { $$each_$$n47(filtered); });
+    $$defer(() => { $$chain_$$n42(); });
   }
   function $$set_search($$v) {
     search = $$v;
     $$upd_filtered();
-    $$defer(() => { $$n10.data = `$${totalAmount.toFixed(2)}`; });
-    $$defer(() => { $$n13.data = String(filtered.length); });
-    $$defer(() => { $$n16.setAttribute('value', String(search)); });
-    $$defer(() => { $$n21.data = String(filtered.length); });
-    $$defer(() => { if ($$chain_$$n39_b0) $$n43.data = `${search || statusFilter !== 'all' ? 'No orders match your filters.' : 'No orders yet.'} `; });
-    $$defer(() => { $$each_$$n44(filtered); });
-    $$defer(() => { $$chain_$$n39(); });
+    $$defer(() => { $$n12.data = `$${totalAmount.toFixed(2)}`; });
+    $$defer(() => { $$n15.data = String(filtered.length); });
+    $$defer(() => { $$n19.setAttribute('value', String(search)); });
+    $$defer(() => { $$n24.data = String(filtered.length); });
+    $$defer(() => { if ($$chain_$$n42_b0) $$n46.data = `${search || statusFilter !== 'all' ? 'No orders match your filters.' : 'No orders yet.'} `; });
+    $$defer(() => { $$each_$$n47(filtered); });
+    $$defer(() => { $$chain_$$n42(); });
   }
   function $$set_statusFilter($$v) {
     statusFilter = $$v;
     $$upd_filtered();
-    $$defer(() => { $$n10.data = `$${totalAmount.toFixed(2)}`; });
-    $$defer(() => { $$n13.data = String(filtered.length); });
-    $$defer(() => { $$each_$$n18(STATUSES); });
-    $$defer(() => { $$n21.data = String(filtered.length); });
-    $$defer(() => { if ($$chain_$$n39_b0) $$n43.data = `${search || statusFilter !== 'all' ? 'No orders match your filters.' : 'No orders yet.'} `; });
-    $$defer(() => { $$each_$$n44(filtered); });
-    $$defer(() => { $$chain_$$n39(); });
+    $$defer(() => { $$n12.data = `$${totalAmount.toFixed(2)}`; });
+    $$defer(() => { $$n15.data = String(filtered.length); });
+    $$defer(() => { $$each_$$n21(STATUSES); });
+    $$defer(() => { $$n24.data = String(filtered.length); });
+    $$defer(() => { if ($$chain_$$n42_b0) $$n46.data = `${search || statusFilter !== 'all' ? 'No orders match your filters.' : 'No orders yet.'} `; });
+    $$defer(() => { $$each_$$n47(filtered); });
+    $$defer(() => { $$chain_$$n42(); });
   }
   function $$set_sortBy($$v) {
     sortBy = $$v;
     $$upd_filtered();
-    $$defer(() => { $$n10.data = `$${totalAmount.toFixed(2)}`; });
-    $$defer(() => { $$n13.data = String(filtered.length); });
-    $$defer(() => { $$n21.data = String(filtered.length); });
-    $$defer(() => { $$each_$$n44(filtered); });
-    $$defer(() => { $$chain_$$n39(); });
+    $$defer(() => { $$n12.data = `$${totalAmount.toFixed(2)}`; });
+    $$defer(() => { $$n15.data = String(filtered.length); });
+    $$defer(() => { $$n24.data = String(filtered.length); });
+    $$defer(() => { $$each_$$n47(filtered); });
+    $$defer(() => { $$chain_$$n42(); });
   }
   function $$set_sortDir($$v) {
     sortDir = $$v;
     $$upd_filtered();
-    $$defer(() => { $$n10.data = `$${totalAmount.toFixed(2)}`; });
-    $$defer(() => { $$n13.data = String(filtered.length); });
-    $$defer(() => { $$n21.data = String(filtered.length); });
-    $$defer(() => { $$each_$$n44(filtered); });
-    $$defer(() => { $$chain_$$n39(); });
+    $$defer(() => { $$n12.data = `$${totalAmount.toFixed(2)}`; });
+    $$defer(() => { $$n15.data = String(filtered.length); });
+    $$defer(() => { $$n24.data = String(filtered.length); });
+    $$defer(() => { $$each_$$n47(filtered); });
+    $$defer(() => { $$chain_$$n42(); });
   }
   function $$set_deleteTarget($$v) {
     deleteTarget = $$v;
-    $$defer(() => { if ($$chain_$$n52_b0) $$n55.data = String(deleteTarget.id); });
-    $$defer(() => { if ($$chain_$$n52_b0) $$n57.data = String(deleteTarget.customer); });
-    $$defer(() => { $$chain_$$n52(); });
+    $$defer(() => { if ($$chain_$$n57_b0) $$n60.data = String(deleteTarget.id); });
+    $$defer(() => { if ($$chain_$$n57_b0) $$n62.data = String(deleteTarget.customer); });
+    $$defer(() => { $$chain_$$n57(); });
   }
   function $$set_confirmOpen($$v) {
     confirmOpen = $$v;
-    $$defer(() => { if ($$n45_comp) $$n45_comp.set({ open: confirmOpen }); });
+    $$defer(() => { if ($$n48_comp) $$n48_comp.set({ open: confirmOpen }); });
   }
   function $$set_toast($$v) {
     toast = $$v;
-    $$defer(() => { $$chain_$$n60(); });
+    $$defer(() => { if ($$n67_comp) $$n67_comp.set({ message: toast.message }); });
+    $$defer(() => { if ($$n67_comp) $$n67_comp.set({ type: toast.type }); });
+    $$defer(() => { $$chain_$$n65(); });
   }
 
   // events
-  $$n16.addEventListener('input', ($e) => $$set_search($e.target.value));
-  $$n16.addEventListener('input', $$n16_input_h);
-  $$n25.addEventListener('click', $$n25_click_h);
-  $$n27.addEventListener('click', $$n27_click_h);
-  $$n29.addEventListener('click', $$n29_click_h);
-  $$n31.addEventListener('click', $$n31_click_h);
-  $$n33.addEventListener('click', $$n33_click_h);
-  $$n48.addEventListener('click', $$n48_click_h);
-  $$n49.addEventListener('click', confirmDelete);
+  $$n19.addEventListener('input', $$n19_input_h);
+  $$n19.addEventListener('input', $$n19_input_h);
+  $$n28.addEventListener('click', $$n28_click_h);
+  $$n30.addEventListener('click', $$n30_click_h);
+  $$n32.addEventListener('click', $$n32_click_h);
+  $$n34.addEventListener('click', $$n34_click_h);
+  $$n36.addEventListener('click', $$n36_click_h);
+  $$n52.addEventListener('click', $$n52_click_h);
+  $$n53.addEventListener('click', confirmDelete);
 
   // initialise derived
   $$upd_filtered();
   $$upd_totalAmount();
 
   // initial render
-  const $$n2_comp = Card($$n2_comp_wrap, { noPad: true }, { "actions": () => { const $$sf_actions_$$n3 = document.createDocumentFragment(); $$n4.appendChild($$n5); $$sf_actions_$$n3.appendChild($$n4); $$n5.data = `${allOrders.length}total`; return $$sf_actions_$$n3; }, "footer": () => { const $$sf_footer_$$n6 = document.createDocumentFragment(); $$n8.appendChild(document.createTextNode(`Filtered total:`)); $$n9.appendChild($$n10); $$n8.appendChild($$n9); $$n7.appendChild($$n8); $$n11.appendChild(document.createTextNode(`Orders:`)); $$n12.appendChild($$n13); $$n11.appendChild($$n12); $$n7.appendChild($$n11); $$sf_footer_$$n6.appendChild($$n7); $$n10.data = `$${totalAmount.toFixed(2)}`; $$n13.data = String(filtered.length); return $$sf_footer_$$n6; }, "default": () => { const $$sf_default_$$n14 = document.createDocumentFragment(); $$n15.appendChild($$n16); $$n17.appendChild($$n18_a); $$n15.appendChild($$n17); $$n19.appendChild(document.createTextNode(`Showing`)); $$n20.appendChild($$n21); $$n19.appendChild($$n20); $$n19.appendChild(document.createTextNode(`orders`)); $$n15.appendChild($$n19); $$sf_default_$$n14.appendChild($$n15); $$n25.appendChild($$n26); $$n24.appendChild($$n25); $$n27.appendChild($$n28); $$n24.appendChild($$n27); $$n29.appendChild($$n30); $$n24.appendChild($$n29); $$n31.appendChild($$n32); $$n24.appendChild($$n31); $$n33.appendChild($$n34); $$n24.appendChild($$n33); $$n35.appendChild(document.createTextNode(`Status`)); $$n24.appendChild($$n35); $$n24.appendChild($$n36); $$n23.appendChild($$n24); $$n22.appendChild($$n23); $$n37.appendChild($$n38_a); $$n22.appendChild($$n37); $$sf_default_$$n14.appendChild($$n22); $$n16.setAttribute('value', String(search)); $$each_$$n18(STATUSES); $$n21.data = String(filtered.length); $$n26.data = `Order${sortIcon('id')}`; $$n28.data = `Customer${sortIcon('customer')}`; $$n30.data = `Date${sortIcon('date')}`; $$n32.data = `Amount${sortIcon('amount')}`; $$n34.data = `Items${sortIcon('items')}`; $$chain_$$n39(); return $$sf_default_$$n14; } });
-  const $$n45_comp = Modal($$n45_comp_wrap, { open: confirmOpen, title: 'Delete Order', size: 'sm' }, { "footer": () => { const $$sf_footer_$$n46 = document.createDocumentFragment(); $$n48.appendChild(document.createTextNode(`Cancel`)); $$n47.appendChild($$n48); $$n49.appendChild(document.createTextNode(`Delete`)); $$n47.appendChild($$n49); $$sf_footer_$$n46.appendChild($$n47); return $$sf_footer_$$n46; }, "default": () => { const $$sf_default_$$n50 = document.createDocumentFragment(); $$sf_default_$$n50.appendChild($$n51_a); $$chain_$$n52(); return $$sf_default_$$n50; } });
-  $$chain_$$n60();
+  const $$n2_comp = Card($$n2_comp_wrap, { noPad: true }, { "actions": () => { if ($$sc_actions_$$n4) { $$n6.data = `${allOrders.length}total`; return $$sc_actions_$$n4; } const $$sf_actions_$$n3 = document.createDocumentFragment(); $$n5.appendChild($$n6); $$sf_actions_$$n3.appendChild($$n5); $$n6.data = `${allOrders.length}total`; $$sc_actions_$$n4 = $$sf_actions_$$n3; return $$sc_actions_$$n4; }, "footer": () => { if ($$sc_footer_$$n8) { $$n12.data = `$${totalAmount.toFixed(2)}`; $$n15.data = String(filtered.length); return $$sc_footer_$$n8; } const $$sf_footer_$$n7 = document.createDocumentFragment(); $$n10.appendChild(document.createTextNode(`Filtered total:`)); $$n11.appendChild($$n12); $$n10.appendChild($$n11); $$n9.appendChild($$n10); $$n13.appendChild(document.createTextNode(`Orders:`)); $$n14.appendChild($$n15); $$n13.appendChild($$n14); $$n9.appendChild($$n13); $$sf_footer_$$n7.appendChild($$n9); $$n12.data = `$${totalAmount.toFixed(2)}`; $$n15.data = String(filtered.length); $$sc_footer_$$n8 = $$sf_footer_$$n7; return $$sc_footer_$$n8; }, "default": () => { if ($$sc_default_$$n17) { $$n19.setAttribute('value', String(search)); $$each_$$n21(STATUSES); $$n24.data = String(filtered.length); $$n29.data = `Order${sortIcon('id')}`; $$n31.data = `Customer${sortIcon('customer')}`; $$n33.data = `Date${sortIcon('date')}`; $$n35.data = `Amount${sortIcon('amount')}`; $$n37.data = `Items${sortIcon('items')}`; $$chain_$$n42(); return $$sc_default_$$n17; } const $$sf_default_$$n16 = document.createDocumentFragment(); $$n18.appendChild($$n19); $$n20.appendChild($$n21_a); $$n18.appendChild($$n20); $$n22.appendChild(document.createTextNode(`Showing`)); $$n23.appendChild($$n24); $$n22.appendChild($$n23); $$n22.appendChild(document.createTextNode(`orders`)); $$n18.appendChild($$n22); $$sf_default_$$n16.appendChild($$n18); $$n28.appendChild($$n29); $$n27.appendChild($$n28); $$n30.appendChild($$n31); $$n27.appendChild($$n30); $$n32.appendChild($$n33); $$n27.appendChild($$n32); $$n34.appendChild($$n35); $$n27.appendChild($$n34); $$n36.appendChild($$n37); $$n27.appendChild($$n36); $$n38.appendChild(document.createTextNode(`Status`)); $$n27.appendChild($$n38); $$n27.appendChild($$n39); $$n26.appendChild($$n27); $$n25.appendChild($$n26); $$n40.appendChild($$n41_a); $$n25.appendChild($$n40); $$sf_default_$$n16.appendChild($$n25); $$n19.setAttribute('value', String(search)); $$each_$$n21(STATUSES); $$n24.data = String(filtered.length); $$n29.data = `Order${sortIcon('id')}`; $$n31.data = `Customer${sortIcon('customer')}`; $$n33.data = `Date${sortIcon('date')}`; $$n35.data = `Amount${sortIcon('amount')}`; $$n37.data = `Items${sortIcon('items')}`; $$chain_$$n42(); $$sc_default_$$n17 = $$sf_default_$$n16; return $$sc_default_$$n17; } });
+  const $$n48_comp = Modal($$n48_comp_wrap, { open: confirmOpen, title: 'Delete Order', size: 'sm' }, { "footer": () => { if ($$sc_footer_$$n50) { return $$sc_footer_$$n50; } const $$sf_footer_$$n49 = document.createDocumentFragment(); $$n52.appendChild(document.createTextNode(`Cancel`)); $$n51.appendChild($$n52); $$n53.appendChild(document.createTextNode(`Delete`)); $$n51.appendChild($$n53); $$sf_footer_$$n49.appendChild($$n51); $$sc_footer_$$n50 = $$sf_footer_$$n49; return $$sc_footer_$$n50; }, "default": () => { if ($$sc_default_$$n55) { $$chain_$$n57(); return $$sc_default_$$n55; } const $$sf_default_$$n54 = document.createDocumentFragment(); $$sf_default_$$n54.appendChild($$n56_a); $$chain_$$n57(); $$sc_default_$$n55 = $$sf_default_$$n54; return $$sc_default_$$n55; } });
+  $$chain_$$n65();
 
   $$effect0();
 
@@ -764,19 +776,19 @@ tr:hover td[vela-5a820d] {
   return {
     destroy() {
       if ($$cleanup0) { $$cleanup0(); }
-      $$n16.removeEventListener('input', ($e) => $$set_search($e.target.value));
-      $$n16.removeEventListener('input', $$n16_input_h);
-      $$n18_bs.forEach(b => b.destroy());
-      $$n25.removeEventListener('click', $$n25_click_h);
-      $$n27.removeEventListener('click', $$n27_click_h);
-      $$n29.removeEventListener('click', $$n29_click_h);
-      $$n31.removeEventListener('click', $$n31_click_h);
-      $$n33.removeEventListener('click', $$n33_click_h);
-      $$n44_bs.forEach(b => b.destroy());
+      $$n19.removeEventListener('input', $$n19_input_h);
+      $$n19.removeEventListener('input', $$n19_input_h);
+      $$n21_bs.forEach(b => b.destroy());
+      $$n28.removeEventListener('click', $$n28_click_h);
+      $$n30.removeEventListener('click', $$n30_click_h);
+      $$n32.removeEventListener('click', $$n32_click_h);
+      $$n34.removeEventListener('click', $$n34_click_h);
+      $$n36.removeEventListener('click', $$n36_click_h);
+      $$n47_bs.forEach(b => b.destroy());
       if ($$n2_comp) $$n2_comp.destroy();
-      $$n48.removeEventListener('click', $$n48_click_h);
-      $$n49.removeEventListener('click', confirmDelete);
-      if ($$n45_comp) $$n45_comp.destroy();
+      $$n52.removeEventListener('click', $$n52_click_h);
+      $$n53.removeEventListener('click', confirmDelete);
+      if ($$n48_comp) $$n48_comp.destroy();
       $$style.remove();
       $$root.remove();
     },

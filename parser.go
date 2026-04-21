@@ -129,10 +129,11 @@ type Part struct {
 
 // Attr holds one HTML attribute, annotated with its sigil role.
 type Attr struct {
-	Name    string // without the leading sigil
-	Value   string
-	IsEvent bool // @ prefix → addEventListener
-	IsBind  bool // : prefix → dynamic attribute
+	Name     string // without the leading sigil
+	Value    string
+	IsEvent  bool // @ prefix → addEventListener
+	IsBind   bool // : prefix → dynamic attribute (one-way)
+	IsTwoWay bool // bind: prefix → two-way binding (reads + writes the state var)
 }
 
 func (e *ElementNode) nodeKind() string   { return "element" }
@@ -561,6 +562,14 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 			elem.EachKey = value
 		case strings.HasPrefix(name, "@"):
 			elem.Attrs = append(elem.Attrs, &Attr{Name: name[1:], Value: value, IsEvent: true})
+		case strings.HasPrefix(name, "bind:"):
+			// Two-way binding:  bind:value="x"  behaves as :value="x" for the
+			// write-to-DOM direction, and additionally wires a listener that
+			// calls $$set_<x>(...) on user input.
+			elem.Attrs = append(elem.Attrs, &Attr{
+				Name: name[len("bind:"):], Value: value,
+				IsBind: true, IsTwoWay: true,
+			})
 		case strings.HasPrefix(name, ":"):
 			elem.Attrs = append(elem.Attrs, &Attr{Name: name[1:], Value: value, IsBind: true})
 		default:

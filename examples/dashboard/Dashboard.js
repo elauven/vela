@@ -43,6 +43,7 @@ export function Dashboard($$target, $$props, $$slots) {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  margin-left: 250px;
 }
 .notif-fab[vela-413f81] {
   position: fixed;
@@ -123,6 +124,14 @@ export function Dashboard($$target, $$props, $$slots) {
   let $$chain_$$n5_b2 = null;
   let $$chain_$$n5_b3 = null;
   let $$chain_$$n5_running = false, $$chain_$$n5_pending = false;
+  let $$n6 = null;
+  let $$n7_comp = null;
+  let $$n8 = null;
+  let $$n9_comp = null;
+  let $$n10 = null;
+  let $$n11_comp = null;
+  let $$n12 = null;
+  let $$n13_comp = null;
   function $$chain_$$n5() {
     if ($$chain_$$n5_running) { $$chain_$$n5_pending = true; return; }
     $$chain_$$n5_running = true;
@@ -132,17 +141,17 @@ export function Dashboard($$target, $$props, $$slots) {
       if ($$active < 0 && (page === 'orders')) $$active = 1;
       if ($$active < 0 && (page === 'users')) $$active = 2;
       if ($$active < 0 && (page === 'settings')) $$active = 3;
-      if ($$active !== 0 && $$chain_$$n5_b0) { $$chain_$$n5_b0.remove(); $$chain_$$n5_b0 = null; }
-      if ($$active !== 1 && $$chain_$$n5_b1) { $$chain_$$n5_b1.remove(); $$chain_$$n5_b1 = null; }
-      if ($$active !== 2 && $$chain_$$n5_b2) { $$chain_$$n5_b2.remove(); $$chain_$$n5_b2 = null; }
-      if ($$active !== 3 && $$chain_$$n5_b3) { $$chain_$$n5_b3.remove(); $$chain_$$n5_b3 = null; }
+      if ($$active !== 0 && $$chain_$$n5_b0) { $$chain_$$n5_b0.remove(); $$chain_$$n5_b0 = null; $$n6 = null; if ($$n7_comp) { $$n7_comp.destroy(); $$n7_comp = null; } }
+      if ($$active !== 1 && $$chain_$$n5_b1) { $$chain_$$n5_b1.remove(); $$chain_$$n5_b1 = null; $$n8 = null; if ($$n9_comp) { $$n9_comp.destroy(); $$n9_comp = null; } }
+      if ($$active !== 2 && $$chain_$$n5_b2) { $$chain_$$n5_b2.remove(); $$chain_$$n5_b2 = null; $$n10 = null; if ($$n11_comp) { $$n11_comp.destroy(); $$n11_comp = null; } }
+      if ($$active !== 3 && $$chain_$$n5_b3) { $$chain_$$n5_b3.remove(); $$chain_$$n5_b3 = null; $$n12 = null; if ($$n13_comp) { $$n13_comp.destroy(); $$n13_comp = null; } }
       if ($$active === 0) {
         if (!$$chain_$$n5_b0) {
           $$chain_$$n5_b0 = document.createElement('div');
           $$chain_$$n5_b0.setAttribute('vela-413f81', '');
-          const $$n6 = document.createElement('div');
+          $$n6 = document.createElement('div');
           $$n6.setAttribute('vela-413f81','');
-          OverviewPage($$n6, {}, {});
+          $$n7_comp = OverviewPage($$n6, {}, {});
           $$chain_$$n5_b0.appendChild($$n6);
           $$n4_a.before($$chain_$$n5_b0);
         }
@@ -152,10 +161,10 @@ export function Dashboard($$target, $$props, $$slots) {
         if (!$$chain_$$n5_b1) {
           $$chain_$$n5_b1 = document.createElement('div');
           $$chain_$$n5_b1.setAttribute('vela-413f81', '');
-          const $$n7 = document.createElement('div');
-          $$n7.setAttribute('vela-413f81','');
-          OrdersPage($$n7, {}, {});
-          $$chain_$$n5_b1.appendChild($$n7);
+          $$n8 = document.createElement('div');
+          $$n8.setAttribute('vela-413f81','');
+          $$n9_comp = OrdersPage($$n8, {}, {});
+          $$chain_$$n5_b1.appendChild($$n8);
           $$n4_a.before($$chain_$$n5_b1);
         }
         if ($$n4_a.parentNode && $$chain_$$n5_b1.parentNode !== $$n4_a.parentNode) { $$n4_a.before($$chain_$$n5_b1); }
@@ -164,10 +173,10 @@ export function Dashboard($$target, $$props, $$slots) {
         if (!$$chain_$$n5_b2) {
           $$chain_$$n5_b2 = document.createElement('div');
           $$chain_$$n5_b2.setAttribute('vela-413f81', '');
-          const $$n8 = document.createElement('div');
-          $$n8.setAttribute('vela-413f81','');
-          UsersPage($$n8, { currentUser: user }, {});
-          $$chain_$$n5_b2.appendChild($$n8);
+          $$n10 = document.createElement('div');
+          $$n10.setAttribute('vela-413f81','');
+          $$n11_comp = UsersPage($$n10, { currentUser: user }, {});
+          $$chain_$$n5_b2.appendChild($$n10);
           $$n4_a.before($$chain_$$n5_b2);
         }
         if ($$n4_a.parentNode && $$chain_$$n5_b2.parentNode !== $$n4_a.parentNode) { $$n4_a.before($$chain_$$n5_b2); }
@@ -176,10 +185,10 @@ export function Dashboard($$target, $$props, $$slots) {
         if (!$$chain_$$n5_b3) {
           $$chain_$$n5_b3 = document.createElement('div');
           $$chain_$$n5_b3.setAttribute('vela-413f81', '');
-          const $$n9 = document.createElement('div');
-          $$n9.setAttribute('vela-413f81','');
-          SettingsPage($$n9, {}, {});
-          $$chain_$$n5_b3.appendChild($$n9);
+          $$n12 = document.createElement('div');
+          $$n12.setAttribute('vela-413f81','');
+          $$n13_comp = SettingsPage($$n12, {}, {});
+          $$chain_$$n5_b3.appendChild($$n12);
           $$n4_a.before($$chain_$$n5_b3);
         }
         if ($$n4_a.parentNode && $$chain_$$n5_b3.parentNode !== $$n4_a.parentNode) { $$n4_a.before($$chain_$$n5_b3); }
@@ -189,60 +198,31 @@ export function Dashboard($$target, $$props, $$slots) {
       if ($$chain_$$n5_pending) { $$chain_$$n5_pending = false; $$chain_$$n5(); }
     }
   }
-  const $$n10 = document.createElement('button');
-  $$n10.setAttribute('vela-413f81', '');
-  $$n10.setAttribute('class', 'notif-fab');
-  $$n10.setAttribute('title', 'Notifications');
-  const $$n11_a = document.createComment('if-chain');
-  let $$chain_$$n12_b0 = null;
-  let $$chain_$$n12_running = false, $$chain_$$n12_pending = false;
-  let $$n13 = null;
-  let $$n14 = null;
-  function $$chain_$$n12() {
-    if ($$chain_$$n12_running) { $$chain_$$n12_pending = true; return; }
-    $$chain_$$n12_running = true;
-    try {
-      let $$active = -1;
-      if ($$active < 0 && (unreadCount > 0)) $$active = 0;
-      if ($$active !== 0 && $$chain_$$n12_b0) { $$chain_$$n12_b0.remove(); $$chain_$$n12_b0 = null; $$n13 = null; $$n14 = null; }
-      if ($$active === 0) {
-        if (!$$chain_$$n12_b0) {
-          $$chain_$$n12_b0 = document.createElement('div');
-          $$chain_$$n12_b0.setAttribute('vela-413f81', '');
-          $$n13 = document.createElement('span');
-          $$n13.setAttribute('vela-413f81', '');
-          $$n13.setAttribute('class', 'badge');
-          $$n14 = document.createTextNode(String(unreadCount));
-          $$n13.appendChild($$n14);
-          $$chain_$$n12_b0.appendChild($$n13);
-          $$n11_a.before($$chain_$$n12_b0);
-        }
-        if ($$n11_a.parentNode && $$chain_$$n12_b0.parentNode !== $$n11_a.parentNode) { $$n11_a.before($$chain_$$n12_b0); }
-      }
-    } finally {
-      $$chain_$$n12_running = false;
-      if ($$chain_$$n12_pending) { $$chain_$$n12_pending = false; $$chain_$$n12(); }
-    }
-  }
+  const $$n14 = document.createElement('button');
+  $$n14.setAttribute('vela-413f81', '');
+  $$n14.setAttribute('class', 'notif-fab');
+  $$n14.setAttribute('title', 'Notifications');
   const $$n15_a = document.createComment('if-chain');
   let $$chain_$$n16_b0 = null;
   let $$chain_$$n16_running = false, $$chain_$$n16_pending = false;
+  let $$n17 = null;
+  let $$n18 = null;
   function $$chain_$$n16() {
     if ($$chain_$$n16_running) { $$chain_$$n16_pending = true; return; }
     $$chain_$$n16_running = true;
     try {
       let $$active = -1;
-      if ($$active < 0 && (notifOpen)) $$active = 0;
-      if ($$active !== 0 && $$chain_$$n16_b0) { $$chain_$$n16_b0.remove(); $$chain_$$n16_b0 = null; }
+      if ($$active < 0 && (unreadCount > 0)) $$active = 0;
+      if ($$active !== 0 && $$chain_$$n16_b0) { $$chain_$$n16_b0.remove(); $$chain_$$n16_b0 = null; $$n17 = null; $$n18 = null; }
       if ($$active === 0) {
         if (!$$chain_$$n16_b0) {
           $$chain_$$n16_b0 = document.createElement('div');
           $$chain_$$n16_b0.setAttribute('vela-413f81', '');
-          const $$n17 = document.createElement('div');
-          $$n17.setAttribute('vela-413f81','');
-          $$n17.addEventListener('close', ($e) => { if ($e instanceof CustomEvent) { (() => notifOpen = false)($e); } });
-          $$n17.addEventListener('markAllRead', ($e) => { if ($e instanceof CustomEvent) { (markAllRead)($e); } });
-          NotificationPanel($$n17, { items: allNotifications }, {});
+          $$n17 = document.createElement('span');
+          $$n17.setAttribute('vela-413f81', '');
+          $$n17.setAttribute('class', 'badge');
+          $$n18 = document.createTextNode(String(unreadCount));
+          $$n17.appendChild($$n18);
           $$chain_$$n16_b0.appendChild($$n17);
           $$n15_a.before($$chain_$$n16_b0);
         }
@@ -253,14 +233,45 @@ export function Dashboard($$target, $$props, $$slots) {
       if ($$chain_$$n16_pending) { $$chain_$$n16_pending = false; $$chain_$$n16(); }
     }
   }
+  const $$n19_a = document.createComment('if-chain');
+  let $$chain_$$n20_b0 = null;
+  let $$chain_$$n20_running = false, $$chain_$$n20_pending = false;
+  let $$n21 = null;
+  let $$n22_comp = null;
+  function $$chain_$$n20() {
+    if ($$chain_$$n20_running) { $$chain_$$n20_pending = true; return; }
+    $$chain_$$n20_running = true;
+    try {
+      let $$active = -1;
+      if ($$active < 0 && (notifOpen)) $$active = 0;
+      if ($$active !== 0 && $$chain_$$n20_b0) { $$chain_$$n20_b0.remove(); $$chain_$$n20_b0 = null; $$n21 = null; if ($$n22_comp) { $$n22_comp.destroy(); $$n22_comp = null; } }
+      if ($$active === 0) {
+        if (!$$chain_$$n20_b0) {
+          $$chain_$$n20_b0 = document.createElement('div');
+          $$chain_$$n20_b0.setAttribute('vela-413f81', '');
+          $$n21 = document.createElement('div');
+          $$n21.setAttribute('vela-413f81','');
+          $$n21.addEventListener('close', ($e) => { if ($e instanceof CustomEvent) { (() => notifOpen = false)($e); } });
+          $$n21.addEventListener('markAllRead', ($e) => { if ($e instanceof CustomEvent) { (markAllRead)($e); } });
+          $$n22_comp = NotificationPanel($$n21, { items: allNotifications }, {});
+          $$chain_$$n20_b0.appendChild($$n21);
+          $$n19_a.before($$chain_$$n20_b0);
+        }
+        if ($$n19_a.parentNode && $$chain_$$n20_b0.parentNode !== $$n19_a.parentNode) { $$n19_a.before($$chain_$$n20_b0); }
+      }
+    } finally {
+      $$chain_$$n20_running = false;
+      if ($$chain_$$n20_pending) { $$chain_$$n20_pending = false; $$chain_$$n20(); }
+    }
+  }
   $$n1.appendChild($$n2_comp_wrap);
   $$root.appendChild($$n1);
   $$n3.appendChild($$n4_a);
   $$root.appendChild($$n3);
-  $$n10.appendChild(document.createTextNode(`🔔`));
-  $$n10.appendChild($$n11_a);
-  $$root.appendChild($$n10);
-  $$root.appendChild($$n15_a);
+  $$n14.appendChild(document.createTextNode(`🔔`));
+  $$n14.appendChild($$n15_a);
+  $$root.appendChild($$n14);
+  $$root.appendChild($$n19_a);
 
   // component logic
   const PAGES = [
@@ -286,15 +297,16 @@ export function Dashboard($$target, $$props, $$slots) {
   }
   function $$set_notifOpen($$v) {
     notifOpen = $$v;
-    $$defer(() => { $$chain_$$n16(); });
+    $$defer(() => { $$chain_$$n20(); });
   }
   function $$set_unreadCount($$v) {
     unreadCount = $$v;
-    $$defer(() => { if ($$chain_$$n12_b0) $$n14.data = String(unreadCount); });
-    $$defer(() => { $$chain_$$n12(); });
+    $$defer(() => { if ($$chain_$$n16_b0) $$n18.data = String(unreadCount); });
+    $$defer(() => { $$chain_$$n16(); });
   }
   function $$set_allNotifications($$v) {
     allNotifications = $$v;
+    $$defer(() => { if ($$n22_comp) $$n22_comp.set({ items: allNotifications }); });
   }
   function $$set_sidebarOpen($$v) {
     sidebarOpen = $$v;
@@ -304,19 +316,20 @@ export function Dashboard($$target, $$props, $$slots) {
   function $$set_user($$v) {
     user = $$v;
     $$defer(() => { if ($$n2_comp) $$n2_comp.set({ user: user }); });
+    $$defer(() => { if ($$n11_comp) $$n11_comp.set({ currentUser: user }); });
   }
 
   // events
   const $$n2_comp_wrap_navigate_ch = ($e) => { if ($e instanceof CustomEvent) { (($e) => navigate($e.detail.page))($e); } };
   $$n2_comp_wrap.addEventListener('navigate', $$n2_comp_wrap_navigate_ch);
-  $$n10.addEventListener('click', toggleNotif);
+  $$n14.addEventListener('click', toggleNotif);
 
   // initial render
   $$n1.className = String(sidebarOpen ? '' : 'collapsed');
   const $$n2_comp = Sidebar($$n2_comp_wrap, { pages: PAGES, activePage: page, user: user }, {});
   $$chain_$$n5();
-  $$chain_$$n12();
   $$chain_$$n16();
+  $$chain_$$n20();
 
   $$effect0();
 
@@ -328,7 +341,7 @@ export function Dashboard($$target, $$props, $$slots) {
       if ($$cleanup0) { $$cleanup0(); }
       $$n2_comp_wrap.removeEventListener('navigate', $$n2_comp_wrap_navigate_ch);
       if ($$n2_comp) $$n2_comp.destroy();
-      $$n10.removeEventListener('click', toggleNotif);
+      $$n14.removeEventListener('click', toggleNotif);
       $$style.remove();
       $$root.remove();
     },

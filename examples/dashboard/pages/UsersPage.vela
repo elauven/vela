@@ -57,7 +57,6 @@
     setTimeout(() => { toast = null; }, 3000);
   }
 </script>
-
 <style>
   .page { padding: 1.5rem; }
   .page-head {
@@ -157,137 +156,135 @@
     z-index: 999;
   }
 </style>
-
 <template>
   <div class="page">
     <div class="page-head">
       <div class="page-title">👥 Users</div>
-    </div>
-
-    <!-- Stats -->
-    <div class="stats-row">
-      <div class="stat-chip">
-        <span class="stat-num">{allUsers.length}</span> Total
-      </div>
-      <div class="stat-chip">
-        <span class="stat-num" style="color:var(--success)">{activeCount}</span> Active
-      </div>
-      <div class="stat-chip">
-        <span class="stat-num" style="color:var(--text-muted)">{inactiveCount}</span> Inactive
-      </div>
-    </div>
-
-    <Card :noPad="true">
-      <div class="toolbar">
-        <input
-          class="search-input"
-          type="text"
-          :value="search"
-          @input="($e) => search = $e.target.value"
-          placeholder="Search users…"
-        />
-        <div class="filter-group">
-          {#each ROLES as r (r)}
-            <button
-              class="filter-btn"
-              :class="roleFilter === r ? 'active' : ''"
-              @click="() => roleFilter = r"
-            >{r}</button>
-          {/each}
-        </div>
       </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>User</th>
-            <th>Role</th>
-            <th>Status</th>
-            <th>Joined</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#if filtered.length === 0}
-            <tr>
-              <td colspan="5"><div class="empty">No users match your filters.</div></td>
-            </tr>
-          {:else}
-            {#each filtered as u (u.id)}
-              <tr>
-                <td>
-                  <div class="user-cell">
-                    <div class="avatar-cell">{u.avatar}</div>
-                    <div>
-                      <div class="user-name">{u.name}</div>
-                      <div class="user-email">{u.email}</div>
+      <!-- Stats -->
+      <div class="stats-row">
+        <div class="stat-chip">
+          <span class="stat-num">{allUsers.length}</span> Total
+          </div>
+          <div class="stat-chip">
+            <span class="stat-num" style="color:var(--success)">{activeCount}</span> Active
+            </div>
+            <div class="stat-chip">
+              <span class="stat-num" style="color:var(--text-muted)">{inactiveCount}</span> Inactive
+              </div>
+            </div>
+
+            <Card :noPad="true">
+              <div class="toolbar">
+                <input
+                  class="search-input"
+                  type="text"
+                  :value="search"
+                  @input="($e) => search = $e.target.value"
+                  placeholder="Search users…"
+                  />
+                  <div class="filter-group">
+                    {#each ROLES as r (r)}
+                      <button
+                        class="filter-btn"
+                        :class="roleFilter === r ? 'active' : ''"
+                        @click="() => roleFilter = r"
+                        >{r}</button>
+                      {/each}
                     </div>
                   </div>
-                </td>
-                <td><Badge :variant="u.role === 'admin' ? 'purple' : 'default'">{u.role}</Badge></td>
-                <td><Badge :variant="u.status === 'active' ? 'success' : 'default'">{u.status}</Badge></td>
-                <td>{u.joined}</td>
-                <td>
-                  <button class="action-btn edit" @click="() => openEdit(u)" title="Edit">✏️ Edit</button>
-                  {#if currentUser.role === 'admin'}
-                    <button
-                      class="action-btn toggle"
-                      @click="() => toggleStatus(u.id)"
-                      title="Toggle status"
-                    >{u.status === 'active' ? '⊘ Deactivate' : '✓ Activate'}</button>
-                  {/if}
-                </td>
-              </tr>
-            {/each}
-          {/if}
-        </tbody>
-      </table>
-    </Card>
 
-    <!-- Edit modal -->
-    <Modal :open="editOpen" title="Edit User">
-      {#if editTarget}
-        <div class="form-row">
-          <label>Name</label>
-          <input
-            type="text"
-            :value="editTarget.name"
-            @input="($e) => editTarget = { ...editTarget, name: $e.target.value }"
-          />
-        </div>
-        <div class="form-row">
-          <label>Email</label>
-          <input
-            type="email"
-            :value="editTarget.email"
-            @input="($e) => editTarget = { ...editTarget, email: $e.target.value }"
-          />
-        </div>
-        <div class="form-row">
-          <label>Role</label>
-          <select
-            :value="editTarget.role"
-            @change="($e) => editTarget = { ...editTarget, role: $e.target.value }"
-          >
-            <option value="admin">Admin</option>
-            <option value="editor">Editor</option>
-            <option value="viewer">Viewer</option>
-          </select>
-        </div>
-      {/if}
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>User</th>
+                          <th>Role</th>
+                            <th>Status</th>
+                              <th>Joined</th>
+                                <th>Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {#if filtered.length === 0}
+                                  <tr>
+                                    <td colspan="5"><div class="empty">No users match your filters.</div></td>
+                                    </tr>
+                                  {:else}
+                                  {#each filtered as u (u.id)}
+                                    <tr>
+                                      <td>
+                                        <div class="user-cell">
+                                          <div class="avatar-cell">{u.avatar}</div>
+                                            <div>
+                                              <div class="user-name">{u.name}</div>
+                                                <div class="user-email">{u.email}</div>
+                                                </div>
+                                              </div>
+                                            </td>
+                                            <td><Badge :variant="u.role === 'admin' ? 'purple' : 'default'">{u.role}</Badge></td>
+                                              <td><Badge :variant="u.status === 'active' ? 'success' : 'default'">{u.status}</Badge></td>
+                                                <td>{u.joined}</td>
+                                                  <td>
+                                                    <button class="action-btn edit" @click="() => openEdit(u)" title="Edit">✏️ Edit</button>
+                                                      {#if currentUser.role === 'admin'}
+                                                        <button
+                                                          class="action-btn toggle"
+                                                          @click="() => toggleStatus(u.id)"
+                                                          title="Toggle status"
+                                                          >{u.status === 'active' ? '⊘ Deactivate' : '✓ Activate'}</button>
+                                                        {/if}
+                                                      </td>
+                                                    </tr>
+                                                  {/each}
+                                                {/if}
+                                              </tbody>
+                                            </table>
+                                          </Card>
 
-      <svelte:fragment slot="footer">
-        <div class="modal-footer-btns">
-          <button class="btn-cancel" @click="() => editOpen = false">Cancel</button>
-          <button class="btn-save"   @click="saveEdit">Save changes</button>
-        </div>
-      </svelte:fragment>
-    </Modal>
+                                          <!-- Edit modal -->
+                                          <Modal :open="editOpen" title="Edit User">
+                                            {#if editTarget}
+                                              <div class="form-row">
+                                                <label>Name</label>
+                                                  <input
+                                                    type="text"
+                                                    bind:value="editTarget.name"
+                                                    />
+                                                  </div>
+                                                  <div class="form-row">
+                                                    <label>Email</label>
+                                                      <input
+                                                        type="email"
+                                                        :value="editTarget.email"
+                                                        @input="($e) => editTarget = { ...editTarget, email: $e.target.value }"
+                                                        />
+                                                      </div>
+                                                      <div class="form-row">
+                                                        <label>Role</label>
+                                                          <select
+                                                            :value="editTarget.role"
+                                                            @change="($e) => editTarget = { ...editTarget, role: $e.target.value }"
+                                                            >
+                                                            <option value="admin">Admin</option>
+                                                              <option value="editor">Editor</option>
+                                                                <option value="viewer">Viewer</option>
+                                                                </select>
+                                                              </div>
+                                                            {/if}
 
-    <div class="toast-area">
-      {#if toast}
-        <Toast :message="toast.message" :type="toast.type" />
-      {/if}
-    </div>
-  </div>
+                                                            <svelte:fragment slot="footer">
+                                                              <div class="modal-footer-btns">
+                                                                <button class="btn-cancel" @click="() => editOpen = false">Cancel</button>
+                                                                  <button class="btn-save"   @click="saveEdit">Save changes</button>
+                                                                  </div>
+                                                                </svelte:fragment>
+                                                              </Modal>
+
+                                                              <div class="toast-area">
+                                                                {#if toast}
+                                                                  <Toast :message="toast.message" :type="toast.type" />
+                                                                {/if}
+                                                              </div>
+                                                            </div>
 </template>

@@ -305,128 +305,130 @@ input[type="range"][vela-53d072] {
       if ($$chain_$$n8_pending) { $$chain_$$n8_pending = false; $$chain_$$n8(); }
     }
   }
-  const $$n12 = document.createElement('div');
-  $$n12.setAttribute('vela-53d072', '');
-  $$n12.setAttribute('class', 'section');
+  let $$sc_default_$$n12 = null;
   const $$n13 = document.createElement('div');
   $$n13.setAttribute('vela-53d072', '');
-  $$n13.setAttribute('class', 'section-title');
+  $$n13.setAttribute('class', 'section');
   const $$n14 = document.createElement('div');
   $$n14.setAttribute('vela-53d072', '');
-  $$n14.setAttribute('class', 'setting-row');
+  $$n14.setAttribute('class', 'section-title');
   const $$n15 = document.createElement('div');
   $$n15.setAttribute('vela-53d072', '');
-  $$n15.setAttribute('class', 'setting-info');
+  $$n15.setAttribute('class', 'setting-row');
   const $$n16 = document.createElement('div');
   $$n16.setAttribute('vela-53d072', '');
-  $$n16.setAttribute('class', 'setting-label');
+  $$n16.setAttribute('class', 'setting-info');
   const $$n17 = document.createElement('div');
   $$n17.setAttribute('vela-53d072', '');
-  $$n17.setAttribute('class', 'setting-desc');
+  $$n17.setAttribute('class', 'setting-label');
   const $$n18 = document.createElement('div');
   $$n18.setAttribute('vela-53d072', '');
-  $$n18.setAttribute('class', 'setting-control');
+  $$n18.setAttribute('class', 'setting-desc');
   const $$n19 = document.createElement('div');
   $$n19.setAttribute('vela-53d072', '');
-  $$n19.setAttribute('class', 'theme-group');
-  const $$n20 = document.createElement('button');
+  $$n19.setAttribute('class', 'setting-control');
+  const $$n20 = document.createElement('div');
   $$n20.setAttribute('vela-53d072', '');
-  $$n20.setAttribute('class', 'theme-btn');
-  const $$n20_click_h = () => handleChange('theme', 'light');
+  $$n20.setAttribute('class', 'theme-group');
   const $$n21 = document.createElement('button');
   $$n21.setAttribute('vela-53d072', '');
   $$n21.setAttribute('class', 'theme-btn');
-  const $$n21_click_h = () => handleChange('theme', 'dark');
-  const $$n22 = document.createElement('div');
+  const $$n21_click_h = () => handleChange('theme', 'light');
+  const $$n22 = document.createElement('button');
   $$n22.setAttribute('vela-53d072', '');
-  $$n22.setAttribute('class', 'setting-row');
+  $$n22.setAttribute('class', 'theme-btn');
+  const $$n22_click_h = () => handleChange('theme', 'dark');
   const $$n23 = document.createElement('div');
   $$n23.setAttribute('vela-53d072', '');
-  $$n23.setAttribute('class', 'setting-info');
+  $$n23.setAttribute('class', 'setting-row');
   const $$n24 = document.createElement('div');
   $$n24.setAttribute('vela-53d072', '');
-  $$n24.setAttribute('class', 'setting-label');
+  $$n24.setAttribute('class', 'setting-info');
   const $$n25 = document.createElement('div');
   $$n25.setAttribute('vela-53d072', '');
-  $$n25.setAttribute('class', 'setting-desc');
+  $$n25.setAttribute('class', 'setting-label');
   const $$n26 = document.createElement('div');
   $$n26.setAttribute('vela-53d072', '');
-  $$n26.setAttribute('class', 'setting-control');
+  $$n26.setAttribute('class', 'setting-desc');
   const $$n27 = document.createElement('div');
   $$n27.setAttribute('vela-53d072', '');
-  $$n27.setAttribute('class', 'toggle-wrap');
-  const $$n28 = document.createElement('label');
+  $$n27.setAttribute('class', 'setting-control');
+  const $$n28 = document.createElement('div');
   $$n28.setAttribute('vela-53d072', '');
-  $$n28.setAttribute('class', 'toggle');
-  const $$n29 = document.createElement('input');
+  $$n28.setAttribute('class', 'toggle-wrap');
+  const $$n29 = document.createElement('label');
   $$n29.setAttribute('vela-53d072', '');
-  $$n29.setAttribute('type', 'checkbox');
-  const $$n29_change_h = ($e) => handleChange('compactMode', $e.target.checked);
-  const $$n30 = document.createElement('span');
+  $$n29.setAttribute('class', 'toggle');
+  const $$n30 = document.createElement('input');
   $$n30.setAttribute('vela-53d072', '');
-  $$n30.setAttribute('class', 'slider');
+  $$n30.setAttribute('type', 'checkbox');
+  const $$n30_change_h = ($e) => handleChange('compactMode', $e.target.checked);
   const $$n31 = document.createElement('span');
   $$n31.setAttribute('vela-53d072', '');
-  $$n31.setAttribute('style', 'font-size:.8rem;color:var(--text-muted)');
-  const $$n32 = document.createTextNode('');
-  const $$n33 = document.createElement('div');
-  $$n33.setAttribute('vela-53d072', '');
-  $$n33.setAttribute('class', 'setting-row');
+  $$n31.setAttribute('class', 'slider');
+  const $$n32 = document.createElement('span');
+  $$n32.setAttribute('vela-53d072', '');
+  $$n32.setAttribute('style', 'font-size:.8rem;color:var(--text-muted)');
+  const $$n33 = document.createTextNode('');
   const $$n34 = document.createElement('div');
   $$n34.setAttribute('vela-53d072', '');
-  $$n34.setAttribute('class', 'setting-info');
+  $$n34.setAttribute('class', 'setting-row');
   const $$n35 = document.createElement('div');
   $$n35.setAttribute('vela-53d072', '');
-  $$n35.setAttribute('class', 'setting-label');
+  $$n35.setAttribute('class', 'setting-info');
   const $$n36 = document.createElement('div');
   $$n36.setAttribute('vela-53d072', '');
-  $$n36.setAttribute('class', 'setting-desc');
+  $$n36.setAttribute('class', 'setting-label');
   const $$n37 = document.createElement('div');
   $$n37.setAttribute('vela-53d072', '');
-  $$n37.setAttribute('class', 'setting-control');
+  $$n37.setAttribute('class', 'setting-desc');
   const $$n38 = document.createElement('div');
   $$n38.setAttribute('vela-53d072', '');
-  $$n38.setAttribute('class', 'toggle-wrap');
-  const $$n39 = document.createElement('label');
+  $$n38.setAttribute('class', 'setting-control');
+  const $$n39 = document.createElement('div');
   $$n39.setAttribute('vela-53d072', '');
-  $$n39.setAttribute('class', 'toggle');
-  const $$n40 = document.createElement('input');
+  $$n39.setAttribute('class', 'toggle-wrap');
+  const $$n40 = document.createElement('label');
   $$n40.setAttribute('vela-53d072', '');
-  $$n40.setAttribute('type', 'checkbox');
-  const $$n40_change_h = ($e) => $$set_previewMode($e.target.checked);
-  const $$n41 = document.createElement('span');
+  $$n40.setAttribute('class', 'toggle');
+  const $$n41 = document.createElement('input');
   $$n41.setAttribute('vela-53d072', '');
-  $$n41.setAttribute('class', 'slider');
-  const $$n44 = document.createTextNode('');
-  const $$n42_comp_wrap = document.createElement('div');
-  $$n42_comp_wrap.setAttribute('vela-53d072', '');
-  const $$n45 = document.createElement('div');
-  $$n45.setAttribute('vela-53d072', '');
-  $$n45.setAttribute('class', 'section');
-  const $$n46 = document.createElement('div');
-  $$n46.setAttribute('vela-53d072', '');
-  $$n46.setAttribute('class', 'section-title');
+  $$n41.setAttribute('type', 'checkbox');
+  const $$n41_change_h = ($e) => $$set_previewMode($e.target.checked);
+  const $$n42 = document.createElement('span');
+  $$n42.setAttribute('vela-53d072', '');
+  $$n42.setAttribute('class', 'slider');
+  let $$sc_default_$$n45 = null;
+  const $$n46 = document.createTextNode('');
+  const $$n43_comp_wrap = document.createElement('div');
+  $$n43_comp_wrap.setAttribute('vela-53d072', '');
   const $$n47 = document.createElement('div');
   $$n47.setAttribute('vela-53d072', '');
-  $$n47.setAttribute('class', 'setting-row');
+  $$n47.setAttribute('class', 'section');
   const $$n48 = document.createElement('div');
   $$n48.setAttribute('vela-53d072', '');
-  $$n48.setAttribute('class', 'setting-info');
+  $$n48.setAttribute('class', 'section-title');
   const $$n49 = document.createElement('div');
   $$n49.setAttribute('vela-53d072', '');
-  $$n49.setAttribute('class', 'setting-label');
+  $$n49.setAttribute('class', 'setting-row');
   const $$n50 = document.createElement('div');
   $$n50.setAttribute('vela-53d072', '');
-  $$n50.setAttribute('class', 'setting-desc');
+  $$n50.setAttribute('class', 'setting-info');
   const $$n51 = document.createElement('div');
   $$n51.setAttribute('vela-53d072', '');
-  $$n51.setAttribute('class', 'setting-control');
-  const $$n52 = document.createElement('select');
+  $$n51.setAttribute('class', 'setting-label');
+  const $$n52 = document.createElement('div');
   $$n52.setAttribute('vela-53d072', '');
-  $$n52.setAttribute('class', 'ctl');
-  const $$n52_change_h = ($e) => handleChange('currency', $e.target.value);
-  const $$n53_a = document.createComment('#each');
-  function $$frag_$$n53(c, $$i) {
+  $$n52.setAttribute('class', 'setting-desc');
+  const $$n53 = document.createElement('div');
+  $$n53.setAttribute('vela-53d072', '');
+  $$n53.setAttribute('class', 'setting-control');
+  const $$n54 = document.createElement('select');
+  $$n54.setAttribute('vela-53d072', '');
+  $$n54.setAttribute('class', 'ctl');
+  const $$n54_change_h = ($e) => handleChange('currency', $e.target.value);
+  const $$n55_a = document.createComment('#each');
+  function $$frag_$$n55(c, $$i) {
     const $$f0 = document.createElement('option');
     $$f0.setAttribute('vela-53d072', '');
     const $$f1 = document.createTextNode('');
@@ -444,50 +446,51 @@ input[type="range"][vela-53d072] {
       },
     };
   }
-  const $$n53_km = new Map();
-  let $$n53_bs = [];
-  function $$each_$$n53($$arr) {
+  const $$n55_km = new Map();
+  let $$n55_bs = [];
+  function $$each_$$n55($$arr) {
+    if (!$$n55_a.parentNode) return;
     const $$newKeys = new Set();
     const $$newBlocks = [];
     ($$arr||[]).forEach(function(c, $$i) {
       const $$key = String(c);
       $$newKeys.add($$key);
-      let $$blk = $$n53_km.get($$key);
+      let $$blk = $$n55_km.get($$key);
       if ($$blk) {
         if ($$blk.update) $$blk.update(c, $$i);
       } else {
-        $$blk = $$frag_$$n53(c, $$i);
-        $$n53_km.set($$key, $$blk);
+        $$blk = $$frag_$$n55(c, $$i);
+        $$n55_km.set($$key, $$blk);
       }
-      $$n53_a.before($$blk.el);
+      $$n55_a.before($$blk.el);
       $$newBlocks.push($$blk);
     });
-    $$n53_km.forEach(($$blk, $$key) => {
-      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n53_km.delete($$key); }
+    $$n55_km.forEach(($$blk, $$key) => {
+      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n55_km.delete($$key); }
     });
-    $$n53_bs = $$newBlocks;
+    $$n55_bs = $$newBlocks;
   }
-  const $$n54 = document.createElement('div');
-  $$n54.setAttribute('vela-53d072', '');
-  $$n54.setAttribute('class', 'setting-row');
-  const $$n55 = document.createElement('div');
-  $$n55.setAttribute('vela-53d072', '');
-  $$n55.setAttribute('class', 'setting-info');
   const $$n56 = document.createElement('div');
   $$n56.setAttribute('vela-53d072', '');
-  $$n56.setAttribute('class', 'setting-label');
+  $$n56.setAttribute('class', 'setting-row');
   const $$n57 = document.createElement('div');
   $$n57.setAttribute('vela-53d072', '');
-  $$n57.setAttribute('class', 'setting-desc');
+  $$n57.setAttribute('class', 'setting-info');
   const $$n58 = document.createElement('div');
   $$n58.setAttribute('vela-53d072', '');
-  $$n58.setAttribute('class', 'setting-control');
-  const $$n59 = document.createElement('select');
+  $$n58.setAttribute('class', 'setting-label');
+  const $$n59 = document.createElement('div');
   $$n59.setAttribute('vela-53d072', '');
-  $$n59.setAttribute('class', 'ctl');
-  const $$n59_change_h = ($e) => handleChange('dateFormat', $e.target.value);
-  const $$n60_a = document.createComment('#each');
-  function $$frag_$$n60(f, $$i) {
+  $$n59.setAttribute('class', 'setting-desc');
+  const $$n60 = document.createElement('div');
+  $$n60.setAttribute('vela-53d072', '');
+  $$n60.setAttribute('class', 'setting-control');
+  const $$n61 = document.createElement('select');
+  $$n61.setAttribute('vela-53d072', '');
+  $$n61.setAttribute('class', 'ctl');
+  const $$n61_change_h = ($e) => handleChange('dateFormat', $e.target.value);
+  const $$n62_a = document.createComment('#each');
+  function $$frag_$$n62(f, $$i) {
     const $$f0 = document.createElement('option');
     $$f0.setAttribute('vela-53d072', '');
     const $$f1 = document.createTextNode('');
@@ -505,47 +508,48 @@ input[type="range"][vela-53d072] {
       },
     };
   }
-  const $$n60_km = new Map();
-  let $$n60_bs = [];
-  function $$each_$$n60($$arr) {
+  const $$n62_km = new Map();
+  let $$n62_bs = [];
+  function $$each_$$n62($$arr) {
+    if (!$$n62_a.parentNode) return;
     const $$newKeys = new Set();
     const $$newBlocks = [];
     ($$arr||[]).forEach(function(f, $$i) {
       const $$key = String(f);
       $$newKeys.add($$key);
-      let $$blk = $$n60_km.get($$key);
+      let $$blk = $$n62_km.get($$key);
       if ($$blk) {
         if ($$blk.update) $$blk.update(f, $$i);
       } else {
-        $$blk = $$frag_$$n60(f, $$i);
-        $$n60_km.set($$key, $$blk);
+        $$blk = $$frag_$$n62(f, $$i);
+        $$n62_km.set($$key, $$blk);
       }
-      $$n60_a.before($$blk.el);
+      $$n62_a.before($$blk.el);
       $$newBlocks.push($$blk);
     });
-    $$n60_km.forEach(($$blk, $$key) => {
-      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n60_km.delete($$key); }
+    $$n62_km.forEach(($$blk, $$key) => {
+      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n62_km.delete($$key); }
     });
-    $$n60_bs = $$newBlocks;
+    $$n62_bs = $$newBlocks;
   }
-  const $$n61 = document.createElement('div');
-  $$n61.setAttribute('vela-53d072', '');
-  $$n61.setAttribute('class', 'setting-row');
-  const $$n62 = document.createElement('div');
-  $$n62.setAttribute('vela-53d072', '');
-  $$n62.setAttribute('class', 'setting-info');
   const $$n63 = document.createElement('div');
   $$n63.setAttribute('vela-53d072', '');
-  $$n63.setAttribute('class', 'setting-label');
+  $$n63.setAttribute('class', 'setting-row');
   const $$n64 = document.createElement('div');
   $$n64.setAttribute('vela-53d072', '');
-  $$n64.setAttribute('class', 'setting-control');
-  const $$n65 = document.createElement('select');
+  $$n64.setAttribute('class', 'setting-info');
+  const $$n65 = document.createElement('div');
   $$n65.setAttribute('vela-53d072', '');
-  $$n65.setAttribute('class', 'ctl');
-  const $$n65_change_h = ($e) => handleChange('language', $e.target.value);
-  const $$n66_a = document.createComment('#each');
-  function $$frag_$$n66(l, $$i) {
+  $$n65.setAttribute('class', 'setting-label');
+  const $$n66 = document.createElement('div');
+  $$n66.setAttribute('vela-53d072', '');
+  $$n66.setAttribute('class', 'setting-control');
+  const $$n67 = document.createElement('select');
+  $$n67.setAttribute('vela-53d072', '');
+  $$n67.setAttribute('class', 'ctl');
+  const $$n67_change_h = ($e) => handleChange('language', $e.target.value);
+  const $$n68_a = document.createComment('#each');
+  function $$frag_$$n68(l, $$i) {
     const $$f0 = document.createElement('option');
     $$f0.setAttribute('vela-53d072', '');
     const $$f1 = document.createTextNode('');
@@ -563,65 +567,64 @@ input[type="range"][vela-53d072] {
       },
     };
   }
-  const $$n66_km = new Map();
-  let $$n66_bs = [];
-  function $$each_$$n66($$arr) {
+  const $$n68_km = new Map();
+  let $$n68_bs = [];
+  function $$each_$$n68($$arr) {
+    if (!$$n68_a.parentNode) return;
     const $$newKeys = new Set();
     const $$newBlocks = [];
     ($$arr||[]).forEach(function(l, $$i) {
       const $$key = String(l.code);
       $$newKeys.add($$key);
-      let $$blk = $$n66_km.get($$key);
+      let $$blk = $$n68_km.get($$key);
       if ($$blk) {
         if ($$blk.update) $$blk.update(l, $$i);
       } else {
-        $$blk = $$frag_$$n66(l, $$i);
-        $$n66_km.set($$key, $$blk);
+        $$blk = $$frag_$$n68(l, $$i);
+        $$n68_km.set($$key, $$blk);
       }
-      $$n66_a.before($$blk.el);
+      $$n68_a.before($$blk.el);
       $$newBlocks.push($$blk);
     });
-    $$n66_km.forEach(($$blk, $$key) => {
-      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n66_km.delete($$key); }
+    $$n68_km.forEach(($$blk, $$key) => {
+      if (!$$newKeys.has($$key)) { $$blk.destroy(); $$n68_km.delete($$key); }
     });
-    $$n66_bs = $$newBlocks;
+    $$n68_bs = $$newBlocks;
   }
-  const $$n67 = document.createElement('div');
-  $$n67.setAttribute('vela-53d072', '');
-  $$n67.setAttribute('class', 'section');
-  const $$n68 = document.createElement('div');
-  $$n68.setAttribute('vela-53d072', '');
-  $$n68.setAttribute('class', 'section-title');
   const $$n69 = document.createElement('div');
   $$n69.setAttribute('vela-53d072', '');
-  $$n69.setAttribute('class', 'setting-row');
+  $$n69.setAttribute('class', 'section');
   const $$n70 = document.createElement('div');
   $$n70.setAttribute('vela-53d072', '');
-  $$n70.setAttribute('class', 'setting-info');
+  $$n70.setAttribute('class', 'section-title');
   const $$n71 = document.createElement('div');
   $$n71.setAttribute('vela-53d072', '');
-  $$n71.setAttribute('class', 'setting-label');
+  $$n71.setAttribute('class', 'setting-row');
   const $$n72 = document.createElement('div');
   $$n72.setAttribute('vela-53d072', '');
-  $$n72.setAttribute('class', 'setting-desc');
+  $$n72.setAttribute('class', 'setting-info');
   const $$n73 = document.createElement('div');
   $$n73.setAttribute('vela-53d072', '');
-  $$n73.setAttribute('class', 'setting-control');
-  const $$n74 = document.createElement('label');
+  $$n73.setAttribute('class', 'setting-label');
+  const $$n74 = document.createElement('div');
   $$n74.setAttribute('vela-53d072', '');
-  $$n74.setAttribute('class', 'toggle');
-  const $$n75 = document.createElement('input');
+  $$n74.setAttribute('class', 'setting-desc');
+  const $$n75 = document.createElement('div');
   $$n75.setAttribute('vela-53d072', '');
-  $$n75.setAttribute('type', 'checkbox');
-  const $$n75_change_h = ($e) => handleChange('autoRefresh', $e.target.checked);
-  const $$n76 = document.createElement('span');
+  $$n75.setAttribute('class', 'setting-control');
+  const $$n76 = document.createElement('label');
   $$n76.setAttribute('vela-53d072', '');
-  $$n76.setAttribute('class', 'slider');
-  const $$n77_a = document.createComment('if-chain');
-  let $$chain_$$n78_b0 = null;
-  let $$chain_$$n78_running = false, $$chain_$$n78_pending = false;
-  let $$n79 = null;
-  let $$n80 = null;
+  $$n76.setAttribute('class', 'toggle');
+  const $$n77 = document.createElement('input');
+  $$n77.setAttribute('vela-53d072', '');
+  $$n77.setAttribute('type', 'checkbox');
+  const $$n77_change_h = ($e) => handleChange('autoRefresh', $e.target.checked);
+  const $$n78 = document.createElement('span');
+  $$n78.setAttribute('vela-53d072', '');
+  $$n78.setAttribute('class', 'slider');
+  const $$n79_a = document.createComment('if-chain');
+  let $$chain_$$n80_b0 = null;
+  let $$chain_$$n80_running = false, $$chain_$$n80_pending = false;
   let $$n81 = null;
   let $$n82 = null;
   let $$n83 = null;
@@ -629,97 +632,101 @@ input[type="range"][vela-53d072] {
   let $$n85 = null;
   let $$n86 = null;
   let $$n87 = null;
-  function $$chain_$$n78() {
-    if ($$chain_$$n78_running) { $$chain_$$n78_pending = true; return; }
-    $$chain_$$n78_running = true;
+  let $$n88 = null;
+  let $$n89 = null;
+  function $$chain_$$n80() {
+    if ($$chain_$$n80_running) { $$chain_$$n80_pending = true; return; }
+    $$chain_$$n80_running = true;
     try {
       let $$active = -1;
       if ($$active < 0 && (current.autoRefresh)) $$active = 0;
-      if ($$active !== 0 && $$chain_$$n78_b0) { $$chain_$$n78_b0.remove(); $$chain_$$n78_b0 = null; $$n79 = null; $$n80 = null; $$n81 = null; $$n82 = null; $$n83 = null; $$n84 = null; $$n85 = null; $$n86 = null; $$n87 = null; }
+      if ($$active !== 0 && $$chain_$$n80_b0) { $$chain_$$n80_b0.remove(); $$chain_$$n80_b0 = null; $$n81 = null; $$n82 = null; $$n83 = null; $$n84 = null; $$n85 = null; $$n86 = null; $$n87 = null; $$n88 = null; $$n89 = null; }
       if ($$active === 0) {
-        if (!$$chain_$$n78_b0) {
-          $$chain_$$n78_b0 = document.createElement('div');
-          $$chain_$$n78_b0.setAttribute('vela-53d072', '');
-          $$n79 = document.createElement('div');
-          $$n79.setAttribute('vela-53d072', '');
-          $$n79.setAttribute('class', 'setting-row');
-          $$n80 = document.createElement('div');
-          $$n80.setAttribute('vela-53d072', '');
-          $$n80.setAttribute('class', 'setting-info');
+        if (!$$chain_$$n80_b0) {
+          $$chain_$$n80_b0 = document.createElement('div');
+          $$chain_$$n80_b0.setAttribute('vela-53d072', '');
           $$n81 = document.createElement('div');
           $$n81.setAttribute('vela-53d072', '');
-          $$n81.setAttribute('class', 'setting-label');
-          $$n81.appendChild(document.createTextNode(`Refresh interval`));
-          $$n80.appendChild($$n81);
+          $$n81.setAttribute('class', 'setting-row');
           $$n82 = document.createElement('div');
           $$n82.setAttribute('vela-53d072', '');
-          $$n82.setAttribute('class', 'setting-desc');
-          $$n82.appendChild(document.createTextNode(`How often to reload data (seconds)`));
-          $$n80.appendChild($$n82);
-          $$n79.appendChild($$n80);
+          $$n82.setAttribute('class', 'setting-info');
           $$n83 = document.createElement('div');
           $$n83.setAttribute('vela-53d072', '');
-          $$n83.setAttribute('class', 'setting-control');
+          $$n83.setAttribute('class', 'setting-label');
+          $$n83.appendChild(document.createTextNode(`Refresh interval`));
+          $$n82.appendChild($$n83);
           $$n84 = document.createElement('div');
           $$n84.setAttribute('vela-53d072', '');
-          $$n84.setAttribute('class', 'range-row');
-          $$n85 = document.createElement('input');
+          $$n84.setAttribute('class', 'setting-desc');
+          $$n84.appendChild(document.createTextNode(`How often to reload data (seconds)`));
+          $$n82.appendChild($$n84);
+          $$n81.appendChild($$n82);
+          $$n85 = document.createElement('div');
           $$n85.setAttribute('vela-53d072', '');
-          $$n85.setAttribute('type', 'range');
-          $$n85.setAttribute('value', String(current.refreshRate));
-          $$n85.setAttribute('min', '10');
-          $$n85.setAttribute('max', '300');
-          $$n85.setAttribute('step', '10');
-          $$n85.addEventListener('input', ($e) => handleChange('refreshRate', Number($e.target.value)));
-          $$n84.appendChild($$n85);
-          $$n86 = document.createElement('span');
+          $$n85.setAttribute('class', 'setting-control');
+          $$n86 = document.createElement('div');
           $$n86.setAttribute('vela-53d072', '');
-          $$n86.setAttribute('class', 'range-val');
-          $$n87 = document.createTextNode(`${current.refreshRate}s`);
+          $$n86.setAttribute('class', 'range-row');
+          $$n87 = document.createElement('input');
+          $$n87.setAttribute('vela-53d072', '');
+          $$n87.setAttribute('type', 'range');
+          $$n87.setAttribute('value', String(current.refreshRate));
+          $$n87.setAttribute('min', '10');
+          $$n87.setAttribute('max', '300');
+          $$n87.setAttribute('step', '10');
+          $$n87.addEventListener('input', ($e) => handleChange('refreshRate', Number($e.target.value)));
           $$n86.appendChild($$n87);
-          $$n84.appendChild($$n86);
-          $$n83.appendChild($$n84);
-          $$n79.appendChild($$n83);
-          $$chain_$$n78_b0.appendChild($$n79);
-          $$n77_a.before($$chain_$$n78_b0);
+          $$n88 = document.createElement('span');
+          $$n88.setAttribute('vela-53d072', '');
+          $$n88.setAttribute('class', 'range-val');
+          $$n89 = document.createTextNode(`${current.refreshRate}s`);
+          $$n88.appendChild($$n89);
+          $$n86.appendChild($$n88);
+          $$n85.appendChild($$n86);
+          $$n81.appendChild($$n85);
+          $$chain_$$n80_b0.appendChild($$n81);
+          $$n79_a.before($$chain_$$n80_b0);
         }
-        if ($$n77_a.parentNode && $$chain_$$n78_b0.parentNode !== $$n77_a.parentNode) { $$n77_a.before($$chain_$$n78_b0); }
+        if ($$n79_a.parentNode && $$chain_$$n80_b0.parentNode !== $$n79_a.parentNode) { $$n79_a.before($$chain_$$n80_b0); }
       }
     } finally {
-      $$chain_$$n78_running = false;
-      if ($$chain_$$n78_pending) { $$chain_$$n78_pending = false; $$chain_$$n78(); }
+      $$chain_$$n80_running = false;
+      if ($$chain_$$n80_pending) { $$chain_$$n80_pending = false; $$chain_$$n80(); }
     }
   }
   const $$n10_comp_wrap = document.createElement('div');
   $$n10_comp_wrap.setAttribute('vela-53d072', '');
-  const $$n88 = document.createElement('div');
-  $$n88.setAttribute('vela-53d072', '');
-  $$n88.setAttribute('class', 'toast-area');
-  const $$n89_a = document.createComment('if-chain');
-  let $$chain_$$n90_b0 = null;
-  let $$chain_$$n90_running = false, $$chain_$$n90_pending = false;
-  function $$chain_$$n90() {
-    if ($$chain_$$n90_running) { $$chain_$$n90_pending = true; return; }
-    $$chain_$$n90_running = true;
+  const $$n90 = document.createElement('div');
+  $$n90.setAttribute('vela-53d072', '');
+  $$n90.setAttribute('class', 'toast-area');
+  const $$n91_a = document.createComment('if-chain');
+  let $$chain_$$n92_b0 = null;
+  let $$chain_$$n92_running = false, $$chain_$$n92_pending = false;
+  let $$n93 = null;
+  let $$n94_comp = null;
+  function $$chain_$$n92() {
+    if ($$chain_$$n92_running) { $$chain_$$n92_pending = true; return; }
+    $$chain_$$n92_running = true;
     try {
       let $$active = -1;
       if ($$active < 0 && (toast)) $$active = 0;
-      if ($$active !== 0 && $$chain_$$n90_b0) { $$chain_$$n90_b0.remove(); $$chain_$$n90_b0 = null; }
+      if ($$active !== 0 && $$chain_$$n92_b0) { $$chain_$$n92_b0.remove(); $$chain_$$n92_b0 = null; $$n93 = null; if ($$n94_comp) { $$n94_comp.destroy(); $$n94_comp = null; } }
       if ($$active === 0) {
-        if (!$$chain_$$n90_b0) {
-          $$chain_$$n90_b0 = document.createElement('div');
-          $$chain_$$n90_b0.setAttribute('vela-53d072', '');
-          const $$n91 = document.createElement('div');
-          $$n91.setAttribute('vela-53d072','');
-          Toast($$n91, { message: toast.message, type: toast.type }, {});
-          $$chain_$$n90_b0.appendChild($$n91);
-          $$n89_a.before($$chain_$$n90_b0);
+        if (!$$chain_$$n92_b0) {
+          $$chain_$$n92_b0 = document.createElement('div');
+          $$chain_$$n92_b0.setAttribute('vela-53d072', '');
+          $$n93 = document.createElement('div');
+          $$n93.setAttribute('vela-53d072','');
+          $$n94_comp = Toast($$n93, { message: toast.message, type: toast.type }, {});
+          $$chain_$$n92_b0.appendChild($$n93);
+          $$n91_a.before($$chain_$$n92_b0);
         }
-        if ($$n89_a.parentNode && $$chain_$$n90_b0.parentNode !== $$n89_a.parentNode) { $$n89_a.before($$chain_$$n90_b0); }
+        if ($$n91_a.parentNode && $$chain_$$n92_b0.parentNode !== $$n91_a.parentNode) { $$n91_a.before($$chain_$$n92_b0); }
       }
     } finally {
-      $$chain_$$n90_running = false;
-      if ($$chain_$$n90_pending) { $$chain_$$n90_pending = false; $$chain_$$n90(); }
+      $$chain_$$n92_running = false;
+      if ($$chain_$$n92_pending) { $$chain_$$n92_pending = false; $$chain_$$n92(); }
     }
   }
   $$n2.appendChild(document.createTextNode(`⚙️ Settings`));
@@ -732,8 +739,8 @@ input[type="range"][vela-53d072] {
   $$root.appendChild($$n1);
   $$root.appendChild($$n7_a);
   $$root.appendChild($$n10_comp_wrap);
-  $$n88.appendChild($$n89_a);
-  $$root.appendChild($$n88);
+  $$n90.appendChild($$n91_a);
+  $$root.appendChild($$n90);
 
   // component logic
   function handleChange(key, value) {
@@ -774,17 +781,17 @@ input[type="range"][vela-53d072] {
   const $$defer = globalThis[Symbol.for('vela.defer')] ?? (fn => fn());
   function $$set_current($$v) {
     current = $$v;
-    $$defer(() => { $$n20.className = String(current.theme === 'light' ? 'active' : ''); });
-    $$defer(() => { $$n21.className = String(current.theme === 'dark' ? 'active' : ''); });
-    $$defer(() => { $$n29.checked = !!(current.compactMode); });
-    $$defer(() => { $$n32.data = `${current.compactMode ? 'On' : 'Off'} `; });
-    $$defer(() => { $$n52.setAttribute('value', String(current.currency)); });
-    $$defer(() => { $$n59.setAttribute('value', String(current.dateFormat)); });
-    $$defer(() => { $$n65.setAttribute('value', String(current.language)); });
-    $$defer(() => { $$n75.checked = !!(current.autoRefresh); });
-    $$defer(() => { if ($$chain_$$n78_b0) $$n85.setAttribute('value', String(current.refreshRate)); });
-    $$defer(() => { if ($$chain_$$n78_b0) $$n87.data = `${current.refreshRate}s`; });
-    $$defer(() => { $$chain_$$n78(); });
+    $$defer(() => { $$n21.className = String(current.theme === 'light' ? 'active' : ''); });
+    $$defer(() => { $$n22.className = String(current.theme === 'dark' ? 'active' : ''); });
+    $$defer(() => { $$n30.checked = !!(current.compactMode); });
+    $$defer(() => { $$n33.data = `${current.compactMode ? 'On' : 'Off'} `; });
+    $$defer(() => { $$n54.setAttribute('value', String(current.currency)); });
+    $$defer(() => { $$n61.setAttribute('value', String(current.dateFormat)); });
+    $$defer(() => { $$n67.setAttribute('value', String(current.language)); });
+    $$defer(() => { $$n77.checked = !!(current.autoRefresh); });
+    $$defer(() => { if ($$chain_$$n80_b0) $$n87.setAttribute('value', String(current.refreshRate)); });
+    $$defer(() => { if ($$chain_$$n80_b0) $$n89.data = `${current.refreshRate}s`; });
+    $$defer(() => { $$chain_$$n80(); });
     $$effect1();
   }
   function $$set_dirty($$v) {
@@ -795,34 +802,36 @@ input[type="range"][vela-53d072] {
   }
   function $$set_toast($$v) {
     toast = $$v;
-    $$defer(() => { $$chain_$$n90(); });
+    $$defer(() => { if ($$n94_comp) $$n94_comp.set({ message: toast.message }); });
+    $$defer(() => { if ($$n94_comp) $$n94_comp.set({ type: toast.type }); });
+    $$defer(() => { $$chain_$$n92(); });
   }
   function $$set_previewMode($$v) {
     previewMode = $$v;
-    $$defer(() => { $$n40.checked = !!(previewMode); });
-    $$defer(() => { $$n44.data = `${previewMode ? 'Live' : 'Off'} `; });
-    $$defer(() => { if ($$n42_comp) $$n42_comp.set({ variant: previewMode ? 'success' : 'default' }); });
+    $$defer(() => { $$n41.checked = !!(previewMode); });
+    $$defer(() => { $$n46.data = `${previewMode ? 'Live' : 'Off'} `; });
+    $$defer(() => { if ($$n43_comp) $$n43_comp.set({ variant: previewMode ? 'success' : 'default' }); });
     $$effect1();
   }
 
   // events
   $$n4.addEventListener('click', reset);
   $$n5.addEventListener('click', save);
-  $$n20.addEventListener('click', $$n20_click_h);
   $$n21.addEventListener('click', $$n21_click_h);
-  $$n29.addEventListener('change', $$n29_change_h);
-  $$n40.addEventListener('change', $$n40_change_h);
-  $$n52.addEventListener('change', $$n52_change_h);
-  $$n59.addEventListener('change', $$n59_change_h);
-  $$n65.addEventListener('change', $$n65_change_h);
-  $$n75.addEventListener('change', $$n75_change_h);
+  $$n22.addEventListener('click', $$n22_click_h);
+  $$n30.addEventListener('change', $$n30_change_h);
+  $$n41.addEventListener('change', $$n41_change_h);
+  $$n54.addEventListener('change', $$n54_change_h);
+  $$n61.addEventListener('change', $$n61_change_h);
+  $$n67.addEventListener('change', $$n67_change_h);
+  $$n77.addEventListener('change', $$n77_change_h);
 
   // initial render
   $$n5.disabled = !!(!dirty);
   $$n6.data = `${dirty ? 'Save changes' : 'Saved'} `;
   $$chain_$$n8();
-  const $$n10_comp = Card($$n10_comp_wrap, {}, { "default": () => { const $$sf_default_$$n11 = document.createDocumentFragment(); $$n13.appendChild(document.createTextNode(`Appearance`)); $$n12.appendChild($$n13); $$n16.appendChild(document.createTextNode(`Theme`)); $$n15.appendChild($$n16); $$n17.appendChild(document.createTextNode(`Choose light or dark interface`)); $$n15.appendChild($$n17); $$n14.appendChild($$n15); $$n20.appendChild(document.createTextNode(`☀️ Light`)); $$n19.appendChild($$n20); $$n21.appendChild(document.createTextNode(`🌙 Dark`)); $$n19.appendChild($$n21); $$n18.appendChild($$n19); $$n14.appendChild($$n18); $$n12.appendChild($$n14); $$n24.appendChild(document.createTextNode(`Compact mode`)); $$n23.appendChild($$n24); $$n25.appendChild(document.createTextNode(`Reduce spacing and padding`)); $$n23.appendChild($$n25); $$n22.appendChild($$n23); $$n28.appendChild($$n29); $$n28.appendChild($$n30); $$n27.appendChild($$n28); $$n31.appendChild($$n32); $$n27.appendChild($$n31); $$n26.appendChild($$n27); $$n22.appendChild($$n26); $$n12.appendChild($$n22); $$n35.appendChild(document.createTextNode(`Preview theme`)); $$n34.appendChild($$n35); $$n36.appendChild(document.createTextNode(`Apply theme changes in real-time`)); $$n34.appendChild($$n36); $$n33.appendChild($$n34); $$n39.appendChild($$n40); $$n39.appendChild($$n41); $$n38.appendChild($$n39); $$n38.appendChild($$n42_comp_wrap); $$n37.appendChild($$n38); $$n33.appendChild($$n37); $$n12.appendChild($$n33); $$sf_default_$$n11.appendChild($$n12); $$n46.appendChild(document.createTextNode(`Localisation`)); $$n45.appendChild($$n46); $$n49.appendChild(document.createTextNode(`Currency`)); $$n48.appendChild($$n49); $$n50.appendChild(document.createTextNode(`Display currency for financial data`)); $$n48.appendChild($$n50); $$n47.appendChild($$n48); $$n52.appendChild($$n53_a); $$n51.appendChild($$n52); $$n47.appendChild($$n51); $$n45.appendChild($$n47); $$n56.appendChild(document.createTextNode(`Date format`)); $$n55.appendChild($$n56); $$n57.appendChild(document.createTextNode(`How dates are displayed throughout`)); $$n55.appendChild($$n57); $$n54.appendChild($$n55); $$n59.appendChild($$n60_a); $$n58.appendChild($$n59); $$n54.appendChild($$n58); $$n45.appendChild($$n54); $$n63.appendChild(document.createTextNode(`Language`)); $$n62.appendChild($$n63); $$n61.appendChild($$n62); $$n65.appendChild($$n66_a); $$n64.appendChild($$n65); $$n61.appendChild($$n64); $$n45.appendChild($$n61); $$sf_default_$$n11.appendChild($$n45); $$n68.appendChild(document.createTextNode(`Data & Refresh`)); $$n67.appendChild($$n68); $$n71.appendChild(document.createTextNode(`Auto-refresh`)); $$n70.appendChild($$n71); $$n72.appendChild(document.createTextNode(`Automatically reload dashboard data`)); $$n70.appendChild($$n72); $$n69.appendChild($$n70); $$n74.appendChild($$n75); $$n74.appendChild($$n76); $$n73.appendChild($$n74); $$n69.appendChild($$n73); $$n67.appendChild($$n69); $$n67.appendChild($$n77_a); $$sf_default_$$n11.appendChild($$n67); $$n20.className = String(current.theme === 'light' ? 'active' : ''); $$n21.className = String(current.theme === 'dark' ? 'active' : ''); $$n29.checked = !!(current.compactMode); $$n32.data = `${current.compactMode ? 'On' : 'Off'} `; $$n40.checked = !!(previewMode); const $$n42_comp = Badge($$n42_comp_wrap, { variant: previewMode ? 'success' : 'default' }, { "default": () => { const $$sf_default_$$n43 = document.createDocumentFragment(); $$sf_default_$$n43.appendChild($$n44); $$n44.data = `${previewMode ? 'Live' : 'Off'} `; return $$sf_default_$$n43; } }); $$n52.setAttribute('value', String(current.currency)); $$each_$$n53(CURRENCIES); $$n59.setAttribute('value', String(current.dateFormat)); $$each_$$n60(DATE_FORMATS); $$n65.setAttribute('value', String(current.language)); $$each_$$n66(LANGUAGES); $$n75.checked = !!(current.autoRefresh); $$chain_$$n78(); return $$sf_default_$$n11; } });
-  $$chain_$$n90();
+  const $$n10_comp = Card($$n10_comp_wrap, {}, { "default": () => { if ($$sc_default_$$n12) { $$n21.className = String(current.theme === 'light' ? 'active' : ''); $$n22.className = String(current.theme === 'dark' ? 'active' : ''); $$n30.checked = !!(current.compactMode); $$n33.data = `${current.compactMode ? 'On' : 'Off'} `; $$n41.checked = !!(previewMode); const $$n43_comp = Badge($$n43_comp_wrap, { variant: previewMode ? 'success' : 'default' }, { "default": () => { if ($$sc_default_$$n45) { $$n46.data = `${previewMode ? 'Live' : 'Off'} `; return $$sc_default_$$n45; } const $$sf_default_$$n44 = document.createDocumentFragment(); $$sf_default_$$n44.appendChild($$n46); $$n46.data = `${previewMode ? 'Live' : 'Off'} `; $$sc_default_$$n45 = $$sf_default_$$n44; return $$sc_default_$$n45; } }); $$n54.setAttribute('value', String(current.currency)); $$each_$$n55(CURRENCIES); $$n61.setAttribute('value', String(current.dateFormat)); $$each_$$n62(DATE_FORMATS); $$n67.setAttribute('value', String(current.language)); $$each_$$n68(LANGUAGES); $$n77.checked = !!(current.autoRefresh); $$chain_$$n80(); return $$sc_default_$$n12; } const $$sf_default_$$n11 = document.createDocumentFragment(); $$n14.appendChild(document.createTextNode(`Appearance`)); $$n13.appendChild($$n14); $$n17.appendChild(document.createTextNode(`Theme`)); $$n16.appendChild($$n17); $$n18.appendChild(document.createTextNode(`Choose light or dark interface`)); $$n16.appendChild($$n18); $$n15.appendChild($$n16); $$n21.appendChild(document.createTextNode(`☀️ Light`)); $$n20.appendChild($$n21); $$n22.appendChild(document.createTextNode(`🌙 Dark`)); $$n20.appendChild($$n22); $$n19.appendChild($$n20); $$n15.appendChild($$n19); $$n13.appendChild($$n15); $$n25.appendChild(document.createTextNode(`Compact mode`)); $$n24.appendChild($$n25); $$n26.appendChild(document.createTextNode(`Reduce spacing and padding`)); $$n24.appendChild($$n26); $$n23.appendChild($$n24); $$n29.appendChild($$n30); $$n29.appendChild($$n31); $$n28.appendChild($$n29); $$n32.appendChild($$n33); $$n28.appendChild($$n32); $$n27.appendChild($$n28); $$n23.appendChild($$n27); $$n13.appendChild($$n23); $$n36.appendChild(document.createTextNode(`Preview theme`)); $$n35.appendChild($$n36); $$n37.appendChild(document.createTextNode(`Apply theme changes in real-time`)); $$n35.appendChild($$n37); $$n34.appendChild($$n35); $$n40.appendChild($$n41); $$n40.appendChild($$n42); $$n39.appendChild($$n40); $$n39.appendChild($$n43_comp_wrap); $$n38.appendChild($$n39); $$n34.appendChild($$n38); $$n13.appendChild($$n34); $$sf_default_$$n11.appendChild($$n13); $$n48.appendChild(document.createTextNode(`Localisation`)); $$n47.appendChild($$n48); $$n51.appendChild(document.createTextNode(`Currency`)); $$n50.appendChild($$n51); $$n52.appendChild(document.createTextNode(`Display currency for financial data`)); $$n50.appendChild($$n52); $$n49.appendChild($$n50); $$n54.appendChild($$n55_a); $$n53.appendChild($$n54); $$n49.appendChild($$n53); $$n47.appendChild($$n49); $$n58.appendChild(document.createTextNode(`Date format`)); $$n57.appendChild($$n58); $$n59.appendChild(document.createTextNode(`How dates are displayed throughout`)); $$n57.appendChild($$n59); $$n56.appendChild($$n57); $$n61.appendChild($$n62_a); $$n60.appendChild($$n61); $$n56.appendChild($$n60); $$n47.appendChild($$n56); $$n65.appendChild(document.createTextNode(`Language`)); $$n64.appendChild($$n65); $$n63.appendChild($$n64); $$n67.appendChild($$n68_a); $$n66.appendChild($$n67); $$n63.appendChild($$n66); $$n47.appendChild($$n63); $$sf_default_$$n11.appendChild($$n47); $$n70.appendChild(document.createTextNode(`Data & Refresh`)); $$n69.appendChild($$n70); $$n73.appendChild(document.createTextNode(`Auto-refresh`)); $$n72.appendChild($$n73); $$n74.appendChild(document.createTextNode(`Automatically reload dashboard data`)); $$n72.appendChild($$n74); $$n71.appendChild($$n72); $$n76.appendChild($$n77); $$n76.appendChild($$n78); $$n75.appendChild($$n76); $$n71.appendChild($$n75); $$n69.appendChild($$n71); $$n69.appendChild($$n79_a); $$sf_default_$$n11.appendChild($$n69); $$n21.className = String(current.theme === 'light' ? 'active' : ''); $$n22.className = String(current.theme === 'dark' ? 'active' : ''); $$n30.checked = !!(current.compactMode); $$n33.data = `${current.compactMode ? 'On' : 'Off'} `; $$n41.checked = !!(previewMode); const $$n43_comp = Badge($$n43_comp_wrap, { variant: previewMode ? 'success' : 'default' }, { "default": () => { if ($$sc_default_$$n45) { $$n46.data = `${previewMode ? 'Live' : 'Off'} `; return $$sc_default_$$n45; } const $$sf_default_$$n44 = document.createDocumentFragment(); $$sf_default_$$n44.appendChild($$n46); $$n46.data = `${previewMode ? 'Live' : 'Off'} `; $$sc_default_$$n45 = $$sf_default_$$n44; return $$sc_default_$$n45; } }); $$n54.setAttribute('value', String(current.currency)); $$each_$$n55(CURRENCIES); $$n61.setAttribute('value', String(current.dateFormat)); $$each_$$n62(DATE_FORMATS); $$n67.setAttribute('value', String(current.language)); $$each_$$n68(LANGUAGES); $$n77.checked = !!(current.autoRefresh); $$chain_$$n80(); $$sc_default_$$n12 = $$sf_default_$$n11; return $$sc_default_$$n12; } });
+  $$chain_$$n92();
 
   $$effect0();
   $$effect1();
@@ -836,18 +845,18 @@ input[type="range"][vela-53d072] {
       if ($$cleanup1) { $$cleanup1(); }
       $$n4.removeEventListener('click', reset);
       $$n5.removeEventListener('click', save);
-      $$n20.removeEventListener('click', $$n20_click_h);
       $$n21.removeEventListener('click', $$n21_click_h);
-      $$n29.removeEventListener('change', $$n29_change_h);
-      $$n40.removeEventListener('change', $$n40_change_h);
-      if ($$n42_comp) $$n42_comp.destroy();
-      $$n52.removeEventListener('change', $$n52_change_h);
-      $$n53_bs.forEach(b => b.destroy());
-      $$n59.removeEventListener('change', $$n59_change_h);
-      $$n60_bs.forEach(b => b.destroy());
-      $$n65.removeEventListener('change', $$n65_change_h);
-      $$n66_bs.forEach(b => b.destroy());
-      $$n75.removeEventListener('change', $$n75_change_h);
+      $$n22.removeEventListener('click', $$n22_click_h);
+      $$n30.removeEventListener('change', $$n30_change_h);
+      $$n41.removeEventListener('change', $$n41_change_h);
+      if ($$n43_comp) $$n43_comp.destroy();
+      $$n54.removeEventListener('change', $$n54_change_h);
+      $$n55_bs.forEach(b => b.destroy());
+      $$n61.removeEventListener('change', $$n61_change_h);
+      $$n62_bs.forEach(b => b.destroy());
+      $$n67.removeEventListener('change', $$n67_change_h);
+      $$n68_bs.forEach(b => b.destroy());
+      $$n77.removeEventListener('change', $$n77_change_h);
       if ($$n10_comp) $$n10_comp.destroy();
       $$style.remove();
       $$root.remove();

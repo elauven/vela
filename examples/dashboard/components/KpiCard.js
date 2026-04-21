@@ -219,7 +219,7 @@ export function KpiCard($$target, $$props, $$slots) {
   {
     const $$sf = $$slots["chart"];
     if ($$sf) {
-      { const $$sn = $$sf(); $$n14_slot_a.before($$sn); }
+      { const $$sn = $$sf(); if ($$sn) $$n14_slot_a.before($$sn); }
     }
   }
 

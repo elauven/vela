@@ -74,7 +74,7 @@ export function Badge($$target, $$props, $$slots) {
   {
     const $$sf = $$slots["default"];
     if ($$sf) {
-      { const $$sn = $$sf(); $$n1_slot_a.before($$sn); }
+      { const $$sn = $$sf(); if ($$sn) $$n1_slot_a.before($$sn); }
     } else {
       $$n1_slot_a.before(document.createTextNode(String(label)));
     }
