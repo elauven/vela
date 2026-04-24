@@ -1,0 +1,177 @@
+--- vela-orig/Makefile	2026-04-17 06:37:55.896861737 +0000
++++ vela-fixed/Makefile	2026-04-17 06:37:55.902861737 +0000
+@@ -10,6 +10,7 @@
+ 
+ build:
+ 	@echo "Building Vela compiler..."
++	@go vet ./...
+ 	@go build -ldflags="-s -w" -o $(BINARY) .
+ 	@echo "   → ./$(BINARY)"
+ 
+--- vela-orig/fraggen.go	2026-04-17 06:37:55.685861739 +0000
++++ vela-fixed/fraggen.go	2026-04-17 06:37:55.901861737 +0000
+@@ -291,7 +291,7 @@
+ 	for _, child := range elem.Children {
+ 		f.emitInlineChild(&fn, child, "$$el", 8)
+ 	}
+-	fn.WriteString(fmt.Sprintf("        %s.before($$el);\n", anchor, anchor))
++	fn.WriteString(fmt.Sprintf("        %s.before($$el);\n", anchor))
+ 	fn.WriteString(fmt.Sprintf("        %s.push({ el: $$el, destroy() { $$el.remove(); } });\n", blocks))
+ 	fn.WriteString("      });\n    }\n")
+ 
+--- vela-orig/codegen.go	2026-04-17 06:37:55.486861741 +0000
++++ vela-fixed/codegen.go	2026-04-17 06:37:55.901861737 +0000
+@@ -441,12 +441,19 @@
+ 			if attr.Name == "value" && (elem.Tag == "input" || elem.Tag == "textarea") {
+ 				if g.analysis.isStateName(attr.Value) {
+ 					sv := attr.Value
++					hv := varName + "_input_h"
++					// Store the handler in a const so addEventListener and
++					// removeEventListener reference the SAME function object.
++					// Previously two separate arrow functions were used, so
++					// removeEventListener silently matched nothing and the
++					// listener leaked on every destroy().
++					g.create.WriteString(fmt.Sprintf(
++						"  const %s = ($e) => $$set_%s($e.target.value);\n",
++						hv, sv))
+ 					g.events.WriteString(fmt.Sprintf(
+-						"  %s.addEventListener('input', ($e) => $$set_%s($e.target.value));\n",
+-						varName, sv))
++						"  %s.addEventListener('input', %s);\n", varName, hv))
+ 					g.cleanup.WriteString(fmt.Sprintf(
+-						"      %s.removeEventListener('input', ($e) => $$set_%s($e.target.value));\n",
+-						varName, sv))
++						"      %s.removeEventListener('input', %s);\n", varName, hv))
+ 				}
+ 			}
+ 
+@@ -919,6 +926,8 @@
+ 
+ 		var fnBuf strings.Builder
+ 		fnBuf.WriteString(fmt.Sprintf("  function %s($$arr) {\n", fn))
++		// Guard: no-op when anchor is detached (branch unmounted mid-update)
++		fnBuf.WriteString(fmt.Sprintf("    if (!%s.parentNode) return;\n", anchor))
+ 		fnBuf.WriteString("    const $$newKeys = new Set();\n")
+ 		fnBuf.WriteString("    const $$newBlks = [];\n")
+ 		fnBuf.WriteString(fmt.Sprintf("    ($$arr||[]).forEach(function(%s, %s) {\n", itemVar, indexVar))
+@@ -941,8 +950,8 @@
+ 		// (i.e. immediately before the anchor). Moving DOM elements fires blur
+ 		// on any focused input inside them, breaking in-place editing.
+ 		fnBuf.WriteString(fmt.Sprintf(
+-			"      if (%[2]s.parentNode && $$blk.wrap.nextSibling !== %[1]s) { %[2]s.before($$blk.wrap); }\n",
+-			anchor, anchor, anchor))
++			"      if ($$blk.wrap.nextSibling !== %[1]s) { %[1]s.before($$blk.wrap); }\n",
++			anchor))
+ 		fnBuf.WriteString("      $$newBlks.push($$blk);\n")
+ 		fnBuf.WriteString("    });\n")
+ 		fnBuf.WriteString(fmt.Sprintf("    %s.forEach(($$blk, $$key) => {\n", keyMap))
+@@ -958,6 +967,8 @@
+ 
+ 		var fnBuf strings.Builder
+ 		fnBuf.WriteString(fmt.Sprintf("  function %s($$arr) {\n", fn))
++		// Guard: no-op when anchor is detached (branch unmounted mid-update)
++		fnBuf.WriteString(fmt.Sprintf("    if (!%s.parentNode) return;\n", anchor))
+ 		fnBuf.WriteString(fmt.Sprintf("    %s.forEach(b => b.comp.destroy()); %s = [];\n", blocks, blocks))
+ 		fnBuf.WriteString(fmt.Sprintf("    ($$arr||[]).forEach(function(%s, %s) {\n", itemVar, indexVar))
+ 		fnBuf.WriteString("      const $$wrap = document.createElement('div');\n")
+@@ -966,7 +977,7 @@
+ 			fnBuf.WriteString("  " + ev + "\n")
+ 		}
+ 		fnBuf.WriteString(fmt.Sprintf("      const $$c = %s($$wrap, %s, {});\n", comp.Name, propsExpr))
+-		fnBuf.WriteString(fmt.Sprintf("      %[1]s.before($$wrap);\n", anchor, anchor))
++		fnBuf.WriteString(fmt.Sprintf("      %[1]s.before($$wrap);\n", anchor))
+ 		fnBuf.WriteString(fmt.Sprintf("      %s.push({ wrap: $$wrap, comp: $$c });\n", blocks))
+ 		fnBuf.WriteString("    });\n  }\n")
+ 		g.create.WriteString(fnBuf.String())
+@@ -1027,7 +1038,7 @@
+ 		}
+ 	}
+ 	fnBuf.WriteString(fmt.Sprintf("        %s = %s(%s, %s, {});\n", instVar, comp.Name, wrapVar, propsExpr))
+-	fnBuf.WriteString(fmt.Sprintf("        %[1]s.before(%[2]s);\n", anchor, wrapVar, anchor))
++	fnBuf.WriteString(fmt.Sprintf("        %[1]s.before(%[2]s);\n", anchor, wrapVar))
+ 	fnBuf.WriteString("      } else {\n")
+ 	fnBuf.WriteString(fmt.Sprintf("        %s.set(%s);\n", instVar, propsExpr))
+ 	fnBuf.WriteString("      }\n")
+@@ -1068,8 +1079,8 @@
+ 	fnBuf.WriteString(fmt.Sprintf("    const $$sf = $$slots[%q];\n", slot.Name))
+ 	fnBuf.WriteString(fmt.Sprintf("    if ($$sf) {\n"))
+ 	fnBuf.WriteString(fmt.Sprintf(
+-		"      { const $$sn = $$sf(); %[1]s.before($$sn); }\n",
+-		anchor, anchor))
++		"      { const $$sn = $$sf(); if ($$sn) %[1]s.before($$sn); }\n",
++		anchor))
+ 	fnBuf.WriteString(fmt.Sprintf("    }"))
+ 
+ 	if len(slot.Fallback) > 0 {
+@@ -1080,14 +1091,31 @@
+ 				expr := buildExpr(c.Parts)
+ 				fnBuf.WriteString(fmt.Sprintf(
+ 					"      %[1]s.before(document.createTextNode(%[2]s));\n",
+-					anchor, expr, anchor))
++					anchor, expr))
+ 			case *ElementNode:
+ 				fnBuf.WriteString(fmt.Sprintf(
+-					"      const $$fb = document.createElement('%s');\n", c.Tag))
++					"      { const $$fb = document.createElement('%s');\n", c.Tag))
+ 				fnBuf.WriteString(fmt.Sprintf(
+-					"      $$fb.setAttribute('%s','');\n", g.scopeID))
++					"        $$fb.setAttribute('%s','');\n", g.scopeID))
++				// Static attributes only — bound attrs/events inside fallback
++				// would need full codegen context; keep fallback simple.
++				for _, attr := range c.Attrs {
++					if !attr.IsEvent && !attr.IsBind {
++						fnBuf.WriteString(fmt.Sprintf(
++							"        $$fb.setAttribute('%s','%s');\n",
++							attr.Name, escapeAttr(attr.Value)))
++					}
++				}
++				// Inline static text children
++				for _, cc := range c.Children {
++					if t, ok := cc.(*TextNode); ok {
++						fnBuf.WriteString(fmt.Sprintf(
++							"        $$fb.appendChild(document.createTextNode(%s));\n",
++							buildExpr(t.Parts)))
++					}
++				}
+ 				fnBuf.WriteString(fmt.Sprintf(
+-					"      %[1]s.before($$fb);\n", anchor, anchor))
++					"        %[1]s.before($$fb); }\n", anchor))
+ 			}
+ 		}
+ 		fnBuf.WriteString("    }\n")
+@@ -1342,6 +1370,8 @@
+ 
+ 		var fnBuf strings.Builder
+ 		fnBuf.WriteString(fmt.Sprintf("  function %s($$arr) {\n", fn))
++		// Guard: no-op when anchor is detached (branch unmounted mid-update)
++		fnBuf.WriteString(fmt.Sprintf("    if (!%s.parentNode) return;\n", anchor))
+ 		fnBuf.WriteString(fmt.Sprintf("    const $$newKeys = new Set();\n"))
+ 		fnBuf.WriteString(fmt.Sprintf("    const $$newBlocks = [];\n"))
+ 		fnBuf.WriteString(fmt.Sprintf("    ($$arr||[]).forEach(function(%s, %s) {\n", itemVar, indexVar))
+@@ -1373,6 +1403,8 @@
+ 
+ 		var fnBuf strings.Builder
+ 		fnBuf.WriteString(fmt.Sprintf("  function %s($$arr) {\n", fn))
++		// Guard: no-op when anchor is detached (branch unmounted mid-update)
++		fnBuf.WriteString(fmt.Sprintf("    if (!%s.parentNode) return;\n", anchor))
+ 		fnBuf.WriteString(fmt.Sprintf("    %s.forEach(b => b.destroy());\n", blocks))
+ 		fnBuf.WriteString(fmt.Sprintf("    %s = [];\n", blocks))
+ 		fnBuf.WriteString(fmt.Sprintf("    ($$arr||[]).forEach(function(%s, %s) {\n", itemVar, indexVar))
+@@ -2009,7 +2041,7 @@
+ 		fn.WriteString(fmt.Sprintf("        %s.set($$key, $$blk);\n", kmVar))
+ 		fn.WriteString("      }\n")
+ 		fn.WriteString(fmt.Sprintf("      if ($$blk.wrap.nextSibling !== %s) { %s.before($$blk.wrap); }\n",
+-			anchorVar, anchorVar, anchorVar))
++			anchorVar, anchorVar))
+ 		fn.WriteString("      $$newBlks.push($$blk);\n")
+ 		fn.WriteString("    });\n")
+ 		fn.WriteString(fmt.Sprintf("    %s.forEach(($$blk, $$k) => { if (!$$newKeys.has($$k)) { $$blk.comp.destroy(); %s.delete($$k); } });\n", kmVar, kmVar))
+@@ -2050,7 +2082,7 @@
+ 		fn.WriteString(fmt.Sprintf("      %s.setAttribute('%s','');\n", wrapVar, g.scopeID))
+ 		fn.WriteString(evWire(wrapVar, "      "))
+ 		fn.WriteString(fmt.Sprintf("      const $$c = %s(%s, %s, {});\n", comp.Name, wrapVar, propsExpr))
+-		fn.WriteString(fmt.Sprintf("      %[1]s.before(%[2]s);\n", anchorVar, wrapVar, anchorVar))
++		fn.WriteString(fmt.Sprintf("      %[1]s.before(%[2]s);\n", anchorVar, wrapVar))
+ 		fn.WriteString(fmt.Sprintf("      %s.push({ wrap: %s, comp: $$c });\n", bsVar, wrapVar))
+ 		fn.WriteString("    });\n  }\n")
+ 		g.create.WriteString(fn.String())

@@ -4035,3 +4035,500 @@ func braceDepthAt(src string, pos int) int {
 	}
 	return depth
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Targeted unit tests for features added during the compiler's recent
+//  fix sessions — A4 (destructuring LHS), A7 (AST-based imports), A8
+//  (scope-aware item-ref rewriter), and turn-13's two-way binding.
+//
+//  These pin the contract of each feature so future refactors can't
+//  silently regress them.  The coverage report before these tests showed
+//  0% on rewritePatternAssign, emitTwoWayListener, twoWayBindSpec, and
+//  RewriteScriptImports — i.e. they shipped with no tests at all.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── A4: RewriteAssignments destructuring-LHS support ──────────────────────
+
+func TestRewritePatternAssign_Object(t *testing.T) {
+	// ({count, name} = obj)  →  const $$dN = obj; $$set_count($$dN.count); $$set_name($$dN.name);
+	src := `({count, name} = obj);`
+	stateSet := map[string]bool{"count": true, "name": true}
+	prog := ParseJS(src)
+	got := RewriteAssignments(src, prog, stateSet)
+
+	if !strings.Contains(got, "$$set_count(") {
+		t.Errorf("expected $$set_count call; got: %s", got)
+	}
+	if !strings.Contains(got, "$$set_name(") {
+		t.Errorf("expected $$set_name call; got: %s", got)
+	}
+	// Must introduce a temp binding for the RHS so obj is only evaluated once.
+	if !strings.Contains(got, "const $$d") {
+		t.Errorf("expected const $$dN temp binding; got: %s", got)
+	}
+	// Access paths: $$dN.count, $$dN.name
+	if !regexp.MustCompile(`\$\$set_count\(\$\$d\d+\.count\)`).MatchString(got) {
+		t.Errorf("expected setter reads temp.count; got: %s", got)
+	}
+}
+
+func TestRewritePatternAssign_Array(t *testing.T) {
+	// [a, b] = pair  →  const $$dN = pair; $$set_a($$dN[0]); $$set_b($$dN[1]);
+	src := `[a, b] = pair;`
+	stateSet := map[string]bool{"a": true, "b": true}
+	prog := ParseJS(src)
+	got := RewriteAssignments(src, prog, stateSet)
+
+	if !regexp.MustCompile(`\$\$set_a\(\$\$d\d+\[0\]\)`).MatchString(got) {
+		t.Errorf("expected $$set_a with [0] index; got: %s", got)
+	}
+	if !regexp.MustCompile(`\$\$set_b\(\$\$d\d+\[1\]\)`).MatchString(got) {
+		t.Errorf("expected $$set_b with [1] index; got: %s", got)
+	}
+}
+
+func TestRewritePatternAssign_Renamed(t *testing.T) {
+	// ({foo: count} = obj)  →  const $$dN = obj; $$set_count($$dN.foo);
+	// The KEY is foo (access path), but the BINDING is count (state var).
+	src := `({foo: count} = obj);`
+	stateSet := map[string]bool{"count": true}
+	prog := ParseJS(src)
+	got := RewriteAssignments(src, prog, stateSet)
+
+	if !regexp.MustCompile(`\$\$set_count\(\$\$d\d+\.foo\)`).MatchString(got) {
+		t.Errorf("expected $$set_count reading temp.foo (renamed key); got: %s", got)
+	}
+}
+
+func TestRewritePatternAssign_SkipsNonState(t *testing.T) {
+	// Non-state vars in a pattern should NOT be rewritten; only the state
+	// var gets a setter.  The non-state binding is silently dropped (a
+	// documented limitation of the rewriter).
+	src := `({count, misc} = obj);`
+	stateSet := map[string]bool{"count": true}
+	prog := ParseJS(src)
+	got := RewriteAssignments(src, prog, stateSet)
+
+	if !strings.Contains(got, "$$set_count(") {
+		t.Errorf("expected $$set_count call; got: %s", got)
+	}
+	if strings.Contains(got, "$$set_misc(") {
+		t.Errorf("$$set_misc should NOT be emitted for non-state var; got: %s", got)
+	}
+}
+
+// ── A8: rewriteItemRef scope tracking ──────────────────────────────────────
+
+func TestRewriteItemRef_Shadowing(t *testing.T) {
+	// `(u) => fn(u)`  — inner u is a shadowed parameter, leave it alone.
+	src := `(u) => fn(u)`
+	got := rewriteItemRef(src, "u", "$$box")
+	if got != src {
+		t.Errorf("shadowed param should not be rewritten;\n  src = %q\n  got = %q", src, got)
+	}
+}
+
+func TestRewriteItemRef_BlockShadow(t *testing.T) {
+	// `() => { const u = 99; return u; }` — block-scoped shadow.
+	src := `() => { const u = 99; return u; }`
+	got := rewriteItemRef(src, "u", "$$box")
+	if got != src {
+		t.Errorf("block-scoped shadow should not be rewritten;\n  src = %q\n  got = %q", src, got)
+	}
+}
+
+func TestRewriteItemRef_MemberAccess(t *testing.T) {
+	// `obj.u` — property access, don't rewrite.
+	// `obj[u]` — computed index, DO rewrite the `u`.
+	// `u.id` — u is the object, .id is the property — rewrite u only.
+	cases := []struct{ src, want string }{
+		{`obj.u`, `obj.u`},
+		{`obj[u]`, `obj[$$box]`},
+		{`u.id`, `$$box.id`},
+		{`obj?.u`, `obj?.u`}, // optional property access also skipped
+	}
+	for _, tc := range cases {
+		got := rewriteItemRef(tc.src, "u", "$$box")
+		if got != tc.want {
+			t.Errorf("rewriteItemRef(%q): want %q, got %q", tc.src, tc.want, got)
+		}
+	}
+}
+
+func TestRewriteItemRef_ObjectKeys(t *testing.T) {
+	// `{u: x}` — u is a key, NOT a ref; leave alone.
+	// `{[u]: 1}` — computed key, DO rewrite.
+	// `{u}` — shorthand: key AND value are the same JsIdent; as a value-pos
+	//         reference, it should be rewritten.
+	cases := []struct{ src, want string }{
+		{`({u: 1})`, `({u: 1})`},
+		{`({[u]: 1})`, `({[$$box]: 1})`},
+		{`({u})`, `({$$box})`}, // shorthand — u appears in value position
+	}
+	for _, tc := range cases {
+		got := rewriteItemRef(tc.src, "u", "$$box")
+		if got != tc.want {
+			t.Errorf("rewriteItemRef(%q): want %q, got %q", tc.src, tc.want, got)
+		}
+	}
+}
+
+// ── Two-way binding (turn 13): emitTwoWayListener + twoWayBindSpec ─────────
+
+func TestTwoWayBindSpec(t *testing.T) {
+	cases := []struct {
+		tag, attr        string
+		wantEvent, wantP string
+		ok               bool
+	}{
+		{"input", "value", "input", "value", true},
+		{"textarea", "value", "input", "value", true},
+		{"select", "value", "change", "value", true},
+		{"input", "checked", "change", "checked", true},
+		{"div", "value", "", "", false},       // value on non-form element: unsupported
+		{"textarea", "checked", "", "", false}, // checked on textarea: unsupported
+	}
+	for _, tc := range cases {
+		spec, ok := twoWayBindSpec(tc.tag, tc.attr)
+		if ok != tc.ok {
+			t.Errorf("<%s bind:%s>: ok=%v, want %v", tc.tag, tc.attr, ok, tc.ok)
+			continue
+		}
+		if ok && (spec.event != tc.wantEvent || spec.readProp != tc.wantP) {
+			t.Errorf("<%s bind:%s>: spec=%+v, want event=%q readProp=%q",
+				tc.tag, tc.attr, spec, tc.wantEvent, tc.wantP)
+		}
+	}
+}
+
+func TestTwoWayBinding_InputValue(t *testing.T) {
+	sfc := &SFC{
+		Script:   `let name = $state('');`,
+		Template: `<input bind:value="name" />`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("Form", sfc, nodes, a, "vela-test")
+
+	// Property write, not setAttribute('value', ...) — so programmatic
+	// state changes reflect on the live input.  Element var is $$root
+	// when the input is the template root; $$nN otherwise.
+	if !regexp.MustCompile(`\$\$(root|n\d+)\.value\s*=\s*\(name\)`).MatchString(code) {
+		t.Errorf("expected elem.value = (name) property write; got:\n%s", code)
+	}
+	// Listener const + registration + cleanup.
+	if !regexp.MustCompile(`const \$\$(root|n\d+)_bind_input_h = \(\$e\) => \$\$set_name\(\$e\.target\.value\)`).MatchString(code) {
+		t.Error("expected bind-input handler const calling $$set_name(e.target.value)")
+	}
+	if !strings.Contains(code, ".addEventListener('input',") {
+		t.Error("expected addEventListener('input', ...)")
+	}
+	if !strings.Contains(code, ".removeEventListener('input',") {
+		t.Error("expected cleanup removeEventListener('input', ...)")
+	}
+}
+
+func TestTwoWayBinding_Checkbox(t *testing.T) {
+	sfc := &SFC{
+		Script:   `let agreed = $state(false);`,
+		Template: `<input type="checkbox" bind:checked="agreed" />`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("Form", sfc, nodes, a, "vela-test")
+
+	// Property: elem.checked = !!(agreed)
+	// The element var is $$root when the input is the template root; $$nN
+	// otherwise.  Either is valid — match both.
+	if !regexp.MustCompile(`\$\$(root|n\d+)\.checked\s*=\s*!!\(agreed\)`).MatchString(code) {
+		t.Errorf("expected elem.checked = !!(agreed); got:\n%s", code)
+	}
+	// 'change' event, reading e.target.checked (not .value).
+	if !regexp.MustCompile(`\$\$set_agreed\(\$e\.target\.checked\)`).MatchString(code) {
+		t.Error("expected $$set_agreed(e.target.checked)")
+	}
+	if !strings.Contains(code, ".addEventListener('change',") {
+		t.Error("expected addEventListener('change', ...)")
+	}
+}
+
+func TestTwoWayBinding_Select(t *testing.T) {
+	sfc := &SFC{
+		Script:   `let role = $state('viewer');`,
+		Template: `<select bind:value="role"><option value="admin">A</option></select>`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("Form", sfc, nodes, a, "vela-test")
+
+	// Select uses 'change' event, not 'input'.
+	if !strings.Contains(code, ".addEventListener('change',") {
+		t.Error("expected select to use 'change' event")
+	}
+	if strings.Contains(code, ".addEventListener('input',") {
+		t.Error("select should NOT wire 'input' event (only 'change')")
+	}
+}
+
+func TestTwoWayBinding_CoexistsWithAtInput(t *testing.T) {
+	// bind:value and @input on the same element must BOTH wire without
+	// colliding on the handler const name.  This was the turn-13 bug:
+	// two `const $$nX_input_h = …` lines produced a SyntaxError.
+	sfc := &SFC{
+		Script:   `let name = $state('');`,
+		Template: `<input bind:value="name" @input="($e) => name = $e.target.value.toUpperCase()" />`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("Form", sfc, nodes, a, "vela-test")
+
+	// Both handlers must be declared — verified by the output parsing
+	// cleanly (no duplicate const SyntaxError).
+	p := &JSParser{lex: NewLexer(code), src: code}
+	p.cur = p.lex.Next()
+	p.peek = p.lex.Next()
+	p.parseProgram()
+	if len(p.Errors) > 0 {
+		t.Errorf("generated JS failed to parse (%d errors): %s\n----\n%s",
+			len(p.Errors), p.Errors[0], code)
+	}
+	// Two addEventListener('input', ...) calls — one for bind, one for user.
+	n := strings.Count(code, "addEventListener('input',")
+	if n != 2 {
+		t.Errorf("expected 2 'input' listeners (bind + @input), got %d in:\n%s", n, code)
+	}
+	// Handler names must be distinct — bind is namespaced with _bind_.
+	if !strings.Contains(code, "_bind_input_h") {
+		t.Error("expected bind handler to use _bind_ prefix to avoid name collision")
+	}
+}
+
+func TestTwoWayBinding_OneWayBindDoesNotWireListener(t *testing.T) {
+	// :value="x" is strictly one-way — no listener should be wired
+	// (that's the contract after the turn-13 redesign).
+	sfc := &SFC{
+		Script:   `let name = $state('');`,
+		Template: `<input :value="name" />`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("Form", sfc, nodes, a, "vela-test")
+
+	if strings.Contains(code, ".addEventListener('input',") {
+		t.Errorf("one-way :value should NOT auto-wire an input listener; got:\n%s", code)
+	}
+}
+
+// ── A7: AST-based imports ──────────────────────────────────────────────────
+
+func TestImports_MultilineNamed(t *testing.T) {
+	script := `import {
+  MultiA,
+  MultiB as Aliased,
+  MultiC
+} from "./multi.vela";`
+	recs := ParseImportRecords(script, 0)
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 import record, got %d", len(recs))
+	}
+	r := recs[0]
+	if r.Path != "./multi.vela" {
+		t.Errorf("path: want ./multi.vela, got %q", r.Path)
+	}
+	want := []string{"MultiA", "Aliased", "MultiC"}
+	if len(r.Names) != len(want) {
+		t.Fatalf("names: want %v, got %v", want, r.Names)
+	}
+	for i, w := range want {
+		if r.Names[i] != w {
+			t.Errorf("name[%d]: want %q, got %q", i, w, r.Names[i])
+		}
+	}
+}
+
+func TestImports_MixedDefaultAndNamed(t *testing.T) {
+	script := `import Def, { A, B as C } from './mixed.vela';`
+	recs := ParseImportRecords(script, 0)
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(recs))
+	}
+	// Names list should include both the default and the named locals.
+	wantNames := map[string]bool{"Def": true, "A": true, "C": true}
+	gotNames := map[string]bool{}
+	for _, n := range recs[0].Names {
+		gotNames[n] = true
+	}
+	for n := range wantNames {
+		if !gotNames[n] {
+			t.Errorf("expected %q in Names; got %v", n, recs[0].Names)
+		}
+	}
+}
+
+func TestImports_SideEffect(t *testing.T) {
+	script := `import './polyfill.vela';`
+	recs := ParseImportRecords(script, 0)
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(recs))
+	}
+	if recs[0].Path != "./polyfill.vela" {
+		t.Errorf("path: want ./polyfill.vela, got %q", recs[0].Path)
+	}
+	if len(recs[0].Names) != 0 {
+		t.Errorf("side-effect import should have no Names; got %v", recs[0].Names)
+	}
+}
+
+func TestImports_Namespace(t *testing.T) {
+	script := `import * as Utils from './utils.vela';`
+	recs := ParseImportRecords(script, 0)
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(recs))
+	}
+	if len(recs[0].Names) != 1 || recs[0].Names[0] != "Utils" {
+		t.Errorf("namespace import names: want [Utils], got %v", recs[0].Names)
+	}
+}
+
+func TestRewriteScriptImports_VelaToJs(t *testing.T) {
+	// .vela paths should be rewritten to .js in every import form,
+	// preserving multi-line formatting and trailing comments.
+	script := `import Card from './Card.vela';
+import { A, B } from "./widgets.vela";
+import * as Utils from './utils.vela';
+import './polyfill.vela';
+import {
+  Multi1,
+  Multi2
+} from "./multi.vela";`
+
+	got := RewriteScriptImports(script)
+
+	// Every .vela suffix must be gone — all rewritten to .js.
+	if strings.Contains(got, ".vela") {
+		t.Errorf(".vela suffix leaked through rewrite; got:\n%s", got)
+	}
+	// Spot-check each form emitted its .js counterpart.
+	for _, want := range []string{
+		`'./Card.js'`, `"./widgets.js"`, `'./utils.js'`, `'./polyfill.js'`, `"./multi.js"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %s in rewritten script; got:\n%s", want, got)
+		}
+	}
+	// Multi-line structure must survive (sanity: line count is roughly the same).
+	origLines := strings.Count(script, "\n")
+	gotLines := strings.Count(got, "\n")
+	if gotLines != origLines {
+		t.Errorf("line count changed during rewrite (structural damage): orig=%d got=%d",
+			origLines, gotLines)
+	}
+}
+
+func TestRewriteScriptImports_NodeModulesUnchanged(t *testing.T) {
+	// Bare specifiers (no leading ./ or /) are node-module paths and
+	// must pass through unchanged — rewriting them would break imports
+	// from npm packages.
+	script := `import { createStore } from 'some-pkg';
+import lodash from "lodash";`
+	got := RewriteScriptImports(script)
+	if got != script {
+		t.Errorf("node-module imports should be unchanged;\n  orig: %q\n  got:  %q", script, got)
+	}
+}
+
+// TestEachRowIfHoist_DeclarationsAtRowScope guards against the ReferenceError
+// class of bug where `let $$nN = null` hoists for elements inside an {#if}
+// nested in an {#each} row were landing INSIDE the if-body instead of at row
+// scope.  The update() function runs in row scope; if a hoisted binding is
+// block-scoped to the if, update() gets "ReferenceError: $$nN is not defined"
+// whenever the if branch wasn't taken, or after its torn-down rebuild.
+//
+// The real trigger was <UsersPage {#each filtered as u}>…{#if currentUser.role
+// === 'admin'}…<button>…</button>…{/if}…</UsersPage>.  Toggling a user's
+// status called users.update(), which re-ran the each reconciler's
+// $$blk.update(u), which referenced $$n60 declared inside the if block —
+// error, and the whole update chain aborted.
+func TestEachRowIfHoist_DeclarationsAtRowScope(t *testing.T) {
+	// Trigger the codegen-inline each-row path: the row must contain at
+	// least one Component AND the whole {#each} must sit inside an {#if}
+	// branch so that emitBranchChildren → emitEachWithComponents →
+	// emitEachRowBody is the path taken.  A bare {#each} at top level
+	// routes through FragGen (simpler, different code path, wasn't
+	// affected by this bug).  UsersPage.vela hit the bug because its
+	// {#each filtered as u (u.id)} was inside an {:else} branch of an
+	// {#if filtered.length === 0}.
+	sfc := &SFC{
+		Script: `
+			import { Badge } from './Badge.vela';
+			let items = $state([{id:1, status:'active'}]);
+			let currentUser = $state({role: 'admin'});
+			let showEmpty = $state(false);
+		`,
+		Template: `
+			<div>
+			  {#if showEmpty}
+			    <p>empty</p>
+			  {:else}
+			    {#each items as u (u.id)}
+			      <div>
+			        <Badge :kind="u.status">{u.status}</Badge>
+			        {#if currentUser.role === 'admin'}
+			          <button>{u.status}</button>
+			        {/if}
+			      </div>
+			    {/each}
+			  {/if}
+			</div>
+		`,
+	}
+	nodes, _ := parseTemplate(sfc.Template)
+	a := analyzeScript(sfc.Script)
+	code := generateCode("App", sfc, nodes, a, "vela-test")
+
+	// Find the row IIFE.  We look for update(u) and walk backwards to the
+	// enclosing `$$blk = (() => {`.
+	updateIdx := strings.Index(code, "update(u) {")
+	if updateIdx < 0 {
+		t.Fatal("no update(u) section in output")
+	}
+	iifeStart := strings.LastIndex(code[:updateIdx], "$$blk = (() => {")
+	if iifeStart < 0 {
+		t.Fatal("no $$blk IIFE start found")
+	}
+
+	// Extract the row IIFE body (up to update).
+	body := code[iifeStart:updateIdx]
+
+	// Every `let $$nN = null;` declaration introduced by the hoisting
+	// pass must appear at row scope — NOT nested inside an `if (...)`
+	// block.  We check this by ensuring every `let ... = null;` line
+	// appears at the same brace depth as the IIFE opening (depth 1 inside
+	// the IIFE arrow body), not deeper.
+	letNullRe := regexp.MustCompile(`let (\$\$[A-Za-z0-9_]+) = null;`)
+	iifeBraceStart := strings.Index(body, "{")
+	if iifeBraceStart < 0 {
+		t.Fatal("IIFE has no opening brace")
+	}
+	// Depth right after the `=> {` — that's the baseline row scope.
+	baseline := braceDepthAt(body, iifeBraceStart+1)
+	for _, m := range letNullRe.FindAllStringSubmatchIndex(body, -1) {
+		depth := braceDepthAt(body, m[0])
+		name := body[m[2]:m[3]]
+		if depth != baseline {
+			t.Errorf("hoist `let %s = null;` is at brace depth %d; must be at row scope (depth %d).\n"+
+				"This would cause ReferenceError: %s is not defined when update() runs.\n"+
+				"Row body:\n%s",
+				name, depth, baseline, name, body)
+		}
+	}
+
+	// Also confirm the output parses cleanly.
+	p := &JSParser{lex: NewLexer(code), src: code}
+	p.cur = p.lex.Next()
+	p.peek = p.lex.Next()
+	p.parseProgram()
+	if len(p.Errors) > 0 {
+		t.Errorf("generated JS failed to parse: %s", p.Errors[0])
+	}
+}

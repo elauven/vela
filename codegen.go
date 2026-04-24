@@ -1892,11 +1892,30 @@ func (g *CodeGen) emitEachRowBody(
 	// data.  Without this, clicking Edit on a row whose fields changed via
 	// another flow (e.g. save) passes the stale row item to the handler.
 	boxVar := "$$item_" + g.id()
-	createBuf.WriteString(fmt.Sprintf("%slet %s = %s;\n", indent, boxVar, itemVar))
+
+	// Hoisted declarations (`let $$nX = null;`, `let $$b_... = false;`) from
+	// nested if-branches must live in ROW scope, not inside the if block
+	// where createBuf's cursor happens to be.  Using a separate buffer that
+	// we prepend to createBuf guarantees that — previously we passed
+	// createBuf as its own hoistBuf, so hoists landed inside whatever block
+	// the cursor had entered, producing ReferenceError in update() when the
+	// if-branch hadn't been taken (or had been torn down and rebuilt).
+	var hoistBuf strings.Builder
+
+	// Box declaration and refresh go in hoistBuf too so they stay at row
+	// scope regardless of nested structure.
+	hoistBuf.WriteString(fmt.Sprintf("%slet %s = %s;\n", indent, boxVar, itemVar))
 	updateBuf.WriteString(fmt.Sprintf("              %s = %s;\n", boxVar, itemVar))
-	// Top-level call: no hoisting needed, no guard.
-	g.emitEachRowBodyGuarded(createBuf, createBuf, updateBuf, destroyBuf,
+
+	// Walk into a temp createBuf so we can prepend hoistBuf cleanly.
+	var bodyBuf strings.Builder
+	g.emitEachRowBodyGuarded(&hoistBuf, &bodyBuf, updateBuf, destroyBuf,
 		nodes, parentVar, itemVar, boxVar, indent, "")
+
+	// Assemble: hoists first, then the create-body (which may reference
+	// hoisted variables from inside nested if blocks).
+	createBuf.WriteString(hoistBuf.String())
+	createBuf.WriteString(bodyBuf.String())
 }
 
 // emitEachRowBodyGuarded is the recursive implementation.

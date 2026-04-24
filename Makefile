@@ -11,6 +11,7 @@ all: build compile
 build:
 	@echo "Building Vela compiler..."
 	@go vet ./...
+	@go test -count=1 ./...
 	@go build -ldflags="-s -w" -o $(BINARY) .
 	@echo "   → ./$(BINARY)"
 

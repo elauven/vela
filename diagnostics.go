@@ -157,29 +157,31 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 	}
 
 	// ── Warn: $derived variable assigned in user code ──────────────────────
-	// Walk CleanScript to detect any $$set_X calls where X is a derived var.
-	// (These would be bugs: derived vars are read-only.)
-	if a.CleanScript != "" {
-		cleanProg := ParseJS(a.CleanScript)
-		WalkNode(cleanProg, func(n JsNode) bool {
-			call, ok := n.(*JsCallExpr)
-			if !ok {
-				return true
-			}
-			callee, ok := call.Callee.(*JsIdent)
-			if !ok {
-				return true
-			}
-			if strings.HasPrefix(callee.Name, "$$set_") {
-				varName := strings.TrimPrefix(callee.Name, "$$set_")
-				if derivedSet[varName] {
-					ds.Warn(callee.Pos,
-						"cannot assign to $derived variable %q — derived values are read-only", varName)
-				}
-			}
+	// Walk the raw program (not CleanScript) for assignments whose LHS is a
+	// derived var.  The rewriter doesn't produce $$set_<derived>() calls —
+	// derived names aren't in stateSet — so checking CleanScript for those
+	// was a no-op; we look at the pre-rewrite source shape instead.
+	WalkNode(prog, func(n JsNode) bool {
+		stmt, ok := n.(*JsExprStmt)
+		if !ok {
 			return true
-		})
-	}
+		}
+		// Direct assignment: doubled = …  / doubled += …  / etc.
+		if assign, ok := stmt.X.(*JsAssignExpr); ok {
+			if id, ok := assign.L.(*JsIdent); ok && derivedSet[id.Name] {
+				ds.Warn(id.Pos,
+					"cannot assign to $derived variable %q — derived values are read-only", id.Name)
+			}
+		}
+		// Update expression: doubled++ / --doubled
+		if upd, ok := stmt.X.(*JsUnaryExpr); ok && (upd.Op == "++" || upd.Op == "--") {
+			if id, ok := upd.X.(*JsIdent); ok && derivedSet[id.Name] {
+				ds.Warn(id.Pos,
+					"cannot assign to $derived variable %q — derived values are read-only", id.Name)
+			}
+		}
+		return true
+	})
 
 	// ── Warn: $effect with no reactive dependencies ────────────────────────
 	for i, eff := range a.Effects {

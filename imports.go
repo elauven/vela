@@ -62,16 +62,17 @@ func ParseImportRecords(script string, lineOffset int) []ImportRecord {
 		}
 		raw := script[d.Pos:end]
 
-		// Build the Names list in the order the old implementation did:
-		// namespace imports get special "* as X" encoding so RewriteImportLine
-		// can still work from these records if it wants to.  Everyone else
-		// is a plain local binding name.
+		// Build the Names list as bound local names: default first, then
+		// namespace (if any), then each specifier's local alias.  This
+		// mirrors Import.Names (analyzer.go) so both sources of truth
+		// agree; the old regex parser encoded namespaces as "* as X",
+		// but no remaining consumer relies on that shape.
 		var names []string
 		if d.DefaultName != "" {
 			names = append(names, d.DefaultName)
 		}
 		if d.Namespace != "" {
-			names = append(names, "* as "+d.Namespace)
+			names = append(names, d.Namespace)
 		}
 		for _, s := range d.Specifiers {
 			names = append(names, s.Local)
