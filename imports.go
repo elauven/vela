@@ -124,17 +124,6 @@ func RewriteImportPath(importPath string) string {
 	return importPath
 }
 
-// RewriteImportLine rewrites a single import source line.
-// Returns the rewritten line (unchanged if no path change is needed).
-//
-// For single-line inputs this is equivalent to RewriteScriptImports; kept
-// as a separate entry point for callers/tests that operate one line at a
-// time.  Multi-line import forms are fully supported — just pass the whole
-// statement text.
-func RewriteImportLine(line string) string {
-	return RewriteScriptImports(line)
-}
-
 // RewriteScriptImports parses every import statement in the script and
 // rewrites its source path via RewriteImportPath.  Returns the script
 // with only the path strings changed — whitespace, comments, and line

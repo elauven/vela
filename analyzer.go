@@ -627,15 +627,6 @@ func (a *Analysis) isStateName(name string) bool {
 	return false
 }
 
-func (a *Analysis) isDerivedName(name string) bool {
-	for _, v := range a.DerivedVars {
-		if v.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
 // findDeps retains the old signature so codegen and tests continue to work.
 func findDeps(expr string, vars []string) []string {
 	return FindDepsInNode(ParseJS(expr), vars)

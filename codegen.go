@@ -379,10 +379,11 @@ func (g *CodeGen) walkNodes(nodes []Node, parentVar string, isRootList bool) {
 		case *EachBlockNode:
 			g.walkEachBlock(n, parentVar)
 		case *ComponentNode:
+			// A ComponentNode with IfCond != "" never reaches this dispatch:
+			// groupIfChains (parser.go) wraps every such component in an
+			// IfChainNode before codegen runs, and walkIfChain handles those.
 			if n.EachExpr != "" {
 				g.walkComponentEach(n, parentVar)
-			} else if n.IfCond != "" {
-				g.walkComponentIf(n, parentVar)
 			} else {
 				g.walkComponent(n, parentVar)
 			}
@@ -400,10 +401,10 @@ func (g *CodeGen) walkElement(elem *ElementNode, varName, parentVar string, isRo
 		g.walkEach(elem, varName, parentVar)
 		return
 	}
-	if elem.IfCond != "" {
-		g.walkIf(elem, varName, parentVar)
-		return
-	}
+	// Note: an ElementNode with IfCond != "" never reaches this dispatch —
+	// groupIfChains (parser.go) wraps every such element in an IfChainNode
+	// before codegen runs.  The former `if elem.IfCond != "" { walkIf(...) }`
+	// arm and walkIf itself were deleted as unreachable code.
 
 	// Create element
 	g.create.WriteString(fmt.Sprintf("  const %s = document.createElement('%s');\n", varName, elem.Tag))
@@ -539,10 +540,10 @@ func (g *CodeGen) walkChildren(children []Node, parentVar string) {
 		case *EachBlockNode:
 			g.walkEachBlock(c, parentVar)
 		case *ComponentNode:
+			// IfCond path consumed by groupIfChains before codegen — see
+			// walkNodes for the full rationale.
 			if c.EachExpr != "" {
 				g.walkComponentEach(c, parentVar)
-			} else if c.IfCond != "" {
-				g.walkComponentIf(c, parentVar)
 			} else {
 				g.walkComponent(c, parentVar)
 			}
@@ -1090,69 +1091,6 @@ func (g *CodeGen) walkComponentEach(comp *ComponentNode, parentVar string) {
 	g.cleanup.WriteString(fmt.Sprintf("      %s.forEach(b => b.comp.destroy());\n", blocks))
 }
 
-// walkComponentIf handles <MyComp #if="cond" :prop="val" />
-func (g *CodeGen) walkComponentIf(comp *ComponentNode, parentVar string) {
-	varName := g.id()
-	anchor := varName + "_a"
-	instVar := varName + "_inst"
-	wrapVar := varName + "_wrap"
-	fn := "$$cif_" + varName
-
-	g.create.WriteString(fmt.Sprintf(
-		"  const %s = document.createComment('if-comp');\n", anchor))
-	g.wire.WriteString(fmt.Sprintf("  %s.appendChild(%s);\n", parentVar, anchor))
-	g.create.WriteString(fmt.Sprintf("  let %s = null, %s = null;\n", instVar, wrapVar))
-
-	var propsEntries []string
-	for _, attr := range comp.Attrs {
-		if attr.IsBind {
-			propsEntries = append(propsEntries, fmt.Sprintf("%s: %s", attr.Name, attr.Value))
-		} else if !attr.IsEvent {
-			propsEntries = append(propsEntries, fmt.Sprintf("%s: '%s'", attr.Name, escapeAttr(attr.Value)))
-		}
-	}
-	propsExpr := "{}"
-	if len(propsEntries) > 0 {
-		propsExpr = "{ " + strings.Join(propsEntries, ", ") + " }"
-	}
-
-	var fnBuf strings.Builder
-	fnBuf.WriteString(fmt.Sprintf("  function %s($$cond) {\n", fn))
-	fnBuf.WriteString("    if ($$cond) {\n")
-	fnBuf.WriteString(fmt.Sprintf("      if (!%s) {\n", instVar))
-	fnBuf.WriteString(fmt.Sprintf("        %s = document.createElement('div');\n", wrapVar))
-	fnBuf.WriteString(fmt.Sprintf("        %s.setAttribute('%s','');\n", wrapVar, g.scopeID))
-	for _, attr := range comp.Attrs {
-		if attr.IsEvent {
-			fnBuf.WriteString(fmt.Sprintf(
-				"        %s.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
-				wrapVar, attr.Name, attr.Value))
-		}
-	}
-	fnBuf.WriteString(fmt.Sprintf("        %s = %s(%s, %s, {});\n", instVar, comp.Name, wrapVar, propsExpr))
-	fnBuf.WriteString(fmt.Sprintf("        %[1]s.before(%[2]s);\n", anchor, wrapVar))
-	fnBuf.WriteString("      } else {\n")
-	fnBuf.WriteString(fmt.Sprintf("        %s.set(%s);\n", instVar, propsExpr))
-	fnBuf.WriteString("      }\n")
-	fnBuf.WriteString(fmt.Sprintf("    } else if (%s) {\n", instVar))
-	fnBuf.WriteString(fmt.Sprintf("      %s.destroy(); %s = null; %s = null;\n", instVar, instVar, wrapVar))
-	fnBuf.WriteString("    }\n  }\n")
-	g.create.WriteString(fnBuf.String())
-
-	call := fmt.Sprintf("  %s(%s);", fn, comp.IfCond)
-	g.init.WriteString(call + "\n")
-	allDeps := findDeps(comp.IfCond, g.analysis.reactiveNames())
-	for _, attr := range comp.Attrs {
-		if attr.IsBind {
-			allDeps = append(allDeps, findDeps(attr.Value, g.analysis.reactiveNames())...)
-		}
-	}
-	for _, dep := range allDeps {
-		g.addUpdate(dep, call)
-	}
-	g.cleanup.WriteString(fmt.Sprintf("      if (%s) %s.destroy();\n", instVar, instVar))
-}
-
 // walkSlot emits code that renders $$slots["name"](parent) if the slot is
 // filled by the parent, or falls back to the declared fallback children.
 func (g *CodeGen) walkSlot(slot *SlotNode, parentVar string) {
@@ -1332,22 +1270,6 @@ func (g *CodeGen) walkComponentIfChain(chain *IfChainNode, parentVar string) {
 	for i := range chain.Branches {
 		g.cleanup.WriteString(fmt.Sprintf("      if (%s) %s.destroy();\n", instVars[i], instVars[i]))
 	}
-}
-
-// ──────────────────────────────────────────────
-//  Legacy single #if
-// ──────────────────────────────────────────────
-
-func (g *CodeGen) walkIf(elem *ElementNode, varName, parentVar string) {
-	// Wrap in a single-branch IfChainNode and delegate.
-	chain := &IfChainNode{
-		Branches: []*IfBranch{{
-			Cond:     elem.IfCond,
-			Children: elem.Children,
-			Elem:     elem,
-		}},
-	}
-	g.walkIfChain(chain, parentVar)
 }
 
 // walkEachBlock handles Svelte-style {#each items as item (key)}...{/each}.
@@ -2958,21 +2880,6 @@ func buildExpr(parts []*Part) string {
 	return b.String()
 }
 
-// buildChildrenExpr produces a single JS expression that represents all text
-// content of a node's children (for simple #if blocks).
-func (g *CodeGen) buildChildrenExpr(children []Node) string {
-	var parts []*Part
-	for _, child := range children {
-		if t, ok := child.(*TextNode); ok {
-			parts = append(parts, t.Parts...)
-		}
-	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return buildExpr(parts)
-}
-
 // ──────────────────────────────────────────────
 //  Utility
 // ──────────────────────────────────────────────
@@ -3122,7 +3029,7 @@ func containsStr(slice []string, s string) bool {
 
 // isStructuralUpdate reports whether an update statement (as passed to
 // addUpdate) is a call to a mount/unmount function — $$chain_N(),
-// $$each_N(arr), $$ceach_N(arr), $$bceach_N(arr), $$cif_N(cond).
+// $$each_N(arr), $$ceach_N(arr), $$bceach_N(arr).
 // These must fire BEFORE attribute updates within the same setter, so a
 // conditional branch that reads e.g. `editTarget.name` gets unmounted
 // before any deferred attribute write tries to dereference null.
@@ -3144,7 +3051,6 @@ func isStructuralUpdate(u string) bool {
 		"$$each_",
 		"$$ceach_",
 		"$$bceach_",
-		"$$cif_",
 	} {
 		if strings.HasPrefix(t, prefix) {
 			return true
