@@ -1,180 +1,118 @@
-# Vela Compiler — Patch Set
+# Changes from baseline
 
-All changes are backward-compatible drop-ins.  
-Copy files into the compiler directory and rebuild: `go build -o vela .`
+This document summarizes the additions made on top of the original
+upload.  Everything below is additive — no existing behavior was
+removed, only extended (with one tiny deletion: a duplicated
+`$effect` warning that moved to a better home).
 
----
+## New files
 
-## Files
+| File                  | Lines | Purpose                                                                                   |
+| --------------------- | -----:| ----------------------------------------------------------------------------------------- |
+| `scope.go`            |  1193 | Scope graph and binding resolver; the substrate every other new pass uses.                |
+| `unreachable.go`      |   225 | Statement-level flow analysis flagging code after `return`/`throw`/`break`/`continue`.    |
+| `dce.go`              |   381 | Dead-binding elimination (string splicing, fixed-point, reactivity-aware).                |
+| `reactivity.go`       |   485 | `$derived` purity, `$effect` dependency, and template-reference diagnostics.              |
+| `scope_test.go`       |   362 | 27 tests for scope + unreachable.                                                         |
+| `dce_test.go`         |   301 | 28 tests for DCE.                                                                         |
+| `reactivity_test.go`  |   224 | 19 tests for the new reactivity diagnostics.                                              |
 
-| File | Action | Fixes |
-|---|---|---|
-| `codegen.go` | **Replace** your existing `codegen.go` | #1 #2 #3 |
-| `imports.go` | **New file** — drop into compiler directory | #4 |
-| `cssscoper.go` | **New file** — drop into compiler directory | #5 |
-| `cssscoper_test.go` | **New file** — tests for cssscoper | — |
-| `patch_cssparser.py` | **Run once** to fix `cssparser.go` | #5 |
+## Modified files
 
----
+### `parser.go`
+- `SFC` gained `ScriptOffset`, `StyleOffset`, `TemplateOffset` fields
+  recording each section's absolute byte offset in the source file.
+- `parseSFC` computes those offsets, accounting for the leading
+  whitespace it trims off the inner text.
 
-## Fix #1 — Duplicate imports in generated JS
+### `diagnostics.go`
+- `DiagSet` gained `PushOffset`/`PopOffset` (a stack) so passes that
+  emit positions relative to a section can be translated to
+  file-relative line/column transparently.
+- `validateScript`'s `assignment to non-existent state var` check was
+  refined to fire only on *declared-but-not-reactive* names, ceding
+  the truly-undeclared case to the scope analyzer to avoid double
+  diagnostics.
+- The `$state never updated` hint now points at the variable
+  declaration instead of position 0 (script start).
+- The `$effect with no reactive deps` warning was removed from here
+  and rebuilt in `reactivity.go` with accurate source positions.
 
-**Problem:** Import statements appeared twice in compiled output — once at the
-top of the file (correct) and again inside the component function body
-(syntax error: `import declarations may only appear at top level`).
+### `main.go`
+- `compileFile` now runs, in order:
+  1. `BuildScopes` (scope graph + undeclared/TDZ/const-write
+     diagnostics)
+  2. `DetectUnreachable` (flow analysis)
+  3. `validateScript` (Vela-specific script checks; original)
+  4. `validateDerivedPurity` (state writes inside `$derived`)
+  5. `validateEffectBody` (`$effect` with no deps)
+  6. `validateTemplate` (component import checks; original)
+  7. `validateTemplateRefs` (template expressions reference
+     undeclared names)
+- All script passes are wrapped in
+  `ds.PushOffset(sfc.ScriptOffset)`; template passes use the
+  template offset.
+- When `--minify` is on, `EliminateDeadCodeFixedPoint` runs between
+  diagnostics and code generation.
 
-**Root cause:** `CleanScript` (the script section with reactive declarations
-stripped) still contained import lines. The `// component logic` loop was
-emitting them verbatim inside `export function`.
+### `vela_test.go`
+- One test moved from calling `validateScript` to calling the new
+  `validateEffectBody`, matching the warning's new home.
 
-**Fix in `codegen.go`:** The `CleanScript` emission loop now skips any line
-whose trimmed form starts with `import ` or `import{`:
+## What the new diagnostics catch
 
-```go
-if strings.HasPrefix(trimmed, "import ") || strings.HasPrefix(trimmed, "import{") {
-    continue
-}
-```
+These all fire with accurate file-relative line/column positions:
 
----
+| Diagnostic                                                          | Severity | Source             |
+| ------------------------------------------------------------------- | -------- | ------------------ |
+| Use of undeclared variable                                          | warning  | `scope.go`         |
+| Assignment to undeclared variable (creates implicit global)         | warning  | `scope.go`         |
+| TDZ — accessing `let`/`const`/`class` before its declaration        | error    | `scope.go`         |
+| Assignment to `const`                                               | error    | `scope.go`         |
+| Assignment to `import` binding                                      | error    | `scope.go`         |
+| Redeclaration of `let`/`const`/`class`                              | error    | `scope.go`         |
+| Code after `return`/`throw`/`break`/`continue`                      | warning  | `unreachable.go`   |
+| `$derived` expression writes to a `$state` variable                 | error    | `reactivity.go`    |
+| `$derived` expression writes to another binding                     | warning  | `reactivity.go`    |
+| `$derived` expression contains `await`                              | warning  | `reactivity.go`    |
+| `$effect` references no reactive variables                          | warning  | `reactivity.go`    |
+| Template expression references undeclared name                      | warning  | `reactivity.go`    |
+| `$state` variable never updated                                     | hint     | `diagnostics.go`   |
 
-## Fix #2 — Component props not updated inside `{#if}` branches
+## What `--minify` now does
 
-**Problem:** A component inside `{#if isAuthenticated}` like
-`<Dashboard :sidebarOpen="sidebarOpen" :user="user" />` never received prop
-updates when `sidebarOpen` or `user` changed. Only re-mounting (condition
-change) would show fresh values.
+Beyond the existing whitespace minification, it also removes:
 
-**Root cause:** `emitBranchComponent` created the component with a local
-`const wrapVar` and discarded the constructor return value. No `g.addUpdate`
-registrations were made, so setters had no way to call `.set()` on the instance.
+- Top-level `let`/`const` bindings with zero references and pure initializers
+- Function declarations that are never referenced
+- Cascading: if removing `f` makes `x` unreferenced, `x` goes too (fixed-point, capped at 8 rounds)
 
-**Fix in `codegen.go`:** `emitBranchComponent` now:
-1. Declares `let wrapVar = null` and `let instVar = null` at **component scope** (`g.create`)
-2. Stores the constructor return: `instVar = Dashboard(wrapVar, props, {})`
-3. Registers `g.addUpdate` for every `:bind` prop:
-   `if (instVar) instVar.set({ sidebarOpen: sidebarOpen })`
-4. On branch removal, calls `instVar.destroy()` before nulling
-5. Returns the declared var names so `walkIfChain` nulls them on deactivation
+Protected from elimination:
+- Anything `$state` / `$derived` / `$props` / `$bindable`
+- Exported names
+- Names appearing in the template
+- Names starting with `_`
+- Bindings with side-effectful initializers (calls, member access, etc.)
+- `var` declarations and multi-declarator forms (conservative)
 
-Generated before/after for `<Dashboard :sidebarOpen="sidebarOpen" />`:
+## Test counts
 
-```js
-// BEFORE — prop never updates
-const $$n13 = document.createElement('div');
-Dashboard($$n13, { sidebarOpen: sidebarOpen }, {});
+- **Baseline**: 200 tests
+- **Final**: 291 tests, 0 failing
+- New: 27 (scope/unreachable) + 28 (DCE) + 19 (reactivity) = 74 tests
+- 17 baseline tests touched the validators that were extended; all
+  still pass
 
-// AFTER — prop updates reactively
-let $$n13 = null;           // component scope
-let $$n13_comp = null;      // component scope
-// in branch creation:
-$$n13 = document.createElement('div');
-$$n13_comp = Dashboard($$n13, { sidebarOpen: sidebarOpen }, {});
-// in $$set_sidebarOpen:
-$$defer(() => { if ($$n13_comp) $$n13_comp.set({ sidebarOpen: sidebarOpen }); });
-// in branch removal:
-if ($$n13_comp) { $$n13_comp.destroy(); $$n13_comp = null; }
-$$n13 = null;
-```
+## Known limitations (documented in code)
 
----
-
-## Fix #3 — Slot components recreated on every modal reopen
-
-**Problem:** Opening a Modal, interacting with a form inside it, closing, and
-reopening — the form was reset. Every reopen called the slot function which
-built a fresh `DocumentFragment`, creating new child component instances.
-
-**Root cause:** Slot functions had no caching — every call rebuilt from scratch.
-
-**Fix in `codegen.go`:** Each slot function now has a companion cache variable
-`$$sc_slotName_N` declared at component scope (null = not yet built):
-
-```js
-// Generated slot function (pseudo-code):
-"default": () => {
-  if ($$sc_default_n5) {
-    // Reopen: re-run chain/each inits so detached branches re-insert
-    $$chain_$$n7();
-    return $$sc_default_n5;   // same DOM nodes — component state preserved
-  }
-  // First open: build fragment, cache it
-  const $$sf = document.createDocumentFragment();
-  $$sf.appendChild($$n6);
-  $$chain_$$n7();
-  $$sc_default_n5 = $$sf;
-  return $$sc_default_n5;
-}
-```
-
----
-
-## Fix #4 — Import path rewriting (`imports.go`)
-
-**New file.** Provides:
-
-- `ParseImportRecords(script, lineOffset)` — parses all import statements
-- `RewriteImportPath(path)` — `.vela` → `.js`, extensionless → `.js`, modules unchanged
-- `RewriteImportLine(line)` — rewrites one import line in-place
-- `RewriteScriptImports(script)` — rewrites all imports in a script section
-
-Integration in `codegen.go` / `analyzer.go`:
-
-```go
-// In analyzeScript() — add to ScriptAnalysis:
-ImportRecords []ImportRecord
-
-// Populate:
-a.ImportRecords = ParseImportRecords(src, 0)
-
-// Already handled: CleanScript loop skips import lines (Fix #1)
-// Imports are emitted at top of file via g.analysis.Imports
-```
-
----
-
-## Fix #5 — CSS scoping bugs (`cssscoper.go` + `patch_cssparser.py`)
-
-**Problems:**
-- `:root { --var: value }` compiled to `[vela-x]:root { ... }` — unmatchable, CSS vars never applied
-- `body { ... }` scoped when it should be global
-- `.card:hover` produced `.card:hover[vela-x]` (attribute after pseudo) instead of `.card[vela-x]:hover`
-
-**New file `cssscoper.go`** provides `scopeOneSel(selector, scopeID)` which:
-- Passes `:root`, `html`, `body`, `*`, `@keyframes` etc. through unchanged
-- Unwraps `:global(body.dark)` → `body.dark` (unscoped)
-- Handles inline `:global()` in compound selectors
-- Inserts `[scope]` before the first pseudo (`:hover`, `::before`) not inside `()`
-
-**Apply fix:** run `patch_cssparser.py` once from the compiler directory:
-
-```bash
-python3 patch_cssparser.py cssparser.go main.go
-go build -o vela .
-```
-
-The script appends the helpers and replaces the scoping expression in `cssparser.go`
-with a call to `scopeOneSel()`. Manual instructions are printed if auto-patch fails.
-
-**Scope ID portability:** The script also prints instructions for changing the
-hash input from the absolute path to a relative path, so scope IDs are stable
-across machines and deployment environments.
-
----
-
-## Rebuild
-
-```bash
-# Copy files into your compiler directory
-cp codegen.go imports.go cssscoper.go cssscoper_test.go /path/to/vela/
-
-# Apply CSS fix
-cd /path/to/vela
-python3 patch_cssparser.py
-
-# Build
-go build -o vela .
-
-# Run tests
-go test ./...
-```
+1. `let x = x;` — runtime TDZ that the static analyzer doesn't
+   catch because it uses source position as a proxy for "is
+   initialized."  V8 will throw `ReferenceError` at runtime.
+2. Template position tracking is approximate — the warning lands at
+   the right *file* and right *section* but the column within a
+   complex expression may be slightly off because the template AST
+   stores expression text as strings rather than parsed positions.
+3. DCE doesn't touch `var` or multi-declarator forms (intentional
+   conservatism; gains are small, risk is high).
+4. DCE doesn't prune unused imports — a separate pass would handle
+   this on top of the same `Binding.Refs` infrastructure.

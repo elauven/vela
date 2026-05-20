@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -1370,7 +1372,10 @@ func TestValidateScript_WarnsEffectNoDeps(t *testing.T) {
 	prog := ParseJS(script)
 	a := analyzeScript(script)
 	ds := NewDiagSet("test.vela", script)
-	validateScript(prog, a, ds)
+	// The effect-no-deps warning moved from validateScript into
+	// validateEffectBody (reactivity.go) so it could carry an
+	// accurate source position.
+	validateEffectBody(prog, a, ds)
 	found := false
 	for _, d := range ds.Warnings() {
 		if strings.Contains(d.Message, "no reactive variables") {
@@ -2718,8 +2723,11 @@ func TestGenerateCode_IfBranchHasChildren(t *testing.T) {
 	a := analyzeScript(sfc.Script)
 	code := generateCode("Comp", sfc, nodes, a, "vela-test")
 
-	// The if-chain function must create the label and input inside the branch element
-	// NOT as siblings at the root level
+	// The if-chain function must mount the label and input inside the branch
+	// element, NOT as siblings at the root level.  The emission shape depends
+	// on whether the content is static (compressed to insertAdjacentHTML) or
+	// dynamic (emitted as createElement).  Both are correct; what matters is
+	// that the content lives inside the chain function's branch body.
 	chainFnStart := strings.Index(code, "function $$chain_")
 	if chainFnStart < 0 {
 		t.Fatal("no $$chain_ function found")
@@ -2734,10 +2742,16 @@ func TestGenerateCode_IfBranchHasChildren(t *testing.T) {
 	}
 	chainFn := code[chainFnStart:chainFnEnd]
 
-	// The label createElement must appear inside the chain function
-	if !strings.Contains(chainFn, "createElement('label')") {
-		t.Errorf("label not created inside #if chain function (branch body empty):\n%s", chainFn)
+	// The label (static) may appear either as createElement('label') in the
+	// per-element path, or as '<label' inside an insertAdjacentHTML call
+	// when batched with adjacent static siblings.
+	hasLabelImperative := strings.Contains(chainFn, "createElement('label')")
+	hasLabelBatched := strings.Contains(chainFn, "<label")
+	if !hasLabelImperative && !hasLabelBatched {
+		t.Errorf("label not mounted inside #if chain function (branch body empty):\n%s", chainFn)
 	}
+	// The input has a binding (:value, @input) so it's dynamic — still
+	// emitted imperatively regardless of batching.
 	if !strings.Contains(chainFn, "createElement('input')") {
 		t.Errorf("input not created inside #if chain function (branch body empty):\n%s", chainFn)
 	}
@@ -3867,6 +3881,395 @@ func compileVelaString(t *testing.T, name, raw string) string {
 	return generateCode(name, sfc, tmpl, analysis, "vela-reg")
 }
 
+// TestRealTemplates_RuntimeMount runs each compiled template inside a real
+// JS engine (Node + jsdom) under realistic props and inside a simulated
+// _batchRun, asserting no exceptions are thrown.  This catches an entire
+// class of bug that source-only tests miss:
+//
+//   1. TreeWalker invalidation on multi-hole subtrees — the compiled code
+//      parses fine but throws TypeError at runtime when nextNode() returns
+//      null after a tree mutation.
+//   2. Captured refs not visible from setters — let-hoisting omissions
+//      cause ReferenceError when a setter fires, but the compiled code
+//      itself parses cleanly.
+//   3. Off-by-one errors in chain function teardown that only show up
+//      when the branch toggles on→off→on.
+//
+// The static-validation tests (OutputParses, NoEmptyControlFlowGuards) run
+// on every machine; this runtime test requires Node + jsdom and SKIPS
+// cleanly if either is unavailable.  When it CAN run, it's the strongest
+// guarantee available short of a real browser.
+//
+// Each template gets a "scenario" — a sequence of set() calls inside a
+// batch that drives the component through realistic state transitions.
+// The scenarios were chosen to activate every {#if} branch in each
+// template so unguarded code paths get exercised.
+func TestRealTemplates_RuntimeMount(t *testing.T) {
+	// Locate jsdom: try VELA_JSDOM_DIR first, then common dev paths.  Skip
+	// if no install is reachable — most CI machines won't have jsdom and
+	// shouldn't fail on its absence.
+	jsdomDir := findJsdomDir(t)
+	if jsdomDir == "" {
+		t.Skip("jsdom not available — set VELA_JSDOM_DIR to a directory whose node_modules/jsdom is installed")
+	}
+
+	// Per-template scenarios.  Each entry is a sequence of set() calls
+	// that drive the component through state transitions.  The scenarios
+	// activate every {#if} branch in the template so unguarded code paths
+	// are exercised by the runtime mount.
+	scenarios := map[string]string{
+		// App: toggle authenticated → not → authenticated again.
+		"App": `[{"user":{"name":"Alice","avatar":"P"},"isAuthenticated":true},{"isAuthenticated":false},{"user":{"name":"Bob","avatar":"L"},"isAuthenticated":true}]`,
+
+		// Card: cycle through showing the title-with-subtitle path, then
+		// title-only path, then no-header path.  Hits the inline {#if subtitle}
+		// inside the {#if title} chain — the original Card bug location.
+		"Card": `[{"title":"Hello","subtitle":"world"},{"subtitle":""},{"title":""},{"title":"Back"}]`,
+
+		// LoginPage: show error, hide error, show again.
+		"LoginPage": `[{"error":"Invalid credentials"},{"error":""},{"error":"Locked out"},{"username":"admin","password":"admin"}]`,
+
+		// Modal: open with size variants.
+		"Modal": `[{"open":true,"title":"Hello","size":"md"},{"size":"lg"},{"open":false},{"open":true,"title":"Back"}]`,
+
+		// OrdersPage / UsersPage: no specific state needed — the store-driven
+		// each blocks don't fire until the store pushes data.
+		"OrdersPage": `[{}]`,
+		"UsersPage":  `[{}]`,
+	}
+
+	entries, err := os.ReadDir("testdata")
+	if err != nil {
+		t.Skip("testdata/ not populated")
+	}
+
+	// Materialize a temp directory with: shim modules at /stores/*.js and
+	// /components/*.js (matching what the templates import), plus a runner
+	// script that mounts each component.
+	tmp := t.TempDir()
+	if err := writeRuntimeShims(tmp); err != nil {
+		t.Fatalf("writing shims: %v", err)
+	}
+
+	// Compile each .vela template into the temp dir.  Keep nested layout
+	// the templates expect (App at root, OrdersPage under pages/, etc.).
+	templates := map[string]string{} // basename → file path
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".vela") {
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), ".vela")
+		data, err := os.ReadFile(filepath.Join("testdata", e.Name()))
+		if err != nil {
+			t.Errorf("%s: read: %v", e.Name(), err)
+			continue
+		}
+		js := compileVelaString(t, name, string(data))
+		// OrdersPage and UsersPage import from "../stores" so they need
+		// to live under a subdir; everything else at root.
+		var dst string
+		if name == "OrdersPage" || name == "UsersPage" {
+			os.MkdirAll(filepath.Join(tmp, "pages"), 0755)
+			dst = filepath.Join(tmp, "pages", name+".js")
+		} else {
+			dst = filepath.Join(tmp, name+".js")
+		}
+		if err := os.WriteFile(dst, []byte(js), 0644); err != nil {
+			t.Fatalf("%s: write: %v", name, err)
+		}
+		templates[name] = dst
+	}
+
+	// Write the runner inside jsdomDir so its `import 'jsdom'` resolves via
+	// Node's normal node_modules lookup (which walks up from the script's
+	// location, not from CWD).  Use a unique name to avoid collisions when
+	// tests run in parallel; clean up at end.
+	runnerName := fmt.Sprintf("vela_runtime_runner_%d.mjs", os.Getpid())
+	runnerPath := filepath.Join(jsdomDir, runnerName)
+	if err := os.WriteFile(runnerPath, []byte(runtimeRunnerScript), 0644); err != nil {
+		t.Fatalf("writing runner: %v", err)
+	}
+	defer os.Remove(runnerPath)
+
+	// Build the input: one line per template — "name|path|scenarioJSON".
+	var inputLines []string
+	for name, path := range templates {
+		scen, ok := scenarios[name]
+		if !ok {
+			scen = "[{}]"
+		}
+		inputLines = append(inputLines, fmt.Sprintf("%s|%s|%s", name, path, scen))
+	}
+	sort.Strings(inputLines) // deterministic order for log readability
+
+	// Run the runner with CWD = jsdomDir so its `import 'jsdom'` resolves.
+	cmd := exec.Command("node", runnerPath)
+	cmd.Dir = jsdomDir
+	cmd.Stdin = strings.NewReader(strings.Join(inputLines, "\n") + "\n")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("runner output:\n%s", out)
+		t.Fatalf("runner failed: %v", err)
+	}
+
+	// Parse output: lines beginning with OK or FAIL.
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "FAIL ") {
+			t.Errorf("runtime mount: %s", strings.TrimPrefix(line, "FAIL "))
+		} else if !strings.HasPrefix(line, "OK ") {
+			// Unexpected line — log for visibility but don't fail the test
+			// (could be a benign warning from jsdom).
+			t.Logf("runner: %s", line)
+		}
+	}
+}
+
+// findJsdomDir returns a directory whose node_modules/jsdom is installed,
+// or "" if none is reachable.  Honors VELA_JSDOM_DIR.
+func findJsdomDir(t *testing.T) string {
+	if v := os.Getenv("VELA_JSDOM_DIR"); v != "" {
+		if _, err := os.Stat(filepath.Join(v, "node_modules", "jsdom")); err == nil {
+			return v
+		}
+		t.Logf("VELA_JSDOM_DIR=%s but no jsdom found there", v)
+	}
+	// Common dev paths to probe.
+	candidates := []string{
+		"/home/claude/svelte-compare", // this project's sibling
+		filepath.Join(os.Getenv("HOME"), "svelte-compare"),
+	}
+	for _, dir := range candidates {
+		if _, err := os.Stat(filepath.Join(dir, "node_modules", "jsdom")); err == nil {
+			return dir
+		}
+	}
+	return ""
+}
+
+// writeRuntimeShims materializes the shim modules each template imports.
+// These mimic the surface area of the real stores (subscribe + various
+// methods) without actually doing anything reactive.  The components mount
+// and run their wiring; we don't care about real reactivity for this test.
+func writeRuntimeShims(dir string) error {
+	mkdir := func(p string) { os.MkdirAll(p, 0755) }
+	write := func(p, body string) error {
+		return os.WriteFile(p, []byte(body), 0644)
+	}
+	mkdir(filepath.Join(dir, "stores"))
+	mkdir(filepath.Join(dir, "components"))
+
+	if err := write(filepath.Join(dir, "stores", "auth.js"), `
+export const auth = { subscribe: () => () => {}, user: null };
+export const logout = () => {};
+export const login = () => Promise.resolve();
+`); err != nil {
+		return err
+	}
+	if err := write(filepath.Join(dir, "stores", "data.js"), `
+export const settings = { subscribe: () => () => {} };
+export const orders   = { subscribe: () => () => {} };
+export const users    = { subscribe: () => () => {} };
+export const deleteOrder = () => {};
+export const updateOrderStatus = () => {};
+export const deleteUser = () => {};
+export const ROLES = ['admin', 'editor', 'viewer'];
+`); err != nil {
+		return err
+	}
+	// Generic component shim: callable as Component(target, props, slots),
+	// returns { destroy, set } compatible with what the real components do.
+	componentShim := `
+export default function (target, props, slots) {
+  const el = document.createElement('div');
+  target.appendChild(el);
+  return { el, destroy: () => el.remove(), set: () => {} };
+};
+`
+	for _, name := range []string{"Card", "Badge", "Modal", "Toast"} {
+		// Named-export shim: matches the real components' export shape.
+		body := fmt.Sprintf(`
+export const %s = (target, props, slots) => {
+  const el = document.createElement('div');
+  target.appendChild(el);
+  return { el, destroy: () => el.remove(), set: () => {} };
+};
+`, name)
+		if err := write(filepath.Join(dir, "components", name+".js"), body); err != nil {
+			return err
+		}
+	}
+	// Top-level page shims for App's imports.
+	for _, name := range []string{"LoginPage", "Dashboard"} {
+		body := fmt.Sprintf(`
+export const %s = (target, props, slots) => {
+  const el = document.createElement('div');
+  target.appendChild(el);
+  return { el, destroy: () => el.remove(), set: () => {} };
+};
+`, name)
+		if err := write(filepath.Join(dir, name+".js"), body); err != nil {
+			return err
+		}
+	}
+	_ = componentShim // reserved for future use
+	return nil
+}
+
+// runtimeRunnerScript is the Node runner.  Reads "name|path|scenarioJSON"
+// lines from stdin; for each, sets up jsdom + a simulated _batchRun, mounts
+// the component, drives it through the scenario, and reports OK or FAIL.
+const runtimeRunnerScript = `
+import { JSDOM } from 'jsdom';
+import { pathToFileURL } from 'url';
+import * as readline from 'readline';
+
+const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only' });
+globalThis.document    = dom.window.document;
+globalThis.window      = dom.window;
+globalThis.CustomEvent = dom.window.CustomEvent;
+globalThis.Node        = dom.window.Node;
+globalThis.NodeFilter  = dom.window.NodeFilter;
+globalThis.performance = { now: () => Date.now() };
+
+// Simulated runtime _batchRun: defer DOM-touching work until the batch
+// completes, mirroring the real runtime's semantics.  Components call
+// $$defer for setter-triggered updates; without batching, intermediate
+// states (e.g. isAuthenticated=true while user is still null) would
+// crash chain functions that read both.
+const _B = Symbol.for('vela.batch');
+globalThis[_B] = { depth: 0, queue: [] };
+globalThis[Symbol.for('vela.defer')] = (fn) => {
+  const b = globalThis[_B];
+  if (b.depth > 0) b.queue.push(fn);
+  else fn();
+};
+// Register $$tmpl so compiled code uses the runtime path (not the inline
+// fallback).  Mirrors the real runtime exactly — see runtime.js.  Testing
+// the runtime helper means future changes that subtly break the bundled
+// behavior (e.g. wrong NodeFilter constant, off-by-one anchor index) get
+// caught here even though the fallback would still work.
+globalThis[Symbol.for('vela.tmpl')] = (parent, html, n) => {
+  parent.innerHTML = html;
+  const w = document.createTreeWalker(parent, 128);
+  const r = new Array(n);
+  for (let i = 0; i < n; i++) r[i] = w.nextNode();
+  return r;
+};
+function batchRun(fn) {
+  const b = globalThis[_B];
+  b.depth++;
+  try { fn(); }
+  finally {
+    if (--b.depth === 0 && b.queue.length) {
+      const q = b.queue.splice(0);
+      for (const f of q) f();
+    }
+  }
+}
+
+const rl = readline.createInterface({ input: process.stdin });
+const lines = [];
+for await (const line of rl) lines.push(line);
+
+for (const line of lines) {
+  if (!line.trim()) continue;
+  const [name, path, scenarioJSON] = line.split('|');
+  let scenario;
+  try { scenario = JSON.parse(scenarioJSON); }
+  catch (e) { console.log('FAIL ' + name + ': bad scenario JSON: ' + e.message); continue; }
+
+  try {
+    const mod = await import(pathToFileURL(path).href);
+    const Comp = mod[name] || mod.default;
+    if (typeof Comp !== 'function') {
+      console.log('FAIL ' + name + ': no exported component named "' + name + '"');
+      continue;
+    }
+    const target = dom.window.document.createElement('div');
+    dom.window.document.body.appendChild(target);
+    const inst = Comp(target, {}, {});
+    // Drive through the scenario steps inside batched updates.
+    for (const step of scenario) {
+      batchRun(() => inst.set(step));
+    }
+    // Tear down.
+    inst.destroy();
+    target.remove();
+    console.log('OK ' + name);
+  } catch (e) {
+    const msg = (e && e.message) ? e.message : String(e);
+    const stack = (e && e.stack) ? e.stack.split('\\n').slice(0, 3).join(' | ') : '';
+    console.log('FAIL ' + name + ': ' + msg + (stack ? ' [' + stack + ']' : ''));
+  }
+}
+`
+
+// TestRealTemplates_NoEmptyControlFlowGuards scans every generated output
+// for accidentally-empty control-flow conditions: `if ()`, `while ()`,
+// `else if ()`.  These are syntax errors in real JavaScript engines but
+// our internal JSParser is too permissive to catch them — it accepts
+// empty parenthesized expressions and skips on.
+//
+// The bug class: when a code-generation site formats `if (%s) ...` with
+// an empty branchVar, the result is `if () ...`, which crashes the
+// browser at module-load time with `SyntaxError: expected expression,
+// got ')'`.  This regression caught a real shipping issue in Card.vela:
+// inline-if blocks (raw `if (cond) { ... }` emission for nested if-chains)
+// pass an empty branchVar to the Step 3 emitter, which then formatted it
+// into the update guard.
+//
+// Pinning the symptom rather than just the root cause means future
+// emission paths can't reintroduce the same shape silently.
+func TestRealTemplates_NoEmptyControlFlowGuards(t *testing.T) {
+	entries, err := os.ReadDir("testdata")
+	if err != nil {
+		t.Skip("testdata/ not populated")
+	}
+	// These patterns must NEVER appear in generated JS.  Each is a
+	// browser-rejected syntax that our internal parser accepts.
+	badPatterns := []string{
+		"if ()",
+		"if()",
+		"} else if ()",
+		"} else if()",
+		"while ()",
+		"while()",
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".vela") {
+			continue
+		}
+		path := filepath.Join("testdata", e.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("%s: read: %v", e.Name(), err)
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), ".vela")
+		code := compileVelaString(t, name, string(data))
+		for _, bad := range badPatterns {
+			if strings.Contains(code, bad) {
+				// Report enough context to make the bug obvious.
+				idx := strings.Index(code, bad)
+				start := idx - 60
+				if start < 0 {
+					start = 0
+				}
+				end := idx + len(bad) + 60
+				if end > len(code) {
+					end = len(code)
+				}
+				t.Errorf("%s: emitted %q (browser-rejected syntax).\n  context: ...%s...",
+					e.Name(), bad, code[start:end])
+			}
+		}
+	}
+}
+
 // TestRealTemplates_NoSprintfLeakage verifies that no generated output
 // contains `%!(EXTRA ` — the format-string footprint of a Sprintf call
 // with wrong arg count.  These historically produced outright JS syntax
@@ -3952,7 +4355,11 @@ func TestRealTemplates_NoDuplicateConsts(t *testing.T) {
 	if err != nil {
 		t.Skip("testdata/ not populated")
 	}
-	constRe := regexp.MustCompile(`\bconst\s+(\$\$[A-Za-z0-9_]+)\b`)
+	// JS identifier characters are [A-Za-z0-9_$].  Without including `$` the
+	// regex would parse `$$tmpl_$$n9` as just `$$tmpl_` — capturing only the
+	// prefix, causing false duplicates when names share that prefix and
+	// missing real duplicates that happen to differ only after a $.
+	constRe := regexp.MustCompile(`\bconst\s+(\$\$[A-Za-z0-9_$]+)\b`)
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".vela") {
 			continue
@@ -4530,5 +4937,499 @@ func TestEachRowIfHoist_DeclarationsAtRowScope(t *testing.T) {
 	p.parseProgram()
 	if len(p.Errors) > 0 {
 		t.Errorf("generated JS failed to parse: %s", p.Errors[0])
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Step 3 predicates and template-with-holes builder.
+//
+//  These tests pin behavioral intent rather than emission shape — the regression
+//  harness already verifies that real templates compile to valid JS, but doesn't
+//  catch silent definitional changes (e.g. a future refactor that subtly changes
+//  what counts as "fully static").  Each test below names ONE behavioral
+//  commitment and constructs the minimal fixture that can verify it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// staticText / dynText / staticElem / dynElem are tiny helpers to build AST
+// fixtures for the predicate tests below.  Keeping them in one place so each
+// test reads as a sequence of clear shape assertions.
+func staticText(s string) *TextNode {
+	return &TextNode{Parts: []*Part{{Static: true, Value: s}}}
+}
+func dynText(expr string) *TextNode {
+	return &TextNode{Parts: []*Part{{Static: false, Value: expr}}}
+}
+func mixedText(parts ...*Part) *TextNode {
+	return &TextNode{Parts: parts}
+}
+func staticElem(tag string, children ...Node) *ElementNode {
+	return &ElementNode{Tag: tag, Children: children}
+}
+func staticElemAttr(tag string, attrName, attrVal string, children ...Node) *ElementNode {
+	return &ElementNode{
+		Tag:      tag,
+		Attrs:    []*Attr{{Name: attrName, Value: attrVal}},
+		Children: children,
+	}
+}
+func eventElem(tag, eventName, handler string, children ...Node) *ElementNode {
+	return &ElementNode{
+		Tag:      tag,
+		Attrs:    []*Attr{{Name: eventName, Value: handler, IsEvent: true}},
+		Children: children,
+	}
+}
+func bindElem(tag, attrName, expr string, children ...Node) *ElementNode {
+	return &ElementNode{
+		Tag:      tag,
+		Attrs:    []*Attr{{Name: attrName, Value: expr, IsBind: true}},
+		Children: children,
+	}
+}
+func twoWayElem(tag, attrName, expr string) *ElementNode {
+	return &ElementNode{
+		Tag:   tag,
+		Attrs: []*Attr{{Name: attrName, Value: expr, IsBind: true, IsTwoWay: true}},
+	}
+}
+
+func TestIsFullyStatic(t *testing.T) {
+	cases := []struct {
+		name string
+		node Node
+		want bool
+	}{
+		{"static-text", staticText("hello"), true},
+		{"dyn-text", dynText("name"), false},
+		{"empty-elem", staticElem("br"), true},
+		{"elem-with-static-children", staticElem("div", staticText("hi")), true},
+		{"deeply-nested-static",
+			staticElem("section",
+				staticElem("header",
+					staticElem("h1", staticText("Title")))),
+			true},
+		{"elem-with-event", eventElem("button", "click", "onClick"), false},
+		{"elem-with-bind", bindElem("input", "value", "name"), false},
+		{"elem-with-two-way", twoWayElem("input", "value", "name"), false},
+		{"static-frame-with-dyn-leaf",
+			staticElem("div", eventElem("button", "click", "onClick")),
+			false},
+		{"static-frame-with-dyn-text",
+			staticElem("p", dynText("greeting")),
+			false},
+		{"if-cond-elem",
+			&ElementNode{Tag: "div", IfCond: "cond"},
+			false},
+		{"each-expr-elem",
+			&ElementNode{Tag: "div", EachExpr: "items as item"},
+			false},
+		{"if-chain", &IfChainNode{}, false},
+		{"each-block", &EachBlockNode{}, false},
+		{"component", &ComponentNode{Name: "MyComp"}, false},
+		{"slot", &SlotNode{Name: "default"}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := isFullyStatic(c.node); got != c.want {
+				t.Errorf("isFullyStatic(%s) = %v, want %v", c.name, got, c.want)
+			}
+		})
+	}
+}
+
+func TestIsLeafDynamicElement(t *testing.T) {
+	cases := []struct {
+		name string
+		elem *ElementNode
+		want bool
+	}{
+		// Pure-static elements are NOT leaf-dynamic — Step 1 handles them.
+		{"static-no-attrs", staticElem("div"), false},
+		{"static-with-class",
+			staticElemAttr("div", "class", "foo"), false},
+
+		// Element with event/bind/two-way — leaf-dynamic if children are static.
+		{"event-no-children", eventElem("button", "click", "onClick"), true},
+		{"event-static-text",
+			eventElem("button", "click", "onClick", staticText("Save")), true},
+		{"bind-no-children", bindElem("input", "value", "name"), true},
+		{"two-way", twoWayElem("input", "value", "name"), true},
+
+		// Element is dynamic but has dynamic descendants — NOT a leaf.
+		{"event-with-dyn-text-child",
+			eventElem("button", "click", "onClick", dynText("label")), false},
+		{"event-with-dyn-elem-child",
+			eventElem("section", "click", "onClick",
+				eventElem("button", "click", "inner")),
+			false},
+
+		// IfCond / EachExpr block — not leaf-dynamic regardless of attrs.
+		{"if-cond-element",
+			&ElementNode{Tag: "div", IfCond: "cond",
+				Attrs: []*Attr{{Name: "click", Value: "h", IsEvent: true}}},
+			false},
+		{"each-expr-element",
+			&ElementNode{Tag: "div", EachExpr: "items as i",
+				Attrs: []*Attr{{Name: "click", Value: "h", IsEvent: true}}},
+			false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := isLeafDynamicElement(c.elem); got != c.want {
+				t.Errorf("isLeafDynamicElement(%s) = %v, want %v", c.name, got, c.want)
+			}
+		})
+	}
+}
+
+func TestIsHoleCompatible_AllHoleCompatible(t *testing.T) {
+	// allHoleCompatible should accept: static elements, leaf-dynamic elements,
+	// and any TextNode (static or dynamic — text holes are always compatible).
+	// It should reject: IfChainNode, EachBlockNode, ComponentNode, SlotNode,
+	// elements with IfCond/EachExpr.
+
+	yes := []Node{
+		staticElem("div", staticText("hi")),
+		eventElem("button", "click", "onClick", staticText("Save")),
+		bindElem("input", "value", "name"),
+		dynText("title"),
+		staticText("hello"),
+	}
+	no := []Node{
+		&IfChainNode{},
+		&EachBlockNode{},
+		&ComponentNode{Name: "X"},
+		&SlotNode{Name: "default"},
+		eventElem("section", "click", "h", dynText("nested")), // dyn descendant
+		&ElementNode{Tag: "div", IfCond: "x"},
+	}
+
+	for _, n := range yes {
+		if !isHoleCompatible(n) {
+			t.Errorf("isHoleCompatible(%T) should be true", n)
+		}
+	}
+	for _, n := range no {
+		if isHoleCompatible(n) {
+			t.Errorf("isHoleCompatible(%T) should be false", n)
+		}
+	}
+
+	// allHoleCompatible: pass iff every node is hole-compatible.
+	if !allHoleCompatible(yes) {
+		t.Error("allHoleCompatible(yes) should be true")
+	}
+	if allHoleCompatible(append([]Node{}, &ComponentNode{Name: "X"})) {
+		t.Error("allHoleCompatible([component]) should be false")
+	}
+	mixed := []Node{staticText("hi"), &ComponentNode{Name: "X"}}
+	if allHoleCompatible(mixed) {
+		t.Error("allHoleCompatible([text, component]) should be false (one rejection vetoes)")
+	}
+}
+
+func TestHasDynamicLeaf(t *testing.T) {
+	// hasDynamicLeaf returns true only when at least one node is an actual hole:
+	//   - leaf-dynamic ElementNode, OR
+	//   - TextNode with a non-Static part.
+	// A purely-static list (Step 1 territory) returns false.
+
+	cases := []struct {
+		name  string
+		nodes []Node
+		want  bool
+	}{
+		{"all-static-elem", []Node{staticElem("div", staticText("hi"))}, false},
+		{"all-static-text", []Node{staticText("a"), staticText("b")}, false},
+		{"single-leaf-dyn",
+			[]Node{eventElem("button", "click", "h")}, true},
+		{"single-dyn-text", []Node{dynText("x")}, true},
+		{"static-then-leaf",
+			[]Node{staticElem("hr"), eventElem("button", "click", "h")},
+			true},
+		{"mixed-text-with-dyn-part",
+			[]Node{mixedText(
+				&Part{Static: true, Value: "Hello "},
+				&Part{Static: false, Value: "name"},
+				&Part{Static: true, Value: "!"},
+			)},
+			true},
+		{"mixed-text-all-static",
+			[]Node{mixedText(
+				&Part{Static: true, Value: "Hello "},
+				&Part{Static: true, Value: "world"},
+			)},
+			false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := hasDynamicLeaf(c.nodes); got != c.want {
+				t.Errorf("hasDynamicLeaf(%s) = %v, want %v", c.name, got, c.want)
+			}
+		})
+	}
+}
+
+func TestBuildHoleTemplate_StaticOnly(t *testing.T) {
+	// Pure-static input: HTML string emitted, zero holes.
+	nodes := []Node{
+		staticElem("div",
+			staticElemAttr("span", "class", "logo",
+				staticText("Hello"))),
+	}
+	html, holes := buildHoleTemplate(nodes, "")
+	if len(holes) != 0 {
+		t.Errorf("expected 0 holes for static input, got %d", len(holes))
+	}
+	if !strings.Contains(html, "<div>") || !strings.Contains(html, "<span") || !strings.Contains(html, "Hello") {
+		t.Errorf("template missing expected static content:\n%s", html)
+	}
+	if strings.Contains(html, "<!--$-->") {
+		t.Errorf("static-only template should have no anchors:\n%s", html)
+	}
+}
+
+func TestBuildHoleTemplate_TextHole(t *testing.T) {
+	// Single dynamic text → one anchor + one "text" hole.
+	// Mirrors the real call path: buildHoleTemplate is invoked with the
+	// CHILDREN of an element, not the element itself.  Wrapper-elements
+	// (<p>) are emitted by walkElement around the buildHoleTemplate output.
+	nodes := []Node{dynText("greeting")}
+	html, holes := buildHoleTemplate(nodes, "")
+
+	if !strings.Contains(html, "<!--$-->") {
+		t.Errorf("missing dynamic-text anchor:\n%s", html)
+	}
+	if len(holes) != 1 {
+		t.Fatalf("expected 1 hole, got %d", len(holes))
+	}
+	if holes[0].kind != "text" {
+		t.Errorf("expected text hole, got %q", holes[0].kind)
+	}
+}
+
+func TestBuildHoleTemplate_ElementHole(t *testing.T) {
+	// Leaf-dynamic element (button with @click, static label) → static
+	// element open/close baked into template, anchor AFTER the element so
+	// .previousSibling captures it.
+	nodes := []Node{
+		eventElem("button", "click", "save", staticText("Save")),
+	}
+	html, holes := buildHoleTemplate(nodes, "")
+
+	// The element's tag, static content, and anchor must all be present.
+	// The anchor must come AFTER the closing tag, because emitTemplateWithHoles
+	// captures elements via anchor.previousSibling.
+	if !strings.Contains(html, "<button") {
+		t.Errorf("missing element tag:\n%s", html)
+	}
+	if !strings.Contains(html, "Save") {
+		t.Errorf("missing static label:\n%s", html)
+	}
+	if !strings.Contains(html, "</button><!--$-->") {
+		t.Errorf("anchor must follow element close tag:\n%s", html)
+	}
+	if len(holes) != 1 || holes[0].kind != "elem" {
+		t.Errorf("expected single elem hole, got %+v", holes)
+	}
+}
+
+func TestBuildHoleTemplate_VoidElementHole(t *testing.T) {
+	// Leaf-dynamic void element (e.g. <input :value="x" @input="h">) — must
+	// be self-closed in the template (no </input>), with anchor after.
+	nodes := []Node{
+		bindElem("input", "value", "name"),
+	}
+	html, holes := buildHoleTemplate(nodes, "")
+
+	if !strings.Contains(html, "<input") {
+		t.Errorf("missing input tag:\n%s", html)
+	}
+	if strings.Contains(html, "</input>") {
+		t.Errorf("void element must not have closing tag:\n%s", html)
+	}
+	if !strings.Contains(html, "/><!--$-->") {
+		t.Errorf("void element anchor must follow self-close:\n%s", html)
+	}
+	if len(holes) != 1 {
+		t.Errorf("expected 1 hole, got %d", len(holes))
+	}
+}
+
+func TestBuildHoleTemplate_ScopeAttribute(t *testing.T) {
+	// When scopeID is non-empty, every static element must carry it as an
+	// empty attribute so scoped CSS [vela-XXXX] selectors keep matching.
+	nodes := []Node{
+		staticElem("div",
+			staticElem("span", staticText("hi"))),
+	}
+	html, _ := buildHoleTemplate(nodes, "vela-abc123")
+
+	if !strings.Contains(html, `<div vela-abc123="">`) {
+		t.Errorf("scope attr missing on outer element:\n%s", html)
+	}
+	if !strings.Contains(html, `<span vela-abc123="">`) {
+		t.Errorf("scope attr missing on nested element:\n%s", html)
+	}
+	// Leaf-dynamic elements also need the scope attribute baked in.
+	htmlDyn, _ := buildHoleTemplate(
+		[]Node{eventElem("button", "click", "h", staticText("Go"))},
+		"vela-xyz")
+	if !strings.Contains(htmlDyn, `<button vela-xyz="">`) {
+		t.Errorf("scope attr missing on leaf-dynamic element:\n%s", htmlDyn)
+	}
+}
+
+func TestBuildHoleTemplate_StaticAttrsBakedDynamicAttrsSkipped(t *testing.T) {
+	// In a leaf-dynamic element, STATIC attributes are baked into the
+	// template (so the parser sets them), and DYNAMIC attributes (events,
+	// bindings) are skipped — they're applied at mount via applyDynamicAttrs.
+	elem := &ElementNode{
+		Tag: "input",
+		Attrs: []*Attr{
+			{Name: "type", Value: "text"},                                  // static
+			{Name: "placeholder", Value: "name"},                            // static
+			{Name: "value", Value: "name", IsBind: true, IsTwoWay: true},    // dyn
+			{Name: "input", Value: "onInput", IsEvent: true},                // dyn
+		},
+	}
+	html, _ := buildHoleTemplate([]Node{elem}, "")
+	if !strings.Contains(html, `type="text"`) {
+		t.Errorf("static type attr should be baked into template:\n%s", html)
+	}
+	if !strings.Contains(html, `placeholder="name"`) {
+		t.Errorf("static placeholder attr should be baked into template:\n%s", html)
+	}
+	// IsBind and IsEvent attrs must NOT appear — they're applied via
+	// applyDynamicAttrs at mount, which would otherwise set them twice.
+	if strings.Contains(html, `value=`) {
+		t.Errorf("dynamic value attr leaked into template:\n%s", html)
+	}
+	if strings.Contains(html, `input=`) {
+		t.Errorf("dynamic event attr leaked into template:\n%s", html)
+	}
+}
+
+func TestBuildHoleTemplate_HoleOrderIsDocumentOrder(t *testing.T) {
+	// emitTemplateWithHoles relies on the holes slice being in the order a
+	// TreeWalker would encounter them (document order).  Verify by giving
+	// a list with mixed shapes and checking the kinds line up.
+	nodes := []Node{
+		staticElem("h1", staticText("Title")),                  // static, no hole
+		dynText("subtitle"),                                     // text hole
+		eventElem("button", "click", "onClick"),                 // elem hole
+		dynText("counter"),                                      // text hole
+	}
+	_, holes := buildHoleTemplate(nodes, "")
+	if len(holes) != 3 {
+		t.Fatalf("expected 3 holes, got %d", len(holes))
+	}
+	want := []string{"text", "elem", "text"}
+	for i, h := range holes {
+		if h.kind != want[i] {
+			t.Errorf("hole %d: kind=%q want %q", i, h.kind, want[i])
+		}
+	}
+}
+
+func TestEscapeHTMLText(t *testing.T) {
+	cases := map[string]string{
+		"hello":     "hello",                 // unchanged
+		"a < b":     "a &lt; b",              // <
+		"a > b":     "a &gt; b",              // >
+		"x & y":     "x &amp; y",             // &
+		"<&>":       "&lt;&amp;&gt;",         // multiple
+		"":          "",                      // empty
+		"plain text": "plain text",           // no special chars
+	}
+	for in, want := range cases {
+		if got := escapeHTMLText(in); got != want {
+			t.Errorf("escapeHTMLText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestEscapeHTMLAttr(t *testing.T) {
+	cases := map[string]string{
+		"hello":             "hello",
+		`a & b`:             "a &amp; b",
+		`he said "hi"`:      `he said &quot;hi&quot;`,
+		`a"&"b`:             `a&quot;&amp;&quot;b`,
+		"":                  "",
+		// < and > are NOT escaped inside attribute values per HTML spec.
+		"a < b":            "a < b",
+	}
+	for in, want := range cases {
+		if got := escapeHTMLAttr(in); got != want {
+			t.Errorf("escapeHTMLAttr(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestEscapeJSString(t *testing.T) {
+	// Used inside single-quoted JS string literals — must escape ', \, and
+	// the line-break/whitespace characters that would break the literal.
+	cases := map[string]string{
+		"hello":         "hello",
+		"it's":          `it\'s`,
+		"a\\b":          `a\\b`,
+		"line1\nline2":  `line1\nline2`,
+		"a\tb":          `a\tb`,
+		"":              "",
+		// Double quotes are NOT escaped — they're fine inside a single-
+		// quoted JS string.  This is intentional: HTML attributes use ".
+		`<div class="x">`: `<div class="x">`,
+	}
+	for in, want := range cases {
+		if got := escapeJSString(in); got != want {
+			t.Errorf("escapeJSString(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestBuildHoleTemplate_PanicsOnBadShape(t *testing.T) {
+	// buildHoleTemplate's contract: caller has verified allHoleCompatible.
+	// Feeding a static wrapper that contains dynamic descendants would
+	// silently drop the dynamic part — the function panics instead, so
+	// any future caller with the wrong shape gets a loud failure.
+	bad := []Node{
+		// Outer <div> is not leaf-dynamic (no events/bindings) AND not
+		// fully-static (its child is a dynamic text).  No legitimate
+		// caller would ever pass this shape.
+		staticElem("div", dynText("badly-routed")),
+	}
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Errorf("expected panic for shape-violation input")
+			return
+		}
+		msg := fmt.Sprintf("%v", r)
+		if !strings.Contains(msg, "invariant violated") {
+			t.Errorf("expected invariant-violation panic, got: %v", r)
+		}
+	}()
+	buildHoleTemplate(bad, "")
+}
+
+func TestVoidTags_ContainsKnownVoidElements(t *testing.T) {
+	// Pin the void-tag list — the HTML spec defines exactly these elements
+	// as void (no closing tag, no children).  buildHoleTemplate consults
+	// this map; getting it wrong produces invalid HTML and broken templates.
+	mustHave := []string{"area", "base", "br", "col", "embed", "hr", "img",
+		"input", "link", "meta", "param", "source", "track", "wbr"}
+	for _, t2 := range mustHave {
+		if !voidTags[t2] {
+			t.Errorf("voidTags missing %q", t2)
+		}
+	}
+	// Common non-void elements MUST NOT be in the list — emitting them
+	// without a closing tag would produce malformed HTML.
+	mustNotHave := []string{"div", "span", "p", "button", "form", "label",
+		"select", "option", "textarea", "table", "tr", "td", "th"}
+	for _, t2 := range mustNotHave {
+		if voidTags[t2] {
+			t.Errorf("voidTags must not contain %q (it's a normal element)", t2)
+		}
 	}
 }

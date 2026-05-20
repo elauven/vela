@@ -29,6 +29,13 @@ type LifecycleHook struct {
 type StateVar struct {
 	Name    string
 	Initial string
+	// Deep means the state was declared via `$state.deep(...)` rather
+	// than plain `$state(...)`.  Codegen wraps the value in a Proxy
+	// so that mutations to nested properties (`arr.push(x)`,
+	// `obj.a.b = 1`) fire the same notify path that reassignment does.
+	// Plain $state only tracks reassignment — matching the previous
+	// behavior — so existing code keeps working without proxy overhead.
+	Deep bool
 }
 
 type DerivedVar struct {
@@ -95,18 +102,44 @@ func analyzeScript(src string) *Analysis {
 				if !ok {
 					continue
 				}
-				callee, ok := call.Callee.(*JsIdent)
-				if !ok {
+				name := identName(decl.Id)
+
+				// Classify the callee.  Two shapes we care about:
+				//
+				//   $state(initial)        → callee is *JsIdent "$state"
+				//   $state.deep(initial)   → callee is *JsMemberExpr,
+				//                             obj=$state, prop=deep
+				//
+				// We accept the member form only when the property name
+				// is "deep"; any other member call (e.g. `$state.foo`)
+				// falls through and is left as a plain call by the
+				// rewriter.
+				var calleeName string
+				var stateDeep bool
+				switch c := call.Callee.(type) {
+				case *JsIdent:
+					calleeName = c.Name
+				case *JsMemberExpr:
+					if obj, ok := c.Obj.(*JsIdent); ok && obj.Name == "$state" {
+						if prop, ok := c.Prop.(*JsIdent); ok && prop.Name == "deep" {
+							calleeName = "$state"
+							stateDeep = true
+						}
+					}
+				}
+				if calleeName == "" {
 					continue
 				}
-				name := identName(decl.Id)
-				switch callee.Name {
+
+				switch calleeName {
 				case "$state":
 					init := ""
 					if len(call.Args) > 0 {
 						init = strings.TrimSpace(src[call.Args[0].nodePos():call.Args[0].nodeEnd()])
 					}
-					a.StateVars = append(a.StateVars, &StateVar{Name: name, Initial: init})
+					a.StateVars = append(a.StateVars, &StateVar{
+						Name: name, Initial: init, Deep: stateDeep,
+					})
 					skipEnd[s.End] = true
 
 				case "$derived":

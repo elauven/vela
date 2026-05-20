@@ -14,42 +14,70 @@ type SFC struct {
 	Script   string
 	Style    string
 	Template string
+
+	// Byte offsets of each section's body in the original source file.
+	// Used by diagnostics to translate parser-local positions into
+	// file-relative line/column for accurate error reporting.  A value
+	// of 0 means the section wasn't found (and the corresponding
+	// content string is empty).
+	ScriptOffset   int
+	StyleOffset    int
+	TemplateOffset int
 }
 
 // parseSFC splits a .vela source file into its three sections by scanning for
 // <script>, <style>, and <template> open/close tags without using regexp.
 // The scanner is case-insensitive and tolerates arbitrary tag attributes.
+//
+// Each section's absolute byte offset is also recorded so positions
+// within a section can be translated back to file-relative locations
+// for diagnostics.  Importantly, the offset is the start of the body
+// *before* whitespace trimming — we record where the inner text
+// actually begins in the file, then compute how many leading
+// whitespace bytes were trimmed and add that to the offset.  Without
+// this, every diagnostic in a `<script>\n  let x = …` block would be
+// off by the newline + indent.
 func parseSFC(src string) (*SFC, error) {
 	sfc := &SFC{}
 
-	// extractBlock finds the first occurrence of <tag …>…</tag> (case-insensitive)
-	// and returns the inner text.
-	extractBlock := func(tag string) string {
+	// extractBlock finds the first occurrence of <tag …>…</tag>
+	// (case-insensitive), returns the trimmed inner text plus the
+	// absolute byte offset of where that trimmed text starts in src.
+	extractBlock := func(tag string) (string, int) {
 		low := strings.ToLower(src)
 		openTag := "<" + tag
 		closeTag := "</" + tag + ">"
 
 		start := strings.Index(low, openTag)
 		if start < 0 {
-			return ""
+			return "", 0
 		}
-		// Advance past the opening tag's closing ">"
 		gt := strings.Index(src[start:], ">")
 		if gt < 0 {
-			return ""
+			return "", 0
 		}
 		bodyStart := start + gt + 1
 
 		closeIdx := strings.Index(strings.ToLower(src[bodyStart:]), closeTag)
 		if closeIdx < 0 {
-			return ""
+			return "", 0
 		}
-		return strings.TrimSpace(src[bodyStart : bodyStart+closeIdx])
+		raw := src[bodyStart : bodyStart+closeIdx]
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			return "", 0
+		}
+		// How many leading whitespace bytes were trimmed.
+		leadingWS := strings.Index(raw, trimmed)
+		if leadingWS < 0 {
+			leadingWS = 0
+		}
+		return trimmed, bodyStart + leadingWS
 	}
 
-	sfc.Script = extractBlock("script")
-	sfc.Style = extractBlock("style")
-	sfc.Template = extractBlock("template")
+	sfc.Script, sfc.ScriptOffset = extractBlock("script")
+	sfc.Style, sfc.StyleOffset = extractBlock("style")
+	sfc.Template, sfc.TemplateOffset = extractBlock("template")
 
 	if sfc.Template == "" {
 		return nil, fmt.Errorf("missing <template> section")
@@ -81,6 +109,13 @@ type ElementNode struct {
 // This is produced by the post-parse grouper pass.
 type IfChainNode struct {
 	Branches []*IfBranch // [0]=if, [1..n-1]=elseif, last may have Cond==""(else)
+
+	// KeyExpr, if non-empty, marks this chain as a {#key expr} block.
+	// Modeled as a single-branch always-active chain whose cached
+	// subtree is force-destroyed and rebuilt whenever expr changes
+	// identity (===).  Useful for forcing re-init of stateful
+	// children — animations, focus management, scroll position.
+	KeyExpr string
 }
 
 type IfBranch struct {
@@ -97,6 +132,36 @@ type EachBlockNode struct {
 	EachKey  string // e.g. "item.id"  (from the (key) suffix)
 	Children []Node
 }
+
+// AwaitBlockNode is produced by Svelte-style:
+//
+//   {#await promise}
+//     pending...
+//   {:then value}
+//     resolved with {value}
+//   {:catch err}
+//     failed: {err}
+//   {/await}
+//
+// Either {:then} or {:catch} (or both) is optional.  When omitted,
+// the corresponding branch slot is nil.  PendingChildren may also be
+// empty (e.g. {#await p then x}...{/await}).
+//
+// At runtime the block renders the pending branch initially; when
+// the promise settles the codegen swaps to then-or-catch.  If the
+// user reassigns the promise expression, the codegen re-evaluates
+// it and reattaches the .then/.catch handlers — so reactive prompts
+// (e.g. await fetch(`/api/${id}`)) work as expected.
+type AwaitBlockNode struct {
+	PromiseExpr     string // the JS expression after `#await`
+	ValueName       string // identifier bound in {:then NAME}, or ""
+	ErrorName       string // identifier bound in {:catch NAME}, or ""
+	PendingChildren []Node
+	ThenChildren    []Node // nil when no {:then} branch
+	CatchChildren   []Node // nil when no {:catch} branch
+}
+
+func (a *AwaitBlockNode) nodeKind() string { return "awaitblock" }
 
 // ComponentNode represents a child component invocation: <MyComp :prop="val" />
 type ComponentNode struct {
@@ -129,11 +194,14 @@ type Part struct {
 
 // Attr holds one HTML attribute, annotated with its sigil role.
 type Attr struct {
-	Name     string // without the leading sigil
-	Value    string
-	IsEvent  bool // @ prefix → addEventListener
-	IsBind   bool // : prefix → dynamic attribute (one-way)
-	IsTwoWay bool // bind: prefix → two-way binding (reads + writes the state var)
+	Name      string // without the leading sigil
+	Value     string
+	IsEvent   bool // @ prefix → addEventListener
+	IsBind    bool // : prefix → dynamic attribute (one-way)
+	IsTwoWay  bool // bind: prefix → two-way binding (reads + writes the state var)
+	IsBindThis bool // bind:this={ref} → write the live element into `ref`
+	IsClassDir bool // class:foo={cond} → toggle the `foo` class based on cond
+	IsStyleDir bool // style:foo={expr} → set inline style property `foo` to expr
 }
 
 func (e *ElementNode) nodeKind() string   { return "element" }
@@ -181,7 +249,18 @@ func (p *parser) has(s string) bool {
 func (p *parser) parseNodes(stopTags []string) ([]Node, error) {
 	var nodes []Node
 	for !p.eof() {
+		// Track whether the upcoming run is preceded by source
+		// whitespace.  If so, and the next thing is text (not a tag),
+		// we need to preserve a single leading space — otherwise
+		// inline markup like `<p>before <code>x</code> after</p>` ends
+		// up rendered as `before<code>x</code>after`, with the space
+		// after the closing tag silently eaten by skipWS.
+		sawWS := false
+		startPos := p.pos
 		p.skipWS()
+		if p.pos > startPos {
+			sawWS = true
+		}
 		if p.eof() {
 			break
 		}
@@ -238,6 +317,18 @@ func (p *parser) parseNodes(stopTags []string) ([]Node, error) {
 				nodes = append(nodes, node)
 			}
 		} else {
+			// If we consumed leading whitespace before reaching this
+			// text run, prepend a space-only text node so the inline
+			// boundary is preserved.  Only fire when there's already
+			// at least one preceding node (i.e. this isn't the very
+			// first child) — leading whitespace at the start of an
+			// element's content is still cosmetic indentation that
+			// should be dropped.
+			if sawWS && len(nodes) > 0 {
+				nodes = append(nodes, &TextNode{
+					Parts: []*Part{{Static: true, Value: " "}},
+				})
+			}
 			node, err := p.parseText()
 			if err != nil {
 				return nil, err
@@ -268,6 +359,13 @@ func (p *parser) parseText() (*TextNode, error) {
 	return &TextNode{Parts: parts}, nil
 }
 
+// isHTMLSpace reports whether c is a whitespace character treated as
+// inter-element spacing by HTML.  Same set the spec calls "ASCII
+// whitespace": space, tab, line-feed, form-feed, carriage-return.
+func isHTMLSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'
+}
+
 // parseInterpolations splits a raw string into static and dynamic parts
 // by scanning for {expr} sequences.
 func parseInterpolations(s string) []*Part {
@@ -275,20 +373,37 @@ func parseInterpolations(s string) []*Part {
 	var buf strings.Builder
 
 	flush := func() {
-		if buf.Len() > 0 {
-			text := buf.String()
-			buf.Reset()
-			// Collapse whitespace-only segments unless they're a single space
-			trimmed := strings.TrimSpace(text)
-			if trimmed == "" {
-				// preserve a single space between words
-				if strings.Contains(text, " ") {
-					parts = append(parts, &Part{Static: true, Value: " "})
-				}
-				return
-			}
-			parts = append(parts, &Part{Static: true, Value: trimmed})
+		if buf.Len() == 0 {
+			return
 		}
+		text := buf.String()
+		buf.Reset()
+		// Whitespace-only segment: collapse to a single space if it
+		// contained one, otherwise drop entirely.  This is what kept
+		// trailing newlines from polluting the output before, and we
+		// keep it.
+		trimmed := strings.TrimSpace(text)
+		if trimmed == "" {
+			if strings.ContainsAny(text, " \t\n\r") {
+				parts = append(parts, &Part{Static: true, Value: " "})
+			}
+			return
+		}
+		// Mixed text: keep boundary whitespace as a single space so
+		// inline markup like `word <code>x</code> word` stays
+		// visually correct.  Without this, the parser used to trim
+		// both sides, producing `word<code>x</code>word` in output.
+		// Internal runs of whitespace inside `trimmed` are kept as-is
+		// because HTML collapses them at render time anyway.
+		leading := ""
+		if len(text) > 0 && isHTMLSpace(text[0]) {
+			leading = " "
+		}
+		trailing := ""
+		if len(text) > 0 && isHTMLSpace(text[len(text)-1]) {
+			trailing = " "
+		}
+		parts = append(parts, &Part{Static: true, Value: leading + trimmed + trailing})
 	}
 
 	i := 0
@@ -562,18 +677,68 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 			elem.EachKey = value
 		case strings.HasPrefix(name, "@"):
 			elem.Attrs = append(elem.Attrs, &Attr{Name: name[1:], Value: value, IsEvent: true})
+		case strings.HasPrefix(name, "class:"):
+			// class:active={cond}  →  toggle the "active" class based on cond.
+			//
+			// Shorthand: `class:active` (no value) is treated as
+			// `class:active={active}` — using the local variable of
+			// the same name as the toggle.  This matches Svelte 5
+			// semantics and is convenient for state-bound flags.
+			cls := name[len("class:"):]
+			expr := value
+			if expr == "" {
+				expr = "{" + cls + "}"
+			}
+			elem.Attrs = append(elem.Attrs, &Attr{
+				Name: cls, Value: expr, IsClassDir: true,
+			})
+		case strings.HasPrefix(name, "style:"):
+			// style:color={c}  →  elem.style.color = c
+			// style:font-size="14px"  →  elem.style.fontSize = "14px"
+			//
+			// Shorthand: `style:color` (no value) → `style:color={color}`,
+			// same as class: shorthand.
+			prop := name[len("style:"):]
+			expr := value
+			if expr == "" {
+				expr = "{" + prop + "}"
+			}
+			elem.Attrs = append(elem.Attrs, &Attr{
+				Name: prop, Value: expr, IsStyleDir: true,
+			})
 		case strings.HasPrefix(name, "bind:"):
+			rest := name[len("bind:"):]
+			if rest == "this" {
+				// bind:this={ref} — write the live DOM element into `ref`
+				// once it has been created.  Codegen handles emission;
+				// here we just tag the attr.  The "value" is the target
+				// expression (typically a state variable name).
+				elem.Attrs = append(elem.Attrs, &Attr{
+					Name: "this", Value: value, IsBindThis: true,
+				})
+				break
+			}
 			// Two-way binding:  bind:value="x"  behaves as :value="x" for the
 			// write-to-DOM direction, and additionally wires a listener that
 			// calls $$set_<x>(...) on user input.
 			elem.Attrs = append(elem.Attrs, &Attr{
-				Name: name[len("bind:"):], Value: value,
+				Name: rest, Value: value,
 				IsBind: true, IsTwoWay: true,
 			})
 		case strings.HasPrefix(name, ":"):
 			elem.Attrs = append(elem.Attrs, &Attr{Name: name[1:], Value: value, IsBind: true})
 		default:
-			elem.Attrs = append(elem.Attrs, &Attr{Name: name, Value: value})
+			// Plain attribute name with a braced value (`href={url}`)
+			// is treated as a dynamic bind, matching `:href={url}`.
+			// Without this, the codegen falls into the static-attribute
+			// path and emits `setAttribute('href', '{url}')` as a
+			// literal, which is almost certainly not what the author
+			// meant.  Quoted values (`href="static"`) still go through
+			// the static path.
+			isBraced := strings.HasPrefix(value, "{") && strings.HasSuffix(value, "}")
+			elem.Attrs = append(elem.Attrs, &Attr{
+				Name: name, Value: value, IsBind: isBraced,
+			})
 		}
 	}
 	return nil
@@ -583,7 +748,7 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 //  Svelte-style block directives: {#if}, {#each}, {:else}, {/if}, {/each}
 // ─────────────────────────────────────────────────────────────────────────────
 
-// isSvelteBlockStart reports whether the parser is at a {#if or {#each opener.
+// isSvelteBlockStart reports whether the parser is at a {#if, {#each, {#key, or {#await opener.
 func (p *parser) isSvelteBlockStart() bool {
 	if p.pos+1 >= len(p.src) || p.src[p.pos] != '{' {
 		return false
@@ -591,18 +756,24 @@ func (p *parser) isSvelteBlockStart() bool {
 	rest := p.src[p.pos+1:]
 	return strings.HasPrefix(rest, "#if ") || strings.HasPrefix(rest, "#if\t") ||
 		strings.HasPrefix(rest, "#if}") ||
-		strings.HasPrefix(rest, "#each ") || strings.HasPrefix(rest, "#each\t")
+		strings.HasPrefix(rest, "#each ") || strings.HasPrefix(rest, "#each\t") ||
+		strings.HasPrefix(rest, "#key ") || strings.HasPrefix(rest, "#key\t") ||
+		strings.HasPrefix(rest, "#await ") || strings.HasPrefix(rest, "#await\t")
 }
 
-// isSvelteBlockTerm reports whether the parser is at {:else}, {:else if}, {/if}, {/each}.
+// isSvelteBlockTerm reports whether the parser is at {:else}, {:else if}, {:then}, {:catch}, {/if}, {/each}, {/key}, {/await}.
 func (p *parser) isSvelteBlockTerm() bool {
 	if p.pos+1 >= len(p.src) || p.src[p.pos] != '{' {
 		return false
 	}
 	rest := p.src[p.pos+1:]
 	return strings.HasPrefix(rest, ":else") ||
+		strings.HasPrefix(rest, ":then") ||
+		strings.HasPrefix(rest, ":catch") ||
 		strings.HasPrefix(rest, "/if") ||
-		strings.HasPrefix(rest, "/each")
+		strings.HasPrefix(rest, "/each") ||
+		strings.HasPrefix(rest, "/key") ||
+		strings.HasPrefix(rest, "/await")
 }
 
 // readSvelteTag reads from current '{' to the closing '}', returning the inner text.
@@ -643,7 +814,23 @@ func (p *parser) parseSvelteBlock() (Node, string, error) {
 		node, err := p.parseSvelteEachBlock(tag[5:])
 		return node, "", err
 
-	case strings.HasPrefix(tag, ":else") || strings.HasPrefix(tag, "/if") || strings.HasPrefix(tag, "/each"):
+	case strings.HasPrefix(tag, "#key"):
+		// {#key expr}...{/key} — re-create the children whenever
+		// `expr` changes identity.  Modeled as a one-branch
+		// IfChainNode with KeyExpr set; the codegen handles the
+		// destroy-and-rebuild logic.
+		node, err := p.parseSvelteKeyBlock(tag[4:])
+		return node, "", err
+
+	case strings.HasPrefix(tag, "#await"):
+		// {#await promise}...{:then v}...{:catch e}...{/await}
+		node, err := p.parseSvelteAwaitBlock(tag[6:])
+		return node, "", err
+
+	case strings.HasPrefix(tag, ":else") || strings.HasPrefix(tag, ":then") ||
+		strings.HasPrefix(tag, ":catch") ||
+		strings.HasPrefix(tag, "/if") || strings.HasPrefix(tag, "/each") ||
+		strings.HasPrefix(tag, "/key") || strings.HasPrefix(tag, "/await"):
 		// Terminator — caller should have caught this via isSvelteBlockTerm
 		return nil, tag, nil
 
@@ -717,6 +904,86 @@ func (p *parser) parseSvelteEachBlock(raw string) (Node, error) {
 		EachKey:  key,
 		Children: groupIfChains(children),
 	}, nil
+}
+
+// parseSvelteKeyBlock parses {#key expr}...{/key}.  expr is whatever
+// follows "#key" on the opening tag.  Lowered to a one-branch
+// IfChainNode with KeyExpr set; codegen reads KeyExpr and emits a
+// "destroy if key changed" guard before the chain's active-branch
+// re-check.
+func (p *parser) parseSvelteKeyBlock(raw string) (Node, error) {
+	expr := strings.TrimSpace(raw)
+	children, _, err := p.parseSvelteBlockBody()
+	if err != nil {
+		return nil, err
+	}
+	return &IfChainNode{
+		KeyExpr: expr,
+		Branches: []*IfBranch{{
+			// Always-true condition.  The chain stays mounted; the
+			// destroy-and-rebuild is driven by the key change, not by
+			// the condition flipping.
+			Cond:     "true",
+			Children: groupIfChains(children),
+		}},
+	}, nil
+}
+
+// parseSvelteAwaitBlock parses
+//
+//   {#await promise}
+//     pending...
+//   {:then value}
+//     resolved with {value}
+//   {:catch err}
+//     failed: {err}
+//   {/await}
+//
+// Either {:then} or {:catch} may be absent; in those cases the
+// corresponding child slot is nil and codegen treats the branch as
+// "do nothing on that state".  Order is fixed: pending body comes
+// first, then optional :then, then optional :catch, then /await.
+func (p *parser) parseSvelteAwaitBlock(raw string) (Node, error) {
+	node := &AwaitBlockNode{
+		PromiseExpr: strings.TrimSpace(raw),
+	}
+
+	// Pending body — consume until the first terminator.
+	pending, term, err := p.parseSvelteBlockBody()
+	if err != nil {
+		return nil, err
+	}
+	node.PendingChildren = groupIfChains(pending)
+
+	// :then [name]
+	if strings.HasPrefix(term, ":then") {
+		// Everything after ":then" up to the closing brace is the
+		// binding name (may be empty).
+		node.ValueName = strings.TrimSpace(strings.TrimPrefix(term, ":then"))
+		// Strip any trailing '}' if it came back attached.
+		node.ValueName = strings.TrimRight(node.ValueName, "}")
+		node.ValueName = strings.TrimSpace(node.ValueName)
+		thenChildren, t2, err := p.parseSvelteBlockBody()
+		if err != nil {
+			return nil, err
+		}
+		node.ThenChildren = groupIfChains(thenChildren)
+		term = t2
+	}
+
+	// :catch [name]
+	if strings.HasPrefix(term, ":catch") {
+		node.ErrorName = strings.TrimSpace(strings.TrimPrefix(term, ":catch"))
+		node.ErrorName = strings.TrimRight(node.ErrorName, "}")
+		node.ErrorName = strings.TrimSpace(node.ErrorName)
+		catchChildren, _, err := p.parseSvelteBlockBody()
+		if err != nil {
+			return nil, err
+		}
+		node.CatchChildren = groupIfChains(catchChildren)
+	}
+
+	return node, nil
 }
 
 // parseSvelteBlockBody collects nodes until a {:else}, {:else if}, {/if}, or
@@ -984,8 +1251,77 @@ func (p *parser) readAttrValue() string {
 		}
 		return val
 	}
-	// Unquoted
+
+	// Unquoted.
+	//
+	// Two shapes are possible here:
+	//
+	//   1. A bare token like `primary` or `42` — stops at whitespace
+	//      or the tag terminator.
+	//   2. A braced expression like `{() => count++}` — the *contents*
+	//      can include whitespace, nested braces, string literals,
+	//      template literals.  The expression ends at the matching
+	//      outer `}`, not at the first whitespace.
+	//
+	// Without case 2 the parser used to split `@click={() => count++}
+	// variant="primary"` into something like four separate attrs
+	// ("@click={()", "=>", "count++}", `variant="primary"`), which
+	// the codegen later turned into broken JS.
 	start := p.pos
+	if p.ch() == '{' {
+		depth := 0
+		for !p.eof() {
+			c := p.ch()
+			switch c {
+			case '"', '\'':
+				// Skip a string literal verbatim — its contents are
+				// arbitrary including unbalanced braces.
+				q := c
+				p.pos++
+				for !p.eof() && p.ch() != q {
+					if p.ch() == '\\' && p.pos+1 < len(p.src) {
+						p.pos += 2
+						continue
+					}
+					p.pos++
+				}
+				if !p.eof() {
+					p.pos++ // closing quote
+				}
+			case '`':
+				// Template literal.  Don't recurse into `${...}`
+				// because any `{`/`}` inside a template literal is
+				// content as far as our balancing goes — the literal
+				// closes at the matching backtick.
+				p.pos++
+				for !p.eof() && p.ch() != '`' {
+					if p.ch() == '\\' && p.pos+1 < len(p.src) {
+						p.pos += 2
+						continue
+					}
+					p.pos++
+				}
+				if !p.eof() {
+					p.pos++
+				}
+			case '{':
+				depth++
+				p.pos++
+			case '}':
+				depth--
+				p.pos++
+				if depth == 0 {
+					return p.src[start:p.pos]
+				}
+			default:
+				p.pos++
+			}
+		}
+		// EOF before matching `}` — return what we have.
+		return p.src[start:p.pos]
+	}
+
+	// Bare token path (no braces).
 	for !p.eof() && p.ch() != ' ' && p.ch() != '\t' && p.ch() != '\n' && p.ch() != '>' && !p.has("/>") {
 		p.pos++
 	}

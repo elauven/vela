@@ -23,6 +23,18 @@ func ParseJS(src string) *JsProgram {
 	return p.parseProgram()
 }
 
+// numberKind classifies a TokNumber's raw value.  ES2020 BigInt
+// literals carry a trailing `n` (e.g. `42n`, `0xffn`); the lexer
+// preserves the suffix in Val, so we look at the last character.
+// All other numerics — integer, float, exponent, hex/octal/binary,
+// numeric separators — share Kind "number".
+func numberKind(raw string) string {
+	if len(raw) > 0 && raw[len(raw)-1] == 'n' {
+		return "bigint"
+	}
+	return "number"
+}
+
 // ──────────────────────────────────────────────
 //  Token helpers
 // ──────────────────────────────────────────────
@@ -973,7 +985,7 @@ func (p *JSParser) parsePrimary() JsExpr {
 
 	case TokNumber:
 		raw := p.advance().Val
-		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: raw, Kind: "number"}
+		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: raw, Kind: numberKind(raw)}
 
 	case TokString:
 		raw := p.advance().Val
@@ -1195,7 +1207,7 @@ func (p *JSParser) parsePropKey() JsExpr {
 		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: raw, Kind: "string"}
 	case TokNumber:
 		raw := p.advance().Val
-		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: raw, Kind: "number"}
+		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: raw, Kind: numberKind(raw)}
 	default:
 		name := p.advance().Val
 		return &JsIdent{baseExpr: baseExpr{baseNode{pos, p.end()}}, Name: name}

@@ -145,8 +145,31 @@ func (f *FragGen) Emit() string {
 
 // WalkNodes walks a node list and emits into this fragment.
 // rootVar is the variable name of the parent element to appendChild into.
+//
+// Contiguous fully-static runs (with at least one element) batch into a
+// single insertAdjacentHTML call, matching the codegen.go walkChildren
+// strategy.  For each-row fragments this is especially valuable because
+// the savings multiply by the row count at runtime.
 func (f *FragGen) WalkNodes(nodes []Node, parentVar string) {
-	for _, node := range nodes {
+	i := 0
+	for i < len(nodes) {
+		if isFullyStatic(nodes[i]) {
+			j := i + 1
+			for j < len(nodes) && isFullyStatic(nodes[j]) {
+				j++
+			}
+			run := nodes[i:j]
+			if hasElement(run) {
+				html := emitStaticHTML(run, f.scopeID)
+				f.create.WriteString(fmt.Sprintf(
+					"    $$insertHTML(%s, '%s');\n",
+					parentVar, escapeJSString(html)))
+				i = j
+				continue
+			}
+		}
+		node := nodes[i]
+		i++
 		switch n := node.(type) {
 		case *ElementNode:
 			f.WalkElement(n, parentVar)
@@ -207,6 +230,16 @@ func (f *FragGen) WalkElement(elem *ElementNode, parentVar string) {
 				f.cleanup.WriteString(fmt.Sprintf(
 					"        %s.removeEventListener('%s', %s);\n", v, attr.Name, hv))
 			}
+		case attr.IsBindThis:
+			// bind:this inside a fragment template (either {#each} row
+			// or {#if} branch via the static-flatten path).  For each
+			// rows this is intentionally skipped — see the codegen
+			// each-row case for rationale.  For #if branches we
+			// shouldn't even reach this path now that isFullyStatic
+			// returns false for bind:this, but if we ever do, skipping
+			// is safer than emitting setAttribute('this', '…') and
+			// surprising the user.
+			_ = attr
 		case attr.IsBind:
 			stmt := bindAttrStmt(v, attr.Name, attr.Value, "    ")
 			if attr.IsTwoWay && attr.Name == "value" {
@@ -223,7 +256,20 @@ func (f *FragGen) WalkElement(elem *ElementNode, parentVar string) {
 		}
 	}
 
-	f.WalkNodes(elem.Children, v)
+	// Static-subtree compression — mirrors the codegen.go walkElement hook.
+	// Important for {#each} rows: each row instantiates the whole subtree
+	// once per item, so fewer per-element DOM ops translates directly into
+	// a proportional speedup as the list grows.
+	if strings.ToLower(elem.Tag) != "template" &&
+		len(elem.Children) > 0 &&
+		hasElement(elem.Children) &&
+		allStatic(elem.Children) {
+		html := emitStaticHTML(elem.Children, f.scopeID)
+		f.create.WriteString(fmt.Sprintf("    %s.innerHTML = '%s';\n",
+			v, escapeJSString(html)))
+	} else {
+		f.WalkNodes(elem.Children, v)
+	}
 	f.wire.WriteString(fmt.Sprintf("    %s.appendChild(%s);\n", parentVar, v))
 }
 

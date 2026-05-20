@@ -47,20 +47,59 @@ func (d *Diagnostic) String() string {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  DiagSet — collects diagnostics during a compile run
+//
+//  Section offsets: a .vela file has up to three sections (<script>,
+//  <template>, <style>) whose parsers each see only the inner text.
+//  When the script parser reports an error at byte offset 12, that's
+//  byte 12 of the *script body*, not byte 12 of the file.  To get
+//  accurate line numbers, callers push the section's absolute byte
+//  offset before emitting diagnostics from that section:
+//
+//      ds.PushOffset(sfc.ScriptOffset)
+//      validateScript(prog, analysis, ds)
+//      ds.PopOffset()
+//
+//  add() translates incoming positions by the current offset before
+//  resolving them against the full source.  This is a stack so nested
+//  passes (e.g. a template that re-parses an embedded expression) can
+//  layer offsets correctly.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type DiagSet struct {
-	diags []*Diagnostic
-	file  string
-	src   string // full source text for line/col resolution
+	diags   []*Diagnostic
+	file    string
+	src     string // full source text for line/col resolution
+	offsets []int  // stack of section offsets; top is added to every incoming pos
 }
 
 func NewDiagSet(file, src string) *DiagSet {
 	return &DiagSet{file: file, src: src}
 }
 
+// PushOffset declares that subsequent diagnostic positions are
+// relative to byte `off` of the source.  Pair with PopOffset; safe to
+// nest.
+func (ds *DiagSet) PushOffset(off int) {
+	ds.offsets = append(ds.offsets, off)
+}
+
+// PopOffset removes the topmost offset pushed via PushOffset.
+func (ds *DiagSet) PopOffset() {
+	if n := len(ds.offsets); n > 0 {
+		ds.offsets = ds.offsets[:n-1]
+	}
+}
+
+// currentOffset returns the offset added to incoming positions.
+func (ds *DiagSet) currentOffset() int {
+	if n := len(ds.offsets); n > 0 {
+		return ds.offsets[n-1]
+	}
+	return 0
+}
+
 func (ds *DiagSet) add(sev DiagSeverity, pos int, msg string) {
-	line, col, srcLine := ds.resolve(pos)
+	line, col, srcLine := ds.resolve(pos + ds.currentOffset())
 	ds.diags = append(ds.diags, &Diagnostic{
 		Sev:     sev,
 		File:    ds.file,
@@ -183,17 +222,38 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 		return true
 	})
 
-	// ── Warn: $effect with no reactive dependencies ────────────────────────
-	for i, eff := range a.Effects {
-		if len(eff.Deps) == 0 && strings.TrimSpace(eff.Body) != "" {
-			ds.Warn(0,
-				"$effect #%d references no reactive variables — it will run once on mount "+
-					"but never re-run; consider using onMount() instead", i+1)
-		}
-	}
+	// ── $effect with no reactive deps ──────────────────────────────────────
+	// Moved to validateEffectBody (reactivity.go), which emits with
+	// accurate positions pointing at the $effect call itself rather
+	// than the start of the script.
 
 	// ── Warn: $state variable never updated ───────────────────────────────
-	// Check if any state var has no $$set_ call anywhere in CleanScript or effects.
+	// Find each state-var's declaration position in the parsed program
+	// so the hint points at the variable rather than the script start.
+	statePos := make(map[string]int)
+	WalkNode(prog, func(n JsNode) bool {
+		decl, ok := n.(*JsVarDecl)
+		if !ok {
+			return true
+		}
+		for _, d := range decl.Decls {
+			id, ok := d.Id.(*JsIdent)
+			if !ok {
+				continue
+			}
+			call, ok := d.Init.(*JsCallExpr)
+			if !ok {
+				continue
+			}
+			callee, ok := call.Callee.(*JsIdent)
+			if !ok || callee.Name != "$state" {
+				continue
+			}
+			statePos[id.Name] = id.Pos
+		}
+		return true
+	})
+
 	if a.CleanScript != "" || len(a.Effects) > 0 {
 		combined := a.CleanScript
 		for _, eff := range a.Effects {
@@ -202,22 +262,23 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 		for _, sv := range a.StateVars {
 			setterCall := "$$set_" + sv.Name
 			if !strings.Contains(combined, setterCall) {
-				ds.Hint(0,
+				ds.Hint(statePos[sv.Name],
 					"$state variable %q is never updated; if it's read-only, consider $derived or a plain const",
 					sv.Name)
 			}
 		}
 	}
 
-	// ── Warn: assignment to non-existent state var (would be a bug) ────────
-	// Walk the JS AST for top-level assignments to bare identifiers that are
-	// not in stateSet, stateSet, props, or known locals.
+	// ── Warn: reactivity won't trigger on a non-$state binding ────────────
+	// Top-level assignment to a *declared but non-reactive* local won't
+	// re-render — flag it.  Fully undeclared names ("typoed") are handled
+	// by the scope analyzer (BuildScopes), which has a real scope graph
+	// and won't false-positive on let/const declared inside blocks.
 	knownLocals := make(map[string]bool)
 	for _, imp := range a.Imports {
-		// Collect import bindings — use the pre-parsed Names list rather
-		// than re-parsing imp.Spec through a synthetic "import ... from 'x'"
-		// string.  The old approach failed for side-effect imports (empty
-		// Spec) and imposed a spurious ParseJS call per import.
+		// Use the pre-parsed Names list rather than re-parsing imp.Spec —
+		// the old approach failed on side-effect imports (empty Spec) and
+		// imposed a spurious ParseJS call per import.
 		for _, name := range imp.Names {
 			knownLocals[name] = true
 		}
@@ -230,7 +291,31 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 		stateSet[prop.Name] = true
 	}
 
-	// Walk program for ExprStmt → AssignExpr where LHS is an Ident not in stateSet
+	// We only fire when we can prove the name *is* declared somewhere —
+	// otherwise the scope analyzer already emitted "X is not defined" and
+	// piling on with a reactivity warning would be confusing.  A real
+	// scope tree would tell us exactly; here we approximate by combining
+	// known-local sets plus a quick scan of CleanScript for "let X" /
+	// "const X" / "var X" / "function X" tokens.
+	declaredSomewhere := func(name string) bool {
+		if knownLocals[name] || stateSet[name] || derivedSet[name] {
+			return true
+		}
+		// Cheap textual fallback — good enough to suppress double
+		// warnings.  False positives here only mean a missed reactivity
+		// warning, never a spurious one.
+		for _, kw := range []string{"let ", "const ", "var ", "function "} {
+			if idx := strings.Index(a.CleanScript, kw+name); idx >= 0 {
+				// boundary check
+				after := idx + len(kw) + len(name)
+				if after >= len(a.CleanScript) || !isIdentByte(a.CleanScript[after]) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
 	WalkNode(prog, func(n JsNode) bool {
 		stmt, ok := n.(*JsExprStmt)
 		if !ok {
@@ -244,14 +329,27 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 		if !ok {
 			return true // member expr — fine
 		}
-		if !stateSet[id.Name] && !knownLocals[id.Name] && !derivedSet[id.Name] {
-			ds.Warn(id.Pos,
-				"assignment to %q which is not declared as $state — "+
-					"reactivity will not trigger; declare with $state() or use a store",
-				id.Name)
+		if stateSet[id.Name] || knownLocals[id.Name] || derivedSet[id.Name] {
+			return true
 		}
+		if !declaredSomewhere(id.Name) {
+			return true // undeclared — scope pass handles it
+		}
+		ds.Warn(id.Pos,
+			"assignment to %q which is not declared as $state — "+
+				"reactivity will not trigger; declare with $state() or use a store",
+			id.Name)
 		return true
 	})
+}
+
+// isIdentByte reports whether c can appear inside a JS identifier
+// (ASCII subset — good enough for the textual boundary check above).
+func isIdentByte(c byte) bool {
+	return c == '_' || c == '$' ||
+		(c >= 'a' && c <= 'z') ||
+		(c >= 'A' && c <= 'Z') ||
+		(c >= '0' && c <= '9')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -323,11 +323,37 @@ func compileFile(src, dest string, opts CompileOptions) ([]*Diagnostic, error) {
 	}
 
 	prog := ParseJS(sfc.Script)
+
+	// Scope + flow analysis over the *original* parsed program.  All
+	// these passes report positions relative to the script body, so we
+	// push the script's absolute offset for the duration of their run
+	// — the DiagSet translates incoming positions into file-relative
+	// line/column on the way out.
+	ds.PushOffset(sfc.ScriptOffset)
+	scriptScope := BuildScopes(prog, ds)
+	DetectUnreachable(prog, ds)
 	validateScript(prog, analysis, ds)
+	validateDerivedPurity(prog, analysis, ds)
+	validateEffectBody(prog, analysis, ds)
+	ds.PopOffset()
+
+	// Template diagnostics use positions relative to the template
+	// body; push that offset for the duration.
+	ds.PushOffset(sfc.TemplateOffset)
 	validateTemplate(tmpl, analysis, ds)
+	validateTemplateRefs(tmpl, analysis, scriptScope, sfc.Template, ds)
+	ds.PopOffset()
 
 	if ds.HasErrors() {
 		return ds.All(), fmt.Errorf("compilation failed with %d error(s)", len(ds.Errors()))
+	}
+
+	// Dead-binding elimination — gated on --minify because it costs an
+	// extra parse + scope build per round.  Runs after all diagnostics
+	// so warnings still fire against the user's original source
+	// positions, not against a script that's already been optimized.
+	if opts.Minify {
+		sfc.Script, analysis = EliminateDeadCodeFixedPoint(sfc.Script, analysis, sfc.Template)
 	}
 
 	code := generateCode(name, sfc, tmpl, analysis, scope)

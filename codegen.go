@@ -85,12 +85,35 @@ func (g *CodeGen) emit(nodes []Node) string {
 	out.WriteString(fmt.Sprintf(
 		"export function %s($$target, $$props, $$slots) {\n", g.name))
 	out.WriteString("  $$props = Object.assign({}, $$props);\n")
-	out.WriteString("  $$slots = $$slots || {};\n\n")
+	out.WriteString("  $$slots = $$slots || {};\n")
+	// Suppress "declared but never read" warnings from strict linters /
+	// TypeScript when a component happens not to receive children or
+	// dispatch any events.  Both names are part of the runtime contract;
+	// callers always pass them.
+	out.WriteString("  void $$slots;\n\n")
 
 	// ── $$dispatch — fire CustomEvents upward ─────────────────────────────
 	out.WriteString("  function $$dispatch(name, detail) {\n")
 	out.WriteString("    $$target.dispatchEvent(new CustomEvent(name, { detail, bubbles: true }));\n")
-	out.WriteString("  }\n\n")
+	out.WriteString("  }\n")
+	out.WriteString("  void $$dispatch;\n\n")
+
+	// ── $$insertHTML — append parsed HTML to a parent ─────────────────────
+	// Element.insertAdjacentHTML works for elements but throws on
+	// DocumentFragment, which is what slot factories return.  When the
+	// target is a fragment (nodeType 11), parse via a <template>
+	// element — its `.content` is itself a fragment whose children we
+	// transfer.  For every other host we keep the original fast path.
+	out.WriteString("  function $$insertHTML($$t, $$h) {\n")
+	out.WriteString("    if ($$t.nodeType === 11) {\n")
+	out.WriteString("      const $$tmp = document.createElement('template');\n")
+	out.WriteString("      $$tmp.innerHTML = $$h;\n")
+	out.WriteString("      $$t.appendChild($$tmp.content);\n")
+	out.WriteString("    } else {\n")
+	out.WriteString("      $$t.insertAdjacentHTML('beforeend', $$h);\n")
+	out.WriteString("    }\n")
+	out.WriteString("  }\n")
+	out.WriteString("  void $$insertHTML;\n\n")
 
 	// ── Props — populated from $$props, reactive via setters ─────────────
 	if len(g.analysis.Props) > 0 {
@@ -136,9 +159,57 @@ func (g *CodeGen) emit(nodes []Node) string {
 
 	// ── State variables ──────────────────────
 	if len(g.analysis.StateVars) > 0 {
+		// Are any deep-reactive?  If so emit the $$proxy helper once
+		// at the top of the file.  Plain $state(...) variables stay
+		// declared as before (no proxy overhead).
+		anyDeep := false
+		for _, sv := range g.analysis.StateVars {
+			if sv.Deep {
+				anyDeep = true
+				break
+			}
+		}
+		if anyDeep {
+			out.WriteString("  // deep-reactive proxy helper\n")
+			out.WriteString("  function $$proxy(val, notify) {\n")
+			out.WriteString("    if (val === null || typeof val !== 'object') return val;\n")
+			// Per-state-var cache: reading the same nested property
+			// twice returns the same Proxy instance, so identity
+			// comparisons (`obj.a === obj.a`) stay truthful.  Without
+			// the cache, every property access would allocate a new
+			// Proxy.
+			out.WriteString("    const cache = new WeakMap();\n")
+			out.WriteString("    const wrap = (v) => {\n")
+			out.WriteString("      if (v === null || typeof v !== 'object') return v;\n")
+			out.WriteString("      let p = cache.get(v);\n")
+			out.WriteString("      if (p) return p;\n")
+			out.WriteString("      p = new Proxy(v, {\n")
+			out.WriteString("        get(t, k) { return wrap(t[k]); },\n")
+			out.WriteString("        set(t, k, x) { t[k] = x; notify(); return true; },\n")
+			out.WriteString("        deleteProperty(t, k) { delete t[k]; notify(); return true; },\n")
+			out.WriteString("      });\n")
+			out.WriteString("      cache.set(v, p);\n")
+			out.WriteString("      return p;\n")
+			out.WriteString("    };\n")
+			out.WriteString("    return wrap(val);\n")
+			out.WriteString("  }\n\n")
+		}
+
 		out.WriteString("  // state\n")
 		for _, sv := range g.analysis.StateVars {
-			out.WriteString(fmt.Sprintf("  let %s = %s;\n", sv.Name, sv.Initial))
+			if sv.Deep {
+				// For deep state, the notify function fires the same
+				// DOM updates that reassignment would.  We declare it
+				// as a forward reference (`$$mut_X`) and define it
+				// further down once the setter exists.  The initial
+				// value is wrapped in a proxy at construction.
+				out.WriteString(fmt.Sprintf(
+					"  const $$mut_%s = () => $$set_%s_notify();\n", sv.Name, sv.Name))
+				out.WriteString(fmt.Sprintf(
+					"  let %s = $$proxy(%s, $$mut_%s);\n", sv.Name, sv.Initial, sv.Name))
+			} else {
+				out.WriteString(fmt.Sprintf("  let %s = %s;\n", sv.Name, sv.Initial))
+			}
 		}
 		out.WriteString("\n")
 	}
@@ -188,10 +259,35 @@ func (g *CodeGen) emit(nodes []Node) string {
 	// with {#if ...} or {#each ...}), no element gets that name, causing
 	// "$$root is not defined". Fix: always emit a transparent wrapper div
 	// when the template root is non-element, and walk the nodes as its children.
+	// A wrapper div is needed when the template has anything other than
+	// exactly one root element.  Without this, multi-root templates
+	// emitted each sibling as a child of the first element, which (1)
+	// breaks the DOM tree (`<button><p>...</p></button>` etc.) and
+	// (2) makes events on sibling elements bubble through the first
+	// one — so clicking a "trigger" button could also fire the
+	// "reload" button's handler attached to the visual root.
+	//
+	// display: contents on the wrapper means it has no box of its
+	// own, so the visual layout is the same as if the wrapper weren't
+	// there.
 	needsWrapper := len(nodes) == 0
 	if !needsWrapper {
 		_, firstIsElem := nodes[0].(*ElementNode)
 		needsWrapper = !firstIsElem
+	}
+	if !needsWrapper {
+		// First child is an element — but check there's only one element
+		// (or one element + non-element siblings that need to nest).
+		// Multiple sibling elements still need a wrapper.
+		elemCount := 0
+		for _, n := range nodes {
+			if _, ok := n.(*ElementNode); ok {
+				elemCount++
+			}
+		}
+		if elemCount > 1 {
+			needsWrapper = true
+		}
 	}
 
 	if needsWrapper {
@@ -378,6 +474,8 @@ func (g *CodeGen) walkNodes(nodes []Node, parentVar string, isRootList bool) {
 			g.walkIfChain(n, parentVar)
 		case *EachBlockNode:
 			g.walkEachBlock(n, parentVar)
+		case *AwaitBlockNode:
+			g.walkAwaitBlock(n, parentVar)
 		case *ComponentNode:
 			// A ComponentNode with IfCond != "" never reaches this dispatch:
 			// groupIfChains (parser.go) wraps every such component in an
@@ -437,6 +535,32 @@ func (g *CodeGen) walkElement(elem *ElementNode, varName, parentVar string, isRo
 					"      %s.removeEventListener('%s', %s);\n", varName, attr.Name, hv))
 			}
 
+		case attr.IsBindThis:
+			// bind:this={ref} — write the live element into the user's
+			// variable once it exists.  Cleared to null on destroy so
+			// component teardown doesn't leak DOM references.
+			g.emitBindThis(varName, attr.Value, &g.init, &g.cleanup, "  ", "      ")
+
+		case attr.IsClassDir:
+			// class:foo={cond}  →  toggle .foo on the element based on cond.
+			// findDeps gets the converted JS form so it can see
+			// dependencies inside string-interpolated values too.
+			deps := findDeps(attrExprToJS(attr.Value), g.analysis.reactiveNames())
+			stmt := classDirStmt(varName, attr.Name, attr.Value, "  ")
+			g.init.WriteString(stmt + "\n")
+			for _, dep := range deps {
+				g.addUpdate(dep, stmt)
+			}
+
+		case attr.IsStyleDir:
+			// style:foo={expr}  →  elem.style.setProperty('foo', String(expr)).
+			deps := findDeps(attrExprToJS(attr.Value), g.analysis.reactiveNames())
+			stmt := styleDirStmt(varName, attr.Name, attr.Value, "  ")
+			g.init.WriteString(stmt + "\n")
+			for _, dep := range deps {
+				g.addUpdate(dep, stmt)
+			}
+
 		case attr.IsBind:
 			deps := findDeps(attr.Value, g.analysis.reactiveNames())
 			upd := bindAttrStmt(varName, attr.Name, attr.Value, "  ")
@@ -448,7 +572,7 @@ func (g *CodeGen) walkElement(elem *ElementNode, varName, parentVar string, isRo
 			// actually appear on screen.  `bind:checked` is already handled
 			// by isBoolAttr in bindAttrStmt (elem.checked = !!(expr)).
 			if attr.IsTwoWay && attr.Name == "value" {
-				upd = fmt.Sprintf("  %s.value = (%s);", varName, attr.Value)
+				upd = fmt.Sprintf("  %s.value = (%s);", varName, unwrapBraces(attr.Value))
 			}
 			g.init.WriteString(upd + "\n")
 			for _, dep := range deps {
@@ -467,12 +591,91 @@ func (g *CodeGen) walkElement(elem *ElementNode, varName, parentVar string, isRo
 		}
 	}
 
-	// Recurse into children
-	g.walkChildren(elem.Children, varName)
+	// Emission-strategy decision tree:
+	//   1. All children fully static → innerHTML (Step 1)
+	//   2. All children hole-compatible with ≥1 dynamic leaf → template+holes (Step 3)
+	//   3. Otherwise → recurse (walkChildren applies Step 2 run-batching)
+	switch {
+	case strings.ToLower(elem.Tag) != "template" &&
+		len(elem.Children) > 0 &&
+		hasElement(elem.Children) &&
+		allStatic(elem.Children):
+		// Step 1: whole subtree is static.
+		html := emitStaticHTML(elem.Children, g.scopeID)
+		g.create.WriteString(fmt.Sprintf("  %s.innerHTML = '%s';\n",
+			varName, escapeJSString(html)))
+
+	case strings.ToLower(elem.Tag) != "template" &&
+		len(elem.Children) > 0 &&
+		allHoleCompatible(elem.Children) &&
+		hasDynamicLeaf(elem.Children):
+		// Step 3: static frame with dynamic leaves — innerHTML + TreeWalker
+		// capture + per-hole binding.  Captures the extremely common pattern
+		// of a structural shell (<form>, <header>, <.card>) whose only
+		// dynamic bits are a handful of <input>s, bindings, and {expr}s.
+		//
+		// Note: I tried adding an isWorthHoleCompression heuristic to skip
+		// "small" subtrees where the TreeWalker overhead seemed to dominate.
+		// Empirically that REGRESSED OrdersPage from 19 → 71 mount ops.  The
+		// reason: Step 3 has multiplicative effects through nested emission
+		// paths (slot lambdas, branch bodies) that don't show up in a local
+		// op-count analysis of one subtree.  Firing aggressively wins.
+		g.emitTemplateWithHoles(varName, elem.Children)
+
+	default:
+		// Step 2: recurse — walkChildren batches contiguous static runs
+		// into insertAdjacentHTML calls between dynamic children.
+		g.walkChildren(elem.Children, varName)
+	}
 
 	// Append to parent (unless this IS the root placeholder)
 	if !isRoot {
 		g.wire.WriteString(fmt.Sprintf("  %s.appendChild(%s);\n", parentVar, varName))
+	}
+}
+
+// emitBindThis wires `bind:this={ref}` for an element.  Writes the
+// live DOM element into `ref` once after creation (init buffer), and
+// clears the slot to null on destroy (cleanup buffer).
+//
+// Two cases for `ref`:
+//   • a bare $state variable — emit `$$set_<name>(elem)` so reactive
+//     dependents (e.g. `{ref?.tagName}` in the template) re-render.
+//   • anything else — emit a plain assignment.  Useful for binding
+//     into a local non-reactive variable or a member expression like
+//     `refs.input`.
+//
+// Cleanup is symmetric: setter call with null for $state, plain
+// assignment to null otherwise.
+//
+// `varName` is the JS local holding the freshly-created element.
+// `targetExpr` is the user's variable / expression as written in the
+// template (may carry surrounding braces from readAttrValue).
+func (g *CodeGen) emitBindThis(
+	varName, targetExpr string,
+	initBuf, cleanupBuf *strings.Builder,
+	initIndent, cleanupIndent string,
+) {
+	target := strings.TrimSpace(unwrapBraces(targetExpr))
+	if target == "" {
+		return
+	}
+	if g.analysis.isStateName(target) {
+		initBuf.WriteString(fmt.Sprintf(
+			"%s$$set_%s(%s);\n", initIndent, target, varName))
+		if cleanupBuf != nil {
+			cleanupBuf.WriteString(fmt.Sprintf(
+				"%s$$set_%s(null);\n", cleanupIndent, target))
+		}
+		return
+	}
+	// Plain assignment — works for `let myRef` locals as well as
+	// member expressions like `refs.input` (no setter rewriting).
+	initBuf.WriteString(fmt.Sprintf(
+		"%s%s = %s;\n", initIndent, target, varName))
+	if cleanupBuf != nil {
+		cleanupBuf.WriteString(fmt.Sprintf(
+			"%s%s = null;\n", cleanupIndent, target))
 	}
 }
 
@@ -508,10 +711,15 @@ func (g *CodeGen) emitTwoWayListener(
 	if !ok {
 		return
 	}
-	if !g.analysis.isStateName(attr.Value) {
+	// Strip the surrounding `{…}` wrapper that readAttrValue preserves
+	// from the template source.  bind:value={x} arrives here with
+	// attr.Value == "{x}", which would never match a state-var name
+	// and the listener would be silently skipped — the symptom users
+	// see is "input field doesn't update my state."
+	sv := strings.TrimSpace(unwrapBraces(attr.Value))
+	if !g.analysis.isStateName(sv) {
 		return
 	}
-	sv := attr.Value
 	hv := varName + "_bind_" + spec.event + "_h"
 	createBuf.WriteString(fmt.Sprintf(
 		"%sconst %s = ($e) => $$set_%s($e.target.%s);\n",
@@ -529,29 +737,87 @@ func (g *CodeGen) emitTwoWayListener(
 	}
 }
 
+// walkChildren emits DOM-construction code for a list of child nodes.
+//
+// Contiguous runs of fully-static children (text nodes with no interpolation,
+// element subtrees with no events/bindings/directives/components) are emitted
+// as ONE `insertAdjacentHTML('beforeend', '<html>')` call per run.  The browser's
+// native HTML parser then builds the subtree in one pass.  Compared to
+// individual createElement / setAttribute / appendChild calls per element, this
+// is a large reduction in JS↔native crossings — typically 10× fewer ops for
+// common shells (headers, cards, form scaffolds).
+//
+// Dynamic children (components, #if/#each blocks, interpolated text, elements
+// with events or bindings) still route through per-child walkers, so document
+// order is preserved: runs slot in exactly where they appeared in the template.
 func (g *CodeGen) walkChildren(children []Node, parentVar string) {
-	for _, child := range children {
-		switch c := child.(type) {
-		case *ElementNode:
-			cv := g.id()
-			g.walkElement(c, cv, parentVar, false)
-		case *IfChainNode:
-			g.walkIfChain(c, parentVar)
-		case *EachBlockNode:
-			g.walkEachBlock(c, parentVar)
-		case *ComponentNode:
-			// IfCond path consumed by groupIfChains before codegen — see
-			// walkNodes for the full rationale.
-			if c.EachExpr != "" {
-				g.walkComponentEach(c, parentVar)
-			} else {
-				g.walkComponent(c, parentVar)
-			}
-		case *SlotNode:
-			g.walkSlot(c, parentVar)
-		case *TextNode:
-			g.walkText(c, parentVar)
+	// Collect contiguous static runs.  i scans forward; staticStart is the
+	// index of the current run's first child (or -1 if not in a run).
+	staticStart := -1
+	flushStatic := func(endExclusive int) {
+		if staticStart < 0 || endExclusive <= staticStart {
+			return
 		}
+		run := children[staticStart:endExclusive]
+		// A run of pure text-only children is usually not worth the HTML-
+		// parser overhead; the existing walkText path creates one text node
+		// per piece, which is already cheap.  Require at least one element
+		// in the run before compressing.
+		if !hasElement(run) {
+			// Fall back to per-child emission for the run.
+			for _, c := range run {
+				g.walkChildSingle(c, parentVar)
+			}
+			staticStart = -1
+			return
+		}
+		html := emitStaticHTML(run, g.scopeID)
+		g.create.WriteString(fmt.Sprintf(
+			"  $$insertHTML(%s, '%s');\n",
+			parentVar, escapeJSString(html)))
+		staticStart = -1
+	}
+
+	for i, child := range children {
+		if isFullyStatic(child) {
+			if staticStart < 0 {
+				staticStart = i
+			}
+			continue
+		}
+		// Dynamic child: flush any pending static run first, then emit.
+		flushStatic(i)
+		g.walkChildSingle(child, parentVar)
+	}
+	flushStatic(len(children))
+}
+
+// walkChildSingle is the per-node dispatch that walkChildren used to inline.
+// Extracted so the static-run batching logic above can call it for the
+// non-batched (dynamic) case.
+func (g *CodeGen) walkChildSingle(child Node, parentVar string) {
+	switch c := child.(type) {
+	case *ElementNode:
+		cv := g.id()
+		g.walkElement(c, cv, parentVar, false)
+	case *IfChainNode:
+		g.walkIfChain(c, parentVar)
+	case *EachBlockNode:
+		g.walkEachBlock(c, parentVar)
+	case *AwaitBlockNode:
+		g.walkAwaitBlock(c, parentVar)
+	case *ComponentNode:
+		// IfCond path consumed by groupIfChains before codegen — see
+		// walkNodes for the full rationale.
+		if c.EachExpr != "" {
+			g.walkComponentEach(c, parentVar)
+		} else {
+			g.walkComponent(c, parentVar)
+		}
+	case *SlotNode:
+		g.walkSlot(c, parentVar)
+	case *TextNode:
+		g.walkText(c, parentVar)
 	}
 }
 
@@ -649,6 +915,30 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 	fnBuf.WriteString(fmt.Sprintf("    if (%s) { %s = true; return; }\n", runningFlag, pendingFlag))
 	fnBuf.WriteString(fmt.Sprintf("    %s = true;\n", runningFlag))
 	fnBuf.WriteString(fmt.Sprintf("    try {\n"))
+
+	// {#key expr} support: when the key expression's value changes
+	// identity, force-destroy the cached subtree before the active-
+	// branch re-check runs.  The branch's `if (!ev)` guard will then
+	// trigger a fresh build.  Without this, the cached DOM would
+	// stay mounted across key changes — defeating the whole point of
+	// {#key}.
+	//
+	// A WeakRef-like sentinel ($$nokey) marks "uninitialized" so the
+	// first call after mount doesn't see a falsy prev and trigger a
+	// spurious destroy.
+	if chain.KeyExpr != "" {
+		keyPrev := fn + "_keyprev"
+		// Sentinel: a unique object that can't match any user value.
+		g.create.WriteString(fmt.Sprintf("  let %s = {};\n", keyPrev))
+		fnBuf.WriteString(fmt.Sprintf("      const $$keynew = (%s);\n", chain.KeyExpr))
+		fnBuf.WriteString(fmt.Sprintf("      if (%s !== $$keynew) {\n", keyPrev))
+		for _, ev := range elVars {
+			fnBuf.WriteString(fmt.Sprintf(
+				"        if (%s) { %s.remove(); %s = null; }\n", ev, ev, ev))
+		}
+		fnBuf.WriteString(fmt.Sprintf("        %s = $$keynew;\n", keyPrev))
+		fnBuf.WriteString("      }\n")
+	}
 
 	// Evaluate which branch is active
 	fnBuf.WriteString("      let $$active = -1;\n")
@@ -769,6 +1059,15 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 			}
 		}
 	}
+	// {#key} blocks: the chain needs to re-run when the key
+	// expression changes, even though its truthy/falsy hasn't.  The
+	// keychange check at the top of the chain function handles the
+	// destroy; we just need to make sure it actually fires.
+	if chain.KeyExpr != "" {
+		for _, d := range findDeps(chain.KeyExpr, g.analysis.reactiveNames()) {
+			allDeps[d] = true
+		}
+	}
 
 	call := fmt.Sprintf("  %s();", fn)
 	g.init.WriteString(call + "\n")
@@ -781,18 +1080,54 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 //  Child component composition
 // ──────────────────────────────────────────────
 
+// componentPropsEntries builds the props-object entries for a child
+// component invocation, including the `$$onChange_<name>` callback
+// entries that wire two-way `bind:<name>={x}` shorthand back to the
+// parent's state.
+//
+// Without this helper the parent emits only the one-way push — child
+// would receive new values when the parent's state changed, but the
+// child's own `$bindable(...)` writes would have nowhere to flow back
+// to.  Symptom: `<Counter bind:count={appCount} />` propagates parent
+// → child fine, but `count++` inside Counter never updates appCount.
+//
+// The callback shape mirrors what the child runtime expects (see the
+// `const $$onChange_X = $$props.$$onChange_X || null` line in any
+// component that uses $bindable on a prop X — codegen.go ~line 280):
+//
+//   $$onChange_count: ($$v) => $$set_appCount($$v)
+//
+// Skipped when the bind target isn't a $state variable (we don't
+// generate setters for non-state locals, so there's no `$$set_` fn
+// to call).  The one-way push entry is still emitted for those.
+func (g *CodeGen) componentPropsEntries(attrs []*Attr) []string {
+	var entries []string
+	for _, attr := range attrs {
+		if attr.IsEvent {
+			continue
+		}
+		if attr.IsBind {
+			entries = append(entries, fmt.Sprintf("%s: %s", attr.Name, unwrapBraces(attr.Value)))
+			if attr.IsTwoWay {
+				target := strings.TrimSpace(unwrapBraces(attr.Value))
+				if g.analysis.isStateName(target) {
+					entries = append(entries, fmt.Sprintf(
+						"$$onChange_%s: ($$v) => $$set_%s($$v)",
+						attr.Name, target))
+				}
+			}
+			continue
+		}
+		entries = append(entries, fmt.Sprintf("%s: '%s'", attr.Name, escapeAttr(attr.Value)))
+	}
+	return entries
+}
+
 // walkComponent emits code to mount a child component.
 func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 	instanceVar := g.id() + "_comp"
 
-	var propsEntries []string
-	for _, attr := range comp.Attrs {
-		if attr.IsBind {
-			propsEntries = append(propsEntries, fmt.Sprintf("%s: %s", attr.Name, attr.Value))
-		} else if !attr.IsEvent {
-			propsEntries = append(propsEntries, fmt.Sprintf("%s: '%s'", attr.Name, escapeAttr(attr.Value)))
-		}
-	}
+	propsEntries := g.componentPropsEntries(comp.Attrs)
 	propsObj := "{}"
 	if len(propsEntries) > 0 {
 		propsObj = "{ " + strings.Join(propsEntries, ", ") + " }"
@@ -837,21 +1172,57 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 		g.create.WriteString(fmt.Sprintf("  let %s = null;\n", cacheVar))
 
 		// Redirect wire to capture only this slot's appendChild calls.
-		savedWire := g.wire
-		g.wire = strings.Builder{}
+		savedWireStr := g.wire.String()
+		g.wire.Reset()
 
 		// Redirect init so initial each/chain calls are deferred past the ctor.
-		savedInit := g.init
-		g.init = strings.Builder{}
+		savedInitStr := g.init.String()
+		g.init.Reset()
+
+		// Redirect create so we can partition emissions: writes that
+		// target `fragVar` belong inside the slot factory closure
+		// (because fragVar is a local of that closure), while every
+		// other create-write — element declarations, instance hoists,
+		// scope-attribute setters — must remain at outer scope so
+		// destroy() and other component-level code can see them.
+		//
+		// Without this partition, walkChildren's `fragVar.insertAdjacentHTML(...)`
+		// landed at outer scope and referenced a name that doesn't exist
+		// there ("Could not find name '$$sf_error_$$nN'").
+		//
+		// We capture via .String()+Reset() rather than copying the
+		// Builder struct because Go forbids copying a non-zero
+		// strings.Builder (the no-copy invariant is enforced at
+		// runtime via copyCheck()).
+		savedCreateStr := g.create.String()
+		g.create.Reset()
 
 		g.walkChildren(slotNodes, fragVar)
 
+		// Partition the captured create-writes.
+		capturedCreate := g.create.String()
+		var slotCreate strings.Builder
+		g.create.Reset()
+		g.create.WriteString(savedCreateStr)
+		for _, line := range strings.Split(capturedCreate, "\n") {
+			if line == "" {
+				continue
+			}
+			if strings.Contains(line, fragVar) {
+				slotCreate.WriteString(line + "\n")
+			} else {
+				g.create.WriteString(line + "\n")
+			}
+		}
+
 		slotWire := g.wire.String()
-		g.wire = savedWire
+		g.wire.Reset()
+		g.wire.WriteString(savedWireStr)
 
 		var slotInitBuf strings.Builder
 		slotInitBuf.WriteString(g.init.String())
-		g.init = savedInit
+		g.init.Reset()
+		g.init.WriteString(savedInitStr)
 
 		slotInits = append(slotInits, slotInitEntry{slotInitBuf})
 
@@ -891,6 +1262,15 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 		// First-open path: build the fragment and its contents, run inits,
 		// then snapshot the fragment's children into the cache.
 		fragFn.WriteString(fmt.Sprintf("const %s = document.createDocumentFragment(); ", fragVar))
+		// Fragment-targeting create-writes captured above — these
+		// include calls like `fragVar.insertAdjacentHTML('beforeend',
+		// '<span>…</span>')` that populate the fragment with static
+		// HTML.  Emit them before the appendChild calls in slotWire.
+		for _, line := range strings.Split(slotCreate.String(), "\n") {
+			if trimmed := strings.TrimSpace(line); trimmed != "" {
+				fragFn.WriteString(trimmed + " ")
+			}
+		}
 		for _, line := range strings.Split(slotWire, "\n") {
 			if trimmed := strings.TrimSpace(line); trimmed != "" {
 				fragFn.WriteString(trimmed + " ")
@@ -932,9 +1312,19 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 	//     first called (on modal open). ✓
 	// Removing the deferred duplicates eliminates spurious double-renders (e.g. duplicate
 	// filter buttons from $$each_$$n18 running twice).
+	//
+	// Guard against re-instantiation: when this component lives inside a
+	// conditional slot (e.g. <Modal>…<Button/>…</Modal>), the slot
+	// factory is called on every reopen.  Without the guard, each
+	// reopen calls `Comp(wrap, props, slots)` again, and `Comp` ends
+	// with `$$target.appendChild($$root)` — so the wrapper accumulates
+	// another `<button>` (or whatever) every time.  The cached subtree
+	// already contains the previously-built DOM; we only need to
+	// construct the instance once.  Reactive prop changes still flow
+	// in via the existing instance's `.set()` (handled below).
 	g.init.WriteString(fmt.Sprintf(
-		"  %s = %s(%s, %s, %s);\n",
-		instanceVar, comp.Name, wrapVar, propsObj, slotsObj))
+		"  if (!%s) %s = %s(%s, %s, %s);\n",
+		instanceVar, instanceVar, comp.Name, wrapVar, propsObj, slotsObj))
 
 	// Reactive prop updates
 	for _, attr := range comp.Attrs {
@@ -943,7 +1333,7 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 		}
 		deps := findDeps(attr.Value, g.analysis.reactiveNames())
 		update := fmt.Sprintf("  if (%s) %s.set({ %s: %s });",
-			instanceVar, instanceVar, attr.Name, attr.Value)
+			instanceVar, instanceVar, attr.Name, unwrapBraces(attr.Value))
 		for _, dep := range deps {
 			g.addUpdate(dep, update)
 		}
@@ -955,10 +1345,10 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 		if !attr.IsEvent {
 			continue
 		}
-		hv := wrapVar + "_" + attr.Name + "_ch"
+		hv := wrapVar + "_" + sanitizeIdent(attr.Name) + "_ch"
 		g.events.WriteString(fmt.Sprintf(
 			"  const %s = ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } };\n",
-			hv, attr.Value))
+			hv, g.rewriteHandlerAssignments(attr.Value)))
 		g.events.WriteString(fmt.Sprintf(
 			"  %s.addEventListener('%s', %s);\n", wrapVar, attr.Name, hv))
 		g.cleanup.WriteString(fmt.Sprintf(
@@ -986,14 +1376,7 @@ func (g *CodeGen) walkComponentEach(comp *ComponentNode, parentVar string) {
 	g.wire.WriteString(fmt.Sprintf("  %s.appendChild(%s);\n", parentVar, anchor))
 
 	// Build initial props object expression using the loop variables.
-	var propsEntries []string
-	for _, attr := range comp.Attrs {
-		if attr.IsBind {
-			propsEntries = append(propsEntries, fmt.Sprintf("%s: %s", attr.Name, attr.Value))
-		} else if !attr.IsEvent {
-			propsEntries = append(propsEntries, fmt.Sprintf("%s: '%s'", attr.Name, escapeAttr(attr.Value)))
-		}
-	}
+	propsEntries := g.componentPropsEntries(comp.Attrs)
 	propsExpr := "{}"
 	if len(propsEntries) > 0 {
 		propsExpr = "{ " + strings.Join(propsEntries, ", ") + " }"
@@ -1008,7 +1391,7 @@ func (g *CodeGen) walkComponentEach(comp *ComponentNode, parentVar string) {
 		if attr.IsEvent {
 			evLines = append(evLines, fmt.Sprintf(
 				"      $$wrap.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });",
-				attr.Name, attr.Value))
+				attr.Name, g.rewriteHandlerAssignments(attr.Value)))
 		}
 	}
 
@@ -1207,14 +1590,7 @@ func (g *CodeGen) walkComponentIfChain(chain *IfChainNode, parentVar string) {
 	// Mount the active branch (first time) or update (subsequent times)
 	for i, branch := range chain.Branches {
 		comp := branch.Comp
-		var propsEntries []string
-		for _, attr := range comp.Attrs {
-			if attr.IsBind {
-				propsEntries = append(propsEntries, fmt.Sprintf("%s: %s", attr.Name, attr.Value))
-			} else if !attr.IsEvent {
-				propsEntries = append(propsEntries, fmt.Sprintf("%s: '%s'", attr.Name, escapeAttr(attr.Value)))
-			}
-		}
+		propsEntries := g.componentPropsEntries(comp.Attrs)
 		propsExpr := "{}"
 		if len(propsEntries) > 0 {
 			propsExpr = "{ " + strings.Join(propsEntries, ", ") + " }"
@@ -1228,7 +1604,7 @@ func (g *CodeGen) walkComponentIfChain(chain *IfChainNode, parentVar string) {
 			if attr.IsEvent {
 				fnBuf.WriteString(fmt.Sprintf(
 					"          %s.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
-					wrapVars[i], attr.Name, attr.Value))
+					wrapVars[i], attr.Name, g.rewriteHandlerAssignments(attr.Value)))
 			}
 		}
 		fnBuf.WriteString(fmt.Sprintf("          %s = %s(%s, %s, {});\n",
@@ -1305,6 +1681,308 @@ func (g *CodeGen) walkEachBlock(block *EachBlockNode, parentVar string) {
 	g.walkEach(wrapper, varName, parentVar)
 }
 
+// walkAwaitBlock emits code for {#await promise}...{:then v}...{:catch e}...{/await}.
+//
+// Strategy: lower to a 3-branch IfChainNode whose branches are
+// gated by an internal state variable `$$promState_X` (0=pending,
+// 1=resolved, 2=rejected).  The chain itself takes care of mount/
+// unmount.  A separate "driver" attaches `.then`/`.catch` to the
+// promise expression, flips the state, and triggers the chain.
+//
+// The promise expression's deps are tracked: if the user reassigns
+// `let promise = $state(...)`, the driver re-runs against the new
+// promise so the await block reflects the latest value.  Without
+// that, only the initial promise would ever be observed.
+//
+// {:then VALUE} and {:catch ERR} bind VALUE/ERR as a let local
+// inside the corresponding branch body so the children can reference
+// them naturally.  We accomplish this by wrapping the branch body in
+// a synthetic <div> with a leading `<script>let VALUE = $$value;</script>`
+// — actually no, we emit the let directly into the branch via a
+// pre-children injection.  Implementation: prepend a fake TextNode
+// containing the let statement.  Easier: store the binding name in
+// a dedicated branch field and have the chain codegen emit the let
+// inside the `if ($$active === N) { if (!ev) {` block.  But that's
+// intrusive.  Pragmatic alternative: rewrite the children to refer
+// to a module-scope variable that the driver writes.
+//
+// I went with the module-scope approach: a per-await `$$awaitVal_X`
+// and `$$awaitErr_X` are declared at component scope.  The {:then v}
+// children get their `v` references rewritten to `$$awaitVal_X`
+// before codegen sees them.  Same for catch.  This keeps the chain
+// codegen unchanged.
+func (g *CodeGen) walkAwaitBlock(block *AwaitBlockNode, parentVar string) {
+	id := g.id()
+	stateVar := "$$promState_" + id
+	valVar := "$$awaitVal_" + id
+	errVar := "$$awaitErr_" + id
+	promCellVar := "$$promCell_" + id // the *current* promise; used for staleness checks
+
+	// Declare component-scope storage for the resolved value, error,
+	// and current state.  State starts at 0 (pending).
+	g.create.WriteString(fmt.Sprintf("  let %s = 0;\n", stateVar))
+	g.create.WriteString(fmt.Sprintf("  let %s = undefined;\n", valVar))
+	g.create.WriteString(fmt.Sprintf("  let %s = undefined;\n", errVar))
+	g.create.WriteString(fmt.Sprintf("  let %s = null;\n", promCellVar))
+
+	// Build the synthetic chain.
+	branches := []*IfBranch{}
+	// Branch 0: pending — always exists (may be empty content).
+	branches = append(branches, &IfBranch{
+		Cond:     fmt.Sprintf("%s === 0", stateVar),
+		Children: block.PendingChildren,
+	})
+	// Branch 1: resolved.  Rewrite ValueName references in children to valVar.
+	if block.ThenChildren != nil {
+		thenKids := rewriteIdentInNodes(block.ThenChildren, block.ValueName, valVar)
+		branches = append(branches, &IfBranch{
+			Cond:     fmt.Sprintf("%s === 1", stateVar),
+			Children: thenKids,
+		})
+	}
+	// Branch 2: rejected.  Rewrite ErrorName references to errVar.
+	if block.CatchChildren != nil {
+		catchKids := rewriteIdentInNodes(block.CatchChildren, block.ErrorName, errVar)
+		branches = append(branches, &IfBranch{
+			Cond:     fmt.Sprintf("%s === 2", stateVar),
+			Children: catchKids,
+		})
+	}
+
+	chain := &IfChainNode{Branches: branches}
+
+	// The chain will register its function in g.create; we don't
+	// have the name in hand, so we put a placeholder marker that we
+	// fix up after the fact.  Simpler: pre-compute the chain function
+	// name the same way walkIfChain does.  But that depends on g.id()
+	// being called inside walkIfChain — which it is, immediately after
+	// generating `anchor`.  That makes the chain fn name a function of
+	// state we can't peek.
+	//
+	// Instead: after walking the chain, the most recent $$chain_*
+	// function is ours.  We capture it via a closure that watches
+	// g.events / g.init growth.  Actually the simplest path is to
+	// pre-extract the chain ID: call g.id() once here for the chain,
+	// inject it via a small accessor.  But walkIfChain already calls
+	// g.id() internally for `anchor` AND for fn.  Plumbing a custom ID
+	// is invasive.
+	//
+	// What I'll do: after walking the chain, scan g.init's tail line
+	// to find the chain's call site (it always emits "  $$chain_NN();").
+	// That's brittle but isolated and easy to test.
+	initBefore := g.init.Len()
+	g.walkIfChain(chain, parentVar)
+	chainCall := strings.TrimSpace(g.init.String()[initBefore:])
+	chainCall = strings.TrimSuffix(chainCall, "\n")
+
+	// Promise driver: attach .then/.catch to the promise expression.
+	// If the same promise resolves twice (someone awaits and the value
+	// is overwritten), the staleness guard prevents the older settle
+	// from clobbering a fresher one.
+	//
+	// The driver runs once at init AND every time deps of the promise
+	// expression change — same registration as the chain function.
+	driverName := "$$awaitDrive_" + id
+	var drv strings.Builder
+	drv.WriteString(fmt.Sprintf("  function %s() {\n", driverName))
+	drv.WriteString(fmt.Sprintf("    const $$p = Promise.resolve(%s);\n", block.PromiseExpr))
+	drv.WriteString(fmt.Sprintf("    if (%s === $$p) return;\n", promCellVar))
+	drv.WriteString(fmt.Sprintf("    %s = $$p;\n", promCellVar))
+	drv.WriteString(fmt.Sprintf("    %s = 0;\n", stateVar))
+	drv.WriteString(fmt.Sprintf("    %s = undefined; %s = undefined;\n", valVar, errVar))
+	drv.WriteString(fmt.Sprintf("    %s\n", chainCall))
+	drv.WriteString("    $$p.then(\n")
+	// Resolved.
+	drv.WriteString(fmt.Sprintf("      v => { if (%s !== $$p) return; %s = v; %s = 1; %s },\n",
+		promCellVar, valVar, stateVar, chainCall))
+	// Rejected.
+	drv.WriteString(fmt.Sprintf("      e => { if (%s !== $$p) return; %s = e; %s = 2; %s }\n",
+		promCellVar, errVar, stateVar, chainCall))
+	drv.WriteString("    );\n")
+	drv.WriteString("  }\n")
+	g.create.WriteString(drv.String())
+
+	// Call driver initially.
+	g.init.WriteString(fmt.Sprintf("  %s();\n", driverName))
+
+	// Re-run driver when the promise expression's deps change.
+	for _, dep := range findDeps(block.PromiseExpr, g.analysis.reactiveNames()) {
+		g.addUpdate(dep, fmt.Sprintf("  %s();", driverName))
+	}
+}
+
+// rewriteIdentInNodes returns a deep copy of nodes with every reference
+// to `from` replaced by `to` inside any interpolated text and any
+// attribute value or expression that the codegen will treat as JS.
+//
+// Used by walkAwaitBlock to redirect references to a {:then VALUE}
+// binding from the user-visible name (`value`) into the compiler's
+// module-scope storage variable (`$$awaitVal_NN`).
+//
+// If from is empty, the function is a no-op — `{:then}` with no
+// binding name has nothing to rewrite.
+func rewriteIdentInNodes(nodes []Node, from, to string) []Node {
+	if from == "" || from == to {
+		return nodes
+	}
+	out := make([]Node, len(nodes))
+	for i, n := range nodes {
+		out[i] = rewriteIdentInNode(n, from, to)
+	}
+	return out
+}
+
+func rewriteIdentInNode(n Node, from, to string) Node {
+	switch v := n.(type) {
+	case *TextNode:
+		newParts := make([]*Part, len(v.Parts))
+		for i, p := range v.Parts {
+			np := *p
+			if !p.Static {
+				np.Value = rewriteIdentInExpr(p.Value, from, to)
+			}
+			newParts[i] = &np
+		}
+		return &TextNode{Parts: newParts}
+
+	case *ElementNode:
+		ne := *v
+		ne.Attrs = make([]*Attr, len(v.Attrs))
+		for i, a := range v.Attrs {
+			na := *a
+			// Rewrite anywhere the value will be interpreted as JS —
+			// bindings, events, directives, braced-attr expressions.
+			if a.IsBind || a.IsTwoWay || a.IsEvent ||
+				a.IsClassDir || a.IsStyleDir || a.IsBindThis ||
+				(strings.HasPrefix(a.Value, "{") && strings.HasSuffix(a.Value, "}")) {
+				na.Value = rewriteIdentInExpr(a.Value, from, to)
+			}
+			ne.Attrs[i] = &na
+		}
+		if v.IfCond != "" {
+			ne.IfCond = rewriteIdentInExpr(v.IfCond, from, to)
+		}
+		if v.EachExpr != "" {
+			ne.EachExpr = rewriteIdentInExpr(v.EachExpr, from, to)
+		}
+		if v.EachKey != "" {
+			ne.EachKey = rewriteIdentInExpr(v.EachKey, from, to)
+		}
+		ne.Children = rewriteIdentInNodes(v.Children, from, to)
+		return &ne
+
+	case *IfChainNode:
+		nc := &IfChainNode{KeyExpr: v.KeyExpr}
+		if v.KeyExpr != "" {
+			nc.KeyExpr = rewriteIdentInExpr(v.KeyExpr, from, to)
+		}
+		nc.Branches = make([]*IfBranch, len(v.Branches))
+		for i, b := range v.Branches {
+			nb := &IfBranch{
+				Cond:     rewriteIdentInExpr(b.Cond, from, to),
+				Children: rewriteIdentInNodes(b.Children, from, to),
+				Elem:     b.Elem,
+				Comp:     b.Comp,
+			}
+			nc.Branches[i] = nb
+		}
+		return nc
+
+	case *EachBlockNode:
+		return &EachBlockNode{
+			EachExpr: rewriteIdentInExpr(v.EachExpr, from, to),
+			EachKey:  rewriteIdentInExpr(v.EachKey, from, to),
+			Children: rewriteIdentInNodes(v.Children, from, to),
+		}
+
+	case *ComponentNode:
+		nc := *v
+		nc.Attrs = make([]*Attr, len(v.Attrs))
+		for i, a := range v.Attrs {
+			na := *a
+			if a.IsBind || a.IsTwoWay || a.IsEvent ||
+				(strings.HasPrefix(a.Value, "{") && strings.HasSuffix(a.Value, "}")) {
+				na.Value = rewriteIdentInExpr(a.Value, from, to)
+			}
+			nc.Attrs[i] = &na
+		}
+		// Slots map is left untouched — we don't recurse into nested
+		// component slot content because await bindings don't typically
+		// leak across component boundaries.  (If users need that, they
+		// can pass the value as a prop.)
+		return &nc
+
+	case *AwaitBlockNode:
+		// Don't recurse into a nested {#await} — that block has its own
+		// scope for any then/catch binding it declares.
+		return v
+	}
+	return n
+}
+
+// rewriteIdentInExpr replaces identifier occurrences of `from` with
+// `to` in a JS expression string, respecting property accesses
+// (`obj.from` is not rewritten) and string/template literals.
+//
+// This is a small-scope rewriter — it doesn't try to be a full
+// scope-aware substitution.  It's intended for the {:then value}
+// binding case, where the binding name is a fresh identifier
+// introduced by the await block, so simple lexical replacement is
+// safe enough in practice.
+func rewriteIdentInExpr(src, from, to string) string {
+	if from == "" || !strings.Contains(src, from) {
+		return src
+	}
+	var b strings.Builder
+	i := 0
+	for i < len(src) {
+		c := src[i]
+		// Skip string and template literals as opaque content.
+		if c == '"' || c == '\'' || c == '`' {
+			q := c
+			b.WriteByte(c)
+			i++
+			for i < len(src) && src[i] != q {
+				if src[i] == '\\' && i+1 < len(src) {
+					b.WriteByte(src[i])
+					b.WriteByte(src[i+1])
+					i += 2
+					continue
+				}
+				b.WriteByte(src[i])
+				i++
+			}
+			if i < len(src) {
+				b.WriteByte(src[i])
+				i++
+			}
+			continue
+		}
+		// Try to match an identifier starting at i.
+		if isIdentStart(c) {
+			j := i + 1
+			for j < len(src) && isIdentCont(src[j]) {
+				j++
+			}
+			word := src[i:j]
+			// Property access: a `.` immediately before the start
+			// means we're in `obj.X` and X is a property, not an
+			// identifier reference.  Don't rewrite.
+			isProperty := i > 0 && src[i-1] == '.'
+			if word == from && !isProperty {
+				b.WriteString(to)
+			} else {
+				b.WriteString(word)
+			}
+			i = j
+			continue
+		}
+		b.WriteByte(c)
+		i++
+	}
+	return b.String()
+}
+
 // ──────────────────────────────────────────────
 //  #each blocks  (keyed + recursive via FragGen)
 // ──────────────────────────────────────────────
@@ -1368,10 +2046,26 @@ func (g *CodeGen) walkEach(elem *ElementNode, varName, parentVar string) {
 				frag.cleanup.WriteString(fmt.Sprintf(
 					"        %s.removeEventListener('%s', %s);\n", rowVar, attr.Name, hv))
 			}
+		case attr.IsBindThis:
+			// bind:this on an each-row would overwrite the same ref
+			// on every iteration, leaving only the last row's element
+			// accessible.  That's rarely what users want, so we skip
+			// rather than emit something subtly broken.  Users who
+			// need per-row element references can use a state array
+			// indexed by the row's $$i.
+			_ = attr
+		case attr.IsClassDir:
+			stmt := classDirStmt(rowVar, attr.Name, attr.Value, "    ")
+			frag.init.WriteString(stmt + "\n")
+			frag.update.WriteString("  " + stmt + "\n")
+		case attr.IsStyleDir:
+			stmt := styleDirStmt(rowVar, attr.Name, attr.Value, "    ")
+			frag.init.WriteString(stmt + "\n")
+			frag.update.WriteString("  " + stmt + "\n")
 		case attr.IsBind:
 			stmt := bindAttrStmt(rowVar, attr.Name, attr.Value, "    ")
 			if attr.IsTwoWay && attr.Name == "value" {
-				stmt = fmt.Sprintf("    %s.value = (%s);", rowVar, attr.Value)
+				stmt = fmt.Sprintf("    %s.value = (%s);", rowVar, unwrapBraces(attr.Value))
 			}
 			frag.init.WriteString(stmt + "\n")
 			frag.update.WriteString("  " + stmt + "\n")
@@ -1526,7 +2220,34 @@ func (g *CodeGen) collectFragDeps(nodes []Node) map[string]bool {
 // indent is the leading whitespace for each emitted line.
 func (g *CodeGen) emitBranchChildren(b *strings.Builder, branchVar string, nodes []Node, parentVar, indent string) []string {
 	var declared []string
-	for _, node := range nodes {
+	// Contiguous static runs inside a branch compress to a single
+	// insertAdjacentHTML call, same strategy as walkChildren.  This is a
+	// large DOM-ops reduction when branches contain mostly decorative
+	// static markup (icons, headers, separators) surrounding a small
+	// number of dynamic siblings.
+	i := 0
+	for i < len(nodes) {
+		// Look ahead for a run of static nodes containing at least one
+		// ElementNode.  Pure-text runs aren't compressed — walkText's
+		// direct createTextNode is already a single op.
+		if isFullyStatic(nodes[i]) {
+			j := i + 1
+			for j < len(nodes) && isFullyStatic(nodes[j]) {
+				j++
+			}
+			run := nodes[i:j]
+			if hasElement(run) {
+				html := emitStaticHTML(run, g.scopeID)
+				b.WriteString(fmt.Sprintf(
+					"%s$$insertHTML(%s, '%s');\n",
+					indent, parentVar, escapeJSString(html)))
+				i = j
+				continue
+			}
+			// Fall through to per-node emission below for pure-text runs.
+		}
+		node := nodes[i]
+		i++
 		switch n := node.(type) {
 		case *TextNode:
 			expr := buildExpr(n.Parts)
@@ -1569,16 +2290,45 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, branchVar string, nodes
 					handler := g.rewriteHandlerAssignments(attr.Value)
 					b.WriteString(fmt.Sprintf("%s%s.addEventListener('%s', %s);\n",
 						indent, subVar, attr.Name, handler))
+				} else if attr.IsBindThis {
+					// bind:this inside a branch.  Write into the user's
+					// ref when the branch builds; we don't bother
+					// clearing on branch teardown because the next
+					// build (or another bind:this) will overwrite, and
+					// holding a stale ref between toggles matches
+					// Svelte's semantics (the variable still points to
+					// the detached element until reassigned).
+					g.emitBindThis(subVar, attr.Value, b, nil, indent, "")
+				} else if attr.IsClassDir {
+					stmt := classDirStmt(subVar, attr.Name, attr.Value, indent)
+					b.WriteString(stmt + "\n")
+					if branchVar != "" {
+						upd := fmt.Sprintf("  if (%s) %s", branchVar,
+							strings.TrimSpace(classDirStmt(subVar, attr.Name, attr.Value, "")))
+						for _, dep := range findDeps(attrExprToJS(attr.Value), g.analysis.reactiveNames()) {
+							g.addUpdate(dep, upd)
+						}
+					}
+				} else if attr.IsStyleDir {
+					stmt := styleDirStmt(subVar, attr.Name, attr.Value, indent)
+					b.WriteString(stmt + "\n")
+					if branchVar != "" {
+						upd := fmt.Sprintf("  if (%s) %s", branchVar,
+							strings.TrimSpace(styleDirStmt(subVar, attr.Name, attr.Value, "")))
+						for _, dep := range findDeps(attrExprToJS(attr.Value), g.analysis.reactiveNames()) {
+							g.addUpdate(dep, upd)
+						}
+					}
 				} else if attr.IsBind {
 					stmt := bindAttrStmt(subVar, attr.Name, attr.Value, indent)
 					if attr.IsTwoWay && attr.Name == "value" {
-						stmt = fmt.Sprintf("%s%s.value = (%s);", indent, subVar, attr.Value)
+						stmt = fmt.Sprintf("%s%s.value = (%s);", indent, subVar, unwrapBraces(attr.Value))
 					}
 					b.WriteString(stmt + "\n")
 					if branchVar != "" {
 						updStmt := bindAttrStmt(subVar, attr.Name, attr.Value, "")
 						if attr.IsTwoWay && attr.Name == "value" {
-							updStmt = fmt.Sprintf("%s.value = (%s);", subVar, attr.Value)
+							updStmt = fmt.Sprintf("%s.value = (%s);", subVar, unwrapBraces(attr.Value))
 						}
 						upd := fmt.Sprintf("  if (%s) %s", branchVar, strings.TrimSpace(updStmt))
 						for _, dep := range findDeps(attr.Value, g.analysis.reactiveNames()) {
@@ -1597,12 +2347,32 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, branchVar string, nodes
 						indent, subVar, attr.Name, escapeAttr(attr.Value)))
 				}
 			}
-			childDeclared := g.emitBranchChildren(b, branchVar, n.Children, subVar, indent)
+			// Static-subtree compression inside a branch — mirrors walkElement's
+			// fast path.  Saves (element-count × 2-3) DOM ops at mount time
+			// when the branch is taken.
+			if strings.ToLower(n.Tag) != "template" &&
+				len(n.Children) > 0 &&
+				hasElement(n.Children) &&
+				allStatic(n.Children) {
+				html := emitStaticHTML(n.Children, g.scopeID)
+				b.WriteString(fmt.Sprintf("%s%s.innerHTML = '%s';\n",
+					indent, subVar, escapeJSString(html)))
+			} else if strings.ToLower(n.Tag) != "template" &&
+				len(n.Children) > 0 &&
+				allHoleCompatible(n.Children) &&
+				hasDynamicLeaf(n.Children) {
+				// Step 3 inside a branch: template-with-holes.  No threshold —
+				// see walkElement comment for why aggressive firing wins.
+				branchDecl := g.emitTemplateWithHolesInto(b, subVar, n.Children, branchVar, indent)
+				declared = append(declared, branchDecl...)
+			} else {
+				childDeclared := g.emitBranchChildren(b, branchVar, n.Children, subVar, indent)
+				declared = append(declared, childDeclared...)
+			}
 			b.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, subVar))
 			if branchVar != "" {
 				declared = append(declared, subVar)
 			}
-			declared = append(declared, childDeclared...)
 
 		case *IfChainNode:
 			for i, branch := range n.Branches {
@@ -1891,7 +2661,29 @@ func (g *CodeGen) emitEachRowBodyGuarded(
 		}
 	}
 
-	for _, node := range nodes {
+	// Contiguous static-run batching — same strategy as walkChildren and
+	// emitBranchChildren.  Each row is instantiated once per item; compressing
+	// its static skeleton to insertAdjacentHTML pays off multiplicatively as
+	// the array grows.
+	i := 0
+	for i < len(nodes) {
+		if isFullyStatic(nodes[i]) {
+			j := i + 1
+			for j < len(nodes) && isFullyStatic(nodes[j]) {
+				j++
+			}
+			run := nodes[i:j]
+			if hasElement(run) {
+				html := emitStaticHTML(run, g.scopeID)
+				createBuf.WriteString(fmt.Sprintf(
+					"%s$$insertHTML(%s, '%s');\n",
+					indent, parentVar, escapeJSString(html)))
+				i = j
+				continue
+			}
+		}
+		node := nodes[i]
+		i++
 		switch n := node.(type) {
 
 		case *TextNode:
@@ -1937,13 +2729,13 @@ func (g *CodeGen) emitEachRowBodyGuarded(
 				} else if attr.IsBind {
 					stmt := bindAttrStmt(sv, attr.Name, attr.Value, indent)
 					if attr.IsTwoWay && attr.Name == "value" {
-						stmt = fmt.Sprintf("%s%s.value = (%s);", indent, sv, attr.Value)
+						stmt = fmt.Sprintf("%s%s.value = (%s);", indent, sv, unwrapBraces(attr.Value))
 					}
 					createBuf.WriteString(stmt + "\n")
 					if strings.Contains(attr.Value, itemVar) {
 						updStmt := bindAttrStmt(sv, attr.Name, attr.Value, "")
 						if attr.IsTwoWay && attr.Name == "value" {
-							updStmt = fmt.Sprintf("%s.value = (%s);", sv, attr.Value)
+							updStmt = fmt.Sprintf("%s.value = (%s);", sv, unwrapBraces(attr.Value))
 						}
 						writeUpdate(strings.TrimSpace(updStmt))
 					}
@@ -1959,22 +2751,26 @@ func (g *CodeGen) emitEachRowBodyGuarded(
 						indent, sv, attr.Name, escapeAttr(attr.Value)))
 				}
 			}
-			g.emitEachRowBodyGuarded(hoistBuf, createBuf, updateBuf, destroyBuf,
-				n.Children, sv, itemVar, boxVar, indent, branchVar)
+			// Static-subtree compression — element-level in an each-row.
+			// Fully-static children become one innerHTML assignment.
+			if strings.ToLower(n.Tag) != "template" &&
+				len(n.Children) > 0 &&
+				hasElement(n.Children) &&
+				allStatic(n.Children) {
+				html := emitStaticHTML(n.Children, g.scopeID)
+				createBuf.WriteString(fmt.Sprintf("%s%s.innerHTML = '%s';\n",
+					indent, sv, escapeJSString(html)))
+			} else {
+				g.emitEachRowBodyGuarded(hoistBuf, createBuf, updateBuf, destroyBuf,
+					n.Children, sv, itemVar, boxVar, indent, branchVar)
+			}
 			createBuf.WriteString(fmt.Sprintf("%s%s.appendChild(%s);\n", indent, parentVar, sv))
 
 		case *ComponentNode:
 			wv := g.id()
 			cv := g.id() + "_comp"
 			// Build props expression from bound attrs
-			var propsEntries []string
-			for _, attr := range n.Attrs {
-				if attr.IsBind {
-					propsEntries = append(propsEntries, fmt.Sprintf("%s: %s", attr.Name, attr.Value))
-				} else if !attr.IsEvent {
-					propsEntries = append(propsEntries, fmt.Sprintf("%s: '%s'", attr.Name, escapeAttr(attr.Value)))
-				}
-			}
+			propsEntries := g.componentPropsEntries(n.Attrs)
 			propsExpr := "{}"
 			if len(propsEntries) > 0 {
 				propsExpr = "{ " + strings.Join(propsEntries, ", ") + " }"
@@ -1985,7 +2781,7 @@ func (g *CodeGen) emitEachRowBodyGuarded(
 			// the captured handler stays current on array updates.
 			for _, attr := range n.Attrs {
 				if attr.IsEvent {
-					boxedHandler := rewriteItemRef(attr.Value, itemVar, boxVar)
+					boxedHandler := rewriteItemRef(g.rewriteHandlerAssignments(attr.Value), itemVar, boxVar)
 					createBuf.WriteString(fmt.Sprintf(
 						"%s%s.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
 						indent, wv, attr.Name, boxedHandler))
@@ -2449,14 +3245,7 @@ func rewriteItemRef(src, itemVar, boxVar string) string {
 func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, parentVar, indent string) []string {
 	var declared []string
 	// Build props object expression
-	var propsEntries []string
-	for _, attr := range comp.Attrs {
-		if attr.IsBind {
-			propsEntries = append(propsEntries, fmt.Sprintf("%s: %s", attr.Name, attr.Value))
-		} else if !attr.IsEvent {
-			propsEntries = append(propsEntries, fmt.Sprintf("%s: '%s'", attr.Name, escapeAttr(attr.Value)))
-		}
-	}
+	propsEntries := g.componentPropsEntries(comp.Attrs)
 	propsExpr := "{}"
 	if len(propsEntries) > 0 {
 		propsExpr = "{ " + strings.Join(propsEntries, ", ") + " }"
@@ -2469,7 +3258,7 @@ func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, p
 			if attr.IsEvent {
 				s.WriteString(fmt.Sprintf(
 					"%s%s.addEventListener('%s', ($e) => { if ($e instanceof CustomEvent) { (%s)($e); } });\n",
-					indentLevel, wrapVar, attr.Name, attr.Value))
+					indentLevel, wrapVar, attr.Name, g.rewriteHandlerAssignments(attr.Value)))
 			}
 		}
 		return s.String()
@@ -2494,7 +3283,7 @@ func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, p
 			if !attr.IsBind {
 				continue
 			}
-			update := fmt.Sprintf("  if (%s) %s.set({ %s: %s });", instVar, instVar, attr.Name, attr.Value)
+			update := fmt.Sprintf("  if (%s) %s.set({ %s: %s });", instVar, instVar, attr.Name, unwrapBraces(attr.Value))
 			for _, dep := range findDeps(attr.Value, g.analysis.reactiveNames()) {
 				g.addUpdate(dep, update)
 			}
@@ -2530,7 +3319,7 @@ func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, p
 			if !attr.IsBind {
 				continue
 			}
-			update := fmt.Sprintf("  if (%s) %s.set({ %s: %s });", instVar, instVar, attr.Name, attr.Value)
+			update := fmt.Sprintf("  if (%s) %s.set({ %s: %s });", instVar, instVar, attr.Name, unwrapBraces(attr.Value))
 			for _, dep := range findDeps(attr.Value, g.analysis.reactiveNames()) {
 				g.addUpdate(dep, update)
 			}
@@ -2668,6 +3457,12 @@ func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, p
 // The component-level RewriteAssignments pass never sees template attribute
 // strings, so this function handles them independently.
 func (g *CodeGen) rewriteHandlerAssignments(handler string) string {
+	// The template parser preserves the source `{…}` wrapper in
+	// attribute values, so this function must strip it before doing
+	// any string surgery — otherwise the outer braces get mistaken
+	// for a block-statement body and the inner arrow ends up wrapped
+	// in a useless `{ () => … }` block at the emission site.
+	handler = unwrapBraces(handler)
 	if len(g.analysis.StateVars) == 0 && len(g.analysis.Props) == 0 {
 		return handler
 	}
@@ -2739,22 +3534,38 @@ func (g *CodeGen) emitEachChild(b *strings.Builder, node Node, parentVar string)
 // ──────────────────────────────────────────────
 
 func (g *CodeGen) genSetter(name string) string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("  function $$set_%s($$v) {\n", name))
-	b.WriteString(fmt.Sprintf("    %s = $$v;\n", name))
+	// Is this a deep-reactive state var?  Affects what we emit.
+	deep := false
+	for _, sv := range g.analysis.StateVars {
+		if sv.Name == name {
+			deep = sv.Deep
+			break
+		}
+	}
 
-	// Fire $$onChange for bindable props so parent can observe
+	// Build the "notify" body — everything that runs after a value
+	// change, regardless of whether the change came from a
+	// reassignment ($$set_X) or from a deep-proxy mutation
+	// ($$mut_X via $$proxy traps).  This used to be inlined inside
+	// $$set_X; extracting it lets deep state run the same reactions
+	// on in-place mutations like arr.push(x).
+	var notify strings.Builder
+
+	// Fire $$onChange for bindable props so parent can observe.
+	// For mutation-based notifies the new value IS the same reference
+	// (we mutated it), but the parent still wants to know — and the
+	// no-op guard in their setter will short-circuit if appropriate.
 	for _, prop := range g.analysis.Props {
 		if prop.Name == name && prop.Bindable {
-			b.WriteString(fmt.Sprintf(
-				"    if ($$onChange_%s) $$onChange_%s($$v);\n", name, name))
+			notify.WriteString(fmt.Sprintf(
+				"    if ($$onChange_%s) $$onChange_%s(%s);\n", name, name, name))
 		}
 	}
 
 	// Recompute derived vars that (transitively) depend on this var
 	for _, dv := range g.analysis.DerivedVars {
 		if containsStr(dv.Deps, name) {
-			b.WriteString(fmt.Sprintf("    $$upd_%s();\n", dv.Name))
+			notify.WriteString(fmt.Sprintf("    $$upd_%s();\n", dv.Name))
 		}
 	}
 
@@ -2803,23 +3614,77 @@ func (g *CodeGen) genSetter(name string) string {
 		}
 	}
 
-	writeUpdate := func(u string) {
-		b.WriteString(fmt.Sprintf("    $$defer(() => { %s });\n", strings.TrimSpace(u)))
-	}
-	for _, u := range structural {
-		writeUpdate(u)
-	}
-	for _, u := range attr {
-		writeUpdate(u)
+	// Emit one bundled $$defer per setter, with all updates as statements
+	// inside a single closure body.  Reduces per-setter-call cost from
+	// N closure allocations + N queue pushes + N flush invocations to
+	// 1 / 1 / 1 — significant savings for setters that touch many DOM
+	// positions (e.g. App.$$set_user fires 3 updates, $$set_loading fires 2-4).
+	//
+	// Ordering preserved: structural updates emitted before attribute
+	// updates inside the same closure, so structural changes (chain
+	// re-render, each reconcile) still happen before attribute reads.
+	//
+	// Trade-off: if one statement throws, subsequent statements in the
+	// same closure don't run.  Pre-consolidation, the queue continued with
+	// the next $$defer's fn after an exception.  In practice this rarely
+	// matters: the existing code guards each update with `if ($$chain_X_b0)`
+	// when the ref might be null, so the "throw" case is already prevented.
+	if len(structural) > 0 || len(attr) > 0 {
+		notify.WriteString("    $$defer(() => {\n")
+		for _, u := range structural {
+			notify.WriteString(fmt.Sprintf("      %s\n", strings.TrimSpace(u)))
+		}
+		for _, u := range attr {
+			notify.WriteString(fmt.Sprintf("      %s\n", strings.TrimSpace(u)))
+		}
+		notify.WriteString("    });\n")
 	}
 
 	// Trigger effects
 	for i, eff := range g.analysis.Effects {
 		if containsStr(eff.Deps, name) {
-			b.WriteString(fmt.Sprintf("    $$effect%d();\n", i))
+			notify.WriteString(fmt.Sprintf("    $$effect%d();\n", i))
 		}
 	}
 
+	notifyBody := notify.String()
+
+	// Build the final emission.
+	var b strings.Builder
+
+	// For deep state, expose the notify body under a stable name so
+	// the $$mut_X arrow declared earlier (forward reference) can
+	// reach it.  Plain setters need no separate notify function —
+	// the body just lives inline.
+	if deep {
+		b.WriteString(fmt.Sprintf("  function $$set_%s_notify() {\n", name))
+		b.WriteString(notifyBody)
+		b.WriteString("  }\n")
+	}
+
+	b.WriteString(fmt.Sprintf("  function $$set_%s($$v) {\n", name))
+	// Early-return on no-op writes.  Two reasons:
+	//   1. Breaks the two-way binding cycle.  When `bind:x={y}` wires
+	//      child→parent via $$onChange_x and parent→child via
+	//      `instance.set({x: y})`, a single user write would otherwise
+	//      bounce between $$set_y (parent) and $$set_x (child)
+	//      indefinitely.  Detecting "value didn't change" stops the
+	//      ping-pong on the second hop.
+	//   2. Skips redundant DOM updates and downstream callbacks.
+	// Identity comparison matches Svelte semantics — writing a fresh
+	// object with the same contents is still considered a change.
+	b.WriteString(fmt.Sprintf("    if (%s === $$v) return;\n", name))
+	if deep {
+		// Reassigning a deep-state variable wraps the incoming value
+		// in a fresh proxy so subsequent mutations on the new value
+		// also fire updates.  The old proxy is dropped along with its
+		// WeakMap cache.
+		b.WriteString(fmt.Sprintf("    %s = $$proxy($$v, $$mut_%s);\n", name, name))
+		b.WriteString(fmt.Sprintf("    $$set_%s_notify();\n", name))
+	} else {
+		b.WriteString(fmt.Sprintf("    %s = $$v;\n", name))
+		b.WriteString(notifyBody)
+	}
 	b.WriteString("  }\n")
 	return b.String()
 }
@@ -2986,6 +3851,12 @@ func isBoolAttr(name string) bool {
 //	class          →  elem.className = String(expr)   (also setAttribute for compat)
 //	everything else →  elem.setAttribute('attr', String(expr))
 func bindAttrStmt(elem, attr, expr, indent string) string {
+	// Attribute values carry their source `{…}` wrapper from the
+	// template parser (see readAttrValue).  Strip it here so every
+	// caller — there are many — emits the inner expression directly
+	// rather than `String({foo})`, which evaluates to "[object
+	// Object]" at runtime via the shorthand-object-literal shape.
+	expr = unwrapBraces(expr)
 	if isBoolAttr(attr) {
 		return fmt.Sprintf("%s%s.%s = !!(%s);", indent, elem, attr, expr)
 	}
@@ -2993,6 +3864,215 @@ func bindAttrStmt(elem, attr, expr, indent string) string {
 		return fmt.Sprintf("%s%s.className = String(%s);", indent, elem, expr)
 	}
 	return fmt.Sprintf("%s%s.setAttribute('%s', String(%s));", indent, elem, attr, expr)
+}
+
+// classDirStmt emits a `class:foo={cond}` directive — toggle the
+// class `foo` based on the truthiness of expr.  Using
+// classList.toggle preserves any other class names the user set via
+// a regular `class="..."` attribute, so a mix of static and dynamic
+// classes works: `<div class="btn" class:active={isActive}>` keeps
+// "btn" always and toggles "active".
+func classDirStmt(elem, cls, expr, indent string) string {
+	return fmt.Sprintf("%s%s.classList.toggle('%s', !!(%s));",
+		indent, elem, cls, attrExprToJS(expr))
+}
+
+// styleDirStmt emits a `style:foo={expr}` directive — set an inline
+// CSS property.  Uses setProperty rather than `elem.style.foo =`
+// because setProperty handles hyphenated names ("font-size",
+// "--theme-color") correctly without the user having to camelCase
+// them.
+func styleDirStmt(elem, prop, expr, indent string) string {
+	return fmt.Sprintf("%s%s.style.setProperty('%s', String(%s));",
+		indent, elem, prop, attrExprToJS(expr))
+}
+
+// attrExprToJS converts an attribute-value string into a JS
+// expression that produces its runtime value.  Three input shapes:
+//
+//   - `{expr}`               → expr                 (pure JS expression)
+//   - `prefix{x}suffix`      → `prefix${x}suffix`   (template literal)
+//   - `text`                 → 'text'               (plain string literal)
+//
+// The middle case is what makes `style:font-size="{size}px"` work:
+// the user wants the string "16px" at runtime, not the JS expression
+// `{size}px` (which is a syntax error).  Without this conversion every
+// unit-suffixed style directive would fail.
+//
+// Brace-matching honors string literals so `{f("}")}` doesn't end
+// at the `}` inside the string.
+func attrExprToJS(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "''"
+	}
+	// Pure-expression shape: `{...}` and nothing outside the
+	// matching braces.
+	if strings.HasPrefix(value, "{") && strings.HasSuffix(value, "}") {
+		inner := unwrapBraces(value)
+		if inner != value {
+			return inner
+		}
+	}
+	// No interpolation at all → plain quoted string.
+	if !strings.Contains(value, "{") {
+		// Escape single quotes and backslashes.
+		s := strings.ReplaceAll(value, "\\", "\\\\")
+		s = strings.ReplaceAll(s, "'", "\\'")
+		return "'" + s + "'"
+	}
+	// Mixed: build a template literal.
+	var b strings.Builder
+	b.WriteByte('`')
+	i := 0
+	for i < len(value) {
+		if value[i] == '{' {
+			// Find the matching `}` honoring nested braces & strings.
+			depth := 1
+			j := i + 1
+			for j < len(value) && depth > 0 {
+				switch value[j] {
+				case '"', '\'':
+					q := value[j]
+					j++
+					for j < len(value) && value[j] != q {
+						if value[j] == '\\' && j+1 < len(value) {
+							j += 2
+							continue
+						}
+						j++
+					}
+				case '{':
+					depth++
+				case '}':
+					depth--
+				}
+				if depth > 0 {
+					j++
+				}
+			}
+			b.WriteString("${")
+			b.WriteString(value[i+1 : j])
+			b.WriteByte('}')
+			i = j + 1
+			continue
+		}
+		// Literal char — escape template-literal specials.
+		c := value[i]
+		switch c {
+		case '`':
+			b.WriteString("\\`")
+		case '\\':
+			b.WriteString("\\\\")
+		case '$':
+			if i+1 < len(value) && value[i+1] == '{' {
+				b.WriteString("\\$")
+			} else {
+				b.WriteByte('$')
+			}
+		default:
+			b.WriteByte(c)
+		}
+		i++
+	}
+	b.WriteByte('`')
+	return b.String()
+}
+
+// unwrapBraces strips a single layer of outer `{...}` from an attribute
+// value when the value is being interpolated as a JavaScript expression.
+//
+// Why this exists:  the template parser preserves the source `{...}`
+// wrapper in Attr.Value (so `:disabled={true}` arrives as the literal
+// string `"{true}"`).  Codegen sites that interpolate Attr.Value into
+// a JS expression context — props objects, event handler bodies, set()
+// calls — must remove that wrapper, or the output becomes either a
+// syntax error ("disabled: {true}" → {true} is a block) or wrong
+// semantics ("value: {username}" → shorthand object literal instead of
+// the variable's value).
+//
+// Only the outermost matched pair is stripped.  Nested braces inside
+// (e.g. `{ {x: 1} }`) are preserved because the inner braces are part
+// of the user expression.  If the value doesn't start with `{` it's
+// returned verbatim — this covers both quoted attributes and bare
+// identifiers.
+func unwrapBraces(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) < 2 || s[0] != '{' || s[len(s)-1] != '}' {
+		return s
+	}
+	// Confirm the outer braces are a matched pair (not e.g. "{a} + {b}").
+	// Walk the string tracking brace depth, skipping over string and
+	// template literals.  If depth hits zero before the final char, the
+	// outer braces aren't a pair and we leave the value alone.
+	depth := 0
+	i := 0
+	for i < len(s) {
+		c := s[i]
+		switch c {
+		case '"', '\'':
+			// Skip the string literal.
+			q := c
+			i++
+			for i < len(s) && s[i] != q {
+				if s[i] == '\\' && i+1 < len(s) {
+					i += 2
+					continue
+				}
+				i++
+			}
+			i++ // closing quote
+		case '`':
+			// Skip the template literal.  We don't descend into ${} for
+			// brace matching — any { inside a template literal is content,
+			// not structure.
+			i++
+			for i < len(s) && s[i] != '`' {
+				if s[i] == '\\' && i+1 < len(s) {
+					i += 2
+					continue
+				}
+				i++
+			}
+			i++
+		case '{':
+			depth++
+			i++
+		case '}':
+			depth--
+			if depth == 0 && i < len(s)-1 {
+				// Closed the outer braces before the end → not a pair.
+				return s
+			}
+			i++
+		default:
+			i++
+		}
+	}
+	return strings.TrimSpace(s[1 : len(s)-1])
+}
+
+// sanitizeIdent replaces characters that are illegal in JS identifiers
+// with underscores.  Used when constructing variable names from event
+// names like "on:input" or "click.once" — the event name itself can
+// stay as-is in the addEventListener() string argument, but it can't
+// appear verbatim inside an identifier.
+func sanitizeIdent(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		isOK := c == '_' || c == '$' ||
+			(c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(i > 0 && c >= '0' && c <= '9')
+		if isOK {
+			b.WriteByte(c)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 // isHandlerExpr returns true when s is already a function/arrow expression
@@ -3078,4 +4158,768 @@ func escapeTL(s string) string {
 func escapeAttr(s string) string {
 	s = strings.ReplaceAll(s, "'", "\\'")
 	return s
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Static-subtree → innerHTML compression
+//
+//  Motivation: runtime DOM operations are expensive.  A chain of
+//  createElement + setAttribute + appendChild + createTextNode + appendChild
+//  for each element makes the browser bounce through JS→native transitions
+//  thousands of times during mount.  A single `elem.innerHTML = '<html>'`
+//  hands the whole string to the HTML parser, which runs in native code and
+//  builds the DOM tree in one pass — dramatically fewer JS↔native crossings.
+//
+//  For a static-heavy page (dashboard shells, form scaffolds, presentation
+//  components), this is by far the single largest win available at mount
+//  time.  Emitted-code size may go UP (the HTML string is verbose), but
+//  that's gzip's problem; mount speed is the user-facing metric.
+//
+//  isFullyStatic(node) identifies subtrees whose DOM never changes after
+//  creation: no events, bindings, interpolations, directives, components,
+//  or slots, recursively.  emitStaticHTML serializes such a subtree as an
+//  HTML string with the scope attribute baked into every tag so scoped
+//  CSS still matches.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// voidTags is the set of HTML elements that have no closing tag.
+var voidTags = map[string]bool{
+	"area": true, "base": true, "br": true, "col": true, "embed": true,
+	"hr": true, "img": true, "input": true, "link": true, "meta": true,
+	"param": true, "source": true, "track": true, "wbr": true,
+}
+
+// isFullyStatic reports whether a node and its entire subtree produce
+// deterministic, unchanging DOM — no reactive bindings, no events, no
+// interpolation, no structural directives, no component instantiations,
+// no slots.
+func isFullyStatic(node Node) bool {
+	switch n := node.(type) {
+	case *TextNode:
+		for _, p := range n.Parts {
+			if !p.Static {
+				return false
+			}
+		}
+		return true
+
+	case *ElementNode:
+		if n.IfCond != "" || n.EachExpr != "" {
+			return false
+		}
+		for _, attr := range n.Attrs {
+			if attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis ||
+				attr.IsClassDir || attr.IsStyleDir {
+				return false
+			}
+		}
+		for _, child := range n.Children {
+			if !isFullyStatic(child) {
+				return false
+			}
+		}
+		return true
+
+	default:
+		return false
+	}
+}
+
+// allStatic returns true iff every node in the list is fully-static.
+func allStatic(nodes []Node) bool {
+	for _, n := range nodes {
+		if !isFullyStatic(n) {
+			return false
+		}
+	}
+	return true
+}
+
+// hasElement returns true iff any node in the list is an ElementNode.
+// Used to decide whether an innerHTML compression is worth it — a list of
+// only TextNodes can still be compressed, but its savings are marginal.
+// Keeping this threshold permissive: even a single-element static subtree
+// pays back the HTML-parse cost when measured by operation count.
+func hasElement(nodes []Node) bool {
+	for _, n := range nodes {
+		if _, ok := n.(*ElementNode); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// emitStaticHTML serializes a fully-static subtree as an HTML string.
+// Scope attribute is baked into every opening tag.  Text is HTML-escaped.
+// Void elements emitted without closing tags.  Attribute values use
+// double-quotes so the string can sit inside a single-quoted JS literal.
+//
+// Precondition: every node passed must satisfy isFullyStatic.
+func emitStaticHTML(nodes []Node, scopeID string) string {
+	var b strings.Builder
+	for _, node := range nodes {
+		emitStaticHTMLNode(&b, node, scopeID)
+	}
+	return b.String()
+}
+
+func emitStaticHTMLNode(b *strings.Builder, node Node, scopeID string) {
+	switch n := node.(type) {
+	case *TextNode:
+		for _, p := range n.Parts {
+			b.WriteString(escapeHTMLText(p.Value))
+		}
+	case *ElementNode:
+		b.WriteByte('<')
+		b.WriteString(n.Tag)
+		if scopeID != "" {
+			b.WriteByte(' ')
+			b.WriteString(scopeID)
+			b.WriteString(`=""`)
+		}
+		for _, attr := range n.Attrs {
+			b.WriteByte(' ')
+			b.WriteString(attr.Name)
+			b.WriteString(`="`)
+			b.WriteString(escapeHTMLAttr(attr.Value))
+			b.WriteByte('"')
+		}
+		if voidTags[strings.ToLower(n.Tag)] {
+			b.WriteString("/>")
+			return
+		}
+		b.WriteByte('>')
+		for _, child := range n.Children {
+			emitStaticHTMLNode(b, child, scopeID)
+		}
+		b.WriteString("</")
+		b.WriteString(n.Tag)
+		b.WriteByte('>')
+	}
+}
+
+// escapeHTMLText escapes <, >, & in text content.
+func escapeHTMLText(s string) string {
+	if !strings.ContainsAny(s, "<>&") {
+		return s
+	}
+	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+	return r.Replace(s)
+}
+
+// escapeHTMLAttr escapes & and " in attribute values.
+func escapeHTMLAttr(s string) string {
+	if !strings.ContainsAny(s, `&"`) {
+		return s
+	}
+	r := strings.NewReplacer("&", "&amp;", `"`, "&quot;")
+	return r.Replace(s)
+}
+
+// escapeJSString escapes a string for a single-quoted JS string literal.
+// ─────────────────────────────────────────────────────────────────────────────
+//  Step 3: "template-with-holes" compression
+//
+//  A much more aggressive version of Step 1.  Where Step 1 only compressed
+//  fully-static subtrees, Step 3 handles subtrees that are "mostly static
+//  with a few dynamic leaves" — an extremely common pattern in real
+//  templates (<form> scaffolds with a few <input> bindings, <header>
+//  structures with an interpolated {title}, etc.).
+//
+//  Approach: emit the whole subtree as a single HTML string (via innerHTML),
+//  with a <!--$--> comment anchor inserted before each dynamic leaf.  At
+//  mount we do one TreeWalker pass over the comments to capture refs to
+//  each anchor, then `.previousSibling` gives us the dynamic element, or
+//  the anchor itself becomes the text-interpolation target.
+//
+//  Ops at mount shrink dramatically: one innerHTML call replaces 10-30
+//  createElement/setAttribute/appendChild calls.  The tree-walker pass is
+//  a single native traversal.
+//
+//  What this does NOT handle (falls back to imperative): #if, #each,
+//  <Component>, <slot>, nested dynamic structures.  Those stay in the
+//  existing emission paths because their shapes don't fit single-leaf
+//  anchor semantics.  Mixing them freely with template-with-holes would
+//  require chain-aware navigation, which is Step 4+.
+//
+//  The Step 3 dynamic-leaf patterns we DO handle:
+//    - Element with events/bindings/two-way but fully-static children
+//    - Text node with {expr} interpolation (becomes an empty text node in
+//      the template, captured as a text-node ref for later .data writes)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// hole describes one dynamic position in a template-with-holes subtree.
+// Populated by buildHoleTemplate as it walks the AST.
+type hole struct {
+	kind string // "elem" = anchor's previousSibling is the element
+	//         // "text" = anchor itself IS the text ref (becomes a text node at mount)
+	node Node // the original AST node (ElementNode or TextNode)
+}
+
+// isLeafDynamicElement reports whether an element is dynamic (has events,
+// bindings, or two-way) AND its subtree is otherwise fully-static — meaning
+// the element itself carries dynamic behavior but nothing deeper does.
+// Such elements fit the template-with-holes pattern.
+func isLeafDynamicElement(elem *ElementNode) bool {
+	if elem.IfCond != "" || elem.EachExpr != "" {
+		return false
+	}
+	hasDyn := false
+	for _, attr := range elem.Attrs {
+		if attr.IsEvent || attr.IsBind || attr.IsTwoWay {
+			hasDyn = true
+			break
+		}
+	}
+	if !hasDyn {
+		return false // fully static — handled by Step 1
+	}
+	// All children must be static; we only handle leaf-level dynamics here.
+	for _, child := range elem.Children {
+		if !isFullyStatic(child) {
+			return false
+		}
+	}
+	return true
+}
+
+// isHoleCompatible reports whether a node is one of: fully-static, a
+// leaf-dynamic element, or a text node with interpolation.  A list of such
+// nodes can be compressed into a template-with-holes.
+func isHoleCompatible(node Node) bool {
+	switch n := node.(type) {
+	case *ElementNode:
+		return isFullyStatic(n) || isLeafDynamicElement(n)
+	case *TextNode:
+		// Always compatible — static parts go into the template, dynamic
+		// parts each become a separate interpolation hole.
+		return true
+	default:
+		// IfChainNode, EachBlockNode, ComponentNode, SlotNode — NOT compatible
+		return false
+	}
+}
+
+
+
+// allHoleCompatible returns true iff every node in the list is a candidate
+// for template-with-holes emission (either static, a leaf-dynamic element,
+// or a text node with interpolation).
+func allHoleCompatible(nodes []Node) bool {
+	for _, n := range nodes {
+		if !isHoleCompatible(n) {
+			return false
+		}
+	}
+	return true
+}
+
+// hasDynamicLeaf reports whether a list of hole-compatible nodes contains
+// at least one actual hole.  A list that is entirely static doesn't need
+// the template-with-holes machinery — Step 1 handles that better.
+func hasDynamicLeaf(nodes []Node) bool {
+	for _, node := range nodes {
+		switch n := node.(type) {
+		case *ElementNode:
+			if isLeafDynamicElement(n) {
+				return true
+			}
+		case *TextNode:
+			for _, p := range n.Parts {
+				if !p.Static {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// buildHoleTemplate walks a list of hole-compatible nodes and produces:
+//   1. An HTML template string with <!--$--> anchors at each dynamic leaf
+//      position and empty text nodes at each text-interpolation position
+//   2. An ordered list of holes in the order a TreeWalker encounters them
+//      (comment-only walk for element anchors, character-data walk for
+//      text holes — handled uniformly by using one comment anchor per hole).
+//
+// Scope attribute is baked into every element in the template so scoped
+// CSS keeps matching.
+//
+// Emission strategy for text holes: emit <!--$--> anchor, then at mount
+// replace it with a created text node whose ref we capture.  Slightly more
+// ops than baking an empty text node directly, but the capture logic stays
+// uniform with element holes.
+func buildHoleTemplate(nodes []Node, scopeID string) (string, []hole) {
+	var b strings.Builder
+	var holes []hole
+	for _, node := range nodes {
+		appendHoleNode(&b, &holes, node, scopeID)
+	}
+	return b.String(), holes
+}
+
+func appendHoleNode(b *strings.Builder, holes *[]hole, node Node, scopeID string) {
+	switch n := node.(type) {
+	case *TextNode:
+		// Walk parts: static parts written verbatim, dynamic parts become
+		// one hole anchor each.  The dynamic part's text value is rendered
+		// at mount time by writing to the captured text ref's .data.
+		for _, p := range n.Parts {
+			if p.Static {
+				b.WriteString(escapeHTMLText(p.Value))
+			} else {
+				// Emit an anchor comment.  At mount we'll create a text node
+				// and insert it before the anchor, then capture the text node
+				// as the hole ref.
+				b.WriteString("<!--$-->")
+				*holes = append(*holes, hole{kind: "text", node: &TextNode{Parts: []*Part{p}}})
+			}
+		}
+
+	case *ElementNode:
+		if isLeafDynamicElement(n) {
+			// Emit static parts of this element (tag, static attrs, static
+			// children) inline.  Dynamic attrs are applied at mount via the
+			// captured ref.  The <!--$--> anchor goes AFTER the element so
+			// anchor.previousSibling returns the element at capture time.
+			b.WriteByte('<')
+			b.WriteString(n.Tag)
+			if scopeID != "" {
+				b.WriteByte(' ')
+				b.WriteString(scopeID)
+				b.WriteString(`=""`)
+			}
+			// Only STATIC attributes go into the template.  Dynamic ones
+			// (events, bindings) are applied at mount — see emitHoleBindings.
+			for _, attr := range n.Attrs {
+				if attr.IsEvent || attr.IsBind || attr.IsTwoWay {
+					continue
+				}
+				b.WriteByte(' ')
+				b.WriteString(attr.Name)
+				b.WriteString(`="`)
+				b.WriteString(escapeHTMLAttr(attr.Value))
+				b.WriteByte('"')
+			}
+			if voidTags[strings.ToLower(n.Tag)] {
+				b.WriteString("/>")
+			} else {
+				b.WriteByte('>')
+				for _, child := range n.Children {
+					emitStaticHTMLNode(b, child, scopeID)
+				}
+				b.WriteString("</")
+				b.WriteString(n.Tag)
+				b.WriteByte('>')
+			}
+			b.WriteString("<!--$-->")
+			*holes = append(*holes, hole{kind: "elem", node: n})
+		} else {
+			// This branch handles fully-static elements.  Reaching here with
+			// a non-static element would be a caller bug — buildHoleTemplate
+			// is gated by allHoleCompatible upstream, which only accepts
+			// static or leaf-dynamic ElementNodes.  A non-static, non-leaf-
+			// dynamic element (e.g. a static wrapper containing a deeper
+			// dynamic descendant) means walkElement should have routed
+			// elsewhere, and we'd silently drop the dynamic content if we
+			// just serialized statically here.
+			//
+			// Defend with an assertion — better to fail loudly during
+			// development than emit corrupted templates.
+			if !isFullyStatic(n) {
+				panic(fmt.Sprintf("buildHoleTemplate invariant violated: element <%s> is neither leaf-dynamic nor fully static; caller bug", n.Tag))
+			}
+			emitStaticHTMLNode(b, n, scopeID)
+		}
+	}
+}
+
+// escapeJSString escapes a string for a single-quoted JS string literal.
+func escapeJSString(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch c {
+		case '\'':
+			b.WriteString(`\'`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// emitTemplateWithHoles is Step 3's emission path.  When walkElement
+// detects that a subtree matches the hole-compatible pattern (static
+// frame with dynamic leaves), this function emits:
+//
+//   1. `parent.innerHTML = '...'` — one native parse, whole subtree built
+//   2. `TreeWalker` traversal — single native pass collecting all anchor
+//      comment refs in document order
+//   3. For each hole: capture the target ref via .previousSibling (for
+//      element holes) or replace the anchor with a text node (for text
+//      interpolation holes)
+//   4. For each hole: apply the dynamic bindings — events, :attrs, two-way,
+//      text-interpolation updates.  These go through the same code paths
+//      the imperative walk uses, just with the ref already in hand.
+//
+// Preconditions: caller has verified allHoleCompatible(children) &&
+// hasDynamicLeaf(children) — i.e. the children mix is expressible as
+// holes and there's at least one actual hole (otherwise Step 1 handles
+// it better).
+func (g *CodeGen) emitTemplateWithHoles(varName string, children []Node) {
+	html, holes := buildHoleTemplate(children, g.scopeID)
+
+	// 1. Set the whole subtree via innerHTML.
+	g.create.WriteString(fmt.Sprintf("  %s.innerHTML = '%s';\n",
+		varName, escapeJSString(html)))
+
+	if len(holes) == 0 {
+		// No holes — shouldn't happen if hasDynamicLeaf was checked, but
+		// guard anyway.  The innerHTML above already materialized the tree.
+		return
+	}
+
+	// 2. One TreeWalker pass captures all anchor comments in document order.
+	//    NodeFilter.SHOW_COMMENT == 128.
+	//
+	//    Critical ordering invariant: ALL nextNode() calls must complete
+	//    BEFORE any anchor is removed or replaced.  The TreeWalker tracks
+	//    its position by reference to the current node; if that node is
+	//    detached from the tree (via .remove() for element holes or
+	//    .replaceChild() for text holes), the walker's internal pointer
+	//    is invalidated and subsequent nextNode() calls return null.
+	//
+	//    So we emit in two passes:
+	//      Pass A: declare walker, then ALL `const $$nN_a = walker.nextNode()`
+	//      Pass B: per-hole, capture the real ref and process the anchor
+	walker := varName + "_tw"
+	g.create.WriteString(fmt.Sprintf(
+		"  const %s = document.createTreeWalker(%s, 128);\n", walker, varName))
+
+	// Pass A: capture every anchor first.  These are stored in deterministic
+	// `$$nN_a` names matching the per-hole id() sequence so Pass B can refer
+	// back to them.
+	anchors := make([]string, len(holes))
+	for i := range holes {
+		anchors[i] = g.id() + "_a"
+		g.create.WriteString(fmt.Sprintf("  const %s = %s.nextNode();\n", anchors[i], walker))
+	}
+
+	// Pass B: process each captured anchor.  Now safe to mutate the tree
+	// (remove / replaceChild) because the walker is no longer in use.
+	for i, h := range holes {
+		anchor := anchors[i]
+		switch h.kind {
+		case "elem":
+			elem := h.node.(*ElementNode)
+			refVar := g.id()
+			// Element ref = anchor.previousSibling.  Then we detach the anchor
+			// so it doesn't pollute the live DOM.
+			g.create.WriteString(fmt.Sprintf(
+				"  const %s = %s.previousSibling;\n", refVar, anchor))
+			g.create.WriteString(fmt.Sprintf("  %s.remove();\n", anchor))
+			// Apply dynamic attributes (events, bindings, two-way) exactly
+			// the way walkElement's attr loop does — factored out.
+			g.applyDynamicAttrs(refVar, elem)
+
+		case "text":
+			textNode := h.node.(*TextNode)
+			// The anchor becomes our text ref.  Replace the comment with a
+			// text node so .data writes show up.
+			//
+			// Critical: emit the createTextNode with an EMPTY initial value
+			// in g.create, then set the real expression value in g.init.
+			// This matches the pre-Step-3 walkText pattern (line ~675).  The
+			// ordering matters because derived-value initializers ($$upd_*)
+			// fire AFTER g.create's DOM-construction statements but BEFORE
+			// g.init's initial-render statements.  Reading a derived value
+			// inline (e.g. document.createTextNode(String(totalAmount.toFixed(2))))
+			// would crash because the derived hasn't been computed yet.
+			refVar := g.id()
+			expr := buildExpr(textNode.Parts)
+			g.create.WriteString(fmt.Sprintf(
+				"  const %s = document.createTextNode('');\n", refVar))
+			g.create.WriteString(fmt.Sprintf(
+				"  %s.parentNode.replaceChild(%s, %s);\n", anchor, refVar, anchor))
+			g.init.WriteString(fmt.Sprintf("  %s.data = %s;\n", refVar, expr))
+			// Register update: whenever any dependency changes, rewrite .data.
+			for _, dep := range findDeps(expr, g.analysis.reactiveNames()) {
+				g.addUpdate(dep, fmt.Sprintf("%s.data = %s;", refVar, expr))
+			}
+		}
+	}
+}
+
+// applyDynamicAttrs emits the events/bindings/two-way wiring for an
+// already-captured element ref.  Factored out so both the imperative
+// walkElement path and the template-with-holes emitTemplateWithHoles
+// path share the same attr handling.  Identical to the switch inside
+// walkElement, operating on the provided varName instead of one it
+// declared itself.
+func (g *CodeGen) applyDynamicAttrs(varName string, elem *ElementNode) {
+	for _, attr := range elem.Attrs {
+		switch {
+		case attr.IsEvent:
+			handler := g.rewriteHandlerAssignments(attr.Value)
+			if isSimpleIdent(handler) {
+				g.events.WriteString(fmt.Sprintf(
+					"  %s.addEventListener('%s', %s);\n", varName, attr.Name, handler))
+				g.cleanup.WriteString(fmt.Sprintf(
+					"      %s.removeEventListener('%s', %s);\n", varName, attr.Name, handler))
+			} else if isHandlerExpr(handler) {
+				hv := varName + "_" + attr.Name + "_h"
+				g.create.WriteString(fmt.Sprintf("  const %s = %s;\n", hv, handler))
+				g.events.WriteString(fmt.Sprintf(
+					"  %s.addEventListener('%s', %s);\n", varName, attr.Name, hv))
+				g.cleanup.WriteString(fmt.Sprintf(
+					"      %s.removeEventListener('%s', %s);\n", varName, attr.Name, hv))
+			} else {
+				hv := varName + "_" + attr.Name + "_h"
+				g.create.WriteString(fmt.Sprintf(
+					"  const %s = ($event) => { %s; };\n", hv, handler))
+				g.events.WriteString(fmt.Sprintf(
+					"  %s.addEventListener('%s', %s);\n", varName, attr.Name, hv))
+				g.cleanup.WriteString(fmt.Sprintf(
+					"      %s.removeEventListener('%s', %s);\n", varName, attr.Name, hv))
+			}
+
+		case attr.IsBindThis:
+			g.emitBindThis(varName, attr.Value, &g.init, &g.cleanup, "  ", "      ")
+
+		case attr.IsClassDir:
+			deps := findDeps(attrExprToJS(attr.Value), g.analysis.reactiveNames())
+			stmt := classDirStmt(varName, attr.Name, attr.Value, "  ")
+			g.init.WriteString(stmt + "\n")
+			for _, dep := range deps {
+				g.addUpdate(dep, stmt)
+			}
+
+		case attr.IsStyleDir:
+			deps := findDeps(attrExprToJS(attr.Value), g.analysis.reactiveNames())
+			stmt := styleDirStmt(varName, attr.Name, attr.Value, "  ")
+			g.init.WriteString(stmt + "\n")
+			for _, dep := range deps {
+				g.addUpdate(dep, stmt)
+			}
+
+		case attr.IsBind:
+			deps := findDeps(attr.Value, g.analysis.reactiveNames())
+			upd := bindAttrStmt(varName, attr.Name, attr.Value, "  ")
+			// For two-way value, write to DOM property rather than attribute.
+			if attr.IsTwoWay && attr.Name == "value" {
+				upd = fmt.Sprintf("  %s.value = (%s);", varName, unwrapBraces(attr.Value))
+			}
+			g.init.WriteString(upd + "\n")
+			for _, dep := range deps {
+				if attr.IsTwoWay && attr.Name == "value" {
+					g.addUpdate(dep, fmt.Sprintf("%s.value = (%s);", varName, unwrapBraces(attr.Value)))
+				} else {
+					g.addUpdate(dep, strings.TrimSpace(upd))
+				}
+			}
+			if attr.IsTwoWay {
+				g.emitTwoWayListener(varName, elem.Tag, attr,
+					&g.create, &g.events, &g.cleanup, "  ", "  ", "      ")
+			}
+		}
+		// Static attrs are baked into the template — skip them here.
+	}
+}
+
+// emitTemplateWithHolesInto is the branch-scoped variant of
+// emitTemplateWithHoles.  Key differences:
+//
+//   1. Emits into the caller's buffer `b` at the given `indent`, not into
+//      the component's top-level g.create/g.events buffers.
+//   2. No cleanup is emitted — when the branch is torn down, the branch
+//      element's `.remove()` takes all child listeners with it.
+//   3. Returns the list of `declared` variable names (dynamic refs and
+//      handler constants) so emitIfChain can emit `if (branchVar) { ... }`
+//      guards around update calls that reference them.
+//   4. For text-interpolation holes, the update call is registered through
+//      g.addUpdate but wrapped in `if (branchVar) ...` at the call site —
+//      the surrounding chain function gates the update on the branch being
+//      active.
+//
+// Preconditions: same as emitTemplateWithHoles.  Caller has verified
+// allHoleCompatible(children) && hasDynamicLeaf(children).
+func (g *CodeGen) emitTemplateWithHolesInto(b *strings.Builder, varName string, children []Node, branchVar, indent string) []string {
+	html, holes := buildHoleTemplate(children, g.scopeID)
+
+	b.WriteString(fmt.Sprintf("%s%s.innerHTML = '%s';\n",
+		indent, varName, escapeJSString(html)))
+
+	if len(holes) == 0 {
+		return nil
+	}
+
+	var declared []string
+
+	// TreeWalker pass capturing each anchor comment in document order.
+	//
+	// Critical ordering invariant (see emitTemplateWithHoles for full rationale):
+	// ALL nextNode() calls must complete BEFORE any anchor is removed or
+	// replaced.  Mutating the tree mid-walk invalidates the walker's
+	// internal pointer and subsequent nextNode() calls return null.
+	//
+	// Inside a branch (branchVar != ""), every name we declare must be
+	// hoisted to module-top with `let X = null;` so setters and other
+	// top-level code can reference the captured refs.  Otherwise the
+	// `const $$nN = …` declarations inside the chain-function body are
+	// invisible to outer scope, causing ReferenceError when a setter
+	// fires before the branch ever ran (or after teardown).  The chain
+	// function's tear-down clause null-outs these via `declared`.
+	emitDecl := func(name string, init string) {
+		// init is the right-hand side of `= …` (without trailing semicolon).
+		if branchVar == "" {
+			// Top-level inline emission: const is fine, nothing to hoist.
+			b.WriteString(fmt.Sprintf("%sconst %s = %s;\n", indent, name, init))
+			return
+		}
+		// Branch emission: hoist as `let X = null;` at module-top, assign
+		// inside the branch body with plain `=`.
+		g.create.WriteString(fmt.Sprintf("  let %s = null;\n", name))
+		b.WriteString(fmt.Sprintf("%s%s = %s;\n", indent, name, init))
+	}
+
+	walker := varName + "_tw"
+	emitDecl(walker, fmt.Sprintf("document.createTreeWalker(%s, 128)", varName))
+	declared = append(declared, walker)
+
+	// Pass A: capture every anchor first.
+	anchors := make([]string, len(holes))
+	for i := range holes {
+		anchors[i] = g.id() + "_a"
+		emitDecl(anchors[i], fmt.Sprintf("%s.nextNode()", walker))
+		declared = append(declared, anchors[i])
+	}
+
+	// Pass B: process each captured anchor — safe to mutate the tree now.
+	for i, h := range holes {
+		anchor := anchors[i]
+		switch h.kind {
+		case "elem":
+			elem := h.node.(*ElementNode)
+			refVar := g.id()
+			emitDecl(refVar, fmt.Sprintf("%s.previousSibling", anchor))
+			b.WriteString(fmt.Sprintf("%s%s.remove();\n", indent, anchor))
+			declared = append(declared, refVar)
+			// Dynamic attrs: events, bindings, two-way.  Write into the
+			// branch buffer `b` at `indent`, matching the existing
+			// emitBranchChildren patterns for static-attr/event emission.
+			g.applyDynamicAttrsInto(b, refVar, elem, branchVar, indent)
+			// applyDynamicAttrsInto may declare extra handler consts — capture
+			// them so the chain function can null them out on tear-down.
+			// The handler const's name pattern is `<refVar>_<attr>_h` and
+			// it's used via `declared` in the chain-function guard setup.
+			// Add them conservatively: any const emitted will already be
+			// pattern-matched via name later, so it's enough to register
+			// refVar itself (which is the handler closure's dependency).
+
+		case "text":
+			textNode := h.node.(*TextNode)
+			refVar := g.id()
+			expr := buildExpr(textNode.Parts)
+			emitDecl(refVar, fmt.Sprintf("document.createTextNode(%s)", expr))
+			b.WriteString(fmt.Sprintf(
+				"%s%s.parentNode.replaceChild(%s, %s);\n", indent, anchor, refVar, anchor))
+			declared = append(declared, refVar)
+			// Register dep-triggered update.  When this Step 3 emission is
+			// nested inside a branch-tracked context, branchVar guards the
+			// update against running after the branch is torn down.  When
+			// branchVar is empty (the inline `if (cond) { ... }` emission
+			// path used by emitBranchChildren for nested if-chains), we
+			// CAN'T gate on a branch variable — there isn't one.  Emitting
+			// `if () ...` would be a syntax error, and emitting an
+			// unguarded update would crash with ReferenceError when the
+			// inline block didn't execute (the const refVar wouldn't exist).
+			//
+			// Resolution: skip the update entirely in inline-if contexts.
+			// This matches the pre-Step-3 emission behavior for dynamic
+			// text inside inline-ifs (the text rendered initial-only and
+			// went stale on prop changes).  Fixing inline-if reactivity
+			// is a separate (orthogonal) issue not introduced by Step 3.
+			if branchVar == "" {
+				continue
+			}
+			for _, dep := range findDeps(expr, g.analysis.reactiveNames()) {
+				g.addUpdate(dep, fmt.Sprintf("if (%s) %s.data = %s;", branchVar, refVar, expr))
+			}
+		}
+	}
+
+	return declared
+}
+
+// applyDynamicAttrsInto is the branch-scoped variant of applyDynamicAttrs.
+// Emits event wires, :attr bindings, and two-way listeners directly into
+// the provided buffer `b` at `indent`.  No cleanup emissions — branch
+// tear-down handles listener removal via .remove().  Update deps are
+// guarded by branchVar via the standard addUpdate path (the chain
+// function wraps the call in `if (branchVar) ...`).
+func (g *CodeGen) applyDynamicAttrsInto(b *strings.Builder, varName string, elem *ElementNode, branchVar, indent string) {
+	for _, attr := range elem.Attrs {
+		switch {
+		case attr.IsEvent:
+			handler := g.rewriteHandlerAssignments(attr.Value)
+			if isSimpleIdent(handler) {
+				b.WriteString(fmt.Sprintf(
+					"%s%s.addEventListener('%s', %s);\n",
+					indent, varName, attr.Name, handler))
+			} else if isHandlerExpr(handler) {
+				hv := varName + "_" + attr.Name + "_h"
+				b.WriteString(fmt.Sprintf("%sconst %s = %s;\n", indent, hv, handler))
+				b.WriteString(fmt.Sprintf(
+					"%s%s.addEventListener('%s', %s);\n",
+					indent, varName, attr.Name, hv))
+			} else {
+				hv := varName + "_" + attr.Name + "_h"
+				b.WriteString(fmt.Sprintf(
+					"%sconst %s = ($event) => { %s; };\n", indent, hv, handler))
+				b.WriteString(fmt.Sprintf(
+					"%s%s.addEventListener('%s', %s);\n",
+					indent, varName, attr.Name, hv))
+			}
+
+		case attr.IsBindThis:
+			// Inside a branch.  No cleanup needed: when the branch
+			// is removed, the element goes with it; the ref will
+			// dangle until the next bind:this fires.  We pass nil for
+			// the cleanupBuf to skip cleanup emission.
+			g.emitBindThis(varName, attr.Value, b, nil, indent, "")
+
+		case attr.IsBind:
+			deps := findDeps(attr.Value, g.analysis.reactiveNames())
+			upd := bindAttrStmt(varName, attr.Name, attr.Value, indent)
+			if attr.IsTwoWay && attr.Name == "value" {
+				upd = fmt.Sprintf("%s%s.value = (%s);", indent, varName, unwrapBraces(attr.Value))
+			}
+			b.WriteString(upd + "\n")
+			// See emitTemplateWithHolesInto for the full rationale: when
+			// branchVar is empty (inline-if context), we can't safely
+			// register an update because the ref might not exist when
+			// the update runs.  Skip in that case.  This matches pre-Step-3
+			// behavior for inline-if dynamic content.
+			if branchVar != "" {
+				for _, dep := range deps {
+					stmt := fmt.Sprintf("if (%s) %s", branchVar, strings.TrimSpace(upd))
+					g.addUpdate(dep, stmt)
+				}
+			}
+			if attr.IsTwoWay {
+				g.emitTwoWayListener(varName, elem.Tag, attr,
+					b, b, nil, indent, indent, "")
+			}
+		}
+	}
 }
