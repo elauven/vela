@@ -495,7 +495,18 @@ func printNode(n JsNode) string {
 	case *JsLiteral:
 		return x.Raw
 	case *JsTemplateLit:
-		return x.Raw
+		var b strings.Builder
+		b.WriteByte('`')
+		for i, q := range x.Quasis {
+			b.WriteString(q)
+			if i < len(x.Exprs) {
+				b.WriteString("${")
+				b.WriteString(printNode(x.Exprs[i]))
+				b.WriteByte('}')
+			}
+		}
+		b.WriteByte('`')
+		return b.String()
 	case *JsThisExpr:
 		return "this"
 	case *JsSuperExpr:

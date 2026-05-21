@@ -827,8 +827,14 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 	case *JsIdent:
 		b.resolveRef(e, false)
 
-	case *JsLiteral, *JsTemplateLit, *JsThisExpr, *JsSuperExpr:
+	case *JsLiteral, *JsThisExpr, *JsSuperExpr:
 		// no references
+
+	case *JsTemplateLit:
+		// Interpolation expressions can reference variables.
+		for _, x := range e.Exprs {
+			b.walkExpr(x)
+		}
 
 	case *JsArrayExpr:
 		for _, el := range e.Elems {

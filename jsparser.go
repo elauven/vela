@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ──────────────────────────────────────────────
 //  Parser
@@ -21,6 +24,21 @@ func ParseJS(src string) *JsProgram {
 	p.peek = p.lex.Next()
 	p.prevEnd = 0
 	return p.parseProgram()
+}
+
+// parseJSExpr parses src as a single JavaScript expression and
+// returns the expression node.  Used for re-parsing the ${...}
+// interpolations of a template literal into structured sub-nodes.
+// Returns nil if src is empty or unparseable.
+func parseJSExpr(src string) JsExpr {
+	if strings.TrimSpace(src) == "" {
+		return nil
+	}
+	p := &JSParser{lex: NewLexer(src), src: src}
+	p.cur = p.lex.Next()
+	p.peek = p.lex.Next()
+	p.prevEnd = 0
+	return p.parseExpr()
 }
 
 // numberKind classifies a TokNumber's raw value.  ES2020 BigInt
@@ -153,7 +171,7 @@ func (p *JSParser) parseStmt() JsStmt {
 			label = p.advance().Val
 		}
 		p.eatSemi()
-		return &JsBreakStmt{baseStmt: baseStmt{baseNode{pos, p.end()}}, Label: label}
+		return &JsBreakStmt{baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}}, Label: label}
 	case TokContinue:
 		p.advance()
 		label := ""
@@ -161,19 +179,19 @@ func (p *JSParser) parseStmt() JsStmt {
 			label = p.advance().Val
 		}
 		p.eatSemi()
-		return &JsContinueStmt{baseStmt: baseStmt{baseNode{pos, p.end()}}, Label: label}
+		return &JsContinueStmt{baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}}, Label: label}
 	case TokLBrace:
 		return p.parseBlock()
 	case TokSemi:
 		p.advance()
-		return &JsEmptyStmt{baseStmt: baseStmt{baseNode{pos, p.end()}}}
+		return &JsEmptyStmt{baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}}}
 	case TokIdent:
 		// labeled statement: ident ':'
 		if p.peek.Kind == TokColon {
 			label := p.advance().Val
 			p.advance() // :
 			body := p.parseStmt()
-			return &JsLabeledStmt{baseStmt: baseStmt{baseNode{pos, p.end()}}, Label: label, Body: body}
+			return &JsLabeledStmt{baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}}, Label: label, Body: body}
 		}
 		return p.parseExprStmt()
 	default:
@@ -182,7 +200,7 @@ func (p *JSParser) parseStmt() JsStmt {
 				label := p.advance().Val
 				p.advance()
 				body := p.parseStmt()
-				return &JsLabeledStmt{baseStmt: baseStmt{baseNode{pos, p.end()}}, Label: label, Body: body}
+				return &JsLabeledStmt{baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}}, Label: label, Body: body}
 			}
 		}
 		return p.parseExprStmt()
@@ -282,7 +300,7 @@ func (p *JSParser) parseFuncDecl(async bool) *JsFuncDecl {
 	params := p.parseParams()
 	body := p.parseBlock()
 	return &JsFuncDecl{
-		baseStmt:  baseStmt{baseNode{pos, p.end()}},
+		baseStmt:  baseStmt{baseNode{Pos: pos, End: p.end()}},
 		Name:      name, Params: params, Body: body,
 		Async: async, Generator: gen,
 	}
@@ -361,7 +379,7 @@ func (p *JSParser) parseVarDecl(consumeSemi bool) *JsVarDecl {
 			init = p.parseAssignExpr()
 		}
 		d.Decls = append(d.Decls, &JsVarDeclarator{
-			baseNode: baseNode{dp, p.end()},
+			baseNode: baseNode{Pos: dp, End: p.end()},
 			Id: id, Init: init,
 		})
 		if !p.eat(TokComma) {
@@ -384,7 +402,7 @@ func (p *JSParser) parseBindingPattern() JsExpr {
 	default:
 		pos := p.curPos()
 		name := p.advance().Val
-		e := &JsIdent{baseExpr: baseExpr{baseNode{pos, p.end()}}, Name: name}
+		e := &JsIdent{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Name: name}
 		return e
 	}
 }
@@ -402,13 +420,13 @@ func (p *JSParser) parseArrayPattern() JsExpr {
 		if p.cur.Kind == TokEllipsis {
 			ep := p.curPos(); p.advance()
 			arg := p.parseBindingPattern()
-			elems = append(elems, &JsSpreadExpr{baseExpr: baseExpr{baseNode{ep, p.end()}}, X: arg})
+			elems = append(elems, &JsSpreadExpr{baseExpr: baseExpr{baseNode{Pos: ep, End: p.end()}}, X: arg})
 			break
 		}
 		elem := p.parseBindingPattern()
 		if p.eat(TokAssign) {
 			def := p.parseAssignExpr()
-			elem = &JsAssignExpr{baseExpr: baseExpr{baseNode{elem.nodePos(), p.end()}},
+			elem = &JsAssignExpr{baseExpr: baseExpr{baseNode{Pos: elem.nodePos(), End: p.end()}},
 				Op: "=", L: elem, R: def}
 		}
 		elems = append(elems, elem)
@@ -417,7 +435,7 @@ func (p *JSParser) parseArrayPattern() JsExpr {
 		}
 	}
 	p.eat(TokRBracket)
-	return &JsArrayExpr{baseExpr: baseExpr{baseNode{pos, p.end()}}, Elems: elems}
+	return &JsArrayExpr{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Elems: elems}
 }
 
 func (p *JSParser) parseObjectPattern() JsExpr {
@@ -430,7 +448,7 @@ func (p *JSParser) parseObjectPattern() JsExpr {
 			p.advance()
 			arg := p.parseBindingPattern()
 			props = append(props, &JsProp{
-				baseNode: baseNode{pp, p.end()},
+				baseNode: baseNode{Pos: pp, End: p.end()},
 				Spread:   true,
 				Value:    arg,
 			})
@@ -454,11 +472,11 @@ func (p *JSParser) parseObjectPattern() JsExpr {
 		}
 		if p.eat(TokAssign) {
 			def := p.parseAssignExpr()
-			val = &JsAssignExpr{baseExpr: baseExpr{baseNode{val.nodePos(), p.end()}},
+			val = &JsAssignExpr{baseExpr: baseExpr{baseNode{Pos: val.nodePos(), End: p.end()}},
 				Op: "=", L: val, R: def}
 		}
 		props = append(props, &JsProp{
-			baseNode:  baseNode{pp, p.end()},
+			baseNode:  baseNode{Pos: pp, End: p.end()},
 			Key:       key, Value: val,
 			Computed:  computed, Shorthand: shorthand, Kind: "init",
 		})
@@ -467,7 +485,7 @@ func (p *JSParser) parseObjectPattern() JsExpr {
 		}
 	}
 	p.eat(TokRBrace)
-	return &JsObjectExpr{baseExpr: baseExpr{baseNode{pos, p.end()}}, Props: props}
+	return &JsObjectExpr{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Props: props}
 }
 
 func (p *JSParser) parseParams() []JsExpr {
@@ -477,13 +495,13 @@ func (p *JSParser) parseParams() []JsExpr {
 		if p.cur.Kind == TokEllipsis {
 			ep := p.curPos(); p.advance()
 			arg := p.parseBindingPattern()
-			params = append(params, &JsSpreadExpr{baseExpr: baseExpr{baseNode{ep, p.end()}}, X: arg})
+			params = append(params, &JsSpreadExpr{baseExpr: baseExpr{baseNode{Pos: ep, End: p.end()}}, X: arg})
 			break
 		}
 		param := p.parseBindingPattern()
 		if p.eat(TokAssign) {
 			def := p.parseAssignExpr()
-			param = &JsAssignExpr{baseExpr: baseExpr{baseNode{param.nodePos(), p.end()}},
+			param = &JsAssignExpr{baseExpr: baseExpr{baseNode{Pos: param.nodePos(), End: p.end()}},
 				Op: "=", L: param, R: def}
 		}
 		params = append(params, param)
@@ -524,7 +542,7 @@ func (p *JSParser) parseIf() *JsIfStmt {
 	if p.eat(TokElse) {
 		els = p.parseStmt()
 	}
-	return &JsIfStmt{baseStmt: baseStmt{baseNode{pos, p.end()}}, Test: test, Then: then, Else: els}
+	return &JsIfStmt{baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}}, Test: test, Then: then, Else: els}
 }
 
 func (p *JSParser) parseFor() JsStmt {
@@ -537,7 +555,7 @@ func (p *JSParser) parseFor() JsStmt {
 			initStmt = p.parseVarDecl(false)
 		} else {
 			expr := p.parseExpr()
-			initStmt = &JsExprStmt{baseStmt: baseStmt{baseNode{expr.nodePos(), p.end()}}, X: expr}
+			initStmt = &JsExprStmt{baseStmt: baseStmt{baseNode{Pos: expr.nodePos(), End: p.end()}}, X: expr}
 		}
 		if p.cur.Kind == TokIn || p.cur.Val == "of" {
 			isOf := p.cur.Val == "of"
@@ -546,7 +564,7 @@ func (p *JSParser) parseFor() JsStmt {
 			p.eat(TokRParen)
 			body := p.parseStmt()
 			return &JsForInStmt{
-				baseStmt: baseStmt{baseNode{pos, p.end()}},
+				baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}},
 				Left: initStmt, Right: right, Body: body, IsOf: isOf,
 			}
 		}
@@ -565,7 +583,7 @@ func (p *JSParser) parseFor() JsStmt {
 	p.eat(TokRParen)
 	body := p.parseStmt()
 	return &JsForStmt{
-		baseStmt: baseStmt{baseNode{pos, p.end()}},
+		baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}},
 		Init: initStmt, Test: test, Update: update, Body: body,
 	}
 }
@@ -576,7 +594,7 @@ func (p *JSParser) parseWhile() *JsWhileStmt {
 	test := p.parseExpr()
 	p.eat(TokRParen)
 	body := p.parseStmt()
-	return &JsWhileStmt{baseStmt: baseStmt{baseNode{pos, p.end()}}, Test: test, Body: body}
+	return &JsWhileStmt{baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}}, Test: test, Body: body}
 }
 
 func (p *JSParser) parseDoWhile() *JsDoWhileStmt {
@@ -587,7 +605,7 @@ func (p *JSParser) parseDoWhile() *JsDoWhileStmt {
 	test := p.parseExpr()
 	p.eat(TokRParen)
 	p.eatSemi()
-	return &JsDoWhileStmt{baseStmt: baseStmt{baseNode{pos, p.end()}}, Body: body, Test: test}
+	return &JsDoWhileStmt{baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}}, Body: body, Test: test}
 }
 
 func (p *JSParser) parseReturn() *JsReturnStmt {
@@ -597,14 +615,14 @@ func (p *JSParser) parseReturn() *JsReturnStmt {
 		arg = p.parseExpr()
 	}
 	p.eatSemi()
-	return &JsReturnStmt{baseStmt: baseStmt{baseNode{pos, p.end()}}, Arg: arg}
+	return &JsReturnStmt{baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}}, Arg: arg}
 }
 
 func (p *JSParser) parseThrow() *JsThrowStmt {
 	pos := p.curPos(); p.advance()
 	arg := p.parseExpr()
 	p.eatSemi()
-	return &JsThrowStmt{baseStmt: baseStmt{baseNode{pos, p.end()}}, Arg: arg}
+	return &JsThrowStmt{baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}}, Arg: arg}
 }
 
 func (p *JSParser) parseTry() *JsTryStmt {
@@ -657,7 +675,7 @@ func (p *JSParser) parseExprStmt() *JsExprStmt {
 	pos := p.curPos()
 	x := p.parseExpr()
 	p.eatSemi()
-	return &JsExprStmt{baseStmt: baseStmt{baseNode{pos, p.end()}}, X: x}
+	return &JsExprStmt{baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}}, X: x}
 }
 
 // ──────────────────────────────────────────────
@@ -672,7 +690,7 @@ func (p *JSParser) parseExpr() JsExpr {
 			exprs = append(exprs, p.parseAssignExpr())
 		}
 		return &JsSeqExpr{
-			baseExpr: baseExpr{baseNode{left.nodePos(), p.end()}},
+			baseExpr: baseExpr{baseNode{Pos: left.nodePos(), End: p.end()}},
 			Exprs:    exprs,
 		}
 	}
@@ -685,10 +703,10 @@ func (p *JSParser) parseAssignExpr() JsExpr {
 		pos := p.curPos()
 		name := p.advance().Val
 		p.advance() // =>
-		param := &JsIdent{baseExpr: baseExpr{baseNode{pos, p.end()}}, Name: name}
+		param := &JsIdent{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Name: name}
 		body := p.parseArrowBody()
 		return &JsArrowFunc{
-			baseExpr: baseExpr{baseNode{pos, p.end()}},
+			baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 			Params:   []JsExpr{param}, Body: body,
 		}
 	}
@@ -702,7 +720,7 @@ func (p *JSParser) parseAssignExpr() JsExpr {
 				param := &JsIdent{Name: name}
 				body := p.parseArrowBody()
 				return &JsArrowFunc{
-					baseExpr: baseExpr{baseNode{pos, p.end()}},
+					baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 					Params:   []JsExpr{param}, Body: body, Async: true,
 				}
 			}
@@ -718,14 +736,14 @@ func (p *JSParser) parseAssignExpr() JsExpr {
 				if p.eat(TokArrow) {
 					body := p.parseArrowBody()
 					return &JsArrowFunc{
-						baseExpr: baseExpr{baseNode{pos, p.end()}},
+						baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 						Params:   params, Body: body, Async: true,
 					}
 				}
 				// Not arrow, parse as call: async(params)
-				callee := &JsIdent{baseExpr: baseExpr{baseNode{pos, pos + 5}}, Name: "async"}
+				callee := &JsIdent{baseExpr: baseExpr{baseNode{Pos: pos, End: pos + 5}}, Name: "async"}
 				return &JsCallExpr{
-					baseExpr: baseExpr{baseNode{pos, p.end()}},
+					baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 					Callee:   callee, Args: params,
 				}
 			}
@@ -739,7 +757,7 @@ func (p *JSParser) parseAssignExpr() JsExpr {
 		op := p.advance().Val
 		right := p.parseAssignExpr()
 		return &JsAssignExpr{
-			baseExpr: baseExpr{baseNode{pos, p.end()}},
+			baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 			Op:       op, L: left, R: right,
 		}
 	}
@@ -763,7 +781,7 @@ func (p *JSParser) parseTernary() JsExpr {
 		p.eat(TokColon)
 		alt := p.parseAssignExpr()
 		return &JsConditionalExpr{
-			baseExpr: baseExpr{baseNode{pos, p.end()}},
+			baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 			Test:     left, Then: then, Else: alt,
 		}
 	}
@@ -821,12 +839,12 @@ func (p *JSParser) parseBinary(minPrec int) JsExpr {
 		right := p.parseBinary(nextPrec)
 		if row.op == "||" || row.op == "&&" || row.op == "??" {
 			left = &JsLogicalExpr{
-				baseExpr: baseExpr{baseNode{pos, p.end()}},
+				baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 				Op:       row.op, L: left, R: right,
 			}
 		} else {
 			left = &JsBinaryExpr{
-				baseExpr: baseExpr{baseNode{pos, p.end()}},
+				baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 				Op:       row.op, L: left, R: right,
 			}
 		}
@@ -840,19 +858,19 @@ func (p *JSParser) parseUnary() JsExpr {
 	case TokBang, TokTilde, TokPlus, TokMinus:
 		op := p.advance().Val
 		x := p.parseUnary()
-		return &JsUnaryExpr{baseExpr: baseExpr{baseNode{pos, p.end()}}, Op: op, Prefix: true, X: x}
+		return &JsUnaryExpr{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Op: op, Prefix: true, X: x}
 	case TokDelete, TokTypeof, TokVoid:
 		op := p.advance().Val
 		x := p.parseUnary()
-		return &JsUnaryExpr{baseExpr: baseExpr{baseNode{pos, p.end()}}, Op: op, Prefix: true, X: x}
+		return &JsUnaryExpr{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Op: op, Prefix: true, X: x}
 	case TokPlusPlus, TokMinusMinus:
 		op := p.advance().Val
 		x := p.parseUnary()
-		return &JsUnaryExpr{baseExpr: baseExpr{baseNode{pos, p.end()}}, Op: op, Prefix: true, X: x}
+		return &JsUnaryExpr{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Op: op, Prefix: true, X: x}
 	case TokAwait:
 		p.advance()
 		x := p.parseUnary()
-		return &JsAwaitExpr{baseExpr: baseExpr{baseNode{pos, p.end()}}, X: x}
+		return &JsAwaitExpr{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, X: x}
 	}
 	return p.parsePostfix()
 }
@@ -862,7 +880,7 @@ func (p *JSParser) parsePostfix() JsExpr {
 	if p.cur.Kind == TokPlusPlus || p.cur.Kind == TokMinusMinus {
 		op := p.advance().Val
 		return &JsUnaryExpr{
-			baseExpr: baseExpr{baseNode{x.nodePos(), p.end()}},
+			baseExpr: baseExpr{baseNode{Pos: x.nodePos(), End: p.end()}},
 			Op:       op, Prefix: false, X: x,
 		}
 	}
@@ -878,16 +896,16 @@ func (p *JSParser) parseLeftHandSide() JsExpr {
 		case TokLParen:
 			args := p.parseArgs()
 			expr = &JsCallExpr{
-				baseExpr: baseExpr{baseNode{pos, p.end()}},
+				baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 				Callee:   expr, Args: args,
 			}
 		case TokDot:
 			p.advance()
 			propPos := p.curPos()
 			name := p.advance().Val
-			prop := &JsIdent{baseExpr: baseExpr{baseNode{propPos, p.end()}}, Name: name}
+			prop := &JsIdent{baseExpr: baseExpr{baseNode{Pos: propPos, End: p.end()}}, Name: name}
 			expr = &JsMemberExpr{
-				baseExpr: baseExpr{baseNode{pos, p.end()}},
+				baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 				Obj:      expr, Prop: prop, Computed: false,
 			}
 		case TokLBracket:
@@ -895,7 +913,7 @@ func (p *JSParser) parseLeftHandSide() JsExpr {
 			prop := p.parseExpr()
 			p.eat(TokRBracket)
 			expr = &JsMemberExpr{
-				baseExpr: baseExpr{baseNode{pos, p.end()}},
+				baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 				Obj:      expr, Prop: prop, Computed: true,
 			}
 		case TokOptChain:
@@ -903,7 +921,7 @@ func (p *JSParser) parseLeftHandSide() JsExpr {
 			if p.cur.Kind == TokLParen {
 				args := p.parseArgs()
 				expr = &JsCallExpr{
-					baseExpr: baseExpr{baseNode{pos, p.end()}},
+					baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 					Callee:   expr, Args: args, Optional: true,
 				}
 			} else if p.cur.Kind == TokLBracket {
@@ -911,15 +929,15 @@ func (p *JSParser) parseLeftHandSide() JsExpr {
 				prop := p.parseExpr()
 				p.eat(TokRBracket)
 				expr = &JsMemberExpr{
-					baseExpr: baseExpr{baseNode{pos, p.end()}},
+					baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 					Obj:      expr, Prop: prop, Computed: true, Optional: true,
 				}
 			} else {
 				propPos := p.curPos()
 				name := p.advance().Val
-				prop := &JsIdent{baseExpr: baseExpr{baseNode{propPos, p.end()}}, Name: name}
+				prop := &JsIdent{baseExpr: baseExpr{baseNode{Pos: propPos, End: p.end()}}, Name: name}
 				expr = &JsMemberExpr{
-					baseExpr: baseExpr{baseNode{pos, p.end()}},
+					baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 					Obj:      expr, Prop: prop, Computed: false, Optional: true,
 				}
 			}
@@ -940,7 +958,7 @@ func (p *JSParser) parseNewOrPrimary() JsExpr {
 		p.advance()
 		p.advance() // target
 		return &JsMemberExpr{
-			baseExpr: baseExpr{baseNode{pos, p.end()}},
+			baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 			Obj:      &JsIdent{Name: "new"},
 			Prop:     &JsIdent{Name: "target"},
 		}
@@ -951,7 +969,7 @@ func (p *JSParser) parseNewOrPrimary() JsExpr {
 		args = p.parseArgs()
 	}
 	return &JsNewExpr{
-		baseExpr: baseExpr{baseNode{pos, p.end()}},
+		baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 		Callee:   callee, Args: args,
 	}
 }
@@ -963,7 +981,7 @@ func (p *JSParser) parseArgs() []JsExpr {
 		if p.cur.Kind == TokEllipsis {
 			ep := p.curPos(); p.advance()
 			x := p.parseAssignExpr()
-			args = append(args, &JsSpreadExpr{baseExpr: baseExpr{baseNode{ep, p.end()}}, X: x})
+			args = append(args, &JsSpreadExpr{baseExpr: baseExpr{baseNode{Pos: ep, End: p.end()}}, X: x})
 		} else {
 			args = append(args, p.parseAssignExpr())
 		}
@@ -981,39 +999,39 @@ func (p *JSParser) parsePrimary() JsExpr {
 	switch p.cur.Kind {
 	case TokIdent:
 		name := p.advance().Val
-		return &JsIdent{baseExpr: baseExpr{baseNode{pos, p.end()}}, Name: name}
+		return &JsIdent{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Name: name}
 
 	case TokNumber:
 		raw := p.advance().Val
-		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: raw, Kind: numberKind(raw)}
+		return &JsLiteral{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Raw: raw, Kind: numberKind(raw)}
 
 	case TokString:
 		raw := p.advance().Val
-		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: raw, Kind: "string"}
+		return &JsLiteral{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Raw: raw, Kind: "string"}
 
 	case TokTemplate:
 		raw := p.advance().Val
-		return &JsTemplateLit{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: raw}
+		return p.structureTemplate(raw, pos, p.end())
 
 	case TokRegex:
 		raw := p.advance().Val
-		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: raw, Kind: "regex"}
+		return &JsLiteral{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Raw: raw, Kind: "regex"}
 
 	case TokTrue, TokFalse:
 		raw := p.advance().Val
-		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: raw, Kind: "boolean"}
+		return &JsLiteral{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Raw: raw, Kind: "boolean"}
 
 	case TokNull:
 		p.advance()
-		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: "null", Kind: "null"}
+		return &JsLiteral{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Raw: "null", Kind: "null"}
 
 	case TokThis:
 		p.advance()
-		return &JsThisExpr{baseExpr: baseExpr{baseNode{pos, p.end()}}}
+		return &JsThisExpr{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}}
 
 	case TokSuper:
 		p.advance()
-		return &JsSuperExpr{baseExpr: baseExpr{baseNode{pos, p.end()}}}
+		return &JsSuperExpr{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}}
 
 	case TokFunction:
 		p.advance()
@@ -1025,7 +1043,7 @@ func (p *JSParser) parsePrimary() JsExpr {
 		params := p.parseParams()
 		body := p.parseBlock()
 		return &JsFuncExpr{
-			baseExpr: baseExpr{baseNode{pos, p.end()}},
+			baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 			Name:     name, Params: params, Body: body, Generator: gen,
 		}
 
@@ -1040,13 +1058,13 @@ func (p *JSParser) parsePrimary() JsExpr {
 			params := p.parseParams()
 			body := p.parseBlock()
 			return &JsFuncExpr{
-				baseExpr: baseExpr{baseNode{pos, p.end()}},
+				baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 				Name:     name, Params: params, Body: body, Async: true,
 			}
 		}
 		// async ident => or async (...)  => handled in parseAssignExpr
 		name := p.advance().Val
-		return &JsIdent{baseExpr: baseExpr{baseNode{pos, p.end()}}, Name: name}
+		return &JsIdent{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Name: name}
 
 	case TokLParen:
 		p.advance()
@@ -1056,12 +1074,12 @@ func (p *JSParser) parsePrimary() JsExpr {
 			if p.eat(TokArrow) {
 				body := p.parseArrowBody()
 				return &JsArrowFunc{
-					baseExpr: baseExpr{baseNode{pos, p.end()}},
+					baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 					Params:   []JsExpr{}, Body: body,
 				}
 			}
 			// () as expression — unusual but handle gracefully
-			return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: "()", Kind: "null"}
+			return &JsLiteral{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Raw: "()", Kind: "null"}
 		}
 		expr := p.parseExpr()
 		p.eat(TokRParen)
@@ -1070,7 +1088,7 @@ func (p *JSParser) parsePrimary() JsExpr {
 			params := seqToParams(expr)
 			body := p.parseArrowBody()
 			return &JsArrowFunc{
-				baseExpr: baseExpr{baseNode{pos, p.end()}},
+				baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}},
 				Params:   params, Body: body,
 			}
 		}
@@ -1089,17 +1107,17 @@ func (p *JSParser) parsePrimary() JsExpr {
 		if p.cur.Kind != TokSemi && p.cur.Kind != TokRBrace && p.cur.Kind != TokEOF {
 			x = p.parseAssignExpr()
 		}
-		return &JsYieldExpr{baseExpr: baseExpr{baseNode{pos, p.end()}}, X: x, Delegate: delegate}
+		return &JsYieldExpr{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, X: x, Delegate: delegate}
 
 	default:
 		// Contextual keywords can appear as identifiers in expression position
 		if isContextualIdent(p.cur.Kind) {
 			name := p.advance().Val
-			return &JsIdent{baseExpr: baseExpr{baseNode{pos, p.end()}}, Name: name}
+			return &JsIdent{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Name: name}
 		}
 		// Unknown token: advance and return a placeholder
 		tok := p.advance()
-		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: tok.Val, Kind: "unknown"}
+		return &JsLiteral{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Raw: tok.Val, Kind: "unknown"}
 	}
 }
 
@@ -1115,7 +1133,7 @@ func (p *JSParser) parseArrayLit() *JsArrayExpr {
 		if p.cur.Kind == TokEllipsis {
 			ep := p.curPos(); p.advance()
 			x := p.parseAssignExpr()
-			elems = append(elems, &JsSpreadExpr{baseExpr: baseExpr{baseNode{ep, p.end()}}, X: x})
+			elems = append(elems, &JsSpreadExpr{baseExpr: baseExpr{baseNode{Pos: ep, End: p.end()}}, X: x})
 		} else {
 			elems = append(elems, p.parseAssignExpr())
 		}
@@ -1124,7 +1142,7 @@ func (p *JSParser) parseArrayLit() *JsArrayExpr {
 		}
 	}
 	p.eat(TokRBracket)
-	return &JsArrayExpr{baseExpr: baseExpr{baseNode{pos, p.end()}}, Elems: elems}
+	return &JsArrayExpr{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Elems: elems}
 }
 
 func (p *JSParser) parseObjectLit() *JsObjectExpr {
@@ -1136,7 +1154,7 @@ func (p *JSParser) parseObjectLit() *JsObjectExpr {
 			p.advance()
 			x := p.parseAssignExpr()
 			props = append(props, &JsProp{
-				baseNode: baseNode{pp, p.end()},
+				baseNode: baseNode{Pos: pp, End: p.end()},
 				Spread:   true, Value: x, Kind: "init",
 			})
 			p.eat(TokComma)
@@ -1173,12 +1191,18 @@ func (p *JSParser) parseObjectLit() *JsObjectExpr {
 		}
 
 		shorthand := false
+		isMethod := false
 		var val JsExpr
 
 		if p.cur.Kind == TokLParen {
 			params := p.parseParams()
 			body := p.parseBlock()
-			val = &JsFuncExpr{Params: params, Body: body}
+			val = &JsFuncExpr{Params: params, Body: body, Async: isAsync, Generator: isGen}
+			// Method shorthand — but get/set already carry their own
+			// Kind, so only plain methods get the Method flag.
+			if kind == "init" {
+				isMethod = true
+			}
 		} else if p.eat(TokColon) {
 			val = p.parseAssignExpr()
 		} else {
@@ -1187,16 +1211,16 @@ func (p *JSParser) parseObjectLit() *JsObjectExpr {
 		}
 
 		props = append(props, &JsProp{
-			baseNode:  baseNode{pp, p.end()},
+			baseNode:  baseNode{Pos: pp, End: p.end()},
 			Key:       key, Value: val,
-			Computed:  computed, Shorthand: shorthand, Kind: kind,
+			Computed:  computed, Shorthand: shorthand, Method: isMethod, Kind: kind,
 		})
 		if !p.eat(TokComma) {
 			break
 		}
 	}
 	p.eat(TokRBrace)
-	return &JsObjectExpr{baseExpr: baseExpr{baseNode{pos, p.end()}}, Props: props}
+	return &JsObjectExpr{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Props: props}
 }
 
 func (p *JSParser) parsePropKey() JsExpr {
@@ -1204,13 +1228,13 @@ func (p *JSParser) parsePropKey() JsExpr {
 	switch p.cur.Kind {
 	case TokString:
 		raw := p.advance().Val
-		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: raw, Kind: "string"}
+		return &JsLiteral{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Raw: raw, Kind: "string"}
 	case TokNumber:
 		raw := p.advance().Val
-		return &JsLiteral{baseExpr: baseExpr{baseNode{pos, p.end()}}, Raw: raw, Kind: numberKind(raw)}
+		return &JsLiteral{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Raw: raw, Kind: numberKind(raw)}
 	default:
 		name := p.advance().Val
-		return &JsIdent{baseExpr: baseExpr{baseNode{pos, p.end()}}, Name: name}
+		return &JsIdent{baseExpr: baseExpr{baseNode{Pos: pos, End: p.end()}}, Name: name}
 	}
 }
 
@@ -1232,4 +1256,109 @@ func unquoteStr(s string) string {
 		return s[1 : len(s)-1]
 	}
 	return s
+}
+
+// structureTemplate splits the raw source text of a template literal
+// (including the enclosing backticks) into its alternating literal
+// chunks and ${...} interpolation expressions.
+//
+// Each interpolation is recursively parsed with a fresh JSParser so
+// the resulting JsTemplateLit carries real sub-expression nodes.
+// Brace depth is tracked so a `}` inside a nested object literal or
+// nested template doesn't prematurely close the hole.
+//
+// If raw is malformed (no closing backtick, unbalanced ${}), the
+// function degrades gracefully: whatever text was accumulated
+// becomes a final quasi.  The parser is lenient by design.
+func (p *JSParser) structureTemplate(raw string, pos, end int) *JsTemplateLit {
+	lit := &JsTemplateLit{baseExpr: baseExpr{baseNode{Pos: pos, End: end}}}
+
+	// Strip the surrounding backticks if present.
+	body := raw
+	if len(body) >= 2 && body[0] == '`' {
+		body = body[1 : len(body)-1]
+	}
+
+	var quasi strings.Builder
+	i := 0
+	for i < len(body) {
+		c := body[i]
+		// Escape: copy the backslash and the next char verbatim.
+		if c == '\\' && i+1 < len(body) {
+			quasi.WriteByte(c)
+			quasi.WriteByte(body[i+1])
+			i += 2
+			continue
+		}
+		// Start of an interpolation hole.
+		if c == '$' && i+1 < len(body) && body[i+1] == '{' {
+			// Close the current quasi.
+			lit.Quasis = append(lit.Quasis, quasi.String())
+			quasi.Reset()
+			// Scan to the matching '}', tracking nested braces and
+			// nested template literals (whose own ${} must not be
+			// counted against this hole).
+			depth := 1
+			j := i + 2
+			for j < len(body) && depth > 0 {
+				switch body[j] {
+				case '\\':
+					j++ // skip escaped char
+				case '{':
+					depth++
+				case '}':
+					depth--
+					if depth == 0 {
+						goto closed
+					}
+				case '`':
+					// Skip a nested template literal wholesale.
+					j++
+					for j < len(body) && body[j] != '`' {
+						if body[j] == '\\' {
+							j++
+						}
+						j++
+					}
+				case '"', '\'':
+					q := body[j]
+					j++
+					for j < len(body) && body[j] != q {
+						if body[j] == '\\' {
+							j++
+						}
+						j++
+					}
+				}
+				j++
+			}
+		closed:
+			exprSrc := ""
+			if j <= len(body) {
+				// body[i+2 : j] is the expression text (j points at '}').
+				hi := j
+				if hi > len(body) {
+					hi = len(body)
+				}
+				exprSrc = body[i+2 : hi]
+			}
+			// Recursively parse the interpolation as an expression.
+			expr := parseJSExpr(exprSrc)
+			if expr == nil {
+				// Degrade: empty interpolation → empty-string literal.
+				expr = &JsLiteral{
+					baseExpr: baseExpr{baseNode{Pos: pos, End: end}},
+					Raw:      "''", Kind: "string",
+				}
+			}
+			lit.Exprs = append(lit.Exprs, expr)
+			i = j + 1
+			continue
+		}
+		quasi.WriteByte(c)
+		i++
+	}
+	// Trailing quasi (always present — maintains the N+1 invariant).
+	lit.Quasis = append(lit.Quasis, quasi.String())
+	return lit
 }

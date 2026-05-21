@@ -9,6 +9,7 @@ type JsNode interface {
 	jsNode()
 	nodePos() int
 	nodeEnd() int
+	origin() NodeOrigin
 }
 
 // JsStmt is any statement node.
@@ -27,11 +28,28 @@ type JsExpr interface {
 //  Base structs
 // ──────────────────────────────────────────────
 
-type baseNode struct{ Pos, End int }
+// NodeOrigin marks where an AST node came from.  In a unified
+// module tree — where user <script> code and compiler-generated
+// wiring coexist — this lets analysis passes and diagnostics tell
+// the two apart: a problem in OriginUser code is reported against
+// the developer's source, while a problem in OriginGenerated code
+// is a compiler bug.
+type NodeOrigin uint8
 
-func (b *baseNode) jsNode()   {}
+const (
+	OriginUser      NodeOrigin = iota // parsed from a .vela <script> or template expr
+	OriginGenerated                   // constructed by the code generator
+)
+
+type baseNode struct {
+	Pos, End int
+	Origin   NodeOrigin
+}
+
+func (b *baseNode) jsNode()      {}
 func (b *baseNode) nodePos() int { return b.Pos }
 func (b *baseNode) nodeEnd() int { return b.End }
+func (b *baseNode) origin() NodeOrigin { return b.Origin }
 
 type baseStmt struct{ baseNode }
 
@@ -232,10 +250,30 @@ type JsLiteral struct {
 	Kind string // "number" | "string" | "boolean" | "null" | "regex"
 }
 
-// JsTemplateLit: complete template literal (raw source text preserved).
+// JsTemplateLit: a template literal, structured into alternating
+// literal string chunks (Quasis) and interpolated expressions (Exprs).
+//
+// For `hello ${name}!`:
+//   Quasis = ["hello ", "!"]
+//   Exprs  = [JsIdent{name}]
+//
+// Invariant: len(Quasis) == len(Exprs) + 1.  A template with no
+// interpolations has one quasi and no exprs.  An empty template ``
+// has Quasis == [""], Exprs == nil.
+//
+// Quasi strings are stored WITHOUT escaping resolved — they are the
+// cooked-but-still-source-form text between the backticks and the
+// ${...} holes.  The printer re-emits them verbatim between
+// backticks; round-tripping is therefore exact.
+//
+// Storing the literal structured (rather than as opaque source
+// text) lets analysis passes descend into the interpolations and
+// lets codegen construct template literals node-by-node instead of
+// by string concatenation.
 type JsTemplateLit struct {
 	baseExpr
-	Raw string // full source text e.g. `hello ${name}!`
+	Quasis []string
+	Exprs  []JsExpr
 }
 
 type JsArrayExpr struct {
@@ -255,7 +293,13 @@ type JsProp struct {
 	Computed  bool
 	Shorthand bool
 	Spread    bool
-	Kind      string // "init" | "get" | "set"
+	// Method is true for object-method shorthand — `{ m() {} }` —
+	// as opposed to `{ m: function() {} }`.  Both parse to a
+	// JsFuncExpr value; this flag distinguishes them so the printer
+	// can round-trip the shorthand form.  Always false for get/set
+	// (those are marked via Kind) and for non-function values.
+	Method bool
+	Kind   string // "init" | "get" | "set"
 }
 
 type JsFuncExpr struct {

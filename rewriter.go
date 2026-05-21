@@ -168,7 +168,14 @@ func WalkNode(node JsNode, fn func(JsNode) bool) {
 		if n.X != nil {
 			WalkNode(n.X, fn)
 		}
-	// Leaves: JsIdent, JsLiteral, JsTemplateLit, JsThisExpr, JsSuperExpr,
+	case *JsTemplateLit:
+		// Template literals are structured — recurse into each ${…}
+		// interpolation so identifier collection, scope resolution,
+		// and rewriting all see inside them.
+		for _, e := range n.Exprs {
+			WalkNode(e, fn)
+		}
+	// Leaves: JsIdent, JsLiteral, JsThisExpr, JsSuperExpr,
 	// JsImportDecl, JsBreakStmt, JsContinueStmt, JsEmptyStmt, JsDebuggerStmt
 	}
 }
@@ -267,16 +274,6 @@ func CollectIdents(node JsNode) []string {
 		switch x := n.(type) {
 		case *JsIdent:
 			add(x.Name)
-		case *JsTemplateLit:
-			// Template literals are opaque tokens in our AST; use the
-			// depth-tracking hole scanner so we never need regexp here.
-			for _, expr := range scanTemplateHoles(x.Raw) {
-				sub := ParseJS(expr)
-				for _, name := range CollectIdents(sub) {
-					add(name)
-				}
-			}
-			return false // no child nodes to recurse into
 		}
 		return true
 	})

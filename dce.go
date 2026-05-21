@@ -326,7 +326,16 @@ func isPureExpr(e JsExpr) bool {
 	switch n := e.(type) {
 	case nil:
 		return true
-	case *JsLiteral, *JsTemplateLit:
+	case *JsLiteral:
+		return true
+	case *JsTemplateLit:
+		// Pure only if every interpolation is pure — a template can
+		// embed arbitrary expressions, including side-effecting calls.
+		for _, e := range n.Exprs {
+			if !isPureExpr(e) {
+				return false
+			}
+		}
 		return true
 	case *JsIdent:
 		return true

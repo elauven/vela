@@ -3187,14 +3187,12 @@ func rewriteItemRef(src, itemVar, boxVar string) string {
 				}
 			}
 		case *JsTemplateLit:
-			// Template literals' interpolation holes (${…}) are stored as
-			// raw source in node.Raw — the parser does not descend into
-			// them to produce sub-expressions.  Rewriting inside template
-			// holes would require a mini-parse of each hole, which isn't
-			// worth the complexity given zero real templates in our corpus
-			// use item refs inside string interpolation.  If a user does
-			// write `@click="() => toast(`user-${u.id}`)"`, the u will
-			// remain a stale closure reference.  Document and move on.
+			// Template literals are structured: descend into each
+			// ${…} interpolation expression so dependency collection
+			// sees identifiers used inside string interpolation.
+			for _, e := range node.Exprs {
+				visit(e)
+			}
 		// Leaves / no-op nodes
 		case *JsLiteral, *JsThisExpr, *JsSuperExpr,
 			*JsBreakStmt, *JsContinueStmt,
