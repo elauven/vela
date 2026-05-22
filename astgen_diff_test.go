@@ -62,6 +62,143 @@ var diffFixtures = map[string]string{
     <p>visible</p>
   {/if}
 </template>`,
+
+	"interp": `<script></script>
+<template>
+  <p>sum is {1 + 2} and product is {3 * 4}</p>
+</template>`,
+
+	"script": `<script>
+  import { fmt } from './util.js';
+  const LABEL = 'total';
+  function pad(s) { return ' ' + s + ' '; }
+</script>
+<template>
+  <p>{pad(LABEL)} = {fmt(99)}</p>
+</template>`,
+
+	"derived": `<script>
+  let count = $state(1);
+  let doubled = $derived(count * 2);
+  $effect(() => { document.title = 'n=' + count; });
+</script>
+<template>
+  <p>{count} and {doubled}</p>
+</template>`,
+
+	"binding": `<script>
+  let name = $state('');
+</script>
+<template>
+  <input bind:value={name} />
+</template>`,
+
+	"directives": `<script>
+  let active = $state(false);
+  let size = $state(14);
+</script>
+<template>
+  <div class="card" class:active={active} style:font-size="{size}px">content</div>
+</template>`,
+
+	"each": `<script>
+  let items = $state(['a', 'b', 'c']);
+</script>
+<template>
+  {#each items as item}
+    <li>{item}</li>
+  {/each}
+</template>`,
+
+	"each_keyed": `<script>
+  let rows = $state([{ id: 1, name: 'x' }]);
+</script>
+<template>
+  {#each rows as row (row.id)}
+    <li>{row.name}</li>
+  {/each}
+</template>`,
+
+	"keyblock": `<script>
+  let userId = $state(1);
+</script>
+<template>
+  {#key userId}
+    <p>static profile</p>
+  {/key}
+</template>`,
+
+	"await": `<script>
+  let data = $state(Promise.resolve(1));
+</script>
+<template>
+  {#await data}
+    <p>loading</p>
+  {:then result}
+    <p>done</p>
+  {:catch err}
+    <p>failed</p>
+  {/await}
+</template>`,
+
+	"slots": `<script></script>
+<template>
+  <div class="card">
+    <slot />
+    <slot name="footer" />
+  </div>
+</template>`,
+
+	"component": `<script>
+  import { Card } from './Card.vela';
+</script>
+<template>
+  <div>
+    <Card>
+      <p>body content</p>
+      <span slot="footer">footer content</span>
+    </Card>
+  </div>
+</template>`,
+
+	"deepstate": `<script>
+  let items = $state.deep([{ name: 'a', count: 1 }]);
+  let total = $derived(items.length);
+</script>
+<template>
+  <p>{items.length} items, total {total}</p>
+</template>`,
+
+	"lifecycle": `<script>
+  import { onMount, onDestroy } from 'vela';
+  let n = $state(0);
+  onMount(() => {
+    const id = setInterval(() => { n++; }, 1000);
+    return () => clearInterval(id);
+  });
+  onDestroy(() => { console.log('bye'); });
+</script>
+<template>
+  <p>ticks: {n}</p>
+</template>`,
+
+	"bindable": `<script>
+  export let value = $bindable('');
+  let touched = $state(false);
+</script>
+<template>
+  <input bind:value={value} />
+</template>`,
+
+	"scopedstyle": `<script>
+  let n = $state(0);
+</script>
+<template>
+  <p>{n}</p>
+</template>
+<style>
+  p { color: blue; font-weight: bold; }
+</style>`,
 }
 
 // compileBothWays runs a .vela source through the legacy and the
@@ -138,7 +275,7 @@ func TestASTGenDiffReport(t *testing.T) {
 		sfc, _ := parseSFC(src)
 		tmpl, _ := parseTemplate(sfc.Template)
 		analysis := analyzeScript(sfc.Script)
-		claimed := astCanHandle(tmpl, analysis)
+		claimed := astCanBuildDirectly(tmpl, analysis)
 		if claimed {
 			native++
 		}
@@ -168,7 +305,7 @@ func TestASTGenDiffReport(t *testing.T) {
 // trees.
 //
 // While the migration is incomplete this only checks fixtures the
-// AST generator claims (astCanHandle); once all blocks land it
+// AST generator claims (astCanBuildDirectly); once all blocks land it
 // covers everything and the claim check is removed.
 func TestASTGenMatchesLegacy(t *testing.T) {
 	for name, src := range diffFixtures {
@@ -183,7 +320,7 @@ func TestASTGenMatchesLegacy(t *testing.T) {
 		analysis := analyzeScript(sfc.Script)
 
 		// Skip fixtures the AST generator doesn't yet claim.
-		if !astCanHandle(tmpl, analysis) {
+		if !astCanBuildDirectly(tmpl, analysis) {
 			continue
 		}
 
@@ -205,18 +342,6 @@ func TestASTGenMatchesLegacy(t *testing.T) {
 
 // stripBanner removes the leading `// Generated…` comment line so
 // it doesn't interfere with re-parsing for comparison.
-func stripBanner(s string) string {
-	lines := strings.Split(s, "\n")
-	var out []string
-	for _, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "// Generated") {
-			continue
-		}
-		out = append(out, l)
-	}
-	return strings.Join(out, "\n")
-}
-
 // ─────────────────────────────────────────────
 //  Helpers
 // ─────────────────────────────────────────────

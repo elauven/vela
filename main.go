@@ -14,7 +14,14 @@ import (
 // CompileOptions controls code generation behaviour.
 type CompileOptions struct {
 	Minify  bool
-	EmitAST bool // write <n>.ast.json alongside the compiled JS
+	EmitAST bool // write <n>.ast.json (input AST) alongside the compiled JS
+	GenAST  bool // write <n>.genast.json (generated output AST) for inspection
+
+	// Codegen selects the code generator: "ast" (default, the
+	// AST-based generator) or "legacy" (the string-concatenation
+	// generator, kept behind the flag during the deprecation
+	// window).
+	Codegen string
 }
 
 func main() {
@@ -22,11 +29,13 @@ func main() {
 	outDir     := flag.String("out",     "dist", "output directory")
 	watch      := flag.Bool("watch",    false,  "watch for changes and recompile")
 	minify     := flag.Bool("minify",   false,  "minify output JS")
-	emitAST    := flag.Bool("ast",      false,  "emit <n>.ast.json debug files")
+	emitAST    := flag.Bool("ast",      false,  "emit <n>.ast.json input-AST debug files")
+	genAST     := flag.Bool("emit-gen-ast", false, "emit <n>.genast.json — the generated output AST, for inspection")
 	parallel   := flag.Bool("parallel", true,   "compile files in parallel (project mode)")
+	codegen    := flag.String("codegen", "ast", "code generator: 'ast' (default); 'legacy' is DEPRECATED and will be removed")
 	flag.Parse()
 
-	opts := CompileOptions{Minify: *minify, EmitAST: *emitAST}
+	opts := CompileOptions{Minify: *minify, EmitAST: *emitAST, GenAST: *genAST, Codegen: *codegen}
 
 	// ── Project mode ─────────────────────────────────────────────────────────
 	if *projectDir != "" {
@@ -356,7 +365,36 @@ func compileFile(src, dest string, opts CompileOptions) ([]*Diagnostic, error) {
 		sfc.Script, analysis = EliminateDeadCodeFixedPoint(sfc.Script, analysis, sfc.Template)
 	}
 
-	code := generateCode(name, sfc, tmpl, analysis, scope)
+	// Code generation.  The AST-based generator is the default;
+	// --codegen=legacy selects the string generator during its
+	// Code generation.  generateCodeAST is the generator: it always
+	// produces a unified, validated JS AST.  Constructs its direct
+	// builder does not cover are handled by buildModuleSplice,
+	// which runs the legacy walk and re-parses the result into the
+	// same AST — so there is no longer a parallel code path, only
+	// an internal DOM-emitter library behind the splice.
+	//
+	// --codegen=legacy remains as a deprecated escape hatch for the
+	// deprecation window: it selects the raw legacy generator,
+	// bypassing the AST pipeline (and its validation).  It will be
+	// removed once the AST default has shipped for a release cycle.
+	var code string
+	if opts.Codegen == "legacy" {
+		code = generateCode(name, sfc, tmpl, analysis, scope)
+	} else {
+		// When the generated-AST dump is requested, build the
+		// program explicitly so its structured form can be
+		// serialized, then print from the same tree.
+		if opts.GenAST {
+			prog := buildProgram(name, sfc, tmpl, analysis, scope)
+			genPath := strings.TrimSuffix(dest, ".js") + ".genast.json"
+			_ = os.MkdirAll(filepath.Dir(genPath), 0755)
+			_ = os.WriteFile(genPath, []byte(ASTToJSON(prog, false)), 0644)
+			code = headerComment + "\n\n" + PrintJS(prog, PrintPretty)
+		} else {
+			code = generateCodeAST(name, sfc, tmpl, analysis, scope)
+		}
+	}
 	if opts.Minify {
 		code = Minify(code)
 	}

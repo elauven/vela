@@ -276,6 +276,21 @@ func (g *CodeGen) emit(nodes []Node) string {
 		needsWrapper = !firstIsElem
 	}
 	if !needsWrapper {
+		// The first node is an ElementNode — but an element that
+		// carries an #if / #each directive is a control-flow BLOCK,
+		// not a plain root element: it is not built as $$root, it
+		// expands into a chain / each-reconciler with its own
+		// anchor.  Without a wrapper there is no $$root for the
+		// block's anchor to attach to and for mount/destroy to
+		// reference — the generated code then refers to an
+		// undeclared $$root.  Force the wrapper in that case.
+		if el, ok := nodes[0].(*ElementNode); ok {
+			if el.IfCond != "" || el.EachExpr != "" {
+				needsWrapper = true
+			}
+		}
+	}
+	if !needsWrapper {
 		// First child is an element — but check there's only one element
 		// (or one element + non-element siblings that need to nest).
 		// Multiple sibling elements still need a wrapper.
@@ -1152,7 +1167,18 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 	type slotInitEntry struct{ buf strings.Builder }
 	slotInits := []slotInitEntry{}
 
-	for slotName, slotNodes := range comp.Slots {
+	// Iterate slots in a deterministic (sorted) order.  Ranging a
+	// Go map directly randomizes the emission order of slot factory
+	// closures, making compiler output non-reproducible — which
+	// breaks build caching and the differential test harness.
+	slotNames := make([]string, 0, len(comp.Slots))
+	for slotName := range comp.Slots {
+		slotNames = append(slotNames, slotName)
+	}
+	sort.Strings(slotNames)
+
+	for _, slotName := range slotNames {
+		slotNodes := comp.Slots[slotName]
 		fragVar := fmt.Sprintf("$$sf_%s_%s", slotName, g.id())
 		cacheVar := fmt.Sprintf("$$sc_%s_%s", slotName, g.id())
 
@@ -4447,6 +4473,41 @@ func hasDynamicLeaf(nodes []Node) bool {
 // replace it with a created text node whose ref we capture.  Slightly more
 // ops than baking an empty text node directly, but the capture logic stays
 // uniform with element holes.
+// elementHasNestedHole reports whether an element has only static
+// attributes but its child subtree contains a text-interpolation
+// hole — the shape buildHoleTemplate serializes by recursing into
+// the children.  An element with dynamic attributes is "leaf-
+// dynamic" instead and handled separately.
+func elementHasNestedHole(n *ElementNode) bool {
+	for _, a := range n.Attrs {
+		if a.IsEvent || a.IsBind || a.IsTwoWay ||
+			a.IsBindThis || a.IsClassDir || a.IsStyleDir {
+			return false
+		}
+	}
+	return subtreeHasHole(n.Children)
+}
+
+// subtreeHasHole reports whether any node in the subtree carries a
+// dynamic (non-static) text part.
+func subtreeHasHole(nodes []Node) bool {
+	for _, node := range nodes {
+		switch n := node.(type) {
+		case *TextNode:
+			for _, p := range n.Parts {
+				if !p.Static {
+					return true
+				}
+			}
+		case *ElementNode:
+			if subtreeHasHole(n.Children) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func buildHoleTemplate(nodes []Node, scopeID string) (string, []hole) {
 	var b strings.Builder
 	var holes []hole
@@ -4512,6 +4573,37 @@ func appendHoleNode(b *strings.Builder, holes *[]hole, node Node, scopeID string
 			}
 			b.WriteString("<!--$-->")
 			*holes = append(*holes, hole{kind: "elem", node: n})
+		} else if elementHasNestedHole(n) {
+			// A static-attr element whose subtree contains holes
+			// (e.g. <p>hello {name}</p>).  Emit the element's open
+			// tag, recurse into its children — so a hole anchor is
+			// placed at the right depth — then the close tag.
+			// Used by hole-bearing {#if}/{#key} branches (E3.1).
+			b.WriteByte('<')
+			b.WriteString(n.Tag)
+			if scopeID != "" {
+				b.WriteByte(' ')
+				b.WriteString(scopeID)
+				b.WriteString(`=""`)
+			}
+			for _, attr := range n.Attrs {
+				b.WriteByte(' ')
+				b.WriteString(attr.Name)
+				b.WriteString(`="`)
+				b.WriteString(escapeHTMLAttr(attr.Value))
+				b.WriteByte('"')
+			}
+			if voidTags[strings.ToLower(n.Tag)] {
+				b.WriteString("/>")
+			} else {
+				b.WriteByte('>')
+				for _, child := range n.Children {
+					appendHoleNode(b, holes, child, scopeID)
+				}
+				b.WriteString("</")
+				b.WriteString(n.Tag)
+				b.WriteByte('>')
+			}
 		} else {
 			// This branch handles fully-static elements.  Reaching here with
 			// a non-static element would be a caller bug — buildHoleTemplate

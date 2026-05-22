@@ -5387,29 +5387,26 @@ func TestEscapeJSString(t *testing.T) {
 	}
 }
 
-func TestBuildHoleTemplate_PanicsOnBadShape(t *testing.T) {
-	// buildHoleTemplate's contract: caller has verified allHoleCompatible.
-	// Feeding a static wrapper that contains dynamic descendants would
-	// silently drop the dynamic part — the function panics instead, so
-	// any future caller with the wrong shape gets a loud failure.
-	bad := []Node{
-		// Outer <div> is not leaf-dynamic (no events/bindings) AND not
-		// fully-static (its child is a dynamic text).  No legitimate
-		// caller would ever pass this shape.
+func TestBuildHoleTemplate_NestedHoleElement(t *testing.T) {
+	// As of E3.1, a static-attribute element whose child subtree
+	// contains a text-interpolation hole is a SUPPORTED shape:
+	// buildHoleTemplate recurses into the children and places the
+	// <!--$--> anchor at the right depth.  (This shape is what a
+	// hole-bearing {#if}/{#key} branch produces.)  It must yield a
+	// template with one hole, not panic.
+	nodes := []Node{
 		staticElem("div", dynText("badly-routed")),
 	}
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Errorf("expected panic for shape-violation input")
-			return
-		}
-		msg := fmt.Sprintf("%v", r)
-		if !strings.Contains(msg, "invariant violated") {
-			t.Errorf("expected invariant-violation panic, got: %v", r)
-		}
-	}()
-	buildHoleTemplate(bad, "")
+	html, holes := buildHoleTemplate(nodes, "")
+	if len(holes) != 1 {
+		t.Fatalf("expected 1 hole, got %d", len(holes))
+	}
+	if !strings.Contains(html, "<!--$-->") {
+		t.Errorf("expected an anchor comment in the template, got: %s", html)
+	}
+	if !strings.Contains(html, "<div") || !strings.Contains(html, "</div>") {
+		t.Errorf("expected the <div> wrapper preserved, got: %s", html)
+	}
 }
 
 func TestVoidTags_ContainsKnownVoidElements(t *testing.T) {

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vela — Generated AST Viewer</title>
+<style>
+  :root {
+    --bg: #1e1f26; --panel: #262830; --line: #34363f;
+    --fg: #d6d8e0; --dim: #8b8e9c; --accent: #7da9ff;
+    --type: #c792ea; --field: #82aaff; --str: #c3e88d;
+    --num: #f78c6c; --bool: #ff9cac; --null: #6b6e7c;
+    --add: #1f3a26; --del: #3a1f24; --addfg: #9fe6a6; --delfg: #ff9ba6;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 13px/1.55 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  }
+  header {
+    padding: 10px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--line); display: flex;
+    align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 14px; margin: 0; font-weight: 600; letter-spacing: .3px;
+  }
+  header h1 .bolt { color: var(--accent); }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  label.file {
+    background: var(--bg); border: 1px solid var(--line); color: var(--fg);
+    padding: 4px 10px; border-radius: 5px; cursor: pointer; font-size: 12px;
+  }
+  label.file:hover { border-color: var(--accent); }
+  label.file input { display: none; }
+  button {
+    background: var(--bg); border: 1px solid var(--line); color: var(--fg);
+    padding: 4px 10px; border-radius: 5px; cursor: pointer; font-size: 12px;
+  }
+  button:hover { border-color: var(--accent); }
+  .hint { color: var(--dim); font-size: 12px; }
+  .search {
+    background: var(--bg); border: 1px solid var(--line); color: var(--fg);
+    padding: 4px 8px; border-radius: 5px; font-size: 12px; width: 180px;
+    font-family: inherit;
+  }
+  main { display: flex; height: calc(100% - 49px); }
+  .pane {
+    flex: 1; overflow: auto; padding: 12px 16px; min-width: 0;
+  }
+  .pane + .pane { border-left: 1px solid var(--line); }
+  .pane.hidden { display: none; }
+  .pane-label {
+    color: var(--dim); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .8px; margin-bottom: 8px;
+  }
+  .node { white-space: pre; }
+  .twist {
+    display: inline-block; width: 12px; cursor: pointer; color: var(--dim);
+    user-select: none;
+  }
+  .twist:hover { color: var(--fg); }
+  .twist.leaf { cursor: default; visibility: hidden; }
+  .type { color: var(--type); font-weight: 600; }
+  .field { color: var(--field); }
+  .str { color: var(--str); }
+  .num { color: var(--num); }
+  .bool { color: var(--bool); }
+  .null { color: var(--null); font-style: italic; }
+  .meta { color: var(--dim); }
+  .children { padding-left: 16px; border-left: 1px solid var(--line); }
+  .children.collapsed { display: none; }
+  .row.hl { background: rgba(125,169,255,.14); border-radius: 3px; }
+  .row.diff-add { background: var(--add); }
+  .row.diff-add .type, .row.diff-add .field { color: var(--addfg); }
+  .row.diff-del { background: var(--del); }
+  .row.diff-del .type, .row.diff-del .field { color: var(--delfg); }
+  .empty {
+    color: var(--dim); padding: 40px; text-align: center; font-size: 13px;
+  }
+  .count { color: var(--dim); font-size: 11px; margin-left: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="bolt">⚡</span> Vela — Generated AST Viewer</h1>
+  <div class="controls">
+    <label class="file">Load AST A
+      <input type="file" id="fileA" accept=".json" />
+    </label>
+    <label class="file">Load AST B (diff)
+      <input type="file" id="fileB" accept=".json" />
+    </label>
+    <button id="expandAll">Expand all</button>
+    <button id="collapseAll">Collapse all</button>
+    <button id="clearB">Clear B</button>
+    <input class="search" id="search" placeholder="filter by _type…" />
+  </div>
+  <span class="count" id="count"></span>
+</header>
+<main>
+  <div class="pane" id="paneA">
+    <div class="pane-label" id="labelA">AST A</div>
+    <div class="empty" id="emptyA">
+      Load a <code>.genast.json</code> file produced by
+      <code>vela --emit-gen-ast</code>.
+    </div>
+    <div id="treeA" class="node"></div>
+  </div>
+  <div class="pane hidden" id="paneB">
+    <div class="pane-label" id="labelB">AST B</div>
+    <div id="treeB" class="node"></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+// State — the two loaded trees.
+let astA = null, astB = null;
+
+// ── Rendering ────────────────────────────────────────────────
+// Render a JSON AST node into a DOM subtree.  `diffPeer` is the
+// structurally-corresponding node in the other tree (or null);
+// when present, fields/children that differ are highlighted.
+function renderNode(node, key, diffPeer) {
+  const row = document.createElement('div');
+  row.className = 'row';
+
+  const line = document.createElement('div');
+  line.className = 'node';
+
+  const childWrap = document.createElement('div');
+  childWrap.className = 'children';
+
+  const twist = document.createElement('span');
+  twist.className = 'twist';
+  line.appendChild(twist);
+
+  // key: for object fields and array elements.
+  if (key !== null) {
+    const k = document.createElement('span');
+    k.className = 'field';
+    k.textContent = key + ': ';
+    line.appendChild(k);
+  }
+
+  const kids = []; // {key, value, peer}
+
+  if (node === null) {
+    appendScalar(line, 'null', 'null');
+  } else if (Array.isArray(node)) {
+    const t = document.createElement('span');
+    t.className = 'meta';
+    t.textContent = '[' + node.length + ']';
+    line.appendChild(t);
+    node.forEach((el, i) => {
+      const peer = (Array.isArray(diffPeer) && diffPeer[i] !== undefined)
+        ? diffPeer[i] : undefined;
+      kids.push({ key: String(i), value: el, peer });
+    });
+  } else if (typeof node === 'object') {
+    const t = document.createElement('span');
+    t.className = 'type';
+    t.textContent = node._type || 'Object';
+    line.appendChild(t);
+
+    // Mark a type mismatch against the peer.
+    if (diffPeer && typeof diffPeer === 'object' &&
+        diffPeer._type !== node._type) {
+      row.classList.add('diff-add');
+    }
+
+    for (const k of Object.keys(node)) {
+      if (k === '_type') continue;
+      const peerVal = (diffPeer && typeof diffPeer === 'object')
+        ? diffPeer[k] : undefined;
+      kids.push({ key: k, value: node[k], peer: peerVal });
+    }
+  } else {
+    // scalar
+    const kind = typeof node === 'string' ? 'str'
+               : typeof node === 'number' ? 'num'
+               : typeof node === 'boolean' ? 'bool' : 'meta';
+    appendScalar(line, JSON.stringify(node), kind);
+    if (diffPeer !== undefined && diffPeer !== node) {
+      row.classList.add('diff-add');
+    }
+  }
+
+  row.appendChild(line);
+
+  if (kids.length) {
+    twist.textContent = '▾';
+    twist.onclick = () => {
+      const c = childWrap.classList.toggle('collapsed');
+      twist.textContent = c ? '▸' : '▾';
+    };
+    for (const kid of kids) {
+      childWrap.appendChild(renderNode(kid.value, kid.key, kid.peer));
+    }
+    row.appendChild(childWrap);
+  } else {
+    twist.classList.add('leaf');
+  }
+
+  return row;
+}
+
+function appendScalar(line, text, kind) {
+  const s = document.createElement('span');
+  s.className = kind;
+  s.textContent = text;
+  line.appendChild(s);
+}
+
+// ── Tree mounting ────────────────────────────────────────────
+function mount(treeId, ast, peer) {
+  const host = document.getElementById(treeId);
+  host.innerHTML = '';
+  if (ast) host.appendChild(renderNode(ast, null, peer || undefined));
+}
+
+function refresh() {
+  document.getElementById('emptyA').style.display = astA ? 'none' : '';
+  mount('treeA', astA, astB);
+  const paneB = document.getElementById('paneB');
+  if (astB) {
+    paneB.classList.remove('hidden');
+    mount('treeB', astB, astA);
+  } else {
+    paneB.classList.add('hidden');
+  }
+  updateCount();
+  applySearch();
+}
+
+function updateCount() {
+  const n = astA ? countNodes(astA) : 0;
+  document.getElementById('count').textContent =
+    astA ? (n + ' nodes' + (astB ? ' · diff mode' : '')) : '';
+}
+
+function countNodes(node) {
+  let n = 0;
+  (function walk(x) {
+    if (Array.isArray(x)) { x.forEach(walk); return; }
+    if (x && typeof x === 'object') {
+      if (x._type) n++;
+      Object.keys(x).forEach(k => { if (k !== '_type') walk(x[k]); });
+    }
+  })(node);
+  return n;
+}
+
+// ── Expand / collapse ────────────────────────────────────────
+function setAllCollapsed(collapsed) {
+  document.querySelectorAll('.children').forEach(c => {
+    c.classList.toggle('collapsed', collapsed);
+  });
+  document.querySelectorAll('.twist').forEach(t => {
+    if (!t.classList.contains('leaf')) {
+      t.textContent = collapsed ? '▸' : '▾';
+    }
+  });
+}
+
+// ── Search / filter ──────────────────────────────────────────
+function applySearch() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  document.querySelectorAll('.row.hl').forEach(r => r.classList.remove('hl'));
+  if (!q) return;
+  document.querySelectorAll('.type').forEach(t => {
+    if (t.textContent.toLowerCase().includes(q)) {
+      const row = t.closest('.row');
+      if (row) {
+        row.classList.add('hl');
+        // reveal ancestors
+        let p = row.parentElement;
+        while (p) {
+          if (p.classList && p.classList.contains('children')) {
+            p.classList.remove('collapsed');
+          }
+          p = p.parentElement;
+        }
+      }
+    }
+  });
+}
+
+// ── File loading ─────────────────────────────────────────────
+function loadFile(input, slot, labelId) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const parsed = JSON.parse(r.result);
+      if (slot === 'A') astA = parsed;
+      else astB = parsed;
+      document.getElementById(labelId).textContent =
+        (slot === 'A' ? 'AST A — ' : 'AST B — ') + f.name;
+      refresh();
+    } catch (e) {
+      alert('Could not parse JSON: ' + e.message);
+    }
+  };
+  r.readAsText(f);
+}
+
+// ── Wiring ───────────────────────────────────────────────────
+document.getElementById('fileA').addEventListener('change', e =>
+  loadFile(e.target, 'A', 'labelA'));
+document.getElementById('fileB').addEventListener('change', e =>
+  loadFile(e.target, 'B', 'labelB'));
+document.getElementById('expandAll').onclick = () => setAllCollapsed(false);
+document.getElementById('collapseAll').onclick = () => setAllCollapsed(true);
+document.getElementById('clearB').onclick = () => {
+  astB = null;
+  document.getElementById('fileB').value = '';
+  document.getElementById('labelB').textContent = 'AST B';
+  refresh();
+};
+document.getElementById('search').addEventListener('input', applySearch);
+</script>
+</body>
+</html>
