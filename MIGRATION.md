@@ -30,91 +30,51 @@ construction so the generator no longer depends on `codegen.go`.
 - **E3.2 — done.** `{#await}` lowers to a struct-built 3-branch
   chain + driver via `buildAwaitBlock`; no splice. Calls the
   E3.1-capable `buildIfChain`.
+- **E3.3 — core done.** `{#each}` is struct-built by
+  `buildEachBlock` — anchor, fragment builder, keyed/unkeyed
+  reconciler, block storage, wiring. No splice for the common
+  case. Verified byte-identical to legacy for unkeyed, indexed,
+  and keyed rows. Fragment captures use a fragment-local $$fN
+  namespace (`withFragmentIDs`); `buildHoleSubtree` gained a
+  `collectUpdates` mode (row update() re-runs writes) and a
+  fragment-only direct-text-node fast path.
+  Remaining gap — E3.3b below.
 
-Remaining splice users: `buildEachBlock` (E3.3) and
-`buildElementSplice` (E3.4).
+Remaining splice users: `buildEachBlock` for per-row-dynamic rows
+only (E3.3b), and `buildElementSplice` (E3.4).
 
-## NEXT STEP — E3.3: `{#each}` as struct construction
+## NEXT STEP — E3.3b: per-row dynamic attributes in {#each}
 
-`{#each}` is the largest remaining conversion. `buildEachBlock`
-currently splices `walkEachBlock`, which delegates to `walkEach` +
-`fraggen.go`. The generated `{#each}` has five parts:
+`buildEachBlock`'s direct path covers hole-bearing-subtree rows.
+`astEachRowOK` still routes rows with per-row **events, binds,
+class:/style: directives, or two-way bindings** to
+`buildModuleSplice`. Legacy `walkEach` handles these inside the
+fragment via `FragGen`:
 
-1. `const $$nN_a = document.createComment('#each')` — anchor.
-2. `function $$frag_$$nN(item, $$i)` — the **fragment builder**:
-   builds one row's DOM, returns `{el, update(item,$$i), destroy()}`.
-3. `let $$nN_bs = []` (+ `const $$nN_km = new Map()` when keyed) —
-   block storage.
-4. `function $$each_$$nN($$arr)` — the **reconciler**: unkeyed
-   destroys-all-then-rebuilds; keyed diffs against `$$nN_km`,
-   reusing matched blocks and destroying dropped keys.
-5. Wiring: `$$root.appendChild($$nN_a)`, the setter `$$defer`
-   re-render, the init call, and the destroy-all in `destroy()`.
+- events — with `rewriteItemRef` so the handler closes over the
+  row's mutable $$item box, not the stale forEach parameter
+- binds / class: / style: — emitted into the fragment's init
+  (run once) and update() (re-run per reconcile)
+- two-way bindings — plus an addEventListener wiring
 
-### Difficulty split
+To close this: extend `buildEachBlock`'s fragment builder to walk
+the row element's attributes (mirroring `walkEach` lines ~2050+),
+emitting per-row event/bind/directive statements into `fragBody`
+(events) and `updateBody` (binds/directives). Then widen
+`astEachRowOK` to admit them. Reuse `rewriteHandler` /
+`rewriteItemRef` for handler rewriting.
 
-- **Parts 1, 3, 4, 5 are fixed-shape** — only the key expression
-  and frag-fn name vary. These struct-build cleanly. The keyed and
-  unkeyed reconciler bodies are two fixed templates.
-- **Part 2, the fragment builder, is the hard part** — its body is
-  arbitrary recursive row content with full per-element wiring
-  (events with row-ref rewriting, binds, class:/style: directives,
-  two-way bindings, nested elements, holes, even nested `{#each}`).
-  `fraggen.go`'s `FragGen` is effectively a second walker.
+After E3.3b, `{#each}` no longer needs the splice at all.
 
-### Recommended approach
+## NEXT STEP — E3.4: buildElementSplice (slots / components)
 
-Two viable paths, pick at session start:
-
-  (a) **Full struct build.** Reimplement `FragGen` as struct
-      construction in `astgen`. Largest single task in the
-      migration; needs a full fresh context budget. Reuse
-      `buildHoleSubtree` (E3.1) for the common hole-bearing-row
-      case; the row `update()` fn re-runs the hole writes.
-      Per-row event/bind/directive wiring must be rebuilt.
-
-  (b) **Reconciler struct-built, fragment body spliced.** Build
-      parts 1/3/4/5 as struct construction; splice ONLY the
-      `$$frag_$$nN` function body via `FragGen`. Shrinks the splice
-      from the whole block to the row body. Does NOT fully
-      decouple — `{#each}` still imports `fraggen.go` — so E4
-      (deleting `codegen.go`/`fraggen.go`) cannot complete until
-      the fragment body is also converted.
-
-Path (a) is required for the stated goal (complete decoupling).
-Path (b) is a valid intermediate if (a) must be split across
-sessions: do the reconciler shells first, fragment body second.
-
-### Verification
-
-- Differential harness: the legacy `{#each}` oracle is correct as
-  of the E1 `$$root` fix. Unkeyed and keyed fixtures must match
-  structurally (or be documented divergences like the E3.1 hole
-  branches).
-- `node --check` on every `{#each}` shape: unkeyed, keyed,
-  indexed, multi-child row (wrapper div), nested.
-- E2 viewer (`--emit-gen-ast` + `tools/ast-viewer.html`, diff
-  mode) for locating any structural divergence.
-
-## The splice users
-
-`spliceLegacyBlock` runs a legacy emitter in a sub-`CodeGen` and
-re-parses its text output into the unified AST. Remaining call
-sites after E3.1 + E3.2:
-
-1. `buildModuleSplice` — whole-template fallback (`astCanBuildDirectly`
-   false). Currently reached only by the legacy `#if`/`#each`
-   attribute-directive syntax on a root element.
-2. `buildElementSplice` — a root element whose subtree contains
-   slots / components / nested dynamics. (E3.4)
-3. `buildEachBlock` — `{#each}`. (E3.3 — next)
-
-`{#if}` / `{#key}` (E3.1) and `{#await}` (E3.2) are struct-built;
-their splice calls are gone.
-
-Note: `astCanBuildDirectly == true` does NOT mean "no splice" —
-`buildModule` still calls `buildEachBlock` / `buildElementSplice`
-internally.
+`buildElementSplice` splices a root element whose subtree contains
+slots or component invocations. Converting it to struct
+construction is the last splice removal before E4. Component
+invocation (props object, `$$onChange` for bindable props, the
+child-component mount) and `<slot>` projection both need
+struct-built equivalents. Scope this as its own session — like
+E3.3, it is a subsystem, not a single function.
 
 ## Verification invariants (every step)
 

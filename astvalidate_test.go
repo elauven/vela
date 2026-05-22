@@ -162,7 +162,7 @@ func TestValidateEveryFixtureClean(t *testing.T) {
 			continue // falls back to legacy — not AST-validated
 		}
 		g := &ASTGen{name: name, scopeID: "vela-000000",
-			analysis: analysis, sfc: sfc}
+			analysis: analysis, sfc: sfc, fragCounter: -1}
 		prog := g.buildModule(tmpl)
 		if issues := ValidateProgram(prog); len(issues) > 0 {
 			var b strings.Builder

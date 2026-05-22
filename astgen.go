@@ -230,6 +230,11 @@ type ASTGen struct {
 	// generated names match between the two generators.
 	counter int
 
+	// fragCounter, when >= 0, switches id() into the {#each}
+	// fragment-builder namespace ($$fN).  -1 means component
+	// scope ($$nN).  Managed by withFragmentIDs.
+	fragCounter int
+
 	// body accumulates DOM-construction statements; initBody holds
 	// the "initial render" statements that run after construction.
 	body     []JsStmt
@@ -260,9 +265,27 @@ func (g *ASTGen) addUpdate(dep string, stmt JsStmt) {
 // $$n1, …), matching the legacy generator's numbering so the two
 // outputs stay comparable.
 func (g *ASTGen) id() string {
+	if g.fragCounter >= 0 {
+		// Inside an {#each} fragment builder: captured vars use the
+		// fragment-local $$fN namespace so they are isolated per
+		// row builder and stable across multiple {#each} blocks.
+		n := g.fragCounter
+		g.fragCounter++
+		return "$$f" + itoa(n)
+	}
 	n := g.counter
 	g.counter++
 	return jsName(n)
+}
+
+// withFragmentIDs runs fn with id() switched to the fragment-local
+// $$fN namespace (starting at $$f0), then restores the component
+// counter.  Used while building an {#each} row fragment.
+func (g *ASTGen) withFragmentIDs(fn func()) {
+	saved := g.fragCounter
+	g.fragCounter = 0
+	fn()
+	g.fragCounter = saved
 }
 
 // jsName formats a node-variable name from a counter value.
@@ -341,10 +364,11 @@ func buildProgram(
 	scopeID string,
 ) *JsProgram {
 	g := &ASTGen{
-		name:     name,
-		scopeID:  scopeID,
-		analysis: analysis,
-		sfc:      sfc,
+		name:        name,
+		scopeID:     scopeID,
+		analysis:    analysis,
+		sfc:         sfc,
+		fragCounter: -1,
 	}
 
 	var prog *JsProgram
@@ -621,12 +645,11 @@ func astChainRootOK(nodes []Node) bool {
 			}
 			sawBlock = true
 		case *EachBlockNode:
-			// The {#each} reconciler and fragment generator are
-			// reused wholesale from the legacy generator (see
-			// buildEachBlock), so any row body is fine — holes,
-			// nested elements, all handled.  Component rows are
-			// the one exception, deferred to block 13.
-			if eachHasComponent(x.Children) {
+			// {#each} is struct-built by buildEachBlock (E3.3).
+			// The direct path covers hole-bearing-subtree rows;
+			// per-row events / binds / directives and nested
+			// control-flow are not yet covered.
+			if !astEachRowOK(x.Children) {
 				return false
 			}
 			sawBlock = true
@@ -666,6 +689,39 @@ func astChainRootOK(nodes []Node) bool {
 // that itself contains a hole needs recursive descent (legacy
 // "step 2"), which is a later block.  Likewise element holes
 // (dynamic attributes) are deferred to block 7.
+// astEachRowOK reports whether an {#each} row body can be built by
+// buildEachBlock's direct path: the row resolves to a single
+// element (or a wrapper) whose attributes are static and whose
+// content is a hole-bearing subtree (astHoleSubtreeOK).
+//
+// Per-row events / binds / class:/style: directives and nested
+// control-flow in a row are not yet covered — those still route
+// through buildModuleSplice.
+func astEachRowOK(children []Node) bool {
+	// Resolve the row element exactly as buildEachBlock does.
+	var rowElem *ElementNode
+	if len(children) == 1 {
+		if el, ok := children[0].(*ElementNode); ok {
+			rowElem = el
+		}
+	}
+	if rowElem == nil {
+		// Wrapped: every child must itself be hole-subtree-safe.
+		return astHoleSubtreeOK(children)
+	}
+	// The row element's own attributes must be static.
+	for _, a := range rowElem.Attrs {
+		if a.IsEvent || a.IsBind || a.IsTwoWay ||
+			a.IsBindThis || a.IsClassDir || a.IsStyleDir {
+			return false
+		}
+	}
+	if rowElem.IfCond != "" || rowElem.EachExpr != "" {
+		return false
+	}
+	return astHoleSubtreeOK(rowElem.Children)
+}
+
 // astHoleSubtreeOK reports whether a subtree can be built by
 // buildHoleSubtree: static content and text-interpolation holes at
 // any depth, but no element holes, nested control-flow,
@@ -1526,6 +1582,12 @@ type holeSubtree struct {
 	// captured lists the names of every node variable captured —
 	// used by a chain branch to null them on unmount.
 	captured []string
+	// updateStmts holds the per-hole reactive writes when
+	// buildHoleSubtree is asked to collect rather than register
+	// them (the {#each} fragment case — the row update() re-runs
+	// every write unconditionally, so they are not registered
+	// against component-scope reactive deps).
+	updateStmts []JsStmt
 }
 
 // buildHoleSubtree builds the innerHTML + TreeWalker hole-capture
@@ -1551,6 +1613,7 @@ func (g *ASTGen) buildHoleSubtree(
 	children []Node,
 	hoist bool,
 	guard string,
+	collectUpdates bool,
 ) holeSubtree {
 	var res holeSubtree
 
@@ -1570,7 +1633,63 @@ func (g *ASTGen) buildHoleSubtree(
 		return res
 	}
 
-	// Holes present — innerHTML carries the <!--$--> anchors.
+	// Holes present.  Inside an {#each} fragment, a text-only
+	// subtree (no nested elements) is built as direct text nodes —
+	// createTextNode + appendChild, one per TextNode, no innerHTML
+	// / TreeWalker.  This matches the legacy fragment generator.
+	// The root-element path keeps innerHTML+TreeWalker (legacy
+	// does too), so this fast path is gated on fragment mode.
+	if g.fragCounter >= 0 && !hasElement(children) {
+		for _, child := range children {
+			tn, ok := child.(*TextNode)
+			if !ok {
+				continue
+			}
+			if textNodeAllStatic(tn) {
+				text := ""
+				for _, p := range tn.Parts {
+					text += p.Value
+				}
+				if isBlankText(text) {
+					continue
+				}
+				res.build = append(res.build, jsStmt(
+					targetVar+".appendChild(document.createTextNode("+
+						backtickString(text)+"));"))
+				continue
+			}
+			// Dynamic TextNode — one text-node hole.
+			refVar := g.id()
+			if hoist {
+				res.decls = append(res.decls,
+					jsStmt("let "+refVar+" = null;"))
+				res.build = append(res.build, jsStmt(
+					refVar+" = document.createTextNode('');"))
+				res.captured = append(res.captured, refVar)
+			} else {
+				res.build = append(res.build, jsStmt(
+					"const "+refVar+" = document.createTextNode('');"))
+			}
+			res.build = append(res.build, jsStmt(
+				targetVar+".appendChild("+refVar+");"))
+
+			exprSrc := buildExpr(tn.Parts)
+			writeSrc := refVar + ".data = " + exprSrc + ";"
+			res.initUpdates = append(res.initUpdates,
+				g.guardedStmt(writeSrc, guard))
+			if collectUpdates {
+				res.updateStmts = append(res.updateStmts, jsStmt(writeSrc))
+			} else {
+				for _, dep := range findDeps(exprSrc, g.reactiveNames()) {
+					g.addUpdate(dep, g.guardedStmt(writeSrc, guard))
+				}
+			}
+		}
+		return res
+	}
+
+	// Element-bearing subtree with holes — innerHTML carries the
+	// <!--$--> anchors.
 	res.build = append(res.build, g.innerHTMLStmt(targetVar, html))
 
 	// TreeWalker over the target; capture every anchor first
@@ -1630,13 +1749,31 @@ func (g *ASTGen) buildHoleSubtree(
 		res.initUpdates = append(res.initUpdates,
 			g.guardedStmt(writeSrc, guard))
 
-		// Reactive updates — one per dependency, mounted-guarded so
-		// they are no-ops while the branch is detached.
-		for _, dep := range findDeps(exprSrc, g.reactiveNames()) {
-			g.addUpdate(dep, g.guardedStmt(writeSrc, guard))
+		// Reactive updates.  For a chain branch they are registered
+		// against the component-scope setters, mounted-guarded.
+		// For an {#each} fragment (collectUpdates) the row update()
+		// re-runs every write unconditionally, so collect them
+		// instead — one write per hole, deduplicated across deps.
+		if collectUpdates {
+			res.updateStmts = append(res.updateStmts, jsStmt(writeSrc))
+		} else {
+			for _, dep := range findDeps(exprSrc, g.reactiveNames()) {
+				g.addUpdate(dep, g.guardedStmt(writeSrc, guard))
+			}
 		}
 	}
 	return res
+}
+
+// textNodeAllStatic reports whether every part of a TextNode is
+// static (no interpolation hole).
+func textNodeAllStatic(tn *TextNode) bool {
+	for _, p := range tn.Parts {
+		if !p.Static {
+			return false
+		}
+	}
+	return true
 }
 
 // guardedStmt parses src into a statement, wrapping it
@@ -1689,7 +1826,7 @@ func (g *ASTGen) buildHolesDOM(el *ElementNode) {
 	g.applyRootAttrs(el)
 
 	// 2-4. Children — innerHTML + TreeWalker hole capture.
-	sub := g.buildHoleSubtree("$$root", el.Children, false, "")
+	sub := g.buildHoleSubtree("$$root", el.Children, false, "", false)
 	g.body = append(g.body, sub.build...)
 	g.initBody = append(g.initBody, sub.initUpdates...)
 }
@@ -1710,10 +1847,153 @@ func (g *ASTGen) buildHolesDOM(el *ElementNode) {
 // deterministic, so parsing it back is safe — and the reconciler
 // stays single-sourced, so a future fix to fraggen.go benefits
 // both generators.
+// buildEachBlock emits an {#each} block (E3.3) as struct
+// construction — no splice.
+//
+// The lowering has five parts:
+//   1. an anchor comment ($$nN_a) the rows are inserted before
+//   2. a fragment builder $$frag_$$nN(item, $$i) that builds one
+//      row's DOM and returns { el, update(item,$$i), destroy() }
+//   3. block storage — $$nN_bs (array); $$nN_km (Map) when keyed
+//   4. the reconciler $$each_$$nN($$arr): unkeyed destroys-all-
+//      then-rebuilds; keyed diffs against $$nN_km, reusing matched
+//      rows and destroying dropped keys
+//   5. wiring — anchor appendChild, the setter $$defer re-render,
+//      the init call, and the destroy-all teardown
+//
+// Row content is built via buildHoleSubtree (the common hole-
+// bearing-subtree row).  Rows with per-row events / binds /
+// directives, or nested control-flow, are not yet covered by the
+// direct path — astEachRowOK gates those to buildModuleSplice.
 func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
-	g.spliceLegacyBlock(func(sub *CodeGen) {
-		sub.walkEachBlock(block, parentVar)
+	array, itemVar, indexVar := parseEachExpr(block.EachExpr)
+	if indexVar == "" {
+		indexVar = "$$i"
+	}
+	keyExpr := block.EachKey // "" means unkeyed
+
+	id := g.id()
+	anchor := id + "_a"
+	blocks := id + "_bs"
+	keymap := id + "_km"
+	fragFn := "$$frag_" + id
+	eachFn := "$$each_" + id
+
+	// Determine the row element: a single child element is used
+	// directly; anything else is wrapped in a <div>.
+	var rowElem *ElementNode
+	if len(block.Children) == 1 {
+		if el, ok := block.Children[0].(*ElementNode); ok {
+			rowElem = el
+		}
+	}
+	if rowElem == nil {
+		rowElem = &ElementNode{Tag: "div", Children: block.Children}
+	}
+
+	// ── 1. Anchor ────────────────────────────────────────────
+	g.body = append(g.body, jsStmt(
+		"const "+anchor+" = document.createComment('#each');"))
+
+	// ── 2. Fragment builder ──────────────────────────────────
+	// Built under the fragment-local $$fN namespace: the row
+	// element is $$f0 and buildHoleSubtree's captures continue
+	// $$f1, $$f2, … — isolated per fragment and stable across
+	// multiple {#each} blocks.
+	var fragBody []JsStmt
+	var sub holeSubtree
+	rowVar := "$$f0"
+	g.withFragmentIDs(func() {
+		rowVar = g.id() // $$f0
+		fragBody = []JsStmt{
+			jsStmt("let $$item_" + id + " = " + itemVar + ";"),
+			jsStmt("const " + rowVar + " = document.createElement('" +
+				rowElem.Tag + "');"),
+			jsStmt(rowVar + ".setAttribute('" + g.scopeID + "', '');"),
+		}
+		sub = g.buildHoleSubtree(rowVar, rowElem.Children, false, "", true)
+		fragBody = append(fragBody, sub.build...)
+		fragBody = append(fragBody, sub.initUpdates...)
 	})
+
+	// update(item, $$i): refresh the row box and re-run hole writes.
+	updateBody := []JsStmt{jsStmt("$$item_" + id + " = " + itemVar + ";")}
+	updateBody = append(updateBody, sub.updateStmts...)
+
+	// return { el, update, destroy };
+	fragReturn := "return { el: " + rowVar + ", " +
+		"update(" + itemVar + ", " + indexVar + ") { " +
+		stmtsToText(updateBody) + " }, " +
+		"destroy() { " + rowVar + ".remove(); } };"
+	fragBody = append(fragBody, jsStmt(fragReturn))
+
+	g.body = append(g.body, jsStmt(
+		"function "+fragFn+"("+itemVar+", "+indexVar+") { "+
+			stmtsToText(fragBody)+" }"))
+
+	// ── 3. Block storage ─────────────────────────────────────
+	if keyExpr != "" {
+		g.body = append(g.body, jsStmt("const "+keymap+" = new Map();"))
+	}
+	g.body = append(g.body, jsStmt("let "+blocks+" = [];"))
+
+	// ── 4. Reconciler ────────────────────────────────────────
+	g.body = append(g.body, jsStmt(g.eachReconciler(
+		eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar)))
+
+	// ── 5. Wiring ────────────────────────────────────────────
+	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
+	g.initBody = append(g.initBody, jsStmt(eachFn+"("+array+");"))
+	for _, dep := range findDeps(array, g.reactiveNames()) {
+		g.addUpdate(dep, jsStmt(eachFn+"("+array+");"))
+	}
+	g.cleanup = append(g.cleanup, jsStmt(
+		blocks+".forEach(b => b.destroy());"))
+}
+
+// eachReconciler returns the source of the $$each_$$nN reconciler
+// function — the unkeyed or keyed variant.  Both are fixed-shape;
+// only names and the key expression vary.
+func (g *ASTGen) eachReconciler(
+	eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar string,
+) string {
+	if keyExpr == "" {
+		// Unkeyed: destroy every row, rebuild from scratch.
+		return "function " + eachFn + "($$arr) {" +
+			"  if (!" + anchor + ".parentNode) return;" +
+			"  " + blocks + ".forEach(b => b.destroy());" +
+			"  " + blocks + " = [];" +
+			"  ($$arr||[]).forEach(function(" + itemVar + ", " + indexVar + ") {" +
+			"    const $$blk = " + fragFn + "(" + itemVar + ", " + indexVar + ");" +
+			"    " + anchor + ".before($$blk.el);" +
+			"    " + blocks + ".push($$blk);" +
+			"  });" +
+			"}"
+	}
+	// Keyed: diff against the key map, reuse matched rows.
+	return "function " + eachFn + "($$arr) {" +
+		"  if (!" + anchor + ".parentNode) return;" +
+		"  const $$newKeys = new Set();" +
+		"  const $$newBlocks = [];" +
+		"  ($$arr||[]).forEach(function(" + itemVar + ", " + indexVar + ") {" +
+		"    const $$key = String(" + stripBraces(keyExpr) + ");" +
+		"    $$newKeys.add($$key);" +
+		"    let $$blk = " + keymap + ".get($$key);" +
+		"    if ($$blk) {" +
+		"      if ($$blk.update) $$blk.update(" + itemVar + ", " + indexVar + ");" +
+		"    } else {" +
+		"      $$blk = " + fragFn + "(" + itemVar + ", " + indexVar + ");" +
+		"      " + keymap + ".set($$key, $$blk);" +
+		"    }" +
+		"    " + anchor + ".before($$blk.el);" +
+		"    $$newBlocks.push($$blk);" +
+		"  });" +
+		"  " + keymap + ".forEach(($$blk, $$key) => {" +
+		"    if (!$$newKeys.has($$key)) { $$blk.destroy(); " +
+		keymap + ".delete($$key); }" +
+		"  });" +
+		"  " + blocks + " = $$newBlocks;" +
+		"}"
 }
 
 // buildAwaitBlock emits an {#await}/{:then}/{:catch} block
@@ -1942,7 +2222,7 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 		}
 		// Hole-bearing branch.  guard = bv: every reactive hole
 		// update is a no-op while the branch is unmounted.
-		sub := g.buildHoleSubtree(bv, br.Children, true, bv)
+		sub := g.buildHoleSubtree(bv, br.Children, true, bv, false)
 		// Component-scope `let X = null;` for every captured var.
 		g.body = append(g.body, sub.decls...)
 		// Build statements run inside the branch's `if (!bv)` block.
