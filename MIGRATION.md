@@ -78,6 +78,16 @@ clears a consumed `#if`/`#each` off a branch element.
    (`{#if}`/`{#each}` inside a row). Everything else is
    struct-built.
 
+## Post-E3.6 fix — component @event handlers were dropped
+
+buildComponentNode built the props object and slot closures but
+never wired @event attributes — so component events (button
+clicks, tab @select, modal @close, …) silently did nothing, no
+error. Fixed: buildComponentEvents wires each @event as a
+CustomEvent-guarded listener on the component wrapper div, with a
+matching removeEventListener in teardown — identical to legacy
+walkComponent's event forwarding. Regression: component_event.
+
 ## Post-E3.6 fix — WalkNode object-key false positive
 
 The validator's checkUndeclaredRefs flagged $$onChange_open (a

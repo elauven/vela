@@ -262,12 +262,17 @@ var corpus = map[string]string{
 	// object.  The property KEY $$onChange_X must not be mistaken
 	// for a variable reference by the validator — WalkNode must
 	// not descend into non-computed object-property keys.
-	"component_bind_prop": `<script>
-		import { Toast } from './Toast.vela';
-		let open = $state(false);
+	// Regression: a component invoked with an @event handler must
+	// wire a CustomEvent-guarded listener on the component wrapper.
+	// This wiring was missing entirely — component events (button
+	// clicks, tab selects, …) silently did nothing.
+	"component_event": `<script>
+		import { Tabs } from './Tabs.vela';
+		let cur = $state('home');
+		function pick(e) { cur = e.detail.id; }
 	</script>
 	<template>
-		<div><Toast bind:open={open} message="hi" /></div>
+		<div><Tabs :activeId={cur} @select={pick} /></div>
 	</template>`,
 }
 
@@ -344,6 +349,9 @@ var knownLegacyBugs = map[string]string{
 		"both valid, same DOM",
 	"component_bind_prop": "component invocation — struct-built (E3.6) " +
 		"vs legacy buffer-partitioned emission; both valid",
+	"component_event": "component invocation — struct-built (E3.6) " +
+		"vs legacy buffer-partitioned emission; the @event wiring " +
+		"itself is identical, only surrounding structure differs",
 	"slot_named": "multiple sibling <slot>s: the recursive AST walker " +
 		"emits createComment+appendChild in document order; legacy's " +
 		"create/wire buffer split emits all comments then all appends " +

@@ -2846,9 +2846,39 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 		g.addUpdate(d, jsStmt(setStmt))
 	}
 
+	// Component @event handlers.  A child component dispatches a
+	// CustomEvent on its wrapper div; the parent listens there.
+	// The handler is guarded with `instanceof CustomEvent` so a
+	// native DOM event of the same name (e.g. a built-in 'select'
+	// /'change' bubbling up) is not mishandled as a component
+	// event.  This wiring was missing — component events silently
+	// did nothing.
+	g.buildComponentEvents(comp, wrap)
+
 	// Teardown.
 	g.cleanup = append(g.cleanup, jsStmt(
 		"if ("+inst+") "+inst+".destroy();"))
+}
+
+// buildComponentEvents wires every @event attribute of a component
+// invocation: a CustomEvent-guarded listener on the component's
+// wrapper div, with a matching removeEventListener in teardown.
+func (g *ASTGen) buildComponentEvents(comp *ComponentNode, wrap string) {
+	for _, attr := range comp.Attrs {
+		if !attr.IsEvent {
+			continue
+		}
+		hv := wrap + "_" + sanitizeIdent(attr.Name) + "_ch"
+		handler := g.rewriteHandler(attr.Value)
+		// The guard wrapper — only forward CustomEvents.
+		g.body = append(g.body, jsStmt(
+			"const "+hv+" = ($e) => { if ($e instanceof CustomEvent) { ("+
+				handler+")($e); } };"))
+		g.events = append(g.events, jsStmt(
+			wrap+".addEventListener('"+attr.Name+"', "+hv+");"))
+		g.cleanup = append(g.cleanup, jsStmt(
+			wrap+".removeEventListener('"+attr.Name+"', "+hv+");"))
+	}
 }
 
 // buildSlotClosures assembles the $$slots object literal passed as
