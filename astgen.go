@@ -253,6 +253,18 @@ type ASTGen struct {
 	// collects these while building holes and replays them inside
 	// each setter's $$defer body.  Mirrors CodeGen.updates.
 	updates map[string][]JsStmt
+
+	// hoisted holds declarations that must ALWAYS live at component
+	// scope, even when emitted while captureScope has redirected
+	// the other buffers into a local scope (a slot-factory closure
+	// or an {#each} fragment).  captureScope deliberately does NOT
+	// swap this buffer.  Used for child-component instance vars:
+	// `let $$nN_comp = null` must be visible to the slot closure's
+	// reopen path, which references the instance without
+	// re-running its first-open declaration — a `let` captured
+	// inside the closure would throw a TDZ ReferenceError on
+	// reopen.  Mirrors legacy walkComponent's instance-var hoist.
+	hoisted []JsStmt
 }
 
 // addUpdate records that statement stmt must re-run whenever the
@@ -958,6 +970,10 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 
 	// ── DOM construction (blocks 2-3) ────────────────────────
 	g.buildDOM(nodes)
+	// Hoisted declarations (child-component instance vars) first,
+	// so a slot closure's reopen path can reference them without a
+	// TDZ error — see ASTGen.hoisted.
+	fnBody.Body = append(fnBody.Body, g.hoisted...)
 	fnBody.Body = append(fnBody.Body, g.body...)
 
 	// ── Component logic — user <script> (block 4) ────────────
@@ -2820,7 +2836,13 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 
 	g.body = append(g.body, g.createElementStmt(wrap, "div"))
 	g.body = append(g.body, g.setAttrStmt(wrap, g.scopeID, ""))
-	g.body = append(g.body, jsStmt("let "+inst+" = null;"))
+	// The instance var is HOISTED to component scope (not g.body):
+	// when this component sits inside a slot, g.body is captured
+	// into the slot-factory closure, and the closure's reopen path
+	// references $$nN_comp without re-running its declaration — a
+	// `let` trapped in the closure would throw a TDZ error on
+	// reopen.  Hoisting keeps the name visible everywhere.
+	g.hoisted = append(g.hoisted, jsStmt("let "+inst+" = null;"))
 	g.body = append(g.body, jsStmt(parentVar+".appendChild("+wrap+");"))
 
 	propsObj := g.componentPropsObject(comp.Attrs)
@@ -2870,8 +2892,13 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, wrap string) {
 		}
 		hv := wrap + "_" + sanitizeIdent(attr.Name) + "_ch"
 		handler := g.rewriteHandler(attr.Value)
-		// The guard wrapper — only forward CustomEvents.
-		g.body = append(g.body, jsStmt(
+		// The guard wrapper — only forward CustomEvents.  Hoisted
+		// to component scope: when the component is in a slot, the
+		// addEventListener call runs on every slot reopen but the
+		// handler const is declared once; a `let`/`const` trapped
+		// in the slot closure's first-open path would be undefined
+		// on reopen.
+		g.hoisted = append(g.hoisted, jsStmt(
 			"const "+hv+" = ($e) => { if ($e instanceof CustomEvent) { ("+
 				handler+")($e); } };"))
 		g.events = append(g.events, jsStmt(
@@ -2917,7 +2944,17 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
 			g.buildChildRun(slotNodes, fragVar)
 		})
 		buildText := stmtsToText(cap.body)
-		initText := stmtsToText(cap.initBody)
+		// Event listeners and initial-render statements emitted by
+		// slot content (e.g. a component @click handler, or a
+		// child component's init call) must run inside the closure
+		// too — they were being dropped, so components in a slot
+		// had no event wiring.
+		initText := stmtsToText(append(append([]JsStmt{},
+			cap.events...), cap.initBody...))
+
+		// Teardown emitted by slot content (component .destroy(),
+		// removeEventListener) runs at component scope.
+		g.cleanup = append(g.cleanup, cap.cleanup...)
 
 		// The cache var is hoisted to component scope so the
 		// closure (and reopens) can see it.

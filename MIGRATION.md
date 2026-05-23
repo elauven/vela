@@ -78,6 +78,28 @@ clears a consumed `#if`/`#each` off a branch element.
    (`{#if}`/`{#each}` inside a row). Everything else is
    struct-built.
 
+## Post-E3.6 fix — component events + TDZ in slots
+
+Two bugs with components placed inside another component's slot:
+
+1. **Slot-content events dropped.** buildSlotClosures used only
+   cap.body and cap.initBody from the captured scope — cap.events
+   was discarded, so a component @click inside a slot wired no
+   listener. Fixed: cap.events fold into the closure's init text;
+   cap.cleanup goes to component-scope teardown.
+
+2. **TDZ on slot reopen.** A child-component instance var
+   (`let $$nN_comp`) and the component-event handler const were
+   emitted into the captured slot-closure scope — so they lived in
+   the closure's first-open path only. The reopen path references
+   them without re-declaring → ReferenceError "can't access
+   lexical declaration before initialization". Fixed: a new
+   ASTGen.hoisted buffer, which captureScope deliberately does NOT
+   redirect, carries these declarations to component scope.
+   buildModule emits g.hoisted just before g.body.
+
+Regression: slot_component_event.
+
 ## Post-E3.6 fix — component @event handlers were dropped
 
 buildComponentNode built the props object and slot closures but

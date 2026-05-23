@@ -266,13 +266,25 @@ var corpus = map[string]string{
 	// wire a CustomEvent-guarded listener on the component wrapper.
 	// This wiring was missing entirely — component events (button
 	// clicks, tab selects, …) silently did nothing.
-	"component_event": `<script>
-		import { Tabs } from './Tabs.vela';
-		let cur = $state('home');
-		function pick(e) { cur = e.detail.id; }
+	// Regression: a component invoked inside another component's
+	// slot, with an @event handler.  The slot-content event wiring
+	// (cap.events) was dropped — buttons in a slot did nothing —
+	// and the child instance `let` was trapped in the slot
+	// closure, throwing a TDZ ReferenceError on slot reopen.  The
+	// instance var and the event handler const are now hoisted to
+	// component scope; the addEventListener runs inside the closure.
+	"slot_component_event": `<script>
+		import { Card } from './Card.vela';
+		import { Button } from './Button.vela';
+		let count = $state(0);
 	</script>
 	<template>
-		<div><Tabs :activeId={cur} @select={pick} /></div>
+		<div>
+			<Card title="C">
+				<Button label="Inc" @click="() => count++" />
+				<div slot="footer"><Button label="Reset" @click="() => count = 0" /></div>
+			</Card>
+		</div>
 	</template>`,
 }
 
@@ -352,6 +364,8 @@ var knownLegacyBugs = map[string]string{
 	"component_event": "component invocation — struct-built (E3.6) " +
 		"vs legacy buffer-partitioned emission; the @event wiring " +
 		"itself is identical, only surrounding structure differs",
+	"slot_component_event": "component-in-slot — struct-built (E3.6) " +
+		"vs legacy buffer-partitioned emission; both valid",
 	"slot_named": "multiple sibling <slot>s: the recursive AST walker " +
 		"emits createComment+appendChild in document order; legacy's " +
 		"create/wire buffer split emits all comments then all appends " +
