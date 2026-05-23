@@ -116,12 +116,12 @@ func WalkNode(node JsNode, fn func(JsNode) bool) {
 		}
 	case *JsObjectExpr:
 		for _, prop := range n.Props {
-			if !prop.Computed {
-				// Don't descend into shorthand key idents as "references"
-				if !prop.Shorthand {
-					WalkNode(prop.Key, fn)
-				}
-			} else {
+			// A non-computed property key — shorthand ({ x }) or
+			// keyed ({ k: v }) — is a name literal, not a variable
+			// reference, exactly like a member expression's .Prop.
+			// Only a computed key ({ [expr]: v }) is a real
+			// expression to walk.
+			if prop.Computed {
 				WalkNode(prop.Key, fn)
 			}
 			WalkNode(prop.Value, fn)

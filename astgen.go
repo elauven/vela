@@ -2368,6 +2368,24 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 				"$$insertHTML(" + bv + ", '" + escapeJSString(html) + "');"
 			continue
 		}
+		// A branch whose subtree the hole-template builder cannot
+		// express — e.g. it contains a nested element carrying a
+		// class:/style: directive, or nested control-flow — must
+		// NOT go through buildHoleSubtree (buildHoleTemplate would
+		// panic on the unhandled element).  Build it with the
+		// recursive walker instead, into a captured local scope so
+		// its emissions land in the branch build block.
+		if !astHoleSubtreeOK(kids) {
+			cap := g.captureScope(func() {
+				g.buildChildRun(kids, bv)
+			})
+			var bt strings.Builder
+			bt.WriteString(stmtsToText(cap.body))
+			bt.WriteString(stmtsToText(cap.initBody))
+			bt.WriteString(stmtsToText(cap.events))
+			plans[i].buildText = bt.String()
+			continue
+		}
 		// Hole-bearing branch.  guard = bv: every reactive hole
 		// update is a no-op while the branch is unmounted.
 		sub := g.buildHoleSubtree(bv, kids, true, bv, false)

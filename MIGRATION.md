@@ -78,6 +78,31 @@ clears a consumed `#if`/`#each` off a branch element.
    (`{#if}`/`{#each}` inside a row). Everything else is
    struct-built.
 
+## Post-E3.6 fix — WalkNode object-key false positive
+
+The validator's checkUndeclaredRefs flagged $$onChange_open (a
+bindable-prop callback) as an undeclared variable. Root cause:
+WalkNode descended into non-computed object-property KEYS as if
+they were references — so the property key in
+`{ $$onChange_open: ... }` was walked as an ident read. Fixed:
+WalkNode now skips non-computed property keys entirely (shorthand
+and keyed alike — a key is a name literal, like a member's .Prop).
+Shorthand references are unaffected: prop.Value holds the ident.
+Regression: component_bind_prop in the corpus.
+
+## Post-E3.6 fix — buildIfChain branch gating
+
+A nested {#if} reached via the recursive walker dispatched
+straight to buildIfChain, which then called buildHoleSubtree for
+any non-static branch WITHOUT checking astHoleSubtreeOK. A branch
+containing a directive-bearing element (class:/style:) made
+buildHoleTemplate panic — appendHoleNode has no arm for such an
+element. Fixed: buildIfChain's branch-plan loop now routes a
+branch that is neither allStatic nor astHoleSubtreeOK through the
+recursive walker (captureScope + buildChildRun), the same
+mechanism {#each} nested rows use. Regression: if_branch_classdir
+in the corpus.
+
 ## E3.6 — DONE — Phase 3 complete
 
 The recursive walker now emits into local scope via captureScope,

@@ -251,6 +251,24 @@ var corpus = map[string]string{
 	<template>
 		{#each xs as x, i}<li class:active={i === sel}>{x}</li>{/each}
 	</template>`,
+
+	// Regression: a nested {#if} whose branch contains an element
+	// carrying a class:/style: directive.  buildHoleTemplate has
+	// no arm for a directive-bearing element, so buildIfChain must
+	// route such a branch through the recursive walker rather than
+	// buildHoleSubtree — otherwise appendHoleNode panics.
+	// Regression: a child component invoked with a bind: prop
+	// generates an { $$onChange_X: ... } entry in its props
+	// object.  The property KEY $$onChange_X must not be mistaken
+	// for a variable reference by the validator — WalkNode must
+	// not descend into non-computed object-property keys.
+	"component_bind_prop": `<script>
+		import { Toast } from './Toast.vela';
+		let open = $state(false);
+	</script>
+	<template>
+		<div><Toast bind:open={open} message="hi" /></div>
+	</template>`,
 }
 
 // TestASTGenCorpus compiles every corpus entry through the
@@ -320,6 +338,12 @@ var knownLegacyBugs = map[string]string{
 	"each_row_event": "AST hoists row event handlers cleanly into a " +
 		"named const; legacy keeps the brace-wrapped value and wraps " +
 		"it in an extra $event arrow — both valid, AST form is cleaner",
+	"if_branch_classdir": "{#if} branch with a directive-bearing " +
+		"element is built by the recursive walker (buildHoleTemplate " +
+		"has no arm for it); legacy uses its own walkElement path — " +
+		"both valid, same DOM",
+	"component_bind_prop": "component invocation — struct-built (E3.6) " +
+		"vs legacy buffer-partitioned emission; both valid",
 	"slot_named": "multiple sibling <slot>s: the recursive AST walker " +
 		"emits createComment+appendChild in document order; legacy's " +
 		"create/wire buffer split emits all comments then all appends " +
