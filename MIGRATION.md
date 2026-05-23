@@ -43,40 +43,79 @@ construction so the generator no longer depends on `codegen.go`.
 Remaining splice users: `buildEachBlock` for per-row-dynamic rows
 only (E3.3b), and `buildElementSplice` (E3.4).
 
-## NEXT STEP — E3.3b: per-row dynamic attributes in {#each}
+- **E3.3b — done.** Per-row events, binds, and class:/style:
+  directives in {#each} are struct-built (`buildEachRowAttrs`),
+  with row-item references rewritten via `rewriteItemRef`.
+  `each_row_class` matches legacy byte-for-byte; `each_row_event`
+  is a documented divergence (cleaner handler hoisting). Only
+  {#each} rows with NESTED CONTROL-FLOW (an {#if}/{#each} inside a
+  row) still route to `buildModuleSplice` — a recursion case.
 
-`buildEachBlock`'s direct path covers hole-bearing-subtree rows.
-`astEachRowOK` still routes rows with per-row **events, binds,
-class:/style: directives, or two-way bindings** to
-`buildModuleSplice`. Legacy `walkEach` handles these inside the
-fragment via `FragGen`:
+Remaining splice users: `buildEachBlock` for nested-control-flow
+rows only, and `buildElementSplice` (E3.4).
 
-- events — with `rewriteItemRef` so the handler closes over the
-  row's mutable $$item box, not the stale forEach parameter
-- binds / class: / style: — emitted into the fragment's init
-  (run once) and update() (re-run per reconcile)
-- two-way bindings — plus an addEventListener wiring
+## E3.4 + E3.5 — recursive walker — DONE
 
-To close this: extend `buildEachBlock`'s fragment builder to walk
-the row element's attributes (mirroring `walkEach` lines ~2050+),
-emitting per-row event/bind/directive statements into `fragBody`
-(events) and `updateBody` (binds/directives). Then widen
-`astEachRowOK` to admit them. Reuse `rewriteHandler` /
-`rewriteItemRef` for handler rewriting.
+The recursive element walker (`buildNodes`/`buildElement`/
+`buildChildren`/`buildChildRun`) is built and wired. The AST
+generator constructs arbitrarily nested dynamic content — nested
+elements with events/binds/directives, components, slots — without
+splicing. `buildElementSplice` is deleted.
 
-After E3.3b, `{#each}` no longer needs the splice at all.
+E3.5 closed the root-directive seams: `#if`/`#each` on a root
+element now build directly (`if_on_root` via element-branch
+normalization in `buildIfChain`; `each_on_root` reframed to an
+EachBlockNode through `buildChainRootDOM`). `stripBranchDirectives`
+clears a consumed `#if`/`#each` off a branch element.
 
-## NEXT STEP — E3.4: buildElementSplice (slots / components)
+### Remaining splice seams (2)
 
-`buildElementSplice` splices a root element whose subtree contains
-slots or component invocations. Converting it to struct
-construction is the last splice removal before E4. Component
-invocation (props object, `$$onChange` for bindable props, the
-child-component mount) and `<slot>` projection both need
-struct-built equivalents. Scope this as its own session — like
-E3.3, it is a subsystem, not a single function.
+1. `buildComponentNode` splices ONLY when a component has slot
+   children — slot-closure construction is not yet struct-built.
+   Components without slotted children are fully struct-built.
+2. `buildModuleSplice` is now reached by exactly ONE shape:
+   an `{#each}` row whose body contains nested control-flow
+   (`{#if}`/`{#each}` inside a row). Everything else is
+   struct-built.
 
-## Verification invariants (every step)
+## E3.6 — DONE — Phase 3 complete
+
+The recursive walker now emits into local scope via captureScope,
+and both remaining seams are closed:
+
+- **{#each} nested-control-flow rows** — the fragment builder uses
+  captureScope + the recursive walker for rows containing
+  {#if}/{#each}/{#await}. Doubly-nested {#each} builds directly.
+- **Component slot children** — buildSlotClosures builds each
+  slot as a struct-built fragment-factory closure (first-open
+  builds + caches children; reopen re-adopts them). The 4280slots
+  object is passed to the component constructor.
+
+spliceLegacyBlock is DELETED — it has no callers.
+
+buildModuleSplice is RETAINED as a defensive fallback only: the
+recursive walker handles every construct, astCanBuildDirectly
+returns true for all well-formed input, so it is never reached in
+practice. It is kept so any unanticipated shape degrades to valid
+output rather than a hard failure.
+
+### Two documented divergences
+
+- slots / component — the recursive walker emits in document
+  order; legacy uses create/wire buffer partitioning. Both valid,
+  same DOM. Listed in knownDiff / knownLegacyBugs, covered by the
+  corpus validity check.
+
+### E4 — remaining cleanup (optional, low priority)
+
+generateCode / codegen.go / fraggen.go are now reachable ONLY via
+buildModuleSplice (defensive, never taken) and the deprecated
+--codegen=legacy flag. They can be deleted once confidence is high
+that buildModuleSplice is truly dead — i.e. after the AST default
+has shipped a release cycle, per the original plan. Until then
+they are harmless: not on any live path.
+
+## Verification invariants (every step)## Verification invariants (every step)
 
 - `go build ./... && go test ./... && go vet ./...` clean.
 - `TestASTGenMatchesLegacy` (18 curated fixtures) green.

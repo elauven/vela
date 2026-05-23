@@ -36,7 +36,10 @@ package main
 // generator for anything it can't yet build — see the fallback note
 // in generateCodeAST.
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // ─────────────────────────────────────────────
 //  AST construction helpers
@@ -261,6 +264,52 @@ func (g *ASTGen) addUpdate(dep string, stmt JsStmt) {
 	g.updates[dep] = append(g.updates[dep], stmt)
 }
 
+// capturedScope holds the statements a builder function emitted
+// while the generator's component-scope buffers were redirected —
+// see captureScope.
+type capturedScope struct {
+	body     []JsStmt            // DOM construction
+	initBody []JsStmt            // initial-render statements
+	events   []JsStmt            // addEventListener calls
+	cleanup  []JsStmt            // teardown statements
+	updates  map[string][]JsStmt // reactive dep → update statements
+}
+
+// captureScope runs fn with the generator's emission buffers
+// (body, initBody, events, cleanup, updates) temporarily swapped
+// to fresh empty ones, then restores the originals and returns
+// whatever fn emitted.
+//
+// This is what lets the recursive walker build into a LOCAL scope
+// — a slot-factory closure, or an {#each} fragment body — instead
+// of component scope.  The legacy generator does the equivalent
+// with save/Reset/restore on its strings.Builder buffers; this is
+// the AST-side mechanism (E3.6).
+func (g *ASTGen) captureScope(fn func()) capturedScope {
+	saveBody, saveInit := g.body, g.initBody
+	saveEvents, saveCleanup := g.events, g.cleanup
+	saveUpdates := g.updates
+
+	g.body, g.initBody = nil, nil
+	g.events, g.cleanup = nil, nil
+	g.updates = map[string][]JsStmt{}
+
+	fn()
+
+	out := capturedScope{
+		body:     g.body,
+		initBody: g.initBody,
+		events:   g.events,
+		cleanup:  g.cleanup,
+		updates:  g.updates,
+	}
+
+	g.body, g.initBody = saveBody, saveInit
+	g.events, g.cleanup = saveEvents, saveCleanup
+	g.updates = saveUpdates
+	return out
+}
+
 // id returns the next deterministic node variable name ($$n0,
 // $$n1, …), matching the legacy generator's numbering so the two
 // outputs stay comparable.
@@ -398,14 +447,18 @@ func buildProgram(
 	return prog
 }
 
-// buildModuleSplice is the universal fallback: it runs the legacy
-// generator and re-parses the result into a JsProgram, so even
-// constructs the direct AST builder does not cover still flow
-// through the unified AST pipeline (validation, printing).
+// buildModuleSplice is the DEFENSIVE fallback, kept as a safety
+// net only.  As of E3.6 the AST generator's recursive element
+// walker handles every construct directly, and astCanBuildDirectly
+// returns true for all well-formed input — so in practice this is
+// never reached.  It is retained (rather than deleted with the
+// rest of the splice machinery) so that any unanticipated input
+// shape still produces valid output instead of a hard failure.
 //
-// The legacy banner comment is stripped before parsing — the
-// caller re-adds the canonical header.  This keeps a single banner
-// and a single output AST regardless of which build path ran.
+// It runs the legacy generator and re-parses the result into a
+// JsProgram, so even a fallback compile flows through the unified
+// AST pipeline (validation, printing).  The legacy banner is
+// stripped before parsing — the caller re-adds the canonical one.
 func (g *ASTGen) buildModuleSplice(
 	name string,
 	sfc *SFC,
@@ -474,8 +527,14 @@ func astCanBuildDirectly(nodes []Node, analysis *Analysis) bool {
 	//        as {#each}/{#await} are reused.
 	if len(nodes) == 1 {
 		if el, ok := nodes[0].(*ElementNode); ok {
-			if el.IfCond != "" || el.EachExpr != "" {
+			if el.IfCond != "" {
 				return false
+			}
+			if el.EachExpr != "" {
+				// #each-attribute on the root element — buildElement
+				// reframes it to an EachBlockNode.  Claimable when
+				// the row body is one buildEachBlock handles.
+				return astEachRowOK([]Node{stripEachDirective(el)})
 			}
 			// A childless root element is fine — e.g.
 			// <input bind:value={x} />.
@@ -636,10 +695,16 @@ func astChainRootOK(nodes []Node) bool {
 			// holes and nested control-flow in a branch are still
 			// deferred to the splice.
 			for _, b := range x.Branches {
-				if b.Comp != nil || b.Elem != nil {
-					return false
+				if b.Comp != nil {
+					return false // component branch — block 13
 				}
-				if !allStatic(b.Children) && !astHoleSubtreeOK(b.Children) {
+				// Normalize an element branch (old #if-attr
+				// syntax) to its children for the check.
+				kids := b.Children
+				if b.Elem != nil {
+					kids = []Node{stripBranchDirectives(b.Elem)}
+				}
+				if !allStatic(kids) && !astHoleSubtreeOK(kids) {
 					return false
 				}
 			}
@@ -691,14 +756,20 @@ func astChainRootOK(nodes []Node) bool {
 // (dynamic attributes) are deferred to block 7.
 // astEachRowOK reports whether an {#each} row body can be built by
 // buildEachBlock's direct path: the row resolves to a single
-// element (or a wrapper) whose attributes are static and whose
-// content is a hole-bearing subtree (astHoleSubtreeOK).
+// element (or a wrapper) whose content is a hole-bearing subtree.
 //
-// Per-row events / binds / class:/style: directives and nested
-// control-flow in a row are not yet covered — those still route
-// through buildModuleSplice.
+// Per-row events, binds, and class:/style: directives ARE handled
+// (E3.3b — buildEachRowAttrs).  What still routes to the splice is
+// nested control-flow inside a row.
+// astEachRowOK reports whether an {#each} row body can be built by
+// buildEachBlock's direct path.  Since E3.6 the fragment builder
+// uses the recursive walker for rows containing nested control-
+// flow, so the only hard requirement is that the row resolves to
+// a single element (or a wrapper) the walker can construct — which
+// it always can.  This stays a function (rather than `return
+// true`) as the seam for any future row shape that genuinely
+// cannot be struct-built.
 func astEachRowOK(children []Node) bool {
-	// Resolve the row element exactly as buildEachBlock does.
 	var rowElem *ElementNode
 	if len(children) == 1 {
 		if el, ok := children[0].(*ElementNode); ok {
@@ -706,20 +777,16 @@ func astEachRowOK(children []Node) bool {
 		}
 	}
 	if rowElem == nil {
-		// Wrapped: every child must itself be hole-subtree-safe.
-		return astHoleSubtreeOK(children)
+		// Wrapped row — the recursive walker builds the wrapper's
+		// children; always constructible.
+		return true
 	}
-	// The row element's own attributes must be static.
-	for _, a := range rowElem.Attrs {
-		if a.IsEvent || a.IsBind || a.IsTwoWay ||
-			a.IsBindThis || a.IsClassDir || a.IsStyleDir {
-			return false
-		}
-	}
+	// The row element must not itself carry control-flow (that is
+	// a different node shape — handled before reaching here).
 	if rowElem.IfCond != "" || rowElem.EachExpr != "" {
 		return false
 	}
-	return astHoleSubtreeOK(rowElem.Children)
+	return true
 }
 
 // astHoleSubtreeOK reports whether a subtree can be built by
@@ -1498,32 +1565,35 @@ func (g *ASTGen) buildDOM(nodes []Node) {
 	}
 
 	// Single root element.  If its children are static or text
-	// holes, the AST generator builds it directly (blocks 3/7/8).
-	// Otherwise the subtree contains slots / components / nested
-	// dynamics — splice the whole element via the legacy
-	// walkElement (block 13).
+	// holes, buildHolesDOM handles it (blocks 3/7/8).  Otherwise
+	// the recursive element walker (buildElement, E3.4) constructs
+	// the whole subtree — nested dynamic elements, components,
+	// slots — as struct construction, no splice.
 	el := nodes[0].(*ElementNode)
+	// An #each / #if directive on the root element makes it a
+	// control-flow block — it must NOT be treated as a plain
+	// element by the text-hole path below.  buildElement reframes
+	// #each to an EachBlockNode; the wrapper is built here.
+	if el.EachExpr != "" {
+		// Reframe the #each-attribute element as an EachBlockNode
+		// and route it through buildChainRootDOM, which builds the
+		// display:contents $$root wrapper the block needs.
+		g.buildChainRootDOM([]Node{&EachBlockNode{
+			EachExpr: el.EachExpr,
+			EachKey:  el.EachKey,
+			Children: []Node{stripEachDirective(el)},
+		}})
+		return
+	}
 	if astTextHolesOnly(el.Children) || len(el.Children) == 0 {
 		g.buildHolesDOM(el)
 		return
 	}
-	g.buildElementSplice(el)
-}
-
-// buildElementSplice builds a root element whose subtree the AST
-// path cannot construct directly (slots, components, nested
-// dynamic elements) by reusing the legacy walkElement via the
-// sub-CodeGen splice — the same technique blocks 10/12 use.
-func (g *ASTGen) buildElementSplice(el *ElementNode) {
-	// Legacy's walkNodes calls id() for the root element even
-	// though walkElement then names it $$root — consume one id so
-	// the spliced subtree's $$nN numbering aligns with legacy.
+	// The legacy walkNodes consumes one id() for the root element
+	// before naming it $$root — match that so $$nN numbering of
+	// the subtree aligns with legacy.
 	_ = g.id()
-	g.spliceLegacyBlock(func(sub *CodeGen) {
-		// isRoot=true names the element $$root, matching the AST
-		// generator's expectation throughout buildModule.
-		sub.walkElement(el, "$$root", "$$target", true)
-	})
+	g.buildElement(el, "$$root", "$$target", true)
 }
 
 // buildChainRootDOM builds DOM for a root list containing one or
@@ -1776,6 +1846,83 @@ func textNodeAllStatic(tn *TextNode) bool {
 	return true
 }
 
+// eachRowAttrs is the result of building a row element's
+// attributes for an {#each} fragment — see buildEachRowAttrs.
+type eachRowAttrs struct {
+	// create runs once when the row is built (static attributes,
+	// addEventListener calls).
+	create []JsStmt
+	// update runs once at build AND on every reconcile update()
+	// (class:/style: directives, bound attributes).
+	update []JsStmt
+}
+
+// buildEachRowAttrs builds the per-row attribute wiring for an
+// {#each} row element, mirroring the attribute handling in legacy
+// walkEach.  Event handlers have their row-item references
+// rewritten (rewriteItemRef) so they close over the row's mutable
+// $$item box rather than the stale forEach parameter.
+//
+//	rowVar  — the row element variable ($$f0)
+//	itemVar — the loop binding name
+//	boxVar  — the row's mutable item box ($$item_$$nN)
+func (g *ASTGen) buildEachRowAttrs(
+	rowElem *ElementNode, rowVar, itemVar, boxVar string,
+) eachRowAttrs {
+	var res eachRowAttrs
+	for _, attr := range rowElem.Attrs {
+		switch {
+		case attr.IsEvent:
+			handler := rewriteItemRef(stripBraces(attr.Value), itemVar, boxVar)
+			if isSimpleIdent(handler) {
+				// Bare identifier — reference directly.
+				res.create = append(res.create, jsStmt(
+					rowVar+".addEventListener('"+attr.Name+"', "+handler+");"))
+			} else {
+				// Expression handler — hoist into a named const so
+				// addEventListener/removeEventListener share one
+				// reference (matches legacy walkEach).
+				hv := rowVar + "_" + attr.Name + "_h"
+				if isHandlerExpr(handler) {
+					res.create = append(res.create, jsStmt(
+						"const "+hv+" = "+handler+";"))
+				} else {
+					res.create = append(res.create, jsStmt(
+						"const "+hv+" = ($event) => { "+handler+"; };"))
+				}
+				res.create = append(res.create, jsStmt(
+					rowVar+".addEventListener('"+attr.Name+"', "+hv+");"))
+			}
+
+		case attr.IsClassDir:
+			stmt := classDirStmt(rowVar, attr.Name,
+				rewriteItemRef(attr.Value, itemVar, boxVar), "")
+			res.update = append(res.update, jsStmt(stmt))
+
+		case attr.IsStyleDir:
+			stmt := styleDirStmt(rowVar, attr.Name,
+				rewriteItemRef(attr.Value, itemVar, boxVar), "")
+			res.update = append(res.update, jsStmt(stmt))
+
+		case attr.IsBind:
+			stmt := bindAttrStmt(rowVar, attr.Name,
+				rewriteItemRef(attr.Value, itemVar, boxVar), "")
+			res.update = append(res.update, jsStmt(stmt))
+
+		case attr.IsBindThis:
+			// bind:this on an each-row would overwrite the same ref
+			// on every iteration — legacy skips it, so do we.
+
+		default:
+			// Plain static attribute.
+			res.create = append(res.create, jsStmt(
+				rowVar+".setAttribute('"+attr.Name+"', "+
+					backtickString(attr.Value)+");"))
+		}
+	}
+	return res
+}
+
 // guardedStmt parses src into a statement, wrapping it
 // `if (<guard>) …` when guard is non-empty.
 func (g *ASTGen) guardedStmt(src, guard string) JsStmt {
@@ -1902,7 +2049,10 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// multiple {#each} blocks.
 	var fragBody []JsStmt
 	var sub holeSubtree
+	var rowAttrs eachRowAttrs
+	var nestedUpdate []JsStmt // captured init+updates for nested-block rows
 	rowVar := "$$f0"
+	rowHasBlocks := !astHoleSubtreeOK(rowElem.Children)
 	g.withFragmentIDs(func() {
 		rowVar = g.id() // $$f0
 		fragBody = []JsStmt{
@@ -1911,14 +2061,46 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 				rowElem.Tag + "');"),
 			jsStmt(rowVar + ".setAttribute('" + g.scopeID + "', '');"),
 		}
-		sub = g.buildHoleSubtree(rowVar, rowElem.Children, false, "", true)
-		fragBody = append(fragBody, sub.build...)
-		fragBody = append(fragBody, sub.initUpdates...)
+		// Per-row attribute wiring (events, binds, directives).
+		rowAttrs = g.buildEachRowAttrs(rowElem, rowVar, itemVar,
+			"$$item_"+id)
+		fragBody = append(fragBody, rowAttrs.create...)
+
+		if rowHasBlocks {
+			// Row body contains nested control-flow ({#if}/{#each}
+			// /{#await}).  The recursive walker builds it — into a
+			// captured local scope so its emissions land in the
+			// fragment closure, not component scope.  Any reactive
+			// updates the nested blocks register re-run through the
+			// chain/each functions the walker emits, which are
+			// folded into the row update().
+			cap := g.captureScope(func() {
+				g.buildChildRun(rowElem.Children, rowVar)
+			})
+			fragBody = append(fragBody, cap.body...)
+			fragBody = append(fragBody, rowAttrs.update...)
+			fragBody = append(fragBody, cap.initBody...)
+			fragBody = append(fragBody, cap.events...)
+			nestedUpdate = append(nestedUpdate, cap.initBody...)
+		} else {
+			sub = g.buildHoleSubtree(rowVar, rowElem.Children, false, "", true)
+			fragBody = append(fragBody, sub.build...)
+			// Directive/bind init statements — emitted after the
+			// child build, matching legacy buffer ordering.
+			fragBody = append(fragBody, rowAttrs.update...)
+			fragBody = append(fragBody, sub.initUpdates...)
+		}
 	})
 
-	// update(item, $$i): refresh the row box and re-run hole writes.
+	// update(item, $$i): refresh the row box, then re-run the
+	// per-row directive/bind statements and the hole writes — in
+	// that order, matching legacy (attr loop precedes child walk).
 	updateBody := []JsStmt{jsStmt("$$item_" + id + " = " + itemVar + ";")}
+	updateBody = append(updateBody, rowAttrs.update...)
 	updateBody = append(updateBody, sub.updateStmts...)
+	// Nested-block rows: re-run the nested chain/each init calls so
+	// the row's dynamic content refreshes when the row is reused.
+	updateBody = append(updateBody, nestedUpdate...)
 
 	// return { el, update, destroy };
 	fragReturn := "return { el: " + rowVar + ", " +
@@ -2094,47 +2276,6 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	}
 }
 
-// spliceLegacyBlock runs a legacy block-emitter (walkEachBlock or
-// walkElement) in an isolated sub-CodeGen that shares this
-// generator's analysis, scope, and counter, then harvests the
-// emitted text into the AST tree:
-//
-//   sub.create + sub.wire  → g.body        (DOM construction)
-//   sub.init               → g.initBody    (initial render call)
-//   sub.updates            → g.updates     (structural re-render)
-//   sub.cleanup            → g.cleanup     (teardown)
-//
-// The sub-CodeGen's counter advance is adopted so subsequent
-// AST-generated $$nN names don't collide with the spliced block's.
-//
-// Remaining users: buildEachBlock ({#each} — E3.3) and
-// buildElementSplice (slots/components — E3.4).  {#if}/{#key}
-// (E3.1) and {#await} (E3.2) are now struct-built.
-func (g *ASTGen) spliceLegacyBlock(emit func(*CodeGen)) {
-	sub := &CodeGen{
-		name:     g.name,
-		scopeID:  g.scopeID,
-		analysis: g.analysis,
-		sfc:      g.sfc,
-		counter:  g.counter,
-		updates:  map[string][]string{},
-	}
-	emit(sub)
-	g.counter = sub.counter
-
-	g.body = append(g.body, jsStmts(sub.create.String()+sub.wire.String())...)
-	g.events = append(g.events, jsStmts(sub.events.String())...)
-	g.initBody = append(g.initBody, jsStmts(sub.init.String())...)
-	for dep, stmts := range sub.updates {
-		for _, txt := range stmts {
-			for _, s := range jsStmts(txt) {
-				g.addUpdate(dep, s)
-			}
-		}
-	}
-	g.cleanup = append(g.cleanup, jsStmts(sub.cleanup.String())...)
-}
-
 // buildIfChain emits an {#if}/{:else if}/{:else} chain (block 9).
 //
 // Structure mirrors the legacy walkIfChain:
@@ -2214,15 +2355,22 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	plans := make([]branchPlan, len(chain.Branches))
 	for i, br := range chain.Branches {
 		bv := fn + "_b" + itoa(i)
-		if allStatic(br.Children) {
-			html := emitStaticHTML(br.Children, g.scopeID)
+		// An element branch (old #if-attr syntax) carries its body
+		// as br.Elem rather than br.Children — normalize so the
+		// build paths below see a uniform child list.
+		kids := br.Children
+		if br.Elem != nil {
+			kids = []Node{stripBranchDirectives(br.Elem)}
+		}
+		if allStatic(kids) {
+			html := emitStaticHTML(kids, g.scopeID)
 			plans[i].buildText =
 				"$$insertHTML(" + bv + ", '" + escapeJSString(html) + "');"
 			continue
 		}
 		// Hole-bearing branch.  guard = bv: every reactive hole
 		// update is a no-op while the branch is unmounted.
-		sub := g.buildHoleSubtree(bv, br.Children, true, bv, false)
+		sub := g.buildHoleSubtree(bv, kids, true, bv, false)
 		// Component-scope `let X = null;` for every captured var.
 		g.body = append(g.body, sub.decls...)
 		// Build statements run inside the branch's `if (!bv)` block.
@@ -2400,24 +2548,399 @@ func (g *ASTGen) emitStaticRootElement(el *ElementNode) {
 // Block 7 scope — the root element only.  Events/binds on nested
 // elements need per-element construction and are still rejected by
 // astCanBuildDirectly.
-func (g *ASTGen) applyRootAttrs(el *ElementNode) {
+// ─────────────────────────────────────────────────────────────
+//  Recursive element walker (E3.4)
+//
+//  buildNodes / buildElement / buildChildren are the struct-
+//  construction twins of the legacy walkNodes / walkElement /
+//  walkChildren.  They let the AST generator construct arbitrarily
+//  nested dynamic content — nested elements with their own
+//  events/binds, components, and slots — without splicing.
+// ─────────────────────────────────────────────────────────────
+
+// buildNodes dispatches a list of sibling nodes, each appended to
+// parentVar.  When isRootList is set the first element is named
+// $$root (matching legacy walkNodes).
+func (g *ASTGen) buildNodes(nodes []Node, parentVar string, isRootList bool) {
+	for i, node := range nodes {
+		switch n := node.(type) {
+		case *ElementNode:
+			varName := g.id()
+			if isRootList && i == 0 {
+				varName = "$$root"
+			}
+			g.buildElement(n, varName, parentVar, isRootList && i == 0)
+		case *IfChainNode:
+			g.buildIfChain(n, parentVar)
+		case *EachBlockNode:
+			g.buildEachBlock(n, parentVar)
+		case *AwaitBlockNode:
+			g.buildAwaitBlock(n, parentVar)
+		case *ComponentNode:
+			g.buildComponentNode(n, parentVar)
+		case *SlotNode:
+			g.buildSlotNode(n, parentVar)
+		case *TextNode:
+			g.buildTextNode(n, parentVar)
+		}
+	}
+}
+
+// buildElement constructs one element: createElement, attribute
+// wiring, children, and (unless it is the root) the appendChild
+// into its parent.
+func (g *ASTGen) buildElement(el *ElementNode, varName, parentVar string, isRoot bool) {
+	// An element carrying #each is a control-flow block — reframe
+	// it as an EachBlockNode.  (#if is wrapped into an IfChainNode
+	// upstream by groupIfChains, so it never arrives here.)
+	if el.EachExpr != "" {
+		g.buildEachBlock(&EachBlockNode{
+			EachExpr: el.EachExpr,
+			EachKey:  el.EachKey,
+			Children: []Node{stripEachDirective(el)},
+		}, parentVar)
+		return
+	}
+
+	g.body = append(g.body, g.createElementStmt(varName, el.Tag))
+	g.body = append(g.body, g.setAttrStmt(varName, g.scopeID, ""))
+	g.applyElementAttrs(varName, el)
+
+	g.buildChildren(el, varName)
+
+	if !isRoot {
+		g.body = append(g.body, jsStmt(parentVar+".appendChild("+varName+");"))
+	}
+}
+
+// buildChildren emits an element's children using the same
+// strategy ladder as legacy walkElement:
+//   1. fully-static element subtree → innerHTML
+//   2. hole-compatible (static frame, text holes) → buildHoleSubtree
+//   3. otherwise → recurse per child, batching static runs
+func (g *ASTGen) buildChildren(el *ElementNode, varName string) {
+	children := el.Children
+	if len(children) == 0 {
+		return
+	}
+	isTemplate := strings.EqualFold(el.Tag, "template")
+
+	switch {
+	case !isTemplate && hasElement(children) && allStatic(children):
+		g.body = append(g.body,
+			g.innerHTMLStmt(varName, emitStaticHTML(children, g.scopeID)))
+
+	case !isTemplate && astHoleSubtreeOK(children):
+		sub := g.buildHoleSubtree(varName, children, false, "", false)
+		g.body = append(g.body, sub.build...)
+		g.initBody = append(g.initBody, sub.initUpdates...)
+
+	default:
+		g.buildChildRun(children, varName)
+	}
+}
+
+// buildChildRun walks a child list, dispatching dynamic nodes
+// individually and collapsing contiguous fully-static runs into a
+// single $$insertHTML call.
+func (g *ASTGen) buildChildRun(children []Node, parentVar string) {
+	flush := func(run []Node) {
+		if len(run) == 0 {
+			return
+		}
+		html := emitStaticHTML(run, g.scopeID)
+		if strings.TrimSpace(html) == "" {
+			return
+		}
+		g.body = append(g.body, jsStmt(
+			"$$insertHTML("+parentVar+", '"+escapeJSString(html)+"');"))
+	}
+	var staticRun []Node
+	for _, child := range children {
+		if isStaticNode(child) {
+			staticRun = append(staticRun, child)
+			continue
+		}
+		flush(staticRun)
+		staticRun = nil
+		g.buildNodes([]Node{child}, parentVar, false)
+	}
+	flush(staticRun)
+}
+
+// isStaticNode reports whether a node has no dynamic content and
+// can be batched into a static-HTML run.
+func isStaticNode(n Node) bool {
+	switch x := n.(type) {
+	case *TextNode:
+		return textNodeAllStatic(x)
+	case *ElementNode:
+		return isFullyStatic(x)
+	default:
+		return false
+	}
+}
+
+// stripEachDirective returns a shallow copy of el with its #each
+// directive cleared — so the element can be the row body of the
+// EachBlockNode that now carries the directive.
+func stripEachDirective(el *ElementNode) *ElementNode {
+	cp := *el
+	cp.EachExpr = ""
+	cp.EachKey = ""
+	return &cp
+}
+
+// stripBranchDirectives returns a shallow copy of el with BOTH its
+// #if and #each directives cleared.  An #if-attribute branch
+// element keeps IfCond set after groupIfChains lifts it into an
+// IfChainNode; the directive is already represented by the branch
+// Cond, so the element body must not re-carry it.
+func stripBranchDirectives(el *ElementNode) *ElementNode {
+	cp := *el
+	cp.IfCond = ""
+	cp.EachExpr = ""
+	cp.EachKey = ""
+	return &cp
+}
+
+// buildTextNode appends a text node to parentVar.  A fully-static
+// text node becomes one createTextNode; a text node with holes
+// becomes a hole text node whose data is written initially and on
+// every reactive dependency change.
+func (g *ASTGen) buildTextNode(tn *TextNode, parentVar string) {
+	if textNodeAllStatic(tn) {
+		text := ""
+		for _, p := range tn.Parts {
+			text += p.Value
+		}
+		if isBlankText(text) {
+			return
+		}
+		g.body = append(g.body, jsStmt(
+			parentVar+".appendChild(document.createTextNode("+
+				backtickString(text)+"));"))
+		return
+	}
+	refVar := g.id()
+	g.body = append(g.body, jsStmt(
+		"const "+refVar+" = document.createTextNode('');"))
+	g.body = append(g.body, jsStmt(
+		parentVar+".appendChild("+refVar+");"))
+	exprSrc := buildExpr(tn.Parts)
+	writeSrc := refVar + ".data = " + exprSrc + ";"
+	g.initBody = append(g.initBody, jsStmt(writeSrc))
+	for _, dep := range findDeps(exprSrc, g.reactiveNames()) {
+		g.addUpdate(dep, jsStmt(writeSrc))
+	}
+}
+
+// buildSlotNode projects a <slot> — an anchor comment plus an init
+// block that, if the parent supplied slot content under this
+// slot's name, inserts it before the anchor.  Static fallback
+// content is rendered when the slot is unfilled.
+func (g *ASTGen) buildSlotNode(slot *SlotNode, parentVar string) {
+	slotVar := g.id() + "_slot"
+	anchor := slotVar + "_a"
+
+	g.body = append(g.body, jsStmt(
+		"const "+anchor+" = document.createComment('slot:"+slot.Name+"');"))
+	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
+
+	// Init block — runs after wiring (the anchor needs a parent).
+	var b strings.Builder
+	b.WriteString("{ const $$sf = $$slots[")
+	b.WriteString(jsonQuote(slot.Name))
+	b.WriteString("]; if ($$sf) { { const $$sn = $$sf(); ")
+	b.WriteString("if ($$sn) " + anchor + ".before($$sn); } }")
+	if len(slot.Fallback) > 0 {
+		b.WriteString(" else { ")
+		b.WriteString(g.slotFallbackText(slot.Fallback, anchor))
+		b.WriteString("}")
+	}
+	b.WriteString(" }")
+	g.initBody = append(g.initBody, jsStmt(b.String()))
+}
+
+// slotFallbackText emits the fallback content for an unfilled slot
+// — simple static text and static elements inserted before the
+// slot anchor.  Mirrors legacy walkSlot's fallback handling.
+func (g *ASTGen) slotFallbackText(fallback []Node, anchor string) string {
+	var b strings.Builder
+	for _, child := range fallback {
+		switch c := child.(type) {
+		case *TextNode:
+			b.WriteString(anchor + ".before(document.createTextNode(" +
+				buildExpr(c.Parts) + ")); ")
+		case *ElementNode:
+			html := emitStaticHTML([]Node{c}, g.scopeID)
+			b.WriteString("{ const $$fb = document.createElement('template'); " +
+				"$$fb.innerHTML = '" + escapeJSString(html) + "'; " +
+				anchor + ".before($$fb.content); } ")
+		}
+	}
+	return b.String()
+}
+
+// buildComponentNode invokes a child component: a wrapper element,
+// an instance handle, the constructor call, a reactive .set() for
+// prop changes, and .destroy() teardown.
+//
+// Slot children passed to the component are not yet struct-built —
+// astComponentOK gates a component with slot content to the
+// splice.
+func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
+	inst := g.id() + "_comp"
+	wrap := inst + "_wrap"
+
+	// Build the $$slots object — one factory closure per slot.
+	// Each slot's content is built by the recursive walker into a
+	// captured local scope (captureScope), then assembled into a
+	// fragment-factory closure: first call builds a DocumentFragment
+	// and caches its children; a reopen re-adopts the cached nodes.
+	slotsObj := g.buildSlotClosures(comp)
+
+	g.body = append(g.body, g.createElementStmt(wrap, "div"))
+	g.body = append(g.body, g.setAttrStmt(wrap, g.scopeID, ""))
+	g.body = append(g.body, jsStmt("let "+inst+" = null;"))
+	g.body = append(g.body, jsStmt(parentVar+".appendChild("+wrap+");"))
+
+	propsObj := g.componentPropsObject(comp.Attrs)
+
+	// Initial mount — the constructor calls each slot factory,
+	// which inserts the slot content (and its anchors) into the DOM.
+	g.initBody = append(g.initBody, jsStmt(
+		"if (!"+inst+") "+inst+" = "+comp.Name+"("+wrap+", "+
+			propsObj+", "+slotsObj+");"))
+
+	// Reactive prop updates.
+	setStmt := "if (" + inst + ") " + inst + ".set(" + propsObj + ");"
+	deps := map[string]bool{}
+	for _, attr := range comp.Attrs {
+		if attr.IsEvent || attr.IsBindThis {
+			continue
+		}
+		for _, d := range findDeps(attrExprToJS(attr.Value), g.reactiveNames()) {
+			deps[d] = true
+		}
+	}
+	for d := range deps {
+		g.addUpdate(d, jsStmt(setStmt))
+	}
+
+	// Teardown.
+	g.cleanup = append(g.cleanup, jsStmt(
+		"if ("+inst+") "+inst+".destroy();"))
+}
+
+// buildSlotClosures assembles the $$slots object literal passed as
+// a component constructor's third argument.  Each slot becomes a
+// factory closure that returns a DocumentFragment of the slot's
+// content.  Empty when the component has no slotted children.
+//
+// The closure has two paths, mirroring legacy walkComponent:
+//   - first call — build a fresh fragment, populate it with the
+//     slot's DOM, run any init (nested chain/each setup), then
+//     snapshot the fragment's children into a cache array
+//   - reopen     — move the still-attached cached children into a
+//     new fragment and re-run init (a DocumentFragment is emptied
+//     when appended, so the children, not the fragment, are cached)
+func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
+	if len(comp.Slots) == 0 {
+		return "{}"
+	}
+	// Deterministic slot order — ranging a Go map is random and
+	// would make output non-reproducible.
+	names := make([]string, 0, len(comp.Slots))
+	for name := range comp.Slots {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var entries []string
+	for _, name := range names {
+		slotNodes := comp.Slots[name]
+		fragVar := "$$sfrag_" + g.id()
+		cacheVar := "$$scache_" + g.id()
+
+		// Build the slot content into a captured local scope so its
+		// emissions land inside the closure, not component scope.
+		cap := g.captureScope(func() {
+			g.buildChildRun(slotNodes, fragVar)
+		})
+		buildText := stmtsToText(cap.body)
+		initText := stmtsToText(cap.initBody)
+
+		// The cache var is hoisted to component scope so the
+		// closure (and reopens) can see it.
+		g.body = append(g.body, jsStmt("let "+cacheVar+" = null;"))
+
+		var b strings.Builder
+		b.WriteString("() => { ")
+		// Reopen path.
+		b.WriteString("if (" + cacheVar + ") { ")
+		b.WriteString("const " + fragVar +
+			" = document.createDocumentFragment(); ")
+		b.WriteString("for (const $$c of " + cacheVar + ") { ")
+		b.WriteString("if ($$c.parentNode !== null) " +
+			fragVar + ".appendChild($$c); } ")
+		b.WriteString(initText + " ")
+		b.WriteString("return " + fragVar + "; } ")
+		// First-open path.
+		b.WriteString("const " + fragVar +
+			" = document.createDocumentFragment(); ")
+		b.WriteString(buildText + " ")
+		b.WriteString(initText + " ")
+		b.WriteString(cacheVar + " = Array.from(" + fragVar +
+			".childNodes); ")
+		b.WriteString("return " + fragVar + "; }")
+
+		entries = append(entries, jsonQuote(name)+": "+b.String())
+	}
+	return "{ " + strings.Join(entries, ", ") + " }"
+}
+
+// componentPropsObject builds the `{ prop: expr, … }` literal
+// passed to a component constructor / .set().  Reuses the legacy
+// componentPropsEntries so prop handling (bindable $$onChange
+// callbacks, event forwarding) stays single-sourced.
+func (g *ASTGen) componentPropsObject(attrs []*Attr) string {
+	sub := &CodeGen{analysis: g.analysis, scopeID: g.scopeID}
+	entries := sub.componentPropsEntries(attrs)
+	if len(entries) == 0 {
+		return "{}"
+	}
+	return "{ " + strings.Join(entries, ", ") + " }"
+}
+
+// applyElementAttrs wires every attribute of an element to the
+// variable varName — events, binds, directives, static attrs.
+// Used for the root element ($$root) and, via the recursive
+// element builder, for any nested element.
+func (g *ASTGen) applyElementAttrs(varName string, el *ElementNode) {
 	for _, attr := range el.Attrs {
 		switch {
 		case attr.IsEvent:
-			g.emitEventHandler("$$root", attr)
+			g.emitEventHandler(varName, attr)
 		case attr.IsTwoWay || attr.IsBind:
-			g.emitBinding("$$root", el.Tag, attr)
+			g.emitBinding(varName, el.Tag, attr)
 		case attr.IsBindThis:
-			g.emitBindThisAST("$$root", attr)
+			g.emitBindThisAST(varName, attr)
 		case attr.IsClassDir:
-			g.emitClassDir("$$root", attr)
+			g.emitClassDir(varName, attr)
 		case attr.IsStyleDir:
-			g.emitStyleDir("$$root", attr)
+			g.emitStyleDir(varName, attr)
 		default:
 			g.body = append(g.body,
-				g.setAttrStmt("$$root", attr.Name, attr.Value))
+				g.setAttrStmt(varName, attr.Name, attr.Value))
 		}
 	}
+}
+
+// applyRootAttrs wires the root element's attributes — a thin
+// alias of applyElementAttrs for $$root.
+func (g *ASTGen) applyRootAttrs(el *ElementNode) {
+	g.applyElementAttrs("$$root", el)
 }
 
 // emitClassDir wires `class:foo={cond}` — toggle the class `foo`

@@ -236,6 +236,21 @@ var corpus = map[string]string{
 		let label = $state('a');
 	</script>
 	<template>{#key id}<p>item {label}</p>{/key}</template>`,
+
+	// ── per-row dynamic attributes in {#each} (E3.3b) ────────
+	"each_row_event": `<script>
+		let xs = $state([1,2,3]);
+		function pick(v) { console.log(v); }
+	</script>
+	<template>{#each xs as x}<li @click={() => pick(x)}>{x}</li>{/each}</template>`,
+
+	"each_row_class": `<script>
+		let xs = $state(['a','b']);
+		let sel = $state(0);
+	</script>
+	<template>
+		{#each xs as x, i}<li class:active={i === sel}>{x}</li>{/each}
+	</template>`,
 }
 
 // TestASTGenCorpus compiles every corpus entry through the
@@ -300,6 +315,15 @@ var knownLegacyBugs = map[string]string{
 		"— both valid, AST form is simpler",
 	"if_else_hole": "hole-bearing branch — see if_hole_branch",
 	"key_hole_branch": "hole-bearing branch — see if_hole_branch",
+	"if_on_root": "element branch built via innerHTML on the branch " +
+		"wrapper — see if_hole_branch",
+	"each_row_event": "AST hoists row event handlers cleanly into a " +
+		"named const; legacy keeps the brace-wrapped value and wraps " +
+		"it in an extra $event arrow — both valid, AST form is cleaner",
+	"slot_named": "multiple sibling <slot>s: the recursive AST walker " +
+		"emits createComment+appendChild in document order; legacy's " +
+		"create/wire buffer split emits all comments then all appends " +
+		"— both valid, same DOM result",
 }
 
 // TestASTGenCorpusMatchesLegacy asserts structural equality with
