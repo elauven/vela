@@ -51,6 +51,20 @@ func (b *baseNode) nodePos() int { return b.Pos }
 func (b *baseNode) nodeEnd() int { return b.End }
 func (b *baseNode) origin() NodeOrigin { return b.Origin }
 
+// shiftPos moves a node's source span by delta bytes.  Used to
+// relocate a sub-tree parsed from a detached substring back onto
+// the coordinates of the original source (see structureTemplate).
+func (b *baseNode) shiftPos(delta int) {
+	b.Pos += delta
+	b.End += delta
+}
+
+// posShiftable is implemented by every node via the embedded
+// *baseNode — it exposes shiftPos for shiftTree.
+type posShiftable interface {
+	shiftPos(int)
+}
+
 type baseStmt struct{ baseNode }
 
 func (s *baseStmt) jsNode()   {}

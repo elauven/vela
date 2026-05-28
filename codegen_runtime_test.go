@@ -27,8 +27,11 @@ import (
 func TestBug8_FragmentHelperEmitted(t *testing.T) {
 	src := `<script></script><template><div>hi</div></template>`
 	out := compileGenerated(t, src)
-	if !strings.Contains(out, "function $$insertHTML") {
-		t.Fatalf("expected $$insertHTML helper in every component preamble:\n%s", out)
+	// $$insertHTML is a shared runtime helper — imported from
+	// runtime.js, no longer inlined into each component.
+	if !strings.Contains(out, "$$insertHTML") ||
+		!strings.Contains(out, "from './runtime.js'") {
+		t.Fatalf("expected $$insertHTML imported from runtime.js:\n%s", out)
 	}
 }
 
@@ -40,18 +43,19 @@ func TestBug8_StaticChildrenRouteThroughHelper(t *testing.T) {
   <div><h1>Title</h1><p>Body</p></div>
 </template>`
 	out := compileGenerated(t, src)
+	// insertAdjacentHTML now lives only in runtime.js — a compiled
+	// component must not call it directly at all.  Static HTML is
+	// emitted either via $$root.innerHTML (root element) or
+	// $$insertHTML (fragment / slot targets) — both are fine; the
+	// raw insertAdjacentHTML on a component-side variable is not.
 	if strings.Contains(out, ".insertAdjacentHTML(") {
-		// Allowed only inside the helper body itself.
-		// Count occurrences and make sure the only one is the helper.
-		count := strings.Count(out, ".insertAdjacentHTML(")
-		// One inside the helper definition is OK; any more is a bug.
-		if count > 1 {
-			t.Fatalf("found %d insertAdjacentHTML calls outside helper; expected only the helper:\n%s",
-				count, out)
-		}
+		t.Fatalf("compiled component calls insertAdjacentHTML "+
+			"directly; it should route through $$insertHTML:\n%s", out)
 	}
-	if !strings.Contains(out, "$$insertHTML(") {
-		t.Fatalf("expected $$insertHTML call somewhere:\n%s", out)
+	if !strings.Contains(out, "$$insertHTML(") &&
+		!strings.Contains(out, ".innerHTML =") {
+		t.Fatalf("expected static HTML via $$insertHTML or "+
+			"innerHTML:\n%s", out)
 	}
 }
 

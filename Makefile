@@ -2,7 +2,7 @@ BINARY   := vela
 EXAMPLES := examples/Counter.vela examples/TodoList.vela examples/Clock.vela
 DIST     := dist
 
-.PHONY: all build compile examples clean watch install test
+.PHONY: all build compile examples clean watch install test fuzz
 
 all: build compile
 
@@ -27,8 +27,8 @@ compile: build
 	@./$(BINARY) --out $(DIST) $(EXAMPLES)
 	@echo ""
 	@echo "   Runtime:"
-	@cp runtime/runtime.js $(DIST)/runtime.js
-	@echo "   ✓  runtime/runtime.js → $(DIST)/runtime.js"
+	@cp runtime.js $(DIST)/runtime.js
+	@echo "   ✓  runtime.js → $(DIST)/runtime.js"
 
 examples: compile
 
@@ -36,7 +36,7 @@ examples: compile
 
 watch: build
 	@mkdir -p $(DIST)
-	@cp runtime/runtime.js $(DIST)/runtime.js
+	@cp runtime.js $(DIST)/runtime.js
 	@./$(BINARY) --out $(DIST) --watch $(EXAMPLES)
 
 ## ── Test ──────────────────────────────────────────────────────────────────
@@ -44,6 +44,10 @@ watch: build
 test:
 	@echo "Running Go tests..."
 	@go test ./... -v
+
+fuzz:
+	@echo "Fuzzing the code generator (Ctrl-C to stop)..."
+	@go test -run xxx -fuzz 'FuzzCodegen$$' -fuzztime $(or $(FUZZTIME),60s)
 
 ## ── Clean ─────────────────────────────────────────────────────────────────
 

@@ -268,3 +268,71 @@ const DEV = typeof process !== 'undefined'
 export function warn(msg) {
   if (DEV) console.warn('[Vela]', msg);
 }
+
+
+// ── Compiler runtime helpers ────────────────────────────────────
+// These were previously inlined into every generated component.
+// A compiled component imports whichever ones it uses, so the
+// helper body ships once instead of per file.
+
+// $$insertHTML parses an HTML string into `target`.  A
+// DocumentFragment (nodeType 11) has no innerHTML setter, so the
+// HTML is routed through a <template>; an element uses the faster
+// insertAdjacentHTML.
+export function $$insertHTML($$t, $$h) {
+  if ($$t.nodeType === 11) {
+    const $$tmp = document.createElement('template');
+    $$tmp.innerHTML = $$h;
+    $$t.appendChild($$tmp.content);
+  } else {
+    $$t.insertAdjacentHTML('beforeend', $$h);
+  }
+}
+
+// $$proxy wraps a value in a recursive, WeakMap-cached Proxy so a
+// nested mutation fires the same `notify` path as a whole-value
+// reassignment.  Backs $state.deep.
+export function $$proxy(val, notify) {
+  if (val === null || typeof val !== 'object') return val;
+  const cache = new WeakMap();
+  const wrap = (v) => {
+    if (v === null || typeof v !== 'object') return v;
+    let p = cache.get(v);
+    if (p) return p;
+    p = new Proxy(v, {
+      get(t, k) {
+        // Brand: lets a component prop setter recognise a deep
+        // ($state.deep) proxy and skip the identity-equality guard
+        // that would otherwise suppress a re-render after an
+        // in-place mutation (the reference is unchanged but the
+        // contents are not).
+        if (k === $$PROXY_BRAND) return true;
+        return wrap(t[k]);
+      },
+      set(t, k, x) { t[k] = x; notify(); return true; },
+      deleteProperty(t, k) { delete t[k]; notify(); return true; },
+    });
+    cache.set(v, p);
+    return p;
+  };
+  return wrap(val);
+}
+
+// $$PROXY_BRAND is a cross-realm symbol read by $$isProxy.  Using
+// Symbol.for keeps it stable across module instances.
+const $$PROXY_BRAND = Symbol.for('vela.proxy');
+
+// $$isProxy reports whether v is a deep-reactive proxy produced by
+// $$proxy.  A component prop setter uses this to decide whether an
+// identity-equal new value might still have mutated in place.
+export function $$isProxy(v) {
+  return v !== null && typeof v === 'object' && v[$$PROXY_BRAND] === true;
+}
+
+// $$dispatch fires a bubbling CustomEvent from a component's mount
+// target.  Exported as a (target, …) function; a generated
+// component binds it to its own $$target.
+export function $$dispatch($$target, name, detail) {
+  $$target.dispatchEvent(
+    new CustomEvent(name, { detail, bubbles: true }));
+}

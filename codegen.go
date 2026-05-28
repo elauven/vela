@@ -65,21 +65,40 @@ func (g *CodeGen) emit(nodes []Node) string {
 	// ── Re-exports / imports ─────────────────
 	for _, imp := range g.analysis.Imports {
 		src := imp.Source
+		spec := imp.Spec
 		if src == "vela/store" || src == "vela" {
 			src = "./runtime.js"
+			// onMount/onDestroy are compiler intrinsics with no
+			// runtime existence — strip them so we do not emit
+			// a phantom `import { onMount } from './runtime.js'`
+			// that fails at module load.  See the AST-generator
+			// twin in astgen.go for the full rationale.
+			spec = stripVelaIntrinsics(spec)
+			if spec == "" && imp.Spec != "" {
+				continue // every name was an intrinsic
+			}
 		} else {
 			src = RewriteImportPath(src) // .vela → .js, extensionless → .js
 		}
-		if imp.Spec == "" {
+		if spec == "" {
 			// Side-effect import:  import 'path'
 			out.WriteString(fmt.Sprintf("import '%s';\n", src))
 		} else {
-			out.WriteString(fmt.Sprintf("import %s from '%s';\n", imp.Spec, src))
+			out.WriteString(fmt.Sprintf("import %s from '%s';\n", spec, src))
 		}
 	}
 	if len(g.analysis.Imports) > 0 {
 		out.WriteString("\n")
 	}
+
+	// ── Runtime helpers ──────────────────────────────────────────────────
+	// $$insertHTML / $$proxy / $$dispatch live in runtime.js; import them
+	// rather than inlining the bodies into every component.  The legacy
+	// generator (deprecated) imports all three unconditionally — the
+	// AST generator does usage-tracked imports.  $$dispatch is bound
+	// locally below since it closes over this component's $$target.
+	out.WriteString("import { $$insertHTML, $$proxy, $$isProxy, " +
+		"$$dispatch as $$rt_dispatch } from './runtime.js';\n\n")
 
 	// ── Component factory function ───────────
 	out.WriteString(fmt.Sprintf(
@@ -92,28 +111,13 @@ func (g *CodeGen) emit(nodes []Node) string {
 	// callers always pass them.
 	out.WriteString("  void $$slots;\n\n")
 
-	// ── $$dispatch — fire CustomEvents upward ─────────────────────────────
-	out.WriteString("  function $$dispatch(name, detail) {\n")
-	out.WriteString("    $$target.dispatchEvent(new CustomEvent(name, { detail, bubbles: true }));\n")
-	out.WriteString("  }\n")
-	out.WriteString("  void $$dispatch;\n\n")
-
-	// ── $$insertHTML — append parsed HTML to a parent ─────────────────────
-	// Element.insertAdjacentHTML works for elements but throws on
-	// DocumentFragment, which is what slot factories return.  When the
-	// target is a fragment (nodeType 11), parse via a <template>
-	// element — its `.content` is itself a fragment whose children we
-	// transfer.  For every other host we keep the original fast path.
-	out.WriteString("  function $$insertHTML($$t, $$h) {\n")
-	out.WriteString("    if ($$t.nodeType === 11) {\n")
-	out.WriteString("      const $$tmp = document.createElement('template');\n")
-	out.WriteString("      $$tmp.innerHTML = $$h;\n")
-	out.WriteString("      $$t.appendChild($$tmp.content);\n")
-	out.WriteString("    } else {\n")
-	out.WriteString("      $$t.insertAdjacentHTML('beforeend', $$h);\n")
-	out.WriteString("    }\n")
-	out.WriteString("  }\n")
-	out.WriteString("  void $$insertHTML;\n\n")
+	// $$dispatch — thin local binding over the imported (target, …)
+	// form, closing over this component's $$target.
+	out.WriteString("  const $$dispatch = (name, detail) => " +
+		"$$rt_dispatch($$target, name, detail);\n")
+	out.WriteString("  void $$dispatch;\n")
+	out.WriteString("  void $$insertHTML;\n")
+	out.WriteString("  void $$proxy;\n\n")
 
 	// ── Props — populated from $$props, reactive via setters ─────────────
 	if len(g.analysis.Props) > 0 {
@@ -159,42 +163,8 @@ func (g *CodeGen) emit(nodes []Node) string {
 
 	// ── State variables ──────────────────────
 	if len(g.analysis.StateVars) > 0 {
-		// Are any deep-reactive?  If so emit the $$proxy helper once
-		// at the top of the file.  Plain $state(...) variables stay
-		// declared as before (no proxy overhead).
-		anyDeep := false
-		for _, sv := range g.analysis.StateVars {
-			if sv.Deep {
-				anyDeep = true
-				break
-			}
-		}
-		if anyDeep {
-			out.WriteString("  // deep-reactive proxy helper\n")
-			out.WriteString("  function $$proxy(val, notify) {\n")
-			out.WriteString("    if (val === null || typeof val !== 'object') return val;\n")
-			// Per-state-var cache: reading the same nested property
-			// twice returns the same Proxy instance, so identity
-			// comparisons (`obj.a === obj.a`) stay truthful.  Without
-			// the cache, every property access would allocate a new
-			// Proxy.
-			out.WriteString("    const cache = new WeakMap();\n")
-			out.WriteString("    const wrap = (v) => {\n")
-			out.WriteString("      if (v === null || typeof v !== 'object') return v;\n")
-			out.WriteString("      let p = cache.get(v);\n")
-			out.WriteString("      if (p) return p;\n")
-			out.WriteString("      p = new Proxy(v, {\n")
-			out.WriteString("        get(t, k) { return wrap(t[k]); },\n")
-			out.WriteString("        set(t, k, x) { t[k] = x; notify(); return true; },\n")
-			out.WriteString("        deleteProperty(t, k) { delete t[k]; notify(); return true; },\n")
-			out.WriteString("      });\n")
-			out.WriteString("      cache.set(v, p);\n")
-			out.WriteString("      return p;\n")
-			out.WriteString("    };\n")
-			out.WriteString("    return wrap(val);\n")
-			out.WriteString("  }\n\n")
-		}
-
+		// $$proxy (the deep-reactive helper) is imported from
+		// runtime.js — see the helper import at module top.
 		out.WriteString("  // state\n")
 		for _, sv := range g.analysis.StateVars {
 			if sv.Deep {
@@ -468,6 +438,11 @@ func (g *CodeGen) emit(nodes []Node) string {
 
 	out.WriteString("  };\n")
 	out.WriteString("}\n")
+
+	// Expose the factory as the module default export as well, so
+	// the idiomatic `import Name from './Name.vela'` (matching how
+	// every multi-component Vela project is written) resolves.
+	out.WriteString(fmt.Sprintf("\nexport default %s;\n", g.name))
 
 	return out.String()
 }
@@ -1318,6 +1293,7 @@ func (g *CodeGen) walkComponent(comp *ComponentNode, parentVar string) {
 	wrapVar := instanceVar + "_wrap"
 	g.create.WriteString(fmt.Sprintf("  const %s = document.createElement('div');\n", wrapVar))
 	g.create.WriteString(fmt.Sprintf("  %s.setAttribute('%s', '');\n", wrapVar, g.scopeID))
+	g.create.WriteString(fmt.Sprintf("  %s.style.display = 'contents';\n", wrapVar))
 	// Hoist the instance var to component (outer) scope.  When this component
 	// is emitted inside a slot, g.init is redirected into the slot closure —
 	// if we declared `const $$nX_comp = …` there, the destroy() block at outer
@@ -1626,6 +1602,7 @@ func (g *CodeGen) walkComponentIfChain(chain *IfChainNode, parentVar string) {
 		fnBuf.WriteString(fmt.Sprintf("        if (!%s) {\n", instVars[i]))
 		fnBuf.WriteString(fmt.Sprintf("          %s = document.createElement('div');\n", wrapVars[i]))
 		fnBuf.WriteString(fmt.Sprintf("          %s.setAttribute('%s','');\n", wrapVars[i], g.scopeID))
+		fnBuf.WriteString(fmt.Sprintf("          %s.style.display = 'contents';\n", wrapVars[i]))
 		for _, attr := range comp.Attrs {
 			if attr.IsEvent {
 				fnBuf.WriteString(fmt.Sprintf(
@@ -2803,6 +2780,7 @@ func (g *CodeGen) emitEachRowBodyGuarded(
 			}
 			decl(wv, "document.createElement('div')")
 			createBuf.WriteString(fmt.Sprintf("%s%s.setAttribute('%s','');\n", indent, wv, g.scopeID))
+			createBuf.WriteString(fmt.Sprintf("%s%s.style.display = 'contents';\n", indent, wv))
 			// Wire event listeners — rewrite bare item refs to the row box so
 			// the captured handler stays current on array updates.
 			for _, attr := range n.Attrs {
@@ -3298,6 +3276,7 @@ func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, p
 		b.WriteString(fmt.Sprintf("%sif (%s) {\n", indent, comp.IfCond))
 		b.WriteString(fmt.Sprintf("%s  %s = document.createElement('div');\n", indent, wrapVar))
 		b.WriteString(fmt.Sprintf("%s  %s.setAttribute('%s','');\n", indent, wrapVar, g.scopeID))
+		b.WriteString(fmt.Sprintf("%s  %s.style.display = 'contents';\n", indent, wrapVar))
 		b.WriteString(evWire(wrapVar, indent+"  "))
 		b.WriteString(fmt.Sprintf("%s  %s = %s(%s, %s, {});\n", indent, instVar, comp.Name, wrapVar, propsExpr))
 		b.WriteString(fmt.Sprintf("%s  %s.appendChild(%s);\n", indent, parentVar, wrapVar))
@@ -3697,7 +3676,12 @@ func (g *CodeGen) genSetter(name string) string {
 	//   2. Skips redundant DOM updates and downstream callbacks.
 	// Identity comparison matches Svelte semantics — writing a fresh
 	// object with the same contents is still considered a change.
-	b.WriteString(fmt.Sprintf("    if (%s === $$v) return;\n", name))
+	// But a deep ($state.deep) proxy keeps its reference across an
+	// in-place mutation, so `=== $$v` alone would suppress the
+	// re-render that mutation should trigger; let an identity-equal
+	// proxy through via $$isProxy.
+	b.WriteString(fmt.Sprintf(
+		"    if (%s === $$v && !$$isProxy($$v)) return;\n", name))
 	if deep {
 		// Reassigning a deep-state variable wraps the incoming value
 		// in a fresh proxy so subsequent mutations on the new value

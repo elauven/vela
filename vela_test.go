@@ -1692,11 +1692,17 @@ func TestGenerateCode_DispatchFunction(t *testing.T) {
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCode("MyComp", sfc, nodes, a, "vela-test")
-	if !strings.Contains(code, "function $$dispatch") {
-		t.Errorf("every component should have $$dispatch; code:\n%s", code[:400])
+	// $$dispatch is imported from runtime.js and bound locally to
+	// the component's $$target.  The CustomEvent construction now
+	// lives in runtime.js's $$dispatch, not in each component.
+	if !strings.Contains(code, "$$dispatch") ||
+		!strings.Contains(code, "from './runtime.js'") {
+		t.Errorf("every component should wire $$dispatch from "+
+			"runtime.js; code:\n%s", code[:400])
 	}
-	if !strings.Contains(code, "CustomEvent") {
-		t.Errorf("$$dispatch should use CustomEvent")
+	if !strings.Contains(code, "$$rt_dispatch($$target") {
+		t.Errorf("$$dispatch should bind the imported helper to "+
+			"$$target; code:\n%s", code[:400])
 	}
 }
 
@@ -1741,7 +1747,7 @@ func TestFullPipeline_UserCard(t *testing.T) {
 		"export function UserCard(",
 		"$$props, $$slots",
 		"$$onChange_name",              // bindable callback
-		"function $$dispatch",          // dispatch helper
+		"const $$dispatch",             // dispatch helper binding
 		"document.body.setAttribute",   // onMount body
 		"document.body.removeAttribute", // onDestroy body
 		"$$effect0",                    // $effect
@@ -2274,7 +2280,7 @@ func TestFullPipeline_PropBindingAndLifecycle(t *testing.T) {
 		{"input rewrite for name", "$$set_name", ""},
 		{"checked uses property", ".checked = !!(online)", "setAttribute('checked'"},
 		{"$$onChange_name for bindable", "$$onChange_name", ""},
-		{"$$dispatch present", "function $$dispatch", ""},
+		{"$$dispatch present", "const $$dispatch", ""},
 	}
 	for _, c := range checks {
 		hasWant := c.want == "" || strings.Contains(code, c.want)

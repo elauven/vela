@@ -343,12 +343,28 @@ func (p *parser) parseNodes(stopTags []string) ([]Node, error) {
 
 func (p *parser) parseText() (*TextNode, error) {
 	var buf strings.Builder
-	for !p.eof() && p.ch() != '<' {
-		// Stop before Svelte block directives so parseNodes can handle them
-		if p.isSvelteBlockStart() || p.isSvelteBlockTerm() {
+	// braceDepth > 0 means the scanner is inside a {…} interpolation.
+	// A '<' there is part of the expression (e.g. `{i < n}`), not the
+	// start of an HTML tag — so only stop on '<' at depth 0.
+	braceDepth := 0
+	for !p.eof() {
+		c := p.ch()
+		if c == '<' && braceDepth == 0 {
 			break
 		}
-		buf.WriteByte(p.ch())
+		// Stop before Svelte block directives so parseNodes can
+		// handle them — but only at the top level, never mid-
+		// interpolation.
+		if braceDepth == 0 &&
+			(p.isSvelteBlockStart() || p.isSvelteBlockTerm()) {
+			break
+		}
+		if c == '{' {
+			braceDepth++
+		} else if c == '}' && braceDepth > 0 {
+			braceDepth--
+		}
+		buf.WriteByte(c)
 		p.pos++
 	}
 	raw := buf.String()

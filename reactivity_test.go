@@ -222,3 +222,63 @@ func TestTemplateRefsDeduplicatesPerExpression(t *testing.T) {
 		t.Fatalf("expected exactly 1 warning for foo, got %d", count)
 	}
 }
+
+// ─────────────────────────────────────────────
+//  {#each} row-variable scoping
+// ─────────────────────────────────────────────
+
+// The row variable of an {#each … as item} block is declared by
+// the block itself and must resolve inside the loop body — it must
+// NOT be reported as "no such name is declared".
+func TestTemplateRefsEachRowVarVisible(t *testing.T) {
+	ds := runTemplateRefs(t,
+		`let items = $state([1, 2, 3]);`,
+		`<ul>{#each items as item}<li>{item}</li>{/each}</ul>`)
+	expectNone(t, ds, `references "item"`)
+}
+
+// Both the value and the index binding of `as item, i` resolve.
+func TestTemplateRefsEachIndexVarVisible(t *testing.T) {
+	ds := runTemplateRefs(t,
+		`let items = $state([1, 2, 3]);`,
+		`<ul>{#each items as item, i}<li>{i}: {item}</li>{/each}</ul>`)
+	expectNone(t, ds, `references "item"`)
+	expectNone(t, ds, `references "i"`)
+}
+
+// A destructuring row pattern — `as { name, id }` — makes both
+// inner identifiers visible.
+func TestTemplateRefsEachDestructuredVisible(t *testing.T) {
+	ds := runTemplateRefs(t,
+		`let rows = $state([]);`,
+		`<ul>{#each rows as { name, id }}<li>{name}-{id}</li>{/each}</ul>`)
+	expectNone(t, ds, `references "name"`)
+	expectNone(t, ds, `references "id"`)
+}
+
+// The iterable expression is still validated — a genuinely
+// undeclared iterable is reported.
+func TestTemplateRefsEachIterableStillChecked(t *testing.T) {
+	ds := runTemplateRefs(t,
+		``,
+		`<ul>{#each missing as item}<li>{item}</li>{/each}</ul>`)
+	expect(t, ds, `references "missing"`)
+}
+
+// A row variable must NOT leak to a sibling outside the {#each}.
+func TestTemplateRefsEachRowVarDoesNotLeak(t *testing.T) {
+	ds := runTemplateRefs(t,
+		`let items = $state([]);`,
+		`<div><ul>{#each items as item}<li>{item}</li>{/each}</ul><p>{item}</p></div>`)
+	// `item` referenced outside the loop is genuinely undeclared.
+	expect(t, ds, `references "item"`)
+}
+
+// A genuinely undeclared name inside the loop body is still
+// reported — adding the row vars must not blanket-suppress.
+func TestTemplateRefsEachBodyStillChecked(t *testing.T) {
+	ds := runTemplateRefs(t,
+		`let items = $state([]);`,
+		`<ul>{#each items as item}<li>{item}{ghost}</li>{/each}</ul>`)
+	expect(t, ds, `references "ghost"`)
+}

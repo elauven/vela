@@ -526,6 +526,8 @@ Flags:
   --watch           recompile on file changes
   --minify          run the minifier pass
   --ast             emit JSON AST alongside JS output
+  --css MODE        CSS delivery: 'inject' (default, CSS-in-JS) or
+                    'external' (scoped CSS written to sibling .css files)
 ```
 
 Output for `Card.vela`:

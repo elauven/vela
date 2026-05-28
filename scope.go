@@ -211,6 +211,12 @@ var defaultGlobals = []string{
 	// Vela compiler primitives.  These appear in user .vela scripts as
 	// $state(0), $derived(...), $effect(...), $props(), $bindable().
 	"$state", "$derived", "$effect", "$props", "$bindable", "$inspect",
+
+	// $$dispatch is wired into every component's scope by the code
+	// generator — a (name, detail) => void that fires a bubbling
+	// CustomEvent at the component's mount target.  User scripts
+	// call it directly, so it must resolve like a builtin.
+	"$$dispatch",
 }
 
 // ─────────────────────────────────────────────
@@ -327,6 +333,16 @@ func (b *scopeBuilder) preDeclareLexicalStmt(s JsStmt) {
 		// Labels are transparent — a labeled `let x = 1` still
 		// introduces x into the enclosing scope.
 		b.preDeclareLexicalStmt(n.Body)
+	case *JsExportDecl:
+		// `export let x = …` / `export class X …` introduces x
+		// into module scope exactly as the bare declaration would
+		// — unwrap so the inner let/const/class is pre-declared.
+		// Without this an `export let` prop referenced by a
+		// closure earlier in source order (e.g. inside an
+		// $effect) resolves to "not defined".
+		if n.Declaration != nil {
+			b.preDeclareLexicalStmt(n.Declaration)
+		}
 	}
 	// Crucially: no recursion into blocks, if/else, loops, try, etc.
 	// Each of those creates its own scope and will pre-declare its

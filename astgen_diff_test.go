@@ -211,6 +211,18 @@ var knownDiff = map[string]string{
 	"component": "component slot children — struct-built slot-factory " +
 		"closures (E3.6) vs legacy's buffer-partitioned emission; " +
 		"both valid, same runtime behaviour",
+	// The AST generator builds {#if}/{#key}/{#await} branches into
+	// a DocumentFragment so the branch's nodes become DIRECT
+	// children of the parent — no wrapper <div>.  Legacy still
+	// emits the wrapper.  The fragment form is the intended
+	// behaviour (a wrapper broke parent>child CSS, flex/grid,
+	// :first-child); legacy is simply behind here.
+	"conditional": "{#if} chain — fragment-based, no wrapper <div>; " +
+		"legacy wraps each branch in a <div>",
+	"keyblock": "{#key} block — fragment-based, no wrapper <div>; " +
+		"legacy wraps in a <div>",
+	"await": "{#await} block — fragment-based, no wrapper <div>; " +
+		"legacy wraps each branch in a <div>",
 }
 
 // compileBothWays runs a .vela source through the legacy and the
@@ -251,12 +263,14 @@ func TestASTGenSkeleton(t *testing.T) {
 		}
 
 		// Skeleton invariants — these hold from block 1 onward.
+		// The runtime helpers ($$dispatch / $$insertHTML / $$proxy)
+		// are no longer skeleton-universal: the AST generator
+		// imports each from runtime.js only when the component
+		// actually uses it, so they are not asserted here.
 		mustContain := []string{
 			"export function Test(",
 			"$$props = Object.assign({}, $$props)",
 			"$$slots = $$slots || {}",
-			"function $$dispatch(",
-			"function $$insertHTML(",
 			"return {",
 			"destroy()",
 		}
@@ -345,10 +359,12 @@ func TestASTGenMatchesLegacy(t *testing.T) {
 		legacy := generateCode("Test", sfc, tmpl, analysis, scope)
 		ast := generateCodeAST("Test", sfc, tmpl, analysis, scope)
 
-		// Strip the legacy banner comment (printer emits none),
-		// then compare re-parsed trees.
-		legacyTree := ParseJS(stripBanner(legacy))
-		astTree := ParseJS(ast)
+		// Strip the legacy banner comment (printer emits none) and
+		// the runtime-helper wiring (emitted unconditionally by
+		// legacy, usage-tracked by the AST generator), then compare
+		// re-parsed trees.
+		legacyTree := stripRuntimeHelperWiring(ParseJS(stripBanner(legacy)))
+		astTree := stripRuntimeHelperWiring(ParseJS(ast))
 
 		if nodeSig(legacyTree) != nodeSig(astTree) {
 			t.Errorf("[%s] generators diverge structurally\n--- legacy ---\n%s\n--- ast ---\n%s",
@@ -359,6 +375,73 @@ func TestASTGenMatchesLegacy(t *testing.T) {
 
 // stripBanner removes the leading `// Generated…` comment line so
 // it doesn't interfere with re-parsing for comparison.
+
+// stripRuntimeHelperWiring removes the shared-runtime-helper plumbing
+// from a parsed program: the `import { … } from './runtime.js'`
+// helper import, and the `const $$dispatch = …` binding plus the
+// `void $$insertHTML/$$proxy` no-op statements.  The legacy
+// generator emits this wiring unconditionally; the AST generator
+// emits only what each component uses — a deliberate, systematic
+// asymmetry.  Normalizing it away on both sides lets the structural
+// diff focus on the actual component code.
+func stripRuntimeHelperWiring(prog *JsProgram) *JsProgram {
+	if prog == nil {
+		return prog
+	}
+	isHelperImport := func(s JsStmt) bool {
+		imp, ok := s.(*JsImportDecl)
+		if !ok || imp.Source != "./runtime.js" {
+			return false
+		}
+		for _, sp := range imp.Specifiers {
+			if sp.Local == "$$rt_dispatch" ||
+				sp.Imported == "$$insertHTML" ||
+				sp.Imported == "$$proxy" ||
+				sp.Imported == "$$isProxy" {
+				return true
+			}
+		}
+		return false
+	}
+	isHelperWiring := func(s JsStmt) bool {
+		// Only individual helper-wiring statements — the
+		// `const $$dispatch = … $$rt_dispatch(…)` binding and the
+		// `void $$insertHTML/$$proxy/$$dispatch` no-ops.  Must NOT
+		// match a whole function that merely contains them.
+		switch st := s.(type) {
+		case *JsVarDecl:
+			txt := PrintJS(&JsProgram{Body: []JsStmt{st}}, PrintMinified)
+			return strings.Contains(txt, "$$rt_dispatch")
+		case *JsExprStmt:
+			txt := PrintJS(&JsProgram{Body: []JsStmt{st}}, PrintMinified)
+			return txt == "void $$insertHTML;" ||
+				txt == "void $$proxy;" ||
+				txt == "void $$dispatch;"
+		}
+		return false
+	}
+	var keep func(stmts []JsStmt) []JsStmt
+	keep = func(stmts []JsStmt) []JsStmt {
+		var out []JsStmt
+		for _, s := range stmts {
+			if isHelperImport(s) || isHelperWiring(s) {
+				continue
+			}
+			// Descend into the exported component function so the
+			// $$dispatch binding inside it is dropped too.
+			if exp, ok := s.(*JsExportDecl); ok {
+				if fn, ok := exp.Declaration.(*JsFuncDecl); ok &&
+					fn.Body != nil {
+					fn.Body.Body = keep(fn.Body.Body)
+				}
+			}
+			out = append(out, s)
+		}
+		return out
+	}
+	prog.Body = keep(prog.Body)
+	return prog
+}
 // ─────────────────────────────────────────────
 //  Helpers
 // ─────────────────────────────────────────────

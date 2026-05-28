@@ -273,6 +273,11 @@ var corpus = map[string]string{
 	// closure, throwing a TDZ ReferenceError on slot reopen.  The
 	// instance var and the event handler const are now hoisted to
 	// component scope; the addEventListener runs inside the closure.
+	// Regression: a component invoked inside another component's
+	// slot, with an @event handler.  The slot-content event wiring
+	// (cap.events) was dropped — buttons in a slot did nothing —
+	// and the child instance `let` was trapped in the slot
+	// closure, throwing a TDZ ReferenceError on slot reopen.
 	"slot_component_event": `<script>
 		import { Card } from './Card.vela';
 		import { Button } from './Button.vela';
@@ -285,6 +290,141 @@ var corpus = map[string]string{
 				<div slot="footer"><Button label="Reset" @click="() => count = 0" /></div>
 			</Card>
 		</div>
+	</template>`,
+
+	// Regression: reactive state interpolated inside a slot must
+	// re-render when the state changes.
+	"slot_reactive_hole": `<script>
+		import { Card } from './Card.vela';
+		import { Button } from './Button.vela';
+		let count = $state(0);
+	</script>
+	<template>
+		<div>
+			<Card title="Counter">
+				<p>Count: {count}</p>
+				<Button label="Inc" @click="() => count++" />
+			</Card>
+		</div>
+	</template>`,
+
+	// Regression: a component inside an {#if} branch.  When the
+	// branch is removed the component must be destroyed and its
+	// instance/wrapper vars nulled — otherwise the `if (!$$nN_comp)`
+	// mount guard skips re-creation on re-entry, leaving an empty
+	// wrapper (the component's DOM stayed in the discarded one).
+	// Also a TDZ check: the wrapper var must be hoisted, not a
+	// `const` trapped in the branch-build block.
+	"if_component_toggle": `<script>
+		import { Toast } from './Toast.vela';
+		let show = $state(false);
+	</script>
+	<template>
+		<div>{#if show}<Toast message="hi" @close="() => show = false" />{/if}</div>
+	</template>`,
+
+	// ── combination matrix (E-stabilize 3) ───────────────────
+	// Cross-construct nestings — the space the recent bugs lived
+	// in.  Each names one specific high-risk combination so a
+	// failure points straight at it (the fuzzer finds these too,
+	// but with opaque byte-slice names).
+
+	// Component inside an {#each} row — the row fragment builder
+	// must construct a component invocation per row.
+	"each_row_component": `<script>
+		import { Badge } from './Badge.vela';
+		let items = $state(['a', 'b', 'c']);
+	</script>
+	<template>
+		<ul>{#each items as it}<li><Badge text={it} /></li>{/each}</ul>
+	</template>`,
+
+	// {#if} nested inside an {#each} row — control-flow within a
+	// row body, built via the recursive walker under captureScope.
+	"each_row_if": `<script>
+		let items = $state([1, 2, 3]);
+		let flag = $state(true);
+	</script>
+	<template>
+		<ul>{#each items as n}<li>{#if flag}<span>{n}</span>{/if}</li>{/each}</ul>
+	</template>`,
+
+	// {#each} nested inside an {#if} branch — a list that appears
+	// and disappears with the branch.
+	"if_branch_each": `<script>
+		let show = $state(true);
+		let items = $state(['x', 'y']);
+	</script>
+	<template>
+		<div>{#if show}<ul>{#each items as it}<li>{it}</li>{/each}</ul>{/if}</div>
+	</template>`,
+
+	// {#each} nested inside another {#each} row — doubly-nested
+	// reconciliation, fragment-within-fragment.
+	"each_nested": `<script>
+		let rows = $state([[1, 2], [3, 4]]);
+	</script>
+	<template>
+		<div>{#each rows as row}<ul>{#each row as cell}<li>{cell}</li>{/each}</ul>{/each}</div>
+	</template>`,
+
+	// Component with slot children inside an {#if} branch — the
+	// captureScope-within-branch case: a slot closure built while
+	// the chain branch scope is itself captured.
+	"if_branch_slot_component": `<script>
+		import { Card } from './Card.vela';
+		let show = $state(true);
+		let label = $state('hi');
+	</script>
+	<template>
+		<div>{#if show}<Card title="C"><p>{label}</p></Card>{/if}</div>
+	</template>`,
+
+	// {#await} whose resolved branch holds a component invocation.
+	"await_component": `<script>
+		import { Badge } from './Badge.vela';
+		let task = $state(Promise.resolve('done'));
+	</script>
+	<template>
+		<div>
+			{#await task}<span>loading</span>
+			{:then result}<Badge text={result} />
+			{:catch err}<span>{err}</span>
+			{/await}
+		</div>
+	</template>`,
+
+	// {#each} row carrying both an event and a nested {#if} — the
+	// row fragment needs per-row event wiring AND a nested chain.
+	"each_row_event_if": `<script>
+		let items = $state([1, 2]);
+		let on = $state(true);
+		function pick(v) { console.log(v); }
+	</script>
+	<template>
+		<ul>{#each items as n}<li @click={() => pick(n)}>{#if on}<b>{n}</b>{/if}</li>{/each}</ul>
+	</template>`,
+
+	// Regression: a '<' inside a {…} interpolation (a comparison
+	// like {i < n}) must not be parsed as the start of an HTML tag
+	// — the template scanner tracks brace depth.
+	"interp_less_than": `<script>
+		let i = $state(2);
+		let n = $state(5);
+	</script>
+	<template>
+		<div><span>{i < n ? 'lo' : 'hi'}</span></div>
+	</template>`,
+
+	// Regression: a dynamic attribute on an element inside an {#if}
+	// branch must update when its dependency changes — the branch's
+	// element var is hoisted so the setter cascade reaches it.
+	"if_branch_dynattr": `<script>
+		let on = $state(true);
+		let w = $state(10);
+	</script>
+	<template>
+		<div>{#if on}<span :data-w={w}>x</span>{/if}</div>
 	</template>`,
 }
 
@@ -345,11 +485,25 @@ func TestASTGenCorpus(t *testing.T) {
 // instead by dedicated correctness / validity assertions.
 var knownLegacyBugs = map[string]string{
 	"derived_chain": "legacy omits transitive derived recompute (legacy bug)",
+	// {#if}/{#key}/{#await} branches build into a DocumentFragment
+	// so the branch nodes are DIRECT children of the parent — no
+	// wrapper <div>.  Legacy still wraps.  The fragment form is the
+	// intended behaviour; legacy is behind.
+	"if_elseif_else": "{#if} chain — fragment-based, no wrapper <div>; " +
+		"legacy wraps each branch",
+	"key_block": "{#key} block — fragment-based, no wrapper <div>; " +
+		"legacy wraps",
+	"await_full": "{#await} block — fragment-based, no wrapper <div>; " +
+		"legacy wraps each branch",
 	"if_hole_branch": "AST builds hole-bearing branches via innerHTML on " +
 		"the branch wrapper; legacy builds each branch element separately " +
 		"— both valid, AST form is simpler",
 	"if_else_hole": "hole-bearing branch — see if_hole_branch",
 	"key_hole_branch": "hole-bearing branch — see if_hole_branch",
+	"interp_less_than": "AST builds the <span> via innerHTML on the " +
+		"parent; legacy builds it element-by-element — both valid",
+	"if_branch_dynattr": "{#if} branch — fragment-based with a " +
+		"hoisted element var; legacy wraps — both valid",
 	"if_on_root": "element branch built via innerHTML on the branch " +
 		"wrapper — see if_hole_branch",
 	"each_row_event": "AST hoists row event handlers cleanly into a " +
@@ -366,6 +520,30 @@ var knownLegacyBugs = map[string]string{
 		"itself is identical, only surrounding structure differs",
 	"slot_component_event": "component-in-slot — struct-built (E3.6) " +
 		"vs legacy buffer-partitioned emission; both valid",
+	"slot_reactive_hole": "reactive hole in a slot — struct-built " +
+		"(E3.6) vs legacy buffer-partitioned emission; both valid",
+	"if_component_toggle": "component in an {#if} branch — the AST " +
+		"recursive walker destroys/recreates it; legacy uses its " +
+		"dedicated walkComponentIfChain — both valid, same lifecycle",
+	// E-stabilize 3 combination matrix — every entry is a
+	// cross-construct nesting the AST builds via the recursive
+	// walker / captureScope; legacy uses its own block walkers.
+	// All verified valid (node --check + ValidateProgram) and,
+	// for the behavioural ones, by the jsdom runtime harness.
+	"each_row_component": "component in an {#each} row — AST recursive " +
+		"walker vs legacy walkComponentEach; both valid",
+	"each_row_if": "{#if} nested in an {#each} row — struct-built " +
+		"vs legacy; both valid, same behaviour",
+	"if_branch_each": "{#each} nested in an {#if} branch — struct-" +
+		"built vs legacy; both valid",
+	"each_nested": "doubly-nested {#each} — struct-built vs legacy; " +
+		"both valid",
+	"if_branch_slot_component": "component-with-slot in an {#if} " +
+		"branch — captureScope-within-branch; both valid",
+	"await_component": "component in an {#await} branch — struct-" +
+		"built vs legacy; both valid",
+	"each_row_event_if": "{#each} row with an event and a nested " +
+		"{#if} — struct-built vs legacy; both valid",
 	"slot_named": "multiple sibling <slot>s: the recursive AST walker " +
 		"emits createComment+appendChild in document order; legacy's " +
 		"create/wire buffer split emits all comments then all appends " +
@@ -398,9 +576,10 @@ func TestASTGenCorpusMatchesLegacy(t *testing.T) {
 				t.Skip("routes through buildModuleSplice — equality trivial")
 			}
 
-			legacy := ParseJS(stripBanner(
-				generateCode(name, sfc, tmpl, analysis, "vela-000000")))
-			ast := ParseJS(generateCodeAST(name, sfc, tmpl, analysis, "vela-000000"))
+			legacy := stripRuntimeHelperWiring(ParseJS(stripBanner(
+				generateCode(name, sfc, tmpl, analysis, "vela-000000"))))
+			ast := stripRuntimeHelperWiring(ParseJS(
+				generateCodeAST(name, sfc, tmpl, analysis, "vela-000000")))
 
 			if nodeSig(legacy) != nodeSig(ast) {
 				t.Errorf("[%s] direct-build output diverges from legacy", name)

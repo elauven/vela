@@ -275,14 +275,23 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 				if n.IfCond != "" {
 					checkExprRefs(n.IfCond, known, templateText, ds)
 				}
+				eachAdded := []string(nil)
 				if n.EachExpr != "" {
-					// "items as item, i" — the part before "as" is an
-					// expression; the names after are introduced locally.
-					if before, _, ok := splitEachExpr(n.EachExpr); ok {
-						checkExprRefs(before, known, templateText, ds)
+					// "items as item, i" — the part before "as" is
+					// an expression; the names after are row
+					// variables declared by the {#each} itself and
+					// must be visible while walking this element's
+					// subtree.
+					iter, names, ok := splitEachExpr(n.EachExpr)
+					if ok {
+						checkExprRefs(iter, known, templateText, ds)
 					}
+					eachAdded = addEachBindings(known, names)
 				}
 				walkNodes(n.Children)
+				for _, nm := range eachAdded {
+					delete(known, nm)
+				}
 			case *ComponentNode:
 				for _, a := range n.Attrs {
 					checkAttrRefs(a, known, templateText, ds)
@@ -298,18 +307,83 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 					walkNodes(branch.Children)
 				}
 			case *EachBlockNode:
-				if before, _, ok := splitEachExpr(n.EachExpr); ok {
-					checkExprRefs(before, known, templateText, ds)
+				iter, names, ok := splitEachExpr(n.EachExpr)
+				if ok {
+					checkExprRefs(iter, known, templateText, ds)
 				}
+				// The {#each … as item, i} row variables are
+				// declared by the block itself — make them visible
+				// while walking the loop body, then withdraw them
+				// so they do not leak to siblings.
+				added := addEachBindings(known, names)
 				walkNodes(n.Children)
+				for _, nm := range added {
+					delete(known, nm)
+				}
 			}
 		}
 	}
 	walkNodes(nodes)
 }
 
-// checkAttrRefs validates the expression value of an attribute,
-// skipping plain string attributes.
+// addEachBindings registers the row variables of an {#each} block
+// into `known` so references inside the loop body resolve.  It
+// returns the names actually added (those not already present), so
+// the caller can withdraw exactly those afterwards without
+// clobbering a same-named outer binding.
+//
+// `names` comes from splitEachExpr, which splits the post-"as"
+// clause on commas — so a destructuring pattern like `{name, id}`
+// or `[a, b]` arrives as several broken fragments.  Every JS
+// identifier found across all fragments is treated as a row
+// variable; punctuation ({}[]() and whitespace) is ignored.  This
+// over-approximates (it would also pick up a default value's
+// identifier, a rare form), but for scope-visibility that is the
+// safe direction — it can only suppress a false "not declared",
+// never introduce a false one.
+func addEachBindings(known map[string]bool, names []string) []string {
+	var added []string
+	for _, tok := range names {
+		for _, id := range identsIn(tok) {
+			if !known[id] {
+				known[id] = true
+				added = append(added, id)
+			}
+		}
+	}
+	return added
+}
+
+// identsIn extracts JS identifiers from a string fragment,
+// treating any non-identifier rune as a separator.
+func identsIn(s string) []string {
+	var out []string
+	start := -1
+	runes := []rune(s)
+	for i, r := range runes {
+		isIdent := r == '_' || r == '$' ||
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9')
+		switch {
+		case isIdent && start < 0:
+			start = i
+		case !isIdent && start >= 0:
+			out = append(out, string(runes[start:i]))
+			start = -1
+		}
+	}
+	if start >= 0 {
+		out = append(out, string(runes[start:]))
+	}
+	// Drop anything that starts with a digit — not a valid ident.
+	filtered := out[:0]
+	for _, id := range out {
+		if id != "" && (id[0] < '0' || id[0] > '9') {
+			filtered = append(filtered, id)
+		}
+	}
+	return filtered
+}
 func checkAttrRefs(a *Attr, known map[string]bool, templateText string, ds *DiagSet) {
 	if a == nil {
 		return

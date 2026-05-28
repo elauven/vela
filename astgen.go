@@ -254,6 +254,12 @@ type ASTGen struct {
 	// each setter's $$defer body.  Mirrors CodeGen.updates.
 	updates map[string][]JsStmt
 
+	// structuralUpdates maps a reactive variable name → chain
+	// re-render (mount/unmount) statements that must run BEFORE
+	// the ordinary updates for the same dependency.  See
+	// addStructuralUpdate.
+	structuralUpdates map[string][]JsStmt
+
 	// hoisted holds declarations that must ALWAYS live at component
 	// scope, even when emitted while captureScope has redirected
 	// the other buffers into a local scope (a slot-factory closure
@@ -265,6 +271,54 @@ type ASTGen struct {
 	// inside the closure would throw a TDZ ReferenceError on
 	// reopen.  Mirrors legacy walkComponent's instance-var hoist.
 	hoisted []JsStmt
+
+	// inSlotScope is true while building the content of a slot
+	// closure.  Slot content emitted under captureScope lands in
+	// the closure's first-open path; any hole-node variable it
+	// captures must therefore be hoisted to component scope (and
+	// null-guarded) so the setter cascade — which replays the
+	// slot's reactive updates — can reach it.  buildChildren reads
+	// this to pick the hoisting build path.
+	inSlotScope bool
+
+	// slotGuard, when inSlotScope, is the slot's cache variable
+	// ($$scache_$$nN).  It is non-null only after the slot has
+	// first opened, so it guards slot-content hole updates: a
+	// reactive update that fires before the slot ever opened (the
+	// captured hole vars still null) becomes a safe no-op.
+	slotGuard string
+
+	// inBranchScope is true while the recursive walker builds an
+	// {#if}/{#key}/{#await} branch body under captureScope.  Like
+	// inSlotScope, it makes element-creating builders hoist their
+	// node variable (`let X = null;` at component scope, assigned
+	// in the branch-build block) so the setter cascade — which
+	// replays the branch's reactive attribute/style updates — can
+	// reach the element.  A `const` trapped in the branch-build
+	// block would be invisible to $$set_*.
+	inBranchScope bool
+
+	// cssExternal selects CSS delivery.  When false (default), the
+	// component injects its scoped <style> into document.head at
+	// runtime (CSS-in-JS).  When true, buildStyleInjection emits
+	// nothing — the scoped CSS is written to a sibling .css file
+	// by the compiler, and the consumer links it.
+	cssExternal bool
+
+	// compInstances records the (instance, wrapper) variable names
+	// of every component built since the last captureScope reset.
+	// buildIfChain uses these to destroy + null a branch's
+	// components when the branch is removed, so re-entering the
+	// branch recreates them (their `if (!$$nN_comp)` guard would
+	// otherwise skip re-creation, leaving an empty wrapper).
+	compInstances []compInstance
+}
+
+// compInstance is one child-component invocation's bookkeeping —
+// its instance handle and wrapper element variable names.
+type compInstance struct {
+	inst string
+	wrap string
 }
 
 // addUpdate records that statement stmt must re-run whenever the
@@ -276,6 +330,26 @@ func (g *ASTGen) addUpdate(dep string, stmt JsStmt) {
 	g.updates[dep] = append(g.updates[dep], stmt)
 }
 
+// addStructuralUpdate records a STRUCTURAL re-render — an
+// {#if}/{#key}/{#await} chain function or a similar
+// mount/unmount operation — that must run BEFORE the ordinary
+// (interior) updates for the same dependency.
+//
+// Why ordering matters: when a condition flips a branch off (e.g.
+// `block` becomes null in `{#if block}`), the chain re-render
+// tears the branch down and nulls its guard var ($$chain_X_bN).
+// The branch's interior updates are all guarded by that var, so
+// once the chain has run they correctly no-op.  If an interior
+// update ran first, it would read now-stale state — e.g.
+// `$$each_$$nN(def.fields)` where `def` just became null —
+// throwing before the branch could be removed.
+func (g *ASTGen) addStructuralUpdate(dep string, stmt JsStmt) {
+	if g.structuralUpdates == nil {
+		g.structuralUpdates = map[string][]JsStmt{}
+	}
+	g.structuralUpdates[dep] = append(g.structuralUpdates[dep], stmt)
+}
+
 // capturedScope holds the statements a builder function emitted
 // while the generator's component-scope buffers were redirected —
 // see captureScope.
@@ -285,6 +359,7 @@ type capturedScope struct {
 	events   []JsStmt            // addEventListener calls
 	cleanup  []JsStmt            // teardown statements
 	updates  map[string][]JsStmt // reactive dep → update statements
+	comps    []compInstance      // component instances built here
 }
 
 // captureScope runs fn with the generator's emission buffers
@@ -301,25 +376,36 @@ func (g *ASTGen) captureScope(fn func()) capturedScope {
 	saveBody, saveInit := g.body, g.initBody
 	saveEvents, saveCleanup := g.events, g.cleanup
 	saveUpdates := g.updates
+	saveComps := g.compInstances
+
+	// Restore on the way out — via defer so a panic inside fn()
+	// cannot leave the generator's buffers swapped out.  The
+	// fuzzer and the test suite both recover from panics and keep
+	// running; without this, a panic mid-capture would corrupt
+	// every subsequent compilation with another generator's
+	// partial state, masking the original failure.
+	defer func() {
+		g.body, g.initBody = saveBody, saveInit
+		g.events, g.cleanup = saveEvents, saveCleanup
+		g.updates = saveUpdates
+		g.compInstances = saveComps
+	}()
 
 	g.body, g.initBody = nil, nil
 	g.events, g.cleanup = nil, nil
 	g.updates = map[string][]JsStmt{}
+	g.compInstances = nil
 
 	fn()
 
-	out := capturedScope{
+	return capturedScope{
 		body:     g.body,
 		initBody: g.initBody,
 		events:   g.events,
 		cleanup:  g.cleanup,
 		updates:  g.updates,
+		comps:    g.compInstances,
 	}
-
-	g.body, g.initBody = saveBody, saveInit
-	g.events, g.cleanup = saveEvents, saveCleanup
-	g.updates = saveUpdates
-	return out
 }
 
 // id returns the next deterministic node variable name ($$n0,
@@ -344,9 +430,9 @@ func (g *ASTGen) id() string {
 // counter.  Used while building an {#each} row fragment.
 func (g *ASTGen) withFragmentIDs(fn func()) {
 	saved := g.fragCounter
+	defer func() { g.fragCounter = saved }()
 	g.fragCounter = 0
 	fn()
-	g.fragCounter = saved
 }
 
 // jsName formats a node-variable name from a counter value.
@@ -402,7 +488,23 @@ func generateCodeAST(
 	analysis *Analysis,
 	scopeID string,
 ) string {
-	prog := buildProgram(name, sfc, nodes, analysis, scopeID)
+	return generateCodeASTCSS(name, sfc, nodes, analysis, scopeID, false)
+}
+
+// generateCodeASTCSS is generateCodeAST with explicit CSS-delivery
+// control.  cssExternal=true suppresses the runtime <style>
+// injection; the compiler writes the scoped CSS to a sibling .css
+// file instead.  generateCodeAST keeps the historical signature
+// (inject mode) for the many existing callers and tests.
+func generateCodeASTCSS(
+	name string,
+	sfc *SFC,
+	nodes []Node,
+	analysis *Analysis,
+	scopeID string,
+	cssExternal bool,
+) string {
+	prog := buildProgramCSS(name, sfc, nodes, analysis, scopeID, cssExternal)
 	return headerComment + "\n\n" + PrintJS(prog, PrintPretty)
 }
 
@@ -424,12 +526,26 @@ func buildProgram(
 	analysis *Analysis,
 	scopeID string,
 ) *JsProgram {
+	return buildProgramCSS(name, sfc, nodes, analysis, scopeID, false)
+}
+
+// buildProgramCSS is buildProgram with explicit CSS-delivery
+// control — see generateCodeASTCSS.
+func buildProgramCSS(
+	name string,
+	sfc *SFC,
+	nodes []Node,
+	analysis *Analysis,
+	scopeID string,
+	cssExternal bool,
+) *JsProgram {
 	g := &ASTGen{
 		name:        name,
 		scopeID:     scopeID,
 		analysis:    analysis,
 		sfc:         sfc,
 		fragCounter: -1,
+		cssExternal: cssExternal,
 	}
 
 	var prog *JsProgram
@@ -828,6 +944,17 @@ func astHoleSubtreeOK(nodes []Node) bool {
 			if n.IfCond != "" || n.EachExpr != "" {
 				return false
 			}
+			// Raw-text elements (<textarea>, <title>) cannot use
+			// the innerHTML + TreeWalker hole path: their body is
+			// CDATA, so a <!--$--> placeholder is stored as
+			// literal text and the hole anchor comes back null.
+			// An interpolated body must take the recursive-walker
+			// path, which writes the .value/.textContent property.
+			if _, isRaw := rawTextProp(n.Tag); isRaw {
+				if _, hasInterp := singleInterpolation(n.Children); hasInterp {
+					return false
+				}
+			}
 			if !astHoleSubtreeOK(n.Children) {
 				return false
 			}
@@ -890,54 +1017,18 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 		void $$slots;
 	`)...)
 
-	// ── Runtime helper: $$dispatch ───────────────────────────
-	fnBody.Body = append(fnBody.Body, jsStmts(`
-		function $$dispatch(name, detail) {
-			$$target.dispatchEvent(new CustomEvent(name, { detail, bubbles: true }));
-		}
-		void $$dispatch;
-	`)...)
+	// ── Runtime helpers ──────────────────────────────────────
+	// $$dispatch, $$insertHTML and $$proxy used to be inlined in
+	// full into every component.  They now live in runtime.js.
+	// After the whole program is built, finalizeRuntimeHelpers
+	// scans for which are referenced and prepends a single import
+	// from runtime.js — plus, for $$dispatch, a thin local arrow
+	// that binds the imported (target, …) form to this
+	// component's own $$target.
 
-	// ── Runtime helper: $$insertHTML ─────────────────────────
-	fnBody.Body = append(fnBody.Body, jsStmts(`
-		function $$insertHTML($$t, $$h) {
-			if ($$t.nodeType === 11) {
-				const $$tmp = document.createElement('template');
-				$$tmp.innerHTML = $$h;
-				$$t.appendChild($$tmp.content);
-			} else {
-				$$t.insertAdjacentHTML('beforeend', $$h);
-			}
-		}
-		void $$insertHTML;
-	`)...)
-
-	// ── Deep-reactivity helper (block 14) ────────────────────
-	// Emitted only when at least one $state.deep variable exists.
-	// $$proxy wraps a value in a recursive, WeakMap-cached Proxy
-	// so nested mutations fire the same notify path as
-	// reassignment.
-	if g.hasDeepState() {
-		fnBody.Body = append(fnBody.Body, jsStmts(`
-			function $$proxy(val, notify) {
-				if (val === null || typeof val !== 'object') return val;
-				const cache = new WeakMap();
-				const wrap = (v) => {
-					if (v === null || typeof v !== 'object') return v;
-					let p = cache.get(v);
-					if (p) return p;
-					p = new Proxy(v, {
-						get(t, k) { return wrap(t[k]); },
-						set(t, k, x) { t[k] = x; notify(); return true; },
-						deleteProperty(t, k) { delete t[k]; notify(); return true; },
-					});
-					cache.set(v, p);
-					return p;
-				};
-				return wrap(val);
-			}
-		`)...)
-	}
+	// $$proxy (deep-reactivity helper) is imported from runtime.js
+	// when the component declares a $state.deep variable —
+	// finalizeRuntimeHelpers adds the import.
 
 	// ── Scoped <style> injection ─────────────────────────────
 	// A component <style> block is scope-transformed (each
@@ -1026,7 +1117,104 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 		baseStmt:    baseStmt{genNode()},
 		Declaration: fn,
 	})
+
+	// Also expose the component factory as the module's DEFAULT
+	// export.  Vela components compile to `export function Name`,
+	// but the idiomatic component import — matching Svelte and the
+	// way every multi-component Vela project is written — is a
+	// default import: `import Name from './Name.vela'`.  Emitting
+	// `export default Name;` makes both the default and the named
+	// import resolve to the same factory.
+	prog.Body = append(prog.Body, jsStmt("export default "+g.name+";"))
+
+	// Prepend runtime-helper imports + the $$dispatch binding for
+	// whichever helpers this component actually references.
+	g.finalizeRuntimeHelpers(prog, fnBody)
 	return prog
+}
+
+// finalizeRuntimeHelpers scans the built program for references to
+// the shared runtime helpers ($$dispatch / $$insertHTML / $$proxy)
+// and wires in only what is used:
+//
+//   - $$insertHTML / $$proxy — imported by name from runtime.js.
+//   - $$dispatch — the runtime exports a (target, name, detail)
+//     form; it is imported aliased as $$rt_dispatch and a thin
+//     local `const $$dispatch = (name, detail) => …` is inserted
+//     at the top of the component body, closing over $$target.
+//
+// Emitting nothing for an unused helper keeps minimal components
+// free of dead imports.
+func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
+	// The splice path re-parses legacy output, which already
+	// carries the helper import and the $$dispatch binding.
+	// Detect that and skip — adding them again would duplicate.
+	for _, st := range prog.Body {
+		imp, ok := st.(*JsImportDecl)
+		if !ok || imp.Source != "./runtime.js" {
+			continue
+		}
+		for _, sp := range imp.Specifiers {
+			if sp.Local == "$$rt_dispatch" ||
+				sp.Imported == "$$insertHTML" ||
+				sp.Imported == "$$proxy" ||
+				sp.Imported == "$$isProxy" {
+				return
+			}
+		}
+	}
+
+	usesDispatch := false
+	usesInsertHTML := false
+	usesProxy := false
+	usesIsProxy := false
+	WalkNode(prog, func(n JsNode) bool {
+		id, ok := n.(*JsIdent)
+		if !ok {
+			return true
+		}
+		switch id.Name {
+		case "$$dispatch":
+			usesDispatch = true
+		case "$$insertHTML":
+			usesInsertHTML = true
+		case "$$proxy":
+			usesProxy = true
+		case "$$isProxy":
+			usesIsProxy = true
+		}
+		return true
+	})
+
+	// Named imports, deterministic order.
+	var names []string
+	if usesDispatch {
+		names = append(names, "$$dispatch as $$rt_dispatch")
+	}
+	if usesInsertHTML {
+		names = append(names, "$$insertHTML")
+	}
+	if usesProxy {
+		names = append(names, "$$proxy")
+	}
+	if usesIsProxy {
+		names = append(names, "$$isProxy")
+	}
+	if len(names) > 0 {
+		imp := jsStmt("import { " + strings.Join(names, ", ") +
+			" } from './runtime.js';")
+		// Helper import goes after user imports, before the body —
+		// prepend to module body just ahead of the export.
+		prog.Body = append([]JsStmt{imp}, prog.Body...)
+	}
+
+	// The $$dispatch local binding closes over $$target — insert
+	// it at the very top of the component function body.
+	if usesDispatch {
+		bind := jsStmts("const $$dispatch = (name, detail) => " +
+			"$$rt_dispatch($$target, name, detail);")
+		fnBody.Body = append(bind, fnBody.Body...)
+	}
 }
 
 // buildImportDecls reconstructs each user import as a JsImportDecl.
@@ -1043,20 +1231,111 @@ func (g *ASTGen) buildImportDecls() []JsStmt {
 	var out []JsStmt
 	for _, imp := range g.analysis.Imports {
 		src := imp.Source
+		spec := imp.Spec
 		if src == "vela/store" || src == "vela" {
 			src = "./runtime.js"
+			// onMount/onDestroy are compiler intrinsics — the
+			// analyzer extracts them and the codegen wires the
+			// callbacks directly into the component's mount path
+			// and destroy() body.  They have no runtime existence,
+			// so emitting `import { onMount } from './runtime.js'`
+			// produces an ERR_MODULE_NOT_FOUND at module load.
+			// Strip them; drop the statement entirely if nothing
+			// real-runtime is left.
+			spec = stripVelaIntrinsics(spec)
+			if spec == "" && imp.Spec != "" {
+				continue // every name was an intrinsic
+			}
 		} else {
 			src = RewriteImportPath(src)
 		}
 		var stmtSrc string
-		if imp.Spec == "" {
+		if spec == "" {
 			stmtSrc = "import '" + src + "';"
 		} else {
-			stmtSrc = "import " + imp.Spec + " from '" + src + "';"
+			stmtSrc = "import " + spec + " from '" + src + "';"
 		}
 		out = append(out, jsStmt(stmtSrc))
 	}
 	return out
+}
+
+// velaCompilerIntrinsics is the set of names that look like imports
+// from 'vela' but are actually compiler intrinsics — extracted at
+// analysis time and wired directly into generated code.  An import
+// statement that mentions one of these must not pass the name
+// through to the runtime module.
+var velaCompilerIntrinsics = map[string]bool{
+	"onMount":   true,
+	"onDestroy": true,
+}
+
+// stripVelaIntrinsics rewrites an import specifier string (the part
+// between `import` and `from`) by removing any imported name that
+// is a Vela compiler intrinsic.  Returns "" when the resulting
+// import would import nothing real — the caller drops the
+// statement in that case.
+//
+// Handles the practical shapes seen on `import … from 'vela'`:
+//
+//	{ A, B }
+//	{ A as a, B }
+//	D, { A }                   (default + named)
+//	* as Ns                    (namespace — passed through)
+//	D                          (default only — passed through)
+//
+// Whitespace and aliases are preserved on the names that survive.
+func stripVelaIntrinsics(spec string) string {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return ""
+	}
+	// Default-only or namespace import — no names to filter.
+	openBrace := strings.Index(spec, "{")
+	if openBrace < 0 {
+		return spec
+	}
+	closeBrace := strings.LastIndex(spec, "}")
+	if closeBrace < openBrace {
+		return spec
+	}
+	before := strings.TrimSpace(spec[:openBrace])      // "D," or ""
+	inside := spec[openBrace+1 : closeBrace]           // "A, B as b"
+	before = strings.TrimSuffix(before, ",")
+	before = strings.TrimSpace(before)
+
+	// Filter the comma-separated specifier list.
+	var kept []string
+	for _, part := range strings.Split(inside, ",") {
+		p := strings.TrimSpace(part)
+		if p == "" {
+			continue
+		}
+		// `X as Y` — the imported name (what `vela` would export)
+		// is on the LEFT of `as`; that is what identifies a Vela
+		// intrinsic.  The local alias is irrelevant here.
+		name := p
+		if i := strings.Index(p, " as "); i > 0 {
+			name = strings.TrimSpace(p[:i])
+		}
+		if velaCompilerIntrinsics[name] {
+			continue
+		}
+		kept = append(kept, p)
+	}
+
+	if len(kept) == 0 && before == "" {
+		return ""
+	}
+	if len(kept) == 0 {
+		// Default-only remains — drop the now-empty braces.
+		return before
+	}
+	named := "{ " + strings.Join(kept, ", ") + " }"
+	if before == "" {
+		return named
+	}
+	return before + ", " + named
 }
 
 // buildUserScript parses the analyzer's CleanScript — the user's
@@ -1137,12 +1416,28 @@ func (g *ASTGen) buildStyleInjection() []JsStmt {
 	if !g.hasStyle() {
 		return nil
 	}
+	// External-CSS mode: the scoped stylesheet is written to a
+	// sibling .css file by the compiler — the component emits no
+	// runtime <style> injection at all.
+	if g.cssExternal {
+		return nil
+	}
 	css := ScopeCSS(g.sfc.Style, g.scopeID)
 	return []JsStmt{
 		jsStmt("const $$style = document.createElement('style');"),
 		jsStmt("$$style.textContent = " + backtickString(css) + ";"),
 		jsStmt("document.head.appendChild($$style);"),
 	}
+}
+
+// ExtractScopedCSS returns the scope-transformed stylesheet for an
+// SFC, or "" when it has no <style>.  Used by the compiler in
+// external-CSS mode to write a sibling .css file.
+func ExtractScopedCSS(sfc *SFC, scopeID string) string {
+	if sfc == nil || strings.TrimSpace(sfc.Style) == "" {
+		return ""
+	}
+	return ScopeCSS(sfc.Style, scopeID)
 }
 
 // hasDeepState reports whether any state variable was declared
@@ -1408,6 +1703,9 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 
 	// 2. DOM updates — direct (read name) + transitive (read a
 	//    dependent derived).  De-duplicated by source text.
+	//    Structural re-renders (chain mount/unmount) come FIRST so
+	//    that a branch toggled off tears down — nulling its guard
+	//    var — before any of its now-stale interior updates run.
 	seen := map[string]bool{}
 	var updates []JsStmt
 	add := func(stmts []JsStmt) {
@@ -1420,6 +1718,13 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 			updates = append(updates, cloneStmt(s))
 		}
 	}
+	// Structural first: for `name` and every transitively-dirtied
+	// derived.
+	add(g.structuralUpdates[name])
+	for _, dv := range dependentDerived {
+		add(g.structuralUpdates[dv.Name])
+	}
+	// Then the ordinary interior updates.
 	add(g.updates[name])
 	for _, dv := range dependentDerived {
 		add(g.updates[dv.Name])
@@ -1440,10 +1745,23 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 		})
 	}
 
-	// 3. Re-run dependent effects.
+	// 3. Re-run dependent effects.  An effect re-runs when it
+	//    reads `name` directly OR reads any derived that `name`
+	//    transitively dirtied — `dirty` already holds that full
+	//    closure (step 1).  Checking only `name` here would miss
+	//    an effect that reads a $derived whose upstream changed
+	//    (e.g. an effect reading `previewHtml = $derived(...md...)`
+	//    would never re-run on a markdownText edit).
 	if g.analysis != nil {
 		for i, eff := range g.analysis.Effects {
-			if containsStr(eff.Deps, name) {
+			effDirty := false
+			for _, d := range eff.Deps {
+				if dirty[d] {
+					effDirty = true
+					break
+				}
+			}
+			if effDirty {
 				out = append(out, jsStmt("$$effect"+itoa(i)+"();"))
 			}
 		}
@@ -1457,14 +1775,38 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 func (g *ASTGen) buildOneSetter(name string) JsStmt {
 	body := &JsBlock{baseStmt: baseStmt{genNode()}}
 
-	// if (<name> === $$v) return;
+	// if (<name> === $$v && !$$isProxy($$v)) return;
+	//
+	// Identity equality is a sound "unchanged" test only for
+	// values that cannot mutate in place.  A deep-reactive proxy
+	// ($state.deep) passed from a parent keeps the same reference
+	// across an in-place mutation, so a bare `=== $$v` guard would
+	// suppress the re-render the mutation should trigger (the
+	// PageCraft symptom: editing a block field updated the data
+	// but Canvas did not re-render).  $$isProxy lets an
+	// identity-equal proxy through to the cascade; primitives and
+	// plain objects keep the fast skip.
 	body.Body = append(body.Body, &JsIfStmt{
 		baseStmt: baseStmt{genNode()},
 		Test: &JsBinaryExpr{
 			baseExpr: baseExpr{genNode()},
-			Op:       "===",
-			L:        id(name),
-			R:        id("$$v"),
+			Op:       "&&",
+			L: &JsBinaryExpr{
+				baseExpr: baseExpr{genNode()},
+				Op:       "===",
+				L:        id(name),
+				R:        id("$$v"),
+			},
+			R: &JsUnaryExpr{
+				baseExpr: baseExpr{genNode()},
+				Op:       "!",
+				Prefix:   true,
+				X: &JsCallExpr{
+					baseExpr: baseExpr{genNode()},
+					Callee:   id("$$isProxy"),
+					Args:     []JsExpr{id("$$v")},
+				},
+			},
 		},
 		Then: &JsReturnStmt{baseStmt: baseStmt{genNode()}},
 	})
@@ -1513,15 +1855,33 @@ func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 		Body:     notifyBody,
 	}
 
-	// $$set_X — guard, re-wrap, notify.
+	// $$set_X — guard, re-wrap, notify.  The guard mirrors the
+	// plain setter (=== plus !$$isProxy) so the two generators
+	// agree; for a deep var the new value is normally raw (proxy
+	// !== raw, so the guard never fired anyway), but a re-passed
+	// proxy must still fall through to a re-wrap + notify.
 	setBody := &JsBlock{baseStmt: baseStmt{genNode()}}
 	setBody.Body = append(setBody.Body, &JsIfStmt{
 		baseStmt: baseStmt{genNode()},
 		Test: &JsBinaryExpr{
 			baseExpr: baseExpr{genNode()},
-			Op:       "===",
-			L:        id(name),
-			R:        id("$$v"),
+			Op:       "&&",
+			L: &JsBinaryExpr{
+				baseExpr: baseExpr{genNode()},
+				Op:       "===",
+				L:        id(name),
+				R:        id("$$v"),
+			},
+			R: &JsUnaryExpr{
+				baseExpr: baseExpr{genNode()},
+				Op:       "!",
+				Prefix:   true,
+				X: &JsCallExpr{
+					baseExpr: baseExpr{genNode()},
+					Callee:   id("$$isProxy"),
+					Args:     []JsExpr{id("$$v")},
+				},
+			},
 		},
 		Then: &JsReturnStmt{baseStmt: baseStmt{genNode()}},
 	})
@@ -1539,10 +1899,20 @@ func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 	return []JsStmt{notify, set}
 }
 
-// cloneStmt re-parses a statement so the same update can appear in
-// multiple setters without aliasing one node pointer across the
-// tree.  Statements here are always compiler-generated and small,
-// so a print+reparse round-trip is cheap and exact.
+// cloneStmt deep-copies a statement so the same reactive update
+// can appear in multiple setters without aliasing one node pointer
+// across the tree (a later mutation of one copy would otherwise
+// corrupt the others).
+//
+// It is implemented as a print + reparse round-trip rather than a
+// hand-written deep-clone visitor.  That is a deliberate call: a
+// per-node-type clone switch is a second exhaustive switch that
+// silently drifts when a JsNode type is added (a missed field =
+// an aliasing bug), whereas the printer/parser are already kept
+// exact inverses by jsprinter_roundtrip_test.  Profiling puts this
+// at <1% of compile time, so the round-trip's cost does not
+// justify taking on that maintenance hazard.  Revisit only if a
+// profile ever shows it mattering.
 func cloneStmt(s JsStmt) JsStmt {
 	src := PrintJS(&JsProgram{Body: []JsStmt{s}}, PrintPretty)
 	return jsStmt(src)
@@ -1691,6 +2061,9 @@ type holeSubtree struct {
 //	guard     — when non-empty, every reactive hole update is
 //	            wrapped `if (<guard>) …` so it is a no-op while the
 //	            branch is unmounted; empty for $$root
+//	fragTarget — true when targetVar is a DocumentFragment (the
+//	            {#if}-branch case): a fragment has no innerHTML
+//	            setter, so HTML is filled via a <template>.
 //
 // Updates are registered in g.updates against each hole's reactive
 // dependencies, exactly as before.
@@ -1700,8 +2073,19 @@ func (g *ASTGen) buildHoleSubtree(
 	hoist bool,
 	guard string,
 	collectUpdates bool,
+	fragTarget bool,
 ) holeSubtree {
 	var res holeSubtree
+
+	// fill emits the HTML-population statements for targetVar —
+	// fragment-safe when the target is a DocumentFragment.
+	fill := func(html string) []JsStmt {
+		if fragTarget {
+			return g.fillHTMLStmts(targetVar, html)
+		}
+		return []JsStmt{g.innerHTMLStmt(targetVar, html)}
+	}
+
 
 	html, holes := buildHoleTemplate(children, g.scopeID)
 	if len(children) == 0 {
@@ -1711,7 +2095,7 @@ func (g *ASTGen) buildHoleSubtree(
 		// Fully static subtree — innerHTML for element-bearing
 		// runs, direct text nodes for text-only runs.
 		if hasElement(children) {
-			res.build = append(res.build, g.innerHTMLStmt(targetVar, html))
+			res.build = append(res.build, fill(html)...)
 		} else {
 			res.build = append(res.build,
 				g.staticTextChildStmts(targetVar, children)...)
@@ -1761,22 +2145,26 @@ func (g *ASTGen) buildHoleSubtree(
 
 			exprSrc := buildExpr(tn.Parts)
 			writeSrc := refVar + ".data = " + exprSrc + ";"
+			hg := guard
+			if hg == "$$self" {
+				hg = refVar
+			}
 			res.initUpdates = append(res.initUpdates,
-				g.guardedStmt(writeSrc, guard))
+				g.guardedStmt(writeSrc, hg))
 			if collectUpdates {
 				res.updateStmts = append(res.updateStmts, jsStmt(writeSrc))
 			} else {
 				for _, dep := range findDeps(exprSrc, g.reactiveNames()) {
-					g.addUpdate(dep, g.guardedStmt(writeSrc, guard))
+					g.addUpdate(dep, g.guardedStmt(writeSrc, hg))
 				}
 			}
 		}
 		return res
 	}
 
-	// Element-bearing subtree with holes — innerHTML carries the
-	// <!--$--> anchors.
-	res.build = append(res.build, g.innerHTMLStmt(targetVar, html))
+	// Element-bearing subtree with holes — the HTML carries the
+	// <!--$--> anchors.  fill is fragment-safe.
+	res.build = append(res.build, fill(html)...)
 
 	// TreeWalker over the target; capture every anchor first
 	// (capture-then-mutate is load-bearing — mutating invalidates
@@ -1829,11 +2217,15 @@ func (g *ASTGen) buildHoleSubtree(
 
 		exprSrc := buildExpr(textNode.Parts)
 		writeSrc := refVar + ".data = " + exprSrc + ";"
+		hg := guard
+		if hg == "$$self" {
+			hg = refVar
+		}
 
 		// Initial render write — guarded too, for symmetry with the
 		// setter path (a branch may be unmounted at init time).
 		res.initUpdates = append(res.initUpdates,
-			g.guardedStmt(writeSrc, guard))
+			g.guardedStmt(writeSrc, hg))
 
 		// Reactive updates.  For a chain branch they are registered
 		// against the component-scope setters, mounted-guarded.
@@ -1844,7 +2236,7 @@ func (g *ASTGen) buildHoleSubtree(
 			res.updateStmts = append(res.updateStmts, jsStmt(writeSrc))
 		} else {
 			for _, dep := range findDeps(exprSrc, g.reactiveNames()) {
-				g.addUpdate(dep, g.guardedStmt(writeSrc, guard))
+				g.addUpdate(dep, g.guardedStmt(writeSrc, hg))
 			}
 		}
 	}
@@ -1988,10 +2380,85 @@ func (g *ASTGen) buildHolesDOM(el *ElementNode) {
 	g.body = append(g.body, g.setAttrStmt("$$root", g.scopeID, ""))
 	g.applyRootAttrs(el)
 
-	// 2-4. Children — innerHTML + TreeWalker hole capture.
-	sub := g.buildHoleSubtree("$$root", el.Children, false, "", false)
+	// 2-4. Children.
+	//
+	// Raw-text elements (<textarea>, <title>) have a CDATA content
+	// model — their markup is NOT parsed as HTML.  Setting
+	// innerHTML = '<!--$-->' on a <textarea> stores the literal
+	// string as its value rather than creating a comment node, so
+	// the hole-capturing TreeWalker finds nothing and the anchor
+	// is null (crash: "$$nN_a is null").  Compile a single
+	// interpolated child to a reactive property assignment instead
+	// — textarea→value, title→textContent — which is also the
+	// semantically correct mapping for these elements.
+	if prop, ok := rawTextProp(el.Tag); ok {
+		if expr, ok := singleInterpolation(el.Children); ok {
+			writeSrc := "$$root." + prop + " = String(" + expr + ");"
+			g.initBody = append(g.initBody, jsStmt(writeSrc))
+			for _, dep := range findDeps(expr, g.reactiveNames()) {
+				g.addUpdate(dep, jsStmt(writeSrc))
+			}
+			return
+		}
+		// A purely static raw-text body is fine as a property too.
+		if text, ok := staticRawText(el.Children); ok {
+			g.body = append(g.body, jsStmt(
+				"$$root."+prop+" = '"+escapeJSString(text)+"';"))
+			return
+		}
+	}
+
+	// Children — innerHTML + TreeWalker hole capture.
+	sub := g.buildHoleSubtree("$$root", el.Children, false, "", false, false)
 	g.body = append(g.body, sub.build...)
 	g.initBody = append(g.initBody, sub.initUpdates...)
+}
+
+// rawTextProp reports whether tag is a raw-text (CDATA) element
+// whose interpolated body must be written as a DOM property rather
+// than parsed as HTML, and returns that property name.
+func rawTextProp(tag string) (string, bool) {
+	switch tag {
+	case "textarea":
+		return "value", true
+	case "title":
+		return "textContent", true
+	}
+	return "", false
+}
+
+// singleInterpolation returns the JS expression of a children list
+// that is exactly one dynamic text interpolation ({expr}) with no
+// surrounding static text or sibling nodes.
+func singleInterpolation(children []Node) (string, bool) {
+	if len(children) != 1 {
+		return "", false
+	}
+	tn, ok := children[0].(*TextNode)
+	if !ok || len(tn.Parts) != 1 || tn.Parts[0].Static {
+		return "", false
+	}
+	return tn.Parts[0].Value, true
+}
+
+// staticRawText returns the concatenated literal text of a children
+// list that contains only static text parts (no interpolation, no
+// elements).
+func staticRawText(children []Node) (string, bool) {
+	var b strings.Builder
+	for _, c := range children {
+		tn, ok := c.(*TextNode)
+		if !ok {
+			return "", false
+		}
+		for _, p := range tn.Parts {
+			if !p.Static {
+				return "", false
+			}
+			b.WriteString(p.Value)
+		}
+	}
+	return b.String(), true
 }
 
 // buildEachBlock emits an {#each} block (block 10).
@@ -2054,9 +2521,26 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 		rowElem = &ElementNode{Tag: "div", Children: block.Children}
 	}
 
+	// When the {#each} is built inside a captured scope — an {#if}
+	// branch via the recursive walker, or a slot closure — its
+	// PERSISTENT machinery (anchor, block storage, keymap, the row
+	// fragment builder, and the reconciler) must live at component
+	// scope.  The setter cascade calls the reconciler ($$each_$$nN)
+	// when a dependency changes; a function trapped in the branch-
+	// build block would be invisible there (ReferenceError).  Only
+	// the INITIAL reconciler call stays in the branch/slot body so
+	// it runs when that branch mounts.
+	captured := g.inBranchScope || g.inSlotScope
+
 	// ── 1. Anchor ────────────────────────────────────────────
-	g.body = append(g.body, jsStmt(
-		"const "+anchor+" = document.createComment('#each');"))
+	if captured {
+		g.hoisted = append(g.hoisted, jsStmt("let "+anchor+" = null;"))
+		g.body = append(g.body, jsStmt(
+			anchor+" = document.createComment('#each');"))
+	} else {
+		g.body = append(g.body, jsStmt(
+			"const "+anchor+" = document.createComment('#each');"))
+	}
 
 	// ── 2. Fragment builder ──────────────────────────────────
 	// Built under the fragment-local $$fN namespace: the row
@@ -2067,6 +2551,10 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	var sub holeSubtree
 	var rowAttrs eachRowAttrs
 	var nestedUpdate []JsStmt // captured init+updates for nested-block rows
+	// rowBodyDeps collects component-state names a nested-control-
+	// flow row body reads; every such dep re-runs the whole {#each}
+	// (see the rowHasBlocks branch).
+	rowBodyDeps := map[string]bool{}
 	rowVar := "$$f0"
 	rowHasBlocks := !astHoleSubtreeOK(rowElem.Children)
 	g.withFragmentIDs(func() {
@@ -2086,10 +2574,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 			// Row body contains nested control-flow ({#if}/{#each}
 			// /{#await}).  The recursive walker builds it — into a
 			// captured local scope so its emissions land in the
-			// fragment closure, not component scope.  Any reactive
-			// updates the nested blocks register re-run through the
-			// chain/each functions the walker emits, which are
-			// folded into the row update().
+			// fragment closure, not component scope.
 			cap := g.captureScope(func() {
 				g.buildChildRun(rowElem.Children, rowVar)
 			})
@@ -2098,8 +2583,19 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 			fragBody = append(fragBody, cap.initBody...)
 			fragBody = append(fragBody, cap.events...)
 			nestedUpdate = append(nestedUpdate, cap.initBody...)
+			// The nested blocks register reactive updates against
+			// component state (e.g. an {#if} on a component-scope
+			// flag).  Those chain functions are fragment-local —
+			// the component setter cannot call them directly.  So
+			// every dep a row body reads must re-run the WHOLE
+			// {#each}: re-rendering all rows re-evaluates each
+			// row's nested chains.  Collect the dep names here;
+			// they are registered against eachFn below.
+			for dep := range cap.updates {
+				rowBodyDeps[dep] = true
+			}
 		} else {
-			sub = g.buildHoleSubtree(rowVar, rowElem.Children, false, "", true)
+			sub = g.buildHoleSubtree(rowVar, rowElem.Children, false, "", true, false)
 			fragBody = append(fragBody, sub.build...)
 			// Directive/bind init statements — emitted after the
 			// child build, matching legacy buffer ordering.
@@ -2125,24 +2621,48 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 		"destroy() { " + rowVar + ".remove(); } };"
 	fragBody = append(fragBody, jsStmt(fragReturn))
 
-	g.body = append(g.body, jsStmt(
-		"function "+fragFn+"("+itemVar+", "+indexVar+") { "+
-			stmtsToText(fragBody)+" }"))
+	fragDecl := jsStmt(
+		"function " + fragFn + "(" + itemVar + ", " + indexVar + ") { " +
+			stmtsToText(fragBody) + " }")
 
 	// ── 3. Block storage ─────────────────────────────────────
-	if keyExpr != "" {
-		g.body = append(g.body, jsStmt("const "+keymap+" = new Map();"))
-	}
-	g.body = append(g.body, jsStmt("let "+blocks+" = [];"))
-
 	// ── 4. Reconciler ────────────────────────────────────────
-	g.body = append(g.body, jsStmt(g.eachReconciler(
-		eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar)))
+	// The fragment builder, block storage, keymap, and reconciler
+	// are persistent: the setter cascade re-invokes the reconciler
+	// across the component's whole life.  Hoist them to component
+	// scope when building inside a captured branch/slot scope.
+	reconcilerDecl := jsStmt(g.eachReconciler(
+		eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar))
+
+	if captured {
+		g.hoisted = append(g.hoisted, fragDecl)
+		if keyExpr != "" {
+			g.hoisted = append(g.hoisted, jsStmt(
+				"let "+keymap+" = null;"))
+			g.body = append(g.body, jsStmt(keymap+" = new Map();"))
+		}
+		g.hoisted = append(g.hoisted, jsStmt("let "+blocks+" = [];"))
+		g.hoisted = append(g.hoisted, reconcilerDecl)
+	} else {
+		g.body = append(g.body, fragDecl)
+		if keyExpr != "" {
+			g.body = append(g.body, jsStmt("const "+keymap+" = new Map();"))
+		}
+		g.body = append(g.body, jsStmt("let "+blocks+" = [];"))
+		g.body = append(g.body, reconcilerDecl)
+	}
 
 	// ── 5. Wiring ────────────────────────────────────────────
 	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
 	g.initBody = append(g.initBody, jsStmt(eachFn+"("+array+");"))
 	for _, dep := range findDeps(array, g.reactiveNames()) {
+		g.addUpdate(dep, jsStmt(eachFn+"("+array+");"))
+	}
+	// A nested-control-flow row body reads component state through
+	// fragment-local chain functions the component setter cannot
+	// reach.  Re-running the whole {#each} when such a dep changes
+	// rebuilds every row, re-evaluating its nested chains.
+	for dep := range rowBodyDeps {
 		g.addUpdate(dep, jsStmt(eachFn+"("+array+");"))
 	}
 	g.cleanup = append(g.cleanup, jsStmt(
@@ -2332,6 +2852,21 @@ func nullCaptured(captured []string) string {
 	return b.String()
 }
 
+// destroyComps returns the teardown statements for a removed
+// branch's child components: each instance is destroyed and its
+// instance + wrapper variables nulled, so re-entering the branch
+// recreates the component (the `if (!$$nN_comp)` mount guard
+// would otherwise skip a still-live instance).
+func destroyComps(comps []compInstance) string {
+	var b strings.Builder
+	for _, c := range comps {
+		b.WriteString(" if (" + c.inst + ") { " + c.inst +
+			".destroy(); " + c.inst + " = null; }")
+		b.WriteString(" " + c.wrap + " = null;")
+	}
+	return b.String()
+}
+
 func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	anchor := g.id() + "_a"
 	fn := "$$chain_" + g.id()
@@ -2365,12 +2900,19 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	// captured node vars must be declared at component scope (so
 	// the setter can reach them) and nulled on branch removal.
 	type branchPlan struct {
-		buildText string   // statements that populate $$chain_X_bI
-		captured  []string // node vars to null on unmount
+		buildText string         // node-construction statements
+		initText  string         // initial hole writes (run after capture)
+		captured  []string       // node vars to null on unmount
+		comps     []compInstance // component instances to destroy on unmount
 	}
 	plans := make([]branchPlan, len(chain.Branches))
 	for i, br := range chain.Branches {
 		bv := fn + "_b" + itoa(i)
+		// The branch is built into a DocumentFragment (frag); its
+		// children become the parent's direct children with no
+		// wrapper element.  The branch handle bv is the array of
+		// those top-level nodes, populated by the mount path.
+		frag := bv + "_frag"
 		// An element branch (old #if-attr syntax) carries its body
 		// as br.Elem rather than br.Children — normalize so the
 		// build paths below see a uniform child list.
@@ -2381,7 +2923,7 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 		if allStatic(kids) {
 			html := emitStaticHTML(kids, g.scopeID)
 			plans[i].buildText =
-				"$$insertHTML(" + bv + ", '" + escapeJSString(html) + "');"
+				"$$insertHTML(" + frag + ", '" + escapeJSString(html) + "');"
 			continue
 		}
 		// A branch whose subtree the hole-template builder cannot
@@ -2393,27 +2935,61 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 		// its emissions land in the branch build block.
 		if !astHoleSubtreeOK(kids) {
 			cap := g.captureScope(func() {
-				g.buildChildRun(kids, bv)
+				savedBranchScope := g.inBranchScope
+				g.inBranchScope = true
+				defer func() { g.inBranchScope = savedBranchScope }()
+				g.buildChildRun(kids, frag)
 			})
 			var bt strings.Builder
 			bt.WriteString(stmtsToText(cap.body))
-			bt.WriteString(stmtsToText(cap.initBody))
 			bt.WriteString(stmtsToText(cap.events))
 			plans[i].buildText = bt.String()
+			// initBody (e.g. an {#each}'s initial reconciler call,
+			// which inserts rows before its anchor) must run AFTER
+			// the branch handle is snapshotted — otherwise those
+			// dynamically-managed rows are captured into bv and,
+			// once the {#each} reconciler later replaces them, the
+			// chain's re-attach path re-inserts the stale originals
+			// (the duplicated-node bug: editing a list item left
+			// both the old and new row in the DOM).  Emitting them
+			// as initText keeps bv to the branch's own stable nodes
+			// (its anchor); the rows live before that anchor and
+			// are owned solely by the {#each} reconciler.
+			plans[i].initText = stmtsToText(cap.initBody)
+			// Components built in this branch must be destroyed
+			// and their instance vars nulled when the branch is
+			// removed, so re-entering the branch recreates them
+			// (the `if (!$$nN_comp)` guard skips a live instance).
+			plans[i].comps = cap.comps
+			// Reactive updates the branch body registered — e.g. a
+			// dynamic attribute or a bind:style on an element
+			// inside the branch — must join the component's setter
+			// cascade, otherwise they only run on the initial
+			// branch build and never again.  Each is guarded by
+			// the branch var (bv): a no-op while the branch is
+			// unmounted (bv is null), since the element vars it
+			// touches are then null too.
+			for dep, stmts := range cap.updates {
+				for _, s := range stmts {
+					g.addUpdate(dep, g.guardedStmt(
+						stmtsToText([]JsStmt{s}), bv))
+				}
+			}
 			continue
 		}
-		// Hole-bearing branch.  guard = bv: every reactive hole
-		// update is a no-op while the branch is unmounted.
-		sub := g.buildHoleSubtree(bv, kids, true, bv, false)
+		// Hole-bearing branch.  Children build into frag; the
+		// reactive-update guard stays bv (the node array — truthy
+		// while mounted, null while removed), so every hole update
+		// is a no-op when the branch is unmounted.
+		sub := g.buildHoleSubtree(frag, kids, true, bv, false, true)
 		// Component-scope `let X = null;` for every captured var.
 		g.body = append(g.body, sub.decls...)
-		// Build statements run inside the branch's `if (!bv)` block.
+		// Node-construction runs while building the fragment.
 		plans[i].buildText = stmtsToText(sub.build)
-		// Initial hole writes — these run once after mount; the
-		// chain's mount path already calls the branch build, so
-		// fold them into the build text (guarded by bv, harmless
-		// at build time since bv is freshly assigned).
-		plans[i].buildText += stmtsToText(sub.initUpdates)
+		// Initial hole writes run AFTER the branch handle (bv) is
+		// assigned — they are bv-guarded, and on first mount bv is
+		// only set once the fragment's nodes are captured.
+		plans[i].initText = stmtsToText(sub.initUpdates)
 		plans[i].captured = sub.captured
 	}
 
@@ -2432,7 +3008,8 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	if chain.KeyExpr != "" {
 		b.WriteString("const $$keynew = (" + stripBraces(chain.KeyExpr) + ");")
 		b.WriteString("if (" + fn + "_keyprev !== $$keynew) {")
-		b.WriteString("if (" + fn + "_b0) { " + fn + "_b0.remove(); " +
+		b.WriteString("if (" + fn + "_b0) { " +
+			"for (const $$node of " + fn + "_b0) $$node.remove(); " +
 			fn + "_b0 = null;" + nullCaptured(plans[0].captured) + " }")
 		b.WriteString(fn + "_keyprev = $$keynew;")
 		b.WriteString("}")
@@ -2450,28 +3027,50 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 			b.WriteString("if ($$active < 0) $$active = " + idx + ";")
 		}
 	}
-	// Remove every branch that is not the active one — and null
-	// that branch's captured node variables.
+	// Remove every branch that is not the active one.  A branch is
+	// stored as the array of its top-level DOM nodes (no wrapper
+	// element — see the mount path below); removal detaches each
+	// node, then nulls captured node vars and destroys child
+	// components so re-entry rebuilds cleanly.
 	for i := range chain.Branches {
 		idx := itoa(i)
 		bv := fn + "_b" + idx
 		b.WriteString("if ($$active !== " + idx + " && " + bv + ") { " +
-			bv + ".remove(); " + bv + " = null;" + nullCaptured(plans[i].captured) + " }")
+			"for (const $$node of " + bv + ") $$node.remove(); " +
+			bv + " = null;" +
+			nullCaptured(plans[i].captured) +
+			destroyComps(plans[i].comps) + " }")
 	}
-	// Mount the active branch (build lazily, then ensure attached).
+	// Mount the active branch.  Build into a DocumentFragment so the
+	// branch's own top-level nodes are inserted DIRECTLY into the
+	// parent — no wrapper <div>.  The fragment empties itself on
+	// insertion, so the branch's top-level nodes are captured into
+	// an array first; that array IS the branch handle (used by the
+	// removal loop above and the re-attach check below).
 	for i := range chain.Branches {
 		idx := itoa(i)
 		bv := fn + "_b" + idx
+		frag := bv + "_frag"
 		b.WriteString("if ($$active === " + idx + ") {")
 		b.WriteString("if (!" + bv + ") {")
-		b.WriteString(bv + " = document.createElement('div');")
-		b.WriteString(bv + ".setAttribute('" + g.scopeID + "', '');")
+		b.WriteString("const " + frag +
+			" = document.createDocumentFragment();")
 		b.WriteString(plans[i].buildText)
-		b.WriteString(anchor + ".before(" + bv + ");")
+		b.WriteString(bv + " = [..." + frag + ".childNodes];")
+		b.WriteString(anchor + ".before(" + frag + ");")
+		// Initial hole writes — run after bv is assigned, since
+		// they are bv-guarded (no-op while the branch is unmounted).
+		b.WriteString(plans[i].initText)
 		b.WriteString("}")
-		b.WriteString("if (" + anchor + ".parentNode && " + bv +
-			".parentNode !== " + anchor + ".parentNode) { " +
-			anchor + ".before(" + bv + "); }")
+		// Re-attach guard: if the branch's nodes were detached (a
+		// parent re-render moved the anchor), splice them back in
+		// before the anchor, in order.
+		b.WriteString("else if (" + anchor + ".parentNode && " + bv +
+			".length && " + bv + "[0].parentNode !== " +
+			anchor + ".parentNode) {")
+		b.WriteString("for (const $$node of " + bv + ") " +
+			anchor + ".before($$node);")
+		b.WriteString("}")
 		b.WriteString("}")
 	}
 	b.WriteString("} finally {")
@@ -2490,9 +3089,8 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	// Initial render: run the chain once.
 	g.initBody = append(g.initBody, jsStmt(fn+"();"))
 
-	// Register the chain as a structural update against every
-	// reactive var any branch condition reads — and, for {#key},
-	// the key expression too, so a key change re-runs the chain.
+	// Register the chain re-render against every reactive var any
+	// branch condition reads (plus the {#key} expression).
 	deps := map[string]bool{}
 	for _, br := range chain.Branches {
 		if br.Cond == "" {
@@ -2508,7 +3106,24 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 		}
 	}
 	for d := range deps {
-		g.addUpdate(d, jsStmt(fn+"();"))
+		if g.fragCounter >= 0 {
+			// Inside an {#each} row fragment the chain fn is
+			// fragment-local and not reachable from a component
+			// setter.  Register as an ORDINARY update so the
+			// enclosing {#each} picks the dep up via rowBodyDeps
+			// and re-runs the whole list (rebuilding every row,
+			// re-evaluating its conditions).  The statement itself
+			// is never emitted at component scope — rowBodyDeps
+			// replaces it with the each-reconciler call — but the
+			// registration is what surfaces the dependency.
+			g.addUpdate(d, jsStmt(fn+"();"))
+		} else {
+			// Component scope: structural updates run BEFORE
+			// interior updates, so a branch toggled off tears down
+			// (nulling its guard var) before its now-stale
+			// interior updates would run.
+			g.addStructuralUpdate(d, jsStmt(fn+"();"))
+		}
 	}
 	return fn
 }
@@ -2636,7 +3251,19 @@ func (g *ASTGen) buildElement(el *ElementNode, varName, parentVar string, isRoot
 		return
 	}
 
-	g.body = append(g.body, g.createElementStmt(varName, el.Tag))
+	// When building inside a captured scope (an {#if} branch via
+	// the recursive walker, or a slot closure), the element var
+	// must be hoisted: a `const` in the branch-build / slot-closure
+	// block is invisible to the component-scope setter cascade that
+	// replays the element's reactive attribute updates.  Emit a
+	// hoisted `let X = null;` plus an assignment in the body.
+	if g.inBranchScope || g.inSlotScope {
+		g.hoisted = append(g.hoisted, jsStmt("let "+varName+" = null;"))
+		g.body = append(g.body, jsStmt(
+			varName+" = document.createElement('"+el.Tag+"');"))
+	} else {
+		g.body = append(g.body, g.createElementStmt(varName, el.Tag))
+	}
 	g.body = append(g.body, g.setAttrStmt(varName, g.scopeID, ""))
 	g.applyElementAttrs(varName, el)
 
@@ -2659,15 +3286,57 @@ func (g *ASTGen) buildChildren(el *ElementNode, varName string) {
 	}
 	isTemplate := strings.EqualFold(el.Tag, "template")
 
+	// Raw-text elements (<textarea>, <title>) have a CDATA content
+	// model: their body is not parsed as HTML, so the innerHTML +
+	// TreeWalker hole mechanism produces a null anchor and crashes
+	// ("$$nN_a is null").  Compile their body to the reactive DOM
+	// property instead (textarea→value, title→textContent).  This
+	// also handles the case nested inside an {#if} branch, where
+	// the element is built via this recursive path.
+	if prop, ok := rawTextProp(el.Tag); ok {
+		if expr, ok := singleInterpolation(children); ok {
+			writeSrc := varName + "." + prop + " = String(" + expr + ");"
+			g.initBody = append(g.initBody, jsStmt(writeSrc))
+			for _, dep := range findDeps(expr, g.reactiveNames()) {
+				g.addUpdate(dep, jsStmt(writeSrc))
+			}
+			return
+		}
+		if text, ok := staticRawText(children); ok {
+			g.body = append(g.body, jsStmt(
+				varName+"."+prop+" = '"+escapeJSString(text)+"';"))
+			return
+		}
+	}
+
 	switch {
 	case !isTemplate && hasElement(children) && allStatic(children):
 		g.body = append(g.body,
 			g.innerHTMLStmt(varName, emitStaticHTML(children, g.scopeID)))
 
 	case !isTemplate && astHoleSubtreeOK(children):
-		sub := g.buildHoleSubtree(varName, children, false, "", false)
-		g.body = append(g.body, sub.build...)
-		g.initBody = append(g.initBody, sub.initUpdates...)
+		if g.inSlotScope || g.inBranchScope {
+			// Inside a slot closure OR an {#if}/{#key}/{#await}
+			// branch built by the recursive walker: the captured
+			// hole-node vars must be hoisted to component scope
+			// (decls → g.hoisted) so the setter cascade — which
+			// runs at component scope — can reach them.  A var left
+			// as a `const` in the branch/slot build block would be
+			// invisible there (ReferenceError: $$nN is not defined).
+			// Each hole's update is guarded by its own ref var
+			// ($$self → the per-node ref), null until the node is
+			// built, so a cascade replay before the branch mounts
+			// or the slot opens is a safe no-op.
+			sub := g.buildHoleSubtree(varName, children, true,
+				"$$self", false, false)
+			g.hoisted = append(g.hoisted, sub.decls...)
+			g.body = append(g.body, sub.build...)
+			g.initBody = append(g.initBody, sub.initUpdates...)
+		} else {
+			sub := g.buildHoleSubtree(varName, children, false, "", false, false)
+			g.body = append(g.body, sub.build...)
+			g.initBody = append(g.initBody, sub.initUpdates...)
+		}
 
 	default:
 		g.buildChildRun(children, varName)
@@ -2826,6 +3495,8 @@ func (g *ASTGen) slotFallbackText(fallback []Node, anchor string) string {
 func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	inst := g.id() + "_comp"
 	wrap := inst + "_wrap"
+	g.compInstances = append(g.compInstances,
+		compInstance{inst: inst, wrap: wrap})
 
 	// Build the $$slots object — one factory closure per slot.
 	// Each slot's content is built by the recursive walker into a
@@ -2834,15 +3505,44 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	// and caches its children; a reopen re-adopts the cached nodes.
 	slotsObj := g.buildSlotClosures(comp)
 
-	g.body = append(g.body, g.createElementStmt(wrap, "div"))
+	// Wrapper + instance variable declarations.
+	//
+	// In an {#each} fragment (fragCounter >= 0) the component is
+	// PER ROW: the fragment function runs once per item, so each
+	// invocation needs its own fresh instance.  The vars are
+	// fragment-local `const`s declared inline — hoisting them to
+	// component scope would make every row share one instance, so
+	// the `if (!$$nN_comp)` mount guard would build only the first
+	// row's component.
+	//
+	// Outside a fragment the vars are HOISTED (declaration only —
+	// assignment stays in g.body, in document order).  When the
+	// component sits in a slot closure or an {#if} branch, g.body
+	// lands in that closure/branch-build block; a `const` trapped
+	// there is invisible on a reopen/rebuild and unassignable when
+	// the branch-removal cleanup nulls it.
+	inFragment := g.fragCounter >= 0
+	if inFragment {
+		g.body = append(g.body, jsStmt("let "+wrap+" = null;"))
+		g.body = append(g.body, jsStmt("let "+inst+" = null;"))
+	} else {
+		g.hoisted = append(g.hoisted, jsStmt("let "+wrap+" = null;"))
+		g.hoisted = append(g.hoisted, jsStmt("let "+inst+" = null;"))
+	}
+	g.body = append(g.body, jsStmt(
+		wrap+" = document.createElement('div');"))
 	g.body = append(g.body, g.setAttrStmt(wrap, g.scopeID, ""))
-	// The instance var is HOISTED to component scope (not g.body):
-	// when this component sits inside a slot, g.body is captured
-	// into the slot-factory closure, and the closure's reopen path
-	// references $$nN_comp without re-running its declaration — a
-	// `let` trapped in the closure would throw a TDZ error on
-	// reopen.  Hoisting keeps the name visible everywhere.
-	g.hoisted = append(g.hoisted, jsStmt("let "+inst+" = null;"))
+	// display:contents makes the wrapper generate no layout box —
+	// the child's content participates in the PARENT's flex/grid
+	// layout exactly as if the wrapper were not there.  The
+	// wrapper is retained only as a stable insertion point and as
+	// the event target the parent listens on for the child's
+	// dispatched CustomEvents (display has no effect on event
+	// propagation); without display:contents the bare <div>
+	// wrapper silently broke flex/grid layouts and any spacing
+	// that assumed the component's root was a direct child.
+	g.body = append(g.body, jsStmt(
+		wrap+".style.display = 'contents';"))
 	g.body = append(g.body, jsStmt(parentVar+".appendChild("+wrap+");"))
 
 	propsObj := g.componentPropsObject(comp.Attrs)
@@ -2940,7 +3640,16 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
 
 		// Build the slot content into a captured local scope so its
 		// emissions land inside the closure, not component scope.
+		// inSlotScope makes buildChildren hoist hole-node vars to
+		// component scope so the setter cascade can reach them;
+		// slotGuard guards those updates until the slot first opens.
 		cap := g.captureScope(func() {
+			savedSlotScope, savedSlotGuard := g.inSlotScope, g.slotGuard
+			g.inSlotScope = true
+			g.slotGuard = cacheVar
+			defer func() {
+				g.inSlotScope, g.slotGuard = savedSlotScope, savedSlotGuard
+			}()
 			g.buildChildRun(slotNodes, fragVar)
 		})
 		buildText := stmtsToText(cap.body)
@@ -2955,6 +3664,21 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
 		// Teardown emitted by slot content (component .destroy(),
 		// removeEventListener) runs at component scope.
 		g.cleanup = append(g.cleanup, cap.cleanup...)
+
+		// Reactive updates emitted by slot content — a {count}
+		// hole inside the slot updates the same component state as
+		// anywhere else, so its update statements must join the
+		// component's setter cascade.  Without this the slot's
+		// holes never re-render: the setter changes the variable
+		// but no DOM write replays.  The hole node vars these
+		// statements reference are hoisted + null-guarded (see
+		// buildHoleSubtree's slot-mode handling), so an update
+		// that fires before the slot first opens is a safe no-op.
+		for dep, stmts := range cap.updates {
+			for _, s := range stmts {
+				g.addUpdate(dep, s)
+			}
+		}
 
 		// The cache var is hoisted to component scope so the
 		// closure (and reopens) can see it.
@@ -3062,26 +3786,38 @@ func (g *ASTGen) emitStyleDir(varName string, attr *Attr) {
 func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 	handler := g.rewriteHandler(attr.Value)
 
+	// Inside a slot closure the element variable is closure-local;
+	// a removeEventListener placed in the component's destroy()
+	// (component scope) would reference an undefined name.  Slot
+	// content listeners die with their nodes when the slot closure
+	// rebuilds or the host component is torn down — so no explicit
+	// cleanup is needed (or possible) at component scope.
+	addCleanup := !g.inSlotScope
+
 	if isSimpleIdent(handler) {
 		g.events = append(g.events,
 			jsStmt(varName+".addEventListener('"+attr.Name+"', "+handler+");"))
-		g.cleanup = append(g.cleanup,
-			jsStmt(varName+".removeEventListener('"+attr.Name+"', "+handler+");"))
+		if addCleanup {
+			g.cleanup = append(g.cleanup, jsStmt(
+				varName+".removeEventListener('"+attr.Name+"', "+handler+");"))
+		}
 		return
 	}
 
 	hv := varName + "_" + attr.Name + "_h"
-	if isHandlerExpr(handler) {
-		g.body = append(g.body, jsStmt("const "+hv+" = "+handler+";"))
-	} else {
+	handlerDecl := jsStmt("const " + hv + " = " + handler + ";")
+	if !isHandlerExpr(handler) {
 		// Statement body — wrap in an ($event) => { … } arrow.
-		g.body = append(g.body,
-			jsStmt("const "+hv+" = ($event) => { "+handler+"; };"))
+		handlerDecl = jsStmt("const " + hv +
+			" = ($event) => { " + handler + "; };")
 	}
+	g.body = append(g.body, handlerDecl)
 	g.events = append(g.events,
 		jsStmt(varName+".addEventListener('"+attr.Name+"', "+hv+");"))
-	g.cleanup = append(g.cleanup,
-		jsStmt(varName+".removeEventListener('"+attr.Name+"', "+hv+");"))
+	if addCleanup {
+		g.cleanup = append(g.cleanup, jsStmt(
+			varName+".removeEventListener('"+attr.Name+"', "+hv+");"))
+	}
 }
 
 // emitBinding wires a bind:value / bind:checked attribute — both
@@ -3189,6 +3925,22 @@ func (g *ASTGen) innerHTMLStmt(varName, html string) JsStmt {
 	}
 }
 
+// fillHTMLStmts populates targetVar with parsed HTML in a way that
+// works whether targetVar is an Element OR a DocumentFragment.
+// A DocumentFragment has no innerHTML setter, so the HTML is parsed
+// through a <template> element and its .content appended.  The
+// resulting child nodes (and the <!--$--> anchors a TreeWalker
+// later visits) land directly under targetVar either way.
+func (g *ASTGen) fillHTMLStmts(targetVar, html string) []JsStmt {
+	tpl := targetVar + "_tpl"
+	return []JsStmt{
+		jsStmt("const " + tpl +
+			" = document.createElement('template');"),
+		jsStmt(tpl + ".innerHTML = '" + escapeJSString(html) + "';"),
+		jsStmt(targetVar + ".appendChild(" + tpl + ".content);"),
+	}
+}
+
 // isBlankText reports whether s is empty or only whitespace.
 func isBlankText(s string) bool {
 	for _, r := range s {
@@ -3266,8 +4018,9 @@ func (g *ASTGen) buildReturn() JsStmt {
 	// 4. Event-listener removal.
 	destroyBody.Body = append(destroyBody.Body, g.cleanup...)
 	// 5. Scoped-style element removal (before root removal,
-	//    matching the legacy generator).
-	if g.hasStyle() {
+	//    matching the legacy generator).  Skipped in external-CSS
+	//    mode — no runtime <style> was injected.
+	if g.hasStyle() && !g.cssExternal {
 		destroyBody.Body = append(destroyBody.Body,
 			jsStmt("$$style.remove();"))
 	}

@@ -82,8 +82,12 @@ func TestBug13_SetterGuardsAgainstNoOpWrites(t *testing.T) {
 	out := compileGenerated(t, src)
 	// Every generated setter must early-return on same-value writes.
 	// Without this, child→parent→child two-way binding would loop.
-	if !strings.Contains(out, "if (x === $$v) return") {
-		t.Fatalf("expected `if (x === $$v) return` guard in setter:\n%s", out)
+	// The guard is proxy-aware now (a deep proxy that mutated in
+	// place keeps its identity, so it must fall through), but the
+	// identity-equality check that breaks the bind loop is still
+	// present.
+	if !strings.Contains(out, "if (x === $$v && !$$isProxy($$v)) return") {
+		t.Fatalf("expected proxy-aware `if (x === $$v && !$$isProxy($$v)) return` guard in setter:\n%s", out)
 	}
 }
 
@@ -97,8 +101,8 @@ func TestBug13_SetterGuardForPropAlsoEmitted(t *testing.T) {
   <p>{count}</p>
 </template>`
 	out := compileGenerated(t, src)
-	if !strings.Contains(out, "if (count === $$v) return") {
-		t.Fatalf("expected guard in $bindable setter:\n%s", out)
+	if !strings.Contains(out, "if (count === $$v && !$$isProxy($$v)) return") {
+		t.Fatalf("expected proxy-aware guard in $bindable setter:\n%s", out)
 	}
 	// And the $$onChange_count reader.
 	if !strings.Contains(out, "$$props.$$onChange_count") {

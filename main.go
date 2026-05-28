@@ -22,6 +22,13 @@ type CompileOptions struct {
 	// generator, kept behind the flag during the deprecation
 	// window).
 	Codegen string
+
+	// CSSExternal selects CSS delivery.  When false (default), a
+	// component injects its scoped <style> into document.head at
+	// runtime (CSS-in-JS).  When true, the scoped CSS is written
+	// to a sibling <n>.css file and no runtime injection is
+	// emitted — the consumer links the stylesheet.
+	CSSExternal bool
 }
 
 func main() {
@@ -33,9 +40,26 @@ func main() {
 	genAST     := flag.Bool("emit-gen-ast", false, "emit <n>.genast.json — the generated output AST, for inspection")
 	parallel   := flag.Bool("parallel", true,   "compile files in parallel (project mode)")
 	codegen    := flag.String("codegen", "ast", "code generator: 'ast' (default); 'legacy' is DEPRECATED and will be removed")
+	cssMode    := flag.String("css", "inject", "CSS delivery: 'inject' (default, CSS-in-JS) or 'external' (sibling .css files)")
 	flag.Parse()
 
-	opts := CompileOptions{Minify: *minify, EmitAST: *emitAST, GenAST: *genAST, Codegen: *codegen}
+	switch *cssMode {
+	case "inject", "external":
+		// ok
+	default:
+		fmt.Fprintf(os.Stderr,
+			"vela: invalid --css value %q (want 'inject' or 'external')\n",
+			*cssMode)
+		os.Exit(2)
+	}
+
+	opts := CompileOptions{
+		Minify:      *minify,
+		EmitAST:     *emitAST,
+		GenAST:      *genAST,
+		Codegen:     *codegen,
+		CSSExternal: *cssMode == "external",
+	}
 
 	// ── Project mode ─────────────────────────────────────────────────────────
 	if *projectDir != "" {
@@ -386,13 +410,15 @@ func compileFile(src, dest string, opts CompileOptions) ([]*Diagnostic, error) {
 		// program explicitly so its structured form can be
 		// serialized, then print from the same tree.
 		if opts.GenAST {
-			prog := buildProgram(name, sfc, tmpl, analysis, scope)
+			prog := buildProgramCSS(name, sfc, tmpl, analysis,
+				scope, opts.CSSExternal)
 			genPath := strings.TrimSuffix(dest, ".js") + ".genast.json"
 			_ = os.MkdirAll(filepath.Dir(genPath), 0755)
 			_ = os.WriteFile(genPath, []byte(ASTToJSON(prog, false)), 0644)
 			code = headerComment + "\n\n" + PrintJS(prog, PrintPretty)
 		} else {
-			code = generateCodeAST(name, sfc, tmpl, analysis, scope)
+			code = generateCodeASTCSS(name, sfc, tmpl, analysis,
+				scope, opts.CSSExternal)
 		}
 	}
 	if opts.Minify {
@@ -404,6 +430,18 @@ func compileFile(src, dest string, opts CompileOptions) ([]*Diagnostic, error) {
 	}
 	if err := os.WriteFile(dest, []byte(code), 0644); err != nil {
 		return ds.All(), err
+	}
+
+	// External-CSS mode: write the scoped stylesheet to a sibling
+	// <name>.css file.  Only when the component actually has a
+	// <style> block — a component without styles produces no .css.
+	if opts.CSSExternal {
+		if css := ExtractScopedCSS(sfc, scope); css != "" {
+			cssPath := strings.TrimSuffix(dest, ".js") + ".css"
+			if err := os.WriteFile(cssPath, []byte(css), 0644); err != nil {
+				return ds.All(), fmt.Errorf("write %s: %w", cssPath, err)
+			}
+		}
 	}
 
 	return ds.All(), nil

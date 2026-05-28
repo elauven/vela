@@ -1350,6 +1350,17 @@ func (p *JSParser) structureTemplate(raw string, pos, end int) *JsTemplateLit {
 					baseExpr: baseExpr{baseNode{Pos: pos, End: end}},
 					Raw:      "''", Kind: "string",
 				}
+			} else {
+				// parseJSExpr parsed exprSrc as a detached string —
+				// every node's Pos/End is relative to exprSrc's
+				// start (0).  Shift the whole sub-tree back onto
+				// the original source coordinates so downstream
+				// position-sensitive passes (TDZ scope analysis,
+				// diagnostics) see correct locations.  The hole
+				// expression begins at the template's Pos, past the
+				// opening backtick, plus the body offset of "${".
+				delta := pos + 1 + (i + 2)
+				shiftTree(expr, delta)
 			}
 			lit.Exprs = append(lit.Exprs, expr)
 			i = j + 1
@@ -1361,4 +1372,22 @@ func (p *JSParser) structureTemplate(raw string, pos, end int) *JsTemplateLit {
 	// Trailing quasi (always present — maintains the N+1 invariant).
 	lit.Quasis = append(lit.Quasis, quasi.String())
 	return lit
+}
+
+// shiftTree moves every node in a sub-tree by delta bytes, so a
+// tree parsed from a detached substring lines up with the original
+// source coordinates.  Skips synthetic nodes (Pos == 0 && End == 0)
+// — they have no source span to shift.
+func shiftTree(root JsNode, delta int) {
+	if delta == 0 || root == nil {
+		return
+	}
+	WalkNode(root, func(n JsNode) bool {
+		if s, ok := n.(posShiftable); ok {
+			if n.nodePos() != 0 || n.nodeEnd() != 0 {
+				s.shiftPos(delta)
+			}
+		}
+		return true
+	})
 }

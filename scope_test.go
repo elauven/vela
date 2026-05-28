@@ -185,6 +185,52 @@ func TestTDZDoesNotFireAcrossFunctionBoundary(t *testing.T) {
 	expectNone(t, ds, "temporal dead zone")
 }
 
+func TestTemplateLiteralInterpolationPosition(t *testing.T) {
+	// Regression: an identifier interpolated in a template literal
+	// is parsed by structureTemplate from a DETACHED substring, so
+	// without a position fix-up every node inside ${…} carried a
+	// Pos relative to that substring (e.g. 0).  The TDZ check then
+	// saw the interpolated ident's Pos (~0) as < the real `const`
+	// declaration's Pos and reported a bogus "before
+	// initialization" error.  structureTemplate now shifts the
+	// sub-tree onto the original source coordinates, so a reference
+	// that legitimately follows its declaration sees the right
+	// ordering and no TDZ fires.
+	src := "function f() { const r = 1; return `value ${r}`; }"
+	ds := runScope(t, src)
+	expectNone(t, ds, "temporal dead zone")
+
+	// The interpolated ident must carry a real, non-zero position
+	// past the declaration — proves the shift was applied.
+	prog := ParseJS(src)
+	if prog == nil {
+		t.Fatalf("ParseJS returned nil")
+	}
+	var declPos, refPos int
+	WalkNode(prog, func(n JsNode) bool {
+		id, ok := n.(*JsIdent)
+		if !ok || id.Name != "r" {
+			return true
+		}
+		// The declarator id comes first in source order; the
+		// interpolated reference second.
+		if declPos == 0 {
+			declPos = id.Pos
+		} else if refPos == 0 {
+			refPos = id.Pos
+		}
+		return true
+	})
+	if declPos == 0 || refPos == 0 {
+		t.Fatalf("expected two 'r' idents with non-zero positions, "+
+			"got decl=%d ref=%d", declPos, refPos)
+	}
+	if refPos <= declPos {
+		t.Fatalf("interpolated ref position %d should follow the "+
+			"declaration position %d", refPos, declPos)
+	}
+}
+
 // ─────────────────────────────────────────────
 //  const / import immutability
 // ─────────────────────────────────────────────
@@ -359,4 +405,33 @@ func TestTryFinallyThatReturnsTerminates(t *testing.T) {
 	}`
 	ds := runUnreachable(t, src)
 	expect(t, ds, "unreachable code")
+}
+
+// TestExportLetVisibleToEarlierClosure — an `export let` prop
+// referenced by a closure that appears EARLIER in source order
+// (e.g. inside an $effect declared above the prop) must resolve.
+// Regression: preDeclareLexicalStmt did not unwrap JsExportDecl,
+// so the prop name was absent from module scope during pass 2 and
+// the reference reported a bogus "not defined".
+func TestExportLetVisibleToEarlierClosure(t *testing.T) {
+	// The arrow function is declared before `export let title`.
+	src := `
+		const log = () => title;
+		export let title = 'hi';
+	`
+	ds := runScope(t, src)
+	expectNone(t, ds, "not defined")
+}
+
+// TestDispatchBuiltinResolves — $$dispatch is wired into every
+// component scope by the code generator, so a user script that
+// calls it must not report "$$dispatch is not defined".
+func TestDispatchBuiltinResolves(t *testing.T) {
+	src := `
+		function close() {
+			$$dispatch('close', { reason: 'user' });
+		}
+	`
+	ds := runScope(t, src)
+	expectNone(t, ds, "not defined")
 }
