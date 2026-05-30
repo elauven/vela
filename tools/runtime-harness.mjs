@@ -154,7 +154,37 @@ for (let i = 0; i < steps.length; i++) {
       const got = $$(step.assertCount).length;
       if (got !== step.equals) {
         failures.push(`${tag}: count of '${step.assertCount}' = ` +
-          `${got}, want ${step.equals}`);
+          `${JSON.stringify(got)}, want ${JSON.stringify(step.equals)}`);
+      }
+    } else if ('focus' in step) {
+      // Move keyboard focus to the first matching element — used
+      // to set up the precondition for a later assertFocused check
+      // (Session A: verifying that a reactive re-render does not
+      // tear out the focused input).
+      const el = $(step.focus);
+      if (!el) {
+        failures.push(`${tag}: focus target '${step.focus}' not found`);
+      } else {
+        el.focus();
+      }
+    } else if ('assertFocused' in step) {
+      // Assert that the element matched by the selector IS the
+      // document's activeElement.  This is THE test for the
+      // Session A change: when a parent re-renders an unkeyed
+      // {#each} whose array structure is unchanged, the rows are
+      // updated in place rather than destroyed, so the focused
+      // input survives.  A destroy+rebuild would replace the
+      // node and activeElement would move to <body>.
+      const want = $(step.assertFocused);
+      const got = window.document.activeElement;
+      if (!want) {
+        failures.push(`${tag}: assertFocused target ` +
+          `'${step.assertFocused}' not found`);
+      } else if (got !== want) {
+        failures.push(`${tag}: activeElement is ` +
+          `${got ? got.tagName + (got.className ? '.' + got.className : '') : 'null'}` +
+          `, want ${want.tagName}` +
+          `${want.className ? '.' + want.className : ''}`);
       }
     } else if ('click' in step) {
       const el = $(step.click);

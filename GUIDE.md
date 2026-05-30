@@ -349,6 +349,37 @@ With the index:
 Each row's element is a direct child of the list parent — no
 wrapper. The list reconciles in place when `items` changes.
 
+**Reconciliation.** When `items` is mutated in place (e.g. a
+`$state.deep` array that you `.push`/`.pop`/`.splice`), the
+reconciler reuses existing rows: the overlapping prefix is updated
+in place via the row's `update` closure (which also calls `.set()`
+on any child component in the row), surplus rows are destroyed
+from the tail, and new rows are appended for any growth. DOM
+identity, input focus, scroll position, native selection, and IME
+composition all survive these updates. A fresh array reference
+(`items = items.filter(…)`) falls back to a full rebuild.
+
+**Keyed each.** The unkeyed reconciler is *positional* (index-based):
+a middle insert or delete shifts every subsequent row's content,
+so the row that was previously showing item *B* now shows item
+*C*. The DOM nodes are reused, but the row-to-item mapping changes
+silently. For lists where row identity matters — especially lists
+of child components carrying their own state, or lists with
+animation/transition — add a key:
+
+```
+{#each items as item (item.id)}
+  <ItemRow item={item} />
+{/each}
+```
+
+With a key, the reconciler matches rows by identity, not position:
+inserting `X` between `B` and `C` keeps `B` and `C` themselves
+unchanged and creates one new row for `X`. The compiler emits a
+hint when it sees an unkeyed `{#each}` over a row that contains a
+child component — that's the shape where the positional default
+most often surprises.
+
 ### `{#key}` — keyed re-creation
 
 `{#key expr}` destroys and rebuilds its content whenever `expr`

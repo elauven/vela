@@ -538,6 +538,19 @@ var knownLegacyBugs = map[string]string{
 		"built vs legacy; both valid",
 	"each_nested": "doubly-nested {#each} — struct-built vs legacy; " +
 		"both valid",
+	// Session A — the AST's unkeyed reconciler updates rows in
+	// place via $$blk.update(item, i) when the array reference
+	// and length are unchanged, instead of destroy+rebuild.  This
+	// preserves DOM identity (and therefore input focus, scroll
+	// position, native selection, IME composition), and reuses
+	// child component instances (their .set(propsObj) is replayed
+	// from the row's update closure).  Legacy still destroys and
+	// rebuilds; the AST form is the intended behaviour.
+	"each_indexed": "unkeyed {#each} — AST update-in-place fast " +
+		"path vs legacy destroy+rebuild; both valid, AST preserves " +
+		"focus and child-component state",
+	"each_on_root": "unkeyed {#each} — see each_indexed",
+	"each_row_class": "unkeyed {#each} — see each_indexed",
 	"if_branch_slot_component": "component-with-slot in an {#if} " +
 		"branch — captureScope-within-branch; both valid",
 	"await_component": "component in an {#await} branch — struct-" +

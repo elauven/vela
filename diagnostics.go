@@ -386,6 +386,29 @@ func validateTemplate(nodes []Node, a *Analysis, ds *DiagSet) {
 				for _, branch := range n.Branches {
 					walkNodes(branch.Children)
 				}
+			case *EachBlockNode:
+				// Session C — unkeyed each over component-bearing
+				// rows.  The unkeyed reconciler is positional
+				// (index-based): a middle insert or delete shifts
+				// every subsequent row's content, so the user's
+				// mental model "this row is item B" silently
+				// becomes "this row is item C", and the focused
+				// input would now belong to a different item.
+				// Adding a key (e.g. `as item (item.id)`) tells
+				// the reconciler to match rows by identity, which
+				// preserves both DOM nodes and the row-to-item
+				// mapping across reorderings.
+				if n.EachKey == "" && eachHasComponent(n.Children) {
+					ds.Hint(0,
+						"unkeyed {#each %s} renders a child "+
+							"component per row; consider keying "+
+							"the loop (e.g. add `(item.id)` after "+
+							"`as item`) so middle insertions and "+
+							"reorderings preserve each row's "+
+							"identity and component state",
+						n.EachExpr)
+				}
+				walkNodes(n.Children)
 			}
 		}
 	}

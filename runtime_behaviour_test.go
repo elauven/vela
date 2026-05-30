@@ -626,3 +626,233 @@ func TestRuntimeTextareaChildInIfBranch(t *testing.T) {
 		{"assertValue": "textarea.ta", "equals": "b"},
 	})
 }
+
+// TestRuntimeUnkeyedEachPreservesFocus — Session A keystone.
+//
+// A parent renders an unkeyed {#each} of child components, each
+// containing an <input>.  We focus one of the inputs, then fire a
+// reactive change that re-runs the each WITH AN UNCHANGED ARRAY
+// reference and length.  The expected behaviour: the row's update
+// closure propagates new props to the existing child via
+// inst.set(propsObj), the DOM nodes are reused, and the focused
+// input retains focus.  Before Session A the each would destroy
+// and rebuild every row on any such re-render — replacing the
+// <input> and dropping focus.
+func TestRuntimeUnkeyedEachPreservesFocus(t *testing.T) {
+	row := `<script>
+  export let item;
+  export let stamp = 0;
+</script>
+<template><div class="r">
+  <input class="in" />
+  <span class="lbl">{item.label}|{stamp}</span>
+</div></template>`
+	app := `<script>
+  import Row from './Row.vela';
+  let items = $state([{id:1, label:'a'}, {id:2, label:'b'}]);
+  let stamp = $state(0);
+</script>
+<template><div>
+  <button class="b" @click={() => stamp++}>bump</button>
+  {#each items as it}<Row item={it} stamp={stamp} />{/each}
+</div></template>`
+	assertRuntimeSet(t, "App", map[string]string{
+		"App": app,
+		"Row": row,
+	}, []rtStep{
+		{"assertCount": "div.r", "equals": 2},
+		{"assertText": "div.r .lbl", "equals": "a|0"},
+		// Focus an input — bumping stamp re-runs the each.
+		{"focus": "div.r:nth-of-type(1) input.in"},
+		{"click": "button.b"},
+		// The label updated, proving props propagated…
+		{"assertText": "div.r .lbl", "equals": "a|1"},
+		// …AND focus survived the re-render (the row was NOT torn
+		// down and rebuilt).  This is the keystone Session A
+		// assertion — it fails on the old destroy-and-rebuild
+		// path because the focused <input> would have been
+		// replaced with a freshly-mounted one.
+		{"assertFocused": "div.r:nth-of-type(1) input.in"},
+	})
+}
+
+// TestRuntimeUnkeyedEachAppendInPlace — Session B.
+//
+// Pushing to a $state.deep array (mutation, same reference) appends
+// ONE row without disturbing the existing ones.  We focus an input
+// in the first existing row beforehand; after the append, that
+// input still has focus AND the appended row is present.  Before
+// Session B, growing the array via in-place mutation also went
+// through destroy+rebuild.
+func TestRuntimeUnkeyedEachAppendInPlace(t *testing.T) {
+	src := `<script>
+  let items = $state.deep([{label:'a'}, {label:'b'}]);
+</script>
+<template><div>
+  <button class="add" @click={() => items.push({label:'c'})}>add</button>
+  {#each items as it}<div class="r"><input class="in" /><span class="lbl">{it.label}</span></div>{/each}
+</div></template>`
+	assertRuntime(t, "EachAppend", src, []rtStep{
+		{"assertCount": "div.r", "equals": 2},
+		{"focus": "div.r:nth-of-type(1) input.in"},
+		{"click": "button.add"},
+		{"assertCount": "div.r", "equals": 3},
+		{"assertText": "div.r:nth-of-type(3) .lbl", "equals": "c"},
+		// Focus on the row that existed before the append survives.
+		{"assertFocused": "div.r:nth-of-type(1) input.in"},
+	})
+}
+
+// TestRuntimeUnkeyedEachRemoveInPlace — Session B.
+//
+// Pop from a $state.deep array (mutation, same reference) removes
+// the LAST row.  The remaining rows are not destroyed; focus in a
+// surviving row is preserved.
+func TestRuntimeUnkeyedEachRemoveInPlace(t *testing.T) {
+	src := `<script>
+  let items = $state.deep([{label:'a'}, {label:'b'}, {label:'c'}]);
+</script>
+<template><div>
+  <button class="pop" @click={() => items.pop()}>pop</button>
+  {#each items as it}<div class="r"><input class="in" /><span class="lbl">{it.label}</span></div>{/each}
+</div></template>`
+	assertRuntime(t, "EachRemove", src, []rtStep{
+		{"assertCount": "div.r", "equals": 3},
+		{"focus": "div.r:nth-of-type(1) input.in"},
+		{"click": "button.pop"},
+		{"assertCount": "div.r", "equals": 2},
+		{"assertText": "div.r:nth-of-type(2) .lbl", "equals": "b"},
+		{"assertFocused": "div.r:nth-of-type(1) input.in"},
+	})
+}
+
+// TestRuntimeUnkeyedEachAppendRemoveRoundTrip — Session B.
+//
+// Push then pop: array returns to original length with original
+// contents.  All rows alive throughout.  This is the "the fast
+// path doesn't leak" check — surplus destroy and tail-append
+// must both behave correctly.
+func TestRuntimeUnkeyedEachAppendRemoveRoundTrip(t *testing.T) {
+	src := `<script>
+  let items = $state.deep(['a','b']);
+</script>
+<template><div>
+  <button class="add" @click={() => items.push('c')}>add</button>
+  <button class="pop" @click={() => items.pop()}>pop</button>
+  {#each items as it}<li class="row">{it}</li>{/each}
+</div></template>`
+	assertRuntime(t, "EachRoundTrip", src, []rtStep{
+		{"assertCount": "li.row", "equals": 2},
+		{"click": "button.add"},
+		{"assertCount": "li.row", "equals": 3},
+		{"assertText": "li.row:nth-of-type(3)", "equals": "c"},
+		{"click": "button.pop"},
+		{"assertCount": "li.row", "equals": 2},
+		{"assertText": "li.row:nth-of-type(2)", "equals": "b"},
+		{"click": "button.pop"},
+		{"assertCount": "li.row", "equals": 1},
+		{"click": "button.pop"},
+		{"assertCount": "li.row", "equals": 0},
+		{"click": "button.add"},
+		{"assertCount": "li.row", "equals": 1},
+		{"assertText": "li.row", "equals": "c"},
+	})
+}
+
+// TestRuntimeUnkeyedEachInBranchAppend — Session B + branch interplay.
+//
+// Reopening a previously-hidden {#if} branch resets _arr tracking
+// (via the isConnected fallback), so the next append must work
+// correctly after that reset.  Sequence: visible(2) → hide → show →
+// append → 3 rows.
+func TestRuntimeUnkeyedEachInBranchAppend(t *testing.T) {
+	src := `<script>
+  let show = $state(true);
+  let items = $state.deep(['a','b']);
+</script>
+<template><div>
+  <button class="t" @click={() => show = !show}>toggle</button>
+  <button class="add" @click={() => items.push('c')}>add</button>
+  {#if show}<ul>{#each items as it}<li class="row">{it}</li>{/each}</ul>{/if}
+</div></template>`
+	assertRuntime(t, "EachInBranchAppend", src, []rtStep{
+		{"assertCount": "li.row", "equals": 2},
+		{"click": "button.t"}, // hide
+		{"assertCount": "li.row", "equals": 0},
+		{"click": "button.t"}, // show
+		{"assertCount": "li.row", "equals": 2},
+		{"click": "button.add"},
+		{"assertCount": "li.row", "equals": 3},
+		{"assertText": "li.row:nth-of-type(3)", "equals": "c"},
+	})
+}
+
+// TestRuntimeNestedIfChainReactive — nested {#if} inside an {#if}
+// branch must reactively update on inner-state change.  The bug
+// before this fix: the inner chain function was declared inside
+// the outer branch's build BLOCK (block-scoped), so the
+// component-scope setter cascade could not reach it
+// (`$$chain_$$nN is not defined`).  The fix hoists nested-chain
+// machinery (anchor, branch handles, reentrancy flags, captured
+// node decls, the chain function itself) to component scope.
+func TestRuntimeNestedIfChainReactive(t *testing.T) {
+	src := `<script>
+  let outer = $state(true);
+  let inner = $state('first');
+</script>
+<template><div>
+  <button class="b" @click={() => inner = 'second'}>change</button>
+  {#if outer}
+    {#if inner}<span class="msg">{inner}</span>{/if}
+  {/if}
+</div></template>`
+	assertRuntime(t, "NestedIf", src, []rtStep{
+		{"assertText": "span.msg", "equals": "first"},
+		{"click": "button.b"},
+		{"assertText": "span.msg", "equals": "second"},
+	})
+}
+
+// TestRuntimeNestedChainElseFallingWhenOuterInactive — pattern
+// from PageCraft's LiveBlock: an outer chain selects on block
+// type; each outer branch contains an inner chain whose {:else}
+// arm always matches (e.g. `{#if level==='h1'}...{:else if
+// level==='h2'}...{:else}<h3>...{/if}`).  When the active outer
+// branch is NOT the one containing the inner chain, the cascade
+// still calls EVERY hoisted inner chain — and the {:else}-falling
+// arm would try to attach via its anchor.  Without the anchor
+// guard the attach crashed (`Cannot read properties of null
+// (reading 'before')`).  With the guard, the chain function
+// returns early when its anchor is null and the active outer
+// branch's nested chain runs normally.
+func TestRuntimeNestedChainElseFallingWhenOuterInactive(t *testing.T) {
+	src := `<script>
+  let which = $state('a');
+  let v = $state('hi');
+</script>
+<template><div>
+  <button class="ba" @click={() => which = 'a'}>a</button>
+  <button class="bb" @click={() => which = 'b'}>b</button>
+  <button class="vc" @click={() => v = 'changed'}>changed</button>
+  {#if which === 'a'}
+    {#if v === 'never'}<p class="x">unreachable</p>{:else}<p class="y">A:{v}</p>{/if}
+  {:else}
+    {#if v === 'never'}<p class="x">unreachable</p>{:else}<p class="z">B:{v}</p>{/if}
+  {/if}
+</div></template>`
+	assertRuntime(t, "NestedElseFalling", src, []rtStep{
+		{"assertText": "p.y", "equals": "A:hi"},
+		{"assertCount": "p.z", "equals": 0},
+		// Click that mutates v — the OTHER outer branch's nested
+		// chain is also wired to v (its {:else} always falls),
+		// and the cascade calls it; without the guard, that call
+		// crashes on a null anchor.
+		{"click": "button.vc"},
+		{"assertText": "p.y", "equals": "A:changed"},
+		// Switch to outer branch b; its nested chain now has a
+		// real anchor and the {:else} branch renders.
+		{"click": "button.bb"},
+		{"assertCount": "p.y", "equals": 0},
+		{"assertText": "p.z", "equals": "B:changed"},
+	})
+}

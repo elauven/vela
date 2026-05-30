@@ -298,6 +298,19 @@ type ASTGen struct {
 	// block would be invisible to $$set_*.
 	inBranchScope bool
 
+	// nestedTeardowns collects teardown statements for nested
+	// {#if}/{#key}/{#await} chains whose machinery was hoisted to
+	// component scope.  When the enclosing outer branch
+	// deactivates, the chain's content is left orphaned in the
+	// DOM (the outer's bv snapshot only contained the chain's
+	// anchor, not its dynamically-attached nodes).  The outer
+	// chain's per-branch teardown reads the entries appended
+	// during that branch's build (snapshot-length pattern) and
+	// emits them so the nested chain is torn down with its
+	// parent.  Doubly-nested chains propagate naturally because
+	// each level appends its own teardown.
+	nestedTeardowns []string
+
 	// cssExternal selects CSS delivery.  When false (default), the
 	// component injects its scoped <style> into document.head at
 	// runtime (CSS-in-JS).  When true, buildStyleInjection emits
@@ -315,10 +328,15 @@ type ASTGen struct {
 }
 
 // compInstance is one child-component invocation's bookkeeping —
-// its instance handle and wrapper element variable names.
+// its instance handle, wrapper element variable names, and the
+// `.set(propsObj)` statement that propagates new prop values to an
+// already-mounted instance.  setStmt is empty for a slot-positioned
+// component whose props are not reactive (the mount call alone is
+// enough).
 type compInstance struct {
-	inst string
-	wrap string
+	inst    string
+	wrap    string
+	setStmt JsStmt // `if (inst) inst.set({...});`  — nil if none
 }
 
 // addUpdate records that statement stmt must re-run whenever the
@@ -832,7 +850,22 @@ func astChainRootOK(nodes []Node) bool {
 				if b.Elem != nil {
 					kids = []Node{stripBranchDirectives(b.Elem)}
 				}
-				if !allStatic(kids) && !astHoleSubtreeOK(kids) {
+				// The AST generator's buildIfChain handles three
+				// branch shapes: fully static, hole-subtree
+				// (innerHTML+TreeWalker), and recursive-walker
+				// (nested control flow / class-style directives
+				// on inner elements).  The gate used to only
+				// accept the first two — that left LiveBlock-style
+				// templates falling to the legacy generator,
+				// which has a buggy nested-{#if} path (the
+				// conditional is emitted as a one-shot inline
+				// `if (cond) { ... }` with no reactive wiring,
+				// so e.g. {#if p.eyebrow}<span>{p.eyebrow}</span>
+				// {/if} never updated).  Accept the recursive
+				// shape too; subtreeHasBrokenAwait still excludes
+				// the known-broken {#await x then y} shorthand.
+				if !allStatic(kids) && !astHoleSubtreeOK(kids) &&
+					subtreeHasBrokenAwait(kids) {
 					return false
 				}
 			}
@@ -2551,6 +2584,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	var sub holeSubtree
 	var rowAttrs eachRowAttrs
 	var nestedUpdate []JsStmt // captured init+updates for nested-block rows
+	var rowComps []compInstance // child-component instances built in this row
 	// rowBodyDeps collects component-state names a nested-control-
 	// flow row body reads; every such dep re-runs the whole {#each}
 	// (see the rowHasBlocks branch).
@@ -2583,6 +2617,11 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 			fragBody = append(fragBody, cap.initBody...)
 			fragBody = append(fragBody, cap.events...)
 			nestedUpdate = append(nestedUpdate, cap.initBody...)
+			// Child-component instances built within this row need
+			// their .set() statements replayed in the row's update
+			// closure (Session A: row reuse without destroying
+			// children).
+			rowComps = append(rowComps, cap.comps...)
 			// The nested blocks register reactive updates against
 			// component state (e.g. an {#if} on a component-scope
 			// flag).  Those chain functions are fragment-local —
@@ -2610,6 +2649,19 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	updateBody := []JsStmt{jsStmt("$$item_" + id + " = " + itemVar + ";")}
 	updateBody = append(updateBody, rowAttrs.update...)
 	updateBody = append(updateBody, sub.updateStmts...)
+	// Re-run each child component's `.set(propsObj)` so an
+	// already-mounted component receives fresh prop values when
+	// the row is reused (instead of being torn down and rebuilt,
+	// which would drop focus, scroll position, and any internal
+	// state).  This is the keystone of Session A: the row's
+	// update is now structurally equivalent to its mount.  An
+	// unmounted instance (slot positions that haven't opened
+	// yet) is skipped by the `if (inst)` guard inside setStmt.
+	for _, ci := range rowComps {
+		if ci.setStmt != nil {
+			updateBody = append(updateBody, cloneStmt(ci.setStmt))
+		}
+	}
 	// Nested-block rows: re-run the nested chain/each init calls so
 	// the row's dynamic content refreshes when the row is reused.
 	updateBody = append(updateBody, nestedUpdate...)
@@ -2676,12 +2728,68 @@ func (g *ASTGen) eachReconciler(
 	eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar string,
 ) string {
 	if keyExpr == "" {
-		// Unkeyed: destroy every row, rebuild from scratch.
+		// Unkeyed reconciler.  When the array reference is stable
+		// AND the existing rows are still in the DOM, the
+		// reconciler updates positionally: rows in the overlap
+		// (min(oldLen, newLen)) are updated in place via
+		// $$blk.update(item, i); surplus rows are destroyed from
+		// the tail; new rows are appended for any growth.
+		//
+		// Positional update preserves DOM identity for the
+		// overlapping prefix — focus, scroll position, native
+		// selection, IME composition survive — and reuses child
+		// component instances (their .set(propsObj) is replayed
+		// by the row's update closure).  This is the unkeyed
+		// each's correct semantics: it is INDEX-based, so a
+		// middle-insertion shifts every subsequent row's content
+		// (the user's mental model "this is row 1, it's about
+		// item B" becomes "this is row 1, it's about item C")
+		// but DOM nodes are preserved.  Users who want stable
+		// row identity across middle inserts/removes should use
+		// a keyed {#each} — see Session C.
+		//
+		// The DOM-liveness check (rows[0].el.isConnected) matters
+		// when an enclosing {#if} branch was previously unmounted:
+		// the chain removes the branch root, which detaches the
+		// rows from the document but leaves their parent
+		// reference intact — so a bare .parentNode check would
+		// spuriously pass and we would update orphaned blocks.
+		// .isConnected reports document-tree connectedness.
+		//
+		// When the reference or liveness check fails we fall
+		// through to full destroy + rebuild — that is still
+		// required for "items = items.concat(…)" style updates
+		// (different array reference, even if contents overlap)
+		// and for branch-reopen.
 		return "function " + eachFn + "($$arr) {" +
 			"  if (!" + anchor + ".parentNode) return;" +
+			"  $$arr = $$arr || [];" +
+			"  const $$sameRef = (" + eachFn + "._arr === $$arr);" +
+			"  const $$stillLive = (" + blocks + ".length === 0 || " +
+			blocks + "[0].el.isConnected);" +
+			"  if ($$sameRef && $$stillLive) {" +
+			"    const $$common = Math.min(" + blocks + ".length, $$arr.length);" +
+			"    for (let $$i = 0; $$i < $$common; $$i++) {" +
+			"      if (" + blocks + "[$$i].update) " + blocks + "[$$i].update($$arr[$$i], $$i);" +
+			"    }" +
+			"    if (" + blocks + ".length > $$arr.length) {" +
+			"      for (let $$i = $$arr.length; $$i < " + blocks + ".length; $$i++) {" +
+			"        " + blocks + "[$$i].destroy();" +
+			"      }" +
+			"      " + blocks + ".length = $$arr.length;" +
+			"    } else if (" + blocks + ".length < $$arr.length) {" +
+			"      for (let $$i = $$common; $$i < $$arr.length; $$i++) {" +
+			"        const $$blk = " + fragFn + "($$arr[$$i], $$i);" +
+			"        " + anchor + ".before($$blk.el);" +
+			"        " + blocks + ".push($$blk);" +
+			"      }" +
+			"    }" +
+			"    return;" +
+			"  }" +
+			"  " + eachFn + "._arr = $$arr;" +
 			"  " + blocks + ".forEach(b => b.destroy());" +
 			"  " + blocks + " = [];" +
-			"  ($$arr||[]).forEach(function(" + itemVar + ", " + indexVar + ") {" +
+			"  $$arr.forEach(function(" + itemVar + ", " + indexVar + ") {" +
 			"    const $$blk = " + fragFn + "(" + itemVar + ", " + indexVar + ");" +
 			"    " + anchor + ".before($$blk.el);" +
 			"    " + blocks + ".push($$blk);" +
@@ -2871,27 +2979,54 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	anchor := g.id() + "_a"
 	fn := "$$chain_" + g.id()
 
+	// When this chain is being built inside another branch's
+	// build closure (the recursive walker calls buildIfChain on
+	// nested {#if} blocks via captureScope), the chain's
+	// declarations are block-scoped to that outer build block.
+	// That makes the chain function INVISIBLE to a setter
+	// cascade firing from component scope ("$$chain_$$nN is not
+	// defined" — the crash you'd see when editing reactive state
+	// referenced by a nested-if branch).  Route declarations to
+	// g.hoisted (component scope) in that case; the assignment
+	// statements still go to g.body so they execute as part of
+	// the outer branch's build sequence.
+	nestedHoist := g.inBranchScope || g.inSlotScope
+	decl := func(s string) {
+		if nestedHoist {
+			g.hoisted = append(g.hoisted, jsStmt(s))
+		} else {
+			g.body = append(g.body, jsStmt(s))
+		}
+	}
+
 	// Anchor comment.  The appendChild that wires it into the
 	// parent is emitted AFTER the chain function below — legacy
 	// keeps element creation and structural wiring in separate
 	// buffers, so wiring trails all create statements.
-	g.body = append(g.body, jsStmt(
-		"const "+anchor+" = document.createComment('if-chain');"))
+	if nestedHoist {
+		// Split decl from assignment so the binding lives at
+		// component scope but the createComment runs when the
+		// outer branch builds.
+		g.hoisted = append(g.hoisted, jsStmt("let "+anchor+" = null;"))
+		g.body = append(g.body, jsStmt(
+			anchor+" = document.createComment('if-chain');"))
+	} else {
+		g.body = append(g.body, jsStmt(
+			"const "+anchor+" = document.createComment('if-chain');"))
+	}
 
 	// Per-branch cached element vars + reentrancy flags.
 	for i := range chain.Branches {
-		g.body = append(g.body,
-			jsStmt("let "+fn+"_b"+itoa(i)+" = null;"))
+		decl("let " + fn + "_b" + itoa(i) + " = null;")
 	}
-	g.body = append(g.body, jsStmt(
-		"let "+fn+"_running = false, "+fn+"_pending = false;"))
+	decl("let " + fn + "_running = false, " + fn + "_pending = false;")
 
 	// {#key} support: a keyprev holder remembers the last key
 	// value.  Initialized to a fresh object so the first run's
 	// `keyprev !== keynew` is always true (a unique reference can
 	// never === any user value).
 	if chain.KeyExpr != "" {
-		g.body = append(g.body, jsStmt("let "+fn+"_keyprev = {};"))
+		decl("let " + fn + "_keyprev = {};")
 	}
 
 	// Per-branch: precompute the build statements and the captured
@@ -2900,10 +3035,11 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	// captured node vars must be declared at component scope (so
 	// the setter can reach them) and nulled on branch removal.
 	type branchPlan struct {
-		buildText string         // node-construction statements
-		initText  string         // initial hole writes (run after capture)
-		captured  []string       // node vars to null on unmount
-		comps     []compInstance // component instances to destroy on unmount
+		buildText        string         // node-construction statements
+		initText         string         // initial hole writes (run after capture)
+		captured         []string       // node vars to null on unmount
+		comps            []compInstance // component instances to destroy on unmount
+		nestedTeardowns  []string       // teardown snippets for nested chains hoisted from this branch's body
 	}
 	plans := make([]branchPlan, len(chain.Branches))
 	for i, br := range chain.Branches {
@@ -2934,12 +3070,19 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 		// recursive walker instead, into a captured local scope so
 		// its emissions land in the branch build block.
 		if !astHoleSubtreeOK(kids) {
+			// Snapshot how many nested-chain teardowns are
+			// already in the global list — any new entries
+			// appended during this branch's build belong to
+			// THIS branch and must be emitted in its teardown.
+			tdMark := len(g.nestedTeardowns)
 			cap := g.captureScope(func() {
 				savedBranchScope := g.inBranchScope
 				g.inBranchScope = true
 				defer func() { g.inBranchScope = savedBranchScope }()
 				g.buildChildRun(kids, frag)
 			})
+			plans[i].nestedTeardowns = append([]string{},
+				g.nestedTeardowns[tdMark:]...)
 			var bt strings.Builder
 			bt.WriteString(stmtsToText(cap.body))
 			bt.WriteString(stmtsToText(cap.events))
@@ -2983,7 +3126,14 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 		// is a no-op when the branch is unmounted.
 		sub := g.buildHoleSubtree(frag, kids, true, bv, false, true)
 		// Component-scope `let X = null;` for every captured var.
-		g.body = append(g.body, sub.decls...)
+		// When this chain itself is nested (nestedHoist), these
+		// must reach component scope too — they're read from the
+		// chain function which now lives there.
+		if nestedHoist {
+			g.hoisted = append(g.hoisted, sub.decls...)
+		} else {
+			g.body = append(g.body, sub.decls...)
+		}
 		// Node-construction runs while building the fragment.
 		plans[i].buildText = stmtsToText(sub.build)
 		// Initial hole writes run AFTER the branch handle (bv) is
@@ -2998,6 +3148,19 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	// content vary, so building it as a string keeps it readable.
 	var b strings.Builder
 	b.WriteString("function " + fn + "() {")
+	// When this chain is nested (its declaration was hoisted to
+	// component scope), the cascade fires it on every dep change
+	// — including ticks when its OUTER branch is currently
+	// unmounted, so its anchor has not been assigned (or has been
+	// cleared on outer-branch teardown).  A bare execution would
+	// crash on `anchor.before(...)` for an {:else}-falling branch.
+	// Skip safely: when the anchor is null, the chain has nothing
+	// to attach to, so doing nothing is the correct semantic.
+	// On a non-nested (root-scope) chain the anchor is a `const`
+	// initialised once and never null, so this guard is omitted.
+	if nestedHoist {
+		b.WriteString("if (!" + anchor + ") return;")
+	}
 	b.WriteString("if (" + fn + "_running) { " + fn + "_pending = true; return; }")
 	b.WriteString(fn + "_running = true;")
 	b.WriteString("try {")
@@ -3039,7 +3202,16 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 			"for (const $$node of " + bv + ") $$node.remove(); " +
 			bv + " = null;" +
 			nullCaptured(plans[i].captured) +
-			destroyComps(plans[i].comps) + " }")
+			destroyComps(plans[i].comps))
+		// Nested chains hoisted out of this branch's body must
+		// be torn down with their parent — see the field comment
+		// on nestedTeardowns.  Each snippet is `if (nestedBv) {
+		// ... } nestedAnchor = null;`, idempotent against an
+		// already-cleared chain.
+		for _, td := range plans[i].nestedTeardowns {
+			b.WriteString(td)
+		}
+		b.WriteString(" }")
 	}
 	// Mount the active branch.  Build into a DocumentFragment so the
 	// branch's own top-level nodes are inserted DIRECTLY into the
@@ -3080,7 +3252,35 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	b.WriteString("}")
 	b.WriteString("}")
 
-	g.body = append(g.body, jsStmt(b.String()))
+	if nestedHoist {
+		g.hoisted = append(g.hoisted, jsStmt(b.String()))
+		// Build a teardown snippet so the OUTER branch (the one
+		// inside whose body THIS chain was emitted) can tear it
+		// down on deactivation.  The outer's bv snapshot only
+		// captured this chain's anchor; its dynamically-attached
+		// content lives before the anchor and is otherwise
+		// orphaned when the outer branch detaches.  The teardown
+		// removes each branch's nodes, nulls the bookkeeping,
+		// and nulls the anchor so the chain function's
+		// `if (!anchor) return;` guard takes effect until a
+		// future re-mount of the outer branch reassigns it.
+		var td strings.Builder
+		for i := range chain.Branches {
+			idx := itoa(i)
+			bv := fn + "_b" + idx
+			td.WriteString("if (" + bv + ") { ")
+			td.WriteString("for (const $$node of " + bv +
+				") $$node.remove(); ")
+			td.WriteString(bv + " = null;")
+			td.WriteString(nullCaptured(plans[i].captured))
+			td.WriteString(destroyComps(plans[i].comps))
+			td.WriteString(" } ")
+		}
+		td.WriteString(anchor + " = null;")
+		g.nestedTeardowns = append(g.nestedTeardowns, td.String())
+	} else {
+		g.body = append(g.body, jsStmt(b.String()))
+	}
 
 	// Wire the anchor into its parent — after the chain function,
 	// matching legacy's create/wire buffer split.
@@ -3553,8 +3753,20 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 		"if (!"+inst+") "+inst+" = "+comp.Name+"("+wrap+", "+
 			propsObj+", "+slotsObj+");"))
 
-	// Reactive prop updates.
+	// Reactive prop updates.  The .set() statement propagates new
+	// prop values to an already-mounted instance — both via the
+	// component-scope setter cascade (addUpdate below) AND, when
+	// this component sits inside an {#each} row, via the row's
+	// update closure (captureScope picks compInstances up and the
+	// fragment builder replays each instance's setStmt so a row
+	// reuse re-sets the child's props rather than tearing down).
 	setStmt := "if (" + inst + ") " + inst + ".set(" + propsObj + ");"
+	// Back-fill the bookkeeping entry pushed above so the
+	// fragment-update path can find this statement.
+	if n := len(g.compInstances); n > 0 &&
+		g.compInstances[n-1].inst == inst {
+		g.compInstances[n-1].setStmt = jsStmt(setStmt)
+	}
 	deps := map[string]bool{}
 	for _, attr := range comp.Attrs {
 		if attr.IsEvent || attr.IsBindThis {

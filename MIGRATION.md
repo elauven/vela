@@ -454,6 +454,256 @@ imports whichever it uses.
     microtask flush.  (This surfaced as a false IfToggle failure —
     a harness gap, not a compiler bug.)
 
+## Post-stabilize fix — nested {#if} chains were not reactive
+
+Reported symptom: in LiveBlock, content wrapped in {#if} did not
+update on state change — e.g. {#if p.eyebrow}<span>{p.eyebrow}</span>
+{/if} inside the outer {#if block.type==='hero'} branch never
+re-rendered when the eyebrow field was edited.  Two distinct bugs
+combined.
+
+1. **The AST generator emitted nested chain machinery
+   block-scoped.**  When buildIfChain ran inside another branch's
+   build closure (the recursive walker calls buildIfChain on
+   nested {#if} blocks via captureScope), the chain's
+   declarations — anchor `const _a = …`, branch handle vars `let
+   _bN = null`, reentrancy flags, captured node decls, and the
+   `function chainFn() {…}` itself — landed in g.body, i.e. the
+   outer branch's build BLOCK.  That made the chain function
+   invisible from component scope: a setter cascade firing from
+   $$set_X would call `$$chain_$$nM()` and get "ReferenceError:
+   $$chain_$$nM is not defined" (a hard crash).
+
+   Fix: when `g.inBranchScope || g.inSlotScope`, route all of
+   that machinery to g.hoisted (component scope) — the anchor
+   is split into `let _a = null;` (hoisted) plus `_a = …;` (body),
+   the branch handle/flag/keyprev vars go to hoisted, captured
+   node decls (sub.decls) go to hoisted, and the chain function
+   declaration itself goes to hoisted.  The initial chain call
+   stays in initText so it runs after the outer branch attaches.
+
+2. **LiveBlock was on the legacy generator, where (1)'s fix
+   doesn't apply.**  astChainRootOK rejected the LiveBlock shape
+   because its outer branches contain nested {#if} blocks —
+   astHoleSubtreeOK returns false for any branch whose subtree
+   has nested control flow.  The fall-through ran the legacy
+   generator, which emits nested {#if} as a one-shot inline `if
+   (cond) { … }` with no reactive wiring at all (a longstanding
+   bug — the conditional ran once at initial build and never
+   again).
+
+   Fix: widen astChainRootOK to also accept branches that need
+   the recursive walker (nested control flow without broken
+   await shorthand).  buildIfChain already handles those via
+   buildChildRun + captureScope, so the gate was simply stale.
+
+A third, distinct issue surfaced once LiveBlock was on the AST
+path: the cascade fires every hoisted nested chain on every dep
+change, including chains whose OUTER branch is currently
+inactive.  Those chains have no anchor (the outer branch hasn't
+built it) and the {:else} arm of the nested chain would still
+try to mount, crashing on `null.before(…)`.  Two layered fixes:
+
+3. **Anchor-null guard on hoisted chain functions.**  Emit
+   `if (!<anchor>) return;` at the top of any chain whose
+   declaration was hoisted.  The cascade's calls from inactive
+   outer branches become safe no-ops; legitimate calls (from
+   inside the outer branch build, or via cascade after the
+   outer mounted) proceed as before.  Root-scope chains keep
+   `const _a = …` and never need the guard.
+
+4. **Outer-branch teardown tears down its nested chains.**
+   When the outer chain switches branches, its bv-snapshot only
+   captured the nested chain's anchor — the nested chain's
+   dynamically-attached content (inserted via `_a.before(...)`
+   after the snapshot) would be orphaned in the DOM and the
+   `if (!_a) return;` guard would prevent any future rebuild.
+   Now each nested chain emits a teardown snippet (remove each
+   branch's nodes, null bookkeeping, null its anchor) to a new
+   g.nestedTeardowns channel.  The OUTER chain's per-branch
+   teardown reads the entries appended during that branch's
+   build (snapshot-length pattern: tdMark = len(g.nestedTeardowns)
+   before captureScope; new entries belong to this branch).
+   Doubly-nested chains propagate naturally — each level appends
+   its own teardown.
+
+End-to-end with PageCraft LiveBlock:
+  - editing eyebrow updates the <span>: PASS
+  - clearing eyebrow hides the <span> ({#if p.eyebrow} → false): PASS
+  - repopulating eyebrow shows the <span> again: PASS
+  - switching between block types (hero → heading) keeps DOM
+    counts stable, no orphan nodes: PASS
+  - focus on the heading input survives the edit: PASS
+  - zero runtime errors throughout
+
+Two regression tests:
+  - TestRuntimeNestedIfChainReactive: minimal nested {#if}
+    reactive update.
+  - TestRuntimeNestedChainElseFallingWhenOuterInactive:
+    sibling outer branches each containing a nested chain whose
+    {:else} arm always matches.  Exercises the cascade calling
+    inactive-outer's nested chain (guard) AND outer-branch
+    switching to ensure the previous nested chain is torn down
+    (teardown propagation).
+
+## Session C — keyed-{#each} hint + guide
+
+The unkeyed reconciler is *positional*: a middle insert or delete
+shifts every subsequent row's content, so the row that previously
+showed item B silently becomes the row showing item C — DOM
+identity is preserved but the row-to-item mapping is not.  This
+surprise is most visible when each row carries child-component
+state (an <input> with focus, a controlled child, animations).
+
+The compiler now emits an informational hint when an {#each} is
+unkeyed AND its row body contains a child component (directly or
+nested inside an {#if} / {#each} / {#await} within the row).  The
+hint names the each expression and tells the author how to add a
+key:
+
+  unkeyed {#each items as it} renders a child component per row;
+  consider keying the loop (e.g. add `(item.id)` after `as item`)
+  so middle insertions and reorderings preserve each row's
+  identity and component state
+
+It is silent for the safe shapes — keyed each, and unkeyed each
+over plain DOM rows.  The hint uses SevHint (informational), not
+SevWarning, so it never blocks compilation; users can ignore it
+when the trade-off is intentional (e.g. lists where positional
+update is exactly what's wanted).
+
+GUIDE.md's {#each} section was rewritten to explain reconciliation
+behavior, the positional semantics of unkeyed, and when to add a
+key.  Four diagnostic tests cover the hint conditions:
+
+  - TestSessionC_UnkeyedEachWithComponentEmitsHint
+  - TestSessionC_KeyedEachIsSilent
+  - TestSessionC_PureDOMEachIsSilent
+  - TestSessionC_ComponentInIfBranchInRowFiresHint
+
+PageCraft now compiles with two such hints (Canvas's blocks-each,
+Inspector's fields-each) — exactly the two unkeyed-each-with-
+component sites in the app.
+
+## Session B — {#each} reconciles append and remove without full rebuild
+
+Session A made same-length updates in-place.  Session B extends
+that to length changes via positional reconciliation:
+
+  same length         → update each row in place
+  grown (oldLen < N)  → update overlap in place; append new tail
+  shrunk (oldLen > N) → update overlap in place; destroy surplus tail
+
+DOM identity, input focus, scroll position, and IME composition
+survive all three.  The fall-through (different array reference,
+or rows detached after an {#if} unmount) still does destroy +
+rebuild.
+
+The new shape:
+
+  if (sameRef && stillLive) {
+    const common = Math.min(blocks.length, arr.length);
+    for (let i = 0; i < common; i++)
+      if (blocks[i].update) blocks[i].update(arr[i], i);
+    if (blocks.length > arr.length) {
+      for (let i = arr.length; i < blocks.length; i++) blocks[i].destroy();
+      blocks.length = arr.length;
+    } else if (blocks.length < arr.length) {
+      for (let i = common; i < arr.length; i++) {
+        const blk = frag(arr[i], i);
+        anchor.before(blk.el);
+        blocks.push(blk);
+      }
+    }
+    return;
+  }
+  // fallback: full destroy + rebuild …
+
+This is the standard positional-unkeyed semantics: middle inserts
+shift subsequent rows' content (covered by Session C's hint).
+
+Runtime regression tests:
+
+  - TestRuntimeUnkeyedEachAppendInPlace      — push, focus survives
+  - TestRuntimeUnkeyedEachRemoveInPlace      — pop, focus survives
+  - TestRuntimeUnkeyedEachAppendRemoveRoundTrip — push/pop cycles
+  - TestRuntimeUnkeyedEachInBranchAppend     — append after branch reopen
+
+End-to-end with PageCraft: editing the heading preserves the
+focused input AND the canvas re-renders; adding a block grows
+the list 6→7 cleanly; zero errors.
+
+## Session A — {#each} updates rows in place; focus is preserved
+
+Reported symptom: typing in an Inspector field lost focus on every
+keystroke.  Root cause: editing a field fired a deep-state notify
+that re-ran the Inspector's unkeyed {#each def.fields}; the
+reconciler destroyed every row and rebuilt — including the <input>
+the user was typing in.  Even with the array reference and length
+unchanged, the unkeyed path always tore everything down.
+
+The proper architectural fix (which is what other frameworks do)
+is to UPDATE existing rows in place rather than re-rendering when
+only attribute/text data changes.  Three coordinated changes:
+
+1. **The row's update closure now propagates props to existing
+   child components.**  compInstance carries a setStmt field
+   (`if (inst) inst.set(propsObj);`).  The fragment builder
+   collects child instances built within the row and replays each
+   setStmt in updateBody.  Before: the row's update only re-ran
+   per-row directive/bind statements and the hole writes — it
+   never called .set() on already-mounted child components, so
+   the path was unusable for component-bearing rows.  After: the
+   row's update is structurally equivalent to its mount.
+
+2. **The unkeyed reconciler short-circuits when safe.**  When the
+   array reference is unchanged AND the length is unchanged AND
+   the existing rows are still in the document tree, the each
+   walks each block and calls $$blk.update(item, i) instead of
+   destroying and rebuilding.  DOM nodes (and therefore focus,
+   scroll position, native selection, IME composition) are
+   preserved; child component instances are reused.  Length /
+   reference / detachment changes fall through to the destroy +
+   rebuild path, which is still required when items are appended
+   or removed.
+
+3. **DOM-liveness via .isConnected, not .parentNode.**  The first
+   draft of the liveness check used `rows[0].el.parentNode`, but
+   an enclosing {#if} branch that's been unmounted detaches the
+   branch's root (e.g. the <ul> that hosts the rows) — the rows'
+   .parentNode still points at the (detached) <ul>, so a
+   .parentNode check spuriously passed and the fast path called
+   .update on orphaned blocks (zero rendered rows on branch
+   reopen).  .isConnected reports document-tree connectedness,
+   which is the property we actually need.
+
+Verified end-to-end with PageCraft: editing the heading field now
+preserves the input node (same node before/after), preserves
+activeElement, and the canvas re-renders to the new value with
+zero errors.  Two regression tests:
+
+  - TestRuntimeUnkeyedEachPreservesFocus — Session A keystone:
+    focus an input inside an {#each}-rendered child component,
+    fire a reactive update, assert focus is still on the same
+    input node afterward.
+  - TestRuntimeIfBranchEach already covered the {#if}-wraps-
+    {#each} branch-reopen case (the .isConnected fix was needed
+    to keep it green).
+
+Three knownLegacyBugs entries (each_indexed, each_on_root,
+each_row_class) plus one knownDiff entry (each) document the
+intentional divergence — the AST generator's unkeyed each is now
+strictly better than the legacy generator's; legacy still
+destroys and rebuilds.
+
+A new harness assertion `assertFocused` and action `focus` were
+added to tools/runtime-harness.mjs.
+
+Sessions B (unkeyed update-in-place beyond the same-length case
+— partial updates when items are appended/removed) and C
+(encourage keyed {#each} in the guide, optionally analyzer-warn
+for unkeyed lists containing components) remain.
+
 ## Post-stabilize fix — raw-text elements (<textarea>/<title>) crashed
 
 `<textarea>{value}</textarea>` crashed with "TypeError: $$nN_a is

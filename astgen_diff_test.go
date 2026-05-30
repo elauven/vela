@@ -206,6 +206,11 @@ var diffFixtures = map[string]string{
 // alternatives, not bugs.  Excluded from structural equality;
 // still exercised for validity by the corpus harness.
 var knownDiff = map[string]string{
+	"each": "unkeyed {#each} — AST update-in-place fast path " +
+		"(same array reference + same length → call $$blk.update " +
+		"on existing rows) preserves DOM identity, focus, and " +
+		"child-component instances; legacy destroys and rebuilds. " +
+		"Both valid; AST form is the intended behaviour.",
 	"slots": "multiple sibling <slot>s — document-order vs " +
 		"create/wire-buffer ordering; same DOM result",
 	"component": "component slot children — struct-built slot-factory " +
