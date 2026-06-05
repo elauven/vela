@@ -311,6 +311,15 @@ type ASTGen struct {
 	// each level appends its own teardown.
 	nestedTeardowns []string
 
+	// fragHoisted collects per-row-fragment declarations during
+	// emission (companion to capturedScope.fragHoisted).
+	// buildComponentNode appends here when it is BOTH in a
+	// fragment AND in a branch scope; the row-fragment builder
+	// prepends them to the fragment body.  captureScope swaps
+	// this with a fresh slice and the inner buildIfChain re-emits
+	// the captured entries so they continue bubbling up.
+	fragHoisted []JsStmt
+
 	// cssExternal selects CSS delivery.  When false (default), the
 	// component injects its scoped <style> into document.head at
 	// runtime (CSS-in-JS).  When true, buildStyleInjection emits
@@ -348,6 +357,63 @@ func (g *ASTGen) addUpdate(dep string, stmt JsStmt) {
 	g.updates[dep] = append(g.updates[dep], stmt)
 }
 
+// declare routes a top-level declaration to the scope appropriate
+// for the generator's current position.  Use this for declarations
+// that must outlive a branch-build closure (`let X = null;`,
+// `function Y(){}`, etc.) — the scope rule is:
+//
+//   - inside an {#each} row fragment closure → fragment scope
+//     (g.fragHoisted; consumed by the row-fragment builder so each
+//     row gets its own var while the chain function declared here
+//     can still read row-local `it`/`$$i`);
+//   - otherwise → component scope (g.hoisted).
+//
+// Pair with inCapturedScope (predicate) and declareInScope (the
+// "escape if captured, else emit to body" wrapper).  These three
+// replaced four nearly-identical per-builder helpers — every
+// builder used to compute the routing itself, which was a recipe
+// for the next builder to forget.
+//
+// declare is for declarations that must be visible across the
+// current closure.  Statements that should execute in document
+// order (e.g. `anchor.appendChild(...)`) still go to g.body or
+// g.initBody as before.
+func (g *ASTGen) declare(stmt JsStmt) {
+	if g.fragCounter >= 0 {
+		g.fragHoisted = append(g.fragHoisted, stmt)
+	} else {
+		g.hoisted = append(g.hoisted, stmt)
+	}
+}
+
+// inCapturedScope reports whether the generator is currently
+// emitting into a captured g.body — that is, inside a branch's
+// build closure (captured by buildIfChain) or a slot's factory
+// closure (captured by buildComponentNode's slot path).  When
+// true, builders must route declarations through g.declare so
+// they escape the closure; when false, declarations can go to
+// g.body directly because g.body IS the component scope.
+//
+// This is the predicate the prior per-builder helpers were
+// each computing as `g.inBranchScope || g.inSlotScope`.
+func (g *ASTGen) inCapturedScope() bool {
+	return g.inBranchScope || g.inSlotScope
+}
+
+// declareInScope emits a declaration at the "right" scope for the
+// generator's current position: g.declare (escape) when inside a
+// captured scope, g.body (direct) otherwise.  This is the body
+// of every builder's `decl` closure — buildIfChain, buildAwait
+// Block, etc. — pulled into a single method so the next builder
+// doesn't have to reinvent it.
+func (g *ASTGen) declareInScope(stmt JsStmt) {
+	if g.inCapturedScope() {
+		g.declare(stmt)
+	} else {
+		g.body = append(g.body, stmt)
+	}
+}
+
 // addStructuralUpdate records a STRUCTURAL re-render — an
 // {#if}/{#key}/{#await} chain function or a similar
 // mount/unmount operation — that must run BEFORE the ordinary
@@ -378,6 +444,22 @@ type capturedScope struct {
 	cleanup  []JsStmt            // teardown statements
 	updates  map[string][]JsStmt // reactive dep → update statements
 	comps    []compInstance      // component instances built here
+
+	// fragHoisted carries declarations that must escape any
+	// enclosing branch-build closures to land at the top of the
+	// nearest ENCLOSING row-fragment scope (an {#each} fragment
+	// body).  Example: a child component used inside an {#if}
+	// inside an {#each} row.  Hoisting to component scope is
+	// wrong (every row would share one instance — the
+	// `if (!compVar)` mount guard would build only the first
+	// row).  The right scope is the row fragment, so each row
+	// has its own var.  buildIfChain (and any other capturing
+	// branch builder) re-emits inner fragHoisted from its own
+	// capture, so the entries bubble up through arbitrarily
+	// deep nesting until consumed.  Outside a fragment (no
+	// enclosing row), buildComponentNode hoists to component
+	// scope directly and this channel stays empty.
+	fragHoisted []JsStmt
 }
 
 // captureScope runs fn with the generator's emission buffers
@@ -395,6 +477,7 @@ func (g *ASTGen) captureScope(fn func()) capturedScope {
 	saveEvents, saveCleanup := g.events, g.cleanup
 	saveUpdates := g.updates
 	saveComps := g.compInstances
+	saveFragHoisted := g.fragHoisted
 
 	// Restore on the way out — via defer so a panic inside fn()
 	// cannot leave the generator's buffers swapped out.  The
@@ -407,22 +490,25 @@ func (g *ASTGen) captureScope(fn func()) capturedScope {
 		g.events, g.cleanup = saveEvents, saveCleanup
 		g.updates = saveUpdates
 		g.compInstances = saveComps
+		g.fragHoisted = saveFragHoisted
 	}()
 
 	g.body, g.initBody = nil, nil
 	g.events, g.cleanup = nil, nil
 	g.updates = map[string][]JsStmt{}
 	g.compInstances = nil
+	g.fragHoisted = nil
 
 	fn()
 
 	return capturedScope{
-		body:     g.body,
-		initBody: g.initBody,
-		events:   g.events,
-		cleanup:  g.cleanup,
-		updates:  g.updates,
-		comps:    g.compInstances,
+		body:        g.body,
+		initBody:    g.initBody,
+		events:      g.events,
+		cleanup:     g.cleanup,
+		updates:     g.updates,
+		comps:       g.compInstances,
+		fragHoisted: g.fragHoisted,
 	}
 }
 
@@ -2563,11 +2649,11 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// build block would be invisible there (ReferenceError).  Only
 	// the INITIAL reconciler call stays in the branch/slot body so
 	// it runs when that branch mounts.
-	captured := g.inBranchScope || g.inSlotScope
+	captured := g.inCapturedScope()
 
 	// ── 1. Anchor ────────────────────────────────────────────
 	if captured {
-		g.hoisted = append(g.hoisted, jsStmt("let "+anchor+" = null;"))
+		g.declare(jsStmt("let " + anchor + " = null;"))
 		g.body = append(g.body, jsStmt(
 			anchor+" = document.createComment('#each');"))
 	} else {
@@ -2612,6 +2698,13 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 			cap := g.captureScope(func() {
 				g.buildChildRun(rowElem.Children, rowVar)
 			})
+			// Per-row declarations bubbled up from any nested
+			// branch (a component built inside an {#if} inside
+			// this row).  These must come BEFORE the row's
+			// element creation/branch builds: code emitted from
+			// those references the vars.  Each row gets its own
+			// instance because they live in the fragment closure.
+			fragBody = append(fragBody, cap.fragHoisted...)
 			fragBody = append(fragBody, cap.body...)
 			fragBody = append(fragBody, rowAttrs.update...)
 			fragBody = append(fragBody, cap.initBody...)
@@ -2687,14 +2780,32 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 		eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar))
 
 	if captured {
-		g.hoisted = append(g.hoisted, fragDecl)
+		g.declare(fragDecl)
 		if keyExpr != "" {
-			g.hoisted = append(g.hoisted, jsStmt(
-				"let "+keymap+" = null;"))
+			g.declare(jsStmt("let " + keymap + " = null;"))
 			g.body = append(g.body, jsStmt(keymap+" = new Map();"))
 		}
-		g.hoisted = append(g.hoisted, jsStmt("let "+blocks+" = [];"))
-		g.hoisted = append(g.hoisted, reconcilerDecl)
+		g.declare(jsStmt("let " + blocks + " = [];"))
+		g.declare(reconcilerDecl)
+		// Outer-branch teardown contribution.  When the {#if} (or
+		// other chain) containing this {#each} switches off, the
+		// chain only captures this each's anchor in its branch
+		// handle — the rows live before the anchor and would be
+		// orphaned in the DOM if the outer simply removed the
+		// handle.  Emit a teardown snippet so the outer branch's
+		// teardown destroys every row, clears the bookkeeping,
+		// and nulls the anchor — matching the pattern used for
+		// nested {#if} chains.  Same g.nestedTeardowns channel,
+		// so a doubly-nested control-flow propagates naturally.
+		var td strings.Builder
+		td.WriteString(blocks + ".forEach(b => b.destroy()); ")
+		td.WriteString(blocks + " = []; ")
+		if keyExpr != "" {
+			td.WriteString(keymap + " = null; ")
+		}
+		td.WriteString(eachFn + "._arr = undefined; ")
+		td.WriteString(anchor + " = null; ")
+		g.nestedTeardowns = append(g.nestedTeardowns, td.String())
 	} else {
 		g.body = append(g.body, fragDecl)
 		if keyExpr != "" {
@@ -2851,12 +2962,19 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	errVar := "$$awaitErr_" + id
 	cellVar := "$$promCell_" + id
 
+	// When this {#await} is built inside another branch's build
+	// closure, the state-var declarations and driver function
+	// must escape that closure — declareInScope handles the
+	// routing.  The initial driver call still goes to g.initBody
+	// so it fires when the component mounts.
+	nestedHoist := g.inCapturedScope()
+	declAwait := func(s string) { g.declareInScope(jsStmt(s)) }
+
 	// Component-scope storage.  State starts at 0 (pending).
-	g.body = append(g.body,
-		jsStmt("let "+stateVar+" = 0;"),
-		jsStmt("let "+valVar+" = undefined;"),
-		jsStmt("let "+errVar+" = undefined;"),
-		jsStmt("let "+cellVar+" = null;"))
+	declAwait("let " + stateVar + " = 0;")
+	declAwait("let " + valVar + " = undefined;")
+	declAwait("let " + errVar + " = undefined;")
+	declAwait("let " + cellVar + " = null;")
 
 	// Synthetic chain: pending / resolved / rejected.  The {:then}
 	// and {:catch} binding names are rewritten to the module-scope
@@ -2903,8 +3021,13 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	// appendChild — legacy emits the driver BEFORE that wiring
 	// (driver goes in the create buffer, the appendChild in the
 	// wire buffer).  Insert the driver just before that trailing
-	// statement so the structural order matches.
-	if n := len(g.body); n > 0 {
+	// statement so the structural order matches.  When nested,
+	// the chain function declaration was hoisted (no trailing
+	// appendChild remained in g.body) and the driver itself must
+	// also reach component scope so the cascade can find it.
+	if nestedHoist {
+		g.declare(driverStmt)
+	} else if n := len(g.body); n > 0 {
 		g.body = append(g.body[:n-1],
 			append([]JsStmt{driverStmt}, g.body[n-1])...)
 	} else {
@@ -2990,14 +3113,14 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	// g.hoisted (component scope) in that case; the assignment
 	// statements still go to g.body so they execute as part of
 	// the outer branch's build sequence.
-	nestedHoist := g.inBranchScope || g.inSlotScope
-	decl := func(s string) {
-		if nestedHoist {
-			g.hoisted = append(g.hoisted, jsStmt(s))
-		} else {
-			g.body = append(g.body, jsStmt(s))
-		}
-	}
+	//
+	// When the chain is built inside another branch's build
+	// closure (recursive walker via captureScope), declarations
+	// must escape that closure — declareInScope routes through
+	// g.declare in that case (which itself picks row-fragment vs
+	// component scope based on whether we are inside an {#each}).
+	nestedHoist := g.inCapturedScope()
+	decl := func(s string) { g.declareInScope(jsStmt(s)) }
 
 	// Anchor comment.  The appendChild that wires it into the
 	// parent is emitted AFTER the chain function below — legacy
@@ -3007,7 +3130,7 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 		// Split decl from assignment so the binding lives at
 		// component scope but the createComment runs when the
 		// outer branch builds.
-		g.hoisted = append(g.hoisted, jsStmt("let "+anchor+" = null;"))
+		g.declare(jsStmt("let " + anchor + " = null;"))
 		g.body = append(g.body, jsStmt(
 			anchor+" = document.createComment('if-chain');"))
 	} else {
@@ -3083,6 +3206,27 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 			})
 			plans[i].nestedTeardowns = append([]string{},
 				g.nestedTeardowns[tdMark:]...)
+			// Bubble fragHoisted (e.g. a component instance
+			// built in this branch when the chain itself lives
+			// inside an {#each} row) out to the enclosing
+			// scope.  The row-fragment builder (or another
+			// outer chain) will consume it; if we're at
+			// component scope there is no consumer, but no
+			// fragHoisted is generated in the first place
+			// because buildComponentNode only emits there when
+			// inFragment is true.
+			g.fragHoisted = append(g.fragHoisted, cap.fragHoisted...)
+			// Branch-local component instances are tracked
+			// separately for branch teardown (plans[i].comps),
+			// but the ENCLOSING scope also needs to know about
+			// them — when the chain sits inside an {#each} row,
+			// the row's update closure must replay each
+			// component's .set(propsObj) so an active branch's
+			// child receives new prop values without being
+			// destroyed.  Re-publish to g.compInstances; the
+			// setStmt guard `if (inst)` makes the replay a
+			// no-op when the branch is currently inactive.
+			g.compInstances = append(g.compInstances, cap.comps...)
 			var bt strings.Builder
 			bt.WriteString(stmtsToText(cap.body))
 			bt.WriteString(stmtsToText(cap.events))
@@ -3130,7 +3274,9 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 		// must reach component scope too — they're read from the
 		// chain function which now lives there.
 		if nestedHoist {
-			g.hoisted = append(g.hoisted, sub.decls...)
+			for _, d := range sub.decls {
+				g.declare(d)
+			}
 		} else {
 			g.body = append(g.body, sub.decls...)
 		}
@@ -3230,9 +3376,6 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 		b.WriteString(plans[i].buildText)
 		b.WriteString(bv + " = [..." + frag + ".childNodes];")
 		b.WriteString(anchor + ".before(" + frag + ");")
-		// Initial hole writes — run after bv is assigned, since
-		// they are bv-guarded (no-op while the branch is unmounted).
-		b.WriteString(plans[i].initText)
 		b.WriteString("}")
 		// Re-attach guard: if the branch's nodes were detached (a
 		// parent re-render moved the anchor), splice them back in
@@ -3243,6 +3386,19 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 		b.WriteString("for (const $$node of " + bv + ") " +
 			anchor + ".before($$node);")
 		b.WriteString("}")
+		// Initial hole writes + nested-chain initial calls.
+		// Run on EVERY active-branch tick — fresh build, detach
+		// re-attach, AND a simple re-fire (an outer cascade that
+		// landed on this branch without changing its activity).
+		// Each statement is bv-guarded ("if (bv) …") and inner
+		// chain calls are themselves no-ops when their anchor is
+		// null, so this is safe to run unconditionally.  Running
+		// it here is the difference between a row's inner-chain
+		// state being refreshed on every cascade tick (correct)
+		// versus only on the rare branch-flip (the symptom: a
+		// nested {#if it.b} inside {#if it.a} in an {#each} row
+		// missed updates to it.b when it.a stayed true).
+		b.WriteString(plans[i].initText)
 		b.WriteString("}")
 	}
 	b.WriteString("} finally {")
@@ -3253,7 +3409,7 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	b.WriteString("}")
 
 	if nestedHoist {
-		g.hoisted = append(g.hoisted, jsStmt(b.String()))
+		g.declare(jsStmt(b.String()))
 		// Build a teardown snippet so the OUTER branch (the one
 		// inside whose body THIS chain was emitted) can tear it
 		// down on deactivation.  The outer's bv snapshot only
@@ -3457,7 +3613,7 @@ func (g *ASTGen) buildElement(el *ElementNode, varName, parentVar string, isRoot
 	// block is invisible to the component-scope setter cascade that
 	// replays the element's reactive attribute updates.  Emit a
 	// hoisted `let X = null;` plus an assignment in the body.
-	if g.inBranchScope || g.inSlotScope {
+	if g.inCapturedScope() {
 		g.hoisted = append(g.hoisted, jsStmt("let "+varName+" = null;"))
 		g.body = append(g.body, jsStmt(
 			varName+" = document.createElement('"+el.Tag+"');"))
@@ -3705,27 +3861,30 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	// and caches its children; a reopen re-adopts the cached nodes.
 	slotsObj := g.buildSlotClosures(comp)
 
-	// Wrapper + instance variable declarations.
+	// Wrap and instance variables.  The right declaration scope
+	// depends on where this component invocation sits:
 	//
-	// In an {#each} fragment (fragCounter >= 0) the component is
-	// PER ROW: the fragment function runs once per item, so each
-	// invocation needs its own fresh instance.  The vars are
-	// fragment-local `const`s declared inline — hoisting them to
-	// component scope would make every row share one instance, so
-	// the `if (!$$nN_comp)` mount guard would build only the first
-	// row's component.
-	//
-	// Outside a fragment the vars are HOISTED (declaration only —
-	// assignment stays in g.body, in document order).  When the
-	// component sits in a slot closure or an {#if} branch, g.body
-	// lands in that closure/branch-build block; a `const` trapped
-	// there is invisible on a reopen/rebuild and unassignable when
-	// the branch-removal cleanup nulls it.
+	//   - inside an {#if} inside an {#each} (inFragment +
+	//     branch): fragHoisted, so each row gets its own var AND
+	//     the var survives the branch closure;
+	//   - inside an {#each} row only (inFragment, no branch):
+	//     g.body — which is the row fragment closure, so each
+	//     row gets its own var naturally;
+	//   - top-level or non-fragment branch: g.hoisted (component
+	//     scope) — every reference site (mount, setStmt cascade,
+	//     destroy) needs to see them, and a local `let` declared
+	//     in a branch closure would be invisible on reopen/
+	//     rebuild and unassignable when the branch-removal
+	//     cleanup nulls it.
 	inFragment := g.fragCounter >= 0
-	if inFragment {
+	switch {
+	case inFragment && g.inBranchScope:
+		g.fragHoisted = append(g.fragHoisted, jsStmt("let "+wrap+" = null;"))
+		g.fragHoisted = append(g.fragHoisted, jsStmt("let "+inst+" = null;"))
+	case inFragment:
 		g.body = append(g.body, jsStmt("let "+wrap+" = null;"))
 		g.body = append(g.body, jsStmt("let "+inst+" = null;"))
-	} else {
+	default:
 		g.hoisted = append(g.hoisted, jsStmt("let "+wrap+" = null;"))
 		g.hoisted = append(g.hoisted, jsStmt("let "+inst+" = null;"))
 	}
@@ -3864,7 +4023,17 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
 			}()
 			g.buildChildRun(slotNodes, fragVar)
 		})
-		buildText := stmtsToText(cap.body)
+		// Per-slot-call hoists (e.g. a nested {#if} chain function
+		// declared while building this slot — its declarations
+		// must live in a scope visible to the rest of the slot
+		// content but not at component scope, since they read
+		// slot-local vars).  The slot factory closure is the
+		// right scope.  Prepend so they declare before any code
+		// references them.
+		var buildBuf strings.Builder
+		buildBuf.WriteString(stmtsToText(cap.fragHoisted))
+		buildBuf.WriteString(stmtsToText(cap.body))
+		buildText := buildBuf.String()
 		// Event listeners and initial-render statements emitted by
 		// slot content (e.g. a component @click handler, or a
 		// child component's init call) must run inside the closure
@@ -3892,9 +4061,18 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
 			}
 		}
 
-		// The cache var is hoisted to component scope so the
-		// closure (and reopens) can see it.
-		g.body = append(g.body, jsStmt("let "+cacheVar+" = null;"))
+		// The cache var stores the slot's previously-built nodes
+		// so a re-open can reuse them.  It is read from the slot
+		// factory closure (stored on the child component's
+		// props, invoked from inside the child's own component
+		// body) — that reference lives outside the current
+		// emission scope.  When this <Component> is itself
+		// inside a captured scope (an {#if} branch or another
+		// slot), a plain `let` in g.body would be block-scoped
+		// to that closure and invisible from the factory.
+		// declareInScope routes via g.declare in that case,
+		// landing the var at the right enclosing scope.
+		g.declareInScope(jsStmt("let " + cacheVar + " = null;"))
 
 		var b strings.Builder
 		b.WriteString("() => { ")

@@ -454,6 +454,308 @@ imports whichever it uses.
     microtask flush.  (This surfaced as a false IfToggle failure —
     a harness gap, not a compiler bug.)
 
+## Session 3 of 3 — audit pass
+
+Final session: hunt for any `let X = null;` / `function Y(){}` /
+`const Z = …;` declarations still going into g.body that should
+have gone through the centralised routing introduced in Session 2.
+Five hits remained after Session 2; four were correct on
+inspection, one was a real bug.
+
+### Hits audited
+
+1-2. **buildEachBlock, lines 2812 / 2814** — `const keymap` and
+   `let blocks` in the `else` arm of `if (captured) { … } else
+   { … }`.  The `else` path runs when NOT in a captured scope,
+   so g.body IS the right scope.  **Correct, no change.**
+
+3-4. **buildComponentNode, lines 3885 / 3886** — `let wrap` and
+   `let inst` in the `case inFragment:` arm of the three-arm
+   switch (inFragment, not branch-scope).  g.body IS the row
+   fragment closure; each row gets its own var naturally.
+   **Correct, deliberate.**
+
+5. **buildComponentNode slot factory, line 4066** — `let cacheVar
+   = null;` for the slot's previously-built nodes.  Read from the
+   slot factory closure stored on the child component's props,
+   invoked from inside the child's own component body — i.e.
+   from OUTSIDE the current emission scope.  When the slot-
+   bearing component is itself inside an {#if} or {#each}
+   branch, a plain `let` in g.body becomes block-scoped to that
+   branch and invisible from the factory.  **REAL BUG.**
+
+   Repro: `{#if show}<Wrapper><span>{msg}</span></Wrapper>{/if}`
+   — initial mount threw `ReferenceError: $$scache_$$nN is not
+   defined`.  Fix: route the declaration through declareInScope
+   so the var escapes the branch closure to the right enclosing
+   scope (fragment if inside an {#each}, component otherwise).
+
+   Regression test:
+   TestRuntimeNestingMatrix_SlotComponentInIf — slot-bearing
+   child component inside an {#if}, edit + hide + reopen cycle.
+
+### Adjacent finding (documented, not a bug)
+
+The if-chain's branch capture drops cap.cleanup (it forwards
+buildText, events, comps, fragHoisted, nestedTeardowns up to
+the outer scope, but not cleanup).  This means a
+`removeEventListener` emitted inside a branch (e.g. from a
+bind:value on an input inside `{#if}`) is silently lost.
+
+In practice this is not a leak: the input element is destroyed
+with the branch and GC reclaims its listeners.  But it would be
+a hazard if a future builder emitted a cleanup statement that
+must run on branch unmount (e.g. tearing down a long-lived
+subscription).  Worth noting for future contributors.
+
+### Coverage additions
+
+- `TestRuntimeNestingMatrix_SlotComponentInIf` — the bug above.
+- `TestRuntimeNestingMatrix_KeyedEachInIf` — confirms the keyed
+  reconciler's `keymap = new Map()` initialiser correctly resets
+  on branch reopen.
+
+Matrix is now 27 cases.
+
+### Three-arm switch on buildComponentNode — reaffirmed correct
+
+The three destinations are genuinely different (fragHoisted /
+g.body / g.hoisted) and the routing decision matches no other
+site.  Generalising it into a new method would add a knob without
+simplifying any caller.  The comment block was already cleaned up
+in Session 2.  No change.
+
+### Gates
+
+Matrix (27 tests): green twice.  Full suite (~597 tests): green
+twice.  vet: clean.  Differential AST↔legacy: in sync.  Fuzzer:
+clean across two passes.  PageCraft e2e: editing heading
+preserves focus AND updates canvas; nested `{#if p.eyebrow}`
+reactively shows/hides; zero errors.
+
+### Honest take on the three-session arc
+
+Session 1 (the matrix) caught six real bugs that had been silently
+present in the codebase.  Session 2 (the centralization) was a
+net-negative LOC refactor that the matrix caught nothing in.
+Session 3 (this audit) caught one additional real bug that the
+matrix had not exercised yet.  That bug was a "slot factory's
+cache var declared in wrong scope" — exactly the shape Session 2's
+declareInScope was designed to handle.
+
+The right summary: Session 1 found the existing bugs, Session 2
+made the architecture express the routing rule once, Session 3
+verified there were no remaining instances of the pattern (and
+found one).  Future builders emitting declarations into closures
+should reach for g.declare / g.declareInScope first and consult
+the comment headers there.
+
+## Session 2 of 3 — centralize branch-scope routing
+
+Session 1's matrix surfaced the same architectural pattern over and
+over: a builder emits `let X = null;` / `function Y(){}` into g.body,
+which is correct at component scope but wrong inside a captured
+branch closure (where g.body is the outer branch's build block).
+Three builders had each learned this lesson independently, ending
+up with three near-identical 6-line hoist helpers:
+
+  hoistEach  (in buildEachBlock)
+  hoistAwait (in buildAwaitBlock)
+  hoistTarget (in buildIfChain)
+
+each computing the same `if g.fragCounter >= 0 { fragHoisted }
+else { hoisted }` routing.  A fourth builder (e.g. when something
+new is added) would forget.
+
+Session 2 consolidates the routing into three methods on ASTGen:
+
+  g.declare(stmt)        — pick fragHoisted or hoisted based on
+                           fragCounter (the scope rule).
+  g.declareInScope(stmt) — escape via declare when in a captured
+                           scope, else emit to g.body.  This is
+                           the body of every builder's per-call
+                           `decl` closure.
+  g.inCapturedScope()    — `g.inBranchScope || g.inSlotScope`
+                           predicate; replaces four open-coded
+                           copies.
+
+All four builders migrated:
+- buildEachBlock: hoistEach removed; six call sites now use
+  g.declare directly.
+- buildAwaitBlock: hoistAwait + declAwait collapsed; the `decl
+  Await` closure now delegates to g.declareInScope.
+- buildIfChain: hoistTarget + decl collapsed similarly.
+- buildComponentNode: stale double-comment block cleaned up; the
+  three-arm scope decision (fragHoisted / g.body / g.hoisted)
+  KEPT as-is because its three destinations are genuinely
+  different — the routing decision matches no other site.
+
+### Net effect
+
+~50 lines of duplicated routing logic deleted.  Every builder that
+needs to declare into "the right scope" goes through one place.
+The next builder to land doesn't have to reinvent the rule.
+
+### Why this matters preventively
+
+Of the six bugs Session 1 surfaced, four were the "builder forgot
+to honor inBranchScope" pattern.  After Session 2, the routing is
+expressed once, named (g.declare / g.declareInScope / g.in
+CapturedScope), and discoverable — a new builder authoring code
+will encounter the method before they write the open-coded
+if/else themselves.
+
+### Gates after the refactor
+
+Matrix safety net (25 tests): green twice.  Full suite (~595
+tests): green.  vet: clean.  Differential AST↔legacy: in sync.
+Fuzzer: clean across two passes.  PageCraft e2e: editing the
+heading preserves focus AND updates the canvas; nested
+{#if p.eyebrow} reactively shows/hides; zero errors.
+
+Session 3 (delete remaining workarounds and any straggling
+g.body-instead-of-g.declare paths) is now the final step.
+
+## Session 1 of 3 — nesting matrix as a safety net
+
+The first of three sessions to harden Vela's control-flow nesting.
+Goal: a comprehensive test suite that covers every meaningful
+combination of {#if}, {#each}, {#key}, {#await} and
+<Component>, so future regressions surface at the test level
+rather than in user apps.  This delivered runtime_nesting_matrix
+_test.go (25 cases) and, in the process, surfaced six real bugs
+that were silently lurking in the codebase.  All fixed before the
+session closed.
+
+### Bugs Session 1 surfaced
+
+1. **{#await} machinery did not hoist when nested in a branch.**
+   The state vars ($$promState, $$awaitVal, $$awaitErr, $$promCell)
+   and the driver function were emitted to g.body unconditionally;
+   inside an outer branch's build closure they became block-scoped
+   and invisible to the component-scope cascade (ReferenceError).
+   Fix: same nestedHoist pattern as buildIfChain — route to
+   g.hoisted (or g.fragHoisted, see below) when inBranchScope or
+   inSlotScope.
+
+2. **$$proxy wrapped exotic built-ins.**  $state.deep wrapped
+   every nested object — including Promise, Date, RegExp, Map,
+   Set, WeakMap, WeakSet, Error, ArrayBuffer and typed arrays.
+   These rely on internal slots a Proxy receiver cannot satisfy,
+   so any method call on the wrapped value threw "Method
+   <X>.prototype.<m> called on incompatible receiver" — e.g.
+   `await it.p` on a $state.deep array of Promises blew up at
+   .then().  This is a real production hazard, not just a test
+   issue.  Fix: $$proxy now passes these built-ins through
+   unwrapped.  Deep reactivity for plain objects and arrays is
+   unaffected.
+
+3. **{#each} rows orphaned when an outer {#if} branch tore
+   down.**  After the earlier Session A "branch handle does not
+   capture each rows" fix, the outer chain only captured the
+   each's anchor in its branch handle; the rows lived before that
+   anchor and were left in the DOM when the outer branch
+   detached.  Symptom: hiding then showing again left duplicate
+   rows.  Fix: buildEachBlock now emits a teardown snippet into
+   the existing g.nestedTeardowns channel — destroy every row,
+   clear the bookkeeping, null the anchor.  The outer chain's
+   per-branch teardown reads new entries (snapshot-length pattern
+   tdMark = len(g.nestedTeardowns)) and emits them.  Doubly-
+   nested propagates naturally.
+
+4. **Component instance vars block-scoped inside
+   {#if}-in-{#each}.**  buildComponentNode emitted
+   `let $$compN = null;` into g.body — fine at the row-fragment
+   top level, but inside a branch closure it became block-scoped
+   and code outside the branch (the chain function's teardown
+   clause, the row's update closure) could not see it.  Hoisting
+   to component scope was wrong too: every row would share one
+   instance.  Fix: a new fragHoisted channel on capturedScope and
+   ASTGen lifts declarations to the nearest ENCLOSING row-fragment
+   scope.  Each row gets its own var, and the chain function /
+   row update inside that fragment can reach it.  buildIfChain
+   re-emits cap.fragHoisted from its branch capture so the
+   channel propagates through nesting; the slot factory
+   consumes it at its closure top.
+
+5. **Nested chain functions hoisted to row-fragment scope
+   were not called on outer-chain re-attach or row-update.**
+   The chain function lived in fragment scope (correct — it
+   reads row-local vars), but the outer chain's emission called
+   nested chains ONLY in the fresh-build branch ("if (!bv)").
+   On the re-attach path or on a row update where the active
+   branch did not change, inner chains never re-ran, so an inner
+   reactive value (e.g. it.b inside `{#if it.a}{#if it.b}…`)
+   never updated.  Fix: move plans[i].initText (which carries
+   the initial chain-call AND interior hole writes) out of the
+   `if (!bv)` block so it runs on every active-branch tick.
+   Each statement is bv-guarded and chain calls are no-ops when
+   their anchor is null, so it is safe to run unconditionally.
+
+6. **Branch-local component instances not replayed in the
+   enclosing row's update.**  Component instances built inside
+   an {#if} inside a row were tracked in plans[i].comps for
+   branch teardown, but were NOT re-published to g.compInstances.
+   Session A's row-update path (which replays each component's
+   .set(propsObj)) therefore could not see them — a reactive
+   prop change on the enclosing row did not reach the child.
+   Fix: after capturing a branch's scope, re-append cap.comps to
+   g.compInstances so the outer row's compInstances collection
+   includes them.  The setStmt's `if (inst) inst.set(...)` guard
+   keeps the replay safe when the branch is currently inactive.
+
+### Infrastructure added
+
+- **fragHoisted channel** — a third hoist destination, sibling to
+  g.body and g.hoisted, carrying declarations that must escape
+  the current branch closure but stop at the nearest enclosing
+  row-fragment scope.  Threaded through capturedScope so it
+  propagates across arbitrary nesting depths.  buildEachBlock,
+  buildIfChain, buildAwaitBlock, and buildComponentNode all
+  route to it when their nestedHoist+inFragment predicate fires.
+
+- **hoistTarget / hoistAwait / hoistEach** — small per-builder
+  helpers that abstract the routing decision (fragment vs
+  component scope) so each builder reads its own intent
+  declaratively.  Session 2's centralization will consolidate
+  these into captureScope; this is the surface to refactor.
+
+- **assertFocused harness assertion + focus action** — were
+  added in Session A; Session 1's
+  TestRuntimeNestingMatrix_FocusSurvives_ComponentInEach exercises
+  them in the matrix.
+
+### Matrix coverage
+
+25 cases, organised as:
+- All 16 pairwise nestings of {if, each, key, await} × {in-if,
+  in-each, in-key, in-await}
+- 4 component-bearing variants (component-in-if, in-each, in-if-
+  in-each, in-each-in-if)
+- 3 triple-nested shapes (each-in-if-in-each, if-in-if-in-each,
+  component-in-if-in-each combined-mutation)
+- 2 edge cases ({#await} rejection, focus-survives-component-in-
+  each)
+
+Each case asserts (where applicable): initial DOM correct;
+reactive change to INNER state updates DOM; toggling OUTER
+construct cleanly tears down inner; no orphan nodes; no runtime
+errors.
+
+PageCraft e2e — editing the heading preserves focus AND updates
+the canvas, zero errors.
+
+### What Session 1 implies for Sessions 2 and 3
+
+The density of bugs (six) caught by this matrix strongly argues
+the architectural cleanup is now closer to NECESSARY than nice-
+to-have.  The code now carries three nearly-identical hoist
+helpers and a fragHoisted channel that future builders must
+remember to consume.  Session 2 will centralize that routing in
+captureScope itself — the right level to consolidate it, since
+that is where the scope semantics change.  Session 3 will delete
+the per-builder workarounds once 2 lands.
+
 ## Post-stabilize fix — nested {#if} chains were not reactive
 
 Reported symptom: in LiveBlock, content wrapped in {#if} did not

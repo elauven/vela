@@ -297,6 +297,23 @@ export function $$proxy(val, notify) {
   const cache = new WeakMap();
   const wrap = (v) => {
     if (v === null || typeof v !== 'object') return v;
+    // Exotic built-ins (Promise, Date, RegExp, Map, Set, WeakMap,
+    // WeakSet, Error, ArrayBuffer / TypedArrays) rely on internal
+    // slots that Proxy receivers cannot satisfy — wrapping them
+    // breaks any method call ("Method Promise.prototype.then
+    // called on incompatible receiver").  Return such values
+    // unwrapped; deep reactivity for plain objects and arrays is
+    // unaffected.
+    if (v instanceof Promise) return v;
+    if (v instanceof Date) return v;
+    if (v instanceof RegExp) return v;
+    if (v instanceof Map) return v;
+    if (v instanceof Set) return v;
+    if (v instanceof WeakMap) return v;
+    if (v instanceof WeakSet) return v;
+    if (v instanceof Error) return v;
+    if (v instanceof ArrayBuffer) return v;
+    if (ArrayBuffer.isView && ArrayBuffer.isView(v)) return v;
     let p = cache.get(v);
     if (p) return p;
     p = new Proxy(v, {
