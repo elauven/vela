@@ -18,6 +18,21 @@ type Analysis struct {
 	Lifecycles    []*LifecycleHook
 	CleanScript   string
 	ImportRecords []ImportRecord
+	// IntrinsicAliases maps a local binding name back to the
+	// original intrinsic it was aliased from (`"onMount"` or
+	// `"onDestroy"`).  Populated when the script imports an
+	// intrinsic under a different name, e.g.
+	//
+	//   import { onMount as init } from 'vela';
+	//   init(() => { … });
+	//
+	// extractLifecycle consults this map so the aliased call is
+	// still recognised as a lifecycle hook.  Without it, the
+	// callee `init` matched no intrinsic name; the import got
+	// stripped (because the imported name was an intrinsic) but
+	// the call survived as a reference to an undeclared name,
+	// crashing at module load.
+	IntrinsicAliases map[string]string
 }
 
 // LifecycleHook represents an onMount or onDestroy call.
@@ -91,6 +106,21 @@ func analyzeScript(src string) *Analysis {
 
 		case *JsImportDecl:
 			a.Imports = append(a.Imports, importFromDecl(s))
+			// When importing from 'vela' or 'vela/store', any
+			// specifier whose ORIGINAL name is a compiler
+			// intrinsic gets recorded — keyed by the local
+			// binding so a later `init(() => …)` (where `init`
+			// aliased `onMount`) still resolves to the intrinsic.
+			if s.Source == "vela" || s.Source == "vela/store" {
+				for _, spec := range s.Specifiers {
+					if velaCompilerIntrinsics[spec.Imported] {
+						if a.IntrinsicAliases == nil {
+							a.IntrinsicAliases = map[string]string{}
+						}
+						a.IntrinsicAliases[spec.Local] = spec.Imported
+					}
+				}
+			}
 			skipEnd[s.End] = true
 
 		case *JsVarDecl:
@@ -156,7 +186,7 @@ func analyzeScript(src string) *Analysis {
 			if body, ok := extractEffect(s.X); ok {
 				a.Effects = append(a.Effects, &Effect{Body: body})
 				skipEnd[s.End] = true
-			} else if kind, body, ok := extractLifecycle(s.X); ok {
+			} else if kind, body, ok := extractLifecycle(s.X, a.IntrinsicAliases); ok {
 				a.Lifecycles = append(a.Lifecycles, &LifecycleHook{Kind: kind, Body: body})
 				skipEnd[s.End] = true
 			}
@@ -313,7 +343,11 @@ func buildImportSpec(d *JsImportDecl) string {
 
 // extractLifecycle checks whether expr is an onMount(() => { … }) or
 // onDestroy(() => { … }) call and returns (kind, body, true) if so.
-func extractLifecycle(expr JsExpr) (kind, body string, ok bool) {
+// aliases (optional) maps local binding names to the original
+// intrinsic name when the script aliased the import, e.g.
+// `import { onMount as init } from 'vela'` registers
+// aliases["init"] = "onMount" so init(() => { … }) is recognised.
+func extractLifecycle(expr JsExpr, aliases map[string]string) (kind, body string, ok bool) {
 	call, isCall := expr.(*JsCallExpr)
 	if !isCall {
 		return
@@ -322,7 +356,11 @@ func extractLifecycle(expr JsExpr) (kind, body string, ok bool) {
 	if !isIdent {
 		return
 	}
-	switch callee.Name {
+	name := callee.Name
+	if real, hit := aliases[name]; hit {
+		name = real
+	}
+	switch name {
 	case "onMount", "onDestroy":
 	default:
 		return
@@ -342,7 +380,7 @@ func extractLifecycle(expr JsExpr) (kind, body string, ok bool) {
 	for _, s := range block.Body {
 		stmts = append(stmts, printNode(s))
 	}
-	return callee.Name, strings.Join(stmts, "\n"), true
+	return name, strings.Join(stmts, "\n"), true
 }
 
 func extractEffect(expr JsExpr) (string, bool) {

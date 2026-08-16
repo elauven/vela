@@ -454,6 +454,442 @@ imports whichever it uses.
     microtask flush.  (This surfaced as a false IfToggle failure —
     a harness gap, not a compiler bug.)
 
+## Component anchor — no wrapper (bug 4)
+
+The last open bug from the backlog.  Before this fix, a child
+component invocation produced a parent-side wrapper:
+
+  <div class="parent">
+    <div style="display:contents" vela-PARENT>      ← the wrapper
+      <button class="my-component">…</button>       ← child $$root
+    </div>
+  </div>
+
+`display:contents` made the wrapper layout-transparent, but the
+`<div>` was still in the DOM tree.  Any CSS rule using direct-
+child selectors broke silently:
+
+  .parent > .my-component { … }    /* never matched */
+  .parent > :nth-child(2) { … }    /* counted the wrapper */
+
+The wrapper had three concrete roles, all of which had to be
+re-homed to remove it:
+
+1. Stable insertion anchor — a fixed position in the parent's
+   DOM that the parent owned, before any component was mounted.
+2. CustomEvent listener target — the parent's `@event` attrs
+   added listeners on the wrapper; the child dispatched on
+   $$target (= the wrapper) and the event was caught there.
+3. CSS scope-id carrier — the wrapper held the parent's scope
+   attribute so "the component" was identifiable as part of the
+   parent's scope.  (Mostly cosmetic; user CSS targeting
+   components never resolved through it anyway.)
+
+### Fix
+
+Wrapper replaced by a single Node.COMMENT_NODE anchor:
+
+  parent.appendChild(document.createComment('comp'));
+  inst = Child(anchor, props, slots);
+
+Three coordinated changes carry the new contract:
+
+**Component-side mount accepts an anchor.**  The generated mount
+line now branches on `$$target.nodeType`:
+
+  if ($$target.nodeType === 8) {                   // Comment
+    $$target.parentNode.insertBefore($$root, $$target);
+  } else {
+    $$target.appendChild($$root);
+  }
+
+When the target is a Comment, the component inserts $$root BEFORE
+the anchor — at the document-order position the caller set up.
+When the target is an Element (e.g. the document root passed in
+by user code: `App(document.getElementById('root'))`), it still
+appendChild's.  The compiler-emitted call sites only ever pass
+a Comment now; the Element branch is for user-supplied targets.
+
+**$$dispatch fires on $$root, not $$target.**  The shim used to
+capture $$target:
+
+  const $$dispatch = (name, detail) =>
+    $$rt_dispatch($$target, name, detail);
+
+With $$target now being the parent's anchor (which lives in the
+parent's DOM), dispatching there would fire events that bubble
+up the parent's tree — sibling components could see each other's
+events.  Switching to $$root keeps events local to the component:
+
+  const $$dispatch = (name, detail) =>
+    $$rt_dispatch($$root, name, detail);
+
+The arrow reads $$root lazily; by the time any user handler
+invokes $$dispatch (always after mount), $$root is initialized.
+
+**Component @event listeners attach on inst.el after mount.**
+The listener target moved from `wrap` to `inst.el` (the
+component's $$root).  This required moving the listener-attach
+from g.events (runs BEFORE g.initBody) into g.initBody AFTER
+the mount call — inst.el doesn't exist until the constructor
+returns.
+
+The component instance now exposes its $$root via the `el`
+field:
+
+  return { el: $$root, destroy() { … }, set(props) { … } };
+
+Caller-side, `inst.el.addEventListener(name, hv)` runs right
+after the mount inside g.initBody.  In captured scopes (an
+{#if} branch, an {#each} row, a slot factory), this lands in
+plans[i].initText / fragBody / the slot factory body — all
+after the mount call.  Branch teardown's `cap.cleanup` closure
+captures the `inst` reference; `inst.el.removeEventListener`
+fires at the right time.
+
+### Cost: AST↔legacy differential is now disabled
+
+The mount line changed for EVERY component the AST generator
+produces — even templates with no child components.  The
+differential test compared AST output to the legacy generator
+character-by-character; with the universal divergence, it
+flagged every corpus entry as a failure.
+
+The differential test was useful when AST was claiming to be
+"the same as legacy, just structurally cleaner".  With this
+fix, AST is intentionally BETTER.  The differential's job is
+done.  Both differential tests (TestASTGenCorpusMatchesLegacy
+and TestASTGenMatchesLegacy) now skip with a clear pointer to
+this section.  When E4 (delete the legacy generator) lands,
+the tests vanish entirely.
+
+The matrix safety net (29 nesting tests + this fix's 2 new
+tests) plus the behavioural codegen tests plus the fuzzer are
+the replacement safety net.
+
+### Multi-root components
+
+A component with multiple root elements wraps its OWN siblings
+in a `display:contents` div internally.  That wrapper is the
+component AUTHOR's choice (they wrote a multi-root template),
+not the parent's.  After this fix:
+
+  <parent>
+    <componentMultiRootWrapper style="display:contents">
+      <…siblings…>
+    </componentMultiRootWrapper>
+  </parent>
+
+The `.parent > .sibling` selector STILL doesn't match because
+of the component's internal wrapper.  This is an honest
+trade-off: a multi-root component is by nature a "group of
+elements with one logical name", and the wrapper is the
+mechanism it uses to be one DOM node from the parent's
+perspective.  Eliminating that wrapper would require sibling-
+range tracking (open/close anchor pairs) — a much larger
+refactor with its own correctness concerns.  Left as future
+work.
+
+### Regression tests
+
+- TestRuntimeNestingMatrix_ComponentDirectChildSelector: a
+  parent with siblings flanking a `<Child/>` — direct-child
+  CSS selectors find the child's root, nth-child counts work,
+  document order is preserved.
+- TestRuntimeNestingMatrix_ComponentEventStillFires: a child
+  dispatches a CustomEvent, the parent's `@event` handler
+  catches it — verifies the new dispatch-on-$$root + listen-on-
+  inst.el path.
+- Updated TestComponentMountUsesAnchorComment_AST (renamed
+  from the now-incorrect TestComponentWrapperIsDisplayContents
+  _AST): pins the anchor-comment shape and the nodeType===8
+  branch in the generated mount.
+
+### Gates
+
+Full suite (~607 tests, less 2 differential families now
+skipped) green twice (in-tree + fresh-extract); vet clean;
+fuzzer clean × 2 passes.  PageCraft e2e: focus preserved,
+canvas updates, zero errors — the most important real-world
+regression check.
+
+### Backlog after this fix
+
+All four bugs from the post-arc backlog are fixed.  Open items
+are now features and architecture work — none "broken", all
+"could be better":
+  5. {#if}-component-preserve-state (mirror of Session A).
+  6. Vite plugin / dev-server integration.
+  7. Multi-component integration fixture as permanent test.
+  8. E4 — delete the legacy generator (~5000 LOC; the
+     differential tests already skip, so this is now
+     unblocked).
+  9. Consolidate branch teardown — make the closure the sole
+     path, retire destroyComps/nestedTeardowns redundancy.
+
+## Aliased intrinsics now resolve correctly
+
+Documented in MIGRATION.md as a deferred issue since the early
+post-Session work, fixed now as backlog item 3.
+
+### Pre-fix shape
+
+  import { onMount as init } from 'vela';
+  init(() => { … });
+
+The import statement was correctly stripped (the imported name
+matched a Vela compiler intrinsic), but `extractLifecycle`
+matched callees by literal name only — `init` did not equal
+`onMount`, so the call site survived as a reference to an
+undeclared local.  Module load threw "init is not defined".
+
+The asymmetry was the bug: import-stripping recognised the
+intrinsic by ORIGINAL name (matching `onMount`), but the call
+recogniser used the LOCAL name.
+
+### Fix
+
+Analysis grows a small map IntrinsicAliases[localName] →
+intrinsicName.  Populated during import processing, only for
+imports whose source is 'vela' or 'vela/store' (a user's own
+function called `onMount` from their own module remains a user
+function, isolated from the compiler's intrinsic logic).
+extractLifecycle takes the map as a parameter and resolves the
+callee name through it before the switch — so `init(() => …)`
+sees `name == "onMount"` and emits as a lifecycle hook.
+
+The kind that gets recorded on LifecycleHook is the resolved
+intrinsic name (`"onMount"` / `"onDestroy"`), not the alias —
+codegen continues to switch on `lc.Kind == "onMount"` without
+needing to know about aliasing.
+
+### Adjacent behaviour, NOT changed by this fix
+
+A direct `onMount(...)` callee with no preceding import is
+still recognised as an intrinsic (the historical "intrinsic by
+convention" behaviour).  Likewise, `import { onMount } from
+'./other.js'; onMount(...)` is STILL hijacked by the compiler
+— the direct-name match in extractLifecycle does not consult
+the import source.  That's a pre-existing asymmetry, separate
+from the alias case; addressing it would be a behaviour
+change for users (however unlikely they are to actually have
+their own `onMount` from a non-Vela module).
+
+### Regression tests
+
+- TestAliasedOnMount_Recognized: `init(...)` removed from
+  output, mount wiring present.
+- TestAliasedOnDestroy_Recognized: `teardown(...)` removed,
+  destroy() body emitted.
+- TestAliasedBothIntrinsics_BothRecognized: both work in one
+  script.
+- TestAnalyzer_IntrinsicAliases_Populated: the map gets the
+  expected entries.
+- TestAnalyzer_IntrinsicAliases_NotPopulatedForOtherSource:
+  imports from non-Vela sources do NOT pollute the map.
+
+### Gates
+
+Full suite green twice (in-tree + fresh-extract); vet clean;
+differential AST↔legacy in sync; fuzzer clean × 2 passes.
+PageCraft e2e clean.
+
+## Branch cleanup statements now actually fire
+
+Documented during Session 3 as a watch-point, fixed as a follow-up
+preventive cleanup of the post-arc backlog (item 2).
+
+### The pre-fix shape
+
+captureScope collected `cap.cleanup` — statements builders had
+emitted via g.cleanup while building the branch body
+(removeEventListener for @click handlers and bindings,
+inst.destroy() for components, blocks.forEach(destroy) for
+nested {#each}).  buildIfChain forwarded buildText, events,
+initBody, comps, fragHoisted, updates, and nestedTeardowns out
+of the capture — but cleanup was silently dropped.
+
+In practice the current emitters were all harmless: they
+reference targets reclaimed when the branch's DOM is removed
+(listeners on branch-local elements, components also tracked
+via plans[i].comps + destroyComps, each rows tracked via
+nestedTeardowns).  The drop was a real leak waiting on a future
+builder that emits cleanup with reach OUTSIDE the branch's DOM
+— a window/document listener, a setTimeout/setInterval, an
+external subscription returning an unsubscribe function.
+
+### The fix — per-branch cleanup closure
+
+Each branch declares a `_bN_cleanup` slot alongside its `_bN`
+handle.  At build time (inside `if (!bv) { … }`), if the
+branch's cap.cleanup is non-empty, the build stores a closure
+into the slot:
+
+  _bN_cleanup = () => {
+    /* every statement from cap.cleanup */
+  };
+
+The closure captures the build-block locals — `const handler =
+…`, `const $$nN = createElement(...)` — so cleanup statements
+that reference those names work even after the build block
+exits.  At branch teardown (inside the per-branch
+`if ($$active !== i && bv) { … }`), the chain invokes the
+closure FIRST (before removing branch nodes — order matters for
+cleanups that read element state), then nulls the slot:
+
+  if (_bN_cleanup) { _bN_cleanup(); _bN_cleanup = null; }
+
+Branches with no cleanup leave the slot at null forever — the
+`if (_bN_cleanup)` teardown guard makes that a free no-op.
+
+### Idempotence with existing teardown mechanisms
+
+The closure may now `inst.destroy()` for components that are
+ALSO destroyed by `destroyComps(plans[i].comps)`, or call
+`blocks.forEach(destroy)` for each blocks ALSO torn down via
+nestedTeardowns.  This is intentionally redundant and safe:
+- destroyComps nulls the inst variable after destroy; a second
+  `if (inst) inst.destroy()` becomes a no-op.
+- blocks gets reset to `[]` by nestedTeardowns; a second
+  forEach iterates an empty array.
+- removeEventListener on an already-removed element is a no-op.
+
+Removing the redundancy would require either replacing
+destroyComps + nestedTeardowns with the closure mechanism
+(invasive) or filtering cap.cleanup statement-by-statement
+(brittle).  Both are out of scope for a preventive fix.  The
+clean refactor — make the closure the sole teardown path,
+delete destroyComps — would be its own session.
+
+### Regression tests
+
+- TestIfBranchCleanupClosure: an @click handler inside `{#if}`
+  emits a cleanup slot, a closure assignment in the build path,
+  the closure invocation in the teardown, and a
+  removeEventListener inside the closure body.
+- TestIfBranchCleanupClosure_NoCleanup_NoOverhead: a branch with
+  no cleanup gets the slot declaration (one `let` per branch,
+  unconditional) but no closure assignment — the teardown's
+  `if (_cleanup)` guard makes it a free no-op.
+
+### Observable test outside the suite
+
+Spying on addEventListener/removeEventListener via prototype
+patches under jsdom — the BindIf scenario (a bind:value inside
+`{#if}`) now shows symmetric add/remove pairs as the branch
+mounts and unmounts.  Same for an @click handler inside the
+branch (ClickIf scenario).
+
+### Gates
+
+Full suite green twice (in-tree + fresh-extract); vet clean;
+differential AST↔legacy in sync; fuzzer clean × 2 passes.
+PageCraft e2e: editing the heading preserves focus AND updates
+the canvas; zero errors.
+
+## Slot content inside {#each} rows is now reactive
+
+Discovered during Session 3's audit, fixed as the first item of
+the post-arc backlog.
+
+Symptom: a child component placed inside another component's
+slot inside an {#each} row did not receive reactive prop updates.
+
+  <Wrapper><ChildLog label={it.v} /></Wrapper>
+
+Mutating items[0].v left ChildLog rendering the original value.
+No runtime errors — just silently stale UI.
+
+### Root cause: three bugs stacked
+
+1. **Slot-internal component vars block-scoped.**  Build
+   ComponentNode's three-arm switch routed the `let $$f4_comp
+   = null;` declaration to g.body when inFragment was true.
+   But when we are inside a slot factory closure, g.body IS
+   that closure — making the var local to a single slot
+   invocation.  The fix: combine inBranchScope and
+   inSlotScope into "captured" (g.inCapturedScope()) for the
+   component-decl routing.  Slot-internal components now
+   hoist to g.fragHoisted along with the branch case.
+
+2. **Slot capture consumed cap.fragHoisted into the slot factory
+   body.**  Even with (1), the fragHoisted entries still ended
+   up trapped in the factory.  The slot factory caches its
+   output, so the component instance was reused across slot
+   invocations — there was no path for fresh prop values to
+   reach the inner child after initial mount.  The fix: the
+   slot capture now BUBBLES cap.fragHoisted through g.declare
+   to the enclosing scope (row fragment, or component scope
+   when no fragment encloses).  All fragHoisted entries are
+   safe to host at row scope — chain functions reading row-
+   local `it` still see it via closure; component instance
+   vars become reachable from the row's update closure.
+
+3. **buildComponentNode's setStmt back-fill assumed [n-1].**
+   With (1) and (2), Wrapper's slot capture now appends ChildLog
+   to g.compInstances during Wrapper's emission.  When the
+   back-fill `g.compInstances[n-1].setStmt = jsStmt(...)` runs
+   for Wrapper, n-1 points at ChildLog (the slot's later
+   append) — and Wrapper's setStmt was silently dropped.  The
+   fix: search backwards for the matching `inst` and write
+   there.  Order-independent and resilient to whatever
+   intermediate appends a captured scope contributes.
+
+### How it now works
+
+For `<Wrapper><Child v={it.v}/></Wrapper>` inside an {#each}:
+
+  - Wrapper's compInstance lands in g.compInstances (row capture).
+  - The slot capture (built inside Wrapper's emission) runs the
+    recursive walker; ChildLog's compInstance lands in the
+    SLOT capture's g.compInstances, with its setStmt
+    `if ($$child) $$child.set({v: it.v})`.
+  - On slot capture exit, ChildLog's compInstance bubbles up
+    to the OUTER g.compInstances (Wrapper's outer scope is the
+    row capture).  ChildLog's wrap+inst vars bubble through
+    cap.fragHoisted → g.declare → g.fragHoisted (row scope).
+  - Wrapper's setStmt back-fills correctly (searching back
+    rather than using [n-1]).
+  - Row capture closes: rowComps now contains BOTH Wrapper
+    and ChildLog with valid setStmts.
+  - Row update closure replays .set() for both on each row tick.
+
+### Regression tests
+
+- TestRuntimeNestingMatrix_SlotContentInEachReactive: the
+  basic case — component in a slot in an each, reactive prop
+  update reaches the slot-content child.
+- TestRuntimeNestingMatrix_SlotContentInEachInIf: combined
+  with an outer {#if} toggle — verifies the toggle off+on
+  rebuilds cleanly AND inner-slot reactivity survives.
+
+Matrix now 29 cases.
+
+### Gates
+
+Full suite green twice (in-tree + fresh-extract); vet clean;
+differential AST↔legacy in sync; fuzzer clean × 2 passes.
+PageCraft e2e: editing the heading still preserves focus AND
+updates the canvas; zero errors.
+
+### Why this is more than just "another nesting bug"
+
+The fix touched three places — but they trace to one missing
+principle: **a captured scope that re-publishes some of its
+emissions must re-publish all of them consistently**.  The if-
+chain's branch capture established that pattern in Sessions
+1–3 (forwarding fragHoisted, comps, nestedTeardowns).  The slot
+capture forwarded comps but not fragHoisted — half the
+machinery — which silently broke this case.
+
+The next preventive step would be to look for any other
+captureScope call sites where cap.fragHoisted is being dropped.
+Currently there are two: the if-chain branch capture (now
+forwards correctly) and the slot capture (this fix).  Both
+should now propagate consistently.  Future captureScope users
+should adopt the same pattern unless they have an explicit
+reason to be a scope boundary (e.g. an event handler closure).
+
 ## Session 3 of 3 — audit pass
 
 Final session: hunt for any `let X = null;` / `function Y(){}` /

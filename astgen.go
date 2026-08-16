@@ -1210,8 +1210,19 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	fnBody.Body = append(fnBody.Body, g.buildEffectInit()...)
 
 	// ── Mount ────────────────────────────────────────────────
+	// $$target may be an Element (appendChild as a child) OR a
+	// Comment node (insertBefore — so the component is positioned
+	// at the anchor's slot rather than appended at the end of its
+	// container).  Comment-as-target is the wrapper-less mount
+	// path: the caller creates an anchor comment in document
+	// order, then passes the anchor here.  Without the
+	// nodeType-8 branch every wrapper-less mount would land at
+	// the END of the containing element, breaking position when
+	// the component has any siblings rendered after it.
 	fnBody.Body = append(fnBody.Body,
-		jsStmt(`$$target.appendChild($$root);`))
+		jsStmt(`if ($$target.nodeType === 8) `+
+			`$$target.parentNode.insertBefore($$root, $$target); `+
+			`else $$target.appendChild($$root);`))
 
 	// ── onMount callbacks (stage 1a) ─────────────────────────
 	// Run after the component's DOM is in the document.  Each
@@ -1327,11 +1338,18 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 		prog.Body = append([]JsStmt{imp}, prog.Body...)
 	}
 
-	// The $$dispatch local binding closes over $$target — insert
-	// it at the very top of the component function body.
+	// The $$dispatch local binding closes over $$root — insert
+	// it at the very top of the component function body.  Note:
+	// the arrow reads $$root LAZILY at call time, not at the
+	// binding's evaluation; by the time a user handler calls
+	// $$dispatch, $$root has been created.  Dispatching on $$root
+	// (not $$target) is what makes events isolated to the
+	// component: with the wrapper-less mount, $$target may be a
+	// Comment anchor in the parent's DOM, and dispatching there
+	// would fire on the parent — leaking to sibling components.
 	if usesDispatch {
 		bind := jsStmts("const $$dispatch = (name, detail) => " +
-			"$$rt_dispatch($$target, name, detail);")
+			"$$rt_dispatch($$root, name, detail);")
 		fnBody.Body = append(bind, fnBody.Body...)
 	}
 }
@@ -3141,6 +3159,17 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	// Per-branch cached element vars + reentrancy flags.
 	for i := range chain.Branches {
 		decl("let " + fn + "_b" + itoa(i) + " = null;")
+		// Per-branch cleanup-closure slot.  At branch build, if
+		// the branch body emitted any cleanup statements (cap.
+		// cleanup, see plans[i].cleanup below), the build stores
+		// a closure here that captures the build-block locals
+		// (handler vars declared as `const` inside `if (!bv) {…}`
+		// are reachable via the closure even after the block
+		// exits).  Branch teardown invokes the closure and nulls
+		// the slot.  Branches with no cleanup leave the slot at
+		// null forever — the `if (_bN_cleanup)` teardown guard
+		// makes that a free no-op.
+		decl("let " + fn + "_b" + itoa(i) + "_cleanup = null;")
 	}
 	decl("let " + fn + "_running = false, " + fn + "_pending = false;")
 
@@ -3163,6 +3192,7 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 		captured         []string       // node vars to null on unmount
 		comps            []compInstance // component instances to destroy on unmount
 		nestedTeardowns  []string       // teardown snippets for nested chains hoisted from this branch's body
+		cleanup          []JsStmt       // cleanup statements from cap.cleanup — fired via a closure stored at build time
 	}
 	plans := make([]branchPlan, len(chain.Branches))
 	for i, br := range chain.Branches {
@@ -3230,6 +3260,19 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 			var bt strings.Builder
 			bt.WriteString(stmtsToText(cap.body))
 			bt.WriteString(stmtsToText(cap.events))
+			// Cleanup-closure assignment.  Store a function that
+			// fires the branch's cleanup statements; it captures
+			// the build-block locals (e.g. `const handler = ...`
+			// from a bind:value) so the closure remains usable
+			// after the build closure exits.  At teardown time,
+			// the per-branch teardown invokes this closure and
+			// nulls the slot.  Branches with no cleanup leave the
+			// slot at its initial null.
+			if len(cap.cleanup) > 0 {
+				bt.WriteString(fn + "_b" + itoa(i) + "_cleanup = () => { ")
+				bt.WriteString(stmtsToText(cap.cleanup))
+				bt.WriteString(" };")
+			}
 			plans[i].buildText = bt.String()
 			// initBody (e.g. an {#each}'s initial reconciler call,
 			// which inserts rows before its anchor) must run AFTER
@@ -3248,6 +3291,25 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 			// removed, so re-entering the branch recreates them
 			// (the `if (!$$nN_comp)` guard skips a live instance).
 			plans[i].comps = cap.comps
+			// Cleanup statements emitted by the branch body —
+			// removeEventListener for bindings, .destroy() for
+			// components, blocks.forEach(destroy) for nested
+			// {#each}, etc.  Without forwarding, these were
+			// silently dropped when the branch tore down; in
+			// practice the existing emitters all reference
+			// targets that get reclaimed with the branch's
+			// elements (the listener's element is removed, the
+			// component is also tracked via plans[i].comps, the
+			// each rows are tracked via nestedTeardowns), so
+			// the drop has been harmless to date.  Forwarding it
+			// now makes the channel work end-to-end: a future
+			// builder that emits cleanup with reach OUTSIDE the
+			// branch's DOM (window/document listeners, timers,
+			// external subscriptions) has its cleanup actually
+			// fire.  Current emitters double-fire harmlessly via
+			// `.remove()`/`destroy()` idempotence; see the
+			// teardown emission below.
+			plans[i].cleanup = cap.cleanup
 			// Reactive updates the branch body registered — e.g. a
 			// dynamic attribute or a bind:style on an element
 			// inside the branch — must join the component's setter
@@ -3344,8 +3406,24 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	for i := range chain.Branches {
 		idx := itoa(i)
 		bv := fn + "_b" + idx
-		b.WriteString("if ($$active !== " + idx + " && " + bv + ") { " +
-			"for (const $$node of " + bv + ") $$node.remove(); " +
+		cleanupVar := bv + "_cleanup"
+		b.WriteString("if ($$active !== " + idx + " && " + bv + ") { ")
+		// Fire the branch's cleanup closure FIRST, before its
+		// elements are removed.  Doing so while the elements
+		// are still attached lets cleanup statements that read
+		// element state (e.g. capturing a focus position) see
+		// it intact.  The current emitters
+		// (removeEventListener on still-attached elements,
+		// .destroy() on components, blocks.forEach(destroy) on
+		// nested {#each}s) are order-insensitive for this — the
+		// listener still detaches, the component's $$root.remove
+		// still runs.  Idempotent against a null slot, so
+		// branches with no cleanup pay only the `if` check.
+		if len(plans[i].cleanup) > 0 {
+			b.WriteString("if (" + cleanupVar + ") { " +
+				cleanupVar + "(); " + cleanupVar + " = null; } ")
+		}
+		b.WriteString("for (const $$node of " + bv + ") $$node.remove(); " +
 			bv + " = null;" +
 			nullCaptured(plans[i].captured) +
 			destroyComps(plans[i].comps))
@@ -3876,9 +3954,20 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	//     in a branch closure would be invisible on reopen/
 	//     rebuild and unassignable when the branch-removal
 	//     cleanup nulls it.
+	//
+	// "Captured" means inBranchScope OR inSlotScope: both place
+	// the current g.body inside a closure (a branch build block,
+	// or a slot factory) whose declarations would be block-
+	// scoped to that closure.  An inner-slot component is the
+	// motivating case for slot scope: `<Wrapper><Child v={it.v}
+	// /></Wrapper>` inside an {#each} needs Child's instance var
+	// to live at row-fragment scope so the row's update closure
+	// can replay .set() on it.  Without this, the slot's
+	// factory rebuilds Child each invocation (or fails to plumb
+	// the reactive prop at all).
 	inFragment := g.fragCounter >= 0
 	switch {
-	case inFragment && g.inBranchScope:
+	case inFragment && g.inCapturedScope():
 		g.fragHoisted = append(g.fragHoisted, jsStmt("let "+wrap+" = null;"))
 		g.fragHoisted = append(g.fragHoisted, jsStmt("let "+inst+" = null;"))
 	case inFragment:
@@ -3888,20 +3977,17 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 		g.hoisted = append(g.hoisted, jsStmt("let "+wrap+" = null;"))
 		g.hoisted = append(g.hoisted, jsStmt("let "+inst+" = null;"))
 	}
+	// The wrap variable now holds an ANCHOR COMMENT — a
+	// Node.COMMENT_NODE that marks the insertion position in
+	// the parent's DOM.  Previously this was a
+	// `<div style="display:contents">`, which fixed layout but
+	// still appeared in the DOM as an element, breaking direct-
+	// child CSS selectors like `.parent > .child`.  Comments
+	// are not elements, so `>` selectors and `:nth-child` skip
+	// them entirely — the component's $$root becomes a true
+	// direct child of the parent.
 	g.body = append(g.body, jsStmt(
-		wrap+" = document.createElement('div');"))
-	g.body = append(g.body, g.setAttrStmt(wrap, g.scopeID, ""))
-	// display:contents makes the wrapper generate no layout box —
-	// the child's content participates in the PARENT's flex/grid
-	// layout exactly as if the wrapper were not there.  The
-	// wrapper is retained only as a stable insertion point and as
-	// the event target the parent listens on for the child's
-	// dispatched CustomEvents (display has no effect on event
-	// propagation); without display:contents the bare <div>
-	// wrapper silently broke flex/grid layouts and any spacing
-	// that assumed the component's root was a direct child.
-	g.body = append(g.body, jsStmt(
-		wrap+".style.display = 'contents';"))
+		wrap+" = document.createComment('comp');"))
 	g.body = append(g.body, jsStmt(parentVar+".appendChild("+wrap+");"))
 
 	propsObj := g.componentPropsObject(comp.Attrs)
@@ -3921,10 +4007,20 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	// reuse re-sets the child's props rather than tearing down).
 	setStmt := "if (" + inst + ") " + inst + ".set(" + propsObj + ");"
 	// Back-fill the bookkeeping entry pushed above so the
-	// fragment-update path can find this statement.
-	if n := len(g.compInstances); n > 0 &&
-		g.compInstances[n-1].inst == inst {
-		g.compInstances[n-1].setStmt = jsStmt(setStmt)
+	// fragment-update path can find this statement.  The entry
+	// is normally the last pushed (the recursive walker hasn't
+	// added anything else between the push and here), but a
+	// component with a slot may emit OTHER component instances
+	// during its slot's captureScope re-publish (an inner-slot
+	// <Child> bubbles its comp entry up to this scope so the
+	// row's update closure can replay its .set()).  Search
+	// backwards by inst name so a later entry doesn't shadow
+	// this component's own bookkeeping.
+	for i := len(g.compInstances) - 1; i >= 0; i-- {
+		if g.compInstances[i].inst == inst {
+			g.compInstances[i].setStmt = jsStmt(setStmt)
+			break
+		}
 	}
 	deps := map[string]bool{}
 	for _, attr := range comp.Attrs {
@@ -3946,7 +4042,7 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	// /'change' bubbling up) is not mishandled as a component
 	// event.  This wiring was missing — component events silently
 	// did nothing.
-	g.buildComponentEvents(comp, wrap)
+	g.buildComponentEvents(comp, inst)
 
 	// Teardown.
 	g.cleanup = append(g.cleanup, jsStmt(
@@ -3954,14 +4050,35 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 }
 
 // buildComponentEvents wires every @event attribute of a component
-// invocation: a CustomEvent-guarded listener on the component's
-// wrapper div, with a matching removeEventListener in teardown.
-func (g *ASTGen) buildComponentEvents(comp *ComponentNode, wrap string) {
+// invocation: a CustomEvent-only filter handler is hoisted to
+// component scope, the listener is attached to the component's
+// $$root (inst.el) AFTER mount, and a matching removeEventListener
+// goes on g.cleanup for branch-teardown unmount + the component-
+// destroy lifecycle.
+//
+// Why inst.el rather than a parent-side wrapper: the bug-4 fix
+// removed the parent-side wrapper div (it broke direct-child CSS
+// selectors).  The component dispatches CustomEvents on $$root
+// (see the $$dispatch shim — it captures $$root, not $$target);
+// listening on inst.el ALWAYS receives those events.  The CustomEvent
+// is also marked `bubbles: true`, so listening on an ancestor would
+// work too, but inst.el keeps the listener scope tight: a sibling
+// component's events of the same name reach a different inst.el and
+// don't cross-fire.
+//
+// Why g.initBody (not g.events): the listener target inst.el does
+// not exist until after the mount call.  g.events runs BEFORE
+// g.initBody (handlers must be in scope when initial render fires
+// their refs), so attaching listeners there would `addEventListener`
+// on null.  Emitting AFTER the mount call in g.initBody is the
+// natural fit — the captured scope's order is preserved (in a
+// branch, plans[i].initText holds these statements after mount).
+func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 	for _, attr := range comp.Attrs {
 		if !attr.IsEvent {
 			continue
 		}
-		hv := wrap + "_" + sanitizeIdent(attr.Name) + "_ch"
+		hv := inst + "_" + sanitizeIdent(attr.Name) + "_ch"
 		handler := g.rewriteHandler(attr.Value)
 		// The guard wrapper — only forward CustomEvents.  Hoisted
 		// to component scope: when the component is in a slot, the
@@ -3972,10 +4089,10 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, wrap string) {
 		g.hoisted = append(g.hoisted, jsStmt(
 			"const "+hv+" = ($e) => { if ($e instanceof CustomEvent) { ("+
 				handler+")($e); } };"))
-		g.events = append(g.events, jsStmt(
-			wrap+".addEventListener('"+attr.Name+"', "+hv+");"))
+		g.initBody = append(g.initBody, jsStmt(
+			inst+".el.addEventListener('"+attr.Name+"', "+hv+");"))
 		g.cleanup = append(g.cleanup, jsStmt(
-			wrap+".removeEventListener('"+attr.Name+"', "+hv+");"))
+			"if ("+inst+") "+inst+".el.removeEventListener('"+attr.Name+"', "+hv+");"))
 	}
 }
 
@@ -4023,17 +4140,40 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
 			}()
 			g.buildChildRun(slotNodes, fragVar)
 		})
-		// Per-slot-call hoists (e.g. a nested {#if} chain function
-		// declared while building this slot — its declarations
-		// must live in a scope visible to the rest of the slot
-		// content but not at component scope, since they read
-		// slot-local vars).  The slot factory closure is the
-		// right scope.  Prepend so they declare before any code
-		// references them.
-		var buildBuf strings.Builder
-		buildBuf.WriteString(stmtsToText(cap.fragHoisted))
-		buildBuf.WriteString(stmtsToText(cap.body))
-		buildText := buildBuf.String()
+		// fragHoisted entries collected while building the slot
+		// content (component instance vars, chain functions
+		// emitted by nested {#if}/{#each}/{#await}) must reach
+		// the OUTER row-fragment scope, not stay trapped in the
+		// slot factory.  The motivating case: an inner-slot
+		// component `<Wrapper><Child v={it.v}/></Wrapper>` inside
+		// an {#each} — Child's instance var has to be reachable
+		// from the row's update closure (Session A's rowComps
+		// replay) so .set({v: it.v}) fires on each row tick.
+		// Bubbling these to g.fragHoisted lands them at the row
+		// fragment top, which is the closure all of: slot
+		// factory, chain functions inside the slot, AND the row
+		// update closure share.  When there is no enclosing
+		// fragment (the slot is at component scope), the bubble
+		// is a no-op consumption — declare picks g.hoisted
+		// instead, also reachable by everything.
+		for _, s := range cap.fragHoisted {
+			g.declare(s)
+		}
+		// Component instances built inside the slot must be
+		// re-published to the enclosing scope's compInstances so
+		// the row-update mechanism (Session A's rowComps replay)
+		// fires .set() on them when the row's item changes.
+		// Without this, an inner-slot component receives no
+		// reactive prop updates after its initial mount.  The
+		// slot factory caches its output, so the component
+		// instance isn't rebuilt on subsequent slot invocations —
+		// the only path for it to receive new props is the
+		// replay.  destroyComps still fires on slot teardown via
+		// the cleanup path; this re-publish only extends the
+		// component's reactive-prop reach, not its lifetime.
+		g.compInstances = append(g.compInstances, cap.comps...)
+
+		buildText := stmtsToText(cap.body)
 		// Event listeners and initial-render statements emitted by
 		// slot content (e.g. a component @click handler, or a
 		// child component's init call) must run inside the closure
@@ -4428,7 +4568,19 @@ func (g *ASTGen) buildReturn() JsStmt {
 		},
 	}
 
-	props := []*JsProp{destroyProp}
+	// The `el` field exposes the component's $$root to its
+	// caller so the caller can attach event listeners and read
+	// position information.  Required by bug-4's wrapper-less
+	// mount: the parent's @event listeners now target inst.el
+	// (instead of a wrapper div the parent itself controls).
+	elProp := &JsProp{
+		baseNode: genNode(),
+		Kind:     "init",
+		Key:      id("el"),
+		Value:    id("$$root"),
+	}
+
+	props := []*JsProp{elProp, destroyProp}
 
 	if hasSettable {
 		// set(props) { if (props.X !== undefined) $$set_X(props.X); … }

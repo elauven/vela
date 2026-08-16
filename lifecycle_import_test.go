@@ -157,3 +157,107 @@ func TestComponentHasDefaultExport(t *testing.T) {
 		t.Errorf("expected default export `export default T;`:\n%s", out)
 	}
 }
+
+// ─────────────────────────────────────────────
+//  Aliased intrinsics — `import { onMount as init } from 'vela'`
+// ─────────────────────────────────────────────
+
+// Before this fix: the import was stripped (the imported NAME
+// matched a Vela intrinsic), but the call survived as a
+// reference to an undeclared local — `init` is not defined at
+// module load.
+//
+// The fix records each intrinsic-from-'vela' import as
+// `localAlias → originalIntrinsic` in Analysis.IntrinsicAliases
+// and threads the map into extractLifecycle.  Aliased calls now
+// get extracted into Lifecycles like their canonical
+// counterparts, and the call site is removed from CleanScript so
+// no dangling reference survives.
+
+func TestAliasedOnMount_Recognized(t *testing.T) {
+	out := compileLifecycle(t, `
+		import { onMount as init } from 'vela';
+		let ready = $state(false);
+		init(() => { ready = true; });
+	`)
+	// The aliased call must NOT appear in the emitted output —
+	// otherwise it would be a ReferenceError at module load.
+	if strings.Contains(out, "init(") {
+		t.Errorf("expected aliased intrinsic call `init(...)` to be removed:\n%s", out)
+	}
+	// And it should have been wired into the mount path.
+	if !strings.Contains(out, "$$mountCleanup") {
+		t.Errorf("expected aliased onMount to wire into the mount path:\n%s", out)
+	}
+}
+
+func TestAliasedOnDestroy_Recognized(t *testing.T) {
+	out := compileLifecycle(t, `
+		import { onDestroy as teardown } from 'vela';
+		let bye = $state(false);
+		teardown(() => { bye = true; });
+	`)
+	if strings.Contains(out, "teardown(") {
+		t.Errorf("expected aliased onDestroy call `teardown(...)` to be removed:\n%s", out)
+	}
+	// The onDestroy body should appear in the destroy() return.
+	// Both `bye = true` (via the setter) and the bookkeeping
+	// should be present.
+	if !strings.Contains(out, "destroy()") {
+		t.Errorf("expected destroy() in generated output:\n%s", out)
+	}
+}
+
+func TestAliasedBothIntrinsics_BothRecognized(t *testing.T) {
+	out := compileLifecycle(t, `
+		import { onMount as setup, onDestroy as teardown } from 'vela';
+		let m = $state(false);
+		let d = $state(false);
+		setup(() => { m = true; });
+		teardown(() => { d = true; });
+	`)
+	for _, banned := range []string{"setup(", "teardown("} {
+		if strings.Contains(out, banned) {
+			t.Errorf("expected %q to be removed:\n%s", banned, out)
+		}
+	}
+	if !strings.Contains(out, "$$mountCleanup") {
+		t.Errorf("expected mount wiring:\n%s", out)
+	}
+}
+
+// The Analysis.IntrinsicAliases map is the single source of
+// truth — verify it is populated as expected directly, so a
+// future change in how lifecycles get emitted does not silently
+// regress the alias mechanism.
+func TestAnalyzer_IntrinsicAliases_Populated(t *testing.T) {
+	a := analyzeScript(`
+		import { onMount as setup, onDestroy as teardown } from 'vela';
+		setup(() => {});
+		teardown(() => {});
+	`)
+	if a.IntrinsicAliases["setup"] != "onMount" {
+		t.Errorf("setup → onMount missing: %#v", a.IntrinsicAliases)
+	}
+	if a.IntrinsicAliases["teardown"] != "onDestroy" {
+		t.Errorf("teardown → onDestroy missing: %#v", a.IntrinsicAliases)
+	}
+}
+
+// An intrinsic imported from a non-Vela source must NOT be
+// recorded as an alias — the user's `onMount` from their own
+// module is a regular function, and the alias map is keyed on
+// `import { … } from 'vela'` only.  (Note: the current direct-
+// name match in extractLifecycle still hijacks `onMount(...)`
+// regardless of import source — that pre-existing behavior is
+// separate from this fix.)
+func TestAnalyzer_IntrinsicAliases_NotPopulatedForOtherSource(t *testing.T) {
+	a := analyzeScript(`
+		import { onMount as setup } from './my-other.js';
+		setup(() => {});
+	`)
+	if _, ok := a.IntrinsicAliases["setup"]; ok {
+		t.Errorf("setup should NOT be in IntrinsicAliases for non-vela source: %#v",
+			a.IntrinsicAliases)
+	}
+}

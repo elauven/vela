@@ -874,3 +874,202 @@ func TestRuntimeNestingMatrix_KeyedEachInIf(t *testing.T) {
 		{"assertText": "li.row:nth-of-type(1)", "equals": "A"},
 	})
 }
+
+// SlotContentInEachReactive — the slot-in-each reactivity fix.
+//
+// Before the fix, a child component placed in another component's
+// slot inside an {#each} row did not receive reactive prop
+// updates: the component instance var was block-scoped to the
+// slot factory closure, so the row's update closure (Session A's
+// rowComps .set() replay) could not see it.  The factory caches
+// its output, so the component instance is reused across slot
+// re-invocations — there was no path for fresh prop values to
+// reach the inner child after initial mount.
+//
+// Fix: the slot capture re-publishes cap.fragHoisted (via
+// g.declare) and cap.comps (via g.compInstances) into the
+// enclosing scope, so inner-slot component instances live at row-
+// fragment scope and join Session A's rowComps replay set.  Also,
+// buildComponentNode's setStmt back-fill now searches for the
+// matching inst rather than assuming [n-1] — the slot capture
+// may have appended other component entries between push and
+// back-fill.
+func TestRuntimeNestingMatrix_SlotContentInEachReactive(t *testing.T) {
+	wrap := `<script>
+  export let label = '';
+</script>
+<template><div class="wrap"><span class="lbl">{label}</span><slot/></div></template>`
+	child := `<script>
+  export let label = '';
+</script>
+<template><span class="logger">log:{label}</span></template>`
+	app := `<script>
+  import Wrapper from './Wrapper.vela';
+  import ChildLog from './ChildLog.vela';
+  let items = $state.deep([{v:'a'},{v:'b'}]);
+</script>
+<template><div>
+  <button class="b" @click={() => items[0].v = 'A'}>bump</button>
+  {#each items as it}
+    <Wrapper label="row"><ChildLog label={it.v} /></Wrapper>
+  {/each}
+</div></template>`
+	// Use a custom class on each child so we can target rows by
+	// the slot-content child's identity.  Each row gets a
+	// stable-by-content selector via the v prop being part of
+	// the rendered text.
+	assertRuntimeSet(t, "App", map[string]string{
+		"App":      app,
+		"Wrapper":  wrap,
+		"ChildLog": child,
+	}, []rtStep{
+		// Both rows render with their own slot-content child:
+		// one shows "log:a", the other "log:b".
+		{"assertCount": "span.logger", "equals": 2},
+		// Selectors keyed by text content via the first matching
+		// element's textContent.  assertText uses the FIRST match;
+		// since loggers render in DOM order, querying for
+		// `span.logger` first returns row 0's text.
+		{"assertText": "span.logger", "equals": "log:a"},
+		// Mutate row 0 — row 0's child reacts; row 1 untouched.
+		{"click": "button.b"},
+		// Total count unchanged.
+		{"assertCount": "span.logger", "equals": 2},
+		// Row 0 now reads "log:A" (the reactive update reached
+		// the slot-content child).  Before the fix, this still
+		// read "log:a".
+		{"assertText": "span.logger", "equals": "log:A"},
+	})
+}
+
+// SlotContentInEachInIf — combined: the slot-in-each pattern
+// wrapped in an {#if}.  Verifies that toggling the outer branch
+// off+on rebuilds the rows cleanly AND inner-slot reactivity
+// survives across the toggle.
+func TestRuntimeNestingMatrix_SlotContentInEachInIf(t *testing.T) {
+	wrap := `<script>
+  export let label = '';
+</script>
+<template><div class="wrap"><span class="lbl">{label}</span><slot/></div></template>`
+	child := `<script>
+  export let label = '';
+</script>
+<template><span class="logger">log:{label}</span></template>`
+	app := `<script>
+  import Wrapper from './Wrapper.vela';
+  import ChildLog from './ChildLog.vela';
+  let items = $state.deep([{v:'a'},{v:'b'}]);
+  let show = $state(true);
+  let n = $state(0);
+</script>
+<template><div>
+  <button class="b" @click={() => { n++; items[0].v = 'v' + n; }}>bump</button>
+  <button class="t" @click={() => show=!show}>toggle</button>
+  {#if show}
+    {#each items as it}
+      <Wrapper label="row"><ChildLog label={it.v} /></Wrapper>
+    {/each}
+  {/if}
+</div></template>`
+	assertRuntimeSet(t, "App", map[string]string{
+		"App":      app,
+		"Wrapper":  wrap,
+		"ChildLog": child,
+	}, []rtStep{
+		{"assertCount": "span.logger", "equals": 2},
+		{"click": "button.b"},
+		{"assertText": "div.wrap:nth-of-type(1) span.logger", "equals": "log:v1"},
+		// Hide + show — rebuilds with current state.
+		{"click": "button.t"},
+		{"assertCount": "span.logger", "equals": 0},
+		{"click": "button.t"},
+		{"assertText": "div.wrap:nth-of-type(1) span.logger", "equals": "log:v1"},
+		// Reactivity still alive after the toggle.
+		{"click": "button.b"},
+		{"assertText": "div.wrap:nth-of-type(1) span.logger", "equals": "log:v2"},
+	})
+}
+
+// ComponentDirectChildSelector — bug 4 verification.
+//
+// Before the fix: a <Child/> inside a parent was mounted into a
+// `<div style="display:contents">` wrapper.  display:contents
+// makes the wrapper layout-transparent but the <div> remains in
+// the DOM tree — so CSS like `.parent > .child` does not match
+// the component's root.  CSS specificity selectors that depend
+// on direct-child relationships broke silently.
+//
+// After: the wrapper is replaced by a `<!-- comp -->` anchor.
+// Comments are not elements; `>` and :nth-child skip them.  The
+// component's $$root is inserted before the anchor, becoming a
+// true direct child of the parent.
+//
+// This test asserts at the JS-runtime level that querySelector
+// finds the child's root via a direct-child selector, AND that
+// document-order siblings still come out in the right order
+// (verifying the anchor-comment positioning works).
+func TestRuntimeNestingMatrix_ComponentDirectChildSelector(t *testing.T) {
+	child := `<template><b class="grand">grand</b></template>`
+	app := `<script>
+  import Child from './Child.vela';
+</script>
+<template>
+  <div class="parent">
+    <span class="sib1">a</span>
+    <Child />
+    <span class="sib2">b</span>
+  </div>
+</template>`
+	assertRuntimeSet(t, "App", map[string]string{
+		"App":   app,
+		"Child": child,
+	}, []rtStep{
+		// The component's <b> is a TRUE direct child of .parent —
+		// before the fix this returned null because of the wrapper.
+		{"assertCount": "div.parent > b.grand", "equals": 1},
+		// Siblings still flank the component in document order.
+		// Use child-position checks via :nth-child counting:
+		// .parent has 3 element children — sib1 first, b in the
+		// middle, sib2 last.
+		{"assertText": "div.parent > :first-child", "equals": "a"},
+		{"assertText": "div.parent > :last-child", "equals": "b"},
+		// And the component's b is the second element child.
+		{"assertText": "div.parent > :nth-child(2)", "equals": "grand"},
+	})
+}
+
+// ComponentDispatchedEventReachesParentHandler — verify the
+// @event listener on a component still fires when the component
+// dispatches its CustomEvent.  Before bug-4, the listener was on
+// the wrapper div; the component dispatched on $$target (== the
+// wrapper) and the listener caught it.  After bug-4, the
+// listener is on inst.el (the component's $$root); the component
+// dispatches on $$root.  Same effect, different mechanism.
+func TestRuntimeNestingMatrix_ComponentEventStillFires(t *testing.T) {
+	child := `<script>
+  import { $$dispatch } from 'vela';
+  export let n = 0;
+  function bump() { $$dispatch('ping', { n }); }
+</script>
+<template><button class="fire" @click={bump}>fire</button></template>`
+	app := `<script>
+  import Child from './Child.vela';
+  let count = $state(0);
+</script>
+<template>
+  <div>
+    <Child n={3} @ping={(e) => count = count + e.detail.n} />
+    <span class="c">{count}</span>
+  </div>
+</template>`
+	assertRuntimeSet(t, "App", map[string]string{
+		"App":   app,
+		"Child": child,
+	}, []rtStep{
+		{"assertText": "span.c", "equals": "0"},
+		{"click": "button.fire"},
+		{"assertText": "span.c", "equals": "3"},
+		{"click": "button.fire"},
+		{"assertText": "span.c", "equals": "6"},
+	})
+}

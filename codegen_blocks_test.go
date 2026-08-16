@@ -290,3 +290,96 @@ func TestAwait_OptionalCatchOmitsBranch(t *testing.T) {
 		t.Errorf("unexpected catch branch:\n%s", out)
 	}
 }
+
+// ─────────────────────────────────────────────
+//  Branch cleanup-closure mechanism
+// ─────────────────────────────────────────────
+
+// compileGeneratedAST runs the AST code generator (the production
+// path), distinct from compileGenerated which uses the legacy
+// generator.  Tests that probe AST-only behavior should use this.
+func compileGeneratedAST(t *testing.T, src string) string {
+	t.Helper()
+	sfc, err := parseSFC(src)
+	if err != nil {
+		t.Fatalf("parseSFC: %v", err)
+	}
+	tmpl, err := parseTemplate(sfc.Template)
+	if err != nil {
+		t.Fatalf("parseTemplate: %v", err)
+	}
+	a := analyzeScript(sfc.Script)
+	return generateCodeAST("Test", sfc, tmpl, a, "vela-test")
+}
+
+// TestIfBranchCleanupClosure — verifies that the cleanup
+// statements emitted while building an {#if} branch (e.g.
+// removeEventListener for an @click handler on a branch-local
+// element) are wired into a per-branch cleanup closure that
+// fires when the branch tears down.
+//
+// Before the fix, captureScope collected `cap.cleanup` but
+// buildIfChain silently dropped it.  An @click handler inside
+// `{#if}` had its addEventListener fire but no matching
+// removeEventListener — currently harmless because the bound
+// element is destroyed with the branch (GC reclaims the
+// listener) but a real hazard the moment a future builder
+// emits cleanup with reach OUTSIDE the branch's DOM tree
+// (window/document listeners, timers, external subscriptions).
+//
+// The fix declares a per-branch _cleanup slot, stores a
+// closure at build time that captures the build-block locals,
+// and invokes it at branch-teardown.
+func TestIfBranchCleanupClosure(t *testing.T) {
+	src := `<script>
+  let show = $state(true);
+  let count = $state(0);
+</script>
+<template><div>
+  {#if show}<button @click={() => count++}>bump</button>{/if}
+</div></template>`
+	out := compileGeneratedAST(t, src)
+	checks := []string{
+		// Per-branch cleanup slot, declared at chain scope.
+		"_b0_cleanup = null",
+		// Build path stores a closure into the slot.
+		"_b0_cleanup = () => {",
+		// Teardown invokes and nulls.
+		"_b0_cleanup()",
+		// The closure body contains the removeEventListener.
+		"removeEventListener('click'",
+	}
+	for _, c := range checks {
+		if !strings.Contains(out, c) {
+			t.Errorf("expected generated code to contain %q\n--- output ---\n%s",
+				c, out)
+		}
+	}
+}
+
+// TestIfBranchCleanupClosure_NoCleanup_NoOverhead — verifies
+// that a branch with NO cleanup statements still gets a
+// _cleanup slot (declared once per branch, simple) but no
+// closure assignment in the build path.  The teardown's
+// `if (_cleanup)` guard makes the slot a free no-op.
+//
+// This pins the "branches with no cleanup pay only the `if`
+// check" invariant — a regression would mean unrelated
+// branches start carrying empty closures.
+func TestIfBranchCleanupClosure_NoCleanup_NoOverhead(t *testing.T) {
+	// Static branch body, no listeners or bindings → no cap.cleanup.
+	src := `<script>
+  let show = $state(true);
+</script>
+<template><div>
+  {#if show}<span>hi</span>{/if}
+</div></template>`
+	out := compileGeneratedAST(t, src)
+	if !strings.Contains(out, "_b0_cleanup = null") {
+		t.Errorf("expected _b0_cleanup slot declaration even when no cleanup:\n%s", out)
+	}
+	// No assignment expression `_cleanup = () =>` for an empty branch.
+	if strings.Contains(out, "_b0_cleanup = () =>") {
+		t.Errorf("did not expect _b0_cleanup closure assignment for an empty branch:\n%s", out)
+	}
+}

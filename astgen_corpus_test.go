@@ -568,7 +568,23 @@ var knownLegacyBugs = map[string]string{
 // handles.  Splice-routed entries are skipped (the splice IS the
 // legacy output, so equality is trivial); knownLegacyBugs entries
 // are skipped (the AST generator is intentionally more correct).
+//
+// Note: as of the bug-4 fix (Component anchor — no wrapper), the
+// AST generator diverges from the legacy generator on the component
+// mount line (`if (nodeType === 8) ... else appendChild`) and on
+// every component invocation (anchor comment vs display:contents
+// wrapper).  The divergence is universal — it affects EVERY corpus
+// entry, because every entry generates a component with the new
+// mount line — so the differential is no longer a useful structural
+// gate.  We rely on the runtime nesting matrix + behavioural tests
+// instead.  The test stays in the codebase as a record; flip the
+// skip when E4 (delete the legacy generator) lands and the legacy
+// path is gone.
 func TestASTGenCorpusMatchesLegacy(t *testing.T) {
+	t.Skip("AST↔legacy intentionally diverged at bug-4 fix " +
+		"(component anchor); differential is no longer a meaningful " +
+		"gate.  See MIGRATION.md; matrix + behaviour tests are the " +
+		"replacement safety net.")
 	for name, src := range corpus {
 		name, src := name, src
 		t.Run(name, func(t *testing.T) {
