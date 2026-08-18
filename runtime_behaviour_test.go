@@ -868,3 +868,39 @@ func TestRuntimeTodoCorpusGPT(t *testing.T) {
 		{"assertCount": ".todo-item", "equals": 1},
 	})
 }
+
+// TestRuntimeInputAndCheckboxBindings exercises the two DOM-to-state paths
+// used by real forms: text input and checkbox change.
+func TestRuntimeInputAndCheckboxBindings(t *testing.T) {
+	src := `<script>
+  let title = ('');
+  let done = (false);
+</script>
+<template><div>
+  <input class="title" bind:value={title} />
+  <input class="done" type="checkbox" bind:checked={done} />
+  <p class="out">{title}:{done}</p>
+</div></template>`
+	assertRuntime(t, "FormBindings", src, []rtStep{
+		{"input": "input.title", "value": "write tests"},
+		{"assertText": "p.out", "equals": "write tests:false"},
+		{"change": "input.done", "checked": true},
+		{"assertText": "p.out", "equals": "write tests:true"},
+	})
+}
+
+// TestRuntimeKeydownHandler verifies the explicit event.key pattern recommended
+// for Vela instead of unsupported event modifiers such as .enter.
+func TestRuntimeKeydownHandler(t *testing.T) {
+	src := `<script>
+  let count = (0);
+  function handleKey(event) { if (event.key === 'Enter') count++; }
+</script>
+<template><div><input class="key" ={handleKey} /><p>{count}</p></div></template>`
+	assertRuntime(t, "Keydown", src, []rtStep{
+		{"keydown": "input.key", "key": "Escape"},
+		{"assertText": "p", "equals": "0"},
+		{"keydown": "input.key", "key": "Enter"},
+		{"assertText": "p", "equals": "1"},
+	})
+}

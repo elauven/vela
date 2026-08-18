@@ -1,6 +1,9 @@
 package main
 
-import "reflect"
+import (
+	"reflect"
+	"sort"
+)
 
 // astvalidate.go — validation passes over the generated JS AST.
 //
@@ -26,7 +29,7 @@ import "reflect"
 
 // ValidationIssue is a single problem found in the generated AST.
 type ValidationIssue struct {
-	Kind string // "empty-node", "undeclared-ref", "unreachable"
+	Kind string // "empty-node", "undeclared-ref", "tdz-ref", "duplicate-decl", "unreachable"
 	Msg  string
 }
 
@@ -37,6 +40,7 @@ func ValidateProgram(prog *JsProgram) []ValidationIssue {
 	var issues []ValidationIssue
 	issues = append(issues, checkEmptyNodes(prog)...)
 	issues = append(issues, checkUndeclaredRefs(prog)...)
+	issues = append(issues, checkLexicalOrder(prog)...)
 	issues = append(issues, checkUnreachable(prog)...)
 	return issues
 }
@@ -307,7 +311,190 @@ var jsGlobals = map[string]bool{
 }
 
 // ─────────────────────────────────────────────
-//  Pass 3 — unreachable statements
+//  Pass 3 — lexical order inside generated scopes
+// ─────────────────────────────────────────────
+
+// checkLexicalOrder catches generated wiring variables referenced before their
+// let, const, or class declaration is initialized, as well as duplicate names
+// in one lexical scope. The undeclared-reference pass intentionally collects
+// declarations globally, so it cannot detect either error.
+//
+// Reports are limited to compiler-reserved double-dollar names. A TDZ reference to such a
+// name is always a generator bug; user JavaScript keeps its normal JS rules.
+func checkLexicalOrder(prog *JsProgram) []ValidationIssue {
+	if prog == nil {
+		return nil
+	}
+	var issues []ValidationIssue
+	seen := map[string]bool{}
+	report := func(kind, msg string) {
+		key := kind + "\x00" + msg
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		issues = append(issues, ValidationIssue{Kind: kind, Msg: msg})
+	}
+
+	moduleReady := map[string]bool{}
+	for _, stmt := range prog.Body {
+		if imp, ok := stmt.(*JsImportDecl); ok {
+			addImportBindings(imp, moduleReady)
+		}
+	}
+	checkStmtListLexically(prog.Body, moduleReady, report)
+	for _, stmt := range prog.Body {
+		if exp, ok := stmt.(*JsExportDecl); ok {
+			if fn, ok := exp.Declaration.(*JsFuncDecl); ok && fn.Body != nil {
+				ready := cloneNames(moduleReady)
+				for _, param := range fn.Params {
+					for _, name := range patternNames(param) {
+						ready[name] = true
+					}
+				}
+				checkStmtListLexically(fn.Body.Body, ready, report)
+			}
+		}
+	}
+	return issues
+}
+
+func addImportBindings(imp *JsImportDecl, out map[string]bool) {
+	if imp.DefaultName != "" {
+		out[imp.DefaultName] = true
+	}
+	if imp.Namespace != "" {
+		out[imp.Namespace] = true
+	}
+	for _, spec := range imp.Specifiers {
+		name := spec.Local
+		if name == "" {
+			name = spec.Imported
+		}
+		out[name] = true
+	}
+}
+
+func checkStmtListLexically(stmts []JsStmt, inherited map[string]bool, report func(string, string)) {
+	decls := map[string]int{}
+	for index, stmt := range stmts {
+		for _, name := range directLexicalDecls(stmt) {
+			if _, exists := decls[name]; exists {
+				report("duplicate-decl", "generated duplicate declaration of "+name+" in one lexical scope")
+				continue
+			}
+			decls[name] = index
+		}
+	}
+
+	ready := cloneNames(inherited)
+	// Function declarations are hoisted within their lexical scope.
+	for _, stmt := range stmts {
+		if fn, ok := stmt.(*JsFuncDecl); ok && fn.Name != "" {
+			ready[fn.Name] = true
+		}
+	}
+	for index, stmt := range stmts {
+		checkStmtTDZ(stmt, index, decls, ready, report)
+		for _, name := range directLexicalDecls(stmt) {
+			ready[name] = true
+		}
+	}
+}
+
+func directLexicalDecls(stmt JsStmt) []string {
+	switch x := stmt.(type) {
+	case *JsVarDecl:
+		if x.Kind == "var" {
+			return nil
+		}
+		var names []string
+		for _, d := range x.Decls {
+			names = append(names, patternNames(d.Id)...)
+		}
+		return names
+	case *JsClassDecl:
+		if x.Name != "" {
+			return []string{x.Name}
+		}
+	case *JsFuncDecl:
+		if x.Name != "" {
+			return []string{x.Name}
+		}
+	}
+	return nil
+}
+
+func patternNames(e JsExpr) []string {
+	set := map[string]bool{}
+	collectPatternNames(e, set)
+	names := make([]string, 0, len(set))
+	for name := range set {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func cloneNames(src map[string]bool) map[string]bool {
+	dst := make(map[string]bool, len(src))
+	for name := range src {
+		dst[name] = true
+	}
+	return dst
+}
+
+func reportFutureRefs(node JsNode, index int, decls map[string]int, ready map[string]bool, report func(string, string)) {
+	WalkNode(node, func(n JsNode) bool {
+		switch n.(type) {
+		case *JsFuncDecl, *JsFuncExpr, *JsArrowFunc:
+			// A closure body is deferred; it receives its own scope check.
+			return false
+		}
+		id, ok := n.(*JsIdent)
+		if !ok || id == nil || !hasDollarDollar(id.Name) || ready[id.Name] {
+			return true
+		}
+		if declIndex, exists := decls[id.Name]; exists && declIndex >= index {
+			report("tdz-ref", "generated reference to "+id.Name+" before its declaration is initialized")
+		}
+		return true
+	})
+}
+
+func checkStmtTDZ(stmt JsStmt, index int, decls map[string]int, ready map[string]bool, report func(string, string)) {
+	switch x := stmt.(type) {
+	case *JsVarDecl:
+		for _, d := range x.Decls {
+			if d.Init != nil {
+				reportFutureRefs(d.Init, index, decls, ready, report)
+			}
+		}
+	case *JsFuncDecl:
+		inner := cloneNames(ready)
+		for name := range decls {
+			inner[name] = true
+		}
+		for _, param := range x.Params {
+			for _, name := range patternNames(param) {
+				inner[name] = true
+			}
+		}
+		if x.Body != nil {
+			checkStmtListLexically(x.Body.Body, inner, report)
+		}
+	case *JsBlock:
+		checkStmtListLexically(x.Body, ready, report)
+	case *JsExportDecl:
+		// The exported component function is checked from checkLexicalOrder.
+		// Its body runs immediately when the component is instantiated.
+	default:
+		reportFutureRefs(stmt, index, decls, ready, report)
+	}
+}
+
+// ─────────────────────────────────────────────
+//  Pass 4 — unreachable statements
 // ─────────────────────────────────────────────
 
 // checkUnreachable reports statements that follow an unconditional
@@ -325,7 +512,7 @@ func checkUnreachable(prog *JsProgram) []ValidationIssue {
 				if isTerminator(st) && i < len(blk.Body)-1 {
 					issues = append(issues, ValidationIssue{
 						Kind: "unreachable",
-						Msg:  "generated unreachable statement after " +
+						Msg: "generated unreachable statement after " +
 							terminatorName(st),
 					})
 					break

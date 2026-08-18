@@ -217,3 +217,43 @@ func TestWithFragmentIDsPanicSafety(t *testing.T) {
 			g.fragCounter)
 	}
 }
+
+func TestValidateGeneratedTDZ(t *testing.T) {
+	prog := ParseJS(`
+		export default function component() {
+			const value = $$later;
+			let $$later = 1;
+			return value;
+		}
+	`)
+	issues := ValidateProgram(prog)
+	if !hasIssueKind(issues, "tdz-ref") {
+		t.Fatalf("generated TDZ reference not caught; got %+v", issues)
+	}
+}
+
+func TestValidateGeneratedDuplicateDeclaration(t *testing.T) {
+	prog := ParseJS(`
+		function component() {
+			let $$node = null;
+			const $$node = document.createElement("div");
+		}
+	`)
+	issues := ValidateProgram(prog)
+	if !hasIssueKind(issues, "duplicate-decl") {
+		t.Fatalf("generated duplicate declaration not caught; got %+v", issues)
+	}
+}
+
+func TestValidateGeneratedFunctionHoisting(t *testing.T) {
+	prog := ParseJS(`
+		function component() {
+			$$render();
+			function $$render() {}
+		}
+	`)
+	issues := ValidateProgram(prog)
+	if hasIssueKind(issues, "tdz-ref") {
+		t.Fatalf("hoisted generated function wrongly flagged; got %+v", issues)
+	}
+}

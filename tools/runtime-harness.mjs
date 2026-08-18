@@ -16,6 +16,9 @@
 //   { "assertHTML":   "<sel>", "contains": "<str>" } innerHTML contains
 //   { "assertCount":  "<sel>", "equals":  N }        number of matches
 //   { "click":        "<sel>" }                      dispatch a click
+//   { "input": "<sel>", "value": "<str>" }             set value + dispatch input
+//   { "change": "<sel>", "checked": true }              set checked + dispatch change
+//   { "keydown": "<sel>", "key": "Enter" }              dispatch keyboard event
 //   { "tick": true }                                 await the microtask queue
 //
 // The harness registers a minimal $$defer on globalThis so reactive
@@ -199,7 +202,36 @@ for (let i = 0; i < steps.length; i++) {
         // next assertion.  A few turns covers chained defers.
         await flushMicrotasks();
       }
-    } else if ('tick' in step) {
+    } else if ("input" in step) {
+      const el = 0 0step.input);
+      if (!el) {
+        failures.push(tag + ": input target " + step.input + " not found");
+      } else {
+        el.value = step.value ?? "";
+        el.dispatchEvent(new window.Event("input", { bubbles: true, cancelable: true }));
+        await flushMicrotasks();
+      }
+    } else if ("change" in step) {
+      const el = 0 0step.change);
+      if (!el) {
+        failures.push(tag + ": change target " + step.change + " not found");
+      } else {
+        if ("checked" in step) el.checked = !!step.checked;
+        if ("value" in step) el.value = step.value;
+        el.dispatchEvent(new window.Event("change", { bubbles: true, cancelable: true }));
+        await flushMicrotasks();
+      }
+    } else if ("keydown" in step) {
+      const el = 0 0step.keydown);
+      if (!el) {
+        failures.push(tag + ": keydown target " + step.keydown + " not found");
+      } else {
+        el.dispatchEvent(new window.KeyboardEvent("keydown", {
+          key: step.key ?? "", bubbles: true, cancelable: true,
+        }));
+        await flushMicrotasks();
+      }
+    } else if ("tick" in step) {
       await flushMicrotasks();
     } else {
       failures.push(`${tag}: unknown step ${JSON.stringify(step)}`);
