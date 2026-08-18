@@ -113,3 +113,12 @@ func TestVelaFormDiagnostics(t *testing.T) {
 		})
 	}
 }
+
+
+func TestTemplateExpressionSyntaxDiagnostic(t *testing.T) {
+	ds := NewDiagSet("test.vela", "<p>{count + }</p>")
+	checkExprRefs("format(count", map[string]bool{"count": true, "format": true}, "<p>{format(count}</p>", ds)
+	if len(ds.Errors()) != 1 || !strings.Contains(ds.Errors()[0].Message, "invalid template expression") {
+		t.Fatalf("template syntax diagnostic = %+v", ds.All())
+	}
+}

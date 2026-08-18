@@ -467,6 +467,69 @@ func checkAttrRefs(a *Attr, known map[string]bool, templateText string, ds *Diag
 	}
 }
 
+func templateExpressionDelimiterErrors(src string) []string {
+	var stack []byte
+	var quote byte
+	escaped := false
+	for i := 0; i < len(src); i++ {
+		c := src[i]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if c == 92 {
+				escaped = true
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == 34 || c == 39 || c == 96 {
+			quote = c
+			continue
+		}
+		switch c {
+		case 40, 91, 123:
+			stack = append(stack, c)
+		case 41, 93, 125:
+			if len(stack) == 0 {
+				return []string{"unexpected closing delimiter"}
+			}
+			open := stack[len(stack)-1]
+			if (open == 40 && c != 41) || (open == 91 && c != 93) || (open == 123 && c != 125) {
+				return []string{"mismatched closing delimiter"}
+			}
+			stack = stack[:len(stack)-1]
+		}
+	}
+	if quote != 0 {
+		return []string{"unterminated string literal"}
+	}
+	if len(stack) > 0 {
+		return []string{"unclosed delimiter"}
+	}
+	return nil
+}
+
+// parseTemplateExpression parses one template expression in statement context
+// and preserves parser errors for user-facing diagnostics.
+func parseTemplateExpression(exprText string) (*JsProgram, []string) {
+	if errs := templateExpressionDelimiterErrors(exprText); len(errs) > 0 {
+		return nil, errs
+	}
+	p := &JSParser{lex: NewLexer("(" + exprText + ");"), src: "(" + exprText + ");"}
+	p.cur = p.lex.Next()
+	p.peek = p.lex.Next()
+	prog := p.parseProgram()
+	for _, issue := range checkEmptyNodes(prog) {
+		p.Errors = append(p.Errors, issue.Msg)
+	}
+	return prog, p.Errors
+}
+
 // checkExprRefs parses a small JS expression and resolves every
 // identifier it contains against `known`.  Unknown identifiers are
 // reported as warnings.
@@ -480,12 +543,14 @@ func checkExprRefs(exprText string, known map[string]bool, templateText string, 
 	if exprText == "" {
 		return
 	}
-	// ParseJS parses a program; wrapping the expression in a statement
-	// position is the easiest way to use it.  An assignment shape is
-	// neutral and works for both expressions and expression-statements.
-	prog := ParseJS("(" + exprText + ");")
-	if prog == nil {
-		return // unparseable — leave alone, the user will see the JS error
+	prog, parseErrors := parseTemplateExpression(exprText)
+	if len(parseErrors) > 0 {
+		pos := strings.Index(templateText, exprText)
+		if pos < 0 {
+			pos = 0
+		}
+		ds.Error(pos, "invalid template expression %q: %s", exprText, parseErrors[0])
+		return
 	}
 
 	seen := make(map[string]bool)
