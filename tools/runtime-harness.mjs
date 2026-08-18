@@ -203,7 +203,7 @@ for (let i = 0; i < steps.length; i++) {
         await flushMicrotasks();
       }
     } else if ("input" in step) {
-      const el = 0 0step.input);
+      const el = $(step.input);
       if (!el) {
         failures.push(tag + ": input target " + step.input + " not found");
       } else {
@@ -212,7 +212,7 @@ for (let i = 0; i < steps.length; i++) {
         await flushMicrotasks();
       }
     } else if ("change" in step) {
-      const el = 0 0step.change);
+      const el = $(step.change);
       if (!el) {
         failures.push(tag + ": change target " + step.change + " not found");
       } else {
@@ -222,7 +222,7 @@ for (let i = 0; i < steps.length; i++) {
         await flushMicrotasks();
       }
     } else if ("keydown" in step) {
-      const el = 0 0step.keydown);
+      const el = $(step.keydown);
       if (!el) {
         failures.push(tag + ": keydown target " + step.keydown + " not found");
       } else {

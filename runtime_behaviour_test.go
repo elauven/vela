@@ -873,8 +873,8 @@ func TestRuntimeTodoCorpusGPT(t *testing.T) {
 // used by real forms: text input and checkbox change.
 func TestRuntimeInputAndCheckboxBindings(t *testing.T) {
 	src := `<script>
-  let title = ('');
-  let done = (false);
+  let title = $state('');
+  let done = $state(false);
 </script>
 <template><div>
   <input class="title" bind:value={title} />
@@ -893,10 +893,10 @@ func TestRuntimeInputAndCheckboxBindings(t *testing.T) {
 // for Vela instead of unsupported event modifiers such as .enter.
 func TestRuntimeKeydownHandler(t *testing.T) {
 	src := `<script>
-  let count = (0);
+  let count = $state(0);
   function handleKey(event) { if (event.key === 'Enter') count++; }
 </script>
-<template><div><input class="key" ={handleKey} /><p>{count}</p></div></template>`
+<template><div><input class="key" @keydown={handleKey} /><p>{count}</p></div></template>`
 	assertRuntime(t, "Keydown", src, []rtStep{
 		{"keydown": "input.key", "key": "Escape"},
 		{"assertText": "p", "equals": "0"},
