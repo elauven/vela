@@ -5520,3 +5520,12 @@ func TestScriptPlanInitializesDerivedBeforeFollowingUserStatement(t *testing.T) 
 		t.Fatalf("derived initializer must precede following user statement:\n%s", code)
 	}
 }
+
+
+func TestTemplateExpressionsKeepSourcePositions(t *testing.T) {
+
+	parts := parseInterpolationsAt(`{value} {value}`, 10)
+	if len(parts) != 3 || parts[0].Pos != 11 || parts[2].Pos != 19 {
+		t.Fatalf("interpolation positions = %+v", parts)
+	}
+}

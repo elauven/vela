@@ -330,7 +330,7 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 			case *TextNode:
 				for _, p := range n.Parts {
 					if !p.Static {
-						checkExprRefs(p.Value, known, templateText, ds)
+						checkExprRefsAt(p.Value, known, templateText, p.Pos, ds)
 					}
 				}
 			case *ElementNode:
@@ -457,13 +457,13 @@ func checkAttrRefs(a *Attr, known map[string]bool, templateText string, ds *Diag
 	// bound/event handler holds an expression.  Static strings don't.
 	val := a.Value
 	if a.IsEvent || a.IsBind {
-		checkExprRefs(stripBraces(val), known, templateText, ds)
+		checkExprRefsAt(stripBraces(val), known, templateText, a.Pos, ds)
 		return
 	}
 	// {expr} form
 	if strings.HasPrefix(val, "{") && strings.HasSuffix(val, "}") {
 		inner := val[1 : len(val)-1]
-		checkExprRefs(inner, known, templateText, ds)
+		checkExprRefsAt(inner, known, templateText, a.Pos, ds)
 	}
 }
 
@@ -539,15 +539,21 @@ func parseTemplateExpression(exprText string) (*JsProgram, []string) {
 // (relative to the template section's offset, which the caller has
 // pushed onto DiagSet).
 func checkExprRefs(exprText string, known map[string]bool, templateText string, ds *DiagSet) {
+	checkExprRefsAt(exprText, known, templateText, -1, ds)
+}
+
+func checkExprRefsAt(exprText string, known map[string]bool, templateText string, pos int, ds *DiagSet) {
 	exprText = strings.TrimSpace(exprText)
 	if exprText == "" {
 		return
 	}
 	prog, parseErrors := parseTemplateExpression(exprText)
 	if len(parseErrors) > 0 {
-		pos := strings.Index(templateText, exprText)
 		if pos < 0 {
-			pos = 0
+			pos = strings.Index(templateText, exprText)
+			if pos < 0 {
+				pos = 0
+			}
 		}
 		ds.Error(pos, "invalid template expression %q: %s", exprText, parseErrors[0])
 		return

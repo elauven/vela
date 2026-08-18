@@ -135,13 +135,13 @@ type EachBlockNode struct {
 
 // AwaitBlockNode is produced by Svelte-style:
 //
-//   {#await promise}
-//     pending...
-//   {:then value}
-//     resolved with {value}
-//   {:catch err}
-//     failed: {err}
-//   {/await}
+//	{#await promise}
+//	  pending...
+//	{:then value}
+//	  resolved with {value}
+//	{:catch err}
+//	  failed: {err}
+//	{/await}
 //
 // Either {:then} or {:catch} (or both) is optional.  When omitted,
 // the corresponding branch slot is nil.  PendingChildren may also be
@@ -182,26 +182,29 @@ type SlotNode struct {
 
 func (s *SlotNode) nodeKind() string      { return "slot" }
 func (e *EachBlockNode) nodeKind() string { return "eachblock" }
+
 type TextNode struct {
 	Parts []*Part
 }
 
 // Part is one segment of a text node.
 type Part struct {
-	Static bool   // true → literal text; false → JS expression
+	Static bool // true → literal text; false → JS expression
 	Value  string
+	Pos    int
 }
 
 // Attr holds one HTML attribute, annotated with its sigil role.
 type Attr struct {
-	Name      string // without the leading sigil
-	Value     string
-	IsEvent   bool // @ prefix → addEventListener
-	IsBind    bool // : prefix → dynamic attribute (one-way)
-	IsTwoWay  bool // bind: prefix → two-way binding (reads + writes the state var)
+	Name       string // without the leading sigil
+	Value      string
+	IsEvent    bool // @ prefix → addEventListener
+	IsBind     bool // : prefix → dynamic attribute (one-way)
+	IsTwoWay   bool // bind: prefix → two-way binding (reads + writes the state var)
 	IsBindThis bool // bind:this={ref} → write the live element into `ref`
 	IsClassDir bool // class:foo={cond} → toggle the `foo` class based on cond
-	IsStyleDir bool // style:foo={expr} → set inline style property `foo` to expr
+	IsStyleDir bool
+	Pos        int // style:foo={expr} → set inline style property `foo` to expr
 }
 
 func (e *ElementNode) nodeKind() string   { return "element" }
@@ -368,7 +371,7 @@ func (p *parser) parseText() (*TextNode, error) {
 		p.pos++
 	}
 	raw := buf.String()
-	parts := parseInterpolations(raw)
+	parts := parseInterpolationsAt(raw, p.pos-len(raw))
 	if len(parts) == 0 {
 		return nil, nil
 	}
@@ -384,7 +387,9 @@ func isHTMLSpace(c byte) bool {
 
 // parseInterpolations splits a raw string into static and dynamic parts
 // by scanning for {expr} sequences.
-func parseInterpolations(s string) []*Part {
+func parseInterpolations(s string) []*Part { return parseInterpolationsAt(s, 0) }
+
+func parseInterpolationsAt(s string, base int) []*Part {
 	var parts []*Part
 	var buf strings.Builder
 
@@ -453,7 +458,7 @@ func parseInterpolations(s string) []*Part {
 		done:
 			expr := strings.TrimSpace(s[start:i])
 			if expr != "" {
-				parts = append(parts, &Part{Static: false, Value: expr})
+				parts = append(parts, &Part{Static: false, Value: expr, Pos: base + start})
 			}
 			i++ // skip '}'
 		} else {
@@ -576,16 +581,16 @@ func (p *parser) parseComponentNode(name string) (Node, error) {
 	}
 	// Transfer directive fields from scratch — parseAttrs puts #each/#key/#if
 	// into the ElementNode fields, not into Attrs.
-	comp.Attrs    = scratch.Attrs
+	comp.Attrs = scratch.Attrs
 	comp.EachExpr = scratch.EachExpr
-	comp.EachKey  = scratch.EachKey
-	comp.IfCond   = scratch.IfCond
+	comp.EachKey = scratch.EachKey
+	comp.IfCond = scratch.IfCond
 
 	if p.has("/>") {
 		p.pos += 2
 		return comp, nil
 	}
-	if !p.eof() && p.ch() == '>'  {
+	if !p.eof() && p.ch() == '>' {
 		p.pos++
 	}
 
@@ -679,6 +684,7 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 		}
 
 		// Classify and store
+		attrCount := len(elem.Attrs)
 		switch {
 		case name == "#if":
 			elem.IfCond = value
@@ -755,6 +761,9 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 			elem.Attrs = append(elem.Attrs, &Attr{
 				Name: name, Value: value, IsBind: isBraced,
 			})
+		}
+		if len(elem.Attrs) > attrCount {
+			elem.Attrs[len(elem.Attrs)-1].Pos = start
 		}
 	}
 	return nil
@@ -947,13 +956,13 @@ func (p *parser) parseSvelteKeyBlock(raw string) (Node, error) {
 
 // parseSvelteAwaitBlock parses
 //
-//   {#await promise}
-//     pending...
-//   {:then value}
-//     resolved with {value}
-//   {:catch err}
-//     failed: {err}
-//   {/await}
+//	{#await promise}
+//	  pending...
+//	{:then value}
+//	  resolved with {value}
+//	{:catch err}
+//	  failed: {err}
+//	{/await}
 //
 // Either {:then} or {:catch} may be absent; in those cases the
 // corresponding child slot is nil and codegen treats the branch as
