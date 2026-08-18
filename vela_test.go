@@ -5436,3 +5436,37 @@ func TestVoidTags_ContainsKnownVoidElements(t *testing.T) {
 		}
 	}
 }
+
+
+func TestAnalyzeScriptOrdersDerivedDependencies(t *testing.T) {
+	analysis := analyzeScript(`
+		let count = $state(2);
+		let total = $derived(doubled + 1);
+		let doubled = $derived(count * 2);
+	`)
+	if len(analysis.DerivedVars) != 2 {
+		t.Fatalf("derived count = %d, want 2", len(analysis.DerivedVars))
+	}
+	if got := analysis.DerivedVars[0].Name; got != "doubled" {
+		t.Fatalf("first derived = %q, want dependency doubled", got)
+	}
+	if got := analysis.DerivedVars[1].Name; got != "total" {
+		t.Fatalf("second derived = %q, want dependent total", got)
+	}
+}
+
+func TestValidateDerivedCycles(t *testing.T) {
+	src := `
+		let first = $derived(second + 1);
+		let second = $derived(first + 1);
+	`
+	analysis := analyzeScript(src)
+	if len(analysis.DerivedCycles) != 1 {
+		t.Fatalf("cycles = %+v, want one cycle", analysis.DerivedCycles)
+	}
+	ds := NewDiagSet("", src)
+	validateDerivedCycles(ParseJS(src), analysis, ds)
+	if len(ds.Errors()) != 1 || !strings.Contains(ds.Errors()[0].Message, "cyclic $derived dependencies") {
+		t.Fatalf("cycle diagnostic = %+v", ds.All())
+	}
+}

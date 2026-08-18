@@ -43,6 +43,31 @@ import (
 //
 // `analysis` provides the set of state-var names for severity
 // classification.
+func validateDerivedCycles(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
+	if analysis == nil || len(analysis.DerivedCycles) == 0 {
+		return
+	}
+	positions := map[string]int{}
+	WalkNode(prog, func(n JsNode) bool {
+		if decl, ok := n.(*JsVarDecl); ok {
+			for _, d := range decl.Decls {
+				if call, ok := d.Init.(*JsCallExpr); ok {
+					if callee, ok := call.Callee.(*JsIdent); ok && callee.Name == "$derived" {
+						positions[identName(d.Id)] = d.Id.nodePos()
+					}
+				}
+			}
+		}
+		return true
+	})
+	for _, cycle := range analysis.DerivedCycles {
+		if len(cycle) == 0 {
+			continue
+		}
+		ds.Error(positions[cycle[0]], "cyclic $derived dependencies: %s", strings.Join(cycle, " -> "))
+	}
+}
+
 func validateDerivedPurity(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
 	if prog == nil {
 		return

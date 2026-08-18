@@ -383,6 +383,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	scriptScope := BuildScopes(prog, ds)
 	DetectUnreachable(prog, ds)
 	validateScript(prog, analysis, ds)
+	validateDerivedCycles(prog, analysis, ds)
 	validateDerivedPurity(prog, analysis, ds)
 	validateScriptForms(prog, ds)
 	validateEffectBody(prog, analysis, ds)

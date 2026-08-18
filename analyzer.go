@@ -18,6 +18,7 @@ type Analysis struct {
 	Lifecycles    []*LifecycleHook
 	CleanScript   string
 	ImportRecords []ImportRecord
+	DerivedCycles [][]string
 	// IntrinsicAliases maps a local binding name back to the
 	// original intrinsic it was aliased from (`"onMount"` or
 	// `"onDestroy"`).  Populated when the script imports an
@@ -236,6 +237,8 @@ func analyzeScript(src string) *Analysis {
 		allNames = append(allNames, dv.Name)
 	}
 
+	a.DerivedVars, a.DerivedCycles = orderDerivedVars(a.DerivedVars)
+
 	allNames = a.reactiveNames()
 	for _, eff := range a.Effects {
 		sub := ParseJS(eff.Body)
@@ -276,6 +279,67 @@ func analyzeScript(src string) *Analysis {
 	}
 	a.ImportRecords = ParseImportRecords(src, 0)
 	return a
+}
+
+// orderDerivedVars produces a stable topological order for derived values.
+// A later declaration may be a dependency of an earlier one; generation must
+// nevertheless initialize the dependency first. Cyclic entries stay at the
+// end and are reported by semantic validation before code generation.
+func orderDerivedVars(vars []*DerivedVar) ([]*DerivedVar, [][]string) {
+	byName := make(map[string]*DerivedVar, len(vars))
+	index := make(map[string]int, len(vars))
+	for i, dv := range vars {
+		byName[dv.Name] = dv
+		index[dv.Name] = i
+	}
+	indegree := make(map[string]int, len(vars))
+	dependents := make(map[string][]string, len(vars))
+	for _, dv := range vars {
+		for _, dep := range dv.Deps {
+			if _, isDerived := byName[dep]; isDerived {
+				indegree[dv.Name]++
+				dependents[dep] = append(dependents[dep], dv.Name)
+			}
+		}
+	}
+	queue := make([]string, 0, len(vars))
+	for _, dv := range vars {
+		if indegree[dv.Name] == 0 {
+			queue = append(queue, dv.Name)
+		}
+	}
+	var ordered []*DerivedVar
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		ordered = append(ordered, byName[name])
+		for _, next := range dependents[name] {
+			indegree[next]--
+			if indegree[next] == 0 {
+				insert := len(queue)
+				for i, queued := range queue {
+					if index[next] < index[queued] {
+						insert = i
+						break
+					}
+				}
+				queue = append(queue, "")
+				copy(queue[insert+1:], queue[insert:])
+				queue[insert] = next
+			}
+		}
+	}
+	if len(ordered) == len(vars) {
+		return ordered, nil
+	}
+	var cycle []string
+	for _, dv := range vars {
+		if indegree[dv.Name] > 0 {
+			cycle = append(cycle, dv.Name)
+			ordered = append(ordered, dv)
+		}
+	}
+	return ordered, [][]string{cycle}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
