@@ -1191,11 +1191,6 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// call $$set_X) are in scope.
 	fnBody.Body = append(fnBody.Body, g.events...)
 
-	// ── Initialise derived (block 6) ─────────────────────────
-	// Run every derived updater once so derived values are valid
-	// before the initial render reads them.
-	fnBody.Body = append(fnBody.Body, g.buildDerivedInit()...)
-
 	// ── Initial render (block 3) ─────────────────────────────
 	fnBody.Body = append(fnBody.Body, g.initBody...)
 
@@ -1497,12 +1492,34 @@ func (g *ASTGen) buildScriptPlan() []JsStmt {
 		return nil
 	}
 	var out []JsStmt
+	seenDerived := map[string]bool{}
+	initialized := map[string]bool{}
+	flushReadyDerived := func() {
+		for _, derived := range g.analysis.DerivedVars {
+			if !seenDerived[derived.Name] || initialized[derived.Name] {
+				continue
+			}
+			ready := true
+			for _, dep := range derived.Deps {
+				if g.isDerivedName(dep) && !initialized[dep] {
+					ready = false
+					break
+				}
+			}
+			if ready {
+				out = append(out, jsStmt("$$upd_"+derived.Name+"();"))
+				initialized[derived.Name] = true
+			}
+		}
+	}
 	for _, step := range g.analysis.ScriptPlan {
 		switch step.Kind {
 		case "state":
 			out = append(out, g.buildStateDecl(step.State)...)
 		case "derived":
 			out = append(out, g.buildDerivedDecl(step.Derived)...)
+			seenDerived[step.Derived.Name] = true
+			flushReadyDerived()
 		case "user":
 			out = append(out, ParseJS(step.Source).Body...)
 		}
@@ -1533,6 +1550,18 @@ func (g *ASTGen) buildUserScript() []JsStmt {
 // reactiveNames returns the names of all reactive variables (state
 // + props) — used to scope dependency detection in hole
 // expressions.
+func (g *ASTGen) isDerivedName(name string) bool {
+	if g.analysis == nil {
+		return false
+	}
+	for _, derived := range g.analysis.DerivedVars {
+		if derived.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *ASTGen) reactiveNames() []string {
 	if g.analysis == nil {
 		return nil

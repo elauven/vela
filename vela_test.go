@@ -5500,3 +5500,23 @@ func TestScriptPlanPreservesStateAndUserInitializerOrder(t *testing.T) {
 		t.Fatalf("generated setup order is wrong:\n%s", code)
 	}
 }
+
+
+func TestScriptPlanInitializesDerivedBeforeFollowingUserStatement(t *testing.T) {
+	script := `
+		let count = $state(2);
+		let doubled = $derived(count * 2);
+		const captured = doubled + 1;
+	`
+	analysis := analyzeScript(script)
+	sfc, err := parseSFC("<script>" + script + "</script><template><p>{captured}</p></template>")
+	if err != nil { t.Fatal(err) }
+	tmpl, err := parseTemplate(sfc.Template)
+	if err != nil { t.Fatal(err) }
+	code := generateCodeAST("DerivedPlan", sfc, tmpl, analysis, "vela-000000")
+	update := strings.Index(code, "();")
+	captured := strings.Index(code, "const captured = doubled + 1;")
+	if update < 0 || captured < 0 || update > captured {
+		t.Fatalf("derived initializer must precede following user statement:\n%s", code)
+	}
+}
