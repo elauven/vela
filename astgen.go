@@ -1163,20 +1163,10 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// can read it.
 	fnBody.Body = append(fnBody.Body, g.buildPropDecls()...)
 
-	// Constants and function declarations that do not read reactive values must
-	// run before state initializers. This preserves source dependencies such as
-	// `const stored = load(); let todos = $state(stored.todos);`.
-	userPrelude, userPostlude := g.buildUserScriptParts()
-	fnBody.Body = append(fnBody.Body, userPrelude...)
-
-	// ── State (block 5) ──────────────────────────────────────
-	fnBody.Body = append(fnBody.Body, g.buildStateDecls()...)
-
-	// ── Derived (block 6) ────────────────────────────────────
-	// Each $derived becomes an uninitialized `let` plus an
-	// $$upd_X updater.  The updater is invoked once before initial
-	// render and again from the setter of any dependency.
-	fnBody.Body = append(fnBody.Body, g.buildDerivedDecls()...)
+	// ── Source-ordered component setup ─────────────────────
+	// Normal top-level statements and reactive declarations keep the order
+	// in which the author wrote them.
+	fnBody.Body = append(fnBody.Body, g.buildScriptPlan()...)
 
 	// ── Effects (block 6) ────────────────────────────────────
 	// Each $effect becomes a $$cleanupN holder plus an $$effectN
@@ -1191,9 +1181,6 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// TDZ error — see ASTGen.hoisted.
 	fnBody.Body = append(fnBody.Body, g.hoisted...)
 	fnBody.Body = append(fnBody.Body, g.body...)
-
-	// ── Component logic — user <script> (block 4) ────────────
-	fnBody.Body = append(fnBody.Body, userPostlude...)
 
 	// ── Reactive setters (blocks 5-6) ────────────────────────
 	fnBody.Body = append(fnBody.Body, g.buildSetters()...)
@@ -1505,6 +1492,24 @@ func (g *ASTGen) buildUserScriptParts() (prelude, postlude []JsStmt) {
 	return prelude, postlude
 }
 
+func (g *ASTGen) buildScriptPlan() []JsStmt {
+	if g.analysis == nil {
+		return nil
+	}
+	var out []JsStmt
+	for _, step := range g.analysis.ScriptPlan {
+		switch step.Kind {
+		case "state":
+			out = append(out, g.buildStateDecl(step.State)...)
+		case "derived":
+			out = append(out, g.buildDerivedDecl(step.Derived)...)
+		case "user":
+			out = append(out, ParseJS(step.Source).Body...)
+		}
+	}
+	return out
+}
+
 // buildUserScript parses the analyzer's CleanScript — the user's
 // <script> with $state/$derived/imports already stripped and
 // assignments rewritten — into AST statements spliced straight
@@ -1632,24 +1637,24 @@ func (g *ASTGen) hasDeepState() bool {
 // The value is Proxy-wrapped so nested mutations route through the
 // same notify path as reassignment; $$mut_X is the mutation
 // callback the Proxy traps invoke.
+func (g *ASTGen) buildStateDecl(sv *StateVar) []JsStmt {
+	init := sv.Initial
+	if init == "" {
+		init = "undefined"
+	}
+	if sv.Deep {
+		return []JsStmt{jsStmt("const $$mut_" + sv.Name + " = () => $$set_" + sv.Name + "_notify();"), jsStmt("let " + sv.Name + " = $$proxy(" + init + ", $$mut_" + sv.Name + ");")}
+	}
+	return []JsStmt{jsStmt("let " + sv.Name + " = " + init + ";")}
+}
+
 func (g *ASTGen) buildStateDecls() []JsStmt {
 	if g.analysis == nil {
 		return nil
 	}
 	var out []JsStmt
 	for _, sv := range g.analysis.StateVars {
-		init := sv.Initial
-		if init == "" {
-			init = "undefined"
-		}
-		if sv.Deep {
-			out = append(out, jsStmt(
-				"const $$mut_"+sv.Name+" = () => $$set_"+sv.Name+"_notify();"))
-			out = append(out, jsStmt(
-				"let "+sv.Name+" = $$proxy("+init+", $$mut_"+sv.Name+");"))
-		} else {
-			out = append(out, jsStmt("let "+sv.Name+" = "+init+";"))
-		}
+		out = append(out, g.buildStateDecl(sv)...)
 	}
 	return out
 }
@@ -1664,6 +1669,10 @@ func (g *ASTGen) buildStateDecls() []JsStmt {
 // reads earlier derived names, so all declarations must precede
 // all updaters; interleaving them still works at runtime (updaters
 // only run later) but diverges structurally.
+func (g *ASTGen) buildDerivedDecl(dv *DerivedVar) []JsStmt {
+	return []JsStmt{jsStmt("let " + dv.Name + ";"), jsStmt("const $$upd_" + dv.Name + " = () => { " + dv.Name + " = " + dv.Expr + "; };")}
+}
+
 func (g *ASTGen) buildDerivedDecls() []JsStmt {
 	if g.analysis == nil {
 		return nil

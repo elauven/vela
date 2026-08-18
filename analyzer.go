@@ -8,6 +8,14 @@ import (
 //  Public analysis result types  (interface unchanged — codegen sees the same)
 // ─────────────────────────────────────────────────────────────────────────────
 
+type ScriptPlanStep struct {
+	Kind    string
+	Pos     int
+	Source  string
+	State   *StateVar
+	Derived *DerivedVar
+}
+
 type Analysis struct {
 	StateVars     []*StateVar
 	DerivedVars   []*DerivedVar
@@ -19,6 +27,7 @@ type Analysis struct {
 	CleanScript   string
 	ImportRecords []ImportRecord
 	DerivedCycles [][]string
+	ScriptPlan    []ScriptPlanStep
 	// IntrinsicAliases maps a local binding name back to the
 	// original intrinsic it was aliased from (`"onMount"` or
 	// `"onDestroy"`).  Populated when the script imports an
@@ -45,6 +54,7 @@ type LifecycleHook struct {
 type StateVar struct {
 	Name    string
 	Initial string
+	Pos     int
 	// Deep means the state was declared via `$state.deep(...)` rather
 	// than plain `$state(...)`.  Codegen wraps the value in a Proxy
 	// so that mutations to nested properties (`arr.push(x)`,
@@ -57,6 +67,7 @@ type StateVar struct {
 type DerivedVar struct {
 	Name string
 	Expr string
+	Pos  int
 	Deps []string
 }
 
@@ -169,7 +180,7 @@ func analyzeScript(src string) *Analysis {
 						init = strings.TrimSpace(src[call.Args[0].nodePos():call.Args[0].nodeEnd()])
 					}
 					a.StateVars = append(a.StateVars, &StateVar{
-						Name: name, Initial: init, Deep: stateDeep,
+						Name: name, Initial: init, Pos: s.nodeEnd(), Deep: stateDeep,
 					})
 					skipEnd[s.End] = true
 
@@ -178,7 +189,7 @@ func analyzeScript(src string) *Analysis {
 					if len(call.Args) > 0 {
 						expr = strings.TrimSpace(src[call.Args[0].nodePos():call.Args[0].nodeEnd()])
 					}
-					a.DerivedVars = append(a.DerivedVars, &DerivedVar{Name: name, Expr: expr})
+					a.DerivedVars = append(a.DerivedVars, &DerivedVar{Name: name, Expr: expr, Pos: s.nodeEnd()})
 					skipEnd[s.End] = true
 				}
 			}
@@ -261,6 +272,7 @@ func analyzeScript(src string) *Analysis {
 	// ── Rewrite assignments inside lifecycle and effect bodies ───────────────
 	ss := a.stateSet()
 	a.CleanScript = buildCleanScript(prog, src, skipEnd, ss)
+	a.ScriptPlan = buildScriptPlan(prog, src, skipEnd, a, ss)
 
 	for _, lc := range a.Lifecycles {
 		if lc.Body == "" {
@@ -279,6 +291,39 @@ func analyzeScript(src string) *Analysis {
 	}
 	a.ImportRecords = ParseImportRecords(src, 0)
 	return a
+}
+
+func buildScriptPlan(prog *JsProgram, src string, skipEnd map[int]bool, a *Analysis, stateSet map[string]bool) []ScriptPlanStep {
+	stateAt := map[int]*StateVar{}
+	for _, state := range a.StateVars {
+		stateAt[state.Pos] = state
+	}
+	derivedAt := map[int]*DerivedVar{}
+	for _, derived := range a.DerivedVars {
+		derivedAt[derived.Pos] = derived
+	}
+	var plan []ScriptPlanStep
+	for _, stmt := range prog.Body {
+		if _, ok := stmt.(*JsImportDecl); ok {
+			continue
+		}
+		if state := stateAt[stmt.nodeEnd()]; state != nil {
+			plan = append(plan, ScriptPlanStep{Kind: "state", Pos: stmt.nodeEnd(), State: state})
+			continue
+		}
+		if derived := derivedAt[stmt.nodeEnd()]; derived != nil {
+			plan = append(plan, ScriptPlanStep{Kind: "derived", Pos: stmt.nodeEnd(), Derived: derived})
+			continue
+		}
+		if skipEnd[stmt.nodeEnd()] {
+			continue
+		}
+		raw := strings.TrimSpace(src[stmt.nodePos():stmt.nodeEnd()])
+		if raw != "" {
+			plan = append(plan, ScriptPlanStep{Kind: "user", Pos: stmt.nodeEnd(), Source: RewriteAssignments(raw, ParseJS(raw), stateSet)})
+		}
+	}
+	return plan
 }
 
 // orderDerivedVars produces a stable topological order for derived values.

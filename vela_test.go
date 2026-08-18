@@ -5470,3 +5470,33 @@ func TestValidateDerivedCycles(t *testing.T) {
 		t.Fatalf("cycle diagnostic = %+v", ds.All())
 	}
 }
+
+
+func TestScriptPlanPreservesStateAndUserInitializerOrder(t *testing.T) {
+	script := `
+		let first = $state(1);
+		const snapshot = first;
+		let second = $state(snapshot);
+	`
+	analysis := analyzeScript(script)
+	if len(analysis.ScriptPlan) != 3 {
+		t.Fatalf("ScriptPlan length = %d, want 3", len(analysis.ScriptPlan))
+	}
+	want := []string{"state", "user", "state"}
+	for i, kind := range want {
+		if got := analysis.ScriptPlan[i].Kind; got != kind {
+			t.Fatalf("ScriptPlan[%d] = %q, want %q", i, got, kind)
+		}
+	}
+	sfc, err := parseSFC("<script>" + script + "</script><template><p>{second}</p></template>")
+	if err != nil { t.Fatal(err) }
+	tmpl, err := parseTemplate(sfc.Template)
+	if err != nil { t.Fatal(err) }
+	code := generateCodeAST("PlanOrder", sfc, tmpl, analysis, "vela-000000")
+	first := strings.Index(code, "let first = 1;")
+	snapshot := strings.Index(code, "const snapshot = first;")
+	second := strings.Index(code, "let second = snapshot;")
+	if first < 0 || snapshot < 0 || second < 0 || !(first < snapshot && snapshot < second) {
+		t.Fatalf("generated setup order is wrong:\n%s", code)
+	}
+}
