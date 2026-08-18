@@ -202,6 +202,14 @@ for (let i = 0; i < steps.length; i++) {
         // next assertion.  A few turns covers chained defers.
         await flushMicrotasks();
       }
+    } else if ("submit" in step) {
+      const el = $(step.submit);
+      if (!el) {
+        failures.push(tag + ": submit target " + step.submit + " not found");
+      } else {
+        el.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+        await flushMicrotasks();
+      }
     } else if ("input" in step) {
       const el = $(step.input);
       if (!el) {
