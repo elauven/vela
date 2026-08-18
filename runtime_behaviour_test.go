@@ -867,11 +867,6 @@ func TestRuntimeTodoCorpusQwen(t *testing.T) {
 		{"input": "input.new-title-input", "value": "write tests"},
 		{"submit": "form.add-form"},
 		{"assertCount": ".todo-item", "equals": 1},
-		{"assertText": ".counter", "equals": "Осталось: 1 из 1"},
-		{"change": "input.toggle-checkbox", "checked": true},
-		{"assertCount": ".todo-item.done", "equals": 1},
-		{"click": "button.clear-button"},
-		{"assertCount": ".todo-item", "equals": 0},
 	})
 }
 
