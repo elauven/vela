@@ -83,3 +83,33 @@ func TestSessionC_ComponentInIfBranchInRowFiresHint(t *testing.T) {
 		t.Fatalf("expected hint for unkeyed each containing nested {#if}-with-component:\n%v", ds.All())
 	}
 }
+
+func TestVelaFormDiagnostics(t *testing.T) {
+	cases := []struct {
+		name, script, template, want string
+	}{
+		{"derived callback", `let x = $state(1); let y = $derived(() => x + 1);`, `<p>{y}</p>`, "$derived does not accept a callback"},
+		{"dispatch import", `import { $$dispatch } from "vela";`, `<button>ok</button>`, "$$dispatch is a Vela builtin"},
+		{"event modifier", `let x = $state(0);`, `<button @keydown.enter={x++}>ok</button>`, "event modifiers are not supported"},
+		{"class map", `let x = $state(false);`, "<div :class=\"{'active': x}\"></div>", "object-valued :class is not supported"},
+		{"member bind", `let x = $state.deep({ ok: false });`, `<input bind:checked={x.ok}>`, "bind:checked requires a plain"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prog := ParseJS(tc.script)
+			nodes, err := parseTemplate(tc.template)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ds := NewDiagSet("test.vela", tc.script+"\n"+tc.template)
+			validateScriptForms(prog, ds)
+			validateTemplateForms(nodes, tc.template, ds)
+			for _, d := range ds.Errors() {
+				if strings.Contains(d.Message, tc.want) {
+					return
+				}
+			}
+			t.Fatalf("missing diagnostic %q: %v", tc.want, ds.All())
+		})
+	}
+}

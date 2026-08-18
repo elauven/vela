@@ -1163,6 +1163,12 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// can read it.
 	fnBody.Body = append(fnBody.Body, g.buildPropDecls()...)
 
+	// Constants and function declarations that do not read reactive values must
+	// run before state initializers. This preserves source dependencies such as
+	// `const stored = load(); let todos = $state(stored.todos);`.
+	userPrelude, userPostlude := g.buildUserScriptParts()
+	fnBody.Body = append(fnBody.Body, userPrelude...)
+
 	// ── State (block 5) ──────────────────────────────────────
 	fnBody.Body = append(fnBody.Body, g.buildStateDecls()...)
 
@@ -1187,7 +1193,7 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	fnBody.Body = append(fnBody.Body, g.body...)
 
 	// ── Component logic — user <script> (block 4) ────────────
-	fnBody.Body = append(fnBody.Body, g.buildUserScript()...)
+	fnBody.Body = append(fnBody.Body, userPostlude...)
 
 	// ── Reactive setters (blocks 5-6) ────────────────────────
 	fnBody.Body = append(fnBody.Body, g.buildSetters()...)
@@ -1436,8 +1442,8 @@ func stripVelaIntrinsics(spec string) string {
 	if closeBrace < openBrace {
 		return spec
 	}
-	before := strings.TrimSpace(spec[:openBrace])      // "D," or ""
-	inside := spec[openBrace+1 : closeBrace]           // "A, B as b"
+	before := strings.TrimSpace(spec[:openBrace]) // "D," or ""
+	inside := spec[openBrace+1 : closeBrace]      // "A, B as b"
 	before = strings.TrimSuffix(before, ",")
 	before = strings.TrimSpace(before)
 
@@ -1473,6 +1479,30 @@ func stripVelaIntrinsics(spec string) string {
 		return named
 	}
 	return before + ", " + named
+}
+
+// buildUserScriptParts keeps source-derived constants ahead of rune
+// initializers while leaving statements that read reactive bindings after them.
+// Function declarations are safe in the prelude because their bodies execute
+// only when called, after the component has completed initialization.
+func (g *ASTGen) buildUserScriptParts() (prelude, postlude []JsStmt) {
+	if g.analysis == nil || g.analysis.CleanScript == "" {
+		return nil, nil
+	}
+	prog := ParseJS(g.analysis.CleanScript)
+	reactive := g.reactiveNames()
+	for _, stmt := range prog.Body {
+		if _, ok := stmt.(*JsFuncDecl); ok {
+			prelude = append(prelude, stmt)
+			continue
+		}
+		if len(FindDepsInNode(stmt, reactive)) == 0 {
+			prelude = append(prelude, stmt)
+		} else {
+			postlude = append(postlude, stmt)
+		}
+	}
+	return prelude, postlude
 }
 
 // buildUserScript parses the analyzer's CleanScript — the user's
@@ -1596,7 +1626,9 @@ func (g *ASTGen) hasDeepState() bool {
 // Plain $state:  let X = <initial>;
 //
 // $state.deep:   const $$mut_X = () => $$set_X_notify();
-//                let X = $$proxy(<initial>, $$mut_X);
+//
+//	let X = $$proxy(<initial>, $$mut_X);
+//
 // The value is Proxy-wrapped so nested mutations route through the
 // same notify path as reassignment; $$mut_X is the mutation
 // callback the Proxy traps invoke.
@@ -1700,7 +1732,7 @@ func (g *ASTGen) buildEffectInit() []JsStmt {
 // callback whose return value (if any) is captured as that mount's
 // cleanup function:
 //
-//   const $$mountCleanup0 = (function() { …body… })();
+//	const $$mountCleanup0 = (function() { …body… })();
 //
 // The IIFE matters: a `return fn` inside an onMount callback is the
 // cleanup return (like an $effect cleanup), NOT the component
@@ -1757,11 +1789,11 @@ func (g *ASTGen) buildOnDestroyCleanup() []JsStmt {
 // Each setter has the shape the legacy generator produces for the
 // non-deep, non-derived case:
 //
-//   function $$set_X($$v) {
-//     if (X === $$v) return;            // cycle break + no-op skip
-//     X = $$v;
-//     $$defer(() => { …DOM updates… }); // only if X drives a hole
-//   }
+//	function $$set_X($$v) {
+//	  if (X === $$v) return;            // cycle break + no-op skip
+//	  X = $$v;
+//	  $$defer(() => { …DOM updates… }); // only if X drives a hole
+//	}
 //
 // The DOM updates are the statements addUpdate collected for X
 // while holes were built.
@@ -1972,12 +2004,12 @@ func (g *ASTGen) buildOneSetter(name string) JsStmt {
 // buildDeepSetters constructs the split setter pair for a
 // $state.deep variable:
 //
-//   function $$set_X_notify() { …reactive cascade… }
-//   function $$set_X($$v) {
-//     if (X === $$v) return;
-//     X = $$proxy($$v, $$mut_X);   // re-wrap the new value
-//     $$set_X_notify();
-//   }
+//	function $$set_X_notify() { …reactive cascade… }
+//	function $$set_X($$v) {
+//	  if (X === $$v) return;
+//	  X = $$proxy($$v, $$mut_X);   // re-wrap the new value
+//	  $$set_X_notify();
+//	}
 //
 // The notify function is what the Proxy's mutation traps call (via
 // $$mut_X), so a nested mutation triggers the same cascade as a
@@ -2222,7 +2254,6 @@ func (g *ASTGen) buildHoleSubtree(
 		}
 		return []JsStmt{g.innerHTMLStmt(targetVar, html)}
 	}
-
 
 	html, holes := buildHoleTemplate(children, g.scopeID)
 	if len(children) == 0 {
@@ -2618,15 +2649,15 @@ func staticRawText(children []Node) (string, bool) {
 // construction — no splice.
 //
 // The lowering has five parts:
-//   1. an anchor comment ($$nN_a) the rows are inserted before
-//   2. a fragment builder $$frag_$$nN(item, $$i) that builds one
-//      row's DOM and returns { el, update(item,$$i), destroy() }
-//   3. block storage — $$nN_bs (array); $$nN_km (Map) when keyed
-//   4. the reconciler $$each_$$nN($$arr): unkeyed destroys-all-
-//      then-rebuilds; keyed diffs against $$nN_km, reusing matched
-//      rows and destroying dropped keys
-//   5. wiring — anchor appendChild, the setter $$defer re-render,
-//      the init call, and the destroy-all teardown
+//  1. an anchor comment ($$nN_a) the rows are inserted before
+//  2. a fragment builder $$frag_$$nN(item, $$i) that builds one
+//     row's DOM and returns { el, update(item,$$i), destroy() }
+//  3. block storage — $$nN_bs (array); $$nN_km (Map) when keyed
+//  4. the reconciler $$each_$$nN($$arr): unkeyed destroys-all-
+//     then-rebuilds; keyed diffs against $$nN_km, reusing matched
+//     rows and destroying dropped keys
+//  5. wiring — anchor appendChild, the setter $$defer re-render,
+//     the init call, and the destroy-all teardown
 //
 // Row content is built via buildHoleSubtree (the common hole-
 // bearing-subtree row).  Rows with per-row events / binds /
@@ -2687,7 +2718,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	var fragBody []JsStmt
 	var sub holeSubtree
 	var rowAttrs eachRowAttrs
-	var nestedUpdate []JsStmt // captured init+updates for nested-block rows
+	var nestedUpdate []JsStmt   // captured init+updates for nested-block rows
 	var rowComps []compInstance // child-component instances built in this row
 	// rowBodyDeps collects component-state names a nested-control-
 	// flow row body reads; every such dep re-runs the whole {#each}
@@ -3187,12 +3218,12 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 	// captured node vars must be declared at component scope (so
 	// the setter can reach them) and nulled on branch removal.
 	type branchPlan struct {
-		buildText        string         // node-construction statements
-		initText         string         // initial hole writes (run after capture)
-		captured         []string       // node vars to null on unmount
-		comps            []compInstance // component instances to destroy on unmount
-		nestedTeardowns  []string       // teardown snippets for nested chains hoisted from this branch's body
-		cleanup          []JsStmt       // cleanup statements from cap.cleanup — fired via a closure stored at build time
+		buildText       string         // node-construction statements
+		initText        string         // initial hole writes (run after capture)
+		captured        []string       // node vars to null on unmount
+		comps           []compInstance // component instances to destroy on unmount
+		nestedTeardowns []string       // teardown snippets for nested chains hoisted from this branch's body
+		cleanup         []JsStmt       // cleanup statements from cap.cleanup — fired via a closure stored at build time
 	}
 	plans := make([]branchPlan, len(chain.Branches))
 	for i, br := range chain.Branches {
@@ -3710,9 +3741,9 @@ func (g *ASTGen) buildElement(el *ElementNode, varName, parentVar string, isRoot
 
 // buildChildren emits an element's children using the same
 // strategy ladder as legacy walkElement:
-//   1. fully-static element subtree → innerHTML
-//   2. hole-compatible (static frame, text holes) → buildHoleSubtree
-//   3. otherwise → recurse per child, batching static runs
+//  1. fully-static element subtree → innerHTML
+//  2. hole-compatible (static frame, text holes) → buildHoleSubtree
+//  3. otherwise → recurse per child, batching static runs
 func (g *ASTGen) buildChildren(el *ElementNode, varName string) {
 	children := el.Children
 	if len(children) == 0 {
@@ -4523,11 +4554,12 @@ func (g *ASTGen) setAttrStmt(varName, name, value string) JsStmt {
 // buildReturn constructs the `return { destroy, set };` statement.
 //
 // destroy() teardown order, matching the legacy generator:
-//   1. effect cleanups        ($$cleanupN)
-//   2. onMount cleanup fns     ($$mountCleanupN)
-//   3. onDestroy callback bodies, inline
-//   4. event-listener removal  (g.cleanup)
-//   5. $$root.remove()
+//  1. effect cleanups        ($$cleanupN)
+//  2. onMount cleanup fns     ($$mountCleanupN)
+//  3. onDestroy callback bodies, inline
+//  4. event-listener removal  (g.cleanup)
+//  5. $$root.remove()
+//
 // set() — emitted only when the component has settable reactive
 // vars — dispatches each incoming prop to its setter.
 func (g *ASTGen) buildReturn() JsStmt {

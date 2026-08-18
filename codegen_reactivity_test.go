@@ -187,3 +187,43 @@ func TestBug7_BlockBodyHandler(t *testing.T) {
 		t.Fatalf("expected $$set_b(20) in block body:\n%s", out)
 	}
 }
+
+func TestBug14_ParenthesizedHandlerAssignmentRewritesOnce(t *testing.T) {
+	src := `<script>let filter = $state("all");</script><template><button @click={() => (filter = "done")}>done</button></template>`
+	sfc, err := parseSFC(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := parseTemplate(sfc.Template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := generateCodeAST("Test", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
+	if !strings.Contains(out, "() => $$set_filter(\"done\")") {
+		t.Fatalf("parenthesized handler was not rewritten correctly:\n%s", out)
+	}
+	if strings.Contains(out, "$$set_filter(\"done\"));") {
+		t.Fatalf("parenthesized handler has an extra closing parenthesis:\n%s", out)
+	}
+}
+
+func TestBug15_UserPreludeRunsBeforeStateInitializer(t *testing.T) {
+	src := `<script>
+  const stored = { todos: [] };
+  let todos = $state(stored.todos);
+</script><template><p>{todos.length}</p></template>`
+	sfc, err := parseSFC(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := parseTemplate(sfc.Template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := generateCodeAST("Test", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
+	prelude := strings.Index(out, "const stored")
+	state := strings.Index(out, "let todos = stored.todos")
+	if prelude < 0 || state < 0 || prelude > state {
+		t.Fatalf("source dependency order was not preserved:\n%s", out)
+	}
+}

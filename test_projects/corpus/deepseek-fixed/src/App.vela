@@ -1,0 +1,304 @@
+<script>
+  // Состояние: список задач
+  let tasks = $state.deep([
+    { id: 1, text: 'Изучить Vela', done: false },
+    { id: 2, text: 'Написать Todo-приложение', done: false },
+  ]);
+
+  // Поле ввода новой задачи
+  let newTaskText = $state('');
+
+  // Фильтр: 'all' | 'active' | 'completed'
+  let filter = $state('all');
+
+  // Вычисляемые списки на основе фильтра
+  let filteredTasks = $derived(
+    filter === "all" ? tasks :
+    filter === "active" ? tasks.filter(t => !t.done) :
+    filter === "completed" ? tasks.filter(t => t.done) : tasks
+  );
+
+  // Количество активных (незавершённых) задач
+  let activeCount = $derived(tasks.filter(t => !t.done).length);
+
+  // Генерация нового ID (простой счётчик)
+  let nextId = $derived(tasks.length ? Math.max(...tasks.map(t => t.id)) + 1 : 1);
+
+  // Добавление задачи
+  function addTask() {
+    const text = newTaskText.trim();
+    if (!text) return;
+    tasks = [...tasks, { id: nextId, text, done: false }];
+    newTaskText = '';
+  }
+
+  function handleAddKeydown(event) {
+    if (event.key === "Enter") addTask();
+  }
+
+  // Переключение статуса выполнения
+  function toggleTask(id) {
+    const index = tasks.findIndex(t => t.id === id);
+    if (index !== -1) {
+      tasks[index].done = !tasks[index].done;
+      // $state.deep позволяет мутировать вложенные свойства
+    }
+  }
+
+  // Удаление задачи
+  function deleteTask(id) {
+    tasks = tasks.filter(t => t.id !== id);
+  }
+
+  // Очистка завершённых задач
+  function clearCompleted() {
+    tasks = tasks.filter(t => !t.done);
+  }
+
+  // Сохранение в localStorage при изменении (эффект)
+  $effect(() => {
+    try {
+      localStorage.setItem('vela-todo-tasks', JSON.stringify(tasks));
+    } catch (_) { /* игнорируем */ }
+  });
+
+  // Загрузка из localStorage при монтировании
+  import { onMount } from 'vela';
+  onMount(() => {
+    try {
+      const saved = localStorage.getItem('vela-todo-tasks');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length) {
+          tasks = parsed;
+        }
+      }
+    } catch (_) { /* игнорируем */ }
+  });
+</script>
+<template>
+  <div class="todo-app">
+    <h1>Список задач</h1>
+
+    <!-- Форма добавления -->
+    <div class="add-form">
+      <input
+        type="text"
+        bind:value={newTaskText}
+        placeholder="Что нужно сделать?"
+        @keydown={handleAddKeydown}
+        />
+        <button @click={addTask}>Добавить</button>
+      </div>
+
+      <!-- Фильтры и счётчик -->
+      <div class="toolbar">
+        <span class="counter">Осталось: {activeCount}</span>
+        <div class="filters">
+          <button
+            class:active={filter === 'all'}
+            @click={() => filter = 'all'}
+            >Все</button>
+            <button
+              class:active={filter === 'active'}
+              @click={() => filter = 'active'}
+              >Активные</button>
+              <button
+                class:active={filter === 'completed'}
+                @click={() => filter = 'completed'}
+                >Завершённые</button>
+              </div>
+              <button @click={clearCompleted} :disabled={activeCount === tasks.length}>
+                Очистить завершённые
+              </button>
+            </div>
+
+            <!-- Список задач -->
+            {#if filteredTasks.length === 0}
+              <p class="empty">Нет задач для отображения</p>
+            {:else}
+              <ul class="task-list">
+                {#each filteredTasks as task (task.id)}
+                  <li class="task-item">
+                    <input
+                      type="checkbox"
+                      :checked={task.done}
+                      @change={() => toggleTask(task.id)}
+                      />
+                      <span class:done={task.done}>{task.text}</span>
+                      <button @click={() => deleteTask(task.id)} class="delete">✕</button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+</template>
+<style>
+  /* Стили для всего приложения */
+  .todo-app {
+    max-width: 600px;
+    margin: 2rem auto;
+    padding: 1rem 2rem 2rem;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f8f9fa;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  }
+
+  h1 {
+    margin-top: 0;
+    color: #1e293b;
+    font-weight: 600;
+    font-size: 1.8rem;
+    text-align: center;
+  }
+
+  .add-form {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .add-form input {
+    flex: 1;
+    padding: 0.6rem 1rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .add-form input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
+  }
+
+  .add-form button {
+    padding: 0.6rem 1.2rem;
+    background: #6366f1;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .add-form button:hover {
+    background: #4f46e5;
+  }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.8rem 1rem;
+    margin-bottom: 1.2rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .counter {
+    font-weight: 500;
+    color: #334155;
+  }
+
+  .filters {
+    display: flex;
+    gap: 0.3rem;
+  }
+  .filters button {
+    padding: 0.3rem 0.8rem;
+    border: 1px solid #d1d5db;
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.15s;
+  }
+  .filters button.active {
+    background: #6366f1;
+    color: white;
+    border-color: #6366f1;
+  }
+  .filters button:hover:not(.active) {
+    background: #f1f5f9;
+  }
+
+  .toolbar button:last-child {
+    margin-left: auto;
+    padding: 0.3rem 0.8rem;
+    border: 1px solid #e2e8f0;
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #ef4444;
+    transition: all 0.15s;
+  }
+  .toolbar button:last-child:hover:not(:disabled) {
+    background: #fee2e2;
+    border-color: #fca5a5;
+  }
+  .toolbar button:last-child:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .empty {
+    text-align: center;
+    color: #94a3b8;
+    font-size: 1.1rem;
+    padding: 1.5rem 0;
+  }
+
+  .task-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .task-item {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 0.4rem;
+    border-bottom: 1px solid #f1f5f9;
+    transition: background 0.1s;
+  }
+  .task-item:hover {
+    background: #f1f5f9;
+    border-radius: 6px;
+  }
+
+  .task-item input[type="checkbox"] {
+    width: 1.2rem;
+    height: 1.2rem;
+    accent-color: #6366f1;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .task-item span {
+    flex: 1;
+    font-size: 1rem;
+    color: #1e293b;
+    word-break: break-word;
+  }
+  .task-item span.done {
+    text-decoration: line-through;
+    color: #94a3b8;
+  }
+
+  .task-item .delete {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 0 0.2rem;
+    transition: color 0.15s;
+  }
+  .task-item .delete:hover {
+    color: #ef4444;
+  }
+</style>

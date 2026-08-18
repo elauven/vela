@@ -548,14 +548,14 @@ func TestRuntimeIfToggleOffWithNullDerived(t *testing.T) {
 // reference is unchanged).  This must re-render the affected row and
 // must NOT leave a duplicate node behind.  Two bugs combined to
 // break this in the PageCraft app (editing a block field):
-//   1. the setter's identity guard (X === $$v) suppressed the
-//      re-render because the deep proxy keeps its reference across
-//      an in-place mutation — fixed by the proxy-aware guard
-//      (X === $$v && !$$isProxy($$v));
-//   2. the {#each}-inside-{#if} branch handle captured the each
-//      rows, so on re-render the chain re-attached stale originals
-//      alongside the rebuilt rows (duplicated DOM) — fixed by
-//      emitting the each's initial call after the branch snapshot.
+//  1. the setter's identity guard (X === $$v) suppressed the
+//     re-render because the deep proxy keeps its reference across
+//     an in-place mutation — fixed by the proxy-aware guard
+//     (X === $$v && !$$isProxy($$v));
+//  2. the {#each}-inside-{#if} branch handle captured the each
+//     rows, so on re-render the chain re-attached stale originals
+//     alongside the rebuilt rows (duplicated DOM) — fixed by
+//     emitting the each's initial call after the branch snapshot.
 func TestRuntimeDeepMutationRerendersEach(t *testing.T) {
 	src := `<script>
   let items = $state.deep([{ id: 1, label: 'a' }, { id: 2, label: 'b' }]);
@@ -854,5 +854,17 @@ func TestRuntimeNestedChainElseFallingWhenOuterInactive(t *testing.T) {
 		{"click": "button.bb"},
 		{"assertCount": "p.y", "equals": 0},
 		{"assertText": "p.z", "equals": "B:changed"},
+	})
+}
+
+func TestRuntimeTodoCorpusGPT(t *testing.T) {
+	src, err := os.ReadFile("test_projects/corpus/gpt-fixed/src/App.vela")
+	if err != nil {
+		t.Fatalf("read GPT todo fixture: %v", err)
+	}
+	assertRuntime(t, "App", string(src), []rtStep{
+		{"assertCount": ".todo-item", "equals": 2},
+		{"click": "button.remove"},
+		{"assertCount": ".todo-item", "equals": 1},
 	})
 }

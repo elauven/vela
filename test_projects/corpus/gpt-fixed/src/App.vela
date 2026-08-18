@@ -1,0 +1,520 @@
+<script>
+  let title = $state('');
+  let filter = $state('all');
+
+  let todos = $state.deep([
+    {
+      id: 1,
+      title: 'Изучить Vela',
+      completed: true
+    },
+    {
+      id: 2,
+      title: 'Написать Todo List',
+      completed: false
+    }
+  ]);
+
+  let nextId = $state(3);
+
+  let completedCount = $derived(
+    todos.filter(todo => todo.completed).length
+  );
+
+  let activeCount = $derived(
+    todos.filter(todo => !todo.completed).length
+  );
+
+  let filteredTodos = $derived(
+    filter === 'active'
+      ? todos.filter(todo => !todo.completed)
+      : filter === 'completed'
+        ? todos.filter(todo => todo.completed)
+        : todos
+  );
+
+  function addTodo() {
+    const value = title.trim();
+
+    if (!value) {
+      return;
+    }
+
+    todos.push({
+      id: nextId,
+      title: value,
+      completed: false
+    });
+
+    nextId++;
+    title = '';
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    addTodo();
+  }
+
+  function toggleTodo(todo) {
+    todo.completed = !todo.completed;
+  }
+
+  function removeTodo(id) {
+    const index = todos.findIndex(todo => todo.id === id);
+
+    if (index !== -1) {
+      todos.splice(index, 1);
+    }
+  }
+
+  function clearCompleted() {
+    for (let i = todos.length - 1; i >= 0; i--) {
+      if (todos[i].completed) {
+        todos.splice(i, 1);
+      }
+    }
+  }
+
+  function setFilter(value) {
+    filter = value;
+  }
+</script>
+<template>
+  <main class="app">
+    <section class="todo-card">
+      <header class="header">
+        <div>
+          <h1>Todo List</h1>
+          <p>
+            Осталось задач: {activeCount}
+          </p>
+        </div>
+
+        <span class="counter">
+          {completedCount}/{todos.length}
+        </span>
+      </header>
+
+      <form class="add-form" @submit={handleSubmit}>
+        <input
+          type="text"
+          bind:value={title}
+          placeholder="Что нужно сделать?"
+          aria-label="Новая задача"
+          />
+
+          <button
+            type="submit"
+            :disabled={!title.trim()}
+            >
+            Добавить
+          </button>
+        </form>
+
+        <nav class="filters">
+          <button
+            type="button"
+            class:active={filter === 'all'}
+            @click={() => setFilter('all')}
+            >
+            Все
+          </button>
+
+          <button
+            type="button"
+            class:active={filter === 'active'}
+            @click={() => setFilter('active')}
+            >
+            Активные
+          </button>
+
+          <button
+            type="button"
+            class:active={filter === 'completed'}
+            @click={() => setFilter('completed')}
+            >
+            Выполненные
+          </button>
+        </nav>
+
+        <div class="todo-list">
+          {#each filteredTodos as todo (todo.id)}
+            <article
+              class="todo-item"
+              class:completed={todo.completed}
+              >
+              <label class="todo-content">
+                <input
+                  type="checkbox"
+                  :checked={todo.completed}
+                  @change={() => toggleTodo(todo)}
+                  />
+
+                  <span>{todo.title}</span>
+                </label>
+
+                <button
+                  type="button"
+                  class="remove"
+                  :aria-label={'Удалить ' + todo.title}
+                  @click={() => removeTodo(todo.id)}
+                  >
+                  ×
+                </button>
+              </article>
+            {:else}
+              <div class="empty">
+                {#if filter === 'completed'}
+                  <p>Выполненных задач пока нет.</p>
+                {:else if filter === 'active'}
+                  <p>Все задачи выполнены 🎉</p>
+                {:else}
+                  <p>Список задач пуст.</p>
+                {/if}
+              </div>
+            {/each}
+          </div>
+
+          {#if completedCount > 0}
+            <footer class="footer">
+              <span>
+                Выполнено: {completedCount}
+              </span>
+
+              <button
+                type="button"
+                class="clear"
+                @click={clearCompleted}
+                >
+                Удалить выполненные
+              </button>
+            </footer>
+          {/if}
+        </section>
+      </main>
+</template>
+<style>
+  :global(*) {
+    box-sizing: border-box;
+  }
+
+  :global(body) {
+    margin: 0;
+    min-height: 100vh;
+    font-family:
+      Inter,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+
+    background:
+      linear-gradient(
+        135deg,
+        #f5f7ff,
+        #eef2ff
+      );
+
+    color: #18181b;
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+
+  .app {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+
+    padding: 72px 20px;
+  }
+
+  .todo-card {
+    width: 100%;
+    max-width: 640px;
+
+    background: white;
+
+    border: 1px solid #e4e4e7;
+    border-radius: 20px;
+
+    box-shadow:
+      0 20px 50px rgba(0, 0, 0, 0.08);
+
+    overflow: hidden;
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    padding: 28px 30px 20px;
+  }
+
+  .header h1 {
+    margin: 0;
+    font-size: 30px;
+    line-height: 1.2;
+  }
+
+  .header p {
+    margin: 6px 0 0;
+    color: #71717a;
+  }
+
+  .counter {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    min-width: 54px;
+    height: 40px;
+    padding: 0 12px;
+
+    background: #eef2ff;
+    color: #4f46e5;
+
+    border-radius: 999px;
+
+    font-weight: 700;
+  }
+
+  .add-form {
+    display: flex;
+    gap: 10px;
+
+    padding: 0 30px 22px;
+  }
+
+  .add-form input {
+    flex: 1;
+    min-width: 0;
+
+    padding: 13px 15px;
+
+    border: 1px solid #d4d4d8;
+    border-radius: 10px;
+
+    outline: none;
+
+    transition:
+      border-color 0.15s,
+      box-shadow 0.15s;
+  }
+
+  .add-form input:focus {
+    border-color: #6366f1;
+
+    box-shadow:
+      0 0 0 3px rgba(99, 102, 241, 0.12);
+  }
+
+  .add-form button {
+    padding: 0 20px;
+
+    border: none;
+    border-radius: 10px;
+
+    background: #4f46e5;
+    color: white;
+
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .add-form button:hover {
+    background: #4338ca;
+  }
+
+  .add-form button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .filters {
+    display: flex;
+    gap: 6px;
+
+    padding: 0 30px 18px;
+
+    border-bottom: 1px solid #f4f4f5;
+  }
+
+  .filters button {
+    padding: 8px 13px;
+
+    border: none;
+    border-radius: 8px;
+
+    background: transparent;
+    color: #71717a;
+
+    cursor: pointer;
+  }
+
+  .filters button:hover {
+    background: #f4f4f5;
+  }
+
+  .filters button.active {
+    background: #eef2ff;
+    color: #4f46e5;
+    font-weight: 600;
+  }
+
+  .todo-list {
+    padding: 12px 18px;
+  }
+
+  .todo-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    padding: 10px 12px;
+
+    border-radius: 10px;
+  }
+
+  .todo-item:hover {
+    background: #fafafa;
+  }
+
+  .todo-content {
+    flex: 1;
+
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    min-width: 0;
+
+    cursor: pointer;
+  }
+
+  .todo-content input {
+    width: 18px;
+    height: 18px;
+
+    accent-color: #4f46e5;
+
+    cursor: pointer;
+  }
+
+  .todo-content span {
+    overflow-wrap: anywhere;
+  }
+
+  .todo-item.completed .todo-content span {
+    color: #a1a1aa;
+    text-decoration: line-through;
+  }
+
+  .remove {
+    width: 34px;
+    height: 34px;
+
+    border: none;
+    border-radius: 8px;
+
+    background: transparent;
+    color: #a1a1aa;
+
+    cursor: pointer;
+
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  .remove:hover {
+    background: #fef2f2;
+    color: #dc2626;
+  }
+
+  .empty {
+    padding: 46px 20px;
+
+    text-align: center;
+    color: #a1a1aa;
+  }
+
+  .empty p {
+    margin: 0;
+  }
+
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+
+    padding: 18px 30px;
+
+    border-top: 1px solid #f4f4f5;
+
+    color: #71717a;
+    font-size: 14px;
+  }
+
+  .clear {
+    padding: 8px 12px;
+
+    border: none;
+    border-radius: 8px;
+
+    background: transparent;
+    color: #dc2626;
+
+    cursor: pointer;
+  }
+
+  .clear:hover {
+    background: #fef2f2;
+  }
+
+  @media (max-width: 560px) {
+    .app {
+      padding: 24px 12px;
+    }
+
+    .header {
+      padding:
+        22px
+        20px
+        18px;
+    }
+
+    .add-form {
+      padding:
+        0
+        20px
+        18px;
+    }
+
+    .add-form button {
+      padding:
+        0
+        14px;
+    }
+
+    .filters {
+      overflow-x: auto;
+
+      padding:
+        0
+        20px
+        16px;
+    }
+
+    .footer {
+      padding:
+        16px
+        20px;
+    }
+  }
+</style>

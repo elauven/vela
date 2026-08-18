@@ -629,9 +629,9 @@ func (g *CodeGen) walkElement(elem *ElementNode, varName, parentVar string, isRo
 // clears the slot to null on destroy (cleanup buffer).
 //
 // Two cases for `ref`:
-//   • a bare $state variable — emit `$$set_<name>(elem)` so reactive
+//   - a bare $state variable — emit `$$set_<name>(elem)` so reactive
 //     dependents (e.g. `{ref?.tagName}` in the template) re-render.
-//   • anything else — emit a plain assignment.  Useful for binding
+//   - anything else — emit a plain assignment.  Useful for binding
 //     into a local non-reactive variable or a member expression like
 //     `refs.input`.
 //
@@ -677,11 +677,11 @@ func (g *CodeGen) emitBindThis(
 // Emits into three separate buffers so each caller can slot the listener into
 // its own code section at its own indentation:
 //
-//   createBuf  — the `const <varName>_<event>_h = ($e) => $$set_X($e.target.Y);`
-//                handler declaration.  Needs to live next to the element
-//                creation so it's in-scope for the addEventListener call.
-//   eventsBuf  — the `elem.addEventListener(event, handler)` line.
-//   cleanupBuf — the matching removeEventListener, usually inside destroy().
+//	createBuf  — the `const <varName>_<event>_h = ($e) => $$set_X($e.target.Y);`
+//	             handler declaration.  Needs to live next to the element
+//	             creation so it's in-scope for the addEventListener call.
+//	eventsBuf  — the `elem.addEventListener(event, handler)` line.
+//	cleanupBuf — the matching removeEventListener, usually inside destroy().
 //
 // The three indent arguments let callers align output with their surrounding
 // code style.  Unknown (tag, attr) combinations are ignored; the caller's
@@ -1085,7 +1085,7 @@ func (g *CodeGen) walkIfChain(chain *IfChainNode, parentVar string) {
 // `const $$onChange_X = $$props.$$onChange_X || null` line in any
 // component that uses $bindable on a prop X — codegen.go ~line 280):
 //
-//   $$onChange_count: ($$v) => $$set_appCount($$v)
+//	$$onChange_count: ($$v) => $$set_appCount($$v)
 //
 // Skipped when the bind target isn't a $state variable (we don't
 // generate setters for non-state locals, so there's no `$$set_` fn
@@ -2438,7 +2438,6 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, branchVar string, nodes
 	return declared
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────
 //  Live {#each} reconciler for complex children (components, {#if}, etc.)
 // ─────────────────────────────────────────────────────────────────────────
@@ -2449,9 +2448,9 @@ func (g *CodeGen) emitBranchChildren(b *strings.Builder, branchVar string, nodes
 //
 // Unlike the old static forEach, this generates an $$each_N(arr) function
 // at component scope.  The function is:
-//   • Called immediately from the branch body to render on first mount.
-//   • Registered in g.addUpdate so it re-runs whenever the array changes.
-//   • Guarded by `if (!anchor.parentNode) return` so it no-ops when the
+//   - Called immediately from the branch body to render on first mount.
+//   - Registered in g.addUpdate so it re-runs whenever the array changes.
+//   - Guarded by `if (!anchor.parentNode) return` so it no-ops when the
 //     enclosing {#if} branch is not currently mounted.
 //
 // Each row is represented as a { root, update(item), destroy() } block
@@ -2472,8 +2471,8 @@ func (g *CodeGen) emitEachWithComponents(
 	// All variables live at component scope so the update function
 	// can reference them even when called from a setter (outside the branch).
 	anchorVar := g.id() + "_a"
-	kmVar     := g.id() + "_km"
-	fnVar     := "$$each_" + g.id()
+	kmVar := g.id() + "_km"
+	fnVar := "$$each_" + g.id()
 
 	g.create.WriteString(fmt.Sprintf("  const %s = document.createComment('#each');\n", anchorVar))
 	if keyExpr != "" {
@@ -2569,13 +2568,13 @@ func (g *CodeGen) emitEachWithComponents(
 // row of an {#each} block.  It recursively handles elements, text, and
 // components.
 //
-//   createBuf  — statements that build DOM (run once per row creation)
-//   updateBuf  — statements that refresh bound values (run on each array update)
-//   destroyBuf — statements that clean up (run when row is removed)
-//   nodes      — the children of the {#each} block
-//   parentVar  — JS variable the row nodes are appended to ("$$row")
-//   itemVar    — the loop variable name (e.g. "order")
-//   indent     — leading whitespace
+//	createBuf  — statements that build DOM (run once per row creation)
+//	updateBuf  — statements that refresh bound values (run on each array update)
+//	destroyBuf — statements that clean up (run when row is removed)
+//	nodes      — the children of the {#each} block
+//	parentVar  — JS variable the row nodes are appended to ("$$row")
+//	itemVar    — the loop variable name (e.g. "order")
+//	indent     — leading whitespace
 func (g *CodeGen) emitEachRowBody(
 	createBuf, updateBuf, destroyBuf *strings.Builder,
 	nodes []Node,
@@ -2615,20 +2614,20 @@ func (g *CodeGen) emitEachRowBody(
 
 // emitEachRowBodyGuarded is the recursive implementation.
 //
-//   hoistBuf   — where `let $$nX = null;` lines go (always at row scope, outside
-//                any if-block), so bindings remain visible to update()/destroy().
-//   createBuf  — where the code that assigns/builds DOM goes (may be nested
-//                inside if-blocks).
-//   itemVar    — the template loop variable name (e.g. "u").
-//   boxVar     — row-scoped identifier to substitute for itemVar inside
-//                event handler closures.  Empty string means "don't rewrite"
-//                (used by internal calls that don't participate in the box
-//                mechanism — currently none, but keeps the API symmetric).
-//   branchVar  — when non-empty, every update / destroy statement emitted for
-//                nodes inside this call is guarded with `if (branchVar)` so a
-//                false conditional doesn't try to touch null bindings.  Inside
-//                a branch, DOM declarations are emitted as assignments to the
-//                already-hoisted bindings rather than fresh `const`s.
+//	hoistBuf   — where `let $$nX = null;` lines go (always at row scope, outside
+//	             any if-block), so bindings remain visible to update()/destroy().
+//	createBuf  — where the code that assigns/builds DOM goes (may be nested
+//	             inside if-blocks).
+//	itemVar    — the template loop variable name (e.g. "u").
+//	boxVar     — row-scoped identifier to substitute for itemVar inside
+//	             event handler closures.  Empty string means "don't rewrite"
+//	             (used by internal calls that don't participate in the box
+//	             mechanism — currently none, but keeps the API symmetric).
+//	branchVar  — when non-empty, every update / destroy statement emitted for
+//	             nodes inside this call is guarded with `if (branchVar)` so a
+//	             false conditional doesn't try to touch null bindings.  Inside
+//	             a branch, DOM declarations are emitted as assignments to the
+//	             already-hoisted bindings rather than fresh `const`s.
 func (g *CodeGen) emitEachRowBodyGuarded(
 	hoistBuf, createBuf, updateBuf, destroyBuf *strings.Builder,
 	nodes []Node,
@@ -2862,16 +2861,17 @@ func eachChildrenNeedCodegen(nodes []Node) bool {
 // over the forEach callback's `itemVar` parameter (which never updates).
 //
 // Behaviour matrix:
-//   () => openEdit(u)             →  () => openEdit($$item_N)
-//   () => toggleStatus(u.id)      →  () => toggleStatus($$item_N.id)
-//   () => obj.u                   →  unchanged (property access)
-//   () => ({u: x})                →  unchanged (object key)
-//   () => ({[u]: x})              →  ({[$$item_N]: x})  (computed key)
-//   (u) => u + 1                  →  unchanged (shadowed)
-//   () => { const u = 1; return u; } →  unchanged (block-scoped shadow)
-//   `${u}`                        →  `${$$item_N}` (template hole — now
-//                                    handled correctly; the old token-based
-//                                    rewriter couldn't descend into these)
+//
+//	() => openEdit(u)             →  () => openEdit($$item_N)
+//	() => toggleStatus(u.id)      →  () => toggleStatus($$item_N.id)
+//	() => obj.u                   →  unchanged (property access)
+//	() => ({u: x})                →  unchanged (object key)
+//	() => ({[u]: x})              →  ({[$$item_N]: x})  (computed key)
+//	(u) => u + 1                  →  unchanged (shadowed)
+//	() => { const u = 1; return u; } →  unchanged (block-scoped shadow)
+//	`${u}`                        →  `${$$item_N}` (template hole — now
+//	                                 handled correctly; the old token-based
+//	                                 rewriter couldn't descend into these)
 //
 // If src fails to parse, the original source is returned unchanged rather
 // than producing malformed JS — callers fall back to the stale-closure
@@ -3269,8 +3269,8 @@ func (g *CodeGen) emitBranchComponent(b *strings.Builder, comp *ComponentNode, p
 	if comp.IfCond != "" {
 		// <Comp #if="cond" /> inside a branch — lift vars to component scope so
 		// bound props can be updated reactively via g.addUpdate.
-		wrapVar  := g.id()
-		instVar  := g.id() + "_comp"
+		wrapVar := g.id()
+		instVar := g.id() + "_comp"
 		g.create.WriteString(fmt.Sprintf("  let %s = null;\n", wrapVar))
 		g.create.WriteString(fmt.Sprintf("  let %s = null;\n", instVar))
 		b.WriteString(fmt.Sprintf("%sif (%s) {\n", indent, comp.IfCond))
@@ -3492,6 +3492,10 @@ func (g *CodeGen) rewriteHandlerAssignments(handler string) string {
 	// Concise body: ($e) => expr
 	// If it's a simple assignment `x = rhs`, rewrite it directly.
 	// Parse as a statement by appending semicolon.
+	wrappedParens := strings.HasPrefix(body, "(") && strings.HasSuffix(body, ")")
+	if wrappedParens {
+		body = strings.TrimSpace(body[1 : len(body)-1])
+	}
 	bodyStmt := body + ";"
 	prog := ParseJS(bodyStmt)
 	rewritten := RewriteAssignments(bodyStmt, prog, ss)
@@ -3499,6 +3503,9 @@ func (g *CodeGen) rewriteHandlerAssignments(handler string) string {
 		// Strip trailing semicolon that RewriteAssignments or the original had
 		rewritten = strings.TrimSpace(rewritten)
 		rewritten = strings.TrimSuffix(rewritten, ";")
+		if wrappedParens {
+			return params + " (" + strings.TrimSpace(rewritten) + ")"
+		}
 		return params + " " + strings.TrimSpace(rewritten)
 	}
 
@@ -3807,10 +3814,11 @@ type twoWaySpec struct {
 // shapes with well-defined semantics; unknowns still get the one-way write).
 //
 // Supported:
-//   input[type=checkbox|radio]  bind:checked  →  change event, target.checked
-//   input[other types]          bind:value    →  input  event, target.value
-//   textarea                    bind:value    →  input  event, target.value
-//   select                      bind:value    →  change event, target.value
+//
+//	input[type=checkbox|radio]  bind:checked  →  change event, target.checked
+//	input[other types]          bind:value    →  input  event, target.value
+//	textarea                    bind:value    →  input  event, target.value
+//	select                      bind:value    →  change event, target.value
 //
 // For <input> without an explicit type the default is "text", so bind:value
 // is fine.  We don't peek at the type attribute statically because it may
@@ -3818,8 +3826,8 @@ type twoWaySpec struct {
 // inputs and 'change' fires for checkbox/radio — and bind:checked is the
 // affordance for the latter, not bind:value.  So the rule is:
 //
-//   bind:checked → change event  (regardless of tag; only meaningful on input)
-//   bind:value   → input or change event depending on tag
+//	bind:checked → change event  (regardless of tag; only meaningful on input)
+//	bind:value   → input or change event depending on tag
 func twoWayBindSpec(tag, attrName string) (twoWaySpec, bool) {
 	switch attrName {
 	case "value":
@@ -4408,8 +4416,6 @@ func isHoleCompatible(node Node) bool {
 	}
 }
 
-
-
 // allHoleCompatible returns true iff every node in the list is a candidate
 // for template-with-holes emission (either static, a leaf-dynamic element,
 // or a text node with interpolation).
@@ -4444,11 +4450,11 @@ func hasDynamicLeaf(nodes []Node) bool {
 }
 
 // buildHoleTemplate walks a list of hole-compatible nodes and produces:
-//   1. An HTML template string with <!--$--> anchors at each dynamic leaf
-//      position and empty text nodes at each text-interpolation position
-//   2. An ordered list of holes in the order a TreeWalker encounters them
-//      (comment-only walk for element anchors, character-data walk for
-//      text holes — handled uniformly by using one comment anchor per hole).
+//  1. An HTML template string with <!--$--> anchors at each dynamic leaf
+//     position and empty text nodes at each text-interpolation position
+//  2. An ordered list of holes in the order a TreeWalker encounters them
+//     (comment-only walk for element anchors, character-data walk for
+//     text holes — handled uniformly by using one comment anchor per hole).
 //
 // Scope attribute is baked into every element in the template so scoped
 // CSS keeps matching.
@@ -4636,15 +4642,15 @@ func escapeJSString(s string) string {
 // detects that a subtree matches the hole-compatible pattern (static
 // frame with dynamic leaves), this function emits:
 //
-//   1. `parent.innerHTML = '...'` — one native parse, whole subtree built
-//   2. `TreeWalker` traversal — single native pass collecting all anchor
-//      comment refs in document order
-//   3. For each hole: capture the target ref via .previousSibling (for
-//      element holes) or replace the anchor with a text node (for text
-//      interpolation holes)
-//   4. For each hole: apply the dynamic bindings — events, :attrs, two-way,
-//      text-interpolation updates.  These go through the same code paths
-//      the imperative walk uses, just with the ref already in hand.
+//  1. `parent.innerHTML = '...'` — one native parse, whole subtree built
+//  2. `TreeWalker` traversal — single native pass collecting all anchor
+//     comment refs in document order
+//  3. For each hole: capture the target ref via .previousSibling (for
+//     element holes) or replace the anchor with a text node (for text
+//     interpolation holes)
+//  4. For each hole: apply the dynamic bindings — events, :attrs, two-way,
+//     text-interpolation updates.  These go through the same code paths
+//     the imperative walk uses, just with the ref already in hand.
 //
 // Preconditions: caller has verified allHoleCompatible(children) &&
 // hasDynamicLeaf(children) — i.e. the children mix is expressible as
@@ -4813,17 +4819,17 @@ func (g *CodeGen) applyDynamicAttrs(varName string, elem *ElementNode) {
 // emitTemplateWithHolesInto is the branch-scoped variant of
 // emitTemplateWithHoles.  Key differences:
 //
-//   1. Emits into the caller's buffer `b` at the given `indent`, not into
-//      the component's top-level g.create/g.events buffers.
-//   2. No cleanup is emitted — when the branch is torn down, the branch
-//      element's `.remove()` takes all child listeners with it.
-//   3. Returns the list of `declared` variable names (dynamic refs and
-//      handler constants) so emitIfChain can emit `if (branchVar) { ... }`
-//      guards around update calls that reference them.
-//   4. For text-interpolation holes, the update call is registered through
-//      g.addUpdate but wrapped in `if (branchVar) ...` at the call site —
-//      the surrounding chain function gates the update on the branch being
-//      active.
+//  1. Emits into the caller's buffer `b` at the given `indent`, not into
+//     the component's top-level g.create/g.events buffers.
+//  2. No cleanup is emitted — when the branch is torn down, the branch
+//     element's `.remove()` takes all child listeners with it.
+//  3. Returns the list of `declared` variable names (dynamic refs and
+//     handler constants) so emitIfChain can emit `if (branchVar) { ... }`
+//     guards around update calls that reference them.
+//  4. For text-interpolation holes, the update call is registered through
+//     g.addUpdate but wrapped in `if (branchVar) ...` at the call site —
+//     the surrounding chain function gates the update on the branch being
+//     active.
 //
 // Preconditions: same as emitTemplateWithHoles.  Caller has verified
 // allHoleCompatible(children) && hasDynamicLeaf(children).

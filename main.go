@@ -33,14 +33,14 @@ type CompileOptions struct {
 
 func main() {
 	projectDir := flag.String("project", "", "source directory — compile all .vela files, mirroring the folder structure into --out")
-	outDir     := flag.String("out",     "dist", "output directory")
-	watch      := flag.Bool("watch",    false,  "watch for changes and recompile")
-	minify     := flag.Bool("minify",   false,  "minify output JS")
-	emitAST    := flag.Bool("ast",      false,  "emit <n>.ast.json input-AST debug files")
-	genAST     := flag.Bool("emit-gen-ast", false, "emit <n>.genast.json — the generated output AST, for inspection")
-	parallel   := flag.Bool("parallel", true,   "compile files in parallel (project mode)")
-	codegen    := flag.String("codegen", "ast", "code generator: 'ast' (default); 'legacy' is DEPRECATED and will be removed")
-	cssMode    := flag.String("css", "inject", "CSS delivery: 'inject' (default, CSS-in-JS) or 'external' (sibling .css files)")
+	outDir := flag.String("out", "dist", "output directory")
+	watch := flag.Bool("watch", false, "watch for changes and recompile")
+	minify := flag.Bool("minify", false, "minify output JS")
+	emitAST := flag.Bool("ast", false, "emit <n>.ast.json input-AST debug files")
+	genAST := flag.Bool("emit-gen-ast", false, "emit <n>.genast.json — the generated output AST, for inspection")
+	parallel := flag.Bool("parallel", true, "compile files in parallel (project mode)")
+	codegen := flag.String("codegen", "ast", "code generator: 'ast' (default); 'legacy' is DEPRECATED and will be removed")
+	cssMode := flag.String("css", "inject", "CSS delivery: 'inject' (default, CSS-in-JS) or 'external' (sibling .css files)")
 	flag.Parse()
 
 	switch *cssMode {
@@ -124,9 +124,15 @@ func runProject(srcRoot, outRoot string, opts CompileOptions, watch, parallel bo
 	fmt.Println("Vela Compiler")
 	fmt.Printf("   project   %s\n", absRoot)
 	fmt.Printf("   out       %s\n", filepath.Clean(outRoot))
-	if opts.Minify { fmt.Println("   minify    on") }
-	if opts.EmitAST { fmt.Println("   ast       on") }
-	if parallel { fmt.Println("   parallel  on") }
+	if opts.Minify {
+		fmt.Println("   minify    on")
+	}
+	if opts.EmitAST {
+		fmt.Println("   ast       on")
+	}
+	if parallel {
+		fmt.Println("   parallel  on")
+	}
 	fmt.Println()
 
 	start := time.Now()
@@ -320,7 +326,18 @@ func compilePrint(src, dest string, opts CompileOptions) bool {
 
 // compileFile compiles one .vela source file, writing JS to dest (full path).
 // The output directory is created automatically.
-func compileFile(src, dest string, opts CompileOptions) ([]*Diagnostic, error) {
+func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, err error) {
+	var ds *DiagSet
+	defer func() {
+		if r := recover(); r != nil {
+			if ds != nil {
+				ds.Error(0, "internal compiler error while generating this component: %v", r)
+				diags = ds.All()
+			}
+			err = fmt.Errorf("internal compiler error: %v", r)
+		}
+	}()
+
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return nil, err
@@ -331,7 +348,7 @@ func compileFile(src, dest string, opts CompileOptions) ([]*Diagnostic, error) {
 	hash := md5.Sum([]byte(src))
 	scope := fmt.Sprintf("vela-%x", hash[:3])
 
-	ds := NewDiagSet(src, raw)
+	ds = NewDiagSet(src, raw)
 
 	sfc, err := parseSFC(raw)
 	if err != nil {
@@ -367,6 +384,7 @@ func compileFile(src, dest string, opts CompileOptions) ([]*Diagnostic, error) {
 	DetectUnreachable(prog, ds)
 	validateScript(prog, analysis, ds)
 	validateDerivedPurity(prog, analysis, ds)
+	validateScriptForms(prog, ds)
 	validateEffectBody(prog, analysis, ds)
 	ds.PopOffset()
 
@@ -374,6 +392,7 @@ func compileFile(src, dest string, opts CompileOptions) ([]*Diagnostic, error) {
 	// body; push that offset for the duration.
 	ds.PushOffset(sfc.TemplateOffset)
 	validateTemplate(tmpl, analysis, ds)
+	validateTemplateForms(tmpl, sfc.Template, ds)
 	validateTemplateRefs(tmpl, analysis, scriptScope, sfc.Template, ds)
 	ds.PopOffset()
 

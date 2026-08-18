@@ -26,6 +26,7 @@ package main
 // translation to file coordinates via PushOffset.
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -134,6 +135,45 @@ func scanDerivedExpr(expr JsExpr, stateSet map[string]bool, ds *DiagSet) {
 			// Future work: flag calls to known-impure builtins
 			// (console.log is fine, fetch is not).
 			_ = e
+		}
+		return true
+	})
+}
+
+// validateScriptForms rejects rune spellings that the current lowering cannot represent.
+func validateScriptForms(prog *JsProgram, ds *DiagSet) {
+	if prog == nil {
+		return
+	}
+	WalkNode(prog, func(n JsNode) bool {
+		switch x := n.(type) {
+		case *JsVarDecl:
+			for _, d := range x.Decls {
+				call, ok := d.Init.(*JsCallExpr)
+				if !ok {
+					continue
+				}
+				callee, ok := call.Callee.(*JsIdent)
+				if !ok || callee.Name != "$derived" {
+					continue
+				}
+				if len(call.Args) != 1 {
+					ds.Error(call.Pos, "$derived expects exactly one pure expression")
+					continue
+				}
+				switch call.Args[0].(type) {
+				case *JsArrowFunc, *JsFuncExpr:
+					ds.Error(call.Args[0].nodePos(), "$derived does not accept a callback; pass the computed expression directly")
+				}
+			}
+		case *JsImportDecl:
+			if x.Source == "vela" || x.Source == "vela/store" {
+				for _, spec := range x.Specifiers {
+					if spec.Imported == "$$dispatch" || spec.Local == "$$dispatch" {
+						ds.Error(x.Pos, "$$dispatch is a Vela builtin; call it directly instead of importing it")
+					}
+				}
+			}
 		}
 		return true
 	})
@@ -392,7 +432,7 @@ func checkAttrRefs(a *Attr, known map[string]bool, templateText string, ds *Diag
 	// bound/event handler holds an expression.  Static strings don't.
 	val := a.Value
 	if a.IsEvent || a.IsBind {
-		checkExprRefs(val, known, templateText, ds)
+		checkExprRefs(stripBraces(val), known, templateText, ds)
 		return
 	}
 	// {expr} form
@@ -538,6 +578,80 @@ func findTemplatePos(templateText, name string) int {
 		}
 	}
 	return 0
+}
+
+// validateTemplateForms catches Vela-specific directive forms before codegen.
+// These are errors: code generation must never be the first stage to discover
+// that it cannot lower a user attribute.
+func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
+	var walk func([]Node)
+	attrPos := func(a *Attr) int {
+		if a == nil {
+			return 0
+		}
+		for _, marker := range []string{"@" + a.Name, ":" + a.Name, "class:" + a.Name, "style:" + a.Name, "bind:" + a.Name} {
+			if pos := strings.Index(templateText, marker); pos >= 0 {
+				return pos
+			}
+		}
+		return findTemplatePos(templateText, a.Name)
+	}
+	reported := map[string]bool{}
+	report := func(pos int, msg string, args ...interface{}) {
+		text := fmt.Sprintf(msg, args...)
+		key := fmt.Sprintf("%d:%s", pos, text)
+		if !reported[key] {
+			ds.Error(pos, "%s", text)
+			reported[key] = true
+		}
+	}
+	checkAttrs := func(attrs []*Attr) {
+		for _, a := range attrs {
+			if a == nil {
+				continue
+			}
+			if a.IsEvent && strings.Contains(a.Name, ".") {
+				ds.Error(attrPos(a), "event modifiers are not supported; use @%s with an explicit event.key check", strings.Split(a.Name, ".")[0])
+			}
+			if a.IsBind && strings.HasPrefix(a.Name, "class:") {
+				report(attrPos(a), "%q is not a dynamic attribute; use class:%s={condition}", a.Name, strings.TrimPrefix(a.Name, "class:"))
+			}
+			if !a.IsClassDir && a.Name == "class" {
+				expr := strings.TrimSpace(a.Value)
+				if strings.HasPrefix(expr, "{'") || strings.HasPrefix(expr, "{\"") {
+					report(attrPos(a), "object-valued :class is not supported; use one class:name={condition} directive per class")
+				}
+			}
+			if a.IsTwoWay && a.Name != "this" && !isSimpleIdent(stripBraces(a.Value)) {
+				report(attrPos(a), "bind:%s requires a plain $state or $bindable prop name; use a one-way :%s binding and an event handler for member expressions", a.Name, a.Name)
+			}
+		}
+	}
+	walk = func(ns []Node) {
+		for _, node := range ns {
+			switch n := node.(type) {
+			case *ElementNode:
+				checkAttrs(n.Attrs)
+				walk(n.Children)
+			case *ComponentNode:
+				checkAttrs(n.Attrs)
+				for _, slot := range n.Slots {
+					walk(slot)
+				}
+			case *IfChainNode:
+				for _, branch := range n.Branches {
+					walk(branch.Children)
+				}
+			case *EachBlockNode:
+				walk(n.Children)
+			case *AwaitBlockNode:
+				walk(n.PendingChildren)
+				walk(n.ThenChildren)
+				walk(n.CatchChildren)
+			}
+		}
+	}
+	walk(nodes)
 }
 
 // splitEachExpr parses the "items as item, i" form of #each, returning
