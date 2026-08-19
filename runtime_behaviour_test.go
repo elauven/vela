@@ -894,6 +894,27 @@ func TestRuntimeTodoCorpusQwen(t *testing.T) {
 	})
 }
 
+func TestRuntimeTodoCorpusDeepSeek(t *testing.T) {
+	src, err := os.ReadFile("test_projects/corpus/deepseek-fixed/src/App.vela")
+	if err != nil {
+		t.Fatalf("read DeepSeek todo fixture: %v", err)
+	}
+	assertRuntime(t, "App", string(src), []rtStep{
+		{"assertCount": ".task-item", "equals": 2},
+		{"assertText": ".counter", "equals": "Осталось: 2"},
+		{"input": ".add-form input", "value": "Проверить deep state"},
+		{"keydown": ".add-form input", "key": "Enter"},
+		{"assertCount": ".task-item", "equals": 3},
+		{"change": ".task-item input[type=checkbox]", "checked": true},
+		{"assertText": ".counter", "equals": "Осталось: 2"},
+		{"click": ".filters button:nth-child(3)"},
+		{"assertCount": ".task-item", "equals": 1},
+		{"click": ".toolbar > button:last-child"},
+		{"assertCount": ".task-item", "equals": 0},
+		{"assertCount": ".empty", "equals": 1},
+	})
+}
+
 func TestRuntimeTodoCorpusGPT(t *testing.T) {
 	src, err := os.ReadFile("test_projects/corpus/gpt-fixed/src/App.vela")
 	if err != nil {
