@@ -1050,6 +1050,7 @@ func (p *parser) parseSvelteKeyBlock(raw string, keyPos int) (Node, error) {
 func (p *parser) parseSvelteAwaitBlock(raw string, exprPos int) (Node, error) {
 	node := &AwaitBlockNode{
 		PromiseExpr: strings.TrimSpace(raw),
+		Expr:        newTemplateExpr(strings.TrimSpace(raw), exprPos),
 		ExprPos:     exprPos,
 	}
 

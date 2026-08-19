@@ -390,6 +390,19 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 					delete(known, nm)
 				}
 				walkNodes(n.ElseChildren)
+			case *AwaitBlockNode:
+				checkCachedExprRefs(n.Expr, known, templateText, ds)
+				walkNodes(n.PendingChildren)
+				thenAdded := addEachBindings(known, []string{n.ValueName})
+				walkNodes(n.ThenChildren)
+				for _, name := range thenAdded {
+					delete(known, name)
+				}
+				catchAdded := addEachBindings(known, []string{n.ErrorName})
+				walkNodes(n.CatchChildren)
+				for _, name := range catchAdded {
+					delete(known, name)
+				}
 			}
 		}
 	}

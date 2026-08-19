@@ -248,6 +248,14 @@ func TestTemplateRefsUseExactElseIfConditionPosition(t *testing.T) {
 	}
 }
 
+func TestTemplateRefsAwaitScopesAndChecksPromise(t *testing.T) {
+	ds := runTemplateRefs(t, "", `{#await missing}{:then value}<p>{value}</p>{:catch err}<p>{err}</p>{/await}`)
+	expect(t, ds, `template references "missing"`)
+	if len(ds.All()) != 1 {
+		t.Fatalf("diagnostics = %v, want only missing promise", ds.All())
+	}
+}
+
 func TestTemplateRefsIfCond(t *testing.T) {
 	// Using attribute-style #if so the parser produces an
 	// ElementNode with IfCond set rather than an {#if} block.
