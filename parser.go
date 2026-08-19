@@ -266,8 +266,9 @@ func (t *TextNode) nodeKind() string      { return "text" }
 // ──────────────────────────────────────────────
 
 type parser struct {
-	src string
-	pos int
+	src          string
+	pos          int
+	lastTagStart int
 }
 
 func parseTemplate(html string) ([]Node, error) {
@@ -858,6 +859,7 @@ func (p *parser) isSvelteBlockTerm() bool {
 
 // readSvelteTag reads from current '{' to the closing '}', returning the inner text.
 func (p *parser) readSvelteTag() string {
+	p.lastTagStart = p.pos
 	p.pos++ // skip '{'
 	start := p.pos
 	depth := 1
@@ -953,7 +955,7 @@ func (p *parser) parseSvelteIfBlock(condRaw string, condPos int) (Node, error) {
 		switch {
 		case strings.HasPrefix(term, ":else if ") || strings.HasPrefix(term, ":else if\t"):
 			cond = strings.TrimSpace(term[9:])
-			condPos = 0
+			condPos = p.blockExprPos(p.lastTagStart, term, cond)
 			// continue loop for next branch
 		case term == ":else" || strings.HasPrefix(term, ":else}"):
 			// Parse else body

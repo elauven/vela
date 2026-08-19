@@ -229,6 +229,25 @@ func TestTemplateRefsUseExactBlockConditionPosition(t *testing.T) {
 	}
 }
 
+func TestTemplateRefsUseExactElseIfConditionPosition(t *testing.T) {
+	template := `{#if false}<p>a</p>{:else if missing}<p>b</p>{/if}`
+	prog := ParseJS("")
+	analysis := analyzeScript("")
+	ds := NewDiagSet("test.vela", template)
+	nodes, err := parseTemplate(template)
+	if err != nil {
+		t.Fatalf("template parse failed: %v", err)
+	}
+	validateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
+	if len(ds.All()) != 1 {
+		t.Fatalf("diagnostics = %v, want one", ds.All())
+	}
+	wantCol := strings.Index(template, "missing") + 1
+	if got := ds.All()[0].Col; got != wantCol {
+		t.Fatalf("column = %d, want %d", got, wantCol)
+	}
+}
+
 func TestTemplateRefsIfCond(t *testing.T) {
 	// Using attribute-style #if so the parser produces an
 	// ElementNode with IfCond set rather than an {#if} block.
