@@ -924,10 +924,10 @@ func TestRuntimeTodoCorpusGPT(t *testing.T) {
 		{"assertCount": ".todo-item", "equals": 2},
 		{"click": "button.remove"},
 		{"assertCount": ".todo-item", "equals": 1},
-		{"assertText": ".counter", "equals": "Осталось: 1 из 1"},
-		{"change": "input.toggle-checkbox", "checked": true},
-		{"assertCount": ".todo-item.done", "equals": 1},
-		{"click": "button.clear-button"},
+		{"assertText": ".counter", "equals": "0/1"},
+		{"change": "input[type=checkbox]", "checked": true},
+		{"assertCount": ".todo-item.completed", "equals": 1},
+		{"click": "button.clear"},
 		{"assertCount": ".todo-item", "equals": 0},
 	})
 }
