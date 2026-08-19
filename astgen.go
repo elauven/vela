@@ -2921,7 +2921,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// ── 5. Wiring ────────────────────────────────────────────
 	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
 	g.initBody = append(g.initBody, jsStmt(eachFn+"("+array+");"))
-	for _, dep := range findDeps(array, g.reactiveNames()) {
+	for _, dep := range templateExprDeps(block.IterExpr, array, g.reactiveNames()) {
 		g.addUpdate(dep, jsStmt(eachFn+"("+array+");"))
 	}
 	for dep := range rowAttrs.deps {
@@ -3144,7 +3144,7 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	g.initBody = append(g.initBody, jsStmt(driver+"();"))
 
 	// Re-run the driver when the promise expression's deps change.
-	for _, dep := range findDeps(stripBraces(block.PromiseExpr), g.reactiveNames()) {
+	for _, dep := range templateExprDeps(block.Expr, stripBraces(block.PromiseExpr), g.reactiveNames()) {
 		g.addUpdate(dep, jsStmt(driver+"();"))
 	}
 }
@@ -3618,12 +3618,12 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 		if br.Cond == "" {
 			continue
 		}
-		for _, d := range findDeps(stripBraces(br.Cond), g.reactiveNames()) {
+		for _, d := range templateExprDeps(br.Expr, stripBraces(br.Cond), g.reactiveNames()) {
 			deps[d] = true
 		}
 	}
 	if chain.KeyExpr != "" {
-		for _, d := range findDeps(stripBraces(chain.KeyExpr), g.reactiveNames()) {
+		for _, d := range templateExprDeps(chain.KeyAST, stripBraces(chain.KeyExpr), g.reactiveNames()) {
 			deps[d] = true
 		}
 	}
