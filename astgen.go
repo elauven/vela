@@ -2362,7 +2362,7 @@ func (g *ASTGen) buildHoleSubtree(
 			if collectUpdates {
 				res.updateStmts = append(res.updateStmts, jsStmt(writeSrc))
 			} else {
-				for _, dep := range findDeps(exprSrc, g.reactiveNames()) {
+				for _, dep := range templatePartsDeps(tn.Parts, g.reactiveNames()) {
 					g.addUpdate(dep, g.guardedStmt(writeSrc, hg))
 				}
 			}
@@ -2443,7 +2443,7 @@ func (g *ASTGen) buildHoleSubtree(
 		if collectUpdates {
 			res.updateStmts = append(res.updateStmts, jsStmt(writeSrc))
 		} else {
-			for _, dep := range findDeps(exprSrc, g.reactiveNames()) {
+			for _, dep := range templatePartsDeps(textNode.Parts, g.reactiveNames()) {
 				g.addUpdate(dep, g.guardedStmt(writeSrc, hg))
 			}
 		}
@@ -3955,7 +3955,7 @@ func (g *ASTGen) buildTextNode(tn *TextNode, parentVar string) {
 	exprSrc := buildExpr(tn.Parts)
 	writeSrc := refVar + ".data = " + exprSrc + ";"
 	g.initBody = append(g.initBody, jsStmt(writeSrc))
-	for _, dep := range findDeps(exprSrc, g.reactiveNames()) {
+	for _, dep := range templatePartsDeps(tn.Parts, g.reactiveNames()) {
 		g.addUpdate(dep, jsStmt(writeSrc))
 	}
 }

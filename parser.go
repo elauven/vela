@@ -218,6 +218,23 @@ func templateExprDeps(expr *TemplateExpr, fallback string, vars []string) []stri
 	return findDeps(fallback, vars)
 }
 
+func templatePartsDeps(parts []*Part, vars []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, part := range parts {
+		if part == nil || part.Static {
+			continue
+		}
+		for _, dep := range templateExprDeps(part.Expr, part.Value, vars) {
+			if !seen[dep] {
+				seen[dep] = true
+				out = append(out, dep)
+			}
+		}
+	}
+	return out
+}
+
 type Part struct {
 	Static bool // true → literal text; false → JS expression
 	Value  string
