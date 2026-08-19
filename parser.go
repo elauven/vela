@@ -194,10 +194,23 @@ type TextNode struct {
 }
 
 // Part is one segment of a text node.
+type TemplateExpr struct {
+	Source  string
+	Pos     int
+	Program *JsProgram
+	Errors  []string
+}
+
+func newTemplateExpr(source string, pos int) *TemplateExpr {
+	prog, errs := parseTemplateExpression(source)
+	return &TemplateExpr{Source: source, Pos: pos, Program: prog, Errors: errs}
+}
+
 type Part struct {
 	Static bool // true → literal text; false → JS expression
 	Value  string
 	Pos    int
+	Expr   *TemplateExpr
 }
 
 // Attr holds one HTML attribute, annotated with its sigil role.
@@ -211,6 +224,7 @@ type Attr struct {
 	IsClassDir bool // class:foo={cond} → toggle the `foo` class based on cond
 	IsStyleDir bool
 	Pos        int // style:foo={expr} → set inline style property `foo` to expr
+	Expr       *TemplateExpr
 }
 
 func (e *ElementNode) nodeKind() string   { return "element" }
@@ -464,7 +478,7 @@ func parseInterpolationsAt(s string, base int) []*Part {
 		done:
 			expr := strings.TrimSpace(s[start:i])
 			if expr != "" {
-				parts = append(parts, &Part{Static: false, Value: expr, Pos: base + start})
+				parts = append(parts, &Part{Static: false, Value: expr, Pos: base + start, Expr: newTemplateExpr(expr, base+start)})
 			}
 			i++ // skip '}'
 		} else {
@@ -770,6 +784,12 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 		}
 		if len(elem.Attrs) > attrCount {
 			elem.Attrs[len(elem.Attrs)-1].Pos = start
+		}
+		if len(elem.Attrs) > attrCount {
+			a := elem.Attrs[len(elem.Attrs)-1]
+			if a.IsEvent || a.IsBind || a.IsClassDir || a.IsStyleDir || a.IsBindThis {
+				a.Expr = newTemplateExpr(stripBraces(a.Value), a.Pos)
+			}
 		}
 	}
 	return nil
