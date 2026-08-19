@@ -997,8 +997,9 @@ func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 	if idx := strings.LastIndex(raw, "("); idx >= 0 {
 		close := strings.Index(raw[idx:], ")")
 		if close >= 0 {
-			key = strings.TrimSpace(raw[idx+1 : idx+close])
-			keyPos = exprPos + idx + 1
+			keyRaw := raw[idx+1 : idx+close]
+			key = strings.TrimSpace(keyRaw)
+			keyPos = exprPos + idx + 1 + len(keyRaw) - len(strings.TrimLeftFunc(keyRaw, unicode.IsSpace))
 			raw = strings.TrimSpace(raw[:idx])
 		}
 	}
