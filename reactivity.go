@@ -578,7 +578,7 @@ func checkExprRefsAt(exprText string, known map[string]bool, templateText string
 			// non-computed property name isn't visited.
 			WalkNode(me.Obj, func(inner JsNode) bool {
 				if id, ok := inner.(*JsIdent); ok {
-					checkIdentRef(id, known, seen, templateText, ds)
+					checkIdentRef(id, known, seen, templateText, pos, ds)
 				}
 				if me, ok := inner.(*JsMemberExpr); ok {
 					_ = me
@@ -594,7 +594,7 @@ func checkExprRefsAt(exprText string, known map[string]bool, templateText string
 				// Property is an expression — recurse normally.
 				WalkNode(me.Prop, func(inner JsNode) bool {
 					if id, ok := inner.(*JsIdent); ok {
-						checkIdentRef(id, known, seen, templateText, ds)
+						checkIdentRef(id, known, seen, templateText, pos, ds)
 					}
 					return true
 				})
@@ -609,14 +609,14 @@ func checkExprRefsAt(exprText string, known map[string]bool, templateText string
 			for _, prop := range obj.Props {
 				if prop.Shorthand {
 					if id, ok := prop.Key.(*JsIdent); ok {
-						checkIdentRef(id, known, seen, templateText, ds)
+						checkIdentRef(id, known, seen, templateText, pos, ds)
 					}
 					continue
 				}
 				if prop.Computed && prop.Key != nil {
 					WalkNode(prop.Key, func(inner JsNode) bool {
 						if id, ok := inner.(*JsIdent); ok {
-							checkIdentRef(id, known, seen, templateText, ds)
+							checkIdentRef(id, known, seen, templateText, pos, ds)
 						}
 						return true
 					})
@@ -624,7 +624,7 @@ func checkExprRefsAt(exprText string, known map[string]bool, templateText string
 				if prop.Value != nil {
 					WalkNode(prop.Value, func(inner JsNode) bool {
 						if id, ok := inner.(*JsIdent); ok {
-							checkIdentRef(id, known, seen, templateText, ds)
+							checkIdentRef(id, known, seen, templateText, pos, ds)
 						}
 						switch inner.(type) {
 						case *JsFuncExpr, *JsArrowFunc, *JsFuncDecl:
@@ -637,7 +637,7 @@ func checkExprRefsAt(exprText string, known map[string]bool, templateText string
 			return false
 		}
 		if id, ok := n.(*JsIdent); ok {
-			checkIdentRef(id, known, seen, templateText, ds)
+			checkIdentRef(id, known, seen, templateText, pos, ds)
 		}
 		return true
 	})
@@ -646,7 +646,7 @@ func checkExprRefsAt(exprText string, known map[string]bool, templateText string
 // checkIdentRef resolves one identifier against the known-names set
 // and emits a warning if missing.  `seen` deduplicates so the same
 // unknown name in one expression only warns once.
-func checkIdentRef(id *JsIdent, known, seen map[string]bool, templateText string, ds *DiagSet) {
+func checkIdentRef(id *JsIdent, known, seen map[string]bool, templateText string, basePos int, ds *DiagSet) {
 	if known[id.Name] || seen[id.Name] {
 		return
 	}
@@ -655,6 +655,9 @@ func checkIdentRef(id *JsIdent, known, seen map[string]bool, templateText string
 	// position.  If not found, fall back to position 0 (the start of
 	// the template section).
 	pos := findTemplatePos(templateText, id.Name)
+	if basePos >= 0 && id.Pos >= 0 {
+		pos = basePos + id.Pos - 1
+	}
 	ds.Warn(pos,
 		"template references %q but no such name is declared in <script>",
 		id.Name)

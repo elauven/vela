@@ -148,6 +148,25 @@ func TestTemplateRefsUndeclared(t *testing.T) {
 	expect(t, ds, `template references "nonexistent"`)
 }
 
+func TestTemplateRefsUseExactExpressionPosition(t *testing.T) {
+	template := `<p>{known}</p><p>{missing}</p>`
+	prog := ParseJS(`let known = $state(0);`)
+	analysis := analyzeScript(`let known = $state(0);`)
+	ds := NewDiagSet("test.vela", template)
+	nodes, err := parseTemplate(template)
+	if err != nil {
+		t.Fatalf("template parse failed: %v", err)
+	}
+	validateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
+	if len(ds.All()) != 1 {
+		t.Fatalf("diagnostics = %v, want one", ds.All())
+	}
+	wantCol := strings.Index(template, "missing") + 1
+	if got := ds.All()[0].Col; got != wantCol {
+		t.Fatalf("column = %d, want %d", got, wantCol)
+	}
+}
+
 func TestTemplateRefsKnownStateVar(t *testing.T) {
 	ds := runTemplateRefs(t,
 		`let count = $state(0);`,
