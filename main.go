@@ -29,6 +29,7 @@ type CompileOptions struct {
 	// to a sibling <n>.css file and no runtime injection is
 	// emitted — the consumer links the stylesheet.
 	CSSExternal bool
+	SourceMap   bool // emit a v3 .js.map alongside generated JS
 }
 
 func main() {
@@ -41,6 +42,7 @@ func main() {
 	parallel := flag.Bool("parallel", true, "compile files in parallel (project mode)")
 	codegen := flag.String("codegen", "ast", "code generator: 'ast' (default); 'legacy' is DEPRECATED and will be removed")
 	cssMode := flag.String("css", "inject", "CSS delivery: 'inject' (default, CSS-in-JS) or 'external' (sibling .css files)")
+	sourceMap := flag.Bool("sourcemap", false, "emit an experimental v3 source map alongside generated JS")
 	flag.Parse()
 
 	switch *cssMode {
@@ -59,6 +61,7 @@ func main() {
 		GenAST:      *genAST,
 		Codegen:     *codegen,
 		CSSExternal: *cssMode == "external",
+		SourceMap:   *sourceMap,
 	}
 
 	// ── Project mode ─────────────────────────────────────────────────────────
@@ -423,23 +426,46 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	// bypassing the AST pipeline (and its validation).  It will be
 	// removed once the AST default has shipped for a release cycle.
 	var code string
+	var sourceMap *SourceMapV3
 	if opts.Codegen == "legacy" {
 		code = generateCode(name, sfc, tmpl, analysis, scope)
 	} else {
 		// When the generated-AST dump is requested, build the
-		// program explicitly so its structured form can be
-		// serialized, then print from the same tree.
-		if opts.GenAST {
-			prog := buildProgramCSS(name, sfc, tmpl, analysis,
-				scope, opts.CSSExternal)
-			genPath := strings.TrimSuffix(dest, ".js") + ".genast.json"
-			_ = os.MkdirAll(filepath.Dir(genPath), 0755)
-			_ = os.WriteFile(genPath, []byte(ASTToJSON(prog, false)), 0644)
-			code = headerComment + "\n\n" + PrintJS(prog, PrintPretty)
+		if opts.GenAST || opts.SourceMap {
+			prog := buildProgramCSS(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
+			if opts.GenAST {
+				genPath := strings.TrimSuffix(dest, ".js") + ".genast.json"
+				_ = os.MkdirAll(filepath.Dir(genPath), 0755)
+				_ = os.WriteFile(genPath, []byte(ASTToJSON(prog, false)), 0644)
+			}
+			if opts.SourceMap {
+				var locations []PrintLocation
+				body := PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) {
+					loc.GeneratedLine += 2
+					loc.SourcePos += sfc.ScriptOffset
+					locations = append(locations, loc)
+				})
+				m := BuildSourceMapV3(filepath.Base(dest), filepath.Base(src), raw, locations)
+				sourceMap = &m
+				code = headerComment + "\n\n" + body
+			} else {
+				code = headerComment + "\n\n" + PrintJS(prog, PrintPretty)
+			}
 		} else {
-			code = generateCodeASTCSS(name, sfc, tmpl, analysis,
-				scope, opts.CSSExternal)
+			code = generateCodeASTCSS(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
 		}
+	}
+
+	if sourceMap != nil {
+		mapBytes, mapErr := SourceMapJSON(*sourceMap)
+		if mapErr != nil {
+			return ds.All(), mapErr
+		}
+		mapPath := dest + ".map"
+		if err := os.WriteFile(mapPath, mapBytes, 0644); err != nil {
+			return ds.All(), err
+		}
+		code += "\n//# sourceMappingURL=" + filepath.Base(mapPath) + "\n"
 	}
 	if opts.Minify {
 		code = Minify(code)
