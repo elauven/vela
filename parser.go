@@ -116,10 +116,12 @@ type IfChainNode struct {
 	// identity (===).  Useful for forcing re-init of stateful
 	// children — animations, focus management, scroll position.
 	KeyExpr string
+	KeyPos  int
 }
 
 type IfBranch struct {
 	Cond     string         // empty string → #else branch
+	CondPos  int            // byte offset of condition in template
 	Children []Node         // branch body
 	Elem     *ElementNode   // non-nil for element branches (old attr syntax)
 	Comp     *ComponentNode // non-nil for component branches
@@ -129,7 +131,9 @@ type IfBranch struct {
 // The children are the content of each row; they may include multiple nodes.
 type EachBlockNode struct {
 	EachExpr     string // e.g. "items as item" or "items as item, index"
-	EachKey      string // e.g. "item.id"  (from the (key) suffix)
+	ExprPos      int
+	EachKey      string
+	KeyPos       int // e.g. "item.id"  (from the (key) suffix)
 	Children     []Node
 	ElseChildren []Node
 }
@@ -155,6 +159,7 @@ type EachBlockNode struct {
 // (e.g. await fetch(`/api/${id}`)) work as expected.
 type AwaitBlockNode struct {
 	PromiseExpr     string // the JS expression after `#await`
+	ExprPos         int
 	ValueName       string // identifier bound in {:then NAME}, or ""
 	ErrorName       string // identifier bound in {:catch NAME}, or ""
 	PendingChildren []Node
@@ -828,16 +833,27 @@ func (p *parser) readSvelteTag() string {
 // branches and the closing {/if} or {/each}.
 // Returns (node, terminator, error). If a terminator was consumed before the
 // block was complete (shouldn't happen at this level), terminator is non-empty.
+func (p *parser) blockExprPos(tagStart int, tag, expr string) int {
+	if expr == "" {
+		return tagStart
+	}
+	if idx := strings.Index(p.src[tagStart:p.pos], expr); idx >= 0 {
+		return tagStart + idx
+	}
+	return tagStart
+}
+
 func (p *parser) parseSvelteBlock() (Node, string, error) {
+	tagStart := p.pos
 	tag := p.readSvelteTag() // e.g. "#if cond", "#each items as item (key)"
 
 	switch {
 	case strings.HasPrefix(tag, "#if"):
-		node, err := p.parseSvelteIfBlock(tag[3:])
+		node, err := p.parseSvelteIfBlock(tag[3:], p.blockExprPos(tagStart, tag, strings.TrimSpace(tag[3:])))
 		return node, "", err
 
 	case strings.HasPrefix(tag, "#each"):
-		node, err := p.parseSvelteEachBlock(tag[5:])
+		node, err := p.parseSvelteEachBlock(tag[5:], p.blockExprPos(tagStart, tag, strings.TrimSpace(tag[5:])))
 		return node, "", err
 
 	case strings.HasPrefix(tag, "#key"):
@@ -845,12 +861,12 @@ func (p *parser) parseSvelteBlock() (Node, string, error) {
 		// `expr` changes identity.  Modeled as a one-branch
 		// IfChainNode with KeyExpr set; the codegen handles the
 		// destroy-and-rebuild logic.
-		node, err := p.parseSvelteKeyBlock(tag[4:])
+		node, err := p.parseSvelteKeyBlock(tag[4:], p.blockExprPos(tagStart, tag, strings.TrimSpace(tag[4:])))
 		return node, "", err
 
 	case strings.HasPrefix(tag, "#await"):
 		// {#await promise}...{:then v}...{:catch e}...{/await}
-		node, err := p.parseSvelteAwaitBlock(tag[6:])
+		node, err := p.parseSvelteAwaitBlock(tag[6:], p.blockExprPos(tagStart, tag, strings.TrimSpace(tag[6:])))
 		return node, "", err
 
 	case strings.HasPrefix(tag, ":else") || strings.HasPrefix(tag, ":then") ||
@@ -867,7 +883,7 @@ func (p *parser) parseSvelteBlock() (Node, string, error) {
 
 // parseSvelteIfBlock parses {#if cond}...{:else if cond}...{:else}...{/if}.
 // condRaw is everything after "#if" (with leading space).
-func (p *parser) parseSvelteIfBlock(condRaw string) (Node, error) {
+func (p *parser) parseSvelteIfBlock(condRaw string, condPos int) (Node, error) {
 	chain := &IfChainNode{}
 
 	cond := strings.TrimSpace(condRaw)
@@ -880,12 +896,14 @@ func (p *parser) parseSvelteIfBlock(condRaw string) (Node, error) {
 
 		chain.Branches = append(chain.Branches, &IfBranch{
 			Cond:     cond,
+			CondPos:  condPos,
 			Children: groupIfChains(children),
 		})
 
 		switch {
 		case strings.HasPrefix(term, ":else if ") || strings.HasPrefix(term, ":else if\t"):
 			cond = strings.TrimSpace(term[9:])
+			condPos = 0
 			// continue loop for next branch
 		case term == ":else" || strings.HasPrefix(term, ":else}"):
 			// Parse else body
@@ -907,15 +925,17 @@ func (p *parser) parseSvelteIfBlock(condRaw string) (Node, error) {
 
 // parseSvelteEachBlock parses {#each expr as item (key)}...{/each}.
 // raw is everything after "#each" (with leading space).
-func (p *parser) parseSvelteEachBlock(raw string) (Node, error) {
+func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 	raw = strings.TrimSpace(raw)
 
 	// Extract optional (key) suffix
 	key := ""
+	keyPos := 0
 	if idx := strings.LastIndex(raw, "("); idx >= 0 {
 		close := strings.Index(raw[idx:], ")")
 		if close >= 0 {
 			key = strings.TrimSpace(raw[idx+1 : idx+close])
+			keyPos = exprPos + idx + 1
 			raw = strings.TrimSpace(raw[:idx])
 		}
 	}
@@ -932,7 +952,7 @@ func (p *parser) parseSvelteEachBlock(raw string) (Node, error) {
 		}
 	}
 	return &EachBlockNode{
-		EachExpr: raw, EachKey: key,
+		EachExpr: raw, ExprPos: exprPos, EachKey: key, KeyPos: keyPos,
 		Children:     groupIfChains(children),
 		ElseChildren: groupIfChains(elseChildren),
 	}, nil
@@ -943,14 +963,14 @@ func (p *parser) parseSvelteEachBlock(raw string) (Node, error) {
 // IfChainNode with KeyExpr set; codegen reads KeyExpr and emits a
 // "destroy if key changed" guard before the chain's active-branch
 // re-check.
-func (p *parser) parseSvelteKeyBlock(raw string) (Node, error) {
+func (p *parser) parseSvelteKeyBlock(raw string, keyPos int) (Node, error) {
 	expr := strings.TrimSpace(raw)
 	children, _, err := p.parseSvelteBlockBody()
 	if err != nil {
 		return nil, err
 	}
 	return &IfChainNode{
-		KeyExpr: expr,
+		KeyExpr: expr, KeyPos: keyPos,
 		Branches: []*IfBranch{{
 			// Always-true condition.  The chain stays mounted; the
 			// destroy-and-rebuild is driven by the key change, not by
@@ -975,9 +995,10 @@ func (p *parser) parseSvelteKeyBlock(raw string) (Node, error) {
 // corresponding child slot is nil and codegen treats the branch as
 // "do nothing on that state".  Order is fixed: pending body comes
 // first, then optional :then, then optional :catch, then /await.
-func (p *parser) parseSvelteAwaitBlock(raw string) (Node, error) {
+func (p *parser) parseSvelteAwaitBlock(raw string, exprPos int) (Node, error) {
 	node := &AwaitBlockNode{
 		PromiseExpr: strings.TrimSpace(raw),
+		ExprPos:     exprPos,
 	}
 
 	// Pending body — consume until the first terminator.
