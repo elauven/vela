@@ -117,11 +117,13 @@ type IfChainNode struct {
 	// children — animations, focus management, scroll position.
 	KeyExpr string
 	KeyPos  int
+	KeyAST  *TemplateExpr
 }
 
 type IfBranch struct {
-	Cond     string         // empty string → #else branch
-	CondPos  int            // byte offset of condition in template
+	Cond     string // empty string → #else branch
+	CondPos  int    // byte offset of condition in template
+	Expr     *TemplateExpr
 	Children []Node         // branch body
 	Elem     *ElementNode   // non-nil for element branches (old attr syntax)
 	Comp     *ComponentNode // non-nil for component branches
@@ -132,8 +134,10 @@ type IfBranch struct {
 type EachBlockNode struct {
 	EachExpr     string // e.g. "items as item" or "items as item, index"
 	ExprPos      int
+	IterExpr     *TemplateExpr
 	EachKey      string
 	KeyPos       int // e.g. "item.id"  (from the (key) suffix)
+	KeyAST       *TemplateExpr
 	Children     []Node
 	ElseChildren []Node
 }
@@ -160,6 +164,7 @@ type EachBlockNode struct {
 type AwaitBlockNode struct {
 	PromiseExpr     string // the JS expression after `#await`
 	ExprPos         int
+	Expr            *TemplateExpr
 	ValueName       string // identifier bound in {:then NAME}, or ""
 	ErrorName       string // identifier bound in {:catch NAME}, or ""
 	PendingChildren []Node
@@ -917,6 +922,7 @@ func (p *parser) parseSvelteIfBlock(condRaw string, condPos int) (Node, error) {
 		chain.Branches = append(chain.Branches, &IfBranch{
 			Cond:     cond,
 			CondPos:  condPos,
+			Expr:     newTemplateExpr(cond, condPos),
 			Children: groupIfChains(children),
 		})
 
@@ -972,7 +978,7 @@ func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 		}
 	}
 	return &EachBlockNode{
-		EachExpr: raw, ExprPos: exprPos, EachKey: key, KeyPos: keyPos,
+		EachExpr: raw, ExprPos: exprPos, IterExpr: newTemplateExpr(strings.TrimSpace(strings.SplitN(raw, " as ", 2)[0]), exprPos), EachKey: key, KeyPos: keyPos, KeyAST: newTemplateExpr(key, keyPos),
 		Children:     groupIfChains(children),
 		ElseChildren: groupIfChains(elseChildren),
 	}, nil
@@ -990,7 +996,7 @@ func (p *parser) parseSvelteKeyBlock(raw string, keyPos int) (Node, error) {
 		return nil, err
 	}
 	return &IfChainNode{
-		KeyExpr: expr, KeyPos: keyPos,
+		KeyExpr: expr, KeyPos: keyPos, KeyAST: newTemplateExpr(expr, keyPos),
 		Branches: []*IfBranch{{
 			// Always-true condition.  The chain stays mounted; the
 			// destroy-and-rebuild is driven by the key change, not by
