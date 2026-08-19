@@ -34,9 +34,24 @@ const (
 	PrintMinified
 )
 
+// PrintLocation identifies one user-origin AST node at its printed location.
+// GeneratedLine is one-based; GeneratedColumn and SourcePos are zero-based.
+type PrintLocation struct {
+	GeneratedLine   int
+	GeneratedColumn int
+	SourcePos       int
+}
+
 // PrintJS serializes a whole program.
 func PrintJS(prog *JsProgram, mode PrintMode) string {
-	p := &jsPrinter{mode: mode}
+	return PrintJSWithLocations(prog, mode, nil)
+}
+
+// PrintJSWithLocations serializes prog and reports every user-origin node at
+// the generated position where printing of that node starts. Compiler-created
+// nodes are deliberately omitted: they have no source location to map back to.
+func PrintJSWithLocations(prog *JsProgram, mode PrintMode, visit func(PrintLocation)) string {
+	p := &jsPrinter{mode: mode, line: 1, location: visit}
 	p.program(prog)
 	return p.sb.String()
 }
@@ -54,15 +69,49 @@ func PrintExpr(e JsExpr, mode PrintMode) string {
 // ─────────────────────────────────────────────
 
 type jsPrinter struct {
-	sb     strings.Builder
-	mode   PrintMode
-	indent int
+	sb       strings.Builder
+	mode     PrintMode
+	indent   int
+	line     int
+	column   int
+	location func(PrintLocation)
 }
 
 func (p *jsPrinter) pretty() bool { return p.mode == PrintPretty }
 
-func (p *jsPrinter) write(s string) { p.sb.WriteString(s) }
-func (p *jsPrinter) ch(c byte)      { p.sb.WriteByte(c) }
+func (p *jsPrinter) write(s string) {
+	p.sb.WriteString(s)
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			p.line++
+			p.column = 0
+		} else {
+			p.column++
+		}
+	}
+}
+
+func (p *jsPrinter) ch(c byte) {
+	p.sb.WriteByte(c)
+	if c == '\n' {
+		p.line++
+		p.column = 0
+	} else {
+		p.column++
+	}
+}
+
+func (p *jsPrinter) note(n JsNode) {
+	if p.location == nil || n == nil || n.origin() != OriginUser {
+		return
+	}
+	if n.nodeEnd() <= n.nodePos() {
+		return
+	}
+	p.location(PrintLocation{
+		GeneratedLine: p.line, GeneratedColumn: p.column, SourcePos: n.nodePos(),
+	})
+}
 
 // nl emits a newline + indentation in pretty mode; nothing in
 // minified mode.
@@ -108,6 +157,7 @@ func (p *jsPrinter) program(prog *JsProgram) {
 // ─────────────────────────────────────────────
 
 func (p *jsPrinter) stmt(s JsStmt) {
+	p.note(s)
 	switch n := s.(type) {
 
 	case *JsVarDecl:
@@ -535,24 +585,24 @@ func (p *jsPrinter) importDecl(n *JsImportDecl) {
 // expr() is the minimum precedence the context can hold without
 // needing parens; if a child's precedence is lower, parenthesize.
 const (
-	precSeq    = 0  // comma
-	precAssign = 1  // = += etc, yield, arrow
-	precCond   = 2  // ?:
-	precNull   = 3  // ??
-	precOr     = 4  // ||
-	precAnd    = 5  // &&
-	precBitOr  = 6  // |
-	precBitXor = 7  // ^
-	precBitAnd = 8  // &
-	precEq     = 9  // == != === !==
-	precRel    = 10 // < > <= >= in instanceof
-	precShift  = 11 // << >> >>>
-	precAdd    = 12 // + -
-	precMul    = 13 // * / %
-	precExp    = 14 // **
-	precUnary  = 15 // ! ~ + - typeof void delete await
+	precSeq     = 0  // comma
+	precAssign  = 1  // = += etc, yield, arrow
+	precCond    = 2  // ?:
+	precNull    = 3  // ??
+	precOr      = 4  // ||
+	precAnd     = 5  // &&
+	precBitOr   = 6  // |
+	precBitXor  = 7  // ^
+	precBitAnd  = 8  // &
+	precEq      = 9  // == != === !==
+	precRel     = 10 // < > <= >= in instanceof
+	precShift   = 11 // << >> >>>
+	precAdd     = 12 // + -
+	precMul     = 13 // * / %
+	precExp     = 14 // **
+	precUnary   = 15 // ! ~ + - typeof void delete await
 	precPostfix = 16 // x++ x--
-	precLHS    = 17 // call, member, new
+	precLHS     = 17 // call, member, new
 	precPrimary = 18 // literals, identifiers, parenthesized
 )
 
@@ -591,6 +641,7 @@ func binPrec(op string) int {
 // surrounding context tolerates; if e's own precedence is lower,
 // it is wrapped in parentheses.
 func (p *jsPrinter) expr(e JsExpr, parentPrec int) {
+	p.note(e)
 	switch n := e.(type) {
 
 	case *JsIdent:

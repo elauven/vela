@@ -668,3 +668,21 @@ func TestPrinterRoundTripFixtures(t *testing.T) {
 		}
 	}
 }
+
+func TestPrintJSWithLocationsReportsUserOrigins(t *testing.T) {
+	prog := ParseJS("let alpha = beta + 1;")
+	var locations []PrintLocation
+	printed := PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) {
+		locations = append(locations, loc)
+	})
+	if printed != "let alpha = beta + 1;" {
+		t.Fatalf("printed = %q", printed)
+	}
+	if len(locations) == 0 {
+		t.Fatal("expected at least one user-origin location")
+	}
+	first := locations[0]
+	if first.GeneratedLine != 1 || first.GeneratedColumn != 0 || first.SourcePos != 0 {
+		t.Fatalf("first location = %+v, want generated 1:0 at source 0", first)
+	}
+}
