@@ -256,6 +256,11 @@ func TestTemplateRefsAwaitScopesAndChecksPromise(t *testing.T) {
 	}
 }
 
+func TestTemplateRefsKeyExpression(t *testing.T) {
+	ds := runTemplateRefs(t, "", `{#key missing}<p>content</p>{/key}`)
+	expect(t, ds, `template references "missing"`)
+}
+
 func TestTemplateRefsIfCond(t *testing.T) {
 	// Using attribute-style #if so the parser produces an
 	// ElementNode with IfCond set rather than an {#if} block.
