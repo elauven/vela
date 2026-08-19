@@ -128,9 +128,10 @@ type IfBranch struct {
 // EachBlockNode is produced by Svelte-style {#each items as item (key)}...{/each}.
 // The children are the content of each row; they may include multiple nodes.
 type EachBlockNode struct {
-	EachExpr string // e.g. "items as item" or "items as item, index"
-	EachKey  string // e.g. "item.id"  (from the (key) suffix)
-	Children []Node
+	EachExpr     string // e.g. "items as item" or "items as item, index"
+	EachKey      string // e.g. "item.id"  (from the (key) suffix)
+	Children     []Node
+	ElseChildren []Node
 }
 
 // AwaitBlockNode is produced by Svelte-style:
@@ -919,15 +920,21 @@ func (p *parser) parseSvelteEachBlock(raw string) (Node, error) {
 		}
 	}
 
-	children, _, err := p.parseSvelteBlockBody()
+	children, term, err := p.parseSvelteBlockBody()
 	if err != nil {
 		return nil, err
 	}
-
+	var elseChildren []Node
+	if term == ":else" {
+		elseChildren, _, err = p.parseSvelteBlockBody()
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &EachBlockNode{
-		EachExpr: raw,
-		EachKey:  key,
-		Children: groupIfChains(children),
+		EachExpr: raw, EachKey: key,
+		Children:     groupIfChains(children),
+		ElseChildren: groupIfChains(elseChildren),
 	}, nil
 }
 

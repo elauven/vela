@@ -2763,7 +2763,8 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// (see the rowHasBlocks branch).
 	rowBodyDeps := map[string]bool{}
 	rowVar := "$$f0"
-	rowHasBlocks := !astHoleSubtreeOK(rowElem.Children)
+	rowChildren := rewriteIdentInNodes(rowElem.Children, itemVar, "$$item_"+id)
+	rowHasBlocks := !astHoleSubtreeOK(rowChildren)
 	g.withFragmentIDs(func() {
 		rowVar = g.id() // $$f0
 		fragBody = []JsStmt{
@@ -2783,7 +2784,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 			// captured local scope so its emissions land in the
 			// fragment closure, not component scope.
 			cap := g.captureScope(func() {
-				g.buildChildRun(rowElem.Children, rowVar)
+				g.buildChildRun(rowChildren, rowVar)
 			})
 			// Per-row declarations bubbled up from any nested
 			// branch (a component built inside an {#if} inside
@@ -2814,7 +2815,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 				rowBodyDeps[dep] = true
 			}
 		} else {
-			sub = g.buildHoleSubtree(rowVar, rowElem.Children, false, "", true, false)
+			sub = g.buildHoleSubtree(rowVar, rowChildren, false, "", true, false)
 			fragBody = append(fragBody, sub.build...)
 			// Directive/bind init statements — emitted after the
 			// child build, matching legacy buffer ordering.
@@ -4149,19 +4150,23 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 		}
 		hv := inst + "_" + sanitizeIdent(attr.Name) + "_ch"
 		handler := g.rewriteHandler(attr.Value)
+		eventName := strings.TrimPrefix(attr.Name, "on:")
 		// The guard wrapper — only forward CustomEvents.  Hoisted
 		// to component scope: when the component is in a slot, the
 		// addEventListener call runs on every slot reopen but the
 		// handler const is declared once; a `let`/`const` trapped
 		// in the slot closure's first-open path would be undefined
 		// on reopen.
-		g.hoisted = append(g.hoisted, jsStmt(
-			"const "+hv+" = ($e) => { if ($e instanceof CustomEvent) { ("+
-				handler+")($e); } };"))
+		handlerDecl := jsStmt("const " + hv + " = ($e) => { if ($e instanceof CustomEvent) { (" + handler + ")($e); } };")
+		if g.fragCounter >= 0 {
+			g.body = append(g.body, handlerDecl)
+		} else {
+			g.hoisted = append(g.hoisted, handlerDecl)
+		}
 		g.initBody = append(g.initBody, jsStmt(
-			inst+".el.addEventListener('"+attr.Name+"', "+hv+");"))
+			inst+".el.addEventListener('"+eventName+"', "+hv+");"))
 		g.cleanup = append(g.cleanup, jsStmt(
-			"if ("+inst+") "+inst+".el.removeEventListener('"+attr.Name+"', "+hv+");"))
+			"if ("+inst+") "+inst+".el.removeEventListener('"+eventName+"', "+hv+");"))
 	}
 }
 
@@ -4404,7 +4409,7 @@ func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 	}
 
 	hv := varName + "_" + attr.Name + "_h"
-	handlerDecl := jsStmt("const " + hv + " = " + handler + ";")
+	handlerDecl := jsStmt("const " + hv + " = ($e) => { if ($e instanceof CustomEvent) { (" + handler + ")($e); } };")
 	if !isHandlerExpr(handler) {
 		// Statement body — wrap in an ($event) => { … } arrow.
 		handlerDecl = jsStmt("const " + hv +
