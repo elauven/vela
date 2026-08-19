@@ -167,6 +167,25 @@ func TestTemplateRefsUseExactExpressionPosition(t *testing.T) {
 	}
 }
 
+func TestTemplateRefsUseExactDynamicAttributeExpressionPosition(t *testing.T) {
+	template := `<button :aria-label={missing}>x</button>`
+	prog := ParseJS(`let known = $state(0);`)
+	analysis := analyzeScript(`let known = $state(0);`)
+	ds := NewDiagSet("test.vela", template)
+	nodes, err := parseTemplate(template)
+	if err != nil {
+		t.Fatalf("template parse failed: %v", err)
+	}
+	validateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
+	if len(ds.All()) != 1 {
+		t.Fatalf("diagnostics = %v, want one", ds.All())
+	}
+	wantCol := strings.Index(template, "missing") + 1
+	if got := ds.All()[0].Col; got != wantCol {
+		t.Fatalf("column = %d, want %d", got, wantCol)
+	}
+}
+
 func TestTemplateRefsKnownStateVar(t *testing.T) {
 	ds := runTemplateRefs(t,
 		`let count = $state(0);`,

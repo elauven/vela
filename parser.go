@@ -727,9 +727,11 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 
 		p.skipWS()
 		value := ""
+		valuePos := -1
 		if !p.eof() && p.ch() == '=' {
 			p.pos++
 			p.skipWS()
+			valuePos = p.pos
 			value = p.readAttrValue()
 		}
 
@@ -818,7 +820,16 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 		if len(elem.Attrs) > attrCount {
 			a := elem.Attrs[len(elem.Attrs)-1]
 			if a.IsEvent || a.IsBind || a.IsClassDir || a.IsStyleDir || a.IsBindThis {
-				a.Expr = newTemplateExpr(stripBraces(a.Value), a.Pos)
+				exprPos := a.Pos
+				if valuePos >= 0 {
+					exprPos = valuePos
+					if strings.HasPrefix(a.Value, "{") {
+						exprPos++
+					}
+				} else if idx := strings.LastIndex(p.src[start:p.pos], a.Name); idx >= 0 {
+					exprPos = start + idx
+				}
+				a.Expr = newTemplateExpr(stripBraces(a.Value), exprPos)
 			}
 		}
 	}
