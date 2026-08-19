@@ -177,6 +177,9 @@ func eachBlockNodeJSON(n *EachBlockNode) interface{} {
 	if n.EachKey != "" {
 		m["eachKey"] = n.EachKey
 	}
+	if len(n.ElseChildren) > 0 {
+		m["elseChildren"] = nodesToJSON(n.ElseChildren)
+	}
 	return m
 }
 

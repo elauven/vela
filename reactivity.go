@@ -385,6 +385,7 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 				for _, nm := range added {
 					delete(known, nm)
 				}
+				walkNodes(n.ElseChildren)
 			}
 		}
 	}

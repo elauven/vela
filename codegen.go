@@ -1893,9 +1893,10 @@ func rewriteIdentInNode(n Node, from, to string) Node {
 
 	case *EachBlockNode:
 		return &EachBlockNode{
-			EachExpr: rewriteIdentInExpr(v.EachExpr, from, to),
-			EachKey:  rewriteIdentInExpr(v.EachKey, from, to),
-			Children: rewriteIdentInNodes(v.Children, from, to),
+			EachExpr:     rewriteIdentInExpr(v.EachExpr, from, to),
+			EachKey:      rewriteIdentInExpr(v.EachKey, from, to),
+			Children:     rewriteIdentInNodes(v.Children, from, to),
+			ElseChildren: rewriteIdentInNodes(v.ElseChildren, from, to),
 		}
 
 	case *ComponentNode:

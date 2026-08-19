@@ -2758,6 +2758,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	var rowAttrs eachRowAttrs
 	var nestedUpdate []JsStmt   // captured init+updates for nested-block rows
 	var rowComps []compInstance // child-component instances built in this row
+	var rowCleanup []JsStmt     // component/event teardown owned by this row
 	// rowBodyDeps collects component-state names a nested-control-
 	// flow row body reads; every such dep re-runs the whole {#each}
 	// (see the rowHasBlocks branch).
@@ -2798,6 +2799,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 			fragBody = append(fragBody, cap.initBody...)
 			fragBody = append(fragBody, cap.events...)
 			nestedUpdate = append(nestedUpdate, cap.initBody...)
+			rowCleanup = append(rowCleanup, cap.cleanup...)
 			// Child-component instances built within this row need
 			// their .set() statements replayed in the row's update
 			// closure (Session A: row reuse without destroying
@@ -2851,7 +2853,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	fragReturn := "return { el: " + rowVar + ", " +
 		"update(" + itemVar + ", " + indexVar + ") { " +
 		stmtsToText(updateBody) + " }, " +
-		"destroy() { " + rowVar + ".remove(); } };"
+		"destroy() { " + stmtsToText(rowCleanup) + rowVar + ".remove(); } };"
 	fragBody = append(fragBody, jsStmt(fragReturn))
 
 	fragDecl := jsStmt(
@@ -4163,8 +4165,13 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 		} else {
 			g.hoisted = append(g.hoisted, handlerDecl)
 		}
-		g.initBody = append(g.initBody, jsStmt(
-			inst+".el.addEventListener('"+eventName+"', "+hv+");"))
+		listener := jsStmt(inst + ".el.addEventListener('" + eventName + "', " + hv + ");")
+		if g.fragCounter >= 0 {
+			// Row update() replays initBody; subscriptions attach only at mount.
+			g.events = append(g.events, listener)
+		} else {
+			g.initBody = append(g.initBody, listener)
+		}
 		g.cleanup = append(g.cleanup, jsStmt(
 			"if ("+inst+") "+inst+".el.removeEventListener('"+eventName+"', "+hv+");"))
 	}

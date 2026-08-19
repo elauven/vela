@@ -409,6 +409,7 @@ func validateTemplate(nodes []Node, a *Analysis, ds *DiagSet) {
 						n.EachExpr)
 				}
 				walkNodes(n.Children)
+				walkNodes(n.ElseChildren)
 			}
 		}
 	}

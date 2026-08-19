@@ -859,15 +859,23 @@ func TestRuntimeNestedChainElseFallingWhenOuterInactive(t *testing.T) {
 
 func TestRuntimeTodoCorpusQwen(t *testing.T) {
 	app, err := os.ReadFile("test_projects/corpus/qwen-fixed/src/App.vela")
-	if err != nil { t.Fatalf("read Qwen app fixture: %v", err) }
+	if err != nil {
+		t.Fatalf("read Qwen app fixture: %v", err)
+	}
 	item, err := os.ReadFile("test_projects/corpus/qwen-fixed/src/TodoItem.vela")
-	if err != nil { t.Fatalf("read Qwen item fixture: %v", err) }
+	if err != nil {
+		t.Fatalf("read Qwen item fixture: %v", err)
+	}
 	assertRuntimeSet(t, "App", map[string]string{"App": string(app), "TodoItem": string(item)}, []rtStep{
 		{"assertCount": ".todo-item", "equals": 0},
 		{"input": "input.new-title-input", "value": "write tests"},
 		{"submit": "form.add-form"},
 		{"assertCount": ".todo-item", "equals": 1},
 		{"assertText": ".counter", "equals": "Осталось: 1 из 1"},
+		{"change": "input.toggle-checkbox", "checked": true},
+		{"assertCount": ".todo-item.done", "equals": 1},
+		{"change": "input.toggle-checkbox", "checked": false},
+		{"assertCount": ".todo-item.done", "equals": 0},
 		{"change": "input.toggle-checkbox", "checked": true},
 		{"assertCount": ".todo-item.done", "equals": 1},
 		{"click": "button.clear-button"},
