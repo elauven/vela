@@ -2489,7 +2489,8 @@ func (g *ASTGen) buildEachRowAttrs(
 	for _, attr := range rowElem.Attrs {
 		switch {
 		case attr.IsEvent:
-			handler := rewriteItemRef(stripBraces(attr.Value), itemVar, boxVar)
+			// A row-root event needs both state-assignment and row-item rewrites.
+			handler := rewriteItemRef(g.rewriteHandler(attr.Value), itemVar, boxVar)
 			if isSimpleIdent(handler) {
 				// Bare identifier — reference directly.
 				res.create = append(res.create, jsStmt(

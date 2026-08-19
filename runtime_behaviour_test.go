@@ -924,6 +924,25 @@ func TestRuntimeTodoCorpusDeepSeek(t *testing.T) {
 	})
 }
 
+func TestRuntimeEachRowInlineHandlerUpdatesState(t *testing.T) {
+	src := `<script>
+  let count = $state(0);
+  let rows = $state([1, 2]);
+</script>
+<template><div>
+  {#each rows as row}
+    <button class="row" @click={() => (count = count + row)}>{row}</button>
+  {/each}
+  <p class="count">{count}</p>
+</div></template>`
+	assertRuntime(t, "EachRowHandler", src, []rtStep{
+		{"click": "button.row"},
+		{"assertText": ".count", "equals": "1"},
+		{"click": "button.row:nth-child(2)"},
+		{"assertText": ".count", "equals": "3"},
+	})
+}
+
 func TestRuntimeDeepSeekRestoresPersistedTasks(t *testing.T) {
 	src, err := os.ReadFile("test_projects/corpus/deepseek-fixed/src/App.vela")
 	if err != nil {
