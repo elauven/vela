@@ -16,6 +16,7 @@
 //   { "assertHTML":   "<sel>", "contains": "<str>" } innerHTML contains
 //   { "assertCount":  "<sel>", "equals":  N }        number of matches
 //   { "click":        "<sel>" }                      dispatch a click
+//   { "dblclick":     "<sel>" }                      dispatch a double click
 //   { "input": "<sel>", "value": "<str>" }             set value + dispatch input
 //   { "change": "<sel>", "checked": true }              set checked + dispatch change
 //   { "keydown": "<sel>", "key": "Enter" }              dispatch keyboard event
@@ -200,6 +201,14 @@ for (let i = 0; i < steps.length; i++) {
         // runtime.js's $$defer batches reactive updates into a
         // microtask; drain it so the DOM has settled before the
         // next assertion.  A few turns covers chained defers.
+        await flushMicrotasks();
+      }
+    } else if ("dblclick" in step) {
+      const el = $(step.dblclick);
+      if (!el) {
+        failures.push(tag + ": double-click target " + step.dblclick + " not found");
+      } else {
+        el.dispatchEvent(new window.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
         await flushMicrotasks();
       }
     } else if ("submit" in step) {
