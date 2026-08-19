@@ -4416,7 +4416,9 @@ func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 	}
 
 	hv := varName + "_" + attr.Name + "_h"
-	handlerDecl := jsStmt("const " + hv + " = ($e) => { if ($e instanceof CustomEvent) { (" + handler + ")($e); } };")
+	// DOM expression handlers receive native browser events directly; the
+	// CustomEvent-only guard applies only to component event listeners.
+	handlerDecl := jsStmt("const " + hv + " = " + handler + ";")
 	if !isHandlerExpr(handler) {
 		// Statement body — wrap in an ($event) => { … } arrow.
 		handlerDecl = jsStmt("const " + hv +
