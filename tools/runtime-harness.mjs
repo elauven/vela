@@ -16,6 +16,7 @@
 //   { "assertHTML":   "<sel>", "contains": "<str>" } innerHTML contains
 //   { "assertCount":  "<sel>", "equals":  N }        number of matches
 //   { "assertStorage": "<key>", "contains": "<str>" } localStorage item contains text
+//   { "seedStorage": { "key": "value" } }          pre-mount localStorage entries
 //   { "click":        "<sel>" }                      dispatch a click
 //   { "dblclick":     "<sel>" }                      dispatch a double click
 //   { "input": "<sel>", "value": "<str>" }             set value + dispatch input
@@ -89,6 +90,13 @@ globalThis.requestAnimationFrame =
 // settled DOM.  A "tick" step still drains real microtasks for code
 // paths that schedule their own.
 globalThis[Symbol.for('vela.defer')] = (fn) => { fn(); };
+for (const step of steps) {
+  if (step.seedStorage && typeof step.seedStorage === "object") {
+    for (const [key, value] of Object.entries(step.seedStorage)) {
+      window.localStorage.setItem(key, String(value));
+    }
+  }
+}
 
 // ── load + mount the component ───────────────────────────────────
 const failures = [];
@@ -132,6 +140,7 @@ const $$ = (sel) => window.document.querySelectorAll(sel);
 for (let i = 0; i < steps.length; i++) {
   const step = steps[i];
   const tag = `step ${i}`;
+  if ("seedStorage" in step) continue;
   try {
     if ('assertText' in step) {
       const el = $(step.assertText);

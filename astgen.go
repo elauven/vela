@@ -1194,9 +1194,6 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// ── Initial render (block 3) ─────────────────────────────
 	fnBody.Body = append(fnBody.Body, g.initBody...)
 
-	// ── Run effects once (block 6) ───────────────────────────
-	fnBody.Body = append(fnBody.Body, g.buildEffectInit()...)
-
 	// ── Mount ────────────────────────────────────────────────
 	// $$target may be an Element (appendChild as a child) OR a
 	// Comment node (insertBefore — so the component is positioned
@@ -1218,6 +1215,11 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// it is captured as that mount's cleanup function rather than
 	// returning from the component factory.
 	fnBody.Body = append(fnBody.Body, g.buildOnMount()...)
+
+	// ── Run effects once (block 6) ───────────────────────────
+	// onMount may restore state from browser storage; run effects afterwards
+	// so persistence observes that restored value rather than overwriting it.
+	fnBody.Body = append(fnBody.Body, g.buildEffectInit()...)
 
 	// ── Return object ────────────────────────────────────────
 	fnBody.Body = append(fnBody.Body, g.buildReturn())

@@ -916,6 +916,19 @@ func TestRuntimeTodoCorpusDeepSeek(t *testing.T) {
 	})
 }
 
+func TestRuntimeDeepSeekRestoresPersistedTasks(t *testing.T) {
+	src, err := os.ReadFile("test_projects/corpus/deepseek-fixed/src/App.vela")
+	if err != nil {
+		t.Fatalf("read DeepSeek todo fixture: %v", err)
+	}
+	assertRuntime(t, "App", string(src), []rtStep{
+		{"seedStorage": map[string]string{"vela-todo-tasks": `[{"id": 41, "text": "Stored task", "done": false}]`}},
+		{"assertCount": ".task-item", "equals": 1},
+		{"assertText": ".task-item span", "equals": "Stored task"},
+		{"assertStorage": "vela-todo-tasks", "contains": "Stored task"},
+	})
+}
+
 func TestRuntimeTodoCorpusGPT(t *testing.T) {
 	src, err := os.ReadFile("test_projects/corpus/gpt-fixed/src/App.vela")
 	if err != nil {
