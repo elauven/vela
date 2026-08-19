@@ -943,6 +943,24 @@ func TestRuntimeEachRowInlineHandlerUpdatesState(t *testing.T) {
 	})
 }
 
+func TestRuntimeEachRowClassDirectiveTracksExternalState(t *testing.T) {
+	src := `<script>
+  let selected = $state(1);
+  let rows = $state([1, 2]);
+</script>
+<template><div>
+  {#each rows as row}
+    <button class="row" class:selected={selected === row} @click={() => (selected = row)}>{row}</button>
+  {/each}
+</div></template>`
+	assertRuntime(t, "EachRowClass", src, []rtStep{
+		{"assertCount": "button.row.selected", "equals": 1},
+		{"click": "button.row:nth-of-type(2)"},
+		{"assertCount": "button.row.selected:nth-of-type(1)", "equals": 0},
+		{"assertCount": "button.row.selected:nth-of-type(2)", "equals": 1},
+	})
+}
+
 func TestRuntimeDeepSeekRestoresPersistedTasks(t *testing.T) {
 	src, err := os.ReadFile("test_projects/corpus/deepseek-fixed/src/App.vela")
 	if err != nil {

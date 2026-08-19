@@ -2471,6 +2471,8 @@ type eachRowAttrs struct {
 	// update runs once at build AND on every reconcile update()
 	// (class:/style: directives, bound attributes).
 	update []JsStmt
+	// deps are component-level reactive names read by row updates.
+	deps map[string]bool
 }
 
 // buildEachRowAttrs builds the per-row attribute wiring for an
@@ -2485,7 +2487,12 @@ type eachRowAttrs struct {
 func (g *ASTGen) buildEachRowAttrs(
 	rowElem *ElementNode, rowVar, itemVar, boxVar string,
 ) eachRowAttrs {
-	var res eachRowAttrs
+	res := eachRowAttrs{deps: map[string]bool{}}
+	addDeps := func(expr string) {
+		for _, dep := range findDeps(stripBraces(expr), g.reactiveNames()) {
+			res.deps[dep] = true
+		}
+	}
 	for _, attr := range rowElem.Attrs {
 		switch {
 		case attr.IsEvent:
@@ -2512,19 +2519,22 @@ func (g *ASTGen) buildEachRowAttrs(
 			}
 
 		case attr.IsClassDir:
-			stmt := classDirStmt(rowVar, attr.Name,
-				rewriteItemRef(attr.Value, itemVar, boxVar), "")
+			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
+			stmt := classDirStmt(rowVar, attr.Name, expr, "")
 			res.update = append(res.update, jsStmt(stmt))
+			addDeps(expr)
 
 		case attr.IsStyleDir:
-			stmt := styleDirStmt(rowVar, attr.Name,
-				rewriteItemRef(attr.Value, itemVar, boxVar), "")
+			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
+			stmt := styleDirStmt(rowVar, attr.Name, expr, "")
 			res.update = append(res.update, jsStmt(stmt))
+			addDeps(expr)
 
 		case attr.IsBind:
-			stmt := bindAttrStmt(rowVar, attr.Name,
-				rewriteItemRef(attr.Value, itemVar, boxVar), "")
+			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
+			stmt := bindAttrStmt(rowVar, attr.Name, expr, "")
 			res.update = append(res.update, jsStmt(stmt))
+			addDeps(expr)
 
 		case attr.IsBindThis:
 			// bind:this on an each-row would overwrite the same ref
@@ -2912,6 +2922,9 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
 	g.initBody = append(g.initBody, jsStmt(eachFn+"("+array+");"))
 	for _, dep := range findDeps(array, g.reactiveNames()) {
+		g.addUpdate(dep, jsStmt(eachFn+"("+array+");"))
+	}
+	for dep := range rowAttrs.deps {
 		g.addUpdate(dep, jsStmt(eachFn+"("+array+");"))
 	}
 	// A nested-control-flow row body reads component state through
