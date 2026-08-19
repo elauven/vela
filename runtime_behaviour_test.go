@@ -75,6 +75,11 @@ func findNodeModules() string {
 // component is also written under that exact name.
 func runRuntimeHarness(t *testing.T, entry string,
 	components map[string]string, steps []rtStep) rtResult {
+	return runRuntimeHarnessWithModules(t, entry, components, nil, steps)
+}
+
+func runRuntimeHarnessWithModules(t *testing.T, entry string,
+	components map[string]string, modules map[string]string, steps []rtStep) rtResult {
 	t.Helper()
 
 	nodeBin, err := exec.LookPath("node")
@@ -105,6 +110,18 @@ func runRuntimeHarness(t *testing.T, entry string,
 	if err := os.WriteFile(filepath.Join(dir, "runtime.js"),
 		rt, 0o644); err != nil {
 		t.Fatalf("cannot stage runtime.js: %v", err)
+	}
+
+	// Stage ordinary JavaScript modules imported by the fixture.  Vela
+	// components are compiled below; utility modules remain verbatim.
+	for name, source := range modules {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("create module directory for %s: %v", name, err)
+		}
+		if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+			t.Fatalf("write module %s: %v", name, err)
+		}
 	}
 
 	// Compile every component through the AST generator.  Each is
@@ -179,6 +196,16 @@ func assertRuntimeSet(t *testing.T, entry string,
 	components map[string]string, steps []rtStep) {
 	t.Helper()
 	res := runRuntimeHarness(t, entry, components, steps)
+	if !res.OK {
+		for _, f := range res.Failures {
+			t.Errorf("[%s] %s", entry, f)
+		}
+	}
+}
+
+func assertRuntimeSetWithModules(t *testing.T, entry string, components, modules map[string]string, steps []rtStep) {
+	t.Helper()
+	res := runRuntimeHarnessWithModules(t, entry, components, modules, steps)
 	if !res.OK {
 		for _, f := range res.Failures {
 			t.Errorf("[%s] %s", entry, f)
@@ -1024,5 +1051,37 @@ func TestRuntimeKeydownHandler(t *testing.T) {
 		{"assertText": "p", "equals": "0"},
 		{"keydown": "input.key", "key": "Enter"},
 		{"assertText": "p", "equals": "1"},
+	})
+}
+
+func TestRuntimeDashboardCorpusQwen(t *testing.T) {
+	read := func(path string) string {
+		t.Helper()
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read dashboard fixture %s: %v", path, err)
+		}
+		return string(src)
+	}
+	const root = "test_projects/qwen-dashboard-vela/src/"
+	assertRuntimeSetWithModules(t, "App", map[string]string{
+		"App":         read(root + "App.vela"),
+		"StatCard":    read(root + "StatCard.vela"),
+		"BarChart":    read(root + "BarChart.vela"),
+		"OrdersTable": read(root + "OrdersTable.vela"),
+	}, map[string]string{
+		"mockData.js": read(root + "mockData.js"),
+		"format.js":   read(root + "format.js"),
+	}, []rtStep{
+		{"assertCount": ".stat-card", "equals": 4},
+		{"assertCount": "button.period-button.selected", "equals": 1},
+		{"assertCount": "tbody tr", "equals": 8},
+		{"assertCount": ".bar-column[title]", "equals": 7},
+		{"click": "button.period-button:nth-of-type(2)"},
+		{"assertCount": "button.period-button.selected", "equals": 1},
+		{"assertCount": "button.period-button:nth-of-type(2).selected", "equals": 1},
+		{"assertCount": ".bar-column[title]", "equals": 14},
+		{"click": "button.refresh-button"},
+		{"assertCount": "tbody tr", "equals": 8},
 	})
 }

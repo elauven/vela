@@ -1,0 +1,102 @@
+<script>
+  import { formatCurrency } from './format.js';
+
+  export let orders = [];
+</script>
+<template>
+  <section class="orders-card">
+    <h2 class="orders-title">Последние заказы</h2>
+    {#if orders.length > 0}
+      <table class="orders-table">
+        <thead>
+          <tr>
+            <th>№</th>
+            <th>Клиент</th>
+            <th>Сумма</th>
+            <th>Статус</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each orders as order (order.id)}
+            <tr>
+              <td>{order.id}</td>
+              <td>{order.customer}</td>
+              <td>{formatCurrency(order.amount)}</td>
+              <td>
+                <span
+                  class="status"
+                  class:paid={order.status === 'paid'}
+                  class:pending={order.status === 'pending'}
+                  class:canceled={order.status === 'canceled'}
+                  >
+                  {order.statusLabel}
+                </span>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {:else}
+      <p class="orders-empty">Заказов пока нет.</p>
+    {/if}
+  </section>
+</template>
+<style>
+  .orders-card {
+    border: 1px solid #e2e6ee;
+    border-radius: 0.75rem;
+    padding: 1rem 1.25rem;
+    background: #fff;
+  }
+
+  .orders-title {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+  }
+
+  .orders-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .orders-table th,
+  .orders-table td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #eef1f6;
+  }
+
+  .orders-table th {
+    color: #5a6375;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+  }
+
+  .status {
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+  }
+
+  .status.paid {
+    background: #e3f6ea;
+    color: #1e8e4a;
+  }
+
+  .status.pending {
+    background: #fff4dd;
+    color: #9a6b00;
+  }
+
+  .status.canceled {
+    background: #fde8e6;
+    color: #c0392b;
+  }
+
+  .orders-empty {
+    margin: 0;
+    color: #8a93a6;
+  }
+</style>

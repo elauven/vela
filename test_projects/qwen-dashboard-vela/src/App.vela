@@ -1,0 +1,184 @@
+<script>
+  import { StatCard } from './StatCard.vela';
+  import { BarChart } from './BarChart.vela';
+  import { OrdersTable } from './OrdersTable.vela';
+  import { generateDays, generateOrders } from './mockData.js';
+  import { formatCurrency, formatNumber, formatTime } from './format.js';
+
+  const PERIODS = [
+    { key: '7d', label: '7 дней', days: 7, seed: 3 },
+    { key: '14d', label: '14 дней', days: 14, seed: 5 },
+    { key: '30d', label: '30 дней', days: 30, seed: 8 },
+  ];
+
+  let period = $state('7d');
+  let orders = $state(generateOrders(8, 42));
+  let lastUpdated = $state(new Date());
+
+  let currentPeriod = $derived(PERIODS.find((item) => item.key === period));
+
+  let days = $derived(generateDays(currentPeriod.days, currentPeriod.seed));
+  let previousDays = $derived(generateDays(currentPeriod.days, currentPeriod.seed + 11));
+
+  let totalRevenue = $derived(days.reduce((sum, day) => sum + day.revenue, 0));
+  let totalOrders = $derived(days.reduce((sum, day) => sum + day.orders, 0));
+  let totalVisits = $derived(days.reduce((sum, day) => sum + day.visits, 0));
+  let previousRevenue = $derived(previousDays.reduce((sum, day) => sum + day.revenue, 0));
+  let previousOrders = $derived(previousDays.reduce((sum, day) => sum + day.orders, 0));
+  let previousVisits = $derived(previousDays.reduce((sum, day) => sum + day.visits, 0));
+
+  let averageCheck = $derived(totalOrders > 0 ? totalRevenue / totalOrders : 0);
+  let previousAverageCheck = $derived(
+    previousOrders > 0 ? previousRevenue / previousOrders : 0
+  );
+  let conversion = $derived(totalVisits > 0 ? (totalOrders / totalVisits) * 100 : 0);
+  let previousConversion = $derived(
+    previousVisits > 0 ? (previousOrders / previousVisits) * 100 : 0
+  );
+
+  let revenueDelta = $derived(percentDelta(totalRevenue, previousRevenue));
+  let ordersDelta = $derived(percentDelta(totalOrders, previousOrders));
+  let averageCheckDelta = $derived(percentDelta(averageCheck, previousAverageCheck));
+  let conversionDelta = $derived(percentDelta(conversion, previousConversion));
+
+  let chartData = $derived(days.map((day) => ({ label: day.label, value: day.revenue })));
+
+  function percentDelta(current, previous) {
+    if (previous === 0) return 0;
+    return ((current - previous) / previous) * 100;
+  }
+
+  function refreshOrders() {
+    orders = generateOrders(8, Math.floor(Math.random() * 1000));
+    lastUpdated = new Date();
+  }
+</script>
+<template>
+  <main class="dashboard">
+    <header class="dashboard-header">
+      <div>
+        <h1 class="dashboard-title">Дашборд продаж</h1>
+        <p class="updated">Обновлено: {formatTime(lastUpdated)}</p>
+      </div>
+      <div class="controls">
+        <div class="period-switch">
+          {#each PERIODS as item (item.key)}
+            <button
+              class="period-button"
+              class:selected={period === item.key}
+              @click={() => (period = item.key)}
+              >
+              {item.label}
+            </button>
+          {/each}
+        </div>
+        <button class="refresh-button" @click={refreshOrders}>
+          Обновить заказы
+        </button>
+      </div>
+    </header>
+
+    <section class="stats-grid">
+      <StatCard
+        title="Выручка"
+        :value={formatCurrency(totalRevenue)}
+        :delta={revenueDelta}
+        hint="к прошлому периоду"
+        />
+        <StatCard
+          title="Заказы"
+          :value={formatNumber(totalOrders)}
+          :delta={ordersDelta}
+          hint="к прошлому периоду"
+          />
+          <StatCard
+            title="Средний чек"
+            :value={formatCurrency(averageCheck)}
+            :delta={averageCheckDelta}
+            hint="к прошлому периоду"
+            />
+            <StatCard
+              title="Конверсия"
+              :value={conversion.toFixed(1) + '%'}
+              :delta={conversionDelta}
+              hint="заказы / визиты"
+              />
+            </section>
+
+            <BarChart title="Выручка по дням" :data={chartData} />
+
+            <OrdersTable :orders={orders} />
+          </main>
+</template>
+<style>
+  .dashboard {
+    max-width: 64rem;
+    margin: 0 auto;
+    padding: 1.5rem;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #1f2430;
+    background: #f6f8fb;
+    min-height: 100vh;
+  }
+
+  .dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+  }
+
+  .dashboard-title {
+    margin: 0;
+    font-size: 1.5rem;
+  }
+
+  .updated {
+    margin: 0.25rem 0 0;
+    color: #8a93a6;
+    font-size: 0.8125rem;
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .period-switch {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .period-button {
+    padding: 0.25rem 0.75rem;
+    border: 1px solid #cbd2e0;
+    border-radius: 999px;
+    background: #fff;
+    cursor: pointer;
+  }
+
+  .period-button.selected {
+    background: #345cff;
+    border-color: #345cff;
+    color: #fff;
+  }
+
+  .refresh-button {
+    padding: 0.375rem 0.875rem;
+    border: 1px solid #cbd2e0;
+    border-radius: 0.5rem;
+    background: #fff;
+    cursor: pointer;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+</style>

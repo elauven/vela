@@ -1,0 +1,62 @@
+<script>
+  import { formatPercent } from './format.js';
+
+  export let title = '';
+  export let value = '';
+  export let delta = null;
+  export let hint = '';
+
+  let positive = $derived(delta !== null && delta >= 0);
+</script>
+<template>
+  <article class="stat-card">
+    <h3 class="stat-title">{title}</h3>
+    <p class="stat-value">{value}</p>
+    {#if delta !== null}
+      <p class="stat-delta" class:positive={positive}>
+        {positive ? '▲' : '▼'} {formatPercent(delta)}
+      </p>
+    {/if}
+    {#if hint}
+      <p class="stat-hint">{hint}</p>
+    {/if}
+  </article>
+</template>
+<style>
+  .stat-card {
+    border: 1px solid #e2e6ee;
+    border-radius: 0.75rem;
+    padding: 1rem 1.25rem;
+    background: #fff;
+  }
+
+  .stat-title {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #5a6375;
+  }
+
+  .stat-value {
+    margin: 0.375rem 0 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+
+  .stat-delta {
+    margin: 0.375rem 0 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #c0392b;
+  }
+
+  .stat-delta.positive {
+    color: #1e8e4a;
+  }
+
+  .stat-hint {
+    margin: 0.25rem 0 0;
+    font-size: 0.75rem;
+    color: #8a93a6;
+  }
+</style>

@@ -1,0 +1,82 @@
+<script>
+  import { formatCurrency } from './format.js';
+
+  export let title = '';
+  export let data = [];
+
+  let maxValue = $derived(Math.max(...data.map((point) => point.value), 1));
+  let labelStep = $derived(Math.max(1, Math.ceil(data.length / 7)));
+</script>
+<template>
+  <section class="chart-card">
+    <h2 class="chart-title">{title}</h2>
+    <div class="chart">
+      {#each data as point, index (point.label)}
+        <div class="bar-column" :title={point.label + ': ' + formatCurrency(point.value)}>
+          <div class="bar" style:height={(point.value / maxValue) * 100 + '%'}></div>
+          <span class="bar-label">
+            {index % labelStep === 0 ? point.label : ''}
+          </span>
+        </div>
+      {:else}
+        <p class="chart-empty">Нет данных.</p>
+      {/each}
+    </div>
+  </section>
+</template>
+<style>
+  .chart-card {
+    border: 1px solid #e2e6ee;
+    border-radius: 0.75rem;
+    padding: 1rem 1.25rem;
+    background: #fff;
+    margin-bottom: 1.5rem;
+  }
+
+  .chart-title {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+  }
+
+  .chart {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    height: 12rem;
+  }
+
+  .bar-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+
+  .bar {
+    background: #345cff;
+    border-radius: 0.25rem 0.25rem 0 0;
+    min-height: 2px;
+  }
+
+  .bar-column:hover .bar {
+    background: #1f43d6;
+  }
+
+  .bar-label {
+    height: 1em;
+    font-size: 0.625rem;
+    color: #8a93a6;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .chart-empty {
+    width: 100%;
+    margin: auto;
+    text-align: center;
+    color: #8a93a6;
+  }
+</style>

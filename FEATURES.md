@@ -88,7 +88,7 @@ not historical roadmaps or the deprecated legacy generator.
 ## Runtime fixture catalog
 
 Runtime fixtures compile `.vela` sources with the default AST generator, load
-the generated ES modules in jsdom, replay interactions, assert on DOM state,
+the generated ES modules in jsdom, stage declared local JavaScript utility modules, replay interactions, assert on DOM state,
 and call `instance.destroy()`. The shared Go helpers are in
 `runtime_behaviour_test.go`; the Node driver is `tools/runtime-harness.mjs`.
 
@@ -106,7 +106,7 @@ real-browser compatibility suite.
 | Form controls and textareas | Textarea children render and remain correct inside conditional branches; focus assertions exercise mutable DOM state. | `TestRuntimeTextareaChildInterpolation`, `TestRuntimeTextareaChildInIfBranch`, `TestRuntimeUnkeyedEachPreservesFocus` |
 | Components, slots, and events | Components survive conditional/list nesting; slot content remains reactive; custom events and teardown do not throw. | `TestRuntimeSlotComponentEvent`, `TestRuntimeComponentInIf`, `TestRuntimeEachRowComponent`, `TestRuntimeNestingMatrix_SlotContentInEachReactive`, `TestRuntimeNestingMatrix_ComponentEventStillFires` |
 | Block nesting matrix | Every pair of `if`, `each`, `key`, and `await` is exercised in nested positions, including rejection paths. | `TestRuntimeNestingMatrix_IfInIf`, `TestRuntimeNestingMatrix_KeyInEach`, `TestRuntimeNestingMatrix_AwaitInAwait`, `TestRuntimeNestingMatrix_AwaitRejection` |
-| Component structure and scoped CSS | Components inserted into control-flow retain correct DOM shape and direct-child CSS selector semantics. | `TestRuntimeNestingMatrix_ComponentDirectChildSelector`, `TestRuntimeNestingMatrix_ComponentInEachInIf` |
+| Component structure and scoped CSS | Components inserted into control-flow retain correct DOM shape and direct-child CSS selector semantics. | `TestRuntimeNestingMatrix_ComponentDirectChildSelector`, `TestRuntimeNestingMatrix_ComponentInEachInIf`, `TestRuntimeDashboardCorpusQwen` |
 
 The full matrix is intentionally split across `runtime_behaviour_test.go` and
 `runtime_nesting_matrix_test.go`. Add a runtime regression to the closest
