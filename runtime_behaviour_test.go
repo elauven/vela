@@ -905,6 +905,7 @@ func TestRuntimeTodoCorpusDeepSeek(t *testing.T) {
 		{"input": ".add-form input", "value": "Проверить deep state"},
 		{"keydown": ".add-form input", "key": "Enter"},
 		{"assertCount": ".task-item", "equals": 3},
+		{"assertStorage": "vela-todo-tasks", "contains": "Проверить deep state"},
 		{"change": ".task-item input[type=checkbox]", "checked": true},
 		{"assertText": ".counter", "equals": "Осталось: 2"},
 		{"click": ".filters button:nth-child(3)"},

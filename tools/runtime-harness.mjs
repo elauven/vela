@@ -15,6 +15,7 @@
 //   { "assertText":   "<sel>", "equals": "<str>" }   textContent of first match
 //   { "assertHTML":   "<sel>", "contains": "<str>" } innerHTML contains
 //   { "assertCount":  "<sel>", "equals":  N }        number of matches
+//   { "assertStorage": "<key>", "contains": "<str>" } localStorage item contains text
 //   { "click":        "<sel>" }                      dispatch a click
 //   { "dblclick":     "<sel>" }                      dispatch a double click
 //   { "input": "<sel>", "value": "<str>" }             set value + dispatch input
@@ -66,6 +67,7 @@ try {
 // ── jsdom environment ────────────────────────────────────────────
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
   pretendToBeVisual: true,
+  url: "https://vela.test/",
 });
 const { window } = dom;
 
@@ -77,6 +79,7 @@ globalThis.CustomEvent = window.CustomEvent;
 globalThis.Event = window.Event;
 globalThis.Node = window.Node;
 globalThis.HTMLElement = window.HTMLElement;
+globalThis.localStorage = window.localStorage;
 globalThis.requestAnimationFrame =
   window.requestAnimationFrame ?? ((fn) => setTimeout(fn, 0));
 
@@ -153,6 +156,12 @@ for (let i = 0; i < steps.length; i++) {
       if (got !== step.equals) {
         failures.push(`${tag}: value of '${step.assertValue}' = ` +
           `${JSON.stringify(got)}, want ${JSON.stringify(step.equals)}`);
+      }
+    } else if ('assertStorage' in step) {
+      const got = window.localStorage.getItem(step.assertStorage);
+      if (got == null || !got.includes(step.contains ?? "")) {
+        failures.push(`${tag}: localStorage[${JSON.stringify(step.assertStorage)}] = ` +
+          `${JSON.stringify(got)}, want substring ${JSON.stringify(step.contains ?? "")}`);
       }
     } else if ('assertCount' in step) {
       const got = $$(step.assertCount).length;

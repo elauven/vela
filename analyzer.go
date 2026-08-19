@@ -196,9 +196,15 @@ func analyzeScript(src string) *Analysis {
 
 		case *JsExprStmt:
 			if body, ok := extractEffect(s.X); ok {
+				if raw, found := callbackBodySource(s.X, src); found {
+					body = raw
+				}
 				a.Effects = append(a.Effects, &Effect{Body: body})
 				skipEnd[s.End] = true
 			} else if kind, body, ok := extractLifecycle(s.X, a.IntrinsicAliases); ok {
+				if raw, found := callbackBodySource(s.X, src); found {
+					body = raw
+				}
 				a.Lifecycles = append(a.Lifecycles, &LifecycleHook{Kind: kind, Body: body})
 				skipEnd[s.End] = true
 			}
@@ -490,6 +496,25 @@ func extractLifecycle(expr JsExpr, aliases map[string]string) (kind, body string
 		stmts = append(stmts, printNode(s))
 	}
 	return name, strings.Join(stmts, "\n"), true
+}
+
+// callbackBodySource returns the original statements inside an arrow callback block.
+// Keeping source text avoids losing valid constructs (notably try/catch) in
+// the partial JavaScript printer used by legacy extraction.
+func callbackBodySource(expr JsExpr, src string) (string, bool) {
+	call, ok := expr.(*JsCallExpr)
+	if !ok || len(call.Args) == 0 {
+		return "", false
+	}
+	arrow, ok := call.Args[0].(*JsArrowFunc)
+	if !ok {
+		return "", false
+	}
+	block, ok := arrow.Body.(*JsBlock)
+	if !ok || block.nodePos() < 0 || block.nodeEnd() > len(src) || block.nodeEnd() <= block.nodePos()+1 {
+		return "", false
+	}
+	return strings.TrimSpace(src[block.nodePos()+1 : block.nodeEnd()-1]), true
 }
 
 func extractEffect(expr JsExpr) (string, bool) {
