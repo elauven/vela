@@ -2488,8 +2488,8 @@ func (g *ASTGen) buildEachRowAttrs(
 	rowElem *ElementNode, rowVar, itemVar, boxVar string,
 ) eachRowAttrs {
 	res := eachRowAttrs{deps: map[string]bool{}}
-	addDeps := func(expr string) {
-		for _, dep := range findDeps(stripBraces(expr), g.reactiveNames()) {
+	addDeps := func(attr *Attr, expr string) {
+		for _, dep := range templateExprDeps(attr.Expr, stripBraces(expr), g.reactiveNames()) {
 			res.deps[dep] = true
 		}
 	}
@@ -2522,19 +2522,19 @@ func (g *ASTGen) buildEachRowAttrs(
 			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
 			stmt := classDirStmt(rowVar, attr.Name, expr, "")
 			res.update = append(res.update, jsStmt(stmt))
-			addDeps(expr)
+			addDeps(attr, expr)
 
 		case attr.IsStyleDir:
 			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
 			stmt := styleDirStmt(rowVar, attr.Name, expr, "")
 			res.update = append(res.update, jsStmt(stmt))
-			addDeps(expr)
+			addDeps(attr, expr)
 
 		case attr.IsBind:
 			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
 			stmt := bindAttrStmt(rowVar, attr.Name, expr, "")
 			res.update = append(res.update, jsStmt(stmt))
-			addDeps(expr)
+			addDeps(attr, expr)
 
 		case attr.IsBindThis:
 			// bind:this on an each-row would overwrite the same ref
@@ -4115,7 +4115,7 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 		if attr.IsEvent || attr.IsBindThis {
 			continue
 		}
-		for _, d := range findDeps(attrExprToJS(attr.Value), g.reactiveNames()) {
+		for _, d := range templateExprDeps(attr.Expr, attrExprToJS(attr.Value), g.reactiveNames()) {
 			deps[d] = true
 		}
 	}
@@ -4387,7 +4387,7 @@ func (g *ASTGen) applyRootAttrs(el *ElementNode) {
 func (g *ASTGen) emitClassDir(varName string, attr *Attr) {
 	stmtSrc := classDirStmt(varName, attr.Name, attr.Value, "")
 	g.initBody = append(g.initBody, jsStmt(stmtSrc))
-	for _, dep := range findDeps(attrExprToJS(attr.Value), g.reactiveNames()) {
+	for _, dep := range templateExprDeps(attr.Expr, attrExprToJS(attr.Value), g.reactiveNames()) {
 		g.addUpdate(dep, jsStmt(stmtSrc))
 	}
 }
@@ -4399,7 +4399,7 @@ func (g *ASTGen) emitClassDir(varName string, attr *Attr) {
 func (g *ASTGen) emitStyleDir(varName string, attr *Attr) {
 	stmtSrc := styleDirStmt(varName, attr.Name, attr.Value, "")
 	g.initBody = append(g.initBody, jsStmt(stmtSrc))
-	for _, dep := range findDeps(attrExprToJS(attr.Value), g.reactiveNames()) {
+	for _, dep := range templateExprDeps(attr.Expr, attrExprToJS(attr.Value), g.reactiveNames()) {
 		g.addUpdate(dep, jsStmt(stmtSrc))
 	}
 }

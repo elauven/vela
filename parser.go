@@ -211,6 +211,13 @@ func newTemplateExpr(source string, pos int) *TemplateExpr {
 	return &TemplateExpr{Source: source, Pos: pos, Program: prog, Errors: errs}
 }
 
+func templateExprDeps(expr *TemplateExpr, fallback string, vars []string) []string {
+	if expr != nil && expr.Program != nil && len(expr.Errors) == 0 {
+		return FindDepsInNode(expr.Program, vars)
+	}
+	return findDeps(fallback, vars)
+}
+
 type Part struct {
 	Static bool // true → literal text; false → JS expression
 	Value  string
