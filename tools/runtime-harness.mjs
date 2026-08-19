@@ -21,6 +21,7 @@
 //   { "dblclick":     "<sel>" }                      dispatch a double click
 //   { "input": "<sel>", "value": "<str>" }             set value + dispatch input
 //   { "change": "<sel>", "checked": true }              set checked + dispatch change
+//   { "blur": "<sel>" }                       dispatch a blur event
 //   { "keydown": "<sel>", "key": "Enter" }              dispatch keyboard event
 //   { "tick": true }                                 await the microtask queue
 //
@@ -254,6 +255,14 @@ for (let i = 0; i < steps.length; i++) {
         if ("checked" in step) el.checked = !!step.checked;
         if ("value" in step) el.value = step.value;
         el.dispatchEvent(new window.Event("change", { bubbles: true, cancelable: true }));
+        await flushMicrotasks();
+      }
+    } else if ("blur" in step) {
+      const el = $(step.blur);
+      if (!el) {
+        failures.push(tag + ": blur target " + step.blur + " not found");
+      } else {
+        el.dispatchEvent(new window.FocusEvent("blur", { bubbles: false, cancelable: false }));
         await flushMicrotasks();
       }
     } else if ("keydown" in step) {
