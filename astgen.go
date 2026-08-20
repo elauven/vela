@@ -3448,6 +3448,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		init     []JsStmt
 		captured []string
 		cleanup  []JsStmt
+		comps    []compInstance
 	}
 	plans := make([]plan, len(chain.Branches))
 
@@ -3457,6 +3458,9 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		g.body = append(g.body, jsStmt("let "+fn+"_b"+itoa(i)+"_cleanup = null;"))
 	}
 	g.body = append(g.body, jsStmt("let "+fn+"_running = false, "+fn+"_pending = false;"))
+	if chain.KeyExpr != "" {
+		g.body = append(g.body, jsStmt("let "+fn+"_keyprev = {};"))
+	}
 
 	for i, branch := range chain.Branches {
 		bv := fn + "_b" + itoa(i)
@@ -3488,6 +3492,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		plans[i].build = append(cap.body, cap.events...)
 		plans[i].init = cap.initBody
 		plans[i].cleanup = cap.cleanup
+		plans[i].comps = cap.comps
 		for dep, stmts := range cap.updates {
 			for _, stmt := range stmts {
 				g.addUpdate(dep, guardedTemplateStmt(stmt, bv))
@@ -3495,7 +3500,17 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		}
 	}
 
-	tryBody := []JsStmt{jsStmt("let $$active = -1;")}
+	tryBody := []JsStmt{}
+	if chain.KeyExpr != "" {
+		keyNew := fn + "_keynew"
+		tryBody = append(tryBody, g.templateStmt("const "+keyNew+" = "+templateMarker(0)+";", g.templateExpr(chain.KeyAST)))
+		for i := range chain.Branches {
+			bv := fn + "_b" + itoa(i)
+			tryBody = append(tryBody, jsStmt("if ("+fn+"_keyprev !== "+keyNew+" && "+bv+") { for (const $$node of "+bv+") $$node.remove(); "+bv+" = null;"+nullCaptured(plans[i].captured)+destroyComps(plans[i].comps)+" }"))
+		}
+		tryBody = append(tryBody, jsStmt(fn+"_keyprev = "+keyNew+";"))
+	}
+	tryBody = append(tryBody, jsStmt("let $$active = -1;"))
 	for i, branch := range chain.Branches {
 		if branch.Cond == "" {
 			tryBody = append(tryBody, jsStmt("if ($$active < 0) $$active = "+itoa(i)+";"))
@@ -3514,7 +3529,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		}
 		teardown := "if ($$active !== " + itoa(i) + " && " + bv + ") { " +
 			cleanup + "for (const $$node of " + bv + ") $$node.remove(); " + bv + " = null;" +
-			nullCaptured(plans[i].captured) + " }"
+			nullCaptured(plans[i].captured) + destroyComps(plans[i].comps) + " }"
 		tryBody = append(tryBody, jsStmt(teardown))
 	}
 	for i := range chain.Branches {
@@ -3558,6 +3573,11 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: body}})
 	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
 	g.initBody = append(g.initBody, jsStmt(fn+"();"))
+	if chain.KeyExpr != "" {
+		for _, dep := range templateExprDeps(chain.KeyAST, stripBraces(chain.KeyExpr), g.reactiveNames()) {
+			g.addStructuralUpdate(dep, jsStmt(fn+"();"))
+		}
+	}
 	for _, branch := range chain.Branches {
 		for _, dep := range templateExprDeps(branch.Expr, stripBraces(branch.Cond), g.reactiveNames()) {
 			g.addStructuralUpdate(dep, jsStmt(fn+"();"))
@@ -5110,7 +5130,7 @@ func collectTemplateExprs(nodes []Node, out *[]*TemplateExpr) {
 
 // structuredBranchPlanSupported enables the direct AST branch emitter for plain component-scope conditional branches.
 func (g *ASTGen) structuredBranchPlanSupported(chain *IfChainNode) bool {
-	if chain == nil || chain.KeyExpr != "" || g.fragCounter >= 0 || g.inCapturedScope() {
+	if chain == nil || g.fragCounter >= 0 || g.inCapturedScope() {
 		return false
 	}
 	for _, branch := range chain.Branches {
@@ -5133,6 +5153,10 @@ func structuredBranchChildrenSupported(nodes []Node) bool {
 			// Static text and interpolations are both supported.
 		case *ElementNode:
 			if n.IfCond != "" || n.EachExpr != "" || !structuredBranchChildrenSupported(n.Children) {
+				return false
+			}
+		case *ComponentNode:
+			if n.IfCond != "" || n.EachExpr != "" || len(n.Slots) != 0 {
 				return false
 			}
 		default:
