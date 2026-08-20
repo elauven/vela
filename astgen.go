@@ -3444,11 +3444,12 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	anchor := g.id() + "_a"
 	fn := "$$chain_" + g.id()
 	type plan struct {
-		build    []JsStmt
-		init     []JsStmt
-		captured []string
-		cleanup  []JsStmt
-		comps    []compInstance
+		build           []JsStmt
+		init            []JsStmt
+		captured        []string
+		cleanup         []JsStmt
+		comps           []compInstance
+		nestedTeardowns []string
 	}
 	plans := make([]plan, len(chain.Branches))
 
@@ -3483,6 +3484,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		// captured as a branch-local AST plan.  Its element references are
 		// hoisted by inBranchScope so setter cascades can safely update a
 		// mounted branch and no source-bearing expression is serialized.
+		tdMark := len(g.nestedTeardowns)
 		wasBranchScope := g.inBranchScope
 		cap := g.captureScope(func() {
 			g.inBranchScope = true
@@ -3493,6 +3495,9 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		plans[i].init = cap.initBody
 		plans[i].cleanup = cap.cleanup
 		plans[i].comps = cap.comps
+		plans[i].nestedTeardowns = append([]string{}, g.nestedTeardowns[tdMark:]...)
+		g.fragHoisted = append(g.fragHoisted, cap.fragHoisted...)
+		g.compInstances = append(g.compInstances, cap.comps...)
 		for dep, stmts := range cap.updates {
 			for _, stmt := range stmts {
 				g.addUpdate(dep, guardedTemplateStmt(stmt, bv))
@@ -3529,7 +3534,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		}
 		teardown := "if ($$active !== " + itoa(i) + " && " + bv + ") { " +
 			cleanup + "for (const $$node of " + bv + ") $$node.remove(); " + bv + " = null;" +
-			nullCaptured(plans[i].captured) + destroyComps(plans[i].comps) + " }"
+			nullCaptured(plans[i].captured) + destroyComps(plans[i].comps) + strings.Join(plans[i].nestedTeardowns, " ") + " }"
 		tryBody = append(tryBody, jsStmt(teardown))
 	}
 	for i := range chain.Branches {
@@ -3573,13 +3578,21 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: body}})
 	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
 	g.initBody = append(g.initBody, jsStmt(fn+"();"))
-	if chain.KeyExpr != "" {
-		for _, dep := range templateExprDeps(chain.KeyAST, stripBraces(chain.KeyExpr), g.reactiveNames()) {
-			g.addStructuralUpdate(dep, jsStmt(fn+"();"))
-		}
-	}
+	deps := map[string]bool{}
 	for _, branch := range chain.Branches {
 		for _, dep := range templateExprDeps(branch.Expr, stripBraces(branch.Cond), g.reactiveNames()) {
+			deps[dep] = true
+		}
+	}
+	if chain.KeyExpr != "" {
+		for _, dep := range templateExprDeps(chain.KeyAST, stripBraces(chain.KeyExpr), g.reactiveNames()) {
+			deps[dep] = true
+		}
+	}
+	for dep := range deps {
+		if g.fragCounter >= 0 {
+			g.addUpdate(dep, jsStmt(fn+"();"))
+		} else {
 			g.addStructuralUpdate(dep, jsStmt(fn+"();"))
 		}
 	}
@@ -5130,7 +5143,7 @@ func collectTemplateExprs(nodes []Node, out *[]*TemplateExpr) {
 
 // structuredBranchPlanSupported enables the direct AST branch emitter for plain component-scope conditional branches.
 func (g *ASTGen) structuredBranchPlanSupported(chain *IfChainNode) bool {
-	if chain == nil || g.fragCounter >= 0 || g.inCapturedScope() {
+	if chain == nil || g.inCapturedScope() {
 		return false
 	}
 	for _, branch := range chain.Branches {
@@ -5159,6 +5172,8 @@ func structuredBranchChildrenSupported(nodes []Node) bool {
 			if n.IfCond != "" || n.EachExpr != "" || len(n.Slots) != 0 {
 				return false
 			}
+		case *EachBlockNode:
+			// The nested reconciler is captured by the enclosing branch plan.
 		default:
 			// IfChainNode, EachBlockNode, AwaitBlockNode, ComponentNode,
 			// and SlotNode require their own BranchPlan phases.
