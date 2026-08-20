@@ -3521,8 +3521,16 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			tryBody = append(tryBody, jsStmt("if ($$active < 0) $$active = "+itoa(i)+";"))
 			continue
 		}
+		if branch.Expr == nil {
+			// Await lowering introduces synthetic state comparisons. Build the
+			// active-selector AST directly; it must retain the exact $$active name.
+			test := &JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: &JsBinaryExpr{baseExpr: baseExpr{genNode()}, Op: "<", L: id("$$active"), R: jsExpr("0")}, R: jsExpr(branch.Cond)}
+			assign := &JsExprStmt{baseStmt: baseStmt{genNode()}, X: &JsAssignExpr{baseExpr: baseExpr{genNode()}, Op: "=", L: id("$$active"), R: jsExpr(itoa(i))}}
+			tryBody = append(tryBody, &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: test, Then: assign})
+			continue
+		}
 		tryBody = append(tryBody, g.templateStmt(
-			"if ($$active < 0 && ("+templateMarker(0)+")) $$active = "+itoa(i)+";",
+			"if ($active < 0 && ("+templateMarker(0)+")) $active = "+itoa(i)+";",
 			g.templateExpr(branch.Expr)))
 	}
 	for i := range chain.Branches {
