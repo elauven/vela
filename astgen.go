@@ -38,6 +38,7 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 )
@@ -613,8 +614,143 @@ func generateCodeASTCSS(
 	return headerComment + "\n\n" + PrintJS(prog, PrintPretty)
 }
 
-// markTemplateOrigins associates generated expression ASTs with cached template expressions.
-func markTemplateOrigins(prog *JsProgram, sfc *SFC, nodes []Node, analysis *Analysis) {
+func templateExprRoot(expr *TemplateExpr) JsExpr {
+	if expr == nil || expr.Program == nil || len(expr.Program.Body) != 1 {
+		return nil
+	}
+	if stmt, ok := expr.Program.Body[0].(*JsExprStmt); ok {
+		return stmt.X
+	}
+	return nil
+}
+
+// templateExpr returns the cached expression parsed from the template and
+// records its absolute SFC offset on its root. Template expressions are
+// deliberately re-used by initial-render and update shells: JsNode has no
+// parent pointers, so sharing this immutable subtree is safe.
+func (g *ASTGen) templateExpr(expr *TemplateExpr) JsExpr {
+	root := templateExprRoot(expr)
+	if root == nil {
+		return jsExpr("undefined")
+	}
+	markGeneratedNode(root)
+	setTemplateOrigin(root, g.sfc.TemplateOffset+expr.Pos)
+	return root
+}
+
+// rewrittenTemplateExpr preserves the existing state-assignment rewrite for
+// event handlers, but gives the rewritten expression its attribute's exact
+// template origin instead of finding matching printed text after generation.
+func (g *ASTGen) rewrittenTemplateExpr(expr *TemplateExpr, source string) JsExpr {
+	root := jsExpr(source)
+	if expr != nil {
+		setTemplateOrigin(root, g.sfc.TemplateOffset+expr.Pos)
+	}
+	return root
+}
+
+func templateMarker(n int) string { return "$$vela_template_" + itoa(n) }
+
+// templateStmt parses a compiler-authored shell and swaps its explicit marker
+// identifiers for cached template AST roots. This is local AST construction,
+// not a global search by printed expression signature.
+func (g *ASTGen) templateStmt(src string, exprs ...JsExpr) JsStmt {
+	bindings := make(map[string]JsExpr, len(exprs))
+	for i, expr := range exprs {
+		bindings[templateMarker(i)] = expr
+	}
+	stmt := jsStmt(src)
+	replaceTemplateMarkers(reflect.ValueOf(stmt), bindings)
+	return stmt
+}
+
+func replaceTemplateMarkers(v reflect.Value, bindings map[string]JsExpr) {
+	if !v.IsValid() {
+		return
+	}
+	if v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return
+		}
+		if v.CanInterface() {
+			if ident, ok := v.Interface().(*JsIdent); ok {
+				if replacement := bindings[ident.Name]; replacement != nil && v.CanSet() {
+					v.Set(reflect.ValueOf(replacement))
+					return
+				}
+			}
+		}
+		replaceTemplateMarkers(v.Elem(), bindings)
+		return
+	}
+	switch v.Kind() {
+	case reflect.Ptr:
+		if !v.IsNil() {
+			replaceTemplateMarkers(v.Elem(), bindings)
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Field(i)
+			if field.CanSet() || field.Kind() != reflect.Interface {
+				replaceTemplateMarkers(field, bindings)
+			}
+		}
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			replaceTemplateMarkers(v.Index(i), bindings)
+		}
+	}
+}
+
+func (g *ASTGen) textValueExpr(parts []*Part) JsExpr {
+	if len(parts) == 1 && !parts[0].Static {
+		return &JsCallExpr{baseExpr: baseExpr{genNode()}, Callee: id("String"), Args: []JsExpr{g.templateExpr(parts[0].Expr)}}
+	}
+	t := &JsTemplateLit{baseExpr: baseExpr{genNode()}, Quasis: []string{""}}
+	for _, part := range parts {
+		if part.Static {
+			t.Quasis[len(t.Quasis)-1] += escapeTL(part.Value)
+			continue
+		}
+		t.Exprs = append(t.Exprs, g.templateExpr(part.Expr))
+		t.Quasis = append(t.Quasis, "")
+	}
+	return t
+}
+
+func (g *ASTGen) textWriteStmt(ref string, parts []*Part) JsStmt {
+	return g.templateStmt(ref+".data = "+templateMarker(0)+";", g.textValueExpr(parts))
+}
+
+func guardedTemplateStmt(stmt JsStmt, guard string) JsStmt {
+	if guard == "" {
+		return stmt
+	}
+	return &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: id(guard), Then: stmt}
+}
+
+func (g *ASTGen) attrWriteStmt(varName string, attr *Attr) JsStmt {
+	expr := g.templateExpr(attr.Expr)
+	if attr.IsTwoWay && attr.Name == "value" {
+		return g.templateStmt(varName+".value = ("+templateMarker(0)+");", expr)
+	}
+	if isBoolAttr(attr.Name) {
+		return g.templateStmt(varName+"."+attr.Name+" = !!("+templateMarker(0)+");", expr)
+	}
+	if attr.Name == "class" {
+		return g.templateStmt(varName+".className = String("+templateMarker(0)+");", expr)
+	}
+	return g.templateStmt(varName+".setAttribute('"+attr.Name+"', String("+templateMarker(0)+"));", expr)
+}
+
+func (g *ASTGen) classDirStmtAST(varName string, attr *Attr) JsStmt {
+	return g.templateStmt(varName+".classList.toggle('"+attr.Name+"', !!("+templateMarker(0)+"));", g.templateExpr(attr.Expr))
+}
+
+func (g *ASTGen) styleDirStmtAST(varName string, attr *Attr) JsStmt {
+	return g.templateStmt(varName+".style.setProperty('"+attr.Name+"', String("+templateMarker(0)+"));", g.templateExpr(attr.Expr))
+}
+func markLegacyTemplateOrigins(prog *JsProgram, sfc *SFC, nodes []Node, analysis *Analysis) {
 	var exprs []*TemplateExpr
 	collectTemplateExprs(nodes, &exprs)
 	type candidate struct {
@@ -646,17 +782,17 @@ func markTemplateOrigins(prog *JsProgram, sfc *SFC, nodes []Node, analysis *Anal
 		}
 		sig := PrintExpr(e, PrintMinified)
 		for _, c := range candidates {
-			if sig == c.sig {
+			if sig == c.sig || strings.Contains(sig, c.sig) {
 				setTemplateOrigin(n, c.pos)
 				return false
 			}
 		}
 		return true
 	})
-	markRewrittenHandlerOrigins(prog, sfc, nodes, analysis)
+	markLegacyRewrittenHandlerOrigins(prog, sfc, nodes, analysis)
 }
 
-func markRewrittenHandlerOrigins(prog *JsProgram, sfc *SFC, nodes []Node, analysis *Analysis) {
+func markLegacyRewrittenHandlerOrigins(prog *JsProgram, sfc *SFC, nodes []Node, analysis *Analysis) {
 	var attrs []*Attr
 	collectEventAttrs(nodes, &attrs)
 	for _, attr := range attrs {
@@ -722,72 +858,6 @@ func collectEventAttrs(nodes []Node, out *[]*Attr) {
 	}
 }
 
-func templateExprRoot(expr *TemplateExpr) JsExpr {
-	if expr == nil || expr.Program == nil || len(expr.Program.Body) != 1 {
-		return nil
-	}
-	if stmt, ok := expr.Program.Body[0].(*JsExprStmt); ok {
-		return stmt.X
-	}
-	return nil
-}
-
-func collectTemplateExprs(nodes []Node, out *[]*TemplateExpr) {
-	addAttrs := func(attrs []*Attr) {
-		for _, a := range attrs {
-			if a.Expr != nil {
-				*out = append(*out, a.Expr)
-			}
-		}
-	}
-	for _, node := range nodes {
-		switch n := node.(type) {
-		case *TextNode:
-			for _, p := range n.Parts {
-				if p.Expr != nil {
-					*out = append(*out, p.Expr)
-				}
-			}
-		case *ElementNode:
-			addAttrs(n.Attrs)
-			collectTemplateExprs(n.Children, out)
-		case *ComponentNode:
-			addAttrs(n.Attrs)
-			for _, children := range n.Slots {
-				collectTemplateExprs(children, out)
-			}
-		case *IfChainNode:
-			if n.KeyAST != nil {
-				*out = append(*out, n.KeyAST)
-			}
-			for _, b := range n.Branches {
-				if b.Expr != nil {
-					*out = append(*out, b.Expr)
-				}
-				collectTemplateExprs(b.Children, out)
-			}
-		case *EachBlockNode:
-			if n.IterExpr != nil {
-				*out = append(*out, n.IterExpr)
-			}
-			if n.KeyAST != nil {
-				*out = append(*out, n.KeyAST)
-			}
-			collectTemplateExprs(n.Children, out)
-			collectTemplateExprs(n.ElseChildren, out)
-		case *AwaitBlockNode:
-			if n.Expr != nil {
-				*out = append(*out, n.Expr)
-			}
-			collectTemplateExprs(n.PendingChildren, out)
-			collectTemplateExprs(n.ThenChildren, out)
-			collectTemplateExprs(n.CatchChildren, out)
-		case *SlotNode:
-			collectTemplateExprs(n.Fallback, out)
-		}
-	}
-}
-
 func setTemplateOrigin(n JsNode, pos int) {
 	switch x := n.(type) {
 	case *JsIdent:
@@ -797,6 +867,7 @@ func setTemplateOrigin(n JsNode, pos int) {
 	case *JsTemplateLit:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
 	case *JsArrayExpr:
+
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
 	case *JsObjectExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
@@ -835,6 +906,29 @@ func setTemplateOrigin(n JsNode, pos int) {
 	}
 }
 
+func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
+	obj := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+	for _, attr := range attrs {
+		if attr.IsEvent {
+			continue
+		}
+		prop := &JsProp{Key: id(attr.Name)}
+		if attr.IsBind {
+			prop.Value = g.templateExpr(attr.Expr)
+		} else {
+			prop.Value = strLit(escapeAttr(attr.Value))
+		}
+		obj.Props = append(obj.Props, prop)
+		if attr.IsTwoWay && g.analysis != nil {
+			target := strings.TrimSpace(unwrapBraces(attr.Value))
+			if g.analysis.isStateName(target) {
+				obj.Props = append(obj.Props, &JsProp{Key: id("$$onChange_" + attr.Name), Value: jsExpr("($$v) => $$set_" + target + "($$v)")})
+			}
+		}
+	}
+	return obj
+}
+
 // buildProgram produces the validated JsProgram for a component —
 // the structured form behind generateCodeAST.  It is exposed
 // separately so tooling (the AST JSON dump, the differential
@@ -854,6 +948,7 @@ func buildProgram(
 	scopeID string,
 ) *JsProgram {
 	return buildProgramCSS(name, sfc, nodes, analysis, scopeID, false)
+
 }
 
 // buildProgramCSS is buildProgram with explicit CSS-delivery
@@ -884,6 +979,7 @@ func buildProgramCSS(
 		// (validation, printing) sees one uniform AST.
 		prog = g.buildModuleSplice(name, sfc, nodes, analysis, scopeID)
 	}
+	markLegacyTemplateOrigins(prog, sfc, nodes, analysis)
 
 	// Validation pass — the payoff of the AST migration.  Any
 	// issue here is a code-generation bug (a malformed control
@@ -968,6 +1064,15 @@ func astCanBuildDirectly(nodes []Node, analysis *Analysis) bool {
 	}
 	if allStaticRoots {
 		return true
+	}
+
+	// A standalone <slot> with a text/static fallback is handled by
+	// buildSlotNode directly; unsupported dynamic fallback shapes still use
+	// the legacy splice path.
+	if len(nodes) == 1 {
+		if slot, ok := nodes[0].(*SlotNode); ok {
+			return astHoleSubtreeOK(slot.Fallback)
+		}
 	}
 
 	// Case B — exactly one root element.
@@ -2248,7 +2353,7 @@ func (g *ASTGen) buildDOM(nodes []Node) {
 	// static siblings.
 	for _, n := range nodes {
 		switch n.(type) {
-		case *IfChainNode, *EachBlockNode, *AwaitBlockNode:
+		case *IfChainNode, *EachBlockNode, *AwaitBlockNode, *SlotNode:
 			g.buildChainRootDOM(nodes)
 			return
 		}
@@ -2323,6 +2428,8 @@ func (g *ASTGen) buildChainRootDOM(nodes []Node) {
 			g.buildEachBlock(x, "$$root")
 		case *AwaitBlockNode:
 			g.buildAwaitBlock(x, "$$root")
+		case *SlotNode:
+			g.buildSlotNode(x, "$$root")
 		}
 	}
 }
@@ -2446,19 +2553,18 @@ func (g *ASTGen) buildHoleSubtree(
 			res.build = append(res.build, jsStmt(
 				targetVar+".appendChild("+refVar+");"))
 
-			exprSrc := buildExpr(tn.Parts)
-			writeSrc := refVar + ".data = " + exprSrc + ";"
+			write := g.textWriteStmt(refVar, tn.Parts)
 			hg := guard
 			if hg == "$$self" {
 				hg = refVar
 			}
 			res.initUpdates = append(res.initUpdates,
-				g.guardedStmt(writeSrc, hg))
+				guardedTemplateStmt(write, hg))
 			if collectUpdates {
-				res.updateStmts = append(res.updateStmts, jsStmt(writeSrc))
+				res.updateStmts = append(res.updateStmts, write)
 			} else {
 				for _, dep := range templatePartsDeps(tn.Parts, g.reactiveNames()) {
-					g.addUpdate(dep, g.guardedStmt(writeSrc, hg))
+					g.addUpdate(dep, guardedTemplateStmt(write, hg))
 				}
 			}
 		}
@@ -2518,8 +2624,7 @@ func (g *ASTGen) buildHoleSubtree(
 		res.build = append(res.build, jsStmt(
 			anchor+".parentNode.replaceChild("+refVar+", "+anchor+");"))
 
-		exprSrc := buildExpr(textNode.Parts)
-		writeSrc := refVar + ".data = " + exprSrc + ";"
+		write := g.textWriteStmt(refVar, textNode.Parts)
 		hg := guard
 		if hg == "$$self" {
 			hg = refVar
@@ -2528,7 +2633,7 @@ func (g *ASTGen) buildHoleSubtree(
 		// Initial render write — guarded too, for symmetry with the
 		// setter path (a branch may be unmounted at init time).
 		res.initUpdates = append(res.initUpdates,
-			g.guardedStmt(writeSrc, hg))
+			guardedTemplateStmt(write, hg))
 
 		// Reactive updates.  For a chain branch they are registered
 		// against the component-scope setters, mounted-guarded.
@@ -2536,10 +2641,10 @@ func (g *ASTGen) buildHoleSubtree(
 		// re-runs every write unconditionally, so collect them
 		// instead — one write per hole, deduplicated across deps.
 		if collectUpdates {
-			res.updateStmts = append(res.updateStmts, jsStmt(writeSrc))
+			res.updateStmts = append(res.updateStmts, write)
 		} else {
 			for _, dep := range templatePartsDeps(textNode.Parts, g.reactiveNames()) {
-				g.addUpdate(dep, g.guardedStmt(writeSrc, hg))
+				g.addUpdate(dep, guardedTemplateStmt(write, hg))
 			}
 		}
 	}
@@ -2593,21 +2698,18 @@ func (g *ASTGen) buildEachRowAttrs(
 		case attr.IsEvent:
 			// A row-root event needs both state-assignment and row-item rewrites.
 			handler := rewriteItemRef(g.rewriteHandler(attr.Value), itemVar, boxVar)
+			handlerExpr := g.rewrittenTemplateExpr(attr.Expr, handler)
 			if isSimpleIdent(handler) {
-				// Bare identifier — reference directly.
-				res.create = append(res.create, jsStmt(
-					rowVar+".addEventListener('"+attr.Name+"', "+handler+");"))
+				res.create = append(res.create, g.templateStmt(
+					rowVar+".addEventListener('"+attr.Name+"', "+templateMarker(0)+");", handlerExpr))
 			} else {
-				// Expression handler — hoist into a named const so
-				// addEventListener/removeEventListener share one
-				// reference (matches legacy walkEach).
 				hv := rowVar + "_" + attr.Name + "_h"
 				if isHandlerExpr(handler) {
-					res.create = append(res.create, jsStmt(
-						"const "+hv+" = "+handler+";"))
+					res.create = append(res.create, g.templateStmt(
+						"const "+hv+" = "+templateMarker(0)+";", handlerExpr))
 				} else {
-					res.create = append(res.create, jsStmt(
-						"const "+hv+" = ($event) => { "+handler+"; };"))
+					res.create = append(res.create, g.templateStmt(
+						"const "+hv+" = ($event) => { "+templateMarker(0)+"; };", handlerExpr))
 				}
 				res.create = append(res.create, jsStmt(
 					rowVar+".addEventListener('"+attr.Name+"', "+hv+");"))
@@ -2615,20 +2717,35 @@ func (g *ASTGen) buildEachRowAttrs(
 
 		case attr.IsClassDir:
 			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
-			stmt := classDirStmt(rowVar, attr.Name, expr, "")
-			res.update = append(res.update, jsStmt(stmt))
+			stmt := g.templateStmt(
+				rowVar+".classList.toggle('"+attr.Name+"', !!("+templateMarker(0)+"));",
+				g.rewrittenTemplateExpr(attr.Expr, attrExprToJS(expr)))
+			res.update = append(res.update, stmt)
 			addDeps(attr, expr)
 
 		case attr.IsStyleDir:
 			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
-			stmt := styleDirStmt(rowVar, attr.Name, expr, "")
-			res.update = append(res.update, jsStmt(stmt))
+			stmt := g.templateStmt(
+				rowVar+".style.setProperty('"+attr.Name+"', String("+templateMarker(0)+"));",
+				g.rewrittenTemplateExpr(attr.Expr, attrExprToJS(expr)))
+			res.update = append(res.update, stmt)
 			addDeps(attr, expr)
 
 		case attr.IsBind:
 			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
-			stmt := bindAttrStmt(rowVar, attr.Name, expr, "")
-			res.update = append(res.update, jsStmt(stmt))
+			valueExpr := g.rewrittenTemplateExpr(attr.Expr, unwrapBraces(expr))
+			var stmt JsStmt
+			switch {
+			case attr.IsTwoWay && attr.Name == "value":
+				stmt = g.templateStmt(rowVar+".value = ("+templateMarker(0)+");", valueExpr)
+			case isBoolAttr(attr.Name):
+				stmt = g.templateStmt(rowVar+"."+attr.Name+" = !!("+templateMarker(0)+");", valueExpr)
+			case attr.Name == "class":
+				stmt = g.templateStmt(rowVar+".className = String("+templateMarker(0)+");", valueExpr)
+			default:
+				stmt = g.templateStmt(rowVar+".setAttribute('"+attr.Name+"', String("+templateMarker(0)+"));", valueExpr)
+			}
+			res.update = append(res.update, stmt)
 			addDeps(attr, expr)
 
 		case attr.IsBindThis:
@@ -2707,17 +2824,15 @@ func (g *ASTGen) buildHolesDOM(el *ElementNode) {
 	// semantically correct mapping for these elements.
 	if prop, ok := rawTextProp(el.Tag); ok {
 		if expr, ok := singleInterpolation(el.Children); ok {
-			writeSrc := "$$root." + prop + " = String(" + expr + ");"
-			g.initBody = append(g.initBody, jsStmt(writeSrc))
+			write := g.templateStmt("$$root."+prop+" = String("+templateMarker(0)+");", g.templateExpr(el.Children[0].(*TextNode).Parts[0].Expr))
+			g.initBody = append(g.initBody, write)
 			for _, dep := range findDeps(expr, g.reactiveNames()) {
-				g.addUpdate(dep, jsStmt(writeSrc))
+				g.addUpdate(dep, write)
 			}
 			return
 		}
-		// A purely static raw-text body is fine as a property too.
 		if text, ok := staticRawText(el.Children); ok {
-			g.body = append(g.body, jsStmt(
-				"$$root."+prop+" = '"+escapeJSString(text)+"';"))
+			g.body = append(g.body, jsStmt("$$root."+prop+" = '"+escapeJSString(text)+"';"))
 			return
 		}
 	}
@@ -2957,16 +3072,38 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// the row's dynamic content refreshes when the row is reused.
 	updateBody = append(updateBody, nestedUpdate...)
 
-	// return { el, update, destroy };
-	fragReturn := "return { el: " + rowVar + ", " +
-		"update(" + itemVar + ", " + indexVar + ") { " +
-		stmtsToText(updateBody) + " }, " +
-		"destroy() { " + stmtsToText(rowCleanup) + rowVar + ".remove(); } };"
-	fragBody = append(fragBody, jsStmt(fragReturn))
+	// Keep the fragment structured. Rendering fragBody/updateBody to text and parsing
+	// it again drops SourceOrigin from row-local template expressions.
+	generatedID := func(name string) JsExpr {
+		return &JsIdent{baseExpr: baseExpr{genNode()}, Name: name}
+	}
+	destroyBody := append([]JsStmt{}, rowCleanup...)
+	destroyBody = append(destroyBody, jsStmt(rowVar+".remove();"))
+	fragBody = append(fragBody, &JsReturnStmt{
+		baseStmt: baseStmt{genNode()},
+		Arg: &JsObjectExpr{
+			baseExpr: baseExpr{genNode()},
+			Props: []*JsProp{
+				{Key: generatedID("el"), Value: generatedID(rowVar)},
+				{Key: generatedID("update"), Value: &JsFuncExpr{
+					baseExpr: baseExpr{genNode()},
+					Params:   []JsExpr{generatedID(itemVar), generatedID(indexVar)},
+					Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: updateBody},
+				}},
+				{Key: generatedID("destroy"), Value: &JsFuncExpr{
+					baseExpr: baseExpr{genNode()},
+					Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: destroyBody},
+				}},
+			},
+		},
+	})
 
-	fragDecl := jsStmt(
-		"function " + fragFn + "(" + itemVar + ", " + indexVar + ") { " +
-			stmtsToText(fragBody) + " }")
+	fragDecl := &JsFuncDecl{
+		baseStmt: baseStmt{genNode()},
+		Name:     fragFn,
+		Params:   []JsExpr{generatedID(itemVar), generatedID(indexVar)},
+		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: fragBody},
+	}
 
 	// ── 3. Block storage ─────────────────────────────────────
 	// ── 4. Reconciler ────────────────────────────────────────
@@ -3015,19 +3152,20 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 
 	// ── 5. Wiring ────────────────────────────────────────────
 	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
-	g.initBody = append(g.initBody, jsStmt(eachFn+"("+array+");"))
+	arrayExpr := g.templateExpr(block.IterExpr)
+	g.initBody = append(g.initBody, g.templateStmt(eachFn+"("+templateMarker(0)+");", arrayExpr))
 	for _, dep := range templateExprDeps(block.IterExpr, array, g.reactiveNames()) {
-		g.addUpdate(dep, jsStmt(eachFn+"("+array+");"))
+		g.addUpdate(dep, g.templateStmt(eachFn+"("+templateMarker(0)+");", arrayExpr))
 	}
 	for dep := range rowAttrs.deps {
-		g.addUpdate(dep, jsStmt(eachFn+"("+array+");"))
+		g.addUpdate(dep, g.templateStmt(eachFn+"("+templateMarker(0)+");", arrayExpr))
 	}
 	// A nested-control-flow row body reads component state through
 	// fragment-local chain functions the component setter cannot
 	// reach.  Re-running the whole {#each} when such a dep changes
 	// rebuilds every row, re-evaluating its nested chains.
 	for dep := range rowBodyDeps {
-		g.addUpdate(dep, jsStmt(eachFn+"("+array+");"))
+		g.addUpdate(dep, g.templateStmt(eachFn+"("+templateMarker(0)+");", arrayExpr))
 	}
 	g.cleanup = append(g.cleanup, jsStmt(
 		blocks+".forEach(b => b.destroy());"))
@@ -3202,21 +3340,21 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	// fresher one.  The driver runs once at init and again whenever
 	// the promise expression's reactive deps change.
 	driver := "$$awaitDrive_" + id
-	driverStmt := jsStmt(
-		"function " + driver + "() {" +
-			"  const $$p = Promise.resolve(" + stripBraces(block.PromiseExpr) + ");" +
-			"  if (" + cellVar + " === $$p) return;" +
-			"  " + cellVar + " = $$p;" +
-			"  " + stateVar + " = 0;" +
-			"  " + valVar + " = undefined; " + errVar + " = undefined;" +
-			"  " + chainFn + "();" +
-			"  $$p.then(" +
-			"    v => { if (" + cellVar + " !== $$p) return; " +
-			valVar + " = v; " + stateVar + " = 1; " + chainFn + "(); }," +
-			"    e => { if (" + cellVar + " !== $$p) return; " +
-			errVar + " = e; " + stateVar + " = 2; " + chainFn + "(); }" +
-			"  );" +
-			"}")
+	driverStmt := g.templateStmt(
+		"function "+driver+"() {"+
+			"  const $$p = Promise.resolve("+templateMarker(0)+");"+
+			"  if ("+cellVar+" === $$p) return;"+
+			"  "+cellVar+" = $$p;"+
+			"  "+stateVar+" = 0;"+
+			"  "+valVar+" = undefined; "+errVar+" = undefined;"+
+			"  "+chainFn+"();"+
+			"  $$p.then("+
+			"    v => { if ("+cellVar+" !== $$p) return; "+
+			valVar+" = v; "+stateVar+" = 1; "+chainFn+"(); },"+
+			"    e => { if ("+cellVar+" !== $$p) return; "+
+			errVar+" = e; "+stateVar+" = 2; "+chainFn+"(); }"+
+			"  );"+
+			"}", g.templateExpr(block.Expr))
 
 	// buildIfChain's last appended statement is the anchor's
 	// appendChild — legacy emits the driver BEFORE that wiring
@@ -3246,7 +3384,7 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 
 // buildIfChain emits an {#if}/{:else if}/{:else} chain (block 9).
 //
-// Structure mirrors the legacy walkIfChain:
+// The structured builder owns lifecycle, source origins, and cleanup ordering.
 //   - a persistent anchor comment, appended to parentVar
 //   - one cached element var per branch ($$chain_N_bI)
 //   - reentrancy flags ($$chain_N_running / _pending)
@@ -3262,9 +3400,9 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 // branch removal).  Element holes / nested control-flow in a
 // branch are still deferred.
 
-// stmtsToText renders a slice of statements to minified JS text,
-// for embedding in the string-built chain function.  The chain
-// function is assembled as text and spliced; statements produced
+// stmtsToText renders a slice of statements to minified JS text for slot factories,
+// where closure bodies are still assembled from compiler-owned text. The chain
+// emitter no longer uses it; statements produced
 // by buildHoleSubtree are folded in the same way.
 func stmtsToText(stmts []JsStmt) string {
 	if len(stmts) == 0 {
@@ -3299,7 +3437,100 @@ func destroyComps(comps []compInstance) string {
 	return b.String()
 }
 
+// buildIfChainStructured emits the Phase-1 BranchPlan path. Branch body
+// statements remain AST nodes all the way into the chain function; only
+// compiler-authored lifecycle plumbing is parsed from fixed strings.
+func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) string {
+	anchor := g.id() + "_a"
+	fn := "$$chain_" + g.id()
+	type plan struct {
+		build    []JsStmt
+		init     []JsStmt
+		captured []string
+	}
+	plans := make([]plan, len(chain.Branches))
+
+	g.body = append(g.body, jsStmt("const "+anchor+" = document.createComment('if-chain');"))
+	for i := range chain.Branches {
+		g.body = append(g.body, jsStmt("let "+fn+"_b"+itoa(i)+" = null;"))
+	}
+	g.body = append(g.body, jsStmt("let "+fn+"_running = false, "+fn+"_pending = false;"))
+
+	for i, branch := range chain.Branches {
+		bv := fn + "_b" + itoa(i)
+		frag := bv + "_frag"
+		if allStatic(branch.Children) {
+			html := emitStaticHTML(branch.Children, g.scopeID)
+			plans[i].build = []JsStmt{jsStmt("$$insertHTML(" + frag + ", '" + escapeJSString(html) + "');")}
+			continue
+		}
+		sub := g.buildHoleSubtree(frag, branch.Children, true, bv, false, true)
+		g.body = append(g.body, sub.decls...)
+		plans[i].build = sub.build
+		plans[i].init = sub.initUpdates
+		plans[i].captured = sub.captured
+	}
+
+	tryBody := []JsStmt{jsStmt("let $$active = -1;")}
+	for i, branch := range chain.Branches {
+		if branch.Cond == "" {
+			tryBody = append(tryBody, jsStmt("if ($$active < 0) $$active = "+itoa(i)+";"))
+			continue
+		}
+		tryBody = append(tryBody, g.templateStmt(
+			"if ($$active < 0 && ("+templateMarker(0)+")) $$active = "+itoa(i)+";",
+			g.templateExpr(branch.Expr)))
+	}
+	for i := range chain.Branches {
+		bv := fn + "_b" + itoa(i)
+		teardown := "if ($$active !== " + itoa(i) + " && " + bv + ") { " +
+			"for (const $$node of " + bv + ") $$node.remove(); " + bv + " = null;" +
+			nullCaptured(plans[i].captured) + " }"
+		tryBody = append(tryBody, jsStmt(teardown))
+	}
+	for i := range chain.Branches {
+		bv := fn + "_b" + itoa(i)
+		frag := bv + "_frag"
+		mountBody := []JsStmt{jsStmt("const " + frag + " = document.createDocumentFragment();")}
+		mountBody = append(mountBody, plans[i].build...)
+		mountBody = append(mountBody,
+			jsStmt(bv+" = [..."+frag+".childNodes];"),
+			jsStmt(anchor+".before("+frag+");"))
+		activeBody := []JsStmt{&JsIfStmt{
+			baseStmt: baseStmt{genNode()},
+			Test:     jsExpr("!" + bv),
+			Then:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: mountBody},
+			Else: jsStmt("if (" + anchor + ".parentNode && " + bv +
+				".length && " + bv + "[0].parentNode !== " + anchor +
+				".parentNode) { for (const $$node of " + bv + ") " + anchor + ".before($$node); }"),
+		}}
+		activeBody = append(activeBody, plans[i].init...)
+		tryBody = append(tryBody, &JsIfStmt{
+			baseStmt: baseStmt{genNode()},
+			Test:     jsExpr("$$active === " + itoa(i)),
+			Then:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: activeBody},
+		})
+	}
+	finallyBody := jsStmts(fn + "_running = false; if (" + fn + "_pending) { " + fn + "_pending = false; " + fn + "(); }")
+	body := []JsStmt{
+		jsStmt("if (" + fn + "_running) { " + fn + "_pending = true; return; }"),
+		jsStmt(fn + "_running = true;"),
+		&JsTryStmt{baseStmt: baseStmt{genNode()}, Block: &JsBlock{baseStmt: baseStmt{genNode()}, Body: tryBody}, Finalizer: &JsBlock{baseStmt: baseStmt{genNode()}, Body: finallyBody}},
+	}
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: body}})
+	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
+	g.initBody = append(g.initBody, jsStmt(fn+"();"))
+	for _, branch := range chain.Branches {
+		for _, dep := range templateExprDeps(branch.Expr, stripBraces(branch.Cond), g.reactiveNames()) {
+			g.addStructuralUpdate(dep, jsStmt(fn+"();"))
+		}
+	}
+	return fn
+}
 func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
+	if g.structuredBranchPlanSupported(chain) {
+		return g.buildIfChainStructured(chain, parentVar)
+	}
 	anchor := g.id() + "_a"
 	fn := "$$chain_" + g.id()
 
@@ -3755,7 +3986,6 @@ func (g *ASTGen) buildIfChain(chain *IfChainNode, parentVar string) string {
 //
 // Each element gets createElement + the scope-ID attribute + its
 // own attributes; a fully static child subtree collapses to one
-// innerHTML (single root) or $$insertHTML (wrapper) assignment.
 func (g *ASTGen) buildStaticDOM(nodes []Node) {
 	if len(nodes) == 1 {
 		el := nodes[0].(*ElementNode)
@@ -4818,3 +5048,72 @@ func (g *ASTGen) buildReturn() JsStmt {
 // strips this from the legacy side before diffing — see
 // astgen_diff_test.go.)
 const headerComment = "// Generated by Vela Compiler — do not edit"
+
+func collectTemplateExprs(nodes []Node, out *[]*TemplateExpr) {
+	addAttrs := func(attrs []*Attr) {
+		for _, a := range attrs {
+			if a.Expr != nil {
+				*out = append(*out, a.Expr)
+			}
+		}
+	}
+	for _, node := range nodes {
+		switch n := node.(type) {
+		case *TextNode:
+			for _, p := range n.Parts {
+				if p.Expr != nil {
+					*out = append(*out, p.Expr)
+				}
+			}
+		case *ElementNode:
+			addAttrs(n.Attrs)
+			collectTemplateExprs(n.Children, out)
+		case *ComponentNode:
+			addAttrs(n.Attrs)
+			for _, children := range n.Slots {
+				collectTemplateExprs(children, out)
+			}
+		case *IfChainNode:
+			if n.KeyAST != nil {
+				*out = append(*out, n.KeyAST)
+			}
+			for _, b := range n.Branches {
+				if b.Expr != nil {
+					*out = append(*out, b.Expr)
+				}
+				collectTemplateExprs(b.Children, out)
+			}
+		case *EachBlockNode:
+			if n.IterExpr != nil {
+				*out = append(*out, n.IterExpr)
+			}
+			if n.KeyAST != nil {
+				*out = append(*out, n.KeyAST)
+			}
+			collectTemplateExprs(n.Children, out)
+			collectTemplateExprs(n.ElseChildren, out)
+		case *AwaitBlockNode:
+			if n.Expr != nil {
+				*out = append(*out, n.Expr)
+			}
+			collectTemplateExprs(n.PendingChildren, out)
+			collectTemplateExprs(n.ThenChildren, out)
+			collectTemplateExprs(n.CatchChildren, out)
+		case *SlotNode:
+			collectTemplateExprs(n.Fallback, out)
+		}
+	}
+}
+
+// structuredBranchPlanSupported enables the direct AST branch emitter for plain component-scope conditional branches.
+func (g *ASTGen) structuredBranchPlanSupported(chain *IfChainNode) bool {
+	if chain == nil || chain.KeyExpr != "" || g.fragCounter >= 0 || g.inCapturedScope() {
+		return false
+	}
+	for _, branch := range chain.Branches {
+		if branch.Comp != nil || branch.Elem != nil || !astHoleSubtreeOK(branch.Children) {
+			return false
+		}
+	}
+	return len(chain.Branches) > 0
+}
