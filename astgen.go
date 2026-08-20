@@ -1075,6 +1075,13 @@ func astCanBuildDirectly(nodes []Node, analysis *Analysis) bool {
 		}
 	}
 
+	// Standalone components without slots are direct-buildable.
+	if len(nodes) == 1 {
+		if comp, ok := nodes[0].(*ComponentNode); ok {
+			return len(comp.Slots) == 0
+		}
+	}
+
 	// Case B — exactly one root element.
 	//
 	// Two sub-cases:
@@ -2359,6 +2366,17 @@ func (g *ASTGen) buildDOM(nodes []Node) {
 		}
 	}
 
+	if len(nodes) == 1 {
+		if comp, ok := nodes[0].(*ComponentNode); ok {
+			root := "$" + "$root"
+			g.body = append(g.body, g.createElementStmt(root, "div"))
+			g.body = append(g.body, g.setAttrStmt(root, g.scopeID, ""))
+			g.body = append(g.body, jsStmt(root+".style.display = 'contents';"))
+			g.buildComponentNode(comp, root)
+			return
+		}
+	}
+
 	// Single root element.  If its children are static or text
 	// holes, buildHolesDOM handles it (blocks 3/7/8).  Otherwise
 	// the recursive element walker (buildElement, E3.4) constructs
@@ -3529,9 +3547,9 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			tryBody = append(tryBody, &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: test, Then: assign})
 			continue
 		}
-		tryBody = append(tryBody, g.templateStmt(
-			"if ($active < 0 && ("+templateMarker(0)+")) $active = "+itoa(i)+";",
-			g.templateExpr(branch.Expr)))
+		test := &JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: &JsBinaryExpr{baseExpr: baseExpr{genNode()}, Op: "<", L: id("$" + "$active"), R: jsExpr("0")}, R: g.templateExpr(branch.Expr)}
+		assign := &JsExprStmt{baseStmt: baseStmt{genNode()}, X: &JsAssignExpr{baseExpr: baseExpr{genNode()}, Op: "=", L: id("$" + "$active"), R: jsExpr(itoa(i))}}
+		tryBody = append(tryBody, &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: test, Then: assign})
 	}
 	for i := range chain.Branches {
 		bv := fn + "_b" + itoa(i)
@@ -4579,7 +4597,7 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 		// handler const is declared once; a `let`/`const` trapped
 		// in the slot closure's first-open path would be undefined
 		// on reopen.
-		handlerDecl := jsStmt("const " + hv + " = ($e) => { if ($e instanceof CustomEvent) { (" + handler + ")($e); } };")
+		handlerDecl := g.templateStmt("const "+hv+" = ($e) => { if ($e instanceof CustomEvent) { ("+templateMarker(0)+")($e); } };", g.rewrittenTemplateExpr(attr.Expr, handler))
 		if g.fragCounter >= 0 {
 			g.body = append(g.body, handlerDecl)
 		} else {
