@@ -44,11 +44,17 @@ const (
 type baseNode struct {
 	Pos, End int
 	Origin   NodeOrigin
+
+	// SourceOrigin is an optional absolute byte offset in the original SFC.
+	// It is deliberately independent of Pos/End, which describe parser input
+	// and are not meaningful for compiler-created nodes.
+	SourceOrigin    int
+	HasSourceOrigin bool
 }
 
-func (b *baseNode) jsNode()      {}
-func (b *baseNode) nodePos() int { return b.Pos }
-func (b *baseNode) nodeEnd() int { return b.End }
+func (b *baseNode) jsNode()            {}
+func (b *baseNode) nodePos() int       { return b.Pos }
+func (b *baseNode) nodeEnd() int       { return b.End }
 func (b *baseNode) origin() NodeOrigin { return b.Origin }
 
 // shiftPos moves a node's source span by delta bytes.  Used to
@@ -67,15 +73,15 @@ type posShiftable interface {
 
 type baseStmt struct{ baseNode }
 
-func (s *baseStmt) jsNode()   {}
-func (s *baseStmt) jsStmt()   {}
+func (s *baseStmt) jsNode()      {}
+func (s *baseStmt) jsStmt()      {}
 func (s *baseStmt) nodePos() int { return s.Pos }
 func (s *baseStmt) nodeEnd() int { return s.End }
 
 type baseExpr struct{ baseNode }
 
-func (e *baseExpr) jsNode()   {}
-func (e *baseExpr) jsExpr()   {}
+func (e *baseExpr) jsNode()      {}
+func (e *baseExpr) jsExpr()      {}
 func (e *baseExpr) nodePos() int { return e.Pos }
 func (e *baseExpr) nodeEnd() int { return e.End }
 
@@ -93,8 +99,9 @@ type JsProgram struct {
 // ──────────────────────────────────────────────
 
 // JsImportDecl: import { Foo, Bar as B } from 'mod'
-//               import * as Ns from 'mod'
-//               import Default from 'mod'
+//
+//	import * as Ns from 'mod'
+//	import Default from 'mod'
 type JsImportDecl struct {
 	baseStmt
 	DefaultName string
@@ -145,11 +152,11 @@ type JsClassDecl struct {
 
 type JsClassMember struct {
 	baseNode
-	Key       JsExpr
-	Value     JsExpr
-	Kind      string // "method" | "get" | "set" | "field"
-	Static    bool
-	Computed  bool
+	Key      JsExpr
+	Value    JsExpr
+	Kind     string // "method" | "get" | "set" | "field"
+	Static   bool
+	Computed bool
 }
 
 type JsBlock struct {
@@ -164,9 +171,9 @@ type JsExprStmt struct {
 
 type JsIfStmt struct {
 	baseStmt
-	Test      JsExpr
-	Then      JsStmt
-	Else      JsStmt // may be nil
+	Test JsExpr
+	Then JsStmt
+	Else JsStmt // may be nil
 }
 
 type JsForStmt struct {
@@ -209,10 +216,10 @@ type JsThrowStmt struct {
 
 type JsTryStmt struct {
 	baseStmt
-	Block     *JsBlock
-	CatchParam JsExpr  // may be nil (optional catch binding)
-	Handler   *JsBlock // may be nil
-	Finalizer *JsBlock // may be nil
+	Block      *JsBlock
+	CatchParam JsExpr   // may be nil (optional catch binding)
+	Handler    *JsBlock // may be nil
+	Finalizer  *JsBlock // may be nil
 }
 
 type JsSwitchStmt struct {
@@ -268,11 +275,12 @@ type JsLiteral struct {
 // literal string chunks (Quasis) and interpolated expressions (Exprs).
 //
 // For `hello ${name}!`:
-//   Quasis = ["hello ", "!"]
-//   Exprs  = [JsIdent{name}]
+//
+//	Quasis = ["hello ", "!"]
+//	Exprs  = [JsIdent{name}]
 //
 // Invariant: len(Quasis) == len(Exprs) + 1.  A template with no
-// interpolations has one quasi and no exprs.  An empty template ``
+// interpolations has one quasi and no exprs.  An empty template “
 // has Quasis == [""], Exprs == nil.
 //
 // Quasi strings are stored WITHOUT escaping resolved — they are the

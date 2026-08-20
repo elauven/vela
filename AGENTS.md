@@ -147,7 +147,17 @@ each optional section, in any order:
   {/await}
   ```
 
-  Do not use inline `{#await expression then value}` syntax.
+  The opening tag also supports one terminal branch without a pending state:
+
+  ```vela
+  {#await request then result}
+    <Result :value={result} />
+  {/await}
+
+  {#await request catch error}
+    <p>{error.message}</p>
+  {/await}
+  ```
 
 ### Components and slots
 
@@ -180,7 +190,7 @@ Do not generate or rely on the following in Vela applications:
 - `<svelte:component>`, `<svelte:element>`, `<svelte:self>`,
   `<svelte:head>`, `<svelte:window>`, `<svelte:document>`, or `<svelte:body>`.
 - `bind:group`, `bind:files`, dimension bindings, or `bind:innerHTML`.
-- Server-side rendering, hydration, source maps, or HMR. `--watch` recompiles
+- Server-side rendering, hydration, CSS source maps, or HMR. External JS source maps are supported with `--sourcemap` on the AST generator only; it cannot be combined with `--minify` or `--codegen=legacy`. `--watch` recompiles
   files but does not preserve component state in the browser.
 
 ## Completion checklist

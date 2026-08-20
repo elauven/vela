@@ -1073,3 +1073,32 @@ func TestRuntimeNestingMatrix_ComponentEventStillFires(t *testing.T) {
 		{"assertText": "span.c", "equals": "6"},
 	})
 }
+
+func TestRuntimeNestingMatrix_AwaitInlineThen_ReplacesPromise(t *testing.T) {
+	src := `<script>
+  let p = $state(Promise.resolve("one"));
+  function replace() { p = Promise.resolve("two"); }
+</script>
+<template><div>
+  <button class="replace" @click={replace}>replace</button>
+  {#await p then value}<span class="resolved">{value}</span>{/await}
+</div></template>`
+	assertRuntime(t, "AwaitInlineThen", src, []rtStep{
+		{"assertText": "span.resolved", "equals": "one"},
+		{"click": "button.replace"},
+		{"assertText": "span.resolved", "equals": "two"},
+	})
+}
+
+func TestRuntimeNestingMatrix_AwaitInlineCatch(t *testing.T) {
+	src := `<script>
+  let p = $state(Promise.reject(new Error("boom")));
+</script>
+<template><div>
+  {#await p catch error}<span class="failure">{error.message}</span>{/await}
+</div></template>`
+	assertRuntime(t, "AwaitInlineCatch", src, []rtStep{
+		{"assertText": "span.failure", "equals": "boom"},
+		{"assertCount": "span.pending", "equals": 0},
+	})
+}

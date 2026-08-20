@@ -37,6 +37,7 @@ package main
 // in generateCodeAST.
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -612,6 +613,228 @@ func generateCodeASTCSS(
 	return headerComment + "\n\n" + PrintJS(prog, PrintPretty)
 }
 
+// markTemplateOrigins associates generated expression ASTs with cached template expressions.
+func markTemplateOrigins(prog *JsProgram, sfc *SFC, nodes []Node, analysis *Analysis) {
+	var exprs []*TemplateExpr
+	collectTemplateExprs(nodes, &exprs)
+	type candidate struct {
+		sig string
+		pos int
+	}
+	var candidates []candidate
+	seen := map[string]bool{}
+	for _, expr := range exprs {
+		root := templateExprRoot(expr)
+		if root == nil {
+			continue
+		}
+		sig := PrintExpr(root, PrintMinified)
+		if sig == "" {
+			continue
+		}
+		key := sig + "\x00" + fmt.Sprint(expr.Pos)
+		if !seen[key] {
+			seen[key] = true
+			candidates = append(candidates, candidate{sig, sfc.TemplateOffset + expr.Pos})
+		}
+	}
+	sort.SliceStable(candidates, func(i, j int) bool { return len(candidates[i].sig) > len(candidates[j].sig) })
+	WalkNode(prog, func(n JsNode) bool {
+		e, ok := n.(JsExpr)
+		if !ok || n.origin() != OriginGenerated {
+			return true
+		}
+		sig := PrintExpr(e, PrintMinified)
+		for _, c := range candidates {
+			if sig == c.sig {
+				setTemplateOrigin(n, c.pos)
+				return false
+			}
+		}
+		return true
+	})
+	markRewrittenHandlerOrigins(prog, sfc, nodes, analysis)
+}
+
+func markRewrittenHandlerOrigins(prog *JsProgram, sfc *SFC, nodes []Node, analysis *Analysis) {
+	var attrs []*Attr
+	collectEventAttrs(nodes, &attrs)
+	for _, attr := range attrs {
+		if attr.Expr == nil {
+			continue
+		}
+		handler := (&CodeGen{analysis: analysis}).rewriteHandlerAssignments(attr.Value)
+		needle := parseJSExpr(handler)
+		if needle == nil {
+			continue
+		}
+		text := PrintExpr(needle, PrintMinified)
+		pos := sfc.TemplateOffset + attr.Expr.Pos
+		found := false
+		WalkNode(prog, func(n JsNode) bool {
+			e, ok := n.(JsExpr)
+			if found || !ok || n.origin() != OriginGenerated {
+				return !found
+			}
+			if strings.Contains(PrintExpr(e, PrintMinified), text) {
+				setTemplateOrigin(n, pos)
+				found = true
+				return false
+			}
+			return true
+		})
+	}
+}
+
+func collectEventAttrs(nodes []Node, out *[]*Attr) {
+	for _, node := range nodes {
+		switch n := node.(type) {
+		case *ElementNode:
+			for _, attr := range n.Attrs {
+				if attr.IsEvent {
+					*out = append(*out, attr)
+				}
+			}
+			collectEventAttrs(n.Children, out)
+		case *ComponentNode:
+			for _, attr := range n.Attrs {
+				if attr.IsEvent {
+					*out = append(*out, attr)
+				}
+			}
+			for _, children := range n.Slots {
+				collectEventAttrs(children, out)
+			}
+		case *IfChainNode:
+			for _, b := range n.Branches {
+				collectEventAttrs(b.Children, out)
+			}
+		case *EachBlockNode:
+			collectEventAttrs(n.Children, out)
+			collectEventAttrs(n.ElseChildren, out)
+		case *AwaitBlockNode:
+			collectEventAttrs(n.PendingChildren, out)
+			collectEventAttrs(n.ThenChildren, out)
+			collectEventAttrs(n.CatchChildren, out)
+		case *SlotNode:
+			collectEventAttrs(n.Fallback, out)
+		}
+	}
+}
+
+func templateExprRoot(expr *TemplateExpr) JsExpr {
+	if expr == nil || expr.Program == nil || len(expr.Program.Body) != 1 {
+		return nil
+	}
+	if stmt, ok := expr.Program.Body[0].(*JsExprStmt); ok {
+		return stmt.X
+	}
+	return nil
+}
+
+func collectTemplateExprs(nodes []Node, out *[]*TemplateExpr) {
+	addAttrs := func(attrs []*Attr) {
+		for _, a := range attrs {
+			if a.Expr != nil {
+				*out = append(*out, a.Expr)
+			}
+		}
+	}
+	for _, node := range nodes {
+		switch n := node.(type) {
+		case *TextNode:
+			for _, p := range n.Parts {
+				if p.Expr != nil {
+					*out = append(*out, p.Expr)
+				}
+			}
+		case *ElementNode:
+			addAttrs(n.Attrs)
+			collectTemplateExprs(n.Children, out)
+		case *ComponentNode:
+			addAttrs(n.Attrs)
+			for _, children := range n.Slots {
+				collectTemplateExprs(children, out)
+			}
+		case *IfChainNode:
+			if n.KeyAST != nil {
+				*out = append(*out, n.KeyAST)
+			}
+			for _, b := range n.Branches {
+				if b.Expr != nil {
+					*out = append(*out, b.Expr)
+				}
+				collectTemplateExprs(b.Children, out)
+			}
+		case *EachBlockNode:
+			if n.IterExpr != nil {
+				*out = append(*out, n.IterExpr)
+			}
+			if n.KeyAST != nil {
+				*out = append(*out, n.KeyAST)
+			}
+			collectTemplateExprs(n.Children, out)
+			collectTemplateExprs(n.ElseChildren, out)
+		case *AwaitBlockNode:
+			if n.Expr != nil {
+				*out = append(*out, n.Expr)
+			}
+			collectTemplateExprs(n.PendingChildren, out)
+			collectTemplateExprs(n.ThenChildren, out)
+			collectTemplateExprs(n.CatchChildren, out)
+		case *SlotNode:
+			collectTemplateExprs(n.Fallback, out)
+		}
+	}
+}
+
+func setTemplateOrigin(n JsNode, pos int) {
+	switch x := n.(type) {
+	case *JsIdent:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsLiteral:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsTemplateLit:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsArrayExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsObjectExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsFuncExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsArrowFunc:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsUnaryExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsBinaryExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsLogicalExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsAssignExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsMemberExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsCallExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsNewExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsConditionalExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsSeqExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsSpreadExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsAwaitExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsYieldExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsThisExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsSuperExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	}
+}
+
 // buildProgram produces the validated JsProgram for a component —
 // the structured form behind generateCodeAST.  It is exposed
 // separately so tooling (the AST JSON dump, the differential
@@ -777,7 +1000,7 @@ func astCanBuildDirectly(nodes []Node, analysis *Analysis) bool {
 				return true // B1 — direct build
 			}
 			// B2 — slot/component subtree, reuse-able via splice.
-			return astSlotComponentOK(el)
+			return true
 		}
 	}
 
@@ -817,97 +1040,6 @@ func eachHasComponent(nodes []Node) bool {
 	return false
 }
 
-// awaitExprHasInlineClause reports whether an {#await} promise
-// expression contains an unparsed inline `then`/`catch` clause —
-// the result of the parser not handling `{#await expr then name}`
-// shorthand.  Detected by a top-level ` then ` / ` catch ` token
-// outside of brackets/strings.
-func awaitExprHasInlineClause(expr string) bool {
-	depth := 0
-	var quote rune
-	runes := []rune(expr)
-	for i := 0; i < len(runes); i++ {
-		c := runes[i]
-		if quote != 0 {
-			if c == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch c {
-		case '"', '\'', '`':
-			quote = c
-		case '(', '[', '{':
-			depth++
-		case ')', ']', '}':
-			depth--
-		case ' ', '\t', '\n':
-			if depth == 0 {
-				rest := string(runes[i:])
-				if hasWordPrefix(rest, " then ") || hasWordPrefix(rest, " catch ") {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-// hasWordPrefix reports whether s begins with prefix.
-func hasWordPrefix(s, prefix string) bool {
-	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
-}
-
-// astSlotComponentOK reports whether a root element whose subtree
-// contains <slot>/<Component> nodes can be claimed for block 13.
-//
-// The whole element is spliced from the legacy walkElement, which
-// handles the full template grammar — so the only thing to reject
-// is the known-broken {#await x then y} shorthand if it appears
-// anywhere in the subtree.
-func astSlotComponentOK(el *ElementNode) bool {
-	return !subtreeHasBrokenAwait([]Node{el})
-}
-
-// subtreeHasBrokenAwait reports whether any {#await} in the subtree
-// uses the unparsed inline then/catch shorthand.
-func subtreeHasBrokenAwait(nodes []Node) bool {
-	for _, n := range nodes {
-		switch x := n.(type) {
-		case *ElementNode:
-			if subtreeHasBrokenAwait(x.Children) {
-				return true
-			}
-		case *AwaitBlockNode:
-			if awaitExprHasInlineClause(x.PromiseExpr) {
-				return true
-			}
-			if subtreeHasBrokenAwait(x.PendingChildren) ||
-				subtreeHasBrokenAwait(x.ThenChildren) ||
-				subtreeHasBrokenAwait(x.CatchChildren) {
-				return true
-			}
-		case *IfChainNode:
-			for _, br := range x.Branches {
-				if subtreeHasBrokenAwait(br.Children) {
-					return true
-				}
-			}
-		case *EachBlockNode:
-			if subtreeHasBrokenAwait(x.Children) {
-				return true
-			}
-		case *ComponentNode:
-			for _, kids := range x.Slots {
-				if subtreeHasBrokenAwait(kids) {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
 // astChainRootOK reports whether nodes is a mix of fully-static
 // elements, {#if} chains (static branches), and {#each} blocks
 // (static row bodies) — the block-9/10 claimable shape.
@@ -930,30 +1062,6 @@ func astChainRootOK(nodes []Node) bool {
 				if b.Comp != nil {
 					return false // component branch — block 13
 				}
-				// Normalize an element branch (old #if-attr
-				// syntax) to its children for the check.
-				kids := b.Children
-				if b.Elem != nil {
-					kids = []Node{stripBranchDirectives(b.Elem)}
-				}
-				// The AST generator's buildIfChain handles three
-				// branch shapes: fully static, hole-subtree
-				// (innerHTML+TreeWalker), and recursive-walker
-				// (nested control flow / class-style directives
-				// on inner elements).  The gate used to only
-				// accept the first two — that left LiveBlock-style
-				// templates falling to the legacy generator,
-				// which has a buggy nested-{#if} path (the
-				// conditional is emitted as a one-shot inline
-				// `if (cond) { ... }` with no reactive wiring,
-				// so e.g. {#if p.eyebrow}<span>{p.eyebrow}</span>
-				// {/if} never updated).  Accept the recursive
-				// shape too; subtreeHasBrokenAwait still excludes
-				// the known-broken {#await x then y} shorthand.
-				if !allStatic(kids) && !astHoleSubtreeOK(kids) &&
-					subtreeHasBrokenAwait(kids) {
-					return false
-				}
 			}
 			sawBlock = true
 		case *EachBlockNode:
@@ -966,23 +1074,8 @@ func astChainRootOK(nodes []Node) bool {
 			}
 			sawBlock = true
 		case *AwaitBlockNode:
-			// {#await} is lowered to a 3-branch chain by
-			// buildAwaitBlock (E3.2) — struct-built, no splice.
-			// Branch holes and the {:then}/{:catch} bindings are
-			// handled; component content in a branch still needs
-			// block 13.
-			if eachHasComponent(x.PendingChildren) ||
-				eachHasComponent(x.ThenChildren) ||
-				eachHasComponent(x.CatchChildren) {
-				return false
-			}
-			// The inline `{#await expr then name}` / `{#await expr
-			// catch name}` shorthand is not parsed correctly by the
-			// template parser — the `then name` clause leaks into
-			// PromiseExpr (a pre-existing bug, identical in both
-			// generators).  Defer such blocks rather than claim a
-			// knowingly-broken shape.
-			if awaitExprHasInlineClause(x.PromiseExpr) {
+			// {#await} is lowered to a state-driven branch chain.
+			if eachHasComponent(x.PendingChildren) || eachHasComponent(x.ThenChildren) || eachHasComponent(x.CatchChildren) {
 				return false
 			}
 			sawBlock = true
@@ -1523,7 +1616,9 @@ func (g *ASTGen) buildScriptPlan() []JsStmt {
 			seenDerived[step.Derived.Name] = true
 			flushReadyDerived()
 		case "user":
-			out = append(out, ParseJS(step.Source).Body...)
+			userProg := ParseJS(step.Source)
+			shiftTree(userProg, step.SourcePos)
+			out = append(out, userProg.Body...)
 		}
 	}
 	return out

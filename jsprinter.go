@@ -21,6 +21,7 @@ package main
 
 import (
 	"strings"
+	"unicode/utf8"
 )
 
 // ─────────────────────────────────────────────
@@ -81,12 +82,18 @@ func (p *jsPrinter) pretty() bool { return p.mode == PrintPretty }
 
 func (p *jsPrinter) write(s string) {
 	p.sb.WriteString(s)
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
+	for len(s) > 0 {
+		r, size := utf8.DecodeRuneInString(s)
+		s = s[size:]
+		if r == '\n' {
 			p.line++
 			p.column = 0
 		} else {
+			// Source Map columns use UTF-16 code units.
 			p.column++
+			if r > 0xffff {
+				p.column++
+			}
 		}
 	}
 }
@@ -102,15 +109,67 @@ func (p *jsPrinter) ch(c byte) {
 }
 
 func (p *jsPrinter) note(n JsNode) {
-	if p.location == nil || n == nil || n.origin() != OriginUser {
+	if p.location == nil || n == nil {
 		return
 	}
-	if n.nodeEnd() <= n.nodePos() {
+	pos, ok := sourceOrigin(n)
+	if !ok {
 		return
 	}
 	p.location(PrintLocation{
-		GeneratedLine: p.line, GeneratedColumn: p.column, SourcePos: n.nodePos(),
+		GeneratedLine: p.line, GeneratedColumn: p.column, SourcePos: pos,
 	})
+}
+
+func sourceOrigin(n JsNode) (int, bool) {
+	if n.origin() == OriginUser && n.nodeEnd() > n.nodePos() {
+		return n.nodePos(), true
+	}
+	switch x := n.(type) {
+	case *JsIdent:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsLiteral:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsTemplateLit:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsArrayExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsObjectExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsFuncExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsArrowFunc:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsUnaryExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsBinaryExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsLogicalExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsAssignExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsMemberExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsCallExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsNewExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsConditionalExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsSeqExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsSpreadExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsAwaitExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsYieldExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsThisExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	case *JsSuperExpr:
+		return x.SourceOrigin, x.HasSourceOrigin
+	}
+	return 0, false
 }
 
 // nl emits a newline + indentation in pretty mode; nothing in

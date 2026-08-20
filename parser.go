@@ -170,9 +170,21 @@ type AwaitBlockNode struct {
 	PendingChildren []Node
 	ThenChildren    []Node // nil when no {:then} branch
 	CatchChildren   []Node // nil when no {:catch} branch
+	mode            awaitMode
 }
 
 func (a *AwaitBlockNode) nodeKind() string { return "awaitblock" }
+
+// awaitMode records whether an await block used the normal multi-branch form
+// or one of Svelte's single-branch opening-tag shortcuts. It is parser-only:
+// both code generators consume the normalized children and bindings above.
+type awaitMode uint8
+
+const (
+	awaitBlockMode awaitMode = iota
+	awaitInlineThenMode
+	awaitInlineCatchMode
+)
 
 // ComponentNode represents a child component invocation: <MyComp :prop="val" />
 type ComponentNode struct {
@@ -207,8 +219,10 @@ type TemplateExpr struct {
 }
 
 func newTemplateExpr(source string, pos int) *TemplateExpr {
+	leading := len(source) - len(strings.TrimLeftFunc(source, unicode.IsSpace))
+	source = strings.TrimSpace(source)
 	prog, errs := parseTemplateExpression(source)
-	return &TemplateExpr{Source: source, Pos: pos, Program: prog, Errors: errs}
+	return &TemplateExpr{Source: source, Pos: pos + leading, Program: prog, Errors: errs}
 }
 
 func templateExprDeps(expr *TemplateExpr, fallback string, vars []string) []string {
@@ -1055,32 +1069,48 @@ func (p *parser) parseSvelteKeyBlock(raw string, keyPos int) (Node, error) {
 //	  failed: {err}
 //	{/await}
 //
-// Either {:then} or {:catch} may be absent; in those cases the
-// corresponding child slot is nil and codegen treats the branch as
-// "do nothing on that state".  Order is fixed: pending body comes
-// first, then optional :then, then optional :catch, then /await.
+// Either {:then} or {:catch} may be absent; the opening tag may instead use
+// `{#await promise then value}` or `{#await promise catch error}`. Inline
+// forms have no pending branch and cannot be mixed with block-form branches.
 func (p *parser) parseSvelteAwaitBlock(raw string, exprPos int) (Node, error) {
-	node := &AwaitBlockNode{
-		PromiseExpr: strings.TrimSpace(raw),
-		Expr:        newTemplateExpr(strings.TrimSpace(raw), exprPos),
-		ExprPos:     exprPos,
-	}
-
-	// Pending body — consume until the first terminator.
-	pending, term, err := p.parseSvelteBlockBody()
+	promise, binding, mode, err := splitAwaitClause(raw)
 	if err != nil {
 		return nil, err
 	}
-	node.PendingChildren = groupIfChains(pending)
-
-	// :then [name]
+	node := &AwaitBlockNode{PromiseExpr: promise, Expr: newTemplateExpr(promise, exprPos), ExprPos: exprPos, mode: mode}
+	if node.PromiseExpr == "" {
+		return nil, fmt.Errorf("await block requires a promise expression")
+	}
+	if mode == awaitInlineThenMode {
+		node.ValueName = binding
+	} else if mode == awaitInlineCatchMode {
+		node.ErrorName = binding
+	}
+	children, term, err := p.parseSvelteBlockBody()
+	if err != nil {
+		return nil, err
+	}
+	if mode != awaitBlockMode {
+		if strings.HasPrefix(term, ":then") || strings.HasPrefix(term, ":catch") {
+			return nil, fmt.Errorf("inline await %s shorthand cannot be combined with %s", inlineAwaitModeName(mode), term)
+		}
+		if term != "/await" {
+			return nil, fmt.Errorf("await block expected {/await}, got {%s}", term)
+		}
+		if mode == awaitInlineThenMode {
+			node.ThenChildren = groupIfChains(children)
+		} else {
+			node.CatchChildren = groupIfChains(children)
+		}
+		return node, nil
+	}
+	node.PendingChildren = groupIfChains(children)
 	if strings.HasPrefix(term, ":then") {
-		// Everything after ":then" up to the closing brace is the
-		// binding name (may be empty).
-		node.ValueName = strings.TrimSpace(strings.TrimPrefix(term, ":then"))
-		// Strip any trailing '}' if it came back attached.
-		node.ValueName = strings.TrimRight(node.ValueName, "}")
-		node.ValueName = strings.TrimSpace(node.ValueName)
+		binding, err = awaitBranchBinding(term, ":then")
+		if err != nil {
+			return nil, err
+		}
+		node.ValueName = binding
 		thenChildren, t2, err := p.parseSvelteBlockBody()
 		if err != nil {
 			return nil, err
@@ -1088,20 +1118,122 @@ func (p *parser) parseSvelteAwaitBlock(raw string, exprPos int) (Node, error) {
 		node.ThenChildren = groupIfChains(thenChildren)
 		term = t2
 	}
-
-	// :catch [name]
 	if strings.HasPrefix(term, ":catch") {
-		node.ErrorName = strings.TrimSpace(strings.TrimPrefix(term, ":catch"))
-		node.ErrorName = strings.TrimRight(node.ErrorName, "}")
-		node.ErrorName = strings.TrimSpace(node.ErrorName)
-		catchChildren, _, err := p.parseSvelteBlockBody()
+		binding, err = awaitBranchBinding(term, ":catch")
+		if err != nil {
+			return nil, err
+		}
+		node.ErrorName = binding
+		catchChildren, t2, err := p.parseSvelteBlockBody()
 		if err != nil {
 			return nil, err
 		}
 		node.CatchChildren = groupIfChains(catchChildren)
+		term = t2
 	}
-
+	if term != "/await" {
+		return nil, fmt.Errorf("await block expected {/await}, got {%s}", term)
+	}
 	return node, nil
+}
+
+// splitAwaitClause separates a top-level opening-tag `then name` or `catch name`
+// clause from its promise expression. Strings, comments, and bracketed expressions
+// are skipped so either word inside one remains part of the promise.
+func splitAwaitClause(raw string) (promise, binding string, mode awaitMode, err error) {
+	raw = strings.TrimSpace(raw)
+	depth := 0
+	var quote byte
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if quote != 0 {
+			if c == 92 {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == 47 && i+1 < len(raw) && raw[i+1] == 47 {
+			i += 2
+			for i < len(raw) && raw[i] != 10 {
+				i++
+			}
+			continue
+		}
+		if c == 47 && i+1 < len(raw) && raw[i+1] == 42 {
+			i += 2
+			for i+1 < len(raw) && !(raw[i] == 42 && raw[i+1] == 47) {
+				i++
+			}
+			if i+1 < len(raw) {
+				i++
+			}
+			continue
+		}
+		switch c {
+		case 39, 34, 96:
+			quote = c
+		case 40, 91, 123:
+			depth++
+		case 41, 93, 125:
+			if depth > 0 {
+				depth--
+			}
+		default:
+			if depth != 0 || !isIdentStart(c) || i == 0 || !unicode.IsSpace(rune(raw[i-1])) {
+				continue
+			}
+			end := i + 1
+			for end < len(raw) && isIdentCont(raw[end]) {
+				end++
+			}
+			word := raw[i:end]
+			if word != "then" && word != "catch" {
+				i = end - 1
+				continue
+			}
+			promise, binding = strings.TrimSpace(raw[:i]), strings.TrimSpace(raw[end:])
+			if promise == "" {
+				return "", "", awaitBlockMode, fmt.Errorf("await block requires a promise expression")
+			}
+			if !isPlainAwaitBinding(binding) {
+				return "", "", awaitBlockMode, fmt.Errorf("await %s binding must be one plain JavaScript identifier", word)
+			}
+			if word == "then" {
+				return promise, binding, awaitInlineThenMode, nil
+			}
+			return promise, binding, awaitInlineCatchMode, nil
+		}
+	}
+	return raw, "", awaitBlockMode, nil
+}
+
+func awaitBranchBinding(term, prefix string) (string, error) {
+	binding := strings.TrimSpace(strings.TrimPrefix(term, prefix))
+	if !isPlainAwaitBinding(binding) {
+		return "", fmt.Errorf("await %s binding must be one plain JavaScript identifier", strings.TrimPrefix(prefix, ":"))
+	}
+	return binding, nil
+}
+
+func isPlainAwaitBinding(name string) bool {
+	if name == "" || !isIdentStart(name[0]) || kwMap[name] != TokIllegal {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		if !isIdentCont(name[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func inlineAwaitModeName(mode awaitMode) string {
+	if mode == awaitInlineThenMode {
+		return "then"
+	}
+	return "catch"
 }
 
 // parseSvelteBlockBody collects nodes until a {:else}, {:else if}, {/if}, or

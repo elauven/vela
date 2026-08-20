@@ -42,7 +42,7 @@ func main() {
 	parallel := flag.Bool("parallel", true, "compile files in parallel (project mode)")
 	codegen := flag.String("codegen", "ast", "code generator: 'ast' (default); 'legacy' is DEPRECATED and will be removed")
 	cssMode := flag.String("css", "inject", "CSS delivery: 'inject' (default, CSS-in-JS) or 'external' (sibling .css files)")
-	sourceMap := flag.Bool("sourcemap", false, "emit an experimental v3 source map alongside generated JS")
+	sourceMap := flag.Bool("sourcemap", false, "emit an external v3 source map alongside AST-generated JS")
 	flag.Parse()
 
 	switch *cssMode {
@@ -352,6 +352,14 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	scope := fmt.Sprintf("vela-%x", hash[:3])
 
 	ds = NewDiagSet(src, raw)
+	if opts.SourceMap && opts.Minify {
+		ds.Error(0, "--sourcemap cannot be combined with --minify; Vela minifier is not source-map-aware")
+		return ds.All(), fmt.Errorf("invalid source map options")
+	}
+	if opts.SourceMap && opts.Codegen == "legacy" {
+		ds.Error(0, "--sourcemap is supported only by --codegen=ast; remove --codegen=legacy")
+		return ds.All(), fmt.Errorf("legacy generator does not support source maps")
+	}
 
 	sfc, err := parseSFC(raw)
 	if err != nil {
@@ -439,13 +447,14 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 				_ = os.WriteFile(genPath, []byte(ASTToJSON(prog, false)), 0644)
 			}
 			if opts.SourceMap {
+				shiftTree(prog, sfc.ScriptOffset)
+				markTemplateOrigins(prog, sfc, tmpl, analysis)
 				var locations []PrintLocation
 				body := PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) {
 					loc.GeneratedLine += 2
-					loc.SourcePos += sfc.ScriptOffset
 					locations = append(locations, loc)
 				})
-				m := BuildSourceMapV3(filepath.Base(dest), filepath.Base(src), raw, locations)
+				m := BuildSourceMapV3(filepath.Base(dest), filepath.ToSlash(src), raw, locations)
 				sourceMap = &m
 				code = headerComment + "\n\n" + body
 			} else {
@@ -457,6 +466,9 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	}
 
 	if sourceMap != nil {
+		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+			return ds.All(), fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), err)
+		}
 		mapBytes, mapErr := SourceMapJSON(*sourceMap)
 		if mapErr != nil {
 			return ds.All(), mapErr

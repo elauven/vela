@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"unicode"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -9,11 +10,14 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 type ScriptPlanStep struct {
-	Kind    string
-	Pos     int
-	Source  string
-	State   *StateVar
-	Derived *DerivedVar
+	Kind string
+	Pos  int
+	// SourcePos is the start of a user statement in the original script body.
+	// Pos remains the historical statement-end key used for rune steps.
+	SourcePos int
+	Source    string
+	State     *StateVar
+	Derived   *DerivedVar
 }
 
 type Analysis struct {
@@ -324,9 +328,14 @@ func buildScriptPlan(prog *JsProgram, src string, skipEnd map[int]bool, a *Analy
 		if skipEnd[stmt.nodeEnd()] {
 			continue
 		}
-		raw := strings.TrimSpace(src[stmt.nodePos():stmt.nodeEnd()])
+		rawSource := src[stmt.nodePos():stmt.nodeEnd()]
+		leading := len(rawSource) - len(strings.TrimLeftFunc(rawSource, unicode.IsSpace))
+		raw := strings.TrimSpace(rawSource)
 		if raw != "" {
-			plan = append(plan, ScriptPlanStep{Kind: "user", Pos: stmt.nodeEnd(), Source: RewriteAssignments(raw, ParseJS(raw), stateSet)})
+			plan = append(plan, ScriptPlanStep{
+				Kind: "user", Pos: stmt.nodeEnd(), SourcePos: stmt.nodePos() + leading,
+				Source: RewriteAssignments(raw, ParseJS(raw), stateSet),
+			})
 		}
 	}
 	return plan

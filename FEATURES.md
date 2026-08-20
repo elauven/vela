@@ -45,7 +45,7 @@ not historical roadmaps or the deprecated legacy generator.
 | List rendering | **Stable** | `{#each items as item, i}...{:else}...{/each}` | Unkeyed rows update in place where possible. |
 | Keyed lists | **Stable** | `{#each items as item (item.id)}` | Reconciles rows by key. |
 | Key blocks | **Stable** | `{#key userId}<Card />{/key}` | Recreates its subtree when the key changes. |
-| Await blocks | **Partial** | `{#await promise}...{:then value}...{:catch err}{/await}` | Pending, fulfilled, rejected, and stale-promise handling are supported. Inline `#await expr then value` syntax is not supported reliably. |
+| Await blocks | **Stable** | `{#await promise}...{:then value}...{:catch err}{/await}` | Pending, fulfilled, rejected, stale-promise handling, and `{#await promise then value}` / `{#await promise catch err}` shortcuts are supported. |
 | Components | **Stable** | `<Card title={title} />` | Components are compiled ES-module functions with `set()` and `destroy()`. |
 | Component bindings | **Stable** | `<Counter bind:count={count} />` | The child prop must be declared with `$bindable`. |
 | Component events | **Stable** | `<Modal @on:close={close} />` | Custom events are forwarded through the component wrapper. |
@@ -75,7 +75,7 @@ not historical roadmaps or the deprecated legacy generator.
 | Feature | Status | Notes |
 | --- | --- | --- |
 | SSR and hydration | **Planned** | The design lives in `SSR.md`; no server emitter or hydrator exists. |
-| Source maps | **Planned** | Generated JS does not yet map browser errors back to `.vela` locations. |
+| Source maps | **Stable** | `--sourcemap` writes an external v3 `.js.map` for AST-generated JS, including script and stable template expressions. `--minify` and `--codegen=legacy` are intentionally rejected with source maps. |
 | Dev server / HMR | **Planned** | Watch mode recompiles only. |
 | TypeScript | **Unsupported** | No `lang="ts"` pipeline or type checker. |
 | Snippets / render props | **Unsupported** | Use current default/named slots instead. |

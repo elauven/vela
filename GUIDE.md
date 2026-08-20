@@ -571,7 +571,7 @@ Scoping is identical either way.
 | `{#if}` `{:else if}` `{:else}` `{/if}` | conditional |
 | `{#each list as item, i}` `{/each}` | list |
 | `{#key expr}` `{/key}` | keyed re-creation |
-| `{#await p}` `{:then v}` `{:catch e}` `{/await}` | promise states |
+| `{#await p}` `{:then v}` `{:catch e}` `{/await}` | promise states, including `{#await p then v}` and `{#await p catch e}` shortcuts |
 | `<slot>` | child-content placeholder |
 | `$$dispatch(name, detail)` | emit a custom event |
 | `onMount` / `onDestroy` | lifecycle (import from `vela`) |

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // SourceMapV3 is the browser source-map interchange format used by Vela.
@@ -34,6 +35,7 @@ func BuildSourceMapV3(file, sourceName, sourceContent string, locations []PrintL
 	prevGeneratedLine := 1
 	prevGeneratedCol := 0
 	emitted := false
+	lineHasSegment := false
 	var out strings.Builder
 	for _, loc := range locations {
 		if loc.GeneratedLine < 1 || (emitted && loc.GeneratedLine == prevGeneratedLine && loc.GeneratedColumn == prevGeneratedCol) {
@@ -43,8 +45,9 @@ func BuildSourceMapV3(file, sourceName, sourceContent string, locations []PrintL
 			out.WriteByte(';')
 			prevGeneratedLine++
 			prevGeneratedCol = 0
+			lineHasSegment = false
 		}
-		if out.Len() > 0 && prevGeneratedLine == loc.GeneratedLine && prevGeneratedCol != 0 {
+		if lineHasSegment {
 			out.WriteByte(',')
 		}
 		line, col = sourceLineColumn(sourceContent, loc.SourcePos)
@@ -54,6 +57,7 @@ func BuildSourceMapV3(file, sourceName, sourceContent string, locations []PrintL
 		out.WriteString(encodeVLQ(col - prevSourceCol))
 		prevGeneratedCol, prevSourceLine, prevSourceCol = loc.GeneratedColumn, line, col
 		emitted = true
+		lineHasSegment = true
 	}
 	m.Mappings = out.String()
 	return m
@@ -68,11 +72,20 @@ func sourceLineColumn(src string, pos int) (line, col int) {
 	if pos > len(src) {
 		pos = len(src)
 	}
-	for i := 0; i < pos; i++ {
-		if src[i] == '\n' {
+	for len(src) > 0 && pos > 0 {
+		r, size := utf8.DecodeRuneInString(src)
+		if size > pos {
+			break
+		}
+		src = src[size:]
+		pos -= size
+		if r == '\n' {
 			line, col = line+1, 0
 		} else {
 			col++
+			if r > 0xffff {
+				col++
+			}
 		}
 	}
 	return line, col

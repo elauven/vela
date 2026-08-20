@@ -383,3 +383,86 @@ func TestIfBranchCleanupClosure_NoCleanup_NoOverhead(t *testing.T) {
 		t.Errorf("did not expect _b0_cleanup closure assignment for an empty branch:\n%s", out)
 	}
 }
+
+func TestParseTemplate_AwaitInlineBranches(t *testing.T) {
+	tests := []struct {
+		src       string
+		valueName string
+		errorName string
+	}{
+		{"{#await request then result}<p>{result}</p>{/await}", "result", ""},
+		{"{#await request catch failure}<p>{failure.message}</p>{/await}", "", "failure"},
+	}
+	for _, tc := range tests {
+		nodes, err := parseTemplate(tc.src)
+		if err != nil {
+			t.Fatalf("parseTemplate(%q): %v", tc.src, err)
+		}
+		await, ok := nodes[0].(*AwaitBlockNode)
+		if !ok {
+			t.Fatalf("got %T, want AwaitBlockNode", nodes[0])
+		}
+		if await.PromiseExpr != "request" || await.Expr.Pos != len("{#await ") {
+			t.Fatalf("promise = %q at %d, want request at %d", await.PromiseExpr, await.Expr.Pos, len("{#await "))
+		}
+		if len(await.PendingChildren) != 0 || await.ValueName != tc.valueName || await.ErrorName != tc.errorName {
+			t.Fatalf("await shape = pending:%d value:%q error:%q", len(await.PendingChildren), await.ValueName, await.ErrorName)
+		}
+		if tc.valueName != "" && len(await.ThenChildren) != 1 || tc.errorName != "" && len(await.CatchChildren) != 1 {
+			t.Fatalf("inline branch body was not assigned to its declared branch")
+		}
+	}
+
+	nodes, err := parseTemplate("{#await Promise.resolve({ then: 1 }) then value}{value}{/await}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	await := nodes[0].(*AwaitBlockNode)
+	if await.PromiseExpr != "Promise.resolve({ then: 1 })" {
+		t.Fatalf("top-level split corrupted promise expression: %q", await.PromiseExpr)
+	}
+}
+
+func TestParseTemplate_AwaitBindingDiagnostics(t *testing.T) {
+	for _, src := range []string{
+		"{#await p then}<p>x</p>{/await}",
+		"{#await p catch error.message}<p>x</p>{/await}",
+		"{#await p}{:then result.value}<p>x</p>{/await}",
+		"{#await p}{:catch}<p>x</p>{/await}",
+		"{#await p then value}<p>{value}</p>{:catch error}<p>{error}</p>{/await}",
+		"{#await p}{:then value}<p>{value}</p>{:then duplicate}<p>{duplicate}</p>{/await}",
+	} {
+		if _, err := parseTemplate(src); err == nil {
+			t.Errorf("parseTemplate(%q) succeeded, want await diagnostic", src)
+		}
+	}
+}
+
+func TestAwait_InlineThenAndCatchCodegen(t *testing.T) {
+	tests := []struct {
+		name      string
+		block     string
+		storage   string
+		forbidden string
+	}{
+		{"then", "{#await p then value}<p>{value}</p>{/await}", "$$awaitVal_", "=== 2)"},
+		{"catch", "{#await p catch error}<p>{error}</p>{/await}", "$$awaitErr_", "=== 1)"},
+	}
+	for _, tc := range tests {
+		src := "<script>let p = $state(Promise.resolve(1));</script><template>" + tc.block + "</template>"
+		for _, gen := range []struct {
+			name string
+			fn   func(*testing.T, string) string
+		}{{"legacy", compileGenerated}, {"ast", compileGeneratedAST}} {
+			t.Run(tc.name+"/"+gen.name, func(t *testing.T) {
+				out := gen.fn(t, src)
+				if !strings.Contains(out, tc.storage) || !strings.Contains(out, "=== 0)") {
+					t.Fatalf("inline await branch was not emitted correctly:\n%s", out)
+				}
+				if strings.Contains(out, tc.forbidden) {
+					t.Fatalf("unexpected opposite terminal branch:\n%s", out)
+				}
+			})
+		}
+	}
+}
