@@ -3447,12 +3447,14 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		build    []JsStmt
 		init     []JsStmt
 		captured []string
+		cleanup  []JsStmt
 	}
 	plans := make([]plan, len(chain.Branches))
 
 	g.body = append(g.body, jsStmt("const "+anchor+" = document.createComment('if-chain');"))
 	for i := range chain.Branches {
 		g.body = append(g.body, jsStmt("let "+fn+"_b"+itoa(i)+" = null;"))
+		g.body = append(g.body, jsStmt("let "+fn+"_b"+itoa(i)+"_cleanup = null;"))
 	}
 	g.body = append(g.body, jsStmt("let "+fn+"_running = false, "+fn+"_pending = false;"))
 
@@ -3464,11 +3466,33 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			plans[i].build = []JsStmt{jsStmt("$$insertHTML(" + frag + ", '" + escapeJSString(html) + "');")}
 			continue
 		}
-		sub := g.buildHoleSubtree(frag, branch.Children, true, bv, false, true)
-		g.body = append(g.body, sub.decls...)
-		plans[i].build = sub.build
-		plans[i].init = sub.initUpdates
-		plans[i].captured = sub.captured
+		if astHoleSubtreeOK(branch.Children) {
+			sub := g.buildHoleSubtree(frag, branch.Children, true, bv, false, true)
+			g.body = append(g.body, sub.decls...)
+			plans[i].build = sub.build
+			plans[i].init = sub.initUpdates
+			plans[i].captured = sub.captured
+			continue
+		}
+
+		// Dynamic element branches use the ordinary recursive DOM builder,
+		// captured as a branch-local AST plan.  Its element references are
+		// hoisted by inBranchScope so setter cascades can safely update a
+		// mounted branch and no source-bearing expression is serialized.
+		wasBranchScope := g.inBranchScope
+		cap := g.captureScope(func() {
+			g.inBranchScope = true
+			defer func() { g.inBranchScope = wasBranchScope }()
+			g.buildChildRun(branch.Children, frag)
+		})
+		plans[i].build = append(cap.body, cap.events...)
+		plans[i].init = cap.initBody
+		plans[i].cleanup = cap.cleanup
+		for dep, stmts := range cap.updates {
+			for _, stmt := range stmts {
+				g.addUpdate(dep, guardedTemplateStmt(stmt, bv))
+			}
+		}
 	}
 
 	tryBody := []JsStmt{jsStmt("let $$active = -1;")}
@@ -3483,8 +3507,13 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	}
 	for i := range chain.Branches {
 		bv := fn + "_b" + itoa(i)
+		cleanupVar := bv + "_cleanup"
+		cleanup := ""
+		if len(plans[i].cleanup) > 0 {
+			cleanup = "if (" + cleanupVar + ") { " + cleanupVar + "(); " + cleanupVar + " = null; } "
+		}
 		teardown := "if ($$active !== " + itoa(i) + " && " + bv + ") { " +
-			"for (const $$node of " + bv + ") $$node.remove(); " + bv + " = null;" +
+			cleanup + "for (const $$node of " + bv + ") $$node.remove(); " + bv + " = null;" +
 			nullCaptured(plans[i].captured) + " }"
 		tryBody = append(tryBody, jsStmt(teardown))
 	}
@@ -3493,6 +3522,15 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		frag := bv + "_frag"
 		mountBody := []JsStmt{jsStmt("const " + frag + " = document.createDocumentFragment();")}
 		mountBody = append(mountBody, plans[i].build...)
+		if len(plans[i].cleanup) > 0 {
+			mountBody = append(mountBody, &JsExprStmt{
+				baseStmt: baseStmt{genNode()},
+				X: &JsAssignExpr{
+					baseExpr: baseExpr{genNode()}, Op: "=", L: id(bv + "_cleanup"),
+					R: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: plans[i].cleanup}},
+				},
+			})
+		}
 		mountBody = append(mountBody,
 			jsStmt(bv+" = [..."+frag+".childNodes];"),
 			jsStmt(anchor+".before("+frag+");"))
@@ -4710,10 +4748,10 @@ func (g *ASTGen) applyRootAttrs(el *ElementNode) {
 // dynamic classes coexist.  The toggle runs at initial render and
 // is registered as an update against each reactive dependency.
 func (g *ASTGen) emitClassDir(varName string, attr *Attr) {
-	stmtSrc := classDirStmt(varName, attr.Name, attr.Value, "")
-	g.initBody = append(g.initBody, jsStmt(stmtSrc))
+	stmt := g.classDirStmtAST(varName, attr)
+	g.initBody = append(g.initBody, stmt)
 	for _, dep := range templateExprDeps(attr.Expr, attrExprToJS(attr.Value), g.reactiveNames()) {
-		g.addUpdate(dep, jsStmt(stmtSrc))
+		g.addUpdate(dep, stmt)
 	}
 }
 
@@ -4722,10 +4760,10 @@ func (g *ASTGen) emitClassDir(varName string, attr *Attr) {
 // custom properties).  Runs at initial render and on every change
 // of a reactive dependency.
 func (g *ASTGen) emitStyleDir(varName string, attr *Attr) {
-	stmtSrc := styleDirStmt(varName, attr.Name, attr.Value, "")
-	g.initBody = append(g.initBody, jsStmt(stmtSrc))
+	stmt := g.styleDirStmtAST(varName, attr)
+	g.initBody = append(g.initBody, stmt)
 	for _, dep := range templateExprDeps(attr.Expr, attrExprToJS(attr.Value), g.reactiveNames()) {
-		g.addUpdate(dep, jsStmt(stmtSrc))
+		g.addUpdate(dep, stmt)
 	}
 }
 
@@ -4737,40 +4775,24 @@ func (g *ASTGen) emitStyleDir(varName string, attr *Attr) {
 //   - statement body   → const $$h = ($event) => { … }; …
 func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 	handler := g.rewriteHandler(attr.Value)
-
-	// Inside a slot closure the element variable is closure-local;
-	// a removeEventListener placed in the component's destroy()
-	// (component scope) would reference an undefined name.  Slot
-	// content listeners die with their nodes when the slot closure
-	// rebuilds or the host component is torn down — so no explicit
-	// cleanup is needed (or possible) at component scope.
+	handlerExpr := g.rewrittenTemplateExpr(attr.Expr, handler)
 	addCleanup := !g.inSlotScope
-
 	if isSimpleIdent(handler) {
-		g.events = append(g.events,
-			jsStmt(varName+".addEventListener('"+attr.Name+"', "+handler+");"))
+		g.events = append(g.events, g.templateStmt(varName+".addEventListener('"+attr.Name+"', "+templateMarker(0)+");", handlerExpr))
 		if addCleanup {
-			g.cleanup = append(g.cleanup, jsStmt(
-				varName+".removeEventListener('"+attr.Name+"', "+handler+");"))
+			g.cleanup = append(g.cleanup, jsStmt(varName+".removeEventListener('"+attr.Name+"', "+handler+");"))
 		}
 		return
 	}
-
 	hv := varName + "_" + attr.Name + "_h"
-	// DOM expression handlers receive native browser events directly; the
-	// CustomEvent-only guard applies only to component event listeners.
-	handlerDecl := jsStmt("const " + hv + " = " + handler + ";")
+	decl := g.templateStmt("const "+hv+" = "+templateMarker(0)+";", handlerExpr)
 	if !isHandlerExpr(handler) {
-		// Statement body — wrap in an ($event) => { … } arrow.
-		handlerDecl = jsStmt("const " + hv +
-			" = ($event) => { " + handler + "; };")
+		decl = g.templateStmt("const "+hv+" = ($event) => { "+templateMarker(0)+"; };", handlerExpr)
 	}
-	g.body = append(g.body, handlerDecl)
-	g.events = append(g.events,
-		jsStmt(varName+".addEventListener('"+attr.Name+"', "+hv+");"))
+	g.body = append(g.body, decl)
+	g.events = append(g.events, jsStmt(varName+".addEventListener('"+attr.Name+"', "+hv+");"))
 	if addCleanup {
-		g.cleanup = append(g.cleanup, jsStmt(
-			varName+".removeEventListener('"+attr.Name+"', "+hv+");"))
+		g.cleanup = append(g.cleanup, jsStmt(varName+".removeEventListener('"+attr.Name+"', "+hv+");"))
 	}
 }
 
@@ -4782,35 +4804,16 @@ func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 	spec, ok := twoWayBindSpec(tag, attr.Name)
 	sv := stripBraces(attr.Value)
-
-	// DOM→state listener — only for a recognized (tag, attr) combo
-	// bound to a bare state variable.
 	if ok && g.analysis != nil && g.analysis.isStateName(sv) {
 		hv := varName + "_bind_" + spec.event + "_h"
-		g.body = append(g.body, jsStmt(
-			"const "+hv+" = ($e) => $$set_"+sv+"($e.target."+spec.readProp+");"))
-		g.events = append(g.events,
-			jsStmt(varName+".addEventListener('"+spec.event+"', "+hv+");"))
-		g.cleanup = append(g.cleanup,
-			jsStmt(varName+".removeEventListener('"+spec.event+"', "+hv+");"))
+		g.body = append(g.body, jsStmt("const "+hv+" = ($e) => $$set_"+sv+"($e.target."+spec.readProp+");"))
+		g.events = append(g.events, jsStmt(varName+".addEventListener('"+spec.event+"', "+hv+");"))
+		g.cleanup = append(g.cleanup, jsStmt(varName+".removeEventListener('"+spec.event+"', "+hv+");"))
 	}
-
-	// state→DOM write — the one-way half.
-	//
-	// For a two-way bind:value the write targets the DOM *property*
-	// (elem.value = …), not the attribute: setAttribute('value', …)
-	// only sets defaultValue and won't update a control the user
-	// has already touched.  bind:checked is a boolean attr and
-	// bindAttrStmt already emits elem.checked = !!(…).
-	writeSrc := func() string {
-		if attr.IsTwoWay && attr.Name == "value" {
-			return varName + ".value = (" + stripBraces(attr.Value) + ");"
-		}
-		return bindAttrStmt(varName, attr.Name, attr.Value, "")
-	}
-	g.initBody = append(g.initBody, jsStmt(writeSrc()))
-	for _, dep := range findDeps(stripBraces(attr.Value), g.reactiveNames()) {
-		g.addUpdate(dep, jsStmt(writeSrc()))
+	write := g.attrWriteStmt(varName, attr)
+	g.initBody = append(g.initBody, write)
+	for _, dep := range templateExprDeps(attr.Expr, stripBraces(attr.Value), g.reactiveNames()) {
+		g.addUpdate(dep, write)
 	}
 }
 
@@ -5111,9 +5114,32 @@ func (g *ASTGen) structuredBranchPlanSupported(chain *IfChainNode) bool {
 		return false
 	}
 	for _, branch := range chain.Branches {
-		if branch.Comp != nil || branch.Elem != nil || !astHoleSubtreeOK(branch.Children) {
+		if branch.Comp != nil || branch.Elem != nil || !structuredBranchChildrenSupported(branch.Children) {
 			return false
 		}
 	}
 	return len(chain.Branches) > 0
+}
+
+// structuredBranchChildrenSupported is the Phase-2 BranchPlan eligibility
+// check.  The recursive DOM builder already keeps dynamic element references
+// and their update statements as AST nodes, so normal element dynamics are
+// safe here.  Structural nodes are excluded because their lifetime ownership
+// has not yet moved into the structured BranchPlan path.
+func structuredBranchChildrenSupported(nodes []Node) bool {
+	for _, node := range nodes {
+		switch n := node.(type) {
+		case *TextNode:
+			// Static text and interpolations are both supported.
+		case *ElementNode:
+			if n.IfCond != "" || n.EachExpr != "" || !structuredBranchChildrenSupported(n.Children) {
+				return false
+			}
+		default:
+			// IfChainNode, EachBlockNode, AwaitBlockNode, ComponentNode,
+			// and SlotNode require their own BranchPlan phases.
+			return false
+		}
+	}
+	return true
 }
