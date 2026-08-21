@@ -33,6 +33,7 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
+import { fixtureStorage, replayFixtureSteps } from './runtime-fixture-dsl.mjs';
 
 // jsdom may be installed in a node_modules dir unrelated to this
 // script's location.  When the Go test sets VELA_NODE_MODULES,
@@ -91,16 +92,12 @@ globalThis.requestAnimationFrame =
 // settled DOM.  A "tick" step still drains real microtasks for code
 // paths that schedule their own.
 globalThis[Symbol.for('vela.defer')] = (fn) => { fn(); };
-for (const step of steps) {
-  if (step.seedStorage && typeof step.seedStorage === "object") {
-    for (const [key, value] of Object.entries(step.seedStorage)) {
-      window.localStorage.setItem(key, String(value));
-    }
-  }
+for (const [key, value] of Object.entries(fixtureStorage(steps))) {
+  window.localStorage.setItem(key, value);
 }
 
 // ── load + mount the component ───────────────────────────────────
-const failures = [];
+let failures = [];
 let mod;
 try {
   mod = await import(pathToFileURL(componentPath).href);
@@ -121,169 +118,68 @@ try {
   fail('mount threw: ' + (e && e.stack ? e.stack : e));
 }
 
-// flushMicrotasks drains the microtask queue.  runtime.js's $$defer
-// batches reactive DOM updates into a microtask, so assertions must
-// wait for it to settle.  Several turns cover defers that schedule
-// further defers.
+// flushMicrotasks drains the microtask queue. Several turns cover defers
+// that schedule further defers.
 async function flushMicrotasks() {
-  for (let t = 0; t < 5; t++) {
-    await Promise.resolve();
-  }
+  for (let turn = 0; turn < 5; turn++) await Promise.resolve();
 }
 
-// Settle any update scheduled during initial mount.
 await flushMicrotasks();
 
-// ── step replay ──────────────────────────────────────────────────
-const $ = (sel) => window.document.querySelector(sel);
-const $$ = (sel) => window.document.querySelectorAll(sel);
-
-for (let i = 0; i < steps.length; i++) {
-  const step = steps[i];
-  const tag = `step ${i}`;
-  if ("seedStorage" in step) continue;
-  try {
-    if ('assertText' in step) {
-      const el = $(step.assertText);
-      const got = el ? el.textContent.trim() : null;
-      if (got !== step.equals) {
-        failures.push(`${tag}: text of '${step.assertText}' = ` +
-          `${JSON.stringify(got)}, want ${JSON.stringify(step.equals)}`);
-      }
-    } else if ('assertHTML' in step) {
-      const el = $(step.assertHTML);
-      const got = el ? el.innerHTML : null;
-      if (got == null || !got.includes(step.contains)) {
-        failures.push(`${tag}: html of '${step.assertHTML}' = ` +
-          `${JSON.stringify(got)}, want substring ` +
-          `${JSON.stringify(step.contains)}`);
-      }
-    } else if ('assertValue' in step) {
-      // The .value PROPERTY of the first match (inputs, textareas,
-      // selects) — distinct from textContent / the value attribute.
-      const el = $(step.assertValue);
-      const got = el ? el.value : null;
-      if (got !== step.equals) {
-        failures.push(`${tag}: value of '${step.assertValue}' = ` +
-          `${JSON.stringify(got)}, want ${JSON.stringify(step.equals)}`);
-      }
-    } else if ('assertStorage' in step) {
-      const got = window.localStorage.getItem(step.assertStorage);
-      if (got == null || !got.includes(step.contains ?? "")) {
-        failures.push(`${tag}: localStorage[${JSON.stringify(step.assertStorage)}] = ` +
-          `${JSON.stringify(got)}, want substring ${JSON.stringify(step.contains ?? "")}`);
-      }
-    } else if ('assertCount' in step) {
-      const got = $$(step.assertCount).length;
-      if (got !== step.equals) {
-        failures.push(`${tag}: count of '${step.assertCount}' = ` +
-          `${JSON.stringify(got)}, want ${JSON.stringify(step.equals)}`);
-      }
-    } else if ('focus' in step) {
-      // Move keyboard focus to the first matching element — used
-      // to set up the precondition for a later assertFocused check
-      // (Session A: verifying that a reactive re-render does not
-      // tear out the focused input).
-      const el = $(step.focus);
-      if (!el) {
-        failures.push(`${tag}: focus target '${step.focus}' not found`);
-      } else {
-        el.focus();
-      }
-    } else if ('assertFocused' in step) {
-      // Assert that the element matched by the selector IS the
-      // document's activeElement.  This is THE test for the
-      // Session A change: when a parent re-renders an unkeyed
-      // {#each} whose array structure is unchanged, the rows are
-      // updated in place rather than destroyed, so the focused
-      // input survives.  A destroy+rebuild would replace the
-      // node and activeElement would move to <body>.
-      const want = $(step.assertFocused);
-      const got = window.document.activeElement;
-      if (!want) {
-        failures.push(`${tag}: assertFocused target ` +
-          `'${step.assertFocused}' not found`);
-      } else if (got !== want) {
-        failures.push(`${tag}: activeElement is ` +
-          `${got ? got.tagName + (got.className ? '.' + got.className : '') : 'null'}` +
-          `, want ${want.tagName}` +
-          `${want.className ? '.' + want.className : ''}`);
-      }
-    } else if ('click' in step) {
-      const el = $(step.click);
-      if (!el) {
-        failures.push(`${tag}: click target '${step.click}' not found`);
-      } else {
-        el.dispatchEvent(new window.MouseEvent('click', {
-          bubbles: true, cancelable: true,
-        }));
-        // runtime.js's $$defer batches reactive updates into a
-        // microtask; drain it so the DOM has settled before the
-        // next assertion.  A few turns covers chained defers.
-        await flushMicrotasks();
-      }
-    } else if ("dblclick" in step) {
-      const el = $(step.dblclick);
-      if (!el) {
-        failures.push(tag + ": double-click target " + step.dblclick + " not found");
-      } else {
-        el.dispatchEvent(new window.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
-        await flushMicrotasks();
-      }
-    } else if ("submit" in step) {
-      const el = $(step.submit);
-      if (!el) {
-        failures.push(tag + ": submit target " + step.submit + " not found");
-      } else {
-        el.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
-        await flushMicrotasks();
-      }
-    } else if ("input" in step) {
-      const el = $(step.input);
-      if (!el) {
-        failures.push(tag + ": input target " + step.input + " not found");
-      } else {
-        el.value = step.value ?? "";
-        el.dispatchEvent(new window.Event("input", { bubbles: true, cancelable: true }));
-        await flushMicrotasks();
-      }
-    } else if ("change" in step) {
-      const el = $(step.change);
-      if (!el) {
-        failures.push(tag + ": change target " + step.change + " not found");
-      } else {
-        if ("checked" in step) el.checked = !!step.checked;
-        if ("value" in step) el.value = step.value;
-        el.dispatchEvent(new window.Event("change", { bubbles: true, cancelable: true }));
-        await flushMicrotasks();
-      }
-    } else if ("blur" in step) {
-      const el = $(step.blur);
-      if (!el) {
-        failures.push(tag + ": blur target " + step.blur + " not found");
-      } else {
-        el.dispatchEvent(new window.FocusEvent("blur", { bubbles: false, cancelable: false }));
-        await flushMicrotasks();
-      }
-    } else if ("keydown" in step) {
-      const el = $(step.keydown);
-      if (!el) {
-        failures.push(tag + ": keydown target " + step.keydown + " not found");
-      } else {
-        el.dispatchEvent(new window.KeyboardEvent("keydown", {
-          key: step.key ?? "", bubbles: true, cancelable: true,
-        }));
-        await flushMicrotasks();
-      }
-    } else if ("tick" in step) {
-      await flushMicrotasks();
-    } else {
-      failures.push(`${tag}: unknown step ${JSON.stringify(step)}`);
-    }
-  } catch (e) {
-    failures.push(`${tag}: threw ${e && e.stack ? e.stack : e}`);
-  }
+const $ = (selector) => window.document.querySelector(selector);
+const $$ = (selector) => window.document.querySelectorAll(selector);
+function fixtureTarget(selector, action) {
+  const element = $(selector);
+  if (!element) throw new Error(action + ' target ' + JSON.stringify(selector) + ' not found');
+  return element;
 }
+
+const adapter = {
+  text: (selector) => {
+    const element = $(selector);
+    return element ? element.textContent.trim() : null;
+  },
+  html: (selector) => {
+    const element = $(selector);
+    return element ? element.innerHTML : null;
+  },
+  value: (selector) => {
+    const element = $(selector);
+    return element ? element.value : null;
+  },
+  storage: (key) => window.localStorage.getItem(key),
+  count: (selector) => $$(selector).length,
+  focused: (selector) => window.document.activeElement === $(selector),
+  style: (selector, property) => {
+    const element = $(selector);
+    return element ? window.getComputedStyle(element).getPropertyValue(property) : null;
+  },
+  focus: (selector) => fixtureTarget(selector, 'focus').focus(),
+  click: (selector) => fixtureTarget(selector, 'click').dispatchEvent(
+    new window.MouseEvent('click', { bubbles: true, cancelable: true })),
+  dblclick: (selector) => fixtureTarget(selector, 'double-click').dispatchEvent(
+    new window.MouseEvent('dblclick', { bubbles: true, cancelable: true })),
+  submit: (selector) => fixtureTarget(selector, 'submit').dispatchEvent(
+    new window.Event('submit', { bubbles: true, cancelable: true })),
+  input: (selector, value) => {
+    const element = fixtureTarget(selector, 'input');
+    element.value = value;
+    element.dispatchEvent(new window.Event('input', { bubbles: true, cancelable: true }));
+  },
+  change: (selector, step) => {
+    const element = fixtureTarget(selector, 'change');
+    if ('checked' in step) element.checked = !!step.checked;
+    if ('value' in step) element.value = step.value;
+    element.dispatchEvent(new window.Event('change', { bubbles: true, cancelable: true }));
+  },
+  blur: (selector) => fixtureTarget(selector, 'blur').dispatchEvent(
+    new window.FocusEvent('blur', { bubbles: false, cancelable: false })),
+  keydown: (selector, key) => fixtureTarget(selector, 'keydown').dispatchEvent(
+    new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })),
+  settle: flushMicrotasks,
+};
+
+failures = await replayFixtureSteps(steps, adapter);
 
 // ── teardown check ───────────────────────────────────────────────
 if (instance && typeof instance.destroy === 'function') {

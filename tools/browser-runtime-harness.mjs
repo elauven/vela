@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { resolve, relative, sep } from "node:path";
 import { chromium } from "playwright";
+import { fixtureStorage, replayFixtureSteps } from './runtime-fixture-dsl.mjs';
 
 const [, , configPath] = process.argv;
 function done(value) { process.stdout.write(JSON.stringify(value)); }
@@ -33,7 +34,8 @@ let browser;
 try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
-  if (config.storage) await page.addInitScript((entries) => { for (const [key, value] of Object.entries(entries)) localStorage.setItem(key, value); }, config.storage);
+  const storage = Object.assign({}, config.storage || {}, fixtureStorage(config.steps || []));
+  if (Object.keys(storage).length) await page.addInitScript((entries) => { for (const [key, value] of Object.entries(entries)) localStorage.setItem(key, value); }, storage);
   const failures = [];
   page.on("pageerror", (error) => failures.push("page error: " + String(error.stack || error)));
   page.on("console", (message) => { if (message.type() === "error") failures.push("console error: " + message.text()); });
@@ -42,54 +44,37 @@ try {
   await page.goto(origin + "/");
   await page.waitForFunction(() => window.__velaInstance);
 
-  for (let i = 0; i < (config.steps || []).length; i++) {
-    const step = config.steps[i];
-    const tag = "step " + i;
-    try {
-      if (step.assertFocused) {
-        const focused = await page.locator(step.assertFocused).first().evaluate((element) => document.activeElement === element);
-        if (!focused) failures.push(tag + ": expected focus on " + step.assertFocused);
-      } else if (step.assertStyle) {
-        const got = await page.locator(step.assertStyle).first().evaluate((element, property) => getComputedStyle(element).getPropertyValue(property), step.property);
-        if (got !== step.equals) failures.push(tag + ": style " + step.property + " of " + step.assertStyle + " = " + JSON.stringify(got) + ", want " + JSON.stringify(step.equals));
-      } else if (step.assertStorage) {
-        const got = await page.evaluate((key) => localStorage.getItem(key), step.assertStorage);
-        if (got == null || !got.includes(step.contains ?? "")) failures.push(tag + ": localStorage[" + step.assertStorage + "] = " + JSON.stringify(got));
-      } else if (step.assertText) {
-        const got = (await page.locator(step.assertText).first().textContent())?.trim() ?? null;
-        if (got !== step.equals) failures.push(tag + ": text of " + step.assertText + " = " + JSON.stringify(got) + ", want " + JSON.stringify(step.equals));
-      } else if (step.assertCount) {
-        const got = await page.locator(step.assertCount).count();
-        if (got !== step.equals) failures.push(tag + ": count of " + step.assertCount + " = " + got + ", want " + step.equals);
-      } else if (step.assertValue) {
-        const got = await page.locator(step.assertValue).first().inputValue();
-        if (got !== step.equals) failures.push(tag + ": value of " + step.assertValue + " = " + JSON.stringify(got) + ", want " + JSON.stringify(step.equals));
-      } else if (step.focus) {
-        await page.locator(step.focus).first().focus();
-      } else if (step.click) {
-        await page.locator(step.click).first().click();
-      } else if (step.dblclick) {
-        await page.locator(step.dblclick).first().dblclick();
-      } else if (step.input) {
-        await page.locator(step.input).first().fill(step.value ?? "");
-      } else if (step.change) {
-        const locator = page.locator(step.change).first();
-        if ("checked" in step) {
-          if (step.checked) await locator.check(); else await locator.uncheck();
-        } else {
-          await locator.selectOption(step.value);
-        }
-      } else if (step.submit) {
-        await page.locator(step.submit).first().dispatchEvent("submit");
-      } else if (step.keydown) {
-        await page.locator(step.keydown).first().press(step.key);
-      } else if (step.blur) {
-        await page.locator(step.blur).first().blur();
+  const adapter = {
+    text: async (selector) => (await page.locator(selector).first().textContent())?.trim() ?? null,
+    html: async (selector) => page.locator(selector).first().evaluate(element => element.innerHTML),
+    value: async (selector) => page.locator(selector).first().inputValue(),
+    storage: (key) => page.evaluate(value => localStorage.getItem(value), key),
+    count: (selector) => page.locator(selector).count(),
+    focused: (selector) => page.locator(selector).first().evaluate(element => document.activeElement === element),
+    style: (selector, property) => page.locator(selector).first().evaluate(
+      (element, name) => getComputedStyle(element).getPropertyValue(name), property),
+    focus: (selector) => page.locator(selector).first().focus(),
+    click: (selector) => page.locator(selector).first().click(),
+    dblclick: (selector) => page.locator(selector).first().dblclick(),
+    submit: (selector) => page.locator(selector).first().dispatchEvent('submit'),
+    input: (selector, value) => page.locator(selector).first().fill(value),
+    change: async (selector, step) => {
+      const locator = page.locator(selector).first();
+      if ('checked' in step) {
+        if (step.checked) await locator.check(); else await locator.uncheck();
       } else {
-        failures.push(tag + ": unsupported step");
+        await locator.selectOption(step.value);
       }
-    } catch (error) { failures.push(tag + ": " + String(error.message || error)); }
-  }
+    },
+    blur: (selector) => page.locator(selector).first().blur(),
+    keydown: (selector, key) => page.locator(selector).first().press(key),
+    settle: async () => {
+      for (let turn = 0; turn < 5; turn++) {
+        await page.evaluate(() => Promise.resolve());
+      }
+    },
+  };
+  failures.push(...await replayFixtureSteps(config.steps || [], adapter));
   try { await page.evaluate(() => window.__velaInstance?.destroy()); } catch (error) { failures.push("destroy failed: " + String(error.stack || error)); }
   done({ ok: failures.length === 0, failures });
 } catch (error) { done({ ok: false, failures: [String(error.stack || error)] }); } finally { await browser?.close(); await new Promise((resolveClose) => server.close(resolveClose)); }
