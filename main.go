@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/md5"
+	_ "embed"
 	"flag"
 	"fmt"
 	"os"
@@ -10,6 +11,32 @@ import (
 	"sync"
 	"time"
 )
+
+//go:embed runtime.js
+var embeddedRuntime []byte
+
+// stageRuntime writes the compiler canonical runtime next to generated
+// components in one output directory. Generated modules import ./runtime.js,
+// so every directory containing emitted component code needs this file.
+func stageRuntime(outDir string) error {
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(outDir, "runtime.js"), embeddedRuntime, 0o644)
+}
+
+func stageRuntimeForComponents(files []string, srcRoot, outRoot string) error {
+	dirs := map[string]bool{}
+	for _, src := range files {
+		dirs[filepath.Dir(mirrorPath(src, srcRoot, outRoot, ".js"))] = true
+	}
+	for dir := range dirs {
+		if err := stageRuntime(dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // CompileOptions controls code generation behaviour.
 type CompileOptions struct {
@@ -199,6 +226,10 @@ func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 	// components retain imports such as ./format.js, so mirror these files next
 	// to the compiled modules instead of leaving dangling imports in dist.
 	errors += copyProjectJSModules(srcRoot, outRoot)
+	if err := stageRuntimeForComponents(files, srcRoot, outRoot); err != nil {
+		fmt.Fprintf(os.Stderr, "cannot stage runtime: %v\n", err)
+		errors++
+	}
 	return errors
 }
 
