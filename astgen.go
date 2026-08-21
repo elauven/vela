@@ -4500,13 +4500,11 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 		wrap+" = document.createComment('comp');"))
 	g.body = append(g.body, jsStmt(parentVar+".appendChild("+wrap+");"))
 
-	propsObj := g.componentPropsObject(comp.Attrs)
+	propsExpr := g.componentPropsExpr(comp.Attrs)
 
-	// Initial mount — the constructor calls each slot factory,
-	// which inserts the slot content (and its anchors) into the DOM.
-	g.initBody = append(g.initBody, jsStmt(
-		"if (!"+inst+") "+inst+" = "+comp.Name+"("+wrap+", "+
-			propsObj+", "+slotsObj+");"))
+	// Initial mount — keep dynamic props as cached template AST expressions.
+	g.initBody = append(g.initBody, g.templateStmt(
+		"if (!"+inst+") "+inst+" = "+comp.Name+"("+wrap+", "+templateMarker(0)+", "+slotsObj+");", propsExpr))
 
 	// Reactive prop updates.  The .set() statement propagates new
 	// prop values to an already-mounted instance — both via the
@@ -4515,7 +4513,7 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	// update closure (captureScope picks compInstances up and the
 	// fragment builder replays each instance's setStmt so a row
 	// reuse re-sets the child's props rather than tearing down).
-	setStmt := "if (" + inst + ") " + inst + ".set(" + propsObj + ");"
+	setStmt := g.templateStmt("if ("+inst+") "+inst+".set("+templateMarker(0)+");", propsExpr)
 	// Back-fill the bookkeeping entry pushed above so the
 	// fragment-update path can find this statement.  The entry
 	// is normally the last pushed (the recursive walker hasn't
@@ -4528,7 +4526,7 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	// this component's own bookkeeping.
 	for i := len(g.compInstances) - 1; i >= 0; i-- {
 		if g.compInstances[i].inst == inst {
-			g.compInstances[i].setStmt = jsStmt(setStmt)
+			g.compInstances[i].setStmt = setStmt
 			break
 		}
 	}
@@ -4542,7 +4540,7 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 		}
 	}
 	for d := range deps {
-		g.addUpdate(d, jsStmt(setStmt))
+		g.addUpdate(d, setStmt)
 	}
 
 	// Component @event handlers.  A child component dispatches a
