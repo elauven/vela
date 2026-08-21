@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$defer, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -105,7 +105,22 @@ assert(caught === expected, 'writable must preserve a subscriber error');
 assert(observed.join(',') === '0,1',
   'a faulty subscriber must not block later subscribers');
 
+let deferredError;
+let ranAfterError = false;
+let ranReentrant = false;
+process.once('uncaughtException', error => { deferredError = error; });
+$$defer(() => {
+  $$defer(() => { ranReentrant = true; });
+  throw expected;
+});
+$$defer(() => { ranAfterError = true; });
+await new Promise(resolve => setTimeout(resolve, 0));
+assert(deferredError === expected, 'scheduler must report its first callback error');
+assert(ranAfterError && ranReentrant,
+  'scheduler must drain later and reentrant callbacks after an error');
+
 console.log('OK');
+
 `
 	if err := os.WriteFile(filepath.Join(dir, "contract.mjs"), []byte(script), 0o644); err != nil {
 		t.Fatal(err)

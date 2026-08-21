@@ -49,10 +49,18 @@ if (!globalThis[_B]) {
 function _flushQueue() {
   const b = globalThis[_B];
   b.scheduled = false;
+  let firstError;
   while (b.queue.length) {
     const q = b.queue.splice(0);
-    for (const f of q) f();
+    for (const f of q) {
+      try {
+        f();
+      } catch (error) {
+        if (firstError === undefined) firstError = error;
+      }
+    }
   }
+  if (firstError !== undefined) throw firstError;
 }
 
 function _batchRun(fn) {
