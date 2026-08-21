@@ -25,16 +25,48 @@ func TestTodoCorpusCompilation(t *testing.T) {
 		})
 	}
 
-	bad := []string{
-		"test_projects/deepseek-todo-vela/src/App.vela",
-		"test_projects/qwen-todo-vela/src/App.vela",
-		"test_projects/qwen-todo-vela/src/TodoItem.vela",
+	bad := []struct {
+		src  string
+		want []string
+	}{
+		{
+			src: "test_projects/deepseek-todo-vela/src/App.vela",
+			want: []string{
+				"$derived does not accept a callback",
+				"event modifiers are not supported",
+				"object-valued :class is not supported",
+				"bind:checked requires a plain $state",
+			},
+		},
+		{
+			src:  "test_projects/qwen-todo-vela/src/App.vela",
+			want: []string{"is not a dynamic attribute"},
+		},
+		{
+			src: "test_projects/qwen-todo-vela/src/TodoItem.vela",
+			want: []string{
+				"$dispatch is a Vela builtin",
+				"is not a dynamic attribute",
+			},
+		},
 	}
-	for _, src := range bad {
-		t.Run("negative/"+src, func(t *testing.T) {
-			_, err := compileFile(src, filepath.Join(t.TempDir(), "out.js"), CompileOptions{Codegen: "ast"})
+	for _, fixture := range bad {
+		t.Run("negative/"+fixture.src, func(t *testing.T) {
+			diags, err := compileFile(fixture.src, filepath.Join(t.TempDir(), "out.js"), CompileOptions{Codegen: "ast"})
 			if err == nil {
 				t.Fatal("negative fixture compiled; expected actionable diagnostics")
+			}
+			for _, want := range fixture.want {
+				found := false
+				for _, diag := range diags {
+					if diag.Sev == SevError && diag.Line > 0 && diag.Col > 0 && strings.Contains(diag.Message, want) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("missing positioned error diagnostic %q: %#v", want, diags)
+				}
 			}
 		})
 	}
