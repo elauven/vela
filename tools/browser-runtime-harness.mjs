@@ -46,7 +46,13 @@ try {
     const step = config.steps[i];
     const tag = "step " + i;
     try {
-      if (step.assertStorage) {
+      if (step.assertFocused) {
+        const focused = await page.locator(step.assertFocused).first().evaluate((element) => document.activeElement === element);
+        if (!focused) failures.push(tag + ": expected focus on " + step.assertFocused);
+      } else if (step.assertStyle) {
+        const got = await page.locator(step.assertStyle).first().evaluate((element, property) => getComputedStyle(element).getPropertyValue(property), step.property);
+        if (got !== step.equals) failures.push(tag + ": style " + step.property + " of " + step.assertStyle + " = " + JSON.stringify(got) + ", want " + JSON.stringify(step.equals));
+      } else if (step.assertStorage) {
         const got = await page.evaluate((key) => localStorage.getItem(key), step.assertStorage);
         if (got == null || !got.includes(step.contains ?? "")) failures.push(tag + ": localStorage[" + step.assertStorage + "] = " + JSON.stringify(got));
       } else if (step.assertText) {
@@ -58,6 +64,8 @@ try {
       } else if (step.assertValue) {
         const got = await page.locator(step.assertValue).first().inputValue();
         if (got !== step.equals) failures.push(tag + ": value of " + step.assertValue + " = " + JSON.stringify(got) + ", want " + JSON.stringify(step.equals));
+      } else if (step.focus) {
+        await page.locator(step.focus).first().focus();
       } else if (step.click) {
         await page.locator(step.click).first().click();
       } else if (step.dblclick) {

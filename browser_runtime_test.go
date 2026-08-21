@@ -59,6 +59,21 @@ func runBrowserProject(t *testing.T, srcRoot, entry string, steps []rtStep) {
 	runBrowserProjectWithStorage(t, srcRoot, entry, nil, steps)
 }
 
+func runBrowserSources(t *testing.T, sources map[string]string, entry string, steps []rtStep) {
+	t.Helper()
+	srcRoot := t.TempDir()
+	for name, source := range sources {
+		path := filepath.Join(srcRoot, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(source), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runBrowserProject(t, srcRoot, entry, steps)
+}
+
 func TestBrowserRuntimeTodoCorpusQwen(t *testing.T) {
 	runBrowserProject(t, "test_projects/corpus/qwen-fixed/src", "App.js", []rtStep{
 		{"assertCount": ".todo-item", "equals": 0},
@@ -105,5 +120,46 @@ func TestBrowserRuntimeTodoCorpusGPT(t *testing.T) {
 		{"assertCount": ".todo-item.completed", "equals": 1},
 		{"click": "button.clear"},
 		{"assertCount": ".todo-item", "equals": 0},
+	})
+}
+
+func TestBrowserRuntimeDashboardCorpusQwen(t *testing.T) {
+	runBrowserProject(t, "test_projects/qwen-dashboard-vela/src", "App.js", []rtStep{
+		{"assertCount": ".stat-card", "equals": 4},
+		{"assertCount": "button.period-button.selected", "equals": 1},
+		{"assertCount": "tbody tr", "equals": 8},
+		{"assertCount": ".bar-column[title]", "equals": 7},
+		{"click": "button.period-button:nth-of-type(2)"},
+		{"assertCount": "button.period-button:nth-of-type(2).selected", "equals": 1},
+		{"assertCount": ".bar-column[title]", "equals": 14},
+		{"click": "button.refresh-button"},
+		{"assertCount": "tbody tr", "equals": 8},
+		{"assertCount": ".status", "equals": 8},
+	})
+}
+
+func TestBrowserRuntimeKeepsFocusAcrossDeepEachUpdate(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let items = $state.deep([{ id: 1, title: "one" }]);
+</script>
+<template>{#each items as item (item.id)}<input class="row-input" bind:value={item.title} />{/each}</template>`}, "App.js", []rtStep{
+		{"focus": "input.row-input"},
+		{"input": "input.row-input", "value": "edited"},
+		{"assertValue": "input.row-input", "equals": "edited"},
+		{"assertFocused": "input.row-input"},
+	})
+}
+
+func TestBrowserRuntimeComponentKeepsDirectChildCSSSelector(t *testing.T) {
+	runBrowserSources(t, map[string]string{
+		"App.vela": `<script>
+  import { Child } from "./Child.vela";
+  let show = $state(true);
+</script>
+<template><div class="parent">{#if show}<Child />{/if}</div></template>
+<style>.parent > .child { color: rgb(1, 2, 3); }</style>`,
+		"Child.vela": `<template><p class="child">child</p></template>`,
+	}, "App.js", []rtStep{
+		{"assertStyle": ".parent > .child", "property": "color", "equals": "rgb(1, 2, 3)"},
 	})
 }
