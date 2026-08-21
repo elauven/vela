@@ -33,6 +33,7 @@ let browser;
 try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
+  if (config.storage) await page.addInitScript((entries) => { for (const [key, value] of Object.entries(entries)) localStorage.setItem(key, value); }, config.storage);
   const failures = [];
   page.on("pageerror", (error) => failures.push("page error: " + String(error.stack || error)));
   page.on("console", (message) => { if (message.type() === "error") failures.push("console error: " + message.text()); });
@@ -45,7 +46,10 @@ try {
     const step = config.steps[i];
     const tag = "step " + i;
     try {
-      if (step.assertText) {
+      if (step.assertStorage) {
+        const got = await page.evaluate((key) => localStorage.getItem(key), step.assertStorage);
+        if (got == null || !got.includes(step.contains ?? "")) failures.push(tag + ": localStorage[" + step.assertStorage + "] = " + JSON.stringify(got));
+      } else if (step.assertText) {
         const got = (await page.locator(step.assertText).first().textContent())?.trim() ?? null;
         if (got !== step.equals) failures.push(tag + ": text of " + step.assertText + " = " + JSON.stringify(got) + ", want " + JSON.stringify(step.equals));
       } else if (step.assertCount) {

@@ -9,10 +9,11 @@ import (
 )
 
 type browserRuntimeConfig struct {
-	RootDir    string   `json:"rootDir"`
-	Entry      string   `json:"entry"`
-	ExportName string   `json:"exportName"`
-	Steps      []rtStep `json:"steps"`
+	RootDir    string            `json:"rootDir"`
+	Entry      string            `json:"entry"`
+	ExportName string            `json:"exportName"`
+	Steps      []rtStep          `json:"steps"`
+	Storage    map[string]string `json:"storage,omitempty"`
 }
 
 type browserRuntimeResult struct {
@@ -20,7 +21,7 @@ type browserRuntimeResult struct {
 	Failures []string `json:"failures"`
 }
 
-func runBrowserProject(t *testing.T, srcRoot, entry string, steps []rtStep) {
+func runBrowserProjectWithStorage(t *testing.T, srcRoot, entry string, storage map[string]string, steps []rtStep) {
 	t.Helper()
 	node := requirePlaywright(t)
 	outRoot := t.TempDir()
@@ -31,7 +32,7 @@ func runBrowserProject(t *testing.T, srcRoot, entry string, steps []rtStep) {
 	if errors := buildProject(files, srcRoot, outRoot, CompileOptions{Codegen: "ast"}, false); errors != 0 {
 		t.Fatalf("project build failed with %d error(s)", errors)
 	}
-	config := browserRuntimeConfig{RootDir: outRoot, Entry: entry, ExportName: componentName(entry), Steps: steps}
+	config := browserRuntimeConfig{RootDir: outRoot, Entry: entry, ExportName: componentName(entry), Steps: steps, Storage: storage}
 	data, err := json.Marshal(config)
 	if err != nil {
 		t.Fatal(err)
@@ -53,6 +54,11 @@ func runBrowserProject(t *testing.T, srcRoot, entry string, steps []rtStep) {
 	}
 }
 
+func runBrowserProject(t *testing.T, srcRoot, entry string, steps []rtStep) {
+	t.Helper()
+	runBrowserProjectWithStorage(t, srcRoot, entry, nil, steps)
+}
+
 func TestBrowserRuntimeTodoCorpusQwen(t *testing.T) {
 	runBrowserProject(t, "test_projects/corpus/qwen-fixed/src", "App.js", []rtStep{
 		{"assertCount": ".todo-item", "equals": 0},
@@ -70,6 +76,34 @@ func TestBrowserRuntimeTodoCorpusQwen(t *testing.T) {
 		{"keydown": "input.edit-input", "key": "Enter"},
 		{"assertText": ".todo-title", "equals": "edited in chromium"},
 		{"click": "button.clear-button"},
+		{"assertCount": ".todo-item", "equals": 0},
+	})
+}
+
+func TestBrowserRuntimeTodoCorpusDeepSeek(t *testing.T) {
+	runBrowserProjectWithStorage(t, "test_projects/corpus/deepseek-fixed/src", "App.js", map[string]string{
+		"vela-todo-tasks": `[{"id":41,"text":"Stored task","done":false}]`,
+	}, []rtStep{
+		{"assertCount": ".task-item", "equals": 1},
+		{"assertText": ".task-item span", "equals": "Stored task"},
+		{"input": ".add-form input", "value": "browser deep state"},
+		{"keydown": ".add-form input", "key": "Enter"},
+		{"assertCount": ".task-item", "equals": 2},
+		{"assertStorage": "vela-todo-tasks", "contains": "browser deep state"},
+		{"change": ".task-item input[type=checkbox]", "checked": true},
+		{"click": ".filters button:nth-child(3)"},
+		{"assertCount": ".task-item", "equals": 1},
+	})
+}
+
+func TestBrowserRuntimeTodoCorpusGPT(t *testing.T) {
+	runBrowserProject(t, "test_projects/corpus/gpt-fixed/src", "App.js", []rtStep{
+		{"assertCount": ".todo-item", "equals": 2},
+		{"click": "button.remove"},
+		{"assertCount": ".todo-item", "equals": 1},
+		{"change": "input[type=checkbox]", "checked": true},
+		{"assertCount": ".todo-item.completed", "equals": 1},
+		{"click": "button.clear"},
 		{"assertCount": ".todo-item", "equals": 0},
 	})
 }
