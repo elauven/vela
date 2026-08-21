@@ -3377,14 +3377,36 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	}
 	plans := make([]plan, len(chain.Branches))
 
-	g.body = append(g.body, jsStmt("const "+anchor+" = document.createComment('if-chain');"))
-	for i := range chain.Branches {
-		g.body = append(g.body, jsStmt("let "+fn+"_b"+itoa(i)+" = null;"))
-		g.body = append(g.body, jsStmt("let "+fn+"_b"+itoa(i)+"_cleanup = null;"))
+	captured := g.inCapturedScope()
+	if captured {
+		g.declare(jsStmt("let " + anchor + " = null;"))
+		g.body = append(g.body, jsStmt(anchor+" = document.createComment('if-chain');"))
+	} else {
+		g.body = append(g.body, jsStmt("const "+anchor+" = document.createComment('if-chain');"))
 	}
-	g.body = append(g.body, jsStmt("let "+fn+"_running = false, "+fn+"_pending = false;"))
+	for i := range chain.Branches {
+		decl := jsStmt("let " + fn + "_b" + itoa(i) + " = null;")
+		cleanupDecl := jsStmt("let " + fn + "_b" + itoa(i) + "_cleanup = null;")
+		if captured {
+			g.declare(decl)
+			g.declare(cleanupDecl)
+		} else {
+			g.body = append(g.body, decl, cleanupDecl)
+		}
+	}
+	runningDecl := jsStmt("let " + fn + "_running = false, " + fn + "_pending = false;")
+	if captured {
+		g.declare(runningDecl)
+	} else {
+		g.body = append(g.body, runningDecl)
+	}
 	if chain.KeyExpr != "" {
-		g.body = append(g.body, jsStmt("let "+fn+"_keyprev = {};"))
+		keyDecl := jsStmt("let " + fn + "_keyprev = {};")
+		if captured {
+			g.declare(keyDecl)
+		} else {
+			g.body = append(g.body, keyDecl)
+		}
 	}
 
 	for i, branch := range chain.Branches {
@@ -3397,7 +3419,13 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		}
 		if astHoleSubtreeOK(branch.Children) {
 			sub := g.buildHoleSubtree(frag, branch.Children, true, bv, false, true)
-			g.body = append(g.body, sub.decls...)
+			if captured {
+				for _, decl := range sub.decls {
+					g.declare(decl)
+				}
+			} else {
+				g.body = append(g.body, sub.decls...)
+			}
 			plans[i].build = sub.build
 			plans[i].init = sub.initUpdates
 			plans[i].captured = sub.captured
@@ -3507,7 +3535,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		jsStmt(fn + "_running = true;"),
 		&JsTryStmt{baseStmt: baseStmt{genNode()}, Block: &JsBlock{baseStmt: baseStmt{genNode()}, Body: tryBody}, Finalizer: &JsBlock{baseStmt: baseStmt{genNode()}, Body: finallyBody}},
 	}
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: body}})
+	g.declareInScope(&JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: body}})
 	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
 	g.initBody = append(g.initBody, jsStmt(fn+"();"))
 	deps := map[string]bool{}
@@ -3527,6 +3555,21 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		} else {
 			g.addStructuralUpdate(dep, jsStmt(fn+"();"))
 		}
+	}
+	if captured {
+		var teardown strings.Builder
+		for i := range chain.Branches {
+			bv := fn + "_b" + itoa(i)
+			cleanupVar := bv + "_cleanup"
+			teardown.WriteString("if (" + cleanupVar + ") { " + cleanupVar + "(); " + cleanupVar + " = null; } ")
+			teardown.WriteString("if (" + bv + ") { for (const $$node of " + bv + ") $$node.remove(); " + bv + " = null; } ")
+		}
+		teardown.WriteString(anchor + " = null; ")
+		teardown.WriteString(fn + "_running = false; " + fn + "_pending = false; ")
+		if chain.KeyExpr != "" {
+			teardown.WriteString(fn + "_keyprev = {}; ")
+		}
+		g.nestedTeardowns = append(g.nestedTeardowns, teardown.String())
 	}
 	return fn
 }
