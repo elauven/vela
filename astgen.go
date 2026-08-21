@@ -4394,6 +4394,23 @@ func (g *ASTGen) buildSlotNode(slot *SlotNode, parentVar string) {
 		"const "+anchor+" = document.createComment('slot:"+slot.Name+"');"))
 	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
 
+	// Keep a text-only fallback on the structured template-expression path.
+	// Besides avoiding a second JS-expression serializer, this preserves the
+	// original template location for its source-map segment.
+	if len(slot.Fallback) == 1 {
+		if text, ok := slot.Fallback[0].(*TextNode); ok {
+			slotFactory := "$" + "$sf"
+			slotNodes := "$" + "$sn"
+			slots := "$" + "$slots"
+			src := "{ const " + slotFactory + " = " + slots + "[" + jsonQuote(slot.Name) + "]; " +
+				"if (" + slotFactory + ") { const " + slotNodes + " = " + slotFactory + "(); " +
+				"if (" + slotNodes + ") " + anchor + ".before(" + slotNodes + "); } else { " +
+				anchor + ".before(document.createTextNode(" + templateMarker(0) + ")); } }"
+			g.initBody = append(g.initBody, g.templateStmt(src, g.textValueExpr(text.Parts)))
+			return
+		}
+	}
+
 	// Init block — runs after wiring (the anchor needs a parent).
 	var b strings.Builder
 	b.WriteString("{ const $$sf = $$slots[")
