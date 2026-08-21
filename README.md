@@ -307,8 +307,9 @@ vela/
 ├── parser.go      SFC extractor + recursive-descent HTML parser → AST
 ├── analyzer.go    Script analysis: $state / $derived / $effect / imports
 ├── codegen.go     AST walker → emits flat, minimal JS
+├── runtime.js      Canonical browser runtime: scheduler, stores, and compiler helpers
 └── runtime/
-    └── runtime.js Writable / readable / derived stores (~120 lines)
+    └── runtime.js Compatibility re-export for historical imports
 ```
 
 The compiler pipeline:
