@@ -107,6 +107,7 @@ real-browser compatibility suite.
 | Components, slots, and events | Components survive conditional/list nesting; slot content remains reactive; custom events and teardown do not throw. | `TestRuntimeSlotComponentEvent`, `TestRuntimeComponentInIf`, `TestRuntimeEachRowComponent`, `TestRuntimeNestingMatrix_SlotContentInEachReactive`, `TestRuntimeNestingMatrix_ComponentEventStillFires` |
 | Block nesting matrix | Every pair of `if`, `each`, `key`, and `await` is exercised in nested positions, including rejection paths. | `TestRuntimeNestingMatrix_IfInIf`, `TestRuntimeNestingMatrix_KeyInEach`, `TestRuntimeNestingMatrix_AwaitInAwait`, `TestRuntimeNestingMatrix_AwaitRejection` |
 | Component structure and scoped CSS | Components inserted into control-flow retain correct DOM shape and direct-child CSS selector semantics. | `TestRuntimeNestingMatrix_ComponentDirectChildSelector`, `TestRuntimeNestingMatrix_ComponentInEachInIf`, `TestRuntimeDashboardCorpusQwen` |
+| AI application compatibility corpus | Corrected DeepSeek, GPT, and Qwen Todo applications plus the Qwen dashboard compile as projects and run their representative user flows. | `TestPositiveCorpusProjectsBuildAsProjects`, `TestTodoCorpusCompilation`, `TestRuntimeTodoCorpusQwen`, `TestRuntimeTodoCorpusDeepSeek`, `TestRuntimeTodoCorpusGPT`, `TestRuntimeDashboardCorpusQwen` |
 
 The full matrix is intentionally split across `runtime_behaviour_test.go` and
 `runtime_nesting_matrix_test.go`. Add a runtime regression to the closest
