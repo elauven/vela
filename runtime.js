@@ -68,43 +68,50 @@ function _batchRun(fn) {
 
 // ─────────────────────────────────────────────
 //  Stores
-// ─────────────────────────────────────────────
+//
+// Store ownership is centralised here: subscriptions are synchronous,
+// unsubscription is idempotent, and fan-out iterates a snapshot.
 
-/**
- * writable(initial) — a store whose value can be set from outside.
- *
- * const count = writable(0);
- * count.subscribe(v => console.log(v)); // → 0
- * count.set(1);                         // → 1
- * count.update(n => n + 1);             // → 2
- */
-export function writable(value) {
-  let subs = [];
+function createWritable(value) {
+  const subscribers = new Set();
 
   function notify() {
-    for (const fn of subs) fn(value);
+    let firstError;
+    for (const run of [...subscribers]) {
+      try {
+        run(value);
+      } catch (error) {
+        if (firstError === undefined) firstError = error;
+      }
+    }
+    if (firstError !== undefined) throw firstError;
+  }
+
+  function set(next) {
+    if (next === value) return;
+    value = next;
+    _batchRun(notify);
   }
 
   return {
-    subscribe(fn) {
-      subs.push(fn);
-      fn(value);
+    subscribe(run) {
+      subscribers.add(run);
+      try {
+        run(value);
+      } catch (error) {
+        subscribers.delete(run);
+        throw error;
+      }
+      let active = true;
       return () => {
-        subs = subs.filter(s => s !== fn);
+        if (!active) return;
+        active = false;
+        subscribers.delete(run);
       };
     },
-    set(v) {
-      if (v !== value) {
-        value = v;
-        _batchRun(() => notify());
-      }
-    },
+    set,
     update(fn) {
-      const next = fn(value);
-      if (next !== value) {
-        value = next;
-        _batchRun(() => notify());
-      }
+      set(fn(value));
     },
     get() {
       return value;
@@ -112,30 +119,49 @@ export function writable(value) {
   };
 }
 
+/** A store whose value can be set from outside. */
+export function writable(value) {
+  return createWritable(value);
+}
+
 /**
- * readable(initial, start?) — a store whose value can only be read externally.
- * `start` receives a `set` function and may return a cleanup callback.
- *
- * const time = readable(new Date(), set => {
- *   const id = setInterval(() => set(new Date()), 1000);
- *   return () => clearInterval(id);
- * });
+ * A read-only store whose start callback runs once for the first subscriber
+ * and whose cleanup runs once after the final unsubscribe.
  */
 export function readable(value, start) {
-  const store = writable(value);
-  let stop;
+  const store = createWritable(value);
+  let subscriberCount = 0;
+  let stop = null;
 
   return {
-    subscribe(fn) {
-      if (subs(store) === 0 && start) {
-        stop = start(store.set) || (() => {});
+    subscribe(run) {
+      const firstSubscriber = subscriberCount === 0;
+      if (firstSubscriber && start) {
+        const cleanup = start(store.set);
+        stop = typeof cleanup === 'function' ? cleanup : null;
       }
-      const unsub = store.subscribe(fn);
-      return () => {
-        unsub();
-        if (subs(store) === 0 && stop) {
-          stop();
+      let unsubscribe;
+      try {
+        unsubscribe = store.subscribe(run);
+      } catch (error) {
+        if (firstSubscriber && stop) {
+          const cleanup = stop;
           stop = null;
+          cleanup();
+        }
+        throw error;
+      }
+      subscriberCount++;
+      let active = true;
+      return () => {
+        if (!active) return;
+        active = false;
+        unsubscribe();
+        subscriberCount--;
+        if (subscriberCount === 0 && stop) {
+          const cleanup = stop;
+          stop = null;
+          cleanup();
         }
       };
     },
@@ -143,45 +169,78 @@ export function readable(value, start) {
   };
 }
 
-function subs(store) {
-  // Count active subscribers — not exposed externally
-  let count = 0;
-  const unsub = store.subscribe(() => count++);
-  unsub();
-  return count - 1; // subtract the probe itself
-}
-
 /**
- * derived(stores, fn) — a read-only store computed from one or more stores.
- *
- * const doubled = derived(count, n => n * 2);
- * const sum     = derived([a, b], ([a, b]) => a + b);
+ * A read-only value derived from one or more stores. Source subscriptions stay
+ * live only while it has subscribers; destroy() is final and idempotent.
  */
 export function derived(stores, fn, initial) {
   const single = !Array.isArray(stores);
   const sources = single ? [stores] : stores;
-  const store = writable(initial);
+  const output = createWritable(initial);
+  let subscriberCount = 0;
+  let sourceUnsubs = [];
+  let active = false;
+  let destroyed = false;
 
-  let values = new Array(sources.length).fill(undefined);
-  let inited = new Array(sources.length).fill(false);
-  let ready = false;
-
-  const unsubs = sources.map((src, i) =>
-    src.subscribe(v => {
-      values[i] = v;
-      inited[i] = true;
-      ready = inited.every(Boolean);
-      if (ready) {
-        store.set(single ? fn(values[0]) : fn(values));
+  function start() {
+    if (active || destroyed) return;
+    active = true;
+    const values = new Array(sources.length);
+    const inited = new Array(sources.length).fill(false);
+    try {
+      sourceUnsubs = [];
+      for (let index = 0; index < sources.length; index++) {
+        const source = sources[index];
+        sourceUnsubs.push(source.subscribe(value => {
+          values[index] = value;
+          inited[index] = true;
+          if (inited.every(Boolean)) {
+            output.set(single ? fn(values[0]) : fn(values));
+          }
+        }));
       }
-    })
-  );
+    } catch (error) {
+      for (const unsubscribe of sourceUnsubs) unsubscribe();
+      sourceUnsubs = [];
+      active = false;
+      throw error;
+    }
+  }
+
+  function stop() {
+    if (!active) return;
+    active = false;
+    const unsubs = sourceUnsubs;
+    sourceUnsubs = [];
+    for (const unsubscribe of unsubs) unsubscribe();
+  }
 
   return {
-    subscribe: store.subscribe,
-    get: store.get,
+    subscribe(run) {
+      const firstSubscriber = subscriberCount === 0;
+      if (firstSubscriber) start();
+      let unsubscribe;
+      try {
+        unsubscribe = output.subscribe(run);
+      } catch (error) {
+        if (firstSubscriber) stop();
+        throw error;
+      }
+      subscriberCount++;
+      let subscribed = true;
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        unsubscribe();
+        subscriberCount--;
+        if (subscriberCount === 0) stop();
+      };
+    },
+    get: output.get,
     destroy() {
-      unsubs.forEach(u => u());
+      if (destroyed) return;
+      destroyed = true;
+      stop();
     },
   };
 }
