@@ -1085,3 +1085,151 @@ func TestRuntimeDashboardCorpusQwen(t *testing.T) {
 		{"assertCount": "tbody tr", "equals": 8},
 	})
 }
+
+// TestRuntimeStructuredIfBranchDynamicDOM exercises the Phase-2 structured
+// BranchPlan path: dynamic directives, a DOM event, and a value binding must
+// remain live both while mounted and after the branch is recreated.
+func TestRuntimeStructuredIfBranchDynamicDOM(t *testing.T) {
+	src := `<script>
+  let visible = $state(true);
+  let active = $state(false);
+  let label = $state("one");
+  let count = $state(0);
+</script>
+<template><div>
+  <button class="toggle" @click={() => visible = !visible}>toggle</button>
+  <button class="activate" @click={() => active = !active}>activate</button>
+  {#if visible}
+    <input class:selected={active} style:opacity={active ? 1 : 0.5} :data-label={label} bind:value={label} />
+    <button class="increment" @click={() => count++}>inc</button>
+    <p class="result">{count}:{label}</p>
+  {/if}
+</div></template>`
+	assertRuntime(t, "StructuredIfDynamicDOM", src, []rtStep{
+		{"assertCount": "input", "equals": 1},
+		{"input": "input", "value": "changed"},
+		{"assertText": ".result", "equals": "0:changed"},
+		{"assertCount": "input[data-label=\"changed\"]", "equals": 1},
+		{"click": ".activate"},
+		{"assertCount": "input.selected", "equals": 1},
+		{"click": ".increment"},
+		{"assertText": ".result", "equals": "1:changed"},
+		{"click": ".toggle"},
+		{"assertCount": "input", "equals": 0},
+		{"click": ".toggle"},
+		{"assertValue": "input", "equals": "changed"},
+		{"click": ".increment"},
+		{"assertText": ".result", "equals": "2:changed"},
+	})
+}
+
+// TestRuntimeStructuredKeyComponent covers Phase 3 ownership: a keyed child
+// is destroyed and recreated, receives reactive props, and its CustomEvent
+// listener is detached and attached again with the new instance.
+func TestRuntimeStructuredKeyComponent(t *testing.T) {
+	child := `<script>export let value = "";</script>
+<template><button class="child" @click={() => $$dispatch("close")}>{value}</button></template>`
+	app := `<script>
+  import { Child } from "./Child.js";
+  let identity = $state(1);
+  let value = $state("one");
+  let closes = $state(0);
+</script>
+<template><div>
+  <button class="next" @click={() => identity++}>next</button>
+  <button class="value" @click={() => value = "two"}>value</button>
+  <p class="closes">{closes}</p>
+  {#key identity}<Child :value={value} @on:close={() => closes++} />{/key}
+</div></template>`
+	assertRuntimeSet(t, "App", map[string]string{
+		"App": app, "Child": child,
+	}, []rtStep{
+		{"assertText": "button.child", "equals": "one"},
+		{"click": "button.child"},
+		{"assertText": ".closes", "equals": "1"},
+		{"click": "button.value"},
+		{"assertText": "button.child", "equals": "two"},
+		{"click": "button.next"},
+		{"assertCount": "button.child", "equals": 1},
+		{"assertText": "button.child", "equals": "two"},
+		{"click": "button.child"},
+		{"assertText": ".closes", "equals": "2"},
+	})
+}
+
+// TestRuntimeStructuredEachRowDynamicIf keeps row-local declarations and
+// dependencies isolated while a structured #if branch updates and remounts.
+func TestRuntimeStructuredEachRowDynamicIf(t *testing.T) {
+	src := `<script>
+  let items = $state.deep([{ title: "one", done: false }]);
+  let visible = $state(true);
+</script>
+<template><div>
+  <button class="visibility" @click={() => visible = !visible}>visibility</button>
+  {#each items as item}<li>
+    {#if visible}<button class="row" class:selected={item.done} @click={() => item.done = !item.done}>{item.title}</button>{/if}
+  </li>{/each}
+</div></template>`
+	assertRuntime(t, "StructuredEachRowDynamicIf", src, []rtStep{
+		{"assertCount": "button.row", "equals": 1},
+		{"assertCount": "button.row.selected", "equals": 0},
+		{"click": "button.row"},
+		{"assertCount": "button.row.selected", "equals": 1},
+		{"click": "button.visibility"},
+		{"assertCount": "button.row", "equals": 0},
+		{"click": "button.visibility"},
+		{"assertCount": "button.row.selected", "equals": 1},
+		{"click": "button.row"},
+		{"assertCount": "button.row.selected", "equals": 0},
+	})
+}
+
+// TestRuntimeStructuredAwaitBranches verifies pending, resolved, and rejected
+// branches after promise replacement; stale-settlement protection remains in
+// the await driver while branch DOM is built by BranchPlan.
+func TestRuntimeStructuredAwaitBranches(t *testing.T) {
+	src := `<script>
+  let request = $state(Promise.resolve("first"));
+</script>
+<template><div>
+  <button class="resolve" @click={() => request = Promise.resolve("second")}>resolve</button>
+  <button class="reject" @click={() => request = Promise.reject(new Error("bad"))}>reject</button>
+  {#await request}
+    <p class="pending">loading</p>
+  {:then value}
+    <p class="resolved">{value}</p>
+  {:catch error}
+    <p class="rejected">{error.message}</p>
+  {/await}
+</div></template>`
+	assertRuntime(t, "StructuredAwaitBranches", src, []rtStep{
+		{"assertText": ".resolved", "equals": "first"},
+		{"click": "button.resolve"},
+		{"assertText": ".resolved", "equals": "second"},
+		{"click": "button.reject"},
+		{"assertText": ".rejected", "equals": "bad"},
+	})
+}
+
+// TestRuntimeNestedStructuredAwait confirms that an await nested in a captured
+// outer branch retains its hoisted driver/chain and can remount safely.
+func TestRuntimeNestedStructuredAwait(t *testing.T) {
+	src := `<script>
+  let show = $state(true);
+  let request = $state(Promise.resolve("first"));
+</script>
+<template><div>
+  <button class="toggle" @click={() => show = !show}>toggle</button>
+  <button class="next" @click={() => request = Promise.resolve("second")}>next</button>
+  {#if show}{#await request}<p class="pending">loading</p>{:then value}<p class="resolved">{value}</p>{:catch error}<p class="rejected">{error.message}</p>{/await}{/if}
+</div></template>`
+	assertRuntime(t, "NestedStructuredAwait", src, []rtStep{
+		{"assertText": ".resolved", "equals": "first"},
+		{"click": "button.toggle"},
+		{"assertCount": ".resolved", "equals": 0},
+		{"click": "button.toggle"},
+		{"assertText": ".resolved", "equals": "first"},
+		{"click": "button.next"},
+		{"assertText": ".resolved", "equals": "second"},
+	})
+}
