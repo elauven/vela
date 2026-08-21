@@ -4069,15 +4069,12 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 		} else {
 			g.hoisted = append(g.hoisted, handlerDecl)
 		}
-		listener := jsStmt(inst + ".el.addEventListener('" + eventName + "', " + hv + ");")
+		attach := &g.initBody
 		if g.fragCounter >= 0 {
 			// Row update() replays initBody; subscriptions attach only at mount.
-			g.events = append(g.events, listener)
-		} else {
-			g.initBody = append(g.initBody, listener)
+			attach = &g.events
 		}
-		g.cleanup = append(g.cleanup, jsStmt(
-			"if ("+inst+") "+inst+".el.removeEventListener('"+eventName+"', "+hv+");"))
+		g.emitListenerPair(attach, inst+".el", eventName, hv, nil, inst, true)
 	}
 }
 
@@ -4298,15 +4295,34 @@ func (g *ASTGen) emitStyleDir(varName string, attr *Attr) {
 //   - bare identifier  → addEventListener('click', inc)
 //   - handler expr     → const $$h = <arrow>; addEventListener(…, $$h)
 //   - statement body   → const $$h = ($event) => { … }; …
+//
+// emitListenerPair keeps listener registration and teardown structurally paired.
+// When handlerExpr is present, the attach statement preserves the template
+// expression origin for source maps; otherwise handler is compiler-authored.
+func (g *ASTGen) emitListenerPair(attach *[]JsStmt, target, event, handler string, handlerExpr JsExpr, cleanupGuard string, addCleanup bool) {
+	var listener JsStmt
+	if handlerExpr != nil {
+		listener = g.templateStmt(target+".addEventListener('"+event+"', "+templateMarker(0)+");", handlerExpr)
+	} else {
+		listener = jsStmt(target + ".addEventListener('" + event + "', " + handler + ");")
+	}
+	*attach = append(*attach, listener)
+	if !addCleanup {
+		return
+	}
+	remove := target + ".removeEventListener('" + event + "', " + handler + ");"
+	if cleanupGuard != "" {
+		remove = "if (" + cleanupGuard + ") " + remove
+	}
+	g.cleanup = append(g.cleanup, jsStmt(remove))
+}
+
 func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 	handler := g.rewriteHandler(attr.Value)
 	handlerExpr := g.rewrittenTemplateExpr(attr.Expr, handler)
 	addCleanup := !g.inSlotScope
 	if isSimpleIdent(handler) {
-		g.events = append(g.events, g.templateStmt(varName+".addEventListener('"+attr.Name+"', "+templateMarker(0)+");", handlerExpr))
-		if addCleanup {
-			g.cleanup = append(g.cleanup, jsStmt(varName+".removeEventListener('"+attr.Name+"', "+handler+");"))
-		}
+		g.emitListenerPair(&g.events, varName, attr.Name, handler, handlerExpr, "", addCleanup)
 		return
 	}
 	hv := varName + "_" + attr.Name + "_h"
@@ -4315,10 +4331,7 @@ func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 		decl = g.templateStmt("const "+hv+" = ($event) => { "+templateMarker(0)+"; };", handlerExpr)
 	}
 	g.body = append(g.body, decl)
-	g.events = append(g.events, jsStmt(varName+".addEventListener('"+attr.Name+"', "+hv+");"))
-	if addCleanup {
-		g.cleanup = append(g.cleanup, jsStmt(varName+".removeEventListener('"+attr.Name+"', "+hv+");"))
-	}
+	g.emitListenerPair(&g.events, varName, attr.Name, hv, nil, "", addCleanup)
 }
 
 // emitBinding wires a bind:value / bind:checked attribute — both
@@ -4332,8 +4345,7 @@ func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 	if ok && g.analysis != nil && g.analysis.isStateName(sv) {
 		hv := varName + "_bind_" + spec.event + "_h"
 		g.body = append(g.body, jsStmt("const "+hv+" = ($e) => $$set_"+sv+"($e.target."+spec.readProp+");"))
-		g.events = append(g.events, jsStmt(varName+".addEventListener('"+spec.event+"', "+hv+");"))
-		g.cleanup = append(g.cleanup, jsStmt(varName+".removeEventListener('"+spec.event+"', "+hv+");"))
+		g.emitListenerPair(&g.events, varName, spec.event, hv, nil, "", true)
 	}
 	write := g.attrWriteStmt(varName, attr)
 	g.initBody = append(g.initBody, write)
