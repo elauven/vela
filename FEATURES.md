@@ -75,7 +75,7 @@ not historical roadmaps or the deprecated legacy generator.
 | Feature | Status | Notes |
 | --- | --- | --- |
 | SSR and hydration | **Planned** | The design lives in `SSR.md`; no server emitter or hydrator exists. |
-| Source maps | **Stable** | `--sourcemap` writes an external v3 `.js.map` for AST-generated JS, including script and stable template expressions. `--minify` and `--codegen=legacy` are intentionally rejected with source maps. |
+| Source maps | **Experimental** | `--sourcemap` writes an external v3 `.js.map` for AST-generated JS. Stable template expressions map directly to their individual source offsets; CSS mappings are not emitted. `--minify` and `--codegen=legacy` are intentionally rejected. |
 | Dev server / HMR | **Planned** | Watch mode recompiles only. |
 | TypeScript | **Unsupported** | No `lang="ts"` pipeline or type checker. |
 | Snippets / render props | **Unsupported** | Use current default/named slots instead. |

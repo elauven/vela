@@ -575,3 +575,7 @@ Scoping is identical either way.
 | `<slot>` | child-content placeholder |
 | `$$dispatch(name, detail)` | emit a custom event |
 | `onMount` / `onDestroy` | lifecycle (import from `vela`) |
+
+## Source maps
+
+Source maps are experimental. Use `vela --sourcemap Component.vela` to emit an external v3 JavaScript source map alongside AST-generated output. Script code and stable template expressions map to their original SFC locations, including repeated expressions at different offsets. Source maps cannot be combined with `--minify` or `--codegen=legacy`; CSS source maps are not emitted.
