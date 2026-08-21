@@ -876,13 +876,8 @@ func buildProgramWithInfo(
 		cssExternal: cssExternal,
 	}
 
-	usedLegacySplice := !astCanBuildDirectly(nodes, analysis)
-	var prog *JsProgram
-	if usedLegacySplice {
-		prog = g.buildModuleSplice(name, sfc, nodes, analysis, scopeID)
-	} else {
-		prog = g.buildModule(nodes)
-	}
+	usedLegacySplice := false
+	prog := g.buildModule(nodes)
 
 	if issues := ValidateProgram(prog); len(issues) > 0 {
 		msg := "vela: internal codegen error — generated AST failed validation:\n"
@@ -895,8 +890,8 @@ func buildProgramWithInfo(
 	return prog, usedLegacySplice
 }
 
-// buildModuleSplice is the DEFENSIVE fallback, kept as a safety
-// net only.  As of E3.6 the AST generator's recursive element
+// buildModuleSplice is retained only for migration experiments and differential
+// tests. Production AST compilation no longer calls it.  As of E3.6 the AST generator's recursive element
 // walker handles every construct directly, and astCanBuildDirectly
 // returns true for all well-formed input — so in practice this is
 // never reached.  It is retained (rather than deleted with the
