@@ -194,6 +194,11 @@ func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 			errors++
 		}
 	}
+
+	// Local JavaScript modules are part of a Vela project contract: generated
+	// components retain imports such as ./format.js, so mirror these files next
+	// to the compiled modules instead of leaving dangling imports in dist.
+	errors += copyProjectJSModules(srcRoot, outRoot)
 	return errors
 }
 
@@ -545,6 +550,60 @@ func collectVela(root string) []string {
 			return nil
 		}
 		if strings.EqualFold(filepath.Ext(path), ".vela") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	return files
+}
+
+// copyProjectJSModules mirrors local JavaScript modules into project output.
+// It deliberately uses the same directory exclusions as collectVela so build
+// output and dependencies cannot be copied back into the project.
+func copyProjectJSModules(srcRoot, outRoot string) int {
+	errors := 0
+	for _, src := range collectProjectJSModules(srcRoot) {
+		rel, err := filepath.Rel(srcRoot, src)
+		if err != nil {
+			errors++
+			continue
+		}
+		dest := filepath.Join(outRoot, rel)
+		data, err := os.ReadFile(src)
+		if err == nil {
+			err = os.MkdirAll(filepath.Dir(dest), 0755)
+		}
+		if err == nil {
+			err = os.WriteFile(dest, data, 0644)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  ✗ %s: copy local module: %v\n", rel, err)
+			errors++
+		}
+	}
+	return errors
+}
+
+func collectProjectJSModules(root string) []string {
+	skipDirs := map[string]bool{
+		"node_modules": true,
+		"dist":         true,
+		".git":         true,
+		".svn":         true,
+	}
+	var files []string
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			name := d.Name()
+			if strings.HasPrefix(name, ".") || skipDirs[name] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.EqualFold(filepath.Ext(path), ".js") {
 			files = append(files, path)
 		}
 		return nil
