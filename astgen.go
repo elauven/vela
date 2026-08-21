@@ -1380,7 +1380,8 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 			if sp.Local == "$$rt_dispatch" ||
 				sp.Imported == "$$insertHTML" ||
 				sp.Imported == "$$proxy" ||
-				sp.Imported == "$$isProxy" {
+				sp.Imported == "$$isProxy" ||
+				sp.Imported == "$$defer" {
 				return
 			}
 		}
@@ -1390,6 +1391,14 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	usesInsertHTML := false
 	usesProxy := false
 	usesIsProxy := false
+	usesDefer := false
+	if g.analysis != nil && (len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0) {
+		usesIsProxy = true
+		usesDefer = true
+		if g.hasDeepState() {
+			usesProxy = true
+		}
+	}
 	WalkNode(prog, func(n JsNode) bool {
 		id, ok := n.(*JsIdent)
 		if !ok {
@@ -1404,6 +1413,8 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 			usesProxy = true
 		case "$$isProxy":
 			usesIsProxy = true
+		case "$$defer":
+			usesDefer = true
 		}
 		return true
 	})
@@ -1421,6 +1432,9 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	}
 	if usesIsProxy {
 		names = append(names, "$$isProxy")
+	}
+	if usesDefer {
+		names = append(names, "$$defer")
 	}
 	if len(names) > 0 {
 		imp := jsStmt("import { " + strings.Join(names, ", ") +
@@ -1949,11 +1963,6 @@ func (g *ASTGen) buildSetters() []JsStmt {
 		return nil
 	}
 	var out []JsStmt
-
-	// $$defer hookup — pulled from the runtime, with a synchronous
-	// fallback so a component works even without the batch runtime.
-	out = append(out, jsStmt(
-		`const $$defer = globalThis[Symbol.for('vela.defer')] ?? (fn => fn());`))
 
 	for _, sv := range g.analysis.StateVars {
 		if sv.Deep {

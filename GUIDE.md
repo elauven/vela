@@ -9,6 +9,10 @@ DOM, no runtime template interpretation — the compiler turns your
 template into direct DOM construction code and wires reactivity at
 build time.
 
+### Runtime and scheduling
+
+Compiled components import the runtime helpers they need from a sibling `runtime.js` module. The project compiler stages that module automatically; application code should not copy or initialize it manually. State and prop updates use the runtime's microtask scheduler, so several synchronous updates coalesce before DOM work runs. The older global scheduler symbol exists solely for compatibility with the deprecated generator and is not part of the application authoring API.
+
 ---
 
 ## 1. File structure

@@ -32,6 +32,12 @@ not historical roadmaps or the deprecated legacy generator.
 | Imports | **Stable** | `import { Card } from './Card.vela'` | Local `.vela` imports are rewritten to `.js`. |
 | Store helpers | **Stable** | `writable`, `readable`, `derived` from `vela/store` | Runtime store utilities; application packaging must provide their import path. |
 
+## Runtime packaging and reactive scheduling
+
+`runtime.js` at the project root is the canonical runtime implementation. Project compilation stages a byte-identical runtime module beside every emitted component directory, so generated `./runtime.js` imports resolve without a manual copy step.
+
+The default AST generator imports `$$defer` directly from that module for every component with state or props. Reactive DOM work therefore uses the shared microtask scheduler regardless of template helpers or module evaluation order. The global `Symbol.for("vela.defer")` registration remains only as a compatibility bridge for the deprecated legacy generator; new compiler output must not rely on it.
+
 ## Template and component features
 
 | Feature | Status | Example | Notes |

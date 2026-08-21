@@ -32,8 +32,9 @@
 //  draining, so only one of them runs per coalesced batch even if
 //  _batchRun fires before the microtask gets its turn.
 //
-//  The context is shared via Symbol.for so generated components can access it
-//  without needing an explicit import path to the runtime.
+//  The context is shared via Symbol.for only for the deprecated legacy
+//  generator. AST-generated components import $$defer directly from this
+//  module, so they never change behaviour based on global registration order.
 // ─────────────────────────────────────────────
 
 const _B = Symbol.for('vela.batch');
@@ -215,9 +216,9 @@ export function tick() {
 // ─────────────────────────────────────────────
 //  Component helper: $$defer
 //
-//  Registered on globalThis via Symbol so compiled components can use it
-//  without an explicit import path (components don't import runtime directly —
-//  they import stores, which import runtime, which registers $$defer first).
+//  AST-generated components import this helper explicitly. It is also
+//  registered on globalThis for generated modules from the deprecated legacy
+//  code generator, which did not emit a runtime import.
 //
 //  Behavior summary:
 //    depth > 0  → push to queue; _batchRun's flush will drain it
@@ -225,9 +226,9 @@ export function tick() {
 //                  scheduled.  Coalesces a chain of state changes into one
 //                  redraw at the end of the current task.
 //
-//  The fallback inside a compiled component is `?? (fn => fn())`, used only
-//  when the component runs before runtime.js has loaded.  That synchronous
-//  fallback isn't great but is the only option without runtime present.
+//  The deprecated generator retains its own synchronous fallback when no
+//  runtime module is loaded. That compatibility behaviour does not apply to
+//  the AST generator: its named import guarantees this implementation runs.
 // ─────────────────────────────────────────────
 
 // _scheduleFlush asks the JS engine to run _flushQueue at the end of the
@@ -241,13 +242,6 @@ const _scheduleFlush = (typeof queueMicrotask === 'function')
 
 export function $$defer(fn) {
   const b = globalThis[Symbol.for('vela.batch')];
-  if (!b) {
-    // Runtime not loaded yet — last-resort synchronous fallback.  Should
-    // not happen in normal use; would mean a compiled component ran before
-    // runtime.js evaluated.
-    fn();
-    return;
-  }
   b.queue.push(fn);
   if (b.depth > 0) {
     // Inside an explicit batch — _batchRun's depth-decrement will flush.
