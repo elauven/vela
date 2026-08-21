@@ -43,15 +43,10 @@ func requirePlaywright(t *testing.T) string {
 	return node
 }
 
-func TestBrowserSourceMapMapsTemplateHandler(t *testing.T) {
+func assertBrowserSourceMap(t *testing.T, raw, selector, sourceNeedle string) {
+	t.Helper()
 	node := requirePlaywright(t)
 	dir := t.TempDir()
-	const raw = `<script>
-  let count = $state(0);
-</script>
-<template>
-  <button class="explode" @click={() => { throw new Error("template boom"); }}>Boom</button>
-</template>`
 	src := filepath.Join(dir, "App.vela")
 	if err := os.WriteFile(src, []byte(raw), 0644); err != nil {
 		t.Fatal(err)
@@ -63,12 +58,12 @@ func TestBrowserSourceMapMapsTemplateHandler(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte(index), 0644); err != nil {
 		t.Fatal(err)
 	}
-	at := strings.Index(raw, "() => { throw new Error")
+	at := strings.Index(raw, sourceNeedle)
 	if at < 0 {
-		t.Fatal("fixture handler expression not found")
+		t.Fatalf("fixture source needle %q not found", sourceNeedle)
 	}
 	line, column := sourceLineColumn(raw, at)
-	config := browserSourceMapConfig{RootDir: dir, Entry: "App.js", Map: "App.js.map", Selector: "button.explode"}
+	config := browserSourceMapConfig{RootDir: dir, Entry: "App.js", Map: "App.js.map", Selector: selector}
 	config.Expected.Source, config.Expected.Line, config.Expected.Column = filepath.ToSlash(src), line, column
 	data, err := json.Marshal(config)
 	if err != nil {
@@ -89,4 +84,59 @@ func TestBrowserSourceMapMapsTemplateHandler(t *testing.T) {
 	if !result.OK {
 		t.Fatalf("browser source-map verification failed: %s; original=%+v", result.Error, result.Original)
 	}
+}
+
+func TestBrowserSourceMapMapsScriptStatement(t *testing.T) {
+	assertBrowserSourceMap(t, `<script>
+  function explode() { throw new Error("script boom"); }
+</script>
+<template><button class="explode" @click={explode}>Boom</button></template>`, "button.explode", "throw new Error")
+}
+
+func TestBrowserSourceMapMapsTemplateHandler(t *testing.T) {
+	assertBrowserSourceMap(t, `<script>
+  let count = $state(0);
+</script>
+<template>
+  <button class="explode" @click={() => { throw new Error("template boom"); }}>Boom</button>
+</template>`, "button.explode", "() => { throw new Error")
+}
+
+func TestBrowserSourceMapMapsEachIfHandler(t *testing.T) {
+	assertBrowserSourceMap(t, `<script>
+  let rows = $state.deep([{ id: 1, show: true }]);
+</script>
+<template>
+  {#each rows as row (row.id)}
+    {#if row.show}
+      <button class="explode" @click={() => { throw new Error("row boom"); }}>Boom</button>
+    {/if}
+  {/each}
+</template>`, "button.explode", "() => { throw new Error")
+}
+
+func TestBrowserSourceMapMapsKeyHandler(t *testing.T) {
+	assertBrowserSourceMap(t, `<script>
+  let identity = $state(1);
+</script>
+<template>
+  {#key identity}
+    <button class="explode" @click={() => { throw new Error("key boom"); }}>Boom</button>
+  {/key}
+</template>`, "button.explode", "() => { throw new Error")
+}
+
+func TestBrowserSourceMapMapsAwaitHandler(t *testing.T) {
+	assertBrowserSourceMap(t, `<script>
+  let request = $state(Promise.resolve("ready"));
+</script>
+<template>
+  {#await request}
+    <p>Loading</p>
+  {:then value}
+    <button class="explode" @click={() => { throw new Error("await boom"); }}>{value}</button>
+  {:catch error}
+    <p>{error.message}</p>
+  {/await}
+</template>`, "button.explode", "() => { throw new Error")
 }
