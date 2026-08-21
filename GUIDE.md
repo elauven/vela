@@ -592,3 +592,20 @@ go test ./... -run TestBrowserSourceMap
 ```
 
 The suite skips with this installation instruction when Node, Playwright, or its Chromium binary is unavailable.
+
+## Compiler diagnostics
+
+Compiler errors identify a one-based UTF-16 source position and, where a
+canonical Vela replacement exists, include a stable VELA-* code and a help:
+line. Tools and AI agents may call DiagnosticsJSON(diags) to obtain the
+compact fields severity, code, file, line, column, message, and suggestion;
+do not parse rendered CLI text.
+
+| Code | Cause | Canonical correction |
+| --- | --- | --- |
+| VELA-DERIVED-CALLBACK | &#36;derived was given a callback. | Use &#36;derived(expression), e.g. &#36;derived(items.length). |
+| VELA-EVENT-MODIFIER | Svelte event modifiers such as @keydown.enter are unsupported. | Use @keydown and explicitly check event.key. |
+| VELA-DYNAMIC-CLASS | :class:name={...} was used. | Use class:name={condition}. |
+| VELA-CLASS-OBJECT | An object-valued :class binding was used. | Use one class:name={condition} directive per class. |
+| VELA-BIND-MEMBER | A two-way binding targets a member expression such as user.name. | Use a one-way binding and an explicit event handler. |
+| VELA-BUILTIN-IMPORT | A Vela builtin such as &#36;&#36;dispatch was imported. | Remove the import and call the builtin directly. |

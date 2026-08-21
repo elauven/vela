@@ -66,7 +66,8 @@ not historical roadmaps or the deprecated legacy generator.
 | Input AST dump | **Stable** | `--ast` | Emits `<name>.ast.json` for the parsed SFC/template AST. |
 | Generated JS AST dump | **Stable** | `--emit-gen-ast` | Emits `<name>.genast.json` for AST-codegen inspection. |
 | Legacy code generator | **Deprecated** | `--codegen=legacy` | Retained only as an escape hatch and differential-testing oracle. |
-| Scope diagnostics | **Stable** | undeclared names, TDZ, redeclarations, invalid writes | Diagnostics carry source positions; complex template-expression columns can still be approximate. |
+| Scope diagnostics | **Stable** | undeclared names, TDZ, redeclarations, invalid writes | Diagnostics use one-based UTF-16 positions; repeated template attributes keep their own source location. |
+| Actionable Vela diagnostics | **Stable** | <code>VELA-*</code> code, <code>help:</code> correction, DiagnosticsJSON(diags) | Stable codes cover common Svelte-like mistakes; JSON is compact for editor and AI tooling. |
 | Reactivity diagnostics | **Stable** | invalid derived writes, effects without reactive deps | Template references are also checked for undeclared names. |
 | Flow diagnostics | **Stable** | code after `return`, `throw`, `break`, `continue` | Reports unreachable statements. |
 

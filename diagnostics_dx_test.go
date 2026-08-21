@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -49,5 +50,22 @@ func TestTemplateFormDiagnosticUsesRepeatedAttributePosition(t *testing.T) {
 	}
 	if got, want := ds.Errors()[1].Col, second+1; got != want {
 		t.Errorf("second diagnostic column = %d, want %d", got, want)
+	}
+}
+
+func TestDiagnosticsJSONIsCompactAndMachineReadable(t *testing.T) {
+	ds := NewDiagSet("App.vela", "<template />")
+	ds.ErrorWith(0, "VELA-EVENT-MODIFIER", "Use @keydown with an explicit event.key check.", "event modifiers are not supported")
+	data, err := DiagnosticsJSON(ds.All())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []map[string]interface{}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0]["severity"] != "error" || got[0]["code"] != "VELA-EVENT-MODIFIER" ||
+		got[0]["column"] != float64(1) || got[0]["suggestion"] == "" {
+		t.Fatalf("machine diagnostics = %s", data)
 	}
 }

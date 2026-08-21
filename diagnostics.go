@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode/utf16"
@@ -17,6 +18,65 @@ const (
 	SevWarning                     // emitted but compilation proceeds
 	SevHint                        // informational
 )
+
+func (s DiagSeverity) String() string {
+	switch s {
+	case SevError:
+		return "error"
+	case SevWarning:
+		return "warning"
+	case SevHint:
+		return "hint"
+	default:
+		return "unknown"
+	}
+}
+
+type MachineDiagnostic struct {
+	Severity   string
+	Code       string
+	File       string
+	Line       int
+	Column     int
+	Message    string
+	Suggestion string
+}
+
+func (d MachineDiagnostic) MarshalJSON() ([]byte, error) {
+	out := map[string]interface{}{
+		"severity": d.Severity, "line": d.Line, "column": d.Column,
+		"message": d.Message,
+	}
+	if d.Code != "" {
+		out["code"] = d.Code
+	}
+	if d.File != "" {
+		out["file"] = d.File
+	}
+	if d.Suggestion != "" {
+		out["suggestion"] = d.Suggestion
+	}
+	return json.Marshal(out)
+}
+func (d *Diagnostic) Machine() MachineDiagnostic {
+	return MachineDiagnostic{
+		Severity: d.Sev.String(), Code: d.Code, File: d.File, Line: d.Line,
+		Column: d.Col, Message: d.Message, Suggestion: d.Suggestion,
+	}
+}
+
+// DiagnosticsJSON provides a compact, stable representation for editor and AI
+// integrations. It deliberately omits Source because consumers can read the
+// file themselves; positions are one-based UTF-16 line/column coordinates.
+func DiagnosticsJSON(diags []*Diagnostic) ([]byte, error) {
+	out := make([]MachineDiagnostic, 0, len(diags))
+	for _, d := range diags {
+		if d != nil {
+			out = append(out, d.Machine())
+		}
+	}
+	return json.Marshal(out)
+}
 
 type Diagnostic struct {
 	Sev        DiagSeverity
