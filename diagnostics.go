@@ -13,17 +13,19 @@ type DiagSeverity uint8
 
 const (
 	SevError   DiagSeverity = iota // stops code generation
-	SevWarning                      // emitted but compilation proceeds
-	SevHint                         // informational
+	SevWarning                     // emitted but compilation proceeds
+	SevHint                        // informational
 )
 
 type Diagnostic struct {
-	Sev     DiagSeverity
-	File    string
-	Line    int
-	Col     int
-	Message string
-	Source  string // the offending source line (for display)
+	Sev        DiagSeverity
+	File       string
+	Line       int
+	Col        int
+	Code       string // stable machine-readable category, e.g. VELA-EVENT-MODIFIER
+	Message    string
+	Suggestion string // optional canonical correction
+	Source     string // the offending source line (for display)
 }
 
 func (d *Diagnostic) String() string {
@@ -37,10 +39,17 @@ func (d *Diagnostic) String() string {
 	if d.File != "" {
 		loc = fmt.Sprintf("%s:%d:%d: ", d.File, d.Line, d.Col)
 	}
-	s := fmt.Sprintf("%s[%s] %s", loc, sev, d.Message)
+	category := ""
+	if d.Code != "" {
+		category = " [" + d.Code + "]"
+	}
+	s := fmt.Sprintf("%s[%s]%s %s", loc, sev, category, d.Message)
 	if d.Source != "" {
 		s += "\n  " + d.Source
 		s += "\n  " + strings.Repeat(" ", d.Col-1) + "^"
+	}
+	if d.Suggestion != "" {
+		s += "\n  help: " + d.Suggestion
 	}
 	return s
 }
@@ -98,28 +107,36 @@ func (ds *DiagSet) currentOffset() int {
 	return 0
 }
 
-func (ds *DiagSet) add(sev DiagSeverity, pos int, msg string) {
+func (ds *DiagSet) add(sev DiagSeverity, pos int, code, suggestion, msg string) {
 	line, col, srcLine := ds.resolve(pos + ds.currentOffset())
 	ds.diags = append(ds.diags, &Diagnostic{
-		Sev:     sev,
-		File:    ds.file,
-		Line:    line,
-		Col:     col,
-		Message: msg,
-		Source:  srcLine,
+		Sev:        sev,
+		File:       ds.file,
+		Line:       line,
+		Col:        col,
+		Code:       code,
+		Message:    msg,
+		Suggestion: suggestion,
+		Source:     srcLine,
 	})
 }
 
 func (ds *DiagSet) Error(pos int, msg string, args ...interface{}) {
-	ds.add(SevError, pos, fmt.Sprintf(msg, args...))
+	ds.add(SevError, pos, "", "", fmt.Sprintf(msg, args...))
+}
+
+// ErrorWith records a stable diagnostic category and canonical correction while
+// retaining Message for existing API callers and human-readable output.
+func (ds *DiagSet) ErrorWith(pos int, code, suggestion, msg string, args ...interface{}) {
+	ds.add(SevError, pos, code, suggestion, fmt.Sprintf(msg, args...))
 }
 
 func (ds *DiagSet) Warn(pos int, msg string, args ...interface{}) {
-	ds.add(SevWarning, pos, fmt.Sprintf(msg, args...))
+	ds.add(SevWarning, pos, "", "", fmt.Sprintf(msg, args...))
 }
 
 func (ds *DiagSet) Hint(pos int, msg string, args ...interface{}) {
-	ds.add(SevHint, pos, fmt.Sprintf(msg, args...))
+	ds.add(SevHint, pos, "", "", fmt.Sprintf(msg, args...))
 }
 
 // HasErrors returns true if any error-severity diagnostic was recorded.

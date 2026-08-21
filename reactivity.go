@@ -188,14 +188,14 @@ func validateScriptForms(prog *JsProgram, ds *DiagSet) {
 				}
 				switch call.Args[0].(type) {
 				case *JsArrowFunc, *JsFuncExpr:
-					ds.Error(call.Args[0].nodePos(), "$derived does not accept a callback; pass the computed expression directly")
+					ds.ErrorWith(call.Args[0].nodePos(), "VELA-DERIVED-CALLBACK", "Write $derived(expression), for example: $derived(items.length).", "$derived does not accept a callback; pass the computed expression directly")
 				}
 			}
 		case *JsImportDecl:
 			if x.Source == "vela" || x.Source == "vela/store" {
 				for _, spec := range x.Specifiers {
 					if spec.Imported == "$$dispatch" || spec.Local == "$$dispatch" {
-						ds.Error(x.Pos, "$$dispatch is a Vela builtin; call it directly instead of importing it")
+						ds.ErrorWith(x.Pos, "VELA-BUILTIN-IMPORT", "Remove the import and call $dispatch(name, detail) directly.", "$dispatch is a Vela builtin; call it directly instead of importing it")
 					}
 				}
 			}
@@ -728,11 +728,11 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 		return findTemplatePos(templateText, a.Name)
 	}
 	reported := map[string]bool{}
-	report := func(pos int, msg string, args ...interface{}) {
+	report := func(pos int, code, suggestion, msg string, args ...interface{}) {
 		text := fmt.Sprintf(msg, args...)
 		key := fmt.Sprintf("%d:%s", pos, text)
 		if !reported[key] {
-			ds.Error(pos, "%s", text)
+			ds.ErrorWith(pos, code, suggestion, "%s", text)
 			reported[key] = true
 		}
 	}
@@ -742,19 +742,19 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 				continue
 			}
 			if a.IsEvent && strings.Contains(a.Name, ".") {
-				ds.Error(attrPos(a), "event modifiers are not supported; use @%s with an explicit event.key check", strings.Split(a.Name, ".")[0])
+				ds.ErrorWith(attrPos(a), "VELA-EVENT-MODIFIER", "Use @event with an explicit event.key check.", "event modifiers are not supported; use @%s with an explicit event.key check", strings.Split(a.Name, ".")[0])
 			}
 			if a.IsBind && strings.HasPrefix(a.Name, "class:") {
-				report(attrPos(a), "%q is not a dynamic attribute; use class:%s={condition}", a.Name, strings.TrimPrefix(a.Name, "class:"))
+				report(attrPos(a), "VELA-DYNAMIC-CLASS", "Use class:name={condition}.", "%q is not a dynamic attribute; use class:%s={condition}", a.Name, strings.TrimPrefix(a.Name, "class:"))
 			}
 			if !a.IsClassDir && a.Name == "class" {
 				expr := strings.TrimSpace(a.Value)
 				if strings.HasPrefix(expr, "{'") || strings.HasPrefix(expr, "{\"") {
-					report(attrPos(a), "object-valued :class is not supported; use one class:name={condition} directive per class")
+					report(attrPos(a), "VELA-CLASS-OBJECT", "Use one class:name={condition} directive per class.", "object-valued :class is not supported; use one class:name={condition} directive per class")
 				}
 			}
 			if a.IsTwoWay && a.Name != "this" && !isSimpleIdent(stripBraces(a.Value)) {
-				report(attrPos(a), "bind:%s requires a plain $state or $bindable prop name; use a one-way :%s binding and an event handler for member expressions", a.Name, a.Name)
+				report(attrPos(a), "VELA-BIND-MEMBER", "Use a one-way binding plus an explicit event handler for member expressions.", "bind:%s requires a plain $state or $bindable prop name; use a one-way :%s binding and an event handler for member expressions", a.Name, a.Name)
 			}
 		}
 	}

@@ -25,28 +25,32 @@ func TestTodoCorpusCompilation(t *testing.T) {
 		})
 	}
 
+	type expectedDiagnostic struct {
+		code string
+		text string
+	}
 	bad := []struct {
 		src  string
-		want []string
+		want []expectedDiagnostic
 	}{
 		{
 			src: "test_projects/deepseek-todo-vela/src/App.vela",
-			want: []string{
-				"$derived does not accept a callback",
-				"event modifiers are not supported",
-				"object-valued :class is not supported",
-				"bind:checked requires a plain $state",
+			want: []expectedDiagnostic{
+				{"VELA-DERIVED-CALLBACK", "$derived does not accept a callback"},
+				{"VELA-EVENT-MODIFIER", "event modifiers are not supported"},
+				{"VELA-CLASS-OBJECT", "object-valued :class is not supported"},
+				{"VELA-BIND-MEMBER", "bind:checked requires a plain $state"},
 			},
 		},
 		{
 			src:  "test_projects/qwen-todo-vela/src/App.vela",
-			want: []string{"is not a dynamic attribute"},
+			want: []expectedDiagnostic{{"VELA-DYNAMIC-CLASS", "is not a dynamic attribute"}},
 		},
 		{
 			src: "test_projects/qwen-todo-vela/src/TodoItem.vela",
-			want: []string{
-				"$dispatch is a Vela builtin",
-				"is not a dynamic attribute",
+			want: []expectedDiagnostic{
+				{"VELA-BUILTIN-IMPORT", "$dispatch is a Vela builtin"},
+				{"VELA-DYNAMIC-CLASS", "is not a dynamic attribute"},
 			},
 		},
 	}
@@ -59,13 +63,13 @@ func TestTodoCorpusCompilation(t *testing.T) {
 			for _, want := range fixture.want {
 				found := false
 				for _, diag := range diags {
-					if diag.Sev == SevError && diag.Line > 0 && diag.Col > 0 && strings.Contains(diag.Message, want) {
+					if diag.Sev == SevError && diag.Line > 0 && diag.Col > 0 && diag.Code == want.code && strings.Contains(diag.Message, want.text) {
 						found = true
 						break
 					}
 				}
 				if !found {
-					t.Fatalf("missing positioned error diagnostic %q: %#v", want, diags)
+					t.Fatalf("missing positioned %s diagnostic %q: %#v", want.code, want.text, diags)
 				}
 			}
 		})
