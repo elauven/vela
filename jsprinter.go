@@ -122,52 +122,94 @@ func (p *jsPrinter) note(n JsNode) {
 }
 
 func sourceOrigin(n JsNode) (int, bool) {
-	if n.origin() == OriginUser && n.nodeEnd() > n.nodePos() {
-		return n.nodePos(), true
-	}
 	switch x := n.(type) {
 	case *JsIdent:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsLiteral:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsTemplateLit:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsArrayExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsObjectExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsFuncExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsArrowFunc:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsUnaryExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsBinaryExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsLogicalExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsAssignExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsMemberExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsCallExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsNewExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsConditionalExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsSeqExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsSpreadExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsAwaitExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsYieldExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsThisExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
 	case *JsSuperExpr:
-		return x.SourceOrigin, x.HasSourceOrigin
+		if x.HasSourceOrigin {
+			return x.SourceOrigin, true
+		}
+	}
+	if n.origin() == OriginUser && n.nodeEnd() > n.nodePos() {
+		return n.nodePos(), true
 	}
 	return 0, false
 }

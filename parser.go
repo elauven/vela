@@ -1053,7 +1053,7 @@ func (p *parser) parseSvelteKeyBlock(raw string, keyPos int) (Node, error) {
 			// Always-true condition.  The chain stays mounted; the
 			// destroy-and-rebuild is driven by the key change, not by
 			// the condition flipping.
-			Cond:     "true",
+			Cond:     "",
 			Children: groupIfChains(children),
 		}},
 	}, nil

@@ -1824,6 +1824,16 @@ func (g *CodeGen) walkAwaitBlock(block *AwaitBlockNode, parentVar string) {
 //
 // If from is empty, the function is a no-op — `{:then}` with no
 // binding name has nothing to rewrite.
+// rewriteTemplateExpr mirrors rewriteIdentInExpr for the cached parser result.
+// Row/await rewrites must preserve the original template offset even though the
+// generated expression now reads a compiler-owned local binding.
+func rewriteTemplateExpr(expr *TemplateExpr, from, to string) *TemplateExpr {
+	if expr == nil {
+		return nil
+	}
+	return newTemplateExpr(rewriteIdentInExpr(expr.Source, from, to), expr.Pos)
+}
+
 func rewriteIdentInNodes(nodes []Node, from, to string) []Node {
 	if from == "" || from == to {
 		return nodes
@@ -1834,13 +1844,13 @@ func rewriteIdentInNodes(nodes []Node, from, to string) []Node {
 	}
 	return out
 }
-
 func rewriteIdentInNode(n Node, from, to string) Node {
 	switch v := n.(type) {
 	case *TextNode:
 		newParts := make([]*Part, len(v.Parts))
 		for i, p := range v.Parts {
 			np := *p
+			np.Expr = rewriteTemplateExpr(p.Expr, from, to)
 			if !p.Static {
 				np.Value = rewriteIdentInExpr(p.Value, from, to)
 			}
@@ -1853,6 +1863,7 @@ func rewriteIdentInNode(n Node, from, to string) Node {
 		ne.Attrs = make([]*Attr, len(v.Attrs))
 		for i, a := range v.Attrs {
 			na := *a
+			na.Expr = rewriteTemplateExpr(a.Expr, from, to)
 			// Rewrite anywhere the value will be interpreted as JS —
 			// bindings, events, directives, braced-attr expressions.
 			if a.IsBind || a.IsTwoWay || a.IsEvent ||
@@ -1875,7 +1886,7 @@ func rewriteIdentInNode(n Node, from, to string) Node {
 		return &ne
 
 	case *IfChainNode:
-		nc := &IfChainNode{KeyExpr: v.KeyExpr}
+		nc := &IfChainNode{KeyExpr: v.KeyExpr, KeyPos: v.KeyPos, KeyAST: rewriteTemplateExpr(v.KeyAST, from, to)}
 		if v.KeyExpr != "" {
 			nc.KeyExpr = rewriteIdentInExpr(v.KeyExpr, from, to)
 		}
@@ -1883,6 +1894,8 @@ func rewriteIdentInNode(n Node, from, to string) Node {
 		for i, b := range v.Branches {
 			nb := &IfBranch{
 				Cond:     rewriteIdentInExpr(b.Cond, from, to),
+				CondPos:  b.CondPos,
+				Expr:     rewriteTemplateExpr(b.Expr, from, to),
 				Children: rewriteIdentInNodes(b.Children, from, to),
 				Elem:     b.Elem,
 				Comp:     b.Comp,
@@ -1894,7 +1907,11 @@ func rewriteIdentInNode(n Node, from, to string) Node {
 	case *EachBlockNode:
 		return &EachBlockNode{
 			EachExpr:     rewriteIdentInExpr(v.EachExpr, from, to),
+			ExprPos:      v.ExprPos,
+			IterExpr:     rewriteTemplateExpr(v.IterExpr, from, to),
 			EachKey:      rewriteIdentInExpr(v.EachKey, from, to),
+			KeyPos:       v.KeyPos,
+			KeyAST:       rewriteTemplateExpr(v.KeyAST, from, to),
 			Children:     rewriteIdentInNodes(v.Children, from, to),
 			ElseChildren: rewriteIdentInNodes(v.ElseChildren, from, to),
 		}

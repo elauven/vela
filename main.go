@@ -453,7 +453,6 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 			}
 			if opts.SourceMap {
 				shiftTree(prog, sfc.ScriptOffset)
-				markTemplateOrigins(prog, sfc, tmpl, analysis)
 				var locations []PrintLocation
 				body := PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) {
 					loc.GeneratedLine += 2
