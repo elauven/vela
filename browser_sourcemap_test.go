@@ -40,6 +40,10 @@ func requirePlaywright(t *testing.T) string {
 	if err := exec.Command(node, "-e", "require.resolve(\"playwright\")").Run(); err != nil {
 		t.Skip("playwright is unavailable; run npm install --save-dev playwright and npx playwright install chromium")
 	}
+	probe := "const fs=require(\"fs\"); const {chromium}=require(\"playwright\"); if (!fs.existsSync(chromium.executablePath())) process.exit(1)"
+	if err := exec.Command(node, "-e", probe).Run(); err != nil {
+		t.Skip("Playwright Chromium is unavailable; run npx playwright install chromium")
+	}
 	return node
 }
 
