@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"unicode/utf16"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,7 +175,10 @@ func (ds *DiagSet) Warnings() []*Diagnostic {
 	return out
 }
 
-// resolve converts a byte offset into (line, col, source-line).
+// resolve converts a byte offset into (line, UTF-16 column, source-line).
+// UTF-16 columns match the coordinate system used by JavaScript tooling and
+// source maps, so locations remain useful for editors when a line contains
+// non-ASCII text before the diagnostic.
 func (ds *DiagSet) resolve(pos int) (line, col int, srcLine string) {
 	if pos < 0 || pos > len(ds.src) {
 		return 1, 1, ""
@@ -187,7 +191,7 @@ func (ds *DiagSet) resolve(pos int) (line, col int, srcLine string) {
 			lineStart = i + 1
 		}
 	}
-	col = pos - lineStart + 1
+	col = len(utf16.Encode([]rune(ds.src[lineStart:pos]))) + 1
 	// Extract the source line
 	end := strings.IndexByte(ds.src[lineStart:], '\n')
 	if end < 0 {

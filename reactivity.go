@@ -720,6 +720,12 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 		if a == nil {
 			return 0
 		}
+		// parseAttrs records the precise offset of every attribute. Do not
+		// search the complete template here: repeated directives otherwise
+		// incorrectly point at the first matching element.
+		if a.Pos >= 0 {
+			return a.Pos
+		}
 		for _, marker := range []string{"@" + a.Name, ":" + a.Name, "class:" + a.Name, "style:" + a.Name, "bind:" + a.Name} {
 			if pos := strings.Index(templateText, marker); pos >= 0 {
 				return pos
