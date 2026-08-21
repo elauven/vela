@@ -4269,12 +4269,19 @@ func (g *ASTGen) applyRootAttrs(el *ElementNode) {
 // classes set via a plain class="…" attribute, so static and
 // dynamic classes coexist.  The toggle runs at initial render and
 // is registered as an update against each reactive dependency.
-func (g *ASTGen) emitClassDir(varName string, attr *Attr) {
-	stmt := g.classDirStmtAST(varName, attr)
+// registerReactiveTemplateStmt runs a DOM write during initial render and
+// reuses that exact AST statement for every reactive dependency of the source
+// expression. Keeping one statement instance preserves its template origin.
+func (g *ASTGen) registerReactiveTemplateStmt(stmt JsStmt, expr *TemplateExpr, source string) {
 	g.initBody = append(g.initBody, stmt)
-	for _, dep := range templateExprDeps(attr.Expr, attrExprToJS(attr.Value), g.reactiveNames()) {
+	for _, dep := range templateExprDeps(expr, source, g.reactiveNames()) {
 		g.addUpdate(dep, stmt)
 	}
+}
+
+func (g *ASTGen) emitClassDir(varName string, attr *Attr) {
+	stmt := g.classDirStmtAST(varName, attr)
+	g.registerReactiveTemplateStmt(stmt, attr.Expr, attrExprToJS(attr.Value))
 }
 
 // emitStyleDir wires `style:foo={expr}` — set an inline CSS
@@ -4283,10 +4290,7 @@ func (g *ASTGen) emitClassDir(varName string, attr *Attr) {
 // of a reactive dependency.
 func (g *ASTGen) emitStyleDir(varName string, attr *Attr) {
 	stmt := g.styleDirStmtAST(varName, attr)
-	g.initBody = append(g.initBody, stmt)
-	for _, dep := range templateExprDeps(attr.Expr, attrExprToJS(attr.Value), g.reactiveNames()) {
-		g.addUpdate(dep, stmt)
-	}
+	g.registerReactiveTemplateStmt(stmt, attr.Expr, attrExprToJS(attr.Value))
 }
 
 // emitEventHandler wires an @event attribute: an addEventListener
@@ -4348,10 +4352,7 @@ func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 		g.emitListenerPair(&g.events, varName, spec.event, hv, nil, "", true)
 	}
 	write := g.attrWriteStmt(varName, attr)
-	g.initBody = append(g.initBody, write)
-	for _, dep := range templateExprDeps(attr.Expr, stripBraces(attr.Value), g.reactiveNames()) {
-		g.addUpdate(dep, write)
-	}
+	g.registerReactiveTemplateStmt(write, attr.Expr, stripBraces(attr.Value))
 }
 
 // emitBindThisAST wires bind:this={ref} — write the live element
