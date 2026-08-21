@@ -852,6 +852,21 @@ func buildProgramCSS(
 	scopeID string,
 	cssExternal bool,
 ) *JsProgram {
+	prog, _ := buildProgramWithInfo(name, sfc, nodes, analysis, scopeID, cssExternal)
+	return prog
+}
+
+// buildProgramWithInfo is the instrumented form of buildProgramCSS. It keeps
+// production output unchanged while allowing migration tests to prove which
+// inputs still route through the legacy string-emitter splice.
+func buildProgramWithInfo(
+	name string,
+	sfc *SFC,
+	nodes []Node,
+	analysis *Analysis,
+	scopeID string,
+	cssExternal bool,
+) (*JsProgram, bool) {
 	g := &ASTGen{
 		name:        name,
 		scopeID:     scopeID,
@@ -861,22 +876,14 @@ func buildProgramCSS(
 		cssExternal: cssExternal,
 	}
 
+	usedLegacySplice := !astCanBuildDirectly(nodes, analysis)
 	var prog *JsProgram
-	if astCanBuildDirectly(nodes, analysis) {
-		prog = g.buildModule(nodes)
-	} else {
-		// Universal escape hatch: build the module via the legacy
-		// walk, then parse it back so the rest of the pipeline
-		// (validation, printing) sees one uniform AST.
+	if usedLegacySplice {
 		prog = g.buildModuleSplice(name, sfc, nodes, analysis, scopeID)
+	} else {
+		prog = g.buildModule(nodes)
 	}
 
-	// Validation pass — the payoff of the AST migration.  Any
-	// issue here is a code-generation bug (a malformed control
-	// structure, a reference to wiring that was never emitted),
-	// not a user error.  Surfaced loudly: a panic with the
-	// located diagnostics, so the bug is caught in CI rather than
-	// shipped as broken JS.
 	if issues := ValidateProgram(prog); len(issues) > 0 {
 		msg := "vela: internal codegen error — generated AST failed validation:\n"
 		for _, iss := range issues {
@@ -885,7 +892,7 @@ func buildProgramCSS(
 		panic(msg)
 	}
 
-	return prog
+	return prog, usedLegacySplice
 }
 
 // buildModuleSplice is the DEFENSIVE fallback, kept as a safety
