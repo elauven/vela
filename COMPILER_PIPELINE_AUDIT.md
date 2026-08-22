@@ -109,3 +109,105 @@ immutable source buffer
 
 Raw source in this model remains available for error excerpts and source maps,
 but is not an inter-stage executable representation.
+
+
+## ComponentAST baseline and target contract
+
+### Current SFC boundary
+
+SFC is a section splitter, not a component AST. It owns three trimmed strings
+and three offsets. The template is parsed later into nodes; script is parsed
+independently by analysis and diagnostics; CSS is parsed only when scoping is
+needed. This shape is simple, but permits independent reparsing and lets later
+stages accept source fragments as inputs.
+
+The audited consumers are production compilation, source-map emission, CSS
+extraction, AST debug output, and a large number of focused tests. The high
+consumer count means the first migration must preserve an adapter rather than
+changing every generator/test signature at once.
+
+### Existing typed material
+
+| Section | Existing typed data | Important gap |
+| --- | --- | --- |
+| Script | JsProgram, scopes, Analysis, ScriptPlan | Analysis records several expressions and bodies as strings; compileFile parses script twice. |
+| Template | Node tree and cached TemplateExpr JsProgram values | Several node fields still retain expression source strings; node source-span coverage is incomplete. |
+| CSS | CssSheet from ParseCSS during scoping | CSS tokens and rules do not preserve source offsets; the stylesheet is retained as raw text. |
+
+### Target contract
+
+The target is a ComponentAST backed by one immutable SourceFile. SourceFile
+contains the complete original bytes and line index and is the only long-lived
+textual source owner. AST nodes refer to byte spans in SourceFile. Literal
+values may remain strings as data, but no stage may pass a source fragment as
+an executable program to a later stage.
+
+```text
+ComponentAST
+  Source: immutable SourceFile
+  Script: ScriptSectionAST
+    Span, JsProgram, parse diagnostics
+  Template: TemplateSectionAST
+    Span, root template nodes, expression ASTs
+  Style: CssSectionAST
+    Span, CssSheet, parse diagnostics
+```
+
+The required invariants are:
+
+1. Each present section has one body span within SourceFile; spans never overlap
+   and retain original whitespace positions.
+2. Script has exactly one parsed JsProgram per component revision. Analysis,
+   scope building, rewriting, and diagnostics consume that program.
+3. Every dynamic template expression has one parsed expression AST and a span
+   pointing at the original expression rather than a reconstructed string.
+4. CSS scoping consumes CssSheet and source spans; printing CSS is the only
+   CSS-string serialization boundary.
+5. Analysis records node references or spans plus semantic facts, not copied
+   executable source bodies. A deliberate source snippet may be requested only
+   from SourceFile for diagnostics.
+6. Target generators accept ComponentAST plus analysis and emit only typed
+   target ASTs. Printer functions are the final code serialization boundary.
+
+### Proposed Go-facing shape
+
+The exact names remain an implementation decision, but the migration target is
+conceptually equivalent to:
+
+```text
+type SourceFile struct { Path; Bytes; LineIndex }
+type Span struct { Start; End }
+type ComponentAST struct { Source; Script; Template; Style }
+type ScriptSectionAST struct { Span; Program; Diagnostics }
+type TemplateSectionAST struct { Span; Roots; Diagnostics }
+type CssSectionAST struct { Span; Sheet; Diagnostics }
+```
+
+SourceFile should be immutable after construction. Individual ASTs are mutable
+only during their owning parse/lower phase; once analysis begins, downstream
+passes treat them as immutable. Optimization produces a new target AST or an
+explicit transformation result rather than mutating source-level nodes.
+
+### Staged migration
+
+1. Introduce ComponentAST and SourceFile beside SFC, then add a parseComponent
+   entry point that creates section ASTs and exposes a compatibility adapter.
+2. Change compileFile to parse script once, pass the same JsProgram into
+   analysis and scope diagnostics, and retain source spans through source-map
+   output.
+3. Change template nodes so directive and attribute expression fields carry
+   typed expression nodes plus spans; retain text only for literal payloads.
+4. Add CSS token/rule spans and make scoped-CSS emission consume CssSheet.
+5. Move AST debug output to serialize ComponentAST directly, avoiding a second
+   parse through DumpAST.
+6. Change generator and test helpers to accept ComponentAST and analysis.
+7. Remove the SFC string fields and every compatibility adapter only after
+   corpus, source-map, browser, and AST-validation coverage prove equivalence.
+
+### Risks and non-goals
+
+This task does not require full JavaScript type checking, CSS semantic
+validation, or a generic lossless parser. The first milestone is representation
+ownership and parse-once semantics. The raw source buffer stays intentionally
+available for diagnostics, source maps, and literal recovery; the prohibition
+is against using it as an untracked executable intermediate representation.
