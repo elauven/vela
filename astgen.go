@@ -844,6 +844,22 @@ func buildProgramWithInfo(
 	scopeID string,
 	cssExternal bool,
 ) (*JsProgram, bool) {
+	prog := buildProgramUnvalidated(name, sfc, nodes, analysis, scopeID, cssExternal)
+	validateGeneratedProgram(prog)
+	return prog, false
+}
+
+// buildProgramUnvalidated constructs the complete target tree but deliberately
+// does not run whole-program validation. It is used by the opt-in compiler
+// trace to measure construction and validation as separate stable stages.
+func buildProgramUnvalidated(
+	name string,
+	sfc *SFC,
+	nodes []Node,
+	analysis *Analysis,
+	scopeID string,
+	cssExternal bool,
+) *JsProgram {
 	g := &ASTGen{
 		name:        name,
 		scopeID:     scopeID,
@@ -852,8 +868,10 @@ func buildProgramWithInfo(
 		fragCounter: -1,
 		cssExternal: cssExternal,
 	}
-	prog := g.buildModule(nodes)
+	return g.buildModule(nodes)
+}
 
+func validateGeneratedProgram(prog *JsProgram) {
 	if issues := ValidateProgram(prog); len(issues) > 0 {
 		msg := "vela: internal codegen error — generated AST failed validation:\n"
 		for _, iss := range issues {
@@ -861,7 +879,6 @@ func buildProgramWithInfo(
 		}
 		panic(msg)
 	}
-	return prog, false
 }
 
 // stripBanner removes the generated-by banner comment from a piece

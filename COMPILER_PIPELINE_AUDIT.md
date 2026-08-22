@@ -794,3 +794,27 @@ the same compilation; decisions remain deterministic inputs to trace metrics.
 The next subtask may prototype this behind the disabled-by-default sink API.
 It should begin with an in-memory test sink and single-file JSONL CLI output;
 no cache instrumentation is included until cache ownership exists.
+
+
+### Prototype status (2026-08-23)
+
+The disabled-by-default API prototype is implemented. `CompileOptions.TraceSink`
+receives one `CompilationTraceV1` value per `compileFile` invocation. It records
+source read, SFC/template/script analysis, input validation, optional
+optimization, separately measured target construction and target validation,
+printing, optional source-map construction, and output write. A stage that is
+not enabled is retained with `skipped` status and a stable reason; there are no
+synthetic cache misses.
+
+The prototype uses no trace recorder when `TraceSink` is nil. With a sink, it
+records aggregate byte/node counts, the currently observed two script parses,
+severity/code counts, non-negative monotonic durations, and success/failed/
+internal-error outcome. Its in-memory tests prove generated JavaScript is
+unchanged, success records have the documented stage order, failures stop at
+the failing stage, and JSON serialization contains neither source text nor the
+temporary absolute path.
+
+The public CLI flag and mutex-protected append-only JSONL file sink are
+intentionally deferred. The API gives embedding tools a stable observation
+point first; a later tooling task can add `--trace=<file>` or `--trace=-`
+without changing compiler semantics or the record schema.

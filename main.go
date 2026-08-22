@@ -50,7 +50,8 @@ type CompileOptions struct {
 	// to a sibling <n>.css file and no runtime injection is
 	// emitted — the consumer links the stylesheet.
 	CSSExternal bool
-	SourceMap   bool // emit a v3 .js.map alongside generated JS
+	SourceMap   bool      // emit a v3 .js.map alongside generated JS
+	TraceSink   TraceSink // optional source-free compiler trace observer
 }
 
 func main() {
@@ -358,24 +359,48 @@ func compilePrint(src, dest string, opts CompileOptions) bool {
 // compileFile compiles one .vela source file, writing JS to dest (full path).
 // The output directory is created automatically.
 func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, err error) {
+	name := componentName(src)
+	trace := newTraceRecorder(src, name, opts)
 	var ds *DiagSet
+	internalFailure := false
 	defer func() {
 		if r := recover(); r != nil {
+			internalFailure = true
 			if ds != nil {
 				ds.Error(0, "internal compiler error while generating this component: %v", r)
 				diags = ds.All()
 			}
 			err = fmt.Errorf("internal compiler error: %v", r)
 		}
+		if trace != nil {
+			if diags == nil && ds != nil {
+				diags = ds.All()
+			}
+			outcome := "success"
+			if internalFailure {
+				outcome = "internal-error"
+			} else if err != nil {
+				outcome = "failed"
+			}
+			if traceErr := trace.finish(diags, outcome); traceErr != nil && err == nil {
+				err = fmt.Errorf("write compiler trace: %w", traceErr)
+			}
+		}
 	}()
 
-	data, err := os.ReadFile(src)
-	if err != nil {
+	var data []byte
+	if err = trace.stage("read-source", func() error {
+		var readErr error
+		data, readErr = os.ReadFile(src)
+		return readErr
+	}); err != nil {
 		return nil, err
 	}
 	raw := string(data)
+	if trace != nil {
+		trace.trace.Metrics.SourceBytes = len(data)
+	}
 
-	name := componentName(src)
 	hash := md5.Sum([]byte(src))
 	scope := fmt.Sprintf("vela-%x", hash[:3])
 
@@ -384,19 +409,45 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 		ds.Error(0, "--sourcemap cannot be combined with --minify; Vela minifier is not source-map-aware")
 		return ds.All(), fmt.Errorf("invalid source map options")
 	}
-	sfc, err := parseSFC(raw)
-	if err != nil {
+
+	var sfc *SFC
+	if err = trace.stage("parse-sfc", func() error {
+		var parseErr error
+		sfc, parseErr = parseSFC(raw)
+		return parseErr
+	}); err != nil {
 		ds.Error(0, "%v", err)
 		return ds.All(), fmt.Errorf("parse: %w", err)
 	}
 
-	tmpl, err := parseTemplate(sfc.Template)
-	if err != nil {
+	var tmpl []Node
+	if err = trace.stage("parse-template", func() error {
+		var parseErr error
+		tmpl, parseErr = parseTemplate(sfc.Template)
+		return parseErr
+	}); err != nil {
 		ds.Error(0, "template: %v", err)
 		return ds.All(), fmt.Errorf("template: %w", err)
 	}
+	if trace != nil {
+		trace.trace.Metrics.TemplateNodes = countTemplateNodes(tmpl)
+	}
 
-	analysis := analyzeScript(sfc.Script)
+	var analysis *Analysis
+	var scriptProg *JsProgram
+	if err = trace.stage("parse-script-and-analyze", func() error {
+		analysis = analyzeScript(sfc.Script)
+		scriptProg = ParseJS(sfc.Script)
+		return nil
+	}); err != nil {
+		return ds.All(), err
+	}
+	if trace != nil {
+		trace.trace.Metrics.ScriptNodes = countJSNodes(scriptProg)
+		// The current analyzer parses the script once and scope validation parses
+		// it once more. Task 013 will replace this observed count with one.
+		trace.trace.Metrics.ScriptParseCount = 2
+	}
 
 	if opts.EmitAST {
 		if astJSON, astErr := DumpAST(src, raw); astErr == nil {
@@ -406,106 +457,142 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 		}
 	}
 
-	prog := ParseJS(sfc.Script)
+	if err = trace.stage("validate-input", func() error {
+		// Scope + flow analysis over the original parsed program. All these
+		// passes report positions relative to the script body, so the DiagSet
+		// offset translates them into original component coordinates.
+		ds.PushOffset(sfc.ScriptOffset)
+		scriptScope := BuildScopes(scriptProg, ds)
+		DetectUnreachable(scriptProg, ds)
+		validateScript(scriptProg, analysis, ds)
+		validateDerivedCycles(scriptProg, analysis, ds)
+		validateDerivedPurity(scriptProg, analysis, ds)
+		validateScriptForms(scriptProg, ds)
+		validateEffectBody(scriptProg, analysis, ds)
+		ds.PopOffset()
 
-	// Scope + flow analysis over the *original* parsed program.  All
-	// these passes report positions relative to the script body, so we
-	// push the script's absolute offset for the duration of their run
-	// — the DiagSet translates incoming positions into file-relative
-	// line/column on the way out.
-	ds.PushOffset(sfc.ScriptOffset)
-	scriptScope := BuildScopes(prog, ds)
-	DetectUnreachable(prog, ds)
-	validateScript(prog, analysis, ds)
-	validateDerivedCycles(prog, analysis, ds)
-	validateDerivedPurity(prog, analysis, ds)
-	validateScriptForms(prog, ds)
-	validateEffectBody(prog, analysis, ds)
-	ds.PopOffset()
-
-	// Template diagnostics use positions relative to the template
-	// body; push that offset for the duration.
-	ds.PushOffset(sfc.TemplateOffset)
-	validateTemplate(tmpl, analysis, ds)
-	validateTemplateForms(tmpl, sfc.Template, ds)
-	validateTemplateRefs(tmpl, analysis, scriptScope, sfc.Template, ds)
-	ds.PopOffset()
-
-	if ds.HasErrors() {
+		ds.PushOffset(sfc.TemplateOffset)
+		validateTemplate(tmpl, analysis, ds)
+		validateTemplateForms(tmpl, sfc.Template, ds)
+		validateTemplateRefs(tmpl, analysis, scriptScope, sfc.Template, ds)
+		ds.PopOffset()
+		if ds.HasErrors() {
+			return fmt.Errorf("input validation failed")
+		}
+		return nil
+	}); err != nil {
 		return ds.All(), fmt.Errorf("compilation failed with %d error(s)", len(ds.Errors()))
 	}
 
-	// Dead-binding elimination — gated on --minify because it costs an
-	// extra parse + scope build per round.  Runs after all diagnostics
-	// so warnings still fire against the user's original source
-	// positions, not against a script that's already been optimized.
 	if opts.Minify {
-		sfc.Script, analysis = EliminateDeadCodeFixedPoint(sfc.Script, analysis, sfc.Template)
+		if err = trace.stage("optimize", func() error {
+			sfc.Script, analysis = EliminateDeadCodeFixedPoint(sfc.Script, analysis, sfc.Template)
+			return nil
+		}); err != nil {
+			return ds.All(), err
+		}
+	} else {
+		trace.skipped("optimize", "disabled")
 	}
 
-	// Code generation always constructs one validated AST directly from the SFC.
-	var code string
-	var sourceMap *SourceMapV3
-	// When the generated-AST dump is requested, build the
-	if opts.GenAST || opts.SourceMap {
-		prog := buildProgramCSS(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
-		if opts.GenAST {
-			genPath := strings.TrimSuffix(dest, ".js") + ".genast.json"
-			_ = os.MkdirAll(filepath.Dir(genPath), 0755)
-			_ = os.WriteFile(genPath, []byte(ASTToJSON(prog, false)), 0644)
+	var target *JsProgram
+	if trace != nil {
+		if err = trace.stage("build-target-ast", func() error {
+			target = buildProgramUnvalidated(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
+			trace.trace.Metrics.TargetNodes = countJSNodes(target)
+			return nil
+		}); err != nil {
+			return ds.All(), err
 		}
-		if opts.SourceMap {
-			shiftTree(prog, sfc.ScriptOffset)
-			var locations []PrintLocation
-			body := PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) {
+		if err = trace.stage("validate-target-ast", func() error {
+			validateGeneratedProgram(target)
+			return nil
+		}); err != nil {
+			return ds.All(), err
+		}
+	} else {
+		target = buildProgramCSS(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
+	}
+
+	if opts.GenAST {
+		genPath := strings.TrimSuffix(dest, ".js") + ".genast.json"
+		_ = os.MkdirAll(filepath.Dir(genPath), 0755)
+		_ = os.WriteFile(genPath, []byte(ASTToJSON(target, false)), 0644)
+	}
+
+	var code string
+	var mapBytes []byte
+	if opts.SourceMap {
+		var locations []PrintLocation
+		if err = trace.stage("print-target", func() error {
+			shiftTree(target, sfc.ScriptOffset)
+			body := PrintJSWithLocations(target, PrintPretty, func(loc PrintLocation) {
 				loc.GeneratedLine += 2
 				locations = append(locations, loc)
 			})
-			m := BuildSourceMapV3(filepath.Base(dest), filepath.ToSlash(src), raw, locations)
-			sourceMap = &m
 			code = headerComment + "\n\n" + body
-		} else {
-			code = headerComment + "\n\n" + PrintJS(prog, PrintPretty)
-		}
-	} else {
-		code = generateCodeASTCSS(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
-	}
-
-	if sourceMap != nil {
-		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-			return ds.All(), fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), err)
-		}
-		mapBytes, mapErr := SourceMapJSON(*sourceMap)
-		if mapErr != nil {
-			return ds.All(), mapErr
-		}
-		mapPath := dest + ".map"
-		if err := os.WriteFile(mapPath, mapBytes, 0644); err != nil {
+			return nil
+		}); err != nil {
 			return ds.All(), err
 		}
-		code += "\n//# sourceMappingURL=" + filepath.Base(mapPath) + "\n"
+		if err = trace.stage("build-source-map", func() error {
+			m := BuildSourceMapV3(filepath.Base(dest), filepath.ToSlash(src), raw, locations)
+			var mapErr error
+			mapBytes, mapErr = SourceMapJSON(m)
+			return mapErr
+		}); err != nil {
+			return ds.All(), err
+		}
+	} else {
+		if err = trace.stage("print-target", func() error {
+			code = headerComment + "\n\n" + PrintJS(target, PrintPretty)
+			return nil
+		}); err != nil {
+			return ds.All(), err
+		}
+		trace.skipped("build-source-map", "disabled")
 	}
 	if opts.Minify {
 		code = Minify(code)
 	}
-
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return ds.All(), fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), err)
-	}
-	if err := os.WriteFile(dest, []byte(code), 0644); err != nil {
-		return ds.All(), err
+	if trace != nil {
+		trace.trace.Metrics.SourceMapBytes = len(mapBytes)
 	}
 
-	// External-CSS mode: write the scoped stylesheet to a sibling
-	// <name>.css file.  Only when the component actually has a
-	// <style> block — a component without styles produces no .css.
-	if opts.CSSExternal {
-		if css := ExtractScopedCSS(sfc, scope); css != "" {
-			cssPath := strings.TrimSuffix(dest, ".js") + ".css"
-			if err := os.WriteFile(cssPath, []byte(css), 0644); err != nil {
-				return ds.All(), fmt.Errorf("write %s: %w", cssPath, err)
+	if err = trace.stage("write-output", func() error {
+		if len(mapBytes) > 0 {
+			if writeErr := os.MkdirAll(filepath.Dir(dest), 0755); writeErr != nil {
+				return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), writeErr)
+			}
+			mapPath := dest + ".map"
+			if writeErr := os.WriteFile(mapPath, mapBytes, 0644); writeErr != nil {
+				return writeErr
+			}
+			code += "\n//# sourceMappingURL=" + filepath.Base(mapPath) + "\n"
+		}
+		if writeErr := os.MkdirAll(filepath.Dir(dest), 0755); writeErr != nil {
+			return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), writeErr)
+		}
+		if writeErr := os.WriteFile(dest, []byte(code), 0644); writeErr != nil {
+			return writeErr
+		}
+		if trace != nil {
+			trace.trace.Metrics.OutputBytes = len(code)
+		}
+		if opts.CSSExternal {
+			if css := ExtractScopedCSS(sfc, scope); css != "" {
+				cssPath := strings.TrimSuffix(dest, ".js") + ".css"
+				if writeErr := os.WriteFile(cssPath, []byte(css), 0644); writeErr != nil {
+					return fmt.Errorf("write %s: %w", cssPath, writeErr)
+				}
+				if trace != nil {
+					trace.trace.Metrics.CSSBytes = len(css)
+				}
 			}
 		}
+		return nil
+	}); err != nil {
+		return ds.All(), err
 	}
 
 	return ds.All(), nil
