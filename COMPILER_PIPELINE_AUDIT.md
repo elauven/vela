@@ -290,3 +290,100 @@ a partial stylesheet with recoverable diagnostics.
    never panic, and produce bounded diagnostics or a valid AST.
 5. Keep existing corpus, generated-JS, jsdom, Chromium, and source-map suites
    as downstream proof that parser changes preserve generated behaviour.
+
+
+## JavaScript pipeline audit
+
+### Parser coverage
+
+The repository has an executable ECMAScript audit. On 2026-08-23 it reports
+87 passing feature probes across ES5 through ES2020, including declarations,
+control flow, classes, destructuring, modules, async and generators, optional
+chaining, nullish operators, dynamic import, and numeric forms. This proves a
+substantial parser subset and useful AST shapes; it is not proof of complete
+ECMAScript conformance or semantic correctness for arbitrary programs.
+
+A critical boundary defect is that the public ParseJS function returns only a
+JsProgram. JSParser.Errors remains on the discarded parser instance. The
+normal compileFile path parses script both for analysis and for scope work but
+does not directly convert syntax errors from either parse into DiagSet
+messages. TemplateExpr uses a separate parseTemplateExpression path that does
+retain parser errors, so template expressions have a stronger syntax-diagnostic
+contract than the script section.
+
+Required remediation: replace ParseJS at compiler boundaries with a parse
+result containing Program and structured diagnostics, preserve byte spans, and
+make syntax errors stop code generation before analysis or rewriting. Keep a
+small internal convenience wrapper only for tests that deliberately construct
+valid compiler-authored snippets.
+
+### Existing semantic analysis
+
+BuildScopes provides real lexical scope construction and diagnostics for
+unresolved identifiers, implicit global writes, const and import writes,
+duplicate lexical declarations, a source-order TDZ approximation, destructured
+bindings, catch bindings, and hoisting. DetectUnreachable adds local flow
+warnings. Analysis recognizes Vela reactive declarations, props, imports,
+derived values, effects, lifecycle hooks, dependency information, and ordered
+script steps. Template-reference validation extends the visible-name model
+into template scopes such as each, await, and keyed blocks.
+
+The guarantees are intentionally narrower than a JavaScript type checker:
+
+- TDZ analysis does not fully model initializer self-reference or arbitrary
+  interprocedural execution order.
+- Name resolution does not prove a called value is callable, validate arity,
+  infer object shapes, or validate member accesses.
+- Imported module exports and values supplied by runtime data are not typed.
+- The default global list suppresses undeclared-name diagnostics for both
+  browser and Node names. It does not prove that a browser API, method, or
+  capability exists in the deployment environment.
+- Effects, asynchronous control flow, aliasing, mutation, and external I/O
+  are analyzed only to the degree required for Vela reactivity diagnostics.
+
+### Rewriter and target AST boundary
+
+Assignment rewriters use parsed JavaScript positions to locate and transform
+reactive writes, including handlers and selected nested closures. Dedicated
+tests cover concise arrows, blocks, compound assignments, patterns, and common
+false positives. However, Analysis and several rewrite paths still keep source
+snippets such as bodies or expressions as strings. The ComponentAST migration
+must replace those with node references or spans wherever a later stage needs
+executable semantics.
+
+Generated output is represented as JsProgram and checked by ValidateProgram.
+The validator catches malformed node shapes, undeclared generated references,
+lexical-order and TDZ errors, duplicate declarations, and unconditional
+unreachable code. It is a strong generator safety net, but it validates
+compiler output rather than arbitrary user-script semantics.
+
+The printer has round-trip and source-map coverage. It is the correct final
+serialization boundary. There is nevertheless a second high-risk class of
+boundary: ASTGen helper functions named jsStmts, jsStmt, and jsExpr construct
+compiler-authored JavaScript as strings and parse it back into AST nodes. This
+is safer than printing raw output, but still duplicates grammar/escaping work
+and can panic after a string-construction defect. It belongs to the structural
+string-emission catalogue in the next audit task.
+
+### Browser API policy recommendation
+
+Keep browser API analysis optional. The baseline compiler should diagnose only
+facts it can prove syntactically: unknown global names under an explicit target
+profile and unsupported direct API forms when a capability is disabled. A
+future capability profile may distinguish browser, worker, Node, and SSR
+contexts and add configured globals. It must not claim to verify arbitrary DOM
+method/property availability without type declarations and flow-sensitive type
+analysis.
+
+### Required JS follow-up tests
+
+1. Syntax-error fixtures for script and template expressions must assert the
+   same component-relative Diagnostic format and must prevent target generation.
+2. Parser audit tests must assert zero parser errors, not merely a non-nil AST.
+3. Add a parser-error recovery fuzz target with bounded diagnostics and no
+   panic; keep valid-input AST/printer round-trip fuzzing separately.
+4. Add scope tests for aliases, module imports, nested functions, TDZ edge
+   cases, and capability-profile globals.
+5. Add generated-AST tests that prohibit new structural jsStmt and jsExpr use
+   outside explicitly reviewed transitional helpers, once the string catalogue
+   is complete.
