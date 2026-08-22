@@ -468,3 +468,98 @@ database and flow-sensitive type layer; that is outside this compiler audit.
 
 Each step needs fixtures for human output, DiagnosticsJSON, UTF-16 positions,
 source-map compatibility, and strict versus permissive behavior.
+
+
+## Executable JavaScript string-boundary catalogue
+
+### Classification
+
+A string is **structural executable emission** when it describes JavaScript
+grammar (a declaration, statement, expression, function, import, or closure)
+and is then parsed to `JsProgram`/`JsExpr`, or otherwise reaches output without
+an equivalent typed node. Re-labelling a parsed result `OriginGenerated` does
+not make string construction typed construction: quoting, precedence, scope,
+and grammar have already been duplicated outside AST constructors.
+
+| Category | Definition | Required treatment |
+| --- | --- | --- |
+| Structural emission | Compiler concatenates JavaScript grammar, then calls `jsStmt`, `jsStmts`, or `jsExpr`. | Replace with typed AST builders. |
+| User-source reparse | A later stage parses a user source slice or rewritten string instead of keeping its parsed node. | Replace with ComponentAST ownership or AST transforms; keep original spans. |
+| Textual transform/reparse | An AST locates ranges but a transform splices text and reparses or reanalyses it. | Transitional only; make AST-native before another backend. |
+| Safe literal payload | A string is data in a typed JS literal, such as escaped static HTML/CSS or an attribute value. | Keep only with one decoded-value encoder and escaping tests. |
+| Printer boundary | `PrintJS` serializes validated target AST to the output file. | Retain as the sole final JS serialization boundary. |
+
+### Active AST generator paths
+
+`astgen.go` centralizes the reparse gateways in `jsStmts` (82), `jsStmt` (89),
+and `jsExpr` (98). They call `ParseJS`/`parseJSExpr`, mark the result generated,
+and return it as target AST. `ParseJS` currently discards parser errors, so a
+bad compiler fragment may become a partial AST before validation can explain
+the generator defect. Every active call-site group is catalogued below.
+
+| Location/group | Constructed as JavaScript text | Classification and priority |
+| --- | --- | --- |
+| `finalizeRuntimeHelpers`, `buildImportDecls` (1308–1467) | Runtime import and `$$dispatch` declaration. | Structural; medium. Build import specifiers, arrow, and call directly. |
+| `templateExpr`, `rewrittenTemplateExpr`, `templateStmt` (613–690) | Fallback expression, rewritten handler source, and marker-shell statements. | Mixed; high for rewritten handlers because they originate in template source. Cached normal expressions are already typed. |
+| Script-plan/state/derived/effect/lifecycle builders (1526–1889) | State initializers, proxy callback, derived updater, effect IIFE, lifecycle bodies, and `$$upd_*` calls. `Initial`, `Expr`, `Body`, `CleanScript`, and `ScriptPlan.Source` contain user code. | **Critical user-source reparse.** Store parsed initializers, expressions, bodies, and statements in ScriptAST/Analysis; wrap typed children in generated AST. |
+| Setter cascade and deep setters (1922–2155) | Scheduler calls, proxy assignment, notify call. | Structural compiler-only; high. Replace with call, assignment, declaration, guard, and block builders. |
+| `cloneStmt` (2176–2180) | `PrintJS` of a statement followed by `jsStmt`. | **Critical printer-as-transform.** Replace with typed clone or immutable sharing; never use printer for cloning. |
+| DOM roots, hole subtrees, each reconciliation (2187–3138) | DOM calls, anchors, row closures, maps, keyed reconciliation, and teardown. | Structural compiler-only; high because it controls nested-block correctness. Migrate using common control-flow/DOM builders. |
+| Await lowering (3139–3247) | Driver function, promise chain, branch locals/updates. | Structural compiler-only; high after common builders. |
+| `stmtsToText`, `nullCaptured`, `destroyComps`, `buildIfChainStructured` (3249–3497) | Existing AST statements are printed, joined into if/key/slot shells, then parsed again. | **Critical nested round trip.** Build blocks/functions/teardown as nested AST directly. |
+| Element, child, text, slot, component lowering (3502–4185) | Element creation, append/write, fallback content, component props and slot factories. | Structural. `buildSlotClosures` is high priority because it combines printed captured AST with `strings.Builder`. |
+| Attributes, events, bindings, HTML fill, return object (4194–4510) | Listeners, handler arrows, bindings, cleanup, template setup, prop setters. | Mixed. User handler rewriting is high priority; static HTML is a safe payload but its surrounding JS must be AST-built. |
+
+`template_codegen_helpers.go` still has string-returning `bindAttrStmt`,
+`classDirStmt`, and `styleDirStmt`. The AST production path uses
+`attrWriteStmt`, `classDirStmtAST`, and `styleDirStmtAST` instead, so these are
+historical/test helpers rather than active lowering. Deprecate and remove or
+convert them during the builder migration to prevent a new backdoor.
+
+### Other user-source and reparse boundaries
+
+| Location | Current boundary | Required remediation |
+| --- | --- | --- |
+| `main.go: compileFile`, `analyzer.go` | Script text is parsed for analysis and parsed again for scopes and target planning. | Parse once into ScriptAST; analysis consumes the same immutable nodes. |
+| `analyzer.go` derived/effect/lifecycle dependencies | `Expr` and `Body` strings are separately parsed for deps and later parsed again by ASTGen. | Store expression/body node references plus dependency metadata. |
+| `RewriteAssignments`, `rewriteTemplateHandlerAssignments` in `rewriter.go` | AST positions choose edits, but replacements are strings and handlers are reparsed. | Implement AST assignment rewrite to setter-call nodes, preserving source origins. |
+| `rewriteItemRef`, `rewriteIdentInExpr` | Identifier substitution splices source then handler lowering reparses it; one path is manual lexical scanning. | Use scoped AST substitution; no fallback-to-original after syntax diagnostics are available. |
+| `EliminateDeadCode` in `dce.go` | AST ranges are textually removed, then code is reparsed/reanalysed to a fixed point. | Transitional minify-only path; replace with AST transform before SSR/HMR. |
+| `imports.go` | Import specifier/path source is transformed textually and reparsed. | Modify/copy typed import nodes after ScriptAST ownership exists. |
+
+### Literal payloads and valid serialization
+
+`emitStaticHTML`, `buildHoleTemplate`, and `emitStaticHTMLNode` create HTML
+data consumed by `innerHTML` or `<template>`; they are not JS grammar, but must
+escape text and attribute values exactly once and receive DOM/XSS-shaped tests.
+Scoped CSS and runtime style injection are likewise CSS data placed in a JS
+literal. The surrounding assignments, calls, and declarations must still be
+typed target AST nodes.
+
+`strLit` currently accepts already-escaped content and stores raw quoted text;
+alongside `jsonQuote`, `escapeJSString`, `backtickString`, `escapeAttr`, and
+`escapeHTML*`, this is an encoding hot spot. The target literal builder accepts
+decoded values and lets the JS printer own JavaScript escaping. `PrintJS` and
+`PrintJSWithLocations` in `compileFile` are the intended final boundary only;
+minification must operate on AST rather than create a second raw-JS path.
+
+### Migration order and enforcement
+
+1. Add typed builders plus an error-returning construction API; migrate
+   compiler-only declarations, calls, assignments, blocks, DOM writes, cleanup,
+   imports, and literals.
+2. Retain parsed ScriptAST/template handler/effect/lifecycle nodes and insert
+   them as typed children rather than interpolating source.
+3. Remove `cloneStmt`, `stmtsToText`, and slot/if-chain print-reparse paths
+   before growing nested blocks or adding SSR.
+4. Convert assignment, item, import, and DCE transforms to AST-native passes.
+5. Delete production `jsStmt`, `jsStmts`, `jsExpr`, and historical
+   string-returning template helpers; test-only valid-input conveniences may
+   remain under `_test.go`.
+
+Add an architectural CI test that scans production Go files for `jsStmt`,
+`jsStmts`, `jsExpr`, `ParseJS(PrintJS(`, and `stmtsToText`. It uses a small
+explicit allowlist that must shrink with every migration. Pair it with AST
+validation, malformed-literal tests, nested-block runtime fixtures, source-map
+assertions for retained user nodes, and no-panic tests for each transitional
+helper.
