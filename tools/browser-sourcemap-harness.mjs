@@ -31,6 +31,8 @@ let browser;
 try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
+  page.setDefaultTimeout(5000);
+  page.setDefaultNavigationTimeout(5000);
   const session = await page.context().newCDPSession(page);
   await session.send("Debugger.enable");
   let parsed;
@@ -56,4 +58,4 @@ try {
   const result = { ok: original.source === config.expected.source && original.line === config.expected.line && original.column === config.expected.column, parsedSourceMapURL: parsed.sourceMapURL, generated: { line: Number(frame[1]), column: Number(frame[2]) - 1 }, original, expected: config.expected };
   if (!result.ok) result.error = "unexpected mapped source location";
   done(result);
-} catch (error) { done({ ok: false, error: error && error.stack ? error.stack : String(error) }); } finally { await browser?.close(); await new Promise((resolveClose) => server.close(resolveClose)); }
+} catch (error) { done({ ok: false, error: error && error.stack ? error.stack : String(error) }); } finally { await browser?.close(); server.closeAllConnections?.(); await new Promise((resolveClose) => server.close(resolveClose)); }

@@ -58,6 +58,9 @@ func assertBrowserSourceMap(t *testing.T, raw, selector, sourceNeedle string) {
 	if _, err := compileFile(src, filepath.Join(dir, "App.js"), CompileOptions{Codegen: "ast", SourceMap: true}); err != nil {
 		t.Fatalf("compile fixture: %v", err)
 	}
+	if err := stageRuntime(dir); err != nil {
+		t.Fatalf("stage runtime: %v", err)
+	}
 	index := `<!doctype html><script type="module">import { App } from "./App.js"; App(document.body, {}, {});</script>`
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte(index), 0644); err != nil {
 		t.Fatal(err)
