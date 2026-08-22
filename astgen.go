@@ -35,6 +35,7 @@ package main
 import (
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -3953,6 +3954,7 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	// Initial mount — keep dynamic props as cached template AST expressions.
 	g.initBody = append(g.initBody, g.templateStmt(
 		"if (!"+inst+") "+inst+" = "+comp.Name+"("+wrap+", "+templateMarker(0)+", "+slotsObj+");", propsExpr))
+	g.initBody = append(g.initBody, jsStmt("if ("+inst+" && "+inst+".el) "+inst+".el.setAttribute("+strconv.Quote(g.scopeID)+", \"\");"))
 
 	// Reactive prop updates.  The .set() statement propagates new
 	// prop values to an already-mounted instance — both via the
