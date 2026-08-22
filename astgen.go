@@ -28,13 +28,9 @@ package main
 //   [x] 13. Slots  (via legacy walkElement reuse)
 //   [x] 14. Deep state  ($state.deep — Proxy-wrapped, split setter)
 //
-// ALL 14 BLOCKS MIGRATED.  Phase D (cutover) is next: flip the
-// default to the AST generator, remove the astCanBuildDirectly claim
-// check, and add the validation passes the migration enables.
-//
-// Until all blocks land, generateCodeAST falls back to the legacy
-// generator for anything it can't yet build — see the fallback note
-// in generateCodeAST.
+// ALL 14 BLOCKS MIGRATED. Production compilation is direct AST-only;
+// astCanBuildDirectly remains temporarily as migration-test classification
+// until the legacy generator is removed entirely.
 
 import (
 	"reflect"
@@ -569,23 +565,9 @@ func itoa(n int) string {
 	return string(buf[i:])
 }
 
-// generateCodeAST is the AST-based counterpart of generateCode.
-// Phase C is incremental: it fully compiles only what the migrated
-// blocks cover (see astCanBuildDirectly) and falls back to the legacy
-// generator for everything else.  This keeps the compiler correct
-// and shippable throughout the migration.
-// generateCodeAST is the code generator.  It always produces a
-// unified JS AST, runs the validation passes over it, and prints
-// it — there is no path that bypasses the AST.
-//
-// For templates whose every construct the AST builder handles
-// directly, buildModule constructs the tree node-by-node.  For the
-// few shapes the direct builder does not yet cover, buildModule
-// falls through to buildModuleSplice, which runs the legacy walk
-// and RE-PARSES its output into the same JsProgram.  Either way
-// the result is one validated AST: the legacy generator is no
-// longer a parallel code path, only an internal DOM-emitter
-// library behind the splice.
+// generateCodeAST is the production code generator. It constructs one
+// validated JavaScript AST directly from the parsed SFC and prints it.
+// The legacy string generator is not part of this path.
 func generateCodeAST(
 	name string,
 	sfc *SFC,
@@ -820,17 +802,8 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 	return obj
 }
 
-// buildProgram produces the validated JsProgram for a component —
-// the structured form behind generateCodeAST.  It is exposed
-// separately so tooling (the AST JSON dump, the differential
-// harness) can inspect the tree without re-deriving it from the
-// printed text.
-//
-// For templates whose every construct the direct builder handles,
-// buildModule constructs the tree node-by-node.  For the few
-// shapes it does not yet cover, buildModuleSplice runs the legacy
-// walk and re-parses its output into the same JsProgram.  Either
-// way the result is one validated AST.
+// buildProgram produces the validated JsProgram for a component. It is exposed
+// so tooling can inspect the structured AST without re-parsing generated code.
 func buildProgram(
 	name string,
 	sfc *SFC,
@@ -839,11 +812,9 @@ func buildProgram(
 	scopeID string,
 ) *JsProgram {
 	return buildProgramCSS(name, sfc, nodes, analysis, scopeID, false)
-
 }
 
-// buildProgramCSS is buildProgram with explicit CSS-delivery
-// control — see generateCodeASTCSS.
+// buildProgramCSS is buildProgram with explicit CSS-delivery control.
 func buildProgramCSS(
 	name string,
 	sfc *SFC,
@@ -856,9 +827,8 @@ func buildProgramCSS(
 	return prog
 }
 
-// buildProgramWithInfo is the instrumented form of buildProgramCSS. It keeps
-// production output unchanged while allowing migration tests to prove which
-// inputs still route through the legacy string-emitter splice.
+// buildProgramWithInfo is instrumented for migration tests. The bool must
+// always be false for production AST output.
 func buildProgramWithInfo(
 	name string,
 	sfc *SFC,
@@ -875,8 +845,6 @@ func buildProgramWithInfo(
 		fragCounter: -1,
 		cssExternal: cssExternal,
 	}
-
-	usedLegacySplice := false
 	prog := g.buildModule(nodes)
 
 	if issues := ValidateProgram(prog); len(issues) > 0 {
@@ -886,31 +854,7 @@ func buildProgramWithInfo(
 		}
 		panic(msg)
 	}
-
-	return prog, usedLegacySplice
-}
-
-// buildModuleSplice is retained only for migration experiments and differential
-// tests. Production AST compilation no longer calls it.  As of E3.6 the AST generator's recursive element
-// walker handles every construct directly, and astCanBuildDirectly
-// returns true for all well-formed input — so in practice this is
-// never reached.  It is retained (rather than deleted with the
-// rest of the splice machinery) so that any unanticipated input
-// shape still produces valid output instead of a hard failure.
-//
-// It runs the legacy generator and re-parses the result into a
-// JsProgram, so even a fallback compile flows through the unified
-// AST pipeline (validation, printing).  The legacy banner is
-// stripped before parsing — the caller re-adds the canonical one.
-func (g *ASTGen) buildModuleSplice(
-	name string,
-	sfc *SFC,
-	nodes []Node,
-	analysis *Analysis,
-	scopeID string,
-) *JsProgram {
-	legacy := generateCode(name, sfc, nodes, analysis, scopeID)
-	return ParseJS(stripBanner(legacy))
+	return prog, false
 }
 
 // stripBanner removes the generated-by banner comment from a piece
@@ -929,17 +873,9 @@ func stripBanner(s string) string {
 	return strings.Join(out, "\n")
 }
 
-// astCanBuildDirectly reports whether the AST generator can fully compile
-// the given template with the blocks migrated so far.  Until all 14
-// blocks land, generateCodeAST falls back to the legacy generator
-// for anything astCanBuildDirectly rejects — this keeps the compiler
-// correct throughout the migration.
-//
-// Blocks 2-3 status: no props/state/derived/effects (those are
-// blocks 4-6).  Within that limit it handles:
-//   - fully static templates (block 2)
-//   - a single root element whose children are static or contain
-//     non-reactive text-interpolation holes (block 3)
+// astCanBuildDirectly classifies historical migration coverage for tests and
+// differential reporting. Production compilation always uses the direct builder.
+// It will disappear with the legacy generator after the migration window.
 func astCanBuildDirectly(nodes []Node, analysis *Analysis) bool {
 	if len(nodes) == 0 {
 		return false

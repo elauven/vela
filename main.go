@@ -456,14 +456,9 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 		sfc.Script, analysis = EliminateDeadCodeFixedPoint(sfc.Script, analysis, sfc.Template)
 	}
 
-	// Code generation.  The AST-based generator is the default;
-	// --codegen=legacy selects the string generator during its
-	// Code generation.  generateCodeAST is the generator: it always
-	// produces a unified, validated JS AST.  Constructs its direct
-	// builder does not cover are handled by buildModuleSplice,
-	// which runs the legacy walk and re-parses the result into the
-	// same AST — so there is no longer a parallel code path, only
-	// an internal DOM-emitter library behind the splice.
+	// Code generation. The AST generator is the default and always constructs
+	// one validated AST directly from the SFC.
+	// --codegen=legacy selects the deprecated string generator.
 	//
 	// --codegen=legacy remains as a deprecated escape hatch for the
 	// deprecation window: it selects the raw legacy generator,
