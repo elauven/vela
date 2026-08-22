@@ -392,6 +392,9 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 				// while walking the loop body, then withdraw them
 				// so they do not leak to siblings.
 				added := addEachBindings(known, names)
+				// A keyed each expression is evaluated in row scope, so it may
+				// reference the item or index bindings declared above.
+				checkCachedExprRefs(n.KeyAST, known, templateText, ds)
 				walkNodes(n.Children)
 				for _, nm := range added {
 					delete(known, nm)

@@ -86,7 +86,7 @@ func TestBug13_SetterGuardsAgainstNoOpWrites(t *testing.T) {
 	// place keeps its identity, so it must fall through), but the
 	// identity-equality check that breaks the bind loop is still
 	// present.
-	if !strings.Contains(out, "if (x === $$v && !$$isProxy($$v)) return") {
+	if !strings.Contains(out, "if (x === $$v && !$$isProxy($$v))") {
 		t.Fatalf("expected proxy-aware `if (x === $$v && !$$isProxy($$v)) return` guard in setter:\n%s", out)
 	}
 }
@@ -101,7 +101,7 @@ func TestBug13_SetterGuardForPropAlsoEmitted(t *testing.T) {
   <p>{count}</p>
 </template>`
 	out := compileGenerated(t, src)
-	if !strings.Contains(out, "if (count === $$v && !$$isProxy($$v)) return") {
+	if !strings.Contains(out, "if (count === $$v && !$$isProxy($$v))") {
 		t.Fatalf("expected proxy-aware guard in $bindable setter:\n%s", out)
 	}
 	// And the $$onChange_count reader.

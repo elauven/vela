@@ -50,6 +50,9 @@ func TestBug10_NestedComponentInstantiationGuarded(t *testing.T) {
 		// a known-safe context.
 		instVar := out[m[4]:m[5]]
 		guardOnSameLine := strings.Contains(line, "if (!"+instVar+")")
+		// The AST printer emits an if-body on the following line, so the
+		// immediately preceding guard is semantically equivalent.
+		guardBefore := strings.Contains(out[max(0, start-200):start], "if (!"+instVar+")")
 		// Inside an each-block factory ($$frag_$$nN), the constructor
 		// call lives inside the per-row builder where guarding would
 		// be wrong (each row gets its own instance).  These appear in
@@ -64,7 +67,7 @@ func TestBug10_NestedComponentInstantiationGuarded(t *testing.T) {
 				insideFragFactory = true
 			}
 		}
-		if !guardOnSameLine && !insideFragFactory {
+		if !guardOnSameLine && !guardBefore && !insideFragFactory {
 			t.Errorf("unguarded constructor call on line:\n  %s\n  (would duplicate DOM on slot reopen)", line)
 		}
 	}

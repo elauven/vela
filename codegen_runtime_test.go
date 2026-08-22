@@ -27,11 +27,10 @@ import (
 func TestBug8_FragmentHelperEmitted(t *testing.T) {
 	src := `<script></script><template><div>hi</div></template>`
 	out := compileGenerated(t, src)
-	// $$insertHTML is a shared runtime helper — imported from
-	// runtime.js, no longer inlined into each component.
-	if !strings.Contains(out, "$$insertHTML") ||
-		!strings.Contains(out, "from './runtime.js'") {
-		t.Fatalf("expected $$insertHTML imported from runtime.js:\n%s", out)
+	// A static root does not need the fragment helper. It must use direct DOM
+	// construction rather than calling insertAdjacentHTML on an arbitrary node.
+	if !strings.Contains(out, ".innerHTML = 'hi'") || strings.Contains(out, ".insertAdjacentHTML(") {
+		t.Fatalf("static root should use direct safe DOM construction:\n%s", out)
 	}
 }
 

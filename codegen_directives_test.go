@@ -26,7 +26,7 @@ func TestDir_ClassDirectiveTogglesClass(t *testing.T) {
   <div class:active={active}>x</div>
 </template>`
 	out := compileGenerated(t, src)
-	if !strings.Contains(out, "classList.toggle('active', !!(active))") {
+	if !strings.Contains(out, "classList.toggle('active', !!active)") {
 		t.Fatalf("expected classList.toggle for class:active; got:\n%s", out)
 	}
 }
@@ -40,7 +40,7 @@ func TestDir_ClassDirectiveShorthand(t *testing.T) {
   <div class:active>x</div>
 </template>`
 	out := compileGenerated(t, src)
-	if !strings.Contains(out, "classList.toggle('active', !!(active))") {
+	if !strings.Contains(out, "classList.toggle('active', !!active)") {
 		t.Fatalf("expected shorthand to expand to active flag:\n%s", out)
 	}
 }
@@ -199,7 +199,7 @@ func TestDir_StyleAndClassCombined(t *testing.T) {
 	out := compileGenerated(t, src)
 	checks := []string{
 		"setAttribute('class', 'card')",
-		"classList.toggle('active', !!(active))",
+		"classList.toggle('active', !!active)",
 		"setProperty('color', String(color))",
 	}
 	for _, c := range checks {

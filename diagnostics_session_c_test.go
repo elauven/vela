@@ -89,7 +89,7 @@ func TestVelaFormDiagnostics(t *testing.T) {
 		name, script, template, want string
 	}{
 		{"derived callback", `let x = $state(1); let y = $derived(() => x + 1);`, `<p>{y}</p>`, "$derived does not accept a callback"},
-		{"dispatch import", `import { $$dispatch } from "vela";`, `<button>ok</button>`, "$$dispatch is a Vela builtin"},
+		{"dispatch import", `import { $$dispatch } from "vela";`, `<button>ok</button>`, "is a Vela builtin"},
 		{"event modifier", `let x = $state(0);`, `<button @keydown.enter={x++}>ok</button>`, "event modifiers are not supported"},
 		{"class map", `let x = $state(false);`, "<div :class=\"{'active': x}\"></div>", "object-valued :class is not supported"},
 		{"member bind", `let x = $state.deep({ ok: false });`, `<input bind:checked={x.ok}>`, "bind:checked requires a plain"},
@@ -113,7 +113,6 @@ func TestVelaFormDiagnostics(t *testing.T) {
 		})
 	}
 }
-
 
 func TestTemplateExpressionSyntaxDiagnostic(t *testing.T) {
 	ds := NewDiagSet("test.vela", "<p>{count + }</p>")

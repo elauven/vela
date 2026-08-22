@@ -2198,10 +2198,13 @@ func (g *ASTGen) buildDOM(nodes []Node) {
 		return
 	}
 
-	// If any root node is a control-flow block ({#if} / {#each} /
-	// {#await}), use the multi-root wrapper path: a
-	// display:contents <div> holds the blocks' anchors and any
-	// static siblings.
+	// Multiple dynamic roots, and roots containing control-flow blocks, need a
+	// stable wrapper. Build every sibling structurally so dynamic elements are
+	// not silently dropped next to the first root.
+	if len(nodes) > 1 {
+		g.buildChainRootDOM(nodes)
+		return
+	}
 	for _, n := range nodes {
 		switch n.(type) {
 		case *IfChainNode, *EachBlockNode, *AwaitBlockNode, *SlotNode:
@@ -2267,33 +2270,10 @@ func (g *ASTGen) buildChainRootDOM(nodes []Node) {
 	g.body = append(g.body,
 		jsStmt(`$$root.style.display = 'contents';`))
 
-	for _, n := range nodes {
-		switch x := n.(type) {
-		case *ElementNode:
-			// A static sibling element — serialize via insertHTML
-			// so document order between it and the chains holds.
-			html := emitStaticHTML([]Node{x}, g.scopeID)
-			g.body = append(g.body, &JsExprStmt{
-				baseStmt: baseStmt{genNode()},
-				X: &JsCallExpr{
-					baseExpr: baseExpr{genNode()},
-					Callee:   id("$$insertHTML"),
-					Args: []JsExpr{
-						id("$$root"),
-						strLit(escapeJSString(html)),
-					},
-				},
-			})
-		case *IfChainNode:
-			g.buildIfChain(x, "$$root")
-		case *EachBlockNode:
-			g.buildEachBlock(x, "$$root")
-		case *AwaitBlockNode:
-			g.buildAwaitBlock(x, "$$root")
-		case *SlotNode:
-			g.buildSlotNode(x, "$$root")
-		}
-	}
+	// Use the common recursive builder for every sibling. Besides preserving
+	// document order this keeps events, bindings, components, and dynamic
+	// attributes alive on root-level elements beside a block.
+	g.buildNodes(nodes, "$$root", false)
 }
 
 // holeSubtree is the result of building a hole-bearing element
@@ -4319,7 +4299,7 @@ func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 	spec, ok := twoWayBindSpec(tag, attr.Name)
 	sv := stripBraces(attr.Value)
-	if ok && g.analysis != nil && g.analysis.isStateName(sv) {
+	if attr.IsTwoWay && ok && g.analysis != nil && g.analysis.isStateName(sv) {
 		hv := varName + "_bind_" + spec.event + "_h"
 		g.body = append(g.body, jsStmt("const "+hv+" = ($e) => $$set_"+sv+"($e.target."+spec.readProp+");"))
 		g.emitListenerPair(&g.events, varName, spec.event, hv, nil, "", true)

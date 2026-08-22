@@ -225,6 +225,16 @@ func newTemplateExpr(source string, pos int) *TemplateExpr {
 	return &TemplateExpr{Source: source, Pos: pos + leading, Program: prog, Errors: errs}
 }
 
+// newAttributeTemplateExpr parses a dynamic attribute value through the same
+// cached expression path as text holes. A plain `{expr}` keeps its original
+// source, while an interpolated value such as `{size}px` is first represented
+// as a JavaScript template literal. This prevents later code generation from
+// reparsing an invalid `{size}px` fragment and preserves a single AST for both
+// initial DOM writes and reactive updates.
+func newAttributeTemplateExpr(value string, pos int) *TemplateExpr {
+	return newTemplateExpr(attrExprToJS(value), pos)
+}
+
 func templateExprDeps(expr *TemplateExpr, fallback string, vars []string) []string {
 	if expr != nil && expr.Program != nil && len(expr.Errors) == 0 {
 		return FindDepsInNode(expr.Program, vars)
@@ -843,7 +853,11 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 				} else if idx := strings.LastIndex(p.src[start:p.pos], a.Name); idx >= 0 {
 					exprPos = start + idx
 				}
-				a.Expr = newTemplateExpr(stripBraces(a.Value), exprPos)
+				if a.IsClassDir || a.IsStyleDir {
+					a.Expr = newAttributeTemplateExpr(a.Value, exprPos)
+				} else {
+					a.Expr = newTemplateExpr(stripBraces(a.Value), exprPos)
+				}
 			}
 		}
 	}
