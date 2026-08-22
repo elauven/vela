@@ -625,7 +625,11 @@ func (g *ASTGen) templateExpr(expr *TemplateExpr) JsExpr {
 func (g *ASTGen) rewrittenTemplateExpr(expr *TemplateExpr, source string) JsExpr {
 	root := jsExpr(source)
 	if expr != nil {
-		setTemplateOrigin(root, g.sfc.TemplateOffset+expr.Pos)
+		pos := g.sfc.TemplateOffset + expr.Pos
+		WalkNode(root, func(node JsNode) bool {
+			setTemplateOrigin(node, pos)
+			return true
+		})
 	}
 	return root
 }
@@ -775,6 +779,8 @@ func setTemplateOrigin(n JsNode, pos int) {
 	case *JsThisExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
 	case *JsSuperExpr:
+		x.SourceOrigin, x.HasSourceOrigin = pos, true
+	case *JsThrowStmt:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
 	}
 }
