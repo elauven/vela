@@ -175,8 +175,8 @@ func WalkNode(node JsNode, fn func(JsNode) bool) {
 		for _, e := range n.Exprs {
 			WalkNode(e, fn)
 		}
-	// Leaves: JsIdent, JsLiteral, JsThisExpr, JsSuperExpr,
-	// JsImportDecl, JsBreakStmt, JsContinueStmt, JsEmptyStmt, JsDebuggerStmt
+		// Leaves: JsIdent, JsLiteral, JsThisExpr, JsSuperExpr,
+		// JsImportDecl, JsBreakStmt, JsContinueStmt, JsEmptyStmt, JsDebuggerStmt
 	}
 }
 
@@ -618,4 +618,43 @@ func quote(s string) string {
 	}
 	b.WriteByte('"')
 	return b.String()
+}
+
+// rewriteTemplateHandlerAssignments rewrites writes to reactive bindings in a
+// template event handler. Template attributes bypass script-level rewriting,
+// so concise and block-bodied arrows need this dedicated entry point.
+func rewriteTemplateHandlerAssignments(handler string, analysis *Analysis) string {
+	handler = unwrapBraces(handler)
+	if analysis == nil || (len(analysis.StateVars) == 0 && len(analysis.Props) == 0) {
+		return handler
+	}
+	stateSet := analysis.stateSet()
+
+	arrowIdx := strings.Index(handler, "=>")
+	if arrowIdx < 0 {
+		return handler
+	}
+	body := strings.TrimSpace(handler[arrowIdx+2:])
+	params := handler[:arrowIdx+2]
+
+	if strings.HasPrefix(body, "{") && strings.HasSuffix(strings.TrimSpace(body), "}") {
+		inner := body[1 : len(body)-1]
+		rewritten := RewriteAssignments(inner, ParseJS(inner), stateSet)
+		return params + " { " + strings.TrimSpace(rewritten) + " }"
+	}
+
+	wrappedParens := strings.HasPrefix(body, "(") && strings.HasSuffix(body, ")")
+	if wrappedParens {
+		body = strings.TrimSpace(body[1 : len(body)-1])
+	}
+	bodyStmt := body + ";"
+	rewritten := RewriteAssignments(bodyStmt, ParseJS(bodyStmt), stateSet)
+	if rewritten == bodyStmt {
+		return handler
+	}
+	rewritten = strings.TrimSuffix(strings.TrimSpace(rewritten), ";")
+	if wrappedParens {
+		return params + " (" + strings.TrimSpace(rewritten) + ")"
+	}
+	return params + " " + strings.TrimSpace(rewritten)
 }

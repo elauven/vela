@@ -4207,19 +4207,6 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
 	return "{ " + strings.Join(entries, ", ") + " }"
 }
 
-// componentPropsObject builds the `{ prop: expr, … }` literal
-// passed to a component constructor / .set().  Reuses the legacy
-// componentPropsEntries so prop handling (bindable $$onChange
-// callbacks, event forwarding) stays single-sourced.
-func (g *ASTGen) componentPropsObject(attrs []*Attr) string {
-	sub := &CodeGen{analysis: g.analysis, scopeID: g.scopeID}
-	entries := sub.componentPropsEntries(attrs)
-	if len(entries) == 0 {
-		return "{}"
-	}
-	return "{ " + strings.Join(entries, ", ") + " }"
-}
-
 // applyElementAttrs wires every attribute of an element to the
 // variable varName — events, binds, directives, static attrs.
 // Used for the root element ($$root) and, via the recursive
@@ -4361,26 +4348,15 @@ func (g *ASTGen) emitBindThisAST(varName string, attr *Attr) {
 	g.cleanup = append(g.cleanup, jsStmt(ref+" = null;"))
 }
 
-// rewriteHandler strips the {…} wrapper from a handler attribute
-// value and rewrites assignments to reactive variables into their
-// $$set_X form — the transform the legacy rewriteHandlerAssignments
-// applies.
-// rewriteHandler strips the {…} wrapper from a handler attribute
-// value and rewrites assignments to reactive variables into their
-// $$set_X form.
-//
-// This delegates to the legacy rewriteHandlerAssignments, which
-// correctly handles the concise-arrow-body case (`() => n++`) by
-// splitting at `=>` and treating the body as a statement — without
-// that split, an update operator in expression position is never
-// seen by RewriteAssignments.  Keeping one implementation avoids
-// the two diverging (Stage 3 caught exactly such a divergence).
+// rewriteHandler strips the {…} wrapper from a template event handler and
+// rewrites assignments to reactive variables into their  form. The
+// shared rewriter handles concise arrow bodies as statements, so updates such
+// as `() => count++` remain reactive.
 func (g *ASTGen) rewriteHandler(handler string) string {
 	if g.analysis == nil {
 		return stripBraces(handler)
 	}
-	sub := &CodeGen{analysis: g.analysis}
-	return sub.rewriteHandlerAssignments(handler)
+	return rewriteTemplateHandlerAssignments(handler, g.analysis)
 }
 
 // stripBraces removes a single surrounding {…} wrapper that the
