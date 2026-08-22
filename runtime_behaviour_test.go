@@ -910,6 +910,40 @@ func TestRuntimeNestedChainElseFallingWhenOuterInactive(t *testing.T) {
 	})
 }
 
+// Regression: a nested {#key} has its own driver for route.id. When a
+// route update activates a different outer branch, that driver may run
+// before the outer chain has created its anchor. The driver must no-op
+// until its enclosing branch is mounted.
+func TestRuntimeNestedKeyDriverBeforeOuterBranch(t *testing.T) {
+	src := `<script>
+  let route = $state({ page: "overview", id: 1 });
+
+  function showOverview() { route = { page: "overview", id: 1 }; }
+  function showUsers() { route = { page: "users", id: 1 }; }
+  function showDetail() { route = { page: "detail", id: 2 }; }
+</script>
+<template><div>
+  <button class="overview" @click={showOverview}>overview</button>
+  <button class="users" @click={showUsers}>users</button>
+  <button class="detail" @click={showDetail}>detail</button>
+  {#if route.page === "overview"}
+    <p class="page">overview</p>
+  {:else if route.page === "detail"}
+    {#key route.id}<p class="page">detail:{route.id}</p>{/key}
+  {:else}
+    <p class="page">users</p>
+  {/if}
+</div></template>`
+	assertRuntime(t, "NestedKeyDriverBeforeOuterBranch", src, []rtStep{
+		{"assertText": ".page", "equals": "overview"},
+		// Before the anchor guard, this transition threw "anchor is null".
+		{"click": "button.users"},
+		{"assertText": ".page", "equals": "users"},
+		{"click": "button.detail"},
+		{"assertText": ".page", "equals": "detail:2"},
+	})
+}
+
 func TestRuntimeTodoCorpusQwen(t *testing.T) {
 	app, err := os.ReadFile("test_projects/corpus/qwen-fixed/src/App.vela")
 	if err != nil {

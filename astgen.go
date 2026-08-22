@@ -3469,6 +3469,10 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	}
 	finallyBody := jsStmts(fn + "_running = false; if (" + fn + "_pending) { " + fn + "_pending = false; " + fn + "(); }")
 	body := []JsStmt{
+		// A nested chain is also registered against its own reactive
+		// dependencies. Those updates may run before the enclosing branch
+		// creates (or after it tears down) this chain's anchor.
+		jsStmt("if (!" + anchor + " || !" + anchor + ".parentNode) return;"),
 		jsStmt("if (" + fn + "_running) { " + fn + "_pending = true; return; }"),
 		jsStmt(fn + "_running = true;"),
 		&JsTryStmt{baseStmt: baseStmt{genNode()}, Block: &JsBlock{baseStmt: baseStmt{genNode()}, Body: tryBody}, Finalizer: &JsBlock{baseStmt: baseStmt{genNode()}, Body: finallyBody}},
