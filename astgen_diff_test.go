@@ -1,35 +1,13 @@
 package main
 
-// astgen_diff_test.go — the differential migration harness.
-//
-// Phase C builds the AST generator in parallel with the legacy
-// string generator.  This harness compiles representative fixtures
-// with BOTH and compares the output.
-//
-// While the migration is in progress the two outputs differ — the
-// AST generator only emits the blocks migrated so far.  The harness
-// therefore does NOT fail on difference; instead it reports a
-// similarity metric so progress is visible.  When the metric
-// reaches 100% across all fixtures, TestASTGenMatchesLegacy is
-// switched from reporting to asserting, and the AST generator
-// becomes the default.
-//
-// What the harness gives us:
-//   - TestASTGenSkeleton — asserts the block-1 skeleton is present
-//     and structurally sound (this DOES hard-fail).
-//   - TestASTGenDiffReport — prints a per-fixture similarity score.
-//     Informational; never fails. The shrinking diff is the
-//     migration progress bar.
-
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
 
-// diffFixtures — small, representative .vela sources spanning the
-// feature surface.  Kept inline so the harness has no file
-// dependencies.
+// astgen_diff_test.go retains the historical migration fixtures as AST-only
+// validity coverage. The legacy string generator is no longer an oracle.
+
 var diffFixtures = map[string]string{
 	"minimal": `<script>
   export let title = '';
@@ -201,38 +179,8 @@ var diffFixtures = map[string]string{
 </style>`,
 }
 
-// knownDiff lists diff-harness fixtures where the AST generator
-// intentionally diverges from legacy — documented, valid
-// alternatives, not bugs.  Excluded from structural equality;
-// still exercised for validity by the corpus harness.
-var knownDiff = map[string]string{
-	"each": "unkeyed {#each} — AST update-in-place fast path " +
-		"(same array reference + same length → call $$blk.update " +
-		"on existing rows) preserves DOM identity, focus, and " +
-		"child-component instances; legacy destroys and rebuilds. " +
-		"Both valid; AST form is the intended behaviour.",
-	"slots": "multiple sibling <slot>s — document-order vs " +
-		"create/wire-buffer ordering; same DOM result",
-	"component": "component slot children — struct-built slot-factory " +
-		"closures (E3.6) vs legacy's buffer-partitioned emission; " +
-		"both valid, same runtime behaviour",
-	// The AST generator builds {#if}/{#key}/{#await} branches into
-	// a DocumentFragment so the branch's nodes become DIRECT
-	// children of the parent — no wrapper <div>.  Legacy still
-	// emits the wrapper.  The fragment form is the intended
-	// behaviour (a wrapper broke parent>child CSS, flex/grid,
-	// :first-child); legacy is simply behind here.
-	"conditional": "{#if} chain — fragment-based, no wrapper <div>; " +
-		"legacy wraps each branch in a <div>",
-	"keyblock": "{#key} block — fragment-based, no wrapper <div>; " +
-		"legacy wraps in a <div>",
-	"await": "{#await} block — fragment-based, no wrapper <div>; " +
-		"legacy wraps each branch in a <div>",
-}
-
-// compileBothWays runs a .vela source through the legacy and the
-// AST generators, returning both outputs.
-func compileBothWays(t *testing.T, src string) (legacy, ast string) {
+// compileASTFixture compiles a fixture through the sole supported generator.
+func compileASTFixture(t *testing.T, src string) string {
 	t.Helper()
 	sfc, err := parseSFC(src)
 	if err != nil {
@@ -242,259 +190,31 @@ func compileBothWays(t *testing.T, src string) (legacy, ast string) {
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
-	analysis := analyzeScript(sfc.Script)
-	const scope = "vela-000000"
-	legacy = generateCode("Test", sfc, tmpl, analysis, scope)
-	ast = generateCodeAST("Test", sfc, tmpl, analysis, scope)
-	return legacy, ast
+	return generateCodeAST("Test", sfc, tmpl, analyzeScript(sfc.Script), "vela-000000")
 }
 
-// ─────────────────────────────────────────────
-//  Block 1 — skeleton assertions (hard-fail)
-// ─────────────────────────────────────────────
-
-func TestASTGenSkeleton(t *testing.T) {
+func TestASTGenFixtureValidity(t *testing.T) {
 	for name, src := range diffFixtures {
-		sfc, _ := parseSFC(src)
-		analysis := analyzeScript(sfc.Script)
-		_, ast := compileBothWays(t, src)
-
-		// The AST generator's output must always be valid,
-		// re-parseable JS — even when incomplete.
-		prog := ParseJS(stripBanner(ast))
-		if len(prog.Body) == 0 {
-			t.Errorf("[%s] AST output did not parse to any statements:\n%s", name, ast)
-			continue
-		}
-
-		// Skeleton invariants — these hold from block 1 onward.
-		// The runtime helpers ($$dispatch / $$insertHTML / $$proxy)
-		// are no longer skeleton-universal: the AST generator
-		// imports each from runtime.js only when the component
-		// actually uses it, so they are not asserted here.
-		mustContain := []string{
-			"export function Test(",
-			"$$props = Object.assign({}, $$props)",
-			"$$slots = $$slots || {}",
-			"return {",
-			"destroy()",
-		}
-		for _, frag := range mustContain {
-			if !strings.Contains(ast, frag) {
-				t.Errorf("[%s] skeleton missing %q in:\n%s", name, frag, ast)
+		t.Run(name, func(t *testing.T) {
+			ast := compileASTFixture(t, src)
+			prog := ParseJS(stripBanner(ast))
+			if len(prog.Body) == 0 {
+				t.Fatalf("AST output did not parse to any statements:\n%s", ast)
 			}
-		}
-
-		// set() appears only when the component receives props.
-		hasProps := len(analysis.Props) > 0
-		hasSet := strings.Contains(ast, "set(props)")
-		if hasProps && !hasSet {
-			t.Errorf("[%s] component has props but no set() method:\n%s", name, ast)
-		}
-	}
-}
-
-// ─────────────────────────────────────────────
-//  Diff report (informational, never fails)
-// ─────────────────────────────────────────────
-
-func TestASTGenDiffReport(t *testing.T) {
-	fmt.Println("\n=== AST generator migration progress ===")
-	var total float64
-	native := 0
-	for name, src := range diffFixtures {
-		sfc, _ := parseSFC(src)
-		tmpl, _ := parseTemplate(sfc.Template)
-		analysis := analyzeScript(sfc.Script)
-		claimed := astCanBuildDirectly(tmpl, analysis)
-		if claimed {
-			native++
-		}
-
-		legacy, ast := compileBothWays(t, src)
-		sim := similarity(legacy, ast)
-		total += sim
-
-		tag := "fallback→legacy"
-		if claimed {
-			tag = "AST-native"
-		}
-		fmt.Printf("  %-14s  %5.1f%%  %-16s  (legacy %d / ast %d lines)\n",
-			name, sim*100, tag,
-			countLines(legacy), countLines(ast))
-	}
-	fmt.Printf("  %-14s  %5.1f%%  %d/%d AST-native\n", "SUMMARY",
-		total/float64(len(diffFixtures))*100, native, len(diffFixtures))
-	fmt.Println("========================================")
-}
-
-// TestASTGenMatchesLegacy is the eventual hard gate.  It compares
-// the two generators by RE-PARSED AST structural equality, not by
-// text — an AST-based generator is expressly allowed to format
-// differently (indentation, else-placement, blank lines).  What
-// must match is the *meaning*: parse both outputs, compare the
-// trees.
-//
-// While the migration is incomplete this only checks fixtures the
-// AST generator claims (astCanBuildDirectly); once all blocks land it
-// covers everything and the claim check is removed.
-//
-// As of bug-4 fix: AST and legacy diverged on the component mount
-// line (anchor comment vs wrapper div).  The differential is no
-// longer a useful gate; see the longer note on
-// TestASTGenCorpusMatchesLegacy.
-func TestASTGenMatchesLegacy(t *testing.T) {
-	t.Skip("AST↔legacy intentionally diverged at bug-4 fix " +
-		"(component anchor); see MIGRATION.md")
-	for name, src := range diffFixtures {
-		sfc, err := parseSFC(src)
-		if err != nil {
-			t.Fatalf("[%s] parseSFC: %v", name, err)
-		}
-		tmpl, err := parseTemplate(sfc.Template)
-		if err != nil {
-			t.Fatalf("[%s] parseTemplate: %v", name, err)
-		}
-		analysis := analyzeScript(sfc.Script)
-
-		// Skip fixtures the AST generator doesn't yet claim.
-		if !astCanBuildDirectly(tmpl, analysis) {
-			continue
-		}
-		// Skip fixtures where the AST generator intentionally
-		// diverges from legacy (documented, valid alternatives).
-		if _, isDiff := knownDiff[name]; isDiff {
-			continue
-		}
-
-		const scope = "vela-000000"
-		legacy := generateCode("Test", sfc, tmpl, analysis, scope)
-		ast := generateCodeAST("Test", sfc, tmpl, analysis, scope)
-
-		// Strip the legacy banner comment (printer emits none) and
-		// the runtime-helper wiring (emitted unconditionally by
-		// legacy, usage-tracked by the AST generator), then compare
-		// re-parsed trees.
-		legacyTree := stripRuntimeHelperWiring(ParseJS(stripBanner(legacy)))
-		astTree := stripRuntimeHelperWiring(ParseJS(ast))
-
-		if nodeSig(legacyTree) != nodeSig(astTree) {
-			t.Errorf("[%s] generators diverge structurally\n--- legacy ---\n%s\n--- ast ---\n%s",
-				name, legacy, ast)
-		}
-	}
-}
-
-// stripBanner removes the leading `// Generated…` comment line so
-// it doesn't interfere with re-parsing for comparison.
-
-// stripRuntimeHelperWiring removes the shared-runtime-helper plumbing
-// from a parsed program: the `import { … } from './runtime.js'`
-// helper import, and the `const $$dispatch = …` binding plus the
-// `void $$insertHTML/$$proxy` no-op statements.  The legacy
-// generator emits this wiring unconditionally; the AST generator
-// emits only what each component uses — a deliberate, systematic
-// asymmetry.  Normalizing it away on both sides lets the structural
-// diff focus on the actual component code.
-func stripRuntimeHelperWiring(prog *JsProgram) *JsProgram {
-	if prog == nil {
-		return prog
-	}
-	isHelperImport := func(s JsStmt) bool {
-		imp, ok := s.(*JsImportDecl)
-		if !ok || imp.Source != "./runtime.js" {
-			return false
-		}
-		for _, sp := range imp.Specifiers {
-			if sp.Local == "$$rt_dispatch" ||
-				sp.Imported == "$$insertHTML" ||
-				sp.Imported == "$$proxy" ||
-				sp.Imported == "$$isProxy" {
-				return true
+			if issues := ValidateProgram(prog); len(issues) > 0 {
+				t.Fatalf("AST output failed validation: %v", issues)
 			}
-		}
-		return false
-	}
-	isHelperWiring := func(s JsStmt) bool {
-		// Only individual helper-wiring statements — the
-		// `const $$dispatch = … $$rt_dispatch(…)` binding and the
-		// `void $$insertHTML/$$proxy/$$dispatch` no-ops.  Must NOT
-		// match a whole function that merely contains them.
-		switch st := s.(type) {
-		case *JsVarDecl:
-			txt := PrintJS(&JsProgram{Body: []JsStmt{st}}, PrintMinified)
-			return strings.Contains(txt, "$$rt_dispatch")
-		case *JsExprStmt:
-			txt := PrintJS(&JsProgram{Body: []JsStmt{st}}, PrintMinified)
-			return txt == "void $$insertHTML;" ||
-				txt == "void $$proxy;" ||
-				txt == "void $$dispatch;"
-		}
-		return false
-	}
-	var keep func(stmts []JsStmt) []JsStmt
-	keep = func(stmts []JsStmt) []JsStmt {
-		var out []JsStmt
-		for _, s := range stmts {
-			if isHelperImport(s) || isHelperWiring(s) {
-				continue
-			}
-			// Descend into the exported component function so the
-			// $$dispatch binding inside it is dropped too.
-			if exp, ok := s.(*JsExportDecl); ok {
-				if fn, ok := exp.Declaration.(*JsFuncDecl); ok &&
-					fn.Body != nil {
-					fn.Body.Body = keep(fn.Body.Body)
+			for _, fragment := range []string{
+				"export function Test(",
+				"$$props = Object.assign({}, $$props)",
+				"$$slots = $$slots || {}",
+				"return {",
+				"destroy()",
+			} {
+				if !strings.Contains(ast, fragment) {
+					t.Errorf("output missing %q:\n%s", fragment, ast)
 				}
 			}
-			out = append(out, s)
-		}
-		return out
+		})
 	}
-	prog.Body = keep(prog.Body)
-	return prog
-}
-// ─────────────────────────────────────────────
-//  Helpers
-// ─────────────────────────────────────────────
-
-// similarity returns a 0..1 score — the fraction of legacy lines
-// that also appear (trimmed) in the AST output.  Crude, but a
-// usable migration progress signal: as blocks land, more legacy
-// lines find a match.
-func similarity(legacy, ast string) float64 {
-	astLines := map[string]bool{}
-	for _, l := range strings.Split(ast, "\n") {
-		astLines[strings.TrimSpace(l)] = true
-	}
-	legLines := strings.Split(legacy, "\n")
-	if len(legLines) == 0 {
-		return 1
-	}
-	matched := 0
-	nonEmpty := 0
-	for _, l := range legLines {
-		tl := strings.TrimSpace(l)
-		if tl == "" {
-			continue
-		}
-		nonEmpty++
-		if astLines[tl] {
-			matched++
-		}
-	}
-	if nonEmpty == 0 {
-		return 1
-	}
-	return float64(matched) / float64(nonEmpty)
-}
-
-func countLines(s string) int {
-	n := 0
-	for _, l := range strings.Split(s, "\n") {
-		if strings.TrimSpace(l) != "" {
-			n++
-		}
-	}
-	return n
 }
