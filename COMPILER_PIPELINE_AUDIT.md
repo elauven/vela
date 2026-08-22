@@ -211,3 +211,82 @@ validation, or a generic lossless parser. The first milestone is representation
 ownership and parse-once semantics. The raw source buffer stays intentionally
 available for diagnostics, source maps, and literal recovery; the prohibition
 is against using it as an untracked executable intermediate representation.
+
+
+## Template and CSS parser audit
+
+### Template coverage and current guarantees
+
+The template parser covers ordinary elements and attributes, text interpolation,
+components and slots, event and bind directives, class and style directives,
+conditional blocks, keyed blocks, each blocks with empty branches, and await
+branches. Dynamic text and attributes use cached TemplateExpr values backed by
+the JavaScript parser. Corpus, generated-JS, runtime, source-map, and fuzz
+coverage exercise many supported compositions.
+
+The parser is fail-fast at the top level: a parse error returns no template
+node slice to compileFile. It is not a recovery parser and does not return a
+partial AST plus diagnostics. This is appropriate for code generation today,
+but limits editor integration and multi-error diagnostics.
+
+Source-position coverage is strongest for dynamic content: TemplateExpr, Part,
+Attr, block condition, each iterator/key, and await expression fields have
+section-relative positions. Source-map tests validate a representative set of
+these origins. Element, component, slot, text-node, selector, and stylesheet
+nodes do not have uniform whole-node spans. Several block and directive fields
+also retain a string alongside a cached expression AST.
+
+### CSS coverage and current guarantees
+
+CSS parsing supports qualified rules, selector lists, declarations, common
+at-rules, nested media-like blocks, keyframes as opaque raw content, important
+flags, global selectors, pseudo-elements, and custom properties. ScopeCSS
+parses into CssStylesheet and prints transformed selectors; current tests cover
+those supported scoping cases.
+
+ParseCSS is deliberately best-effort. It returns a stylesheet rather than an
+error result, skips unexpected declaration tokens, silently discards malformed
+qualified rules, and preserves keyframe content as raw text. CssTok and all
+CssNode types lack source positions. Therefore CSS syntax errors cannot yet be
+reported precisely and CSS AST cannot satisfy the proposed ComponentAST span
+contract without a parser upgrade.
+
+### Confirmed gaps
+
+| Area | Current state | Required direction |
+| --- | --- | --- |
+| Template node spans | Dynamic subexpressions are positioned; structural nodes are not uniformly positioned. | Add Span to every node, attribute, branch, and text part. |
+| Template recovery | First parser error aborts the tree. | Keep fail-fast compiler mode initially; later expose a recovery result for tooling. |
+| Template structural validation | Parser and specialized validators share responsibility; no standalone tree validator exists. | Add ValidateTemplateAST before semantic analysis and generation. |
+| Template expression fields | Cached AST exists, but source strings remain in many block/directive fields. | Make typed expression node plus span canonical; retain literal text only when semantically required. |
+| CSS diagnostics | Best-effort parser silently recovers. | Return stylesheet plus diagnostics, with spans for tokens/rules/declarations. |
+| CSS source maps | CSS output has no source maps and nodes have no spans. | Defer CSS source maps, but establish spans now for diagnostics and future mapping. |
+| Parser fuzzing | Fuzzing targets valid templates and generator robustness. | Add malformed template/CSS fuzzing with no panic, bounded recovery, and stable diagnostics. |
+
+### Required validation hooks
+
+ValidateTemplateAST should run after parsing and before semantic analysis. It
+must reject nil children, invalid or missing spans, invalid block branch shapes,
+unparsed dynamic expressions, dangling terminators, invalid directive payloads,
+and illegal parent/child relationships. It must operate on typed nodes only and
+produce diagnostics in original component coordinates.
+
+ValidateCssAST should run after ParseCSS. It must reject nil rules/selectors/
+declarations, malformed brace structure, empty property names, invalid spans,
+and any raw opaque region outside explicitly supported constructs such as
+keyframes. Compiler mode should fail on CSS errors; an editor mode may preserve
+a partial stylesheet with recoverable diagnostics.
+
+### Test plan for the parser boundary
+
+1. Add AST-invariant tests for every template node kind and for every CSS node
+   kind, including span containment and non-nil child invariants.
+2. Add negative fixture tables for mismatched tags, unclosed interpolations,
+   malformed block terminators, invalid directive values, unterminated CSS
+   strings/comments, missing braces, and malformed declarations.
+3. Add source-location assertions for structural template and CSS diagnostics,
+   not only for expression source maps.
+4. Add parser fuzz targets that accept arbitrary component/template/CSS input,
+   never panic, and produce bounded diagnostics or a valid AST.
+5. Keep existing corpus, generated-JS, jsdom, Chromium, and source-map suites
+   as downstream proof that parser changes preserve generated behaviour.
