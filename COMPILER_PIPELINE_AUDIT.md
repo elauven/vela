@@ -387,3 +387,84 @@ analysis.
 5. Add generated-AST tests that prohibit new structural jsStmt and jsExpr use
    outside explicitly reviewed transitional helpers, once the string catalogue
    is complete.
+
+
+## User JavaScript diagnostic policy
+
+### Policy goals
+
+Diagnostics must be deterministic, source-located, machine-readable, and
+truthful about their proof strength. Existing DiagSet already provides
+component-relative UTF-16 positions, severity, stable code support, suggestions,
+and JSON output. The missing work is to route script parser errors through it
+and to extend stable codes to high-value generic JS diagnostics.
+
+A diagnostic is emitted only when the parser or analysis can prove a fact from
+the current component and selected target profile. The compiler must not infer
+runtime object shapes, network availability, browser implementation details, or
+application-defined API contracts without an explicit type/capability source.
+
+### Severity and code taxonomy
+
+| Category | Default severity | Proposed code family | Policy |
+| --- | --- | --- | --- |
+| Script or template expression syntax | error | VELA-JS-SYNTAX | Stop generation; report the first parser location and retain later recovery diagnostics when available. |
+| Unsupported but recognized syntax | error | VELA-JS-UNSUPPORTED | Never silently lower or reinterpret it. Explain the supported alternative when one exists. |
+| Unresolved read | warning | VELA-JS-UNRESOLVED | Warn in normal mode; strict mode may elevate to error. Explicit profile globals suppress it. |
+| Implicit global write | error | VELA-JS-IMPLICIT-GLOBAL | Always error for modules and components. |
+| Write to const or import | error | VELA-JS-IMMUTABLE-WRITE | Preserve existing hard error behaviour. |
+| TDZ violation proved by local order | error | VELA-JS-TDZ | State that analysis is local and conservative. |
+| Duplicate lexical declaration | error | VELA-JS-DUPLICATE-BINDING | Preserve existing hard error behaviour. |
+| Unreachable statement | warning | VELA-JS-UNREACHABLE | Do not reject a component solely for flow hygiene. |
+| Proven non-callable direct callee | error | VELA-JS-NONCALLABLE | Initially only syntactic literals or framework intrinsics with fixed forms. |
+| Framework intrinsic misuse | error | existing VELA family | Continue Vela-specific codes and canonical suggestions. |
+| Profile-forbidden global | error | VELA-TARGET-GLOBAL | Error only when the selected target definitely excludes the global. |
+| Optional capability unavailable | warning | VELA-TARGET-CAPABILITY | Warn only for direct known capability use configured as absent. |
+
+Warning and hint diagnostics should gain WarnWith and HintWith equivalents to
+ErrorWith before the generic code families are introduced. Existing un-coded
+messages remain backward compatible until each has a tested stable code.
+
+### Target and capability profiles
+
+The compiler should accept an explicit profile rather than treating every known
+global as universally available. The baseline profiles are browser, worker,
+Node, and future SSR. Each profile supplies allowed globals and optional
+capabilities such as DOM, storage, fetch, timers, WebSocket, IndexedDB, and
+animation frames. Profile selection must be explicit in project configuration
+or CLI options; the legacy permissive set remains the compatibility default
+until a migration release documents a stricter default.
+
+Examples of sound diagnostics:
+
+- An SSR profile reports direct window or document usage as VELA-TARGET-GLOBAL.
+- A worker profile reports document usage because the global is absent.
+- A browser profile does not warn merely because document.querySelector is
+  called; method existence and selector validity require a DOM/type model.
+- A configured no-network environment may warn for direct fetch use as
+  VELA-TARGET-CAPABILITY, while a dynamic alias cannot be proven and is left
+  alone.
+
+### Invalid calls and non-goals
+
+The first implementation may diagnose only calls that are statically
+non-callable, such as a literal number invoked as a function, and framework
+intrinsic forms whose argument contract is defined by Vela. It must not treat
+missing or extra arguments to ordinary JavaScript functions as errors because
+JavaScript permits them, and it must not infer whether arbitrary members are
+functions. Member, DOM, and browser API validation needs a future declaration
+database and flow-sensitive type layer; that is outside this compiler audit.
+
+### Delivery order
+
+1. Introduce a script parse result and VELA-JS-SYNTAX diagnostics.
+2. Assign stable codes to existing scope and flow diagnostics without changing
+   their default severities.
+3. Add strictness and target-profile plumbing with the legacy permissive
+   profile as default.
+4. Add direct-global checks for browser, worker, Node, and SSR profiles.
+5. Add only proven intrinsic and literal-call diagnostics; defer general call
+   validation until a separate type-analysis task exists.
+
+Each step needs fixtures for human output, DiagnosticsJSON, UTF-16 positions,
+source-map compatibility, and strict versus permissive behavior.
