@@ -34,6 +34,8 @@ let browser;
 try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
+  page.setDefaultTimeout(5000);
+  page.setDefaultNavigationTimeout(5000);
   const storage = Object.assign({}, config.storage || {}, fixtureStorage(config.steps || []));
   if (Object.keys(storage).length) await page.addInitScript((entries) => { for (const [key, value] of Object.entries(entries)) localStorage.setItem(key, value); }, storage);
   const failures = [];
@@ -82,4 +84,4 @@ try {
   failures.push(...await replayFixtureSteps(config.steps || [], adapter));
   try { await page.evaluate(() => window.__velaInstance?.destroy()); } catch (error) { failures.push("destroy failed: " + String(error.stack || error)); }
   done({ ok: failures.length === 0, failures });
-} catch (error) { done({ ok: false, failures: [String(error.stack || error)] }); } finally { await browser?.close(); await new Promise((resolveClose) => server.close(resolveClose)); }
+} catch (error) { done({ ok: false, failures: [String(error.stack || error)] }); } finally { await browser?.close(); server.closeAllConnections?.(); await new Promise((resolveClose) => server.close(resolveClose)); }

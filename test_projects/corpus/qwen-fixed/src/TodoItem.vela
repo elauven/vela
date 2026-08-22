@@ -56,8 +56,8 @@
             :checked={todo.done}
             @change={toggle}
             />
-            <span class="todo-title" @dblclick={startEdit}>{todo.title}</span>
           </label>
+          <span class="todo-title" @dblclick={startEdit}>{todo.title}</span>
           <button class="remove-button" aria-label="Удалить задачу" @click={remove}>
             ×
           </button>
