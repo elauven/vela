@@ -15,7 +15,7 @@ const entry = "/" + config.entry;
 const server = createServer((req, res) => {
   const pathname = new URL(req.url, "http://vela.test").pathname;
   if (pathname === "/") {
-    const html = "<!doctype html><script type=module>import { " + config.exportName + " } from " + JSON.stringify(entry) + "; window.__velaInstance = " + config.exportName + "(document.body, {}, {});</script>";
+    const html = "<!doctype html><script type=module>import { " + config.exportName + " } from " + JSON.stringify(entry) + "; window.__velaMount = () => " + config.exportName + "(document.body, {}, {}); window.__velaInstance = window.__velaMount();</script>";
     res.writeHead(200, { "content-type": "text/html" }).end(html);
     return;
   }
@@ -68,6 +68,11 @@ try {
     },
     blur: (selector) => page.locator(selector).first().blur(),
     keydown: (selector, key) => page.locator(selector).first().press(key),
+    remount: () => page.evaluate(() => {
+      window.__velaInstance?.destroy();
+      document.body.replaceChildren();
+      window.__velaInstance = window.__velaMount();
+    }),
     settle: async () => {
       for (let turn = 0; turn < 5; turn++) {
         await page.evaluate(() => Promise.resolve());

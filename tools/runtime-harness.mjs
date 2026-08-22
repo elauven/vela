@@ -112,8 +112,11 @@ if (typeof Component !== 'function') {
 
 const target = window.document.body;
 let instance;
+function mount() {
+  return Component(target, {}, {});
+}
 try {
-  instance = Component(target, {}, {});
+  instance = mount();
 } catch (e) {
   fail('mount threw: ' + (e && e.stack ? e.stack : e));
 }
@@ -176,6 +179,12 @@ const adapter = {
     new window.FocusEvent('blur', { bubbles: false, cancelable: false })),
   keydown: (selector, key) => fixtureTarget(selector, 'keydown').dispatchEvent(
     new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })),
+  remount: () => {
+    if (instance && typeof instance.destroy === 'function') instance.destroy();
+    if (typeof target.replaceChildren === 'function') target.replaceChildren();
+    else target.textContent = '';
+    instance = mount();
+  },
   settle: flushMicrotasks,
 };
 

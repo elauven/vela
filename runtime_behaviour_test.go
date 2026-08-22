@@ -229,6 +229,32 @@ func TestRuntimeCounter(t *testing.T) {
 	})
 }
 
+// TestRuntimeRemountReleasesListeners verifies that a fixture can destroy and
+// recreate a component without retaining its old lifecycle resources.
+func TestRuntimeRemountReleasesListeners(t *testing.T) {
+	src := `<script>
+  import { onMount } from 'vela';
+  let count = $state(0);
+  onMount(() => {
+    localStorage.setItem('mounts', String(Number(localStorage.getItem('mounts') || 0) + 1));
+    return () => localStorage.setItem('unmounts', String(Number(localStorage.getItem('unmounts') || 0) + 1));
+  });
+</script>
+<template><button @click={() => count++}>{count}</button></template>`
+	assertRuntime(t, "RemountReleasesListeners", src, []rtStep{
+		{"seedStorage": map[string]string{"mounts": "0", "unmounts": "0"}},
+		{"assertStorage": "mounts", "contains": "1"},
+		{"click": "button"},
+		{"assertText": "button", "equals": "1"},
+		{"remount": true},
+		{"assertStorage": "mounts", "contains": "2"},
+		{"assertStorage": "unmounts", "contains": "1"},
+		{"assertText": "button", "equals": "0"},
+		{"click": "button"},
+		{"assertText": "button", "equals": "1"},
+	})
+}
+
 // TestRuntimeIfToggle — an {#if} whose condition flips: content must
 // appear, disappear, and reappear (the reopen path).
 func TestRuntimeIfToggle(t *testing.T) {
