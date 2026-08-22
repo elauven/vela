@@ -48,7 +48,7 @@ try {
   if (!requests.includes("/" + config.map)) throw new Error("source map was not served to the browser");
   const stack = errors.join("\n");
   if (!stack.includes("/" + config.entry)) throw new Error("browser stack has no generated frame for " + config.entry + ": " + stack);
-  const frame = stack.match(/:(\\d+):(\\d+)/);
+  const frame = stack.match(/:(\d+):(\d+)/);
   if (!frame) throw new Error("browser stack has no line/column frame: " + stack);
   const consumer = new SourceMapConsumer(JSON.parse(mapResponse.text));
   const original = consumer.originalPositionFor({ line: Number(frame[1]), column: Number(frame[2]) - 1, bias: SourceMapConsumer.GREATEST_LOWER_BOUND });

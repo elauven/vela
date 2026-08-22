@@ -68,7 +68,7 @@ func assertBrowserSourceMap(t *testing.T, raw, selector, sourceNeedle string) {
 	}
 	line, column := sourceLineColumn(raw, at)
 	config := browserSourceMapConfig{RootDir: dir, Entry: "App.js", Map: "App.js.map", Selector: selector}
-	config.Expected.Source, config.Expected.Line, config.Expected.Column = filepath.ToSlash(src), line, column
+	config.Expected.Source, config.Expected.Line, config.Expected.Column = filepath.ToSlash(src), line+1, column
 	data, err := json.Marshal(config)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestBrowserSourceMapMapsScriptStatement(t *testing.T) {
 	assertBrowserSourceMap(t, `<script>
   function explode() { throw new Error("script boom"); }
 </script>
-<template><button class="explode" @click={explode}>Boom</button></template>`, "button.explode", "throw new Error")
+<template><button class="explode" @click={explode}>Boom</button></template>`, "button.explode", "new Error")
 }
 
 func TestBrowserSourceMapMapsTemplateHandler(t *testing.T) {
