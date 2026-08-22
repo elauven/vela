@@ -25,7 +25,7 @@ func TestBuildProjectStagesCanonicalRuntimeForEveryComponentDirectory(t *testing
 	}
 
 	files := collectVela(srcRoot)
-	if errors := buildProject(files, srcRoot, outRoot, CompileOptions{Codegen: "ast"}, false); errors != 0 {
+	if errors := buildProject(files, srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
 		t.Fatalf("project build failed with %d error(s)", errors)
 	}
 	for _, dir := range []string{outRoot, filepath.Join(outRoot, "nested")} {

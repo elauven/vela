@@ -29,7 +29,7 @@ func runBrowserProjectWithStorage(t *testing.T, srcRoot, entry string, storage m
 	if len(files) == 0 {
 		t.Fatalf("project %s has no .vela files", srcRoot)
 	}
-	if errors := buildProject(files, srcRoot, outRoot, CompileOptions{Codegen: "ast"}, false); errors != 0 {
+	if errors := buildProject(files, srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
 		t.Fatalf("project build failed with %d error(s)", errors)
 	}
 	config := browserRuntimeConfig{RootDir: outRoot, Entry: entry, ExportName: componentName(entry), Steps: steps, Storage: storage}

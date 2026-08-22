@@ -86,7 +86,7 @@ func TestCompileFileEmitsSourceMap(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(dir, "nested", "Demo.js")
-	if _, err := compileFile(src, dest, CompileOptions{Codegen: "ast", SourceMap: true}); err != nil {
+	if _, err := compileFile(src, dest, CompileOptions{SourceMap: true}); err != nil {
 		t.Fatal(err)
 	}
 	code, err := os.ReadFile(dest)
@@ -113,7 +113,7 @@ func TestTemplateExpressionProducesSourceMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(dir, "nested", "OnlyTemplate.js")
-	if _, err := compileFile(src, dest, CompileOptions{Codegen: "ast", SourceMap: true}); err != nil {
+	if _, err := compileFile(src, dest, CompileOptions{SourceMap: true}); err != nil {
 		t.Fatal(err)
 	}
 	var m SourceMapV3
@@ -138,7 +138,7 @@ func TestSourceMapRejectsUnsupportedModes(t *testing.T) {
 	if err := os.WriteFile(src, []byte("<template><p>ok</p></template>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, opts := range []CompileOptions{{Codegen: "ast", SourceMap: true, Minify: true}, {Codegen: "legacy", SourceMap: true}} {
+	for _, opts := range []CompileOptions{{SourceMap: true, Minify: true}} {
 		if _, err := compileFile(src, filepath.Join(dir, "out", "Demo.js"), opts); err == nil {
 			t.Fatalf("compileFile(%+v) succeeded, want unsupported source-map mode error", opts)
 		}
