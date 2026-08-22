@@ -18,7 +18,7 @@ import (
 // selectors AND :nth-child counting.  The component's $$root is
 // inserted before the anchor, becoming a true direct child of
 // the parent.  See MIGRATION.md "Component anchor — no wrapper".
-func compileComponentParent(t *testing.T, astPath bool) string {
+func compileComponentParent(t *testing.T) string {
 	t.Helper()
 	src := `<script>
   import Child from './Child.vela';
@@ -33,10 +33,7 @@ func compileComponentParent(t *testing.T, astPath bool) string {
 		t.Fatalf("parseTemplate: %v", err)
 	}
 	a := analyzeScript(sfc.Script)
-	if astPath {
-		return generateCodeAST("Parent", sfc, tmpl, a, "vela-test")
-	}
-	return generateCode("Parent", sfc, tmpl, a, "vela-test")
+	return generateCodeAST("Parent", sfc, tmpl, a, "vela-test")
 }
 
 // Before the bug-4 fix: a component invocation produced a parent-
@@ -54,7 +51,7 @@ func compileComponentParent(t *testing.T, astPath bool) string {
 // net is no longer relied on for component invocation shape — see
 // MIGRATION.md).
 func TestComponentMountUsesAnchorComment_AST(t *testing.T) {
-	out := compileComponentParent(t, true)
+	out := compileComponentParent(t)
 	// New shape: anchor comment, no wrapper div.
 	if !strings.Contains(out, "document.createComment('comp')") {
 		t.Errorf("expected anchor comment for component mount:\n%s", out)
@@ -68,12 +65,5 @@ func TestComponentMountUsesAnchorComment_AST(t *testing.T) {
 	// mount branch as part of the same artefact.
 	if !strings.Contains(out, "nodeType === 8") {
 		t.Errorf("expected component-side mount to detect Comment target:\n%s", out)
-	}
-}
-
-func TestComponentWrapperIsDisplayContents_Legacy(t *testing.T) {
-	out := compileComponentParent(t, false)
-	if !strings.Contains(out, ".style.display = 'contents';") {
-		t.Fatalf("legacy component wrapper must be display:contents:\n%s", out)
 	}
 }

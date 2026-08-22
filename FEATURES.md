@@ -1,8 +1,7 @@
 # Vela feature matrix
 
 This document is the source of truth for the implemented client-side
-compiler. It describes the default AST code generator (`--codegen=ast`),
-not historical roadmaps or the deprecated legacy generator.
+compiler. It describes the single direct AST code-generation pipeline.
 
 ## Status legend
 
@@ -36,7 +35,7 @@ not historical roadmaps or the deprecated legacy generator.
 
 `runtime.js` at the project root is the canonical runtime implementation. Project compilation stages a byte-identical runtime module beside every emitted component directory, so generated `./runtime.js` imports resolve without a manual copy step.
 
-The default AST generator imports `$$defer` directly from that module for every component with state or props. Reactive DOM work therefore uses the shared microtask scheduler regardless of template helpers or module evaluation order. The global `Symbol.for("vela.defer")` registration remains only as a compatibility bridge for the deprecated legacy generator; new compiler output must not rely on it.
+The compiler imports `$$defer` directly from that module for every component with state or props. Reactive DOM work therefore uses the shared microtask scheduler regardless of template helpers or module evaluation order.
 
 Store subscriptions are synchronous. `readable` starts on its first subscriber and stops after its last; `derived` subscribes lazily and its `destroy()` method is final and idempotent. Subscriber and deferred-callback failures are reported after later and reentrant callbacks have drained, so one bad callback does not leave queued DOM work stranded.
 
@@ -75,7 +74,6 @@ Store subscriptions are synchronous. `readable` starts on its first subscriber a
 | Minification and DCE | **Stable** | `--minify` | Includes conservative dead-binding elimination in addition to JS minification. |
 | Input AST dump | **Stable** | `--ast` | Emits `<name>.ast.json` for the parsed SFC/template AST. |
 | Generated JS AST dump | **Stable** | `--emit-gen-ast` | Emits `<name>.genast.json` for AST-codegen inspection. |
-| Legacy code generator | **Deprecated** | `--codegen=legacy` | Retained only as an escape hatch and differential-testing oracle. |
 | Scope diagnostics | **Stable** | undeclared names, TDZ, redeclarations, invalid writes | Diagnostics use one-based UTF-16 positions; repeated template attributes keep their own source location. |
 | Actionable Vela diagnostics | **Stable** | <code>VELA-*</code> code, <code>help:</code> correction, DiagnosticsJSON(diags) | Stable codes cover common Svelte-like mistakes; JSON is compact for editor and AI tooling. |
 | Reactivity diagnostics | **Stable** | invalid derived writes, effects without reactive deps | Template references are also checked for undeclared names. |
@@ -86,7 +84,7 @@ Store subscriptions are synchronous. `readable` starts on its first subscriber a
 | Feature | Status | Notes |
 | --- | --- | --- |
 | SSR and hydration | **Planned** | The design lives in `SSR.md`; no server emitter or hydrator exists. |
-| Source maps | **Experimental** | `--sourcemap` writes an external v3 `.js.map` for AST-generated JS. Stable template expressions map directly to their individual source offsets; CSS mappings are not emitted. `--minify` and `--codegen=legacy` are intentionally rejected. |
+| Source maps | **Experimental** | `--sourcemap` writes an external v3 `.js.map` for generated JS. Stable template expressions map directly to their individual source offsets; CSS mappings are not emitted. `--minify` is intentionally rejected. |
 | Dev server / HMR | **Planned** | Watch mode recompiles only. |
 | TypeScript | **Unsupported** | No `lang="ts"` pipeline or type checker. |
 | Snippets / render props | **Unsupported** | Use current default/named slots instead. |

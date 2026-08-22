@@ -306,7 +306,9 @@ vela/
 ├── main.go        CLI entry point, file loop, watch mode
 ├── parser.go      SFC extractor + recursive-descent HTML parser → AST
 ├── analyzer.go    Script analysis: $state / $derived / $effect / imports
-├── codegen.go     AST walker → emits flat, minimal JS
+├── astgen.go      direct JsProgram builder
+├── jsprinter.go   validated JavaScript AST printer
+├── template_codegen_helpers.go shared template lowering helpers
 ├── runtime.js      Canonical browser runtime: scheduler, stores, and compiler helpers
 └── runtime/
     └── runtime.js Compatibility re-export for historical imports
@@ -327,13 +329,10 @@ parseSFC()          extract <script> <style> <template>
     │        StateVar / DerivedVar / Effect / Import
     │        + dependency tracking via identifier analysis
     │
-    └──► generateCode()    visitor over AST → buffered JS sections
-             create  — DOM node construction
-             wire    — appendChild / structural links
-             events  — addEventListener calls
-             init    — initial property hydration
-             cleanup — removeEventListener / teardown
-             setters — one per $state var, update only the nodes that care
+    └──► buildProgram()      direct JsProgram construction
+             validation — generated AST invariants
+             printing    — ES module output with source origins
+             setters     — direct DOM updates for reactive bindings
 ```
 
 ---

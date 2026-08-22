@@ -32,7 +32,7 @@ func compileGenerated(t *testing.T, src string) string {
 		t.Fatalf("parseTemplate: %v", err)
 	}
 	a := analyzeScript(sfc.Script)
-	return generateCode("Test", sfc, tmpl, a, "vela-test")
+	return generateCodeAST("Test", sfc, tmpl, a, "vela-test")
 }
 
 // ─────────────────────────────────────────────
@@ -164,7 +164,7 @@ func TestBug7_NamedHandlersUnchanged(t *testing.T) {
   <MyBtn @click={openModal} />
 </template>`
 	out := compileGenerated(t, src)
-	if !strings.Contains(out, "(openModal)($e)") {
+	if !strings.Contains(out, "openModal($e)") {
 		t.Fatalf("expected (openModal)($e) wrapper; got:\n%s", out)
 	}
 }

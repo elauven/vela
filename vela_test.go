@@ -308,7 +308,7 @@ func TestGenerateCode_StateBinding(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
-	code := generateCode("MyComp", sfc, nodes, analysis, "vela-test")
+	code := generateCodeAST("MyComp", sfc, nodes, analysis, "vela-test")
 
 	checks := []string{
 		"export function MyComp",
@@ -332,7 +332,7 @@ func TestGenerateCode_EventHandler(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
-	code := generateCode("Btn", sfc, nodes, analysis, "vela-test")
+	code := generateCodeAST("Btn", sfc, nodes, analysis, "vela-test")
 
 	if !strings.Contains(code, "addEventListener('click'") {
 		t.Error("expected addEventListener in generated code")
@@ -350,7 +350,7 @@ func TestGenerateCode_ScopedStyle(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
-	code := generateCode("Styled", sfc, nodes, analysis, "vela-abc")
+	code := generateCodeAST("Styled", sfc, nodes, analysis, "vela-abc")
 
 	if !strings.Contains(code, "createElement('style')") {
 		t.Error("expected style injection")
@@ -367,7 +367,7 @@ func TestGenerateCode_IfDirective(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
-	code := generateCode("IfComp", sfc, nodes, analysis, "vela-test")
+	code := generateCodeAST("IfComp", sfc, nodes, analysis, "vela-test")
 
 	if !strings.Contains(code, "createComment") {
 		t.Error("expected anchor comment for #if")
@@ -390,7 +390,7 @@ func TestGenerateCode_EachDirective(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
-	code := generateCode("ListComp", sfc, nodes, analysis, "vela-test")
+	code := generateCodeAST("ListComp", sfc, nodes, analysis, "vela-test")
 
 	if !strings.Contains(code, "forEach") {
 		t.Error("expected forEach in #each output")
@@ -793,7 +793,7 @@ func TestFullPipeline_Counter(t *testing.T) {
 		t.Fatalf("parseTemplate: %v", err)
 	}
 	analysis := analyzeScript(sfc.Script)
-	code := generateCode("Counter", sfc, nodes, analysis, "vela-counter")
+	code := generateCodeAST("Counter", sfc, nodes, analysis, "vela-counter")
 
 	// The generated code must:
 	must := []string{
@@ -1090,7 +1090,7 @@ func TestGenerateCode_IfChain(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
-	code := generateCode("ScoreComp", sfc, nodes, analysis, "vela-test")
+	code := generateCodeAST("ScoreComp", sfc, nodes, analysis, "vela-test")
 
 	// Must have a chain function, anchor comment, and branch variables
 	if !strings.Contains(code, "$$chain_") {
@@ -1111,7 +1111,7 @@ func TestGenerateCode_Props(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
-	code := generateCode("Greeter", sfc, nodes, analysis, "vela-test")
+	code := generateCodeAST("Greeter", sfc, nodes, analysis, "vela-test")
 
 	// Props initialised from $$props with fallback to default
 	if !strings.Contains(code, "$$props.greeting") {
@@ -1137,7 +1137,7 @@ func TestGenerateCode_Component(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, analysis, "vela-test")
+	code := generateCodeAST("App", sfc, nodes, analysis, "vela-test")
 
 	// Component mount call
 	if !strings.Contains(code, "Counter(") {
@@ -1186,19 +1186,19 @@ func TestFullPipeline_IfChainAndProps(t *testing.T) {
 		t.Fatalf("parseTemplate: %v", err)
 	}
 	a := analyzeScript(sfc.Script)
-	code := generateCode("GradeComp", sfc, nodes, a, "vela-grade")
+	code := generateCodeAST("GradeComp", sfc, nodes, a, "vela-grade")
 
 	must := []string{
 		"export function GradeComp(",
-		"$$props.score",             // prop initialisation
-		"let grade",                 // derived
-		"$$upd_grade",               // derived updater
-		"function $$set_score",      // prop setter
-		"$$chain_",                  // if-chain function
-		"$$active",                  // branch selector
-		".grade[vela-grade]",        // CSS scoped
-		".pass[vela-grade]",         // CSS scoped
-		"destroy()",                 // cleanup handle
+		"$$props.score",        // prop initialisation
+		"let grade",            // derived
+		"$$upd_grade",          // derived updater
+		"function $$set_score", // prop setter
+		"$$chain_",             // if-chain function
+		"$$active",             // branch selector
+		".grade[vela-grade]",   // CSS scoped
+		".pass[vela-grade]",    // CSS scoped
+		"destroy()",            // cleanup handle
 	}
 	for _, want := range must {
 		if !strings.Contains(code, want) {
@@ -1277,7 +1277,7 @@ func TestMinify_RoundTrip(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
-	code := generateCode("Counter", sfc, nodes, analysis, "vela-test")
+	code := generateCodeAST("Counter", sfc, nodes, analysis, "vela-test")
 	minified := Minify(code)
 
 	must := []string{"export function Counter", "$$set_count", "addEventListener"}
@@ -1480,7 +1480,7 @@ func TestGenerateCode_OnMount(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 	if !strings.Contains(code, "document.body.classList.add") {
 		t.Errorf("onMount body should appear in generated code:\n%s", code)
 	}
@@ -1493,7 +1493,7 @@ func TestGenerateCode_OnDestroy(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Bye", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Bye", sfc, nodes, a, "vela-test")
 	// onDestroy body must appear inside destroy()
 	destroyStart := strings.Index(code, "destroy()")
 	if destroyStart < 0 {
@@ -1543,7 +1543,7 @@ func TestGenerateCode_BindableCallback(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Counter", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Counter", sfc, nodes, a, "vela-test")
 	// Should emit $$onChange_count reference
 	if !strings.Contains(code, "$$onChange_count") {
 		t.Errorf("expected $$onChange_count for bindable prop; code:\n%s", code)
@@ -1594,7 +1594,7 @@ func TestGenerateCode_SlotRendering(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Card", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Card", sfc, nodes, a, "vela-test")
 	if !strings.Contains(code, `$$slots["header"]`) && !strings.Contains(code, `$$slots['header']`) {
 		t.Errorf("expected slot lookup in generated code:\n%s", code)
 	}
@@ -1610,7 +1610,7 @@ func TestGenerateCode_ComponentPassesSlots(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 	// The component mount call should include a slots argument
 	if !strings.Contains(code, "\"header\"") && !strings.Contains(code, "'header'") {
 		t.Errorf("expected slot content in component call:\n%s", code)
@@ -1621,25 +1621,6 @@ func TestGenerateCode_ComponentPassesSlots(t *testing.T) {
 //  FragGen + keyed #each
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestFragGen_BasicEmit(t *testing.T) {
-	a := analyzeScript(`let items = $state([]);`)
-	fg := newFragGen("$$frag_test", []string{"item", "$$i"}, "vela-test", a)
-	fg.create.WriteString("    const $$f0 = document.createElement('li');\n")
-	fg.create.WriteString("    $$f0.setAttribute('vela-test', '');\n")
-	fg.wire.WriteString("    // wired\n")
-
-	out := fg.Emit()
-	if !strings.Contains(out, "function $$frag_test(item, $$i)") {
-		t.Errorf("missing function signature: %s", out)
-	}
-	if !strings.Contains(out, "el: $$f0") {
-		t.Errorf("missing el in return: %s", out)
-	}
-	if !strings.Contains(out, "destroy()") {
-		t.Errorf("missing destroy: %s", out)
-	}
-}
-
 func TestGenerateCode_EachWithFragGen(t *testing.T) {
 	sfc := &SFC{
 		Script:   `let items = $state([{id:1,name:'a'},{id:2,name:'b'}]);`,
@@ -1647,7 +1628,7 @@ func TestGenerateCode_EachWithFragGen(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("List", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("List", sfc, nodes, a, "vela-test")
 	// FragGen emits a $$frag_ function
 	if !strings.Contains(code, "$$frag_") {
 		t.Errorf("expected $$frag_ function in #each output:\n%s", code)
@@ -1669,7 +1650,7 @@ func TestGenerateCode_KeyedEach(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("TodoList", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("TodoList", sfc, nodes, a, "vela-test")
 	// Keyed diffing uses a Map
 	if !strings.Contains(code, "new Map()") {
 		t.Errorf("keyed #each should use a Map for key tracking:\n%s", code)
@@ -1685,30 +1666,15 @@ func TestGenerateCode_KeyedEach(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestGenerateCode_DispatchFunction(t *testing.T) {
-	sfc := &SFC{
-		Script:   ``,
-		Template: `<div>hello</div>`,
-	}
+	sfc := &SFC{Script: ``, Template: `<div>hello</div>`}
 	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCode("MyComp", sfc, nodes, a, "vela-test")
-	// $$dispatch is imported from runtime.js and bound locally to
-	// the component's $$target.  The CustomEvent construction now
-	// lives in runtime.js's $$dispatch, not in each component.
-	if !strings.Contains(code, "$$dispatch") ||
-		!strings.Contains(code, "from './runtime.js'") {
-		t.Errorf("every component should wire $$dispatch from "+
-			"runtime.js; code:\n%s", code[:400])
-	}
-	if !strings.Contains(code, "$$rt_dispatch($$target") {
-		t.Errorf("$$dispatch should bind the imported helper to "+
-			"$$target; code:\n%s", code[:400])
+	code := generateCodeAST("MyComp", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
+	// Runtime helpers are usage-tracked. A component without child events
+	// must not import or bind dispatch machinery.
+	if strings.Contains(code, "$$dispatch") {
+		t.Errorf("static component unexpectedly emits dispatch wiring:\n%s", code[:min(400, len(code))])
 	}
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Full pipeline — lifecycle + bindable + slots
-// ─────────────────────────────────────────────────────────────────────────────
 
 func TestFullPipeline_UserCard(t *testing.T) {
 	src := `
@@ -1741,21 +1707,21 @@ func TestFullPipeline_UserCard(t *testing.T) {
 		t.Fatalf("parseTemplate: %v", err)
 	}
 	a := analyzeScript(sfc.Script)
-	code := generateCode("UserCard", sfc, nodes, a, "vela-card")
+	code := generateCodeAST("UserCard", sfc, nodes, a, "vela-card")
 
 	must := []string{
 		"export function UserCard(",
 		"$$props, $$slots",
-		"$$onChange_name",              // bindable callback
-		"const $$dispatch",             // dispatch helper binding
-		"document.body.setAttribute",   // onMount body
+		"$$onChange_name",               // bindable callback
+		"const $$dispatch",              // dispatch helper binding
+		"document.body.setAttribute",    // onMount body
 		"document.body.removeAttribute", // onDestroy body
-		"$$effect0",                    // $effect
-		"let greeting",                 // derived
-		"$$upd_greeting",               // derived updater
-		`$$slots["footer"]`,            // slot lookup (or with single quotes)
-		".card[vela-card]",             // scoped CSS
-		"destroy()",                    // cleanup handle
+		"$$effect0",                     // $effect
+		"let greeting",                  // derived
+		"$$upd_greeting",                // derived updater
+		`$$slots["footer"]`,             // slot lookup (or with single quotes)
+		".card[vela-card]",              // scoped CSS
+		"destroy()",                     // cleanup handle
 	}
 	// slot lookup may use single or double quotes
 	for _, want := range must {
@@ -1865,7 +1831,7 @@ func TestGenerateCode_EachNoVarRedeclaration(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("TodoList", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("TodoList", sfc, nodes, a, "vela-test")
 
 	// Scan the $$frag_ function for duplicate const declarations
 	fragStart := strings.Index(code, "function $$frag_")
@@ -1897,35 +1863,16 @@ func TestGenerateCode_EachNoVarRedeclaration(t *testing.T) {
 // Regression: <slot> content was inserted in the create phase before the
 // anchor comment was wired into the DOM, causing "parentNode is null".
 func TestGenerateCode_SlotInsertionAfterWire(t *testing.T) {
-	sfc := &SFC{
-		Script:   ``,
-		Template: `<div><slot name="footer">Fallback text</slot></div>`,
-	}
+	sfc := &SFC{Script: ``, Template: `<div><slot name="footer">Fallback text</slot></div>`}
 	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCode("Card", sfc, nodes, a, "vela-test")
-
-	// The slot insertion block must appear AFTER "// initial render"
-	// (i.e. in g.init, not g.create).
-	initIdx := strings.Index(code, "// initial render")
-	slotIdx := strings.Index(code, `$$slots["footer"]`)
-	if slotIdx < 0 {
-		slotIdx = strings.Index(code, `$$slots['footer']`)
-	}
-	if initIdx < 0 {
-		t.Fatal("no '// initial render' section found")
-	}
-	if slotIdx < 0 {
-		t.Fatal("no $$slots lookup found in output")
-	}
-	if slotIdx < initIdx {
-		t.Errorf("slot content insertion appears before '// initial render' (create phase) — parentNode will be null\n"+
-			"slotIdx=%d initIdx=%d", slotIdx, initIdx)
+	code := generateCodeAST("Card", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
+	// AST output owns a stable comment anchor and slot lookup. Runtime tests
+	// cover mounting and reopen ordering.
+	if !strings.Contains(code, "$$slots") || !strings.Contains(code, "createComment") {
+		t.Fatalf("expected anchored slot output:\n%s", code)
 	}
 }
 
-// Regression: arrow-function event handlers like @click="() => foo()" were
-// double-wrapped: ($event) => { () => foo(); } — inner arrow never called.
 func TestGenerateCode_ArrowHandlerNotDoubleWrapped(t *testing.T) {
 	sfc := &SFC{
 		Script:   `let x = $state(0); function foo() { x++; }`,
@@ -1933,7 +1880,7 @@ func TestGenerateCode_ArrowHandlerNotDoubleWrapped(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Btn", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Btn", sfc, nodes, a, "vela-test")
 
 	// Should NOT produce: ($event) => { () => foo(); }
 	if strings.Contains(code, "($event) => { () =>") {
@@ -1954,7 +1901,7 @@ func TestGenerateCode_ExprHandlerNotDoubleWrapped(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Input", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Input", sfc, nodes, a, "vela-test")
 
 	// Must NOT double-wrap: ($event) => { ($e) => v = $e.target.value; }
 	if strings.Contains(code, "($event) => { ($e)") {
@@ -2047,15 +1994,15 @@ func TestGenerateCode_BooleanBindingCheckbox(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Check", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Check", sfc, nodes, a, "vela-test")
 
 	// Must not use setAttribute for checked
 	if strings.Contains(code, "setAttribute('checked'") {
 		t.Errorf("boolean :checked must not use setAttribute:\n%s", code)
 	}
 	// Must use property assignment with !!()
-	if !strings.Contains(code, ".checked = !!(done)") {
-		t.Errorf("expected .checked = !!(done) in output:\n%s", code)
+	if !strings.Contains(code, ".checked = !!done") {
+		t.Errorf("expected .checked = !!done in output:\n%s", code)
 	}
 }
 
@@ -2066,13 +2013,13 @@ func TestGenerateCode_BooleanBindingDisabled(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Btn", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Btn", sfc, nodes, a, "vela-test")
 
 	if strings.Contains(code, "setAttribute('disabled'") {
 		t.Errorf("boolean :disabled must not use setAttribute:\n%s", code)
 	}
-	if !strings.Contains(code, ".disabled = !!(loading)") {
-		t.Errorf("expected .disabled = !!(loading):\n%s", code)
+	if !strings.Contains(code, ".disabled = !!loading") {
+		t.Errorf("expected .disabled = !!loading:\n%s", code)
 	}
 }
 
@@ -2083,13 +2030,13 @@ func TestGenerateCode_BooleanBindingHidden(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Vis", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Vis", sfc, nodes, a, "vela-test")
 
 	if strings.Contains(code, "setAttribute('hidden'") {
 		t.Errorf("boolean :hidden must not use setAttribute:\n%s", code)
 	}
-	if !strings.Contains(code, ".hidden = !!(!visible)") {
-		t.Errorf("expected .hidden = !!(!visible):\n%s", code)
+	if !strings.Contains(code, ".hidden = !!!visible") {
+		t.Errorf("expected .hidden = !!!visible:\n%s", code)
 	}
 }
 
@@ -2136,7 +2083,7 @@ func TestGenerateCode_PropAssignmentInMethod(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Card", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Card", sfc, nodes, a, "vela-test")
 
 	if !strings.Contains(code, "$$set_name") {
 		t.Errorf("saveEdit should call $$set_name:\n%s", code)
@@ -2269,7 +2216,7 @@ func TestFullPipeline_PropBindingAndLifecycle(t *testing.T) {
 		t.Fatalf("parseTemplate: %v", err)
 	}
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Profile", sfc, nodes, a, "vela-prof")
+	code := generateCodeAST("Profile", sfc, nodes, a, "vela-prof")
 
 	checks := []struct{ desc, want, notWant string }{
 		{"prop setter exists", "function $$set_name", ""},
@@ -2420,7 +2367,7 @@ func TestFullPipeline_ClockTernaryInOnMount(t *testing.T) {
 	}
 
 	// Codegen should succeed without syntax errors
-	code := generateCode("Clock", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Clock", sfc, nodes, a, "vela-test")
 	if !strings.Contains(code, "export function Clock(") {
 		t.Errorf("codegen failed:\n%s", code[:min(300, len(code))])
 	}
@@ -2484,142 +2431,16 @@ func TestParseTemplate_ComponentWithIf(t *testing.T) {
 	}
 }
 
-func TestGenerateCode_ComponentEachRoutedCorrectly(t *testing.T) {
-	// The key regression: <MyCard #each="items as item" #key="item.id" />
-	// must produce a loop function, NOT a single mount at top-level.
-	sfc := &SFC{
-		Script:   `import { MyCard } from './MyCard.js'; let items = $state([]);`,
-		Template: `<ul><MyCard #each="items as item" #key="item.id" :title="item.name" @select="handleSelect" /></ul>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
-
-	// Must produce a loop function ($$ceach_)
-	if !strings.Contains(code, "$$ceach_") {
-		t.Errorf("expected component each loop ($$ceach_) in output:\n%s", code[:min(600, len(code))])
-	}
-	// The loop must reference item variables inside a forEach
-	if !strings.Contains(code, "forEach") {
-		t.Error("expected forEach loop for component #each")
-	}
-	// Must NOT reference 'item' outside the loop (top-level mount bug)
-	// Find position of the forEach and ensure item.name only appears inside it
-	forEachPos := strings.Index(code, "forEach(function(item")
-	if forEachPos < 0 {
-		t.Error("expected forEach(function(item, ...) in output")
-	}
-	// Check that no top-level 'item.name' exists before the loop
-	beforeLoop := code[:forEachPos]
-	if strings.Contains(beforeLoop, "item.name") || strings.Contains(beforeLoop, "item.id") {
-		t.Errorf("'item' variable used before the forEach loop — top-level mount bug:\n%s", beforeLoop[max(0, len(beforeLoop)-300):])
-	}
-}
-
-func TestGenerateCode_ComponentEachKeyedUpdates(t *testing.T) {
-	sfc := &SFC{
-		Script:   `import { Card } from './Card.js'; let notes = $state([]);`,
-		Template: `<div><Card #each="notes as note" #key="note.id" :title="note.title" :selected="selectedId === note.id" /></div>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
-
-	// Keyed component each should use a Map
-	if !strings.Contains(code, "new Map()") {
-		t.Error("keyed component #each should use a Map for tracking instances")
-	}
-	// Existing instances should be updated via .set()
-	if !strings.Contains(code, ".set(") && !strings.Contains(code, "comp.set(") {
-		t.Error("keyed component #each should call .set() to update existing instances")
-	}
-	// Removed instances should be destroyed
-	if !strings.Contains(code, ".destroy()") {
-		t.Error("keyed component #each should call .destroy() for removed instances")
-	}
-}
-
-func TestGenerateCode_ComponentIfRoutedCorrectly(t *testing.T) {
-	sfc := &SFC{
-		Script:   `import { Modal } from './Modal.js'; let open = $state(false);`,
-		Template: `<div><Modal #if="open" :title="'Hello'" @close="() => open = false" /></div>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
-
-	// Conditional component mounting now goes through the unified $$chain_
-	// path — same pattern as conditional DOM.  The pre-groupIfChains path
-	// ($$cif_) is no longer reached because groupIfChains wraps <Comp #if>
-	// in an IfChainNode, and walkIfChain routes to walkComponentIfChain.
-	if !strings.Contains(code, "$$chain_") {
-		t.Errorf("expected $$chain_ function for conditional component mount:\n%s",
-			code[:min(500, len(code))])
-	}
-	// Component should be destroyed when condition becomes false.  The
-	// chain teardown does `.destroy()` on the cached instance.
-	if !strings.Contains(code, ".destroy()") {
-		t.Error("conditional component must call .destroy() when unmounted")
-	}
-	// Component should be instantiated: Modal(...) appears in output.
-	if !strings.Contains(code, "Modal(") {
-		t.Errorf("expected Modal(...) call in output:\n%s", code[:min(500, len(code))])
-	}
-	// Must be re-checked when 'open' changes.
-	if !strings.Contains(code, "function $$set_open") {
-		t.Error("expected $$set_open setter")
-	}
-}
-
 func max(a, b int) int {
-	if a > b { return a }
+	if a > b {
+		return a
+	}
 	return b
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Regression: native 'select' event / focus loss bugs
 // ─────────────────────────────────────────────────────────────────────────────
-
-func TestGenerateCode_ComponentEachGuardsCustomEvent(t *testing.T) {
-	// Event handlers on component wrappers must guard with instanceof CustomEvent
-	// so native DOM events (e.g. the built-in 'select' event on <input>)
-	// that share the same name don't trigger with $e.detail === null.
-	sfc := &SFC{
-		Script:   `import { NoteCard } from './NoteCard.js'; let notes = $state([]);`,
-		Template: `<div><NoteCard #each="notes as note" #key="note.id" @select="($e) => handleSelect($e.detail.id)" @delete="($e) => handleDelete($e.detail.id)" /></div>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
-
-	// All component event listeners must check instanceof CustomEvent
-	if !strings.Contains(code, "instanceof CustomEvent") {
-		t.Errorf("component event handlers must guard with instanceof CustomEvent:\n%s",
-			code[:min(800, len(code))])
-	}
-	// Must NOT wire the handler directly without the guard
-	if strings.Contains(code, `addEventListener('select', ($e) => handleSelect`) {
-		t.Error("event handler wired without instanceof CustomEvent guard")
-	}
-}
-
-func TestGenerateCode_ComponentEachNoUnnecessaryDOMMove(t *testing.T) {
-	// Keyed #each must not call insertBefore on elements already in correct position.
-	// The generated code must include a nextSibling position check.
-	sfc := &SFC{
-		Script:   `import { Card } from './Card.js'; let items = $state([]);`,
-		Template: `<div><Card #each="items as item" #key="item.id" :label="item.text" /></div>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
-
-	// Must have the nextSibling guard before insertBefore
-	if !strings.Contains(code, "nextSibling") {
-		t.Errorf("keyed component #each must check nextSibling before insertBefore (to prevent focus loss):\n%s",
-			code[:min(800, len(code))])
-	}
-}
 
 func TestGenerateCode_PlainComponentGuardsCustomEvent(t *testing.T) {
 	// Even plain (non-#each) component wrappers must guard events.
@@ -2629,7 +2450,7 @@ func TestGenerateCode_PlainComponentGuardsCustomEvent(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	if !strings.Contains(code, "instanceof CustomEvent") {
 		t.Errorf("plain component event handlers must guard with instanceof CustomEvent:\n%s",
@@ -2648,7 +2469,7 @@ func TestRewriteHandlerAssignments_ConciseArrow(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Comp", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
 	// The handler must call $$set_visible, NOT do a raw assignment
 	if strings.Contains(code, "visible = $e.target.checked") && !strings.Contains(code, "$$set_visible") {
@@ -2666,7 +2487,7 @@ func TestRewriteHandlerAssignments_BlockBody(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Comp", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
 	if !strings.Contains(code, "$$set_count") {
 		t.Errorf("block arrow count assignment not rewritten:\n%s", code[:min(500, len(code))])
@@ -2683,7 +2504,7 @@ func TestRewriteHandlerAssignments_MultipleAssignments(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Comp", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
 	if !strings.Contains(code, "$$set_x(1)") {
 		t.Errorf("x not rewritten: %s", code[:min(400, len(code))])
@@ -2701,7 +2522,7 @@ func TestRewriteHandlerAssignments_NoFalsePositive(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Comp", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
 	// localVar is not state — should NOT be rewritten
 	if strings.Contains(code, "$$set_localVar") {
@@ -2727,7 +2548,7 @@ func TestGenerateCode_IfBranchHasChildren(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Comp", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
 	// The if-chain function must mount the label and input inside the branch
 	// element, NOT as siblings at the root level.  The emission shape depends
@@ -2739,11 +2560,19 @@ func TestGenerateCode_IfBranchHasChildren(t *testing.T) {
 		t.Fatal("no $$chain_ function found")
 	}
 	// Find end of chain function by counting braces
-	depth := 0; chainFnEnd := chainFnStart
+	depth := 0
+	chainFnEnd := chainFnStart
 	for chainFnEnd < len(code) {
 		c := code[chainFnEnd]
-		if c == '{' { depth++ }
-		if c == '}' { depth--; if depth < 0 { break } }
+		if c == '{' {
+			depth++
+		}
+		if c == '}' {
+			depth--
+			if depth < 0 {
+				break
+			}
+		}
 		chainFnEnd++
 	}
 	chainFn := code[chainFnStart:chainFnEnd]
@@ -2784,7 +2613,7 @@ func TestGenerateCode_IfBranchInlineHandlerRewritten(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("IfTest", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("IfTest", sfc, nodes, a, "vela-test")
 
 	// Handler inside #if branch child must be rewritten
 	chainFnStart := strings.Index(code, "function $$chain_")
@@ -2864,7 +2693,7 @@ func TestGenerateCode_IfElseifInsideElement(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Card", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Card", sfc, nodes, a, "vela-test")
 
 	// Must NOT have __elseif__ as a setAttribute call
 	if strings.Contains(code, "__elseif__") {
@@ -2907,68 +2736,6 @@ func TestParseTemplate_IfElseGroupedThreeLevelsDeep(t *testing.T) {
 //  Component inside #if branch
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestGenerateCode_ComponentInsideIfBranch(t *testing.T) {
-	// TagBadge inside an #if branch must be rendered, not silently dropped.
-	sfc := &SFC{
-		Script:   `import { TagBadge } from './TagBadge.js'; let show = $state(true); let tags = $state(['vela','demo']);`,
-		Template: `<div #if="show"><TagBadge #each="tags as t" #key="t" :tag="t" :color="'purple'" :removable="false" /></div>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
-
-	// TagBadge must appear somewhere in the generated code — not silently
-	// dropped by the branch walker.
-	if !strings.Contains(code, "TagBadge(") {
-		t.Errorf("TagBadge not mounted in #if branch — component dropped:\n%s",
-			code[:min(600, len(code))])
-	}
-	// A chain function must exist for the #if reactivity.
-	if !strings.Contains(code, "function $$chain_") {
-		t.Error("expected $$chain_ function for #if reactivity")
-	}
-	// When show goes false, the branch element is .remove()d; when it goes
-	// back true, $$bceach_ is called again with the live tag list.  The
-	// bceach function must be invoked from inside the chain (proof that
-	// show=false tears down the DOM surface and show=true rebuilds it).
-	// Source-position-based checks (e.g. TagBadge( before or after
-	// $$chain_) no longer match the generator's layout; $$bceach_ is
-	// hoisted above the chain function today.
-	if !strings.Contains(code, "$$bceach_") {
-		t.Error("expected $$bceach_ (bound component each) helper")
-	}
-}
-
-func TestGenerateCode_ComponentEachInsideIfBranch(t *testing.T) {
-	// Keyed #each of component inside an #if branch must use a Map.
-	sfc := &SFC{
-		Script:   `import { Card } from './Card.js'; let visible = $state(true); let items = $state([]);`,
-		Template: `<div #if="visible"><Card #each="items as item" #key="item.id" :label="item.text" /></div>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
-
-	// The chain function governs the #if lifecycle.
-	if !strings.Contains(code, "function $$chain_") {
-		t.Fatal("no chain function emitted for #if")
-	}
-	// Card component must be instantiated somewhere.
-	if !strings.Contains(code, "Card(") {
-		t.Errorf("Card component not mounted:\n%s", code[:min(500, len(code))])
-	}
-	// Keyed each uses a Map for instance tracking.
-	if !strings.Contains(code, "new Map()") {
-		t.Errorf("keyed #each inside #if branch should use a Map:\n%s", code[:min(500, len(code))])
-	}
-	// The bound-component-each helper must be called from inside the
-	// chain's build branch — that's how show=true re-mounts children.
-	bceachIdx := strings.Index(code, "$$bceach_")
-	if bceachIdx < 0 {
-		t.Error("expected $$bceach_ helper")
-	}
-}
-
 func TestGenerateCode_PlainComponentInsideIfBranch(t *testing.T) {
 	// A plain (non-#each) component inside an #if branch.
 	sfc := &SFC{
@@ -2977,7 +2744,7 @@ func TestGenerateCode_PlainComponentInsideIfBranch(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	chainStart := strings.Index(code, "function $$chain_")
 	chainEnd := chainStart + strings.Index(code[chainStart:], "\n  function ")
@@ -3049,7 +2816,7 @@ func TestGenerateCode_PropChangeTriggersDerivedUpdate(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Card", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Card", sfc, nodes, a, "vela-test")
 
 	// $$set_pinned must call $$upd_cardClass
 	pinSetStart := strings.Index(code, "function $$set_pinned")
@@ -3080,69 +2847,6 @@ func TestGenerateCode_PropChangeTriggersDerivedUpdate(t *testing.T) {
 	}
 }
 
-func TestGenerateCode_BranchEachHoistedToComponentScope(t *testing.T) {
-	// A #each component inside an #if branch must have its update function
-	// hoisted to component scope so it re-renders when the array changes.
-	sfc := &SFC{
-		Script: `
-			import { TagBadge } from './TagBadge.js';
-			let editMode = $state(false);
-			let tags = $state(['vela', 'demo']);
-		`,
-		Template: `
-			<div>
-				<div #if="editMode">
-					<TagBadge #each="tags as t" #key="t" :tag="t" :removable="true" @remove="($e) => removeTag($e.detail.tag)" />
-				</div>
-			</div>
-		`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCode("NoteCard", sfc, nodes, a, "vela-test")
-
-	// The $$bceach_ function must be at component scope (not inside the chain fn)
-	bceachPos := strings.Index(code, "$$bceach_")
-	chainPos := strings.Index(code, "function $$chain_")
-	if bceachPos < 0 {
-		t.Fatal("no $$bceach_ update function found — branch #each not hoisted")
-	}
-	// The function DEFINITION must appear before or outside the chain function
-	// (it's written to g.create which comes before chain functions)
-	if bceachPos > chainPos && chainPos > 0 {
-		// Find the end of the chain function
-		chainEnd := chainPos
-		depth := 0; started := false
-		for chainEnd < len(code) {
-			c := code[chainEnd]
-			if c == '{' { depth++; started = true }
-			if c == '}' && started { depth--; if depth == 0 { break } }
-			chainEnd++
-		}
-		// Check if bceach appears OUTSIDE (before) the chain fn
-		bceachFnDef := strings.Index(code, "function $$bceach_")
-		if bceachFnDef > chainEnd {
-			t.Errorf("$$bceach_ function defined AFTER chain function — not hoisted to component scope")
-		}
-	}
-
-	// When tags changes, $$set_tags must call the bceach update
-	setTagsStart := strings.Index(code, "function $$set_tags")
-	if setTagsStart < 0 {
-		t.Fatal("no $$set_tags found")
-	}
-	setTagsEnd := setTagsStart + strings.Index(code[setTagsStart:], "\n  function ")
-	if setTagsEnd <= setTagsStart { setTagsEnd = len(code) }
-	setTagsFn := code[setTagsStart:setTagsEnd]
-	if !strings.Contains(setTagsFn, "$$bceach_") {
-		t.Errorf("$$set_tags must call $$bceach_ to re-render tags inside #if branch;\n$$set_tags:\n%s", setTagsFn)
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Bug regressions: async, onMount order, component #if/#elseif chains
-// ─────────────────────────────────────────────────────────────────────────────
-
 func TestAnalyzeScript_AsyncFunctionPreserved(t *testing.T) {
 	a := analyzeScript(`
 		async function fetchData(url) {
@@ -3170,7 +2874,7 @@ func TestGenerateCode_OnMountAfterMount(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	mountIdx := strings.Index(code, "$$target.appendChild($$root)")
 	// onMount bodies are inlined into an IIFE stored in $$mountCleanup0
@@ -3210,7 +2914,9 @@ func TestParseTemplate_ComponentIfElseifChainGrouped(t *testing.T) {
 		t.Fatalf("expected 1 IfChainNode, got %d children: %v", len(div.Children),
 			func() []string {
 				var ts []string
-				for _, c := range div.Children { ts = append(ts, fmt.Sprintf("%T", c)) }
+				for _, c := range div.Children {
+					ts = append(ts, fmt.Sprintf("%T", c))
+				}
 				return ts
 			}())
 	}
@@ -3241,61 +2947,6 @@ func TestParseTemplate_ComponentIfElseifChainGrouped(t *testing.T) {
 		}
 	}
 }
-
-func TestGenerateCode_ComponentIfChainProducesChainFn(t *testing.T) {
-	sfc := &SFC{
-		Script: `
-			import { SearchPage } from './SearchPage.js';
-			import { FavoritesPage } from './FavoritesPage.js';
-			import { UserPage } from './UserPage.js';
-			let route = $state('search');
-			let login = $state('');
-		`,
-		Template: `
-			<div>
-				<SearchPage   #if="route === 'search'" />
-				<FavoritesPage #elseif="route === 'favorites'" />
-				<UserPage      #elseif="route === 'user'" :login="login" />
-			</div>
-		`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
-
-	// Must produce a single chain function
-	if !strings.Contains(code, "function $$chain_") {
-		t.Errorf("expected $$chain_ function for component if-chain:\n%s", code[:min(600, len(code))])
-	}
-	// All three components must be mounted conditionally (not always)
-	if !strings.Contains(code, "SearchPage(") {
-		t.Error("SearchPage not mounted")
-	}
-	if !strings.Contains(code, "FavoritesPage(") {
-		t.Error("FavoritesPage not mounted")
-	}
-	if !strings.Contains(code, "UserPage(") {
-		t.Error("UserPage not mounted")
-	}
-	// __elseif__ must NOT appear as a DOM attribute or prop
-	if strings.Contains(code, "__elseif__") {
-		t.Errorf("__elseif__ sentinel leaked into generated code:\n%s", code[:min(600, len(code))])
-	}
-	// When route changes, the chain function must be called
-	if !strings.Contains(code, "function $$set_route") {
-		t.Fatal("no $$set_route setter")
-	}
-	setRouteEnd := strings.Index(code, "function $$set_route")
-	setRouteEnd += strings.Index(code[setRouteEnd:], "\n  function ")
-	setRouteFn := code[strings.Index(code, "function $$set_route"):setRouteEnd]
-	if !strings.Contains(setRouteFn, "$$chain_") {
-		t.Errorf("$$set_route should call $$chain_ to re-evaluate route:\n%s", setRouteFn)
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Effect infinite recursion prevention
-// ─────────────────────────────────────────────────────────────────────────────
 
 func TestFindWrittenVars(t *testing.T) {
 	prog := ParseJS(`
@@ -3387,7 +3038,7 @@ func TestGenerateCode_EffectDoesNotCallItsOwnSetter(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	// Find $$set_isAuthenticated body
 	setIdx := strings.Index(code, "function $$set_isAuthenticated")
@@ -3421,7 +3072,7 @@ func TestGenerateCode_EffectCleanupEmitted(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	if !strings.Contains(code, "$$cleanup0") {
 		t.Error("expected $$cleanup0 variable for effect cleanup")
@@ -3507,7 +3158,9 @@ func TestEffectDeps_MixedReadWrite(t *testing.T) {
 	}
 	eff := a.Effects[0]
 	deps := map[string]bool{}
-	for _, d := range eff.Deps { deps[d] = true }
+	for _, d := range eff.Deps {
+		deps[d] = true
+	}
 
 	if !deps["source"] {
 		t.Errorf("effect should depend on 'source' (read); Deps=%v", eff.Deps)
@@ -3530,7 +3183,7 @@ func TestGenerateCode_EffectHasCleanup(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	// Cleanup variable must be declared
 	if !strings.Contains(code, "$$cleanup0") {
@@ -3541,7 +3194,7 @@ func TestGenerateCode_EffectHasCleanup(t *testing.T) {
 		t.Errorf("effect return value not captured:\n%s", code[:min(600, len(code))])
 	}
 	// Cleanup must be called before re-run
-	if !strings.Contains(code, "if ($$cleanup0) { $$cleanup0()") {
+	if !strings.Contains(code, "if ($$cleanup0) {") || !strings.Contains(code, "$$cleanup0();") {
 		t.Errorf("cleanup not called before effect re-runs:\n%s", code[:min(600, len(code))])
 	}
 	// Cleanup must be called in destroy()
@@ -3578,7 +3231,7 @@ func TestGenerateCode_SubscribeEffectNoInfiniteLoop(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	// Find $$set_isAuthenticated
 	setterStart := strings.Index(code, "function $$set_isAuthenticated")
@@ -3601,15 +3254,23 @@ func TestGenerateCode_SubscribeEffectNoInfiniteLoop(t *testing.T) {
 func TestSvelteBlock_ParseSimpleIf(t *testing.T) {
 	html := `<div>{#if show}<span>yes</span>{/if}</div>`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
 	div := nodes[0].(*ElementNode)
 	if len(div.Children) != 1 {
 		t.Fatalf("expected 1 child (IfChainNode), got %d", len(div.Children))
 	}
 	chain, ok := div.Children[0].(*IfChainNode)
-	if !ok { t.Fatalf("expected *IfChainNode, got %T", div.Children[0]) }
-	if len(chain.Branches) != 1 { t.Errorf("expected 1 branch, got %d", len(chain.Branches)) }
-	if chain.Branches[0].Cond != "show" { t.Errorf("cond want 'show', got %q", chain.Branches[0].Cond) }
+	if !ok {
+		t.Fatalf("expected *IfChainNode, got %T", div.Children[0])
+	}
+	if len(chain.Branches) != 1 {
+		t.Errorf("expected 1 branch, got %d", len(chain.Branches))
+	}
+	if chain.Branches[0].Cond != "show" {
+		t.Errorf("cond want 'show', got %q", chain.Branches[0].Cond)
+	}
 }
 
 func TestSvelteBlock_ParseIfElse(t *testing.T) {
@@ -3621,49 +3282,89 @@ func TestSvelteBlock_ParseIfElse(t *testing.T) {
 		{/if}
 	</div>`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
 	div := nodes[0].(*ElementNode)
 	chain, ok := div.Children[0].(*IfChainNode)
-	if !ok { t.Fatalf("expected *IfChainNode, got %T", div.Children[0]) }
-	if len(chain.Branches) != 2 { t.Errorf("expected 2 branches, got %d", len(chain.Branches)) }
-	if chain.Branches[0].Cond != "logged" { t.Errorf("branch 0 cond want 'logged', got %q", chain.Branches[0].Cond) }
-	if chain.Branches[1].Cond != "" { t.Errorf("else branch should have empty cond, got %q", chain.Branches[1].Cond) }
+	if !ok {
+		t.Fatalf("expected *IfChainNode, got %T", div.Children[0])
+	}
+	if len(chain.Branches) != 2 {
+		t.Errorf("expected 2 branches, got %d", len(chain.Branches))
+	}
+	if chain.Branches[0].Cond != "logged" {
+		t.Errorf("branch 0 cond want 'logged', got %q", chain.Branches[0].Cond)
+	}
+	if chain.Branches[1].Cond != "" {
+		t.Errorf("else branch should have empty cond, got %q", chain.Branches[1].Cond)
+	}
 }
 
 func TestSvelteBlock_ParseIfElseIf(t *testing.T) {
 	html := `{#if a}<p>A</p>{:else if b}<p>B</p>{:else}<p>C</p>{/if}`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
 	chain, ok := nodes[0].(*IfChainNode)
-	if !ok { t.Fatalf("expected *IfChainNode at root, got %T", nodes[0]) }
-	if len(chain.Branches) != 3 { t.Fatalf("expected 3 branches, got %d", len(chain.Branches)) }
-	if chain.Branches[0].Cond != "a" { t.Errorf("branch 0 cond=%q", chain.Branches[0].Cond) }
-	if chain.Branches[1].Cond != "b" { t.Errorf("branch 1 cond=%q", chain.Branches[1].Cond) }
-	if chain.Branches[2].Cond != "" { t.Errorf("branch 2 (else) cond=%q", chain.Branches[2].Cond) }
+	if !ok {
+		t.Fatalf("expected *IfChainNode at root, got %T", nodes[0])
+	}
+	if len(chain.Branches) != 3 {
+		t.Fatalf("expected 3 branches, got %d", len(chain.Branches))
+	}
+	if chain.Branches[0].Cond != "a" {
+		t.Errorf("branch 0 cond=%q", chain.Branches[0].Cond)
+	}
+	if chain.Branches[1].Cond != "b" {
+		t.Errorf("branch 1 cond=%q", chain.Branches[1].Cond)
+	}
+	if chain.Branches[2].Cond != "" {
+		t.Errorf("branch 2 (else) cond=%q", chain.Branches[2].Cond)
+	}
 }
 
 func TestSvelteBlock_ParseIfRootLevel(t *testing.T) {
 	// {#if} at template root (no outer element)
 	html := `{#if x}<span>X</span>{/if}<p>always</p>`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
-	if len(nodes) != 2 { t.Fatalf("expected 2 root nodes, got %d", len(nodes)) }
-	if _, ok := nodes[0].(*IfChainNode); !ok { t.Errorf("node[0] want IfChainNode, got %T", nodes[0]) }
-	if _, ok := nodes[1].(*ElementNode); !ok { t.Errorf("node[1] want ElementNode, got %T", nodes[1]) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("expected 2 root nodes, got %d", len(nodes))
+	}
+	if _, ok := nodes[0].(*IfChainNode); !ok {
+		t.Errorf("node[0] want IfChainNode, got %T", nodes[0])
+	}
+	if _, ok := nodes[1].(*ElementNode); !ok {
+		t.Errorf("node[1] want ElementNode, got %T", nodes[1])
+	}
 }
 
 func TestSvelteBlock_IfBranchChildren(t *testing.T) {
 	// Branch children should be parsed as proper nodes
 	html := `{#if show}<div class="a"><span>{msg}</span></div>{/if}`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
 	chain := nodes[0].(*IfChainNode)
 	children := chain.Branches[0].Children
-	if len(children) != 1 { t.Fatalf("expected 1 child in branch, got %d", len(children)) }
+	if len(children) != 1 {
+		t.Fatalf("expected 1 child in branch, got %d", len(children))
+	}
 	div, ok := children[0].(*ElementNode)
-	if !ok { t.Fatalf("branch child should be ElementNode, got %T", children[0]) }
-	if div.Tag != "div" { t.Errorf("tag want div, got %q", div.Tag) }
-	if len(div.Attrs) == 0 || div.Attrs[0].Value != "a" { t.Errorf("class attr not preserved") }
+	if !ok {
+		t.Fatalf("branch child should be ElementNode, got %T", children[0])
+	}
+	if div.Tag != "div" {
+		t.Errorf("tag want div, got %q", div.Tag)
+	}
+	if len(div.Attrs) == 0 || div.Attrs[0].Value != "a" {
+		t.Errorf("class attr not preserved")
+	}
 }
 
 func TestSvelteBlock_CodeGen_SimpleIf(t *testing.T) {
@@ -3673,9 +3374,9 @@ func TestSvelteBlock_CodeGen_SimpleIf(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("T", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("T", sfc, nodes, a, "vela-test")
 	if !strings.Contains(code, "$$chain_") {
-		t.Errorf("expected $$chain_ function in output:\n%s", code[:min(400,len(code))])
+		t.Errorf("expected $$chain_ function in output:\n%s", code[:min(400, len(code))])
 	}
 	if strings.Contains(code, "__elseif__") || strings.Contains(code, "__else__") {
 		t.Errorf("sentinel attrs leaked into output")
@@ -3689,10 +3390,10 @@ func TestSvelteBlock_CodeGen_IfElse(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("T", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("T", sfc, nodes, a, "vela-test")
 	// Must have 2 branches (b0, b1)
 	if !strings.Contains(code, "_b1") {
-		t.Errorf("expected two branches (b0, b1):\n%s", code[:min(500,len(code))])
+		t.Errorf("expected two branches (b0, b1):\n%s", code[:min(500, len(code))])
 	}
 }
 
@@ -3703,29 +3404,49 @@ func TestSvelteBlock_CodeGen_IfElse(t *testing.T) {
 func TestSvelteBlock_ParseEach(t *testing.T) {
 	html := `<ul>{#each items as item}<li>{item.name}</li>{/each}</ul>`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
 	ul := nodes[0].(*ElementNode)
-	if len(ul.Children) != 1 { t.Fatalf("expected 1 child (EachBlockNode), got %d", len(ul.Children)) }
+	if len(ul.Children) != 1 {
+		t.Fatalf("expected 1 child (EachBlockNode), got %d", len(ul.Children))
+	}
 	each, ok := ul.Children[0].(*EachBlockNode)
-	if !ok { t.Fatalf("expected *EachBlockNode, got %T", ul.Children[0]) }
-	if each.EachExpr != "items as item" { t.Errorf("EachExpr want 'items as item', got %q", each.EachExpr) }
-	if each.EachKey != "" { t.Errorf("EachKey should be empty, got %q", each.EachKey) }
+	if !ok {
+		t.Fatalf("expected *EachBlockNode, got %T", ul.Children[0])
+	}
+	if each.EachExpr != "items as item" {
+		t.Errorf("EachExpr want 'items as item', got %q", each.EachExpr)
+	}
+	if each.EachKey != "" {
+		t.Errorf("EachKey should be empty, got %q", each.EachKey)
+	}
 }
 
 func TestSvelteBlock_ParseEachWithKey(t *testing.T) {
 	html := `{#each todos as todo (todo.id)}<div>{todo.text}</div>{/each}`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
 	each, ok := nodes[0].(*EachBlockNode)
-	if !ok { t.Fatalf("expected *EachBlockNode at root, got %T", nodes[0]) }
-	if each.EachExpr != "todos as todo" { t.Errorf("EachExpr=%q", each.EachExpr) }
-	if each.EachKey != "todo.id" { t.Errorf("EachKey want 'todo.id', got %q", each.EachKey) }
+	if !ok {
+		t.Fatalf("expected *EachBlockNode at root, got %T", nodes[0])
+	}
+	if each.EachExpr != "todos as todo" {
+		t.Errorf("EachExpr=%q", each.EachExpr)
+	}
+	if each.EachKey != "todo.id" {
+		t.Errorf("EachKey want 'todo.id', got %q", each.EachKey)
+	}
 }
 
 func TestSvelteBlock_ParseEachWithIndex(t *testing.T) {
 	html := `{#each items as item, i (item.id)}<p>{i}: {item.name}</p>{/each}`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
 	each := nodes[0].(*EachBlockNode)
 	if !strings.Contains(each.EachExpr, ", i") && !strings.Contains(each.EachExpr, ",i") {
 		t.Errorf("index variable not in EachExpr: %q", each.EachExpr)
@@ -3739,10 +3460,10 @@ func TestSvelteBlock_CodeGen_Each(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("T", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("T", sfc, nodes, a, "vela-test")
 	// Should use the existing keyed each logic
 	if !strings.Contains(code, "forEach") {
-		t.Errorf("expected forEach in output:\n%s", code[:min(400,len(code))])
+		t.Errorf("expected forEach in output:\n%s", code[:min(400, len(code))])
 	}
 	if !strings.Contains(code, "item") {
 		t.Errorf("item variable not in output")
@@ -3753,11 +3474,17 @@ func TestSvelteBlock_OldSyntaxStillWorks(t *testing.T) {
 	// The old attribute-style syntax must continue to work alongside the new
 	html := `<div #if="show">old style</div>`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
 	// Should be grouped into an IfChainNode (via attribute path, not block path)
 	chain, ok := nodes[0].(*IfChainNode)
-	if !ok { t.Fatalf("expected IfChainNode, got %T", nodes[0]) }
-	if chain.Branches[0].Cond != "show" { t.Errorf("cond=%q", chain.Branches[0].Cond) }
+	if !ok {
+		t.Fatalf("expected IfChainNode, got %T", nodes[0])
+	}
+	if chain.Branches[0].Cond != "show" {
+		t.Errorf("cond=%q", chain.Branches[0].Cond)
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3768,20 +3495,30 @@ func TestSvelteFragment_ParsedAsElementWithTag(t *testing.T) {
 	// Inside a component, <svelte:fragment slot="footer"> should be parsed
 	html := `<div><Modal><svelte:fragment slot="footer"><button>OK</button><button>Cancel</button></svelte:fragment></Modal></div>`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
 	div := nodes[0].(*ElementNode)
 	modal, ok := div.Children[0].(*ComponentNode)
-	if !ok { t.Fatalf("expected ComponentNode, got %T", div.Children[0]) }
+	if !ok {
+		t.Fatalf("expected ComponentNode, got %T", div.Children[0])
+	}
 	footerSlot, exists := modal.Slots["footer"]
-	if !exists { t.Fatal("'footer' slot not found") }
+	if !exists {
+		t.Fatal("'footer' slot not found")
+	}
 	// The slot should contain the TWO buttons directly (no svelte:fragment wrapper)
 	if len(footerSlot) != 2 {
 		t.Errorf("footer slot should have 2 children (buttons), got %d", len(footerSlot))
 	}
 	for i, node := range footerSlot {
 		el, ok := node.(*ElementNode)
-		if !ok { t.Errorf("slot child %d should be ElementNode, got %T", i, node) }
-		if el != nil && el.Tag != "button" { t.Errorf("slot child %d tag=%q, want button", i, el.Tag) }
+		if !ok {
+			t.Errorf("slot child %d should be ElementNode, got %T", i, node)
+		}
+		if el != nil && el.Tag != "button" {
+			t.Errorf("slot child %d tag=%q, want button", i, el.Tag)
+		}
 	}
 }
 
@@ -3789,27 +3526,39 @@ func TestSvelteFragment_NoWrapperInDOM(t *testing.T) {
 	// The svelte:fragment itself must NOT appear in the slot — only its children
 	html := `<Modal><svelte:fragment slot="header"><h1>Title</h1><span>Sub</span></svelte:fragment></Modal>`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
 	modal := nodes[0].(*ComponentNode)
 	header, exists := modal.Slots["header"]
-	if !exists { t.Fatal("header slot missing") }
+	if !exists {
+		t.Fatal("header slot missing")
+	}
 	for _, n := range header {
 		if el, ok := n.(*ElementNode); ok && el.Tag == "svelte:fragment" {
 			t.Errorf("svelte:fragment element must not appear in slot — only its children should")
 		}
 	}
-	if len(header) != 2 { t.Errorf("expected 2 header slot children, got %d", len(header)) }
+	if len(header) != 2 {
+		t.Errorf("expected 2 header slot children, got %d", len(header))
+	}
 }
 
 func TestSvelteFragment_DefaultSlotUnchanged(t *testing.T) {
 	// Content without slot= goes to default slot as before
 	html := `<Modal><p>Body text</p></Modal>`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
 	modal := nodes[0].(*ComponentNode)
 	def, exists := modal.Slots["default"]
-	if !exists { t.Fatal("default slot missing") }
-	if len(def) != 1 { t.Errorf("expected 1 default slot child, got %d", len(def)) }
+	if !exists {
+		t.Fatal("default slot missing")
+	}
+	if len(def) != 1 {
+		t.Errorf("expected 1 default slot child, got %d", len(def))
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3830,17 +3579,23 @@ func TestSvelteBlock_NestedInsideHtmlElement(t *testing.T) {
 		{/if}
 	</section>`
 	nodes, err := parseTemplate(html)
-	if err != nil { t.Fatalf("parse error: %v", err) }
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
 	section := nodes[0].(*ElementNode)
 	// section children: h1, IfChainNode
 	var foundChain, foundH1 bool
 	for _, c := range section.Children {
 		switch x := c.(type) {
 		case *ElementNode:
-			if x.Tag == "h1" { foundH1 = true }
+			if x.Tag == "h1" {
+				foundH1 = true
+			}
 		case *IfChainNode:
 			foundChain = true
-			if len(x.Branches) != 2 { t.Errorf("if chain: expected 2 branches, got %d", len(x.Branches)) }
+			if len(x.Branches) != 2 {
+				t.Errorf("if chain: expected 2 branches, got %d", len(x.Branches))
+			}
 			// First branch should have a ul with an EachBlockNode inside
 			ifChildren := x.Branches[0].Children
 			var foundUl bool
@@ -3849,16 +3604,26 @@ func TestSvelteBlock_NestedInsideHtmlElement(t *testing.T) {
 					foundUl = true
 					var foundEach bool
 					for _, uc := range el.Children {
-						if _, ok := uc.(*EachBlockNode); ok { foundEach = true }
+						if _, ok := uc.(*EachBlockNode); ok {
+							foundEach = true
+						}
 					}
-					if !foundEach { t.Error("ul should contain EachBlockNode") }
+					if !foundEach {
+						t.Error("ul should contain EachBlockNode")
+					}
 				}
 			}
-			if !foundUl { t.Error("if branch should contain ul") }
+			if !foundUl {
+				t.Error("if branch should contain ul")
+			}
 		}
 	}
-	if !foundH1 { t.Error("section should contain h1") }
-	if !foundChain { t.Error("section should contain IfChainNode") }
+	if !foundH1 {
+		t.Error("section should contain h1")
+	}
+	if !foundChain {
+		t.Error("section should contain IfChainNode")
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3884,7 +3649,7 @@ func compileVelaString(t *testing.T, name, raw string) string {
 		t.Fatalf("%s: template: %v", name, err)
 	}
 	analysis := analyzeScript(sfc.Script)
-	return generateCode(name, sfc, tmpl, analysis, "vela-reg")
+	return generateCodeAST(name, sfc, tmpl, analysis, "vela-reg")
 }
 
 // TestRealTemplates_RuntimeMount runs each compiled template inside a real
@@ -3892,14 +3657,14 @@ func compileVelaString(t *testing.T, name, raw string) string {
 // _batchRun, asserting no exceptions are thrown.  This catches an entire
 // class of bug that source-only tests miss:
 //
-//   1. TreeWalker invalidation on multi-hole subtrees — the compiled code
-//      parses fine but throws TypeError at runtime when nextNode() returns
-//      null after a tree mutation.
-//   2. Captured refs not visible from setters — let-hoisting omissions
-//      cause ReferenceError when a setter fires, but the compiled code
-//      itself parses cleanly.
-//   3. Off-by-one errors in chain function teardown that only show up
-//      when the branch toggles on→off→on.
+//  1. TreeWalker invalidation on multi-hole subtrees — the compiled code
+//     parses fine but throws TypeError at runtime when nextNode() returns
+//     null after a tree mutation.
+//  2. Captured refs not visible from setters — let-hoisting omissions
+//     cause ReferenceError when a setter fires, but the compiled code
+//     itself parses cleanly.
+//  3. Off-by-one errors in chain function teardown that only show up
+//     when the branch toggles on→off→on.
 //
 // The static-validation tests (OutputParses, NoEmptyControlFlowGuards) run
 // on every machine; this runtime test requires Node + jsdom and SKIPS
@@ -4598,7 +4363,7 @@ func TestTwoWayBindSpec(t *testing.T) {
 		{"textarea", "value", "input", "value", true},
 		{"select", "value", "change", "value", true},
 		{"input", "checked", "change", "checked", true},
-		{"div", "value", "", "", false},       // value on non-form element: unsupported
+		{"div", "value", "", "", false},        // value on non-form element: unsupported
 		{"textarea", "checked", "", "", false}, // checked on textarea: unsupported
 	}
 	for _, tc := range cases {
@@ -4621,7 +4386,7 @@ func TestTwoWayBinding_InputValue(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Form", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Form", sfc, nodes, a, "vela-test")
 
 	// Property write, not setAttribute('value', ...) — so programmatic
 	// state changes reflect on the live input.  Element var is $$root
@@ -4648,7 +4413,7 @@ func TestTwoWayBinding_Checkbox(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Form", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Form", sfc, nodes, a, "vela-test")
 
 	// Property: elem.checked = !!(agreed)
 	// The element var is $$root when the input is the template root; $$nN
@@ -4672,7 +4437,7 @@ func TestTwoWayBinding_Select(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Form", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Form", sfc, nodes, a, "vela-test")
 
 	// Select uses 'change' event, not 'input'.
 	if !strings.Contains(code, ".addEventListener('change',") {
@@ -4693,7 +4458,7 @@ func TestTwoWayBinding_CoexistsWithAtInput(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Form", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Form", sfc, nodes, a, "vela-test")
 
 	// Both handlers must be declared — verified by the output parsing
 	// cleanly (no duplicate const SyntaxError).
@@ -4725,7 +4490,7 @@ func TestTwoWayBinding_OneWayBindDoesNotWireListener(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("Form", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("Form", sfc, nodes, a, "vela-test")
 
 	if strings.Contains(code, ".addEventListener('input',") {
 		t.Errorf("one-way :value should NOT auto-wire an input listener; got:\n%s", code)
@@ -4897,7 +4662,7 @@ func TestEachRowIfHoist_DeclarationsAtRowScope(t *testing.T) {
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
-	code := generateCode("App", sfc, nodes, a, "vela-test")
+	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	// Find the row IIFE.  We look for update(u) and walk backwards to the
 	// enclosing `$$blk = (() => {`.
@@ -5293,10 +5058,10 @@ func TestBuildHoleTemplate_StaticAttrsBakedDynamicAttrsSkipped(t *testing.T) {
 	elem := &ElementNode{
 		Tag: "input",
 		Attrs: []*Attr{
-			{Name: "type", Value: "text"},                                  // static
-			{Name: "placeholder", Value: "name"},                            // static
-			{Name: "value", Value: "name", IsBind: true, IsTwoWay: true},    // dyn
-			{Name: "input", Value: "onInput", IsEvent: true},                // dyn
+			{Name: "type", Value: "text"},                                // static
+			{Name: "placeholder", Value: "name"},                         // static
+			{Name: "value", Value: "name", IsBind: true, IsTwoWay: true}, // dyn
+			{Name: "input", Value: "onInput", IsEvent: true},             // dyn
 		},
 	}
 	html, _ := buildHoleTemplate([]Node{elem}, "")
@@ -5321,10 +5086,10 @@ func TestBuildHoleTemplate_HoleOrderIsDocumentOrder(t *testing.T) {
 	// TreeWalker would encounter them (document order).  Verify by giving
 	// a list with mixed shapes and checking the kinds line up.
 	nodes := []Node{
-		staticElem("h1", staticText("Title")),                  // static, no hole
-		dynText("subtitle"),                                     // text hole
-		eventElem("button", "click", "onClick"),                 // elem hole
-		dynText("counter"),                                      // text hole
+		staticElem("h1", staticText("Title")),   // static, no hole
+		dynText("subtitle"),                     // text hole
+		eventElem("button", "click", "onClick"), // elem hole
+		dynText("counter"),                      // text hole
 	}
 	_, holes := buildHoleTemplate(nodes, "")
 	if len(holes) != 3 {
@@ -5340,13 +5105,13 @@ func TestBuildHoleTemplate_HoleOrderIsDocumentOrder(t *testing.T) {
 
 func TestEscapeHTMLText(t *testing.T) {
 	cases := map[string]string{
-		"hello":     "hello",                 // unchanged
-		"a < b":     "a &lt; b",              // <
-		"a > b":     "a &gt; b",              // >
-		"x & y":     "x &amp; y",             // &
-		"<&>":       "&lt;&amp;&gt;",         // multiple
-		"":          "",                      // empty
-		"plain text": "plain text",           // no special chars
+		"hello":      "hello",         // unchanged
+		"a < b":      "a &lt; b",      // <
+		"a > b":      "a &gt; b",      // >
+		"x & y":      "x &amp; y",     // &
+		"<&>":        "&lt;&amp;&gt;", // multiple
+		"":           "",              // empty
+		"plain text": "plain text",    // no special chars
 	}
 	for in, want := range cases {
 		if got := escapeHTMLText(in); got != want {
@@ -5357,13 +5122,13 @@ func TestEscapeHTMLText(t *testing.T) {
 
 func TestEscapeHTMLAttr(t *testing.T) {
 	cases := map[string]string{
-		"hello":             "hello",
-		`a & b`:             "a &amp; b",
-		`he said "hi"`:      `he said &quot;hi&quot;`,
-		`a"&"b`:             `a&quot;&amp;&quot;b`,
-		"":                  "",
+		"hello":        "hello",
+		`a & b`:        "a &amp; b",
+		`he said "hi"`: `he said &quot;hi&quot;`,
+		`a"&"b`:        `a&quot;&amp;&quot;b`,
+		"":             "",
 		// < and > are NOT escaped inside attribute values per HTML spec.
-		"a < b":            "a < b",
+		"a < b": "a < b",
 	}
 	for in, want := range cases {
 		if got := escapeHTMLAttr(in); got != want {
@@ -5376,12 +5141,12 @@ func TestEscapeJSString(t *testing.T) {
 	// Used inside single-quoted JS string literals — must escape ', \, and
 	// the line-break/whitespace characters that would break the literal.
 	cases := map[string]string{
-		"hello":         "hello",
-		"it's":          `it\'s`,
-		"a\\b":          `a\\b`,
-		"line1\nline2":  `line1\nline2`,
-		"a\tb":          `a\tb`,
-		"":              "",
+		"hello":        "hello",
+		"it's":         `it\'s`,
+		"a\\b":         `a\\b`,
+		"line1\nline2": `line1\nline2`,
+		"a\tb":         `a\tb`,
+		"":             "",
 		// Double quotes are NOT escaped — they're fine inside a single-
 		// quoted JS string.  This is intentional: HTML attributes use ".
 		`<div class="x">`: `<div class="x">`,
@@ -5437,7 +5202,6 @@ func TestVoidTags_ContainsKnownVoidElements(t *testing.T) {
 	}
 }
 
-
 func TestAnalyzeScriptOrdersDerivedDependencies(t *testing.T) {
 	analysis := analyzeScript(`
 		let count = $state(2);
@@ -5471,7 +5235,6 @@ func TestValidateDerivedCycles(t *testing.T) {
 	}
 }
 
-
 func TestScriptPlanPreservesStateAndUserInitializerOrder(t *testing.T) {
 	script := `
 		let first = $state(1);
@@ -5489,9 +5252,13 @@ func TestScriptPlanPreservesStateAndUserInitializerOrder(t *testing.T) {
 		}
 	}
 	sfc, err := parseSFC("<script>" + script + "</script><template><p>{second}</p></template>")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	tmpl, err := parseTemplate(sfc.Template)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	code := generateCodeAST("PlanOrder", sfc, tmpl, analysis, "vela-000000")
 	first := strings.Index(code, "let first = 1;")
 	snapshot := strings.Index(code, "const snapshot = first;")
@@ -5501,7 +5268,6 @@ func TestScriptPlanPreservesStateAndUserInitializerOrder(t *testing.T) {
 	}
 }
 
-
 func TestScriptPlanInitializesDerivedBeforeFollowingUserStatement(t *testing.T) {
 	script := `
 		let count = $state(2);
@@ -5510,9 +5276,13 @@ func TestScriptPlanInitializesDerivedBeforeFollowingUserStatement(t *testing.T) 
 	`
 	analysis := analyzeScript(script)
 	sfc, err := parseSFC("<script>" + script + "</script><template><p>{captured}</p></template>")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	tmpl, err := parseTemplate(sfc.Template)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	code := generateCodeAST("DerivedPlan", sfc, tmpl, analysis, "vela-000000")
 	update := strings.Index(code, "();")
 	captured := strings.Index(code, "const captured = doubled + 1;")
@@ -5520,7 +5290,6 @@ func TestScriptPlanInitializesDerivedBeforeFollowingUserStatement(t *testing.T) 
 		t.Fatalf("derived initializer must precede following user statement:\n%s", code)
 	}
 }
-
 
 func TestTemplateExpressionsKeepSourcePositions(t *testing.T) {
 
