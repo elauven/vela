@@ -661,3 +661,136 @@ first. Only after the builders and validator contract are stable should Task
 textual transformations. This keeps each change observable through the
 inventory test and avoids mixing a semantic source rewrite with a structural
 codegen rewrite.
+
+
+## Optional compiler trace design
+
+### Decision
+
+A trace is an opt-in observation of the existing `compileFile` pipeline, not a
+new compilation path, cache, AST dump, or diagnostic format. It is disabled by
+default: the normal compiler performs no trace allocation, clock read, source
+retention, or output write. When enabled, it reports one bounded record per
+component compilation and does not change generated JS, CSS, source maps,
+diagnostic order, or failure semantics.
+
+The current stage boundaries are stable enough for an initial contract:
+
+```text
+read-source
+  -> parse-sfc
+  -> parse-template
+  -> parse-script-and-analyze
+  -> validate-input
+  -> optimize              (skipped unless enabled)
+  -> build-target-ast
+  -> validate-target-ast
+  -> print-target
+  -> build-source-map      (skipped unless enabled)
+  -> write-output
+```
+
+`parse-script-and-analyze` remains one trace stage until Task 013 supplies a
+single owned ScriptAST. The trace may expose its internal parse count as a
+metric today, but must not pretend that duplicate parsing is a cache hit.
+`optimize`, source-map, and debug-AST steps are explicitly marked skipped when
+the corresponding option is off. This makes comparisons between normal,
+minified, and source-map builds meaningful.
+
+### Public data model
+
+Use a versioned, machine-readable JSON Lines format: one self-contained
+`CompilationTraceV1` object per source component. JSONL avoids cross-file
+ordering assumptions in parallel project builds and permits watch mode to
+append a new record for each rebuild.
+
+```text
+CompilationTraceV1
+  schemaVersion: 1
+  component: { id, displayName }
+  outcome: success | failed | internal-error
+  options: { minify, sourceMap, cssMode, debugAst }
+  stages: [ StageTrace ]
+  diagnostics: { errors, warnings, hints, byCode? }
+  metrics: { sourceBytes, templateNodes, scriptNodes, cssNodes,
+             targetNodes, outputBytes, cssBytes, sourceMapBytes,
+             scriptParseCount }
+
+StageTrace
+  name: stable stage name above
+  status: complete | skipped | failed
+  durationNs: non-negative integer
+  metrics: optional stage-local numeric aggregates
+  cache: { decision: not-applicable | hit | miss | bypassed,
+           reason?: stable reason code }
+```
+
+`id` is a stable, project-relative slash-normalized component identifier when a
+project root is known. File-mode uses a cleaned configured source identifier,
+not an absolute resolved path. `displayName` is the component name only. The
+trace contains no raw source, source snippets, AST JSON, generated JavaScript,
+CSS text, user identifier inventory, diagnostic message text, absolute paths,
+wall-clock timestamps, or hash of source content. Diagnostic codes may be
+counted only after the stable-code migration; before that, report severities
+without fabricating code keys.
+
+Durations use monotonic elapsed `time.Duration` values serialized as integer
+nanoseconds. The record has no start timestamp, avoiding both privacy leakage
+and meaningless wall-clock comparison. Node/output counts are aggregates only;
+missing AST classes report zero and a stage that failed before creating its AST
+omits the corresponding metric rather than retaining a partial tree.
+
+### API and CLI shape
+
+Add an optional `TraceSink` to `CompileOptions`, not a package-global collector:
+
+```go
+type TraceSink interface { Record(CompilationTraceV1) error }
+```
+
+`compileFile` creates a local recorder only when `opts.TraceSink != nil`, emits
+its finalized record with `defer`, and ignores sink failures only if the caller
+explicitly requests best-effort tracing. CLI `--trace=<file>` opens a
+mutex-protected append-only JSONL sink once per command; a sink failure is a
+separate tooling error and must not corrupt the compiled component output.
+`--trace=-` writes JSONL to stderr so normal status lines on stdout remain
+readable. Watch mode appends a record for every recompile. A future in-memory
+sink supports unit tests and embedding APIs without filesystem writes.
+
+Timing helpers are local start/finish calls at the named boundaries. They must
+not wrap individual AST nodes, retain section strings, or change branch order.
+A trace therefore adds O(number of stages) allocations and clock reads only
+when enabled; the disabled branch is a nil check.
+
+### Cache decisions and future use
+
+There is no component-AST, analyzer, or target-AST cache today. Every stage
+must therefore record `not-applicable`, never a synthetic miss. Once a cache
+exists, its boundary must record `hit`, `miss`, or `bypassed` with a stable
+reason code such as `source-unchanged`, `option-changed`, `dependency-changed`,
+or `cache-disabled`. The record may reveal that a cache was used, but not cache
+keys, source hashes, or source-derived contents.
+
+This trace supports later comparison of template complexity, parser work,
+target-AST size, print time, and output size across client and SSR backends.
+It is not a profiler and must not be used to decide optimization heuristics in
+the same compilation; decisions remain deterministic inputs to trace metrics.
+
+### Test and compatibility contract
+
+1. With tracing disabled, compile output, source map, diagnostics, and normal
+   API results are byte-for-byte unchanged.
+2. With an in-memory sink, every successful compilation has exactly one record,
+   stable stage order, one terminal outcome, non-negative durations, and
+   internally consistent counts.
+3. Failure fixtures stop at the actual failing stage, retain prior completed
+   stages, have no later complete stages, and contain diagnostic counts but no
+   source text.
+4. Parallel project and watch tests prove records are individually valid JSON
+   and no records interleave; their global order is deliberately unspecified.
+5. Snapshot tests validate schema version and stable enum values, while timing
+   values are checked only for range/non-negativity.
+
+The next subtask may prototype this behind the disabled-by-default sink API.
+It should begin with an in-memory test sink and single-file JSONL CLI output;
+no cache instrumentation is included until cache ownership exists.
