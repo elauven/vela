@@ -818,3 +818,41 @@ The public CLI flag and mutex-protected append-only JSONL file sink are
 intentionally deferred. The API gives embedding tools a stable observation
 point first; a later tooling task can add `--trace=<file>` or `--trace=-`
 without changing compiler semantics or the record schema.
+
+
+## Test matrix and confirmed remediation
+
+`COMPILER_TEST_MATRIX.md` is the maintained executable-coverage map for this
+audit. It links every current compiler stage to focused unit/invariant tests,
+corpus/generated-JS proof, jsdom runtime fixtures, Chromium checks, and
+source-map tests. It also records where an external tool causes a deliberate
+local skip rather than falsely claiming coverage.
+
+The audit has produced the following independently executable remediation
+sequence:
+
+1. **Task 012** replaces structural executable-JS string emission, print/reparse
+   cloning, and nested string assembly with typed target-AST builders.
+2. **Task 013** introduces parse-once ScriptAST ownership and AST-native
+   assignment, handler, item, import, and DCE transforms.
+3. **Task 014** completes template/CSS AST spans, diagnostics, and validation
+   around the outer ComponentAST boundary.
+4. **Task 015** implements optional target-profile JavaScript diagnostics after
+   the parse-once script path is available.
+5. **Task 016** exposes the completed trace API through a CLI JSONL sink.
+
+Tasks 007 (SSR/hydration) and 008 (dev server/HMR) now depend on 012, 013, and
+014 as well as this audit. The first three are mandatory architecture work:
+without them, a second backend or persistent incremental compiler state would
+inherit the same text intermediates and unvalidated structural paths. Target
+profiles and trace CLI delivery remain useful but intentionally non-blocking.
+
+
+### Final audit validation
+
+The trace prototype code phase passed `go test ./... -count=1` in 55.931s.
+The final explicit Chromium runtime and browser-source-map selection passed
+`go test ./... -run "TestBrowser(Runtime|SourceMap)" -count=1` in 10.195s.
+TaskMD validation accepted all 16 tasks. Fuzzing remains a bounded manual/CI
+job documented in the test matrix rather than an implicit requirement of the
+ordinary Go test command.
