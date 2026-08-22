@@ -563,3 +563,101 @@ explicit allowlist that must shrink with every migration. Pair it with AST
 validation, malformed-literal tests, nested-block runtime fixtures, source-map
 assertions for retained user nodes, and no-panic tests for each transitional
 helper.
+
+
+## Typed target-AST builder and validation contract
+
+### Builder model
+
+Task 012 must introduce a small composable builder layer rather than a second
+large text-based DSL. Builders create existing `JsNode` structs directly and
+are grouped by semantic purpose:
+
+| Builder group | Required operations | Invariants at construction |
+| --- | --- | --- |
+| Values and references | decoded string/number/boolean/null literals, identifiers, arrays, objects, template literals, members | Identifier and property forms are explicit; literal builders receive decoded data; template `quasis == exprs + 1`; no pre-escaped JS source. |
+| Expressions | call, construct, unary/binary/logical/conditional, assign, await, arrow/function | Required operands are non-nil, operator belongs to a fixed supported set, arrow body is expression or block, assignment target is assignable. |
+| Statements and declarations | expression, variable, import, return, throw, if, loop, try, block, function/class | Declaration kind/name and import forms are valid; required bodies/tests exist; empty blocks and optional branches are explicit rather than represented by an empty string. |
+| DOM and component operations | create element/comment/text/template, append/before/remove, attribute/property/class/style write, component mount/set/destroy | DOM names and data arguments are decoded literals; generated identifiers come from one allocator; no selector/tag/attribute is interpolated into JS grammar. |
+| Events, bindings, cleanup | handler arrow, listener add/remove pair, `bind:*` read/write, cleanup registration | Add/remove use the same target/event/handler identity; handler body has template origin; cleanup ownership is explicit and emitted exactly once. |
+| Reactive scheduling | state setter, deep-proxy notifier, derived updater, effect runner, structural update/defer queue | Setter declaration precedes every generated read, update statements are cloned/shared safely, and structural updates are scheduled before interior DOM writes. |
+
+A `GenBuilder`/`BuildContext` owns the current lexical target scope, a
+monotonic deterministic generated-name allocator, current source-origin
+context, runtime-helper requirements, and cleanup/update collections. It must
+not own mutable source text. A builder returns `(JsNode, error)` or records a
+structured internal construction diagnostic; `panic` is reserved for violated
+compiler assertions after the diagnostic path has been exhausted.
+
+Generated wrapper nodes use `OriginGenerated`. A retained user subtree keeps
+its original `OriginUser` and original section-relative span; a wrapper or
+DOM/event operation caused by template syntax receives the exact template
+source origin. A child is either immutable and safely shared or deep-cloned by
+an AST-native clone utility. It is never cloned by printing and reparsing.
+
+### Literal and ownership conventions
+
+`JsLiteral.Raw` is an insufficient long-term generated-literal API because it
+requires callers to know printer quoting rules. Add a decoded literal value
+representation (or a generated-only literal constructor whose printer encodes
+that value) before migrating call sites. Raw source remains permitted only for
+parser-owned user literals and explicitly documented opaque syntax, never for
+new generated values.
+
+User AST is immutable after parsing. Analysis may attach side metadata keyed by
+node identity/span, but must not rewrite parser nodes in place. A transform
+returns a new tree that shares unchanged user subtrees and creates generated
+replacement/wrapper nodes. This preserves source maps, makes repeated use of a
+template expression safe, and lets client and future SSR generators consume one
+ComponentAST without hidden mutation.
+
+### Validation layers
+
+1. **Construction validation** is local and immediate: nil required child,
+   illegal operator/kind, invalid identifier/import form, impossible
+   template-literal arity, duplicate cleanup token, or scope/name-allocation
+   misuse returns a builder diagnostic at the operation that created it.
+2. **Target-AST invariant validation** runs after each generator stage. Extend
+   `ValidateProgram` beyond its present empty-node checks to validate every
+   statement/expression form, program/import/module constraints, literal
+   encoding state, block/branch shape, source-origin consistency, and
+   generated-versus-user ownership rules.
+3. **Whole-program semantic validation** retains undeclared generated
+   references, lexical order/TDZ, duplicate declarations, and unreachable
+   generated output. It runs after the complete target program is assembled
+   and before either normal printing or source-map printing.
+
+Validation must report structured internal errors rather than only build a
+string and panic in `buildProgramWithInfo`. Compilation surfaces those errors
+as compiler failures with the involved builder operation and source origin;
+tests may still fail immediately with the rendered diagnostic. `PrintJS` is
+called only after all three layers succeed.
+
+### Required test matrix and migration guardrails
+
+- `codegen_string_boundary_test.go` is the initial architectural baseline. It
+  parses `astgen.go`, snapshots every `jsStmt`/`jsStmts`/`jsExpr` call by
+  owning function, and forbids such calls from any other production Go file.
+  Task 012 must lower this inventory monotonically and finally replace it with
+  an empty-inventory assertion.
+- Add focused unit tables for every builder: valid node shape, decoded-literal
+  escaping, each rejected invariant, generated name/scope lifetime, event
+  add/remove identity, cleanup exactly-once, and scheduling order.
+- Keep malformed manually-built AST tests for every validator rule, then add
+  a builder test proving invalid structures cannot normally be constructed.
+- Compile corpus and fuzz fixtures through builder stages; assert a validated
+  AST, deterministic printer output, no panic, and retained source-map origins.
+- Exercise nested each/if/key/await/slot fixtures in jsdom and Chromium after
+  every control-flow migration, including branch teardown, route transition,
+  handler assignment, and deep-state updates.
+
+### Staged implementation boundary
+
+The first implementation should not redesign all `JsNode` types at once.
+Start with decoded literals, references/calls/assignments/blocks/declarations,
+then DOM/event/cleanup/scheduler builders. Migrate compiler-only structures
+first. Only after the builders and validator contract are stable should Task
+013 insert retained user ScriptAST/template-handler children and replace
+textual transformations. This keeps each change observable through the
+inventory test and avoids mixing a semantic source rewrite with a structural
+codegen rewrite.
