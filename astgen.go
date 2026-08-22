@@ -3116,7 +3116,7 @@ func (g *ASTGen) eachReconciler(
 		"      $$blk = " + fragFn + "(" + itemVar + ", " + indexVar + ");" +
 		"      " + keymap + ".set($$key, $$blk);" +
 		"    }" +
-		"    " + anchor + ".before($$blk.el);" +
+		"    if ($$blk.el.nextSibling !== " + anchor + ") " + anchor + ".before($$blk.el);" +
 		"    $$newBlocks.push($$blk);" +
 		"  });" +
 		"  " + keymap + ".forEach(($$blk, $$key) => {" +

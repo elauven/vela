@@ -142,7 +142,7 @@ func TestBrowserRuntimeKeepsFocusAcrossDeepEachUpdate(t *testing.T) {
 	runBrowserSources(t, map[string]string{"App.vela": `<script>
   let items = $state.deep([{ id: 1, title: "one" }]);
 </script>
-<template>{#each items as item (item.id)}<input class="row-input" bind:value={item.title} />{/each}</template>`}, "App.js", []rtStep{
+<template>{#each items as item (item.id)}<input class="row-input" :value={item.title} @input={(event) => item.title = event.target.value} />{/each}</template>`}, "App.js", []rtStep{
 		{"focus": "input.row-input"},
 		{"input": "input.row-input", "value": "edited"},
 		{"assertValue": "input.row-input", "equals": "edited"},
