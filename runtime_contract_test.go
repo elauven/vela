@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$defer, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$defer, $$isProxy, $$proxy, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -118,6 +118,21 @@ await new Promise(resolve => setTimeout(resolve, 0));
 assert(deferredError === expected, 'scheduler must report its first callback error');
 assert(ranAfterError && ranReentrant,
   'scheduler must drain later and reentrant callbacks after an error');
+
+const rawDeep = { nested: { value: 1 }, date: new Date(0) };
+rawDeep.self = rawDeep;
+let deepNotifications = 0;
+const deep = $$proxy(rawDeep, () => { deepNotifications++; });
+assert($$isProxy(deep), 'deep root must be branded as a Vela proxy');
+assert(deep.nested === deep.nested, 'deep nested reads must preserve proxy identity');
+assert(deep.self === deep, 'deep cyclic references must resolve to the root proxy');
+assert(deep.date === rawDeep.date, 'built-in objects with internal slots must remain unwrapped');
+let beforeDeepMutation = deepNotifications;
+deep.nested.value = 2;
+assert(deepNotifications === beforeDeepMutation + 1, 'nested write must notify exactly once');
+beforeDeepMutation = deepNotifications;
+delete deep.nested.value;
+assert(deepNotifications === beforeDeepMutation + 1, 'nested delete must notify exactly once');
 
 console.log('OK');
 

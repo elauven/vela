@@ -38,6 +38,10 @@ not historical roadmaps or the deprecated legacy generator.
 
 The default AST generator imports `$$defer` directly from that module for every component with state or props. Reactive DOM work therefore uses the shared microtask scheduler regardless of template helpers or module evaluation order. The global `Symbol.for("vela.defer")` registration remains only as a compatibility bridge for the deprecated legacy generator; new compiler output must not rely on it.
 
+Store subscriptions are synchronous. `readable` starts on its first subscriber and stops after its last; `derived` subscribes lazily and its `destroy()` method is final and idempotent. Subscriber and deferred-callback failures are reported after later and reentrant callbacks have drained, so one bad callback does not leave queued DOM work stranded.
+
+`$state.deep` proxies ordinary objects and arrays recursively. Repeated reads preserve proxy identity, cyclic plain-object graphs are supported, and built-ins that require internal slots (for example `Date`, `Promise`, `Map`, and typed arrays) deliberately remain unwrapped.
+
 ## Template and component features
 
 | Feature | Status | Example | Notes |
@@ -99,17 +103,14 @@ the generated ES modules in jsdom, stage declared local JavaScript utility modul
 and call `instance.destroy()`. The shared Go helpers are in
 `runtime_behaviour_test.go`; the Node driver is `tools/runtime-harness.mjs`.
 
-The harness currently supports text, HTML, count, value, and focus assertions,
-clicks, and microtask draining. It skips its runtime tests when Node or jsdom
-is unavailable. It is a behavioural jsdom suite, not a substitute for a
-real-browser compatibility suite.
+The shared fixture DSL supports text, HTML, value, storage, count, focus, and style assertions; focus, click, double-click, submit, input, change, blur, keyboard, tick, and remount actions. Both jsdom and Chromium harnesses replay the same steps. The jsdom suite skips when Node or jsdom is unavailable; it complements, rather than replaces, real-browser compatibility coverage.
 
 | Fixture group | What it proves | Representative tests |
 | --- | --- | --- |
 | Core reactivity | Initial mount, event-driven state changes, derived values, effects, and dynamic attributes update rendered DOM. | `TestRuntimeCounter`, `TestRuntimeEffectReadsDerived`, `TestRuntimeIfBranchDynamicAttr` |
 | Conditional lifecycle | Branch insertion/removal, reactive holes, repeated open/close, and inactive branches remain safe. | `TestRuntimeIfToggle`, `TestRuntimeIfHole`, `TestRuntimeIfToggleOffWithNullDerived`, `TestRuntimeNestedIfChainReactive` |
 | Lists and DOM identity | Basic list rendering, nested lists, unkeyed append/remove reconciliation, and focus preservation. | `TestRuntimeEachRender`, `TestRuntimeEachNested`, `TestRuntimeUnkeyedEachPreservesFocus`, `TestRuntimeUnkeyedEachAppendRemoveRoundTrip` |
-| Deep state | Proxy-triggered nested mutations cause list rerendering. | `TestRuntimeDeepMutationRerendersEach` |
+| Deep state | Proxy-triggered nested mutations rerender lists; proxy identity, cycles, built-in boundaries, and set/delete notification are covered directly. | `TestRuntimeDeepMutationRerendersEach`, `TestRuntimeStoreLifecycleContract` |
 | Form controls and textareas | Textarea children render and remain correct inside conditional branches; focus assertions exercise mutable DOM state. | `TestRuntimeTextareaChildInterpolation`, `TestRuntimeTextareaChildInIfBranch`, `TestRuntimeUnkeyedEachPreservesFocus` |
 | Components, slots, and events | Components survive conditional/list nesting; slot content remains reactive; custom events and teardown do not throw. | `TestRuntimeSlotComponentEvent`, `TestRuntimeComponentInIf`, `TestRuntimeEachRowComponent`, `TestRuntimeNestingMatrix_SlotContentInEachReactive`, `TestRuntimeNestingMatrix_ComponentEventStillFires` |
 | Block nesting matrix | Every pair of `if`, `each`, `key`, and `await` is exercised in nested positions, including rejection paths. | `TestRuntimeNestingMatrix_IfInIf`, `TestRuntimeNestingMatrix_KeyInEach`, `TestRuntimeNestingMatrix_AwaitInAwait`, `TestRuntimeNestingMatrix_AwaitRejection` |

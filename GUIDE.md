@@ -87,6 +87,9 @@ user.tags.push('admin'); // ✓ tracked
 `$state.deep` wraps the value in a recursive Proxy. Use plain
 `$state` when you only ever replace the whole value — it has no
 proxy overhead.
+Built-ins such as `Date`, `Map`, `Set`, `Promise`, and typed arrays remain
+unwrapped; replace them through the state binding if a change must rerender the
+template.
 
 ### `$derived` — computed value
 
