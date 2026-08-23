@@ -114,6 +114,42 @@ func genNull() *JsLiteral {
 	return &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "null", Kind: "null"}
 }
 
+func numLit(value int) *JsLiteral {
+	return &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: itoa(value), Kind: "number"}
+}
+
+func genComputedMember(obj, prop JsExpr) *JsMemberExpr {
+	return &JsMemberExpr{baseExpr: baseExpr{genNode()}, Obj: obj, Prop: prop, Computed: true}
+}
+
+func genLogical(op string, left, right JsExpr) *JsLogicalExpr {
+	return &JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: op, L: left, R: right}
+}
+
+func genUnary(op string, expr JsExpr) *JsUnaryExpr {
+	return &JsUnaryExpr{baseExpr: baseExpr{genNode()}, Op: op, Prefix: true, X: expr}
+}
+
+func genNew(callee JsExpr, args ...JsExpr) *JsNewExpr {
+	return &JsNewExpr{baseExpr: baseExpr{genNode()}, Callee: callee, Args: args}
+}
+
+func genArray(elems ...JsExpr) *JsArrayExpr {
+	return &JsArrayExpr{baseExpr: baseExpr{genNode()}, Elems: elems}
+}
+
+func genBlock(body ...JsStmt) *JsBlock {
+	return &JsBlock{baseStmt: baseStmt{genNode()}, Body: body}
+}
+
+func genReturn(arg JsExpr) *JsReturnStmt {
+	return &JsReturnStmt{baseStmt: baseStmt{genNode()}, Arg: arg}
+}
+
+func genFor(init JsStmt, test, update JsExpr, body JsStmt) *JsForStmt {
+	return &JsForStmt{baseStmt: baseStmt{genNode()}, Init: init, Test: test, Update: update, Body: body}
+}
+
 // generatedMemberPath turns a compiler-owned dotted path into a member AST.
 // It must not receive user JavaScript.
 func generatedMemberPath(path string) JsExpr {
