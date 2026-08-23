@@ -103,6 +103,14 @@ func genInvoke(name string, args ...JsExpr) *JsExprStmt {
 	return genExprStmt(genCall(id(name), args...))
 }
 
+func genBinary(op string, left, right JsExpr) *JsBinaryExpr {
+	return &JsBinaryExpr{baseExpr: baseExpr{genNode()}, Op: op, L: left, R: right}
+}
+
+func genIf(test JsExpr, then JsStmt) *JsIfStmt {
+	return &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: test, Then: then}
+}
+
 // jsStmts parses src as a sequence of statements and returns them,
 // each re-marked OriginGenerated.  Panics on parse failure — the
 // input is always compiler-controlled, so a failure is a compiler
@@ -4460,7 +4468,7 @@ func (g *ASTGen) buildReturn() JsStmt {
 		for i := range g.analysis.Effects {
 			n := itoa(i)
 			destroyBody.Body = append(destroyBody.Body,
-				jsStmt("if ($$cleanup"+n+") { $$cleanup"+n+"(); }"))
+				genIf(id("$$cleanup"+n), genInvoke("$$cleanup"+n)))
 		}
 	}
 	// 2-3. onMount cleanup fns + onDestroy bodies.
@@ -4472,10 +4480,11 @@ func (g *ASTGen) buildReturn() JsStmt {
 	//    mode — no runtime <style> was injected.
 	if g.hasStyle() && !g.cssExternal {
 		destroyBody.Body = append(destroyBody.Body,
-			jsStmt("$$style.remove();"))
+			genExprStmt(genCall(genMember(id("$$style"), "remove"))))
 	}
 	// 6. Root removal.
-	destroyBody.Body = append(destroyBody.Body, jsStmt("$$root.remove();"))
+	destroyBody.Body = append(destroyBody.Body,
+		genExprStmt(genCall(genMember(id("$$root"), "remove"))))
 
 	destroyProp := &JsProp{
 		baseNode: genNode(),
@@ -4506,8 +4515,10 @@ func (g *ASTGen) buildReturn() JsStmt {
 		// set(props) { if (props.X !== undefined) $$set_X(props.X); … }
 		setBody := &JsBlock{baseStmt: baseStmt{genNode()}}
 		emit := func(name string) {
-			setBody.Body = append(setBody.Body, jsStmt(
-				"if (props."+name+" !== undefined) $$set_"+name+"(props."+name+");"))
+			prop := genMember(id("props"), name)
+			setBody.Body = append(setBody.Body,
+				genIf(genBinary("!==", prop, id("undefined")),
+					genInvoke("$$set_"+name, genMember(id("props"), name))))
 		}
 		for _, sv := range g.analysis.StateVars {
 			emit(sv.Name)
