@@ -3797,8 +3797,8 @@ func (g *ASTGen) buildChildRun(children []Node, parentVar string) {
 		if strings.TrimSpace(html) == "" {
 			return
 		}
-		g.body = append(g.body, jsStmt(
-			"$$insertHTML("+parentVar+", '"+escapeJSString(html)+"');"))
+		g.body = append(g.body,
+			genExprStmt(genCall(id("$$insertHTML"), id(parentVar), strLit(html))))
 	}
 	var staticRun []Node
 	for _, child := range children {
@@ -3862,16 +3862,15 @@ func (g *ASTGen) buildTextNode(tn *TextNode, parentVar string) {
 		if isBlankText(text) {
 			return
 		}
-		g.body = append(g.body, jsStmt(
-			parentVar+".appendChild(document.createTextNode("+
-				backtickString(text)+"));"))
+		g.body = append(g.body,
+			genExprStmt(genCall(genMember(id(parentVar), "appendChild"),
+				genCall(genMember(id("document"), "createTextNode"), strLit(text)))))
 		return
 	}
 	refVar := g.id()
-	g.body = append(g.body, jsStmt(
-		"const "+refVar+" = document.createTextNode('');"))
-	g.body = append(g.body, jsStmt(
-		parentVar+".appendChild("+refVar+");"))
+	g.body = append(g.body,
+		genConst(refVar, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
+		genExprStmt(genCall(genMember(id(parentVar), "appendChild"), id(refVar))))
 	exprSrc := buildExpr(tn.Parts)
 	writeSrc := refVar + ".data = " + exprSrc + ";"
 	g.initBody = append(g.initBody, jsStmt(writeSrc))

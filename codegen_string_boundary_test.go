@@ -18,7 +18,6 @@ import (
 func TestASTGenStructuralStringGatewayInventory(t *testing.T) {
 	expected := map[string]int{
 		"buildAwaitBlock/jsStmt":         3,
-		"buildChildRun/jsStmt":           1,
 		"buildChildren/jsStmt":           3,
 		"buildComponentNode/jsStmt":      10,
 		"buildDerivedDecl/jsStmt":        2,
@@ -43,7 +42,7 @@ func TestASTGenStructuralStringGatewayInventory(t *testing.T) {
 		"buildSlotClosures/jsStmt":       1,
 		"buildSlotNode/jsStmt":           3,
 		"buildStateDecl/jsStmt":          3,
-		"buildTextNode/jsStmt":           5,
+		"buildTextNode/jsStmt":           2,
 		"cloneStmt/jsStmt":               1,
 		"componentPropsExpr/jsExpr":      1,
 		"emitBindThisAST/jsStmt":         2,
