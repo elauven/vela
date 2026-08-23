@@ -3586,7 +3586,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			bv := fn + "_b" + itoa(i)
 			tryBody = append(tryBody, jsStmt("if ("+fn+"_keyprev !== "+keyNew+" && "+bv+") { for (const $$node of "+bv+") $$node.remove(); "+bv+" = null;"+nullCaptured(plans[i].captured)+destroyComps(plans[i].comps)+" }"))
 		}
-		tryBody = append(tryBody, jsStmt(fn+"_keyprev = "+keyNew+";"))
+		tryBody = append(tryBody, genAssignStmt(id(fn+"_keyprev"), id(keyNew)))
 	}
 	tryBody = append(tryBody, genLet("$$active", &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "-1", Kind: "number"}))
 	for i, branch := range chain.Branches {
@@ -3621,7 +3621,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	for i := range chain.Branches {
 		bv := fn + "_b" + itoa(i)
 		frag := bv + "_frag"
-		mountBody := []JsStmt{jsStmt("const " + frag + " = document.createDocumentFragment();")}
+		mountBody := []JsStmt{genConst(frag, genCall(genMember(id("document"), "createDocumentFragment")))}
 		mountBody = append(mountBody, plans[i].build...)
 		if len(plans[i].cleanup) > 0 {
 			mountBody = append(mountBody, &JsExprStmt{
@@ -3633,11 +3633,12 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			})
 		}
 		mountBody = append(mountBody,
-			jsStmt(bv+" = [..."+frag+".childNodes];"),
-			jsStmt(anchor+".before("+frag+");"))
+			genAssignStmt(id(bv), genArray(&JsSpreadExpr{baseExpr: baseExpr{genNode()}, X: genMember(id(frag), "childNodes")})),
+			genExprStmt(genCall(genMember(id(anchor), "before"), id(frag))),
+		)
 		activeBody := []JsStmt{&JsIfStmt{
 			baseStmt: baseStmt{genNode()},
-			Test:     jsExpr("!" + bv),
+			Test:     genUnary("!", id(bv)),
 			Then:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: mountBody},
 			Else: jsStmt("if (" + anchor + ".parentNode && " + bv +
 				".length && " + bv + "[0].parentNode !== " + anchor +
@@ -3646,7 +3647,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		activeBody = append(activeBody, plans[i].init...)
 		tryBody = append(tryBody, &JsIfStmt{
 			baseStmt: baseStmt{genNode()},
-			Test:     jsExpr("$$active === " + itoa(i)),
+			Test:     genBinary("===", id("$$active"), numLit(i)),
 			Then:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: activeBody},
 		})
 	}
@@ -3661,8 +3662,8 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		&JsTryStmt{baseStmt: baseStmt{genNode()}, Block: &JsBlock{baseStmt: baseStmt{genNode()}, Body: tryBody}, Finalizer: &JsBlock{baseStmt: baseStmt{genNode()}, Body: finallyBody}},
 	}
 	g.declareInScope(&JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: body}})
-	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
-	g.initBody = append(g.initBody, jsStmt(fn+"();"))
+	g.body = append(g.body, genExprStmt(genCall(genMember(id(parentVar), "appendChild"), id(anchor))))
+	g.initBody = append(g.initBody, genInvoke(fn))
 	deps := map[string]bool{}
 	for _, branch := range chain.Branches {
 		for _, dep := range templateExprDeps(branch.Expr, stripBraces(branch.Cond), g.reactiveNames()) {
@@ -3676,9 +3677,9 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	}
 	for dep := range deps {
 		if g.fragCounter >= 0 {
-			g.addUpdate(dep, jsStmt(fn+"();"))
+			g.addUpdate(dep, genInvoke(fn))
 		} else {
-			g.addStructuralUpdate(dep, jsStmt(fn+"();"))
+			g.addStructuralUpdate(dep, genInvoke(fn))
 		}
 	}
 	if captured {
