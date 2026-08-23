@@ -22,7 +22,6 @@ func TestASTGenStructuralStringGatewayInventory(t *testing.T) {
 		"buildDerivedDecl/jsStmt":        2,
 		"buildDerivedDecls/jsStmt":       2,
 		"buildEachBlock/jsStmt":          16,
-		"buildEachRowAttrs/jsStmt":       2,
 		"buildEffectDecls/jsStmt":        2,
 		"buildHoleSubtree/jsStmt":        15,
 		"buildIfChainStructured/jsExpr":  7,

@@ -2635,8 +2635,8 @@ func (g *ASTGen) buildEachRowAttrs(
 					res.create = append(res.create, g.templateStmt(
 						"const "+hv+" = ($event) => { "+templateMarker(0)+"; };", handlerExpr))
 				}
-				res.create = append(res.create, jsStmt(
-					rowVar+".addEventListener('"+attr.Name+"', "+hv+");"))
+				res.create = append(res.create,
+					genExprStmt(genCall(genMember(id(rowVar), "addEventListener"), strLit(attr.Name), id(hv))))
 			}
 
 		case attr.IsClassDir:
@@ -2678,9 +2678,8 @@ func (g *ASTGen) buildEachRowAttrs(
 
 		default:
 			// Plain static attribute.
-			res.create = append(res.create, jsStmt(
-				rowVar+".setAttribute('"+attr.Name+"', "+
-					backtickString(attr.Value)+");"))
+			res.create = append(res.create,
+				genExprStmt(genCall(genMember(id(rowVar), "setAttribute"), strLit(attr.Name), strLit(attr.Value))))
 		}
 	}
 	return res
