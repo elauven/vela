@@ -1957,8 +1957,10 @@ func (g *ASTGen) buildOnDestroyCleanup() []JsStmt {
 			continue
 		}
 		cv := "$$mountCleanup" + itoa(i)
-		out = append(out, jsStmt(
-			"if (typeof "+cv+" === 'function') { "+cv+"(); }"))
+		out = append(out, genIf(
+			genBinary("===", &JsUnaryExpr{baseExpr: baseExpr{genNode()}, Op: "typeof", Prefix: true, X: id(cv)}, strLit("function")),
+			genInvoke(cv),
+		))
 	}
 	// onDestroy callback bodies, inline.
 	for _, lc := range g.analysis.Lifecycles {
@@ -2684,15 +2686,6 @@ func (g *ASTGen) buildEachRowAttrs(
 	return res
 }
 
-// guardedStmt parses src into a statement, wrapping it
-// `if (<guard>) …` when guard is non-empty.
-func (g *ASTGen) guardedStmt(src, guard string) JsStmt {
-	if guard == "" {
-		return jsStmt(src)
-	}
-	return jsStmt("if (" + guard + ") { " + src + " }")
-}
-
 // staticTextChildStmts returns the createTextNode/appendChild
 // statements for a fully-static text-only child run, without
 // appending them to g.body (so it composes inside buildHoleSubtree).
@@ -2710,9 +2703,9 @@ func (g *ASTGen) staticTextChildStmts(targetVar string, children []Node) []JsStm
 		if isBlankText(text) {
 			continue
 		}
-		out = append(out, jsStmt(
-			targetVar+".appendChild(document.createTextNode("+
-				backtickString(text)+"));"))
+		out = append(out,
+			genExprStmt(genCall(genMember(id(targetVar), "appendChild"),
+				genCall(genMember(id("document"), "createTextNode"), strLit(text)))))
 	}
 	return out
 }
