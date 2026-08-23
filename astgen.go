@@ -2061,7 +2061,7 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 				continue
 			}
 			seen[key] = true
-			updates = append(updates, cloneStmt(s))
+			updates = append(updates, shareStmt(s))
 		}
 	}
 	// Structural first: for `name` and every transitively-dirtied
@@ -2244,24 +2244,14 @@ func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 	return []JsStmt{notify, set}
 }
 
-// cloneStmt deep-copies a statement so the same reactive update
-// can appear in multiple setters without aliasing one node pointer
-// across the tree (a later mutation of one copy would otherwise
-// corrupt the others).
+// shareStmt returns a registered generated statement without copying it.
 //
-// It is implemented as a print + reparse round-trip rather than a
-// hand-written deep-clone visitor.  That is a deliberate call: a
-// per-node-type clone switch is a second exhaustive switch that
-// silently drifts when a JsNode type is added (a missed field =
-// an aliasing bug), whereas the printer/parser are already kept
-// exact inverses by jsprinter_roundtrip_test.  Profiling puts this
-// at <1% of compile time, so the round-trip's cost does not
-// justify taking on that maintenance hazard.  Revisit only if a
-// profile ever shows it mattering.
-func cloneStmt(s JsStmt) JsStmt {
-	src := PrintJS(&JsProgram{Body: []JsStmt{s}}, PrintPretty)
-	return jsStmt(src)
-}
+// Update AST nodes are immutable once passed to addUpdate/addStructuralUpdate or
+// saved as compInstance.setStmt: ASTGen only appends them to completed blocks,
+// while validation, walking, source-map collection and printing are read-only.
+// Sharing therefore avoids the former PrintJS → ParseJS clone round-trip without
+// allowing one reactive path to affect another.
+func shareStmt(s JsStmt) JsStmt { return s }
 
 // buildDOM emits the DOM-construction statements for the template
 // into g.body (and any initial-render statements into g.initBody).
@@ -2992,7 +2982,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// yet) is skipped by the `if (inst)` guard inside setStmt.
 	for _, ci := range rowComps {
 		if ci.setStmt != nil {
-			updateBody = append(updateBody, cloneStmt(ci.setStmt))
+			updateBody = append(updateBody, shareStmt(ci.setStmt))
 		}
 	}
 	// Nested-block rows: re-run the nested chain/each init calls so
