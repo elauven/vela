@@ -91,8 +91,16 @@ func genAssignStmt(left, right JsExpr) *JsExprStmt {
 	return genExprStmt(&JsAssignExpr{baseExpr: baseExpr{genNode()}, Op: "=", L: left, R: right})
 }
 
-func genConst(name string, init JsExpr) *JsVarDecl {
-	return &JsVarDecl{baseStmt: baseStmt{genNode()}, Kind: "const", Decls: []*JsVarDeclarator{{Id: id(name), Init: init}}}
+func genVar(kind, name string, init JsExpr) *JsVarDecl {
+	return &JsVarDecl{baseStmt: baseStmt{genNode()}, Kind: kind, Decls: []*JsVarDeclarator{{Id: id(name), Init: init}}}
+}
+
+func genConst(name string, init JsExpr) *JsVarDecl { return genVar("const", name, init) }
+
+func genLet(name string, init JsExpr) *JsVarDecl { return genVar("let", name, init) }
+
+func genInvoke(name string, args ...JsExpr) *JsExprStmt {
+	return genExprStmt(genCall(id(name), args...))
 }
 
 // jsStmts parses src as a sequence of statements and returns them,
@@ -1600,7 +1608,7 @@ func (g *ASTGen) buildScriptPlan() []JsStmt {
 				}
 			}
 			if ready {
-				out = append(out, jsStmt("$$upd_"+derived.Name+"();"))
+				out = append(out, genInvoke("$$upd_"+derived.Name))
 				initialized[derived.Name] = true
 			}
 		}
@@ -1820,7 +1828,7 @@ func (g *ASTGen) buildDerivedInit() []JsStmt {
 	}
 	var out []JsStmt
 	for _, dv := range g.analysis.DerivedVars {
-		out = append(out, jsStmt("$$upd_"+dv.Name+"();"))
+		out = append(out, genInvoke("$$upd_"+dv.Name))
 	}
 	return out
 }
@@ -1856,7 +1864,7 @@ func (g *ASTGen) buildEffectInit() []JsStmt {
 	}
 	var out []JsStmt
 	for i := range g.analysis.Effects {
-		out = append(out, jsStmt("$$effect"+itoa(i)+"();"))
+		out = append(out, genInvoke("$$effect"+itoa(i)))
 	}
 	return out
 }
@@ -1993,7 +2001,7 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 			if depDirty {
 				dirty[dv.Name] = true
 				dependentDerived = append(dependentDerived, dv)
-				out = append(out, jsStmt("$$upd_"+dv.Name+"();"))
+				out = append(out, genInvoke("$$upd_"+dv.Name))
 			}
 		}
 	}
@@ -2059,7 +2067,7 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 				}
 			}
 			if effDirty {
-				out = append(out, jsStmt("$$effect"+itoa(i)+"();"))
+				out = append(out, genInvoke("$$effect"+itoa(i)))
 			}
 		}
 	}
@@ -2183,9 +2191,8 @@ func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 		Then: &JsReturnStmt{baseStmt: baseStmt{genNode()}},
 	})
 	setBody.Body = append(setBody.Body,
-		jsStmt(name+" = $$proxy($$v, $$mut_"+name+");"))
-	setBody.Body = append(setBody.Body,
-		jsStmt("$$set_"+name+"_notify();"))
+		genAssignStmt(id(name), genCall(id("$$proxy"), id("$$v"), id("$$mut_"+name))),
+		genInvoke("$$set_"+name+"_notify"))
 	set := &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
 		Name:     "$$set_" + name,
