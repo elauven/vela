@@ -3651,15 +3651,24 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			Then:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: activeBody},
 		})
 	}
-	finallyBody := jsStmts(fn + "_running = false; if (" + fn + "_pending) { " + fn + "_pending = false; " + fn + "(); }")
+	finallyBody := []JsStmt{
+		genAssignStmt(id(fn+"_running"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}),
+		genIf(id(fn+"_pending"), genBlock(
+			genAssignStmt(id(fn+"_pending"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}),
+			genInvoke(fn),
+		)),
+	}
 	body := []JsStmt{
 		// A nested chain is also registered against its own reactive
 		// dependencies. Those updates may run before the enclosing branch
-		// creates (or after it tears down) this chain's anchor.
-		jsStmt("if (!" + anchor + " || !" + anchor + ".parentNode) return;"),
-		jsStmt("if (" + fn + "_running) { " + fn + "_pending = true; return; }"),
-		jsStmt(fn + "_running = true;"),
-		&JsTryStmt{baseStmt: baseStmt{genNode()}, Block: &JsBlock{baseStmt: baseStmt{genNode()}, Body: tryBody}, Finalizer: &JsBlock{baseStmt: baseStmt{genNode()}, Body: finallyBody}},
+		// creates (or after it tears down) this chain anchor.
+		genIf(genLogical("||", genUnary("!", id(anchor)), genUnary("!", genMember(id(anchor), "parentNode"))), genReturn(nil)),
+		genIf(id(fn+"_running"), genBlock(
+			genAssignStmt(id(fn+"_pending"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "true", Kind: "boolean"}),
+			genReturn(nil),
+		)),
+		genAssignStmt(id(fn+"_running"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "true", Kind: "boolean"}),
+		&JsTryStmt{baseStmt: baseStmt{genNode()}, Block: genBlock(tryBody...), Finalizer: genBlock(finallyBody...)},
 	}
 	g.declareInScope(&JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: body}})
 	g.body = append(g.body, genExprStmt(genCall(genMember(id(parentVar), "appendChild"), id(anchor))))
