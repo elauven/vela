@@ -2747,7 +2747,7 @@ func (g *ASTGen) buildHolesDOM(el *ElementNode) {
 	// semantically correct mapping for these elements.
 	if prop, ok := rawTextProp(el.Tag); ok {
 		if expr, ok := singleInterpolation(el.Children); ok {
-			write := g.templateStmt("$$root."+prop+" = String("+templateMarker(0)+");", g.templateExpr(el.Children[0].(*TextNode).Parts[0].Expr))
+			write := genAssignStmt(genMember(id("$$root"), prop), genString(g.templateExpr(el.Children[0].(*TextNode).Parts[0].Expr)))
 			g.initBody = append(g.initBody, write)
 			for _, dep := range findDeps(expr, g.reactiveNames()) {
 				g.addUpdate(dep, write)
@@ -3735,10 +3735,10 @@ func (g *ASTGen) buildChildren(el *ElementNode, varName string) {
 	// the element is built via this recursive path.
 	if prop, ok := rawTextProp(el.Tag); ok {
 		if expr, ok := singleInterpolation(children); ok {
-			writeSrc := varName + "." + prop + " = String(" + expr + ");"
-			g.initBody = append(g.initBody, jsStmt(writeSrc))
+			write := genAssignStmt(genMember(id(varName), prop), genString(g.templateExpr(children[0].(*TextNode).Parts[0].Expr)))
+			g.initBody = append(g.initBody, write)
 			for _, dep := range findDeps(expr, g.reactiveNames()) {
-				g.addUpdate(dep, jsStmt(writeSrc))
+				g.addUpdate(dep, shareStmt(write))
 			}
 			return
 		}
