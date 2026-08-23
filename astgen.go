@@ -2301,7 +2301,8 @@ func (g *ASTGen) buildDOM(nodes []Node) {
 			root := "$" + "$root"
 			g.body = append(g.body, g.createElementStmt(root, "div"))
 			g.body = append(g.body, g.setAttrStmt(root, g.scopeID, ""))
-			g.body = append(g.body, jsStmt(root+".style.display = 'contents';"))
+			g.body = append(g.body,
+				genAssignStmt(genMember(genMember(id(root), "style"), "display"), strLit("contents")))
 			g.buildComponentNode(comp, root)
 			return
 		}
@@ -2347,11 +2348,10 @@ func (g *ASTGen) buildDOM(nodes []Node) {
 func (g *ASTGen) buildChainRootDOM(nodes []Node) {
 	// The wrapper <div> is named $$root literally — legacy does not
 	// call id() for it, so the chain numbering must not either.
-	g.body = append(g.body,
-		jsStmt(`const $$root = document.createElement('div');`))
+	g.body = append(g.body, g.createElementStmt("$$root", "div"))
 	g.body = append(g.body, g.setAttrStmt("$$root", g.scopeID, ""))
 	g.body = append(g.body,
-		jsStmt(`$$root.style.display = 'contents';`))
+		genAssignStmt(genMember(genMember(id("$$root"), "style"), "display"), strLit("contents")))
 
 	// Use the common recursive builder for every sibling. Besides preserving
 	// document order this keeps events, bindings, components, and dynamic
@@ -3589,11 +3589,10 @@ func (g *ASTGen) buildStaticDOM(nodes []Node) {
 		return
 	}
 	// Multi-root: a display:contents wrapper holds the siblings.
-	g.body = append(g.body,
-		jsStmt(`const $$root = document.createElement('div');`))
+	g.body = append(g.body, g.createElementStmt("$$root", "div"))
 	g.body = append(g.body, g.setAttrStmt("$$root", g.scopeID, ""))
 	g.body = append(g.body,
-		jsStmt(`$$root.style.display = 'contents';`))
+		genAssignStmt(genMember(genMember(id("$$root"), "style"), "display"), strLit("contents")))
 	html := emitStaticHTML(nodes, g.scopeID)
 	g.body = append(g.body, &JsExprStmt{
 		baseStmt: baseStmt{genNode()},
