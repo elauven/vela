@@ -64,15 +64,35 @@ func id(name string) *JsIdent {
 	return &JsIdent{baseExpr: baseExpr{genNode()}, Name: name}
 }
 
-// strLit builds a single-quoted string literal.  The value is
-// emitted verbatim between quotes — callers pass already-escaped
-// content.
-func strLit(s string) *JsLiteral {
+// strLit builds a decoded compiler-generated string literal. The printer
+// owns JavaScript escaping, so callers always pass the semantic string value.
+func strLit(value string) *JsLiteral {
 	return &JsLiteral{
 		baseExpr: baseExpr{genNode()},
-		Raw:      "'" + s + "'",
 		Kind:     "string",
+		Value:    value,
+		Decoded:  true,
 	}
+}
+
+func genMember(obj JsExpr, prop string) *JsMemberExpr {
+	return &JsMemberExpr{baseExpr: baseExpr{genNode()}, Obj: obj, Prop: id(prop)}
+}
+
+func genCall(callee JsExpr, args ...JsExpr) *JsCallExpr {
+	return &JsCallExpr{baseExpr: baseExpr{genNode()}, Callee: callee, Args: args}
+}
+
+func genExprStmt(expr JsExpr) *JsExprStmt {
+	return &JsExprStmt{baseStmt: baseStmt{genNode()}, X: expr}
+}
+
+func genAssignStmt(left, right JsExpr) *JsExprStmt {
+	return genExprStmt(&JsAssignExpr{baseExpr: baseExpr{genNode()}, Op: "=", L: left, R: right})
+}
+
+func genConst(name string, init JsExpr) *JsVarDecl {
+	return &JsVarDecl{baseStmt: baseStmt{genNode()}, Kind: "const", Decls: []*JsVarDeclarator{{Id: id(name), Init: init}}}
 }
 
 // jsStmts parses src as a sequence of statements and returns them,
@@ -796,7 +816,7 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 		if attr.IsBind {
 			prop.Value = g.templateExpr(attr.Expr)
 		} else {
-			prop.Value = strLit(escapeAttr(attr.Value))
+			prop.Value = strLit(attr.Value)
 		}
 		obj.Props = append(obj.Props, prop)
 		if attr.IsTwoWay && g.analysis != nil {
@@ -1700,9 +1720,9 @@ func (g *ASTGen) buildStyleInjection() []JsStmt {
 	}
 	css := ScopeCSS(g.sfc.Style, g.scopeID)
 	return []JsStmt{
-		jsStmt("const $$style = document.createElement('style');"),
-		jsStmt("$$style.textContent = " + backtickString(css) + ";"),
-		jsStmt("document.head.appendChild($$style);"),
+		genConst("$$style", genCall(genMember(id("document"), "createElement"), strLit("style"))),
+		genAssignStmt(genMember(id("$$style"), "textContent"), strLit(css)),
+		genExprStmt(genCall(genMember(genMember(id("document"), "head"), "appendChild"), id("$$style"))),
 	}
 }
 
@@ -3534,7 +3554,7 @@ func (g *ASTGen) buildStaticDOM(nodes []Node) {
 		X: &JsCallExpr{
 			baseExpr: baseExpr{genNode()},
 			Callee:   id("$$insertHTML"),
-			Args:     []JsExpr{id("$$root"), strLit(escapeJSString(html))},
+			Args:     []JsExpr{id("$$root"), strLit(html)},
 		},
 	})
 }
@@ -3561,7 +3581,7 @@ func (g *ASTGen) emitStaticRootElement(el *ElementNode) {
 					Obj:      id("$$root"),
 					Prop:     id("innerHTML"),
 				},
-				R: strLit(escapeJSString(html)),
+				R: strLit(html),
 			},
 		})
 	}
@@ -4364,19 +4384,7 @@ func stripBraces(s string) string {
 
 // innerHTMLStmt builds `<varName>.innerHTML = '<html>';`
 func (g *ASTGen) innerHTMLStmt(varName, html string) JsStmt {
-	return &JsExprStmt{
-		baseStmt: baseStmt{genNode()},
-		X: &JsAssignExpr{
-			baseExpr: baseExpr{genNode()},
-			Op:       "=",
-			L: &JsMemberExpr{
-				baseExpr: baseExpr{genNode()},
-				Obj:      id(varName),
-				Prop:     id("innerHTML"),
-			},
-			R: strLit(escapeJSString(html)),
-		},
-	}
+	return genAssignStmt(genMember(id(varName), "innerHTML"), strLit(html))
 }
 
 // fillHTMLStmts populates targetVar with parsed HTML in a way that
@@ -4388,10 +4396,9 @@ func (g *ASTGen) innerHTMLStmt(varName, html string) JsStmt {
 func (g *ASTGen) fillHTMLStmts(targetVar, html string) []JsStmt {
 	tpl := targetVar + "_tpl"
 	return []JsStmt{
-		jsStmt("const " + tpl +
-			" = document.createElement('template');"),
-		jsStmt(tpl + ".innerHTML = '" + escapeJSString(html) + "';"),
-		jsStmt(targetVar + ".appendChild(" + tpl + ".content);"),
+		genConst(tpl, genCall(genMember(id("document"), "createElement"), strLit("template"))),
+		genAssignStmt(genMember(id(tpl), "innerHTML"), strLit(html)),
+		genExprStmt(genCall(genMember(id(targetVar), "appendChild"), genMember(id(tpl), "content"))),
 	}
 }
 
@@ -4407,41 +4414,12 @@ func isBlankText(s string) bool {
 
 // createElementStmt builds `const <varName> = document.createElement('<tag>');`
 func (g *ASTGen) createElementStmt(varName, tag string) JsStmt {
-	return &JsVarDecl{
-		baseStmt: baseStmt{genNode()},
-		Kind:     "const",
-		Decls: []*JsVarDeclarator{{
-			Id: id(varName),
-			Init: &JsCallExpr{
-				baseExpr: baseExpr{genNode()},
-				Callee: &JsMemberExpr{
-					baseExpr: baseExpr{genNode()},
-					Obj:      id("document"),
-					Prop:     id("createElement"),
-				},
-				Args: []JsExpr{strLit(tag)},
-			},
-		}},
-	}
+	return genConst(varName, genCall(genMember(id("document"), "createElement"), strLit(tag)))
 }
 
 // setAttrStmt builds `<varName>.setAttribute('<name>', '<value>');`
 func (g *ASTGen) setAttrStmt(varName, name, value string) JsStmt {
-	return &JsExprStmt{
-		baseStmt: baseStmt{genNode()},
-		X: &JsCallExpr{
-			baseExpr: baseExpr{genNode()},
-			Callee: &JsMemberExpr{
-				baseExpr: baseExpr{genNode()},
-				Obj:      id(varName),
-				Prop:     id("setAttribute"),
-			},
-			Args: []JsExpr{
-				strLit(name),
-				strLit(escapeAttr(value)),
-			},
-		},
-	}
+	return genExprStmt(genCall(genMember(id(varName), "setAttribute"), strLit(name), strLit(value)))
 }
 
 // buildReturn constructs the `return { destroy, set };` statement.

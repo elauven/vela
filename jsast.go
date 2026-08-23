@@ -267,8 +267,10 @@ type JsIdent struct {
 // JsLiteral: number, string, boolean, null, regex.
 type JsLiteral struct {
 	baseExpr
-	Raw  string
-	Kind string // "number" | "string" | "boolean" | "null" | "regex"
+	Raw     string
+	Kind    string // "number" | "string" | "boolean" | "null" | "regex"
+	Value   string // decoded generated string value when Decoded is true
+	Decoded bool   // printer owns escaping for generated string literals
 }
 
 // JsTemplateLit: a template literal, structured into alternating

@@ -20,6 +20,7 @@ package main
 // against the parent.  The AST never carries explicit paren nodes.
 
 import (
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -749,7 +750,11 @@ func (p *jsPrinter) expr(e JsExpr, parentPrec int) {
 		p.write(n.Name)
 
 	case *JsLiteral:
-		p.write(n.Raw)
+		if n.Decoded && n.Kind == "string" {
+			p.write(encodeGeneratedString(n.Value))
+		} else {
+			p.write(n.Raw)
+		}
 
 	case *JsThisExpr:
 		p.write("this")
@@ -1207,4 +1212,14 @@ func leftmost(e JsExpr) JsExpr {
 			return e
 		}
 	}
+}
+
+// encodeGeneratedString serializes a decoded compiler-generated string as a
+// single-quoted JavaScript string literal. The printer owns quote and control
+// character escaping; parser-owned literals retain their original Raw spelling.
+func encodeGeneratedString(value string) string {
+	quoted := strconv.Quote(value)
+	content := quoted[1 : len(quoted)-1]
+	content = strings.ReplaceAll(content, "'", "\\'")
+	return "'" + content + "'"
 }
