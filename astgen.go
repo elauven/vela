@@ -3700,9 +3700,9 @@ func (g *ASTGen) buildElement(el *ElementNode, varName, parentVar string, isRoot
 	// replays the element's reactive attribute updates.  Emit a
 	// hoisted `let X = null;` plus an assignment in the body.
 	if g.inCapturedScope() {
-		g.hoisted = append(g.hoisted, jsStmt("let "+varName+" = null;"))
-		g.body = append(g.body, jsStmt(
-			varName+" = document.createElement('"+el.Tag+"');"))
+		g.hoisted = append(g.hoisted, genLet(varName, genNull()))
+		g.body = append(g.body,
+			genAssignStmt(id(varName), genCall(genMember(id("document"), "createElement"), strLit(el.Tag))))
 	} else {
 		g.body = append(g.body, g.createElementStmt(varName, el.Tag))
 	}
@@ -3712,7 +3712,7 @@ func (g *ASTGen) buildElement(el *ElementNode, varName, parentVar string, isRoot
 	g.buildChildren(el, varName)
 
 	if !isRoot {
-		g.body = append(g.body, jsStmt(parentVar+".appendChild("+varName+");"))
+		g.body = append(g.body, genExprStmt(genCall(genMember(id(parentVar), "appendChild"), id(varName))))
 	}
 }
 
@@ -3886,9 +3886,9 @@ func (g *ASTGen) buildSlotNode(slot *SlotNode, parentVar string) {
 	slotVar := g.id() + "_slot"
 	anchor := slotVar + "_a"
 
-	g.body = append(g.body, jsStmt(
-		"const "+anchor+" = document.createComment('slot:"+slot.Name+"');"))
-	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
+	g.body = append(g.body,
+		genConst(anchor, genCall(genMember(id("document"), "createComment"), strLit("slot:"+slot.Name))),
+		genExprStmt(genCall(genMember(id(parentVar), "appendChild"), id(anchor))))
 
 	// Keep a text-only fallback on the structured template-expression path.
 	// Besides avoiding a second JS-expression serializer, this preserves the
