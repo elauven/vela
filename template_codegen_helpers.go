@@ -68,6 +68,7 @@ func rewriteIdentInNode(n Node, from, to string) Node {
 		if v.IfCond != "" {
 			ne.IfCond = rewriteIdentInExpr(v.IfCond, from, to)
 		}
+		ne.IfExpr = rewriteTemplateExpr(v.IfExpr, from, to)
 		if v.EachExpr != "" {
 			ne.EachExpr = rewriteIdentInExpr(v.EachExpr, from, to)
 		}
@@ -85,12 +86,13 @@ func rewriteIdentInNode(n Node, from, to string) Node {
 		nc.Branches = make([]*IfBranch, len(v.Branches))
 		for i, b := range v.Branches {
 			nb := &IfBranch{
-				Cond:     rewriteIdentInExpr(b.Cond, from, to),
-				CondPos:  b.CondPos,
-				Expr:     rewriteTemplateExpr(b.Expr, from, to),
-				Children: rewriteIdentInNodes(b.Children, from, to),
-				Elem:     b.Elem,
-				Comp:     b.Comp,
+				Cond:          rewriteIdentInExpr(b.Cond, from, to),
+				CondPos:       b.CondPos,
+				Expr:          rewriteTemplateExpr(b.Expr, from, to),
+				SyntheticCond: b.SyntheticCond,
+				Children:      rewriteIdentInNodes(b.Children, from, to),
+				Elem:          b.Elem,
+				Comp:          b.Comp,
 			}
 			nc.Branches[i] = nb
 		}
@@ -117,6 +119,7 @@ func rewriteIdentInNode(n Node, from, to string) Node {
 				(strings.HasPrefix(a.Value, "{") && strings.HasSuffix(a.Value, "}")) {
 				na.Value = rewriteIdentInExpr(a.Value, from, to)
 			}
+			nc.IfExpr = rewriteTemplateExpr(v.IfExpr, from, to)
 			nc.Attrs[i] = &na
 		}
 		// Slots map is left untouched — we don't recurse into nested

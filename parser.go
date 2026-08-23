@@ -100,7 +100,9 @@ type ElementNode struct {
 
 	// Directives — set by the attribute-style syntax (#if="expr" on the element)
 	// For Svelte block syntax, IfCond/EachExpr live in IfChainNode/EachBlockNode.
-	IfCond   string // #if="expr"
+	IfCond string        // #if="expr"
+	IfExpr *TemplateExpr // cached #if condition
+
 	EachExpr string // #each="items as item, i"
 	EachKey  string // #key="expr"
 }
@@ -194,9 +196,11 @@ type ComponentNode struct {
 	Attrs []*Attr           // :prop bindings and @event handlers
 	Slots map[string][]Node // slot name → children (default slot keyed as "default")
 	// Directives (transferred from parseAttrs scratch element)
-	EachExpr string // #each="items as item, i"
-	EachKey  string // #key="expr"
-	IfCond   string // #if="expr"
+	EachExpr string        // #each="items as item, i"
+	IfExpr   *TemplateExpr // cached #if condition transferred from parseAttrs
+
+	EachKey string // #key="expr"
+	IfCond  string // #if="expr"
 }
 
 // SlotNode represents a <slot> element — renders $$slots["name"] from parent.
@@ -657,6 +661,7 @@ func (p *parser) parseComponentNode(name string) (Node, error) {
 	}
 	// Transfer directive fields from scratch — parseAttrs puts #each/#key/#if
 	// into the ElementNode fields, not into Attrs.
+	comp.IfExpr = scratch.IfExpr
 	comp.Attrs = scratch.Attrs
 	comp.EachExpr = scratch.EachExpr
 	comp.EachKey = scratch.EachKey
@@ -761,11 +766,11 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 			value = p.readAttrValue()
 		}
 
-		// Classify and store
 		attrCount := len(elem.Attrs)
 		switch {
 		case name == "#if":
 			elem.IfCond = value
+			elem.IfExpr = newTemplateExpr(stripBraces(value), valuePos)
 		case name == "#elseif":
 			// Stored as a special sentinel attr; groupIfChains() picks this up.
 			elem.Attrs = append(elem.Attrs, &Attr{Name: "__elseif__", Value: value})
@@ -1361,6 +1366,7 @@ func groupIfChains(nodes []Node) []Node {
 			chain := &IfChainNode{}
 			chain.Branches = append(chain.Branches, &IfBranch{
 				Cond:     el.IfCond,
+				Expr:     el.IfExpr,
 				Children: groupIfChains(el.Children),
 				Elem:     el,
 			})
@@ -1402,6 +1408,7 @@ func groupIfChains(nodes []Node) []Node {
 			chain := &IfChainNode{}
 			chain.Branches = append(chain.Branches, &IfBranch{
 				Cond: comp.IfCond,
+				Expr: comp.IfExpr,
 				Comp: comp,
 			})
 			i++
