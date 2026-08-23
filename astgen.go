@@ -771,26 +771,35 @@ func guardedTemplateStmt(stmt JsStmt, guard string) JsStmt {
 	return &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: id(guard), Then: stmt}
 }
 
+func genBool(expr JsExpr) JsExpr {
+	return &JsUnaryExpr{
+		baseExpr: baseExpr{genNode()}, Op: "!", Prefix: true,
+		X: &JsUnaryExpr{baseExpr: baseExpr{genNode()}, Op: "!", Prefix: true, X: expr},
+	}
+}
+
+func genString(expr JsExpr) JsExpr { return genCall(id("String"), expr) }
+
 func (g *ASTGen) attrWriteStmt(varName string, attr *Attr) JsStmt {
 	expr := g.templateExpr(attr.Expr)
 	if attr.IsTwoWay && attr.Name == "value" {
-		return g.templateStmt(varName+".value = ("+templateMarker(0)+");", expr)
+		return genAssignStmt(genMember(id(varName), "value"), expr)
 	}
 	if isBoolAttr(attr.Name) {
-		return g.templateStmt(varName+"."+attr.Name+" = !!("+templateMarker(0)+");", expr)
+		return genAssignStmt(genMember(id(varName), attr.Name), genBool(expr))
 	}
 	if attr.Name == "class" {
-		return g.templateStmt(varName+".className = String("+templateMarker(0)+");", expr)
+		return genAssignStmt(genMember(id(varName), "className"), genString(expr))
 	}
-	return g.templateStmt(varName+".setAttribute('"+attr.Name+"', String("+templateMarker(0)+"));", expr)
+	return genExprStmt(genCall(genMember(id(varName), "setAttribute"), strLit(attr.Name), genString(expr)))
 }
 
 func (g *ASTGen) classDirStmtAST(varName string, attr *Attr) JsStmt {
-	return g.templateStmt(varName+".classList.toggle('"+attr.Name+"', !!("+templateMarker(0)+"));", g.templateExpr(attr.Expr))
+	return genExprStmt(genCall(genMember(genMember(id(varName), "classList"), "toggle"), strLit(attr.Name), genBool(g.templateExpr(attr.Expr))))
 }
 
 func (g *ASTGen) styleDirStmtAST(varName string, attr *Attr) JsStmt {
-	return g.templateStmt(varName+".style.setProperty('"+attr.Name+"', String("+templateMarker(0)+"));", g.templateExpr(attr.Expr))
+	return genExprStmt(genCall(genMember(genMember(id(varName), "style"), "setProperty"), strLit(attr.Name), genString(g.templateExpr(attr.Expr))))
 }
 func setTemplateOrigin(n JsNode, pos int) {
 	switch x := n.(type) {
