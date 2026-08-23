@@ -1244,11 +1244,15 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	fnBody := &JsBlock{baseStmt: baseStmt{genNode()}}
 
 	// ── Preamble: normalize props/slots ──────────────────────
-	fnBody.Body = append(fnBody.Body, jsStmts(`
-		$$props = Object.assign({}, $$props);
-		$$slots = $$slots || {};
-		void $$slots;
-	`)...)
+	fnBody.Body = append(fnBody.Body,
+		genAssignStmt(id("$$props"), genCall(genMember(id("Object"), "assign"),
+			&JsObjectExpr{baseExpr: baseExpr{genNode()}}, id("$$props"))),
+		genAssignStmt(id("$$slots"), &JsLogicalExpr{
+			baseExpr: baseExpr{genNode()}, Op: "||", L: id("$$slots"),
+			R: &JsObjectExpr{baseExpr: baseExpr{genNode()}},
+		}),
+		genExprStmt(&JsUnaryExpr{baseExpr: baseExpr{genNode()}, Op: "void", Prefix: true, X: id("$$slots")}),
+	)
 
 	// ── Runtime helpers ──────────────────────────────────────
 	// $$dispatch, $$insertHTML and $$proxy used to be inlined in
@@ -1314,14 +1318,12 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// at the anchor's slot rather than appended at the end of its
 	// container).  Comment-as-target is the wrapper-less mount
 	// path: the caller creates an anchor comment in document
-	// order, then passes the anchor here.  Without the
-	// nodeType-8 branch every wrapper-less mount would land at
-	// the END of the containing element, breaking position when
-	// the component has any siblings rendered after it.
-	fnBody.Body = append(fnBody.Body,
-		jsStmt(`if ($$target.nodeType === 8) `+
-			`$$target.parentNode.insertBefore($$root, $$target); `+
-			`else $$target.appendChild($$root);`))
+	mount := genIf(
+		genBinary("===", genMember(id("$$target"), "nodeType"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "8", Kind: "number"}),
+		genExprStmt(genCall(genMember(genMember(id("$$target"), "parentNode"), "insertBefore"), id("$$root"), id("$$target"))),
+	)
+	mount.Else = genExprStmt(genCall(genMember(id("$$target"), "appendChild"), id("$$root")))
+	fnBody.Body = append(fnBody.Body, mount)
 
 	// ── onMount callbacks (stage 1a) ─────────────────────────
 	// Run after the component's DOM is in the document.  Each
