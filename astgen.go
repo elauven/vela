@@ -2031,8 +2031,10 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 	if g.analysis != nil {
 		for _, p := range g.analysis.Props {
 			if p.Name == name && p.Bindable {
-				out = append(out, jsStmt(
-					"if ($$onChange_"+name+") $$onChange_"+name+"("+name+");"))
+				out = append(out, genIf(
+					id("$$onChange_"+name),
+					genInvoke("$$onChange_"+name, id(name)),
+				))
 			}
 		}
 	}

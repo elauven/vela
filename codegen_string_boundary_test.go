@@ -28,7 +28,6 @@ func TestASTGenStructuralStringGatewayInventory(t *testing.T) {
 		"buildOnDestroyCleanup/jsStmts":  1,
 		"buildOnMount/jsStmt":            1,
 		"buildPropDecls/jsStmt":          2,
-		"buildSetterCascade/jsStmt":      1,
 		"buildSlotClosures/jsStmt":       1,
 		"buildSlotNode/jsStmt":           1,
 		"buildStateDecl/jsStmt":          3,
