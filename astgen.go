@@ -35,7 +35,6 @@ package main
 import (
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -3989,14 +3988,11 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	inFragment := g.fragCounter >= 0
 	switch {
 	case inFragment && g.inCapturedScope():
-		g.fragHoisted = append(g.fragHoisted, jsStmt("let "+wrap+" = null;"))
-		g.fragHoisted = append(g.fragHoisted, jsStmt("let "+inst+" = null;"))
+		g.fragHoisted = append(g.fragHoisted, genLet(wrap, genNull()), genLet(inst, genNull()))
 	case inFragment:
-		g.body = append(g.body, jsStmt("let "+wrap+" = null;"))
-		g.body = append(g.body, jsStmt("let "+inst+" = null;"))
+		g.body = append(g.body, genLet(wrap, genNull()), genLet(inst, genNull()))
 	default:
-		g.hoisted = append(g.hoisted, jsStmt("let "+wrap+" = null;"))
-		g.hoisted = append(g.hoisted, jsStmt("let "+inst+" = null;"))
+		g.hoisted = append(g.hoisted, genLet(wrap, genNull()), genLet(inst, genNull()))
 	}
 	// The wrap variable now holds an ANCHOR COMMENT — a
 	// Node.COMMENT_NODE that marks the insertion position in
@@ -4007,24 +4003,23 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	// are not elements, so `>` selectors and `:nth-child` skip
 	// them entirely — the component's $$root becomes a true
 	// direct child of the parent.
-	g.body = append(g.body, jsStmt(
-		wrap+" = document.createComment('comp');"))
-	g.body = append(g.body, jsStmt(parentVar+".appendChild("+wrap+");"))
+	g.body = append(g.body,
+		genAssignStmt(id(wrap), genCall(genMember(id("document"), "createComment"), strLit("comp"))),
+		genExprStmt(genCall(genMember(id(parentVar), "appendChild"), id(wrap))))
 
 	propsExpr := g.componentPropsExpr(comp.Attrs)
 
 	// Initial mount — keep dynamic props as cached template AST expressions.
 	g.initBody = append(g.initBody, g.templateStmt(
 		"if (!"+inst+") "+inst+" = "+comp.Name+"("+wrap+", "+templateMarker(0)+", "+slotsObj+");", propsExpr))
-	g.initBody = append(g.initBody, jsStmt("if ("+inst+" && "+inst+".el) "+inst+".el.setAttribute("+strconv.Quote(g.scopeID)+", \"\");"))
 
-	// Reactive prop updates.  The .set() statement propagates new
-	// prop values to an already-mounted instance — both via the
-	// component-scope setter cascade (addUpdate below) AND, when
-	// this component sits inside an {#each} row, via the row's
-	// update closure (captureScope picks compInstances up and the
-	// fragment builder replays each instance's setStmt so a row
-	// reuse re-sets the child's props rather than tearing down).
+	g.initBody = append(g.initBody, genIf(
+		&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(inst), R: genMember(id(inst), "el")},
+		genExprStmt(genCall(genMember(genMember(id(inst), "el"), "setAttribute"), strLit(g.scopeID), strLit(""))),
+	))
+
+	// Reactive prop updates. The .set() statement propagates new prop values to an already-mounted instance.
+	// It is registered both in the component setter cascade and in each-row update closures.
 	setStmt := g.templateStmt("if ("+inst+") "+inst+".set("+templateMarker(0)+");", propsExpr)
 	// Back-fill the bookkeeping entry pushed above so the
 	// fragment-update path can find this statement.  The entry
@@ -4064,9 +4059,8 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	// did nothing.
 	g.buildComponentEvents(comp, inst)
 
-	// Teardown.
-	g.cleanup = append(g.cleanup, jsStmt(
-		"if ("+inst+") "+inst+".destroy();"))
+	g.cleanup = append(g.cleanup,
+		genIf(id(inst), genExprStmt(genCall(genMember(id(inst), "destroy")))))
 }
 
 // buildComponentEvents wires every @event attribute of a component
