@@ -773,7 +773,7 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 			elem.IfExpr = newTemplateExpr(stripBraces(value), valuePos)
 		case name == "#elseif":
 			// Stored as a special sentinel attr; groupIfChains() picks this up.
-			elem.Attrs = append(elem.Attrs, &Attr{Name: "__elseif__", Value: value})
+			elem.Attrs = append(elem.Attrs, &Attr{Name: "__elseif__", Value: value, Expr: newTemplateExpr(stripBraces(value), valuePos)})
 		case name == "#else":
 			elem.Attrs = append(elem.Attrs, &Attr{Name: "__else__", Value: ""})
 		case name == "#each":
@@ -1378,9 +1378,11 @@ func groupIfChains(nodes []Node) []Node {
 				}
 				if hasMarker(sib, "__elseif__") {
 					cond := markerVal(sib, "__elseif__")
+					expr := markerExpr(sib.Attrs, "__elseif__")
 					removeMarker(sib, "__elseif__")
 					chain.Branches = append(chain.Branches, &IfBranch{
 						Cond:     cond,
+						Expr:     expr,
 						Children: groupIfChains(sib.Children),
 						Elem:     sib,
 					})
@@ -1419,9 +1421,11 @@ func groupIfChains(nodes []Node) []Node {
 				}
 				if hasCompMarker(sib, "__elseif__") {
 					cond := compMarkerVal(sib, "__elseif__")
+					expr := markerExpr(sib.Attrs, "__elseif__")
 					removeCompMarker(sib, "__elseif__")
 					chain.Branches = append(chain.Branches, &IfBranch{
 						Cond: cond,
+						Expr: expr,
 						Comp: sib,
 					})
 					i++
@@ -1463,6 +1467,15 @@ func markerVal(el *ElementNode, marker string) string {
 		}
 	}
 	return ""
+}
+
+func markerExpr(attrs []*Attr, marker string) *TemplateExpr {
+	for _, a := range attrs {
+		if a.Name == marker {
+			return a.Expr
+		}
+	}
+	return nil
 }
 
 func removeMarker(el *ElementNode, marker string) {

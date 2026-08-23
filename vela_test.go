@@ -985,6 +985,12 @@ func TestParseTemplate_ElseIfElse(t *testing.T) {
 	if chains[0].Branches[1].Cond != "b" {
 		t.Errorf("branch[1].Cond: want 'b', got %q", chains[0].Branches[1].Cond)
 	}
+	for i, want := range []string{"a", "b"} {
+		if got := chains[0].Branches[i].Expr; got == nil || got.Source != want {
+			t.Errorf("branch[%d].Expr = %#v, want cached expression %q", i, got, want)
+		}
+	}
+
 	if chains[0].Branches[2].Cond != "" {
 		t.Errorf("branch[2] (else) should have empty Cond, got %q", chains[0].Branches[2].Cond)
 	}
@@ -2930,6 +2936,10 @@ func TestParseTemplate_ComponentIfElseifChainGrouped(t *testing.T) {
 		if branch.Comp == nil {
 			t.Errorf("branch[%d] has nil Comp — not a component branch", i)
 		}
+		if branch.Expr == nil || branch.Expr.Source == "" {
+			t.Errorf("branch[%d] is missing its cached condition AST", i)
+		}
+
 		if branch.Elem != nil {
 			t.Errorf("branch[%d] has unexpected Elem", i)
 		}
