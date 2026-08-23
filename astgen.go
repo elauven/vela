@@ -4420,8 +4420,9 @@ func (g *ASTGen) emitBindThisAST(varName string, attr *Attr) {
 			genInvoke("$$set_"+ref, genNull()))
 		return
 	}
-	g.initBody = append(g.initBody, jsStmt(ref+" = "+varName+";"))
-	g.cleanup = append(g.cleanup, jsStmt(ref+" = null;"))
+	refExpr := g.templateExpr(attr.Expr)
+	g.initBody = append(g.initBody, genAssignStmt(refExpr, id(varName)))
+	g.cleanup = append(g.cleanup, genAssignStmt(refExpr, genNull()))
 }
 
 // rewriteHandler strips the {…} wrapper from a template event handler and
