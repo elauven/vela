@@ -3046,10 +3046,12 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	if captured {
 		g.declare(fragDecl)
 		if keyExpr != "" {
-			g.declare(jsStmt("let " + keymap + " = null;"))
-			g.body = append(g.body, jsStmt(keymap+" = new Map();"))
+			g.declare(genLet(keymap, genNull()))
+			g.body = append(g.body, genAssignStmt(generatedID(keymap), &JsNewExpr{
+				baseExpr: baseExpr{genNode()}, Callee: generatedID("Map"),
+			}))
 		}
-		g.declare(jsStmt("let " + blocks + " = [];"))
+		g.declare(genLet(blocks, &JsArrayExpr{baseExpr: baseExpr{genNode()}, Elems: []JsExpr{}}))
 		g.declare(reconcilerDecl)
 		// Outer-branch teardown contribution.  When the {#if} (or
 		// other chain) containing this {#each} switches off, the
@@ -3073,14 +3075,18 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	} else {
 		g.body = append(g.body, fragDecl)
 		if keyExpr != "" {
-			g.body = append(g.body, jsStmt("const "+keymap+" = new Map();"))
+			g.body = append(g.body, genConst(keymap, &JsNewExpr{
+				baseExpr: baseExpr{genNode()}, Callee: generatedID("Map"),
+			}))
 		}
-		g.body = append(g.body, jsStmt("let "+blocks+" = [];"))
+		g.body = append(g.body, genLet(blocks, &JsArrayExpr{baseExpr: baseExpr{genNode()}, Elems: []JsExpr{}}))
 		g.body = append(g.body, reconcilerDecl)
 	}
 
 	// ── 5. Wiring ────────────────────────────────────────────
-	g.body = append(g.body, jsStmt(parentVar+".appendChild("+anchor+");"))
+	g.body = append(g.body, genExprStmt(genCall(
+		genMember(generatedID(parentVar), "appendChild"), generatedID(anchor),
+	)))
 	arrayExpr := g.templateExpr(block.IterExpr)
 	g.initBody = append(g.initBody, g.templateStmt(eachFn+"("+templateMarker(0)+");", arrayExpr))
 	for _, dep := range templateExprDeps(block.IterExpr, array, g.reactiveNames()) {
@@ -3096,8 +3102,14 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	for dep := range rowBodyDeps {
 		g.addUpdate(dep, g.templateStmt(eachFn+"("+templateMarker(0)+");", arrayExpr))
 	}
-	g.cleanup = append(g.cleanup, jsStmt(
-		blocks+".forEach(b => b.destroy());"))
+	g.cleanup = append(g.cleanup, genExprStmt(genCall(
+		genMember(generatedID(blocks), "forEach"),
+		&JsArrowFunc{
+			baseExpr: baseExpr{genNode()},
+			Params:   []JsExpr{generatedID("b")},
+			Body:     genCall(genMember(generatedID("b"), "destroy")),
+		},
+	)))
 }
 
 // eachReconciler returns the source of the $$each_$$nN reconciler
