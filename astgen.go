@@ -409,7 +409,7 @@ type ASTGen struct {
 	// emits them so the nested chain is torn down with its
 	// parent.  Doubly-nested chains propagate naturally because
 	// each level appends its own teardown.
-	nestedTeardowns []string
+	nestedTeardowns []JsStmt
 
 	// fragHoisted collects per-row-fragment declarations during
 	// emission (companion to capturedScope.fragHoisted).
@@ -3106,20 +3106,28 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 		// chain only captures this each's anchor in its branch
 		// handle — the rows live before the anchor and would be
 		// orphaned in the DOM if the outer simply removed the
-		// handle.  Emit a teardown snippet so the outer branch's
+		// handle.  Emit teardown statements so the outer branch's
 		// teardown destroys every row, clears the bookkeeping,
 		// and nulls the anchor — matching the pattern used for
 		// nested {#if} chains.  Same g.nestedTeardowns channel,
 		// so a doubly-nested control-flow propagates naturally.
-		var td strings.Builder
-		td.WriteString(blocks + ".forEach(b => b.destroy()); ")
-		td.WriteString(blocks + " = []; ")
-		if keyExpr != "" {
-			td.WriteString(keymap + " = null; ")
+		rowDestroy := &JsArrowFunc{
+			baseExpr: baseExpr{genNode()},
+			Params:   []JsExpr{generatedID("$$block")},
+			Body:     genCall(genMember(generatedID("$$block"), "destroy")),
 		}
-		td.WriteString(eachFn + "._arr = undefined; ")
-		td.WriteString(anchor + " = null; ")
-		g.nestedTeardowns = append(g.nestedTeardowns, td.String())
+		teardown := []JsStmt{
+			genExprStmt(genCall(genMember(generatedID(blocks), "forEach"), rowDestroy)),
+			genAssignStmt(generatedID(blocks), genArray()),
+		}
+		if keyExpr != "" {
+			teardown = append(teardown, genAssignStmt(generatedID(keymap), genNull()))
+		}
+		teardown = append(teardown,
+			genAssignStmt(genMember(generatedID(eachFn), "_arr"), generatedID("undefined")),
+			genAssignStmt(generatedID(anchor), genNull()),
+		)
+		g.nestedTeardowns = append(g.nestedTeardowns, teardown...)
 	} else {
 		g.body = append(g.body, fragDecl)
 		if keyExpr != "" {
@@ -3459,30 +3467,36 @@ func stmtsToText(stmts []JsStmt) string {
 	return PrintJS(&JsProgram{Body: stmts}, PrintMinified)
 }
 
-// nullCaptured returns ` X = null; Y = null;` for every captured
-// node variable of a branch — emitted when the branch is removed
-// so detached DOM nodes are not retained.
-func nullCaptured(captured []string) string {
-	var b strings.Builder
-	for _, v := range captured {
-		b.WriteString(" " + v + " = null;")
+// removeNodesStmts removes the DOM nodes cached for a branch and clears its handle.
+func removeNodesStmts(nodes string) []JsStmt {
+	return []JsStmt{
+		genForOf("$$node", id(nodes), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genAssignStmt(id(nodes), genNull()),
 	}
-	return b.String()
 }
 
-// destroyComps returns the teardown statements for a removed
-// branch's child components: each instance is destroyed and its
-// instance + wrapper variables nulled, so re-entering the branch
-// recreates the component (the `if (!$$nN_comp)` mount guard
-// would otherwise skip a still-live instance).
-func destroyComps(comps []compInstance) string {
-	var b strings.Builder
-	for _, c := range comps {
-		b.WriteString(" if (" + c.inst + ") { " + c.inst +
-			".destroy(); " + c.inst + " = null; }")
-		b.WriteString(" " + c.wrap + " = null;")
+// nullCapturedStmts clears branch-local references to detached DOM nodes.
+func nullCapturedStmts(captured []string) []JsStmt {
+	stmts := make([]JsStmt, 0, len(captured))
+	for _, name := range captured {
+		stmts = append(stmts, genAssignStmt(id(name), genNull()))
 	}
-	return b.String()
+	return stmts
+}
+
+// destroyCompStmts tears down child component instances and clears their handles.
+func destroyCompStmts(comps []compInstance) []JsStmt {
+	stmts := make([]JsStmt, 0, len(comps)*2)
+	for _, comp := range comps {
+		stmts = append(stmts,
+			genIf(id(comp.inst), genBlock(
+				genExprStmt(genCall(genMember(id(comp.inst), "destroy"))),
+				genAssignStmt(id(comp.inst), genNull()),
+			)),
+			genAssignStmt(id(comp.wrap), genNull()),
+		)
+	}
+	return stmts
 }
 
 // buildIfChainStructured emits the Phase-1 BranchPlan path. Branch body
@@ -3497,7 +3511,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		captured        []string
 		cleanup         []JsStmt
 		comps           []compInstance
-		nestedTeardowns []string
+		nestedTeardowns []JsStmt
 	}
 	plans := make([]plan, len(chain.Branches))
 
@@ -3584,7 +3598,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		plans[i].init = cap.initBody
 		plans[i].cleanup = cap.cleanup
 		plans[i].comps = cap.comps
-		plans[i].nestedTeardowns = append([]string{}, g.nestedTeardowns[tdMark:]...)
+		plans[i].nestedTeardowns = append([]JsStmt{}, g.nestedTeardowns[tdMark:]...)
 		g.fragHoisted = append(g.fragHoisted, cap.fragHoisted...)
 		g.compInstances = append(g.compInstances, cap.comps...)
 		for dep, stmts := range cap.updates {
@@ -3600,22 +3614,9 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		tryBody = append(tryBody, g.templateStmt("const "+keyNew+" = "+templateMarker(0)+";", g.templateExpr(chain.KeyAST)))
 		for i := range chain.Branches {
 			bv := fn + "_b" + itoa(i)
-			teardown := []JsStmt{
-				genForOf("$$node", id(bv), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
-				genAssignStmt(id(bv), genNull()),
-			}
-			for _, captured := range plans[i].captured {
-				teardown = append(teardown, genAssignStmt(id(captured), genNull()))
-			}
-			for _, comp := range plans[i].comps {
-				teardown = append(teardown,
-					genIf(id(comp.inst), genBlock(
-						genExprStmt(genCall(genMember(id(comp.inst), "destroy"))),
-						genAssignStmt(id(comp.inst), genNull()),
-					)),
-					genAssignStmt(id(comp.wrap), genNull()),
-				)
-			}
+			teardown := removeNodesStmts(bv)
+			teardown = append(teardown, nullCapturedStmts(plans[i].captured)...)
+			teardown = append(teardown, destroyCompStmts(plans[i].comps)...)
 			tryBody = append(tryBody, genIf(
 				genLogical("&&", genBinary("!==", id(fn+"_keyprev"), id(keyNew)), id(bv)),
 				genBlock(teardown...),
@@ -3647,14 +3648,21 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	for i := range chain.Branches {
 		bv := fn + "_b" + itoa(i)
 		cleanupVar := bv + "_cleanup"
-		cleanup := ""
+		teardown := []JsStmt{}
 		if len(plans[i].cleanup) > 0 {
-			cleanup = "if (" + cleanupVar + ") { " + cleanupVar + "(); " + cleanupVar + " = null; } "
+			teardown = append(teardown, genIf(id(cleanupVar), genBlock(
+				genInvoke(cleanupVar),
+				genAssignStmt(id(cleanupVar), genNull()),
+			)))
 		}
-		teardown := "if ($$active !== " + itoa(i) + " && " + bv + ") { " +
-			cleanup + "for (const $$node of " + bv + ") $$node.remove(); " + bv + " = null;" +
-			nullCaptured(plans[i].captured) + destroyComps(plans[i].comps) + strings.Join(plans[i].nestedTeardowns, " ") + " }"
-		tryBody = append(tryBody, jsStmt(teardown))
+		teardown = append(teardown, removeNodesStmts(bv)...)
+		teardown = append(teardown, nullCapturedStmts(plans[i].captured)...)
+		teardown = append(teardown, destroyCompStmts(plans[i].comps)...)
+		teardown = append(teardown, plans[i].nestedTeardowns...)
+		tryBody = append(tryBody, genIf(
+			genLogical("&&", genBinary("!==", id("$$active"), numLit(i)), id(bv)),
+			genBlock(teardown...),
+		))
 	}
 	for i := range chain.Branches {
 		bv := fn + "_b" + itoa(i)
@@ -3730,19 +3738,25 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		}
 	}
 	if captured {
-		var teardown strings.Builder
+		teardown := []JsStmt{}
 		for i := range chain.Branches {
 			bv := fn + "_b" + itoa(i)
 			cleanupVar := bv + "_cleanup"
-			teardown.WriteString("if (" + cleanupVar + ") { " + cleanupVar + "(); " + cleanupVar + " = null; } ")
-			teardown.WriteString("if (" + bv + ") { for (const $$node of " + bv + ") $$node.remove(); " + bv + " = null; } ")
+			teardown = append(teardown, genIf(id(cleanupVar), genBlock(
+				genInvoke(cleanupVar),
+				genAssignStmt(id(cleanupVar), genNull()),
+			)))
+			teardown = append(teardown, genIf(id(bv), genBlock(removeNodesStmts(bv)...)))
 		}
-		teardown.WriteString(anchor + " = null; ")
-		teardown.WriteString(fn + "_running = false; " + fn + "_pending = false; ")
+		teardown = append(teardown,
+			genAssignStmt(id(anchor), genNull()),
+			genAssignStmt(id(fn+"_running"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}),
+			genAssignStmt(id(fn+"_pending"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}),
+		)
 		if chain.KeyExpr != "" {
-			teardown.WriteString(fn + "_keyprev = {}; ")
+			teardown = append(teardown, genAssignStmt(id(fn+"_keyprev"), &JsObjectExpr{baseExpr: baseExpr{genNode()}}))
 		}
-		g.nestedTeardowns = append(g.nestedTeardowns, teardown.String())
+		g.nestedTeardowns = append(g.nestedTeardowns, teardown...)
 	}
 	return fn
 }
@@ -4358,7 +4372,7 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
 		// slot factory caches its output, so the component
 		// instance isn't rebuilt on subsequent slot invocations —
 		// the only path for it to receive new props is the
-		// replay.  destroyComps still fires on slot teardown via
+		// replay.  the branch teardown still fires on slot teardown via
 		// the cleanup path; this re-publish only extends the
 		// component's reactive-prop reach, not its lifetime.
 		g.compInstances = append(g.compInstances, cap.comps...)
