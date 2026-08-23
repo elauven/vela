@@ -3588,23 +3588,23 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		}
 		tryBody = append(tryBody, jsStmt(fn+"_keyprev = "+keyNew+";"))
 	}
-	tryBody = append(tryBody, jsStmt("let $$active = -1;"))
+	tryBody = append(tryBody, genLet("$$active", &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "-1", Kind: "number"}))
 	for i, branch := range chain.Branches {
 		if branch.Cond == "" {
-			tryBody = append(tryBody, jsStmt("if ($$active < 0) $$active = "+itoa(i)+";"))
+			tryBody = append(tryBody, genIf(
+				genBinary("<", id("$$active"), numLit(0)),
+				genAssignStmt(id("$$active"), numLit(i)),
+			))
 			continue
 		}
 		if branch.Expr == nil {
-			// Await lowering introduces synthetic state comparisons. Build the
-			// active-selector AST directly; it must retain the exact $$active name.
-			test := &JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: &JsBinaryExpr{baseExpr: baseExpr{genNode()}, Op: "<", L: id("$$active"), R: jsExpr("0")}, R: jsExpr(branch.Cond)}
-			assign := &JsExprStmt{baseStmt: baseStmt{genNode()}, X: &JsAssignExpr{baseExpr: baseExpr{genNode()}, Op: "=", L: id("$$active"), R: jsExpr(itoa(i))}}
-			tryBody = append(tryBody, &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: test, Then: assign})
+			// Await lowering still contributes a synthetic condition expression.
+			test := genLogical("&&", genBinary("<", id("$$active"), numLit(0)), jsExpr(branch.Cond))
+			tryBody = append(tryBody, genIf(test, genAssignStmt(id("$$active"), numLit(i))))
 			continue
 		}
-		test := &JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: &JsBinaryExpr{baseExpr: baseExpr{genNode()}, Op: "<", L: id("$" + "$active"), R: jsExpr("0")}, R: g.templateExpr(branch.Expr)}
-		assign := &JsExprStmt{baseStmt: baseStmt{genNode()}, X: &JsAssignExpr{baseExpr: baseExpr{genNode()}, Op: "=", L: id("$" + "$active"), R: jsExpr(itoa(i))}}
-		tryBody = append(tryBody, &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: test, Then: assign})
+		test := genLogical("&&", genBinary("<", id("$$active"), numLit(0)), g.templateExpr(branch.Expr))
+		tryBody = append(tryBody, genIf(test, genAssignStmt(id("$$active"), numLit(i))))
 	}
 	for i := range chain.Branches {
 		bv := fn + "_b" + itoa(i)
