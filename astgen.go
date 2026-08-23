@@ -111,6 +111,27 @@ func genIf(test JsExpr, then JsStmt) *JsIfStmt {
 	return &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: test, Then: then}
 }
 
+func genNull() *JsLiteral {
+	return &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "null", Kind: "null"}
+}
+
+// generatedMemberPath turns a compiler-owned dotted path into a member AST.
+// It must not receive user JavaScript.
+func generatedMemberPath(path string) JsExpr {
+	parts := strings.Split(path, ".")
+	if len(parts) == 0 || parts[0] == "" {
+		panic("empty compiler-generated member path")
+	}
+	var expr JsExpr = id(parts[0])
+	for _, part := range parts[1:] {
+		if part == "" {
+			panic("invalid compiler-generated member path: " + path)
+		}
+		expr = genMember(expr, part)
+	}
+	return expr
+}
+
 // jsStmts parses src as a sequence of statements and returns them,
 // each re-marked OriginGenerated.  Panics on parse failure — the
 // input is always compiler-controlled, so a failure is a compiler
@@ -4319,21 +4340,21 @@ func (g *ASTGen) emitStyleDir(varName string, attr *Attr) {
 // When handlerExpr is present, the attach statement preserves the template
 // expression origin for source maps; otherwise handler is compiler-authored.
 func (g *ASTGen) emitListenerPair(attach *[]JsStmt, target, event, handler string, handlerExpr JsExpr, cleanupGuard string, addCleanup bool) {
-	var listener JsStmt
-	if handlerExpr != nil {
-		listener = g.templateStmt(target+".addEventListener('"+event+"', "+templateMarker(0)+");", handlerExpr)
-	} else {
-		listener = jsStmt(target + ".addEventListener('" + event + "', " + handler + ");")
+	listenerExpr := handlerExpr
+	if listenerExpr == nil {
+		listenerExpr = id(handler)
 	}
-	*attach = append(*attach, listener)
+	*attach = append(*attach,
+		genExprStmt(genCall(genMember(generatedMemberPath(target), "addEventListener"), strLit(event), listenerExpr)))
 	if !addCleanup {
 		return
 	}
-	remove := target + ".removeEventListener('" + event + "', " + handler + ");"
+	remove := genExprStmt(genCall(genMember(generatedMemberPath(target), "removeEventListener"), strLit(event), id(handler)))
 	if cleanupGuard != "" {
-		remove = "if (" + cleanupGuard + ") " + remove
+		g.cleanup = append(g.cleanup, genIf(id(cleanupGuard), remove))
+		return
 	}
-	g.cleanup = append(g.cleanup, jsStmt(remove))
+	g.cleanup = append(g.cleanup, remove)
 }
 
 func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
@@ -4363,7 +4384,11 @@ func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 	sv := stripBraces(attr.Value)
 	if attr.IsTwoWay && ok && g.analysis != nil && g.analysis.isStateName(sv) {
 		hv := varName + "_bind_" + spec.event + "_h"
-		g.body = append(g.body, jsStmt("const "+hv+" = ($e) => $$set_"+sv+"($e.target."+spec.readProp+");"))
+		g.body = append(g.body, genConst(hv, &JsArrowFunc{
+			baseExpr: baseExpr{genNode()},
+			Params:   []JsExpr{id("$e")},
+			Body:     genCall(id("$$set_"+sv), genMember(genMember(id("$e"), "target"), spec.readProp)),
+		}))
 		g.emitListenerPair(&g.events, varName, spec.event, hv, nil, "", true)
 	}
 	write := g.attrWriteStmt(varName, attr)
@@ -4381,9 +4406,9 @@ func (g *ASTGen) emitBindThisAST(varName string, attr *Attr) {
 	ref := stripBraces(attr.Value)
 	if g.analysis != nil && g.analysis.isStateName(ref) {
 		g.initBody = append(g.initBody,
-			jsStmt("$$set_"+ref+"("+varName+");"))
+			genInvoke("$$set_"+ref, id(varName)))
 		g.cleanup = append(g.cleanup,
-			jsStmt("$$set_"+ref+"(null);"))
+			genInvoke("$$set_"+ref, genNull()))
 		return
 	}
 	g.initBody = append(g.initBody, jsStmt(ref+" = "+varName+";"))
