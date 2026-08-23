@@ -859,7 +859,13 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 		if attr.IsTwoWay && g.analysis != nil {
 			target := strings.TrimSpace(unwrapBraces(attr.Value))
 			if g.analysis.isStateName(target) {
-				obj.Props = append(obj.Props, &JsProp{Key: id("$$onChange_" + attr.Name), Value: jsExpr("($$v) => $$set_" + target + "($$v)")})
+				obj.Props = append(obj.Props, &JsProp{
+					baseNode: genNode(), Key: id("$$onChange_" + attr.Name),
+					Value: &JsArrowFunc{
+						baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$v")},
+						Body: genCall(id("$$set_"+target), id("$$v")),
+					},
+				})
 			}
 		}
 	}
