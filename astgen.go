@@ -3351,18 +3351,24 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	// and {:catch} binding names are rewritten to the module-scope
 	// storage variables so branch content can reference them.
 	branches := []*IfBranch{
-		{Cond: stateVar + " === 0", Children: block.PendingChildren},
+		{
+			Cond:          stateVar + " === 0",
+			SyntheticCond: genBinary("===", id(stateVar), numLit(0)),
+			Children:      block.PendingChildren,
+		},
 	}
 	if block.ThenChildren != nil {
 		branches = append(branches, &IfBranch{
-			Cond:     stateVar + " === 1",
-			Children: rewriteIdentInNodes(block.ThenChildren, block.ValueName, valVar),
+			Cond:          stateVar + " === 1",
+			SyntheticCond: genBinary("===", id(stateVar), numLit(1)),
+			Children:      rewriteIdentInNodes(block.ThenChildren, block.ValueName, valVar),
 		})
 	}
 	if block.CatchChildren != nil {
 		branches = append(branches, &IfBranch{
-			Cond:     stateVar + " === 2",
-			Children: rewriteIdentInNodes(block.CatchChildren, block.ErrorName, errVar),
+			Cond:          stateVar + " === 2",
+			SyntheticCond: genBinary("===", id(stateVar), numLit(2)),
+			Children:      rewriteIdentInNodes(block.CatchChildren, block.ErrorName, errVar),
 		})
 	}
 	chainFn := g.buildIfChain(&IfChainNode{Branches: branches}, parentVar)
@@ -3598,8 +3604,11 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			continue
 		}
 		if branch.Expr == nil {
-			// Await lowering still contributes a synthetic condition expression.
-			test := genLogical("&&", genBinary("<", id("$$active"), numLit(0)), jsExpr(branch.Cond))
+			condition := branch.SyntheticCond
+			if condition == nil {
+				condition = g.templateExpr(newTemplateExpr(branch.Cond, branch.CondPos))
+			}
+			test := genLogical("&&", genBinary("<", id("$$active"), numLit(0)), condition)
 			tryBody = append(tryBody, genIf(test, genAssignStmt(id("$$active"), numLit(i))))
 			continue
 		}

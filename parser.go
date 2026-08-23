@@ -121,9 +121,11 @@ type IfChainNode struct {
 }
 
 type IfBranch struct {
-	Cond     string // empty string → #else branch
-	CondPos  int    // byte offset of condition in template
-	Expr     *TemplateExpr
+	Cond          string // empty string → #else branch
+	CondPos       int    // byte offset of condition in template
+	Expr          *TemplateExpr
+	SyntheticCond JsExpr // compiler-generated condition AST for synthetic branches
+
 	Children []Node         // branch body
 	Elem     *ElementNode   // non-nil for element branches (old attr syntax)
 	Comp     *ComponentNode // non-nil for component branches
