@@ -1330,7 +1330,11 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// default import: `import Name from './Name.vela'`.  Emitting
 	// `export default Name;` makes both the default and the named
 	// import resolve to the same factory.
-	prog.Body = append(prog.Body, jsStmt("export default "+g.name+";"))
+	prog.Body = append(prog.Body, &JsExportDecl{
+		baseStmt:    baseStmt{genNode()},
+		Default:     true,
+		Declaration: genExprStmt(id(g.name)),
+	})
 
 	// Prepend runtime-helper imports + the $$dispatch binding for
 	// whichever helpers this component actually references.
@@ -1403,25 +1407,28 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	})
 
 	// Named imports, deterministic order.
-	var names []string
+	var specs []JsImportSpec
 	if usesDispatch {
-		names = append(names, "$$dispatch as $$rt_dispatch")
+		specs = append(specs, JsImportSpec{Imported: "$$dispatch", Local: "$$rt_dispatch"})
 	}
 	if usesInsertHTML {
-		names = append(names, "$$insertHTML")
+		specs = append(specs, JsImportSpec{Imported: "$$insertHTML"})
 	}
 	if usesProxy {
-		names = append(names, "$$proxy")
+		specs = append(specs, JsImportSpec{Imported: "$$proxy"})
 	}
 	if usesIsProxy {
-		names = append(names, "$$isProxy")
+		specs = append(specs, JsImportSpec{Imported: "$$isProxy"})
 	}
 	if usesDefer {
-		names = append(names, "$$defer")
+		specs = append(specs, JsImportSpec{Imported: "$$defer"})
 	}
-	if len(names) > 0 {
-		imp := jsStmt("import { " + strings.Join(names, ", ") +
-			" } from './runtime.js';")
+	if len(specs) > 0 {
+		imp := &JsImportDecl{
+			baseStmt:   baseStmt{genNode()},
+			Specifiers: specs,
+			Source:     "./runtime.js",
+		}
 		// Helper import goes after user imports, before the body —
 		// prepend to module body just ahead of the export.
 		prog.Body = append([]JsStmt{imp}, prog.Body...)
@@ -1437,9 +1444,12 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	// Comment anchor in the parent's DOM, and dispatching there
 	// would fire on the parent — leaking to sibling components.
 	if usesDispatch {
-		bind := jsStmts("const $$dispatch = (name, detail) => " +
-			"$$rt_dispatch($$root, name, detail);")
-		fnBody.Body = append(bind, fnBody.Body...)
+		bind := genConst("$$dispatch", &JsArrowFunc{
+			baseExpr: baseExpr{genNode()},
+			Params:   []JsExpr{id("name"), id("detail")},
+			Body:     genCall(id("$$rt_dispatch"), id("$$root"), id("name"), id("detail")),
+		})
+		fnBody.Body = append([]JsStmt{bind}, fnBody.Body...)
 	}
 }
 
