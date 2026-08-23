@@ -2466,26 +2466,24 @@ func (g *ASTGen) buildHoleSubtree(
 				if isBlankText(text) {
 					continue
 				}
-				res.build = append(res.build, jsStmt(
-					targetVar+".appendChild(document.createTextNode("+
-						backtickString(text)+"));"))
+				res.build = append(res.build,
+					genExprStmt(genCall(genMember(id(targetVar), "appendChild"),
+						genCall(genMember(id("document"), "createTextNode"), strLit(text)))))
 				continue
 			}
 			// Dynamic TextNode — one text-node hole.
 			refVar := g.id()
 			if hoist {
-				res.decls = append(res.decls,
-					jsStmt("let "+refVar+" = null;"))
-				res.build = append(res.build, jsStmt(
-					refVar+" = document.createTextNode('');"))
+				res.decls = append(res.decls, genLet(refVar, genNull()))
+				res.build = append(res.build,
+					genAssignStmt(id(refVar), genCall(genMember(id("document"), "createTextNode"), strLit(""))))
 				res.captured = append(res.captured, refVar)
 			} else {
-				res.build = append(res.build, jsStmt(
-					"const "+refVar+" = document.createTextNode('');"))
+				res.build = append(res.build,
+					genConst(refVar, genCall(genMember(id("document"), "createTextNode"), strLit(""))))
 			}
-			res.build = append(res.build, jsStmt(
-				targetVar+".appendChild("+refVar+");"))
-
+			res.build = append(res.build,
+				genExprStmt(genCall(genMember(id(targetVar), "appendChild"), id(refVar))))
 			write := g.textWriteStmt(refVar, tn.Parts)
 			hg := guard
 			if hg == "$$self" {
@@ -2513,25 +2511,26 @@ func (g *ASTGen) buildHoleSubtree(
 	// a live TreeWalker).
 	twVar := targetVar + "_tw"
 	if hoist {
-		res.decls = append(res.decls, jsStmt("let "+twVar+" = null;"))
-		res.build = append(res.build, jsStmt(
-			twVar+" = document.createTreeWalker("+targetVar+", 128);"))
+		res.decls = append(res.decls, genLet(twVar, genNull()))
+		res.build = append(res.build,
+			genAssignStmt(id(twVar), genCall(genMember(id("document"), "createTreeWalker"), id(targetVar), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "128", Kind: "number"})))
 		res.captured = append(res.captured, twVar)
 	} else {
-		res.build = append(res.build, jsStmt(
-			"const "+twVar+" = document.createTreeWalker("+targetVar+", 128);"))
+		res.build = append(res.build,
+			genConst(twVar, genCall(genMember(id("document"), "createTreeWalker"), id(targetVar), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "128", Kind: "number"})))
 	}
 
 	anchors := make([]string, len(holes))
 	for i := range holes {
 		anchors[i] = g.id() + "_a"
-		decl := anchors[i] + " = " + twVar + ".nextNode();"
 		if hoist {
-			res.decls = append(res.decls, jsStmt("let "+anchors[i]+" = null;"))
-			res.build = append(res.build, jsStmt(anchors[i]+" = "+twVar+".nextNode();"))
+			res.decls = append(res.decls, genLet(anchors[i], genNull()))
+			res.build = append(res.build,
+				genAssignStmt(id(anchors[i]), genCall(genMember(id(twVar), "nextNode"))))
 			res.captured = append(res.captured, anchors[i])
 		} else {
-			res.build = append(res.build, jsStmt("const "+decl))
+			res.build = append(res.build,
+				genConst(anchors[i], genCall(genMember(id(twVar), "nextNode"))))
 		}
 	}
 
@@ -2546,16 +2545,16 @@ func (g *ASTGen) buildHoleSubtree(
 		anchor := anchors[i]
 
 		if hoist {
-			res.decls = append(res.decls, jsStmt("let "+refVar+" = null;"))
-			res.build = append(res.build, jsStmt(
-				refVar+" = document.createTextNode('');"))
+			res.decls = append(res.decls, genLet(refVar, genNull()))
+			res.build = append(res.build,
+				genAssignStmt(id(refVar), genCall(genMember(id("document"), "createTextNode"), strLit(""))))
 			res.captured = append(res.captured, refVar)
 		} else {
-			res.build = append(res.build, jsStmt(
-				"const "+refVar+" = document.createTextNode('');"))
+			res.build = append(res.build,
+				genConst(refVar, genCall(genMember(id("document"), "createTextNode"), strLit(""))))
 		}
-		res.build = append(res.build, jsStmt(
-			anchor+".parentNode.replaceChild("+refVar+", "+anchor+");"))
+		res.build = append(res.build,
+			genExprStmt(genCall(genMember(genMember(id(anchor), "parentNode"), "replaceChild"), id(refVar), id(anchor))))
 
 		write := g.textWriteStmt(refVar, textNode.Parts)
 		hg := guard
