@@ -2859,6 +2859,9 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	keymap := id + "_km"
 	fragFn := "$$frag_" + id
 	eachFn := "$$each_" + id
+	generatedID := func(name string) JsExpr {
+		return &JsIdent{baseExpr: baseExpr{genNode()}, Name: name}
+	}
 
 	// Determine the row element: a single child element is used
 	// directly; anything else is wrapped in a <div>.
@@ -2885,12 +2888,16 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 
 	// ── 1. Anchor ────────────────────────────────────────────
 	if captured {
-		g.declare(jsStmt("let " + anchor + " = null;"))
-		g.body = append(g.body, jsStmt(
-			anchor+" = document.createComment('#each');"))
+		g.declare(genLet(anchor, genNull()))
+		g.body = append(g.body, genAssignStmt(
+			generatedID(anchor),
+			genCall(genMember(generatedID("document"), "createComment"), strLit("#each")),
+		))
 	} else {
-		g.body = append(g.body, jsStmt(
-			"const "+anchor+" = document.createComment('#each');"))
+		g.body = append(g.body, genConst(
+			anchor,
+			genCall(genMember(generatedID("document"), "createComment"), strLit("#each")),
+		))
 	}
 
 	// ── 2. Fragment builder ──────────────────────────────────
@@ -2914,10 +2921,13 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	g.withFragmentIDs(func() {
 		rowVar = g.id() // $$f0
 		fragBody = []JsStmt{
-			jsStmt("let $$item_" + id + " = " + itemVar + ";"),
-			jsStmt("const " + rowVar + " = document.createElement('" +
-				rowElem.Tag + "');"),
-			jsStmt(rowVar + ".setAttribute('" + g.scopeID + "', '');"),
+			genLet("$$item_"+id, generatedID(itemVar)),
+			genConst(rowVar, genCall(
+				genMember(generatedID("document"), "createElement"), strLit(rowElem.Tag),
+			)),
+			genExprStmt(genCall(
+				genMember(generatedID(rowVar), "setAttribute"), strLit(g.scopeID), strLit(""),
+			)),
 		}
 		// Per-row attribute wiring (events, binds, directives).
 		rowAttrs = g.buildEachRowAttrs(rowElem, rowVar, itemVar,
@@ -2974,7 +2984,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// update(item, $$i): refresh the row box, then re-run the
 	// per-row directive/bind statements and the hole writes — in
 	// that order, matching legacy (attr loop precedes child walk).
-	updateBody := []JsStmt{jsStmt("$$item_" + id + " = " + itemVar + ";")}
+	updateBody := []JsStmt{genAssignStmt(generatedID("$$item_"+id), generatedID(itemVar))}
 	updateBody = append(updateBody, rowAttrs.update...)
 	updateBody = append(updateBody, sub.updateStmts...)
 	// Re-run each child component's `.set(propsObj)` so an
@@ -2996,11 +3006,8 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 
 	// Keep the fragment structured. Rendering fragBody/updateBody to text and parsing
 	// it again drops SourceOrigin from row-local template expressions.
-	generatedID := func(name string) JsExpr {
-		return &JsIdent{baseExpr: baseExpr{genNode()}, Name: name}
-	}
 	destroyBody := append([]JsStmt{}, rowCleanup...)
-	destroyBody = append(destroyBody, jsStmt(rowVar+".remove();"))
+	destroyBody = append(destroyBody, genExprStmt(genCall(genMember(generatedID(rowVar), "remove"))))
 	fragBody = append(fragBody, &JsReturnStmt{
 		baseStmt: baseStmt{genNode()},
 		Arg: &JsObjectExpr{
