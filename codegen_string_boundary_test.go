@@ -35,7 +35,6 @@ func TestASTGenStructuralStringGatewayInventory(t *testing.T) {
 		"buildSlotClosures/jsStmt":       1,
 		"buildSlotNode/jsStmt":           1,
 		"buildStateDecl/jsStmt":          3,
-		"buildTextNode/jsStmt":           2,
 		"emitBindThisAST/jsStmt":         2,
 		"jsStmt/jsStmts":                 1,
 		"rewrittenTemplateExpr/jsExpr":   1,

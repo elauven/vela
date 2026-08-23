@@ -761,7 +761,7 @@ func (g *ASTGen) textValueExpr(parts []*Part) JsExpr {
 }
 
 func (g *ASTGen) textWriteStmt(ref string, parts []*Part) JsStmt {
-	return g.templateStmt(ref+".data = "+templateMarker(0)+";", g.textValueExpr(parts))
+	return genAssignStmt(genMember(id(ref), "data"), g.textValueExpr(parts))
 }
 
 func guardedTemplateStmt(stmt JsStmt, guard string) JsStmt {
@@ -3859,11 +3859,10 @@ func (g *ASTGen) buildTextNode(tn *TextNode, parentVar string) {
 	g.body = append(g.body,
 		genConst(refVar, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
 		genExprStmt(genCall(genMember(id(parentVar), "appendChild"), id(refVar))))
-	exprSrc := buildExpr(tn.Parts)
-	writeSrc := refVar + ".data = " + exprSrc + ";"
-	g.initBody = append(g.initBody, jsStmt(writeSrc))
+	write := g.textWriteStmt(refVar, tn.Parts)
+	g.initBody = append(g.initBody, write)
 	for _, dep := range templatePartsDeps(tn.Parts, g.reactiveNames()) {
-		g.addUpdate(dep, jsStmt(writeSrc))
+		g.addUpdate(dep, shareStmt(write))
 	}
 }
 
