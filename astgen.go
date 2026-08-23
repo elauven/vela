@@ -150,6 +150,16 @@ func genFor(init JsStmt, test, update JsExpr, body JsStmt) *JsForStmt {
 	return &JsForStmt{baseStmt: baseStmt{genNode()}, Init: init, Test: test, Update: update, Body: body}
 }
 
+func genForOf(name string, iterable JsExpr, body JsStmt) *JsForInStmt {
+	return &JsForInStmt{
+		baseStmt: baseStmt{genNode()},
+		Left:     genConst(name, nil),
+		Right:    iterable,
+		Body:     body,
+		IsOf:     true,
+	}
+}
+
 // generatedMemberPath turns a compiler-owned dotted path into a member AST.
 // It must not receive user JavaScript.
 func generatedMemberPath(path string) JsExpr {
@@ -3590,7 +3600,26 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		tryBody = append(tryBody, g.templateStmt("const "+keyNew+" = "+templateMarker(0)+";", g.templateExpr(chain.KeyAST)))
 		for i := range chain.Branches {
 			bv := fn + "_b" + itoa(i)
-			tryBody = append(tryBody, jsStmt("if ("+fn+"_keyprev !== "+keyNew+" && "+bv+") { for (const $$node of "+bv+") $$node.remove(); "+bv+" = null;"+nullCaptured(plans[i].captured)+destroyComps(plans[i].comps)+" }"))
+			teardown := []JsStmt{
+				genForOf("$$node", id(bv), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+				genAssignStmt(id(bv), genNull()),
+			}
+			for _, captured := range plans[i].captured {
+				teardown = append(teardown, genAssignStmt(id(captured), genNull()))
+			}
+			for _, comp := range plans[i].comps {
+				teardown = append(teardown,
+					genIf(id(comp.inst), genBlock(
+						genExprStmt(genCall(genMember(id(comp.inst), "destroy"))),
+						genAssignStmt(id(comp.inst), genNull()),
+					)),
+					genAssignStmt(id(comp.wrap), genNull()),
+				)
+			}
+			tryBody = append(tryBody, genIf(
+				genLogical("&&", genBinary("!==", id(fn+"_keyprev"), id(keyNew)), id(bv)),
+				genBlock(teardown...),
+			))
 		}
 		tryBody = append(tryBody, genAssignStmt(id(fn+"_keyprev"), id(keyNew)))
 	}
