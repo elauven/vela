@@ -3079,7 +3079,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// across the component's whole life.  Hoist them to component
 	// scope when building inside a captured branch/slot scope.
 	reconcilerDecl := g.eachReconciler(
-		eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar)
+		eachFn, fragFn, anchor, blocks, keymap, keyExpr, block.KeyAST, itemVar, indexVar)
 
 	if captured {
 		g.declare(fragDecl)
@@ -3153,10 +3153,10 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 // eachReconciler builds a typed reconciler. The keyed path remains a temporary
 // source fallback while its key-expression origin handling is migrated.
 func (g *ASTGen) eachReconciler(
-	eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar string,
+	eachFn, fragFn, anchor, blocks, keymap, keyExpr string, keyAST *TemplateExpr, itemVar, indexVar string,
 ) JsStmt {
 	if keyExpr != "" {
-		return jsStmt(g.eachReconcilerSource(eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar))
+		return g.eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap, keyAST, itemVar, indexVar)
 	}
 	return g.eachReconcilerUnkeyed(eachFn, fragFn, anchor, blocks, itemVar, indexVar)
 }
@@ -3248,108 +3248,63 @@ func (g *ASTGen) eachReconcilerUnkeyed(eachFn, fragFn, anchor, blocks, itemVar, 
 	}
 }
 
-// eachReconciler returns the source of the $$each_$$nN reconciler
-// function — the unkeyed or keyed variant.  Both are fixed-shape;
-// only names and the key expression vary.
-func (g *ASTGen) eachReconcilerSource(
-	eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar string,
-) string {
-	if keyExpr == "" {
-		// Unkeyed reconciler.  When the array reference is stable
-		// AND the existing rows are still in the DOM, the
-		// reconciler updates positionally: rows in the overlap
-		// (min(oldLen, newLen)) are updated in place via
-		// $$blk.update(item, i); surplus rows are destroyed from
-		// the tail; new rows are appended for any growth.
-		//
-		// Positional update preserves DOM identity for the
-		// overlapping prefix — focus, scroll position, native
-		// selection, IME composition survive — and reuses child
-		// component instances (their .set(propsObj) is replayed
-		// by the row's update closure).  This is the unkeyed
-		// each's correct semantics: it is INDEX-based, so a
-		// middle-insertion shifts every subsequent row's content
-		// (the user's mental model "this is row 1, it's about
-		// item B" becomes "this is row 1, it's about item C")
-		// but DOM nodes are preserved.  Users who want stable
-		// row identity across middle inserts/removes should use
-		// a keyed {#each} — see Session C.
-		//
-		// The DOM-liveness check (rows[0].el.isConnected) matters
-		// when an enclosing {#if} branch was previously unmounted:
-		// the chain removes the branch root, which detaches the
-		// rows from the document but leaves their parent
-		// reference intact — so a bare .parentNode check would
-		// spuriously pass and we would update orphaned blocks.
-		// .isConnected reports document-tree connectedness.
-		//
-		// When the reference or liveness check fails we fall
-		// through to full destroy + rebuild — that is still
-		// required for "items = items.concat(…)" style updates
-		// (different array reference, even if contents overlap)
-		// and for branch-reopen.
-		return "function " + eachFn + "($$arr) {" +
-			"  if (!" + anchor + ".parentNode) return;" +
-			"  $$arr = $$arr || [];" +
-			"  const $$sameRef = (" + eachFn + "._arr === $$arr);" +
-			"  const $$stillLive = (" + blocks + ".length === 0 || " +
-			blocks + "[0].el.isConnected);" +
-			"  if ($$sameRef && $$stillLive) {" +
-			"    const $$common = Math.min(" + blocks + ".length, $$arr.length);" +
-			"    for (let $$i = 0; $$i < $$common; $$i++) {" +
-			"      if (" + blocks + "[$$i].update) " + blocks + "[$$i].update($$arr[$$i], $$i);" +
-			"    }" +
-			"    if (" + blocks + ".length > $$arr.length) {" +
-			"      for (let $$i = $$arr.length; $$i < " + blocks + ".length; $$i++) {" +
-			"        " + blocks + "[$$i].destroy();" +
-			"      }" +
-			"      " + blocks + ".length = $$arr.length;" +
-			"    } else if (" + blocks + ".length < $$arr.length) {" +
-			"      for (let $$i = $$common; $$i < $$arr.length; $$i++) {" +
-			"        const $$blk = " + fragFn + "($$arr[$$i], $$i);" +
-			"        " + anchor + ".before($$blk.el);" +
-			"        " + blocks + ".push($$blk);" +
-			"      }" +
-			"    }" +
-			"    return;" +
-			"  }" +
-			"  " + eachFn + "._arr = $$arr;" +
-			"  " + blocks + ".forEach(b => b.destroy());" +
-			"  " + blocks + " = [];" +
-			"  $$arr.forEach(function(" + itemVar + ", " + indexVar + ") {" +
-			"    const $$blk = " + fragFn + "(" + itemVar + ", " + indexVar + ");" +
-			"    " + anchor + ".before($$blk.el);" +
-			"    " + blocks + ".push($$blk);" +
-			"  });" +
-			"}"
+func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap string, keyAST *TemplateExpr, itemVar, indexVar string) JsStmt {
+	arr := id("$$arr")
+	key := id("$$key")
+	blk := id("$$blk")
+	keyExpr := g.templateExpr(keyAST)
+	buildRow := genBlock(
+		genConst("$$key", genCall(id("String"), keyExpr)),
+		genExprStmt(genCall(genMember(id("$$newKeys"), "add"), key)),
+		genLet("$$blk", genCall(genMember(id(keymap), "get"), key)),
+		&JsIfStmt{
+			baseStmt: baseStmt{genNode()},
+			Test:     blk,
+			Then: genBlock(genIf(
+				genMember(blk, "update"),
+				genExprStmt(genCall(genMember(blk, "update"), id(itemVar), id(indexVar))),
+			)),
+			Else: genBlock(
+				genAssignStmt(blk, genCall(id(fragFn), id(itemVar), id(indexVar))),
+				genExprStmt(genCall(genMember(id(keymap), "set"), key, blk)),
+			),
+		},
+		genIf(
+			genBinary("!==", genMember(genMember(blk, "el"), "nextSibling"), id(anchor)),
+			genExprStmt(genCall(genMember(id(anchor), "before"), genMember(blk, "el"))),
+		),
+		genExprStmt(genCall(genMember(id("$$newBlocks"), "push"), blk)),
+	)
+	removeDropped := &JsArrowFunc{
+		baseExpr: baseExpr{genNode()},
+		Params:   []JsExpr{id("$$blk"), id("$$key")},
+		Body: genBlock(genIf(
+			genUnary("!", genCall(genMember(id("$$newKeys"), "has"), id("$$key"))),
+			genBlock(
+				genExprStmt(genCall(genMember(id("$$blk"), "destroy"))),
+				genExprStmt(genCall(genMember(id(keymap), "delete"), id("$$key"))),
+			),
+		)),
 	}
-	// Keyed: diff against the key map, reuse matched rows.
-	return "function " + eachFn + "($$arr) {" +
-		"  if (!" + anchor + ".parentNode) return;" +
-		"  const $$newKeys = new Set();" +
-		"  const $$newBlocks = [];" +
-		"  ($$arr||[]).forEach(function(" + itemVar + ", " + indexVar + ") {" +
-		"    const $$key = String(" + stripBraces(keyExpr) + ");" +
-		"    $$newKeys.add($$key);" +
-		"    let $$blk = " + keymap + ".get($$key);" +
-		"    if ($$blk) {" +
-		"      if ($$blk.update) $$blk.update(" + itemVar + ", " + indexVar + ");" +
-		"    } else {" +
-		"      $$blk = " + fragFn + "(" + itemVar + ", " + indexVar + ");" +
-		"      " + keymap + ".set($$key, $$blk);" +
-		"    }" +
-		"    if ($$blk.el.nextSibling !== " + anchor + ") " + anchor + ".before($$blk.el);" +
-		"    $$newBlocks.push($$blk);" +
-		"  });" +
-		"  " + keymap + ".forEach(($$blk, $$key) => {" +
-		"    if (!$$newKeys.has($$key)) { $$blk.destroy(); " +
-		keymap + ".delete($$key); }" +
-		"  });" +
-		"  " + blocks + " = $$newBlocks;" +
-		"}"
+	return &JsFuncDecl{
+		baseStmt: baseStmt{genNode()},
+		Name:     eachFn,
+		Params:   []JsExpr{arr},
+		Body: genBlock(
+			genIf(genUnary("!", genMember(id(anchor), "parentNode")), genReturn(nil)),
+			genConst("$$newKeys", genNew(id("Set"))),
+			genConst("$$newBlocks", genArray()),
+			genExprStmt(genCall(genMember(genLogical("||", arr, genArray()), "forEach"), &JsFuncExpr{
+				baseExpr: baseExpr{genNode()},
+				Params:   []JsExpr{id(itemVar), id(indexVar)},
+				Body:     buildRow,
+			})),
+			genExprStmt(genCall(genMember(id(keymap), "forEach"), removeDropped)),
+			genAssignStmt(id(blocks), id("$$newBlocks")),
+		),
+	}
 }
 
-// buildAwaitBlock emits an {#await}/{:then}/{:catch} block
 // (block 12).
 //
 // {#await} is lowered by the legacy walkAwaitBlock into promise-
