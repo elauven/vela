@@ -2757,7 +2757,7 @@ func (g *ASTGen) buildHolesDOM(el *ElementNode) {
 			return
 		}
 		if text, ok := staticRawText(el.Children); ok {
-			g.body = append(g.body, jsStmt("$$root."+prop+" = '"+escapeJSString(text)+"';"))
+			g.body = append(g.body, genAssignStmt(genMember(id("$$root"), prop), strLit(text)))
 			return
 		}
 	}
@@ -3745,8 +3745,7 @@ func (g *ASTGen) buildChildren(el *ElementNode, varName string) {
 			return
 		}
 		if text, ok := staticRawText(children); ok {
-			g.body = append(g.body, jsStmt(
-				varName+"."+prop+" = '"+escapeJSString(text)+"';"))
+			g.body = append(g.body, genAssignStmt(genMember(id(varName), prop), strLit(text)))
 			return
 		}
 	}
