@@ -3078,8 +3078,8 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// are persistent: the setter cascade re-invokes the reconciler
 	// across the component's whole life.  Hoist them to component
 	// scope when building inside a captured branch/slot scope.
-	reconcilerDecl := jsStmt(g.eachReconciler(
-		eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar))
+	reconcilerDecl := g.eachReconciler(
+		eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar)
 
 	if captured {
 		g.declare(fragDecl)
@@ -3150,10 +3150,108 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	)))
 }
 
+// eachReconciler builds a typed reconciler. The keyed path remains a temporary
+// source fallback while its key-expression origin handling is migrated.
+func (g *ASTGen) eachReconciler(
+	eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar string,
+) JsStmt {
+	if keyExpr != "" {
+		return jsStmt(g.eachReconcilerSource(eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar))
+	}
+	return g.eachReconcilerUnkeyed(eachFn, fragFn, anchor, blocks, itemVar, indexVar)
+}
+
+func (g *ASTGen) eachReconcilerUnkeyed(eachFn, fragFn, anchor, blocks, itemVar, indexVar string) JsStmt {
+	arr := id("$$arr")
+	blockAt := func(index JsExpr) JsExpr { return genComputedMember(id(blocks), index) }
+	arrAt := func(index JsExpr) JsExpr { return genComputedMember(arr, index) }
+	inc := func(name string) JsExpr {
+		return &JsAssignExpr{baseExpr: baseExpr{genNode()}, Op: "=", L: id(name), R: genBinary("+", id(name), numLit(1))}
+	}
+	rowDestroy := func(index JsExpr) JsStmt {
+		return genExprStmt(genCall(genMember(blockAt(index), "destroy")))
+	}
+	makeRow := func(index JsExpr) []JsStmt {
+		return []JsStmt{
+			genConst("$$blk", genCall(id(fragFn), arrAt(index), index)),
+			genExprStmt(genCall(genMember(id(anchor), "before"), genMember(id("$$blk"), "el"))),
+			genExprStmt(genCall(genMember(id(blocks), "push"), id("$$blk"))),
+		}
+	}
+
+	commonLoop := genFor(
+		genLet("$$i", numLit(0)),
+		genBinary("<", id("$$i"), id("$$common")),
+		inc("$$i"),
+		genBlock(genIf(
+			genMember(blockAt(id("$$i")), "update"),
+			genExprStmt(genCall(genMember(blockAt(id("$$i")), "update"), arrAt(id("$$i")), id("$$i"))),
+		)),
+	)
+	shrinkLoop := genFor(
+		genLet("$$i", genMember(arr, "length")),
+		genBinary("<", id("$$i"), genMember(id(blocks), "length")),
+		inc("$$i"),
+		genBlock(rowDestroy(id("$$i"))),
+	)
+	growLoop := genFor(
+		genLet("$$i", id("$$common")),
+		genBinary("<", id("$$i"), genMember(arr, "length")),
+		inc("$$i"),
+		genBlock(makeRow(id("$$i"))...),
+	)
+	updateExisting := genBlock(
+		genConst("$$common", genCall(genMember(id("Math"), "min"), genMember(id(blocks), "length"), genMember(arr, "length"))),
+		commonLoop,
+		&JsIfStmt{
+			baseStmt: baseStmt{genNode()},
+			Test:     genBinary(">", genMember(id(blocks), "length"), genMember(arr, "length")),
+			Then: genBlock(
+				shrinkLoop,
+				genAssignStmt(genMember(id(blocks), "length"), genMember(arr, "length")),
+			),
+			Else: &JsIfStmt{
+				baseStmt: baseStmt{genNode()},
+				Test:     genBinary("<", genMember(id(blocks), "length"), genMember(arr, "length")),
+				Then:     genBlock(growLoop),
+			},
+		},
+		genReturn(nil),
+	)
+	return &JsFuncDecl{
+		baseStmt: baseStmt{genNode()},
+		Name:     eachFn,
+		Params:   []JsExpr{arr},
+		Body: genBlock(
+			genIf(genUnary("!", genMember(id(anchor), "parentNode")), genReturn(nil)),
+			genAssignStmt(arr, genLogical("||", arr, genArray())),
+			genConst("$$sameRef", genBinary("===", genMember(id(eachFn), "_arr"), arr)),
+			genConst("$$stillLive", genLogical("||",
+				genBinary("===", genMember(id(blocks), "length"), numLit(0)),
+				genMember(genMember(blockAt(numLit(0)), "el"), "isConnected"),
+			)),
+			genIf(genLogical("&&", id("$$sameRef"), id("$$stillLive")), updateExisting),
+			genAssignStmt(genMember(id(eachFn), "_arr"), arr),
+			genExprStmt(genCall(genMember(id(blocks), "forEach"), &JsArrowFunc{
+				baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("b")}, Body: genCall(genMember(id("b"), "destroy")),
+			})),
+			genAssignStmt(id(blocks), genArray()),
+			genExprStmt(genCall(genMember(arr, "forEach"), &JsFuncExpr{
+				baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(itemVar), id(indexVar)},
+				Body: genBlock(
+					genConst("$$blk", genCall(id(fragFn), id(itemVar), id(indexVar))),
+					genExprStmt(genCall(genMember(id(anchor), "before"), genMember(id("$$blk"), "el"))),
+					genExprStmt(genCall(genMember(id(blocks), "push"), id("$$blk"))),
+				),
+			})),
+		),
+	}
+}
+
 // eachReconciler returns the source of the $$each_$$nN reconciler
 // function — the unkeyed or keyed variant.  Both are fixed-shape;
 // only names and the key expression vary.
-func (g *ASTGen) eachReconciler(
+func (g *ASTGen) eachReconcilerSource(
 	eachFn, fragFn, anchor, blocks, keymap, keyExpr, itemVar, indexVar string,
 ) string {
 	if keyExpr == "" {
