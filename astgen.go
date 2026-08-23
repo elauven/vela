@@ -3236,11 +3236,11 @@ func (g *ASTGen) eachReconciler(
 // $$awaitVal/$$awaitErr storage via rewriteIdentInNodes before the
 // chain sees them.
 func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
-	id := g.id()
-	stateVar := "$$promState_" + id
-	valVar := "$$awaitVal_" + id
-	errVar := "$$awaitErr_" + id
-	cellVar := "$$promCell_" + id
+	blockID := g.id()
+	stateVar := "$$promState_" + blockID
+	valVar := "$$awaitVal_" + blockID
+	errVar := "$$awaitErr_" + blockID
+	cellVar := "$$promCell_" + blockID
 
 	// When this {#await} is built inside another branch's build
 	// closure, the state-var declarations and driver function
@@ -3248,13 +3248,13 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	// routing.  The initial driver call still goes to g.initBody
 	// so it fires when the component mounts.
 	nestedHoist := g.inCapturedScope()
-	declAwait := func(s string) { g.declareInScope(jsStmt(s)) }
+	declAwait := func(stmt JsStmt) { g.declareInScope(stmt) }
 
 	// Component-scope storage.  State starts at 0 (pending).
-	declAwait("let " + stateVar + " = 0;")
-	declAwait("let " + valVar + " = undefined;")
-	declAwait("let " + errVar + " = undefined;")
-	declAwait("let " + cellVar + " = null;")
+	declAwait(genLet(stateVar, &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "0"}))
+	declAwait(genLet(valVar, id("undefined")))
+	declAwait(genLet(errVar, id("undefined")))
+	declAwait(genLet(cellVar, genNull()))
 
 	// Synthetic chain: pending / resolved / rejected.  The {:then}
 	// and {:catch} binding names are rewritten to the module-scope
@@ -3280,7 +3280,7 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	// guarded by the cell check: a stale settle cannot clobber a
 	// fresher one.  The driver runs once at init and again whenever
 	// the promise expression's reactive deps change.
-	driver := "$$awaitDrive_" + id
+	driver := "$$awaitDrive_" + blockID
 	driverStmt := g.templateStmt(
 		"function "+driver+"() {"+
 			"  const $$p = Promise.resolve("+templateMarker(0)+");"+
@@ -3315,11 +3315,11 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	}
 
 	// Run the driver at init.
-	g.initBody = append(g.initBody, jsStmt(driver+"();"))
+	g.initBody = append(g.initBody, genInvoke(driver))
 
 	// Re-run the driver when the promise expression's deps change.
 	for _, dep := range templateExprDeps(block.Expr, stripBraces(block.PromiseExpr), g.reactiveNames()) {
-		g.addUpdate(dep, jsStmt(driver+"();"))
+		g.addUpdate(dep, genInvoke(driver))
 	}
 }
 
