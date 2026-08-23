@@ -3487,14 +3487,20 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 
 	captured := g.inCapturedScope()
 	if captured {
-		g.declare(jsStmt("let " + anchor + " = null;"))
-		g.body = append(g.body, jsStmt(anchor+" = document.createComment('if-chain');"))
+		g.declare(genLet(anchor, genNull()))
+		g.body = append(g.body, genAssignStmt(
+			id(anchor),
+			genCall(genMember(id("document"), "createComment"), strLit("if-chain")),
+		))
 	} else {
-		g.body = append(g.body, jsStmt("const "+anchor+" = document.createComment('if-chain');"))
+		g.body = append(g.body, genConst(
+			anchor,
+			genCall(genMember(id("document"), "createComment"), strLit("if-chain")),
+		))
 	}
 	for i := range chain.Branches {
-		decl := jsStmt("let " + fn + "_b" + itoa(i) + " = null;")
-		cleanupDecl := jsStmt("let " + fn + "_b" + itoa(i) + "_cleanup = null;")
+		decl := genLet(fn+"_b"+itoa(i), genNull())
+		cleanupDecl := genLet(fn+"_b"+itoa(i)+"_cleanup", genNull())
 		if captured {
 			g.declare(decl)
 			g.declare(cleanupDecl)
@@ -3502,14 +3508,21 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			g.body = append(g.body, decl, cleanupDecl)
 		}
 	}
-	runningDecl := jsStmt("let " + fn + "_running = false, " + fn + "_pending = false;")
+	runningDecl := &JsVarDecl{
+		baseStmt: baseStmt{genNode()},
+		Kind:     "let",
+		Decls: []*JsVarDeclarator{
+			{Id: id(fn + "_running"), Init: &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}},
+			{Id: id(fn + "_pending"), Init: &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}},
+		},
+	}
 	if captured {
 		g.declare(runningDecl)
 	} else {
 		g.body = append(g.body, runningDecl)
 	}
 	if chain.KeyExpr != "" {
-		keyDecl := jsStmt("let " + fn + "_keyprev = {};")
+		keyDecl := genLet(fn+"_keyprev", &JsObjectExpr{baseExpr: baseExpr{genNode()}})
 		if captured {
 			g.declare(keyDecl)
 		} else {
@@ -3522,7 +3535,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		frag := bv + "_frag"
 		if allStatic(branch.Children) {
 			html := emitStaticHTML(branch.Children, g.scopeID)
-			plans[i].build = []JsStmt{jsStmt("$$insertHTML(" + frag + ", '" + escapeJSString(html) + "');")}
+			plans[i].build = []JsStmt{genInvoke("$$insertHTML", id(frag), strLit(html))}
 			continue
 		}
 		if astHoleSubtreeOK(branch.Children) {
