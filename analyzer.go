@@ -85,8 +85,11 @@ type Function struct {
 }
 
 type Import struct {
-	Spec   string
-	Source string
+	Spec        string
+	Source      string
+	DefaultName string
+	Namespace   string
+	Specifiers  []JsImportSpec
 	// Names is the list of local binding names introduced by this import.
 	// For `import Card from '...'` → ["Card"]; for `import { A, B as C } from
 	// '...'` → ["A", "C"]; for `import * as Ns from '...'` → ["Ns"]; for
@@ -437,10 +440,17 @@ func importFromDecl(d *JsImportDecl) *Import {
 	if d.Namespace != "" {
 		names = append(names, d.Namespace)
 	}
-	for _, s := range d.Specifiers {
-		names = append(names, s.Local)
+	for _, spec := range d.Specifiers {
+		names = append(names, spec.Local)
 	}
-	return &Import{Spec: buildImportSpec(d), Source: d.Source, Names: names}
+	return &Import{
+		Spec:        buildImportSpec(d),
+		Source:      d.Source,
+		DefaultName: d.DefaultName,
+		Namespace:   d.Namespace,
+		Specifiers:  append([]JsImportSpec(nil), d.Specifiers...),
+		Names:       names,
+	}
 }
 
 func buildImportSpec(d *JsImportDecl) string {

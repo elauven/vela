@@ -1544,13 +1544,9 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	}
 }
 
-// buildImportDecls reconstructs each user import as a JsImportDecl.
-//
-// The analyzer stores imports as (Spec, Source) string pairs.  We
-// rebuild the import-statement source text — applying the same
-// path rewriting the legacy generator does (.vela→.js, the vela
-// runtime alias) — and parse it back into a real AST node, so the
-// import participates in the unified tree like everything else.
+// buildImportDecls reconstructs user imports from the typed shape captured by
+// the analyzer. Path rewriting and intrinsic filtering are applied directly to
+// JsImportDecl fields; no executable import text is built or parsed again.
 func (g *ASTGen) buildImportDecls() []JsStmt {
 	if g.analysis == nil {
 		return nil
@@ -1558,31 +1554,31 @@ func (g *ASTGen) buildImportDecls() []JsStmt {
 	var out []JsStmt
 	for _, imp := range g.analysis.Imports {
 		src := imp.Source
-		spec := imp.Spec
+		defaultName := imp.DefaultName
+		namespace := imp.Namespace
+		specifiers := append([]JsImportSpec(nil), imp.Specifiers...)
 		if src == "vela/store" || src == "vela" {
 			src = "./runtime.js"
-			// onMount/onDestroy are compiler intrinsics — the
-			// analyzer extracts them and the codegen wires the
-			// callbacks directly into the component's mount path
-			// and destroy() body.  They have no runtime existence,
-			// so emitting `import { onMount } from './runtime.js'`
-			// produces an ERR_MODULE_NOT_FOUND at module load.
-			// Strip them; drop the statement entirely if nothing
-			// real-runtime is left.
-			spec = stripVelaIntrinsics(spec)
-			if spec == "" && imp.Spec != "" {
-				continue // every name was an intrinsic
+			kept := specifiers[:0]
+			for _, spec := range specifiers {
+				if !velaCompilerIntrinsics[spec.Imported] {
+					kept = append(kept, spec)
+				}
+			}
+			specifiers = kept
+			if defaultName == "" && namespace == "" && len(specifiers) == 0 && imp.Spec != "" {
+				continue
 			}
 		} else {
 			src = RewriteImportPath(src)
 		}
-		var stmtSrc string
-		if spec == "" {
-			stmtSrc = "import '" + src + "';"
-		} else {
-			stmtSrc = "import " + spec + " from '" + src + "';"
-		}
-		out = append(out, jsStmt(stmtSrc))
+		out = append(out, &JsImportDecl{
+			baseStmt:    baseStmt{genNode()},
+			DefaultName: defaultName,
+			Namespace:   namespace,
+			Specifiers:  specifiers,
+			Source:      src,
+		})
 	}
 	return out
 }
