@@ -23,6 +23,26 @@ func TestGeneratedStringLiteralDefersEscapingToPrinter(t *testing.T) {
 	}
 }
 
+func TestGeneratedPrimitiveLiteralBuildersUseTypedValues(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw, kind string
+		literal         *JsLiteral
+	}{
+		{"true", "true", "boolean", boolLit(true)},
+		{"false", "false", "boolean", boolLit(false)},
+		{"negative number", "-7", "number", numLit(-7)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.literal.Raw != tc.raw || tc.literal.Kind != tc.kind || tc.literal.Decoded {
+				t.Fatalf("typed literal = %+v, want raw=%q kind=%q and undecoded", tc.literal, tc.raw, tc.kind)
+			}
+			if tc.literal.Origin != OriginGenerated {
+				t.Fatalf("typed literal origin = %v, want OriginGenerated", tc.literal.Origin)
+			}
+		})
+	}
+}
+
 func TestTypedHTMLFillUsesDecodedDataLiteral(t *testing.T) {
 	g := &ASTGen{}
 	html := `<p title="a&b">quote ' and "</p>`

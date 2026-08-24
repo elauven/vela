@@ -6,11 +6,9 @@ package main
 // approach.  Instead of writing JS text into buffers, it constructs
 // a JsProgram tree and hands it to the printer (jsprinter.go).
 //
-// Built in parallel with the legacy generator behind the
-// --codegen flag.  The differential test harness
-// (astgen_diff_test.go) compiles every fixture both ways and diffs
-// the output; as blocks migrate, the diff shrinks to zero, at which
-// point the AST generator becomes the default.
+// The historical differential fixtures remain as validation coverage, but
+// production compilation constructs this AST directly and never reparses
+// generated JavaScript.
 //
 // MIGRATION STATUS — blocks completed:
 //   [x] 1. Module skeleton  (imports, fn shell, return object)
@@ -41,18 +39,11 @@ import (
 //  AST construction helpers
 // ─────────────────────────────────────────────
 //
-// Hand-building AST nodes is verbose, so these helpers cover the
-// shapes astgen reaches for most often.  Two strategies are mixed:
-//
-//   - Direct constructors (id, lit, call…) for small nodes.
-//   - jsStmts / jsExpr — parse a known-good snippet of JS text and
-//     lift its AST.  This is the "splice a parsed fragment" trick:
-//     it lets a complex but *static* piece of output be written as
-//     readable JS instead of a tower of struct literals.  The
-//     fragment is fully under compiler control (never user input),
-//     so parsing it is safe and deterministic.
-//
-// Everything constructed here is marked OriginGenerated.
+// Hand-building AST nodes is verbose, so these helpers cover the shapes
+// astgen reaches for most often. Every compiler-authored construct is made
+// through typed nodes; user-authored <script> enters separately through the
+// cached source-ordered ScriptPlan. Everything constructed here is marked
+// OriginGenerated.
 
 // gen marks a freshly built node as compiler-generated.
 func genNode() baseNode { return baseNode{Origin: OriginGenerated} }
@@ -115,6 +106,13 @@ func genNull() *JsLiteral {
 
 func numLit(value int) *JsLiteral {
 	return &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: itoa(value), Kind: "number"}
+}
+
+func boolLit(value bool) *JsLiteral {
+	if value {
+		return &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "true", Kind: "boolean"}
+	}
+	return &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}
 }
 
 func genComputedMember(obj, prop JsExpr) *JsMemberExpr {
@@ -1265,7 +1263,7 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// container).  Comment-as-target is the wrapper-less mount
 	// path: the caller creates an anchor comment in document
 	mount := genIf(
-		genBinary("===", genMember(id("$$target"), "nodeType"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "8", Kind: "number"}),
+		genBinary("===", genMember(id("$$target"), "nodeType"), numLit(8)),
 		genExprStmt(genCall(genMember(genMember(id("$$target"), "parentNode"), "insertBefore"), id("$$root"), id("$$target"))),
 	)
 	mount.Else = genExprStmt(genCall(genMember(id("$$target"), "appendChild"), id("$$root")))
@@ -2440,11 +2438,11 @@ func (g *ASTGen) buildHoleSubtree(
 	if hoist {
 		res.decls = append(res.decls, genLet(twVar, genNull()))
 		res.build = append(res.build,
-			genAssignStmt(id(twVar), genCall(genMember(id("document"), "createTreeWalker"), id(targetVar), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "128", Kind: "number"})))
+			genAssignStmt(id(twVar), genCall(genMember(id("document"), "createTreeWalker"), id(targetVar), numLit(128))))
 		res.captured = append(res.captured, twVar)
 	} else {
 		res.build = append(res.build,
-			genConst(twVar, genCall(genMember(id("document"), "createTreeWalker"), id(targetVar), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "128", Kind: "number"})))
+			genConst(twVar, genCall(genMember(id("document"), "createTreeWalker"), id(targetVar), numLit(128))))
 	}
 
 	anchors := make([]string, len(holes))
@@ -3230,7 +3228,7 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	declAwait := func(stmt JsStmt) { g.declareInScope(stmt) }
 
 	// Component-scope storage.  State starts at 0 (pending).
-	declAwait(genLet(stateVar, &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "0"}))
+	declAwait(genLet(stateVar, numLit(0)))
 	declAwait(genLet(valVar, id("undefined")))
 	declAwait(genLet(errVar, id("undefined")))
 	declAwait(genLet(cellVar, genNull()))
@@ -3404,8 +3402,8 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		baseStmt: baseStmt{genNode()},
 		Kind:     "let",
 		Decls: []*JsVarDeclarator{
-			{Id: id(fn + "_running"), Init: &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}},
-			{Id: id(fn + "_pending"), Init: &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}},
+			{Id: id(fn + "_running"), Init: boolLit(false)},
+			{Id: id(fn + "_pending"), Init: boolLit(false)},
 		},
 	}
 	if captured {
@@ -3486,7 +3484,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		}
 		tryBody = append(tryBody, genAssignStmt(id(fn+"_keyprev"), id(keyNew)))
 	}
-	tryBody = append(tryBody, genLet("$$active", &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "-1", Kind: "number"}))
+	tryBody = append(tryBody, genLet("$$active", numLit(-1)))
 	for i, branch := range chain.Branches {
 		if branch.Cond == "" {
 			tryBody = append(tryBody, genIf(
@@ -3564,9 +3562,9 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		})
 	}
 	finallyBody := []JsStmt{
-		genAssignStmt(id(fn+"_running"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}),
+		genAssignStmt(id(fn+"_running"), boolLit(false)),
 		genIf(id(fn+"_pending"), genBlock(
-			genAssignStmt(id(fn+"_pending"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}),
+			genAssignStmt(id(fn+"_pending"), boolLit(false)),
 			genInvoke(fn),
 		)),
 	}
@@ -3576,10 +3574,10 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		// creates (or after it tears down) this chain anchor.
 		genIf(genLogical("||", genUnary("!", id(anchor)), genUnary("!", genMember(id(anchor), "parentNode"))), genReturn(nil)),
 		genIf(id(fn+"_running"), genBlock(
-			genAssignStmt(id(fn+"_pending"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "true", Kind: "boolean"}),
+			genAssignStmt(id(fn+"_pending"), boolLit(true)),
 			genReturn(nil),
 		)),
-		genAssignStmt(id(fn+"_running"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "true", Kind: "boolean"}),
+		genAssignStmt(id(fn+"_running"), boolLit(true)),
 		&JsTryStmt{baseStmt: baseStmt{genNode()}, Block: genBlock(tryBody...), Finalizer: genBlock(finallyBody...)},
 	}
 	g.declareInScope(&JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: body}})
@@ -3616,8 +3614,8 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		}
 		teardown = append(teardown,
 			genAssignStmt(id(anchor), genNull()),
-			genAssignStmt(id(fn+"_running"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}),
-			genAssignStmt(id(fn+"_pending"), &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}),
+			genAssignStmt(id(fn+"_running"), boolLit(false)),
+			genAssignStmt(id(fn+"_pending"), boolLit(false)),
 		)
 		if chain.KeyExpr != "" {
 			teardown = append(teardown, genAssignStmt(id(fn+"_keyprev"), &JsObjectExpr{baseExpr: baseExpr{genNode()}}))
