@@ -17,9 +17,7 @@ import (
 // routine requires an intentional review and baseline update.
 func TestASTGenStructuralStringGatewayInventory(t *testing.T) {
 	expected := map[string]int{
-		"jsStmt/jsStmts":               1,
 		"rewrittenTemplateExpr/jsExpr": 1,
-		"templateStmt/jsStmt":          1,
 	}
 	if actual := structuralGatewayCalls(t, "astgen.go"); !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("structural JS gateway inventory changed:\nwant %#v\n got %#v", expected, actual)

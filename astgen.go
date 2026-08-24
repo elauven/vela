@@ -33,7 +33,6 @@ package main
 // until the legacy generator is removed entirely.
 
 import (
-	"reflect"
 	"sort"
 	"strings"
 )
@@ -175,25 +174,6 @@ func generatedMemberPath(path string) JsExpr {
 		expr = genMember(expr, part)
 	}
 	return expr
-}
-
-// jsStmts parses src as a sequence of statements and returns them,
-// each re-marked OriginGenerated.  Panics on parse failure — the
-// input is always compiler-controlled, so a failure is a compiler
-// bug that should surface loudly during development.
-func jsStmts(src string) []JsStmt {
-	prog := ParseJS(src)
-	markGenerated(prog)
-	return prog.Body
-}
-
-// jsStmt parses src as exactly one statement.
-func jsStmt(src string) JsStmt {
-	s := jsStmts(src)
-	if len(s) != 1 {
-		panic("jsStmt: expected exactly one statement from: " + src)
-	}
-	return s[0]
 }
 
 // jsExpr parses src as a single expression.
@@ -735,59 +715,6 @@ func (g *ASTGen) rewrittenTemplateExpr(expr *TemplateExpr, source string) JsExpr
 		})
 	}
 	return root
-}
-
-func templateMarker(n int) string { return "$$vela_template_" + itoa(n) }
-
-// templateStmt parses a compiler-authored shell and swaps its explicit marker
-// identifiers for cached template AST roots. This is local AST construction,
-// not a global search by printed expression signature.
-func (g *ASTGen) templateStmt(src string, exprs ...JsExpr) JsStmt {
-	bindings := make(map[string]JsExpr, len(exprs))
-	for i, expr := range exprs {
-		bindings[templateMarker(i)] = expr
-	}
-	stmt := jsStmt(src)
-	replaceTemplateMarkers(reflect.ValueOf(stmt), bindings)
-	return stmt
-}
-
-func replaceTemplateMarkers(v reflect.Value, bindings map[string]JsExpr) {
-	if !v.IsValid() {
-		return
-	}
-	if v.Kind() == reflect.Interface {
-		if v.IsNil() {
-			return
-		}
-		if v.CanInterface() {
-			if ident, ok := v.Interface().(*JsIdent); ok {
-				if replacement := bindings[ident.Name]; replacement != nil && v.CanSet() {
-					v.Set(reflect.ValueOf(replacement))
-					return
-				}
-			}
-		}
-		replaceTemplateMarkers(v.Elem(), bindings)
-		return
-	}
-	switch v.Kind() {
-	case reflect.Ptr:
-		if !v.IsNil() {
-			replaceTemplateMarkers(v.Elem(), bindings)
-		}
-	case reflect.Struct:
-		for i := 0; i < v.NumField(); i++ {
-			field := v.Field(i)
-			if field.CanSet() || field.Kind() != reflect.Interface {
-				replaceTemplateMarkers(field, bindings)
-			}
-		}
-	case reflect.Slice:
-		for i := 0; i < v.Len(); i++ {
-			replaceTemplateMarkers(v.Index(i), bindings)
-		}
-	}
 }
 
 func (g *ASTGen) textValueExpr(parts []*Part) JsExpr {
@@ -3427,21 +3354,24 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	// fresher one.  The driver runs once at init and again whenever
 	// the promise expression's reactive deps change.
 	driver := "$$awaitDrive_" + blockID
-	driverStmt := g.templateStmt(
-		"function "+driver+"() {"+
-			"  const $$p = Promise.resolve("+templateMarker(0)+");"+
-			"  if ("+cellVar+" === $$p) return;"+
-			"  "+cellVar+" = $$p;"+
-			"  "+stateVar+" = 0;"+
-			"  "+valVar+" = undefined; "+errVar+" = undefined;"+
-			"  "+chainFn+"();"+
-			"  $$p.then("+
-			"    v => { if ("+cellVar+" !== $$p) return; "+
-			valVar+" = v; "+stateVar+" = 1; "+chainFn+"(); },"+
-			"    e => { if ("+cellVar+" !== $$p) return; "+
-			errVar+" = e; "+stateVar+" = 2; "+chainFn+"(); }"+
-			"  );"+
-			"}", g.templateExpr(block.Expr))
+	settle := func(name, target string, state int) JsExpr {
+		return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(name)}, Body: genBlock(
+			genIf(genBinary("!==", id(cellVar), id("$$p")), genReturn(nil)),
+			genAssignStmt(id(target), id(name)),
+			genAssignStmt(id(stateVar), numLit(state)),
+			genInvoke(chainFn),
+		)}
+	}
+	driverStmt := &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: driver, Body: genBlock(
+		genConst("$$p", genCall(genMember(id("Promise"), "resolve"), g.templateExpr(block.Expr))),
+		genIf(genBinary("===", id(cellVar), id("$$p")), genReturn(nil)),
+		genAssignStmt(id(cellVar), id("$$p")),
+		genAssignStmt(id(stateVar), numLit(0)),
+		genAssignStmt(id(valVar), id("undefined")),
+		genAssignStmt(id(errVar), id("undefined")),
+		genInvoke(chainFn),
+		genExprStmt(genCall(genMember(id("$$p"), "then"), settle("v", valVar, 1), settle("e", errVar, 2))),
+	)}
 
 	// buildIfChain's last appended statement is the anchor's
 	// appendChild — legacy emits the driver BEFORE that wiring
