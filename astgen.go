@@ -900,22 +900,6 @@ func validateGeneratedProgram(prog *JsProgram) {
 	}
 }
 
-// stripBanner removes the generated-by banner comment from a piece
-// of generated JS, leaving the code body.  Used when re-parsing
-// one generator's output for splicing or comparison so the banner
-// is not duplicated.
-func stripBanner(s string) string {
-	lines := strings.Split(s, "\n")
-	var out []string
-	for _, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "// Generated") {
-			continue
-		}
-		out = append(out, l)
-	}
-	return strings.Join(out, "\n")
-}
-
 // astCanBuildDirectly classifies historical migration coverage for tests and
 // differential reporting. Production compilation always uses the direct builder.
 // It will disappear with the legacy generator after the migration window.
@@ -1563,30 +1547,6 @@ func stripVelaIntrinsics(spec string) string {
 	return before + ", " + named
 }
 
-// buildUserScriptParts keeps source-derived constants ahead of rune
-// initializers while leaving statements that read reactive bindings after them.
-// Function declarations are safe in the prelude because their bodies execute
-// only when called, after the component has completed initialization.
-func (g *ASTGen) buildUserScriptParts() (prelude, postlude []JsStmt) {
-	if g.analysis == nil || g.analysis.CleanScript == "" {
-		return nil, nil
-	}
-	prog := ParseJS(g.analysis.CleanScript)
-	reactive := g.reactiveNames()
-	for _, stmt := range prog.Body {
-		if _, ok := stmt.(*JsFuncDecl); ok {
-			prelude = append(prelude, stmt)
-			continue
-		}
-		if len(FindDepsInNode(stmt, reactive)) == 0 {
-			prelude = append(prelude, stmt)
-		} else {
-			postlude = append(postlude, stmt)
-		}
-	}
-	return prelude, postlude
-}
-
 func (g *ASTGen) buildScriptPlan() []JsStmt {
 	if g.analysis == nil {
 		return nil
@@ -1627,26 +1587,6 @@ func (g *ASTGen) buildScriptPlan() []JsStmt {
 		}
 	}
 	return out
-}
-
-// buildUserScript parses the analyzer's CleanScript — the user's
-// <script> with $state/$derived/imports already stripped and
-// assignments rewritten — into AST statements spliced straight
-// into the component function body.
-//
-// This is the heart of block 4: user-authored code becomes part
-// of the same tree as the generated wiring, so later validation
-// and optimization passes see across the boundary.  Nodes keep
-// OriginUser (jsStmts would stamp them generated, so we parse
-// directly and leave the origin alone).
-func (g *ASTGen) buildUserScript() []JsStmt {
-	if g.analysis == nil || g.analysis.CleanScript == "" {
-		return nil
-	}
-	prog := ParseJS(g.analysis.CleanScript)
-	// Leave Origin as OriginUser — these nodes genuinely are the
-	// developer's code, and downstream passes rely on that mark.
-	return prog.Body
 }
 
 // reactiveNames returns the names of all reactive variables (state

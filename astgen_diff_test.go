@@ -5,6 +5,20 @@ import (
 	"testing"
 )
 
+// stripBanner is test-only support for the historical differential fixture.
+// Production AST generation never reparses generated JavaScript.
+func stripBanner(s string) string {
+	lines := strings.Split(s, "\n")
+	var out []string
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "// Generated") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
 // astgen_diff_test.go retains the historical migration fixtures as AST-only
 // validity coverage. The legacy string generator is no longer an oracle.
 
