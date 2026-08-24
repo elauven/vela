@@ -222,25 +222,15 @@ func rewriteIdentInExpr(src, from, to string) string {
 //	                                 handled correctly; the old token-based
 //	                                 rewriter couldn't descend into these)
 //
-// If src fails to parse, the original source is returned unchanged rather
-// than producing malformed JS — callers fall back to the stale-closure
-// behaviour, which is the same pre-fix behaviour.
-func rewriteItemRef(src, itemVar, boxVar string) string {
-	if itemVar == "" || boxVar == "" || itemVar == boxVar {
-		return src
+// visitItemRefs visits references to an each-block item binding that are not
+// shadowed by a nested lexical scope. The callback may inspect or mutate the
+// matching identifier. It intentionally excludes member-property names and
+// non-computed object keys, while preserving computed keys, shorthand values,
+// spreads, and template-literal interpolations.
+func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
+	if root == nil || itemVar == "" || onRef == nil {
+		return
 	}
-	if !strings.Contains(src, itemVar) {
-		return src
-	}
-
-	prog := ParseJS(src)
-	if prog == nil {
-		return src
-	}
-
-	// Collect (pos, end) spans of every JsIdent that should be rewritten.
-	// We then splice all of them at once in source order.
-	var hits []struct{ pos, end int }
 
 	// Scope stack: each entry is true iff itemVar is shadowed at that level.
 	// The outermost scope starts unshadowed.
@@ -330,7 +320,7 @@ func rewriteItemRef(src, itemVar, boxVar string) string {
 
 		case *JsIdent:
 			if node.Name == itemVar && !isShadowed() {
-				hits = append(hits, struct{ pos, end int }{node.Pos, node.End})
+				onRef(node)
 			}
 
 		// ── Scope-introducing nodes ──────────────────────────────────────
@@ -565,7 +555,31 @@ func rewriteItemRef(src, itemVar, boxVar string) string {
 		}
 	}
 
-	visit(prog)
+	visit(root)
+}
+
+// rewriteItemRef is the temporary source-string compatibility wrapper around
+// visitItemRefs. Production codegen rewrites cached template ASTs directly;
+// this wrapper remains a parity oracle for the lexical traversal until the
+// string-based tests have been migrated.
+//
+// If src fails to parse, the original source is returned unchanged rather
+// than producing malformed JS.
+func rewriteItemRef(src, itemVar, boxVar string) string {
+	if itemVar == "" || boxVar == "" || itemVar == boxVar || !strings.Contains(src, itemVar) {
+		return src
+	}
+
+	prog := ParseJS(src)
+	if prog == nil {
+		return src
+	}
+
+	// Collect source spans, then splice them all at once in source order.
+	var hits []struct{ pos, end int }
+	visitItemRefs(prog, itemVar, func(node *JsIdent) {
+		hits = append(hits, struct{ pos, end int }{node.Pos, node.End})
+	})
 
 	if len(hits) == 0 {
 		return src
@@ -588,6 +602,20 @@ func rewriteItemRef(src, itemVar, boxVar string) string {
 	}
 	out.WriteString(src[cursor:])
 	return out.String()
+}
+
+// rewriteItemRefAST redirects unshadowed each-item references to the mutable
+// row box without parsing or printing template source again. It returns root
+// for fluent use by the AST generator; the tree is deliberately mutated in
+// place because a row attribute expression is lowered exactly once.
+func rewriteItemRefAST(root JsExpr, itemVar, boxVar string) JsExpr {
+	if root == nil || itemVar == "" || boxVar == "" || itemVar == boxVar {
+		return root
+	}
+	visitItemRefs(root, itemVar, func(ref *JsIdent) {
+		ref.Name = boxVar
+	})
+	return root
 }
 
 // ──────────────────────────────────────────────

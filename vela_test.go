@@ -4373,6 +4373,29 @@ func TestRewriteItemRef_ObjectKeys(t *testing.T) {
 	}
 }
 
+func TestRewriteItemRefAST_MatchesScopedRewriteRules(t *testing.T) {
+	cases := []struct{ src, want string }{
+		{`(u) => fn(u)`, `(u)=>fn(u)`},
+		{`() => { const u = 99; return u; }`, `()=>{const u=99;return u;}`},
+		{`obj[u]`, `obj[$$box]`},
+		{`u.id`, `$$box.id`},
+		{`obj.u`, `obj.u`},
+		{`({[u]: 1})`, `{[$$box]:1}`},
+		{`({u})`, `{$$box}`},
+		{"`${u}`", "`${$$box}`"},
+	}
+	for _, tc := range cases {
+		root := parseJSExpr(tc.src)
+		if root == nil {
+			t.Fatalf("parseJSExpr(%q) returned nil", tc.src)
+		}
+		got := PrintExpr(rewriteItemRefAST(root, "u", "$$box"), PrintMinified)
+		if got != tc.want {
+			t.Errorf("rewriteItemRefAST(%q): want %q, got %q", tc.src, tc.want, got)
+		}
+	}
+}
+
 // ── Two-way binding (turn 13): emitTwoWayListener + twoWayBindSpec ─────────
 
 func TestTwoWayBindSpec(t *testing.T) {
