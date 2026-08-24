@@ -281,8 +281,7 @@ func analyzeScriptAST(script *ScriptAST) *Analysis {
 	allNames := a.reactiveNames()
 
 	for _, dv := range a.DerivedVars {
-		sub := ParseJS(dv.Expr)
-		dv.Deps = FindDepsInNode(sub, allNames)
+		dv.Deps = FindDepsInNode(dv.ExprAST, allNames)
 		allNames = append(allNames, dv.Name)
 	}
 
@@ -290,14 +289,13 @@ func analyzeScriptAST(script *ScriptAST) *Analysis {
 
 	allNames = a.reactiveNames()
 	for _, eff := range a.Effects {
-		sub := ParseJS(eff.Body)
 		// Find all reactive names referenced in the effect body
-		allDeps := FindDepsInNode(sub, allNames)
+		allDeps := FindDepsInNode(eff.BodyAST, allNames)
 		// Exclude variables that are ASSIGNED inside the effect body.
 		// An effect that writes `x = y` should depend on y (the read) but
 		// NOT on x (the write) — otherwise $$set_x would re-run the effect,
 		// which re-runs $$set_x, causing infinite recursion.
-		writtenVars := findWrittenVars(sub)
+		writtenVars := findWrittenVars(eff.BodyAST)
 		var readDeps []string
 		for _, d := range allDeps {
 			if !writtenVars[d] {
