@@ -715,7 +715,7 @@ func templateExprRoot(expr *TemplateExpr) JsExpr {
 func (g *ASTGen) templateExpr(expr *TemplateExpr) JsExpr {
 	root := templateExprRoot(expr)
 	if root == nil {
-		return jsExpr("undefined")
+		return id("undefined")
 	}
 	markGeneratedNode(root)
 	setTemplateOrigin(root, g.sfc.TemplateOffset+expr.Pos)

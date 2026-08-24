@@ -19,7 +19,6 @@ func TestASTGenStructuralStringGatewayInventory(t *testing.T) {
 	expected := map[string]int{
 		"jsStmt/jsStmts":               1,
 		"rewrittenTemplateExpr/jsExpr": 1,
-		"templateExpr/jsExpr":          1,
 		"templateStmt/jsStmt":          1,
 	}
 	if actual := structuralGatewayCalls(t, "astgen.go"); !reflect.DeepEqual(actual, expected) {
