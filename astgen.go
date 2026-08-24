@@ -3712,9 +3712,13 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			baseStmt: baseStmt{genNode()},
 			Test:     genUnary("!", id(bv)),
 			Then:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: mountBody},
-			Else: jsStmt("if (" + anchor + ".parentNode && " + bv +
-				".length && " + bv + "[0].parentNode !== " + anchor +
-				".parentNode) { for (const $$node of " + bv + ") " + anchor + ".before($$node); }"),
+			Else: genIf(
+				genLogical("&&",
+					genLogical("&&", genMember(id(anchor), "parentNode"), genMember(id(bv), "length")),
+					genBinary("!==", genMember(genComputedMember(id(bv), numLit(0)), "parentNode"), genMember(id(anchor), "parentNode")),
+				),
+				genForOf("$$node", id(bv), genExprStmt(genCall(genMember(id(anchor), "before"), id("$$node")))),
+			),
 		}}
 		activeBody = append(activeBody, plans[i].init...)
 		tryBody = append(tryBody, &JsIfStmt{

@@ -395,10 +395,14 @@ func TestNestedEachAndIfExpressionsKeepSourceMapOrigins(t *testing.T) {
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) { seen[loc.SourcePos] = true })
 	for kind, want := range map[string]int{
-		"row iterable":     strings.Index(raw, "items as item"),
-		"row condition":    strings.Index(raw, "flag"),
+		"row iterable": strings.Index(raw, "items as item"),
+		// Locate the directive payload, not the same state binding in
+		// <script>. A source map for `{#if flag}` must point into the
+		// template even when the declaration happens to have a similar
+		// source position.
+		"row condition":    strings.Index(raw, "{#if flag}") + len("{#if "),
 		"row attribute":    strings.Index(raw, ":title={item.title}") + len(":title={"),
-		"branch condition": strings.LastIndex(raw, "show"),
+		"branch condition": strings.Index(raw, "{#if show}") + len("{#if "),
 		"nested iterable":  strings.LastIndex(raw, "items as item"),
 	} {
 		if !seen[want] {
