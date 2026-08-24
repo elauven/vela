@@ -1062,8 +1062,14 @@ func TestAnalyzeScript_ExportLetProps(t *testing.T) {
 	if a.Props[0].Name != "name" || a.Props[0].Default != "'World'" {
 		t.Errorf("prop[0]: got name=%q default=%q", a.Props[0].Name, a.Props[0].Default)
 	}
+	if got := printNode(a.Props[0].DefaultAST); got != "'World'" {
+		t.Errorf("prop[0] default AST: want %q, got %q", "'World'", got)
+	}
 	if a.Props[2].Name != "required" || a.Props[2].Default != "" {
 		t.Errorf("prop[2] should have empty default: %+v", a.Props[2])
+	}
+	if a.Props[2].DefaultAST != nil {
+		t.Errorf("required prop must not have a default AST: %#v", a.Props[2].DefaultAST)
 	}
 }
 
@@ -1526,6 +1532,9 @@ func TestAnalyzeScript_Bindable(t *testing.T) {
 	}
 	if p.Default != "0" {
 		t.Errorf("default: want '0', got %q", p.Default)
+	}
+	if got := printNode(p.DefaultAST); got != "0" {
+		t.Errorf("default AST: want %q, got %q", "0", got)
 	}
 }
 

@@ -106,9 +106,10 @@ type Import struct {
 // Prop represents an `export let name = default` declaration.
 // Bindable is set when the default is wrapped in $bindable(default).
 type Prop struct {
-	Name     string
-	Default  string // JS expression; empty → required
-	Bindable bool   // true when declared as export let x = $bindable(default)
+	Name       string
+	Default    string // JS expression; empty → required
+	DefaultAST JsExpr // source AST for the declared default, nil → required
+	Bindable   bool   // true when declared as export let x = $bindable(default)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -234,6 +235,7 @@ func analyzeScript(src string) *Analysis {
 						continue
 					}
 					def := ""
+					var defAST JsExpr
 					bindable := false
 					if decl.Init != nil {
 						// Check for $bindable(expr) wrapper
@@ -241,15 +243,17 @@ func analyzeScript(src string) *Analysis {
 							if callee, ok := call.Callee.(*JsIdent); ok && callee.Name == "$bindable" {
 								bindable = true
 								if len(call.Args) > 0 {
-									def = strings.TrimSpace(src[call.Args[0].nodePos():call.Args[0].nodeEnd()])
+									defAST = call.Args[0]
+									def = strings.TrimSpace(src[defAST.nodePos():defAST.nodeEnd()])
 								}
 							}
 						}
 						if !bindable {
+							defAST = decl.Init
 							def = strings.TrimSpace(src[decl.Init.nodePos():decl.Init.nodeEnd()])
 						}
 					}
-					a.Props = append(a.Props, &Prop{Name: name, Default: def, Bindable: bindable})
+					a.Props = append(a.Props, &Prop{Name: name, Default: def, DefaultAST: defAST, Bindable: bindable})
 				}
 				skipEnd[s.End] = true
 			}

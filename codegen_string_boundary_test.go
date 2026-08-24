@@ -18,7 +18,6 @@ import (
 func TestASTGenStructuralStringGatewayInventory(t *testing.T) {
 	expected := map[string]int{
 		"buildIfChainStructured/jsStmt": 1,
-		"buildPropDecls/jsStmt":         2,
 		"buildSlotClosures/jsStmt":      1,
 		"buildSlotNode/jsStmt":          1,
 		"jsStmt/jsStmts":                1,

@@ -1785,21 +1785,22 @@ func (g *ASTGen) buildPropDecls() []JsStmt {
 	}
 	var out []JsStmt
 	for _, p := range g.analysis.Props {
-		var src string
-		if p.Default != "" {
-			src = "let " + p.Name + " = $$props." + p.Name +
-				" !== undefined ? $$props." + p.Name + " : " + p.Default + ";"
-		} else {
-			src = "let " + p.Name + " = $$props." + p.Name + ";"
+		value := JsExpr(genMember(id("$$props"), p.Name))
+		if p.DefaultAST != nil {
+			value = &JsConditionalExpr{
+				baseExpr: baseExpr{genNode()},
+				Test:     genBinary("!==", genMember(id("$$props"), p.Name), id("undefined")),
+				Then:     genMember(id("$$props"), p.Name),
+				Else:     p.DefaultAST,
+			}
 		}
-		out = append(out, jsStmt(src))
+		out = append(out, genLet(p.Name, value))
 	}
 	// $$onChange handles for bindable props.
 	for _, p := range g.analysis.Props {
 		if p.Bindable {
-			out = append(out, jsStmt(
-				"const $$onChange_"+p.Name+
-					" = $$props.$$onChange_"+p.Name+" || null;"))
+			out = append(out, genConst("$$onChange_"+p.Name,
+				genLogical("||", genMember(id("$$props"), "$$onChange_"+p.Name), genNull())))
 		}
 	}
 	return out
