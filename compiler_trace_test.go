@@ -169,3 +169,27 @@ func TestScriptASTOwnsParserResultUsedByAnalysis(t *testing.T) {
 		t.Fatalf("script span start = %d, want section offset %d", got, want)
 	}
 }
+
+func TestSharedScriptASTDoesNotLeakLoweredSetterIntoValidation(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "Lifecycle.vela")
+	source := `<script>
+  import { onMount } from 'vela';
+  let count = $state(0);
+  onMount(() => { count++; });
+</script>
+<template><p>{count}</p></template>`
+	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	diags, err := compileFile(src, filepath.Join(dir, "Lifecycle.js"), CompileOptions{})
+	if err != nil {
+		t.Fatalf("compile failed: %v; diagnostics: %+v", err, diags)
+	}
+	for _, diag := range diags {
+		if strings.Contains(diag.Message, "$$set_") {
+			t.Fatalf("input validation saw generated setter name: %+v", diag)
+		}
+	}
+}

@@ -218,6 +218,35 @@ func TestWithFragmentIDsPanicSafety(t *testing.T) {
 	}
 }
 
+func TestNestedEachBranchUsesFragmentLocalHoists(t *testing.T) {
+	src := `<script>
+  let groups = $state([]);
+</script>
+<template>
+  {#each groups as group}
+    {#if group.kind === 'first'}
+      {#each group.items as item}<button>{item}</button>{/each}
+    {:else}
+      {#each group.items as item}<input :value={item} />{/each}
+    {/if}
+  {/each}
+</template>`
+	sfc, err := parseSFC(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := parseTemplate(sfc.Template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog := buildProgramUnvalidated("NestedEach", sfc, nodes, analyzeScriptAST(sfc.ScriptAST), "vela-test", false)
+	for _, issue := range ValidateProgram(prog) {
+		if issue.Kind == "duplicate-decl" {
+			t.Fatalf("nested each fragment leaked duplicate declaration: %s", issue.Msg)
+		}
+	}
+}
+
 func TestValidateGeneratedTDZ(t *testing.T) {
 	prog := ParseJS(`
 		export default function component() {

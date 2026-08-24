@@ -877,6 +877,10 @@ func buildProgramUnvalidated(
 	scopeID string,
 	cssExternal bool,
 ) *JsProgram {
+	// Input validation consumes the immutable ScriptAST before this point.
+	// Lower callback assignments only while assembling target code, so the
+	// shared source tree cannot leak generated $$set_* names into user scopes.
+	analysis.lowerReactiveCallbackBodies()
 	g := &ASTGen{
 		name:        name,
 		scopeID:     scopeID,
@@ -3746,7 +3750,11 @@ func (g *ASTGen) buildElement(el *ElementNode, varName, parentVar string, isRoot
 	// replays the element's reactive attribute updates.  Emit a
 	// hoisted `let X = null;` plus an assignment in the body.
 	if g.inCapturedScope() {
-		g.hoisted = append(g.hoisted, genLet(varName, genNull()))
+		// A branch nested in an each-row must keep its captured DOM
+		// reference in that row fragment's closure. Routing straight to
+		// g.hoisted made independently-built nested each fragments reuse
+		// their $$fN names in component scope, producing duplicate lets.
+		g.declare(genLet(varName, genNull()))
 		g.body = append(g.body,
 			genAssignStmt(id(varName), genCall(genMember(id("document"), "createElement"), strLit(el.Tag))))
 	} else {
@@ -3816,7 +3824,9 @@ func (g *ASTGen) buildChildren(el *ElementNode, varName string) {
 			// or the slot opens is a safe no-op.
 			sub := g.buildHoleSubtree(varName, children, true,
 				"$$self", false, false)
-			g.hoisted = append(g.hoisted, sub.decls...)
+			for _, decl := range sub.decls {
+				g.declare(decl)
+			}
 			g.body = append(g.body, sub.build...)
 			g.initBody = append(g.initBody, sub.initUpdates...)
 		} else {

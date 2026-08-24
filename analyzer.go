@@ -118,7 +118,13 @@ type Prop struct {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func analyzeScript(src string) *Analysis {
-	return analyzeScriptAST(newScriptAST(src, 0))
+	analysis := analyzeScriptAST(newScriptAST(src, 0))
+	// This source-only helper predates owned component ScriptASTs and exposes
+	// lowered callback bodies to its standalone callers. The compiler pipeline
+	// uses analyzeScriptAST directly and postpones this mutation until after
+	// validating the original user program.
+	analysis.lowerReactiveCallbackBodies()
+	return analysis
 }
 
 // analyzeScriptAST consumes the owned script program created by parseSFC.
@@ -310,15 +316,25 @@ func analyzeScriptAST(script *ScriptAST) *Analysis {
 	a.CleanScript = buildCleanScript(prog, src, skipEnd, ss)
 	a.ScriptPlan = buildScriptPlan(prog, src, skipEnd, a, ss)
 
-	for _, lc := range a.Lifecycles {
-		RewriteAssignmentsAST(lc.BodyAST, ss)
-	}
-
-	for _, eff := range a.Effects {
-		RewriteAssignmentsAST(eff.BodyAST, ss)
-	}
 	a.ImportRecords = ParseImportRecords(src, 0)
 	return a
+}
+
+// lowerReactiveCallbackBodies runs only after input validation, when the
+// source ScriptAST is no longer used for scope diagnostics. Keeping analysis
+// non-mutating prevents compiler-generated $$set_* identifiers from leaking
+// into user-scope validation when ScriptAST is shared across the pipeline.
+func (a *Analysis) lowerReactiveCallbackBodies() {
+	if a == nil {
+		return
+	}
+	stateSet := a.stateSet()
+	for _, lc := range a.Lifecycles {
+		RewriteAssignmentsAST(lc.BodyAST, stateSet)
+	}
+	for _, eff := range a.Effects {
+		RewriteAssignmentsAST(eff.BodyAST, stateSet)
+	}
 }
 
 func buildScriptPlan(prog *JsProgram, src string, skipEnd map[int]bool, a *Analysis, stateSet map[string]bool) []ScriptPlanStep {
