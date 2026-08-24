@@ -3493,17 +3493,6 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 // branch removal).  Element holes / nested control-flow in a
 // branch are still deferred.
 
-// stmtsToText renders a slice of statements to minified JS text for slot factories,
-// where closure bodies are still assembled from compiler-owned text. The chain
-// emitter no longer uses it; statements produced
-// by buildHoleSubtree are folded in the same way.
-func stmtsToText(stmts []JsStmt) string {
-	if len(stmts) == 0 {
-		return ""
-	}
-	return PrintJS(&JsProgram{Body: stmts}, PrintMinified)
-}
-
 // removeNodesStmts removes the DOM nodes cached for a branch and clears its handle.
 func removeNodesStmts(nodes string) []JsStmt {
 	return []JsStmt{
@@ -4218,9 +4207,10 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 
 	propsExpr := g.componentPropsExpr(comp.Attrs)
 
-	// Initial mount — keep dynamic props as cached template AST expressions.
-	g.initBody = append(g.initBody, g.templateStmt(
-		"if (!"+inst+") "+inst+" = "+comp.Name+"("+wrap+", "+templateMarker(0)+", "+slotsObj+");", propsExpr))
+	// Initial mount. propsExpr and slotsObj are both typed AST, so their
+	// user-origin subexpressions never cross a printer/parser boundary.
+	g.initBody = append(g.initBody, genIf(genUnary("!", id(inst)),
+		genAssignStmt(id(inst), genCall(id(comp.Name), id(wrap), propsExpr, slotsObj))))
 
 	g.initBody = append(g.initBody, genIf(
 		&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(inst), R: genMember(id(inst), "el")},
@@ -4229,7 +4219,7 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 
 	// Reactive prop updates. The .set() statement propagates new prop values to an already-mounted instance.
 	// It is registered both in the component setter cascade and in each-row update closures.
-	setStmt := g.templateStmt("if ("+inst+") "+inst+".set("+templateMarker(0)+");", propsExpr)
+	setStmt := genIf(id(inst), genExprStmt(genCall(genMember(id(inst), "set"), propsExpr)))
 	// Back-fill the bookkeeping entry pushed above so the
 	// fragment-update path can find this statement.  The entry
 	// is normally the last pushed (the recursive walker hasn't
@@ -4337,9 +4327,9 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 //   - reopen     — move the still-attached cached children into a
 //     new fragment and re-run init (a DocumentFragment is emptied
 //     when appended, so the children, not the fragment, are cached)
-func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
+func (g *ASTGen) buildSlotClosures(comp *ComponentNode) JsExpr {
 	if len(comp.Slots) == 0 {
-		return "{}"
+		return &JsObjectExpr{baseExpr: baseExpr{genNode()}}
 	}
 	// Deterministic slot order — ranging a Go map is random and
 	// would make output non-reproducible.
@@ -4349,7 +4339,7 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
 	}
 	sort.Strings(names)
 
-	var entries []string
+	slots := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
 	for _, name := range names {
 		slotNodes := comp.Slots[name]
 		fragVar := "$$sfrag_" + g.id()
@@ -4402,14 +4392,12 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
 		// component's reactive-prop reach, not its lifetime.
 		g.compInstances = append(g.compInstances, cap.comps...)
 
-		buildText := stmtsToText(cap.body)
 		// Event listeners and initial-render statements emitted by
 		// slot content (e.g. a component @click handler, or a
 		// child component's init call) must run inside the closure
 		// too — they were being dropped, so components in a slot
 		// had no event wiring.
-		initText := stmtsToText(append(append([]JsStmt{},
-			cap.events...), cap.initBody...))
+		initStmts := append(append([]JsStmt{}, cap.events...), cap.initBody...)
 
 		// Teardown emitted by slot content (component .destroy(),
 		// removeEventListener) runs at component scope.
@@ -4441,31 +4429,44 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) string {
 		// to that closure and invisible from the factory.
 		// declareInScope routes via g.declare in that case,
 		// landing the var at the right enclosing scope.
-		g.declareInScope(jsStmt("let " + cacheVar + " = null;"))
+		g.declareInScope(genLet(cacheVar, genNull()))
 
-		var b strings.Builder
-		b.WriteString("() => { ")
-		// Reopen path.
-		b.WriteString("if (" + cacheVar + ") { ")
-		b.WriteString("const " + fragVar +
-			" = document.createDocumentFragment(); ")
-		b.WriteString("for (const $$c of " + cacheVar + ") { ")
-		b.WriteString("if ($$c.parentNode !== null) " +
-			fragVar + ".appendChild($$c); } ")
-		b.WriteString(initText + " ")
-		b.WriteString("return " + fragVar + "; } ")
-		// First-open path.
-		b.WriteString("const " + fragVar +
-			" = document.createDocumentFragment(); ")
-		b.WriteString(buildText + " ")
-		b.WriteString(initText + " ")
-		b.WriteString(cacheVar + " = Array.from(" + fragVar +
-			".childNodes); ")
-		b.WriteString("return " + fragVar + "; }")
+		newFragment := func() JsExpr {
+			return genCall(genMember(id("document"), "createDocumentFragment"))
+		}
+		reopen := []JsStmt{
+			genConst(fragVar, newFragment()),
+			genForOf("$$c", id(cacheVar), genBlock(
+				genIf(genBinary("!==", genMember(id("$$c"), "parentNode"), genNull()),
+					genExprStmt(genCall(genMember(id(fragVar), "appendChild"), id("$$c"))),
+				),
+			)),
+		}
+		reopen = append(reopen, initStmts...)
+		reopen = append(reopen, genReturn(id(fragVar)))
 
-		entries = append(entries, jsonQuote(name)+": "+b.String())
+		firstOpen := []JsStmt{genConst(fragVar, newFragment())}
+		firstOpen = append(firstOpen, cap.body...)
+		firstOpen = append(firstOpen, initStmts...)
+		firstOpen = append(firstOpen,
+			genAssignStmt(id(cacheVar), genCall(genMember(id("Array"), "from"), genMember(id(fragVar), "childNodes"))),
+			genReturn(id(fragVar)),
+		)
+
+		factory := &JsArrowFunc{
+			baseExpr: baseExpr{genNode()},
+			Body: genBlock(
+				genIf(id(cacheVar), genBlock(reopen...)),
+				genBlock(firstOpen...),
+			),
+		}
+		slots.Props = append(slots.Props, &JsProp{
+			baseNode: genNode(),
+			Key:      strLit(name),
+			Value:    factory,
+		})
 	}
-	return "{ " + strings.Join(entries, ", ") + " }"
+	return slots
 }
 
 // applyElementAttrs wires every attribute of an element to the
