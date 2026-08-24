@@ -3181,19 +3181,20 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 		genMember(generatedID(parentVar), "appendChild"), generatedID(anchor),
 	)))
 	arrayExpr := g.templateExpr(block.IterExpr)
-	g.initBody = append(g.initBody, g.templateStmt(eachFn+"("+templateMarker(0)+");", arrayExpr))
+	runEach := genExprStmt(genCall(generatedID(eachFn), arrayExpr))
+	g.initBody = append(g.initBody, runEach)
 	for _, dep := range templateExprDeps(block.IterExpr, array, g.reactiveNames()) {
-		g.addUpdate(dep, g.templateStmt(eachFn+"("+templateMarker(0)+");", arrayExpr))
+		g.addUpdate(dep, shareStmt(runEach))
 	}
 	for dep := range rowAttrs.deps {
-		g.addUpdate(dep, g.templateStmt(eachFn+"("+templateMarker(0)+");", arrayExpr))
+		g.addUpdate(dep, shareStmt(runEach))
 	}
 	// A nested-control-flow row body reads component state through
 	// fragment-local chain functions the component setter cannot
 	// reach.  Re-running the whole {#each} when such a dep changes
 	// rebuilds every row, re-evaluating its nested chains.
 	for dep := range rowBodyDeps {
-		g.addUpdate(dep, g.templateStmt(eachFn+"("+templateMarker(0)+");", arrayExpr))
+		g.addUpdate(dep, shareStmt(runEach))
 	}
 	g.cleanup = append(g.cleanup, genExprStmt(genCall(
 		genMember(generatedID(blocks), "forEach"),
@@ -3637,7 +3638,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	tryBody := []JsStmt{}
 	if chain.KeyExpr != "" {
 		keyNew := fn + "_keynew"
-		tryBody = append(tryBody, g.templateStmt("const "+keyNew+" = "+templateMarker(0)+";", g.templateExpr(chain.KeyAST)))
+		tryBody = append(tryBody, genConst(keyNew, g.templateExpr(chain.KeyAST)))
 		for i := range chain.Branches {
 			bv := fn + "_b" + itoa(i)
 			teardown := removeNodesStmts(bv)
