@@ -2717,16 +2717,13 @@ func (g *ASTGen) buildEachRowAttrs(
 			handler := rewriteItemRef(g.rewriteHandler(attr.Value), itemVar, boxVar)
 			handlerExpr := g.rewrittenTemplateExpr(attr.Expr, handler)
 			if isSimpleIdent(handler) {
-				res.create = append(res.create, g.templateStmt(
-					rowVar+".addEventListener('"+attr.Name+"', "+templateMarker(0)+");", handlerExpr))
+				res.create = append(res.create, genExprStmt(genCall(genMember(id(rowVar), "addEventListener"), strLit(attr.Name), handlerExpr)))
 			} else {
 				hv := rowVar + "_" + attr.Name + "_h"
 				if isHandlerExpr(handler) {
-					res.create = append(res.create, g.templateStmt(
-						"const "+hv+" = "+templateMarker(0)+";", handlerExpr))
+					res.create = append(res.create, genConst(hv, handlerExpr))
 				} else {
-					res.create = append(res.create, g.templateStmt(
-						"const "+hv+" = ($event) => { "+templateMarker(0)+"; };", handlerExpr))
+					res.create = append(res.create, genConst(hv, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))}))
 				}
 				res.create = append(res.create,
 					genExprStmt(genCall(genMember(id(rowVar), "addEventListener"), strLit(attr.Name), id(hv))))
@@ -2734,17 +2731,13 @@ func (g *ASTGen) buildEachRowAttrs(
 
 		case attr.IsClassDir:
 			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
-			stmt := g.templateStmt(
-				rowVar+".classList.toggle('"+attr.Name+"', !!("+templateMarker(0)+"));",
-				g.rewrittenTemplateExpr(attr.Expr, attrExprToJS(expr)))
+			stmt := genExprStmt(genCall(genMember(genMember(id(rowVar), "classList"), "toggle"), strLit(attr.Name), genBool(g.rewrittenTemplateExpr(attr.Expr, attrExprToJS(expr)))))
 			res.update = append(res.update, stmt)
 			addDeps(attr, expr)
 
 		case attr.IsStyleDir:
 			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
-			stmt := g.templateStmt(
-				rowVar+".style.setProperty('"+attr.Name+"', String("+templateMarker(0)+"));",
-				g.rewrittenTemplateExpr(attr.Expr, attrExprToJS(expr)))
+			stmt := genExprStmt(genCall(genMember(genMember(id(rowVar), "style"), "setProperty"), strLit(attr.Name), genString(g.rewrittenTemplateExpr(attr.Expr, attrExprToJS(expr)))))
 			res.update = append(res.update, stmt)
 			addDeps(attr, expr)
 
@@ -2754,13 +2747,13 @@ func (g *ASTGen) buildEachRowAttrs(
 			var stmt JsStmt
 			switch {
 			case attr.IsTwoWay && attr.Name == "value":
-				stmt = g.templateStmt(rowVar+".value = ("+templateMarker(0)+");", valueExpr)
+				stmt = genAssignStmt(genMember(id(rowVar), "value"), valueExpr)
 			case isBoolAttr(attr.Name):
-				stmt = g.templateStmt(rowVar+"."+attr.Name+" = !!("+templateMarker(0)+");", valueExpr)
+				stmt = genAssignStmt(genMember(id(rowVar), attr.Name), genBool(valueExpr))
 			case attr.Name == "class":
-				stmt = g.templateStmt(rowVar+".className = String("+templateMarker(0)+");", valueExpr)
+				stmt = genAssignStmt(genMember(id(rowVar), "className"), genString(valueExpr))
 			default:
-				stmt = g.templateStmt(rowVar+".setAttribute('"+attr.Name+"', String("+templateMarker(0)+"));", valueExpr)
+				stmt = genExprStmt(genCall(genMember(id(rowVar), "setAttribute"), strLit(attr.Name), genString(valueExpr)))
 			}
 			res.update = append(res.update, stmt)
 			addDeps(attr, expr)
