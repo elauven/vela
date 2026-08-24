@@ -333,6 +333,29 @@ func RewriteAssignmentsAST(block *JsBlock, stateSet map[string]bool) {
 	rewriteAssignmentBlock(block, stateSet)
 }
 
+// RewriteHandlerAssignmentsAST applies the same state-write lowering to a
+// cached template event handler. Block-bodied arrows reuse the callback-block
+// transform; concise bodies are replaced with the generated setter call.
+func RewriteHandlerAssignmentsAST(expr JsExpr, stateSet map[string]bool) JsExpr {
+	arrow, ok := expr.(*JsArrowFunc)
+	if !ok {
+		return expr
+	}
+	if block, ok := arrow.Body.(*JsBlock); ok {
+		RewriteAssignmentsAST(block, stateSet)
+		return arrow
+	}
+	body, ok := arrow.Body.(JsExpr)
+	if !ok {
+		return arrow
+	}
+	rewriteAssignmentExpr(body, stateSet)
+	if setter := reactiveSetterExpr(body, stateSet); setter != nil {
+		arrow.Body = setter
+	}
+	return arrow
+}
+
 func rewriteAssignmentBlock(block *JsBlock, stateSet map[string]bool) {
 	if block == nil {
 		return
@@ -408,13 +431,20 @@ func rewriteAssignmentStmt(stmt JsStmt, stateSet map[string]bool) JsStmt {
 }
 
 func reactiveSetterStmt(expr JsExpr, stateSet map[string]bool) JsStmt {
+	if setter := reactiveSetterExpr(expr, stateSet); setter != nil {
+		return genExprStmt(setter)
+	}
+	return nil
+}
+
+func reactiveSetterExpr(expr JsExpr, stateSet map[string]bool) JsExpr {
 	if update, ok := expr.(*JsUnaryExpr); ok && (update.Op == "++" || update.Op == "--") {
 		if name, ok := reactiveIdent(update.X, stateSet); ok {
 			op := "+"
 			if update.Op == "--" {
 				op = "-"
 			}
-			return genInvoke("$$set_"+name, genBinary(op, id(name), numLit(1)))
+			return genCall(id("$$set_"+name), genBinary(op, id(name), numLit(1)))
 		}
 	}
 
@@ -428,18 +458,18 @@ func reactiveSetterStmt(expr JsExpr, stateSet map[string]bool) JsStmt {
 	}
 
 	if assign.Op == "=" {
-		return genInvoke("$$set_"+name, assign.R)
+		return genCall(id("$$set_"+name), assign.R)
 	}
 	op := strings.TrimSuffix(assign.Op, "=")
 	if op == assign.Op {
 		return nil
 	}
 	if op == "&&" || op == "||" || op == "??" {
-		return genInvoke("$$set_"+name, genLogical(op, id(name), assign.R))
+		return genCall(id("$$set_"+name), genLogical(op, id(name), assign.R))
 	}
 	switch op {
 	case "+", "-", "*", "/", "%", "**":
-		return genInvoke("$$set_"+name, genBinary(op, id(name), assign.R))
+		return genCall(id("$$set_"+name), genBinary(op, id(name), assign.R))
 	default:
 		return nil
 	}

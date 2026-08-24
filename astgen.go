@@ -4304,7 +4304,14 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 		// handler const is declared once; a `let`/`const` trapped
 		// in the slot closure's first-open path would be undefined
 		// on reopen.
-		handlerDecl := g.templateStmt("const "+hv+" = ($e) => { if ($e instanceof CustomEvent) { ("+templateMarker(0)+")($e); } };", g.rewrittenTemplateExpr(attr.Expr, handler))
+		handlerExpr := g.eventHandlerExpr(attr)
+		if handlerExpr == nil {
+			handlerExpr = g.rewrittenTemplateExpr(attr.Expr, handler)
+		}
+		handlerDecl := genConst(hv, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$e")}, Body: genBlock(
+			genIf(genBinary("instanceof", id("$e"), id("CustomEvent")),
+				genBlock(genExprStmt(genCall(handlerExpr, id("$e"))))),
+		)})
 		if g.fragCounter >= 0 {
 			g.body = append(g.body, handlerDecl)
 		} else {
@@ -4562,16 +4569,19 @@ func (g *ASTGen) emitListenerPair(attach *[]JsStmt, target, event, handler strin
 
 func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 	handler := g.rewriteHandler(attr.Value)
-	handlerExpr := g.rewrittenTemplateExpr(attr.Expr, handler)
+	handlerExpr := g.eventHandlerExpr(attr)
+	if handlerExpr == nil {
+		handlerExpr = g.rewrittenTemplateExpr(attr.Expr, handler)
+	}
 	addCleanup := !g.inSlotScope
 	if isSimpleIdent(handler) {
 		g.emitListenerPair(&g.events, varName, attr.Name, handler, handlerExpr, "", addCleanup)
 		return
 	}
 	hv := varName + "_" + attr.Name + "_h"
-	decl := g.templateStmt("const "+hv+" = "+templateMarker(0)+";", handlerExpr)
+	decl := genConst(hv, handlerExpr)
 	if !isHandlerExpr(handler) {
-		decl = g.templateStmt("const "+hv+" = ($event) => { "+templateMarker(0)+"; };", handlerExpr)
+		decl = genConst(hv, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))})
 	}
 	g.body = append(g.body, decl)
 	g.emitListenerPair(&g.events, varName, attr.Name, hv, nil, "", addCleanup)
@@ -4628,6 +4638,29 @@ func (g *ASTGen) rewriteHandler(handler string) string {
 		return stripBraces(handler)
 	}
 	return rewriteTemplateHandlerAssignments(handler, g.analysis)
+}
+
+func (g *ASTGen) eventHandlerExpr(attr *Attr) JsExpr {
+	if attr == nil || attr.Expr == nil {
+		return nil
+	}
+	root := templateExprRoot(attr.Expr)
+	if root == nil {
+		return nil
+	}
+	root = g.templateExpr(attr.Expr)
+	if g.analysis != nil {
+		root = RewriteHandlerAssignmentsAST(root, g.analysis.stateSet())
+	}
+	// Browser source-map consumers may stop at a nested handler node rather
+	// than the arrow root. Keep the attribute's exact origin on the complete
+	// lowered subtree, matching the legacy rewritten-template path.
+	pos := g.sfc.TemplateOffset + attr.Expr.Pos
+	WalkNode(root, func(node JsNode) bool {
+		setTemplateOrigin(node, pos)
+		return true
+	})
+	return root
 }
 
 // stripBraces removes a single surrounding {…} wrapper that the
