@@ -56,9 +56,10 @@ type LifecycleHook struct {
 }
 
 type StateVar struct {
-	Name    string
-	Initial string
-	Pos     int
+	Name       string
+	Initial    string
+	InitialAST JsExpr // immutable source AST for the initial value
+	Pos        int
 	// Deep means the state was declared via `$state.deep(...)` rather
 	// than plain `$state(...)`.  Codegen wraps the value in a Proxy
 	// so that mutations to nested properties (`arr.push(x)`,
@@ -183,11 +184,13 @@ func analyzeScript(src string) *Analysis {
 				switch calleeName {
 				case "$state":
 					init := ""
+					var initAST JsExpr
 					if len(call.Args) > 0 {
-						init = strings.TrimSpace(src[call.Args[0].nodePos():call.Args[0].nodeEnd()])
+						initAST = call.Args[0]
+						init = strings.TrimSpace(src[initAST.nodePos():initAST.nodeEnd()])
 					}
 					a.StateVars = append(a.StateVars, &StateVar{
-						Name: name, Initial: init, Pos: s.nodeEnd(), Deep: stateDeep,
+						Name: name, Initial: init, InitialAST: initAST, Pos: s.nodeEnd(), Deep: stateDeep,
 					})
 					skipEnd[s.End] = true
 

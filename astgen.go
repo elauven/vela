@@ -1867,14 +1867,18 @@ func (g *ASTGen) hasDeepState() bool {
 // same notify path as reassignment; $$mut_X is the mutation
 // callback the Proxy traps invoke.
 func (g *ASTGen) buildStateDecl(sv *StateVar) []JsStmt {
-	init := sv.Initial
-	if init == "" {
-		init = "undefined"
+	init := sv.InitialAST
+	if init == nil {
+		init = id("undefined")
 	}
-	if sv.Deep {
-		return []JsStmt{jsStmt("const $$mut_" + sv.Name + " = () => $$set_" + sv.Name + "_notify();"), jsStmt("let " + sv.Name + " = $$proxy(" + init + ", $$mut_" + sv.Name + ");")}
+	if !sv.Deep {
+		return []JsStmt{genLet(sv.Name, init)}
 	}
-	return []JsStmt{jsStmt("let " + sv.Name + " = " + init + ";")}
+	mutName := "$$mut_" + sv.Name
+	return []JsStmt{
+		genConst(mutName, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genCall(id("$$set_" + sv.Name + "_notify"))}),
+		genLet(sv.Name, genCall(id("$$proxy"), init, id(mutName))),
+	}
 }
 
 func (g *ASTGen) buildStateDecls() []JsStmt {
