@@ -176,16 +176,6 @@ func generatedMemberPath(path string) JsExpr {
 	return expr
 }
 
-// jsExpr parses src as a single expression.
-func jsExpr(src string) JsExpr {
-	e := parseJSExpr(src)
-	if e == nil {
-		panic("jsExpr: failed to parse: " + src)
-	}
-	markGeneratedNode(e)
-	return e
-}
-
 // markGenerated recursively re-stamps every node in a tree as
 // OriginGenerated.  Used after parsing a compiler-authored snippet,
 // since the parser stamps everything OriginUser by default.
@@ -699,21 +689,6 @@ func (g *ASTGen) templateExpr(expr *TemplateExpr) JsExpr {
 	}
 	markGeneratedNode(root)
 	setTemplateOrigin(root, g.sfc.TemplateOffset+expr.Pos)
-	return root
-}
-
-// rewrittenTemplateExpr preserves the existing state-assignment rewrite for
-// event handlers, but gives the rewritten expression its attribute's exact
-// template origin instead of finding matching printed text after generation.
-func (g *ASTGen) rewrittenTemplateExpr(expr *TemplateExpr, source string) JsExpr {
-	root := jsExpr(source)
-	if expr != nil {
-		pos := g.sfc.TemplateOffset + expr.Pos
-		WalkNode(root, func(node JsNode) bool {
-			setTemplateOrigin(node, pos)
-			return true
-		})
-	}
 	return root
 }
 
@@ -2622,7 +2597,7 @@ type eachRowAttrs struct {
 // buildEachRowAttrs builds the per-row attribute wiring for an
 // {#each} row element, mirroring the attribute handling in legacy
 // walkEach.  Event handlers have their row-item references
-// rewritten (rewriteItemRef) so they close over the row's mutable
+// rewritten on the cached template AST so they close over the row's mutable
 // $$item box rather than the stale forEach parameter.
 //
 //	rowVar  — the row element variable ($$f0)
@@ -2641,8 +2616,8 @@ func (g *ASTGen) buildEachRowAttrs(
 		switch {
 		case attr.IsEvent:
 			// A row-root event needs both state-assignment and row-item rewrites.
-			handler := rewriteItemRef(g.rewriteHandler(attr.Value), itemVar, boxVar)
-			handlerExpr := g.rewrittenTemplateExpr(attr.Expr, handler)
+			handler := stripBraces(attr.Value)
+			handlerExpr := g.eachItemExpr(attr, itemVar, boxVar, true)
 			if isSimpleIdent(handler) {
 				res.create = append(res.create, genExprStmt(genCall(genMember(id(rowVar), "addEventListener"), strLit(attr.Name), handlerExpr)))
 			} else {
@@ -2657,20 +2632,17 @@ func (g *ASTGen) buildEachRowAttrs(
 			}
 
 		case attr.IsClassDir:
-			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
-			stmt := genExprStmt(genCall(genMember(genMember(id(rowVar), "classList"), "toggle"), strLit(attr.Name), genBool(g.rewrittenTemplateExpr(attr.Expr, attrExprToJS(expr)))))
+			stmt := genExprStmt(genCall(genMember(genMember(id(rowVar), "classList"), "toggle"), strLit(attr.Name), genBool(g.eachItemExpr(attr, itemVar, boxVar, false))))
 			res.update = append(res.update, stmt)
-			addDeps(attr, expr)
+			addDeps(attr, attr.Value)
 
 		case attr.IsStyleDir:
-			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
-			stmt := genExprStmt(genCall(genMember(genMember(id(rowVar), "style"), "setProperty"), strLit(attr.Name), genString(g.rewrittenTemplateExpr(attr.Expr, attrExprToJS(expr)))))
+			stmt := genExprStmt(genCall(genMember(genMember(id(rowVar), "style"), "setProperty"), strLit(attr.Name), genString(g.eachItemExpr(attr, itemVar, boxVar, false))))
 			res.update = append(res.update, stmt)
-			addDeps(attr, expr)
+			addDeps(attr, attr.Value)
 
 		case attr.IsBind:
-			expr := rewriteItemRef(attr.Value, itemVar, boxVar)
-			valueExpr := g.rewrittenTemplateExpr(attr.Expr, unwrapBraces(expr))
+			valueExpr := g.eachItemExpr(attr, itemVar, boxVar, false)
 			var stmt JsStmt
 			switch {
 			case attr.IsTwoWay && attr.Name == "value":
@@ -2683,7 +2655,7 @@ func (g *ASTGen) buildEachRowAttrs(
 				stmt = genExprStmt(genCall(genMember(id(rowVar), "setAttribute"), strLit(attr.Name), genString(valueExpr)))
 			}
 			res.update = append(res.update, stmt)
-			addDeps(attr, expr)
+			addDeps(attr, attr.Value)
 
 		case attr.IsBindThis:
 			// bind:this on an each-row would overwrite the same ref
@@ -4220,7 +4192,6 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 			continue
 		}
 		hv := inst + "_" + sanitizeIdent(attr.Name) + "_ch"
-		handler := g.rewriteHandler(attr.Value)
 		eventName := strings.TrimPrefix(attr.Name, "on:")
 		// The guard wrapper — only forward CustomEvents.  Hoisted
 		// to component scope: when the component is in a slot, the
@@ -4230,7 +4201,7 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 		// on reopen.
 		handlerExpr := g.eventHandlerExpr(attr)
 		if handlerExpr == nil {
-			handlerExpr = g.rewrittenTemplateExpr(attr.Expr, handler)
+			handlerExpr = id("undefined")
 		}
 		handlerDecl := genConst(hv, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$e")}, Body: genBlock(
 			genIf(genBinary("instanceof", id("$e"), id("CustomEvent")),
@@ -4492,10 +4463,10 @@ func (g *ASTGen) emitListenerPair(attach *[]JsStmt, target, event, handler strin
 }
 
 func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
-	handler := g.rewriteHandler(attr.Value)
+	handler := stripBraces(attr.Value)
 	handlerExpr := g.eventHandlerExpr(attr)
 	if handlerExpr == nil {
-		handlerExpr = g.rewrittenTemplateExpr(attr.Expr, handler)
+		handlerExpr = id("undefined")
 	}
 	addCleanup := !g.inSlotScope
 	if isSimpleIdent(handler) {
@@ -4557,13 +4528,6 @@ func (g *ASTGen) emitBindThisAST(varName string, attr *Attr) {
 // rewrites assignments to reactive variables into their  form. The
 // shared rewriter handles concise arrow bodies as statements, so updates such
 // as `() => count++` remain reactive.
-func (g *ASTGen) rewriteHandler(handler string) string {
-	if g.analysis == nil {
-		return stripBraces(handler)
-	}
-	return rewriteTemplateHandlerAssignments(handler, g.analysis)
-}
-
 func (g *ASTGen) eventHandlerExpr(attr *Attr) JsExpr {
 	if attr == nil || attr.Expr == nil {
 		return nil
@@ -4579,6 +4543,26 @@ func (g *ASTGen) eventHandlerExpr(attr *Attr) JsExpr {
 	// Browser source-map consumers may stop at a nested handler node rather
 	// than the arrow root. Keep the attribute's exact origin on the complete
 	// lowered subtree, matching the legacy rewritten-template path.
+	pos := g.sfc.TemplateOffset + attr.Expr.Pos
+	WalkNode(root, func(node JsNode) bool {
+		setTemplateOrigin(node, pos)
+		return true
+	})
+	return root
+}
+
+// eachItemExpr lowers one each-row attribute from its cached template AST.
+// The item rewrite happens before the handler assignment rewrite, so both
+// transformations see structured JavaScript and retain the original template
+// source origin.
+func (g *ASTGen) eachItemExpr(attr *Attr, itemVar, boxVar string, handler bool) JsExpr {
+	if attr == nil || attr.Expr == nil || templateExprRoot(attr.Expr) == nil {
+		return id("undefined")
+	}
+	root := rewriteItemRefAST(g.templateExpr(attr.Expr), itemVar, boxVar)
+	if handler && g.analysis != nil {
+		root = RewriteHandlerAssignmentsAST(root, g.analysis.stateSet())
+	}
 	pos := g.sfc.TemplateOffset + attr.Expr.Pos
 	WalkNode(root, func(node JsNode) bool {
 		setTemplateOrigin(node, pos)

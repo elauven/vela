@@ -32,7 +32,7 @@ func TestSourceMapUsesUTF16Columns(t *testing.T) {
 }
 
 func TestPrintJSWithLocationsUsesExplicitTemplateOrigin(t *testing.T) {
-	expr := jsExpr("answer")
+	expr := id("answer")
 	setTemplateOrigin(expr, 17)
 	var locations []PrintLocation
 	PrintJSWithLocations(&JsProgram{Body: []JsStmt{&JsExprStmt{baseStmt: baseStmt{genNode()}, X: expr}}}, PrintPretty, func(loc PrintLocation) { locations = append(locations, loc) })
@@ -42,7 +42,7 @@ func TestPrintJSWithLocationsUsesExplicitTemplateOrigin(t *testing.T) {
 }
 
 func TestPrintJSWithLocationsSkipsGeneratedNodes(t *testing.T) {
-	expr := jsExpr("generated")
+	expr := id("generated")
 	var locations []PrintLocation
 	PrintJSWithLocations(&JsProgram{Body: []JsStmt{&JsExprStmt{baseStmt: baseStmt{genNode()}, X: expr}}}, PrintPretty, func(loc PrintLocation) { locations = append(locations, loc) })
 	if len(locations) != 0 {

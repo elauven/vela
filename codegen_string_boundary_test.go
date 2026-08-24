@@ -16,9 +16,7 @@ import (
 // inventory; adding a new gateway or adding calls to an existing generator
 // routine requires an intentional review and baseline update.
 func TestASTGenStructuralStringGatewayInventory(t *testing.T) {
-	expected := map[string]int{
-		"rewrittenTemplateExpr/jsExpr": 1,
-	}
+	expected := map[string]int{}
 	if actual := structuralGatewayCalls(t, "astgen.go"); !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("structural JS gateway inventory changed:\nwant %#v\n got %#v", expected, actual)
 	}
