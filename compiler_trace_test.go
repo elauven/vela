@@ -66,7 +66,7 @@ func TestCompilerTraceRecordsStableSuccessfulPipeline(t *testing.T) {
 	}
 	if trace.Metrics.SourceBytes != len(source) || trace.Metrics.TemplateNodes == 0 ||
 		trace.Metrics.ScriptNodes == 0 || trace.Metrics.TargetNodes == 0 ||
-		trace.Metrics.OutputBytes != len(traced) || trace.Metrics.ScriptParseCount != 2 {
+		trace.Metrics.OutputBytes != len(traced) || trace.Metrics.ScriptParseCount != 1 {
 		t.Fatalf("incomplete successful trace metrics: %+v", trace.Metrics)
 	}
 
@@ -132,5 +132,40 @@ func TestCompilerTraceStopsAtFailingStageWithoutSource(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), secret) || strings.Contains(string(encoded), dir) {
 		t.Fatalf("failed trace retained source text or absolute path: %s", encoded)
+	}
+}
+
+func TestCompileFileReportsScriptASTSyntaxDiagnostic(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "BrokenScript.vela")
+	source := "<script>\nimport * as value from ;\n</script>\n<template><p>ok</p></template>"
+	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	diags, err := compileFile(src, filepath.Join(dir, "BrokenScript.js"), CompileOptions{})
+	if err == nil {
+		t.Fatal("compile unexpectedly succeeded")
+	}
+	if len(diags) != 1 {
+		t.Fatalf("diagnostics = %+v, want one script syntax error", diags)
+	}
+	diag := diags[0]
+	if diag.Code != "VELA-JS-SYNTAX" || diag.Line != 2 || diag.Col < 1 {
+		t.Fatalf("script syntax diagnostic = %+v, want VELA-JS-SYNTAX on line 2", diag)
+	}
+}
+
+func TestScriptASTOwnsParserResultUsedByAnalysis(t *testing.T) {
+	sfc, err := parseSFC("<script>let count = $state(0);</script><template>{count}</template>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if sfc.ScriptAST.Program == nil || analysis.Script != sfc.ScriptAST {
+		t.Fatalf("analysis did not retain owned ScriptAST: script=%p analysis=%p", sfc.ScriptAST, analysis.Script)
+	}
+	if got, want := sfc.ScriptAST.Span.Start, sfc.ScriptOffset; got != want {
+		t.Fatalf("script span start = %d, want section offset %d", got, want)
 	}
 }

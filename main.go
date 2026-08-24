@@ -436,17 +436,23 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	var analysis *Analysis
 	var scriptProg *JsProgram
 	if err = trace.stage("parse-script-and-analyze", func() error {
-		analysis = analyzeScript(sfc.Script)
-		scriptProg = ParseJS(sfc.Script)
+		if len(sfc.ScriptAST.Diagnostics) > 0 {
+			ds.PushOffset(sfc.ScriptAST.Span.Start)
+			for _, issue := range sfc.ScriptAST.Diagnostics {
+				ds.ErrorWith(issue.Pos, "VELA-JS-SYNTAX", "fix the JavaScript syntax in <script>", "%s", issue.Message)
+			}
+			ds.PopOffset()
+			return fmt.Errorf("script syntax validation failed")
+		}
+		analysis = analyzeScriptAST(sfc.ScriptAST)
+		scriptProg = sfc.ScriptAST.Program
 		return nil
 	}); err != nil {
-		return ds.All(), err
+		return ds.All(), fmt.Errorf("compilation failed with %d error(s)", len(ds.Errors()))
 	}
 	if trace != nil {
 		trace.trace.Metrics.ScriptNodes = countJSNodes(scriptProg)
-		// The current analyzer parses the script once and scope validation parses
-		// it once more. Task 013 will replace this observed count with one.
-		trace.trace.Metrics.ScriptParseCount = 2
+		trace.trace.Metrics.ScriptParseCount = 1
 	}
 
 	if opts.EmitAST {

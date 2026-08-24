@@ -15,20 +15,20 @@ import (
 
 // SFCJSON is the top-level debug dump emitted by --ast.
 type SFCJSON struct {
-	File     string          `json:"file"`
-	Script   ScriptJSON      `json:"script"`
-	Template []interface{}   `json:"template"`
-	Style    string          `json:"style,omitempty"`
+	File     string        `json:"file"`
+	Script   ScriptJSON    `json:"script"`
+	Template []interface{} `json:"template"`
+	Style    string        `json:"style,omitempty"`
 }
 
 type ScriptJSON struct {
-	StateVars    []StateVarJSON    `json:"stateVars"`
-	Props        []PropJSON        `json:"props"`
-	DerivedVars  []DerivedVarJSON  `json:"derivedVars"`
-	Effects      []EffectJSON      `json:"effects"`
-	Lifecycles   []LifecycleJSON   `json:"lifecycles"`
-	Imports      []string          `json:"imports,omitempty"`
-	CleanScript  string            `json:"cleanScript,omitempty"`
+	StateVars   []StateVarJSON   `json:"stateVars"`
+	Props       []PropJSON       `json:"props"`
+	DerivedVars []DerivedVarJSON `json:"derivedVars"`
+	Effects     []EffectJSON     `json:"effects"`
+	Lifecycles  []LifecycleJSON  `json:"lifecycles"`
+	Imports     []string         `json:"imports,omitempty"`
+	CleanScript string           `json:"cleanScript,omitempty"`
 }
 
 type StateVarJSON struct {
@@ -279,7 +279,7 @@ func DumpAST(filename, src string) (string, error) {
 		return "", fmt.Errorf("parseTemplate: %w", err)
 	}
 
-	analysis := analyzeScript(sfc.Script)
+	analysis := analyzeScriptAST(sfc.ScriptAST)
 
 	dump := SFCJSON{
 		File:     filename,

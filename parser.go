@@ -15,6 +15,11 @@ type SFC struct {
 	Style    string
 	Template string
 
+	// ScriptAST owns the one parsed representation of the <script> section.
+	// Script remains temporarily for source extraction and user-facing tooling;
+	// compiler passes must use ScriptAST.Program rather than reparsing it.
+	ScriptAST *ScriptAST
+
 	// Byte offsets of each section's body in the original source file.
 	// Used by diagnostics to translate parser-local positions into
 	// file-relative line/column for accurate error reporting.  A value
@@ -23,6 +28,33 @@ type SFC struct {
 	ScriptOffset   int
 	StyleOffset    int
 	TemplateOffset int
+}
+
+// SectionSpan is an immutable half-open byte range in the full .vela source.
+type SectionSpan struct {
+	Start int
+	End   int
+}
+
+// ScriptAST is the script portion of a ComponentAST. Program node positions
+// remain relative to Source; Span translates those positions to the component
+// source file. Diagnostics are structured parser failures collected during the
+// same parse, before any analyzer transform can mutate the program.
+type ScriptAST struct {
+	Source      string
+	Span        SectionSpan
+	Program     *JsProgram
+	Diagnostics []JSParseDiagnostic
+}
+
+func newScriptAST(source string, offset int) *ScriptAST {
+	program, diagnostics := ParseJSWithDiagnostics(source)
+	return &ScriptAST{
+		Source:      source,
+		Span:        SectionSpan{Start: offset, End: offset + len(source)},
+		Program:     program,
+		Diagnostics: diagnostics,
+	}
 }
 
 // parseSFC splits a .vela source file into its three sections by scanning for
@@ -78,6 +110,7 @@ func parseSFC(src string) (*SFC, error) {
 	sfc.Script, sfc.ScriptOffset = extractBlock("script")
 	sfc.Style, sfc.StyleOffset = extractBlock("style")
 	sfc.Template, sfc.TemplateOffset = extractBlock("template")
+	sfc.ScriptAST = newScriptAST(sfc.Script, sfc.ScriptOffset)
 
 	if sfc.Template == "" {
 		return nil, fmt.Errorf("missing <template> section")

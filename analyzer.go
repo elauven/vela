@@ -21,6 +21,7 @@ type ScriptPlanStep struct {
 }
 
 type Analysis struct {
+	Script        *ScriptAST
 	StateVars     []*StateVar
 	DerivedVars   []*DerivedVar
 	Effects       []*Effect
@@ -117,8 +118,19 @@ type Prop struct {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func analyzeScript(src string) *Analysis {
-	prog := ParseJS(src)
-	a := &Analysis{}
+	return analyzeScriptAST(newScriptAST(src, 0))
+}
+
+// analyzeScriptAST consumes the owned script program created by parseSFC.
+// The compatibility analyzeScript wrapper above remains for unit tests and
+// standalone callers that only have source text.
+func analyzeScriptAST(script *ScriptAST) *Analysis {
+	if script == nil {
+		script = newScriptAST("", 0)
+	}
+	prog := script.Program
+	src := script.Source
+	a := &Analysis{Script: script}
 
 	// skipEnd maps the End byte-offset of every reactive top-level statement
 	// so we can exclude it from CleanScript.

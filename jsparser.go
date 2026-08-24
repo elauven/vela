@@ -10,20 +10,37 @@ import (
 // ──────────────────────────────────────────────
 
 type JSParser struct {
-	lex     *Lexer
-	cur     Token
-	peek    Token
-	prevEnd int // End of last consumed token — used for node.End
-	src     string
-	Errors  []string
+	lex         *Lexer
+	cur         Token
+	peek        Token
+	prevEnd     int // End of last consumed token — used for node.End
+	src         string
+	Errors      []string
+	Diagnostics []JSParseDiagnostic
+}
+
+// JSParseDiagnostic records one recoverable parser failure with a byte offset
+// relative to the parsed JavaScript source. Errors remains for compatibility
+// with parser tests and template-expression callers; component compilation
+// consumes this structured form through ScriptAST.
+type JSParseDiagnostic struct {
+	Pos     int
+	Message string
 }
 
 func ParseJS(src string) *JsProgram {
+	prog, _ := ParseJSWithDiagnostics(src)
+	return prog
+}
+
+// ParseJSWithDiagnostics parses JavaScript once and returns both its AST and
+// structured recoverable parser diagnostics.
+func ParseJSWithDiagnostics(src string) (*JsProgram, []JSParseDiagnostic) {
 	p := &JSParser{lex: NewLexer(src), src: src}
 	p.cur = p.lex.Next()
 	p.peek = p.lex.Next()
 	p.prevEnd = 0
-	return p.parseProgram()
+	return p.parseProgram(), p.Diagnostics
 }
 
 // parseJSExpr parses src as a single JavaScript expression and
@@ -75,8 +92,9 @@ func (p *JSParser) eat(k TokKind) bool {
 
 func (p *JSParser) expect(k TokKind) Token {
 	if p.cur.Kind != k {
-		p.Errors = append(p.Errors,
-			fmt.Sprintf("line %d: expected token %d, got %q", p.cur.Line, k, p.cur.Val))
+		message := fmt.Sprintf("line %d: expected token %d, got %q", p.cur.Line, k, p.cur.Val)
+		p.Errors = append(p.Errors, message)
+		p.Diagnostics = append(p.Diagnostics, JSParseDiagnostic{Pos: p.cur.Pos, Message: message})
 		// error recovery: return zero token so parsing can continue
 		return Token{Kind: k, Pos: p.cur.Pos, End: p.cur.Pos}
 	}
@@ -300,8 +318,8 @@ func (p *JSParser) parseFuncDecl(async bool) *JsFuncDecl {
 	params := p.parseParams()
 	body := p.parseBlock()
 	return &JsFuncDecl{
-		baseStmt:  baseStmt{baseNode{Pos: pos, End: p.end()}},
-		Name:      name, Params: params, Body: body,
+		baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}},
+		Name:     name, Params: params, Body: body,
 		Async: async, Generator: gen,
 	}
 }
@@ -380,7 +398,7 @@ func (p *JSParser) parseVarDecl(consumeSemi bool) *JsVarDecl {
 		}
 		d.Decls = append(d.Decls, &JsVarDeclarator{
 			baseNode: baseNode{Pos: dp, End: p.end()},
-			Id: id, Init: init,
+			Id:       id, Init: init,
 		})
 		if !p.eat(TokComma) {
 			break
@@ -418,7 +436,8 @@ func (p *JSParser) parseArrayPattern() JsExpr {
 			continue
 		}
 		if p.cur.Kind == TokEllipsis {
-			ep := p.curPos(); p.advance()
+			ep := p.curPos()
+			p.advance()
 			arg := p.parseBindingPattern()
 			elems = append(elems, &JsSpreadExpr{baseExpr: baseExpr{baseNode{Pos: ep, End: p.end()}}, X: arg})
 			break
@@ -457,7 +476,8 @@ func (p *JSParser) parseObjectPattern() JsExpr {
 		computed := false
 		var key JsExpr
 		if p.cur.Kind == TokLBracket {
-			p.advance(); computed = true
+			p.advance()
+			computed = true
 			key = p.parseAssignExpr()
 			p.eat(TokRBracket)
 		} else {
@@ -468,7 +488,8 @@ func (p *JSParser) parseObjectPattern() JsExpr {
 		if p.eat(TokColon) {
 			val = p.parseBindingPattern()
 		} else {
-			shorthand = true; val = key
+			shorthand = true
+			val = key
 		}
 		if p.eat(TokAssign) {
 			def := p.parseAssignExpr()
@@ -476,9 +497,9 @@ func (p *JSParser) parseObjectPattern() JsExpr {
 				Op: "=", L: val, R: def}
 		}
 		props = append(props, &JsProp{
-			baseNode:  baseNode{Pos: pp, End: p.end()},
-			Key:       key, Value: val,
-			Computed:  computed, Shorthand: shorthand, Kind: "init",
+			baseNode: baseNode{Pos: pp, End: p.end()},
+			Key:      key, Value: val,
+			Computed: computed, Shorthand: shorthand, Kind: "init",
 		})
 		if !p.eat(TokComma) {
 			break
@@ -493,7 +514,8 @@ func (p *JSParser) parseParams() []JsExpr {
 	var params []JsExpr
 	for p.cur.Kind != TokRParen && p.cur.Kind != TokEOF {
 		if p.cur.Kind == TokEllipsis {
-			ep := p.curPos(); p.advance()
+			ep := p.curPos()
+			p.advance()
 			arg := p.parseBindingPattern()
 			params = append(params, &JsSpreadExpr{baseExpr: baseExpr{baseNode{Pos: ep, End: p.end()}}, X: arg})
 			break
@@ -533,7 +555,8 @@ func (p *JSParser) parseBlock() *JsBlock {
 // ──────────────────────────────────────────────
 
 func (p *JSParser) parseIf() *JsIfStmt {
-	pos := p.curPos(); p.advance()
+	pos := p.curPos()
+	p.advance()
 	p.eat(TokLParen)
 	test := p.parseExpr()
 	p.eat(TokRParen)
@@ -546,7 +569,8 @@ func (p *JSParser) parseIf() *JsIfStmt {
 }
 
 func (p *JSParser) parseFor() JsStmt {
-	pos := p.curPos(); p.advance()
+	pos := p.curPos()
+	p.advance()
 	p.eat(TokLParen)
 
 	var initStmt JsStmt
@@ -565,7 +589,7 @@ func (p *JSParser) parseFor() JsStmt {
 			body := p.parseStmt()
 			return &JsForInStmt{
 				baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}},
-				Left: initStmt, Right: right, Body: body, IsOf: isOf,
+				Left:     initStmt, Right: right, Body: body, IsOf: isOf,
 			}
 		}
 	}
@@ -584,12 +608,13 @@ func (p *JSParser) parseFor() JsStmt {
 	body := p.parseStmt()
 	return &JsForStmt{
 		baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}},
-		Init: initStmt, Test: test, Update: update, Body: body,
+		Init:     initStmt, Test: test, Update: update, Body: body,
 	}
 }
 
 func (p *JSParser) parseWhile() *JsWhileStmt {
-	pos := p.curPos(); p.advance()
+	pos := p.curPos()
+	p.advance()
 	p.eat(TokLParen)
 	test := p.parseExpr()
 	p.eat(TokRParen)
@@ -598,7 +623,8 @@ func (p *JSParser) parseWhile() *JsWhileStmt {
 }
 
 func (p *JSParser) parseDoWhile() *JsDoWhileStmt {
-	pos := p.curPos(); p.advance()
+	pos := p.curPos()
+	p.advance()
 	body := p.parseStmt()
 	p.eat(TokWhile)
 	p.eat(TokLParen)
@@ -609,7 +635,8 @@ func (p *JSParser) parseDoWhile() *JsDoWhileStmt {
 }
 
 func (p *JSParser) parseReturn() *JsReturnStmt {
-	pos := p.curPos(); p.advance()
+	pos := p.curPos()
+	p.advance()
 	var arg JsExpr
 	if p.cur.Kind != TokSemi && p.cur.Kind != TokRBrace && p.cur.Kind != TokEOF {
 		arg = p.parseExpr()
@@ -619,14 +646,16 @@ func (p *JSParser) parseReturn() *JsReturnStmt {
 }
 
 func (p *JSParser) parseThrow() *JsThrowStmt {
-	pos := p.curPos(); p.advance()
+	pos := p.curPos()
+	p.advance()
 	arg := p.parseExpr()
 	p.eatSemi()
 	return &JsThrowStmt{baseStmt: baseStmt{baseNode{Pos: pos, End: p.end()}}, Arg: arg}
 }
 
 func (p *JSParser) parseTry() *JsTryStmt {
-	pos := p.curPos(); p.advance()
+	pos := p.curPos()
+	p.advance()
 	block := p.parseBlock()
 	st := &JsTryStmt{Block: block}
 	if p.eat(TokCatch) {
@@ -644,7 +673,8 @@ func (p *JSParser) parseTry() *JsTryStmt {
 }
 
 func (p *JSParser) parseSwitch() *JsSwitchStmt {
-	pos := p.curPos(); p.advance()
+	pos := p.curPos()
+	p.advance()
 	p.eat(TokLParen)
 	disc := p.parseExpr()
 	p.eat(TokRParen)
@@ -979,7 +1009,8 @@ func (p *JSParser) parseArgs() []JsExpr {
 	var args []JsExpr
 	for p.cur.Kind != TokRParen && p.cur.Kind != TokEOF {
 		if p.cur.Kind == TokEllipsis {
-			ep := p.curPos(); p.advance()
+			ep := p.curPos()
+			p.advance()
 			x := p.parseAssignExpr()
 			args = append(args, &JsSpreadExpr{baseExpr: baseExpr{baseNode{Pos: ep, End: p.end()}}, X: x})
 		} else {
@@ -1050,7 +1081,8 @@ func (p *JSParser) parsePrimary() JsExpr {
 	case TokAsync:
 		// async function expr  or  async arrow
 		if p.peek.Kind == TokFunction {
-			p.advance(); p.advance()
+			p.advance()
+			p.advance()
 			name := ""
 			if p.cur.Kind == TokIdent {
 				name = p.advance().Val
@@ -1122,7 +1154,8 @@ func (p *JSParser) parsePrimary() JsExpr {
 }
 
 func (p *JSParser) parseArrayLit() *JsArrayExpr {
-	pos := p.curPos(); p.advance()
+	pos := p.curPos()
+	p.advance()
 	var elems []JsExpr
 	for p.cur.Kind != TokRBracket && p.cur.Kind != TokEOF {
 		if p.cur.Kind == TokComma {
@@ -1131,7 +1164,8 @@ func (p *JSParser) parseArrayLit() *JsArrayExpr {
 			continue
 		}
 		if p.cur.Kind == TokEllipsis {
-			ep := p.curPos(); p.advance()
+			ep := p.curPos()
+			p.advance()
 			x := p.parseAssignExpr()
 			elems = append(elems, &JsSpreadExpr{baseExpr: baseExpr{baseNode{Pos: ep, End: p.end()}}, X: x})
 		} else {
@@ -1146,7 +1180,8 @@ func (p *JSParser) parseArrayLit() *JsArrayExpr {
 }
 
 func (p *JSParser) parseObjectLit() *JsObjectExpr {
-	pos := p.curPos(); p.advance()
+	pos := p.curPos()
+	p.advance()
 	var props []*JsProp
 	for p.cur.Kind != TokRBrace && p.cur.Kind != TokEOF {
 		pp := p.curPos()
@@ -1183,7 +1218,8 @@ func (p *JSParser) parseObjectLit() *JsObjectExpr {
 		computed := false
 		var key JsExpr
 		if p.cur.Kind == TokLBracket {
-			p.advance(); computed = true
+			p.advance()
+			computed = true
 			key = p.parseAssignExpr()
 			p.eat(TokRBracket)
 		} else {
@@ -1211,9 +1247,9 @@ func (p *JSParser) parseObjectLit() *JsObjectExpr {
 		}
 
 		props = append(props, &JsProp{
-			baseNode:  baseNode{Pos: pp, End: p.end()},
-			Key:       key, Value: val,
-			Computed:  computed, Shorthand: shorthand, Method: isMethod, Kind: kind,
+			baseNode: baseNode{Pos: pp, End: p.end()},
+			Key:      key, Value: val,
+			Computed: computed, Shorthand: shorthand, Method: isMethod, Kind: kind,
 		})
 		if !p.eat(TokComma) {
 			break
