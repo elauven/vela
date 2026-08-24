@@ -1963,12 +1963,25 @@ func (g *ASTGen) buildEffectDecls() []JsStmt {
 	var out []JsStmt
 	for i, eff := range g.analysis.Effects {
 		n := itoa(i)
-		out = append(out, jsStmt("let $$cleanup"+n+" = null;"))
-		out = append(out, jsStmt(
-			"const $$effect"+n+" = () => {"+
-				"  if ($$cleanup"+n+") { $$cleanup"+n+"(); $$cleanup"+n+" = null; }"+
-				"  $$cleanup"+n+" = (function() {"+eff.Body+"})();"+
-				"};"))
+		cleanup := "$$cleanup" + n
+		body := eff.BodyAST
+		if body == nil {
+			body = genBlock()
+		}
+		runner := &JsArrowFunc{
+			baseExpr: baseExpr{genNode()},
+			Body: genBlock(
+				genIf(id(cleanup), genBlock(
+					genInvoke(cleanup),
+					genAssignStmt(id(cleanup), genNull()),
+				)),
+				genAssignStmt(id(cleanup), genCall(&JsFuncExpr{
+					baseExpr: baseExpr{genNode()},
+					Body:     body,
+				})),
+			),
+		}
+		out = append(out, genLet(cleanup, genNull()), genConst("$$effect"+n, runner))
 	}
 	return out
 }

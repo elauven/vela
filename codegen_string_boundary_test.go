@@ -17,7 +17,6 @@ import (
 // routine requires an intentional review and baseline update.
 func TestASTGenStructuralStringGatewayInventory(t *testing.T) {
 	expected := map[string]int{
-		"buildEffectDecls/jsStmt":       2,
 		"buildIfChainStructured/jsStmt": 1,
 		"buildOnDestroyCleanup/jsStmts": 1,
 		"buildOnMount/jsStmt":           1,

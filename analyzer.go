@@ -78,8 +78,9 @@ type DerivedVar struct {
 }
 
 type Effect struct {
-	Body string
-	Deps []string
+	Body    string
+	BodyAST *JsBlock // immutable source AST for the effect callback body
+	Deps    []string
 }
 
 type Function struct {
@@ -213,7 +214,7 @@ func analyzeScript(src string) *Analysis {
 				if raw, found := callbackBodySource(s.X, src); found {
 					body = raw
 				}
-				a.Effects = append(a.Effects, &Effect{Body: body})
+				a.Effects = append(a.Effects, &Effect{Body: body, BodyAST: effectCallbackBlock(s.X)})
 				skipEnd[s.End] = true
 			} else if kind, body, ok := extractLifecycle(s.X, a.IntrinsicAliases); ok {
 				if raw, found := callbackBodySource(s.X, src); found {
@@ -541,6 +542,23 @@ func callbackBodySource(expr JsExpr, src string) (string, bool) {
 		return "", false
 	}
 	return strings.TrimSpace(src[block.nodePos()+1 : block.nodeEnd()-1]), true
+}
+
+func effectCallbackBlock(expr JsExpr) *JsBlock {
+	call, ok := expr.(*JsCallExpr)
+	if !ok || len(call.Args) == 0 {
+		return nil
+	}
+	callee, ok := call.Callee.(*JsIdent)
+	if !ok || callee.Name != "$effect" {
+		return nil
+	}
+	arrow, ok := call.Args[0].(*JsArrowFunc)
+	if !ok {
+		return nil
+	}
+	block, _ := arrow.Body.(*JsBlock)
+	return block
 }
 
 func extractEffect(expr JsExpr) (string, bool) {
