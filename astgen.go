@@ -4108,56 +4108,44 @@ func (g *ASTGen) buildSlotNode(slot *SlotNode, parentVar string) {
 		genConst(anchor, genCall(genMember(id("document"), "createComment"), strLit("slot:"+slot.Name))),
 		genExprStmt(genCall(genMember(id(parentVar), "appendChild"), id(anchor))))
 
-	// Keep a text-only fallback on the structured template-expression path.
-	// Besides avoiding a second JS-expression serializer, this preserves the
-	// original template location for its source-map segment.
-	if len(slot.Fallback) == 1 {
-		if text, ok := slot.Fallback[0].(*TextNode); ok {
-			slotFactory := "$" + "$sf"
-			slotNodes := "$" + "$sn"
-			slots := "$" + "$slots"
-			src := "{ const " + slotFactory + " = " + slots + "[" + jsonQuote(slot.Name) + "]; " +
-				"if (" + slotFactory + ") { const " + slotNodes + " = " + slotFactory + "(); " +
-				"if (" + slotNodes + ") " + anchor + ".before(" + slotNodes + "); } else { " +
-				anchor + ".before(document.createTextNode(" + templateMarker(0) + ")); } }"
-			g.initBody = append(g.initBody, g.templateStmt(src, g.textValueExpr(text.Parts)))
-			return
-		}
-	}
-
-	// Init block — runs after wiring (the anchor needs a parent).
-	var b strings.Builder
-	b.WriteString("{ const $$sf = $$slots[")
-	b.WriteString(jsonQuote(slot.Name))
-	b.WriteString("]; if ($$sf) { { const $$sn = $$sf(); ")
-	b.WriteString("if ($$sn) " + anchor + ".before($$sn); } }")
+	// The init block runs after wiring, once the anchor has a parent.  User
+	// fallback expressions remain AST nodes so their original template offsets
+	// reach the source map.
+	showSlot := genBlock(
+		genConst("$$sn", genCall(id("$$sf"))),
+		genIf(id("$$sn"), genExprStmt(genCall(genMember(id(anchor), "before"), id("$$sn")))),
+	)
+	init := &JsBlock{baseStmt: baseStmt{genNode()}, Body: []JsStmt{
+		genConst("$$sf", genComputedMember(id("$$slots"), strLit(slot.Name))),
+		&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: id("$$sf"), Then: showSlot},
+	}}
 	if len(slot.Fallback) > 0 {
-		b.WriteString(" else { ")
-		b.WriteString(g.slotFallbackText(slot.Fallback, anchor))
-		b.WriteString("}")
+		init.Body[1].(*JsIfStmt).Else = genBlock(g.slotFallbackStmts(slot.Fallback, anchor)...)
 	}
-	b.WriteString(" }")
-	g.initBody = append(g.initBody, jsStmt(b.String()))
+	g.initBody = append(g.initBody, init)
 }
 
-// slotFallbackText emits the fallback content for an unfilled slot
-// — simple static text and static elements inserted before the
-// slot anchor.  Mirrors legacy walkSlot's fallback handling.
-func (g *ASTGen) slotFallbackText(fallback []Node, anchor string) string {
-	var b strings.Builder
+// slotFallbackStmts emits fallback content for an unfilled slot. Text nodes
+// keep their structured expressions; static elements use a template fragment
+// like the legacy path, but now as typed target AST.
+func (g *ASTGen) slotFallbackStmts(fallback []Node, anchor string) []JsStmt {
+	var out []JsStmt
 	for _, child := range fallback {
 		switch c := child.(type) {
 		case *TextNode:
-			b.WriteString(anchor + ".before(document.createTextNode(" +
-				buildExpr(c.Parts) + ")); ")
+			out = append(out, genExprStmt(genCall(genMember(id(anchor), "before"),
+				genCall(genMember(id("document"), "createTextNode"), g.textValueExpr(c.Parts)))))
 		case *ElementNode:
 			html := emitStaticHTML([]Node{c}, g.scopeID)
-			b.WriteString("{ const $$fb = document.createElement('template'); " +
-				"$$fb.innerHTML = '" + escapeJSString(html) + "'; " +
-				anchor + ".before($$fb.content); } ")
+			fallbackVar := g.id()
+			out = append(out, genBlock(
+				genConst(fallbackVar, genCall(genMember(id("document"), "createElement"), strLit("template"))),
+				genAssignStmt(genMember(id(fallbackVar), "innerHTML"), strLit(html)),
+				genExprStmt(genCall(genMember(id(anchor), "before"), genMember(id(fallbackVar), "content"))),
+			))
 		}
 	}
-	return b.String()
+	return out
 }
 
 // buildComponentNode invokes a child component: a wrapper element,
