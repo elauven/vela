@@ -1059,17 +1059,18 @@ func (p *parser) parseSvelteIfBlock(condRaw string, condPos int) (Node, error) {
 func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 	raw = strings.TrimSpace(raw)
 
-	// Extract optional (key) suffix
+	// Extract the optional terminal `(key)` suffix.  It must be terminal:
+	// parentheses inside the iterable expression are ordinary JavaScript, e.g.
+	// `{#each feats(plan) as feature}`.  The former LastIndex("(") logic
+	// mistook that call for a key, reduced the iterable to `feats`, and also
+	// dropped the declared row binding.
 	key := ""
 	keyPos := 0
-	if idx := strings.LastIndex(raw, "("); idx >= 0 {
-		close := strings.Index(raw[idx:], ")")
-		if close >= 0 {
-			keyRaw := raw[idx+1 : idx+close]
-			key = strings.TrimSpace(keyRaw)
-			keyPos = exprPos + idx + 1 + len(keyRaw) - len(strings.TrimLeftFunc(keyRaw, unicode.IsSpace))
-			raw = strings.TrimSpace(raw[:idx])
-		}
+	if keyStart := eachTerminalKeyStart(raw); keyStart >= 0 {
+		keyRaw := raw[keyStart+1 : len(raw)-1]
+		key = strings.TrimSpace(keyRaw)
+		keyPos = exprPos + keyStart + 1 + len(keyRaw) - len(strings.TrimLeftFunc(keyRaw, unicode.IsSpace))
+		raw = strings.TrimSpace(raw[:keyStart])
 	}
 
 	children, term, err := p.parseSvelteBlockBody()
@@ -1088,6 +1089,29 @@ func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 		Children:     groupIfChains(children),
 		ElseChildren: groupIfChains(elseChildren),
 	}, nil
+}
+
+// eachTerminalKeyStart returns the opening parenthesis of a terminal
+// `{#each iterable as item (key)}` suffix, or -1 when the header has no key.
+// Requiring the closing parenthesis to be the final token distinguishes the
+// suffix from a normal call expression in the iterable.
+func eachTerminalKeyStart(raw string) int {
+	if !strings.HasSuffix(raw, ")") || !strings.Contains(raw, " as ") {
+		return -1
+	}
+	depth := 0
+	for i := len(raw) - 1; i >= 0; i-- {
+		switch raw[i] {
+		case ')':
+			depth++
+		case '(':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 // parseSvelteKeyBlock parses {#key expr}...{/key}.  expr is whatever

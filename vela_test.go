@@ -2498,6 +2498,24 @@ func TestRewriteHandlerAssignments_ConciseArrow(t *testing.T) {
 	}
 }
 
+func TestComponentCallbackPropInlineAssignmentIsReactive(t *testing.T) {
+	sfc := &SFC{
+		Script:   `import { Canvas } from './Canvas.vela'; let selectedId = $state(null);`,
+		Template: `<Canvas onSelect={(id) => selectedId = id} />`,
+	}
+	nodes, err := parseTemplate(sfc.Template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := generateCodeAST("Editor", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
+	if !strings.Contains(code, "$$set_selectedId(id)") {
+		t.Fatalf("inline component callback bypassed reactive setter:\n%s", code)
+	}
+	if strings.Contains(code, "onSelect: (id) => selectedId = id") {
+		t.Fatalf("raw state assignment remained in callback prop:\n%s", code)
+	}
+}
+
 func TestRewriteHandlerAssignments_BlockBody(t *testing.T) {
 	sfc := &SFC{
 		Script:   `let count = $state(0); let step = $state(1);`,
@@ -3463,6 +3481,26 @@ func TestSvelteBlock_ParseEachWithKey(t *testing.T) {
 	}
 }
 
+func TestSvelteBlock_ParseEachIterableCallWithoutKey(t *testing.T) {
+	nodes, err := parseTemplate(`{#each feats(plan) as f}<li>{f}</li>{/each}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	each, ok := nodes[0].(*EachBlockNode)
+	if !ok {
+		t.Fatalf("expected *EachBlockNode, got %T", nodes[0])
+	}
+	if got, want := each.EachExpr, "feats(plan) as f"; got != want {
+		t.Errorf("EachExpr = %q, want %q", got, want)
+	}
+	if each.EachKey != "" {
+		t.Errorf("function-call parentheses must not become EachKey: %q", each.EachKey)
+	}
+	if each.IterExpr == nil || each.IterExpr.Source != "feats(plan)" {
+		t.Fatalf("iterable AST source = %#v, want feats(plan)", each.IterExpr)
+	}
+}
+
 func TestSvelteBlock_ParseEachWithIndex(t *testing.T) {
 	html := `{#each items as item, i (item.id)}<p>{i}: {item.name}</p>{/each}`
 	nodes, err := parseTemplate(html)
@@ -3489,6 +3527,21 @@ func TestSvelteBlock_CodeGen_Each(t *testing.T) {
 	}
 	if !strings.Contains(code, "item") {
 		t.Errorf("item variable not in output")
+	}
+}
+
+func TestSvelteBlock_CodeGen_NestedEachIterableCallUsesRowItem(t *testing.T) {
+	sfc := &SFC{
+		Script:   `let plans = $state([]); let feats = (plan) => plan.features;`,
+		Template: `{#each plans as plan}{#each feats(plan) as f}<li>{f}</li>{/each}{/each}`,
+	}
+	nodes, err := parseTemplate(sfc.Template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := generateCodeAST("Pricing", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
+	if !strings.Contains(code, "feats($$item_") {
+		t.Fatalf("nested each call lost its row argument:\n%s", code)
 	}
 }
 

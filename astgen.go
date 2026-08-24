@@ -805,7 +805,12 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 		}
 		prop := &JsProp{Key: id(attr.Name)}
 		if attr.IsBind {
-			prop.Value = g.templateExpr(attr.Expr)
+			// Callback props are ordinary component inputs, not CustomEvents.
+			// An inline arrow can still assign Vela state and therefore needs
+			// the same AST lowering as a DOM @event handler.  Without it,
+			// `<Canvas onSelect={(id) => selectedId = id} />` updates the
+			// local variable but bypasses the setter cascade.
+			prop.Value = g.componentPropExpr(attr)
 		} else {
 			prop.Value = strLit(attr.Value)
 		}
@@ -824,6 +829,14 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 		}
 	}
 	return obj
+}
+
+func (g *ASTGen) componentPropExpr(attr *Attr) JsExpr {
+	value := g.templateExpr(attr.Expr)
+	if _, isArrow := value.(*JsArrowFunc); isArrow && g.analysis != nil {
+		value = RewriteHandlerAssignmentsAST(value, g.analysis.stateSet())
+	}
+	return value
 }
 
 // buildProgram produces the validated JsProgram for a component. It is exposed
