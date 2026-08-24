@@ -318,6 +318,212 @@ func RewriteAssignments(src string, prog *JsProgram, stateSet map[string]bool) s
 	return applyRepls(src, repls)
 }
 
+// RewriteAssignmentsAST applies the reactive-assignment transform directly to
+// a callback block. Unlike RewriteAssignments it never reparses or splices
+// JavaScript source: user expressions retain their parsed nodes and source
+// origins, while only the compiler-owned $$set_* wrapper is constructed.
+//
+// The transform intentionally mirrors the statement forms supported by the
+// legacy source rewriter. It descends into nested blocks and closures so an
+// assignment in a timer, promise callback, or event listener is reactive too.
+func RewriteAssignmentsAST(block *JsBlock, stateSet map[string]bool) {
+	if block == nil || len(stateSet) == 0 {
+		return
+	}
+	rewriteAssignmentBlock(block, stateSet)
+}
+
+func rewriteAssignmentBlock(block *JsBlock, stateSet map[string]bool) {
+	if block == nil {
+		return
+	}
+	for i, stmt := range block.Body {
+		block.Body[i] = rewriteAssignmentStmt(stmt, stateSet)
+	}
+}
+
+func rewriteAssignmentStmt(stmt JsStmt, stateSet map[string]bool) JsStmt {
+	if stmt == nil {
+		return nil
+	}
+	switch s := stmt.(type) {
+	case *JsExprStmt:
+		rewriteAssignmentExpr(s.X, stateSet)
+		if setter := reactiveSetterStmt(s.X, stateSet); setter != nil {
+			return setter
+		}
+	case *JsBlock:
+		rewriteAssignmentBlock(s, stateSet)
+	case *JsIfStmt:
+		rewriteAssignmentExpr(s.Test, stateSet)
+		s.Then = rewriteAssignmentStmt(s.Then, stateSet)
+		if s.Else != nil {
+			s.Else = rewriteAssignmentStmt(s.Else, stateSet)
+		}
+	case *JsForStmt:
+		if s.Init != nil {
+			s.Init = rewriteAssignmentStmt(s.Init, stateSet)
+		}
+		rewriteAssignmentExpr(s.Test, stateSet)
+		rewriteAssignmentExpr(s.Update, stateSet)
+		s.Body = rewriteAssignmentStmt(s.Body, stateSet)
+	case *JsForInStmt:
+		s.Left = rewriteAssignmentStmt(s.Left, stateSet)
+		rewriteAssignmentExpr(s.Right, stateSet)
+		s.Body = rewriteAssignmentStmt(s.Body, stateSet)
+	case *JsWhileStmt:
+		rewriteAssignmentExpr(s.Test, stateSet)
+		s.Body = rewriteAssignmentStmt(s.Body, stateSet)
+	case *JsDoWhileStmt:
+		s.Body = rewriteAssignmentStmt(s.Body, stateSet)
+		rewriteAssignmentExpr(s.Test, stateSet)
+	case *JsReturnStmt:
+		rewriteAssignmentExpr(s.Arg, stateSet)
+	case *JsThrowStmt:
+		rewriteAssignmentExpr(s.Arg, stateSet)
+	case *JsTryStmt:
+		rewriteAssignmentBlock(s.Block, stateSet)
+		rewriteAssignmentBlock(s.Handler, stateSet)
+		rewriteAssignmentBlock(s.Finalizer, stateSet)
+	case *JsSwitchStmt:
+		rewriteAssignmentExpr(s.Disc, stateSet)
+		for _, c := range s.Cases {
+			rewriteAssignmentExpr(c.Test, stateSet)
+			for i, caseStmt := range c.Body {
+				c.Body[i] = rewriteAssignmentStmt(caseStmt, stateSet)
+			}
+		}
+	case *JsLabeledStmt:
+		s.Body = rewriteAssignmentStmt(s.Body, stateSet)
+	case *JsVarDecl:
+		for _, d := range s.Decls {
+			rewriteAssignmentExpr(d.Init, stateSet)
+		}
+	case *JsFuncDecl:
+		rewriteAssignmentBlock(s.Body, stateSet)
+	case *JsExportDecl:
+		s.Declaration = rewriteAssignmentStmt(s.Declaration, stateSet)
+	}
+	return stmt
+}
+
+func reactiveSetterStmt(expr JsExpr, stateSet map[string]bool) JsStmt {
+	if update, ok := expr.(*JsUnaryExpr); ok && (update.Op == "++" || update.Op == "--") {
+		if name, ok := reactiveIdent(update.X, stateSet); ok {
+			op := "+"
+			if update.Op == "--" {
+				op = "-"
+			}
+			return genInvoke("$$set_"+name, genBinary(op, id(name), numLit(1)))
+		}
+	}
+
+	assign, ok := expr.(*JsAssignExpr)
+	if !ok {
+		return nil
+	}
+	name, ok := reactiveIdent(assign.L, stateSet)
+	if !ok {
+		return nil
+	}
+
+	if assign.Op == "=" {
+		return genInvoke("$$set_"+name, assign.R)
+	}
+	op := strings.TrimSuffix(assign.Op, "=")
+	if op == assign.Op {
+		return nil
+	}
+	if op == "&&" || op == "||" || op == "??" {
+		return genInvoke("$$set_"+name, genLogical(op, id(name), assign.R))
+	}
+	switch op {
+	case "+", "-", "*", "/", "%", "**":
+		return genInvoke("$$set_"+name, genBinary(op, id(name), assign.R))
+	default:
+		return nil
+	}
+}
+
+func reactiveIdent(expr JsExpr, stateSet map[string]bool) (string, bool) {
+	id, ok := expr.(*JsIdent)
+	if !ok || !stateSet[id.Name] {
+		return "", false
+	}
+	return id.Name, true
+}
+
+func rewriteAssignmentExpr(expr JsExpr, stateSet map[string]bool) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *JsArrayExpr:
+		for _, item := range e.Elems {
+			rewriteAssignmentExpr(item, stateSet)
+		}
+	case *JsObjectExpr:
+		for _, prop := range e.Props {
+			if prop.Computed {
+				rewriteAssignmentExpr(prop.Key, stateSet)
+			}
+			rewriteAssignmentExpr(prop.Value, stateSet)
+		}
+	case *JsFuncExpr:
+		rewriteAssignmentBlock(e.Body, stateSet)
+	case *JsArrowFunc:
+		if block, ok := e.Body.(*JsBlock); ok {
+			rewriteAssignmentBlock(block, stateSet)
+		} else if body, ok := e.Body.(JsExpr); ok {
+			rewriteAssignmentExpr(body, stateSet)
+		}
+	case *JsUnaryExpr:
+		rewriteAssignmentExpr(e.X, stateSet)
+	case *JsBinaryExpr:
+		rewriteAssignmentExpr(e.L, stateSet)
+		rewriteAssignmentExpr(e.R, stateSet)
+	case *JsLogicalExpr:
+		rewriteAssignmentExpr(e.L, stateSet)
+		rewriteAssignmentExpr(e.R, stateSet)
+	case *JsAssignExpr:
+		rewriteAssignmentExpr(e.L, stateSet)
+		rewriteAssignmentExpr(e.R, stateSet)
+	case *JsMemberExpr:
+		rewriteAssignmentExpr(e.Obj, stateSet)
+		if e.Computed {
+			rewriteAssignmentExpr(e.Prop, stateSet)
+		}
+	case *JsCallExpr:
+		rewriteAssignmentExpr(e.Callee, stateSet)
+		for _, arg := range e.Args {
+			rewriteAssignmentExpr(arg, stateSet)
+		}
+	case *JsNewExpr:
+		rewriteAssignmentExpr(e.Callee, stateSet)
+		for _, arg := range e.Args {
+			rewriteAssignmentExpr(arg, stateSet)
+		}
+	case *JsConditionalExpr:
+		rewriteAssignmentExpr(e.Test, stateSet)
+		rewriteAssignmentExpr(e.Then, stateSet)
+		rewriteAssignmentExpr(e.Else, stateSet)
+	case *JsSeqExpr:
+		for _, item := range e.Exprs {
+			rewriteAssignmentExpr(item, stateSet)
+		}
+	case *JsSpreadExpr:
+		rewriteAssignmentExpr(e.X, stateSet)
+	case *JsAwaitExpr:
+		rewriteAssignmentExpr(e.X, stateSet)
+	case *JsYieldExpr:
+		rewriteAssignmentExpr(e.X, stateSet)
+	case *JsTemplateLit:
+		for _, item := range e.Exprs {
+			rewriteAssignmentExpr(item, stateSet)
+		}
+	}
+}
+
 // collectRepls walks the AST and accumulates replacements for assignment nodes.
 func collectRepls(root JsNode, src string, stateSet map[string]bool, out *[]repl) {
 	WalkNode(root, func(n JsNode) bool {

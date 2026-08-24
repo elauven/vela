@@ -2110,11 +2110,12 @@ func TestLifecycle_OnMountBodyRewritten(t *testing.T) {
 		t.Fatal("no lifecycles found")
 	}
 	lc := a.Lifecycles[0]
-	if strings.Contains(lc.Body, "online = true") && !strings.Contains(lc.Body, "$$set_online") {
-		t.Errorf("onMount body state assignment should be rewritten:\n%s", lc.Body)
+	body := printNode(lc.BodyAST)
+	if strings.Contains(body, "online = true") && !strings.Contains(body, "$$set_online") {
+		t.Errorf("onMount AST body state assignment should be rewritten:\n%s", body)
 	}
-	if !strings.Contains(lc.Body, "$$set_online(true)") {
-		t.Errorf("expected $$set_online(true) in onMount body:\n%s", lc.Body)
+	if !strings.Contains(body, "$$set_online(true)") {
+		t.Errorf("expected $$set_online(true) in onMount AST body:\n%s", body)
 	}
 }
 
@@ -2130,8 +2131,9 @@ func TestLifecycle_OnMountRewritesNestedClosureAssignment(t *testing.T) {
 		t.Fatal("no lifecycles found")
 	}
 	lc := a.Lifecycles[0]
-	if !strings.Contains(lc.Body, "$$set_online") {
-		t.Errorf("nested state assignment in onMount body not rewritten:\n%s", lc.Body)
+	body := printNode(lc.BodyAST)
+	if !strings.Contains(body, "$$set_online") {
+		t.Errorf("nested state assignment in onMount AST body not rewritten:\n%s", body)
 	}
 }
 
@@ -2145,8 +2147,9 @@ func TestLifecycle_PropAssignmentInOnMount(t *testing.T) {
 		t.Fatal("no lifecycle found")
 	}
 	lc := a.Lifecycles[0]
-	if !strings.Contains(lc.Body, "$$set_count") {
-		t.Errorf("prop assignment in onMount not rewritten:\n%s", lc.Body)
+	body := printNode(lc.BodyAST)
+	if !strings.Contains(body, "$$set_count") {
+		t.Errorf("prop assignment in onMount AST body not rewritten:\n%s", body)
 	}
 }
 
@@ -2159,8 +2162,9 @@ func TestLifecycle_OnDestroyBodyRewritten(t *testing.T) {
 		t.Fatal("no lifecycle found")
 	}
 	lc := a.Lifecycles[0]
-	if !strings.Contains(lc.Body, "$$set_status") {
-		t.Errorf("onDestroy body state assignment not rewritten:\n%s", lc.Body)
+	body := printNode(lc.BodyAST)
+	if !strings.Contains(body, "$$set_status") {
+		t.Errorf("onDestroy AST body state assignment not rewritten:\n%s", body)
 	}
 }
 
@@ -2175,8 +2179,9 @@ func TestEffect_BodyRewritten(t *testing.T) {
 		t.Fatal("no effect found")
 	}
 	eff := a.Effects[0]
-	if !strings.Contains(eff.Body, "$$set_doubled") {
-		t.Errorf("effect body state assignment not rewritten:\n%s", eff.Body)
+	body := printNode(eff.BodyAST)
+	if !strings.Contains(body, "$$set_doubled") {
+		t.Errorf("effect AST body state assignment not rewritten:\n%s", body)
 	}
 }
 
@@ -2351,7 +2356,7 @@ func TestFullPipeline_ClockTernaryInOnMount(t *testing.T) {
 	if len(a.Lifecycles) == 0 {
 		t.Fatal("no lifecycle found")
 	}
-	body := a.Lifecycles[0].Body
+	body := printNode(a.Lifecycles[0].BodyAST)
 
 	// Must produce a valid setter call — not a truncated one
 	if !strings.Contains(body, "$$set_ampm") {

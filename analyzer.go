@@ -51,8 +51,9 @@ type Analysis struct {
 
 // LifecycleHook represents an onMount or onDestroy call.
 type LifecycleHook struct {
-	Kind string // "onMount" | "onDestroy"
-	Body string // callback body text
+	Kind    string   // "onMount" | "onDestroy"
+	Body    string   // callback body text retained for diagnostics and legacy callers
+	BodyAST *JsBlock // source AST for the lifecycle callback body
 }
 
 type StateVar struct {
@@ -79,7 +80,7 @@ type DerivedVar struct {
 
 type Effect struct {
 	Body    string
-	BodyAST *JsBlock // immutable source AST for the effect callback body
+	BodyAST *JsBlock // source AST for the effect callback body
 	Deps    []string
 }
 
@@ -220,7 +221,7 @@ func analyzeScript(src string) *Analysis {
 				if raw, found := callbackBodySource(s.X, src); found {
 					body = raw
 				}
-				a.Lifecycles = append(a.Lifecycles, &LifecycleHook{Kind: kind, Body: body})
+				a.Lifecycles = append(a.Lifecycles, &LifecycleHook{Kind: kind, Body: body, BodyAST: callbackBlock(s.X)})
 				skipEnd[s.End] = true
 			}
 
@@ -296,19 +297,11 @@ func analyzeScript(src string) *Analysis {
 	a.ScriptPlan = buildScriptPlan(prog, src, skipEnd, a, ss)
 
 	for _, lc := range a.Lifecycles {
-		if lc.Body == "" {
-			continue
-		}
-		lcProg := ParseJS(lc.Body)
-		lc.Body = RewriteAssignments(lc.Body, lcProg, ss)
+		RewriteAssignmentsAST(lc.BodyAST, ss)
 	}
 
 	for _, eff := range a.Effects {
-		if eff.Body == "" {
-			continue
-		}
-		effProg := ParseJS(eff.Body)
-		eff.Body = RewriteAssignments(eff.Body, effProg, ss)
+		RewriteAssignmentsAST(eff.BodyAST, ss)
 	}
 	a.ImportRecords = ParseImportRecords(src, 0)
 	return a
@@ -528,6 +521,19 @@ func extractLifecycle(expr JsExpr, aliases map[string]string) (kind, body string
 // callbackBodySource returns the original statements inside an arrow callback block.
 // Keeping source text avoids losing valid constructs (notably try/catch) in
 // the partial JavaScript printer used by legacy extraction.
+func callbackBlock(expr JsExpr) *JsBlock {
+	call, ok := expr.(*JsCallExpr)
+	if !ok || len(call.Args) == 0 {
+		return nil
+	}
+	arrow, ok := call.Args[0].(*JsArrowFunc)
+	if !ok {
+		return nil
+	}
+	block, _ := arrow.Body.(*JsBlock)
+	return block
+}
+
 func callbackBodySource(expr JsExpr, src string) (string, bool) {
 	call, ok := expr.(*JsCallExpr)
 	if !ok || len(call.Args) == 0 {

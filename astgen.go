@@ -2018,9 +2018,14 @@ func (g *ASTGen) buildOnMount() []JsStmt {
 		if lc.Kind != "onMount" {
 			continue
 		}
-		out = append(out, jsStmt(
-			"const $$mountCleanup"+itoa(i)+
-				" = (function() {"+lc.Body+"})();"))
+		body := lc.BodyAST
+		if body == nil {
+			body = genBlock()
+		}
+		out = append(out, genConst("$$mountCleanup"+itoa(i), genCall(&JsFuncExpr{
+			baseExpr: baseExpr{genNode()},
+			Body:     body,
+		})))
 	}
 	return out
 }
@@ -2051,7 +2056,9 @@ func (g *ASTGen) buildOnDestroyCleanup() []JsStmt {
 		if lc.Kind != "onDestroy" {
 			continue
 		}
-		out = append(out, jsStmts(lc.Body)...)
+		if lc.BodyAST != nil {
+			out = append(out, lc.BodyAST.Body...)
+		}
 	}
 	return out
 }
