@@ -70,10 +70,11 @@ type StateVar struct {
 }
 
 type DerivedVar struct {
-	Name string
-	Expr string
-	Pos  int
-	Deps []string
+	Name    string
+	Expr    string
+	ExprAST JsExpr // immutable source AST for the derived expression
+	Pos     int
+	Deps    []string
 }
 
 type Effect struct {
@@ -196,10 +197,13 @@ func analyzeScript(src string) *Analysis {
 
 				case "$derived":
 					expr := ""
+					var exprAST JsExpr
 					if len(call.Args) > 0 {
-						expr = strings.TrimSpace(src[call.Args[0].nodePos():call.Args[0].nodeEnd()])
+						exprAST = call.Args[0]
+						expr = strings.TrimSpace(src[exprAST.nodePos():exprAST.nodeEnd()])
 					}
-					a.DerivedVars = append(a.DerivedVars, &DerivedVar{Name: name, Expr: expr, Pos: s.nodeEnd()})
+					a.DerivedVars = append(a.DerivedVars, &DerivedVar{Name: name, Expr: expr, ExprAST: exprAST, Pos: s.nodeEnd()})
+					skipEnd[s.End] = true
 					skipEnd[s.End] = true
 				}
 			}

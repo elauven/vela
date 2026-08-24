@@ -1903,7 +1903,17 @@ func (g *ASTGen) buildStateDecls() []JsStmt {
 // all updaters; interleaving them still works at runtime (updaters
 // only run later) but diverges structurally.
 func (g *ASTGen) buildDerivedDecl(dv *DerivedVar) []JsStmt {
-	return []JsStmt{jsStmt("let " + dv.Name + ";"), jsStmt("const $$upd_" + dv.Name + " = () => { " + dv.Name + " = " + dv.Expr + "; };")}
+	expr := dv.ExprAST
+	if expr == nil {
+		expr = id("undefined")
+	}
+	return []JsStmt{
+		genLet(dv.Name, nil),
+		genConst("$$upd_"+dv.Name, &JsArrowFunc{
+			baseExpr: baseExpr{genNode()},
+			Body:     genBlock(genAssignStmt(id(dv.Name), expr)),
+		}),
+	}
 }
 
 func (g *ASTGen) buildDerivedDecls() []JsStmt {
@@ -1912,11 +1922,17 @@ func (g *ASTGen) buildDerivedDecls() []JsStmt {
 	}
 	var out []JsStmt
 	for _, dv := range g.analysis.DerivedVars {
-		out = append(out, jsStmt("let "+dv.Name+";"))
+		out = append(out, genLet(dv.Name, nil))
 	}
 	for _, dv := range g.analysis.DerivedVars {
-		out = append(out, jsStmt(
-			"const $$upd_"+dv.Name+" = () => { "+dv.Name+" = "+dv.Expr+"; };"))
+		expr := dv.ExprAST
+		if expr == nil {
+			expr = id("undefined")
+		}
+		out = append(out, genConst("$$upd_"+dv.Name, &JsArrowFunc{
+			baseExpr: baseExpr{genNode()},
+			Body:     genBlock(genAssignStmt(id(dv.Name), expr)),
+		}))
 	}
 	return out
 }
