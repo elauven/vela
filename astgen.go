@@ -3271,9 +3271,9 @@ func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap stri
 // The chain is built by buildIfChain — the same struct-based path
 // {#if}/{#key} use, including hole-bearing branches (E3.1), so the
 // {:then v} / {:catch e} branches may freely reference their
-// bindings.  Those bindings are redirected to the module-scope
-// $$awaitVal/$$awaitErr storage via rewriteIdentInNodes before the
-// chain sees them.
+// bindings. Those bindings are redirected to the module-scope
+// $$awaitVal/$$awaitErr storage through the scoped template-AST binding
+// environment before the chain sees them.
 func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	blockID := g.id()
 	stateVar := "$$promState_" + blockID

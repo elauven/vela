@@ -266,8 +266,9 @@ func analysisToJSON(a *Analysis) ScriptJSON {
 //  Top-level dump function
 // ─────────────────────────────────────────────────────────────────────────────
 
-// DumpAST parses the given .vela file and returns a pretty-printed JSON string
-// containing the full template AST, script analysis, and CSS.
+// DumpAST is the standalone compatibility entry point for tooling that only
+// has source text. Compilation itself must use DumpParsedAST so --ast does not
+// parse the component a second time.
 func DumpAST(filename, src string) (string, error) {
 	sfc, err := parseSFC(src)
 	if err != nil {
@@ -280,7 +281,19 @@ func DumpAST(filename, src string) (string, error) {
 	}
 
 	analysis := analyzeScriptAST(sfc.ScriptAST)
+	return DumpParsedAST(filename, sfc, templateNodes, analysis)
+}
 
+// DumpParsedAST serializes an already parsed and analyzed component. Keeping
+// this boundary typed is important: diagnostic/debug output must not silently
+// introduce a second script parse into the normal compiler pipeline.
+func DumpParsedAST(filename string, sfc *SFC, templateNodes []Node, analysis *Analysis) (string, error) {
+	if sfc == nil || sfc.ScriptAST == nil {
+		return "", fmt.Errorf("missing parsed component AST")
+	}
+	if analysis == nil {
+		return "", fmt.Errorf("missing component analysis")
+	}
 	dump := SFCJSON{
 		File:     filename,
 		Script:   analysisToJSON(analysis),

@@ -258,3 +258,32 @@ func TestMinifyEliminatesFromOwnedScriptAST(t *testing.T) {
 		t.Fatalf("minify trace did not retain one script parse: %+v", sink.records)
 	}
 }
+
+func TestEmitASTUsesParsedComponentPipeline(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "Debug.vela")
+	source := `<script>
+  let count = $state(0);
+</script>
+<template><button @click={() => count++}>{count}</button></template>`
+	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sink := &memoryTraceSink{}
+	dest := filepath.Join(dir, "Debug.js")
+	if diags, err := compileFile(src, dest, CompileOptions{EmitAST: true, TraceSink: sink}); err != nil {
+		t.Fatalf("--ast compile failed: %v; diagnostics: %+v", err, diags)
+	}
+	astPath := filepath.Join(dir, "Debug.ast.json")
+	dump, err := os.ReadFile(astPath)
+	if err != nil {
+		t.Fatalf("--ast did not write parsed AST dump: %v", err)
+	}
+	if !strings.Contains(string(dump), `"count"`) || !strings.Contains(string(dump), `"template"`) {
+		t.Fatalf("unexpected AST dump: %s", dump)
+	}
+	if len(sink.records) != 1 || sink.records[0].Metrics.ScriptParseCount != 1 {
+		t.Fatalf("--ast pipeline did not retain one script parse: %+v", sink.records)
+	}
+}

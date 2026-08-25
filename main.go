@@ -456,7 +456,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	}
 
 	if opts.EmitAST {
-		if astJSON, astErr := DumpAST(src, raw); astErr == nil {
+		if astJSON, astErr := DumpParsedAST(src, sfc, tmpl, analysis); astErr == nil {
 			astPath := strings.TrimSuffix(dest, ".js") + ".ast.json"
 			_ = os.MkdirAll(filepath.Dir(astPath), 0755)
 			_ = os.WriteFile(astPath, []byte(astJSON), 0644)
