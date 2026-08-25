@@ -163,7 +163,7 @@ let active  = $state(false);
 	if len(a.StateVars) != 3 {
 		t.Fatalf("expected 3 state vars, got %d", len(a.StateVars))
 	}
-	if a.StateVars[0].Name != "count" || a.StateVars[0].Initial != "0" {
+	if a.StateVars[0].Name != "count" || sourceExpr(a.StateVars[0].InitialAST) != "0" {
 		t.Errorf("first state var: got %+v", a.StateVars[0])
 	}
 }
@@ -210,13 +210,13 @@ function increment() {
   count++;
 }
 `)
-	if strings.Contains(a.CleanScript, "$state") {
+	if strings.Contains(a.CleanScript(), "$state") {
 		t.Error("CleanScript should have $state removed")
 	}
-	if strings.Contains(a.CleanScript, "$effect") {
+	if strings.Contains(a.CleanScript(), "$effect") {
 		t.Error("CleanScript should have $effect removed")
 	}
-	if !strings.Contains(a.CleanScript, "function increment") {
+	if !strings.Contains(a.CleanScript(), "function increment") {
 		t.Error("CleanScript should retain function declarations")
 	}
 }
@@ -273,7 +273,7 @@ function inc() { count++; }
 function dec() { count--; }
 function set(n) { count = n; }
 `)
-	clean := a.CleanScript
+	clean := a.CleanScript()
 	if !strings.Contains(clean, "$$set_count") {
 		t.Errorf("CleanScript should contain $$set_count; got:\n%s", clean)
 	}
@@ -653,9 +653,9 @@ func TestAnalyzeScript_ImportSpec(t *testing.T) {
 			t.Errorf("no imports parsed for: %s", tc.src)
 			continue
 		}
-		if a.Imports[0].Spec != tc.spec {
+		if formatImportSpec(a.Imports[0]) != tc.spec {
 			t.Errorf("import spec:\n  want %q\n  got  %q\n  src: %s",
-				tc.spec, a.Imports[0].Spec, tc.src)
+				tc.spec, formatImportSpec(a.Imports[0]), tc.src)
 		}
 	}
 }
@@ -691,7 +691,7 @@ func TestAnalyzeScript_EffectDepsInTemplate(t *testing.T) {
 	}
 	if !containsStr(a.Effects[0].Deps, "count") {
 		t.Errorf("effect should depend on count; deps=%v body=%q",
-			a.Effects[0].Deps, a.Effects[0].Body)
+			a.Effects[0].Deps, sourceBlock(a.Effects[0].BodyAST))
 	}
 }
 
@@ -1059,13 +1059,13 @@ func TestAnalyzeScript_ExportLetProps(t *testing.T) {
 	if len(a.Props) != 3 {
 		t.Fatalf("expected 3 props, got %d", len(a.Props))
 	}
-	if a.Props[0].Name != "name" || a.Props[0].Default != "'World'" {
-		t.Errorf("prop[0]: got name=%q default=%q", a.Props[0].Name, a.Props[0].Default)
+	if a.Props[0].Name != "name" || sourceExpr(a.Props[0].DefaultAST) != "'World'" {
+		t.Errorf("prop[0]: got name=%q default=%q", a.Props[0].Name, sourceExpr(a.Props[0].DefaultAST))
 	}
 	if got := printNode(a.Props[0].DefaultAST); got != "'World'" {
 		t.Errorf("prop[0] default AST: want %q, got %q", "'World'", got)
 	}
-	if a.Props[2].Name != "required" || a.Props[2].Default != "" {
+	if a.Props[2].Name != "required" || a.Props[2].DefaultAST != nil {
 		t.Errorf("prop[2] should have empty default: %+v", a.Props[2])
 	}
 	if a.Props[2].DefaultAST != nil {
@@ -1079,11 +1079,11 @@ func TestAnalyzeScript_PropsNotInCleanScript(t *testing.T) {
 		export let name = 'World';
 		function greet() { return name; }
 	`)
-	if strings.Contains(a.CleanScript, "export let") {
-		t.Errorf("export let should not appear in CleanScript: %s", a.CleanScript)
+	if strings.Contains(a.CleanScript(), "export let") {
+		t.Errorf("export let should not appear in CleanScript: %s", a.CleanScript())
 	}
-	if !strings.Contains(a.CleanScript, "function greet") {
-		t.Errorf("greet function should be in CleanScript: %s", a.CleanScript)
+	if !strings.Contains(a.CleanScript(), "function greet") {
+		t.Errorf("greet function should be in CleanScript: %s", a.CleanScript())
 	}
 }
 
@@ -1453,8 +1453,8 @@ func TestAnalyzeScript_OnMount(t *testing.T) {
 	if lc.Kind != "onMount" {
 		t.Errorf("kind: want 'onMount', got %q", lc.Kind)
 	}
-	if !strings.Contains(lc.Body, "setInterval") {
-		t.Errorf("body should contain setInterval; got: %q", lc.Body)
+	if !strings.Contains(sourceBlock(lc.BodyAST), "setInterval") {
+		t.Errorf("body should contain setInterval; got: %q", sourceBlock(lc.BodyAST))
 	}
 }
 
@@ -1477,10 +1477,10 @@ func TestAnalyzeScript_LifecycleNotInCleanScript(t *testing.T) {
 		onMount(() => { document.title = 'hi'; });
 		function greet() { return 'hello'; }
 	`)
-	if strings.Contains(a.CleanScript, "onMount") {
-		t.Errorf("onMount should be removed from CleanScript; got:\n%s", a.CleanScript)
+	if strings.Contains(a.CleanScript(), "onMount") {
+		t.Errorf("onMount should be removed from CleanScript; got:\n%s", a.CleanScript())
 	}
-	if !strings.Contains(a.CleanScript, "function greet") {
+	if !strings.Contains(a.CleanScript(), "function greet") {
 		t.Errorf("user functions should remain in CleanScript")
 	}
 }
@@ -1530,8 +1530,8 @@ func TestAnalyzeScript_Bindable(t *testing.T) {
 	if !p.Bindable {
 		t.Error("prop should be marked Bindable")
 	}
-	if p.Default != "0" {
-		t.Errorf("default: want '0', got %q", p.Default)
+	if sourceExpr(p.DefaultAST) != "0" {
+		t.Errorf("default: want '0', got %q", sourceExpr(p.DefaultAST))
 	}
 	if got := printNode(p.DefaultAST); got != "0" {
 		t.Errorf("default AST: want %q, got %q", "0", got)
@@ -1546,8 +1546,8 @@ func TestAnalyzeScript_BindableNoDefault(t *testing.T) {
 	if !a.Props[0].Bindable {
 		t.Error("should be bindable")
 	}
-	if a.Props[0].Default != "" {
-		t.Errorf("should have empty default, got %q", a.Props[0].Default)
+	if a.Props[0].DefaultAST != nil {
+		t.Errorf("should have empty default, got %q", sourceExpr(a.Props[0].DefaultAST))
 	}
 }
 
@@ -2078,11 +2078,11 @@ func TestCleanScript_PropAssignmentRewritten(t *testing.T) {
 		export let name = $bindable('World');
 		function rename(v) { name = v; }
 	`)
-	if !strings.Contains(a.CleanScript, "$$set_name") {
-		t.Errorf("prop assignment should be rewritten to $$set_name:\n%s", a.CleanScript)
+	if !strings.Contains(a.CleanScript(), "$$set_name") {
+		t.Errorf("prop assignment should be rewritten to $$set_name:\n%s", a.CleanScript())
 	}
-	if strings.Contains(a.CleanScript, "name = v") {
-		t.Errorf("raw prop assignment should be gone:\n%s", a.CleanScript)
+	if strings.Contains(a.CleanScript(), "name = v") {
+		t.Errorf("raw prop assignment should be gone:\n%s", a.CleanScript())
 	}
 }
 
@@ -2894,11 +2894,11 @@ func TestAnalyzeScript_AsyncFunctionPreserved(t *testing.T) {
 			return data;
 		}
 	`)
-	if !strings.Contains(a.CleanScript, "async function fetchData") {
-		t.Errorf("async keyword lost from fetchData:\n%s", a.CleanScript)
+	if !strings.Contains(a.CleanScript(), "async function fetchData") {
+		t.Errorf("async keyword lost from fetchData:\n%s", a.CleanScript())
 	}
-	if !strings.Contains(a.CleanScript, "async function search") {
-		t.Errorf("async keyword lost from search:\n%s", a.CleanScript)
+	if !strings.Contains(a.CleanScript(), "async function search") {
+		t.Errorf("async keyword lost from search:\n%s", a.CleanScript())
 	}
 }
 

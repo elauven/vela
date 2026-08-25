@@ -267,7 +267,7 @@ func validateEffectBody(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
 			return true
 		}
 		eff := analysis.Effects[idx]
-		if len(eff.Deps) == 0 && strings.TrimSpace(eff.Body) != "" {
+		if len(eff.Deps) == 0 && eff.BodyAST != nil && len(eff.BodyAST.Body) != 0 {
 			ds.Warn(callee.Pos,
 				"$effect references no reactive variables — it will run "+
 					"once on mount but never re-run; consider using onMount() "+

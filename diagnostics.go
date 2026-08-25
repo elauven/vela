@@ -335,10 +335,10 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 		return true
 	})
 
-	if a.CleanScript != "" || len(a.Effects) > 0 {
-		combined := a.CleanScript
+	if a.CleanScript() != "" || len(a.Effects) > 0 {
+		combined := a.CleanScript()
 		for _, eff := range a.Effects {
-			combined += "\n" + eff.Body
+			combined += "\n" + sourceBlock(eff.BodyAST)
 		}
 		for _, sv := range a.StateVars {
 			setterCall := "$$set_" + sv.Name
@@ -386,10 +386,10 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 		// warnings.  False positives here only mean a missed reactivity
 		// warning, never a spurious one.
 		for _, kw := range []string{"let ", "const ", "var ", "function "} {
-			if idx := strings.Index(a.CleanScript, kw+name); idx >= 0 {
+			if idx := strings.Index(a.CleanScript(), kw+name); idx >= 0 {
 				// boundary check
 				after := idx + len(kw) + len(name)
-				if after >= len(a.CleanScript) || !isIdentByte(a.CleanScript[after]) {
+				if after >= len(a.CleanScript()) || !isIdentByte(a.CleanScript()[after]) {
 					return true
 				}
 			}

@@ -223,42 +223,56 @@ func slotNodeJSON(n *SlotNode) interface{} {
 //  Analysis → JSON
 // ─────────────────────────────────────────────────────────────────────────────
 
+func sourceExpr(expr JsExpr) string {
+	if expr == nil {
+		return ""
+	}
+	return strings.TrimSpace(printNode(expr))
+}
+
+func sourceBlock(block *JsBlock) string {
+	if block == nil {
+		return ""
+	}
+	return strings.TrimSpace(printNode(block))
+}
+
 func analysisToJSON(a *Analysis) ScriptJSON {
 	out := ScriptJSON{}
 
 	for _, sv := range a.StateVars {
 		out.StateVars = append(out.StateVars, StateVarJSON{
 			Name:    sv.Name,
-			Initial: sv.Initial,
+			Initial: sourceExpr(sv.InitialAST),
 		})
 	}
 	for _, p := range a.Props {
 		out.Props = append(out.Props, PropJSON{
 			Name:     p.Name,
 			Bindable: p.Bindable,
-			Default:  p.Default,
+			Default:  sourceExpr(p.DefaultAST),
 		})
 	}
 	for _, dv := range a.DerivedVars {
 		out.DerivedVars = append(out.DerivedVars, DerivedVarJSON{
 			Name: dv.Name,
-			Expr: dv.Expr,
+			Expr: sourceExpr(dv.ExprAST),
 			Deps: dv.Deps,
 		})
 	}
 	for _, eff := range a.Effects {
 		out.Effects = append(out.Effects, EffectJSON{
-			Body: strings.TrimSpace(eff.Body),
+			Body: sourceBlock(eff.BodyAST),
 			Deps: eff.Deps,
 		})
 	}
 	for _, lc := range a.Lifecycles {
 		out.Lifecycles = append(out.Lifecycles, LifecycleJSON{
 			Kind: lc.Kind,
-			Body: strings.TrimSpace(lc.Body),
+			Body: sourceBlock(lc.BodyAST),
 		})
 	}
-	out.CleanScript = strings.TrimSpace(a.CleanScript)
+	out.CleanScript = strings.TrimSpace(a.CleanScript())
 	return out
 }
 

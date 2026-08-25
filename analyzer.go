@@ -31,8 +31,6 @@ type Analysis struct {
 	Imports       []*Import
 	Props         []*Prop
 	Lifecycles    []*LifecycleHook
-	CleanScript   string
-	ImportRecords []ImportRecord
 	DerivedCycles [][]string
 	ScriptPlan    []ScriptPlanStep
 	// IntrinsicAliases maps a local binding name back to the
@@ -55,13 +53,11 @@ type Analysis struct {
 // LifecycleHook represents an onMount or onDestroy call.
 type LifecycleHook struct {
 	Kind    string   // "onMount" | "onDestroy"
-	Body    string   // callback body text retained for diagnostics and legacy callers
 	BodyAST *JsBlock // source AST for the lifecycle callback body
 }
 
 type StateVar struct {
 	Name       string
-	Initial    string
 	InitialAST JsExpr // immutable source AST for the initial value
 	Pos        int
 	// Deep means the state was declared via `$state.deep(...)` rather
@@ -75,14 +71,12 @@ type StateVar struct {
 
 type DerivedVar struct {
 	Name    string
-	Expr    string
 	ExprAST JsExpr // immutable source AST for the derived expression
 	Pos     int
 	Deps    []string
 }
 
 type Effect struct {
-	Body    string
 	BodyAST *JsBlock // source AST for the effect callback body
 	Deps    []string
 }
@@ -92,7 +86,6 @@ type Function struct {
 }
 
 type Import struct {
-	Spec        string
 	Source      string
 	DefaultName string
 	Namespace   string
@@ -110,7 +103,6 @@ type Import struct {
 // Bindable is set when the default is wrapped in $bindable(default).
 type Prop struct {
 	Name       string
-	Default    string // JS expression; empty → required
 	DefaultAST JsExpr // source AST for the declared default, nil → required
 	Bindable   bool   // true when declared as export let x = $bindable(default)
 }
@@ -137,7 +129,6 @@ func analyzeScriptAST(script *ScriptAST) *Analysis {
 		script = newScriptAST("", 0)
 	}
 	prog := script.Program
-	src := script.Source
 	a := &Analysis{Script: script}
 
 	// skipEnd maps the End byte-offset of every reactive top-level statement
@@ -207,42 +198,32 @@ func analyzeScriptAST(script *ScriptAST) *Analysis {
 
 				switch calleeName {
 				case "$state":
-					init := ""
 					var initAST JsExpr
 					if len(call.Args) > 0 {
 						initAST = call.Args[0]
-						init = strings.TrimSpace(src[initAST.nodePos():initAST.nodeEnd()])
 					}
 					a.StateVars = append(a.StateVars, &StateVar{
-						Name: name, Initial: init, InitialAST: initAST, Pos: s.nodeEnd(), Deep: stateDeep,
+						Name: name, InitialAST: initAST, Pos: s.nodeEnd(), Deep: stateDeep,
 					})
 					skipEnd[s.End] = true
 
 				case "$derived":
-					expr := ""
 					var exprAST JsExpr
 					if len(call.Args) > 0 {
 						exprAST = call.Args[0]
-						expr = strings.TrimSpace(src[exprAST.nodePos():exprAST.nodeEnd()])
 					}
-					a.DerivedVars = append(a.DerivedVars, &DerivedVar{Name: name, Expr: expr, ExprAST: exprAST, Pos: s.nodeEnd()})
+					a.DerivedVars = append(a.DerivedVars, &DerivedVar{Name: name, ExprAST: exprAST, Pos: s.nodeEnd()})
 					skipEnd[s.End] = true
 					skipEnd[s.End] = true
 				}
 			}
 
 		case *JsExprStmt:
-			if body, ok := extractEffect(s.X); ok {
-				if raw, found := callbackBodySource(s.X, src); found {
-					body = raw
-				}
-				a.Effects = append(a.Effects, &Effect{Body: body, BodyAST: effectCallbackBlock(s.X)})
+			if extractEffect(s.X) {
+				a.Effects = append(a.Effects, &Effect{BodyAST: effectCallbackBlock(s.X)})
 				skipEnd[s.End] = true
-			} else if kind, body, ok := extractLifecycle(s.X, a.IntrinsicAliases); ok {
-				if raw, found := callbackBodySource(s.X, src); found {
-					body = raw
-				}
-				a.Lifecycles = append(a.Lifecycles, &LifecycleHook{Kind: kind, Body: body, BodyAST: callbackBlock(s.X)})
+			} else if kind, ok := extractLifecycle(s.X, a.IntrinsicAliases); ok {
+				a.Lifecycles = append(a.Lifecycles, &LifecycleHook{Kind: kind, BodyAST: callbackBlock(s.X)})
 				skipEnd[s.End] = true
 			}
 
@@ -254,7 +235,6 @@ func analyzeScriptAST(script *ScriptAST) *Analysis {
 					if name == "" {
 						continue
 					}
-					def := ""
 					var defAST JsExpr
 					bindable := false
 					if decl.Init != nil {
@@ -264,16 +244,14 @@ func analyzeScriptAST(script *ScriptAST) *Analysis {
 								bindable = true
 								if len(call.Args) > 0 {
 									defAST = call.Args[0]
-									def = strings.TrimSpace(src[defAST.nodePos():defAST.nodeEnd()])
 								}
 							}
 						}
 						if !bindable {
 							defAST = decl.Init
-							def = strings.TrimSpace(src[decl.Init.nodePos():decl.Init.nodeEnd()])
 						}
 					}
-					a.Props = append(a.Props, &Prop{Name: name, Default: def, DefaultAST: defAST, Bindable: bindable})
+					a.Props = append(a.Props, &Prop{Name: name, DefaultAST: defAST, Bindable: bindable})
 				}
 				skipEnd[s.End] = true
 			}
@@ -314,10 +292,8 @@ func analyzeScriptAST(script *ScriptAST) *Analysis {
 	}
 
 	// ── Rewrite assignments inside lifecycle and effect bodies ───────────────
-	a.ScriptPlan = buildScriptPlan(prog, src, skipEnd, a)
-	a.CleanScript = buildCleanScript(a.ScriptPlan)
+	a.ScriptPlan = buildScriptPlan(prog, skipEnd, a)
 
-	a.ImportRecords = importRecordsFromProgram(src, prog, 0)
 	return a
 }
 
@@ -342,12 +318,9 @@ func (a *Analysis) lowerReactiveCallbackBodies() {
 			step.Stmt = RewriteStatementAssignmentsAST(step.Stmt, stateSet)
 		}
 	}
-	// CleanScript remains a compatibility/diagnostic view, but is now printed
-	// directly from the same typed user statements instead of being reparsed.
-	a.CleanScript = buildCleanScript(a.ScriptPlan)
 }
 
-func buildScriptPlan(prog *JsProgram, src string, skipEnd map[int]bool, a *Analysis) []ScriptPlanStep {
+func buildScriptPlan(prog *JsProgram, skipEnd map[int]bool, a *Analysis) []ScriptPlanStep {
 	stateAt := map[int]*StateVar{}
 	for _, state := range a.StateVars {
 		stateAt[state.Pos] = state
@@ -446,6 +419,16 @@ func orderDerivedVars(vars []*DerivedVar) ([]*DerivedVar, [][]string) {
 //  CleanScript
 // ─────────────────────────────────────────────────────────────────────────────
 
+// CleanScript is a compatibility/debug view generated directly from the
+// typed ScriptPlan. It is deliberately not stored on Analysis, so user code
+// has one canonical representation: the owned source AST.
+func (a *Analysis) CleanScript() string {
+	if a == nil {
+		return ""
+	}
+	return buildCleanScript(a.ScriptPlan)
+}
+
 func buildCleanScript(plan []ScriptPlanStep) string {
 	prog := &JsProgram{}
 	for _, step := range plan {
@@ -475,7 +458,6 @@ func importFromDecl(d *JsImportDecl) *Import {
 		names = append(names, spec.Local)
 	}
 	return &Import{
-		Spec:        buildImportSpec(d),
 		Source:      d.Source,
 		DefaultName: d.DefaultName,
 		Namespace:   d.Namespace,
@@ -485,16 +467,29 @@ func importFromDecl(d *JsImportDecl) *Import {
 }
 
 func buildImportSpec(d *JsImportDecl) string {
-	if d.Namespace != "" {
-		return "* as " + d.Namespace
+	return formatImportSpec(&Import{
+		DefaultName: d.DefaultName,
+		Namespace:   d.Namespace,
+		Specifiers:  d.Specifiers,
+	})
+}
+
+// formatImportSpec is a debug/test presentation generated from the typed
+// import fields. It is never used as compiler input or reparsed.
+func formatImportSpec(imp *Import) string {
+	if imp == nil {
+		return ""
+	}
+	if imp.Namespace != "" {
+		return "* as " + imp.Namespace
 	}
 	var parts []string
-	if d.DefaultName != "" {
-		parts = append(parts, d.DefaultName)
+	if imp.DefaultName != "" {
+		parts = append(parts, imp.DefaultName)
 	}
-	if len(d.Specifiers) > 0 {
+	if len(imp.Specifiers) > 0 {
 		var named []string
-		for _, s := range d.Specifiers {
+		for _, s := range imp.Specifiers {
 			if s.Imported == s.Local {
 				named = append(named, s.Local)
 			} else {
@@ -512,7 +507,7 @@ func buildImportSpec(d *JsImportDecl) string {
 // intrinsic name when the script aliased the import, e.g.
 // `import { onMount as init } from 'vela'` registers
 // aliases["init"] = "onMount" so init(() => { … }) is recognised.
-func extractLifecycle(expr JsExpr, aliases map[string]string) (kind, body string, ok bool) {
+func extractLifecycle(expr JsExpr, aliases map[string]string) (kind string, ok bool) {
 	call, isCall := expr.(*JsCallExpr)
 	if !isCall {
 		return
@@ -537,20 +532,14 @@ func extractLifecycle(expr JsExpr, aliases map[string]string) (kind, body string
 	if !isArrow {
 		return
 	}
-	block, isBlock := arrow.Body.(*JsBlock)
+	_, isBlock := arrow.Body.(*JsBlock)
 	if !isBlock {
 		return
 	}
-	var stmts []string
-	for _, s := range block.Body {
-		stmts = append(stmts, printNode(s))
-	}
-	return name, strings.Join(stmts, "\n"), true
+	return name, true
 }
 
-// callbackBodySource returns the original statements inside an arrow callback block.
-// Keeping source text avoids losing valid constructs (notably try/catch) in
-// the partial JavaScript printer used by legacy extraction.
+// callbackBlock returns the callback body owned by the parsed source AST.
 func callbackBlock(expr JsExpr) *JsBlock {
 	call, ok := expr.(*JsCallExpr)
 	if !ok || len(call.Args) == 0 {
@@ -562,22 +551,6 @@ func callbackBlock(expr JsExpr) *JsBlock {
 	}
 	block, _ := arrow.Body.(*JsBlock)
 	return block
-}
-
-func callbackBodySource(expr JsExpr, src string) (string, bool) {
-	call, ok := expr.(*JsCallExpr)
-	if !ok || len(call.Args) == 0 {
-		return "", false
-	}
-	arrow, ok := call.Args[0].(*JsArrowFunc)
-	if !ok {
-		return "", false
-	}
-	block, ok := arrow.Body.(*JsBlock)
-	if !ok || block.nodePos() < 0 || block.nodeEnd() > len(src) || block.nodeEnd() <= block.nodePos()+1 {
-		return "", false
-	}
-	return strings.TrimSpace(src[block.nodePos()+1 : block.nodeEnd()-1]), true
 }
 
 func effectCallbackBlock(expr JsExpr) *JsBlock {
@@ -597,31 +570,27 @@ func effectCallbackBlock(expr JsExpr) *JsBlock {
 	return block
 }
 
-func extractEffect(expr JsExpr) (string, bool) {
+func extractEffect(expr JsExpr) bool {
 	call, ok := expr.(*JsCallExpr)
 	if !ok {
-		return "", false
+		return false
 	}
 	callee, ok := call.Callee.(*JsIdent)
 	if !ok || callee.Name != "$effect" {
-		return "", false
+		return false
 	}
 	if len(call.Args) == 0 {
-		return "", false
+		return false
 	}
 	arrow, ok := call.Args[0].(*JsArrowFunc)
 	if !ok {
-		return "", false
+		return false
 	}
-	block, ok := arrow.Body.(*JsBlock)
+	_, ok = arrow.Body.(*JsBlock)
 	if !ok {
-		return "", false
+		return false
 	}
-	var stmts []string
-	for _, s := range block.Body {
-		stmts = append(stmts, printNode(s))
-	}
-	return strings.Join(stmts, "\n"), true
+	return true
 }
 
 // findWrittenVars returns a set of all identifier names that appear on the

@@ -1510,7 +1510,7 @@ func (g *ASTGen) buildImportDecls() []JsStmt {
 				}
 			}
 			specifiers = kept
-			if defaultName == "" && namespace == "" && len(specifiers) == 0 && imp.Spec != "" {
+			if defaultName == "" && namespace == "" && len(specifiers) == 0 {
 				continue
 			}
 		} else {
