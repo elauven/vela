@@ -402,6 +402,25 @@ type ASTGen struct {
 	// branch recreates them (their `if (!$$nN_comp)` guard would
 	// otherwise skip re-creation, leaving an empty wrapper).
 	compInstances []compInstance
+
+	// templateBindings redirects parser-owned template identifiers into the
+	// generated lexical bindings that currently own them: an each-row's
+	// mutable item cell or an await branch's resolved value cell.  Expressions
+	// are rewritten through the scope-aware AST visitor at emission time;
+	// template nodes themselves are never copied through source text.
+	templateBindings []templateBinding
+}
+
+type templateBinding struct{ from, to string }
+
+func (g *ASTGen) withTemplateBinding(from, to string, fn func()) {
+	if from == "" || to == "" || from == to {
+		fn()
+		return
+	}
+	g.templateBindings = append(g.templateBindings, templateBinding{from: from, to: to})
+	defer func() { g.templateBindings = g.templateBindings[:len(g.templateBindings)-1] }()
+	fn()
 }
 
 // compInstance is one child-component invocation's bookkeeping —
@@ -684,6 +703,12 @@ func (g *ASTGen) templateExpr(expr *TemplateExpr) JsExpr {
 	root := templateExprRoot(expr)
 	if root == nil {
 		return id("undefined")
+	}
+	// The innermost template binding wins when nested each/await blocks reuse
+	// a binding name. Rewriting in reverse order preserves lexical shadowing.
+	for i := len(g.templateBindings) - 1; i >= 0; i-- {
+		binding := g.templateBindings[i]
+		root = rewriteItemRefAST(root, binding.from, binding.to)
 	}
 	markGeneratedNode(root)
 	setTemplateOrigin(root, g.sfc.TemplateOffset+expr.Pos)
@@ -2848,69 +2873,71 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// (see the rowHasBlocks branch).
 	rowBodyDeps := map[string]bool{}
 	rowVar := "$$f0"
-	rowChildren := rewriteIdentInNodes(rowElem.Children, itemVar, "$$item_"+id)
+	rowChildren := rowElem.Children
 	rowHasBlocks := !astHoleSubtreeOK(rowChildren)
 	g.withFragmentIDs(func() {
-		rowVar = g.id() // $$f0
-		fragBody = []JsStmt{
-			genLet("$$item_"+id, generatedID(itemVar)),
-			genConst(rowVar, genCall(
-				genMember(generatedID("document"), "createElement"), strLit(rowElem.Tag),
-			)),
-			genExprStmt(genCall(
-				genMember(generatedID(rowVar), "setAttribute"), strLit(g.scopeID), strLit(""),
-			)),
-		}
-		// Per-row attribute wiring (events, binds, directives).
-		rowAttrs = g.buildEachRowAttrs(rowElem, rowVar, itemVar,
-			"$$item_"+id)
-		fragBody = append(fragBody, rowAttrs.create...)
-
-		if rowHasBlocks {
-			// Row body contains nested control-flow ({#if}/{#each}
-			// /{#await}).  The recursive walker builds it — into a
-			// captured local scope so its emissions land in the
-			// fragment closure, not component scope.
-			cap := g.captureScope(func() {
-				g.buildChildRun(rowChildren, rowVar)
-			})
-			// Per-row declarations bubbled up from any nested
-			// branch (a component built inside an {#if} inside
-			// this row).  These must come BEFORE the row's
-			// element creation/branch builds: code emitted from
-			// those references the vars.  Each row gets its own
-			// instance because they live in the fragment closure.
-			fragBody = append(fragBody, cap.fragHoisted...)
-			fragBody = append(fragBody, cap.body...)
-			fragBody = append(fragBody, rowAttrs.update...)
-			fragBody = append(fragBody, cap.initBody...)
-			fragBody = append(fragBody, cap.events...)
-			nestedUpdate = append(nestedUpdate, cap.initBody...)
-			rowCleanup = append(rowCleanup, cap.cleanup...)
-			// Child-component instances built within this row need
-			// their .set() statements replayed in the row's update
-			// closure (Session A: row reuse without destroying
-			// children).
-			rowComps = append(rowComps, cap.comps...)
-			// The nested blocks register reactive updates against
-			// component state (e.g. an {#if} on a component-scope
-			// flag).  Those chain functions are fragment-local —
-			// the component setter cannot call them directly.  So
-			// every dep a row body reads must re-run the WHOLE
-			// {#each}: re-rendering all rows re-evaluates each
-			// row's nested chains.  Collect the dep names here;
-			// they are registered against eachFn below.
-			for dep := range cap.updates {
-				rowBodyDeps[dep] = true
+		g.withTemplateBinding(itemVar, "$$item_"+id, func() {
+			rowVar = g.id() // $$f0
+			fragBody = []JsStmt{
+				genLet("$$item_"+id, generatedID(itemVar)),
+				genConst(rowVar, genCall(
+					genMember(generatedID("document"), "createElement"), strLit(rowElem.Tag),
+				)),
+				genExprStmt(genCall(
+					genMember(generatedID(rowVar), "setAttribute"), strLit(g.scopeID), strLit(""),
+				)),
 			}
-		} else {
-			sub = g.buildHoleSubtree(rowVar, rowChildren, false, "", true, false)
-			fragBody = append(fragBody, sub.build...)
-			// Directive/bind init statements — emitted after the
-			// child build, matching legacy buffer ordering.
-			fragBody = append(fragBody, rowAttrs.update...)
-			fragBody = append(fragBody, sub.initUpdates...)
-		}
+			// Per-row attribute wiring (events, binds, directives).
+			rowAttrs = g.buildEachRowAttrs(rowElem, rowVar, itemVar,
+				"$$item_"+id)
+			fragBody = append(fragBody, rowAttrs.create...)
+
+			if rowHasBlocks {
+				// Row body contains nested control-flow ({#if}/{#each}
+				// /{#await}).  The recursive walker builds it — into a
+				// captured local scope so its emissions land in the
+				// fragment closure, not component scope.
+				cap := g.captureScope(func() {
+					g.buildChildRun(rowChildren, rowVar)
+				})
+				// Per-row declarations bubbled up from any nested
+				// branch (a component built inside an {#if} inside
+				// this row).  These must come BEFORE the row's
+				// element creation/branch builds: code emitted from
+				// those references the vars.  Each row gets its own
+				// instance because they live in the fragment closure.
+				fragBody = append(fragBody, cap.fragHoisted...)
+				fragBody = append(fragBody, cap.body...)
+				fragBody = append(fragBody, rowAttrs.update...)
+				fragBody = append(fragBody, cap.initBody...)
+				fragBody = append(fragBody, cap.events...)
+				nestedUpdate = append(nestedUpdate, cap.initBody...)
+				rowCleanup = append(rowCleanup, cap.cleanup...)
+				// Child-component instances built within this row need
+				// their .set() statements replayed in the row's update
+				// closure (Session A: row reuse without destroying
+				// children).
+				rowComps = append(rowComps, cap.comps...)
+				// The nested blocks register reactive updates against
+				// component state (e.g. an {#if} on a component-scope
+				// flag).  Those chain functions are fragment-local —
+				// the component setter cannot call them directly.  So
+				// every dep a row body reads must re-run the WHOLE
+				// {#each}: re-rendering all rows re-evaluates each
+				// row's nested chains.  Collect the dep names here;
+				// they are registered against eachFn below.
+				for dep := range cap.updates {
+					rowBodyDeps[dep] = true
+				}
+			} else {
+				sub = g.buildHoleSubtree(rowVar, rowChildren, false, "", true, false)
+				fragBody = append(fragBody, sub.build...)
+				// Directive/bind init statements — emitted after the
+				// child build, matching legacy buffer ordering.
+				fragBody = append(fragBody, rowAttrs.update...)
+				fragBody = append(fragBody, sub.initUpdates...)
+			}
+		})
 	})
 
 	// update(item, $$i): refresh the row box, then re-run the
