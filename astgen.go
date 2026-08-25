@@ -409,6 +409,11 @@ type ASTGen struct {
 	// are rewritten through the scope-aware AST visitor at emission time;
 	// template nodes themselves are never copied through source text.
 	templateBindings []templateBinding
+
+	// branchTemplateBindings are temporary lexical bindings attached to a
+	// synthetic branch (currently {:then}/{:catch}). They are applied only
+	// while that branch's DOM plan is built, never to sibling branches.
+	branchTemplateBindings map[*IfBranch][]templateBinding
 }
 
 type templateBinding struct{ from, to string }
@@ -421,6 +426,19 @@ func (g *ASTGen) withTemplateBinding(from, to string, fn func()) {
 	g.templateBindings = append(g.templateBindings, templateBinding{from: from, to: to})
 	defer func() { g.templateBindings = g.templateBindings[:len(g.templateBindings)-1] }()
 	fn()
+}
+
+func (g *ASTGen) withBranchTemplateBindings(branch *IfBranch, fn func()) {
+	bindings := g.branchTemplateBindings[branch]
+	var apply func(int)
+	apply = func(i int) {
+		if i == len(bindings) {
+			fn()
+			return
+		}
+		g.withTemplateBinding(bindings[i].from, bindings[i].to, func() { apply(i + 1) })
+	}
+	apply(0)
 }
 
 // compInstance is one child-component invocation's bookkeeping —
@@ -3278,8 +3296,9 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	declAwait(genLet(cellVar, genNull()))
 
 	// Synthetic chain: pending / resolved / rejected.  The {:then}
-	// and {:catch} binding names are rewritten to the module-scope
-	// storage variables so branch content can reference them.
+	// and {:catch} binding names are redirected by a branch-local AST
+	// context while that branch plan is built, so sibling branches retain
+	// their own lexical meaning without copying template source text.
 	branches := []*IfBranch{
 		{
 			Cond:          stateVar + " === 0",
@@ -3288,18 +3307,32 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 		},
 	}
 	if block.ThenChildren != nil {
-		branches = append(branches, &IfBranch{
+		branch := &IfBranch{
 			Cond:          stateVar + " === 1",
 			SyntheticCond: genBinary("===", id(stateVar), numLit(1)),
-			Children:      rewriteIdentInNodes(block.ThenChildren, block.ValueName, valVar),
-		})
+			Children:      block.ThenChildren,
+		}
+		branches = append(branches, branch)
+		if block.ValueName != "" {
+			if g.branchTemplateBindings == nil {
+				g.branchTemplateBindings = map[*IfBranch][]templateBinding{}
+			}
+			g.branchTemplateBindings[branch] = []templateBinding{{from: block.ValueName, to: valVar}}
+		}
 	}
 	if block.CatchChildren != nil {
-		branches = append(branches, &IfBranch{
+		branch := &IfBranch{
 			Cond:          stateVar + " === 2",
 			SyntheticCond: genBinary("===", id(stateVar), numLit(2)),
-			Children:      rewriteIdentInNodes(block.CatchChildren, block.ErrorName, errVar),
-		})
+			Children:      block.CatchChildren,
+		}
+		branches = append(branches, branch)
+		if block.ErrorName != "" {
+			if g.branchTemplateBindings == nil {
+				g.branchTemplateBindings = map[*IfBranch][]templateBinding{}
+			}
+			g.branchTemplateBindings[branch] = []templateBinding{{from: block.ErrorName, to: errVar}}
+		}
 	}
 	chainFn := g.buildIfChain(&IfChainNode{Branches: branches}, parentVar)
 
@@ -3465,51 +3498,53 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	}
 
 	for i, branch := range chain.Branches {
-		bv := fn + "_b" + itoa(i)
-		frag := bv + "_frag"
-		if allStatic(branch.Children) {
-			html := emitStaticHTML(branch.Children, g.scopeID)
-			plans[i].build = []JsStmt{genInvoke("$$insertHTML", id(frag), strLit(html))}
-			continue
-		}
-		if astHoleSubtreeOK(branch.Children) {
-			sub := g.buildHoleSubtree(frag, branch.Children, true, bv, false, true)
-			if captured {
-				for _, decl := range sub.decls {
-					g.declare(decl)
+		g.withBranchTemplateBindings(branch, func() {
+			bv := fn + "_b" + itoa(i)
+			frag := bv + "_frag"
+			if allStatic(branch.Children) {
+				html := emitStaticHTML(branch.Children, g.scopeID)
+				plans[i].build = []JsStmt{genInvoke("$$insertHTML", id(frag), strLit(html))}
+				return
+			}
+			if astHoleSubtreeOK(branch.Children) {
+				sub := g.buildHoleSubtree(frag, branch.Children, true, bv, false, true)
+				if captured {
+					for _, decl := range sub.decls {
+						g.declare(decl)
+					}
+				} else {
+					g.body = append(g.body, sub.decls...)
 				}
-			} else {
-				g.body = append(g.body, sub.decls...)
+				plans[i].build = sub.build
+				plans[i].init = sub.initUpdates
+				plans[i].captured = sub.captured
+				return
 			}
-			plans[i].build = sub.build
-			plans[i].init = sub.initUpdates
-			plans[i].captured = sub.captured
-			continue
-		}
 
-		// Dynamic element branches use the ordinary recursive DOM builder,
-		// captured as a branch-local AST plan.  Its element references are
-		// hoisted by inBranchScope so setter cascades can safely update a
-		// mounted branch and no source-bearing expression is serialized.
-		tdMark := len(g.nestedTeardowns)
-		wasBranchScope := g.inBranchScope
-		cap := g.captureScope(func() {
-			g.inBranchScope = true
-			defer func() { g.inBranchScope = wasBranchScope }()
-			g.buildChildRun(branch.Children, frag)
-		})
-		plans[i].build = append(cap.body, cap.events...)
-		plans[i].init = cap.initBody
-		plans[i].cleanup = cap.cleanup
-		plans[i].comps = cap.comps
-		plans[i].nestedTeardowns = append([]JsStmt{}, g.nestedTeardowns[tdMark:]...)
-		g.fragHoisted = append(g.fragHoisted, cap.fragHoisted...)
-		g.compInstances = append(g.compInstances, cap.comps...)
-		for dep, stmts := range cap.updates {
-			for _, stmt := range stmts {
-				g.addUpdate(dep, guardedTemplateStmt(stmt, bv))
+			// Dynamic element branches use the ordinary recursive DOM builder,
+			// captured as a branch-local AST plan.  Its element references are
+			// hoisted by inBranchScope so setter cascades can safely update a
+			// mounted branch and no source-bearing expression is serialized.
+			tdMark := len(g.nestedTeardowns)
+			wasBranchScope := g.inBranchScope
+			cap := g.captureScope(func() {
+				g.inBranchScope = true
+				defer func() { g.inBranchScope = wasBranchScope }()
+				g.buildChildRun(branch.Children, frag)
+			})
+			plans[i].build = append(cap.body, cap.events...)
+			plans[i].init = cap.initBody
+			plans[i].cleanup = cap.cleanup
+			plans[i].comps = cap.comps
+			plans[i].nestedTeardowns = append([]JsStmt{}, g.nestedTeardowns[tdMark:]...)
+			g.fragHoisted = append(g.fragHoisted, cap.fragHoisted...)
+			g.compInstances = append(g.compInstances, cap.comps...)
+			for dep, stmts := range cap.updates {
+				for _, stmt := range stmts {
+					g.addUpdate(dep, guardedTemplateStmt(stmt, bv))
+				}
 			}
-		}
+		})
 	}
 
 	tryBody := []JsStmt{}
