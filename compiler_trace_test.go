@@ -229,3 +229,32 @@ func TestScriptPlanRetainsOwnedUserStatementUntilTargetBuild(t *testing.T) {
 		t.Fatal("target build did not lower ScriptPlan state write")
 	}
 }
+
+func TestMinifyEliminatesFromOwnedScriptAST(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "Minify.vela")
+	source := `<script>
+  let count = $state(0);
+  const unused = 42;
+  function increment() { count++; }
+</script>
+<template><button @click={increment}>{count}</button></template>`
+	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sink := &memoryTraceSink{}
+	out := filepath.Join(dir, "Minify.js")
+	if diags, err := compileFile(src, out, CompileOptions{Minify: true, TraceSink: sink}); err != nil {
+		t.Fatalf("minify compile failed: %v; diagnostics: %+v", err, diags)
+	}
+	code, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(code), "unused") || !strings.Contains(string(code), "$$set_count") {
+		t.Fatalf("unexpected minified output: %s", code)
+	}
+	if len(sink.records) != 1 || sink.records[0].Metrics.ScriptParseCount != 1 {
+		t.Fatalf("minify trace did not retain one script parse: %+v", sink.records)
+	}
+}

@@ -492,7 +492,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 
 	if opts.Minify {
 		if err = trace.stage("optimize", func() error {
-			sfc.Script, analysis = EliminateDeadCodeFixedPoint(sfc.Script, analysis, sfc.Template)
+			analysis = EliminateDeadCodeAST(sfc.ScriptAST, analysis, sfc.Template)
 			return nil
 		}); err != nil {
 			return ds.All(), err

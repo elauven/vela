@@ -124,6 +124,110 @@ func EliminateDeadCodeFixedPoint(script string, analysis *Analysis, templateText
 	return cur, curA
 }
 
+// EliminateDeadCodeAST is the compiler-path counterpart of the legacy
+// string API above. It removes eligible statements directly from the owned
+// ScriptAST and re-runs analysis over that same tree, never reparsing script
+// source. The public string API remains for compatibility tests/tools.
+func EliminateDeadCodeAST(script *ScriptAST, analysis *Analysis, templateText string) *Analysis {
+	if script == nil || script.Program == nil {
+		return analysis
+	}
+	current := analysis
+	for i := 0; i < 8; i++ {
+		drops := deadStatementPositions(script.Program, current, templateText)
+		if len(drops) == 0 {
+			break
+		}
+		filterDeadProgram(script.Program, drops)
+		current = analyzeScriptAST(script)
+	}
+	return current
+}
+
+func deadStatementPositions(prog *JsProgram, analysis *Analysis, templateText string) map[int]bool {
+	silent := NewDiagSet("", "")
+	root := BuildScopes(prog, silent)
+	if root == nil {
+		return nil
+	}
+	idx := indexBindingsByPos(root)
+	reactive, exported := reactiveNameSet(analysis), exportedNamesIn(prog)
+	drops := map[int]bool{}
+	WalkNode(prog, func(n JsNode) bool {
+		switch stmt := n.(type) {
+		case *JsExportDecl:
+			return false
+		case *JsVarDecl:
+			if span, ok := varDeclEliminable(stmt, idx, reactive, exported, templateText); ok {
+				drops[span.start] = true
+			}
+		case *JsFuncDecl:
+			if span, ok := funcDeclEliminable(stmt, idx, reactive, exported, templateText); ok {
+				drops[span.start] = true
+				return false
+			}
+		}
+		return true
+	})
+	return drops
+}
+
+func filterDeadProgram(prog *JsProgram, drops map[int]bool) {
+	prog.Body = filterDeadStmts(prog.Body, drops)
+}
+
+func filterDeadStmts(stmts []JsStmt, drops map[int]bool) []JsStmt {
+	out := make([]JsStmt, 0, len(stmts))
+	for _, stmt := range stmts {
+		if stmt == nil || drops[stmt.nodePos()] {
+			continue
+		}
+		switch s := stmt.(type) {
+		case *JsBlock:
+			s.Body = filterDeadStmts(s.Body, drops)
+		case *JsFuncDecl:
+			s.Body.Body = filterDeadStmts(s.Body.Body, drops)
+		case *JsIfStmt:
+			s.Then = filterDeadNestedStmt(s.Then, drops)
+			if s.Else != nil {
+				s.Else = filterDeadNestedStmt(s.Else, drops)
+			}
+		case *JsForStmt:
+			s.Body = filterDeadNestedStmt(s.Body, drops)
+		case *JsForInStmt:
+			s.Body = filterDeadNestedStmt(s.Body, drops)
+		case *JsWhileStmt:
+			s.Body = filterDeadNestedStmt(s.Body, drops)
+		case *JsDoWhileStmt:
+			s.Body = filterDeadNestedStmt(s.Body, drops)
+		case *JsTryStmt:
+			if s.Block != nil {
+				s.Block.Body = filterDeadStmts(s.Block.Body, drops)
+			}
+			if s.Handler != nil {
+				s.Handler.Body = filterDeadStmts(s.Handler.Body, drops)
+			}
+			if s.Finalizer != nil {
+				s.Finalizer.Body = filterDeadStmts(s.Finalizer.Body, drops)
+			}
+		case *JsSwitchStmt:
+			for _, c := range s.Cases {
+				c.Body = filterDeadStmts(c.Body, drops)
+			}
+		}
+		out = append(out, stmt)
+	}
+	return out
+}
+
+func filterDeadNestedStmt(stmt JsStmt, drops map[int]bool) JsStmt {
+	filtered := filterDeadStmts([]JsStmt{stmt}, drops)
+	if len(filtered) > 0 {
+		return filtered[0]
+	}
+	return &JsEmptyStmt{baseStmt: baseStmt{genNode()}}
+}
+
 // ─────────────────────────────────────────────
 //  Splicing
 // ─────────────────────────────────────────────
