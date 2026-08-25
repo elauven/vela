@@ -2,7 +2,6 @@ package main
 
 import (
 	"strings"
-	"unicode"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,11 +12,14 @@ type ScriptPlanStep struct {
 	Kind string
 	Pos  int
 	// SourcePos is the start of a user statement in the original script body.
-	// Pos remains the historical statement-end key used for rune steps.
+	// Pos remains the historical statement-end key used for ordering steps.
 	SourcePos int
-	Source    string
-	State     *StateVar
-	Derived   *DerivedVar
+	// Stmt points into the component-owned ScriptAST. It replaces the former
+	// executable Source string, so target generation can retain user origins
+	// without printing and parsing ordinary script statements again.
+	Stmt    JsStmt
+	State   *StateVar
+	Derived *DerivedVar
 }
 
 type Analysis struct {
@@ -312,11 +314,10 @@ func analyzeScriptAST(script *ScriptAST) *Analysis {
 	}
 
 	// ── Rewrite assignments inside lifecycle and effect bodies ───────────────
-	ss := a.stateSet()
-	a.CleanScript = buildCleanScript(prog, src, skipEnd, ss)
-	a.ScriptPlan = buildScriptPlan(prog, src, skipEnd, a, ss)
+	a.ScriptPlan = buildScriptPlan(prog, src, skipEnd, a)
+	a.CleanScript = buildCleanScript(a.ScriptPlan)
 
-	a.ImportRecords = ParseImportRecords(src, 0)
+	a.ImportRecords = importRecordsFromProgram(src, prog, 0)
 	return a
 }
 
@@ -335,9 +336,18 @@ func (a *Analysis) lowerReactiveCallbackBodies() {
 	for _, eff := range a.Effects {
 		RewriteAssignmentsAST(eff.BodyAST, stateSet)
 	}
+	for i := range a.ScriptPlan {
+		step := &a.ScriptPlan[i]
+		if step.Kind == "user" {
+			step.Stmt = RewriteStatementAssignmentsAST(step.Stmt, stateSet)
+		}
+	}
+	// CleanScript remains a compatibility/diagnostic view, but is now printed
+	// directly from the same typed user statements instead of being reparsed.
+	a.CleanScript = buildCleanScript(a.ScriptPlan)
 }
 
-func buildScriptPlan(prog *JsProgram, src string, skipEnd map[int]bool, a *Analysis, stateSet map[string]bool) []ScriptPlanStep {
+func buildScriptPlan(prog *JsProgram, src string, skipEnd map[int]bool, a *Analysis) []ScriptPlanStep {
 	stateAt := map[int]*StateVar{}
 	for _, state := range a.StateVars {
 		stateAt[state.Pos] = state
@@ -362,13 +372,9 @@ func buildScriptPlan(prog *JsProgram, src string, skipEnd map[int]bool, a *Analy
 		if skipEnd[stmt.nodeEnd()] {
 			continue
 		}
-		rawSource := src[stmt.nodePos():stmt.nodeEnd()]
-		leading := len(rawSource) - len(strings.TrimLeftFunc(rawSource, unicode.IsSpace))
-		raw := strings.TrimSpace(rawSource)
-		if raw != "" {
+		if stmt != nil {
 			plan = append(plan, ScriptPlanStep{
-				Kind: "user", Pos: stmt.nodeEnd(), SourcePos: stmt.nodePos() + leading,
-				Source: RewriteAssignments(raw, ParseJS(raw), stateSet),
+				Kind: "user", Pos: stmt.nodeEnd(), SourcePos: stmt.nodePos(), Stmt: stmt,
 			})
 		}
 	}
@@ -440,23 +446,17 @@ func orderDerivedVars(vars []*DerivedVar) ([]*DerivedVar, [][]string) {
 //  CleanScript
 // ─────────────────────────────────────────────────────────────────────────────
 
-func buildCleanScript(prog *JsProgram, src string, skipEnd map[int]bool, stateSet map[string]bool) string {
-	var parts []string
-	for _, stmt := range prog.Body {
-		if skipEnd[stmt.nodeEnd()] {
-			continue
-		}
-		raw := strings.TrimSpace(src[stmt.nodePos():stmt.nodeEnd()])
-		if raw != "" {
-			parts = append(parts, raw)
+func buildCleanScript(plan []ScriptPlanStep) string {
+	prog := &JsProgram{}
+	for _, step := range plan {
+		if step.Kind == "user" && step.Stmt != nil {
+			prog.Body = append(prog.Body, step.Stmt)
 		}
 	}
-	clean := strings.Join(parts, "\n\n")
-	if clean == "" {
+	if len(prog.Body) == 0 {
 		return ""
 	}
-	cleanProg := ParseJS(clean)
-	return RewriteAssignments(clean, cleanProg, stateSet)
+	return strings.TrimSpace(PrintJS(prog, PrintPretty))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

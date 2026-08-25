@@ -36,7 +36,13 @@ type ImportRecord struct {
 // comments, all of which the previous regex-based implementation either
 // missed silently or tagged with the wrong `Raw` content.
 func ParseImportRecords(script string, lineOffset int) []ImportRecord {
-	prog := ParseJS(script)
+	return importRecordsFromProgram(script, ParseJS(script), lineOffset)
+}
+
+// importRecordsFromProgram derives import metadata from an already-owned
+// program. The component pipeline calls this variant so import diagnostics and
+// project staging do not parse the <script> section a second time.
+func importRecordsFromProgram(script string, prog *JsProgram, lineOffset int) []ImportRecord {
 	if prog == nil {
 		return nil
 	}
@@ -95,10 +101,10 @@ func ParseImportRecords(script string, lineOffset int) []ImportRecord {
 // RewriteImportPath rewrites an import path for the compiled JS output.
 //
 // Rules applied in order:
-//   1. Node module (no leading ./ or /) → unchanged
-//   2. .vela extension → replace with .js
-//   3. Already has .js/.mjs/.cjs/.ts extension → unchanged
-//   4. Extensionless relative path → append .js
+//  1. Node module (no leading ./ or /) → unchanged
+//  2. .vela extension → replace with .js
+//  3. Already has .js/.mjs/.cjs/.ts extension → unchanged
+//  4. Extensionless relative path → append .js
 func RewriteImportPath(importPath string) string {
 	// Node module — pass through unchanged
 	if !strings.HasPrefix(importPath, ".") && !strings.HasPrefix(importPath, "/") {
@@ -141,7 +147,10 @@ func RewriteScriptImports(script string) string {
 	// Collect (start, end, replacement) tuples for every path that needs
 	// changing, then apply them right-to-left so earlier offsets stay
 	// valid after later splices.
-	type splice struct{ start, end int; text string }
+	type splice struct {
+		start, end int
+		text       string
+	}
 	var splices []splice
 	for _, stmt := range prog.Body {
 		d, ok := stmt.(*JsImportDecl)

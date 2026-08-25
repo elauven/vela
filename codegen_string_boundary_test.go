@@ -44,9 +44,7 @@ func TestStructuralStringGatewaysStayInASTGen(t *testing.T) {
 // already-authored <script> source enters the unified target program. A
 // generated fragment must never be serialized and parsed back into AST.
 func TestASTGenOnlyParsesUserScriptAST(t *testing.T) {
-	expected := map[string]int{
-		"buildScriptPlan/ParseJS": 1,
-	}
+	expected := map[string]int{}
 	actual := namedCallInventory(t, "astgen.go", "ParseJS", "parseJSExpr")
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("AST generator parse boundary changed:\nwant %#v\n got %#v", expected, actual)

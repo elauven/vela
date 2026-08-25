@@ -333,6 +333,14 @@ func RewriteAssignmentsAST(block *JsBlock, stateSet map[string]bool) {
 	rewriteAssignmentBlock(block, stateSet)
 }
 
+// RewriteStatementAssignmentsAST lowers state writes in one already-parsed
+// user statement. ScriptPlan uses it after input validation so ordinary
+// functions and top-level statements never cross a source-text ParseJS
+// boundary during target generation.
+func RewriteStatementAssignmentsAST(stmt JsStmt, stateSet map[string]bool) JsStmt {
+	return rewriteAssignmentStmt(stmt, stateSet)
+}
+
 // RewriteHandlerAssignmentsAST applies the same state-write lowering to a
 // cached template event handler. Block-bodied arrows reuse the callback-block
 // transform; concise bodies are replaced with the generated setter call.

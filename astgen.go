@@ -1596,9 +1596,9 @@ func (g *ASTGen) buildScriptPlan() []JsStmt {
 			seenDerived[step.Derived.Name] = true
 			flushReadyDerived()
 		case "user":
-			userProg := ParseJS(step.Source)
-			shiftTree(userProg, step.SourcePos)
-			out = append(out, userProg.Body...)
+			if step.Stmt != nil {
+				out = append(out, step.Stmt)
+			}
 		}
 	}
 	return out
