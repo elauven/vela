@@ -423,3 +423,19 @@ func TestIfBranchSpansUseComponentSource(t *testing.T) {
 		}
 	}
 }
+
+func TestCompileFileReportsCSSSyntaxDiagnostic(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "BrokenStyle.vela")
+	source := "<style>\n.card { color: red;\n</style>\n<template><p>ok</p></template>"
+	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	diags, err := compileFile(src, filepath.Join(dir, "BrokenStyle.js"), CompileOptions{})
+	if err == nil {
+		t.Fatal("compile unexpectedly succeeded")
+	}
+	if len(diags) != 1 || diags[0].Code != "VELA-CSS-SYNTAX" {
+		t.Fatalf("diagnostics = %+v, want one VELA-CSS-SYNTAX error", diags)
+	}
+}

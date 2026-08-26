@@ -484,6 +484,13 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	}
 
 	if err = trace.stage("validate-input", func() error {
+		if sfc.StyleAST != nil && len(sfc.StyleAST.Diagnostics) > 0 {
+			ds.PushOffset(sfc.StyleAST.Span.Start)
+			for _, issue := range sfc.StyleAST.Diagnostics {
+				ds.ErrorWith(issue.Pos, "VELA-CSS-SYNTAX", "fix the stylesheet syntax", "%s", issue.Message)
+			}
+			ds.PopOffset()
+		}
 		// Scope + flow analysis over the original parsed program. All these
 		// passes report positions relative to the script body, so the DiagSet
 		// offset translates them into original component coordinates.

@@ -185,9 +185,15 @@ type CssNode interface{ cssNode() }
 
 // CssStylesheet is the root node.
 type CssStylesheet struct {
-	Source string
-	Span   SectionSpan
-	Rules  []CssNode
+	Source      string
+	Span        SectionSpan
+	Rules       []CssNode
+	Diagnostics []CssParseDiagnostic
+}
+
+type CssParseDiagnostic struct {
+	Pos     int
+	Message string
 }
 
 func (c *CssStylesheet) cssNode() {}
@@ -237,6 +243,7 @@ func newCssStylesheet(src string, offset int) *CssStylesheet {
 	ss := ParseCSS(src)
 	ss.Source = src
 	ss.Span = SectionSpan{Start: offset, End: offset + len(src)}
+	ss.Diagnostics = validateCSSSource(src)
 	return ss
 }
 
@@ -772,4 +779,55 @@ func scopeOneSel(sel, scopeID string) string {
 		rem = rest[i+1:]
 	}
 	return strings.TrimSpace(out.String())
+}
+
+// validateCSSSource performs deterministic lexical validation before CSS
+// scoping. The structural parser remains permissive for editor tooling, while
+// compiler mode consumes these diagnostics and rejects malformed stylesheets.
+func validateCSSSource(src string) []CssParseDiagnostic {
+	var out []CssParseDiagnostic
+	depth := 0
+	quote := byte(0)
+	for i := 0; i < len(src); i++ {
+		c := src[i]
+		if quote != 0 {
+			if c == 92 && i+1 < len(src) {
+				i++
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == 47 && i+1 < len(src) && src[i+1] == 42 {
+			end := strings.Index(src[i+2:], "*/")
+			if end < 0 {
+				return append(out, CssParseDiagnostic{Pos: i, Message: "unterminated CSS comment"})
+			}
+			i += end + 3
+			continue
+		}
+		if c == 39 || c == 34 {
+			quote = c
+			continue
+		}
+		switch c {
+		case 123:
+			depth++
+		case 125:
+			if depth == 0 {
+				out = append(out, CssParseDiagnostic{Pos: i, Message: "unexpected closing CSS brace"})
+			} else {
+				depth--
+			}
+		}
+	}
+	if quote != 0 {
+		out = append(out, CssParseDiagnostic{Pos: len(src), Message: "unterminated CSS string"})
+	}
+	if depth != 0 {
+		out = append(out, CssParseDiagnostic{Pos: len(src), Message: "unterminated CSS block"})
+	}
+	return out
 }
