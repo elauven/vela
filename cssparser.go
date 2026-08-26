@@ -295,6 +295,7 @@ func (p *CssParser) parseRuleList(insideBlock bool) []CssNode {
 }
 
 func (p *CssParser) parseAtRule() *CssAtRule {
+	start := p.cur.Start
 	name := strings.TrimPrefix(p.cur.Val, "@")
 	p.advance()
 
@@ -312,6 +313,7 @@ func (p *CssParser) parseAtRule() *CssAtRule {
 
 	if p.cur.Kind == CssTokSemi {
 		rule.IsStmt = true
+		rule.Span = SectionSpan{Start: start, End: p.cur.End}
 		p.advance()
 		return rule
 	}
@@ -330,9 +332,12 @@ func (p *CssParser) parseAtRule() *CssAtRule {
 		rule.Block = p.parseRuleList(true)
 	}
 
+	end := p.cur.Start
 	if p.cur.Kind == CssTokRBrace {
+		end = p.cur.End
 		p.advance()
 	}
+	rule.Span = SectionSpan{Start: start, End: end}
 	return rule
 }
 
@@ -359,6 +364,7 @@ func (p *CssParser) parseKeyframeBlock() []CssNode {
 }
 
 func (p *CssParser) parseQualifiedRule() *CssQualifiedRule {
+	start := p.cur.Start
 	// Collect selector tokens until {
 	var selectorToks []CssTok
 	for p.cur.Kind != CssTokEOF && p.cur.Kind != CssTokLBrace && p.cur.Kind != CssTokRBrace {
@@ -371,12 +377,15 @@ func (p *CssParser) parseQualifiedRule() *CssQualifiedRule {
 	}
 	p.advance() // consume {
 
-	rule := &CssQualifiedRule{}
+	rule := &CssQualifiedRule{Span: SectionSpan{Start: start}}
 	rule.Selectors = splitSelectors(selectorToks)
 	rule.Decls = p.parseDeclBlock()
 
 	if p.cur.Kind == CssTokRBrace {
+		rule.Span.End = p.cur.End
 		p.advance()
+	} else {
+		rule.Span.End = p.cur.Start
 	}
 	return rule
 }
@@ -439,6 +448,7 @@ func (p *CssParser) parseDeclBlock() []*CssDecl {
 			continue
 		}
 		prop := p.cur.Val
+		start := p.cur.Start
 		p.advance()
 
 		p.skipWS()
@@ -459,6 +469,10 @@ func (p *CssParser) parseDeclBlock() []*CssDecl {
 			val.WriteString(p.cur.Val)
 			p.advance()
 		}
+		end := p.cur.Start
+		if p.cur.Kind == CssTokSemi {
+			end = p.cur.End
+		}
 		p.eat(CssTokSemi)
 
 		valStr := strings.TrimSpace(val.String())
@@ -468,6 +482,7 @@ func (p *CssParser) parseDeclBlock() []*CssDecl {
 		}
 
 		decls = append(decls, &CssDecl{
+			Span:      SectionSpan{Start: start, End: end},
 			Prop:      prop,
 			Value:     valStr,
 			Important: important,
