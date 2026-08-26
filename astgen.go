@@ -1741,7 +1741,7 @@ func (g *ASTGen) buildStyleInjection() []JsStmt {
 	if g.cssExternal {
 		return nil
 	}
-	css := ScopeCssStylesheet(g.sfc.StyleAST, g.scopeID)
+	css := scopedCSSForSFC(g.sfc, g.scopeID)
 	return []JsStmt{
 		genConst("$$style", genCall(genMember(id("document"), "createElement"), strLit("style"))),
 		genAssignStmt(genMember(id("$$style"), "textContent"), strLit(css)),
@@ -1756,7 +1756,22 @@ func ExtractScopedCSS(sfc *SFC, scopeID string) string {
 	if sfc == nil || strings.TrimSpace(sfc.Style) == "" {
 		return ""
 	}
-	return ScopeCssStylesheet(sfc.StyleAST, scopeID)
+	return scopedCSSForSFC(sfc, scopeID)
+}
+
+// scopedCSSForSFC keeps the compiler's parse-once path while supporting
+// embedders and focused tests that construct an SFC directly. Parsed SFCs
+// always own StyleAST; only the latter compatibility boundary needs a local
+// stylesheet parse before scoping.
+func scopedCSSForSFC(sfc *SFC, scopeID string) string {
+	if sfc == nil || strings.TrimSpace(sfc.Style) == "" {
+		return ""
+	}
+	sheet := sfc.StyleAST
+	if sheet == nil {
+		sheet = newCssStylesheet(sfc.Style, sfc.StyleOffset)
+	}
+	return ScopeCssStylesheet(sheet, scopeID)
 }
 
 // hasDeepState reports whether any state variable was declared
