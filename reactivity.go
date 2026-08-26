@@ -482,15 +482,9 @@ func checkAttrRefs(a *Attr, known map[string]bool, templateText string, ds *Diag
 	if a == nil {
 		return
 	}
-	// Heuristic: an attribute whose value is wrapped in {…} or is a
-	// bound/event handler holds an expression.  Static strings don't.
-	val := a.Value
-	if a.IsEvent || a.IsBind {
-		checkCachedExprRefs(a.Expr, known, templateText, ds)
-		return
-	}
-	// {expr} form
-	if strings.HasPrefix(val, "{") && strings.HasSuffix(val, "}") {
+	// Dynamic attribute meaning is represented by a cached TemplateExpr.
+	// Static attributes intentionally leave Expr nil.
+	if a.Expr != nil {
 		checkCachedExprRefs(a.Expr, known, templateText, ds)
 	}
 }
@@ -758,8 +752,15 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 				report(attrPos(a), "VELA-DYNAMIC-CLASS", "Use class:name={condition}.", "%q is not a dynamic attribute; use class:%s={condition}", a.Name, strings.TrimPrefix(a.Name, "class:"))
 			}
 			if !a.IsClassDir && a.Name == "class" {
-				expr := strings.TrimSpace(a.Value)
-				if strings.HasPrefix(expr, "{'") || strings.HasPrefix(expr, "{\"") {
+				_, isObject := templateExprRoot(a.Expr).(*JsObjectExpr)
+				// Quoted compatibility form :class="{'name': cond}" reaches the
+				// expression normalizer without its outer object braces. Retain this
+				// narrow source-shape recovery until attribute value kind is typed.
+				if !isObject {
+					expr := strings.TrimSpace(a.Value)
+					isObject = strings.HasPrefix(expr, "{'") || strings.HasPrefix(expr, "{\"")
+				}
+				if isObject {
 					report(attrPos(a), "VELA-CLASS-OBJECT", "Use one class:name={condition} directive per class.", "object-valued :class is not supported; use one class:name={condition} directive per class")
 				}
 			}
