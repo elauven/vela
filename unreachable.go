@@ -54,7 +54,7 @@ func analyzeStmts(stmts []JsStmt, ds *DiagSet) flowOutcome {
 		if terminated {
 			if firstDead == nil {
 				firstDead = s
-				ds.Warn(s.nodePos(), "unreachable code")
+				ds.WarnWith(s.nodePos(), "VELA-FLOW-UNREACHABLE", "Remove the statement or make the preceding control flow fall through.", "unreachable code")
 			}
 			// Even after the marker we still recurse into nested
 			// function bodies — their flow is independent and a

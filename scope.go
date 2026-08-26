@@ -390,7 +390,7 @@ func (b *scopeBuilder) predeclare(name string, kind BindingKind, pos, end int) {
 	}
 	if existing, ok := b.cur.Bindings[name]; ok {
 		// Anything involving let/const/class is a SyntaxError at runtime.
-		b.ds.Error(pos,
+		b.ds.ErrorWith(pos, "VELA-SCOPE-DUPLICATE", "Rename or remove one of the declarations.",
 			"redeclaration of %q (previously declared as %s)",
 			name, existing.Kind)
 		return
@@ -522,7 +522,7 @@ func (b *scopeBuilder) declare(name string, kind BindingKind, pos, end int) *Bin
 		if kind == BindVar && existing.Kind == BindFunction {
 			return existing // legal
 		}
-		b.ds.Error(pos,
+		b.ds.ErrorWith(pos, "VELA-SCOPE-DUPLICATE", "Rename or remove one of the declarations.",
 			"redeclaration of %q (previously declared as %s)",
 			name, existing.Kind)
 		return existing
@@ -1096,11 +1096,11 @@ func (b *scopeBuilder) resolveRef(id *JsIdent, isWrite bool) {
 	bind := b.cur.lookup(id.Name)
 	if bind == nil {
 		if isWrite {
-			b.ds.Warn(id.Pos,
+			b.ds.WarnWith(id.Pos, "VELA-SCOPE-IMPLICIT-GLOBAL", "Declare the binding with let, const, or var.",
 				"assignment to undeclared variable %q (this creates an implicit global; use let/const)",
 				id.Name)
 		} else {
-			b.ds.Warn(id.Pos, "%q is not defined", id.Name)
+			b.ds.WarnWith(id.Pos, "VELA-SCOPE-UNDECLARED", "Declare the name or import it before use.", "%q is not defined", id.Name)
 		}
 		return
 	}
@@ -1124,9 +1124,9 @@ func (b *scopeBuilder) resolveRef(id *JsIdent, isWrite bool) {
 	if isWrite {
 		switch bind.Kind {
 		case BindConst:
-			b.ds.Error(id.Pos, "cannot assign to const %q", id.Name)
+			b.ds.ErrorWith(id.Pos, "VELA-SCOPE-IMMUTABLE-WRITE", "Assign to a mutable binding instead.", "cannot assign to const %q", id.Name)
 		case BindImport:
-			b.ds.Error(id.Pos, "cannot assign to import binding %q", id.Name)
+			b.ds.ErrorWith(id.Pos, "VELA-SCOPE-IMMUTABLE-WRITE", "Assign to a local mutable binding instead.", "cannot assign to import binding %q", id.Name)
 		}
 	}
 
@@ -1138,10 +1138,10 @@ func (b *scopeBuilder) resolveRef(id *JsIdent, isWrite bool) {
 	// runtime — too speculative to flag.
 	if bind.Kind.hasTDZ() && id.Pos < bind.Pos && b.noFunctionBetween(bind.Scope) {
 		if isWrite {
-			b.ds.Error(id.Pos,
+			b.ds.ErrorWith(id.Pos, "VELA-SCOPE-TDZ", "Move the access after the declaration.",
 				"cannot assign to %q before initialization (temporal dead zone)", id.Name)
 		} else {
-			b.ds.Error(id.Pos,
+			b.ds.ErrorWith(id.Pos, "VELA-SCOPE-TDZ", "Move the access after the declaration.",
 				"cannot access %q before initialization (temporal dead zone)", id.Name)
 		}
 	}
@@ -1229,7 +1229,7 @@ func ReportUnused(root *Scope, ds *DiagSet) {
 	visit = func(s *Scope) {
 		for _, bind := range s.Bindings {
 			if shouldReportUnused(bind) {
-				ds.Hint(bind.Pos,
+				ds.HintWith(bind.Pos, "VELA-SCOPE-UNUSED", "Remove the binding or use it.",
 					"%q is declared but never used", bind.Name)
 			}
 		}

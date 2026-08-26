@@ -196,8 +196,18 @@ func (ds *DiagSet) Warn(pos int, msg string, args ...interface{}) {
 	ds.add(SevWarning, pos, "", "", fmt.Sprintf(msg, args...))
 }
 
+// WarnWith records a warning with a stable machine-readable code.
+func (ds *DiagSet) WarnWith(pos int, code, suggestion, msg string, args ...interface{}) {
+	ds.add(SevWarning, pos, code, suggestion, fmt.Sprintf(msg, args...))
+}
+
 func (ds *DiagSet) Hint(pos int, msg string, args ...interface{}) {
 	ds.add(SevHint, pos, "", "", fmt.Sprintf(msg, args...))
+}
+
+// HintWith records an informational diagnostic with a stable code.
+func (ds *DiagSet) HintWith(pos int, code, suggestion, msg string, args ...interface{}) {
+	ds.add(SevHint, pos, code, suggestion, fmt.Sprintf(msg, args...))
 }
 
 // HasErrors returns true if any error-severity diagnostic was recorded.

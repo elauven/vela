@@ -279,6 +279,38 @@ func TestUpdateOnUndeclaredIsImplicitGlobal(t *testing.T) {
 	expect(t, ds, "implicit global")
 }
 
+func TestScopeDiagnosticsHaveStableCodes(t *testing.T) {
+	tests := []struct {
+		source, want string
+	}{
+		{`missing;`, "VELA-SCOPE-UNDECLARED"},
+		{`missing = 1;`, "VELA-SCOPE-IMPLICIT-GLOBAL"},
+		{`const value = 1; value = 2;`, "VELA-SCOPE-IMMUTABLE-WRITE"},
+		{`function f() { value; let value = 1; }`, "VELA-SCOPE-TDZ"},
+		{`let value = 1; let value = 2;`, "VELA-SCOPE-DUPLICATE"},
+	}
+	for _, tc := range tests {
+		ds := runScope(t, tc.source)
+		found := false
+		for _, diag := range ds.All() {
+			found = found || diag.Code == tc.want
+		}
+		if !found {
+			t.Fatalf("source %q did not emit %s: %+v", tc.source, tc.want, ds.All())
+		}
+	}
+}
+
+func TestUnreachableDiagnosticHasStableCode(t *testing.T) {
+	ds := runUnreachable(t, `function f() { return 1; console.log('dead'); }`)
+	for _, diag := range ds.All() {
+		if diag.Code == "VELA-FLOW-UNREACHABLE" {
+			return
+		}
+	}
+	t.Fatalf("diagnostics = %+v, want VELA-FLOW-UNREACHABLE", ds.All())
+}
+
 // ─────────────────────────────────────────────
 //  Member expressions: property names aren't variables
 // ─────────────────────────────────────────────
