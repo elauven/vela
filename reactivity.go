@@ -753,12 +753,8 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 			}
 			if !a.IsClassDir && a.Name == "class" {
 				_, isObject := templateExprRoot(a.Expr).(*JsObjectExpr)
-				// Quoted compatibility form :class="{'name': cond}" reaches the
-				// expression normalizer without its outer object braces. Retain this
-				// narrow source-shape recovery until attribute value kind is typed.
-				if !isObject {
-					expr := strings.TrimSpace(a.Value)
-					isObject = strings.HasPrefix(expr, "{'") || strings.HasPrefix(expr, "{\"")
+				if a.ValueKind == AttrValueQuotedObjectCompat {
+					isObject = true
 				}
 				if isObject {
 					report(attrPos(a), "VELA-CLASS-OBJECT", "Use one class:name={condition} directive per class.", "object-valued :class is not supported; use one class:name={condition} directive per class")

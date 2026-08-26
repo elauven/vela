@@ -536,11 +536,43 @@ type Part struct {
 	Expr   *TemplateExpr
 }
 
+// AttrValueKind records the syntactic value form captured by the template parser.
+type AttrValueKind uint8
+
+const (
+	AttrValueMissing AttrValueKind = iota
+	AttrValueBare
+	AttrValueQuoted
+	AttrValueBraced
+	AttrValueSynthetic
+	// AttrValueQuotedObjectCompat identifies the legacy unsupported form
+	// :class="{'name': condition}" before value normalization.
+	AttrValueQuotedObjectCompat
+)
+
+func (k AttrValueKind) String() string {
+	switch k {
+	case AttrValueBare:
+		return "bare"
+	case AttrValueQuoted:
+		return "quoted"
+	case AttrValueBraced:
+		return "braced"
+	case AttrValueSynthetic:
+		return "synthetic"
+	case AttrValueQuotedObjectCompat:
+		return "quoted-object-compat"
+	default:
+		return "missing"
+	}
+}
+
 // Attr holds one HTML attribute, annotated with its sigil role.
 type Attr struct {
 	Span       SectionSpan
 	Name       string // without the leading sigil
 	Value      string
+	ValueKind  AttrValueKind
 	IsEvent    bool // @ prefix → addEventListener
 	IsBind     bool // : prefix → dynamic attribute (one-way)
 	IsTwoWay   bool // bind: prefix → two-way binding (reads + writes the state var)
@@ -1055,11 +1087,23 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 		p.skipWS()
 		value := ""
 		valuePos := -1
+		valueKind := AttrValueMissing
 		if !p.eof() && p.ch() == '=' {
 			p.pos++
 			p.skipWS()
 			valuePos = p.pos
+			switch p.ch() {
+			case '"', '\'':
+				valueKind = AttrValueQuoted
+			case '{':
+				valueKind = AttrValueBraced
+			default:
+				valueKind = AttrValueBare
+			}
 			value = p.readAttrValue()
+		}
+		if name == ":class" && valueKind == AttrValueQuoted && quotedObjectClassValue(value) {
+			valueKind = AttrValueQuotedObjectCompat
 		}
 
 		attrCount := len(elem.Attrs)
@@ -1142,8 +1186,13 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 			})
 		}
 		if len(elem.Attrs) > attrCount {
-			elem.Attrs[len(elem.Attrs)-1].Pos = start
-			elem.Attrs[len(elem.Attrs)-1].Span = SectionSpan{Start: p.base + start, End: p.base + p.pos}
+			a := elem.Attrs[len(elem.Attrs)-1]
+			a.Pos = start
+			a.Span = SectionSpan{Start: p.base + start, End: p.base + p.pos}
+			if valueKind == AttrValueMissing && (a.IsClassDir || a.IsStyleDir) {
+				valueKind = AttrValueSynthetic
+			}
+			a.ValueKind = valueKind
 		}
 		if len(elem.Attrs) > attrCount {
 			a := elem.Attrs[len(elem.Attrs)-1]
@@ -1159,6 +1208,8 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 				}
 				if a.IsClassDir || a.IsStyleDir {
 					a.Expr = p.attributeTemplateExpr(a.Value, exprPos)
+				} else if a.ValueKind == AttrValueQuotedObjectCompat {
+					a.Expr = p.templateExpr(a.Value, exprPos)
 				} else {
 					a.Expr = p.templateExpr(stripBraces(a.Value), exprPos)
 				}
@@ -1372,9 +1423,13 @@ func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 	}, nil
 }
 
-// parseEachHeader extracts the structural parts of the supported each header.
-// It deliberately preserves the existing permissive no-`as` form by assigning
-// the conventional `item` binding.
+// quotedObjectClassValue identifies the legacy unsupported object-class form
+// while the original quote syntax is still available to the parser.
+func quotedObjectClassValue(value string) bool {
+	value = strings.TrimSpace(value)
+	return strings.HasPrefix(value, "{'") || strings.HasPrefix(value, "{\"")
+}
+
 func parseEachHeader(raw string) (iter, item, index string) {
 	parts := strings.SplitN(raw, " as ", 2)
 	iter = strings.TrimSpace(parts[0])

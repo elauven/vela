@@ -110,7 +110,7 @@ func textNodeJSON(n *TextNode) interface{} {
 func attrJSON(attrs []*Attr) []interface{} {
 	out := make([]interface{}, 0, len(attrs))
 	for _, a := range attrs {
-		m := map[string]interface{}{"name": a.Name, "value": a.Value}
+		m := map[string]interface{}{"name": a.Name, "value": a.Value, "valueKind": a.ValueKind.String()}
 		if a.IsEvent {
 			m["kind"] = "event"
 		} else if a.IsBind {

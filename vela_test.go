@@ -114,6 +114,20 @@ func TestParseTemplate_Directives(t *testing.T) {
 	}
 }
 
+func TestParseTemplate_QuotedObjectClassKeepsTypedValueKind(t *testing.T) {
+	nodes, err := parseTemplate(`<div :class="{'active': enabled}" />`)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	attr := nodes[0].(*ElementNode).Attrs[0]
+	if attr.ValueKind != AttrValueQuotedObjectCompat {
+		t.Fatalf("value kind = %d, want quoted object compatibility", attr.ValueKind)
+	}
+	if _, ok := templateExprRoot(attr.Expr).(*JsObjectExpr); !ok {
+		t.Fatalf("expression root = %T, want *JsObjectExpr", templateExprRoot(attr.Expr))
+	}
+}
+
 func TestParseTemplate_Each(t *testing.T) {
 	nodes, err := parseTemplate(`<li #each="items as item, i">{item}</li>`)
 	if err != nil {
