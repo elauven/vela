@@ -839,3 +839,56 @@ func validateCSSSource(src string) []CssParseDiagnostic {
 	}
 	return out
 }
+
+// ValidateCssAST checks the typed stylesheet before CSS scoping. It complements
+// lexical parser diagnostics and protects codegen from incomplete AST shapes.
+func ValidateCssAST(sheet *CssStylesheet) []CssParseDiagnostic {
+	var issues []CssParseDiagnostic
+	add := func(pos int, message string) {
+		issues = append(issues, CssParseDiagnostic{Pos: pos, Message: message})
+	}
+	if sheet == nil {
+		add(0, "missing stylesheet AST")
+		return issues
+	}
+	if sheet.Span.Start < 0 || sheet.Span.End < sheet.Span.Start || sheet.Span.End-sheet.Span.Start != len(sheet.Source) {
+		add(0, "stylesheet source span does not match its owned source")
+	}
+	var walk func([]CssNode)
+	walk = func(nodes []CssNode) {
+		for _, node := range nodes {
+			if node == nil {
+				add(0, "stylesheet contains a nil rule")
+				continue
+			}
+			switch rule := node.(type) {
+			case *CssQualifiedRule:
+				if len(rule.Selectors) == 0 {
+					add(0, "qualified rule has no selectors")
+				}
+				for _, selector := range rule.Selectors {
+					if selector == nil || len(selector.Parts) == 0 {
+						add(0, "qualified rule contains an empty selector")
+					}
+				}
+				for _, decl := range rule.Decls {
+					if decl == nil || strings.TrimSpace(decl.Prop) == "" {
+						add(0, "qualified rule contains an invalid declaration")
+					}
+				}
+			case *CssAtRule:
+				if strings.TrimSpace(rule.Name) == "" {
+					add(0, "at-rule has an empty name")
+				}
+				if rule.IsStmt && len(rule.Block) != 0 {
+					add(0, "statement at-rule cannot contain a block")
+				}
+				walk(rule.Block)
+			default:
+				add(0, "stylesheet contains an unsupported rule kind")
+			}
+		}
+	}
+	walk(sheet.Rules)
+	return issues
+}

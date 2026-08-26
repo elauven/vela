@@ -439,3 +439,18 @@ func TestCompileFileReportsCSSSyntaxDiagnostic(t *testing.T) {
 		t.Fatalf("diagnostics = %+v, want one VELA-CSS-SYNTAX error", diags)
 	}
 }
+
+func TestValidateCssASTRejectsBrokenShapes(t *testing.T) {
+	sheet := &CssStylesheet{
+		Source: "p {}",
+		Span:   SectionSpan{Start: 0, End: len("p {}")},
+		Rules: []CssNode{
+			&CssQualifiedRule{Selectors: []*CssSelector{nil}, Decls: []*CssDecl{nil}},
+			nil,
+		},
+	}
+	issues := ValidateCssAST(sheet)
+	if len(issues) < 3 {
+		t.Fatalf("issues = %+v, want structural CSS failures", issues)
+	}
+}

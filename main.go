@@ -484,10 +484,13 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	}
 
 	if err = trace.stage("validate-input", func() error {
-		if sfc.StyleAST != nil && len(sfc.StyleAST.Diagnostics) > 0 {
+		if sfc.StyleAST != nil {
 			ds.PushOffset(sfc.StyleAST.Span.Start)
 			for _, issue := range sfc.StyleAST.Diagnostics {
 				ds.ErrorWith(issue.Pos, "VELA-CSS-SYNTAX", "fix the stylesheet syntax", "%s", issue.Message)
+			}
+			for _, issue := range ValidateCssAST(sfc.StyleAST) {
+				ds.ErrorWith(issue.Pos, "VELA-CSS-AST", "fix the stylesheet structure", "%s", issue.Message)
 			}
 			ds.PopOffset()
 		}
