@@ -1210,7 +1210,7 @@ func (p *parser) parseSvelteBlock() (Node, string, error) {
 
 	switch {
 	case strings.HasPrefix(tag, "#if"):
-		node, err := p.parseSvelteIfBlock(tag[3:], p.blockExprPos(tagStart, tag, strings.TrimSpace(tag[3:])))
+		node, err := p.parseSvelteIfBlock(tag[3:], p.blockExprPos(tagStart, tag, strings.TrimSpace(tag[3:])), tagStart)
 		if node != nil {
 			setTemplateNodeSpan(node, p.base+tagStart, p.base+p.pos)
 		}
@@ -1256,7 +1256,7 @@ func (p *parser) parseSvelteBlock() (Node, string, error) {
 
 // parseSvelteIfBlock parses {#if cond}...{:else if cond}...{:else}...{/if}.
 // condRaw is everything after "#if" (with leading space).
-func (p *parser) parseSvelteIfBlock(condRaw string, condPos int) (Node, error) {
+func (p *parser) parseSvelteIfBlock(condRaw string, condPos int, branchStart int) (Node, error) {
 	chain := &IfChainNode{}
 
 	cond := strings.TrimSpace(condRaw)
@@ -1268,6 +1268,7 @@ func (p *parser) parseSvelteIfBlock(condRaw string, condPos int) (Node, error) {
 		}
 
 		chain.Branches = append(chain.Branches, &IfBranch{
+			Span:     SectionSpan{Start: p.base + branchStart, End: p.base + p.lastTagStart},
 			Cond:     cond,
 			CondPos:  condPos,
 			Expr:     p.templateExpr(cond, condPos),
@@ -1278,6 +1279,7 @@ func (p *parser) parseSvelteIfBlock(condRaw string, condPos int) (Node, error) {
 		case strings.HasPrefix(term, ":else if ") || strings.HasPrefix(term, ":else if\t"):
 			cond = strings.TrimSpace(term[9:])
 			condPos = p.blockExprPos(p.lastTagStart, term, cond)
+			branchStart = p.lastTagStart
 			// continue loop for next branch
 		case term == ":else" || strings.HasPrefix(term, ":else}"):
 			// Parse else body
@@ -1286,6 +1288,7 @@ func (p *parser) parseSvelteIfBlock(condRaw string, condPos int) (Node, error) {
 				return nil, err2
 			}
 			chain.Branches = append(chain.Branches, &IfBranch{
+				Span:     SectionSpan{Start: p.base + branchStart, End: p.base + p.lastTagStart},
 				Cond:     "",
 				Children: groupIfChains(elseChildren),
 			})

@@ -404,3 +404,22 @@ func TestComponentAndSlotSpansUseComponentSource(t *testing.T) {
 		t.Fatalf("fragment child span = %q", got)
 	}
 }
+
+func TestIfBranchSpansUseComponentSource(t *testing.T) {
+	source := `<template>{#if first}<p>first</p>{:else if second}<p>second</p>{:else}<p>last</p>{/if}</template>`
+	sfc, err := parseSFC(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain := sfc.TemplateAST.Nodes[0].(*IfChainNode)
+	want := []string{
+		`{#if first}<p>first</p>`,
+		`{:else if second}<p>second</p>`,
+		`{:else}<p>last</p>`,
+	}
+	for i, branch := range chain.Branches {
+		if got := source[branch.Span.Start:branch.Span.End]; got != want[i] {
+			t.Fatalf("branch %d span = %q, want %q", i, got, want[i])
+		}
+	}
+}
