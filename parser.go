@@ -805,18 +805,18 @@ func (p *parser) parseElement() (Node, error) {
 
 	// ── Slot detection ────────────────────────────────────────────────────
 	if tag == "slot" {
-		return p.parseSlotNode()
+		return p.parseSlotNode(elementStart)
 	}
 
 	// ── svelte:fragment — transparent wrapper for named slot content ──────
 	if tag == "svelte:fragment" {
-		return p.parseSvelteFragment()
+		return p.parseSvelteFragment(elementStart)
 	}
 
 	// ── Component detection ───────────────────────────────────────────────
 	// Tags starting with an uppercase letter are treated as child components.
 	if len(tag) > 0 && tag[0] >= 'A' && tag[0] <= 'Z' {
-		return p.parseComponentNode(tag)
+		return p.parseComponentNode(tag, elementStart)
 	}
 
 	elem := &ElementNode{Tag: tag, Span: SectionSpan{Start: p.base + elementStart}}
@@ -857,7 +857,8 @@ func (p *parser) parseElement() (Node, error) {
 }
 
 // parseSlotNode parses a <slot name="header">fallback</slot> element.
-func (p *parser) parseSlotNode() (Node, error) {
+func (p *parser) parseSlotNode(elementStart int) (Node, error) {
+	slot := &SlotNode{Span: SectionSpan{Start: p.base + elementStart}}
 	scratch := &ElementNode{}
 	if err := p.parseAttrs(scratch); err != nil {
 		return nil, err
@@ -872,7 +873,9 @@ func (p *parser) parseSlotNode() (Node, error) {
 	selfClose := p.has("/>")
 	if selfClose {
 		p.pos += 2
-		return &SlotNode{Name: name}, nil
+		slot.Name = name
+		slot.Span.End = p.base + p.pos
+		return slot, nil
 	}
 	if !p.eof() && p.ch() == '>' {
 		p.pos++
@@ -892,10 +895,13 @@ func (p *parser) parseSlotNode() (Node, error) {
 			p.pos++
 		}
 	}
-	return &SlotNode{Name: name, Fallback: groupIfChains(fallback)}, nil
+	slot.Name = name
+	slot.Fallback = groupIfChains(fallback)
+	slot.Span.End = p.base + p.pos
+	return slot, nil
 }
-func (p *parser) parseComponentNode(name string) (Node, error) {
-	comp := &ComponentNode{Name: name, Slots: map[string][]Node{}}
+func (p *parser) parseComponentNode(name string, elementStart int) (Node, error) {
+	comp := &ComponentNode{Span: SectionSpan{Start: p.base + elementStart}, Name: name, Slots: map[string][]Node{}}
 	scratch := &ElementNode{}
 	if err := p.parseAttrs(scratch); err != nil {
 		return nil, err
@@ -910,6 +916,7 @@ func (p *parser) parseComponentNode(name string) (Node, error) {
 
 	if p.has("/>") {
 		p.pos += 2
+		comp.Span.End = p.base + p.pos
 		return comp, nil
 	}
 	if !p.eof() && p.ch() == '>' {
@@ -977,6 +984,7 @@ func (p *parser) parseComponentNode(name string) (Node, error) {
 	if len(defaultSlot) > 0 {
 		comp.Slots["default"] = defaultSlot
 	}
+	comp.Span.End = p.base + p.pos
 	return comp, nil
 }
 
@@ -1598,13 +1606,14 @@ func (p *parser) parseSvelteBlockBody() ([]Node, string, error) {
 
 // parseSvelteFragment parses <svelte:fragment slot="name">...</svelte:fragment>.
 // Returns an ElementNode with Tag="svelte:fragment" so slot sorting can detect it.
-func (p *parser) parseSvelteFragment() (Node, error) {
-	elem := &ElementNode{Tag: "svelte:fragment"}
+func (p *parser) parseSvelteFragment(elementStart int) (Node, error) {
+	elem := &ElementNode{Span: SectionSpan{Start: p.base + elementStart}, Tag: "svelte:fragment"}
 	if err := p.parseAttrs(elem); err != nil {
 		return nil, err
 	}
 	if p.has("/>") {
 		p.pos += 2
+		elem.Span.End = p.base + p.pos
 		return elem, nil
 	}
 	if !p.eof() && p.ch() == '>' {
@@ -1624,6 +1633,7 @@ func (p *parser) parseSvelteFragment() (Node, error) {
 			p.pos++
 		}
 	}
+	elem.Span.End = p.base + p.pos
 	return elem, nil
 }
 

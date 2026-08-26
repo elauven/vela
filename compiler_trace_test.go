@@ -380,3 +380,23 @@ func TestTemplateStructuralSpansUseComponentSource(t *testing.T) {
 		t.Fatalf("each block span = %q", got)
 	}
 }
+
+func TestComponentAndSlotSpansUseComponentSource(t *testing.T) {
+	source := `<template><Card :title={title}><slot name="actions" /><svelte:fragment slot="footer"><p>Footer</p></svelte:fragment></Card></template>`
+	sfc, err := parseSFC(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card := sfc.TemplateAST.Nodes[0].(*ComponentNode)
+	if got := source[card.Span.Start:card.Span.End]; got != `<Card :title={title}><slot name="actions" /><svelte:fragment slot="footer"><p>Footer</p></svelte:fragment></Card>` {
+		t.Fatalf("component span = %q", got)
+	}
+	actions := card.Slots["default"][0].(*SlotNode)
+	if got := source[actions.Span.Start:actions.Span.End]; got != `<slot name="actions" />` {
+		t.Fatalf("slot span = %q", got)
+	}
+	footer := card.Slots["footer"][0].(*ElementNode)
+	if got := source[footer.Span.Start:footer.Span.End]; got != `<p>Footer</p>` {
+		t.Fatalf("fragment child span = %q", got)
+	}
+}
