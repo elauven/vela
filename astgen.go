@@ -3601,7 +3601,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			// rather than reparsing branch.Cond from source text.
 			condition = g.templateExpr(branch.Expr)
 		}
-		test := genLogical("&&", genBinary("<", id(""), numLit(0)), condition)
+		test := genLogical("&&", genBinary("<", id("$$active"), numLit(0)), condition)
 		tryBody = append(tryBody, genIf(test, genAssignStmt(id("$$active"), numLit(i))))
 	}
 	for i := range chain.Branches {
