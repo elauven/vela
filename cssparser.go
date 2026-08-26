@@ -320,8 +320,14 @@ func (p *CssParser) parseRuleList(insideBlock bool) []CssNode {
 			p.advance()
 			continue
 		}
-		if insideBlock && p.cur.Kind == CssTokRBrace {
-			break
+		if p.cur.Kind == CssTokRBrace {
+			if insideBlock {
+				break
+			}
+			// The lexical validator reports a top-level closing brace. Consume
+			// it here so the permissive editor parser always makes progress.
+			p.advance()
+			continue
 		}
 		if p.cur.Kind == CssTokAt {
 			rules = append(rules, p.parseAtRule())

@@ -458,6 +458,36 @@ func TestCompileFileReportsCSSSyntaxDiagnostic(t *testing.T) {
 	}
 }
 
+func TestCompileFileReportsCSSSyntaxPositions(t *testing.T) {
+	tests := []struct {
+		name, css string
+		line, col int
+	}{
+		{name: "unexpected closing brace", css: "}", line: 2, col: 1},
+		{name: "unterminated string", css: "'", line: 2, col: 2},
+		{name: "unterminated block", css: ".x {", line: 2, col: 5},
+		{name: "unterminated comment", css: "/*", line: 2, col: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "BrokenStyle.vela")
+			source := "<style>\n" + tc.css + "\n</style>\n<template><p>ok</p></template>"
+			if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			diags, err := compileFile(src, filepath.Join(dir, "BrokenStyle.js"), CompileOptions{})
+			if err == nil || len(diags) != 1 {
+				t.Fatalf("diagnostics = %+v, err = %v", diags, err)
+			}
+			diag := diags[0]
+			if diag.Code != "VELA-CSS-SYNTAX" || diag.Line != tc.line || diag.Col != tc.col {
+				t.Fatalf("diagnostic = %+v, want VELA-CSS-SYNTAX at %d:%d", diag, tc.line, tc.col)
+			}
+		})
+	}
+}
+
 func TestValidateCssASTRejectsBrokenShapes(t *testing.T) {
 	sheet := &CssStylesheet{
 		Source: "p {}",
