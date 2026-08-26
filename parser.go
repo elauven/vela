@@ -230,6 +230,7 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 					}
 				}
 			case *ElementNode:
+				checkSpan(n.Span, "element")
 				if strings.TrimSpace(n.Tag) == "" {
 					add(0, "element has an empty tag name")
 				}
@@ -239,8 +240,11 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				for _, attr := range n.Attrs {
 					if attr == nil {
 						add(0, "element contains a nil attribute")
-					} else if attr.Expr != nil {
-						validateExpr(attr.Expr, attr.Pos, "attribute directive")
+					} else {
+						checkSpan(attr.Span, "attribute")
+						if attr.Expr != nil {
+							validateExpr(attr.Expr, attr.Pos, "attribute directive")
+						}
 					}
 				}
 				walkNodes(n.Children)
