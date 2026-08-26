@@ -218,11 +218,15 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 			}
 			switch n := node.(type) {
 			case *TextNode:
+				checkSpan(n.Span, "text node")
 				for _, part := range n.Parts {
 					if part == nil {
 						add(0, "text node contains a nil part")
-					} else if !part.Static {
-						validateExpr(part.Expr, part.Pos, "text interpolation")
+					} else {
+						checkSpan(part.Span, "text part")
+						if !part.Static {
+							validateExpr(part.Expr, part.Pos, "text interpolation")
+						}
 					}
 				}
 			case *ElementNode:
