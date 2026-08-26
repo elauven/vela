@@ -345,3 +345,19 @@ func TestCompileFileReportsTemplateASTSyntaxDiagnostic(t *testing.T) {
 		t.Fatalf("template syntax diagnostic = %+v, want VELA-TEMPLATE-SYNTAX on line 2", got)
 	}
 }
+
+func TestValidateTemplateASTRejectsMissingCachedExpression(t *testing.T) {
+	ast := &TemplateAST{
+		Source: "{count}",
+		Span:   SectionSpan{Start: 0, End: len("{count}")},
+		Nodes: []Node{&TextNode{Parts: []*Part{{
+			Static: false,
+			Value:  "count",
+			Pos:    1,
+		}}}},
+	}
+	issues := ValidateTemplateAST(ast)
+	if len(issues) != 1 || !strings.Contains(issues[0].Message, "cached expression AST") {
+		t.Fatalf("validation issues = %+v, want missing cached expression diagnostic", issues)
+	}
+}

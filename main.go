@@ -433,6 +433,14 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 			ds.PopOffset()
 			return fmt.Errorf("template syntax validation failed")
 		}
+		if issues := ValidateTemplateAST(sfc.TemplateAST); len(issues) > 0 {
+			ds.PushOffset(sfc.TemplateAST.Span.Start)
+			for _, issue := range issues {
+				ds.ErrorWith(issue.Pos, "VELA-TEMPLATE-AST", "fix the template structure", "%s", issue.Message)
+			}
+			ds.PopOffset()
+			return fmt.Errorf("template AST validation failed")
+		}
 		tmpl = sfc.TemplateAST.Nodes
 		return nil
 	}); err != nil {

@@ -172,6 +172,125 @@ func newTemplateAST(source string, offset int) *TemplateAST {
 	return ast
 }
 
+// ValidateTemplateAST checks structural invariants before semantic analysis or
+// target generation. Parser diagnostics cover malformed source syntax; this
+// validator protects later phases from incomplete or manually-mutated AST
+// shapes and from uncached/invalid executable template expressions.
+func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
+	var issues []TemplateParseDiagnostic
+	add := func(pos int, format string, args ...interface{}) {
+		issues = append(issues, TemplateParseDiagnostic{Pos: pos, Message: fmt.Sprintf(format, args...)})
+	}
+	if ast == nil {
+		add(0, "missing template AST")
+		return issues
+	}
+	if ast.Span.Start < 0 || ast.Span.End < ast.Span.Start || ast.Span.End-ast.Span.Start != len(ast.Source) {
+		add(0, "template source span does not match its owned source")
+	}
+	validateExpr := func(expr *TemplateExpr, pos int, label string) {
+		if expr == nil {
+			add(pos, "%s is missing its cached expression AST", label)
+			return
+		}
+		if expr.Program == nil {
+			add(expr.Pos, "%s has no parsed expression program", label)
+		}
+		for _, message := range expr.Errors {
+			add(expr.Pos, "%s expression is invalid: %s", label, message)
+		}
+	}
+	var walkNodes func([]Node)
+	walkNodes = func(nodes []Node) {
+		for _, node := range nodes {
+			if node == nil {
+				add(0, "template contains a nil node")
+				continue
+			}
+			switch n := node.(type) {
+			case *TextNode:
+				for _, part := range n.Parts {
+					if part == nil {
+						add(0, "text node contains a nil part")
+					} else if !part.Static {
+						validateExpr(part.Expr, part.Pos, "text interpolation")
+					}
+				}
+			case *ElementNode:
+				if strings.TrimSpace(n.Tag) == "" {
+					add(0, "element has an empty tag name")
+				}
+				if n.IfCond != "" {
+					validateExpr(n.IfExpr, 0, "#if directive")
+				}
+				for _, attr := range n.Attrs {
+					if attr == nil {
+						add(0, "element contains a nil attribute")
+					} else if attr.Expr != nil {
+						validateExpr(attr.Expr, attr.Pos, "attribute directive")
+					}
+				}
+				walkNodes(n.Children)
+			case *ComponentNode:
+				if strings.TrimSpace(n.Name) == "" {
+					add(0, "component has an empty name")
+				}
+				if n.IfCond != "" {
+					validateExpr(n.IfExpr, 0, "component #if directive")
+				}
+				for _, attr := range n.Attrs {
+					if attr == nil {
+						add(0, "component contains a nil attribute")
+					} else if attr.Expr != nil {
+						validateExpr(attr.Expr, attr.Pos, "component attribute")
+					}
+				}
+				for _, children := range n.Slots {
+					walkNodes(children)
+				}
+			case *SlotNode:
+				if strings.TrimSpace(n.Name) == "" {
+					add(0, "slot has an empty name")
+				}
+				walkNodes(n.Fallback)
+			case *EachBlockNode:
+				validateExpr(n.IterExpr, n.ExprPos, "#each iterable")
+				if n.EachKey != "" {
+					validateExpr(n.KeyAST, n.KeyPos, "#each key")
+				}
+				walkNodes(n.Children)
+				walkNodes(n.ElseChildren)
+			case *AwaitBlockNode:
+				validateExpr(n.Expr, n.ExprPos, "#await promise")
+				walkNodes(n.PendingChildren)
+				walkNodes(n.ThenChildren)
+				walkNodes(n.CatchChildren)
+			case *IfChainNode:
+				if len(n.Branches) == 0 {
+					add(0, "if/key block has no branches")
+				}
+				if n.KeyExpr != "" {
+					validateExpr(n.KeyAST, n.KeyPos, "#key expression")
+				}
+				for _, branch := range n.Branches {
+					if branch == nil {
+						add(0, "if/key block contains a nil branch")
+						continue
+					}
+					if branch.Cond != "" && branch.SyntheticCond == nil {
+						validateExpr(branch.Expr, branch.CondPos, "#if branch")
+					}
+					walkNodes(branch.Children)
+				}
+			default:
+				add(0, "template contains unsupported node kind %q", node.nodeKind())
+			}
+		}
+	}
+	walkNodes(ast.Nodes)
+	return issues
+}
+
 type Node interface{ nodeKind() string }
 
 // ElementNode represents a DOM element. Directives (#if, #each) are hoisted
