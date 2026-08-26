@@ -917,6 +917,17 @@ func ValidateCssAST(sheet *CssStylesheet) []CssParseDiagnostic {
 	if sheet.Span.Start < 0 || sheet.Span.End < sheet.Span.Start || sheet.Span.End-sheet.Span.Start != len(sheet.Source) {
 		add(0, "stylesheet source span does not match its owned source")
 	}
+	contains := func(span SectionSpan) bool {
+		return span.Start >= sheet.Span.Start && span.End >= span.Start && span.End <= sheet.Span.End
+	}
+	checkSpan := func(span SectionSpan, label string) {
+		if span.Start == 0 && span.End == 0 {
+			return
+		}
+		if !contains(span) {
+			add(0, label+" span escapes stylesheet source")
+		}
+	}
 	var walk func([]CssNode)
 	walk = func(nodes []CssNode) {
 		for _, node := range nodes {
@@ -926,20 +937,26 @@ func ValidateCssAST(sheet *CssStylesheet) []CssParseDiagnostic {
 			}
 			switch rule := node.(type) {
 			case *CssQualifiedRule:
+				checkSpan(rule.Span, "qualified rule")
 				if len(rule.Selectors) == 0 {
 					add(0, "qualified rule has no selectors")
 				}
 				for _, selector := range rule.Selectors {
 					if selector == nil || len(selector.Parts) == 0 {
 						add(0, "qualified rule contains an empty selector")
+					} else {
+						checkSpan(selector.Span, "selector")
 					}
 				}
 				for _, decl := range rule.Decls {
 					if decl == nil || strings.TrimSpace(decl.Prop) == "" {
 						add(0, "qualified rule contains an invalid declaration")
+					} else {
+						checkSpan(decl.Span, "declaration")
 					}
 				}
 			case *CssAtRule:
+				checkSpan(rule.Span, "at-rule")
 				if strings.TrimSpace(rule.Name) == "" {
 					add(0, "at-rule has an empty name")
 				}
