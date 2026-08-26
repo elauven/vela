@@ -1277,8 +1277,24 @@ func (p *parser) readSvelteTag() string {
 	p.pos++ // skip '{'
 	start := p.pos
 	depth := 1
+	var quote byte
+	escaped := false
 	for p.pos < len(p.src) && depth > 0 {
-		switch p.src[p.pos] {
+		c := p.src[p.pos]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == quote {
+				quote = 0
+			}
+			p.pos++
+			continue
+		}
+		switch c {
+		case '\'', '"', '`':
+			quote = c
 		case '{':
 			depth++
 		case '}':
@@ -1451,17 +1467,57 @@ func quotedObjectClassValue(value string) bool {
 }
 
 func parseEachHeader(raw string) (iter, item, index string) {
-	parts := strings.SplitN(raw, " as ", 2)
-	iter = strings.TrimSpace(parts[0])
-	item = "item"
-	if len(parts) < 2 {
-		return iter, item, ""
+	as := eachAsDelimiter(raw)
+	if as < 0 {
+		return strings.TrimSpace(raw), "item", ""
 	}
-	rest := strings.TrimSpace(parts[1])
+	iter = strings.TrimSpace(raw[:as])
+	item = "item"
+	rest := strings.TrimSpace(raw[as+4:])
 	if comma := strings.Index(rest, ","); comma >= 0 {
 		return iter, strings.TrimSpace(rest[:comma]), strings.TrimSpace(rest[comma+1:])
 	}
 	return iter, rest, ""
+}
+
+// eachAsDelimiter finds the structural ` as ` separator in a standard #each
+// header. JS expressions before the separator may contain the same bytes in
+// strings, template literals, nested calls, objects, and arrays; none of
+// those are header syntax. Keeping this distinction in the parser prevents a
+// later stage from turning `lookup(plan, " as ")` into the bare identifier
+// `lookup`.
+func eachAsDelimiter(raw string) int {
+	var quote byte
+	escaped := false
+	depth := 0
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '\'', '"', '`':
+			quote = c
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			if depth > 0 {
+				depth--
+			}
+		default:
+			if depth == 0 && i+4 <= len(raw) && raw[i:i+4] == " as " {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 // eachTerminalKeyStart returns the opening parenthesis of a terminal
@@ -1469,18 +1525,41 @@ func parseEachHeader(raw string) (iter, item, index string) {
 // Requiring the closing parenthesis to be the final token distinguishes the
 // suffix from a normal call expression in the iterable.
 func eachTerminalKeyStart(raw string) int {
-	if !strings.HasSuffix(raw, ")") || !strings.Contains(raw, " as ") {
+	if !strings.HasSuffix(raw, ")") || eachAsDelimiter(raw) < 0 {
 		return -1
 	}
+	as := eachAsDelimiter(raw)
+	var quote byte
+	escaped := false
 	depth := 0
-	for i := len(raw) - 1; i >= 0; i-- {
-		switch raw[i] {
-		case ')':
-			depth++
+	keyStart := -1
+	for i := as + 4; i < len(raw); i++ {
+		c := raw[i]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '\'', '"', '`':
+			quote = c
 		case '(':
-			depth--
 			if depth == 0 {
-				return i
+				keyStart = i
+			}
+			depth++
+		case ')':
+			if depth == 0 {
+				return -1
+			}
+			depth--
+			if depth == 0 && i == len(raw)-1 {
+				return keyStart
 			}
 		}
 	}

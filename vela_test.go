@@ -3529,6 +3529,40 @@ func TestSvelteBlock_ParseEachIterableCallWithoutKey(t *testing.T) {
 	}
 }
 
+func TestSvelteBlock_ParseEachHeaderIgnoresJSStringDelimiters(t *testing.T) {
+	nodes, err := parseTemplate(`{#each collect(plan, " as ", { closing: "}" }) as feature (feature.id)}<li>{feature}</li>{/each}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	each, ok := nodes[0].(*EachBlockNode)
+	if !ok {
+		t.Fatalf("expected *EachBlockNode, got %T", nodes[0])
+	}
+	if got, want := each.IterExpr.Source, `collect(plan, " as ", { closing: "}" })`; got != want {
+		t.Fatalf("iterable source = %q, want %q", got, want)
+	}
+	if got, want := each.ItemName, "feature"; got != want {
+		t.Fatalf("item binding = %q, want %q", got, want)
+	}
+	if got, want := each.EachKey, "feature.id"; got != want {
+		t.Fatalf("key = %q, want %q", got, want)
+	}
+}
+
+func TestSvelteBlock_ReadTagIgnoresClosingBraceInJSString(t *testing.T) {
+	nodes, err := parseTemplate(`{#if message === "}"}<p>{message}</p>{/if}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	chain, ok := nodes[0].(*IfChainNode)
+	if !ok || len(chain.Branches) != 1 {
+		t.Fatalf("expected one if branch, got %#v", nodes)
+	}
+	if got, want := chain.Branches[0].Expr.Source, `message === "}"`; got != want {
+		t.Fatalf("condition source = %q, want %q", got, want)
+	}
+}
+
 func TestSvelteBlock_ParseEachWithIndex(t *testing.T) {
 	html := `{#each items as item, i (item.id)}<p>{i}: {item.name}</p>{/each}`
 	nodes, err := parseTemplate(html)
