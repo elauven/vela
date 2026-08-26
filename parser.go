@@ -160,7 +160,7 @@ type TemplateParseDiagnostic struct {
 }
 
 func newTemplateAST(source string, offset int) *TemplateAST {
-	nodes, err := parseTemplate(source)
+	nodes, err := parseTemplateAt(source, offset)
 	ast := &TemplateAST{
 		Source: source,
 		Span:   SectionSpan{Start: offset, End: offset + len(source)},
@@ -296,6 +296,7 @@ type Node interface{ nodeKind() string }
 // ElementNode represents a DOM element. Directives (#if, #each) are hoisted
 // out of the attribute list into dedicated fields during parsing.
 type ElementNode struct {
+	Span     SectionSpan
 	Tag      string
 	Attrs    []*Attr
 	Children []Node
@@ -312,6 +313,7 @@ type ElementNode struct {
 // IfChainNode groups a #if element with its optional #elseif / #else siblings.
 // This is produced by the post-parse grouper pass.
 type IfChainNode struct {
+	Span     SectionSpan
 	Branches []*IfBranch // [0]=if, [1..n-1]=elseif, last may have Cond==""(else)
 
 	// KeyExpr, if non-empty, marks this chain as a {#key expr} block.
@@ -325,6 +327,7 @@ type IfChainNode struct {
 }
 
 type IfBranch struct {
+	Span          SectionSpan
 	Cond          string // empty string → #else branch
 	CondPos       int    // byte offset of condition in template
 	Expr          *TemplateExpr
@@ -338,6 +341,7 @@ type IfBranch struct {
 // EachBlockNode is produced by Svelte-style {#each items as item (key)}...{/each}.
 // The children are the content of each row; they may include multiple nodes.
 type EachBlockNode struct {
+	Span         SectionSpan
 	EachExpr     string // e.g. "items as item" or "items as item, index"
 	ExprPos      int
 	IterExpr     *TemplateExpr
@@ -368,6 +372,7 @@ type EachBlockNode struct {
 // it and reattaches the .then/.catch handlers — so reactive prompts
 // (e.g. await fetch(`/api/${id}`)) work as expected.
 type AwaitBlockNode struct {
+	Span            SectionSpan
 	PromiseExpr     string // the JS expression after `#await`
 	ExprPos         int
 	Expr            *TemplateExpr
@@ -394,6 +399,7 @@ const (
 
 // ComponentNode represents a child component invocation: <MyComp :prop="val" />
 type ComponentNode struct {
+	Span  SectionSpan
 	Name  string            // component name, e.g. "MyComp"
 	Attrs []*Attr           // :prop bindings and @event handlers
 	Slots map[string][]Node // slot name → children (default slot keyed as "default")
@@ -407,6 +413,7 @@ type ComponentNode struct {
 
 // SlotNode represents a <slot> element — renders $$slots["name"] from parent.
 type SlotNode struct {
+	Span     SectionSpan
 	Name     string // "default" for bare <slot />, or the name attr value
 	Fallback []Node // children rendered if slot is not filled
 }
@@ -415,11 +422,13 @@ func (s *SlotNode) nodeKind() string      { return "slot" }
 func (e *EachBlockNode) nodeKind() string { return "eachblock" }
 
 type TextNode struct {
+	Span  SectionSpan
 	Parts []*Part
 }
 
 // Part is one segment of a text node.
 type TemplateExpr struct {
+	Span    SectionSpan
 	Source  string
 	Pos     int
 	Program *JsProgram
@@ -427,10 +436,25 @@ type TemplateExpr struct {
 }
 
 func newTemplateExpr(source string, pos int) *TemplateExpr {
+	return newTemplateExprAt(source, pos, pos)
+}
+
+func newTemplateExprAt(source string, pos, absolutePos int) *TemplateExpr {
 	leading := len(source) - len(strings.TrimLeftFunc(source, unicode.IsSpace))
 	source = strings.TrimSpace(source)
 	prog, errs := parseTemplateExpression(source)
-	return &TemplateExpr{Source: source, Pos: pos + leading, Program: prog, Errors: errs}
+	start := absolutePos + leading
+	return &TemplateExpr{
+		Span:    SectionSpan{Start: start, End: start + len(source)},
+		Source:  source,
+		Pos:     pos + leading,
+		Program: prog,
+		Errors:  errs,
+	}
+}
+
+func (p *parser) templateExpr(source string, pos int) *TemplateExpr {
+	return newTemplateExprAt(source, pos, p.base+pos)
 }
 
 // newAttributeTemplateExpr parses a dynamic attribute value through the same
@@ -441,6 +465,10 @@ func newTemplateExpr(source string, pos int) *TemplateExpr {
 // initial DOM writes and reactive updates.
 func newAttributeTemplateExpr(value string, pos int) *TemplateExpr {
 	return newTemplateExpr(attrExprToJS(value), pos)
+}
+
+func (p *parser) attributeTemplateExpr(value string, pos int) *TemplateExpr {
+	return newTemplateExprAt(attrExprToJS(value), pos, p.base+pos)
 }
 
 func templateExprDeps(expr *TemplateExpr, fallback string, vars []string) []string {
@@ -468,6 +496,7 @@ func templatePartsDeps(parts []*Part, vars []string) []string {
 }
 
 type Part struct {
+	Span   SectionSpan
 	Static bool // true → literal text; false → JS expression
 	Value  string
 	Pos    int
@@ -476,6 +505,7 @@ type Part struct {
 
 // Attr holds one HTML attribute, annotated with its sigil role.
 type Attr struct {
+	Span       SectionSpan
 	Name       string // without the leading sigil
 	Value      string
 	IsEvent    bool // @ prefix → addEventListener
@@ -499,12 +529,17 @@ func (t *TextNode) nodeKind() string      { return "text" }
 
 type parser struct {
 	src          string
+	base         int
 	pos          int
 	lastTagStart int
 }
 
 func parseTemplate(html string) ([]Node, error) {
-	p := &parser{src: html}
+	return parseTemplateAt(html, 0)
+}
+
+func parseTemplateAt(html string, base int) ([]Node, error) {
+	p := &parser{src: html, base: base}
 	nodes, err := p.parseNodes(nil)
 	if err != nil {
 		return nil, err
@@ -611,6 +646,7 @@ func (p *parser) parseNodes(stopTags []string) ([]Node, error) {
 			// should be dropped.
 			if sawWS && len(nodes) > 0 {
 				nodes = append(nodes, &TextNode{
+					Span:  SectionSpan{Start: p.base + startPos, End: p.base + p.pos},
 					Parts: []*Part{{Static: true, Value: " "}},
 				})
 			}
@@ -627,6 +663,7 @@ func (p *parser) parseNodes(stopTags []string) ([]Node, error) {
 }
 
 func (p *parser) parseText() (*TextNode, error) {
+	start := p.pos
 	var buf strings.Builder
 	// braceDepth > 0 means the scanner is inside a {…} interpolation.
 	// A '<' there is part of the expression (e.g. `{i < n}`), not the
@@ -657,7 +694,7 @@ func (p *parser) parseText() (*TextNode, error) {
 	if len(parts) == 0 {
 		return nil, nil
 	}
-	return &TextNode{Parts: parts}, nil
+	return &TextNode{Span: SectionSpan{Start: p.base + start, End: p.base + p.pos}, Parts: parts}, nil
 }
 
 // isHTMLSpace reports whether c is a whitespace character treated as
@@ -753,6 +790,7 @@ func parseInterpolationsAt(s string, base int) []*Part {
 }
 
 func (p *parser) parseElement() (Node, error) {
+	elementStart := p.pos
 	p.pos++ // consume '<'
 
 	// Tag name
@@ -781,7 +819,7 @@ func (p *parser) parseElement() (Node, error) {
 		return p.parseComponentNode(tag)
 	}
 
-	elem := &ElementNode{Tag: tag}
+	elem := &ElementNode{Tag: tag, Span: SectionSpan{Start: p.base + elementStart}}
 
 	if err := p.parseAttrs(elem); err != nil {
 		return nil, err
@@ -814,6 +852,7 @@ func (p *parser) parseElement() (Node, error) {
 		}
 	}
 
+	elem.Span.End = p.base + p.pos
 	return elem, nil
 }
 
@@ -972,10 +1011,10 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 		switch {
 		case name == "#if":
 			elem.IfCond = value
-			elem.IfExpr = newTemplateExpr(stripBraces(value), valuePos)
+			elem.IfExpr = p.templateExpr(stripBraces(value), valuePos)
 		case name == "#elseif":
 			// Stored as a special sentinel attr; groupIfChains() picks this up.
-			elem.Attrs = append(elem.Attrs, &Attr{Name: "__elseif__", Value: value, Expr: newTemplateExpr(stripBraces(value), valuePos)})
+			elem.Attrs = append(elem.Attrs, &Attr{Name: "__elseif__", Value: value, Expr: p.templateExpr(stripBraces(value), valuePos)})
 		case name == "#else":
 			elem.Attrs = append(elem.Attrs, &Attr{Name: "__else__", Value: ""})
 		case name == "#each":
@@ -1049,6 +1088,7 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 		}
 		if len(elem.Attrs) > attrCount {
 			elem.Attrs[len(elem.Attrs)-1].Pos = start
+			elem.Attrs[len(elem.Attrs)-1].Span = SectionSpan{Start: p.base + start, End: p.base + p.pos}
 		}
 		if len(elem.Attrs) > attrCount {
 			a := elem.Attrs[len(elem.Attrs)-1]
@@ -1063,9 +1103,9 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 					exprPos = start + idx
 				}
 				if a.IsClassDir || a.IsStyleDir {
-					a.Expr = newAttributeTemplateExpr(a.Value, exprPos)
+					a.Expr = p.attributeTemplateExpr(a.Value, exprPos)
 				} else {
-					a.Expr = newTemplateExpr(stripBraces(a.Value), exprPos)
+					a.Expr = p.templateExpr(stripBraces(a.Value), exprPos)
 				}
 			}
 		}
@@ -1149,10 +1189,16 @@ func (p *parser) parseSvelteBlock() (Node, string, error) {
 	switch {
 	case strings.HasPrefix(tag, "#if"):
 		node, err := p.parseSvelteIfBlock(tag[3:], p.blockExprPos(tagStart, tag, strings.TrimSpace(tag[3:])))
+		if node != nil {
+			setTemplateNodeSpan(node, p.base+tagStart, p.base+p.pos)
+		}
 		return node, "", err
 
 	case strings.HasPrefix(tag, "#each"):
 		node, err := p.parseSvelteEachBlock(tag[5:], p.blockExprPos(tagStart, tag, strings.TrimSpace(tag[5:])))
+		if node != nil {
+			setTemplateNodeSpan(node, p.base+tagStart, p.base+p.pos)
+		}
 		return node, "", err
 
 	case strings.HasPrefix(tag, "#key"):
@@ -1161,11 +1207,17 @@ func (p *parser) parseSvelteBlock() (Node, string, error) {
 		// IfChainNode with KeyExpr set; the codegen handles the
 		// destroy-and-rebuild logic.
 		node, err := p.parseSvelteKeyBlock(tag[4:], p.blockExprPos(tagStart, tag, strings.TrimSpace(tag[4:])))
+		if node != nil {
+			setTemplateNodeSpan(node, p.base+tagStart, p.base+p.pos)
+		}
 		return node, "", err
 
 	case strings.HasPrefix(tag, "#await"):
 		// {#await promise}...{:then v}...{:catch e}...{/await}
 		node, err := p.parseSvelteAwaitBlock(tag[6:], p.blockExprPos(tagStart, tag, strings.TrimSpace(tag[6:])))
+		if node != nil {
+			setTemplateNodeSpan(node, p.base+tagStart, p.base+p.pos)
+		}
 		return node, "", err
 
 	case strings.HasPrefix(tag, ":else") || strings.HasPrefix(tag, ":then") ||
@@ -1196,7 +1248,7 @@ func (p *parser) parseSvelteIfBlock(condRaw string, condPos int) (Node, error) {
 		chain.Branches = append(chain.Branches, &IfBranch{
 			Cond:     cond,
 			CondPos:  condPos,
-			Expr:     newTemplateExpr(cond, condPos),
+			Expr:     p.templateExpr(cond, condPos),
 			Children: groupIfChains(children),
 		})
 
@@ -1254,7 +1306,7 @@ func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 		}
 	}
 	return &EachBlockNode{
-		EachExpr: raw, ExprPos: exprPos, IterExpr: newTemplateExpr(strings.TrimSpace(strings.SplitN(raw, " as ", 2)[0]), exprPos), EachKey: key, KeyPos: keyPos, KeyAST: newTemplateExpr(key, keyPos),
+		EachExpr: raw, ExprPos: exprPos, IterExpr: p.templateExpr(strings.TrimSpace(strings.SplitN(raw, " as ", 2)[0]), exprPos), EachKey: key, KeyPos: keyPos, KeyAST: p.templateExpr(key, keyPos),
 		Children:     groupIfChains(children),
 		ElseChildren: groupIfChains(elseChildren),
 	}, nil
@@ -1295,7 +1347,7 @@ func (p *parser) parseSvelteKeyBlock(raw string, keyPos int) (Node, error) {
 		return nil, err
 	}
 	return &IfChainNode{
-		KeyExpr: expr, KeyPos: keyPos, KeyAST: newTemplateExpr(expr, keyPos),
+		KeyExpr: expr, KeyPos: keyPos, KeyAST: p.templateExpr(expr, keyPos),
 		Branches: []*IfBranch{{
 			// Always-true condition.  The chain stays mounted; the
 			// destroy-and-rebuild is driven by the key change, not by
@@ -1324,7 +1376,7 @@ func (p *parser) parseSvelteAwaitBlock(raw string, exprPos int) (Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	node := &AwaitBlockNode{PromiseExpr: promise, Expr: newTemplateExpr(promise, exprPos), ExprPos: exprPos, mode: mode}
+	node := &AwaitBlockNode{PromiseExpr: promise, Expr: p.templateExpr(promise, exprPos), ExprPos: exprPos, mode: mode}
 	if node.PromiseExpr == "" {
 		return nil, fmt.Errorf("await block requires a promise expression")
 	}
@@ -1860,4 +1912,16 @@ func isVoidElement(tag string) bool {
 		"track": true, "wbr": true,
 	}
 	return void[strings.ToLower(tag)]
+}
+
+func setTemplateNodeSpan(node Node, start, end int) {
+	span := SectionSpan{Start: start, End: end}
+	switch n := node.(type) {
+	case *IfChainNode:
+		n.Span = span
+	case *EachBlockNode:
+		n.Span = span
+	case *AwaitBlockNode:
+		n.Span = span
+	}
 }

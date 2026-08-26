@@ -361,3 +361,22 @@ func TestValidateTemplateASTRejectsMissingCachedExpression(t *testing.T) {
 		t.Fatalf("validation issues = %+v, want missing cached expression diagnostic", issues)
 	}
 }
+
+func TestTemplateStructuralSpansUseComponentSource(t *testing.T) {
+	source := `<template><div :title={label}>{label}</div>{#each items as item}<p>{item}</p>{/each}</template>`
+	sfc, err := parseSFC(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	div := sfc.TemplateAST.Nodes[0].(*ElementNode)
+	if got := source[div.Span.Start:div.Span.End]; got != `<div :title={label}>{label}</div>` {
+		t.Fatalf("element span = %q", got)
+	}
+	if got := source[div.Attrs[0].Span.Start:div.Attrs[0].Span.End]; got != `:title={label}` {
+		t.Fatalf("attribute span = %q", got)
+	}
+	each := sfc.TemplateAST.Nodes[1].(*EachBlockNode)
+	if got := source[each.Span.Start:each.Span.End]; got != `{#each items as item}<p>{item}</p>{/each}` {
+		t.Fatalf("each block span = %q", got)
+	}
+}
