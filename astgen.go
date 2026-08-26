@@ -3572,16 +3572,14 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			))
 			continue
 		}
-		if branch.Expr == nil {
-			condition := branch.SyntheticCond
-			if condition == nil {
-				condition = g.templateExpr(newTemplateExpr(branch.Cond, branch.CondPos))
-			}
-			test := genLogical("&&", genBinary("<", id("$$active"), numLit(0)), condition)
-			tryBody = append(tryBody, genIf(test, genAssignStmt(id("$$active"), numLit(i))))
-			continue
+		condition := branch.SyntheticCond
+		if condition == nil {
+			// ValidateTemplateAST rejects a non-synthetic condition without
+			// its cached TemplateExpr before codegen. Keep this fallback inert
+			// rather than reparsing branch.Cond from source text.
+			condition = g.templateExpr(branch.Expr)
 		}
-		test := genLogical("&&", genBinary("<", id("$$active"), numLit(0)), g.templateExpr(branch.Expr))
+		test := genLogical("&&", genBinary("<", id(""), numLit(0)), condition)
 		tryBody = append(tryBody, genIf(test, genAssignStmt(id("$$active"), numLit(i))))
 	}
 	for i := range chain.Branches {
