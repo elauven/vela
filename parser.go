@@ -90,7 +90,7 @@ func parseSFC(src string) (*SFC, error) {
 	// (case-insensitive), returns the trimmed inner text plus the
 	// absolute byte offset of where that trimmed text starts in src.
 	extractBlock := func(tag string) (string, int) {
-		low := strings.ToLower(src)
+		low := asciiLower(src)
 		openTag := "<" + tag
 		closeTag := "</" + tag + ">"
 
@@ -104,7 +104,7 @@ func parseSFC(src string) (*SFC, error) {
 		}
 		bodyStart := start + gt + 1
 
-		closeIdx := strings.Index(strings.ToLower(src[bodyStart:]), closeTag)
+		closeIdx := strings.Index(asciiLower(src[bodyStart:]), closeTag)
 		if closeIdx < 0 {
 			return "", 0
 		}
@@ -138,6 +138,18 @@ func parseSFC(src string) (*SFC, error) {
 		Style:    sfc.StyleAST,
 	}
 	return sfc, nil
+}
+
+// asciiLower only folds ASCII bytes. SFC section tags are ASCII by grammar,
+// and preserving byte length is essential because their indices address src.
+func asciiLower(src string) string {
+	buf := []byte(src)
+	for i, c := range buf {
+		if c >= 'A' && c <= 'Z' {
+			buf[i] = c + ('a' - 'A')
+		}
+	}
+	return string(buf)
 }
 
 // ──────────────────────────────────────────────
@@ -854,11 +866,19 @@ func parseInterpolationsAt(s string, base int) []*Part {
 				i++
 			}
 		done:
+			// An unterminated quoted interpolation can advance past EOF in
+			// the quote scanner. Clamp before slicing and only consume a
+			// closing brace when one was actually found.
+			if i > len(s) {
+				i = len(s)
+			}
 			expr := strings.TrimSpace(s[start:i])
 			if expr != "" {
 				parts = append(parts, &Part{Static: false, Value: expr, Pos: base + start, Expr: newTemplateExpr(expr, base+start)})
 			}
-			i++ // skip '}'
+			if i < len(s) {
+				i++ // skip the matched '}'
+			}
 		} else {
 			buf.WriteByte(s[i])
 			i++

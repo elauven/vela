@@ -73,7 +73,7 @@ func (l *CssLexer) Next() CssTok {
 	if l.ch() == '/' && l.peek(1) == '*' {
 		l.pos += 2
 		for l.pos < len(l.src) {
-			if l.ch() == '*' && l.peek(1) == '/' {
+			if l.ch() == 42 && l.peek(1) == 47 {
 				l.pos += 2
 				break
 			}
@@ -96,7 +96,7 @@ func (l *CssLexer) Next() CssTok {
 		q := l.adv()
 		start := l.pos - 1
 		for l.pos < len(l.src) && l.ch() != q {
-			if l.ch() == '\\' {
+			if l.ch() == 92 && l.pos+1 < len(l.src) {
 				l.pos++
 			}
 			l.pos++

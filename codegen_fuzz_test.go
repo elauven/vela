@@ -319,3 +319,48 @@ func FuzzCodegen(f *testing.F) {
 		}
 	})
 }
+
+// FuzzComponentASTBoundaries exercises the parser/validator boundary with both
+// valid and malformed template/CSS input. Unlike FuzzCodegen it never asks
+// codegen to recover from malformed structures: the property here is that one
+// parse produces owned section ASTs whose validators can inspect safely.
+func FuzzComponentASTBoundaries(f *testing.F) {
+	f.Add(`<p>{count}</p>`, `.card { color: red; }`)
+	f.Add(`{#if visible}<button @click={() => count++}>ok</button>{:else}<p>no</p>{/if}`, `@media screen { .card { color: red; } }`)
+	f.Add(`{#each items as item, i (item.id)}<p class:selected={item.done}>{i}</p>{/each}`, `@keyframes fade { from { opacity: 0; } to { opacity: 1; } }`)
+	f.Add(`<div :class="{'active': enabled}">broken legacy form</div>`, `.card { color: `)
+	f.Add(`{#await request}<p>pending</p>{:then value}<p>{value}</p>{/await}`, `/* unterminated`)
+
+	f.Fuzz(func(t *testing.T, template, css string) {
+		if len(template) > 4096 || len(css) > 4096 {
+			t.Skip()
+		}
+		source := `<script></script><template>` + template + `</template><style>` + css + `</style>`
+		sfc, err := parseSFC(source)
+		if err != nil {
+			return // malformed outer SFC is a valid parser outcome
+		}
+		if sfc.AST == nil || sfc.AST.Source != source {
+			t.Fatalf("component AST ownership lost for %q", source)
+		}
+		if sfc.AST.Script != sfc.ScriptAST || sfc.AST.Template != sfc.TemplateAST || sfc.AST.Style != sfc.StyleAST {
+			t.Fatal("component AST sections do not match SFC section pointers")
+		}
+		checkSection := func(name, text string, span SectionSpan) {
+			if span.Start < 0 || span.End < span.Start || span.End > len(source) {
+				t.Fatalf("%s span %#v escapes source length %d", name, span, len(source))
+			}
+			if got := source[span.Start:span.End]; got != text {
+				t.Fatalf("%s span source = %q, want %q", name, got, text)
+			}
+		}
+		checkSection("script", sfc.ScriptAST.Source, sfc.ScriptAST.Span)
+		checkSection("template", sfc.TemplateAST.Source, sfc.TemplateAST.Span)
+		checkSection("style", sfc.StyleAST.Source, sfc.StyleAST.Span)
+
+		// Validators may return diagnostics for intentionally malformed inner
+		// input, but must always be safe to call on the owned parse result.
+		_ = ValidateTemplateAST(sfc.TemplateAST)
+		_ = ValidateCssAST(sfc.StyleAST)
+	})
+}

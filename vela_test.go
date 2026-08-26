@@ -82,6 +82,17 @@ func TestParseTemplate_Interpolation(t *testing.T) {
 	}
 }
 
+func TestParseSFCHandlesNonASCIIBytesBeforeSections(t *testing.T) {
+	src := "<template><p>" + string([]byte{0xdf}) + "</p></template><style>.card { color: red; }</style>"
+	sfc, err := parseSFC(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sfc.Style != ".card { color: red; }" {
+		t.Fatalf("style = %q", sfc.Style)
+	}
+}
+
 func TestParseTemplate_Directives(t *testing.T) {
 	nodes, err := parseTemplate(`<div #if="show" :class="cls" @click="handler">x</div>`)
 	if err != nil {
