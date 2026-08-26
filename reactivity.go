@@ -165,32 +165,25 @@ func scanDerivedExpr(expr JsExpr, stateSet map[string]bool, ds *DiagSet) {
 	})
 }
 
-// validateScriptForms rejects rune spellings that the current lowering cannot represent.
+// validateScriptForms retains the historical helper signature for focused
+// validation tests. The compiler pipeline supplies Analysis through the
+// analysis-aware variant below so imported lifecycle aliases can be checked.
 func validateScriptForms(prog *JsProgram, ds *DiagSet) {
+	validateScriptFormsWithAnalysis(prog, nil, ds)
+}
+
+// validateScriptFormsWithAnalysis rejects only call forms that the compiler
+// can prove are invalid. It intentionally performs no inference for
+// variables, members, or user-function arity: those may be callable at
+// runtime.
+func validateScriptFormsWithAnalysis(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
 	if prog == nil {
 		return
 	}
 	WalkNode(prog, func(n JsNode) bool {
 		switch x := n.(type) {
-		case *JsVarDecl:
-			for _, d := range x.Decls {
-				call, ok := d.Init.(*JsCallExpr)
-				if !ok {
-					continue
-				}
-				callee, ok := call.Callee.(*JsIdent)
-				if !ok || callee.Name != "$derived" {
-					continue
-				}
-				if len(call.Args) != 1 {
-					ds.Error(call.Pos, "$derived expects exactly one pure expression")
-					continue
-				}
-				switch call.Args[0].(type) {
-				case *JsArrowFunc, *JsFuncExpr:
-					ds.ErrorWith(call.Args[0].nodePos(), "VELA-DERIVED-CALLBACK", "Write $derived(expression), for example: $derived(items.length).", "$derived does not accept a callback; pass the computed expression directly")
-				}
-			}
+		case *JsCallExpr:
+			validateCallForm(x, analysis, ds)
 		case *JsImportDecl:
 			if x.Source == "vela" || x.Source == "vela/store" {
 				for _, spec := range x.Specifiers {
@@ -202,6 +195,98 @@ func validateScriptForms(prog *JsProgram, ds *DiagSet) {
 		}
 		return true
 	})
+}
+
+func validateCallForm(call *JsCallExpr, analysis *Analysis, ds *DiagSet) {
+	if call == nil {
+		return
+	}
+	if isProvenNonCallable(call.Callee) {
+		ds.ErrorWith(call.Callee.nodePos(), "VELA-NONCALLABLE", "Call a function value instead of a literal.", "this literal value is not callable")
+		return
+	}
+
+	name := intrinsicCallName(call.Callee)
+	switch name {
+	case "$derived":
+		if len(call.Args) != 1 {
+			ds.ErrorWith(call.Pos, "VELA-DERIVED-ARITY", "Write $derived(expression).", "$derived expects exactly one pure expression")
+			return
+		}
+		switch call.Args[0].(type) {
+		case *JsArrowFunc, *JsFuncExpr:
+			ds.ErrorWith(call.Args[0].nodePos(), "VELA-DERIVED-CALLBACK", "Write $derived(expression), for example: $derived(items.length).", "$derived does not accept a callback; pass the computed expression directly")
+		}
+	case "$state", "$state.deep":
+		if len(call.Args) != 1 {
+			ds.ErrorWith(call.Pos, "VELA-STATE-ARITY", "Pass exactly one initial value to $state(...).", "%s expects exactly one initial value", name)
+		}
+	case "$effect":
+		if len(call.Args) != 1 {
+			ds.ErrorWith(call.Pos, "VELA-EFFECT-ARITY", "Write $effect(() => { ... }).", "$effect expects exactly one callback")
+			return
+		}
+		arrow, ok := call.Args[0].(*JsArrowFunc)
+		if !ok {
+			ds.ErrorWith(call.Args[0].nodePos(), "VELA-EFFECT-CALLBACK", "Pass an arrow callback, for example $effect(() => { ... }).", "$effect expects an arrow callback")
+			return
+		}
+		if _, ok := arrow.Body.(*JsBlock); !ok {
+			ds.ErrorWith(arrow.nodePos(), "VELA-EFFECT-CALLBACK", "Use a block callback, for example $effect(() => { ... }).", "$effect callback must use a block body")
+		}
+	case "$props":
+		ds.ErrorWith(call.Pos, "VELA-INTRINSIC-UNSUPPORTED", "Declare component inputs with export let instead.", "$props() is not supported by Vela")
+	}
+
+	if analysis == nil {
+		return
+	}
+	ident, ok := call.Callee.(*JsIdent)
+	if !ok {
+		return
+	}
+	if lifecycle, found := analysis.IntrinsicAliases[ident.Name]; found {
+		if len(call.Args) != 1 {
+			ds.ErrorWith(call.Pos, "VELA-LIFECYCLE-ARITY", "Pass one block-bodied arrow callback.", "%s expects exactly one callback", lifecycle)
+			return
+		}
+		arrow, ok := call.Args[0].(*JsArrowFunc)
+		if !ok {
+			ds.ErrorWith(call.Args[0].nodePos(), "VELA-LIFECYCLE-CALLBACK", "Pass a block-bodied arrow callback.", "%s expects an arrow callback", lifecycle)
+			return
+		}
+		if _, ok := arrow.Body.(*JsBlock); !ok {
+			ds.ErrorWith(arrow.nodePos(), "VELA-LIFECYCLE-CALLBACK", "Use a block-bodied arrow callback.", "%s callback must use a block body", lifecycle)
+		}
+	}
+}
+
+func intrinsicCallName(callee JsExpr) string {
+	if ident, ok := callee.(*JsIdent); ok {
+		return ident.Name
+	}
+	member, ok := callee.(*JsMemberExpr)
+	if !ok || member.Computed {
+		return ""
+	}
+	obj, ok := member.Obj.(*JsIdent)
+	if !ok || obj.Name != "$state" {
+		return ""
+	}
+	prop, ok := member.Prop.(*JsIdent)
+	if !ok || prop.Name != "deep" {
+		return ""
+	}
+	return "$state.deep"
+}
+
+func isProvenNonCallable(expr JsExpr) bool {
+	switch expr.(type) {
+	case *JsLiteral, *JsTemplateLit, *JsArrayExpr, *JsObjectExpr, *JsUnaryExpr, *JsBinaryExpr, *JsLogicalExpr:
+		return true
+	default:
+		return false
+	}
 }
 
 // ─────────────────────────────────────────────

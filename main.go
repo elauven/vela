@@ -534,7 +534,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 		validateScript(scriptProg, analysis, ds)
 		validateDerivedCycles(scriptProg, analysis, ds)
 		validateDerivedPurity(scriptProg, analysis, ds)
-		validateScriptForms(scriptProg, ds)
+		validateScriptFormsWithAnalysis(scriptProg, analysis, ds)
 		validateEffectBody(scriptProg, analysis, ds)
 		ds.PopOffset()
 
