@@ -383,9 +383,10 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 					walkNodes(branch.Children)
 				}
 			case *EachBlockNode:
-				_, names, ok := splitEachExpr(n.EachExpr)
-				if ok {
-					checkCachedExprRefs(n.IterExpr, known, templateText, ds)
+				checkCachedExprRefs(n.IterExpr, known, templateText, ds)
+				names := []string{n.ItemName}
+				if n.IndexName != "" {
+					names = append(names, n.IndexName)
 				}
 				// The {#each … as item, i} row variables are
 				// declared by the block itself — make them visible

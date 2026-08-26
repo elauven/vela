@@ -277,6 +277,9 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				walkNodes(n.Fallback)
 			case *EachBlockNode:
 				checkSpan(n.Span, "each block")
+				if strings.TrimSpace(n.ItemName) == "" {
+					add(n.ExprPos, "#each block has an empty item binding")
+				}
 				validateExpr(n.IterExpr, n.ExprPos, "#each iterable")
 				if n.EachKey != "" {
 					validateExpr(n.KeyAST, n.KeyPos, "#each key")
@@ -367,10 +370,14 @@ type IfBranch struct {
 // EachBlockNode is produced by Svelte-style {#each items as item (key)}...{/each}.
 // The children are the content of each row; they may include multiple nodes.
 type EachBlockNode struct {
-	Span         SectionSpan
+	Span SectionSpan
+	// EachExpr is retained as source/debug metadata. Standard block consumers use
+	// IterExpr, ItemName, and IndexName instead of re-parsing this string.
 	EachExpr     string // e.g. "items as item" or "items as item, index"
 	ExprPos      int
 	IterExpr     *TemplateExpr
+	ItemName     string
+	IndexName    string
 	EachKey      string
 	KeyPos       int // e.g. "item.id"  (from the (key) suffix)
 	KeyAST       *TemplateExpr
@@ -1346,6 +1353,7 @@ func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 		raw = strings.TrimSpace(raw[:keyStart])
 	}
 
+	iter, itemName, indexName := parseEachHeader(raw)
 	children, term, err := p.parseSvelteBlockBody()
 	if err != nil {
 		return nil, err
@@ -1358,10 +1366,27 @@ func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 		}
 	}
 	return &EachBlockNode{
-		EachExpr: raw, ExprPos: exprPos, IterExpr: p.templateExpr(strings.TrimSpace(strings.SplitN(raw, " as ", 2)[0]), exprPos), EachKey: key, KeyPos: keyPos, KeyAST: p.templateExpr(key, keyPos),
+		EachExpr: raw, ExprPos: exprPos, IterExpr: p.templateExpr(iter, exprPos), ItemName: itemName, IndexName: indexName, EachKey: key, KeyPos: keyPos, KeyAST: p.templateExpr(key, keyPos),
 		Children:     groupIfChains(children),
 		ElseChildren: groupIfChains(elseChildren),
 	}, nil
+}
+
+// parseEachHeader extracts the structural parts of the supported each header.
+// It deliberately preserves the existing permissive no-`as` form by assigning
+// the conventional `item` binding.
+func parseEachHeader(raw string) (iter, item, index string) {
+	parts := strings.SplitN(raw, " as ", 2)
+	iter = strings.TrimSpace(parts[0])
+	item = "item"
+	if len(parts) < 2 {
+		return iter, item, ""
+	}
+	rest := strings.TrimSpace(parts[1])
+	if comma := strings.Index(rest, ","); comma >= 0 {
+		return iter, strings.TrimSpace(rest[:comma]), strings.TrimSpace(rest[comma+1:])
+	}
+	return iter, rest, ""
 }
 
 // eachTerminalKeyStart returns the opening parenthesis of a terminal

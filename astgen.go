@@ -2822,7 +2822,12 @@ func staticRawText(children []Node) (string, bool) {
 // directives, or nested control-flow, are not yet covered by the
 // direct path — astEachRowOK gates those to buildModuleSplice.
 func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
-	_, itemVar, indexVar := parseEachExpr(block.EachExpr)
+	itemVar, indexVar := block.ItemName, block.IndexName
+	if itemVar == "" {
+		// Attribute-style #each is deprecated compatibility syntax. It has
+		// no typed header fields, so keep its isolated legacy fallback here.
+		_, itemVar, indexVar = parseEachExpr(block.EachExpr)
+	}
 	if indexVar == "" {
 		indexVar = "$$i"
 	}

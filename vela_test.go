@@ -3499,6 +3499,9 @@ func TestSvelteBlock_ParseEachIterableCallWithoutKey(t *testing.T) {
 	if each.IterExpr == nil || each.IterExpr.Source != "feats(plan)" {
 		t.Fatalf("iterable AST source = %#v, want feats(plan)", each.IterExpr)
 	}
+	if each.ItemName != "f" || each.IndexName != "" {
+		t.Fatalf("typed row bindings = (%q, %q), want (f, empty)", each.ItemName, each.IndexName)
+	}
 }
 
 func TestSvelteBlock_ParseEachWithIndex(t *testing.T) {
@@ -3508,8 +3511,8 @@ func TestSvelteBlock_ParseEachWithIndex(t *testing.T) {
 		t.Fatalf("parse error: %v", err)
 	}
 	each := nodes[0].(*EachBlockNode)
-	if !strings.Contains(each.EachExpr, ", i") && !strings.Contains(each.EachExpr, ",i") {
-		t.Errorf("index variable not in EachExpr: %q", each.EachExpr)
+	if each.ItemName != "item" || each.IndexName != "i" {
+		t.Fatalf("typed row bindings = (%q, %q), want (item, i)", each.ItemName, each.IndexName)
 	}
 }
 

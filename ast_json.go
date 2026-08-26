@@ -170,9 +170,11 @@ func ifChainNodeJSON(n *IfChainNode) interface{} {
 
 func eachBlockNodeJSON(n *EachBlockNode) interface{} {
 	m := map[string]interface{}{
-		"type":     "EachBlock",
-		"eachExpr": n.EachExpr,
-		"children": nodesToJSON(n.Children),
+		"type":      "EachBlock",
+		"eachExpr":  n.EachExpr,
+		"itemName":  n.ItemName,
+		"indexName": n.IndexName,
+		"children":  nodesToJSON(n.Children),
 	}
 	if n.EachKey != "" {
 		m["eachKey"] = n.EachKey
