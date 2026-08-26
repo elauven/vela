@@ -497,11 +497,11 @@ func (p *parser) attributeTemplateExpr(value string, pos int) *TemplateExpr {
 	return newTemplateExprAt(attrExprToJS(value), pos, p.base+pos)
 }
 
-func templateExprDeps(expr *TemplateExpr, fallback string, vars []string) []string {
-	if expr != nil && expr.Program != nil && len(expr.Errors) == 0 {
-		return FindDepsInNode(expr.Program, vars)
+func templateExprDeps(expr *TemplateExpr, vars []string) []string {
+	if expr == nil || expr.Program == nil || len(expr.Errors) != 0 {
+		return nil
 	}
-	return findDeps(fallback, vars)
+	return FindDepsInNode(expr.Program, vars)
 }
 
 func templatePartsDeps(parts []*Part, vars []string) []string {
@@ -511,7 +511,7 @@ func templatePartsDeps(parts []*Part, vars []string) []string {
 		if part == nil || part.Static {
 			continue
 		}
-		for _, dep := range templateExprDeps(part.Expr, part.Value, vars) {
+		for _, dep := range templateExprDeps(part.Expr, vars) {
 			if !seen[dep] {
 				seen[dep] = true
 				out = append(out, dep)

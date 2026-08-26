@@ -2605,8 +2605,8 @@ func (g *ASTGen) buildEachRowAttrs(
 	rowElem *ElementNode, rowVar, itemVar, boxVar string,
 ) eachRowAttrs {
 	res := eachRowAttrs{deps: map[string]bool{}}
-	addDeps := func(attr *Attr, expr string) {
-		for _, dep := range templateExprDeps(attr.Expr, stripBraces(expr), g.reactiveNames()) {
+	addDeps := func(attr *Attr) {
+		for _, dep := range templateExprDeps(attr.Expr, g.reactiveNames()) {
 			res.deps[dep] = true
 		}
 	}
@@ -2632,12 +2632,12 @@ func (g *ASTGen) buildEachRowAttrs(
 		case attr.IsClassDir:
 			stmt := genExprStmt(genCall(genMember(genMember(id(rowVar), "classList"), "toggle"), strLit(attr.Name), genBool(g.eachItemExpr(attr, itemVar, boxVar, false))))
 			res.update = append(res.update, stmt)
-			addDeps(attr, attr.Value)
+			addDeps(attr)
 
 		case attr.IsStyleDir:
 			stmt := genExprStmt(genCall(genMember(genMember(id(rowVar), "style"), "setProperty"), strLit(attr.Name), genString(g.eachItemExpr(attr, itemVar, boxVar, false))))
 			res.update = append(res.update, stmt)
-			addDeps(attr, attr.Value)
+			addDeps(attr)
 
 		case attr.IsBind:
 			valueExpr := g.eachItemExpr(attr, itemVar, boxVar, false)
@@ -2653,7 +2653,7 @@ func (g *ASTGen) buildEachRowAttrs(
 				stmt = genExprStmt(genCall(genMember(id(rowVar), "setAttribute"), strLit(attr.Name), genString(valueExpr)))
 			}
 			res.update = append(res.update, stmt)
-			addDeps(attr, attr.Value)
+			addDeps(attr)
 
 		case attr.IsBindThis:
 			// bind:this on an each-row would overwrite the same ref
@@ -2822,7 +2822,7 @@ func staticRawText(children []Node) (string, bool) {
 // directives, or nested control-flow, are not yet covered by the
 // direct path — astEachRowOK gates those to buildModuleSplice.
 func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
-	array, itemVar, indexVar := parseEachExpr(block.EachExpr)
+	_, itemVar, indexVar := parseEachExpr(block.EachExpr)
 	if indexVar == "" {
 		indexVar = "$$i"
 	}
@@ -3075,7 +3075,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	arrayExpr := g.templateExpr(block.IterExpr)
 	runEach := genExprStmt(genCall(generatedID(eachFn), arrayExpr))
 	g.initBody = append(g.initBody, runEach)
-	for _, dep := range templateExprDeps(block.IterExpr, array, g.reactiveNames()) {
+	for _, dep := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		g.addUpdate(dep, shareStmt(runEach))
 	}
 	for dep := range rowAttrs.deps {
@@ -3381,7 +3381,7 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	g.initBody = append(g.initBody, genInvoke(driver))
 
 	// Re-run the driver when the promise expression's deps change.
-	for _, dep := range templateExprDeps(block.Expr, stripBraces(block.PromiseExpr), g.reactiveNames()) {
+	for _, dep := range templateExprDeps(block.Expr, g.reactiveNames()) {
 		g.addUpdate(dep, genInvoke(driver))
 	}
 }
@@ -3664,12 +3664,12 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	g.initBody = append(g.initBody, genInvoke(fn))
 	deps := map[string]bool{}
 	for _, branch := range chain.Branches {
-		for _, dep := range templateExprDeps(branch.Expr, stripBraces(branch.Cond), g.reactiveNames()) {
+		for _, dep := range templateExprDeps(branch.Expr, g.reactiveNames()) {
 			deps[dep] = true
 		}
 	}
 	if chain.KeyExpr != "" {
-		for _, dep := range templateExprDeps(chain.KeyAST, stripBraces(chain.KeyExpr), g.reactiveNames()) {
+		for _, dep := range templateExprDeps(chain.KeyAST, g.reactiveNames()) {
 			deps[dep] = true
 		}
 	}
@@ -4164,7 +4164,7 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 		if attr.IsEvent || attr.IsBindThis {
 			continue
 		}
-		for _, d := range templateExprDeps(attr.Expr, attrExprToJS(attr.Value), g.reactiveNames()) {
+		for _, d := range templateExprDeps(attr.Expr, g.reactiveNames()) {
 			deps[d] = true
 		}
 	}
@@ -4436,16 +4436,16 @@ func (g *ASTGen) applyRootAttrs(el *ElementNode) {
 // registerReactiveTemplateStmt runs a DOM write during initial render and
 // reuses that exact AST statement for every reactive dependency of the source
 // expression. Keeping one statement instance preserves its template origin.
-func (g *ASTGen) registerReactiveTemplateStmt(stmt JsStmt, expr *TemplateExpr, source string) {
+func (g *ASTGen) registerReactiveTemplateStmt(stmt JsStmt, expr *TemplateExpr) {
 	g.initBody = append(g.initBody, stmt)
-	for _, dep := range templateExprDeps(expr, source, g.reactiveNames()) {
+	for _, dep := range templateExprDeps(expr, g.reactiveNames()) {
 		g.addUpdate(dep, stmt)
 	}
 }
 
 func (g *ASTGen) emitClassDir(varName string, attr *Attr) {
 	stmt := g.classDirStmtAST(varName, attr)
-	g.registerReactiveTemplateStmt(stmt, attr.Expr, attrExprToJS(attr.Value))
+	g.registerReactiveTemplateStmt(stmt, attr.Expr)
 }
 
 // emitStyleDir wires `style:foo={expr}` — set an inline CSS
@@ -4454,7 +4454,7 @@ func (g *ASTGen) emitClassDir(varName string, attr *Attr) {
 // of a reactive dependency.
 func (g *ASTGen) emitStyleDir(varName string, attr *Attr) {
 	stmt := g.styleDirStmtAST(varName, attr)
-	g.registerReactiveTemplateStmt(stmt, attr.Expr, attrExprToJS(attr.Value))
+	g.registerReactiveTemplateStmt(stmt, attr.Expr)
 }
 
 // emitEventHandler wires an @event attribute: an addEventListener
@@ -4523,7 +4523,7 @@ func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 		g.emitListenerPair(&g.events, varName, spec.event, hv, nil, "", true)
 	}
 	write := g.attrWriteStmt(varName, attr)
-	g.registerReactiveTemplateStmt(write, attr.Expr, stripBraces(attr.Value))
+	g.registerReactiveTemplateStmt(write, attr.Expr)
 }
 
 // emitBindThisAST wires bind:this={ref} — write the live element

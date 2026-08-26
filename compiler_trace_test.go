@@ -507,6 +507,16 @@ func TestCSSStructuralSpansUseComponentSource(t *testing.T) {
 	}
 }
 
+func TestTemplateExprDepsRequiresCachedAST(t *testing.T) {
+	if got := templateExprDeps(nil, []string{"count"}); len(got) != 0 {
+		t.Fatalf("nil cached expression dependencies = %v, want none", got)
+	}
+	expr := newTemplateExpr("count + other", 0)
+	if got := templateExprDeps(expr, []string{"count", "other"}); len(got) != 2 || got[0] != "count" || got[1] != "other" {
+		t.Fatalf("cached expression dependencies = %v", got)
+	}
+}
+
 func TestKeyframeOpaqueRegionUsesComponentSourceSpan(t *testing.T) {
 	source := `<style>@keyframes fade { from { opacity: 0; } to { opacity: 1; } }</style><template><p>ok</p></template>`
 	sfc, err := parseSFC(source)
