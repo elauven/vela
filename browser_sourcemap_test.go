@@ -109,6 +109,18 @@ func TestBrowserSourceMapMapsTemplateHandler(t *testing.T) {
 </template>`, "button.explode", "() => { throw new Error")
 }
 
+func TestBrowserSourceMapKeepsTemplateHandlerOriginWithScopedCSS(t *testing.T) {
+	assertBrowserSourceMap(t, `<script>
+  let count = $state(0);
+</script>
+<template>
+  <button class="explode" @click={() => { throw new Error("styled template boom"); }}>Boom</button>
+</template>
+<style>
+  .explode:hover { color: rgb(1, 2, 3); }
+</style>`, "button.explode", "() => { throw new Error")
+}
+
 func TestBrowserSourceMapMapsEachIfHandler(t *testing.T) {
 	assertBrowserSourceMap(t, `<script>
   let rows = $state.deep([{ id: 1, show: true }]);
