@@ -188,11 +188,20 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 	if ast.Span.Start < 0 || ast.Span.End < ast.Span.Start || ast.Span.End-ast.Span.Start != len(ast.Source) {
 		add(0, "template source span does not match its owned source")
 	}
+	checkSpan := func(span SectionSpan, label string) {
+		if span.Start == 0 && span.End == 0 {
+			return
+		}
+		if span.Start < ast.Span.Start || span.End < span.Start || span.End > ast.Span.End {
+			add(0, "%s span escapes template source", label)
+		}
+	}
 	validateExpr := func(expr *TemplateExpr, pos int, label string) {
 		if expr == nil {
 			add(pos, "%s is missing its cached expression AST", label)
 			return
 		}
+		checkSpan(expr.Span, label+" expression")
 		if expr.Program == nil {
 			add(expr.Pos, "%s has no parsed expression program", label)
 		}

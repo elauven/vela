@@ -488,3 +488,22 @@ func TestCSSStructuralSpansUseComponentSource(t *testing.T) {
 		t.Fatalf("declaration span = %q", got)
 	}
 }
+
+func TestValidateTemplateASTRejectsEscapingExpressionSpan(t *testing.T) {
+	expr := newTemplateExpr("count", 1)
+	expr.Span = SectionSpan{Start: 11, End: 30}
+	ast := &TemplateAST{
+		Source: "{count}",
+		Span:   SectionSpan{Start: 10, End: 17},
+		Nodes: []Node{&TextNode{Parts: []*Part{{
+			Static: false,
+			Value:  "count",
+			Pos:    1,
+			Expr:   expr,
+		}}}},
+	}
+	issues := ValidateTemplateAST(ast)
+	if len(issues) == 0 || !strings.Contains(issues[0].Message, "escapes template source") {
+		t.Fatalf("issues = %+v, want escaping span diagnostic", issues)
+	}
+}
