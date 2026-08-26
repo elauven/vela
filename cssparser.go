@@ -493,7 +493,15 @@ func (p *CssParser) eat(k CssTokKind) bool {
 //   - ::before / ::after / :hover etc. have the attr injected before them
 //   - Combinators (>, +, ~, space) are preserved verbatim
 func ScopeCSS(css, scopeID string) string {
-	sheet := ParseCSS(css)
+	return ScopeCssStylesheet(ParseCSS(css), scopeID)
+}
+
+// ScopeCssStylesheet prints an already parsed stylesheet. Component codegen
+// uses this path so CSS scoping does not re-interpret the section source.
+func ScopeCssStylesheet(sheet *CssStylesheet, scopeID string) string {
+	if sheet == nil {
+		return ""
+	}
 	attr := "[" + scopeID + "]"
 	var b strings.Builder
 	printSheet(sheet.Rules, &b, attr)

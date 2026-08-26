@@ -1724,7 +1724,7 @@ func (g *ASTGen) buildStyleInjection() []JsStmt {
 	if g.cssExternal {
 		return nil
 	}
-	css := ScopeCSS(g.sfc.Style, g.scopeID)
+	css := ScopeCssStylesheet(g.sfc.StyleAST, g.scopeID)
 	return []JsStmt{
 		genConst("$$style", genCall(genMember(id("document"), "createElement"), strLit("style"))),
 		genAssignStmt(genMember(id("$$style"), "textContent"), strLit(css)),
@@ -1739,7 +1739,7 @@ func ExtractScopedCSS(sfc *SFC, scopeID string) string {
 	if sfc == nil || strings.TrimSpace(sfc.Style) == "" {
 		return ""
 	}
-	return ScopeCSS(sfc.Style, scopeID)
+	return ScopeCssStylesheet(sfc.StyleAST, scopeID)
 }
 
 // hasDeepState reports whether any state variable was declared
