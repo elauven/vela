@@ -611,6 +611,66 @@ type parser struct {
 	lastTagStart int
 }
 
+// templateJSSyntax tracks the lexical forms that make punctuation inert while
+// scanning an embedded JavaScript expression. It is intentionally small: the
+// JavaScript parser remains responsible for validating the expression itself;
+// this scanner only prevents template delimiters from being recognised inside
+// strings and comments.
+type templateJSSyntax struct {
+	quote        byte
+	escaped      bool
+	lineComment  bool
+	blockComment bool
+}
+
+// skip consumes a quoted or commented span starting at i. It returns the next
+// source position and true when the caller must not interpret src[i] as
+// template structure.
+func (s *templateJSSyntax) skip(src string, i int) (int, bool) {
+	if i >= len(src) {
+		return i, false
+	}
+	c := src[i]
+	if s.lineComment {
+		if c == '\n' || c == '\r' {
+			s.lineComment = false
+		}
+		return i + 1, true
+	}
+	if s.blockComment {
+		if c == '*' && i+1 < len(src) && src[i+1] == '/' {
+			s.blockComment = false
+			return i + 2, true
+		}
+		return i + 1, true
+	}
+	if s.quote != 0 {
+		if s.escaped {
+			s.escaped = false
+		} else if c == '\\' {
+			s.escaped = true
+		} else if c == s.quote {
+			s.quote = 0
+		}
+		return i + 1, true
+	}
+	if c == '/' && i+1 < len(src) {
+		switch src[i+1] {
+		case '/':
+			s.lineComment = true
+			return i + 2, true
+		case '*':
+			s.blockComment = true
+			return i + 2, true
+		}
+	}
+	if c == '\'' || c == '"' || c == '`' {
+		s.quote = c
+		return i + 1, true
+	}
+	return i, false
+}
+
 func parseTemplate(html string) ([]Node, error) {
 	return parseTemplateAt(html, 0)
 }
@@ -1277,24 +1337,13 @@ func (p *parser) readSvelteTag() string {
 	p.pos++ // skip '{'
 	start := p.pos
 	depth := 1
-	var quote byte
-	escaped := false
+	var syntax templateJSSyntax
 	for p.pos < len(p.src) && depth > 0 {
-		c := p.src[p.pos]
-		if quote != 0 {
-			if escaped {
-				escaped = false
-			} else if c == '\\' {
-				escaped = true
-			} else if c == quote {
-				quote = 0
-			}
-			p.pos++
+		if next, skipped := syntax.skip(p.src, p.pos); skipped {
+			p.pos = next
 			continue
 		}
-		switch c {
-		case '\'', '"', '`':
-			quote = c
+		switch p.src[p.pos] {
 		case '{':
 			depth++
 		case '}':
@@ -1487,24 +1536,15 @@ func parseEachHeader(raw string) (iter, item, index string) {
 // later stage from turning `lookup(plan, " as ")` into the bare identifier
 // `lookup`.
 func eachAsDelimiter(raw string) int {
-	var quote byte
-	escaped := false
+	var syntax templateJSSyntax
 	depth := 0
 	for i := 0; i < len(raw); i++ {
-		c := raw[i]
-		if quote != 0 {
-			if escaped {
-				escaped = false
-			} else if c == '\\' {
-				escaped = true
-			} else if c == quote {
-				quote = 0
-			}
+		if next, skipped := syntax.skip(raw, i); skipped {
+			i = next - 1
 			continue
 		}
+		c := raw[i]
 		switch c {
-		case '\'', '"', '`':
-			quote = c
 		case '(', '[', '{':
 			depth++
 		case ')', ']', '}':
@@ -1529,25 +1569,16 @@ func eachTerminalKeyStart(raw string) int {
 		return -1
 	}
 	as := eachAsDelimiter(raw)
-	var quote byte
-	escaped := false
+	var syntax templateJSSyntax
 	depth := 0
 	keyStart := -1
 	for i := as + 4; i < len(raw); i++ {
-		c := raw[i]
-		if quote != 0 {
-			if escaped {
-				escaped = false
-			} else if c == '\\' {
-				escaped = true
-			} else if c == quote {
-				quote = 0
-			}
+		if next, skipped := syntax.skip(raw, i); skipped {
+			i = next - 1
 			continue
 		}
+		c := raw[i]
 		switch c {
-		case '\'', '"', '`':
-			quote = c
 		case '(':
 			if depth == 0 {
 				keyStart = i

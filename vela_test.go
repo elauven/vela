@@ -3563,6 +3563,20 @@ func TestSvelteBlock_ReadTagIgnoresClosingBraceInJSString(t *testing.T) {
 	}
 }
 
+func TestSvelteBlock_ReadTagIgnoresClosingBraceInJSComment(t *testing.T) {
+	nodes, err := parseTemplate("{#if /* } */ visible}<p>{visible}</p>{/if}")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	chain, ok := nodes[0].(*IfChainNode)
+	if !ok || len(chain.Branches) != 1 {
+		t.Fatalf("expected one if branch, got %#v", nodes)
+	}
+	if got, want := chain.Branches[0].Expr.Source, "/* } */ visible"; got != want {
+		t.Fatalf("condition source = %q, want %q", got, want)
+	}
+}
+
 func TestSvelteBlock_ParseEachWithIndex(t *testing.T) {
 	html := `{#each items as item, i (item.id)}<p>{i}: {item.name}</p>{/each}`
 	nodes, err := parseTemplate(html)
