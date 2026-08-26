@@ -455,6 +455,21 @@ func TestValidateCssASTRejectsBrokenShapes(t *testing.T) {
 	}
 }
 
+func TestValidateCssASTRejectsEscapingSpan(t *testing.T) {
+	sheet := &CssStylesheet{
+		Source: "p {}",
+		Span:   SectionSpan{Start: 10, End: 14},
+		Rules: []CssNode{&CssQualifiedRule{
+			Span:      SectionSpan{Start: 10, End: 20},
+			Selectors: []*CssSelector{{Span: SectionSpan{Start: 10, End: 11}, Parts: []CssTok{{Kind: CssTokIdent, Val: "p"}}}},
+		}},
+	}
+	issues := ValidateCssAST(sheet)
+	if len(issues) == 0 || !strings.Contains(issues[0].Message, "escapes stylesheet source") {
+		t.Fatalf("issues = %+v, want escaping span diagnostic", issues)
+	}
+}
+
 func TestCSSStructuralSpansUseComponentSource(t *testing.T) {
 	source := `<style>@media screen { .card, .panel { color: red; } }</style><template><p>ok</p></template>`
 	sfc, err := parseSFC(source)
