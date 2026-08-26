@@ -3506,6 +3506,20 @@ func TestSvelteBlock_ParseEachWithKey(t *testing.T) {
 	}
 }
 
+func TestSvelteBlock_RecognizesEmptyTerminalEachKey(t *testing.T) {
+	if got := eachTerminalKeyStart("rows as row ()"); got < 0 {
+		t.Fatal("empty terminal key was not recognised as a key construct")
+	}
+	nodes, err := parseTemplate(`{#each rows as row ()}<p>{row}</p>{/each}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	each := nodes[0].(*EachBlockNode)
+	if !each.HasKey() || each.KeyAST == nil || each.KeyAST.Source != "" {
+		t.Fatalf("empty key did not retain an invalid cached AST: %+v", each)
+	}
+}
+
 func TestSvelteBlock_ParseEachIterableCallWithoutKey(t *testing.T) {
 	nodes, err := parseTemplate(`{#each feats(plan) as f}<li>{f}</li>{/each}`)
 	if err != nil {

@@ -346,6 +346,39 @@ func TestCompileFileReportsTemplateASTSyntaxDiagnostic(t *testing.T) {
 	}
 }
 
+func TestCompileFileRejectsEmptyStructuredKeyExpressions(t *testing.T) {
+	tests := []struct {
+		name, template string
+	}{
+		{"key block", `{#key}<p>bad key</p>{/key}`},
+		{"each key", `{#each rows as row ()}<p>{row}</p>{/each}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "BrokenKey.vela")
+			source := "<template>" + tc.template + "</template>"
+			if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			diags, err := compileFile(src, filepath.Join(dir, "BrokenKey.js"), CompileOptions{})
+			if err == nil || len(diags) == 0 {
+				t.Fatalf("diagnostics = %+v, err = %v; want template AST failure", diags, err)
+			}
+			var validation *Diagnostic
+			for i := range diags {
+				if diags[i].Code == "VELA-TEMPLATE-AST" {
+					validation = diags[i]
+					break
+				}
+			}
+			if validation == nil || validation.Line != 1 || validation.Col < 1 {
+				t.Fatalf("diagnostics = %+v, want positioned VELA-TEMPLATE-AST", diags)
+			}
+		})
+	}
+}
+
 func TestValidateTemplateASTRejectsMissingCachedExpression(t *testing.T) {
 	ast := &TemplateAST{
 		Source: "{count}",

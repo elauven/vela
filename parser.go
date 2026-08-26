@@ -216,6 +216,10 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 		checkSpan(expr.Span, label+" expression")
 		if expr.Program == nil {
 			add(expr.Pos, "%s has no parsed expression program", label)
+		} else if strings.TrimSpace(expr.Source) == "" {
+			add(expr.Pos, "%s must not be empty", label)
+		} else if expr.Root() == nil {
+			add(expr.Pos, "%s must contain exactly one JavaScript expression", label)
 		}
 		for _, message := range expr.Errors {
 			add(expr.Pos, "%s expression is invalid: %s", label, message)
@@ -293,7 +297,7 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 					add(n.ExprPos, "#each block has an empty item binding")
 				}
 				validateExpr(n.IterExpr, n.ExprPos, "#each iterable")
-				if n.EachKey != "" {
+				if n.HasKey() {
 					validateExpr(n.KeyAST, n.KeyPos, "#each key")
 				}
 				walkNodes(n.Children)
@@ -309,7 +313,7 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				if len(n.Branches) == 0 {
 					add(0, "if/key block has no branches")
 				}
-				if n.KeyExpr != "" {
+				if n.HasKey() {
 					validateExpr(n.KeyAST, n.KeyPos, "#key expression")
 				}
 				for _, branch := range n.Branches {
@@ -318,7 +322,7 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 						continue
 					}
 					checkSpan(branch.Span, "if branch")
-					if branch.Cond != "" && branch.SyntheticCond == nil {
+					if branch.HasCondition() && branch.SyntheticCond == nil {
 						validateExpr(branch.Expr, branch.CondPos, "#if branch")
 					}
 					walkNodes(branch.Children)
@@ -379,6 +383,13 @@ type IfBranch struct {
 	Comp     *ComponentNode // non-nil for component branches
 }
 
+// HasCondition reports whether this is a conditional #if branch. Cond is
+// retained only as source/debug metadata; downstream semantics must follow
+// the cached expression (or an explicitly generated condition), not text.
+func (b *IfBranch) HasCondition() bool {
+	return b != nil && (b.Expr != nil || b.SyntheticCond != nil)
+}
+
 // EachBlockNode is produced by Svelte-style {#each items as item (key)}...{/each}.
 // The children are the content of each row; they may include multiple nodes.
 type EachBlockNode struct {
@@ -396,6 +407,12 @@ type EachBlockNode struct {
 	Children     []Node
 	ElseChildren []Node
 }
+
+// HasKey reports whether the standard block contains a key expression. The
+// raw EachKey string is metadata, so even an empty/malformed key is retained
+// as KeyAST and can be rejected by validation instead of silently becoming an
+// unkeyed block.
+func (e *EachBlockNode) HasKey() bool { return e != nil && e.KeyAST != nil }
 
 // AwaitBlockNode is produced by Svelte-style:
 //
@@ -456,6 +473,10 @@ type ComponentNode struct {
 	IfCond  string // #if="expr"
 }
 
+// HasKey reports whether this structured #key chain owns an expression AST.
+// KeyExpr remains available for diagnostics and AST debug output only.
+func (c *IfChainNode) HasKey() bool { return c != nil && c.KeyAST != nil }
+
 // SlotNode represents a <slot> element — renders $$slots["name"] from parent.
 type SlotNode struct {
 	Span     SectionSpan
@@ -478,6 +499,20 @@ type TemplateExpr struct {
 	Pos     int
 	Program *JsProgram
 	Errors  []string
+}
+
+// Root returns the single JavaScript expression owned by a template
+// expression. Template syntax never accepts statement lists here; callers
+// that need executable meaning must use this typed root rather than Source.
+func (e *TemplateExpr) Root() JsExpr {
+	if e == nil || e.Program == nil || len(e.Program.Body) != 1 {
+		return nil
+	}
+	stmt, ok := e.Program.Body[0].(*JsExprStmt)
+	if !ok {
+		return nil
+	}
+	return stmt.X
 }
 
 func newTemplateExpr(source string, pos int) *TemplateExpr {
@@ -1482,10 +1517,12 @@ func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 	// dropped the declared row binding.
 	key := ""
 	keyPos := 0
+	var keyAST *TemplateExpr
 	if keyStart := eachTerminalKeyStart(raw); keyStart >= 0 {
 		keyRaw := raw[keyStart+1 : len(raw)-1]
 		key = strings.TrimSpace(keyRaw)
 		keyPos = exprPos + keyStart + 1 + len(keyRaw) - len(strings.TrimLeftFunc(keyRaw, unicode.IsSpace))
+		keyAST = p.templateExpr(key, keyPos)
 		raw = strings.TrimSpace(raw[:keyStart])
 	}
 
@@ -1502,7 +1539,7 @@ func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 		}
 	}
 	return &EachBlockNode{
-		EachExpr: raw, ExprPos: exprPos, IterExpr: p.templateExpr(iter, exprPos), ItemName: itemName, IndexName: indexName, EachKey: key, KeyPos: keyPos, KeyAST: p.templateExpr(key, keyPos),
+		EachExpr: raw, ExprPos: exprPos, IterExpr: p.templateExpr(iter, exprPos), ItemName: itemName, IndexName: indexName, EachKey: key, KeyPos: keyPos, KeyAST: keyAST,
 		Children:     groupIfChains(children),
 		ElseChildren: groupIfChains(elseChildren),
 	}, nil

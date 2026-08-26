@@ -704,13 +704,7 @@ func generateCodeASTCSS(
 }
 
 func templateExprRoot(expr *TemplateExpr) JsExpr {
-	if expr == nil || expr.Program == nil || len(expr.Program.Body) != 1 {
-		return nil
-	}
-	if stmt, ok := expr.Program.Body[0].(*JsExprStmt); ok {
-		return stmt.X
-	}
-	return nil
+	return expr.Root()
 }
 
 // templateExpr returns the cached expression parsed from the template and
@@ -3525,7 +3519,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	} else {
 		g.body = append(g.body, runningDecl)
 	}
-	if chain.KeyExpr != "" {
+	if chain.HasKey() {
 		keyDecl := genLet(fn+"_keyprev", &JsObjectExpr{baseExpr: baseExpr{genNode()}})
 		if captured {
 			g.declare(keyDecl)
@@ -3585,7 +3579,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	}
 
 	tryBody := []JsStmt{}
-	if chain.KeyExpr != "" {
+	if chain.HasKey() {
 		keyNew := fn + "_keynew"
 		tryBody = append(tryBody, genConst(keyNew, g.templateExpr(chain.KeyAST)))
 		for i := range chain.Branches {
@@ -3602,7 +3596,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	}
 	tryBody = append(tryBody, genLet("$$active", numLit(-1)))
 	for i, branch := range chain.Branches {
-		if branch.Cond == "" {
+		if !branch.HasCondition() {
 			tryBody = append(tryBody, genIf(
 				genBinary("<", id("$$active"), numLit(0)),
 				genAssignStmt(id("$$active"), numLit(i)),
@@ -3703,7 +3697,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			deps[dep] = true
 		}
 	}
-	if chain.KeyExpr != "" {
+	if chain.HasKey() {
 		for _, dep := range templateExprDeps(chain.KeyAST, g.reactiveNames()) {
 			deps[dep] = true
 		}
@@ -3731,7 +3725,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			genAssignStmt(id(fn+"_running"), boolLit(false)),
 			genAssignStmt(id(fn+"_pending"), boolLit(false)),
 		)
-		if chain.KeyExpr != "" {
+		if chain.HasKey() {
 			teardown = append(teardown, genAssignStmt(id(fn+"_keyprev"), &JsObjectExpr{baseExpr: baseExpr{genNode()}}))
 		}
 		g.nestedTeardowns = append(g.nestedTeardowns, teardown...)

@@ -365,7 +365,7 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 					walkNodes(slotNodes)
 				}
 			case *IfChainNode:
-				if n.KeyExpr != "" {
+				if n.HasKey() {
 					if n.KeyAST != nil {
 						checkCachedExprRefs(n.KeyAST, known, templateText, ds)
 					} else {
@@ -373,7 +373,7 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 					}
 				}
 				for _, branch := range n.Branches {
-					if branch.Cond != "" {
+					if branch.HasCondition() {
 						if branch.Expr != nil {
 							checkCachedExprRefs(branch.Expr, known, templateText, ds)
 						} else {
