@@ -385,7 +385,10 @@ func (p *CssParser) parseAtRule() *CssAtRule {
 // parseKeyframeBlock reads inside @keyframes { … } as a single opaque at-rule
 // so we never try to scope "from" or "to" as selectors.
 func (p *CssParser) parseKeyframeBlock() []CssNode {
-	// We collect the entire content as an opaque raw rule.
+	// We collect the entire content as an opaque raw rule. It remains typed
+	// and positioned even though its declaration grammar is intentionally not
+	// interpreted by the scoping pass.
+	start := p.cur.Start
 	var raw strings.Builder
 	depth := 1
 	for p.cur.Kind != CssTokEOF && depth > 0 {
@@ -400,8 +403,14 @@ func (p *CssParser) parseKeyframeBlock() []CssNode {
 		raw.WriteString(p.cur.Val)
 		p.advance()
 	}
-	// Return as an opaque at-rule with no name (just raw prelude as block text)
-	return []CssNode{&CssAtRule{Name: "raw", Prelude: raw.String(), IsStmt: false}}
+	// Return as an opaque at-rule with no name (just raw prelude as block text).
+	// The closing brace belongs to the parent @keyframes rule.
+	return []CssNode{&CssAtRule{
+		Span:    SectionSpan{Start: start, End: p.cur.Start},
+		Name:    "raw",
+		Prelude: raw.String(),
+		IsStmt:  false,
+	}}
 }
 
 func (p *CssParser) parseQualifiedRule() *CssQualifiedRule {

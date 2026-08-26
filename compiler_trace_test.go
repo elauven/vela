@@ -507,6 +507,22 @@ func TestCSSStructuralSpansUseComponentSource(t *testing.T) {
 	}
 }
 
+func TestKeyframeOpaqueRegionUsesComponentSourceSpan(t *testing.T) {
+	source := `<style>@keyframes fade { from { opacity: 0; } to { opacity: 1; } }</style><template><p>ok</p></template>`
+	sfc, err := parseSFC(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyframes := sfc.StyleAST.Rules[0].(*CssAtRule)
+	raw := keyframes.Block[0].(*CssAtRule)
+	if got := source[raw.Span.Start:raw.Span.End]; got != ` from { opacity: 0; } to { opacity: 1; } ` {
+		t.Fatalf("opaque keyframe span = %q", got)
+	}
+	if issues := ValidateCssAST(sfc.StyleAST); len(issues) != 0 {
+		t.Fatalf("validation issues = %+v", issues)
+	}
+}
+
 func TestValidateCssASTRejectsEscapingSelectorTokenSpan(t *testing.T) {
 	source := `<style>.card { color: red; }</style><template><p>ok</p></template>`
 	sfc, err := parseSFC(source)
