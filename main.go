@@ -57,6 +57,7 @@ type CompileOptions struct {
 	// The zero value is permissive for backwards compatibility.
 	TargetProfile           TargetProfile
 	UnavailableCapabilities []string // direct known globals disabled by the host
+	Strict                  bool     // elevate proven unresolved reads to errors
 }
 
 func main() {
@@ -71,6 +72,7 @@ func main() {
 	sourceMap := flag.Bool("sourcemap", false, "emit an external v3 source map alongside AST-generated JS")
 	target := flag.String("target", "permissive", "JavaScript host profile: permissive, browser, worker, node, or ssr")
 	unavailableCapabilities := flag.String("unavailable-capabilities", "", "comma-separated direct host capabilities to reject, e.g. fetch,indexedDB")
+	strict := flag.Bool("strict", false, "treat proven unresolved JavaScript reads as errors")
 	flag.Parse()
 
 	targetProfile, err := ParseTargetProfile(*target)
@@ -97,6 +99,7 @@ func main() {
 		SourceMap:               *sourceMap,
 		TargetProfile:           targetProfile,
 		UnavailableCapabilities: splitCapabilityList(*unavailableCapabilities),
+		Strict:                  *strict,
 	}
 
 	// ── Project mode ─────────────────────────────────────────────────────────
@@ -529,6 +532,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 		scriptScope := BuildScopesWithOptions(scriptProg, ds, ScopeOptions{
 			TargetProfile:           opts.TargetProfile,
 			UnavailableCapabilities: opts.UnavailableCapabilities,
+			Strict:                  opts.Strict,
 		})
 		DetectUnreachable(scriptProg, ds)
 		validateScript(scriptProg, analysis, ds)

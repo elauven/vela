@@ -230,6 +230,7 @@ type scopeBuilder struct {
 	target                  TargetProfile
 	excludedGlobals         map[string]bool
 	unavailableCapabilities map[string]bool
+	strict                  bool
 }
 
 // ScopeOptions controls proof-oriented global diagnostics. Zero values retain
@@ -238,6 +239,7 @@ type ScopeOptions struct {
 	ExtraGlobals            []string
 	TargetProfile           TargetProfile
 	UnavailableCapabilities []string
+	Strict                  bool
 }
 
 // BuildScopes runs scope/binding analysis over a parsed program and
@@ -295,6 +297,7 @@ func BuildScopesWithOptions(prog *JsProgram, ds *DiagSet, opts ScopeOptions) *Sc
 		target:                  opts.TargetProfile.normalized(),
 		excludedGlobals:         targetExcludedGlobals(opts.TargetProfile),
 		unavailableCapabilities: unavailable,
+		strict:                  opts.Strict,
 	}
 
 	// Pass 1 (hoisting): pre-declare every var and function statement
@@ -1099,6 +1102,8 @@ func (b *scopeBuilder) resolveRef(id *JsIdent, isWrite bool) {
 			b.ds.WarnWith(id.Pos, "VELA-SCOPE-IMPLICIT-GLOBAL", "Declare the binding with let, const, or var.",
 				"assignment to undeclared variable %q (this creates an implicit global; use let/const)",
 				id.Name)
+		} else if b.strict {
+			b.ds.ErrorWith(id.Pos, "VELA-SCOPE-UNDECLARED", "Declare the name or import it before use.", "%q is not defined", id.Name)
 		} else {
 			b.ds.WarnWith(id.Pos, "VELA-SCOPE-UNDECLARED", "Declare the name or import it before use.", "%q is not defined", id.Name)
 		}

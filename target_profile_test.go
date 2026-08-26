@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -89,5 +91,72 @@ func TestParseTargetProfileAndCapabilityList(t *testing.T) {
 	}
 	if got := splitCapabilityList("fetch, indexedDB,fetch, "); len(got) != 2 || got[0] != "fetch" || got[1] != "indexedDB" {
 		t.Fatalf("capability list = %#v", got)
+	}
+}
+
+func TestStrictElevatesOnlyUnresolvedReads(t *testing.T) {
+	diags, err := compileProfileScript(t, `missing;`, CompileOptions{})
+	if err != nil || findDiagnostic(diags, "VELA-SCOPE-UNDECLARED") == nil {
+		t.Fatalf("permissive diagnostics = %+v, err = %v; want warning", diags, err)
+	}
+
+	diags, err = compileProfileScript(t, `missing;`, CompileOptions{Strict: true})
+	diag := findDiagnostic(diags, "VELA-SCOPE-UNDECLARED")
+	if err == nil || diag == nil || diag.Sev != SevError {
+		t.Fatalf("strict diagnostics = %+v, err = %v; want error", diags, err)
+	}
+
+	diags, err = compileProfileScript(t, `const value = 1; value;`, CompileOptions{Strict: true})
+	if err != nil || findDiagnostic(diags, "VELA-SCOPE-UNDECLARED") != nil {
+		t.Fatalf("strict known binding diagnostics = %+v, err = %v", diags, err)
+	}
+}
+
+func TestProfileDiagnosticHumanJSONAndUTF16Position(t *testing.T) {
+	source := "<script>🙂 document.createElement('p');</script><template><p>ok</p></template>"
+	dir := t.TempDir()
+	src := filepath.Join(dir, "App.vela")
+	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	diags, err := compileFile(src, filepath.Join(dir, "App.js"), CompileOptions{TargetProfile: TargetWorker})
+	diag := findDiagnostic(diags, "VELA-PROFILE-GLOBAL")
+	if err == nil || diag == nil || diag.Col != 12 {
+		t.Fatalf("diagnostics = %+v, err = %v; want UTF-16 column 12", diags, err)
+	}
+	if text := diag.String(); !strings.Contains(text, "[VELA-PROFILE-GLOBAL]") || !strings.Contains(text, "help:") {
+		t.Fatalf("human diagnostic = %q", text)
+	}
+	data, jsonErr := DiagnosticsJSON(diags)
+	if jsonErr != nil {
+		t.Fatal(jsonErr)
+	}
+	var machine []MachineDiagnostic
+	if err := json.Unmarshal(data, &machine); err != nil {
+		t.Fatal(err)
+	}
+	if len(machine) == 0 || machine[0].Code != "VELA-PROFILE-GLOBAL" || machine[0].Column != 12 || machine[0].Severity != "error" {
+		t.Fatalf("machine diagnostics = %s", data)
+	}
+}
+
+func TestTargetProfileKeepsSourceMapOutputCompatible(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "App.vela")
+	source := `<script>document.title = "ready";</script><template><button @click={() => document.title = "clicked"}>Go</button></template>`
+	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(dir, "App.js")
+	if diags, err := compileFile(src, dest, CompileOptions{TargetProfile: TargetBrowser, SourceMap: true}); err != nil {
+		t.Fatalf("diagnostics = %+v, err = %v", diags, err)
+	}
+	data, err := os.ReadFile(dest + ".map")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mapping SourceMapV3
+	if err := json.Unmarshal(data, &mapping); err != nil || mapping.Mappings == "" {
+		t.Fatalf("source map = %s, err = %v", data, err)
 	}
 }
