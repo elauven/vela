@@ -52,6 +52,11 @@ type CompileOptions struct {
 	CSSExternal bool
 	SourceMap   bool      // emit a v3 .js.map alongside generated JS
 	TraceSink   TraceSink // optional source-free compiler trace observer
+
+	// TargetProfile enables sound direct-global diagnostics for a known host.
+	// The zero value is permissive for backwards compatibility.
+	TargetProfile           TargetProfile
+	UnavailableCapabilities []string // direct known globals disabled by the host
 }
 
 func main() {
@@ -64,7 +69,15 @@ func main() {
 	parallel := flag.Bool("parallel", true, "compile files in parallel (project mode)")
 	cssMode := flag.String("css", "inject", "CSS delivery: 'inject' (default, CSS-in-JS) or 'external' (sibling .css files)")
 	sourceMap := flag.Bool("sourcemap", false, "emit an external v3 source map alongside AST-generated JS")
+	target := flag.String("target", "permissive", "JavaScript host profile: permissive, browser, worker, node, or ssr")
+	unavailableCapabilities := flag.String("unavailable-capabilities", "", "comma-separated direct host capabilities to reject, e.g. fetch,indexedDB")
 	flag.Parse()
+
+	targetProfile, err := ParseTargetProfile(*target)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vela: %v\n", err)
+		os.Exit(2)
+	}
 
 	switch *cssMode {
 	case "inject", "external":
@@ -77,11 +90,13 @@ func main() {
 	}
 
 	opts := CompileOptions{
-		Minify:      *minify,
-		EmitAST:     *emitAST,
-		GenAST:      *genAST,
-		CSSExternal: *cssMode == "external",
-		SourceMap:   *sourceMap,
+		Minify:                  *minify,
+		EmitAST:                 *emitAST,
+		GenAST:                  *genAST,
+		CSSExternal:             *cssMode == "external",
+		SourceMap:               *sourceMap,
+		TargetProfile:           targetProfile,
+		UnavailableCapabilities: splitCapabilityList(*unavailableCapabilities),
 	}
 
 	// ── Project mode ─────────────────────────────────────────────────────────
@@ -130,6 +145,19 @@ func main() {
 	if *watch {
 		runWatchFiles(args, *outDir, opts)
 	}
+}
+
+func splitCapabilityList(raw string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, name := range strings.Split(raw, ",") {
+		name = strings.TrimSpace(name)
+		if name != "" && !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -498,7 +526,10 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 		// passes report positions relative to the script body, so the DiagSet
 		// offset translates them into original component coordinates.
 		ds.PushOffset(sfc.ScriptOffset)
-		scriptScope := BuildScopes(scriptProg, ds)
+		scriptScope := BuildScopesWithOptions(scriptProg, ds, ScopeOptions{
+			TargetProfile:           opts.TargetProfile,
+			UnavailableCapabilities: opts.UnavailableCapabilities,
+		})
 		DetectUnreachable(scriptProg, ds)
 		validateScript(scriptProg, analysis, ds)
 		validateDerivedCycles(scriptProg, analysis, ds)

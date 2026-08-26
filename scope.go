@@ -224,9 +224,20 @@ var defaultGlobals = []string{
 // ─────────────────────────────────────────────
 
 type scopeBuilder struct {
-	ds   *DiagSet
-	cur  *Scope // top of the scope stack
-	root *Scope // program scope (for hoisting / globals)
+	ds                      *DiagSet
+	cur                     *Scope // top of the scope stack
+	root                    *Scope // program scope (for hoisting / globals)
+	target                  TargetProfile
+	excludedGlobals         map[string]bool
+	unavailableCapabilities map[string]bool
+}
+
+// ScopeOptions controls proof-oriented global diagnostics. Zero values retain
+// the historical permissive environment.
+type ScopeOptions struct {
+	ExtraGlobals            []string
+	TargetProfile           TargetProfile
+	UnavailableCapabilities []string
 }
 
 // BuildScopes runs scope/binding analysis over a parsed program and
@@ -235,13 +246,21 @@ type scopeBuilder struct {
 //
 // Safe to call with prog == nil — returns nil.
 func BuildScopes(prog *JsProgram, ds *DiagSet) *Scope {
-	return BuildScopesWith(prog, ds, nil)
+	return BuildScopesWithOptions(prog, ds, ScopeOptions{})
 }
 
 // BuildScopesWith is like BuildScopes but lets the caller supply extra
 // pre-declared globals (e.g. injected by a host environment).  These
 // merge with defaultGlobals.
 func BuildScopesWith(prog *JsProgram, ds *DiagSet, extraGlobals []string) *Scope {
+	return BuildScopesWithOptions(prog, ds, ScopeOptions{ExtraGlobals: extraGlobals})
+}
+
+// BuildScopesWithOptions extends BuildScopesWith with an explicit host target
+// and unavailable direct capabilities. All known globals stay declared so the
+// permissive default remains compatible; resolveRef reports selected absences
+// only when it can prove the reference is that builtin.
+func BuildScopesWithOptions(prog *JsProgram, ds *DiagSet, opts ScopeOptions) *Scope {
 	if prog == nil {
 		return nil
 	}
@@ -255,7 +274,7 @@ func BuildScopesWith(prog *JsProgram, ds *DiagSet, extraGlobals []string) *Scope
 			Name: name, Kind: BindBuiltin, Scope: globalScope,
 		}
 	}
-	for _, name := range extraGlobals {
+	for _, name := range opts.ExtraGlobals {
 		if _, dup := globalScope.Bindings[name]; !dup {
 			globalScope.Bindings[name] = &Binding{
 				Name: name, Kind: BindBuiltin, Scope: globalScope,
@@ -265,7 +284,18 @@ func BuildScopesWith(prog *JsProgram, ds *DiagSet, extraGlobals []string) *Scope
 
 	root := newScope(globalScope, ScopeProgram, prog)
 
-	b := &scopeBuilder{ds: ds, cur: root, root: root}
+	unavailable := map[string]bool{}
+	for _, name := range opts.UnavailableCapabilities {
+		if name != "" {
+			unavailable[name] = true
+		}
+	}
+	b := &scopeBuilder{
+		ds: ds, cur: root, root: root,
+		target:                  opts.TargetProfile.normalized(),
+		excludedGlobals:         targetExcludedGlobals(opts.TargetProfile),
+		unavailableCapabilities: unavailable,
+	}
 
 	// Pass 1 (hoisting): pre-declare every var and function statement
 	// reachable through transparent scopes (block, if, try, switch …)
@@ -293,7 +323,9 @@ func BuildScopesWith(prog *JsProgram, ds *DiagSet, extraGlobals []string) *Scope
 // transparent to scoping.
 //
 // Why this exists: a reference like
-//   function f() { console.log(x); let x = 1; }
+//
+//	function f() { console.log(x); let x = 1; }
+//
 // must report TDZ, not "undefined".  TDZ detection in resolveRef
 // works by comparing the reference's source position to the
 // binding's; that comparison is meaningless if the binding hasn't
@@ -1076,6 +1108,16 @@ func (b *scopeBuilder) resolveRef(id *JsIdent, isWrite bool) {
 	bind.Refs = append(bind.Refs, id)
 	if isWrite {
 		bind.Writes = append(bind.Writes, id)
+	}
+	if bind.Kind == BindBuiltin {
+		if b.excludedGlobals[id.Name] {
+			b.ds.ErrorWith(id.Pos, "VELA-PROFILE-GLOBAL", "Use a target-compatible API or guard this code behind a host boundary.", "%q is not available in the %s target profile", id.Name, b.target)
+			return
+		}
+		if b.unavailableCapabilities[id.Name] {
+			b.ds.ErrorWith(id.Pos, "VELA-CAPABILITY-UNAVAILABLE", "Enable the capability in the host or use a supported alternative.", "%q is configured as unavailable for this compilation", id.Name)
+			return
+		}
 	}
 
 	// Write checks.
