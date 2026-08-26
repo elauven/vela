@@ -249,6 +249,7 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				}
 				walkNodes(n.Children)
 			case *ComponentNode:
+				checkSpan(n.Span, "component")
 				if strings.TrimSpace(n.Name) == "" {
 					add(0, "component has an empty name")
 				}
@@ -266,6 +267,7 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 					walkNodes(children)
 				}
 			case *SlotNode:
+				checkSpan(n.Span, "slot")
 				if strings.TrimSpace(n.Name) == "" {
 					add(0, "slot has an empty name")
 				}
