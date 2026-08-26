@@ -10,10 +10,24 @@ import (
 //  Single-File Component
 // ──────────────────────────────────────────────
 
+// ComponentAST owns the immutable component source and the typed AST of each
+// section. Section node positions remain relative to their section source;
+// the section Span translates them to component-relative positions.
+type ComponentAST struct {
+	Source   string
+	Script   *ScriptAST
+	Template *TemplateAST
+	Style    *CssStylesheet
+}
+
 type SFC struct {
 	Script   string
 	Style    string
 	Template string
+
+	AST         *ComponentAST
+	TemplateAST *TemplateAST
+	StyleAST    *CssStylesheet
 
 	// ScriptAST owns the one parsed representation of the <script> section.
 	// Script remains temporarily for source extraction and user-facing tooling;
@@ -110,10 +124,18 @@ func parseSFC(src string) (*SFC, error) {
 	sfc.Script, sfc.ScriptOffset = extractBlock("script")
 	sfc.Style, sfc.StyleOffset = extractBlock("style")
 	sfc.Template, sfc.TemplateOffset = extractBlock("template")
-	sfc.ScriptAST = newScriptAST(sfc.Script, sfc.ScriptOffset)
 
 	if sfc.Template == "" {
 		return nil, fmt.Errorf("missing <template> section")
+	}
+	sfc.ScriptAST = newScriptAST(sfc.Script, sfc.ScriptOffset)
+	sfc.TemplateAST = newTemplateAST(sfc.Template, sfc.TemplateOffset)
+	sfc.StyleAST = newCssStylesheet(sfc.Style, sfc.StyleOffset)
+	sfc.AST = &ComponentAST{
+		Source:   src,
+		Script:   sfc.ScriptAST,
+		Template: sfc.TemplateAST,
+		Style:    sfc.StyleAST,
 	}
 	return sfc, nil
 }
@@ -121,6 +143,34 @@ func parseSFC(src string) (*SFC, error) {
 // ──────────────────────────────────────────────
 //  Template AST
 // ──────────────────────────────────────────────
+
+// TemplateAST is the typed template section of a ComponentAST.
+// Source and Span are immutable ownership metadata; Nodes is the canonical
+// parsed representation used by compiler stages.
+type TemplateAST struct {
+	Source      string
+	Span        SectionSpan
+	Nodes       []Node
+	Diagnostics []TemplateParseDiagnostic
+}
+
+type TemplateParseDiagnostic struct {
+	Pos     int
+	Message string
+}
+
+func newTemplateAST(source string, offset int) *TemplateAST {
+	nodes, err := parseTemplate(source)
+	ast := &TemplateAST{
+		Source: source,
+		Span:   SectionSpan{Start: offset, End: offset + len(source)},
+		Nodes:  nodes,
+	}
+	if err != nil {
+		ast.Diagnostics = append(ast.Diagnostics, TemplateParseDiagnostic{Pos: 0, Message: err.Error()})
+	}
+	return ast
+}
 
 type Node interface{ nodeKind() string }
 

@@ -287,3 +287,61 @@ func TestEmitASTUsesParsedComponentPipeline(t *testing.T) {
 		t.Fatalf("--ast pipeline did not retain one script parse: %+v", sink.records)
 	}
 }
+
+func TestComponentASTOwnsSectionTreesAndSpans(t *testing.T) {
+	source := `<style>
+  button { color: red; }
+</style>
+<script>
+  let count = $state(0);
+</script>
+<template><button>{count}</button></template>`
+	sfc, err := parseSFC(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sfc.AST == nil || sfc.AST.Source != source {
+		t.Fatalf("component AST did not retain source ownership: %+v", sfc.AST)
+	}
+	if sfc.AST.Script != sfc.ScriptAST || sfc.AST.Template != sfc.TemplateAST || sfc.AST.Style != sfc.StyleAST {
+		t.Fatalf("section AST ownership is not canonical: %+v", sfc.AST)
+	}
+	for _, section := range []struct {
+		name string
+		span SectionSpan
+		src  string
+	}{
+		{"script", sfc.ScriptAST.Span, sfc.Script},
+		{"template", sfc.TemplateAST.Span, sfc.Template},
+		{"style", sfc.StyleAST.Span, sfc.Style},
+	} {
+		if section.span.Start < 0 || section.span.End < section.span.Start || section.span.End > len(source) {
+			t.Fatalf("%s span is outside component source: %+v", section.name, section.span)
+		}
+		if got := source[section.span.Start:section.span.End]; got != section.src {
+			t.Fatalf("%s span source = %q, want %q", section.name, got, section.src)
+		}
+	}
+	if len(sfc.TemplateAST.Nodes) != 1 || len(sfc.StyleAST.Rules) != 1 {
+		t.Fatalf("section AST trees missing: template=%d css=%d", len(sfc.TemplateAST.Nodes), len(sfc.StyleAST.Rules))
+	}
+}
+
+func TestCompileFileReportsTemplateASTSyntaxDiagnostic(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "BrokenTemplate.vela")
+	source := "<template>\n{#await p then}<p>bad</p>{/await}\n</template>"
+	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	diags, err := compileFile(src, filepath.Join(dir, "BrokenTemplate.js"), CompileOptions{})
+	if err == nil {
+		t.Fatal("compile unexpectedly succeeded")
+	}
+	if len(diags) != 1 {
+		t.Fatalf("diagnostics = %+v, want one template syntax error", diags)
+	}
+	if got := diags[0]; got.Code != "VELA-TEMPLATE-SYNTAX" || got.Line != 2 || got.Col < 1 {
+		t.Fatalf("template syntax diagnostic = %+v, want VELA-TEMPLATE-SYNTAX on line 2", got)
+	}
+}

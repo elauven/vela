@@ -422,11 +422,23 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 
 	var tmpl []Node
 	if err = trace.stage("parse-template", func() error {
-		var parseErr error
-		tmpl, parseErr = parseTemplate(sfc.Template)
-		return parseErr
+		if sfc.TemplateAST == nil {
+			return fmt.Errorf("missing template AST")
+		}
+		if len(sfc.TemplateAST.Diagnostics) > 0 {
+			ds.PushOffset(sfc.TemplateAST.Span.Start)
+			for _, issue := range sfc.TemplateAST.Diagnostics {
+				ds.ErrorWith(issue.Pos, "VELA-TEMPLATE-SYNTAX", "fix the template syntax", "%s", issue.Message)
+			}
+			ds.PopOffset()
+			return fmt.Errorf("template syntax validation failed")
+		}
+		tmpl = sfc.TemplateAST.Nodes
+		return nil
 	}); err != nil {
-		ds.Error(0, "template: %v", err)
+		if !ds.HasErrors() {
+			ds.Error(0, "template: %v", err)
+		}
 		return ds.All(), fmt.Errorf("template: %w", err)
 	}
 	if trace != nil {

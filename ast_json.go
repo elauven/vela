@@ -289,13 +289,15 @@ func DumpAST(filename, src string) (string, error) {
 		return "", fmt.Errorf("parseSFC: %w", err)
 	}
 
-	templateNodes, err := parseTemplate(sfc.Template)
-	if err != nil {
-		return "", fmt.Errorf("parseTemplate: %w", err)
+	if sfc.TemplateAST == nil {
+		return "", fmt.Errorf("missing template AST")
+	}
+	if len(sfc.TemplateAST.Diagnostics) > 0 {
+		return "", fmt.Errorf("parseTemplate: %s", sfc.TemplateAST.Diagnostics[0].Message)
 	}
 
 	analysis := analyzeScriptAST(sfc.ScriptAST)
-	return DumpParsedAST(filename, sfc, templateNodes, analysis)
+	return DumpParsedAST(filename, sfc, sfc.TemplateAST.Nodes, analysis)
 }
 
 // DumpParsedAST serializes an already parsed and analyzed component. Keeping
