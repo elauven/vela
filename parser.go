@@ -1282,6 +1282,7 @@ func (p *parser) parseSvelteIfBlock(condRaw string, condPos int, branchStart int
 			branchStart = p.lastTagStart
 			// continue loop for next branch
 		case term == ":else" || strings.HasPrefix(term, ":else}"):
+			branchStart = p.lastTagStart
 			// Parse else body
 			elseChildren, _, err2 := p.parseSvelteBlockBody()
 			if err2 != nil {
