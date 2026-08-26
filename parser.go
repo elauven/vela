@@ -694,7 +694,21 @@ func (p *parser) parseText() (*TextNode, error) {
 	if len(parts) == 0 {
 		return nil, nil
 	}
-	return &TextNode{Span: SectionSpan{Start: p.base + start, End: p.base + p.pos}, Parts: parts}, nil
+	span := SectionSpan{Start: p.base + start, End: p.base + p.pos}
+	for _, part := range parts {
+		if part == nil {
+			continue
+		}
+		part.Span = span
+		if !part.Static && part.Expr != nil {
+			part.Expr.Span = SectionSpan{
+				Start: p.base + part.Expr.Pos,
+				End:   p.base + part.Expr.Pos + len(part.Expr.Source),
+			}
+			part.Span = part.Expr.Span
+		}
+	}
+	return &TextNode{Span: span, Parts: parts}, nil
 }
 
 // isHTMLSpace reports whether c is a whitespace character treated as

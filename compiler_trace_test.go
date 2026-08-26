@@ -375,6 +375,10 @@ func TestTemplateStructuralSpansUseComponentSource(t *testing.T) {
 	if got := source[div.Attrs[0].Span.Start:div.Attrs[0].Span.End]; got != `:title={label}` {
 		t.Fatalf("attribute span = %q", got)
 	}
+	part := div.Children[0].(*TextNode).Parts[0]
+	if got := source[part.Span.Start:part.Span.End]; got != `label` {
+		t.Fatalf("interpolation part span = %q", got)
+	}
 	each := sfc.TemplateAST.Nodes[1].(*EachBlockNode)
 	if got := source[each.Span.Start:each.Span.End]; got != `{#each items as item}<p>{item}</p>{/each}` {
 		t.Fatalf("each block span = %q", got)
