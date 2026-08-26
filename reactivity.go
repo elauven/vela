@@ -763,8 +763,11 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 					report(attrPos(a), "VELA-CLASS-OBJECT", "Use one class:name={condition} directive per class.", "object-valued :class is not supported; use one class:name={condition} directive per class")
 				}
 			}
-			if a.IsTwoWay && a.Name != "this" && !isSimpleIdent(stripBraces(a.Value)) {
-				report(attrPos(a), "VELA-BIND-MEMBER", "Use a one-way binding plus an explicit event handler for member expressions.", "bind:%s requires a plain $state or $bindable prop name; use a one-way :%s binding and an event handler for member expressions", a.Name, a.Name)
+			if a.IsTwoWay && a.Name != "this" {
+				_, isIdent := templateExprIdent(a.Expr)
+				if !isIdent {
+					report(attrPos(a), "VELA-BIND-MEMBER", "Use a one-way binding plus an explicit event handler for member expressions.", "bind:%s requires a plain $state or $bindable prop name; use a one-way :%s binding and an event handler for member expressions", a.Name, a.Name)
+				}
 			}
 		}
 	}

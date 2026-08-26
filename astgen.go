@@ -717,6 +717,23 @@ func templateExprRoot(expr *TemplateExpr) JsExpr {
 // records its absolute SFC offset on its root. Template expressions are
 // deliberately re-used by initial-render and update shells: JsNode has no
 // parent pointers, so sharing this immutable subtree is safe.
+func templateExprIdent(expr *TemplateExpr) (string, bool) {
+	ident, ok := templateExprRoot(expr).(*JsIdent)
+	if !ok || ident.Name == "" {
+		return "", false
+	}
+	return ident.Name, true
+}
+
+func templateExprIsHandler(expr *TemplateExpr) bool {
+	switch templateExprRoot(expr).(type) {
+	case *JsArrowFunc, *JsFuncExpr:
+		return true
+	default:
+		return false
+	}
+}
+
 func (g *ASTGen) templateExpr(expr *TemplateExpr) JsExpr {
 	root := templateExprRoot(expr)
 	if root == nil {
@@ -859,8 +876,8 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 		}
 		obj.Props = append(obj.Props, prop)
 		if attr.IsTwoWay && g.analysis != nil {
-			target := strings.TrimSpace(unwrapBraces(attr.Value))
-			if g.analysis.isStateName(target) {
+			target, isIdent := templateExprIdent(attr.Expr)
+			if isIdent && g.analysis.isStateName(target) {
 				obj.Props = append(obj.Props, &JsProp{
 					baseNode: genNode(), Key: id("$$onChange_" + attr.Name),
 					Value: &JsArrowFunc{
@@ -2614,13 +2631,13 @@ func (g *ASTGen) buildEachRowAttrs(
 		switch {
 		case attr.IsEvent:
 			// A row-root event needs both state-assignment and row-item rewrites.
-			handler := stripBraces(attr.Value)
+			_, isIdent := templateExprIdent(attr.Expr)
 			handlerExpr := g.eachItemExpr(attr, itemVar, boxVar, true)
-			if isSimpleIdent(handler) {
+			if isIdent {
 				res.create = append(res.create, genExprStmt(genCall(genMember(id(rowVar), "addEventListener"), strLit(attr.Name), handlerExpr)))
 			} else {
 				hv := rowVar + "_" + attr.Name + "_h"
-				if isHandlerExpr(handler) {
+				if templateExprIsHandler(attr.Expr) {
 					res.create = append(res.create, genConst(hv, handlerExpr))
 				} else {
 					res.create = append(res.create, genConst(hv, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))}))
@@ -4489,19 +4506,19 @@ func (g *ASTGen) emitListenerPair(attach *[]JsStmt, target, event, handler strin
 }
 
 func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
-	handler := stripBraces(attr.Value)
+	handler, isIdent := templateExprIdent(attr.Expr)
 	handlerExpr := g.eventHandlerExpr(attr)
 	if handlerExpr == nil {
 		handlerExpr = id("undefined")
 	}
 	addCleanup := !g.inSlotScope
-	if isSimpleIdent(handler) {
+	if isIdent {
 		g.emitListenerPair(&g.events, varName, attr.Name, handler, handlerExpr, "", addCleanup)
 		return
 	}
 	hv := varName + "_" + attr.Name + "_h"
 	decl := genConst(hv, handlerExpr)
-	if !isHandlerExpr(handler) {
+	if !templateExprIsHandler(attr.Expr) {
 		decl = genConst(hv, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))})
 	}
 	g.body = append(g.body, decl)
@@ -4515,8 +4532,8 @@ func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 //     against X so the setter re-writes the DOM
 func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 	spec, ok := twoWayBindSpec(tag, attr.Name)
-	sv := stripBraces(attr.Value)
-	if attr.IsTwoWay && ok && g.analysis != nil && g.analysis.isStateName(sv) {
+	sv, isIdent := templateExprIdent(attr.Expr)
+	if attr.IsTwoWay && ok && isIdent && g.analysis != nil && g.analysis.isStateName(sv) {
 		hv := varName + "_bind_" + spec.event + "_h"
 		g.body = append(g.body, genConst(hv, &JsArrowFunc{
 			baseExpr: baseExpr{genNode()},
@@ -4537,8 +4554,8 @@ func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 // otherwise (a plain local, or a member like refs.input) a raw
 // assignment is used.  Mirrors the legacy emitBindThis.
 func (g *ASTGen) emitBindThisAST(varName string, attr *Attr) {
-	ref := stripBraces(attr.Value)
-	if g.analysis != nil && g.analysis.isStateName(ref) {
+	ref, isIdent := templateExprIdent(attr.Expr)
+	if isIdent && g.analysis != nil && g.analysis.isStateName(ref) {
 		g.initBody = append(g.initBody,
 			genInvoke("$$set_"+ref, id(varName)))
 		g.cleanup = append(g.cleanup,
