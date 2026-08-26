@@ -32,8 +32,10 @@ const (
 )
 
 type CssTok struct {
-	Kind CssTokKind
-	Val  string
+	Kind  CssTokKind
+	Val   string
+	Start int
+	End   int
 }
 
 type CssLexer struct {
@@ -86,7 +88,7 @@ func (l *CssLexer) Next() CssTok {
 		for l.pos < len(l.src) && isWSByte(l.ch()) {
 			l.pos++
 		}
-		return CssTok{CssTokWhitespace, l.src[start:l.pos]}
+		return CssTok{Kind: CssTokWhitespace, Val: l.src[start:l.pos], Start: start, End: l.pos}
 	}
 
 	// ── Strings ────────────────────────────────────────────────────────────
@@ -102,7 +104,7 @@ func (l *CssLexer) Next() CssTok {
 		if l.pos < len(l.src) {
 			l.pos++
 		}
-		return CssTok{CssTokString, l.src[start:l.pos]}
+		return CssTok{Kind: CssTokString, Val: l.src[start:l.pos], Start: start, End: l.pos}
 	}
 
 	// ── @ keywords ─────────────────────────────────────────────────────────
@@ -112,7 +114,7 @@ func (l *CssLexer) Next() CssTok {
 		for l.pos < len(l.src) && isCssIdentChar(l.ch()) {
 			l.pos++
 		}
-		return CssTok{CssTokAt, l.src[start:l.pos]}
+		return CssTok{Kind: CssTokAt, Val: l.src[start:l.pos], Start: start, End: l.pos}
 	}
 
 	// ── Hash ───────────────────────────────────────────────────────────────
@@ -122,7 +124,7 @@ func (l *CssLexer) Next() CssTok {
 		for l.pos < len(l.src) && isCssIdentChar(l.ch()) {
 			l.pos++
 		}
-		return CssTok{CssTokHash, l.src[start:l.pos]}
+		return CssTok{Kind: CssTokHash, Val: l.src[start:l.pos], Start: start, End: l.pos}
 	}
 
 	// ── Identifiers (including custom properties --foo) ────────────────────
@@ -132,7 +134,7 @@ func (l *CssLexer) Next() CssTok {
 		for l.pos < len(l.src) && isCssIdentChar(l.ch()) {
 			l.pos++
 		}
-		return CssTok{CssTokIdent, l.src[start:l.pos]}
+		return CssTok{Kind: CssTokIdent, Val: l.src[start:l.pos], Start: start, End: l.pos}
 	}
 
 	// ── Numbers (with optional unit) ───────────────────────────────────────
@@ -148,32 +150,33 @@ func (l *CssLexer) Next() CssTok {
 		if l.pos < len(l.src) && l.ch() == '%' {
 			l.pos++
 		}
-		return CssTok{CssTokNumber, l.src[start:l.pos]}
+		return CssTok{Kind: CssTokNumber, Val: l.src[start:l.pos], Start: start, End: l.pos}
 	}
 
 	// ── Single-char tokens ─────────────────────────────────────────────────
+	start := l.pos
 	c := l.adv()
 	switch c {
 	case ':':
-		return CssTok{CssTokColon, ":"}
+		return CssTok{Kind: CssTokColon, Val: ":", Start: start, End: l.pos}
 	case ';':
-		return CssTok{CssTokSemi, ";"}
+		return CssTok{Kind: CssTokSemi, Val: ";", Start: start, End: l.pos}
 	case ',':
-		return CssTok{CssTokComma, ","}
+		return CssTok{Kind: CssTokComma, Val: ",", Start: start, End: l.pos}
 	case '{':
-		return CssTok{CssTokLBrace, "{"}
+		return CssTok{Kind: CssTokLBrace, Val: "{", Start: start, End: l.pos}
 	case '}':
-		return CssTok{CssTokRBrace, "}"}
+		return CssTok{Kind: CssTokRBrace, Val: "}", Start: start, End: l.pos}
 	case '(':
-		return CssTok{CssTokLParen, "("}
+		return CssTok{Kind: CssTokLParen, Val: "(", Start: start, End: l.pos}
 	case ')':
-		return CssTok{CssTokRParen, ")"}
+		return CssTok{Kind: CssTokRParen, Val: ")", Start: start, End: l.pos}
 	case '[':
-		return CssTok{CssTokLBracket, "["}
+		return CssTok{Kind: CssTokLBracket, Val: "[", Start: start, End: l.pos}
 	case ']':
-		return CssTok{CssTokRBracket, "]"}
+		return CssTok{Kind: CssTokRBracket, Val: "]", Start: start, End: l.pos}
 	}
-	return CssTok{CssTokDelim, string(c)}
+	return CssTok{Kind: CssTokDelim, Val: string(c), Start: start, End: l.pos}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -200,6 +203,7 @@ func (c *CssStylesheet) cssNode() {}
 
 // CssQualifiedRule holds a selector list + a declaration block.
 type CssQualifiedRule struct {
+	Span      SectionSpan
 	Selectors []*CssSelector // comma-separated list
 	Decls     []*CssDecl
 }
@@ -208,6 +212,7 @@ func (c *CssQualifiedRule) cssNode() {}
 
 // CssAtRule represents @media, @keyframes, @supports, etc.
 type CssAtRule struct {
+	Span    SectionSpan
 	Name    string    // e.g. "media", "keyframes", "supports"
 	Prelude string    // everything between @name and { or ;
 	Block   []CssNode // inner rules (nil for statement at-rules ending in ;)
@@ -220,11 +225,13 @@ func (c *CssAtRule) cssNode() {}
 // Parts is the raw token sequence; we keep tokens so we can accurately
 // insert the scoping attribute at the right position.
 type CssSelector struct {
+	Span  SectionSpan
 	Parts []CssTok // raw token stream for this selector
 }
 
 // CssDecl is a single property: value declaration.
 type CssDecl struct {
+	Span      SectionSpan
 	Prop      string
 	Value     string
 	Important bool
@@ -390,7 +397,7 @@ func splitSelectors(toks []CssTok) []*CssSelector {
 			current = current[:len(current)-1]
 		}
 		if len(current) > 0 {
-			selectors = append(selectors, &CssSelector{Parts: current})
+			selectors = append(selectors, &CssSelector{Span: SectionSpan{Start: current[0].Start, End: current[len(current)-1].End}, Parts: current})
 		}
 		current = nil
 	}
