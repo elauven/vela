@@ -424,6 +424,24 @@ func TestIfBranchSpansUseComponentSource(t *testing.T) {
 	}
 }
 
+func TestValidateTemplateASTRejectsEscapingStructuralSpans(t *testing.T) {
+	source := `<template>{#if visible}<p>{label}</p>{/if}{#each items as item}<p>{item}</p>{/each}{#await request}<p>loading</p>{/await}</template>`
+	sfc, err := parseSFC(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain := sfc.TemplateAST.Nodes[0].(*IfChainNode)
+	each := sfc.TemplateAST.Nodes[1].(*EachBlockNode)
+	await := sfc.TemplateAST.Nodes[2].(*AwaitBlockNode)
+	chain.Branches[0].Span.End = sfc.TemplateAST.Span.End + 1
+	each.Span.End = sfc.TemplateAST.Span.End + 1
+	await.Span.End = sfc.TemplateAST.Span.End + 1
+	issues := ValidateTemplateAST(sfc.TemplateAST)
+	if len(issues) != 3 {
+		t.Fatalf("validation issues = %+v, want three escaping structural span diagnostics", issues)
+	}
+}
+
 func TestCompileFileReportsCSSSyntaxDiagnostic(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "BrokenStyle.vela")

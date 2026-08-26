@@ -259,8 +259,11 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				for _, attr := range n.Attrs {
 					if attr == nil {
 						add(0, "component contains a nil attribute")
-					} else if attr.Expr != nil {
-						validateExpr(attr.Expr, attr.Pos, "component attribute")
+					} else {
+						checkSpan(attr.Span, "component attribute")
+						if attr.Expr != nil {
+							validateExpr(attr.Expr, attr.Pos, "component attribute")
+						}
 					}
 				}
 				for _, children := range n.Slots {
@@ -273,6 +276,7 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				}
 				walkNodes(n.Fallback)
 			case *EachBlockNode:
+				checkSpan(n.Span, "each block")
 				validateExpr(n.IterExpr, n.ExprPos, "#each iterable")
 				if n.EachKey != "" {
 					validateExpr(n.KeyAST, n.KeyPos, "#each key")
@@ -280,11 +284,13 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				walkNodes(n.Children)
 				walkNodes(n.ElseChildren)
 			case *AwaitBlockNode:
+				checkSpan(n.Span, "await block")
 				validateExpr(n.Expr, n.ExprPos, "#await promise")
 				walkNodes(n.PendingChildren)
 				walkNodes(n.ThenChildren)
 				walkNodes(n.CatchChildren)
 			case *IfChainNode:
+				checkSpan(n.Span, "if/key block")
 				if len(n.Branches) == 0 {
 					add(0, "if/key block has no branches")
 				}
@@ -296,6 +302,7 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 						add(0, "if/key block contains a nil branch")
 						continue
 					}
+					checkSpan(branch.Span, "if branch")
 					if branch.Cond != "" && branch.SyntheticCond == nil {
 						validateExpr(branch.Expr, branch.CondPos, "#if branch")
 					}
