@@ -250,8 +250,49 @@ func newCssStylesheet(src string, offset int) *CssStylesheet {
 	ss := ParseCSS(src)
 	ss.Source = src
 	ss.Span = SectionSpan{Start: offset, End: offset + len(src)}
+	offsetCSSSpans(ss, offset)
 	ss.Diagnostics = validateCSSSource(src)
 	return ss
+}
+
+// offsetCSSSpans translates parser-local CSS spans into the full component
+// source coordinate space owned by CssStylesheet.Span.
+func offsetCSSSpans(sheet *CssStylesheet, offset int) {
+	if sheet == nil || offset == 0 {
+		return
+	}
+	shift := func(span *SectionSpan) {
+		span.Start += offset
+		span.End += offset
+	}
+	var walk func([]CssNode)
+	walk = func(nodes []CssNode) {
+		for _, node := range nodes {
+			switch rule := node.(type) {
+			case *CssQualifiedRule:
+				shift(&rule.Span)
+				for _, selector := range rule.Selectors {
+					if selector == nil {
+						continue
+					}
+					shift(&selector.Span)
+					for i := range selector.Parts {
+						selector.Parts[i].Start += offset
+						selector.Parts[i].End += offset
+					}
+				}
+				for _, decl := range rule.Decls {
+					if decl != nil {
+						shift(&decl.Span)
+					}
+				}
+			case *CssAtRule:
+				shift(&rule.Span)
+				walk(rule.Block)
+			}
+		}
+	}
+	walk(sheet.Rules)
 }
 
 func ParseCSS(src string) *CssStylesheet {

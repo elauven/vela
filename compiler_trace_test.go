@@ -454,3 +454,22 @@ func TestValidateCssASTRejectsBrokenShapes(t *testing.T) {
 		t.Fatalf("issues = %+v, want structural CSS failures", issues)
 	}
 }
+
+func TestCSSStructuralSpansUseComponentSource(t *testing.T) {
+	source := `<style>@media screen { .card, .panel { color: red; } }</style><template><p>ok</p></template>`
+	sfc, err := parseSFC(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	media := sfc.StyleAST.Rules[0].(*CssAtRule)
+	if got := source[media.Span.Start:media.Span.End]; got != `@media screen { .card, .panel { color: red; } }` {
+		t.Fatalf("at-rule span = %q", got)
+	}
+	rule := media.Block[0].(*CssQualifiedRule)
+	if got := source[rule.Selectors[1].Span.Start:rule.Selectors[1].Span.End]; got != `.panel` {
+		t.Fatalf("selector span = %q", got)
+	}
+	if got := source[rule.Decls[0].Span.Start:rule.Decls[0].Span.End]; got != `color: red;` {
+		t.Fatalf("declaration span = %q", got)
+	}
+}
