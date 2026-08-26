@@ -507,6 +507,20 @@ func TestCSSStructuralSpansUseComponentSource(t *testing.T) {
 	}
 }
 
+func TestValidateCssASTRejectsEscapingSelectorTokenSpan(t *testing.T) {
+	source := `<style>.card { color: red; }</style><template><p>ok</p></template>`
+	sfc, err := parseSFC(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := sfc.StyleAST.Rules[0].(*CssQualifiedRule)
+	rule.Selectors[0].Parts[0].End = sfc.StyleAST.Span.End + 1
+	issues := ValidateCssAST(sfc.StyleAST)
+	if len(issues) == 0 || !strings.Contains(issues[0].Message, "selector token") {
+		t.Fatalf("issues = %+v, want escaping selector token span diagnostic", issues)
+	}
+}
+
 func TestValidateTemplateASTRejectsEscapingExpressionSpan(t *testing.T) {
 	expr := newTemplateExpr("count", 1)
 	expr.Span = SectionSpan{Start: 11, End: 30}

@@ -946,6 +946,17 @@ func ValidateCssAST(sheet *CssStylesheet) []CssParseDiagnostic {
 						add(0, "qualified rule contains an empty selector")
 					} else {
 						checkSpan(selector.Span, "selector")
+						for _, token := range selector.Parts {
+							span := SectionSpan{Start: token.Start, End: token.End}
+							if token.End <= token.Start {
+								add(0, "selector contains a token with an empty span")
+								continue
+							}
+							checkSpan(span, "selector token")
+							if selector.Span != (SectionSpan{}) && (span.Start < selector.Span.Start || span.End > selector.Span.End) {
+								add(0, "selector token span escapes selector")
+							}
+						}
 					}
 				}
 				for _, decl := range rule.Decls {
