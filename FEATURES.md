@@ -74,6 +74,7 @@ Store subscriptions are synchronous. `readable` starts on its first subscriber a
 | Minification and DCE | **Stable** | `--minify` | Includes conservative dead-binding elimination in addition to JS minification. |
 | Input AST dump | **Stable** | `--ast` | Emits `<name>.ast.json` for the parsed SFC/template AST. |
 | Generated JS AST dump | **Stable** | `--emit-gen-ast` | Emits `<name>.genast.json` for AST-codegen inspection. |
+| Compiler trace | **Experimental** | `--trace=build.trace.jsonl`, `--trace=-` | Appends one source-free `CompilationTraceV1` JSON record per component. File output is safe for parallel project builds. With `--trace=-`, stdout is JSONL only and human progress moves to stderr. Schema version 1 is additive-only within Vela 1.x; consumers must ignore unknown fields. Disabled by default, so it adds no timing, allocation, or I/O cost to ordinary compilation. |
 | Scope diagnostics | **Stable** | undeclared names, TDZ, redeclarations, invalid writes | Diagnostics use one-based UTF-16 positions; repeated template attributes keep their own source location. |
 | Actionable Vela diagnostics | **Stable** | <code>VELA-*</code> code, <code>help:</code> correction, DiagnosticsJSON(diags) | Stable codes cover common Svelte-like mistakes; JSON is compact for editor and AI tooling. |
 | Reactivity diagnostics | **Stable** | invalid derived writes, effects without reactive deps | Template references are also checked for undeclared names. |

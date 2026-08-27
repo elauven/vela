@@ -600,6 +600,31 @@ go test ./... -run TestBrowserSourceMap
 
 The suite skips with this installation instruction when Node, Playwright, or its Chromium binary is unavailable.
 
+## Compiler trace (experimental)
+
+Use `--trace=path.jsonl` to append one JSON record for every component
+compilation. Each line is a standalone, source-free `CompilationTraceV1`
+record: it includes schema version, a safe component ID, selected compiler
+options, completed/skipped/failed stages and durations, aggregate diagnostic
+counts, and aggregate AST/output metrics. It never serializes component source,
+generated JavaScript, diagnostic text, AST payloads, or absolute paths.
+
+```sh
+vela --project src --out dist --trace=build.trace.jsonl
+vela --project src --out dist --trace=- > build.trace.jsonl
+```
+
+`--trace=-` reserves stdout for JSONL; normal progress and warnings are written
+to stderr. The file sink serializes complete records under a mutex, so parallel
+project builds cannot interleave JSON fragments. Repeated watch recompiles append
+new records. A trace-write failure is reported after compilation, but does not
+roll back or modify an already generated `.js`, `.css`, or `.map` artifact.
+
+The current schema is `schemaVersion: 1`. New compatible fields may be added;
+tools should use the schema version and ignore unknown fields. Trace output is
+disabled by default and has no compilation-path timing, allocation, or I/O cost
+until enabled. Treat the schema as experimental while it is still version 1.
+
 ## Compiler diagnostics
 
 Compiler errors identify a one-based UTF-16 source position and, where a
