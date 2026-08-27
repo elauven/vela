@@ -150,6 +150,177 @@ func TestBrowserRuntimeKeepsFocusAcrossDeepEachUpdate(t *testing.T) {
 	})
 }
 
+// The audit fixtures below intentionally record the current runtime-cost
+// baseline. They are not acceptance tests for the eventual optimized
+// behaviour: tasks 021–025 will lower these counts and update the expectation
+// together with the implementation. Keeping the baseline executable makes the
+// cost and the affected generated path unambiguous.
+
+func TestBrowserRuntimeAuditDeepNoOpWrite(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let data = $state.deep({ value: 'ready' });
+  let probeCalls = 0;
+  function probe(value) {
+    probeCalls++;
+    return value;
+  }
+  function writeSameValue() {
+    probeCalls = 0;
+    data.value = data.value;
+    queueMicrotask(() => { globalThis.__velaAudit = { deepNoOpRenders: probeCalls }; });
+  }
+</script>
+<template>
+  <button class="same" @click={writeSameValue}>same</button>
+  <p class="value">{probe(data.value)}</p>
+</template>`}, "App.js", []rtStep{
+		{"click": "button.same"},
+		{"assertText": ".value", "equals": "ready"},
+		{"assertGlobal": "__velaAudit.deepNoOpRenders", "equals": 1},
+	})
+}
+
+func TestBrowserRuntimeAuditBurstSetterAndEffectWork(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let first = $state(0);
+  let second = $state(0);
+  let effectRuns = 0;
+  let domRuns = 0;
+  function sample(value) {
+    domRuns++;
+    return value;
+  }
+  $effect(() => {
+    first;
+    second;
+    effectRuns++;
+  });
+  function burst() {
+    effectRuns = 0;
+    domRuns = 0;
+    first = 1;
+    second = 1;
+    queueMicrotask(() => {
+      globalThis.__velaAudit = { burstEffectRuns: effectRuns, burstDOMRuns: domRuns };
+    });
+  }
+</script>
+<template>
+  <button class="burst" @click={burst}>burst</button>
+  <p class="value">{sample(first + second)}</p>
+</template>`}, "App.js", []rtStep{
+		{"click": "button.burst"},
+		{"assertText": ".value", "equals": "2"},
+		{"assertGlobal": "__velaAudit.burstEffectRuns", "equals": 2},
+		{"assertGlobal": "__velaAudit.burstDOMRuns", "equals": 2},
+	})
+}
+
+func TestBrowserRuntimeAuditKeyedDeepEachUpdatesEveryRow(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let rows = $state.deep([
+    { id: 1, label: 'one' },
+    { id: 2, label: 'two' },
+    { id: 3, label: 'three' },
+  ]);
+  let rowCalls = 0;
+  function label(row) {
+    rowCalls++;
+    return row.label;
+  }
+  function updateMiddle() {
+    const firstRow = document.querySelector('.row');
+    rowCalls = 0;
+    rows[1].label = 'two updated';
+    queueMicrotask(() => {
+      globalThis.__velaAudit = {
+        keyedRowUpdates: rowCalls,
+        firstRowPreserved: document.querySelector('.row') === firstRow,
+      };
+    });
+  }
+</script>
+<template>
+  <button class="update" @click={updateMiddle}>update</button>
+  {#each rows as row (row.id)}
+    <p class="row">{label(row)}</p>
+  {/each}
+</template>`}, "App.js", []rtStep{
+		{"click": "button.update"},
+		{"assertText": ".row:nth-of-type(2)", "equals": "two updated"},
+		{"assertGlobal": "__velaAudit.keyedRowUpdates", "equals": 3},
+		{"assertGlobal": "__velaAudit.firstRowPreserved", "equals": true},
+	})
+}
+
+func TestBrowserRuntimeAuditBindingRepeatsDOMValueWrite(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  const inputPrototype = document.createElement('input').constructor.prototype;
+  const valueDescriptor = Object.getOwnPropertyDescriptor(inputPrototype, 'value');
+  let valueWrites = 0;
+  Object.defineProperty(inputPrototype, 'value', {
+    configurable: true,
+    get: valueDescriptor.get,
+    set: function(next) {
+      valueWrites++;
+      return valueDescriptor.set.call(this, next);
+    },
+  });
+  let value = $state('');
+  function measureInput() {
+    valueWrites = 0;
+    queueMicrotask(() => {
+      globalThis.__velaAudit = { bindingValueWrites: valueWrites };
+    });
+  }
+  function dispatchNativeInput() {
+    const field = document.querySelector('input.field');
+    field.value = 'typed';
+    valueWrites = 0;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+</script>
+<template>
+  <input class="field" bind:value={value} @input={measureInput} />
+  <button class="dispatch" @click={dispatchNativeInput}>dispatch</button>
+</template>`}, "App.js", []rtStep{
+		{"click": "button.dispatch"},
+		{"assertValue": "input.field", "equals": "typed"},
+		{"assertGlobal": "__velaAudit.bindingValueWrites", "equals": 1},
+	})
+}
+
+func TestBrowserRuntimeAuditDestroyBeforeDeferredFlush(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  const textPrototype = Object.getPrototypeOf(
+    Object.getPrototypeOf(document.createTextNode(''))
+  );
+  const dataDescriptor = Object.getOwnPropertyDescriptor(textPrototype, 'data');
+  let detachedWrites = 0;
+  Object.defineProperty(textPrototype, 'data', {
+    configurable: true,
+    get: dataDescriptor.get,
+    set: function(next) {
+      if (!this.isConnected) detachedWrites++;
+      return dataDescriptor.set.call(this, next);
+    },
+  });
+  let value = $state('before');
+  function update() {
+    detachedWrites = 0;
+    value = 'after';
+    queueMicrotask(() => {
+      globalThis.__velaAudit = { detachedWrites: detachedWrites };
+    });
+  }
+</script>
+<template><button class="update" @click={update}>{value}</button></template>`}, "App.js", []rtStep{
+		{"clickAndDestroy": "button.update"},
+		{"assertCount": "button.update", "equals": 0},
+		{"assertGlobal": "__velaAudit.detachedWrites", "equals": 1},
+	})
+}
+
 func TestBrowserRuntimeComponentKeepsDirectChildCSSSelector(t *testing.T) {
 	runBrowserSources(t, map[string]string{
 		"App.vela": `<script>

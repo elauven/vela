@@ -77,6 +77,12 @@ try {
       document.body.replaceChildren();
       window.__velaInstance = window.__velaMount();
     }),
+    clickAndDestroy: (selector) => page.evaluate((targetSelector) => {
+      const target = document.querySelector(targetSelector);
+      if (!target) throw new Error('click-and-destroy target not found: ' + targetSelector);
+      target.click();
+      window.__velaInstance?.destroy();
+    }, selector),
     settle: async () => {
       for (let turn = 0; turn < 5; turn++) {
         await page.evaluate(() => Promise.resolve());

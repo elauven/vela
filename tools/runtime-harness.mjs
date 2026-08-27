@@ -24,6 +24,7 @@
 //   { "change": "<sel>", "checked": true }              set checked + dispatch change
 //   { "blur": "<sel>" }                       dispatch a blur event
 //   { "keydown": "<sel>", "key": "Enter" }              dispatch keyboard event
+//   { "clickAndDestroy": "<sel>" }                 click and destroy before queued work flushes
 //   { "tick": true }                                 await the microtask queue
 //
 // The harness registers a minimal $$defer on globalThis so reactive
@@ -191,6 +192,11 @@ const adapter = {
     if (typeof target.replaceChildren === 'function') target.replaceChildren();
     else target.textContent = '';
     instance = mount();
+  },
+  clickAndDestroy: (selector) => {
+    fixtureTarget(selector, 'click-and-destroy').dispatchEvent(
+      new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    if (instance && typeof instance.destroy === 'function') instance.destroy();
   },
   settle: flushMicrotasks,
 };

@@ -6,7 +6,7 @@
 const stepKeys = [
   'seedStorage', 'assertText', 'assertHTML', 'assertValue', 'assertStorage',
   'assertCount', 'assertFocused', 'assertStyle', 'assertGlobal', 'focus', 'click', 'dblclick',
-  'submit', 'input', 'change', 'blur', 'keydown', 'remount', 'tick',
+  'submit', 'input', 'change', 'blur', 'keydown', 'remount', 'clickAndDestroy', 'tick',
 ];
 
 function kindOf(step) {
@@ -138,6 +138,10 @@ export async function replayFixtureSteps(steps, adapter) {
           break;
         case 'remount':
           await adapter.remount();
+          await adapter.settle();
+          break;
+        case 'clickAndDestroy':
+          await adapter.clickAndDestroy(step.clickAndDestroy);
           await adapter.settle();
           break;
         case 'tick':
