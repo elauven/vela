@@ -159,15 +159,15 @@ func TestBrowserRuntimeKeepsFocusAcrossDeepEachUpdate(t *testing.T) {
 func TestBrowserRuntimeAuditDeepNoOpWrite(t *testing.T) {
 	runBrowserSources(t, map[string]string{"App.vela": `<script>
   let data = $state.deep({ value: 'ready' });
-  let probeCalls = 0;
+  const metrics = { probeCalls: 0 };
   function probe(value) {
-    probeCalls++;
+    metrics.probeCalls++;
     return value;
   }
   function writeSameValue() {
-    probeCalls = 0;
+    metrics.probeCalls = 0;
     data.value = data.value;
-    queueMicrotask(() => { globalThis.__velaAudit = { deepNoOpRenders: probeCalls }; });
+    queueMicrotask(() => { globalThis.__velaAudit = { deepNoOpRenders: metrics.probeCalls }; });
   }
 </script>
 <template>
@@ -184,24 +184,23 @@ func TestBrowserRuntimeAuditBurstSetterAndEffectWork(t *testing.T) {
 	runBrowserSources(t, map[string]string{"App.vela": `<script>
   let first = $state(0);
   let second = $state(0);
-  let effectRuns = 0;
-  let domRuns = 0;
+  const metrics = { effectRuns: 0, domRuns: 0 };
   function sample(value) {
-    domRuns++;
+    metrics.domRuns++;
     return value;
   }
   $effect(() => {
     first;
     second;
-    effectRuns++;
+    metrics.effectRuns++;
   });
   function burst() {
-    effectRuns = 0;
-    domRuns = 0;
+    metrics.effectRuns = 0;
+    metrics.domRuns = 0;
     first = 1;
     second = 1;
     queueMicrotask(() => {
-      globalThis.__velaAudit = { burstEffectRuns: effectRuns, burstDOMRuns: domRuns };
+      globalThis.__velaAudit = { burstEffectRuns: metrics.effectRuns, burstDOMRuns: metrics.domRuns };
     });
   }
 </script>
@@ -223,18 +222,18 @@ func TestBrowserRuntimeAuditKeyedDeepEachUpdatesEveryRow(t *testing.T) {
     { id: 2, label: 'two' },
     { id: 3, label: 'three' },
   ]);
-  let rowCalls = 0;
+  const metrics = { rowCalls: 0 };
   function label(row) {
-    rowCalls++;
+    metrics.rowCalls++;
     return row.label;
   }
   function updateMiddle() {
     const firstRow = document.querySelector('.row');
-    rowCalls = 0;
+    metrics.rowCalls = 0;
     rows[1].label = 'two updated';
     queueMicrotask(() => {
       globalThis.__velaAudit = {
-        keyedRowUpdates: rowCalls,
+        keyedRowUpdates: metrics.rowCalls,
         firstRowPreserved: document.querySelector('.row') === firstRow,
       };
     });
@@ -257,26 +256,26 @@ func TestBrowserRuntimeAuditBindingRepeatsDOMValueWrite(t *testing.T) {
 	runBrowserSources(t, map[string]string{"App.vela": `<script>
   const inputPrototype = document.createElement('input').constructor.prototype;
   const valueDescriptor = Object.getOwnPropertyDescriptor(inputPrototype, 'value');
-  let valueWrites = 0;
+  const metrics = { valueWrites: 0 };
   Object.defineProperty(inputPrototype, 'value', {
     configurable: true,
     get: valueDescriptor.get,
     set: function(next) {
-      valueWrites++;
+      metrics.valueWrites++;
       return valueDescriptor.set.call(this, next);
     },
   });
   let value = $state('');
   function measureInput() {
-    valueWrites = 0;
+    metrics.valueWrites = 0;
     queueMicrotask(() => {
-      globalThis.__velaAudit = { bindingValueWrites: valueWrites };
+      globalThis.__velaAudit = { bindingValueWrites: metrics.valueWrites };
     });
   }
   function dispatchNativeInput() {
     const field = document.querySelector('input.field');
     field.value = 'typed';
-    valueWrites = 0;
+    metrics.valueWrites = 0;
     field.dispatchEvent(new Event('input', { bubbles: true }));
   }
 </script>
@@ -296,21 +295,21 @@ func TestBrowserRuntimeAuditDestroyBeforeDeferredFlush(t *testing.T) {
     Object.getPrototypeOf(document.createTextNode(''))
   );
   const dataDescriptor = Object.getOwnPropertyDescriptor(textPrototype, 'data');
-  let detachedWrites = 0;
+  const metrics = { detachedWrites: 0 };
   Object.defineProperty(textPrototype, 'data', {
     configurable: true,
     get: dataDescriptor.get,
     set: function(next) {
-      if (!this.isConnected) detachedWrites++;
+      if (!this.isConnected) metrics.detachedWrites++;
       return dataDescriptor.set.call(this, next);
     },
   });
   let value = $state('before');
   function update() {
-    detachedWrites = 0;
+    metrics.detachedWrites = 0;
     value = 'after';
     queueMicrotask(() => {
-      globalThis.__velaAudit = { detachedWrites: detachedWrites };
+      globalThis.__velaAudit = { detachedWrites: metrics.detachedWrites };
     });
   }
 </script>
