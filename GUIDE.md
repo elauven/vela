@@ -11,7 +11,7 @@ build time.
 
 ### Runtime and scheduling
 
-Compiled components import the runtime helpers they need from a sibling `runtime.js` module. The project compiler stages that module automatically; application code should not copy or initialize it manually. State and prop updates use the runtime's microtask scheduler, so several synchronous updates coalesce before DOM work runs. The older global scheduler symbol exists solely for compatibility with the deprecated generator and is not part of the application authoring API.
+Compiled components import the runtime helpers they need from a sibling `runtime.js` module. The project compiler stages that module automatically; application code should not copy or initialize it manually. State and prop updates use the runtime's microtask scheduler, so several synchronous updates flush after the current call stack. Today this coalesces the flush boundary, not necessarily duplicate DOM writes or effect runs within it; applications should not rely on a particular count of effect invocations for a multi-state update. The older global scheduler symbol exists solely for compatibility with the deprecated generator and is not part of the application authoring API.
 
 ---
 
@@ -91,6 +91,11 @@ Built-ins such as `Date`, `Map`, `Set`, `Promise`, and typed arrays remain
 unwrapped; replace them through the state binding if a change must rerender the
 template.
 
+A deep mutation currently invalidates consumers of the whole binding. For a
+large list this means the reconciler rechecks its existing rows even when only
+one nested record changed. Keyed lists retain DOM identity, but this is not yet
+per-row reactive invalidation.
+
 ### `$derived` — computed value
 
 A value computed from other reactive state. It recomputes
@@ -129,9 +134,10 @@ logging, syncing to storage:
 ```
 
 The effect re-runs whenever any reactive value it *reads* changes
-— including a `$derived` whose upstream changed. Effects are
-batched: multiple state changes in the same tick coalesce into a
-single re-run, flushed on a microtask.
+— including a `$derived` whose upstream changed. The component scheduler
+flushes DOM work on a microtask. In the current runtime, an effect may run once
+per relevant setter in a synchronous update burst; write effects so repeated
+execution with the final state remains safe.
 
 An effect with **no** reactive reads runs once on mount and never
 again — the compiler warns and suggests `onMount` instead.
@@ -386,6 +392,11 @@ unchanged and creates one new row for `X`. The compiler emits a
 hint when it sees an unkeyed `{#each}` over a row that contains a
 child component — that's the shape where the positional default
 most often surprises.
+
+On a collection invalidation, the current keyed reconciler retains these row
+nodes but still calls each existing row's update path. Treat stable keys as a
+DOM-identity and correctness feature; they do not yet guarantee that only the
+changed record's dynamic expressions are evaluated.
 
 ### `{#key}` — keyed re-creation
 
