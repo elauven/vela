@@ -52,12 +52,12 @@ func TestASTGenOnlyParsesUserScriptAST(t *testing.T) {
 }
 
 // TestASTGenPrinterBoundaryInventory makes the two intentional printer uses
-// reviewable: final output and deterministic de-duplication of already-built
+// reviewable: scoped CSS output and deterministic keys for already-built
 // update statements. Neither result is ever parsed as JavaScript.
 func TestASTGenPrinterBoundaryInventory(t *testing.T) {
 	expected := map[string]int{
-		"generateCodeASTCSS/PrintJS": 1,
-		"buildSetterCascade/PrintJS": 1,
+		"generateCodeASTCSS/PrintJS":   1,
+		"reactiveFlushStmtKey/PrintJS": 1,
 	}
 	actual := namedCallInventory(t, "astgen.go", "PrintJS", "PrintExpr")
 	if !reflect.DeepEqual(actual, expected) {

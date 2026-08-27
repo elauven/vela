@@ -150,11 +150,10 @@ func TestBrowserRuntimeKeepsFocusAcrossDeepEachUpdate(t *testing.T) {
 	})
 }
 
-// The audit fixtures below intentionally record the current runtime-cost
-// baseline. They are not acceptance tests for the eventual optimized
-// behaviour: tasks 021–025 will lower these counts and update the expectation
-// together with the implementation. Keeping the baseline executable makes the
-// cost and the affected generated path unambiguous.
+// The audit fixtures below are executable runtime-cost regression contracts.
+// Tasks 021 and 022 have already tightened the deep-state and synchronous
+// flush counts; the remaining fixtures describe the next optimisation targets.
+// Keeping each count explicit makes its generated path unambiguous.
 
 func TestBrowserRuntimeAuditDeepNoOpWrite(t *testing.T) {
 	runBrowserSources(t, map[string]string{"App.vela": `<script>
@@ -264,8 +263,118 @@ func TestBrowserRuntimeAuditBurstSetterAndEffectWork(t *testing.T) {
 </template>`}, "App.js", []rtStep{
 		{"click": "button.burst"},
 		{"assertText": ".value", "equals": "2"},
-		{"assertGlobal": "__velaAudit.burstEffectRuns", "equals": 2},
-		{"assertGlobal": "__velaAudit.burstDOMRuns", "equals": 2},
+		{"assertGlobal": "__velaAudit.burstEffectRuns", "equals": 1},
+		{"assertGlobal": "__velaAudit.burstDOMRuns", "equals": 1},
+	})
+}
+
+func TestBrowserRuntimeCoalescesRepeatedStateAndDerivedFanout(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let count = $state(0);
+  let next = $derived(count + 1);
+  let doubled = $derived(count * 2);
+  const metrics = { effectRuns: 0, domRuns: 0 };
+  function sample(value) {
+    metrics.domRuns++;
+    return value;
+  }
+  $effect(() => {
+    next;
+    doubled;
+    metrics.effectRuns++;
+  });
+  function burst() {
+    metrics.effectRuns = 0;
+    metrics.domRuns = 0;
+    count = 1;
+    count = 2;
+    queueMicrotask(() => {
+      globalThis.__velaAudit = { repeatedEffectRuns: metrics.effectRuns, repeatedDOMRuns: metrics.domRuns };
+    });
+  }
+</script>
+<template>
+  <button class="burst" @click={burst}>burst</button>
+  <p class="value">{sample(next + doubled)}</p>
+</template>`}, "App.js", []rtStep{
+		{"click": "button.burst"},
+		{"assertText": ".value", "equals": "7"},
+		{"assertGlobal": "__velaAudit.repeatedEffectRuns", "equals": 1},
+		{"assertGlobal": "__velaAudit.repeatedDOMRuns", "equals": 1},
+	})
+}
+
+func TestBrowserRuntimeCoalescesNestedBlockFinalState(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let shown = $state(false);
+  let label = $state("before");
+  const metrics = { domRuns: 0 };
+  function sample(value) {
+    metrics.domRuns++;
+    return value;
+  }
+  function reveal() {
+    metrics.domRuns = 0;
+    shown = true;
+    label = "after";
+    queueMicrotask(() => {
+      globalThis.__velaAudit = { nestedDOMRuns: metrics.domRuns };
+    });
+  }
+</script>
+<template>
+  <button class="reveal" @click={reveal}>reveal</button>
+  {#if shown}<p class="value">{sample(label)}</p>{/if}
+</template>`}, "App.js", []rtStep{
+		{"click": "button.reveal"},
+		{"assertText": ".value", "equals": "after"},
+		{"assertGlobal": "__velaAudit.nestedDOMRuns", "equals": 1},
+	})
+}
+
+func TestBrowserRuntimeCoalescedFlushKeepsReentrantUpdates(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let source = $state(0);
+  let target = $state(0);
+  const metrics = { sourceEffects: 0, targetEffects: 0, domRuns: 0 };
+  function sample(value) {
+    metrics.domRuns++;
+    return value;
+  }
+  $effect(() => {
+    source;
+    metrics.sourceEffects++;
+    if (source === 1) target = 2;
+  });
+  $effect(() => {
+    target;
+    metrics.targetEffects++;
+  });
+  function trigger() {
+    metrics.sourceEffects = 0;
+    metrics.targetEffects = 0;
+    metrics.domRuns = 0;
+    source = 1;
+    queueMicrotask(() => {
+      queueMicrotask(() => {
+        globalThis.__velaAudit = {
+          reentrantSourceEffects: metrics.sourceEffects,
+          reentrantTargetEffects: metrics.targetEffects,
+          reentrantDOMRuns: metrics.domRuns,
+        };
+      });
+    });
+  }
+</script>
+<template>
+  <button class="trigger" @click={trigger}>trigger</button>
+  <p class="value">{sample(source + target)}</p>
+</template>`}, "App.js", []rtStep{
+		{"click": "button.trigger"},
+		{"assertText": ".value", "equals": "3"},
+		{"assertGlobal": "__velaAudit.reentrantSourceEffects", "equals": 1},
+		{"assertGlobal": "__velaAudit.reentrantTargetEffects", "equals": 1},
+		{"assertGlobal": "__velaAudit.reentrantDOMRuns", "equals": 2},
 	})
 }
 

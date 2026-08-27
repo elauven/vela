@@ -328,6 +328,18 @@ type ASTGen struct {
 	// addStructuralUpdate.
 	structuralUpdates map[string][]JsStmt
 
+	// updateStructuralOwners records structural reconcile functions that build
+	// a given ordinary update. When such a reconcile runs in a flush, its
+	// branch init already writes the final value, so the ordinary update can
+	// be skipped rather than writing the newly-created node twice.
+	updateStructuralOwners map[string][]string
+	structuralOwnerStack   []string
+
+	// flushPlan is assembled after template code generation and assigns a
+	// stable dirty flag to every unique structural/DOM update and effect.
+	// Setters only mark flags; one component-local $$flush replays them.
+	flushPlan *reactiveFlushPlan
+
 	// hoisted holds declarations that must ALWAYS live at component
 	// scope, even when emitted while captureScope has redirected
 	// the other buffers into a local scope (a slot-factory closure
@@ -460,6 +472,31 @@ func (g *ASTGen) addUpdate(dep string, stmt JsStmt) {
 		g.updates = map[string][]JsStmt{}
 	}
 	g.updates[dep] = append(g.updates[dep], stmt)
+	if len(g.structuralOwnerStack) == 0 || stmt == nil {
+		return
+	}
+	if g.updateStructuralOwners == nil {
+		g.updateStructuralOwners = map[string][]string{}
+	}
+	key := reactiveFlushStmtKey(stmt)
+	for _, owner := range g.structuralOwnerStack {
+		if owner == "" {
+			continue
+		}
+		g.updateStructuralOwners[key] = append(g.updateStructuralOwners[key], owner)
+	}
+}
+
+func (g *ASTGen) withStructuralOwner(owner string, fn func()) {
+	if owner == "" {
+		fn()
+		return
+	}
+	g.structuralOwnerStack = append(g.structuralOwnerStack, owner)
+	defer func() {
+		g.structuralOwnerStack = g.structuralOwnerStack[:len(g.structuralOwnerStack)-1]
+	}()
+	fn()
 }
 
 // declare routes a top-level declaration to the scope appropriate
@@ -537,6 +574,219 @@ func (g *ASTGen) addStructuralUpdate(dep string, stmt JsStmt) {
 		g.structuralUpdates = map[string][]JsStmt{}
 	}
 	g.structuralUpdates[dep] = append(g.structuralUpdates[dep], stmt)
+}
+
+type reactiveFlushEntry struct {
+	key  string
+	flag string
+	ran  string
+	stmt JsStmt
+}
+
+type reactiveFlushPlan struct {
+	entries     []reactiveFlushEntry
+	structural  []int
+	ordinary    []int
+	flagsByKey  map[string]string
+	effectFlags []string
+}
+
+func reactiveFlushStmtKey(stmt JsStmt) string {
+	return PrintJS(&JsProgram{Body: []JsStmt{stmt}}, PrintMinified)
+}
+
+func (p *reactiveFlushPlan) flagFor(stmt JsStmt) string {
+	if p == nil || stmt == nil {
+		return ""
+	}
+	return p.flagsByKey[reactiveFlushStmtKey(stmt)]
+}
+
+func (g *ASTGen) flushDependencyOrder() []string {
+	if g.analysis == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	add := func(name string) {
+		if name != "" && !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	for _, state := range g.analysis.StateVars {
+		add(state.Name)
+	}
+	for _, prop := range g.analysis.Props {
+		add(prop.Name)
+	}
+	for _, derived := range g.analysis.DerivedVars {
+		add(derived.Name)
+	}
+	return out
+}
+
+// buildReactiveFlushPlan emits one component-local scheduler. Setters mark
+// dirty flags and invoke $$scheduleFlush; the scheduled $$flush performs
+// structural reconciliation, ordinary DOM work, and effects in that order.
+//
+// Derived values remain synchronous in buildSetterCascade: user script may
+// read a derived immediately between two source-order assignments.
+func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
+	plan := &reactiveFlushPlan{flagsByKey: map[string]string{}}
+	register := func(stmt JsStmt, structural bool) {
+		if stmt == nil {
+			return
+		}
+		key := reactiveFlushStmtKey(stmt)
+		if index, exists := planIndex(plan.entries, key); exists {
+			if structural && !planHasIndex(plan.structural, index) {
+				plan.structural = append(plan.structural, index)
+				plan.entries[index].ran = "$$ran_s" + itoa(index)
+				plan.ordinary = planWithoutIndex(plan.ordinary, index)
+			}
+			return
+		}
+		prefix := "$$dirty_u"
+		if structural {
+			prefix = "$$dirty_s"
+		}
+		index := len(plan.entries)
+		entry := reactiveFlushEntry{
+			key:  key,
+			flag: prefix + itoa(index),
+			stmt: shareStmt(stmt),
+		}
+		if structural {
+			entry.ran = "$$ran_s" + itoa(index)
+		}
+		plan.entries = append(plan.entries, entry)
+		plan.flagsByKey[key] = entry.flag
+		if structural {
+			plan.structural = append(plan.structural, index)
+		} else {
+			plan.ordinary = append(plan.ordinary, index)
+		}
+	}
+	for _, dep := range g.flushDependencyOrder() {
+		for _, stmt := range g.structuralUpdates[dep] {
+			register(stmt, true)
+		}
+	}
+	for _, dep := range g.flushDependencyOrder() {
+		for _, stmt := range g.updates[dep] {
+			register(stmt, false)
+		}
+	}
+	if g.analysis != nil {
+		for i := range g.analysis.Effects {
+			plan.effectFlags = append(plan.effectFlags, "$$dirty_e"+itoa(i))
+		}
+	}
+	ownerRuns := map[string]string{}
+	for _, index := range plan.structural {
+		entry := plan.entries[index]
+		ownerRuns[entry.key] = entry.ran
+	}
+	g.flushPlan = plan
+	if len(plan.entries) == 0 && len(plan.effectFlags) == 0 {
+		return nil
+	}
+
+	var out []JsStmt
+	out = append(out, genLet("$$flushQueued", boolLit(false)))
+	for _, entry := range plan.entries {
+		out = append(out, genLet(entry.flag, boolLit(false)))
+	}
+	for _, index := range plan.structural {
+		out = append(out, genLet(plan.entries[index].ran, boolLit(false)))
+	}
+	for _, flag := range plan.effectFlags {
+		out = append(out, genLet(flag, boolLit(false)))
+	}
+
+	flushBody := []JsStmt{genAssignStmt(id("$$flushQueued"), boolLit(false))}
+	for _, index := range plan.structural {
+		flushBody = append(flushBody, genAssignStmt(id(plan.entries[index].ran), boolLit(false)))
+	}
+	appendEntry := func(index int, structural bool) {
+		entry := plan.entries[index]
+		body := []JsStmt{genAssignStmt(id(entry.flag), boolLit(false))}
+		if structural {
+			body = append(body, genAssignStmt(id(entry.ran), boolLit(true)), shareStmt(entry.stmt))
+		} else {
+			shouldRun := JsExpr(boolLit(true))
+			hasOwnerRun := false
+			for _, owner := range g.updateStructuralOwners[entry.key] {
+				structuralKey := reactiveFlushStmtKey(genInvoke(owner))
+				if ran := ownerRuns[structuralKey]; ran != "" {
+					hasOwnerRun = true
+					shouldRun = genLogical("&&", shouldRun, genUnary("!", id(ran)))
+				}
+			}
+			if hasOwnerRun {
+				body = append(body, genIf(shouldRun, shareStmt(entry.stmt)))
+			} else {
+				body = append(body, shareStmt(entry.stmt))
+			}
+		}
+		flushBody = append(flushBody, genIf(id(entry.flag), genBlock(body...)))
+	}
+	for _, index := range plan.structural {
+		appendEntry(index, true)
+	}
+	for _, index := range plan.ordinary {
+		appendEntry(index, false)
+	}
+	for i, flag := range plan.effectFlags {
+		flushBody = append(flushBody, genIf(id(flag), genBlock(
+			genAssignStmt(id(flag), boolLit(false)),
+			genInvoke("$$effect"+itoa(i)),
+		)))
+	}
+	out = append(out, &JsFuncDecl{
+		baseStmt: baseStmt{genNode()},
+		Name:     "$$flush",
+		Body:     genBlock(flushBody...),
+	})
+	out = append(out, &JsFuncDecl{
+		baseStmt: baseStmt{genNode()},
+		Name:     "$$scheduleFlush",
+		Body: genBlock(
+			genIf(id("$$flushQueued"), genReturn(nil)),
+			genAssignStmt(id("$$flushQueued"), boolLit(true)),
+			genInvoke("$$defer", id("$$flush")),
+		),
+	})
+	return out
+}
+
+func planIndex(entries []reactiveFlushEntry, key string) (int, bool) {
+	for index, entry := range entries {
+		if entry.key == key {
+			return index, true
+		}
+	}
+	return 0, false
+}
+
+func planHasIndex(indices []int, wanted int) bool {
+	for _, index := range indices {
+		if index == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func planWithoutIndex(indices []int, unwanted int) []int {
+	out := indices[:0]
+	for _, index := range indices {
+		if index != unwanted {
+			out = append(out, index)
+		}
+	}
+	return out
 }
 
 // capturedScope holds the statements a builder function emitted
@@ -1291,6 +1541,10 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	fnBody.Body = append(fnBody.Body, g.body...)
 
 	// ── Reactive setters (blocks 5-6) ────────────────────────
+	// All template sites have been registered by buildDOM, so construct the
+	// component-local dirty flush plan immediately before the setters that
+	// mark it.
+	fnBody.Body = append(fnBody.Body, g.buildReactiveFlushPlan()...)
 	fnBody.Body = append(fnBody.Body, g.buildSetters()...)
 
 	// ── Event listeners (block 7) ────────────────────────────
@@ -2002,8 +2256,8 @@ func (g *ASTGen) buildSetters() []JsStmt {
 }
 
 // buildSetterCascade builds the reactive cascade for a state/prop
-// var: recompute dependent derived, $$defer the DOM updates
-// (direct + transitive), re-run dependent effects.  Shared by the
+// var: recompute dependent derived immediately, then mark the relevant DOM
+// sites and effects for the component-local microtask flush. Shared by the
 // plain combined setter and the deep-state notify function.
 func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 	var out []JsStmt
@@ -2048,17 +2302,14 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 			}
 		}
 	}
-
-	// 2. DOM updates — direct (read name) + transitive (read a
-	//    dependent derived).  De-duplicated by source text.
-	//    Structural re-renders (chain mount/unmount) come FIRST so
-	//    that a branch toggled off tears down — nulling its guard
-	//    var — before any of its now-stale interior updates run.
+	// 2. DOM updates - direct (read name) + transitive (read a
+	//    dependent derived). Structural re-renders come FIRST so a branch
+	//    that closes nulls its interior handles before ordinary writes run.
 	seen := map[string]bool{}
 	var updates []JsStmt
 	add := func(stmts []JsStmt) {
 		for _, s := range stmts {
-			key := PrintJS(&JsProgram{Body: []JsStmt{s}}, PrintMinified)
+			key := reactiveFlushStmtKey(s)
 			if seen[key] {
 				continue
 			}
@@ -2066,41 +2317,35 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 			updates = append(updates, shareStmt(s))
 		}
 	}
-	// Structural first: for `name` and every transitively-dirtied
-	// derived.
 	add(g.structuralUpdates[name])
 	for _, dv := range dependentDerived {
 		add(g.structuralUpdates[dv.Name])
 	}
-	// Then the ordinary interior updates.
 	add(g.updates[name])
 	for _, dv := range dependentDerived {
 		add(g.updates[dv.Name])
 	}
-	if len(updates) > 0 {
-		deferBody := &JsBlock{baseStmt: baseStmt{genNode()}}
-		deferBody.Body = append(deferBody.Body, updates...)
-		out = append(out, &JsExprStmt{
-			baseStmt: baseStmt{genNode()},
-			X: &JsCallExpr{
-				baseExpr: baseExpr{genNode()},
-				Callee:   id("$$defer"),
-				Args: []JsExpr{&JsArrowFunc{
-					baseExpr: baseExpr{genNode()},
-					Body:     deferBody,
-				}},
-			},
-		})
+
+	// Setters mark component-local flags instead of enqueueing a fresh closure.
+	// One $$scheduleFlush call coalesces all synchronous setter work into a
+	// single $$flush with final state values.
+	marked := map[string]bool{}
+	mark := func(flag string) {
+		if flag == "" || marked[flag] {
+			return
+		}
+		marked[flag] = true
+		out = append(out, genAssignStmt(id(flag), boolLit(true)))
+	}
+	for _, stmt := range updates {
+		if g.flushPlan != nil {
+			mark(g.flushPlan.flagFor(stmt))
+		}
 	}
 
-	// 3. Re-run dependent effects.  An effect re-runs when it
-	//    reads `name` directly OR reads any derived that `name`
-	//    transitively dirtied — `dirty` already holds that full
-	//    closure (step 1).  Checking only `name` here would miss
-	//    an effect that reads a $derived whose upstream changed
-	//    (e.g. an effect reading `previewHtml = $derived(...md...)`
-	//    would never re-run on a markdownText edit).
-	if g.analysis != nil {
+	// 3. Re-run dependent effects in the same flush. Effects therefore see
+	//    final state and derived values once per synchronous setter burst.
+	if g.analysis != nil && g.flushPlan != nil {
 		for i, eff := range g.analysis.Effects {
 			effDirty := false
 			for _, d := range eff.Deps {
@@ -2109,10 +2354,13 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 					break
 				}
 			}
-			if effDirty {
-				out = append(out, genInvoke("$$effect"+itoa(i)))
+			if effDirty && i < len(g.flushPlan.effectFlags) {
+				mark(g.flushPlan.effectFlags[i])
 			}
 		}
+	}
+	if len(marked) > 0 {
+		out = append(out, genInvoke("$$scheduleFlush"))
 	}
 	return out
 }
@@ -3484,52 +3732,54 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 	}
 
 	for i, branch := range chain.Branches {
-		g.withBranchTemplateBindings(branch, func() {
-			bv := fn + "_b" + itoa(i)
-			frag := bv + "_frag"
-			if allStatic(branch.Children) {
-				html := emitStaticHTML(branch.Children, g.scopeID)
-				plans[i].build = []JsStmt{genInvoke("$$insertHTML", id(frag), strLit(html))}
-				return
-			}
-			if astHoleSubtreeOK(branch.Children) {
-				sub := g.buildHoleSubtree(frag, branch.Children, true, bv, false, true)
-				if captured {
-					for _, decl := range sub.decls {
-						g.declare(decl)
+		g.withStructuralOwner(fn, func() {
+			g.withBranchTemplateBindings(branch, func() {
+				bv := fn + "_b" + itoa(i)
+				frag := bv + "_frag"
+				if allStatic(branch.Children) {
+					html := emitStaticHTML(branch.Children, g.scopeID)
+					plans[i].build = []JsStmt{genInvoke("$$insertHTML", id(frag), strLit(html))}
+					return
+				}
+				if astHoleSubtreeOK(branch.Children) {
+					sub := g.buildHoleSubtree(frag, branch.Children, true, bv, false, true)
+					if captured {
+						for _, decl := range sub.decls {
+							g.declare(decl)
+						}
+					} else {
+						g.body = append(g.body, sub.decls...)
 					}
-				} else {
-					g.body = append(g.body, sub.decls...)
+					plans[i].build = sub.build
+					plans[i].init = sub.initUpdates
+					plans[i].captured = sub.captured
+					return
 				}
-				plans[i].build = sub.build
-				plans[i].init = sub.initUpdates
-				plans[i].captured = sub.captured
-				return
-			}
 
-			// Dynamic element branches use the ordinary recursive DOM builder,
-			// captured as a branch-local AST plan.  Its element references are
-			// hoisted by inBranchScope so setter cascades can safely update a
-			// mounted branch and no source-bearing expression is serialized.
-			tdMark := len(g.nestedTeardowns)
-			wasBranchScope := g.inBranchScope
-			cap := g.captureScope(func() {
-				g.inBranchScope = true
-				defer func() { g.inBranchScope = wasBranchScope }()
-				g.buildChildRun(branch.Children, frag)
-			})
-			plans[i].build = append(cap.body, cap.events...)
-			plans[i].init = cap.initBody
-			plans[i].cleanup = cap.cleanup
-			plans[i].comps = cap.comps
-			plans[i].nestedTeardowns = append([]JsStmt{}, g.nestedTeardowns[tdMark:]...)
-			g.fragHoisted = append(g.fragHoisted, cap.fragHoisted...)
-			g.compInstances = append(g.compInstances, cap.comps...)
-			for dep, stmts := range cap.updates {
-				for _, stmt := range stmts {
-					g.addUpdate(dep, guardedTemplateStmt(stmt, bv))
+				// Dynamic element branches use the ordinary recursive DOM builder,
+				// captured as a branch-local AST plan.  Its element references are
+				// hoisted by inBranchScope so setter cascades can safely update a
+				// mounted branch and no source-bearing expression is serialized.
+				tdMark := len(g.nestedTeardowns)
+				wasBranchScope := g.inBranchScope
+				cap := g.captureScope(func() {
+					g.inBranchScope = true
+					defer func() { g.inBranchScope = wasBranchScope }()
+					g.buildChildRun(branch.Children, frag)
+				})
+				plans[i].build = append(cap.body, cap.events...)
+				plans[i].init = cap.initBody
+				plans[i].cleanup = cap.cleanup
+				plans[i].comps = cap.comps
+				plans[i].nestedTeardowns = append([]JsStmt{}, g.nestedTeardowns[tdMark:]...)
+				g.fragHoisted = append(g.fragHoisted, cap.fragHoisted...)
+				g.compInstances = append(g.compInstances, cap.comps...)
+				for dep, stmts := range cap.updates {
+					for _, stmt := range stmts {
+						g.addUpdate(dep, guardedTemplateStmt(stmt, bv))
+					}
 				}
-			}
+			})
 		})
 	}
 

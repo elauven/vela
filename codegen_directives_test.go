@@ -81,15 +81,15 @@ func TestDir_ClassDirectiveRegistersUpdate(t *testing.T) {
 	if !strings.Contains(out, "function $$set_active(") {
 		t.Fatalf("missing setter:\n%s", out)
 	}
-	// Find the setter body and ensure it contains the toggle call.
+	// Find the setter body and ensure it schedules the toggle update.
 	idx := strings.Index(out, "function $$set_active(")
 	end := strings.Index(out[idx:], "\n  }\n")
 	if end < 0 {
 		t.Fatalf("can't find setter end")
 	}
 	setterBody := out[idx : idx+end]
-	if !strings.Contains(setterBody, "classList.toggle('active'") {
-		t.Fatalf("setter doesn't refresh class:active toggle:\n%s", setterBody)
+	if !strings.Contains(out, "classList.toggle('active'") || !strings.Contains(setterBody, "$$dirty_u") || !strings.Contains(setterBody, "$$scheduleFlush()") {
+		t.Fatalf("setter does not mark and schedule class:active refresh:\n%s", setterBody)
 	}
 }
 

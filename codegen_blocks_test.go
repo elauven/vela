@@ -119,7 +119,7 @@ func TestKey_RegistersUpdateOnKeyDeps(t *testing.T) {
   {/key}
 </template>`
 	out := compileGenerated(t, src)
-	// $$set_id should trigger the chain function in its $$defer body.
+	// $$set_id should mark and schedule the chain update for the component flush.
 	idx := strings.Index(out, "function $$set_id(")
 	if idx < 0 {
 		t.Fatalf("missing $$set_id:\n%s", out)
@@ -130,8 +130,8 @@ func TestKey_RegistersUpdateOnKeyDeps(t *testing.T) {
 		endIdx = len(tail)
 	}
 	setterBody := tail[:endIdx]
-	if !strings.Contains(setterBody, "$$chain_") {
-		t.Fatalf("$$set_id doesn't trigger the chain:\n%s", setterBody)
+	if !strings.Contains(setterBody, "$$dirty_s") || !strings.Contains(setterBody, "$$scheduleFlush()") {
+		t.Fatalf("$$set_id does not mark and schedule its structural chain update:\n%s", setterBody)
 	}
 }
 
@@ -250,7 +250,7 @@ func TestAwait_DriverReRunsOnPromiseChange(t *testing.T) {
   {#await p}p{/await}
 </template>`
 	out := compileGenerated(t, src)
-	// $$set_p's $$defer body should include a call to the driver.
+	// $$set_p should mark and schedule the driver update for the component flush.
 	idx := strings.Index(out, "function $$set_p(")
 	if idx < 0 {
 		t.Fatalf("missing $$set_p:\n%s", out)
@@ -261,8 +261,8 @@ func TestAwait_DriverReRunsOnPromiseChange(t *testing.T) {
 		end = len(tail)
 	}
 	setter := tail[:end]
-	if !strings.Contains(setter, "$$awaitDrive_") {
-		t.Fatalf("$$set_p doesn't call the driver:\n%s", setter)
+	if !strings.Contains(out, "$$awaitDrive_") || !strings.Contains(setter, "$$dirty_u") || !strings.Contains(setter, "$$scheduleFlush()") {
+		t.Fatalf("$$set_p does not mark and schedule the await driver update:\n%s", setter)
 	}
 }
 
