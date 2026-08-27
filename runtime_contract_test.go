@@ -133,6 +133,34 @@ assert(deepNotifications === beforeDeepMutation + 1, 'nested write must notify e
 beforeDeepMutation = deepNotifications;
 delete deep.nested.value;
 assert(deepNotifications === beforeDeepMutation + 1, 'nested delete must notify exactly once');
+beforeDeepMutation = deepNotifications;
+deep.nested.missing = undefined;
+assert(deepNotifications === beforeDeepMutation + 1,
+  'adding an absent key must notify even when its value is undefined');
+beforeDeepMutation = deepNotifications;
+deep.nested.missing = undefined;
+assert(deepNotifications === beforeDeepMutation,
+  'equal nested write must not notify');
+beforeDeepMutation = deepNotifications;
+delete deep.nested.missing;
+assert(deepNotifications === beforeDeepMutation + 1,
+  'deleting an existing nested key must notify');
+beforeDeepMutation = deepNotifications;
+delete deep.nested.missing;
+assert(deepNotifications === beforeDeepMutation,
+  'deleting a missing nested key must not notify');
+beforeDeepMutation = deepNotifications;
+deep.nested.items = [];
+assert(deepNotifications === beforeDeepMutation + 1,
+  'adding a nested array must notify once');
+beforeDeepMutation = deepNotifications;
+deep.nested.items.push('first');
+assert(deepNotifications === beforeDeepMutation + 1,
+  'one Array#push must notify once, not once per Proxy trap');
+beforeDeepMutation = deepNotifications;
+deep.nested.items.splice(0, 0, 'zero');
+assert(deepNotifications === beforeDeepMutation + 1,
+  'one Array#splice must notify once, not once per Proxy trap');
 
 console.log('OK');
 

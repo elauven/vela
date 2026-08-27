@@ -353,9 +353,59 @@ export function $$insertHTML($$t, $$h) {
 // $$proxy wraps a value in a recursive, WeakMap-cached Proxy so a
 // nested mutation fires the same `notify` path as a whole-value
 // reassignment.  Backs $state.deep.
+//
+// Notification is value-aware: assigning an equal value or deleting
+// a missing key is a no-op. Native mutating Array methods use one
+// local transaction, so their several Proxy traps publish at most
+// one component invalidation.
 export function $$proxy(val, notify) {
   if (val === null || typeof val !== 'object') return val;
   const cache = new WeakMap();
+  const rawByProxy = new WeakMap();
+  const arrayMethods = new WeakMap();
+  let mutationDepth = 0;
+  let mutationPending = false;
+
+  const mutatingArrayMethods = new Set([
+    'copyWithin', 'fill', 'pop', 'push', 'reverse', 'shift', 'sort',
+    'splice', 'unshift',
+  ]);
+
+  const unwrap = (value) => rawByProxy.get(value) || value;
+  const changed = () => {
+    if (mutationDepth > 0) {
+      mutationPending = true;
+      return;
+    }
+    notify();
+  };
+  const runArrayMutation = (target, key, receiver, method) => {
+    let methods = arrayMethods.get(target);
+    if (!methods) {
+      methods = new Map();
+      arrayMethods.set(target, methods);
+    }
+    const cached = methods.get(key);
+    if (cached && cached.method === method) return cached.wrapped;
+    const wrapped = function(...args) {
+      // Preserve native extraction/call semantics. Only a method invoked with
+      // this proxy as its receiver owns this deep-state notification batch;
+      // `const push = list.push; push()` must still throw like Array#push.
+      if (this !== receiver) return Reflect.apply(method, this, args.map(unwrap));
+      mutationDepth++;
+      try {
+        return Reflect.apply(method, receiver, args.map(unwrap));
+      } finally {
+        mutationDepth--;
+        if (mutationDepth === 0 && mutationPending) {
+          mutationPending = false;
+          notify();
+        }
+      }
+    };
+    methods.set(key, { method, wrapped });
+    return wrapped;
+  };
   const wrap = (v) => {
     if (v === null || typeof v !== 'object') return v;
     // Exotic built-ins (Promise, Date, RegExp, Map, Set, WeakMap,
@@ -378,19 +428,38 @@ export function $$proxy(val, notify) {
     let p = cache.get(v);
     if (p) return p;
     p = new Proxy(v, {
-      get(t, k) {
+      get(t, k, receiver) {
         // Brand: lets a component prop setter recognise a deep
         // ($state.deep) proxy and skip the identity-equality guard
         // that would otherwise suppress a re-render after an
         // in-place mutation (the reference is unchanged but the
         // contents are not).
         if (k === $$PROXY_BRAND) return true;
-        return wrap(t[k]);
+        const value = Reflect.get(t, k, receiver);
+        if (Array.isArray(t) && typeof k === 'string' &&
+            mutatingArrayMethods.has(k) && typeof value === 'function') {
+          return runArrayMutation(t, k, receiver, value);
+        }
+        return wrap(value);
       },
-      set(t, k, x) { t[k] = x; notify(); return true; },
-      deleteProperty(t, k) { delete t[k]; notify(); return true; },
+      set(t, k, x, receiver) {
+        const hadOwn = Object.prototype.hasOwnProperty.call(t, k);
+        const before = Reflect.get(t, k, receiver);
+        const ok = Reflect.set(t, k, unwrap(x), receiver);
+        const hasOwn = Object.prototype.hasOwnProperty.call(t, k);
+        if (ok && (hadOwn !== hasOwn ||
+            !Object.is(before, Reflect.get(t, k, receiver)))) changed();
+        return ok;
+      },
+      deleteProperty(t, k) {
+        if (!Object.prototype.hasOwnProperty.call(t, k)) return true;
+        const ok = Reflect.deleteProperty(t, k);
+        if (ok) changed();
+        return ok;
+      },
     });
     cache.set(v, p);
+    rawByProxy.set(p, v);
     return p;
   };
   return wrap(val);

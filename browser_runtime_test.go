@@ -176,7 +176,61 @@ func TestBrowserRuntimeAuditDeepNoOpWrite(t *testing.T) {
 </template>`}, "App.js", []rtStep{
 		{"click": "button.same"},
 		{"assertText": ".value", "equals": "ready"},
-		{"assertGlobal": "__velaAudit.deepNoOpRenders", "equals": 1},
+		{"assertGlobal": "__velaAudit.deepNoOpRenders", "equals": 0},
+	})
+}
+
+func TestBrowserRuntimeDeepArrayMutationRerendersOnce(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let items = $state.deep([3, 2, 1]);
+  const metrics = { renders: 0 };
+  function render(values) {
+    metrics.renders++;
+    return values.join(',');
+  }
+  function record(operation) {
+    queueMicrotask(() => {
+      globalThis.__velaAudit = {
+        arrayOperation: operation,
+        arrayRenders: metrics.renders,
+      };
+    });
+  }
+  function push() {
+    metrics.renders = 0;
+    items.push(4);
+    record('push');
+  }
+  function splice() {
+    metrics.renders = 0;
+    items.splice(1, 1, 7);
+    record('splice');
+  }
+  function sort() {
+    metrics.renders = 0;
+    items.sort();
+    record('sort');
+  }
+</script>
+<template>
+  <button class="push" @click={push}>push</button>
+  <button class="splice" @click={splice}>splice</button>
+  <button class="sort" @click={sort}>sort</button>
+  <p class="values">{render(items)}</p>
+  {#each items as item (item)}<span class="row">{item}</span>{/each}
+</template>`}, "App.js", []rtStep{
+		{"click": "button.push"},
+		{"assertText": ".values", "equals": "3,2,1,4"},
+		{"assertGlobal": "__velaAudit.arrayOperation", "equals": "push"},
+		{"assertGlobal": "__velaAudit.arrayRenders", "equals": 1},
+		{"click": "button.splice"},
+		{"assertText": ".values", "equals": "3,7,1,4"},
+		{"assertGlobal": "__velaAudit.arrayOperation", "equals": "splice"},
+		{"assertGlobal": "__velaAudit.arrayRenders", "equals": 1},
+		{"click": "button.sort"},
+		{"assertText": ".values", "equals": "1,3,4,7"},
+		{"assertGlobal": "__velaAudit.arrayOperation", "equals": "sort"},
+		{"assertGlobal": "__velaAudit.arrayRenders", "equals": 1},
 	})
 }
 
