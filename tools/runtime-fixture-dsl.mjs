@@ -5,7 +5,7 @@
 
 const stepKeys = [
   'seedStorage', 'assertText', 'assertHTML', 'assertValue', 'assertStorage',
-  'assertCount', 'assertFocused', 'assertStyle', 'focus', 'click', 'dblclick',
+  'assertCount', 'assertFocused', 'assertStyle', 'assertGlobal', 'focus', 'click', 'dblclick',
   'submit', 'input', 'change', 'blur', 'keydown', 'remount', 'tick',
 ];
 
@@ -94,6 +94,14 @@ export async function replayFixtureSteps(steps, adapter) {
             failures.push(tag + ': style ' + step.property + ' of ' +
               step.assertStyle + ' = ' + quoted(got) + ', want ' +
               quoted(step.equals));
+          }
+          break;
+        }
+        case 'assertGlobal': {
+          const got = await adapter.global(step.assertGlobal);
+          if (!Object.is(got, step.equals)) {
+            failures.push(tag + ': global ' + quoted(step.assertGlobal) +
+              ' = ' + quoted(got) + ', want ' + quoted(step.equals));
           }
           break;
         }

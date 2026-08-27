@@ -37,9 +37,22 @@ compiler. It describes the single direct AST code-generation pipeline.
 
 The compiler imports `$$defer` directly from that module for every component with state or props. Reactive DOM work therefore uses the shared microtask scheduler regardless of template helpers or module evaluation order.
 
+The scheduler currently coalesces the time at which synchronous work flushes,
+but not duplicate component update closures within that flush. Likewise, an
+effect that depends on two state values can currently run once for each setter
+in a synchronous update burst. This is a tracked performance limitation
+(`tasks/022-coalesce-component-reactive-flush-work.md`), not a correctness
+guarantee about the number of writes.
+
 Store subscriptions are synchronous. `readable` starts on its first subscriber and stops after its last; `derived` subscribes lazily and its `destroy()` method is final and idempotent. Subscriber and deferred-callback failures are reported after later and reentrant callbacks have drained, so one bad callback does not leave queued DOM work stranded.
 
 `$state.deep` proxies ordinary objects and arrays recursively. Repeated reads preserve proxy identity, cyclic plain-object graphs are supported, and built-ins that require internal slots (for example `Date`, `Promise`, `Map`, and typed arrays) deliberately remain unwrapped.
+
+Deep-state notifications are currently root-granular: a nested mutation
+invalidates consumers of the whole binding. The current Proxy also notifies on
+some JavaScript no-op traps and may observe more than one trap for one array
+method call. This preserves visible correctness but is a tracked runtime-cost
+limitation (`tasks/021-avoid-redundant-deep-state-notifications.md`).
 
 ## Template and component features
 
@@ -52,7 +65,7 @@ Store subscriptions are synchronous. `readable` starts on its first subscriber a
 | DOM bindings | **Stable** | `bind:value={name}`, `bind:checked={done}`, `bind:this={input}` | Includes common input, checkbox, select, textarea, and element-reference cases. |
 | Conditional rendering | **Stable** | `{#if open}...{:else if other}...{:else}...{/if}` | Branches mount and tear down around comment anchors without wrapper elements. |
 | List rendering | **Stable** | `{#each items as item, i}...{:else}...{/each}` | Unkeyed rows update in place where possible. |
-| Keyed lists | **Stable** | `{#each items as item (item.id)}` | Reconciles rows by key. |
+| Keyed lists | **Stable** | `{#each items as item (item.id)}` | Reconciles DOM rows by key. Existing rows are currently revisited on a list invalidation; precise changed-row updates are tracked in task 023. |
 | Key blocks | **Stable** | `{#key userId}<Card />{/key}` | Recreates its subtree when the key changes. |
 | Await blocks | **Stable** | `{#await promise}...{:then value}...{:catch err}{/await}` | Pending, fulfilled, rejected, stale-promise handling, and `{#await promise then value}` / `{#await promise catch err}` shortcuts are supported. |
 | Components | **Stable** | `<Card title={title} />` | Components are compiled ES-module functions with `set()` and `destroy()`. |
@@ -102,7 +115,12 @@ the generated ES modules in jsdom, stage declared local JavaScript utility modul
 and call `instance.destroy()`. The shared Go helpers are in
 `runtime_behaviour_test.go`; the Node driver is `tools/runtime-harness.mjs`.
 
-The shared fixture DSL supports text, HTML, value, storage, count, focus, and style assertions; focus, click, double-click, submit, input, change, blur, keyboard, tick, and remount actions. Both jsdom and Chromium harnesses replay the same steps. The jsdom suite skips when Node or jsdom is unavailable; it complements, rather than replaces, real-browser compatibility coverage.
+The shared fixture DSL supports text, HTML, value, storage, count, focus,
+style, and fixture-owned `globalThis` metric assertions; focus, click,
+double-click, submit, input, change, blur, keyboard, tick, and remount
+actions. Both jsdom and Chromium harnesses replay the same steps. The jsdom
+suite skips when Node or jsdom is unavailable; it complements, rather than
+replaces, real-browser compatibility coverage.
 
 | Fixture group | What it proves | Representative tests |
 | --- | --- | --- |

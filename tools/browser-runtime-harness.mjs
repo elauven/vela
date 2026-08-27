@@ -51,6 +51,8 @@ try {
     html: async (selector) => page.locator(selector).first().evaluate(element => element.innerHTML),
     value: async (selector) => page.locator(selector).first().inputValue(),
     storage: (key) => page.evaluate(value => localStorage.getItem(value), key),
+    global: (path) => page.evaluate((valuePath) => String(valuePath).split('.').reduce(
+      (value, key) => value == null ? undefined : value[key], globalThis), path),
     count: (selector) => page.locator(selector).count(),
     focused: (selector) => page.locator(selector).first().evaluate(element => document.activeElement === element),
     style: (selector, property) => page.locator(selector).first().evaluate(

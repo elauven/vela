@@ -15,6 +15,7 @@
 //   { "assertText":   "<sel>", "equals": "<str>" }   textContent of first match
 //   { "assertHTML":   "<sel>", "contains": "<str>" } innerHTML contains
 //   { "assertCount":  "<sel>", "equals":  N }        number of matches
+//   { "assertGlobal": "<path>", "equals": value }     globalThis metric value
 //   { "assertStorage": "<key>", "contains": "<str>" } localStorage item contains text
 //   { "seedStorage": { "key": "value" } }          pre-mount localStorage entries
 //   { "click":        "<sel>" }                      dispatch a click
@@ -137,6 +138,11 @@ function fixtureTarget(selector, action) {
   return element;
 }
 
+function globalValue(path) {
+  return String(path).split('.').reduce(
+    (value, key) => value == null ? undefined : value[key], globalThis);
+}
+
 const adapter = {
   text: (selector) => {
     const element = $(selector);
@@ -151,6 +157,7 @@ const adapter = {
     return element ? element.value : null;
   },
   storage: (key) => window.localStorage.getItem(key),
+  global: globalValue,
   count: (selector) => $$(selector).length,
   focused: (selector) => window.document.activeElement === $(selector),
   style: (selector, property) => {

@@ -229,6 +229,25 @@ func TestRuntimeCounter(t *testing.T) {
 	})
 }
 
+// TestRuntimeFixtureCanAssertGlobalMetrics establishes the measurement hook
+// used by runtime-performance and lifecycle audits.  The metric lives only in
+// the fixture; generated production components do not import test helpers.
+func TestRuntimeFixtureCanAssertGlobalMetrics(t *testing.T) {
+	src := `<script>
+  let count = $state(0);
+  function increment() {
+    globalThis.__velaAudit = (globalThis.__velaAudit || 0) + 1;
+    count++;
+  }
+</script>
+<template><button @click={increment}>{count}</button></template>`
+	assertRuntime(t, "FixtureGlobalMetrics", src, []rtStep{
+		{"click": "button"},
+		{"assertGlobal": "__velaAudit", "equals": 1},
+		{"assertText": "button", "equals": "1"},
+	})
+}
+
 // TestRuntimeRemountReleasesListeners verifies that a fixture can destroy and
 // recreate a component without retaining its old lifecycle resources.
 func TestRuntimeRemountReleasesListeners(t *testing.T) {
