@@ -11,7 +11,7 @@ build time.
 
 ### Runtime and scheduling
 
-Compiled components import the runtime helpers they need from a sibling `runtime.js` module. The project compiler stages that module automatically; application code should not copy or initialize it manually. State and prop updates use the runtime's microtask scheduler, so several synchronous updates flush after the current call stack. Today this coalesces the flush boundary, not necessarily duplicate DOM writes or effect runs within it; applications should not rely on a particular count of effect invocations for a multi-state update. The older global scheduler symbol exists solely for compatibility with the deprecated generator and is not part of the application authoring API.
+Compiled components import the runtime helpers they need from a sibling `runtime.js` module. The project compiler stages that module automatically; application code should not copy or initialize it manually. State and prop updates use a component-local microtask scheduler, so synchronous writes settle after the current call stack. Derived values recompute synchronously, while each affected DOM site and dependent effect runs once in the settled flush with final values. Structural reconciliation runs before ordinary guarded updates; when it recreates a branch, its interior writes are not repeated. A setter invoked from an effect schedules a separate, deterministic subsequent flush. The older global scheduler symbol exists solely for compatibility with the deprecated generator and is not part of the application authoring API.
 
 ---
 
@@ -134,10 +134,11 @@ logging, syncing to storage:
 ```
 
 The effect re-runs whenever any reactive value it *reads* changes
-— including a `$derived` whose upstream changed. The component scheduler
-flushes DOM work on a microtask. In the current runtime, an effect may run once
-per relevant setter in a synchronous update burst; write effects so repeated
-execution with the final state remains safe.
+— including a `$derived` whose upstream changed. A component-local microtask
+flush coalesces a synchronous update burst, so a dependent effect runs once
+after the affected DOM work and observes final derived values. If an effect
+updates state itself, that update is processed by a separate subsequent flush;
+effects should still be written to avoid unbounded feedback loops.
 
 An effect with **no** reactive reads runs once on mount and never
 again — the compiler warns and suggests `onMount` instead.
