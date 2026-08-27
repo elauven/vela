@@ -300,18 +300,16 @@ func TestTemplateRefsEachKeyUsesExactExpressionPosition(t *testing.T) {
 }
 
 func TestTemplateRefsIfCond(t *testing.T) {
-	// Using attribute-style #if so the parser produces an
-	// ElementNode with IfCond set rather than an {#if} block.
 	ds := runTemplateRefs(t,
 		``,
-		`<p #if="nope">x</p>`)
+		`{#if nope}<p>x</p>{/if}`)
 	expect(t, ds, `template references "nope"`)
 }
 
 func TestTemplateRefsEachIter(t *testing.T) {
 	ds := runTemplateRefs(t,
 		``,
-		`<p #each="nope as item">{item}</p>`)
+		`{#each nope as item}<p>{item}</p>{/each}`)
 	expect(t, ds, `template references "nope"`)
 }
 

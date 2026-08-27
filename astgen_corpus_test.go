@@ -207,16 +207,16 @@ var corpus = map[string]string{
 		.box span { font-weight: bold; }
 	</style>`,
 
-	// ── legacy attribute-directive syntax (routes via splice) ─
+	// ── standard control-flow blocks ──────────────────────────
 	"each_on_root": `<script>
 		let items = $state(['a','b']);
 	</script>
-	<template><li #each="items as item">{item}</li></template>`,
+	<template>{#each items as item}<li>{item}</li>{/each}</template>`,
 
 	"if_on_root": `<script>
 		let show = $state(true);
 	</script>
-	<template><span #if="show">visible</span></template>`,
+	<template>{#if show}<span>visible</span>{/if}</template>`,
 
 	// ── hole-bearing control-flow branches (E3.1) ────────────
 	"if_hole_branch": `<script>

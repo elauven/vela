@@ -457,29 +457,6 @@ func buildExpr(parts []*Part) string {
 //  Utility
 // ──────────────────────────────────────────────
 
-func parseEachExpr(expr string) (array, item, index string) {
-	parts := strings.SplitN(expr, " as ", 2)
-	array = strings.TrimSpace(parts[0])
-	if len(parts) < 2 {
-		item = "item"
-		return
-	}
-	rest := strings.TrimSpace(parts[1])
-	if idx := strings.Index(rest, ","); idx >= 0 {
-		item = strings.TrimSpace(rest[:idx])
-		index = strings.TrimSpace(rest[idx+1:])
-	} else {
-		item = rest
-	}
-	return
-}
-
-// parseEachExprArray extracts just the array portion of an each expression.
-func parseEachExprArray(expr string) string {
-	arr, _, _ := parseEachExpr(expr)
-	return arr
-}
-
 func isSimpleIdent(s string) bool {
 	if s == "" {
 		return false
@@ -913,9 +890,6 @@ func isFullyStatic(node Node) bool {
 		return true
 
 	case *ElementNode:
-		if n.IfCond != "" || n.EachExpr != "" {
-			return false
-		}
 		for _, attr := range n.Attrs {
 			if attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis ||
 				attr.IsClassDir || attr.IsStyleDir {
@@ -1070,9 +1044,6 @@ type hole struct {
 // the element itself carries dynamic behavior but nothing deeper does.
 // Such elements fit the template-with-holes pattern.
 func isLeafDynamicElement(elem *ElementNode) bool {
-	if elem.IfCond != "" || elem.EachExpr != "" {
-		return false
-	}
 	hasDyn := false
 	for _, attr := range elem.Attrs {
 		if attr.IsEvent || attr.IsBind || attr.IsTwoWay {

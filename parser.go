@@ -250,9 +250,6 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				if strings.TrimSpace(n.Tag) == "" {
 					add(0, "element has an empty tag name")
 				}
-				if n.IfCond != "" {
-					validateExpr(n.IfExpr, 0, "#if directive")
-				}
 				for _, attr := range n.Attrs {
 					if attr == nil {
 						add(0, "element contains a nil attribute")
@@ -268,9 +265,6 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				checkSpan(n.Span, "component")
 				if strings.TrimSpace(n.Name) == "" {
 					add(0, "component has an empty name")
-				}
-				if n.IfCond != "" {
-					validateExpr(n.IfExpr, 0, "component #if directive")
 				}
 				for _, attr := range n.Attrs {
 					if attr == nil {
@@ -338,25 +332,15 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 
 type Node interface{ nodeKind() string }
 
-// ElementNode represents a DOM element. Directives (#if, #each) are hoisted
-// out of the attribute list into dedicated fields during parsing.
+// ElementNode represents a DOM element.
 type ElementNode struct {
 	Span     SectionSpan
 	Tag      string
 	Attrs    []*Attr
 	Children []Node
-
-	// Directives — set by the attribute-style syntax (#if="expr" on the element)
-	// For Svelte block syntax, IfCond/EachExpr live in IfChainNode/EachBlockNode.
-	IfCond string        // #if="expr"
-	IfExpr *TemplateExpr // cached #if condition
-
-	EachExpr string // #each="items as item, i"
-	EachKey  string // #key="expr"
 }
 
-// IfChainNode groups a #if element with its optional #elseif / #else siblings.
-// This is produced by the post-parse grouper pass.
+// IfChainNode represents a standard {#if} chain or a {#key} block.
 type IfChainNode struct {
 	Span     SectionSpan
 	Branches []*IfBranch // [0]=if, [1..n-1]=elseif, last may have Cond==""(else)
@@ -378,9 +362,7 @@ type IfBranch struct {
 	Expr          *TemplateExpr
 	SyntheticCond JsExpr // compiler-generated condition AST for synthetic branches
 
-	Children []Node         // branch body
-	Elem     *ElementNode   // non-nil for element branches (old attr syntax)
-	Comp     *ComponentNode // non-nil for component branches
+	Children []Node // branch body
 }
 
 // HasCondition reports whether this is a conditional #if branch. Cond is
@@ -465,12 +447,6 @@ type ComponentNode struct {
 	Name  string            // component name, e.g. "MyComp"
 	Attrs []*Attr           // :prop bindings and @event handlers
 	Slots map[string][]Node // slot name → children (default slot keyed as "default")
-	// Directives (transferred from parseAttrs scratch element)
-	EachExpr string        // #each="items as item, i"
-	IfExpr   *TemplateExpr // cached #if condition transferred from parseAttrs
-
-	EachKey string // #key="expr"
-	IfCond  string // #if="expr"
 }
 
 // HasKey reports whether this structured #key chain owns an expression AST.
@@ -716,7 +692,7 @@ func parseTemplateAt(html string, base int) ([]Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	return groupIfChains(nodes), nil
+	return nodes, nil
 }
 
 func (p *parser) ch() byte {
@@ -1032,7 +1008,7 @@ func (p *parser) parseElement() (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		elem.Children = groupIfChains(children)
+		elem.Children = children
 
 		// Consume </tag>
 		if p.has("</") {
@@ -1090,7 +1066,7 @@ func (p *parser) parseSlotNode(elementStart int) (Node, error) {
 		}
 	}
 	slot.Name = name
-	slot.Fallback = groupIfChains(fallback)
+	slot.Fallback = fallback
 	slot.Span.End = p.base + p.pos
 	return slot, nil
 }
@@ -1100,13 +1076,7 @@ func (p *parser) parseComponentNode(name string, elementStart int) (Node, error)
 	if err := p.parseAttrs(scratch); err != nil {
 		return nil, err
 	}
-	// Transfer directive fields from scratch — parseAttrs puts #each/#key/#if
-	// into the ElementNode fields, not into Attrs.
-	comp.IfExpr = scratch.IfExpr
 	comp.Attrs = scratch.Attrs
-	comp.EachExpr = scratch.EachExpr
-	comp.EachKey = scratch.EachKey
-	comp.IfCond = scratch.IfCond
 
 	if p.has("/>") {
 		p.pos += 2
@@ -1122,7 +1092,6 @@ func (p *parser) parseComponentNode(name string, elementStart int) (Node, error)
 	if err != nil {
 		return nil, err
 	}
-	children = groupIfChains(children)
 	closeTag := "</" + name
 	if p.has(closeTag) {
 		p.pos += len(closeTag)
@@ -1223,18 +1192,8 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 
 		attrCount := len(elem.Attrs)
 		switch {
-		case name == "#if":
-			elem.IfCond = value
-			elem.IfExpr = p.templateExpr(stripBraces(value), valuePos)
-		case name == "#elseif":
-			// Stored as a special sentinel attr; groupIfChains() picks this up.
-			elem.Attrs = append(elem.Attrs, &Attr{Name: "__elseif__", Value: value, Expr: p.templateExpr(stripBraces(value), valuePos)})
-		case name == "#else":
-			elem.Attrs = append(elem.Attrs, &Attr{Name: "__else__", Value: ""})
-		case name == "#each":
-			elem.EachExpr = value
-		case name == "#key":
-			elem.EachKey = value
+		case strings.HasPrefix(name, "#"):
+			return legacyElementDirectiveError(name, value)
 		case strings.HasPrefix(name, "@"):
 			elem.Attrs = append(elem.Attrs, &Attr{Name: name[1:], Value: value, IsEvent: true})
 		case strings.HasPrefix(name, "class:"):
@@ -1332,6 +1291,22 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 		}
 	}
 	return nil
+}
+
+func legacyElementDirectiveError(name, value string) error {
+	expr := strings.TrimSpace(stripBraces(value))
+	switch name {
+	case "#if":
+		return fmt.Errorf("element directive #if is no longer supported; wrap the element in {#if %s} ... {/if}", expr)
+	case "#elseif", "#else":
+		return fmt.Errorf("element directive %s is no longer supported; use {:else if condition} or {:else} inside a {#if} block", name)
+	case "#each":
+		return fmt.Errorf("element directive #each is no longer supported; wrap the element in {#each %s} ... {/each}", expr)
+	case "#key":
+		return fmt.Errorf("element directive #key is no longer supported; use {#each items as item (%s)} or wrap content in {#key %s} ... {/key}", expr, expr)
+	default:
+		return fmt.Errorf("element directive %s is not supported; use Vela block syntax instead", name)
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1476,7 +1451,7 @@ func (p *parser) parseSvelteIfBlock(condRaw string, condPos int, branchStart int
 			Cond:     cond,
 			CondPos:  condPos,
 			Expr:     p.templateExpr(cond, condPos),
-			Children: groupIfChains(children),
+			Children: children,
 		})
 
 		switch {
@@ -1495,7 +1470,7 @@ func (p *parser) parseSvelteIfBlock(condRaw string, condPos int, branchStart int
 			chain.Branches = append(chain.Branches, &IfBranch{
 				Span:     SectionSpan{Start: p.base + branchStart, End: p.base + p.lastTagStart},
 				Cond:     "",
-				Children: groupIfChains(elseChildren),
+				Children: elseChildren,
 			})
 			return chain, nil
 		default:
@@ -1540,8 +1515,8 @@ func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 	}
 	return &EachBlockNode{
 		EachExpr: raw, ExprPos: exprPos, IterExpr: p.templateExpr(iter, exprPos), ItemName: itemName, IndexName: indexName, EachKey: key, KeyPos: keyPos, KeyAST: keyAST,
-		Children:     groupIfChains(children),
-		ElseChildren: groupIfChains(elseChildren),
+		Children:     children,
+		ElseChildren: elseChildren,
 	}, nil
 }
 
@@ -1652,7 +1627,7 @@ func (p *parser) parseSvelteKeyBlock(raw string, keyPos int) (Node, error) {
 			// destroy-and-rebuild is driven by the key change, not by
 			// the condition flipping.
 			Cond:     "",
-			Children: groupIfChains(children),
+			Children: children,
 		}},
 	}, nil
 }
@@ -1696,13 +1671,13 @@ func (p *parser) parseSvelteAwaitBlock(raw string, exprPos int) (Node, error) {
 			return nil, fmt.Errorf("await block expected {/await}, got {%s}", term)
 		}
 		if mode == awaitInlineThenMode {
-			node.ThenChildren = groupIfChains(children)
+			node.ThenChildren = children
 		} else {
-			node.CatchChildren = groupIfChains(children)
+			node.CatchChildren = children
 		}
 		return node, nil
 	}
-	node.PendingChildren = groupIfChains(children)
+	node.PendingChildren = children
 	if strings.HasPrefix(term, ":then") {
 		binding, err = awaitBranchBinding(term, ":then")
 		if err != nil {
@@ -1713,7 +1688,7 @@ func (p *parser) parseSvelteAwaitBlock(raw string, exprPos int) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		node.ThenChildren = groupIfChains(thenChildren)
+		node.ThenChildren = thenChildren
 		term = t2
 	}
 	if strings.HasPrefix(term, ":catch") {
@@ -1726,7 +1701,7 @@ func (p *parser) parseSvelteAwaitBlock(raw string, exprPos int) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		node.CatchChildren = groupIfChains(catchChildren)
+		node.CatchChildren = catchChildren
 		term = t2
 	}
 	if term != "/await" {
@@ -1914,7 +1889,7 @@ func (p *parser) parseSvelteFragment(elementStart int) (Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	elem.Children = groupIfChains(children)
+	elem.Children = children
 	if p.has("</") {
 		p.pos += 2
 		for !p.eof() && p.ch() != '>' {
@@ -1926,174 +1901,6 @@ func (p *parser) parseSvelteFragment(elementStart int) (Node, error) {
 	}
 	elem.Span.End = p.base + p.pos
 	return elem, nil
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  If-chain grouper
-// ─────────────────────────────────────────────────────────────────────────────
-
-// groupIfChains performs a second pass over a node list and merges consecutive
-// #if / #elseif / #else elements into IfChainNode groups.
-// Works for both ElementNode and ComponentNode.
-func groupIfChains(nodes []Node) []Node {
-	var out []Node
-	i := 0
-	for i < len(nodes) {
-		// ── ElementNode #if ───────────────────────────────────────────────
-		el, isEl := nodes[i].(*ElementNode)
-		if isEl && el.IfCond != "" {
-			chain := &IfChainNode{}
-			chain.Branches = append(chain.Branches, &IfBranch{
-				Cond:     el.IfCond,
-				Expr:     el.IfExpr,
-				Children: groupIfChains(el.Children),
-				Elem:     el,
-			})
-			i++
-			for i < len(nodes) {
-				sib, ok := nodes[i].(*ElementNode)
-				if !ok {
-					break
-				}
-				if hasMarker(sib, "__elseif__") {
-					cond := markerVal(sib, "__elseif__")
-					expr := markerExpr(sib.Attrs, "__elseif__")
-					removeMarker(sib, "__elseif__")
-					chain.Branches = append(chain.Branches, &IfBranch{
-						Cond:     cond,
-						Expr:     expr,
-						Children: groupIfChains(sib.Children),
-						Elem:     sib,
-					})
-					i++
-				} else if hasMarker(sib, "__else__") {
-					removeMarker(sib, "__else__")
-					chain.Branches = append(chain.Branches, &IfBranch{
-						Cond:     "",
-						Children: groupIfChains(sib.Children),
-						Elem:     sib,
-					})
-					i++
-					break
-				} else {
-					break
-				}
-			}
-			out = append(out, chain)
-			continue
-		}
-
-		// ── ComponentNode #if ─────────────────────────────────────────────
-		comp, isComp := nodes[i].(*ComponentNode)
-		if isComp && comp.IfCond != "" {
-			chain := &IfChainNode{}
-			chain.Branches = append(chain.Branches, &IfBranch{
-				Cond: comp.IfCond,
-				Expr: comp.IfExpr,
-				Comp: comp,
-			})
-			i++
-			for i < len(nodes) {
-				sib, ok := nodes[i].(*ComponentNode)
-				if !ok {
-					break
-				}
-				if hasCompMarker(sib, "__elseif__") {
-					cond := compMarkerVal(sib, "__elseif__")
-					expr := markerExpr(sib.Attrs, "__elseif__")
-					removeCompMarker(sib, "__elseif__")
-					chain.Branches = append(chain.Branches, &IfBranch{
-						Cond: cond,
-						Expr: expr,
-						Comp: sib,
-					})
-					i++
-				} else if hasCompMarker(sib, "__else__") {
-					removeCompMarker(sib, "__else__")
-					chain.Branches = append(chain.Branches, &IfBranch{
-						Cond: "",
-						Comp: sib,
-					})
-					i++
-					break
-				} else {
-					break
-				}
-			}
-			out = append(out, chain)
-			continue
-		}
-
-		out = append(out, nodes[i])
-		i++
-	}
-	return out
-}
-
-func hasMarker(el *ElementNode, marker string) bool {
-	for _, a := range el.Attrs {
-		if a.Name == marker {
-			return true
-		}
-	}
-	return false
-}
-
-func markerVal(el *ElementNode, marker string) string {
-	for _, a := range el.Attrs {
-		if a.Name == marker {
-			return a.Value
-		}
-	}
-	return ""
-}
-
-func markerExpr(attrs []*Attr, marker string) *TemplateExpr {
-	for _, a := range attrs {
-		if a.Name == marker {
-			return a.Expr
-		}
-	}
-	return nil
-}
-
-func removeMarker(el *ElementNode, marker string) {
-	var kept []*Attr
-	for _, a := range el.Attrs {
-		if a.Name != marker {
-			kept = append(kept, a)
-		}
-	}
-	el.Attrs = kept
-}
-
-// ComponentNode equivalents
-func hasCompMarker(c *ComponentNode, marker string) bool {
-	for _, a := range c.Attrs {
-		if a.Name == marker {
-			return true
-		}
-	}
-	return false
-}
-
-func compMarkerVal(c *ComponentNode, marker string) string {
-	for _, a := range c.Attrs {
-		if a.Name == marker {
-			return a.Value
-		}
-	}
-	return ""
-}
-
-func removeCompMarker(c *ComponentNode, marker string) {
-	var kept []*Attr
-	for _, a := range c.Attrs {
-		if a.Name != marker {
-			kept = append(kept, a)
-		}
-	}
-	c.Attrs = kept
 }
 
 func (p *parser) readAttrValue() string {

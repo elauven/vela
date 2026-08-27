@@ -30,14 +30,14 @@
       <button class="btn-inc" @click="increment">+</button>
     </div>
 
-    <div class="step-row" #if="visible">
+    {#if visible}<div class="step-row">
       <label>Step:</label>
       <input
         type="number"
         :value="step"
         @input="($e) => step = Number($e.target.value)"
       />
-    </div>
+    </div>{/if}
 
     <div class="step-row">
       <label>Visible:</label>

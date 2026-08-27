@@ -12,15 +12,14 @@ adopt, change, or skip.
 
 ## TL;DR
 
-- **Reactivity primitives**: Vela has `$state`, `$derived`, `$effect`,
-  `$props`, `$bindable` — same names, mostly same semantics, but
-  declared differently and **without deep reactivity**.
+- **Reactivity primitives**: Vela has `$state`, `$state.deep`, `$derived`,
+  `$effect`, and `$bindable`; props use `export let` rather than `$props()`.
 - **Event syntax**: Vela uses `@click=` (Vue-style); Svelte 5 uses
   `onclick=` (HTML-attribute style). Both rejected Svelte 4's `on:click=`.
 - **Bindings (`bind:`)**: Same syntax for both. Vela's `bind:this` and
   `bind:value`/`bind:checked` work as expected.
-- **Template control flow**: `{#if}`, `{#each}`, `{:else}` — same on
-  both. Vela has no `{#await}`, `{#key}`, `{#snippet}`, or `{@html}`.
+- **Template control flow**: `{#if}`, `{#each}`, `{#await}`, `{#key}`, and
+  their branch syntax are supported. Snippets and `{@html}` are not.
 - **Slots**: Vela uses `slot="name"` / `<slot>` (Svelte-4 style).
   Svelte 5 deprecated those in favor of **snippets** (`{#snippet}` /
   `{@render}`). This is the biggest single design divergence.
@@ -223,21 +222,9 @@ identical.
 {/each}
 ```
 
-### Svelte 5 has, Vela doesn't
+### Svelte 5 features Vela does not support
 
 ```svelte
-{#await promise}
-  loading...
-{:then value}
-  {value}
-{:catch err}
-  {err.message}
-{/await}
-
-{#key value}
-  <Component />    <!-- destroyed and recreated when value changes -->
-{/key}
-
 {#snippet item(arg)}
   <li>{arg.name}</li>
 {/snippet}
@@ -431,13 +418,13 @@ A few places where Vela actually has *more* than Svelte:
 | `bind:` on components (two-way) | ✅ | ✅ |
 | `bind:group` / `:files` / `:innerHTML` | ✅ | ❌ |
 | `{#if}` / `{#each}` / `{:else}` | ✅ | ✅ |
-| `{#await}` | ✅ | ❌ |
-| `{#key}` | ✅ | ❌ |
+| `{#await}` | ✅ | ✅ |
+| `{#key}` | ✅ | ✅ |
 | `{#snippet}` + `{@render}` | ✅ | ❌ |
 | Named slots (`<slot name>`) | legacy | ✅ |
 | `{@html}` / `{@const}` / `{@debug}` | ✅ | ❌ |
-| `class:foo={cond}` | ✅ | ❌ |
-| `style:foo={x}` | ✅ | ❌ |
+| `class:foo={cond}` | ✅ | ✅ |
+| `style:foo={x}` | ✅ | ✅ |
 | `transition:` / `in:` / `out:` | ✅ | ❌ |
 | `use:action` | ✅ | ❌ |
 | `<svelte:component>` (dynamic) | ✅ | ❌ |

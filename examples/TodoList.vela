@@ -197,20 +197,20 @@
     </div>
 
     <ul class="todo-list">
-      <li #each="visible as todo, i" #key="todo.id">
+      {#each visible as todo, i (todo.id)}<li>
         <input type="checkbox" @change="() => toggle(todo.id)" />
         <span class="todo-text">{todo.text}</span>
         <button class="remove-btn" @click="() => remove(todo.id)">✕</button>
-      </li>
+      </li>{/each}
     </ul>
 
-    <div class="empty" #if="todos.length === 0">
+    {#if todos.length === 0}<div class="empty">
       Nothing to do — enjoy the day ☀️
-    </div>
+    </div>{/if}
 
-    <div class="footer" #if="todos.length > 0">
+    {#if todos.length > 0}<div class="footer">
       <span>{remaining} item{remaining === 1 ? '' : 's'} left</span>
       <button class="clear-btn" @click="clearDone">Clear done</button>
-    </div>
+    </div>{/if}
   </div>
 </template>

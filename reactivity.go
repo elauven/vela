@@ -422,26 +422,7 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 				for _, a := range n.Attrs {
 					checkAttrRefs(a, known, templateText, ds)
 				}
-				if n.IfCond != "" {
-					checkExprRefsAt(n.IfCond, known, templateText, 0, ds)
-				}
-				eachAdded := []string(nil)
-				if n.EachExpr != "" {
-					// "items as item, i" — the part before "as" is
-					// an expression; the names after are row
-					// variables declared by the {#each} itself and
-					// must be visible while walking this element's
-					// subtree.
-					iter, names, ok := splitEachExpr(n.EachExpr)
-					if ok {
-						checkExprRefs(iter, known, templateText, ds)
-					}
-					eachAdded = addEachBindings(known, names)
-				}
 				walkNodes(n.Children)
-				for _, nm := range eachAdded {
-					delete(known, nm)
-				}
 			case *ComponentNode:
 				for _, a := range n.Attrs {
 					checkAttrRefs(a, known, templateText, ds)
@@ -511,15 +492,8 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 // the caller can withdraw exactly those afterwards without
 // clobbering a same-named outer binding.
 //
-// `names` comes from splitEachExpr, which splits the post-"as"
-// clause on commas — so a destructuring pattern like `{name, id}`
-// or `[a, b]` arrives as several broken fragments.  Every JS
-// identifier found across all fragments is treated as a row
-// variable; punctuation ({}[]() and whitespace) is ignored.  This
-// over-approximates (it would also pick up a default value's
-// identifier, a rare form), but for scope-visibility that is the
-// safe direction — it can only suppress a false "not declared",
-// never introduce a false one.
+// Names originate in a structured {#each} header. The helper accepts a slice
+// because await branches reuse the same scoped-binding machinery.
 func addEachBindings(known map[string]bool, names []string) []string {
 	var added []string
 	for _, tok := range names {
@@ -878,22 +852,4 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 		}
 	}
 	walk(nodes)
-}
-
-// splitEachExpr parses the "items as item, i" form of #each, returning
-// the expression part and the bound names.  Returns ok=false on
-// malformed input.
-func splitEachExpr(expr string) (iterExpr string, boundNames []string, ok bool) {
-	idx := strings.Index(expr, " as ")
-	if idx < 0 {
-		return expr, nil, true // bare "items" — no bindings
-	}
-	iterExpr = strings.TrimSpace(expr[:idx])
-	rest := strings.TrimSpace(expr[idx+4:])
-	for _, name := range strings.Split(rest, ",") {
-		if n := strings.TrimSpace(name); n != "" {
-			boundNames = append(boundNames, n)
-		}
-	}
-	return iterExpr, boundNames, true
 }

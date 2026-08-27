@@ -117,42 +117,48 @@ compile time via identifier analysis.
 Every `{expr}` compiles to a **`Text` node** with a direct `.data` update in
 the setter — no innerHTML, no re-renders.
 
-### Dynamic attributes `:attr="expr"`
+### Dynamic attributes `:attr={expr}`
 
 ```html
-<input :value="count" />
-<div :class="active ? 'on' : 'off'">...</div>
-<a :href="url">link</a>
+<input :value={count} />
+<div :class={active ? 'on' : 'off'}>...</div>
+<a :href={url}>link</a>
 ```
 
-### Event listeners `@event="handler"`
+### Event listeners `@event={handler}`
 
 ```html
-<button @click="increment">+</button>
-<input @input="($e) => name = $e.target.value" />
-<form @submit="($e) => { $e.preventDefault(); submit(); }">
+<button @click={increment}>+</button>
+<input @input={(e) => name = e.target.value} />
+<form @submit={(e) => { e.preventDefault(); submit(); }}>
 ```
 
-### Conditional rendering `#if="expr"`
+### Conditional rendering `{#if expression}`
 
 ```html
-<p #if="count > 0">You have {count} items</p>
-<div #if="error" class="alert">{error}</div>
+{#if count > 0}
+  <p>You have {count} items</p>
+{:else if error}
+  <div class="alert">{error}</div>
+{/if}
 ```
 
 The element is created/destroyed by an anchor comment node. The condition is
 re-evaluated inside every setter whose variables appear in the expression.
 
-### List rendering `#each="array as item, index"`
+### List rendering `{#each array as item, index (key)}`
 
 ```html
-<li #each="todos as todo, i">
-  {i + 1}. {todo.text}
-</li>
+{#each todos as todo, i (todo.id)}
+  <li>{i + 1}. {todo.text}</li>
+{:else}
+  <li>No todos.</li>
+{/each}
 ```
 
-The index parameter is optional. Items are efficiently replaced on each update
-(keyed diffing planned for a future release via `#key`).
+The index and key are optional. Use a stable key for reorderable lists.
+Element-level `#if`, `#elseif`, `#else`, `#each`, and `#key` directives are
+not part of Vela; control flow is expressed only with blocks.
 
 ---
 

@@ -45,6 +45,6 @@
 <template>
   <span class="tag" :style="`background:${bgVar};color:${txtVar};`">
     {tag}
-    <button class="remove-btn" #if="removable" @click="remove">✕</button>
+    {#if removable}<button class="remove-btn" @click="remove">✕</button>{/if}
   </span>
 </template>

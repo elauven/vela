@@ -292,7 +292,7 @@
   <div :class="cardClass" @click="select">
 
     <!-- ── View mode ─────────────────────────────── -->
-    <div #if="!editMode">
+    {#if !editMode}<div>
       <div class="card-header">
         <span class="card-title">
           {pinned ? '📌 ' : ''}{title}
@@ -304,24 +304,22 @@
         </div>
       </div>
 
-      <p class="card-body-text" #if="body">{preview}</p>
+      {#if body}<p class="card-body-text">{preview}</p>{/if}
 
       <div class="card-meta">
         <div class="tag-row">
-          <TagBadge
-            #each="tags as t"
-            #key="t"
+          {#each tags as t (t)}<TagBadge
             :tag="t"
             :color="tagColor(t)"
             :removable="false"
-          />
+          />{/each}
         </div>
-        <span class="word-count" #if="wordCount > 0">{wordCount}w</span>
+        {#if wordCount > 0}<span class="word-count">{wordCount}w</span>{/if}
       </div>
     </div>
 
     <!-- ── Edit mode ──────────────────────────────── -->
-    <div class="edit-area" #elseif="editMode">
+    {:else}<div class="edit-area">
       <input
         class="title-input"
         type="text"
@@ -338,35 +336,31 @@
       ></textarea>
 
       <div class="tag-row">
-        <TagBadge
-          #each="tags as t"
-          #key="t"
+        {#each tags as t (t)}<TagBadge
           :tag="t"
           :color="tagColor(t)"
           :removable="true"
           @remove="($e) => removeTag($e.detail.tag)"
-        />
-        <input
-          #if="showTagInput"
+        />{/each}
+        {#if showTagInput}<input
           class="tag-input"
           type="text"
           :value="newTag"
           @input="($e) => newTag = $e.target.value"
           @keydown="handleKeydown"
           placeholder="tag…"
-        />
-        <button
+        />{/if}
+        {#if !showTagInput}<button
           class="add-tag-btn"
-          #if="!showTagInput"
           @click="($e) => { $e.stopPropagation(); showTagInput = true; }"
-        >+ tag</button>
+        >+ tag</button>{/if}
       </div>
 
       <div class="edit-footer">
         <button class="btn-cancel" @click="($e) => { $e.stopPropagation(); cancelEdit(); }">Cancel</button>
         <button class="btn-save"   @click="($e) => { $e.stopPropagation(); saveEdit(); }">Save</button>
       </div>
-    </div>
+    </div>{/if}
 
     <!-- ── Optional slot content (e.g. action bar from parent) ── -->
     <div class="card-slot">

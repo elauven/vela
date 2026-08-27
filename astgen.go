@@ -1018,15 +1018,6 @@ func astCanBuildDirectly(nodes []Node, analysis *Analysis) bool {
 	//        as {#each}/{#await} are reused.
 	if len(nodes) == 1 {
 		if el, ok := nodes[0].(*ElementNode); ok {
-			if el.IfCond != "" {
-				return false
-			}
-			if el.EachExpr != "" {
-				// #each-attribute on the root element — buildElement
-				// reframes it to an EachBlockNode.  Claimable when
-				// the row body is one buildEachBlock handles.
-				return astEachRowOK([]Node{stripEachDirective(el)})
-			}
 			// A childless root element is fine — e.g.
 			// <input bind:value={x} />.
 			if len(el.Children) == 0 {
@@ -1060,9 +1051,6 @@ func eachHasComponent(nodes []Node) bool {
 			}
 		case *IfChainNode:
 			for _, b := range x.Branches {
-				if b.Comp != nil {
-					return true
-				}
 				if eachHasComponent(b.Children) {
 					return true
 				}
@@ -1094,11 +1082,6 @@ func astChainRootOK(nodes []Node) bool {
 			// or carry text-interpolation holes (E3.1); element
 			// holes and nested control-flow in a branch are still
 			// deferred to the splice.
-			for _, b := range x.Branches {
-				if b.Comp != nil {
-					return false // component branch — block 13
-				}
-			}
 			sawBlock = true
 		case *EachBlockNode:
 			// {#each} is struct-built by buildEachBlock (E3.3).
@@ -1157,11 +1140,6 @@ func astEachRowOK(children []Node) bool {
 		// children; always constructible.
 		return true
 	}
-	// The row element must not itself carry control-flow (that is
-	// a different node shape — handled before reaching here).
-	if rowElem.IfCond != "" || rowElem.EachExpr != "" {
-		return false
-	}
 	return true
 }
 
@@ -1188,9 +1166,6 @@ func astHoleSubtreeOK(nodes []Node) bool {
 					a.IsBindThis || a.IsClassDir || a.IsStyleDir {
 					return false
 				}
-			}
-			if n.IfCond != "" || n.EachExpr != "" {
-				return false
 			}
 			// Raw-text elements (<textarea>, <title>) cannot use
 			// the innerHTML + TreeWalker hole path: their body is
@@ -2333,21 +2308,6 @@ func (g *ASTGen) buildDOM(nodes []Node) {
 	// the whole subtree — nested dynamic elements, components,
 	// slots — as struct construction, no splice.
 	el := nodes[0].(*ElementNode)
-	// An #each / #if directive on the root element makes it a
-	// control-flow block — it must NOT be treated as a plain
-	// element by the text-hole path below.  buildElement reframes
-	// #each to an EachBlockNode; the wrapper is built here.
-	if el.EachExpr != "" {
-		// Reframe the #each-attribute element as an EachBlockNode
-		// and route it through buildChainRootDOM, which builds the
-		// display:contents $$root wrapper the block needs.
-		g.buildChainRootDOM([]Node{&EachBlockNode{
-			EachExpr: el.EachExpr,
-			EachKey:  el.EachKey,
-			Children: []Node{stripEachDirective(el)},
-		}})
-		return
-	}
 	if astTextHolesOnly(el.Children) || len(el.Children) == 0 {
 		g.buildHolesDOM(el)
 		return
@@ -2849,11 +2809,6 @@ func staticRawText(children []Node) (string, bool) {
 // direct path — astEachRowOK gates those to buildModuleSplice.
 func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	itemVar, indexVar := block.ItemName, block.IndexName
-	if itemVar == "" {
-		// Attribute-style #each is deprecated compatibility syntax. It has
-		// no typed header fields, so keep its isolated legacy fallback here.
-		_, itemVar, indexVar = parseEachExpr(block.EachExpr)
-	}
 	if indexVar == "" {
 		indexVar = "$$i"
 	}
@@ -3835,18 +3790,6 @@ func (g *ASTGen) buildNodes(nodes []Node, parentVar string, isRootList bool) {
 // wiring, children, and (unless it is the root) the appendChild
 // into its parent.
 func (g *ASTGen) buildElement(el *ElementNode, varName, parentVar string, isRoot bool) {
-	// An element carrying #each is a control-flow block — reframe
-	// it as an EachBlockNode.  (#if is wrapped into an IfChainNode
-	// upstream by groupIfChains, so it never arrives here.)
-	if el.EachExpr != "" {
-		g.buildEachBlock(&EachBlockNode{
-			EachExpr: el.EachExpr,
-			EachKey:  el.EachKey,
-			Children: []Node{stripEachDirective(el)},
-		}, parentVar)
-		return
-	}
-
 	// When building inside a captured scope (an {#if} branch via
 	// the recursive walker, or a slot closure), the element var
 	// must be hoisted: a `const` in the branch-build / slot-closure
@@ -3983,29 +3926,6 @@ func isStaticNode(n Node) bool {
 	default:
 		return false
 	}
-}
-
-// stripEachDirective returns a shallow copy of el with its #each
-// directive cleared — so the element can be the row body of the
-// EachBlockNode that now carries the directive.
-func stripEachDirective(el *ElementNode) *ElementNode {
-	cp := *el
-	cp.EachExpr = ""
-	cp.EachKey = ""
-	return &cp
-}
-
-// stripBranchDirectives returns a shallow copy of el with BOTH its
-// #if and #each directives cleared.  An #if-attribute branch
-// element keeps IfCond set after groupIfChains lifts it into an
-// IfChainNode; the directive is already represented by the branch
-// Cond, so the element body must not re-carry it.
-func stripBranchDirectives(el *ElementNode) *ElementNode {
-	cp := *el
-	cp.IfCond = ""
-	cp.EachExpr = ""
-	cp.EachKey = ""
-	return &cp
 }
 
 // buildTextNode appends a text node to parentVar.  A fully-static

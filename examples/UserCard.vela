@@ -149,7 +149,7 @@
   <div :class="cardClass">
     <div class="avatar">{initials}</div>
 
-    <div #if="!editMode">
+    {#if !editMode}<div>
       <div class="name">{name}</div>
       <div class="role">{role}</div>
       <div class="status">
@@ -158,19 +158,19 @@
       </div>
     </div>
 
-    <div #elseif="editMode">
+    {:else}<div>
       <input
         type="text"
         :value="nameEdit"
         @input="($e) => nameEdit = $e.target.value"
         placeholder="Display name"
       />
-    </div>
+    </div>{/if}
 
     <div class="actions">
-      <button class="btn-edit"   #if="!editMode" @click="startEdit">Edit</button>
-      <button class="btn-save"   #if="editMode"  @click="saveEdit">Save</button>
-      <button class="btn-cancel" #if="editMode"  @click="cancelEdit">Cancel</button>
+      {#if !editMode}<button class="btn-edit" @click="startEdit">Edit</button>{/if}
+      {#if editMode}<button class="btn-save" @click="saveEdit">Save</button>{/if}
+      {#if editMode}<button class="btn-cancel" @click="cancelEdit">Cancel</button>{/if}
     </div>
 
     <div class="footer-slot">

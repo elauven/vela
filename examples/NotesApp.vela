@@ -377,12 +377,12 @@
     </div>
 
     <!-- ── Stats bar ────────────────────────────────────── -->
-    <div class="stats-bar" #if="showStats">
+    {#if showStats}<div class="stats-bar">
       <div class="stat"><span>Notes:</span><strong>{stats.total}</strong></div>
       <div class="stat"><span>Pinned:</span><strong>{stats.pinned}</strong></div>
       <div class="stat"><span>Words:</span><strong>{stats.words}</strong></div>
       <div class="stat"><span>Tags:</span><strong>{stats.tags}</strong></div>
-    </div>
+    </div>{/if}
 
     <!-- ── Main layout ──────────────────────────────────── -->
     <div class="layout">
@@ -406,13 +406,11 @@
               :class="filterTag === '' ? 'active' : ''"
               @click="() => filterTag = ''"
             >All notes<span class="tag-count">{notes.length}</span></li>
-            <li
-              #each="allTags as t"
-              #key="t"
+            {#each allTags as t (t)}<li
               class="tag-item"
               :class="filterTag === t ? 'active' : ''"
               @click="() => filterTag = t"
-            >{t}<span class="tag-count">{notes.filter(n => n.tags.includes(t)).length}</span></li>
+            >{t}<span class="tag-count">{notes.filter(n => n.tags.includes(t)).length}</span></li>{/each}
           </ul>
         </div>
       </div>
@@ -421,21 +419,19 @@
       <div class="notes-area">
         <div class="notes-header">
           <span class="notes-count">{filtered.length} note{filtered.length === 1 ? '' : 's'}</span>
-          <div class="active-filter" #if="query || filterTag">
+          {#if query || filterTag}<div class="active-filter">
             Filtering: "{query || filterTag}"
             <button class="clear-filter" @click="clearFilter">✕</button>
-          </div>
+          </div>{/if}
         </div>
 
         <div class="notes-grid">
-          <div #if="filtered.length === 0" class="empty-state">
+          {#if filtered.length === 0}<div class="empty-state">
             <div class="empty-icon">🗒</div>
             <div class="empty-msg">{emptyMessage}</div>
-          </div>
+          </div>{/if}
 
-          <NoteCard
-            #each="filtered as note"
-            #key="note.id"
+          {#each filtered as note (note.id)}<NoteCard
             :id="note.id"
             :title="note.title"
             :body="note.body"
@@ -445,7 +441,7 @@
             @select="($e) => selectNote($e.detail.id)"
             @delete="($e) => deleteNote($e.detail.id)"
             @change="($e) => updateNote($e.detail)"
-          />
+          />{/each}
         </div>
       </div>
 

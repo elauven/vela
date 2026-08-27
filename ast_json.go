@@ -132,15 +132,6 @@ func elementNodeJSON(n *ElementNode) interface{} {
 	if len(n.Children) > 0 {
 		m["children"] = nodesToJSON(n.Children)
 	}
-	if n.IfCond != "" {
-		m["ifCond"] = n.IfCond
-	}
-	if n.EachExpr != "" {
-		m["eachExpr"] = n.EachExpr
-	}
-	if n.EachKey != "" {
-		m["eachKey"] = n.EachKey
-	}
 	return m
 }
 
@@ -150,15 +141,6 @@ func ifChainNodeJSON(n *IfChainNode) interface{} {
 		bm := map[string]interface{}{
 			"cond":     b.Cond,
 			"children": nodesToJSON(b.Children),
-		}
-		if b.Elem != nil {
-			bm["elem"] = map[string]interface{}{
-				"tag":   b.Elem.Tag,
-				"attrs": attrJSON(b.Elem.Attrs),
-			}
-		}
-		if b.Comp != nil {
-			bm["comp"] = b.Comp.Name
 		}
 		branches = append(branches, bm)
 	}
@@ -197,15 +179,6 @@ func componentNodeJSON(n *ComponentNode) interface{} {
 			slots[k] = nodesToJSON(v)
 		}
 		m["slots"] = slots
-	}
-	if n.EachExpr != "" {
-		m["eachExpr"] = n.EachExpr
-	}
-	if n.EachKey != "" {
-		m["eachKey"] = n.EachKey
-	}
-	if n.IfCond != "" {
-		m["ifCond"] = n.IfCond
 	}
 	return m
 }

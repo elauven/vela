@@ -94,23 +94,13 @@ func TestParseSFCHandlesNonASCIIBytesBeforeSections(t *testing.T) {
 }
 
 func TestParseTemplate_Directives(t *testing.T) {
-	nodes, err := parseTemplate(`<div #if="show" :class="cls" @click="handler">x</div>`)
+	nodes, err := parseTemplate(`<div :class={cls} @click={handler}>x</div>`)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	// groupIfChains wraps elements with #if in an IfChainNode; the original
-	// element (with its IfCond, attrs, and children) is preserved at
-	// Branches[0].Elem.  The test originally predates that pass.
-	chain, ok := nodes[0].(*IfChainNode)
+	el, ok := nodes[0].(*ElementNode)
 	if !ok {
-		t.Fatalf("expected *IfChainNode at nodes[0], got %T", nodes[0])
-	}
-	if len(chain.Branches) == 0 || chain.Branches[0].Elem == nil {
-		t.Fatalf("expected first branch to carry the original element")
-	}
-	el := chain.Branches[0].Elem
-	if el.IfCond != "show" {
-		t.Errorf("IfCond: want 'show', got %q", el.IfCond)
+		t.Fatalf("expected *ElementNode at nodes[0], got %T", nodes[0])
 	}
 	if len(el.Attrs) != 2 {
 		t.Fatalf("expected 2 attrs, got %d", len(el.Attrs))
@@ -140,13 +130,16 @@ func TestParseTemplate_QuotedObjectClassKeepsTypedValueKind(t *testing.T) {
 }
 
 func TestParseTemplate_Each(t *testing.T) {
-	nodes, err := parseTemplate(`<li #each="items as item, i">{item}</li>`)
-	if err != nil {
-		t.Fatalf("error: %v", err)
-	}
-	el := nodes[0].(*ElementNode)
-	if el.EachExpr != "items as item, i" {
-		t.Errorf("EachExpr: want 'items as item, i', got %q", el.EachExpr)
+	for _, source := range []string{
+		`<li #if="show">x</li>`,
+		`<li #elseif="show">x</li>`,
+		`<li #else>x</li>`,
+		`<li #each="items as item">{item}</li>`,
+		`<li #key="item.id">x</li>`,
+	} {
+		if _, err := parseTemplate(source); err == nil || !strings.Contains(err.Error(), "no longer supported") {
+			t.Fatalf("legacy template %q error = %v", source, err)
+		}
 	}
 }
 
@@ -388,7 +381,7 @@ func TestGenerateCode_ScopedStyle(t *testing.T) {
 func TestGenerateCode_IfDirective(t *testing.T) {
 	sfc := &SFC{
 		Script:   `let show = $state(true);`,
-		Template: `<span #if="show">visible</span>`,
+		Template: `{#if show}<span>visible</span>{/if}`,
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
@@ -411,7 +404,7 @@ func TestGenerateCode_IfDirective(t *testing.T) {
 func TestGenerateCode_EachDirective(t *testing.T) {
 	sfc := &SFC{
 		Script:   `let items = $state(['a','b']);`,
-		Template: `<li #each="items as item">{item}</li>`,
+		Template: `{#each items as item}<li>{item}</li>{/each}`,
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
@@ -528,30 +521,6 @@ func TestCollectIdents_SkipsPropertyNames(t *testing.T) {
 	// (This is intentional: property names are not variable references.)
 	if containsStr(names, "foo") {
 		t.Error("should not contain property name foo as a dep")
-	}
-}
-
-// ──────────────────────────────────────────────
-//  parseEachExpr
-// ──────────────────────────────────────────────
-
-func TestParseEachExpr(t *testing.T) {
-	array, item, index := parseEachExpr("items as todo, i")
-	if array != "items" {
-		t.Errorf("array: want 'items', got %q", array)
-	}
-	if item != "todo" {
-		t.Errorf("item: want 'todo', got %q", item)
-	}
-	if index != "i" {
-		t.Errorf("index: want 'i', got %q", index)
-	}
-}
-
-func TestParseEachExpr_NoIndex(t *testing.T) {
-	array, item, index := parseEachExpr("list as el")
-	if array != "list" || item != "el" || index != "" {
-		t.Errorf("got array=%q item=%q index=%q", array, item, index)
 	}
 }
 
@@ -983,9 +952,9 @@ func TestScopeCSS_CustomProperty(t *testing.T) {
 
 func TestParseTemplate_ElseIfElse(t *testing.T) {
 	html := `
-		<div #if="a">A</div>
-		<div #elseif="b">B</div>
-		<div #else>C</div>
+		{#if a}<div>A</div>
+		{:else if b}<div>B</div>
+		{:else}<div>C</div>{/if}
 	`
 	nodes, err := parseTemplate(html)
 	if err != nil {
@@ -1120,9 +1089,9 @@ func TestGenerateCode_IfChain(t *testing.T) {
 	sfc := &SFC{
 		Script: `let score = $state(0);`,
 		Template: `
-			<p #if="score > 90">Excellent</p>
-			<p #elseif="score > 60">Good</p>
-			<p #else>Try again</p>
+			{#if score > 90}<p>Excellent</p>
+			{:else if score > 60}<p>Good</p>
+			{:else}<p>Try again</p>{/if}
 		`,
 	}
 	nodes, _ := parseTemplate(sfc.Template)
@@ -1208,9 +1177,9 @@ func TestFullPipeline_IfChainAndProps(t *testing.T) {
 <template>
   <div>
     <span class="grade">{grade}</span>
-    <p #if="score >= 70" class="pass">Pass</p>
-    <p #elseif="score >= 50" class="near">Almost</p>
-    <p #else class="fail">Fail</p>
+    {#if score >= 70}<p class="pass">Pass</p>
+    {:else if score >= 50}<p class="near">Almost</p>
+    {:else}<p class="fail">Fail</p>{/if}
   </div>
 </template>
 `
@@ -1664,7 +1633,7 @@ func TestGenerateCode_ComponentPassesSlots(t *testing.T) {
 func TestGenerateCode_EachWithFragGen(t *testing.T) {
 	sfc := &SFC{
 		Script:   `let items = $state([{id:1,name:'a'},{id:2,name:'b'}]);`,
-		Template: `<ul><li #each="items as item">{item.name}</li></ul>`,
+		Template: `<ul>{#each items as item}<li>{item.name}</li>{/each}</ul>`,
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
@@ -1686,7 +1655,7 @@ func TestGenerateCode_EachWithFragGen(t *testing.T) {
 func TestGenerateCode_KeyedEach(t *testing.T) {
 	sfc := &SFC{
 		Script:   `let todos = $state([]);`,
-		Template: `<li #each="todos as todo" #key="todo.id">{todo.text}</li>`,
+		Template: `{#each todos as todo (todo.id)}<li>{todo.text}</li>{/each}`,
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
@@ -1860,11 +1829,11 @@ func TestGenerateCode_EachNoVarRedeclaration(t *testing.T) {
 		Script: `let todos = $state([]);`,
 		Template: `
 			<ul>
-			  <li #each="todos as todo, i" #key="todo.id">
+			  {#each todos as todo, i (todo.id)}<li>
 			    <input type="checkbox" @change="() => toggle(todo.id)" />
 			    <span>{todo.text}</span>
 			    <button @click="() => remove(todo.id)">✕</button>
-			  </li>
+			  </li>{/each}
 			</ul>
 		`,
 	}
@@ -2422,55 +2391,27 @@ func TestFullPipeline_ClockTernaryInOnMount(t *testing.T) {
 
 func TestParseTemplate_ComponentWithEach(t *testing.T) {
 	html := `<div><MyCard #each="items as item" #key="item.id" :title="item.name" /></div>`
-	nodes, err := parseTemplate(html)
-	if err != nil {
-		t.Fatalf("parse error: %v", err)
-	}
-	div := nodes[0].(*ElementNode)
-	if len(div.Children) != 1 {
-		t.Fatalf("expected 1 child, got %d", len(div.Children))
-	}
-	comp, ok := div.Children[0].(*ComponentNode)
-	if !ok {
-		t.Fatalf("expected ComponentNode, got %T", div.Children[0])
-	}
-	if comp.EachExpr != "items as item" {
-		t.Errorf("EachExpr: want 'items as item', got %q", comp.EachExpr)
-	}
-	if comp.EachKey != "item.id" {
-		t.Errorf("EachKey: want 'item.id', got %q", comp.EachKey)
-	}
-	// :title should still be in Attrs
-	found := false
-	for _, a := range comp.Attrs {
-		if a.Name == "title" && a.IsBind {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("expected :title IsBind attr on component")
+	if _, err := parseTemplate(html); err == nil || !strings.Contains(err.Error(), "#each") {
+		t.Fatalf("component legacy #each error = %v", err)
 	}
 }
 
 func TestParseTemplate_ComponentWithIf(t *testing.T) {
-	html := `<div><Modal #if="open" :title="header" /></div>`
+	html := `<div>{#if open}<Modal :title={header} />{/if}</div>`
 	nodes, err := parseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
 	div := nodes[0].(*ElementNode)
-	// Component with #if is wrapped in IfChainNode by groupIfChains; the
-	// original ComponentNode is preserved at Branches[0].Comp.
 	chain, ok := div.Children[0].(*IfChainNode)
 	if !ok {
 		t.Fatalf("expected IfChainNode, got %T", div.Children[0])
 	}
-	if len(chain.Branches) == 0 || chain.Branches[0].Comp == nil {
-		t.Fatal("expected first branch to carry the component")
+	if len(chain.Branches) != 1 || len(chain.Branches[0].Children) != 1 {
+		t.Fatalf("if branch children = %+v", chain.Branches)
 	}
-	comp := chain.Branches[0].Comp
-	if comp.IfCond != "open" {
-		t.Errorf("IfCond: want 'open', got %q", comp.IfCond)
+	if _, ok := chain.Branches[0].Children[0].(*ComponentNode); !ok {
+		t.Fatalf("if branch child = %T, want *ComponentNode", chain.Branches[0].Children[0])
 	}
 }
 
@@ -2600,10 +2541,10 @@ func TestGenerateCode_IfBranchHasChildren(t *testing.T) {
 		Script: `let visible = $state(false); let step = $state(1);`,
 		Template: `
 			<div>
-				<div #if="visible" class="step-row">
+				{#if visible}<div class="step-row">
 					<label>Step:</label>
 					<input type="number" :value="step" @input="($e) => step = Number($e.target.value)" />
-				</div>
+				</div>{/if}
 			</div>
 		`,
 	}
@@ -2665,10 +2606,10 @@ func TestGenerateCode_IfBranchInlineHandlerRewritten(t *testing.T) {
 		Template: `
 			<div>
 				<button @click="() => count = count + step">+</button>
-				<div #if="visible" class="step-row">
+				{#if visible}<div class="step-row">
 					<label>Step:</label>
 					<input type="checkbox" @change="($e) => visible = $e.target.checked" />
-				</div>
+				</div>{/if}
 			</div>
 		`,
 	}
@@ -2696,18 +2637,15 @@ func TestGenerateCode_IfBranchInlineHandlerRewritten(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  #if/#elseif grouping in nested children
+//  Canonical {#if}/{:else if} blocks in nested children
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestParseTemplate_IfElseifGroupedInsideElement(t *testing.T) {
-	// #if and #elseif INSIDE a parent element must be grouped into one IfChainNode.
-	// Previously groupIfChains was only called on top-level nodes, so nested
-	// #elseif elements were left as raw ElementNodes with a __elseif__ attr,
-	// which then got rendered unconditionally.
+	// A nested standard block must parse into one IfChainNode.
 	html := `
 		<div class="card">
-			<div #if="!editMode">View mode</div>
-			<div #elseif="editMode">Edit mode</div>
+			{#if !editMode}<div>View mode</div>
+			{:else if editMode}<div>Edit mode</div>{/if}
 		</div>
 	`
 	nodes, err := parseTemplate(html)
@@ -2716,7 +2654,7 @@ func TestParseTemplate_IfElseifGroupedInsideElement(t *testing.T) {
 	}
 	div := nodes[0].(*ElementNode)
 
-	// The two divs should be merged into ONE IfChainNode, not two separate nodes
+	// The standard block owns both branches in one IfChainNode.
 	if len(div.Children) != 1 {
 		t.Fatalf("expected 1 child (IfChainNode), got %d children: %T, ...",
 			len(div.Children), div.Children[0])
@@ -2729,26 +2667,16 @@ func TestParseTemplate_IfElseifGroupedInsideElement(t *testing.T) {
 		t.Errorf("expected 2 branches, got %d", len(chain.Branches))
 	}
 
-	// No element with raw __elseif__ attr should remain
-	for _, child := range div.Children {
-		if el, ok := child.(*ElementNode); ok {
-			for _, attr := range el.Attrs {
-				if attr.Name == "__elseif__" {
-					t.Errorf("__elseif__ sentinel left on element — groupIfChains not called on children")
-				}
-			}
-		}
-	}
 }
 
 func TestGenerateCode_IfElseifInsideElement(t *testing.T) {
-	// Codegen for nested #if/#elseif must not emit __elseif__ as a DOM attribute
+	// Codegen for nested standard blocks must build one chain.
 	sfc := &SFC{
 		Script: `let editMode = $state(false);`,
 		Template: `
 			<div>
-				<div #if="!editMode" class="view">View</div>
-				<div #elseif="editMode" class="edit">Edit</div>
+				{#if !editMode}<div class="view">View</div>
+				{:else if editMode}<div class="edit">Edit</div>{/if}
 			</div>
 		`,
 	}
@@ -2756,11 +2684,6 @@ func TestGenerateCode_IfElseifInsideElement(t *testing.T) {
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Card", sfc, nodes, a, "vela-test")
 
-	// Must NOT have __elseif__ as a setAttribute call
-	if strings.Contains(code, "__elseif__") {
-		t.Errorf("__elseif__ sentinel leaked into generated DOM code:\n%s",
-			code[:min(600, len(code))])
-	}
 	// Must have a chain function handling both branches
 	if !strings.Contains(code, "$$chain_") {
 		t.Error("expected $$chain_ if-chain function in output")
@@ -2773,7 +2696,7 @@ func TestGenerateCode_IfElseifInsideElement(t *testing.T) {
 
 func TestParseTemplate_IfElseGroupedThreeLevelsDeep(t *testing.T) {
 	// Verify grouping works at any nesting depth
-	html := `<outer><middle><p #if="a">A</p><p #elseif="b">B</p><p #else>C</p></middle></outer>`
+	html := `<outer><middle>{#if a}<p>A</p>{:else if b}<p>B</p>{:else}<p>C</p>{/if}</middle></outer>`
 	nodes, err := parseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -2801,7 +2724,7 @@ func TestGenerateCode_PlainComponentInsideIfBranch(t *testing.T) {
 	// A plain (non-#each) component inside an #if branch.
 	sfc := &SFC{
 		Script:   `import { Modal } from './Modal.js'; let open = $state(false);`,
-		Template: `<div><div #if="open"><Modal :title="'Hello'" /></div></div>`,
+		Template: `<div>{#if open}<div><Modal :title={'Hello'} /></div>{/if}</div>`,
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
@@ -2958,12 +2881,12 @@ func TestGenerateCode_OnMountAfterMount(t *testing.T) {
 }
 
 func TestParseTemplate_ComponentIfElseifChainGrouped(t *testing.T) {
-	// #if/#elseif/#else on ComponentNode siblings must be grouped into one IfChainNode
+	// Standard block syntax owns all component branches in one IfChainNode.
 	html := `
 		<div>
-			<SearchPage #if="route === 'search'" />
-			<FavoritesPage #elseif="route === 'favorites'" />
-			<UserPage #elseif="route === 'user'" :login="params.login" />
+			{#if route === 'search'}<SearchPage />
+			{:else if route === 'favorites'}<FavoritesPage />
+			{:else if route === 'user'}<UserPage :login={params.login} />{/if}
 		</div>
 	`
 	nodes, err := parseTemplate(html)
@@ -2988,27 +2911,16 @@ func TestParseTemplate_ComponentIfElseifChainGrouped(t *testing.T) {
 	if len(chain.Branches) != 3 {
 		t.Errorf("expected 3 branches, got %d", len(chain.Branches))
 	}
-	// Each branch must hold a Comp, not an Elem
 	for i, branch := range chain.Branches {
-		if branch.Comp == nil {
-			t.Errorf("branch[%d] has nil Comp — not a component branch", i)
-		}
-		if branch.Expr == nil || branch.Expr.Source == "" {
+		if i < 2 && (branch.Expr == nil || branch.Expr.Source == "") {
 			t.Errorf("branch[%d] is missing its cached condition AST", i)
 		}
-
-		if branch.Elem != nil {
-			t.Errorf("branch[%d] has unexpected Elem", i)
+		if len(branch.Children) != 1 {
+			t.Errorf("branch[%d] children = %d, want 1", i, len(branch.Children))
+			continue
 		}
-	}
-	// No __elseif__ sentinel must remain
-	for i, branch := range chain.Branches {
-		if branch.Comp != nil {
-			for _, a := range branch.Comp.Attrs {
-				if a.Name == "__elseif__" || a.Name == "__else__" {
-					t.Errorf("branch[%d] still has sentinel attr %q", i, a.Name)
-				}
-			}
+		if _, ok := branch.Children[0].(*ComponentNode); !ok {
+			t.Errorf("branch[%d] child = %T, want component", i, branch.Children[0])
 		}
 	}
 }
@@ -3099,7 +3011,7 @@ func TestGenerateCode_EffectDoesNotCallItsOwnSetter(t *testing.T) {
 				return unsub;
 			});
 		`,
-		Template: `<div #if="isAuthenticated">logged in</div>`,
+		Template: `{#if isAuthenticated}<div>logged in</div>{/if}`,
 	}
 	nodes, _ := parseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
@@ -3635,20 +3547,9 @@ func TestSvelteBlock_CodeGen_NestedEachIterableCallUsesRowItem(t *testing.T) {
 	}
 }
 
-func TestSvelteBlock_OldSyntaxStillWorks(t *testing.T) {
-	// The old attribute-style syntax must continue to work alongside the new
-	html := `<div #if="show">old style</div>`
-	nodes, err := parseTemplate(html)
-	if err != nil {
-		t.Fatalf("parse error: %v", err)
-	}
-	// Should be grouped into an IfChainNode (via attribute path, not block path)
-	chain, ok := nodes[0].(*IfChainNode)
-	if !ok {
-		t.Fatalf("expected IfChainNode, got %T", nodes[0])
-	}
-	if chain.Branches[0].Cond != "show" {
-		t.Errorf("cond=%q", chain.Branches[0].Cond)
+func TestSvelteBlock_OldSyntaxIsRejected(t *testing.T) {
+	if _, err := parseTemplate(`<div #if="show">old style</div>`); err == nil || !strings.Contains(err.Error(), "no longer supported") {
+		t.Fatalf("legacy syntax error = %v", err)
 	}
 }
 
@@ -4949,12 +4850,6 @@ func TestIsFullyStatic(t *testing.T) {
 		{"static-frame-with-dyn-text",
 			staticElem("p", dynText("greeting")),
 			false},
-		{"if-cond-elem",
-			&ElementNode{Tag: "div", IfCond: "cond"},
-			false},
-		{"each-expr-elem",
-			&ElementNode{Tag: "div", EachExpr: "items as item"},
-			false},
 		{"if-chain", &IfChainNode{}, false},
 		{"each-block", &EachBlockNode{}, false},
 		{"component", &ComponentNode{Name: "MyComp"}, false},
@@ -4994,16 +4889,6 @@ func TestIsLeafDynamicElement(t *testing.T) {
 			eventElem("section", "click", "onClick",
 				eventElem("button", "click", "inner")),
 			false},
-
-		// IfCond / EachExpr block — not leaf-dynamic regardless of attrs.
-		{"if-cond-element",
-			&ElementNode{Tag: "div", IfCond: "cond",
-				Attrs: []*Attr{{Name: "click", Value: "h", IsEvent: true}}},
-			false},
-		{"each-expr-element",
-			&ElementNode{Tag: "div", EachExpr: "items as i",
-				Attrs: []*Attr{{Name: "click", Value: "h", IsEvent: true}}},
-			false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -5017,8 +4902,7 @@ func TestIsLeafDynamicElement(t *testing.T) {
 func TestIsHoleCompatible_AllHoleCompatible(t *testing.T) {
 	// allHoleCompatible should accept: static elements, leaf-dynamic elements,
 	// and any TextNode (static or dynamic — text holes are always compatible).
-	// It should reject: IfChainNode, EachBlockNode, ComponentNode, SlotNode,
-	// elements with IfCond/EachExpr.
+	// It should reject: IfChainNode, EachBlockNode, ComponentNode, SlotNode.
 
 	yes := []Node{
 		staticElem("div", staticText("hi")),
@@ -5033,7 +4917,6 @@ func TestIsHoleCompatible_AllHoleCompatible(t *testing.T) {
 		&ComponentNode{Name: "X"},
 		&SlotNode{Name: "default"},
 		eventElem("section", "click", "h", dynText("nested")), // dyn descendant
-		&ElementNode{Tag: "div", IfCond: "x"},
 	}
 
 	for _, n := range yes {
