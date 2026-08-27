@@ -49,10 +49,10 @@ Store subscriptions are synchronous. `readable` starts on its first subscriber a
 `$state.deep` proxies ordinary objects and arrays recursively. Repeated reads preserve proxy identity, cyclic plain-object graphs are supported, and built-ins that require internal slots (for example `Date`, `Promise`, `Map`, and typed arrays) deliberately remain unwrapped.
 
 Deep-state notifications are currently root-granular: a nested mutation
-invalidates consumers of the whole binding. The current Proxy also notifies on
-some JavaScript no-op traps and may observe more than one trap for one array
-method call. This preserves visible correctness but is a tracked runtime-cost
-limitation (`tasks/021-avoid-redundant-deep-state-notifications.md`).
+invalidates consumers of the whole binding. The Proxy suppresses equal writes
+and missing-key deletes; built-in mutating array methods publish at most one
+notification per logical operation. Per-row invalidation of large lists remains
+a tracked runtime-cost limitation (`tasks/023-make-each-row-updates-incremental.md`).
 
 ## Template and component features
 
