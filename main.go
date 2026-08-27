@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,6 +53,12 @@ type CompileOptions struct {
 	CSSExternal bool
 	SourceMap   bool      // emit a v3 .js.map alongside generated JS
 	TraceSink   TraceSink // optional source-free compiler trace observer
+	// TraceComponentID is an internal source-free override used for project
+	// traces. File mode derives a safe basename automatically.
+	TraceComponentID string
+	// StatusWriter receives human compiler progress. It defaults to stdout;
+	// --trace=- redirects it to stderr so stdout remains valid JSONL.
+	StatusWriter io.Writer
 
 	// TargetProfile enables sound direct-global diagnostics for a known host.
 	// The zero value is permissive for backwards compatibility.
@@ -73,6 +80,7 @@ func main() {
 	target := flag.String("target", "permissive", "JavaScript host profile: permissive, browser, worker, node, or ssr")
 	unavailableCapabilities := flag.String("unavailable-capabilities", "", "comma-separated direct host capabilities to reject, e.g. fetch,indexedDB")
 	strict := flag.Bool("strict", false, "treat proven unresolved JavaScript reads as errors")
+	tracePath := flag.String("trace", "", "append source-free CompilationTraceV1 records as JSONL; use '-' for stdout")
 	flag.Parse()
 
 	targetProfile, err := ParseTargetProfile(*target)
@@ -100,6 +108,12 @@ func main() {
 		TargetProfile:           targetProfile,
 		UnavailableCapabilities: splitCapabilityList(*unavailableCapabilities),
 		Strict:                  *strict,
+	}
+	if closeTrace, traceErr := configureTrace(&opts, *tracePath); traceErr != nil {
+		fmt.Fprintf(os.Stderr, "vela: %v\n", traceErr)
+		os.Exit(2)
+	} else if closeTrace != nil {
+		defer func() { _ = closeTrace() }()
 	}
 
 	// ── Project mode ─────────────────────────────────────────────────────────
@@ -137,8 +151,8 @@ func main() {
 		}
 	}
 
-	fmt.Println("Vela Compiler")
-	fmt.Println()
+	fmt.Fprintln(compilerStatusWriter(opts), "Vela Compiler")
+	fmt.Fprintln(compilerStatusWriter(opts))
 	compile()
 
 	if exitCode != 0 {
@@ -148,6 +162,31 @@ func main() {
 	if *watch {
 		runWatchFiles(args, *outDir, opts)
 	}
+}
+
+func compilerStatusWriter(opts CompileOptions) io.Writer {
+	if opts.StatusWriter != nil {
+		return opts.StatusWriter
+	}
+	return os.Stdout
+}
+
+// configureTrace applies CLI trace transport policy without changing normal
+// compilation options. When JSONL uses stdout, all human progress is moved to
+// stderr so every stdout line remains an independently parseable JSON record.
+func configureTrace(opts *CompileOptions, tracePath string) (func() error, error) {
+	if tracePath == "" {
+		return nil, nil
+	}
+	sink, err := OpenJSONLTraceSink(tracePath)
+	if err != nil {
+		return nil, err
+	}
+	opts.TraceSink = sink
+	if tracePath == "-" {
+		opts.StatusWriter = os.Stderr
+	}
+	return sink.Close, nil
 }
 
 func splitCapabilityList(raw string) []string {
@@ -175,25 +214,26 @@ func runProject(srcRoot, outRoot string, opts CompileOptions, watch, parallel bo
 		os.Exit(1)
 	}
 
-	fmt.Println("Vela Compiler")
-	fmt.Printf("   project   %s\n", absRoot)
-	fmt.Printf("   out       %s\n", filepath.Clean(outRoot))
+	status := compilerStatusWriter(opts)
+	fmt.Fprintln(status, "Vela Compiler")
+	fmt.Fprintf(status, "   project   %s\n", absRoot)
+	fmt.Fprintf(status, "   out       %s\n", filepath.Clean(outRoot))
 	if opts.Minify {
-		fmt.Println("   minify    on")
+		fmt.Fprintln(status, "   minify    on")
 	}
 	if opts.EmitAST {
-		fmt.Println("   ast       on")
+		fmt.Fprintln(status, "   ast       on")
 	}
 	if parallel {
-		fmt.Println("   parallel  on")
+		fmt.Fprintln(status, "   parallel  on")
 	}
-	fmt.Println()
+	fmt.Fprintln(status)
 
 	start := time.Now()
 	files := collectVela(srcRoot)
 
 	if len(files) == 0 {
-		fmt.Println("  no .vela files found")
+		fmt.Fprintln(status, "  no .vela files found")
 		return
 	}
 
@@ -202,12 +242,12 @@ func runProject(srcRoot, outRoot string, opts CompileOptions, watch, parallel bo
 	elapsed := time.Since(start).Round(time.Millisecond)
 	total := len(files)
 	ok := total - errors
-	fmt.Printf("\n  %d/%d compiled", ok, total)
+	fmt.Fprintf(status, "\n  %d/%d compiled", ok, total)
 	if errors > 0 {
-		fmt.Printf("  (%d error(s))\n", errors)
+		fmt.Fprintf(status, "  (%d error(s))\n", errors)
 		os.Exit(1)
 	} else {
-		fmt.Printf("  in %s ✓\n", elapsed)
+		fmt.Fprintf(status, "  in %s ✓\n", elapsed)
 	}
 
 	if watch {
@@ -227,15 +267,13 @@ func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 			wg.Add(1)
 			go func(i int, src string) {
 				defer wg.Done()
-				dest := mirrorPath(src, srcRoot, outRoot, ".js")
-				results[i] = result{compilePrint(src, dest, opts)}
+				results[i] = result{compileProjectFile(src, srcRoot, outRoot, opts)}
 			}(i, src)
 		}
 		wg.Wait()
 	} else {
 		for i, src := range files {
-			dest := mirrorPath(src, srcRoot, outRoot, ".js")
-			results[i] = result{compilePrint(src, dest, opts)}
+			results[i] = result{compileProjectFile(src, srcRoot, outRoot, opts)}
 		}
 	}
 
@@ -257,12 +295,21 @@ func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 	return errors
 }
 
+func compileProjectFile(src, srcRoot, outRoot string, opts CompileOptions) bool {
+	dest := mirrorPath(src, srcRoot, outRoot, ".js")
+	if rel, err := filepath.Rel(srcRoot, src); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		opts.TraceComponentID = filepath.ToSlash(rel)
+	}
+	return compilePrint(src, dest, opts)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Watch modes
 // ─────────────────────────────────────────────────────────────────────────────
 
 func runWatchFiles(files []string, outDir string, opts CompileOptions) {
-	fmt.Println("\nWatching for changes… (Ctrl-C to stop)")
+	status := compilerStatusWriter(opts)
+	fmt.Fprintln(status, "\nWatching for changes… (Ctrl-C to stop)")
 	mtimes := map[string]time.Time{}
 	for _, f := range files {
 		if info, err := os.Stat(f); err == nil {
@@ -278,7 +325,7 @@ func runWatchFiles(files []string, outDir string, opts CompileOptions) {
 			}
 			if info.ModTime().After(mtimes[src]) {
 				mtimes[src] = info.ModTime()
-				fmt.Printf("\n  ↻  %s\n", src)
+				fmt.Fprintf(status, "\n  ↻  %s\n", src)
 				dest := filepath.Join(outDir, componentName(src)+".js")
 				compilePrint(src, dest, opts)
 			}
@@ -287,7 +334,8 @@ func runWatchFiles(files []string, outDir string, opts CompileOptions) {
 }
 
 func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
-	fmt.Println("\nWatching for changes… (Ctrl-C to stop)")
+	status := compilerStatusWriter(opts)
+	fmt.Fprintln(status, "\nWatching for changes… (Ctrl-C to stop)")
 
 	mtimes := map[string]time.Time{}
 	for _, f := range collectVela(srcRoot) {
@@ -314,7 +362,7 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 			}
 			prev, known := mtimes[f]
 			if !known {
-				fmt.Printf("\n  +  %s (new)\n", relOrBase(f, srcRoot))
+				fmt.Fprintf(status, "\n  +  %s (new)\n", relOrBase(f, srcRoot))
 			}
 			if !known || info.ModTime().After(prev) {
 				mtimes[f] = info.ModTime()
@@ -331,15 +379,14 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 				if opts.EmitAST {
 					_ = os.Remove(strings.TrimSuffix(dest, ".js") + ".ast.json")
 				}
-				fmt.Printf("\n  −  %s (removed)\n", relOrBase(f, srcRoot))
+				fmt.Fprintf(status, "\n  −  %s (removed)\n", relOrBase(f, srcRoot))
 			}
 		}
 
 		if len(changed) > 0 {
-			fmt.Printf("\n  ↻  %d file(s) changed\n", len(changed))
+			fmt.Fprintf(status, "\n  ↻  %d file(s) changed\n", len(changed))
 			for _, src := range changed {
-				dest := mirrorPath(src, srcRoot, outRoot, ".js")
-				compilePrint(src, dest, opts)
+				compileProjectFile(src, srcRoot, outRoot, opts)
 			}
 		}
 	}
@@ -357,7 +404,7 @@ func compilePrint(src, dest string, opts CompileOptions) bool {
 		if d.Sev == SevError {
 			fmt.Fprintf(os.Stderr, "       %s\n", d)
 		} else {
-			fmt.Printf("       %s\n", d)
+			fmt.Fprintf(compilerStatusWriter(opts), "       %s\n", d)
 		}
 	}
 
@@ -383,7 +430,7 @@ func compilePrint(src, dest string, opts CompileOptions) bool {
 		suffix += " [ast]"
 	}
 
-	fmt.Printf("  ✓  %-40s → %s%s\n", src, dest, suffix)
+	fmt.Fprintf(compilerStatusWriter(opts), "  ✓  %-40s → %s%s\n", src, dest, suffix)
 	return true
 }
 

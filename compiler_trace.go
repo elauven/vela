@@ -1,7 +1,12 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -10,6 +15,71 @@ import (
 // side effects beyond the normal compiler path.
 type TraceSink interface {
 	Record(CompilationTraceV1) error
+}
+
+// JSONLTraceSink appends one complete JSON record per line. Record is safe for
+// concurrent project builds: serialization and the single underlying Write are
+// both protected by a mutex, so separate records cannot interleave.
+type JSONLTraceSink struct {
+	mu     sync.Mutex
+	writer io.Writer
+	closer io.Closer
+}
+
+// OpenJSONLTraceSink opens path for append-only trace output. A path of "-"
+// writes to stdout and is never closed by the sink.
+func OpenJSONLTraceSink(path string) (*JSONLTraceSink, error) {
+	if path == "" {
+		return nil, fmt.Errorf("trace path must not be empty")
+	}
+	if path == "-" {
+		return NewJSONLTraceSink(os.Stdout), nil
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("open trace file %q: %w", path, err)
+	}
+	sink := NewJSONLTraceSink(file)
+	sink.closer = file
+	return sink, nil
+}
+
+// NewJSONLTraceSink constructs a JSONL sink around writer. It is primarily
+// useful for embedding and tests; callers that pass an *os.File retain its
+// lifetime unless they call Close after assigning their own closer.
+func NewJSONLTraceSink(writer io.Writer) *JSONLTraceSink {
+	return &JSONLTraceSink{writer: writer}
+}
+
+func (s *JSONLTraceSink) Record(trace CompilationTraceV1) error {
+	if s == nil || s.writer == nil {
+		return fmt.Errorf("write trace JSONL record: sink is not initialized")
+	}
+	data, err := json.Marshal(trace)
+	if err != nil {
+		return fmt.Errorf("marshal trace JSONL record: %w", err)
+	}
+	data = append(data, '\n')
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	written, err := s.writer.Write(data)
+	if err != nil {
+		return fmt.Errorf("write trace JSONL record: %w", err)
+	}
+	if written != len(data) {
+		return fmt.Errorf("write trace JSONL record: %w", io.ErrShortWrite)
+	}
+	return nil
+}
+
+// Close releases a file opened by OpenJSONLTraceSink. It intentionally leaves
+// stdout and externally supplied writers alone.
+func (s *JSONLTraceSink) Close() error {
+	if s == nil || s.closer == nil {
+		return nil
+	}
+	return s.closer.Close()
 }
 
 // CompilationTraceV1 is the stable, source-free observability record for one
@@ -94,7 +164,7 @@ func newTraceRecorder(src, componentName string, opts CompileOptions) *traceReco
 		trace: CompilationTraceV1{
 			SchemaVersion: 1,
 			Component: TraceComponent{
-				ID:          traceComponentID(src),
+				ID:          traceComponentIDForCompile(src, opts),
 				DisplayName: componentName,
 			},
 			Options: TraceOptions{
@@ -107,9 +177,15 @@ func newTraceRecorder(src, componentName string, opts CompileOptions) *traceReco
 	}
 }
 
+func traceComponentIDForCompile(src string, opts CompileOptions) string {
+	if opts.TraceComponentID != "" {
+		return opts.TraceComponentID
+	}
+	return traceComponentID(src)
+}
+
 // traceComponentID deliberately avoids absolute paths in file mode. Project
-// mode can replace this with a project-relative ID when project ownership is
-// introduced into CompileOptions.
+// mode supplies a project-relative ID through CompileOptions.
 func traceComponentID(src string) string {
 	clean := filepath.ToSlash(filepath.Clean(src))
 	if filepath.IsAbs(src) {
