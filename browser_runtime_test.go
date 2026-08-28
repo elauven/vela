@@ -479,7 +479,32 @@ func TestBrowserRuntimeAuditDestroyBeforeDeferredFlush(t *testing.T) {
 <template><button class="update" @click={update}>{value}</button></template>`}, "App.js", []rtStep{
 		{"clickAndDestroy": "button.update"},
 		{"assertCount": "button.update", "equals": 0},
-		{"assertGlobal": "__velaAudit.detachedWrites", "equals": 1},
+		{"assertGlobal": "__velaAudit.detachedWrites", "equals": 0},
+	})
+}
+
+func TestBrowserRuntimeDestroyIsIdempotentAndDropsQueuedFlush(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  import { onMount, onDestroy } from "vela";
+  const metrics = { renders: 0, mountCleanups: 0, effectCleanups: 0, destroyCalls: 0 };
+  globalThis.__velaDestroyMetrics = metrics;
+  let value = $state("before");
+  function render(next) { metrics.renders++; return next; }
+  function update() { value = "after"; }
+  $effect(() => { return () => { metrics.effectCleanups++; }; });
+  onMount(() => { return () => { metrics.mountCleanups++; }; });
+  onDestroy(() => {
+    metrics.destroyCalls++;
+    globalThis.__velaInstance.destroy();
+  });
+</script>
+<template><button class="update" ={update}>{render(value)}</button></template>`}, "App.js", []rtStep{
+		{"assertGlobal": "__velaDestroyMetrics.renders", "equals": 1},
+		{"clickAndDestroy": "button.update"},
+		{"assertGlobal": "__velaDestroyMetrics.renders", "equals": 1},
+		{"assertGlobal": "__velaDestroyMetrics.mountCleanups", "equals": 1},
+		{"assertGlobal": "__velaDestroyMetrics.effectCleanups", "equals": 1},
+		{"assertGlobal": "__velaDestroyMetrics.destroyCalls", "equals": 1},
 	})
 }
 

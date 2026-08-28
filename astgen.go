@@ -689,11 +689,15 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 		ownerRuns[entry.key] = entry.ran
 	}
 	g.flushPlan = plan
+
+	// Every component owns one liveness flag. It is set before teardown so
+	// queued flushes and late user callbacks become harmless no-ops.
+	var out []JsStmt
+	out = append(out, genLet("$$disposed", boolLit(false)))
 	if len(plan.entries) == 0 && len(plan.effectFlags) == 0 {
-		return nil
+		return out
 	}
 
-	var out []JsStmt
 	out = append(out, genLet("$$flushQueued", boolLit(false)))
 	for _, entry := range plan.entries {
 		out = append(out, genLet(entry.flag, boolLit(false)))
@@ -705,7 +709,10 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 		out = append(out, genLet(flag, boolLit(false)))
 	}
 
-	flushBody := []JsStmt{genAssignStmt(id("$$flushQueued"), boolLit(false))}
+	flushBody := []JsStmt{
+		genAssignStmt(id("$$flushQueued"), boolLit(false)),
+		genIf(id("$$disposed"), genReturn(nil)),
+	}
 	if g.analysis != nil {
 		for _, state := range g.analysis.StateVars {
 			if state.Deep {
@@ -772,6 +779,7 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 		baseStmt: baseStmt{genNode()},
 		Name:     "$$scheduleFlush",
 		Body: genBlock(
+			genIf(id("$$disposed"), genReturn(nil)),
 			genIf(id("$$flushQueued"), genReturn(nil)),
 			genAssignStmt(id("$$flushQueued"), boolLit(true)),
 			genInvoke("$$defer", id("$$flush")),
@@ -2392,6 +2400,7 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 // assignment, then the reactive cascade.
 func (g *ASTGen) buildOneSetter(name string) JsStmt {
 	body := &JsBlock{baseStmt: baseStmt{genNode()}}
+	body.Body = append(body.Body, genIf(id("$$disposed"), genReturn(nil)))
 
 	// if (<name> === $$v && !$$isProxy($$v)) return;
 	//
@@ -2473,6 +2482,7 @@ func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 
 	// $$set_X_notify — the cascade body.
 	notifyBody := &JsBlock{baseStmt: baseStmt{genNode()}}
+	notifyBody.Body = append(notifyBody.Body, genIf(id("$$disposed"), genReturn(nil)))
 	notifyBody.Body = append(notifyBody.Body, mutationCapture)
 	notifyBody.Body = append(notifyBody.Body, g.buildSetterCascade(name)...)
 	notify := &JsFuncDecl{
@@ -2488,6 +2498,7 @@ func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 	// !== raw, so the guard never fired anyway), but a re-passed
 	// proxy must still fall through to a re-wrap + notify.
 	setBody := &JsBlock{baseStmt: baseStmt{genNode()}}
+	setBody.Body = append(setBody.Body, genIf(id("$$disposed"), genReturn(nil)))
 	setBody.Body = append(setBody.Body, &JsIfStmt{
 		baseStmt: baseStmt{genNode()},
 		Test: &JsBinaryExpr{
@@ -4969,6 +4980,36 @@ func (g *ASTGen) buildReturn() JsStmt {
 		(len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0)
 
 	destroyBody := &JsBlock{baseStmt: baseStmt{genNode()}}
+	// Mark disposal before user cleanup. This makes repeated destroy() calls and
+	// setters reached from cleanup or later callbacks harmless.
+	destroyBody.Body = append(destroyBody.Body,
+		genIf(id("$$disposed"), genReturn(nil)),
+		genAssignStmt(id("$$disposed"), boolLit(true)),
+	)
+	// A shared runtime queue may still hold a component flush; it will observe disposal,
+	// while clearing component-local bookkeeping releases the current batch.
+	if g.flushPlan != nil && (len(g.flushPlan.entries) > 0 || len(g.flushPlan.effectFlags) > 0) {
+		destroyBody.Body = append(destroyBody.Body, genAssignStmt(id("$$flushQueued"), boolLit(false)))
+		for _, entry := range g.flushPlan.entries {
+			destroyBody.Body = append(destroyBody.Body, genAssignStmt(id(entry.flag), boolLit(false)))
+			if entry.ran != "" {
+				destroyBody.Body = append(destroyBody.Body, genAssignStmt(id(entry.ran), boolLit(false)))
+			}
+		}
+		for _, flag := range g.flushPlan.effectFlags {
+			destroyBody.Body = append(destroyBody.Body, genAssignStmt(id(flag), boolLit(false)))
+		}
+	}
+	if g.analysis != nil {
+		for _, state := range g.analysis.StateVars {
+			if state.Deep {
+				destroyBody.Body = append(destroyBody.Body,
+					genAssignStmt(id("$$pendingMutations_"+state.Name), genArray()),
+					genAssignStmt(id("$$activeMutations_"+state.Name), genArray()),
+				)
+			}
+		}
+	}
 	// 1. Effect cleanups.
 	if g.analysis != nil {
 		for i := range g.analysis.Effects {
