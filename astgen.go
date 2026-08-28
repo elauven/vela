@@ -706,6 +706,16 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 	}
 
 	flushBody := []JsStmt{genAssignStmt(id("$$flushQueued"), boolLit(false))}
+	if g.analysis != nil {
+		for _, state := range g.analysis.StateVars {
+			if state.Deep {
+				flushBody = append(flushBody,
+					genAssignStmt(id("$$activeMutations_"+state.Name), id("$$pendingMutations_"+state.Name)),
+					genAssignStmt(id("$$pendingMutations_"+state.Name), genArray()),
+				)
+			}
+		}
+	}
 	for _, index := range plan.structural {
 		flushBody = append(flushBody, genAssignStmt(id(plan.entries[index].ran), boolLit(false)))
 	}
@@ -2033,6 +2043,8 @@ func (g *ASTGen) buildStateDecl(sv *StateVar) []JsStmt {
 	mutName := "$$mut_" + sv.Name
 	return []JsStmt{
 		genConst(mutName, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$mutation")}, Body: genCall(id("$$set_"+sv.Name+"_notify"), id("$$mutation"))}),
+		genLet("$$pendingMutations_"+sv.Name, genArray()),
+		genLet("$$activeMutations_"+sv.Name, genArray()),
 		genLet(sv.Name, genCall(id("$$proxy"), init, id(mutName))),
 	}
 }
@@ -2442,8 +2454,16 @@ func (g *ASTGen) buildOneSetter(name string) JsStmt {
 // $$mut_X), so a nested mutation triggers the same cascade as a
 // full reassignment.
 func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
+	pendingMutations := "$$pendingMutations_" + name
+	mutationCapture := genIf(id("$$mutation"),
+		genIf(genBinary("!==", id(pendingMutations), genNull()),
+			genExprStmt(genCall(genMember(id(pendingMutations), "push"), id("$$mutation")))),
+	)
+	mutationCapture.Else = genAssignStmt(id(pendingMutations), genNull())
+
 	// $$set_X_notify — the cascade body.
 	notifyBody := &JsBlock{baseStmt: baseStmt{genNode()}}
+	notifyBody.Body = append(notifyBody.Body, mutationCapture)
 	notifyBody.Body = append(notifyBody.Body, g.buildSetterCascade(name)...)
 	notify := &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
