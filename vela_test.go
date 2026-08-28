@@ -4482,8 +4482,10 @@ func TestTwoWayBinding_InputValue(t *testing.T) {
 	// Property write, not setAttribute('value', ...) — so programmatic
 	// state changes reflect on the live input.  Element var is $$root
 	// when the input is the template root; $$nN otherwise.
-	if !strings.Contains(code, ".value = name") {
-		t.Errorf("expected elem.value = (name) property write; got:\n%s", code)
+	if !strings.Contains(code, "$$root_bind_value_value = name") ||
+		!strings.Contains(code, "if ($$root.value !== $$root_bind_value_value)") ||
+		!strings.Contains(code, "$$root.value = $$root_bind_value_value") {
+		t.Errorf("expected guarded elem.value property write; got:\n%s", code)
 	}
 	// Listener const + registration + cleanup.
 	if !regexp.MustCompile(`const \$\$(root|n\d+)_bind_input_h = \(\$e\) => \$\$set_name\(\$e\.target\.value\)`).MatchString(code) {
@@ -4509,8 +4511,10 @@ func TestTwoWayBinding_Checkbox(t *testing.T) {
 	// Property: elem.checked = !!(agreed)
 	// The element var is $$root when the input is the template root; $$nN
 	// otherwise.  Either is valid — match both.
-	if !strings.Contains(code, ".checked = !!agreed") {
-		t.Errorf("expected elem.checked = !!(agreed); got:\n%s", code)
+	if !strings.Contains(code, "$$root_bind_checked_value = !!agreed") ||
+		!strings.Contains(code, "if ($$root.checked !== $$root_bind_checked_value)") ||
+		!strings.Contains(code, "$$root.checked = $$root_bind_checked_value") {
+		t.Errorf("expected guarded elem.checked property write; got:\n%s", code)
 	}
 	// 'change' event, reading e.target.checked (not .value).
 	if !regexp.MustCompile(`\$\$set_agreed\(\$e\.target\.checked\)`).MatchString(code) {
@@ -4569,6 +4573,11 @@ func TestTwoWayBinding_CoexistsWithAtInput(t *testing.T) {
 	// Handler names must be distinct — bind is namespaced with _bind_.
 	if !strings.Contains(code, "_bind_input_h") {
 		t.Error("expected bind handler to use _bind_ prefix to avoid name collision")
+	}
+	bindAt := strings.Index(code, "addEventListener('input', $$root_bind_input_h)")
+	userAt := strings.Index(code, "addEventListener('input', $$root_input_h)")
+	if bindAt < 0 || userAt < 0 || bindAt >= userAt {
+		t.Errorf("expected source-order bind listener before user @input listener; got:\n%s", code)
 	}
 }
 

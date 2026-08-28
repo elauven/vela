@@ -415,7 +415,7 @@ func TestBrowserRuntimeAuditKeyedDeepEachUpdatesOnlyChangedRow(t *testing.T) {
 	})
 }
 
-func TestBrowserRuntimeAuditBindingRepeatsDOMValueWrite(t *testing.T) {
+func TestBrowserRuntimeBindingSkipsIdenticalDOMValueWrite(t *testing.T) {
 	runBrowserSources(t, map[string]string{"App.vela": `<script>
   const inputPrototype = document.createElement('input').constructor.prototype;
   const valueDescriptor = Object.getOwnPropertyDescriptor(inputPrototype, 'value');
@@ -435,20 +435,133 @@ func TestBrowserRuntimeAuditBindingRepeatsDOMValueWrite(t *testing.T) {
       globalThis.__velaAudit = { bindingValueWrites: metrics.valueWrites };
     });
   }
-  function dispatchNativeInput() {
-    const field = document.querySelector('input.field');
-    field.value = 'typed';
+  function burst() {
+    const field = document.querySelector("input.field");
+    field.value = "first";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    field.value = "final";
     metrics.valueWrites = 0;
-    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event("input", { bubbles: true }));
   }
 </script>
 <template>
   <input class="field" bind:value={value} @input={measureInput} />
-  <button class="dispatch" @click={dispatchNativeInput}>dispatch</button>
+  <button class="burst" @click={burst}>burst</button>
 </template>`}, "App.js", []rtStep{
-		{"click": "button.dispatch"},
+		{"focus": "input.field"},
+		{"input": "input.field", "value": "typed"},
 		{"assertValue": "input.field", "equals": "typed"},
-		{"assertGlobal": "__velaAudit.bindingValueWrites", "equals": 1},
+		{"assertFocused": "input.field"},
+		{"assertGlobal": "__velaAudit.bindingValueWrites", "equals": 0},
+		{"click": "button.burst"},
+		{"assertValue": "input.field", "equals": "final"},
+		{"assertGlobal": "__velaAudit.bindingValueWrites", "equals": 0},
+	})
+}
+
+func TestBrowserRuntimeBindingWritesNormalizedAndExternalValues(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  const inputPrototype = document.createElement("input").constructor.prototype;
+  const valueDescriptor = Object.getOwnPropertyDescriptor(inputPrototype, "value");
+  const metrics = { valueWrites: 0 };
+  Object.defineProperty(inputPrototype, "value", {
+    configurable: true,
+    get: valueDescriptor.get,
+    set: function(next) {
+      metrics.valueWrites++;
+      return valueDescriptor.set.call(this, next);
+    },
+  });
+  let value = $state("");
+  function publish(kind) {
+    queueMicrotask(() => {
+      globalThis.__velaAudit = { kind, valueWrites: metrics.valueWrites, value };
+    });
+  }
+  function external() {
+    metrics.valueWrites = 0;
+    value = "SERVER";
+    publish("external");
+  }
+</script>
+<template>
+  <input class="field" bind:value={value} @input={() => { metrics.valueWrites = 0; value = value.toUpperCase(); publish("normalized"); }} />
+  <button class="external" @click={external}>external</button>
+</template>`}, "App.js", []rtStep{
+		{"input": "input.field", "value": "vela"},
+		{"assertValue": "input.field", "equals": "VELA"},
+		{"assertGlobal": "__velaAudit.kind", "equals": "normalized"},
+		{"assertGlobal": "__velaAudit.valueWrites", "equals": 1},
+		{"click": "button.external"},
+		{"assertValue": "input.field", "equals": "SERVER"},
+		{"assertGlobal": "__velaAudit.kind", "equals": "external"},
+		{"assertGlobal": "__velaAudit.valueWrites", "equals": 1},
+	})
+}
+
+func TestBrowserRuntimeBindingsSkipNativeWritesForTextareaSelectAndCheckbox(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  function patch(tag, property, key) {
+    const prototype = document.createElement(tag).constructor.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, property);
+    Object.defineProperty(prototype, property, {
+      configurable: true,
+      get: descriptor.get,
+      set: function(next) {
+        metrics[key]++;
+        return descriptor.set.call(this, next);
+      },
+    });
+  }
+  const metrics = { textWrites: 0, selectWrites: 0, checkedWrites: 0 };
+  patch("textarea", "value", "textWrites");
+  patch("select", "value", "selectWrites");
+  patch("input", "checked", "checkedWrites");
+  let text = $state("");
+  let choice = $state("one");
+  let enabled = $state(false);
+  function resetAndPublish(kind) {
+    metrics.textWrites = 0;
+    metrics.selectWrites = 0;
+    metrics.checkedWrites = 0;
+    queueMicrotask(() => {
+      globalThis.__velaAudit = { kind, textWrites: metrics.textWrites, selectWrites: metrics.selectWrites, checkedWrites: metrics.checkedWrites };
+    });
+  }
+  function external() {
+    metrics.textWrites = 0;
+    metrics.selectWrites = 0;
+    metrics.checkedWrites = 0;
+    text = "server";
+    choice = "three";
+    enabled = false;
+    queueMicrotask(() => {
+      globalThis.__velaAudit = { kind: "external", textWrites: metrics.textWrites, selectWrites: metrics.selectWrites, checkedWrites: metrics.checkedWrites };
+    });
+  }
+</script>
+<template>
+  <textarea class="text" bind:value={text} @input={() => resetAndPublish("text")}></textarea>
+  <select class="choice" bind:value={choice} @change={() => resetAndPublish("select")}><option value="one">one</option><option value="two">two</option><option value="three">three</option></select>
+  <input class="enabled" type="checkbox" bind:checked={enabled} @change={() => resetAndPublish("checked")} />
+  <button class="external" @click={external}>external</button>
+</template>`}, "App.js", []rtStep{
+		{"input": "textarea.text", "value": "typed"},
+		{"assertGlobal": "__velaAudit.kind", "equals": "text"},
+		{"assertGlobal": "__velaAudit.textWrites", "equals": 0},
+		{"change": "select.choice", "value": "two"},
+		{"assertGlobal": "__velaAudit.kind", "equals": "select"},
+		{"assertGlobal": "__velaAudit.selectWrites", "equals": 0},
+		{"change": "input.enabled", "checked": true},
+		{"assertGlobal": "__velaAudit.kind", "equals": "checked"},
+		{"assertGlobal": "__velaAudit.checkedWrites", "equals": 0},
+		{"click": "button.external"},
+		{"assertValue": "textarea.text", "equals": "server"},
+		{"assertValue": "select.choice", "equals": "three"},
+		{"assertGlobal": "__velaAudit.kind", "equals": "external"},
+		{"assertGlobal": "__velaAudit.textWrites", "equals": 1},
+		{"assertGlobal": "__velaAudit.selectWrites", "equals": 1},
+		{"assertGlobal": "__velaAudit.checkedWrites", "equals": 1},
 	})
 }
 
