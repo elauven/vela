@@ -494,7 +494,8 @@ export function $$eachRowsForMutations(mutations, keyField) {
   for (const mutation of mutations) {
     if (!mutation || (mutation.kind !== "set" && mutation.kind !== "delete") ||
         !Array.isArray(mutation.path) || mutation.path.length < 2) return null;
-    const [index, field] = mutation.path;
+    const [rawIndex, field] = mutation.path;
+    const index = typeof rawIndex === "string" ? Number(rawIndex) : rawIndex;
     if (!Number.isInteger(index) || index < 0 || field === keyField) return null;
     rows.add(index);
   }

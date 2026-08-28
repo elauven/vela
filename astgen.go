@@ -1701,6 +1701,7 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	}
 	if usesProxy {
 		specs = append(specs, JsImportSpec{Imported: "$$proxy"})
+		specs = append(specs, JsImportSpec{Imported: "$$eachRowsForMutations"})
 	}
 	if usesIsProxy {
 		specs = append(specs, JsImportSpec{Imported: "$$isProxy"})
@@ -3309,7 +3310,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// scope when building inside a captured branch/slot scope.
 	incrementalPlan := g.eachIncrementalPlanFor(block)
 	reconcilerDecl := g.eachReconciler(
-		eachFn, fragFn, anchor, blocks, keymap, keyExpr, block.KeyAST, itemVar, indexVar)
+		eachFn, fragFn, anchor, blocks, keymap, keyExpr, block.KeyAST, itemVar, indexVar, incrementalPlan)
 
 	if captured {
 		g.declare(fragDecl)
@@ -3396,10 +3397,10 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 // eachReconciler builds a typed reconciler. The keyed path remains a temporary
 // source fallback while its key-expression origin handling is migrated.
 func (g *ASTGen) eachReconciler(
-	eachFn, fragFn, anchor, blocks, keymap, keyExpr string, keyAST *TemplateExpr, itemVar, indexVar string,
+	eachFn, fragFn, anchor, blocks, keymap, keyExpr string, keyAST *TemplateExpr, itemVar, indexVar string, incremental *eachIncrementalPlan,
 ) JsStmt {
 	if keyExpr != "" {
-		return g.eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap, keyAST, itemVar, indexVar)
+		return g.eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap, keyAST, itemVar, indexVar, incremental)
 	}
 	return g.eachReconcilerUnkeyed(eachFn, fragFn, anchor, blocks, itemVar, indexVar)
 }
@@ -3491,7 +3492,7 @@ func (g *ASTGen) eachReconcilerUnkeyed(eachFn, fragFn, anchor, blocks, itemVar, 
 	}
 }
 
-func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap string, keyAST *TemplateExpr, itemVar, indexVar string) JsStmt {
+func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap string, keyAST *TemplateExpr, itemVar, indexVar string, incremental *eachIncrementalPlan) JsStmt {
 	arr := id("$$arr")
 	key := id("$$key")
 	blk := id("$$blk")
@@ -3529,12 +3530,33 @@ func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap stri
 			),
 		)),
 	}
+	fastPath := []JsStmt{}
+	if incremental != nil {
+		rows := id("$$dirtyRows")
+		rowIndex := id("$$rowIndex")
+		rowBlock := id("$$rowBlock")
+		rowUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{rowIndex}, Body: genBlock(
+			genConst("$$rowBlock", genComputedMember(id(blocks), rowIndex)),
+			genIf(genLogical("&&", rowBlock, genMember(rowBlock, "update")),
+				genExprStmt(genCall(genMember(rowBlock, "update"), genComputedMember(arr, rowIndex), rowIndex))),
+		)}
+		canUpdateRows := genLogical("&&", rows, genLogical("&&", arr,
+			genBinary("===", genMember(arr, "length"), genMember(id(blocks), "length"))))
+		fastPath = append(fastPath,
+			genConst("$$dirtyRows", genCall(id("$$eachRowsForMutations"), id("$$mutations"), strLit(incremental.keyField))),
+			genIf(canUpdateRows, genBlock(
+				genExprStmt(genCall(genMember(rows, "forEach"), rowUpdate)),
+				genReturn(nil),
+			)),
+		)
+	}
 	return &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
 		Name:     eachFn,
-		Params:   []JsExpr{arr},
+		Params:   []JsExpr{arr, id("$$mutations")},
 		Body: genBlock(
 			genIf(genUnary("!", genMember(id(anchor), "parentNode")), genReturn(nil)),
+			genBlock(fastPath...),
 			genConst("$$newKeys", genNew(id("Set"))),
 			genConst("$$newBlocks", genArray()),
 			genExprStmt(genCall(genMember(genLogical("||", arr, genArray()), "forEach"), &JsFuncExpr{

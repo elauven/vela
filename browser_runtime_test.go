@@ -378,7 +378,7 @@ func TestBrowserRuntimeCoalescedFlushKeepsReentrantUpdates(t *testing.T) {
 	})
 }
 
-func TestBrowserRuntimeAuditKeyedDeepEachUpdatesEveryRow(t *testing.T) {
+func TestBrowserRuntimeAuditKeyedDeepEachUpdatesOnlyChangedRow(t *testing.T) {
 	runBrowserSources(t, map[string]string{"App.vela": `<script>
   let rows = $state.deep([
     { id: 1, label: 'one' },
@@ -410,7 +410,7 @@ func TestBrowserRuntimeAuditKeyedDeepEachUpdatesEveryRow(t *testing.T) {
 </template>`}, "App.js", []rtStep{
 		{"click": "button.update"},
 		{"assertText": ".row:nth-of-type(2)", "equals": "two updated"},
-		{"assertGlobal": "__velaAudit.keyedRowUpdates", "equals": 3},
+		{"assertGlobal": "__velaAudit.keyedRowUpdates", "equals": 1},
 		{"assertGlobal": "__velaAudit.firstRowPreserved", "equals": true},
 	})
 }
@@ -494,5 +494,26 @@ func TestBrowserRuntimeComponentKeepsDirectChildCSSSelector(t *testing.T) {
 		"Child.vela": `<template><p class="child">child</p></template>`,
 	}, "App.js", []rtStep{
 		{"assertStyle": ".parent > .child", "property": "color", "equals": "rgb(1, 2, 3)"},
+	})
+}
+
+func TestBrowserRuntimeUpdatesOnlyChangedDeepKeyedEachRow(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let items = $state.deep([{ id: 1, title: "one" }, { id: 2, title: "two" }, { id: 3, title: "three" }]);
+  const metrics = { renders: 0 };
+  function render(value) { metrics.renders++; return value; }
+  function editFirst() {
+    metrics.renders = 0;
+    items[0].title = "edited";
+    queueMicrotask(() => { globalThis.__velaAudit = { renders: metrics.renders }; });
+  }
+</script>
+<template>
+  <button class="edit" @click={editFirst}>edit</button>
+  {#each items as item (item.id)}<p class="row">{render(item.title)}</p>{/each}
+</template>`}, "App.js", []rtStep{
+		{"click": "button.edit"},
+		{"assertText": ".row", "equals": "edited"},
+		{"assertGlobal": "__velaAudit.renders", "equals": 1},
 	})
 }
