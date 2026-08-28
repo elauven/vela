@@ -483,3 +483,20 @@ export function $$dispatch($$target, name, detail) {
   $$target.dispatchEvent(
     new CustomEvent(name, { detail, bubbles: true }));
 }
+
+// $$eachRowsForMutations returns the distinct row indexes that can be safely
+// refreshed without a full keyed reconciliation. null is the conservative
+// fallback: structural array changes, key writes, unknown records, and empty
+// batches must retain the normal keyed diff.
+export function $$eachRowsForMutations(mutations, keyField) {
+  if (!Array.isArray(mutations) || mutations.length === 0) return null;
+  const rows = new Set();
+  for (const mutation of mutations) {
+    if (!mutation || (mutation.kind !== "set" && mutation.kind !== "delete") ||
+        !Array.isArray(mutation.path) || mutation.path.length < 2) return null;
+    const [index, field] = mutation.path;
+    if (!Number.isInteger(index) || index < 0 || field === keyField) return null;
+    rows.add(index);
+  }
+  return [...rows];
+}

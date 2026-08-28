@@ -3076,6 +3076,41 @@ func staticRawText(children []Node) (string, bool) {
 // bearing-subtree row).  Rows with per-row events / binds /
 // directives, or nested control-flow, are not yet covered by the
 // direct path — astEachRowOK gates those to buildModuleSplice.
+type eachIncrementalPlan struct {
+	stateName string
+	keyField  string
+}
+
+// eachIncrementalPlanFor returns a deliberately narrow optimisation contract:
+// a direct $state.deep list keyed by item.<field>. All other expressions use
+// the existing full keyed reconciler.
+func (g *ASTGen) eachIncrementalPlanFor(block *EachBlockNode) *eachIncrementalPlan {
+	name, ok := templateExprIdent(block.IterExpr)
+	if !ok || g.analysis == nil {
+		return nil
+	}
+	deep := false
+	for _, state := range g.analysis.StateVars {
+		if state.Name == name && state.Deep {
+			deep = true
+			break
+		}
+	}
+	if !deep {
+		return nil
+	}
+	key, ok := templateExprRoot(block.KeyAST).(*JsMemberExpr)
+	if !ok || key.Computed {
+		return nil
+	}
+	item, itemOK := key.Obj.(*JsIdent)
+	field, fieldOK := key.Prop.(*JsIdent)
+	if !itemOK || !fieldOK || item.Name != block.ItemName || field.Name == "" {
+		return nil
+	}
+	return &eachIncrementalPlan{stateName: name, keyField: field.Name}
+}
+
 func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	itemVar, indexVar := block.ItemName, block.IndexName
 	if indexVar == "" {
@@ -3272,6 +3307,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// are persistent: the setter cascade re-invokes the reconciler
 	// across the component's whole life.  Hoist them to component
 	// scope when building inside a captured branch/slot scope.
+	incrementalPlan := g.eachIncrementalPlanFor(block)
 	reconcilerDecl := g.eachReconciler(
 		eachFn, fragFn, anchor, blocks, keymap, keyExpr, block.KeyAST, itemVar, indexVar)
 
@@ -3324,16 +3360,18 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	}
 
 	// ── 5. Wiring ────────────────────────────────────────────
+	// ── 5. Wiring ────────────────────────────────────────────
 	g.body = append(g.body, genExprStmt(genCall(
 		genMember(generatedID(parentVar), "appendChild"), generatedID(anchor),
 	)))
 	arrayExpr := g.templateExpr(block.IterExpr)
-	runEach := genExprStmt(genCall(generatedID(eachFn), arrayExpr))
+	runEachArgs := []JsExpr{arrayExpr}
+	if incrementalPlan != nil {
+		runEachArgs = append(runEachArgs, generatedID("$$activeMutations_"+incrementalPlan.stateName))
+	}
+	runEach := genExprStmt(genCall(generatedID(eachFn), runEachArgs...))
 	g.initBody = append(g.initBody, runEach)
 	for _, dep := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
-		g.addUpdate(dep, shareStmt(runEach))
-	}
-	for dep := range rowAttrs.deps {
 		g.addUpdate(dep, shareStmt(runEach))
 	}
 	// A nested-control-flow row body reads component state through
