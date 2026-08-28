@@ -596,3 +596,26 @@ func TestBrowserRuntimeDeepKeyedEachKeepsAndCleansChildRows(t *testing.T) {
 		{"assertGlobal": "__velaAudit.removedDestroys", "equals": 1},
 	})
 }
+
+func TestBrowserRuntimeDeepKeyedEachLargeListUpdatesOneRow(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  function makeItems() {
+    return Array.from({ length: 100 }, (_, id) => ({ id, label: "row-" + id }));
+  }
+  let items = $state.deep(makeItems());
+  const metrics = { renders: 0 };
+  function render(value) { metrics.renders++; return value; }
+  function editMiddle() {
+    metrics.renders = 0;
+    items[50].label = "changed";
+    queueMicrotask(() => { globalThis.__velaAudit = { largeListRenders: metrics.renders }; });
+  }
+</script>
+<template><button class="edit" @click={editMiddle}>edit</button>{#each items as item (item.id)}<p class="row">{render(item.label)}</p>{/each}</template>`}, "App.js", []rtStep{
+		{"assertCount": ".row", "equals": 100},
+		{"click": "button.edit"},
+		{"assertText": ".row:nth-of-type(51)", "equals": "changed"},
+		{"assertCount": ".row", "equals": 100},
+		{"assertGlobal": "__velaAudit.largeListRenders", "equals": 1},
+	})
+}
