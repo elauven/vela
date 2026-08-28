@@ -1057,13 +1057,26 @@ func genBool(expr JsExpr) JsExpr {
 
 func genString(expr JsExpr) JsExpr { return genCall(id("String"), expr) }
 
+// attrWriteStmt handles ordinary dynamic attributes. Two-way form bindings use
+// bindingWriteStmt below so their live property write can be guarded.
+func (g *ASTGen) attrWriteStmt(varName string, attr *Attr) JsStmt {
+	expr := g.templateExpr(attr.Expr)
+	if isBoolAttr(attr.Name) {
+		return genAssignStmt(genMember(id(varName), attr.Name), genBool(expr))
+	}
+	if attr.Name == "class" {
+		return genAssignStmt(genMember(id(varName), "className"), genString(expr))
+	}
+	return genExprStmt(genCall(genMember(id(varName), "setAttribute"), strLit(attr.Name), genString(expr)))
+}
+
 // bindingWriteStmt evaluates a two-way binding expression once, then writes the
 // live DOM property only when it differs. Reusing one compiler-owned temporary
 // preserves expression side effects while avoiding a redundant controlled-input
 // write immediately after the browser has already applied user input.
 func (g *ASTGen) bindingWriteStmt(varName string, attr *Attr) JsStmt {
 	cache := varName + "_bind_" + attr.Name + "_value"
-	g.body = append(g.body, genLet(cache, nil))
+	g.declareInScope(genLet(cache, nil))
 	value := g.templateExpr(attr.Expr)
 	if attr.Name == "checked" {
 		value = genBool(value)
@@ -4850,7 +4863,10 @@ func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 		}))
 		g.emitListenerPair(&g.events, varName, spec.event, hv, nil, "", true)
 	}
-	write := g.bindingWriteStmt(varName, attr)
+	write := g.attrWriteStmt(varName, attr)
+	if attr.IsTwoWay && ok {
+		write = g.bindingWriteStmt(varName, attr)
+	}
 	g.registerReactiveTemplateStmt(write, attr.Expr)
 }
 
