@@ -754,6 +754,15 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 			genInvoke("$$effect"+itoa(i)),
 		)))
 	}
+	// Active mutation metadata belongs only to this flush. Mutations from an
+	// effect above have already been recorded in the separate pending batch.
+	if g.analysis != nil {
+		for _, state := range g.analysis.StateVars {
+			if state.Deep {
+				flushBody = append(flushBody, genAssignStmt(id("$$activeMutations_"+state.Name), genArray()))
+			}
+		}
+	}
 	out = append(out, &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
 		Name:     "$$flush",

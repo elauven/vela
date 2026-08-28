@@ -619,3 +619,39 @@ func TestBrowserRuntimeDeepKeyedEachLargeListUpdatesOneRow(t *testing.T) {
 		{"assertGlobal": "__velaAudit.largeListRenders", "equals": 1},
 	})
 }
+
+func TestBrowserRuntimeDeepKeyedEachUpdatesRowAttributesAndClassesOnly(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let items = $state.deep([{ id: 1, label: "one", selected: false }, { id: 2, label: "two", selected: false }]);
+  const metrics = { attributeCalls: 0 };
+  function attribute(value) { metrics.attributeCalls++; return value; }
+  function updateFirst() {
+    metrics.attributeCalls = 0;
+    items[0].label = "edited";
+    items[0].selected = true;
+    queueMicrotask(() => { globalThis.__velaAudit = { attributeCalls: metrics.attributeCalls }; });
+  }
+</script>
+<template><button class="update" @click={updateFirst}>update</button>{#each items as item (item.id)}<p class="row" :data-label={attribute(item.label)} class:selected={item.selected}>{item.label}</p>{/each}</template>`}, "App.js", []rtStep{
+		{"click": "button.update"},
+		{"assertText": ".row", "equals": "edited"},
+		{"assertCount": ".row.selected", "equals": 1},
+		{"assertGlobal": "__velaAudit.attributeCalls", "equals": 1},
+	})
+}
+
+func TestBrowserRuntimeDeepKeyedEachExpiresMutationBatchBeforeExternalUpdate(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let items = $state.deep([{ id: 1, label: "one" }, { id: 2, label: "two" }]);
+  let selected = $state(1);
+  function edit() { items[0].label = "edited"; }
+  function selectSecond() { selected = 2; }
+</script>
+<template><button class="edit" @click={edit}>edit</button><button class="select" @click={selectSecond}>select</button>{#each items as item (item.id)}<p class="row" class:selected={item.id === selected}>{item.label}</p>{/each}</template>`}, "App.js", []rtStep{
+		{"click": "button.edit"},
+		{"assertText": ".row", "equals": "edited"},
+		{"click": "button.select"},
+		{"assertCount": ".row.selected:nth-of-type(1)", "equals": 0},
+		{"assertCount": ".row.selected:nth-of-type(2)", "equals": 1},
+	})
+}
