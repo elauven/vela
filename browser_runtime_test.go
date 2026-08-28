@@ -564,3 +564,35 @@ func TestBrowserRuntimeDeepKeyedEachUpdatesNestedBlockRowOnly(t *testing.T) {
 		{"assertGlobal": "__velaAudit.nestedRenders", "equals": 1},
 	})
 }
+
+func TestBrowserRuntimeDeepKeyedEachKeepsAndCleansChildRows(t *testing.T) {
+	runBrowserSources(t, map[string]string{
+		"App.vela": `<script>
+  import Child from "./Child.vela";
+  let items = $state.deep([{ id: 1, label: "one" }, { id: 2, label: "two" }]);
+  function edit() {
+    globalThis.__velaDestroyed = 0;
+    items[0].label = "edited";
+    queueMicrotask(() => { globalThis.__velaAudit = { preservedDestroys: globalThis.__velaDestroyed }; });
+  }
+  function removeSecond() {
+    items.splice(1, 1);
+    queueMicrotask(() => { globalThis.__velaAudit = { removedDestroys: globalThis.__velaDestroyed }; });
+  }
+</script>
+<template><button class="edit" @click={edit}>edit</button><button class="remove" @click={removeSecond}>remove</button>{#each items as item (item.id)}<Child :item={item} />{/each}</template>`,
+		"Child.vela": `<script>
+  import { onDestroy } from "vela";
+  export let item;
+  onDestroy(() => { globalThis.__velaDestroyed = (globalThis.__velaDestroyed || 0) + 1; });
+</script>
+<template><p class="child">{item.label}</p></template>`,
+	}, "App.js", []rtStep{
+		{"click": "button.edit"},
+		{"assertText": ".child", "equals": "edited"},
+		{"assertGlobal": "__velaAudit.preservedDestroys", "equals": 0},
+		{"click": "button.remove"},
+		{"assertCount": ".child", "equals": 1},
+		{"assertGlobal": "__velaAudit.removedDestroys", "equals": 1},
+	})
+}
