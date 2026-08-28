@@ -372,14 +372,14 @@ export function $$proxy(val, notify) {
   ]);
 
   const unwrap = (value) => rawByProxy.get(value) || value;
-  const changed = () => {
+  const changed = (mutation) => {
     if (mutationDepth > 0) {
       mutationPending = true;
       return;
     }
-    notify();
+    notify(mutation);
   };
-  const runArrayMutation = (target, key, receiver, method) => {
+  const runArrayMutation = (target, key, receiver, method, path) => {
     let methods = arrayMethods.get(target);
     if (!methods) {
       methods = new Map();
@@ -399,14 +399,14 @@ export function $$proxy(val, notify) {
         mutationDepth--;
         if (mutationDepth === 0 && mutationPending) {
           mutationPending = false;
-          notify();
+          notify({ kind: 'array', path: path.slice(), method: key });
         }
       }
     };
     methods.set(key, { method, wrapped });
     return wrapped;
   };
-  const wrap = (v) => {
+  const wrap = (v, path = []) => {
     if (v === null || typeof v !== 'object') return v;
     // Exotic built-ins (Promise, Date, RegExp, Map, Set, WeakMap,
     // WeakSet, Error, ArrayBuffer / TypedArrays) rely on internal
@@ -438,9 +438,9 @@ export function $$proxy(val, notify) {
         const value = Reflect.get(t, k, receiver);
         if (Array.isArray(t) && typeof k === 'string' &&
             mutatingArrayMethods.has(k) && typeof value === 'function') {
-          return runArrayMutation(t, k, receiver, value);
+          return runArrayMutation(t, k, receiver, value, path);
         }
-        return wrap(value);
+        return wrap(value, path.concat(k));
       },
       set(t, k, x, receiver) {
         const hadOwn = Object.prototype.hasOwnProperty.call(t, k);
@@ -448,13 +448,13 @@ export function $$proxy(val, notify) {
         const ok = Reflect.set(t, k, unwrap(x), receiver);
         const hasOwn = Object.prototype.hasOwnProperty.call(t, k);
         if (ok && (hadOwn !== hasOwn ||
-            !Object.is(before, Reflect.get(t, k, receiver)))) changed();
+            !Object.is(before, Reflect.get(t, k, receiver)))) changed({ kind: 'set', path: path.concat(k) });
         return ok;
       },
       deleteProperty(t, k) {
         if (!Object.prototype.hasOwnProperty.call(t, k)) return true;
         const ok = Reflect.deleteProperty(t, k);
-        if (ok) changed();
+        if (ok) changed({ kind: 'delete', path: path.concat(k) });
         return ok;
       },
     });

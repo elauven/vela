@@ -2015,7 +2015,7 @@ func (g *ASTGen) hasDeepState() bool {
 //
 // Plain $state:  let X = <initial>;
 //
-// $state.deep:   const $$mut_X = () => $$set_X_notify();
+// $state.deep:   const $$mut_X = (mutation) => $$set_X_notify(mutation);
 //
 //	let X = $$proxy(<initial>, $$mut_X);
 //
@@ -2032,7 +2032,7 @@ func (g *ASTGen) buildStateDecl(sv *StateVar) []JsStmt {
 	}
 	mutName := "$$mut_" + sv.Name
 	return []JsStmt{
-		genConst(mutName, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genCall(id("$$set_" + sv.Name + "_notify"))}),
+		genConst(mutName, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$mutation")}, Body: genCall(id("$$set_"+sv.Name+"_notify"), id("$$mutation"))}),
 		genLet(sv.Name, genCall(id("$$proxy"), init, id(mutName))),
 	}
 }
@@ -2431,7 +2431,7 @@ func (g *ASTGen) buildOneSetter(name string) JsStmt {
 // buildDeepSetters constructs the split setter pair for a
 // $state.deep variable:
 //
-//	function $$set_X_notify() { …reactive cascade… }
+//	function $$set_X_notify($$mutation) { …reactive cascade… }
 //	function $$set_X($$v) {
 //	  if (X === $$v) return;
 //	  X = $$proxy($$v, $$mut_X);   // re-wrap the new value
@@ -2448,6 +2448,7 @@ func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 	notify := &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
 		Name:     "$$set_" + name + "_notify",
+		Params:   []JsExpr{id("$$mutation")},
 		Body:     notifyBody,
 	}
 

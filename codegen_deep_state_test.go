@@ -101,8 +101,8 @@ func TestDeepState_NotifyFunctionShared(t *testing.T) {
 	if !strings.Contains(out, "function $$set_items_notify(") {
 		t.Fatalf("expected shared $$set_items_notify function:\n%s", out)
 	}
-	if !strings.Contains(out, "$$mut_items = () => $$set_items_notify()") {
-		t.Fatalf("expected $$mut_items to delegate to notify:\n%s", out)
+	if !strings.Contains(out, "$$mut_items = ($$mutation) => $$set_items_notify($$mutation)") {
+		t.Fatalf("expected $$mut_items to forward mutation metadata to notify:\n%s", out)
 	}
 }
 
