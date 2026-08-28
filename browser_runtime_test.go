@@ -517,3 +517,50 @@ func TestBrowserRuntimeUpdatesOnlyChangedDeepKeyedEachRow(t *testing.T) {
 		{"assertGlobal": "__velaAudit.renders", "equals": 1},
 	})
 }
+
+func TestBrowserRuntimeDeepKeyedEachSkipsUnchangedChildProps(t *testing.T) {
+	runBrowserSources(t, map[string]string{
+		"App.vela": `<script>
+  import Child from "./Child.vela";
+  let items = $state.deep([{ id: 1, label: "one" }, { id: 2, label: "two" }]);
+  function edit() {
+    globalThis.__velaChildRenders = 0;
+    items[0].label = "edited";
+    queueMicrotask(() => queueMicrotask(() => {
+      globalThis.__velaAudit = { childRenders: globalThis.__velaChildRenders };
+    }));
+  }
+</script>
+<template><button class="edit" @click={edit}>edit</button>{#each items as item (item.id)}<Child :item={item} />{/each}</template>`,
+		"Child.vela": `<script>
+  export let item;
+  function render(value) {
+    globalThis.__velaChildRenders = (globalThis.__velaChildRenders || 0) + 1;
+    return value;
+  }
+</script>
+<template><p class="child">{render(item.label)}</p></template>`,
+	}, "App.js", []rtStep{
+		{"click": "button.edit"},
+		{"assertText": ".child", "equals": "edited"},
+		{"assertGlobal": "__velaAudit.childRenders", "equals": 1},
+	})
+}
+
+func TestBrowserRuntimeDeepKeyedEachUpdatesNestedBlockRowOnly(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let items = $state.deep([{ id: 1, label: "one", visible: true }, { id: 2, label: "two", visible: true }]);
+  const metrics = { renders: 0 };
+  function render(value) { metrics.renders++; return value; }
+  function edit() {
+    metrics.renders = 0;
+    items[0].label = "edited";
+    queueMicrotask(() => { globalThis.__velaAudit = { nestedRenders: metrics.renders }; });
+  }
+</script>
+<template><button class="edit" @click={edit}>edit</button>{#each items as item (item.id)}{#if item.visible}<p class="row">{render(item.label)}</p>{/if}{/each}</template>`}, "App.js", []rtStep{
+		{"click": "button.edit"},
+		{"assertText": ".row", "equals": "edited"},
+		{"assertGlobal": "__velaAudit.nestedRenders", "equals": 1},
+	})
+}
