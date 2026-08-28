@@ -498,13 +498,70 @@ func TestBrowserRuntimeDestroyIsIdempotentAndDropsQueuedFlush(t *testing.T) {
     globalThis.__velaInstance.destroy();
   });
 </script>
-<template><button class="update" ={update}>{render(value)}</button></template>`}, "App.js", []rtStep{
+<template><button class="update" @click={update}>{render(value)}</button></template>`}, "App.js", []rtStep{
 		{"assertGlobal": "__velaDestroyMetrics.renders", "equals": 1},
 		{"clickAndDestroy": "button.update"},
 		{"assertGlobal": "__velaDestroyMetrics.renders", "equals": 1},
 		{"assertGlobal": "__velaDestroyMetrics.mountCleanups", "equals": 1},
 		{"assertGlobal": "__velaDestroyMetrics.effectCleanups", "equals": 1},
 		{"assertGlobal": "__velaDestroyMetrics.destroyCalls", "equals": 1},
+	})
+}
+
+func TestBrowserRuntimeDestroyReleasesChildAndDOMListener(t *testing.T) {
+	runBrowserSources(t, map[string]string{
+		"App.vela": `<script>
+  import { onMount } from "vela";
+  import Child from "./Child.vela";
+  const metrics = { removes: 0, childDestroys: 0 };
+  globalThis.__velaTeardownMetrics = metrics;
+  onMount(() => {
+    const target = document.querySelector("button.target");
+    const removeListener = target.removeEventListener;
+    target.removeEventListener = function(type, listener) {
+      metrics.removes++;
+      return removeListener.call(this, type, listener);
+    };
+  });
+  function dispose() {}
+</script>
+<template><button class="target" @click={dispose}>destroy</button><Child /></template>`,
+		"Child.vela": `<script>
+  import { onDestroy } from "vela";
+  onDestroy(() => { globalThis.__velaTeardownMetrics.childDestroys++; });
+</script>
+<template><p>child</p></template>`,
+	}, "App.js", []rtStep{
+		{"clickAndDestroy": "button.target"},
+		{"assertGlobal": "__velaTeardownMetrics.removes", "equals": 1},
+		{"assertGlobal": "__velaTeardownMetrics.childDestroys", "equals": 1},
+	})
+}
+
+func TestBrowserRuntimeRepeatedRemountReleasesLifecycleAndStyle(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  import { onMount, onDestroy } from "vela";
+  let metrics = globalThis.__velaRemountMetrics;
+  if (!metrics) {
+    metrics = { mounts: 0, mountCleanups: 0, destroyCalls: 0 };
+    globalThis.__velaRemountMetrics = metrics;
+  }
+  onMount(() => {
+    metrics.mounts++;
+    return () => { metrics.mountCleanups++; };
+  });
+  onDestroy(() => { metrics.destroyCalls++; });
+  function dispose() {}
+</script>
+<template><button class="dispose" @click={dispose}>dispose</button></template>
+<style>.dispose { color: rgb(1, 2, 3); }</style>`}, "App.js", []rtStep{
+		{"remount": true},
+		{"remount": true},
+		{"clickAndDestroy": "button.dispose"},
+		{"assertGlobal": "__velaRemountMetrics.mounts", "equals": 3},
+		{"assertGlobal": "__velaRemountMetrics.mountCleanups", "equals": 3},
+		{"assertGlobal": "__velaRemountMetrics.destroyCalls", "equals": 3},
+		{"assertCount": "style", "equals": 0},
 	})
 }
 
