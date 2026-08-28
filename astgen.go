@@ -3318,6 +3318,11 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	// across the component's whole life.  Hoist them to component
 	// scope when building inside a captured branch/slot scope.
 	incrementalPlan := g.eachIncrementalPlanFor(block)
+	forceFull := ""
+	if incrementalPlan != nil {
+		forceFull = "$$forceFull_" + id
+		g.declare(genLet(forceFull, boolLit(false)))
+	}
 	reconcilerDecl := g.eachReconciler(
 		eachFn, fragFn, anchor, blocks, keymap, keyExpr, block.KeyAST, itemVar, indexVar, incrementalPlan)
 
@@ -3368,30 +3373,47 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 		g.body = append(g.body, genLet(blocks, &JsArrayExpr{baseExpr: baseExpr{genNode()}, Elems: []JsExpr{}}))
 		g.body = append(g.body, reconcilerDecl)
 	}
-
 	// ── 5. Wiring ────────────────────────────────────────────
 	g.body = append(g.body, genExprStmt(genCall(
 		genMember(generatedID(parentVar), "appendChild"), generatedID(anchor),
 	)))
 	arrayExpr := g.templateExpr(block.IterExpr)
 	runEachArgs := []JsExpr{arrayExpr}
+	var markForceFull JsStmt
 	if incrementalPlan != nil {
-		runEachArgs = append(runEachArgs, generatedID("$$activeMutations_"+incrementalPlan.stateName))
+		mutations := JsExpr(generatedID("$$activeMutations_" + incrementalPlan.stateName))
+		mutations = &JsConditionalExpr{
+			baseExpr: baseExpr{genNode()},
+			Test:     generatedID(forceFull),
+			Then:     genNull(),
+			Else:     mutations,
+		}
+		runEachArgs = append(runEachArgs, mutations)
+		markForceFull = genAssignStmt(generatedID(forceFull), boolLit(true))
 	}
-	runEach := genExprStmt(genCall(generatedID(eachFn), runEachArgs...))
+	runEachBody := []JsStmt{genExprStmt(genCall(generatedID(eachFn), runEachArgs...))}
+	if forceFull != "" {
+		runEachBody = append(runEachBody, genAssignStmt(generatedID(forceFull), boolLit(false)))
+	}
+	runEach := genBlock(runEachBody...)
 	g.initBody = append(g.initBody, runEach)
 	for _, dep := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		g.addUpdate(dep, shareStmt(runEach))
 	}
 	for dep := range rowAttrs.deps {
 		g.addUpdate(dep, shareStmt(runEach))
+		if markForceFull != nil {
+			g.addStructuralUpdate(dep, shareStmt(markForceFull))
+		}
 	}
 	// A nested-control-flow row body reads component state through
 	// fragment-local chain functions the component setter cannot
-	// reach.  Re-running the whole {#each} when such a dep changes
-	// rebuilds every row, re-evaluating its nested chains.
+	// reach. Re-run the full reconciler when such an external dep changes.
 	for dep := range rowBodyDeps {
 		g.addUpdate(dep, shareStmt(runEach))
+		if markForceFull != nil {
+			g.addStructuralUpdate(dep, shareStmt(markForceFull))
+		}
 	}
 	g.cleanup = append(g.cleanup, genExprStmt(genCall(
 		genMember(generatedID(blocks), "forEach"),

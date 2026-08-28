@@ -655,3 +655,20 @@ func TestBrowserRuntimeDeepKeyedEachExpiresMutationBatchBeforeExternalUpdate(t *
 		{"assertCount": ".row.selected:nth-of-type(2)", "equals": 1},
 	})
 }
+
+func TestBrowserRuntimeDeepKeyedEachFallsBackForMixedStateBurst(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let items = $state.deep([{ id: 1, label: "one" }, { id: 2, label: "two" }]);
+  let selected = $state(1);
+  function updateBoth() {
+    items[0].label = "edited";
+    selected = 2;
+  }
+</script>
+<template><button class="update" @click={updateBoth}>update</button>{#each items as item (item.id)}<p class="row" class:selected={item.id === selected}>{item.label}</p>{/each}</template>`}, "App.js", []rtStep{
+		{"click": "button.update"},
+		{"assertText": ".row", "equals": "edited"},
+		{"assertCount": ".row.selected:nth-of-type(1)", "equals": 0},
+		{"assertCount": ".row.selected:nth-of-type(2)", "equals": 1},
+	})
+}
