@@ -3360,7 +3360,6 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	}
 
 	// ── 5. Wiring ────────────────────────────────────────────
-	// ── 5. Wiring ────────────────────────────────────────────
 	g.body = append(g.body, genExprStmt(genCall(
 		genMember(generatedID(parentVar), "appendChild"), generatedID(anchor),
 	)))
@@ -3372,6 +3371,9 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	runEach := genExprStmt(genCall(generatedID(eachFn), runEachArgs...))
 	g.initBody = append(g.initBody, runEach)
 	for _, dep := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
+		g.addUpdate(dep, shareStmt(runEach))
+	}
+	for dep := range rowAttrs.deps {
 		g.addUpdate(dep, shareStmt(runEach))
 	}
 	// A nested-control-flow row body reads component state through
