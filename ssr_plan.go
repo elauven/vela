@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // SSRRenderPlan is the server-target-neutral representation of a validated
@@ -12,6 +13,7 @@ import (
 type SSRRenderPlan struct {
 	ComponentName string
 	ScopeID       string
+	Props         []SSRPlanProp
 	Nodes         []SSRPlanNode
 	Events        []SSRStaticEvent
 	Dynamics      []SSRDynamicSite
@@ -20,6 +22,28 @@ type SSRRenderPlan struct {
 
 // SSRPlanNode is a typed render-plan node. It deliberately mirrors the
 // template AST rather than storing printable HTML or Go source.
+type SSRValueType uint8
+
+const (
+	SSRTypeAny SSRValueType = iota
+	SSRTypeString
+	SSRTypeBool
+	SSRTypeInt
+	SSRTypeFloat
+	SSRTypeSlice
+	SSRTypeObject
+)
+
+// SSRPlanProp is semantic server-input metadata. The Go AST backend maps Type
+// to a typed ast.Expr rather than storing Go source fragments.
+type SSRPlanProp struct {
+	SourceName string
+	GoName     string
+	Type       SSRValueType
+	Default    JsExpr
+	Bindable   bool
+}
+
 type SSRPlanNode interface {
 	ssrPlanNode()
 }
@@ -162,6 +186,13 @@ type ssrPlanBuilder struct {
 // BuildSSRRenderPlan converts only the validated template AST into a typed
 // plan. It never parses source text and never emits Go or HTML strings.
 func BuildSSRRenderPlan(componentName string, sfc *SFC, scopeID string) (*SSRRenderPlan, error) {
+	return BuildSSRRenderPlanWithAnalysis(componentName, sfc, nil, scopeID)
+}
+
+// BuildSSRRenderPlanWithAnalysis accepts the compiler-owned analysis when it
+// is already available in the pipeline. The nil compatibility path analyses
+// the existing ScriptAST; it never reparses script source.
+func BuildSSRRenderPlanWithAnalysis(componentName string, sfc *SFC, analysis *Analysis, scopeID string) (*SSRRenderPlan, error) {
 	if sfc == nil || sfc.TemplateAST == nil {
 		return nil, fmt.Errorf("ssr render plan: missing template AST")
 	}
@@ -175,9 +206,17 @@ func BuildSSRRenderPlan(componentName string, sfc *SFC, scopeID string) (*SSRRen
 	if scopeID == "" {
 		scopeID = "vela-" + componentName
 	}
+	if analysis == nil {
+		analysis = analyzeScriptAST(sfc.ScriptAST)
+	}
+	props, err := buildSSRPlanProps(analysis)
+	if err != nil {
+		return nil, err
+	}
 	b := &ssrPlanBuilder{plan: &SSRRenderPlan{
 		ComponentName: componentName,
 		ScopeID:       scopeID,
+		Props:         props,
 		ScopedCSS:     ExtractScopedCSS(sfc, scopeID),
 	}}
 	b.plan.Nodes = b.nodes(sfc.TemplateAST.Nodes)
@@ -321,4 +360,59 @@ func (b *ssrPlanBuilder) attrs(attrs []*Attr, domElement bool) ([]SSRPlanAttr, [
 		}
 	}
 	return out, events
+}
+
+func buildSSRPlanProps(analysis *Analysis) ([]SSRPlanProp, error) {
+	if analysis == nil {
+		return nil, nil
+	}
+	out := make([]SSRPlanProp, 0, len(analysis.Props))
+	seenGoNames := map[string]string{}
+	for _, prop := range analysis.Props {
+		if prop == nil {
+			continue
+		}
+		goName := ssrGoExportName(prop.Name)
+		if previous, exists := seenGoNames[goName]; exists {
+			return nil, fmt.Errorf("ssr render plan: props %q and %q both map to Go field %q", previous, prop.Name, goName)
+		}
+		seenGoNames[goName] = prop.Name
+		out = append(out, SSRPlanProp{
+			SourceName: prop.Name,
+			GoName:     goName,
+			Type:       inferSSRValueType(prop.DefaultAST),
+			Default:    prop.DefaultAST,
+			Bindable:   prop.Bindable,
+		})
+	}
+	return out, nil
+}
+
+func ssrGoExportName(name string) string {
+	for i, r := range name {
+		return string(unicode.ToUpper(r)) + name[i+len(string(r)):]
+	}
+	return ""
+}
+
+func inferSSRValueType(expr JsExpr) SSRValueType {
+	switch node := expr.(type) {
+	case *JsLiteral:
+		switch node.Kind {
+		case "string":
+			return SSRTypeString
+		case "boolean":
+			return SSRTypeBool
+		case "number":
+			if strings.ContainsAny(node.Raw, ".eE") {
+				return SSRTypeFloat
+			}
+			return SSRTypeInt
+		}
+	case *JsArrayExpr:
+		return SSRTypeSlice
+	case *JsObjectExpr:
+		return SSRTypeObject
+	}
+	return SSRTypeAny
 }

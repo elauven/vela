@@ -6,7 +6,13 @@ import (
 )
 
 func TestBuildSSRGoSkeletonUsesStandardGoAST(t *testing.T) {
-	sfc, err := parseSFC(`<template><main><h1>{title}</h1></main></template>`)
+	sfc, err := parseSFC(`<script>
+export let title = "";
+export let count = 0;
+export let active = false;
+export let items = [];
+export let config = {};
+</script><template><main><h1>{title}</h1></main></template>`)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
@@ -24,7 +30,7 @@ func TestBuildSSRGoSkeletonUsesStandardGoAST(t *testing.T) {
 	}
 	got := string(source)
 	for _, want := range []string{
-		"package components", "import \"io\"", "type GreetingProps struct {",
+		"package components", "import \"io\"", "type GreetingProps struct {", "Title  string", "Count  int", "Active bool", "Items  []any", "Config map[string]any",
 		"type GreetingSlots struct {", "func RenderGreeting(w io.Writer, props GreetingProps, slots GreetingSlots) error",
 		"return nil",
 	} {

@@ -35,7 +35,7 @@ func BuildSSRGoSkeleton(plan *SSRRenderPlan, packageName string) (*goast.File, e
 		Name: goast.NewIdent(packageName),
 		Decls: []goast.Decl{
 			goImportDecl("io"),
-			goEmptyStructTypeDecl(propsName),
+			goPropsTypeDecl(propsName, plan.Props),
 			goEmptyStructTypeDecl(slotsName),
 			goRenderFuncDecl(component, propsName, slotsName),
 		},
@@ -128,4 +128,40 @@ func utf8FirstRune(value string) (rune, int) {
 		return r, len(string(r))
 	}
 	return 0, 0
+}
+
+func goPropsTypeDecl(name string, props []SSRPlanProp) *goast.GenDecl {
+	fields := make([]*goast.Field, 0, len(props))
+	for _, prop := range props {
+		fields = append(fields, &goast.Field{
+			Names: []*goast.Ident{goast.NewIdent(prop.GoName)},
+			Type:  goSSRTypeExpr(prop.Type),
+		})
+	}
+	return &goast.GenDecl{
+		Tok: token.TYPE,
+		Specs: []goast.Spec{&goast.TypeSpec{
+			Name: goast.NewIdent(name),
+			Type: &goast.StructType{Fields: &goast.FieldList{List: fields}},
+		}},
+	}
+}
+
+func goSSRTypeExpr(kind SSRValueType) goast.Expr {
+	switch kind {
+	case SSRTypeString:
+		return goast.NewIdent("string")
+	case SSRTypeBool:
+		return goast.NewIdent("bool")
+	case SSRTypeInt:
+		return goast.NewIdent("int")
+	case SSRTypeFloat:
+		return goast.NewIdent("float64")
+	case SSRTypeSlice:
+		return &goast.ArrayType{Elt: goast.NewIdent("any")}
+	case SSRTypeObject:
+		return &goast.MapType{Key: goast.NewIdent("string"), Value: goast.NewIdent("any")}
+	default:
+		return goast.NewIdent("any")
+	}
 }
