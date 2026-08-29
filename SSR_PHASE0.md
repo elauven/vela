@@ -26,6 +26,12 @@ func Card(props CardProps, slots CardSlots) vela.Renderer
 
 `Card` returns a tiny renderer wrapper whose `Render` delegates to `RenderCard`. Direct calls are efficient and make component lowering simple; the wrapper is opt-in for composition. `CardSlots` contains named `vela.Slot` closures, each with the shape `func(io.Writer) error`.
 
+## Go AST output invariant
+
+Every final Go artifact — component file, prop/slot type, statement, expression, import, and string literal — is built with standard-library `go/ast` nodes and positions from `go/token`. `go/format.Node` is the only printer. The test path independently parses the printed file with `go/parser` and type-checks it through `go/types`.
+
+Template text may appear only as the semantic value of an AST string literal. The SSR backend must never assemble executable Go with string concatenation or parse compiler-authored Go snippets. This gives the same structural guarantee that the JavaScript target AST now has.
+
 ## Phase-1 expression contract
 
 The server translator consumes cached `TemplateExpr.Root()` JavaScript ASTs; it must never parse expression source text again. The first implementation supports only constructs whose Go semantics and runtime types are known:
@@ -41,6 +47,17 @@ The server translator consumes cached `TemplateExpr.Root()` JavaScript ASTs; it 
 Calls, user script helpers, JavaScript methods, object/array construction, assignments, update operators, `new`, `this`, arbitrary template literals, and browser globals are outside Phase 1. They emit a positioned `VELA-SSR-EXPR` error. The future Go escape hatch from `SSR.md` is not syntax yet and therefore must not be accepted or documented as working language syntax.
 
 This strict rule differs intentionally from the future hydration placeholder strategy: a static page has no client to repair missing output.
+
+## Static event bridge
+
+Server rendering cannot execute user event handlers; their closures and reactive DOM update plan live in the client. Phase 1 nevertheless produces a stable, deliberately simple event bridge:
+
+- The render plan assigns every event-bearing element a compiler-owned unique `data-vela-event` key. It does not overwrite an author-provided HTML `id`.
+- The generated external client companion module locates that key under the SSR root and uses the platform `addEventListener(eventName, handler)` API. No inline executable handler is placed in server HTML.
+- The bridge may activate only a handler proven not to write Vela state, use bindings, or require a template update. Handlers outside that profile receive `VELA-SSR-EVENT-REACTIVE` until hydration owns state restoration and DOM updates.
+- Event order and key allocation are part of the render plan and therefore become inputs to the later hydrator; no second ad-hoc DOM traversal is permitted.
+
+This makes normal native event registration an intentional compatibility layer without claiming that a static page can perform reactive UI updates.
 
 ## State and lifecycle contract
 
