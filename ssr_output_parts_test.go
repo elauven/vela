@@ -140,3 +140,44 @@ func TestBuildSSRGoFileEmitsStableEventMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildSSRGoFileRendersKeyAndAwaitPending(t *testing.T) {
+	source := `<script>export let identity=0; export let request=null;</script><template>{#key identity}<p>key body</p>{/key}{#await request}<p>loading</p>{:then value}<p>{value}</p>{:catch error}<p>{error}</p>{/await}</template>`
+	sfc, err := parseSFC(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "key body") || !strings.Contains(string(src), "loading") || strings.Contains(string(src), "value") {
+		t.Fatalf("unexpected static key or await output:\n%s", src)
+	}
+	if err := ValidateGeneratedSSRGo("page.go", src); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuildSSRGoFileRejectsAwaitWithoutPending(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let request=null;</script><template>{#await request then value}<p>{value}</p>{/await}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = BuildSSRGoFile(plan, "components")
+	if err == nil || !strings.Contains(err.Error(), SSRExpressionDiagnosticCode) {
+		t.Fatalf("err=%v", err)
+	}
+}

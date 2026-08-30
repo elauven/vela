@@ -56,6 +56,8 @@ func (e *ssrGoEmitter) node(node SSRPlanNode) ([]goast.Stmt, error) {
 		return e.element(n)
 	case *SSRPlanIf:
 		return e.ifBlock(n)
+	case *SSRPlanAwait:
+		return e.awaitBlock(n)
 	case *SSRPlanEach:
 		return e.eachBlock(n)
 	default:
@@ -120,6 +122,12 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 }
 
 func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
+	if node.Key != nil {
+		if len(node.Branches) != 1 || node.Branches[0].Condition != nil {
+			return nil, ssrExprUnsupported(node.Span.Start, "SSR key block has an invalid branch shape")
+		}
+		return e.nodes(node.Branches[0].Children)
+	}
 	var first *goast.IfStmt
 	var previous *goast.IfStmt
 	for _, branch := range node.Branches {
@@ -222,4 +230,11 @@ func (e *ssrGoEmitter) outputValue(static bool, literal string, expr *TemplateEx
 	return &goast.CallExpr{Fun: goSelector("vela", "EscapeString"), Args: []goast.Expr{
 		&goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{value}},
 	}}, nil
+}
+
+func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
+	if len(node.PendingChildren) == 0 {
+		return nil, ssrExprUnsupported(node.Span.Start, "SSR await requires an explicit pending branch until hydration")
+	}
+	return e.nodes(node.PendingChildren)
 }
