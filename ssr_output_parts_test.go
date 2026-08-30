@@ -56,6 +56,43 @@ func TestBuildSSRGoFileWithOutputPartsRendersDynamicAttribute(t *testing.T) {
 	}
 }
 
+func TestBuildSSRGoFileRendersClassAndStyleDirectives(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let active=false; export let color="";</script><template><button class="base" class:selected={active} style="width: 1px" style:color={color}>Save</button></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := string(src)
+	for _, want := range []string{
+		`vela.WriteString(w, "<button class=\"base")`,
+		`if props.Active {`,
+		`vela.WriteString(w, " selected")`,
+		`vela.WriteString(w, "\" style=\"width: 1px;color:")`,
+		`vela.EscapeString(vela.String(props.Color))`,
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("missing %q in SSR renderer:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "class:selected") || strings.Contains(output, "style:color") {
+		t.Fatalf("SSR directive leaked as an HTML attribute:\n%s", output)
+	}
+	if err := ValidateGeneratedSSRGo("page.go", src); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBuildSSRGoFileRendersIfBranches(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let visible=false; export let title="";</script><template>{#if visible}<p>{title}</p>{:else}<p>hidden</p>{/if}</template>`)
 	if err != nil {

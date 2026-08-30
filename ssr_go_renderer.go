@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"html"
 	"strconv"
+	"strings"
 )
 
 // BuildSSRGoFile emits the currently supported server render plan through
@@ -80,7 +81,49 @@ func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {
 func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 	body := make([]goast.Stmt, 0, len(node.Attrs)+len(node.Children)+2)
 	open := "<" + node.Tag
+	classStatic, classDirectives, styleStatic, styleDirectives := ssrElementDirectives(node.Attrs)
+	if len(classDirectives) > 0 {
+		open += ` class="` + html.EscapeString(classStatic)
+		body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
+		for _, attr := range classDirectives {
+			if attr.Expr == nil {
+				return nil, ssrExprUnsupported(attr.Span.Start, "class directive %q has no cached expression", attr.Name)
+			}
+			condition, err := TranslateSSRExpression(attr.Expr, e.ctx)
+			if err != nil {
+				return nil, err
+			}
+			body = append(body, &goast.IfStmt{
+				Cond: condition,
+				Body: &goast.BlockStmt{List: []goast.Stmt{
+					goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(" " + html.EscapeString(attr.Name))}),
+				}},
+			})
+		}
+		open = `"`
+	}
+	if len(styleDirectives) > 0 {
+		open += ` style="` + html.EscapeString(ssrStylePrefix(styleStatic))
+		for _, attr := range styleDirectives {
+			if attr.Expr == nil {
+				return nil, ssrExprUnsupported(attr.Span.Start, "style directive %q has no cached expression", attr.Name)
+			}
+			open += html.EscapeString(attr.Name) + `:`
+			body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
+			value, err := e.outputValue(false, "", attr.Expr)
+			if err != nil {
+				return nil, err
+			}
+			body = append(body, goWriteSSRValue(value))
+			open = ";"
+		}
+		open += `"`
+	}
 	for _, attr := range node.Attrs {
+		if attr.Role == SSRAttrClassDirective || attr.Role == SSRAttrStyleDirective ||
+			(attr.Role == SSRAttrStatic && ((attr.Name == "class" && len(classDirectives) > 0) || (attr.Name == "style" && len(styleDirectives) > 0))) {
+			continue
+		}
 		switch attr.Role {
 		case SSRAttrStatic:
 			open += " " + attr.Name
@@ -119,6 +162,37 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 		body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("</" + node.Tag + ">")}))
 	}
 	return body, nil
+}
+
+// ssrElementDirectives separates directive attributes from their ordinary
+// static class/style counterparts. The emitter serializes both forms into one
+// HTML attribute, which is the server equivalent of the client classList and
+// style.setProperty updates.
+func ssrElementDirectives(attrs []SSRPlanAttr) (classStatic string, classDirectives []SSRPlanAttr, styleStatic string, styleDirectives []SSRPlanAttr) {
+	for _, attr := range attrs {
+		switch attr.Role {
+		case SSRAttrClassDirective:
+			classDirectives = append(classDirectives, attr)
+		case SSRAttrStyleDirective:
+			styleDirectives = append(styleDirectives, attr)
+		case SSRAttrStatic:
+			switch attr.Name {
+			case "class":
+				classStatic = attr.Value
+			case "style":
+				styleStatic = attr.Value
+			}
+		}
+	}
+	return classStatic, classDirectives, styleStatic, styleDirectives
+}
+
+func ssrStylePrefix(style string) string {
+	style = strings.TrimSpace(style)
+	if style == "" || strings.HasSuffix(style, ";") {
+		return style
+	}
+	return style + ";"
 }
 
 func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
