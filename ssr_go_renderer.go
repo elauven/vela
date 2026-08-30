@@ -36,6 +36,7 @@ func BuildSSRGoFile(plan *SSRRenderPlan, packageName string) (*goast.File, error
 type ssrGoEmitter struct {
 	ctx           SSRExprContext
 	needsEscaping bool
+	eachNext      int
 }
 
 func (e *ssrGoEmitter) nodes(nodes []SSRPlanNode) ([]goast.Stmt, error) {
@@ -58,6 +59,8 @@ func (e *ssrGoEmitter) node(node SSRPlanNode) ([]goast.Stmt, error) {
 		return e.element(n)
 	case *SSRPlanIf:
 		return e.ifBlock(n)
+	case *SSRPlanEach:
+		return e.eachBlock(n)
 	default:
 		return nil, ssrExprUnsupported(0, "SSR node %T is not lowered yet", node)
 	}
@@ -145,6 +148,64 @@ func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
 		return nil, ssrExprUnsupported(node.Span.Start, "SSR if block has no conditional branch")
 	}
 	return []goast.Stmt{first}, nil
+}
+
+func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
+	iterable, err := TranslateSSRExpression(node.Iterable, e.ctx)
+	if err != nil {
+		return nil, err
+	}
+	id := e.eachNext
+	e.eachNext++
+	iterName := "ssrEach" + itoa(id)
+	itemName := "ssrEachItem" + itoa(id)
+	indexName := "_"
+	if node.IndexName != "" {
+		indexName = "ssrEachIndex" + itoa(id)
+	}
+	iterIdent := goast.NewIdent(iterName)
+	itemIdent := goast.NewIdent(itemName)
+	child := *e
+	child.ctx = ssrContextWithBindings(e.ctx)
+	child.ctx.Bindings[node.ItemName] = itemIdent
+	if node.IndexName != "" {
+		child.ctx.Bindings[node.IndexName] = goast.NewIdent(indexName)
+	}
+	children, err := child.nodes(node.Children)
+	if err != nil {
+		return nil, err
+	}
+	e.eachNext = child.eachNext
+	e.needsEscaping = e.needsEscaping || child.needsEscaping
+	rangeStmt := &goast.RangeStmt{
+		Key:   goast.NewIdent(indexName),
+		Value: itemIdent,
+		Tok:   token.DEFINE,
+		X:     iterIdent,
+		Body:  &goast.BlockStmt{List: children},
+	}
+	assign := &goast.AssignStmt{Lhs: []goast.Expr{iterIdent}, Tok: token.DEFINE, Rhs: []goast.Expr{iterable}}
+	if len(node.ElseChildren) == 0 {
+		return []goast.Stmt{assign, rangeStmt}, nil
+	}
+	otherwise, err := e.nodes(node.ElseChildren)
+	if err != nil {
+		return nil, err
+	}
+	empty := &goast.BinaryExpr{X: &goast.CallExpr{Fun: goast.NewIdent("len"), Args: []goast.Expr{iterIdent}}, Op: token.EQL, Y: &goast.BasicLit{Kind: token.INT, Value: "0"}}
+	return []goast.Stmt{assign, &goast.IfStmt{
+		Cond: empty,
+		Body: &goast.BlockStmt{List: otherwise},
+		Else: &goast.BlockStmt{List: []goast.Stmt{rangeStmt}},
+	}}, nil
+}
+
+func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
+	bindings := make(map[string]goast.Expr, len(base.Bindings))
+	for name, binding := range base.Bindings {
+		bindings[name] = binding
+	}
+	return SSRExprContext{Props: base.Props, Bindings: bindings}
 }
 
 func (e *ssrGoEmitter) outputValue(static bool, literal string, expr *TemplateExpr) (goast.Expr, error) {

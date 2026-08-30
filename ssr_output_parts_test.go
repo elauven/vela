@@ -80,3 +80,31 @@ func TestBuildSSRGoFileRendersIfBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildSSRGoFileRendersEachAndEmptyBranch(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let items=[];</script><template>{#each items as item, index}<p>{index}:{item}</p>{:else}<p>empty</p>{/each}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "ssrEach0 := props.Items") || !strings.Contains(string(src), "if len(ssrEach0) == 0") || !strings.Contains(string(src), "for ssrEachIndex0, ssrEachItem0 := range ssrEach0") {
+		t.Fatalf("unexpected each renderer:\n%s", src)
+	}
+	if !strings.Contains(string(src), "fmt.Sprint(ssrEachItem0)") || !strings.Contains(string(src), "fmt.Sprint(ssrEachIndex0)") {
+		t.Fatalf("missing each binding output:\n%s", src)
+	}
+	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {
+		t.Fatal(err)
+	}
+}
