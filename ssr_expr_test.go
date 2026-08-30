@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -57,6 +58,23 @@ func TestTranslateSSRExpressionReportsPositionedUnsupportedForm(t *testing.T) {
 	}
 	if problem.Pos != expr.Pos || problem.Error()[:len(SSRExpressionDiagnosticCode)] != SSRExpressionDiagnosticCode {
 		t.Fatalf("problem = %#v", problem)
+	}
+}
+
+func TestTranslateSSRExpressionExplainsLocalReactiveValue(t *testing.T) {
+	sfc, err := parseSFC(`<script>let profile = $state.deep({});</script><template>{profile}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
+	problem, ok := err.(*SSRExpressionError)
+	if !ok || problem.Pos != expr.Pos || !strings.Contains(problem.Error(), "local reactive binding \"profile\"") {
+		t.Fatalf("error=%T %v", err, err)
 	}
 }
 

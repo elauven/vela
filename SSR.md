@@ -303,6 +303,27 @@ setters, no effects, no DOM updates, no defer queue, no proxy. It
 just walks the AST and emits string-building code. The Go backend
 is **~1/3 the complexity of the JS backend**, not the same again.
 
+### Current compiler contract before hydration
+
+Until Phase 3 adds state serialization and DOM adoption, the compiler applies
+the following deliberately strict rules. They prevent the server from
+advertising interactivity or values that it cannot reproduce correctly:
+
+- `<script>` is not executed by the generated Go renderer. `$effect` and
+  lifecycle callbacks never run on the server.
+- Template reads may use exported component props and lexical `#each`/
+  `#await` bindings. A local `$state`, `$state.deep`, or `$derived` read fails
+  with `VELA-SSR-EXPR`; pass the initial value as an exported prop instead.
+- Normal DOM events receive the static event bridge only when an inline arrow
+  handler is closed over browser-safe globals. A handler that captures reactive
+  state or a component closure fails with `VELA-SSR-EVENT-REACTIVE`.
+- `bind:value`, `bind:checked`, `bind:this`, component two-way bindings, and
+  any other `bind:*` form fail with `VELA-SSR-EXPR`. Use a one-way `:attribute`
+  for static server HTML; bindings become available after hydration.
+- Unsupported JavaScript expressions fail at their template position. The
+  future placeholder/Go escape-hatch design is not emitted yet: silently
+  omitting server content would create an unbounded hydration mismatch.
+
 ---
 
 ## The type system

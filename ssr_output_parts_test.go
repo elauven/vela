@@ -93,6 +93,48 @@ func TestBuildSSRGoFileRendersClassAndStyleDirectives(t *testing.T) {
 	}
 }
 
+func TestBuildSSRGoFileRejectsBindingsUntilHydration(t *testing.T) {
+	for _, source := range []string{
+		`<script>export let title="";</script><template><input bind:value={title} /></template>`,
+		`<script>export let title="";</script><template><input bind:this={title} /></template>`,
+	} {
+		sfc, err := parseSFC(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = BuildSSRGoFile(plan, "components")
+		if err == nil || !strings.Contains(err.Error(), SSRExpressionDiagnosticCode) || !strings.Contains(err.Error(), "requires hydration") {
+			t.Fatalf("binding error=%v", err)
+		}
+	}
+}
+
+func TestBuildSSRGoFileDoesNotExecuteEffects(t *testing.T) {
+	sfc, err := parseSFC(`<script>$effect(() => { alert("unexpected"); });</script><template><p>server only</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(src), "alert") || !strings.Contains(string(src), "server only") {
+		t.Fatalf("effect leaked into server renderer:\n%s", src)
+	}
+}
+
 func TestBuildSSRGoFileRendersIfBranches(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let visible=false; export let title="";</script><template>{#if visible}<p>{title}</p>{:else}<p>hidden</p>{/if}</template>`)
 	if err != nil {

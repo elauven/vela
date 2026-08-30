@@ -132,6 +132,10 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			}
 		case SSRAttrEvent:
 			continue
+		case SSRAttrTwoWay:
+			return nil, ssrExprUnsupported(attr.Span.Start, "bind:%s requires hydration; use :%s for server-only output", attr.Name, attr.Name)
+		case SSRAttrBindThis:
+			return nil, ssrExprUnsupported(attr.Span.Start, "bind:this requires hydration and has no server HTML representation")
 		case SSRAttrDynamic:
 			if attr.Expr == nil {
 				return nil, ssrExprUnsupported(attr.Span.Start, "dynamic attribute %q has no cached expression", attr.Name)
@@ -289,7 +293,7 @@ func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
 	for name, binding := range base.Bindings {
 		bindings[name] = binding
 	}
-	return SSRExprContext{Props: base.Props, Bindings: bindings}
+	return SSRExprContext{Props: base.Props, Bindings: bindings, ReactiveNames: base.ReactiveNames}
 }
 
 func (e *ssrGoEmitter) outputValue(static bool, literal string, expr *TemplateExpr) (goast.Expr, error) {

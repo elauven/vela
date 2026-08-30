@@ -27,17 +27,25 @@ func (e *SSRExpressionError) Error() string {
 // Props are constructed by NewSSRExprContext; each/await lowering will extend
 // Bindings with lexical row and branch names rather than reparsing expressions.
 type SSRExprContext struct {
-	Props    map[string]SSRPlanProp
-	Bindings map[string]goast.Expr
+	Props         map[string]SSRPlanProp
+	Bindings      map[string]goast.Expr
+	ReactiveNames map[string]bool
 }
 
 func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
-	ctx := SSRExprContext{Props: map[string]SSRPlanProp{}, Bindings: map[string]goast.Expr{}}
+	ctx := SSRExprContext{
+		Props:         map[string]SSRPlanProp{},
+		Bindings:      map[string]goast.Expr{},
+		ReactiveNames: map[string]bool{},
+	}
 	if plan == nil {
 		return ctx
 	}
 	for _, prop := range plan.Props {
 		ctx.Props[prop.SourceName] = prop
+	}
+	for _, name := range plan.ReactiveNames {
+		ctx.ReactiveNames[name] = true
 	}
 	return ctx
 }
@@ -60,6 +68,9 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		}
 		if prop, ok := ctx.Props[node.Name]; ok {
 			return &goast.SelectorExpr{X: goast.NewIdent("props"), Sel: goast.NewIdent(prop.GoName)}, nil
+		}
+		if ctx.ReactiveNames[node.Name] {
+			return nil, ssrExprUnsupported(pos, "local reactive binding %q has no server value; pass it as an exported prop or wait for hydration", node.Name)
 		}
 		return nil, ssrExprUnsupported(pos, "identifier %q is not an exported prop or server binding", node.Name)
 	case *JsLiteral:
