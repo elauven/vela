@@ -14,6 +14,9 @@ type SSRRenderPlan struct {
 	ComponentName string
 	ScopeID       string
 	Props         []SSRPlanProp
+	// ReactiveNames is analysis metadata for diagnostics and bridge safety.
+	// It is not emitted into server code.
+	ReactiveNames []string
 	Nodes         []SSRPlanNode
 	Events        []SSRStaticEvent
 	Dynamics      []SSRDynamicSite
@@ -217,6 +220,7 @@ func BuildSSRRenderPlanWithAnalysis(componentName string, sfc *SFC, analysis *An
 		ComponentName: componentName,
 		ScopeID:       scopeID,
 		Props:         props,
+		ReactiveNames: analysis.reactiveNames(),
 		ScopedCSS:     ExtractScopedCSS(sfc, scopeID),
 	}}
 	b.plan.Nodes = b.nodes(sfc.TemplateAST.Nodes)

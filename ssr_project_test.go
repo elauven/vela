@@ -15,7 +15,7 @@ func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := filepath.Join(srcRoot, "App.vela")
-	if err := os.WriteFile(source, []byte(`<template><main class="card"><h1>Hello</h1></main></template><style>.card { color: red; }</style>`), 0o644); err != nil {
+	if err := os.WriteFile(source, []byte(`<template><button class="card" @click={() => alert("done")}>Hello</button></template><style>.card { color: red; }</style>`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	outRoot := filepath.Join(root, "out")
@@ -40,6 +40,16 @@ func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
 	}
 	if err := ValidateGeneratedSSRGo("App.go", server); err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(string(server), `data-vela-event=\"`) {
+		t.Fatalf("server output misses event marker:\n%s", server)
+	}
+	bridge, err := os.ReadFile(layout.eventBridgePath(source, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(bridge), "addEventListener") {
+		t.Fatalf("event bridge is missing native listener:\n%s", bridge)
 	}
 	css, err := os.ReadFile(layout.stylePath(source, srcRoot))
 	if err != nil {

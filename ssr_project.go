@@ -38,6 +38,9 @@ func (layout SSRProjectLayout) serverPath(src, srcRoot string) string {
 func (layout SSRProjectLayout) stylePath(src, srcRoot string) string {
 	return mirrorPath(src, srcRoot, layout.StylesDir, ".css")
 }
+func (layout SSRProjectLayout) eventBridgePath(src, srcRoot string) string {
+	return mirrorPath(src, srcRoot, layout.ClientDir, ".ssr-events.js")
+}
 
 // buildSSRProject adds server and styles products around the established CSR
 // project build. The caller owns user-facing progress and exit handling.
@@ -70,6 +73,10 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	if err != nil {
 		return err
 	}
+	bridge, err := BuildSSRStaticEventBridge(plan)
+	if err != nil {
+		return err
+	}
 	file, err := BuildSSRGoFile(plan, "components")
 	if err != nil {
 		return err
@@ -87,6 +94,15 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	}
 	if err := os.WriteFile(serverPath, source, 0o644); err != nil {
 		return err
+	}
+	if bridge != nil {
+		bridgePath := layout.eventBridgePath(src, srcRoot)
+		if err := os.MkdirAll(filepath.Dir(bridgePath), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(bridgePath, []byte(PrintJS(bridge, PrintPretty)), 0o644); err != nil {
+			return err
+		}
 	}
 	if plan.ScopedCSS == "" {
 		return nil
