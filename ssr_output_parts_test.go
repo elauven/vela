@@ -246,6 +246,30 @@ func TestBuildSSRGoFileRendersKeyAndAwaitPending(t *testing.T) {
 	}
 }
 
+func TestBuildSSRGoFileEmitsPairedMarkersForDynamicRanges(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let title=""; export let show=false; export let items=[];</script><template><p>{title}</p>{#if show}<b>yes</b>{/if}{#each items as item}<i>{item}</i>{/each}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"<!--v0-->", "<!--/v0-->", "<!--v1-->", "<!--/v1-->", "<!--v2-->", "<!--/v2-->"} {
+		if !strings.Contains(string(source), want) {
+			t.Fatalf("generated renderer misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestBuildSSRGoFileRejectsAwaitWithoutPending(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request=null;</script><template>{#await request then value}<p>{value}</p>{/await}</template>`)
 	if err != nil {

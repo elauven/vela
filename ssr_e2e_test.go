@@ -60,7 +60,7 @@ func main() {
 	if err != nil {
 		t.Fatalf("go run: %v\n%s", err, output)
 	}
-	if got, want := string(output), "<main>Hello world</main>"; got != want {
+	if got, want := string(output), "<main>Hello <!--v0-->world<!--/v0--></main>"; got != want {
 		t.Fatalf("SSR output=%q want %q", got, want)
 	}
 }

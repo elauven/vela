@@ -94,16 +94,18 @@ type SSRPlanText struct {
 }
 
 type SSRPlanTextPart struct {
-	Span   SectionSpan
-	Static bool
-	Value  string
-	Expr   *TemplateExpr // cached expression; nil for Static parts
+	Span      SectionSpan
+	Static    bool
+	Value     string
+	Expr      *TemplateExpr // cached expression; nil for Static parts
+	DynamicID int           // -1 for static text; paired server marker otherwise
 }
 
 type SSRPlanIf struct {
-	Span     SectionSpan
-	Key      *TemplateExpr // non-nil for a {#key} block
-	Branches []SSRPlanIfBranch
+	Span      SectionSpan
+	Key       *TemplateExpr // non-nil for a {#key} block
+	Branches  []SSRPlanIfBranch
+	DynamicID int // paired marker around the rendered branch range
 }
 
 type SSRPlanIfBranch struct {
@@ -120,6 +122,7 @@ type SSRPlanEach struct {
 	Key          *TemplateExpr
 	Children     []SSRPlanNode
 	ElseChildren []SSRPlanNode
+	DynamicID    int // paired marker around the rendered list range
 }
 
 type SSRPlanAwait struct {
@@ -130,6 +133,7 @@ type SSRPlanAwait struct {
 	PendingChildren []SSRPlanNode
 	ThenChildren    []SSRPlanNode
 	CatchChildren   []SSRPlanNode
+	DynamicID       int // paired marker around the rendered branch range
 }
 
 func (*SSRPlanElement) ssrPlanNode()   {}
@@ -259,11 +263,13 @@ func (b *ssrPlanBuilder) nextEventKey() string {
 	return key
 }
 
-func (b *ssrPlanBuilder) dynamic(kind SSRDynamicKind, expr *TemplateExpr, span SectionSpan) {
+func (b *ssrPlanBuilder) dynamic(kind SSRDynamicKind, expr *TemplateExpr, span SectionSpan) int {
+	id := b.dynamicNext
 	b.plan.Dynamics = append(b.plan.Dynamics, SSRDynamicSite{
-		ID: b.dynamicNext, Kind: kind, Expr: expr, Span: span,
+		ID: id, Kind: kind, Expr: expr, Span: span,
 	})
 	b.dynamicNext++
+	return id
 }
 
 func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
@@ -281,35 +287,39 @@ func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
 			out = append(out, b.text(n))
 		case *IfChainNode:
 			branches := make([]SSRPlanIfBranch, 0, len(n.Branches))
+			markerID := -1
 			if n.HasKey() {
-				b.dynamic(SSRDynamicKey, n.KeyAST, n.Span)
+				markerID = b.dynamic(SSRDynamicKey, n.KeyAST, n.Span)
 			}
 			for _, branch := range n.Branches {
 				if branch == nil {
 					continue
 				}
 				if condition := branch.Expr; condition != nil {
-					b.dynamic(SSRDynamicIf, condition, branch.Span)
+					id := b.dynamic(SSRDynamicIf, condition, branch.Span)
+					if markerID < 0 {
+						markerID = id
+					}
 				}
 				branches = append(branches, SSRPlanIfBranch{
 					Span: branch.Span, Condition: branch.Expr, Children: b.nodes(branch.Children),
 				})
 			}
-			out = append(out, &SSRPlanIf{Span: n.Span, Key: n.KeyAST, Branches: branches})
+			out = append(out, &SSRPlanIf{Span: n.Span, Key: n.KeyAST, Branches: branches, DynamicID: markerID})
 		case *EachBlockNode:
-			b.dynamic(SSRDynamicEach, n.IterExpr, n.Span)
+			markerID := b.dynamic(SSRDynamicEach, n.IterExpr, n.Span)
 			if n.HasKey() {
 				b.dynamic(SSRDynamicEachKey, n.KeyAST, n.Span)
 			}
 			out = append(out, &SSRPlanEach{
 				Span: n.Span, Iterable: n.IterExpr, ItemName: n.ItemName, IndexName: n.IndexName,
-				Key: n.KeyAST, Children: b.nodes(n.Children), ElseChildren: b.nodes(n.ElseChildren),
+				Key: n.KeyAST, Children: b.nodes(n.Children), ElseChildren: b.nodes(n.ElseChildren), DynamicID: markerID,
 			})
 		case *AwaitBlockNode:
-			b.dynamic(SSRDynamicAwait, n.Expr, n.Span)
+			markerID := b.dynamic(SSRDynamicAwait, n.Expr, n.Span)
 			out = append(out, &SSRPlanAwait{
 				Span: n.Span, Promise: n.Expr, ValueName: n.ValueName, ErrorName: n.ErrorName,
-				PendingChildren: b.nodes(n.PendingChildren), ThenChildren: b.nodes(n.ThenChildren), CatchChildren: b.nodes(n.CatchChildren),
+				PendingChildren: b.nodes(n.PendingChildren), ThenChildren: b.nodes(n.ThenChildren), CatchChildren: b.nodes(n.CatchChildren), DynamicID: markerID,
 			})
 		}
 	}
@@ -394,12 +404,11 @@ func (b *ssrPlanBuilder) text(node *TextNode) *SSRPlanText {
 		if part == nil {
 			continue
 		}
-		parts = append(parts, SSRPlanTextPart{
-			Span: part.Span, Static: part.Static, Value: part.Value, Expr: part.Expr,
-		})
+		planned := SSRPlanTextPart{Span: part.Span, Static: part.Static, Value: part.Value, Expr: part.Expr, DynamicID: -1}
 		if !part.Static {
-			b.dynamic(SSRDynamicText, part.Expr, part.Span)
+			planned.DynamicID = b.dynamic(SSRDynamicText, part.Expr, part.Span)
 		}
+		parts = append(parts, planned)
 	}
 	return &SSRPlanText{Span: node.Span, Parts: parts}
 }

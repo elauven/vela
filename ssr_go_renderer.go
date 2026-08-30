@@ -229,13 +229,19 @@ func (e *ssrGoEmitter) slot(node *SSRPlanSlot) ([]goast.Stmt, error) {
 }
 
 func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {
-	body := make([]goast.Stmt, 0, len(node.Parts))
+	body := make([]goast.Stmt, 0, len(node.Parts)*3)
 	for _, part := range node.Parts {
+		if !part.Static {
+			body = append(body, ssrMarkerStart(part.DynamicID))
+		}
 		value, err := e.outputValue(part.Static, part.Value, part.Expr)
 		if err != nil {
 			return nil, err
 		}
 		body = append(body, goWriteSSRValue(value))
+		if !part.Static {
+			body = append(body, ssrMarkerEnd(part.DynamicID))
+		}
 	}
 	return body, nil
 }
@@ -362,11 +368,23 @@ func ssrStylePrefix(style string) string {
 }
 
 func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
+	var body []goast.Stmt
+	if node.DynamicID >= 0 {
+		body = append(body, ssrMarkerStart(node.DynamicID))
+	}
 	if node.Key != nil {
 		if len(node.Branches) != 1 || node.Branches[0].Condition != nil {
 			return nil, ssrExprUnsupported(node.Span.Start, "SSR key block has an invalid branch shape")
 		}
-		return e.nodes(node.Branches[0].Children)
+		children, err := e.nodes(node.Branches[0].Children)
+		if err != nil {
+			return nil, err
+		}
+		body = append(body, children...)
+		if node.DynamicID >= 0 {
+			body = append(body, ssrMarkerEnd(node.DynamicID))
+		}
+		return body, nil
 	}
 	var first *goast.IfStmt
 	var previous *goast.IfStmt
@@ -397,7 +415,11 @@ func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
 	if first == nil {
 		return nil, ssrExprUnsupported(node.Span.Start, "SSR if block has no conditional branch")
 	}
-	return []goast.Stmt{first}, nil
+	body = append(body, first)
+	if node.DynamicID >= 0 {
+		body = append(body, ssrMarkerEnd(node.DynamicID))
+	}
+	return body, nil
 }
 
 func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
@@ -436,18 +458,18 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	}
 	assign := &goast.AssignStmt{Lhs: []goast.Expr{iterIdent}, Tok: token.DEFINE, Rhs: []goast.Expr{iterable}}
 	if len(node.ElseChildren) == 0 {
-		return []goast.Stmt{assign, rangeStmt}, nil
+		return ssrMarkedStatements(node.DynamicID, []goast.Stmt{assign, rangeStmt}), nil
 	}
 	otherwise, err := e.nodes(node.ElseChildren)
 	if err != nil {
 		return nil, err
 	}
 	empty := &goast.BinaryExpr{X: &goast.CallExpr{Fun: goast.NewIdent("len"), Args: []goast.Expr{iterIdent}}, Op: token.EQL, Y: &goast.BasicLit{Kind: token.INT, Value: "0"}}
-	return []goast.Stmt{assign, &goast.IfStmt{
+	return ssrMarkedStatements(node.DynamicID, []goast.Stmt{assign, &goast.IfStmt{
 		Cond: empty,
 		Body: &goast.BlockStmt{List: otherwise},
 		Else: &goast.BlockStmt{List: []goast.Stmt{rangeStmt}},
-	}}, nil
+	}}), nil
 }
 
 func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
@@ -476,5 +498,28 @@ func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
 	if len(node.PendingChildren) == 0 {
 		return nil, ssrExprUnsupported(node.Span.Start, "SSR await requires an explicit pending branch until hydration")
 	}
-	return e.nodes(node.PendingChildren)
+	body, err := e.nodes(node.PendingChildren)
+	if err != nil {
+		return nil, err
+	}
+	return ssrMarkedStatements(node.DynamicID, body), nil
+}
+
+func ssrMarkedStatements(id int, body []goast.Stmt) []goast.Stmt {
+	if id < 0 {
+		return body
+	}
+	marked := make([]goast.Stmt, 0, len(body)+2)
+	marked = append(marked, ssrMarkerStart(id))
+	marked = append(marked, body...)
+	marked = append(marked, ssrMarkerEnd(id))
+	return marked
+}
+
+func ssrMarkerStart(id int) goast.Stmt {
+	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--v" + itoa(id) + "-->")})
+}
+
+func ssrMarkerEnd(id int) goast.Stmt {
+	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--/v" + itoa(id) + "-->")})
 }
