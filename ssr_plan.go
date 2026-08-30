@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"unicode"
 )
@@ -62,8 +63,18 @@ type SSRPlanElement struct {
 type SSRPlanComponent struct {
 	Span  SectionSpan
 	Name  string
+	Link  *SSRComponentLink
 	Attrs []SSRPlanAttr
 	Slots map[string][]SSRPlanNode
+}
+
+// SSRComponentLink is project-level import metadata retained by the typed
+// render plan. LocalName is the template-visible import alias; SourcePath is
+// canonical and prevents a later Go backend from guessing child identity from
+// a tag name alone.
+type SSRComponentLink struct {
+	LocalName  string
+	SourcePath string
 }
 
 type SSRPlanSlot struct {
@@ -182,6 +193,7 @@ type SSRDynamicSite struct {
 
 type ssrPlanBuilder struct {
 	plan        *SSRRenderPlan
+	links       map[string]SSRComponentLink
 	eventNext   int
 	dynamicNext int
 }
@@ -196,6 +208,10 @@ func BuildSSRRenderPlan(componentName string, sfc *SFC, scopeID string) (*SSRRen
 // is already available in the pipeline. The nil compatibility path analyses
 // the existing ScriptAST; it never reparses script source.
 func BuildSSRRenderPlanWithAnalysis(componentName string, sfc *SFC, analysis *Analysis, scopeID string) (*SSRRenderPlan, error) {
+	return BuildSSRRenderPlanWithAnalysisAndLinks(componentName, sfc, analysis, scopeID, nil)
+}
+
+func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, analysis *Analysis, scopeID string, links map[string]SSRComponentLink) (*SSRRenderPlan, error) {
 	if sfc == nil || sfc.TemplateAST == nil {
 		return nil, fmt.Errorf("ssr render plan: missing template AST")
 	}
@@ -216,7 +232,7 @@ func BuildSSRRenderPlanWithAnalysis(componentName string, sfc *SFC, analysis *An
 	if err != nil {
 		return nil, err
 	}
-	b := &ssrPlanBuilder{plan: &SSRRenderPlan{
+	b := &ssrPlanBuilder{links: links, plan: &SSRRenderPlan{
 		ComponentName: componentName,
 		ScopeID:       scopeID,
 		Props:         props,
@@ -308,7 +324,44 @@ func (b *ssrPlanBuilder) component(node *ComponentNode) *SSRPlanComponent {
 	for name, children := range node.Slots {
 		slots[name] = b.nodes(children)
 	}
-	return &SSRPlanComponent{Span: node.Span, Name: node.Name, Attrs: attrs, Slots: slots}
+	component := &SSRPlanComponent{Span: node.Span, Name: node.Name, Attrs: attrs, Slots: slots}
+	if link, ok := b.links[node.Name]; ok {
+		copy := link
+		component.Link = &copy
+	}
+	return component
+}
+
+// ResolveSSRLocalComponentLinks resolves only relative .vela imports. It does
+// not infer package names or Go import paths yet; those are a later project
+// linking concern. Returning canonical source paths here keeps both later
+// stages independent of import spelling and aliases.
+func ResolveSSRLocalComponentLinks(src, srcRoot string, analysis *Analysis) (map[string]SSRComponentLink, error) {
+	links := map[string]SSRComponentLink{}
+	if analysis == nil {
+		return links, nil
+	}
+	root, err := filepath.Abs(srcRoot)
+	if err != nil {
+		return nil, err
+	}
+	for _, imp := range analysis.Imports {
+		if imp == nil || !strings.HasSuffix(imp.Source, ".vela") || (!strings.HasPrefix(imp.Source, "./") && !strings.HasPrefix(imp.Source, "../")) {
+			continue
+		}
+		resolved, err := filepath.Abs(filepath.Join(filepath.Dir(src), imp.Source))
+		if err != nil {
+			return nil, err
+		}
+		rel, err := filepath.Rel(root, resolved)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("ssr component import %q escapes project source root", imp.Source)
+		}
+		for _, local := range imp.Names {
+			links[local] = SSRComponentLink{LocalName: local, SourcePath: resolved}
+		}
+	}
+	return links, nil
 }
 
 func (b *ssrPlanBuilder) text(node *TextNode) *SSRPlanText {

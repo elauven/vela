@@ -75,7 +75,12 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	}
 	hash := md5.Sum([]byte(src))
 	scopeID := fmt.Sprintf("vela-%x", hash[:3])
-	plan, err := BuildSSRRenderPlan(componentName(src), sfc, scopeID)
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	links, err := ResolveSSRLocalComponentLinks(src, srcRoot, analysis)
+	if err != nil {
+		return err
+	}
+	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks(componentName(src), sfc, analysis, scopeID, links)
 	if err != nil {
 		return err
 	}
