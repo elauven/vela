@@ -37,3 +37,22 @@ func TestBuildStaticSSRGoFileRejectsDynamic(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestBuildStaticSSRGoFileWithTextPropsEscapesValue(t *testing.T) {
+	sfc, _ := parseSFC(`<script>export let title="";</script><template>Hello {title}</template>`)
+	plan, _ := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	file, err := BuildStaticSSRGoFileWithTextProps(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "html.EscapeString(fmt.Sprint(props.Title))") {
+		t.Fatalf("missing escaped prop write:\n%s", src)
+	}
+	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {
+		t.Fatal(err)
+	}
+}
