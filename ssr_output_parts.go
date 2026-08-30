@@ -185,3 +185,11 @@ func goWriteSSRValue(value goast.Expr) goast.Stmt {
 		}},
 	}
 }
+
+func goWriteSSRErr(call goast.Expr) goast.Stmt {
+	return &goast.IfStmt{
+		Init: &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("err")}, Tok: token.DEFINE, Rhs: []goast.Expr{call}},
+		Cond: &goast.BinaryExpr{X: goast.NewIdent("err"), Op: token.NEQ, Y: goast.NewIdent("nil")},
+		Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("err")}}}},
+	}
+}

@@ -27,7 +27,7 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	if err != nil {
 		return nil, err
 	}
-	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan)}
+	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName}
 	body, err := emitter.nodes(plan.Nodes)
 	if err != nil {
 		return nil, err
@@ -43,6 +43,7 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 
 type ssrGoEmitter struct {
 	ctx           SSRExprContext
+	packageName   string
 	needsEscaping bool
 	eachNext      int
 }
@@ -65,6 +66,8 @@ func (e *ssrGoEmitter) node(node SSRPlanNode) ([]goast.Stmt, error) {
 		return e.text(n)
 	case *SSRPlanElement:
 		return e.element(n)
+	case *SSRPlanComponent:
+		return e.component(n)
 	case *SSRPlanIf:
 		return e.ifBlock(n)
 	case *SSRPlanAwait:
@@ -74,6 +77,48 @@ func (e *ssrGoEmitter) node(node SSRPlanNode) ([]goast.Stmt, error) {
 	default:
 		return nil, ssrExprUnsupported(0, "SSR node %T is not lowered yet", node)
 	}
+}
+
+func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
+	if node.Link == nil {
+		return nil, ssrExprUnsupported(node.Span.Start, "component %q is not linked to a local .vela import", node.Name)
+	}
+	if node.Link.PackageName != e.packageName {
+		return nil, ssrExprUnsupported(node.Span.Start, "component %q belongs to Go package %q; cross-package component calls are not lowered yet", node.Name, node.Link.PackageName)
+	}
+	if len(node.Slots) > 0 {
+		return nil, ssrExprUnsupported(node.Span.Start, "component %q slots are not lowered yet", node.Name)
+	}
+	fields := make([]*goast.KeyValueExpr, 0, len(node.Attrs))
+	for _, attr := range node.Attrs {
+		var value goast.Expr
+		switch attr.Role {
+		case SSRAttrStatic:
+			if attr.ValueKind == AttrValueMissing {
+				return nil, ssrExprUnsupported(attr.Span.Start, "component prop %q requires a value", attr.Name)
+			}
+			value = &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(attr.Value)}
+		case SSRAttrDynamic:
+			var err error
+			value, err = TranslateSSRExpression(attr.Expr, e.ctx)
+			if err != nil {
+				return nil, err
+			}
+		default:
+			return nil, ssrExprUnsupported(attr.Span.Start, "component prop %q with role %d requires hydration", attr.Name, attr.Role)
+		}
+		fields = append(fields, &goast.KeyValueExpr{Key: goast.NewIdent(ssrGoExportName(attr.Name)), Value: value})
+	}
+	props := &goast.CompositeLit{Type: goast.NewIdent(node.Link.GoName + "Props"), Elts: make([]goast.Expr, len(fields))}
+	for i, field := range fields {
+		props.Elts[i] = field
+	}
+	call := &goast.CallExpr{
+		Fun:  goast.NewIdent(node.Link.GoName),
+		Args: []goast.Expr{props, &goast.CompositeLit{Type: goast.NewIdent(node.Link.GoName + "Slots")}},
+	}
+	render := &goast.CallExpr{Fun: goSelectorExpr(call, "Render"), Args: []goast.Expr{goast.NewIdent("w")}}
+	return []goast.Stmt{goWriteSSRErr(render)}, nil
 }
 
 func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {

@@ -144,6 +144,10 @@ func goSelector(pkg, name string) goast.Expr {
 	return &goast.SelectorExpr{X: goast.NewIdent(pkg), Sel: goast.NewIdent(name)}
 }
 
+func goSelectorExpr(x goast.Expr, name string) goast.Expr {
+	return &goast.SelectorExpr{X: x, Sel: goast.NewIdent(name)}
+}
+
 // FormatSSRGoFile is the sole printer for compiler-owned Go output.
 func FormatSSRGoFile(file *goast.File) ([]byte, error) {
 	if file == nil {

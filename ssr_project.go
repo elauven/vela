@@ -170,11 +170,8 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		return err
 	}
 	propsPath := layout.propsPath(src, srcRoot)
-	propsSource, err := ssrProjectPropsSource(plan, propsPath, layout.packageName(src, srcRoot))
+	_, err = ssrProjectPropsSource(plan, propsPath, layout.packageName(src, srcRoot))
 	if err != nil {
-		return err
-	}
-	if err := ValidateGeneratedSSRGoPackage(map[string][]byte{serverPath: source, propsPath: propsSource}); err != nil {
 		return err
 	}
 	if err := os.WriteFile(serverPath, source, 0o644); err != nil {

@@ -121,6 +121,32 @@ func TestValidateSSRProjectPackagesChecksOneDirectoryAsOnePackage(t *testing.T) 
 	}
 }
 
+func TestSSRProjectRendersSamePackageChildComponent(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(srcRoot, "Parent.vela")
+	child := filepath.Join(srcRoot, "Child.vela")
+	if err := os.WriteFile(parent, []byte(`<script>import { Child } from './Child.vela'; export let title="";</script><template><Child :title={title} /></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(child, []byte(`<script>export let title="";</script><template><p>{title}</p></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if errors := buildSSRProject([]string{parent, child}, srcRoot, filepath.Join(root, "out"), CompileOptions{StatusWriter: io.Discard}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	server, err := os.ReadFile(NewSSRProjectLayout(filepath.Join(root, "out")).serverPath(parent, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(server), "Child(ChildProps{Title: props.Title}, ChildSlots{}).Render(w)") {
+		t.Fatalf("child call was not generated:\n%s", server)
+	}
+}
+
 func TestGoFileStemUsesLowerSnakeCase(t *testing.T) {
 	cases := map[string]string{
 		"UserPage":      "user_page",
