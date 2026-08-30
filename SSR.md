@@ -1,10 +1,9 @@
 # Vela SSR — Design Document
 
 This document captures the working design for Vela's server-side
-rendering (SSR) capability. It compiles a multi-turn design
-discussion into a single reference. Nothing in here is implemented
-yet — the goal is to lock in decisions and a phased plan before
-writing code.
+rendering (SSR) capability. It records both the implemented Phase 1/2
+contracts and the remaining phases, so implementation cannot drift
+from the compiler architecture.
 
 The reader should already be familiar with the current state of the
 compiler (see `VELA.md`).
@@ -71,9 +70,9 @@ out/
 
   server/
     components/
-      Foo.go                         server-side renderer
+      foo.go                         server-side renderer
     types.go                         shared prop structs (cross-component)
-    Foo.d.go                         inferred prop types (developer-overridable)
+      foo_props.go                   inferred prop types (developer-overridable)
 ```
 
 A future bundler stage (not yet planned in detail) consolidates the
@@ -99,6 +98,34 @@ per-component CSS and JS into route-scoped or app-scoped bundles.
   `github.com/your-org/vela-runtime` providing `vela.WriteEscaped`,
   `vela.Each`, `vela.ToString`, `vela.ToJSON`. Same approach on the
   JS side: a separate `vela-runtime.js` the bundler picks up.
+
+### Component composition package contract
+
+Component composition is a project-level operation, not an isolated renderer
+operation. Before emitting Go, the SSR project pass must resolve every local
+`.vela` import to its canonical source path and link each component tag to
+that import. The linker is the only source of truth for a child renderer's Go
+package path and exported symbol; template tag text alone is insufficient
+because JavaScript imports may be aliased.
+
+The generated server tree preserves source directories. Every directory is a
+separate Go package, named in lowercase snake_case; files are likewise
+lowercase snake_case. A project supplies one explicit Go module import root
+for generated SSR (for example `example.com/site/out/server`). A renderer in
+`components/admin` imports a child under `components/ui` through that module
+root, never with Go's invalid relative imports. Root components keep package
+`components`.
+
+The compiler validates the linked package graph after all renderer and props
+sidecar files have been materialized. Per-file validation remains useful for
+standalone renderers, but it cannot prove component calls because the child
+types and functions live in another generated package.
+
+Slots follow the same linked render plan. A generated child exposes a typed
+`ComponentSlots` struct whose default and named fields are `vela.Slot` values.
+The parent creates each closure from its already-planned slot children and
+passes the struct to the child renderer. An unfilled `<slot>` renders its
+fallback; a filled slot writes exactly once at the child slot location.
 
 ---
 
