@@ -73,8 +73,11 @@ type SSRPlanComponent struct {
 // canonical and prevents a later Go backend from guessing child identity from
 // a tag name alone.
 type SSRComponentLink struct {
-	LocalName  string
-	SourcePath string
+	LocalName   string
+	SourcePath  string
+	PackageName string
+	ImportPath  string
+	GoName      string
 }
 
 type SSRPlanSlot struct {
@@ -362,6 +365,19 @@ func ResolveSSRLocalComponentLinks(src, srcRoot string, analysis *Analysis) (map
 		}
 	}
 	return links, nil
+}
+
+// LinkSSRComponentPackages enriches canonical source links with the Go
+// package identity selected by the project layout. It keeps all filesystem and
+// module-path policy out of template parsing and Go-AST emission.
+func LinkSSRComponentPackages(links map[string]SSRComponentLink, srcRoot string, layout SSRProjectLayout) map[string]SSRComponentLink {
+	for name, link := range links {
+		link.PackageName = layout.packageName(link.SourcePath, srcRoot)
+		link.ImportPath = layout.importPath(link.SourcePath, srcRoot)
+		link.GoName = componentName(link.SourcePath)
+		links[name] = link
+	}
+	return links
 }
 
 func (b *ssrPlanBuilder) text(node *TextNode) *SSRPlanText {

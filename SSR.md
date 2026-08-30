@@ -114,7 +114,9 @@ lowercase snake_case. A project supplies one explicit Go module import root
 for generated SSR (for example `example.com/site/out/server`). A renderer in
 `components/admin` imports a child under `components/ui` through that module
 root, never with Go's invalid relative imports. Root components keep package
-`components`.
+`components`. The CLI option is `--ssr-module`; its default
+`vela/generated/server` is intended for generated-code inspection and tests,
+while applications should pass their actual module path.
 
 The compiler validates the linked package graph after all renderer and props
 sidecar files have been materialized. Per-file validation remains useful for

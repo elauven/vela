@@ -65,6 +65,7 @@ type CompileOptions struct {
 	TargetProfile           TargetProfile
 	UnavailableCapabilities []string // direct known globals disabled by the host
 	Strict                  bool     // elevate proven unresolved reads to errors
+	SSRModule               string   // Go module import root for generated SSR server packages
 }
 
 func main() {
@@ -82,6 +83,7 @@ func main() {
 	strict := flag.Bool("strict", false, "treat proven unresolved JavaScript reads as errors")
 	tracePath := flag.String("trace", "", "append source-free CompilationTraceV1 records as JSONL; use '-' for stdout")
 	ssr := flag.Bool("ssr", false, "emit SSR project outputs into client/, server/, and styles/")
+	ssrModule := flag.String("ssr-module", "vela/generated/server", "Go module import root for generated SSR packages")
 	flag.Parse()
 
 	targetProfile, err := ParseTargetProfile(*target)
@@ -109,6 +111,7 @@ func main() {
 		TargetProfile:           targetProfile,
 		UnavailableCapabilities: splitCapabilityList(*unavailableCapabilities),
 		Strict:                  *strict,
+		SSRModule:               *ssrModule,
 	}
 	if closeTrace, traceErr := configureTrace(&opts, *tracePath); traceErr != nil {
 		fmt.Fprintf(os.Stderr, "vela: %v\n", traceErr)

@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -13,19 +14,25 @@ import (
 // remain consumable by the existing browser toolchain, while Go renderers and
 // extracted scoped CSS never share a directory with generated JavaScript.
 type SSRProjectLayout struct {
-	Root      string
-	ClientDir string
-	ServerDir string
-	StylesDir string
+	Root       string
+	ModulePath string
+	ClientDir  string
+	ServerDir  string
+	StylesDir  string
 }
 
 func NewSSRProjectLayout(outRoot string) SSRProjectLayout {
+	return NewSSRProjectLayoutWithModule(outRoot, "vela/generated/server")
+}
+
+func NewSSRProjectLayoutWithModule(outRoot, modulePath string) SSRProjectLayout {
 	root := filepath.Clean(outRoot)
 	return SSRProjectLayout{
-		Root:      root,
-		ClientDir: filepath.Join(root, "client"),
-		ServerDir: filepath.Join(root, "server", "components"),
-		StylesDir: filepath.Join(root, "styles"),
+		Root:       root,
+		ModulePath: strings.TrimSuffix(strings.TrimSpace(modulePath), "/"),
+		ClientDir:  filepath.Join(root, "client"),
+		ServerDir:  filepath.Join(root, "server", "components"),
+		StylesDir:  filepath.Join(root, "styles"),
 	}
 }
 
@@ -41,6 +48,22 @@ func (layout SSRProjectLayout) propsPath(src, srcRoot string) string {
 	return mirrorGoPathWithSuffix(src, srcRoot, layout.ServerDir, "_props.go")
 }
 
+func (layout SSRProjectLayout) packageName(src, srcRoot string) string {
+	rel, err := filepath.Rel(srcRoot, filepath.Dir(src))
+	if err != nil || rel == "." {
+		return "components"
+	}
+	return goFileStem(filepath.Base(rel))
+}
+
+func (layout SSRProjectLayout) importPath(src, srcRoot string) string {
+	rel, err := filepath.Rel(srcRoot, filepath.Dir(src))
+	if err != nil || rel == "." {
+		return path.Join(layout.ModulePath, "components")
+	}
+	return path.Join(layout.ModulePath, "components", filepath.ToSlash(rel))
+}
+
 func (layout SSRProjectLayout) stylePath(src, srcRoot string) string {
 	return mirrorPath(src, srcRoot, layout.StylesDir, ".css")
 }
@@ -51,7 +74,7 @@ func (layout SSRProjectLayout) eventBridgePath(src, srcRoot string) string {
 // buildSSRProject adds server and styles products around the established CSR
 // project build. The caller owns user-facing progress and exit handling.
 func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOptions, parallel bool) int {
-	layout := NewSSRProjectLayout(outRoot)
+	layout := NewSSRProjectLayoutWithModule(outRoot, opts.SSRModule)
 	errors := buildProject(files, srcRoot, layout.ClientDir, opts, parallel)
 	for _, src := range files {
 		if err := compileSSRProjectFile(src, srcRoot, layout); err != nil {
@@ -80,6 +103,7 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	if err != nil {
 		return err
 	}
+	links = LinkSSRComponentPackages(links, srcRoot, layout)
 	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks(componentName(src), sfc, analysis, scopeID, links)
 	if err != nil {
 		return err
@@ -88,7 +112,7 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	if err != nil {
 		return err
 	}
-	file, err := BuildSSRGoRendererFile(plan, "components")
+	file, err := BuildSSRGoRendererFile(plan, layout.packageName(src, srcRoot))
 	if err != nil {
 		return err
 	}
@@ -101,7 +125,7 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		return err
 	}
 	propsPath := layout.propsPath(src, srcRoot)
-	propsSource, err := ssrProjectPropsSource(plan, propsPath)
+	propsSource, err := ssrProjectPropsSource(plan, propsPath, layout.packageName(src, srcRoot))
 	if err != nil {
 		return err
 	}
@@ -130,7 +154,7 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	return os.WriteFile(stylePath, []byte(plan.ScopedCSS), 0o644)
 }
 
-func ssrProjectPropsSource(plan *SSRRenderPlan, path string) ([]byte, error) {
+func ssrProjectPropsSource(plan *SSRRenderPlan, path, packageName string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err == nil {
 		return data, nil
@@ -138,7 +162,7 @@ func ssrProjectPropsSource(plan *SSRRenderPlan, path string) ([]byte, error) {
 	if !os.IsNotExist(err) {
 		return nil, err
 	}
-	file, err := BuildSSRGoPropsFile(plan, "components")
+	file, err := BuildSSRGoPropsFile(plan, packageName)
 	if err != nil {
 		return nil, err
 	}

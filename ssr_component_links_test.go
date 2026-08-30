@@ -25,6 +25,11 @@ func TestResolveSSRLocalComponentLinksRetainsAliasedCanonicalImport(t *testing.T
 	if !ok || link.SourcePath != filepath.Join(root, "ui", "Card.vela") {
 		t.Fatalf("links=%#v", links)
 	}
+	links = LinkSSRComponentPackages(links, root, NewSSRProjectLayoutWithModule(filepath.Join(root, "out"), "example.com/site/out/server"))
+	link = links["ProfileCard"]
+	if link.PackageName != "ui" || link.ImportPath != "example.com/site/out/server/components/ui" || link.GoName != "Card" {
+		t.Fatalf("linked package metadata=%#v", link)
+	}
 	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", sfc, analysis, "vela-parent", links)
 	if err != nil {
 		t.Fatal(err)
