@@ -103,6 +103,24 @@ func TestSSRProjectPreservesDeveloperPropsSidecar(t *testing.T) {
 	}
 }
 
+func TestValidateSSRProjectPackagesChecksOneDirectoryAsOnePackage(t *testing.T) {
+	root := t.TempDir()
+	layout := NewSSRProjectLayout(root)
+	if err := os.MkdirAll(layout.ServerDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout.ServerDir, "first.go"), []byte("package components\n\ntype Shared struct{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout.ServerDir, "second.go"), []byte("package components\n\ntype Shared struct{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := ValidateSSRProjectPackages(layout)
+	if err == nil || !strings.Contains(err.Error(), "Shared redeclared") {
+		t.Fatalf("package validation error=%v", err)
+	}
+}
+
 func TestGoFileStemUsesLowerSnakeCase(t *testing.T) {
 	cases := map[string]string{
 		"UserPage":      "user_page",

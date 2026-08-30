@@ -84,7 +84,52 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 		}
 		fmt.Fprintf(compilerStatusWriter(opts), "  +  %-40s -> server/styles\n", relOrBase(src, srcRoot))
 	}
+	if errors == 0 {
+		if err := ValidateSSRProjectPackages(layout); err != nil {
+			fmt.Fprintf(os.Stderr, "  x  SSR package validation: %v\n", err)
+			errors++
+		}
+	}
 	return errors
+}
+
+// ValidateSSRProjectPackages checks every materialized generated-server Go
+// package as a unit. Renderer files deliberately rely on their preserved
+// *_props.go sibling, so isolated-file checking cannot catch every conflict.
+// The directory grouping is also the boundary where child-package import
+// resolution will be attached before component calls are emitted.
+func ValidateSSRProjectPackages(layout SSRProjectLayout) error {
+	packages := map[string]map[string][]byte{}
+	err := filepath.Walk(layout.ServerDir, func(filename string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info == nil || info.IsDir() || filepath.Ext(filename) != ".go" {
+			return nil
+		}
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			return err
+		}
+		dir := filepath.Dir(filename)
+		if packages[dir] == nil {
+			packages[dir] = map[string][]byte{}
+		}
+		packages[dir][filename] = data
+		return nil
+	})
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for dir, sources := range packages {
+		if err := ValidateGeneratedSSRGoPackage(sources); err != nil {
+			return fmt.Errorf("package %s: %w", dir, err)
+		}
+	}
+	return nil
 }
 
 func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
