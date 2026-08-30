@@ -38,7 +38,17 @@ func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
 	if !strings.Contains(string(server), "func RenderApp") {
 		t.Fatalf("server output is not a Go renderer:\n%s", server)
 	}
-	if err := ValidateGeneratedSSRGo("App.go", server); err != nil {
+	props, err := os.ReadFile(layout.propsPath(source, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(props), "type AppProps struct") {
+		t.Fatalf("missing inferred props sidecar:\n%s", props)
+	}
+	if strings.Contains(string(server), "type AppProps struct") {
+		t.Fatalf("renderer unexpectedly owns the props contract:\n%s", server)
+	}
+	if err := ValidateGeneratedSSRGoPackage(map[string][]byte{"app.go": server, "app_props.go": props}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(server), `data-vela-event=\"`) {
@@ -63,6 +73,36 @@ func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
 	}
 }
 
+func TestSSRProjectPreservesDeveloperPropsSidecar(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(srcRoot, "App.vela")
+	if err := os.WriteFile(source, []byte(`<script>export let title="";</script><template><p>{title}</p></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	layout := NewSSRProjectLayout(filepath.Join(root, "out"))
+	if err := compileSSRProjectFile(source, srcRoot, layout); err != nil {
+		t.Fatal(err)
+	}
+	custom := []byte("package components\n\ntype AppProps struct {\n\tTitle string\n\tMarker int\n}\n")
+	if err := os.WriteFile(layout.propsPath(source, srcRoot), custom, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := compileSSRProjectFile(source, srcRoot, layout); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(layout.propsPath(source, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(custom) {
+		t.Fatalf("user props sidecar was overwritten:\n%s", got)
+	}
+}
+
 func TestGoFileStemUsesLowerSnakeCase(t *testing.T) {
 	cases := map[string]string{
 		"UserPage":      "user_page",
@@ -83,5 +123,13 @@ func TestSSRProjectLayoutMirrorsSnakeCaseGoPath(t *testing.T) {
 	got := filepath.ToSlash(layout.serverPath(filepath.Join("src", "admin", "HTTPServer.vela"), "src"))
 	if want := "out/server/components/admin/http_server.go"; got != want {
 		t.Fatalf("serverPath=%q want %q", got, want)
+	}
+}
+
+func TestSSRProjectLayoutUsesSnakeCasePropsPath(t *testing.T) {
+	layout := NewSSRProjectLayout("out")
+	got := filepath.ToSlash(layout.propsPath(filepath.Join("src", "admin", "HTTPServer.vela"), "src"))
+	if want := "out/server/components/admin/http_server_props.go"; got != want {
+		t.Fatalf("propsPath=%q want %q", got, want)
 	}
 }

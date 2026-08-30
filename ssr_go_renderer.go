@@ -13,7 +13,17 @@ import (
 // attributes, and conditional template branches. Other plan node kinds keep
 // producing explicit diagnostics until their renderer semantics exist.
 func BuildSSRGoFile(plan *SSRRenderPlan, packageName string) (*goast.File, error) {
-	file, err := BuildSSRGoSkeleton(plan, packageName)
+	return buildSSRGoFile(plan, packageName, true)
+}
+
+// BuildSSRGoRendererFile emits a project renderer that takes its props type
+// from the adjacent, user-preservable *_props.go contract file.
+func BuildSSRGoRendererFile(plan *SSRRenderPlan, packageName string) (*goast.File, error) {
+	return buildSSRGoFile(plan, packageName, false)
+}
+
+func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) (*goast.File, error) {
+	file, err := buildSSRGoSkeleton(plan, packageName, includeProps)
 	if err != nil {
 		return nil, err
 	}

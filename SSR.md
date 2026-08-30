@@ -396,6 +396,16 @@ syntax into `.vela`. Runtime reflection is a safety net but
 **not the default** — Go reflection is slow and ugly; it should
 feel like an admission of defeat, not a feature.
 
+### Generated props sidecar
+
+Project SSR output keeps each component's inferred prop struct in a separate,
+lowercase snake_case file such as `server/components/user_page_props.go`. The
+compiler creates this `*_props.go` file only when it is absent; later builds
+read and preserve it byte-for-byte. Developers may refine the inferred Go
+fields there (for example replacing `map[string]any` with an application
+struct). The companion `user_page.go` renderer deliberately does not declare
+the props type, and the compiler type-checks both files as one Go package.
+
 ---
 
 ## Hydration mechanics

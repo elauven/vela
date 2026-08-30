@@ -37,6 +37,10 @@ func (layout SSRProjectLayout) serverPath(src, srcRoot string) string {
 	return mirrorGoPath(src, srcRoot, layout.ServerDir)
 }
 
+func (layout SSRProjectLayout) propsPath(src, srcRoot string) string {
+	return mirrorGoPathWithSuffix(src, srcRoot, layout.ServerDir, "_props.go")
+}
+
 func (layout SSRProjectLayout) stylePath(src, srcRoot string) string {
 	return mirrorPath(src, srcRoot, layout.StylesDir, ".css")
 }
@@ -79,7 +83,7 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	if err != nil {
 		return err
 	}
-	file, err := BuildSSRGoFile(plan, "components")
+	file, err := BuildSSRGoRendererFile(plan, "components")
 	if err != nil {
 		return err
 	}
@@ -87,11 +91,16 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	if err != nil {
 		return err
 	}
-	if err := ValidateGeneratedSSRGo(layout.serverPath(src, srcRoot), source); err != nil {
-		return err
-	}
 	serverPath := layout.serverPath(src, srcRoot)
 	if err := os.MkdirAll(filepath.Dir(serverPath), 0o755); err != nil {
+		return err
+	}
+	propsPath := layout.propsPath(src, srcRoot)
+	propsSource, err := ssrProjectPropsSource(plan, propsPath)
+	if err != nil {
+		return err
+	}
+	if err := ValidateGeneratedSSRGoPackage(map[string][]byte{serverPath: source, propsPath: propsSource}); err != nil {
 		return err
 	}
 	if err := os.WriteFile(serverPath, source, 0o644); err != nil {
@@ -116,16 +125,42 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	return os.WriteFile(stylePath, []byte(plan.ScopedCSS), 0o644)
 }
 
+func ssrProjectPropsSource(plan *SSRRenderPlan, path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err == nil {
+		return data, nil
+	}
+	if !os.IsNotExist(err) {
+		return nil, err
+	}
+	file, err := BuildSSRGoPropsFile(plan, "components")
+	if err != nil {
+		return nil, err
+	}
+	data, err = FormatSSRGoFile(file)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
 // mirrorGoPath preserves the component directory tree but applies Go source
 // filename convention to every emitted component file.
 func mirrorGoPath(src, srcRoot, outRoot string) string {
+	return mirrorGoPathWithSuffix(src, srcRoot, outRoot, ".go")
+}
+
+func mirrorGoPathWithSuffix(src, srcRoot, outRoot, suffix string) string {
 	rel, err := filepath.Rel(srcRoot, src)
 	if err != nil {
 		rel = filepath.Base(src)
 	}
 	dir := filepath.Dir(rel)
 	stem := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
-	name := goFileStem(stem) + ".go"
+	name := goFileStem(stem) + suffix
 	if dir == "." {
 		return filepath.Join(outRoot, name)
 	}

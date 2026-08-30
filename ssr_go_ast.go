@@ -19,6 +19,17 @@ const SSRRuntimeImportPath = "github.com/elauven/vela/ssr_runtime"
 // the standard Go AST. Later SSR stages extend the function body from the
 // typed SSRRenderPlan; they must not switch to source-string generation.
 func BuildSSRGoSkeleton(plan *SSRRenderPlan, packageName string) (*goast.File, error) {
+	return buildSSRGoSkeleton(plan, packageName, true)
+}
+
+// BuildSSRGoRendererSkeleton creates the renderer half of a project output.
+// Its Props declaration is emitted separately into the user-preservable
+// *_props.go sidecar.
+func BuildSSRGoRendererSkeleton(plan *SSRRenderPlan, packageName string) (*goast.File, error) {
+	return buildSSRGoSkeleton(plan, packageName, false)
+}
+
+func buildSSRGoSkeleton(plan *SSRRenderPlan, packageName string, includeProps bool) (*goast.File, error) {
 	if plan == nil {
 		return nil, fmt.Errorf("ssr go AST: missing render plan")
 	}
@@ -33,17 +44,30 @@ func BuildSSRGoSkeleton(plan *SSRRenderPlan, packageName string) (*goast.File, e
 
 	propsName := component + "Props"
 	slotsName := component + "Slots"
-	file := &goast.File{
-		Name: goast.NewIdent(packageName),
-		Decls: []goast.Decl{
-			goSSRImportDecl(),
-			goPropsTypeDecl(propsName, plan.Props),
-			goEmptyStructTypeDecl(slotsName),
-			goRenderFuncDecl(component, propsName, slotsName),
-			goComponentRendererFuncDecl(component, propsName, slotsName),
-		},
+	decls := []goast.Decl{goSSRImportDecl()}
+	if includeProps {
+		decls = append(decls, goPropsTypeDecl(propsName, plan.Props))
 	}
+	decls = append(decls,
+		goEmptyStructTypeDecl(slotsName),
+		goRenderFuncDecl(component, propsName, slotsName),
+		goComponentRendererFuncDecl(component, propsName, slotsName),
+	)
+	file := &goast.File{Name: goast.NewIdent(packageName), Decls: decls}
 	return file, nil
+}
+
+// BuildSSRGoPropsFile emits the inferred prop contract as its own Go file.
+// Project generation creates it once and preserves it on later builds, so a
+// developer can refine fields without generated output overwriting the edit.
+func BuildSSRGoPropsFile(plan *SSRRenderPlan, packageName string) (*goast.File, error) {
+	if _, err := buildSSRGoSkeleton(plan, packageName, false); err != nil {
+		return nil, err
+	}
+	return &goast.File{
+		Name:  goast.NewIdent(packageName),
+		Decls: []goast.Decl{goPropsTypeDecl(plan.ComponentName+"Props", plan.Props)},
+	}, nil
 }
 
 func goImportDecl(path string) *goast.GenDecl {
@@ -136,13 +160,24 @@ func FormatSSRGoFile(file *goast.File) ([]byte, error) {
 // result. This protects the AST builder boundary before generated files are
 // written into a user project.
 func ValidateGeneratedSSRGo(filename string, source []byte) error {
+	return ValidateGeneratedSSRGoPackage(map[string][]byte{filename: source})
+}
+
+// ValidateGeneratedSSRGoPackage independently reparses and type-checks every
+// source file in one generated package. It is used when a renderer depends on
+// a preserved *_props.go sidecar.
+func ValidateGeneratedSSRGoPackage(sources map[string][]byte) error {
 	fset := token.NewFileSet()
-	file, err := goparser.ParseFile(fset, filename, source, goparser.AllErrors)
-	if err != nil {
-		return fmt.Errorf("ssr go AST: parse generated Go: %w", err)
+	files := make([]*goast.File, 0, len(sources))
+	for filename, source := range sources {
+		file, err := goparser.ParseFile(fset, filename, source, goparser.AllErrors)
+		if err != nil {
+			return fmt.Errorf("ssr go AST: parse generated Go: %w", err)
+		}
+		files = append(files, file)
 	}
 	config := types.Config{Importer: ssrGeneratedImporter{fallback: importer.Default()}}
-	if _, err := config.Check("vela/generated", fset, []*goast.File{file}, nil); err != nil {
+	if _, err := config.Check("vela/generated", fset, files, nil); err != nil {
 		return fmt.Errorf("ssr go AST: type-check generated Go: %w", err)
 	}
 	return nil
