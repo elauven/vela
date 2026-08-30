@@ -30,8 +30,10 @@ export let config = {};
 	}
 	got := string(source)
 	for _, want := range []string{
-		"package components", "import \"io\"", "type GreetingProps struct {", "Title  string", "Count  int", "Active bool", "Items  []any", "Config map[string]any",
+		"package components", `"io"`, `vela "github.com/elauven/vela/ssr_runtime"`, "type GreetingProps struct {", "Title  string", "Count  int", "Active bool", "Items  []any", "Config map[string]any",
 		"type GreetingSlots struct {", "func RenderGreeting(w io.Writer, props GreetingProps, slots GreetingSlots) error",
+		"func Greeting(props GreetingProps, slots GreetingSlots) vela.Renderer",
+		"return vela.RendererFunc(func(w io.Writer) error",
 		"return nil",
 	} {
 		if !strings.Contains(got, want) {

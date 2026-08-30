@@ -148,17 +148,6 @@ func BuildSSRGoFileWithOutputParts(plan *SSRRenderPlan, packageName string) (*go
 	if err != nil {
 		return nil, err
 	}
-	needsDynamic := false
-	for _, part := range parts {
-		needsDynamic = needsDynamic || part.Dynamic()
-	}
-	if needsDynamic {
-		imports := file.Decls[0].(*goast.GenDecl)
-		imports.Specs = append(imports.Specs,
-			&goast.ImportSpec{Path: &goast.BasicLit{Kind: token.STRING, Value: `"fmt"`}},
-			&goast.ImportSpec{Path: &goast.BasicLit{Kind: token.STRING, Value: `"html"`}},
-		)
-	}
 	ctx := NewSSRExprContext(plan)
 	body := make([]goast.Stmt, 0, len(parts)+1)
 	for _, part := range parts {
@@ -168,8 +157,8 @@ func BuildSSRGoFileWithOutputParts(plan *SSRRenderPlan, packageName string) (*go
 			if err != nil {
 				return nil, err
 			}
-			value = &goast.CallExpr{Fun: goSelector("html", "EscapeString"), Args: []goast.Expr{
-				&goast.CallExpr{Fun: goSelector("fmt", "Sprint"), Args: []goast.Expr{expr}},
+			value = &goast.CallExpr{Fun: goSelector("vela", "EscapeString"), Args: []goast.Expr{
+				&goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{expr}},
 			}}
 		} else {
 			value = &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(part.Literal)}
@@ -177,13 +166,17 @@ func BuildSSRGoFileWithOutputParts(plan *SSRRenderPlan, packageName string) (*go
 		body = append(body, goWriteSSRValue(value))
 	}
 	body = append(body, &goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}})
-	file.Decls[len(file.Decls)-1].(*goast.FuncDecl).Body.List = body
+	render, err := ssrRenderFunc(file, plan.ComponentName)
+	if err != nil {
+		return nil, err
+	}
+	render.Body.List = body
 	return file, nil
 }
 
 func goWriteSSRValue(value goast.Expr) goast.Stmt {
-	write := &goast.CallExpr{Fun: goSelector("io", "WriteString"), Args: []goast.Expr{goast.NewIdent("w"), value}}
-	assign := &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("_"), goast.NewIdent("err")}, Tok: token.DEFINE, Rhs: []goast.Expr{write}}
+	write := &goast.CallExpr{Fun: goSelector("vela", "WriteString"), Args: []goast.Expr{goast.NewIdent("w"), value}}
+	assign := &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("err")}, Tok: token.DEFINE, Rhs: []goast.Expr{write}}
 	return &goast.IfStmt{
 		Init: assign,
 		Cond: &goast.BinaryExpr{X: goast.NewIdent("err"), Op: token.NEQ, Y: goast.NewIdent("nil")},

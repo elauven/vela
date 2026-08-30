@@ -22,7 +22,7 @@ func TestBuildStaticSSRGoFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), "io.WriteString(w,") || !strings.Contains(string(src), "<main class") || !strings.Contains(string(src), "<br></main>") {
+	if !strings.Contains(string(src), "vela.WriteString(w,") || !strings.Contains(string(src), "<main class") || !strings.Contains(string(src), "<br></main>") {
 		t.Fatalf("unexpected output:\n%s", src)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {
@@ -49,7 +49,7 @@ func TestBuildStaticSSRGoFileWithTextPropsEscapesValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), "html.EscapeString(fmt.Sprint(props.Title))") {
+	if !strings.Contains(string(src), "vela.EscapeString(vela.String(props.Title))") {
 		t.Fatalf("missing escaped prop write:\n%s", src)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {

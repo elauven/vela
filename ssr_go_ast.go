@@ -13,6 +13,8 @@ import (
 	"unicode"
 )
 
+const SSRRuntimeImportPath = "github.com/elauven/vela/ssr_runtime"
+
 // BuildSSRGoSkeleton creates the first server renderer file entirely through
 // the standard Go AST. Later SSR stages extend the function body from the
 // typed SSRRenderPlan; they must not switch to source-string generation.
@@ -34,10 +36,11 @@ func BuildSSRGoSkeleton(plan *SSRRenderPlan, packageName string) (*goast.File, e
 	file := &goast.File{
 		Name: goast.NewIdent(packageName),
 		Decls: []goast.Decl{
-			goImportDecl("io"),
+			goSSRImportDecl(),
 			goPropsTypeDecl(propsName, plan.Props),
 			goEmptyStructTypeDecl(slotsName),
 			goRenderFuncDecl(component, propsName, slotsName),
+			goComponentRendererFuncDecl(component, propsName, slotsName),
 		},
 	}
 	return file, nil
@@ -50,6 +53,15 @@ func goImportDecl(path string) *goast.GenDecl {
 			Path: &goast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", path)},
 		}},
 	}
+}
+
+func goSSRImportDecl() *goast.GenDecl {
+	decl := goImportDecl("io")
+	decl.Specs = append(decl.Specs, &goast.ImportSpec{
+		Name: goast.NewIdent("vela"),
+		Path: &goast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", SSRRuntimeImportPath)},
+	})
+	return decl
 }
 
 func goEmptyStructTypeDecl(name string) *goast.GenDecl {
@@ -79,6 +91,31 @@ func goRenderFuncDecl(component, propsName, slotsName string) *goast.FuncDecl {
 	}
 }
 
+func goComponentRendererFuncDecl(component, propsName, slotsName string) *goast.FuncDecl {
+	wrapper := &goast.FuncLit{
+		Type: &goast.FuncType{
+			Params:  &goast.FieldList{List: []*goast.Field{{Names: []*goast.Ident{goast.NewIdent("w")}, Type: goSelector("io", "Writer")}}},
+			Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("error")}}},
+		},
+		Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{
+			&goast.CallExpr{Fun: goast.NewIdent("Render" + component), Args: []goast.Expr{goast.NewIdent("w"), goast.NewIdent("props"), goast.NewIdent("slots")}},
+		}}}},
+	}
+	return &goast.FuncDecl{
+		Name: goast.NewIdent(component),
+		Type: &goast.FuncType{
+			Params: &goast.FieldList{List: []*goast.Field{
+				{Names: []*goast.Ident{goast.NewIdent("props")}, Type: goast.NewIdent(propsName)},
+				{Names: []*goast.Ident{goast.NewIdent("slots")}, Type: goast.NewIdent(slotsName)},
+			}},
+			Results: &goast.FieldList{List: []*goast.Field{{Type: goSelector("vela", "Renderer")}}},
+		},
+		Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{
+			&goast.CallExpr{Fun: goSelector("vela", "RendererFunc"), Args: []goast.Expr{wrapper}},
+		}}}},
+	}
+}
+
 func goSelector(pkg, name string) goast.Expr {
 	return &goast.SelectorExpr{X: goast.NewIdent(pkg), Sel: goast.NewIdent(name)}
 }
@@ -104,7 +141,7 @@ func ValidateGeneratedSSRGo(filename string, source []byte) error {
 	if err != nil {
 		return fmt.Errorf("ssr go AST: parse generated Go: %w", err)
 	}
-	config := types.Config{Importer: importer.Default()}
+	config := types.Config{Importer: ssrGeneratedImporter{fallback: importer.Default()}}
 	if _, err := config.Check("vela/generated", fset, []*goast.File{file}, nil); err != nil {
 		return fmt.Errorf("ssr go AST: type-check generated Go: %w", err)
 	}
@@ -164,4 +201,69 @@ func goSSRTypeExpr(kind SSRValueType) goast.Expr {
 	default:
 		return goast.NewIdent("any")
 	}
+}
+
+type ssrGeneratedImporter struct {
+	fallback types.Importer
+}
+
+func (importer ssrGeneratedImporter) Import(path string) (*types.Package, error) {
+	if path == SSRRuntimeImportPath {
+		return ssrRuntimeTypesPackage(importer.fallback)
+	}
+	return importer.fallback.Import(path)
+}
+
+func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
+	pkg := types.NewPackage(SSRRuntimeImportPath, "ssr_runtime")
+	ioPkg, err := loader.Import("io")
+	if err != nil {
+		return nil, err
+	}
+	writer := ioPkg.Scope().Lookup("Writer").Type()
+	errorType := types.Universe.Lookup("error").Type()
+	stringType := types.Typ[types.String]
+	anyType := types.Universe.Lookup("any").Type()
+	renderSignature := ssrRuntimeSignature(pkg, nil, []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
+	rendererMethod := types.NewFunc(token.NoPos, pkg, "Render", renderSignature)
+	renderer := types.NewInterfaceType([]*types.Func{rendererMethod}, nil)
+	renderer.Complete()
+	pkg.Scope().Insert(types.NewTypeName(token.NoPos, pkg, "Renderer", renderer))
+
+	rendererFuncName := types.NewTypeName(token.NoPos, pkg, "RendererFunc", nil)
+	rendererFunc := types.NewNamed(rendererFuncName, renderSignature, nil)
+	pkg.Scope().Insert(rendererFuncName)
+	receiver := types.NewVar(token.NoPos, pkg, "render", rendererFunc)
+	rendererFunc.AddMethod(types.NewFunc(token.NoPos, pkg, "Render", ssrRuntimeSignature(pkg, receiver, []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})))
+
+	slotName := types.NewTypeName(token.NoPos, pkg, "Slot", nil)
+	types.NewNamed(slotName, renderSignature, nil)
+	pkg.Scope().Insert(slotName)
+	ssrRuntimeAddFunc(pkg, "WriteString", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "value", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
+	ssrRuntimeAddFunc(pkg, "String", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
+	ssrRuntimeAddFunc(pkg, "EscapeString", []*types.Var{types.NewVar(token.NoPos, pkg, "value", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
+	pkg.MarkComplete()
+	return pkg, nil
+}
+
+func ssrRuntimeAddFunc(pkg *types.Package, name string, params, results []*types.Var) {
+	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, name, ssrRuntimeSignature(pkg, nil, params, results)))
+}
+
+func ssrRuntimeSignature(pkg *types.Package, receiver *types.Var, params, results []*types.Var) *types.Signature {
+	return types.NewSignatureType(receiver, nil, nil, types.NewTuple(params...), types.NewTuple(results...), false)
+}
+
+func ssrRenderFunc(file *goast.File, component string) (*goast.FuncDecl, error) {
+	if file == nil {
+		return nil, fmt.Errorf("ssr go AST: missing generated file")
+	}
+	name := "Render" + component
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*goast.FuncDecl)
+		if ok && function.Name != nil && function.Name.Name == name {
+			return function, nil
+		}
+	}
+	return nil, fmt.Errorf("ssr go AST: missing %s declaration", name)
 }

@@ -21,15 +21,12 @@ func BuildSSRGoFile(plan *SSRRenderPlan, packageName string) (*goast.File, error
 	if err != nil {
 		return nil, err
 	}
-	if emitter.needsEscaping {
-		imports := file.Decls[0].(*goast.GenDecl)
-		imports.Specs = append(imports.Specs,
-			&goast.ImportSpec{Path: &goast.BasicLit{Kind: token.STRING, Value: `"fmt"`}},
-			&goast.ImportSpec{Path: &goast.BasicLit{Kind: token.STRING, Value: `"html"`}},
-		)
-	}
 	body = append(body, &goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}})
-	file.Decls[len(file.Decls)-1].(*goast.FuncDecl).Body.List = body
+	render, err := ssrRenderFunc(file, plan.ComponentName)
+	if err != nil {
+		return nil, err
+	}
+	render.Body.List = body
 	return file, nil
 }
 
@@ -222,7 +219,7 @@ func (e *ssrGoEmitter) outputValue(static bool, literal string, expr *TemplateEx
 		return nil, err
 	}
 	e.needsEscaping = true
-	return &goast.CallExpr{Fun: goSelector("html", "EscapeString"), Args: []goast.Expr{
-		&goast.CallExpr{Fun: goSelector("fmt", "Sprint"), Args: []goast.Expr{value}},
+	return &goast.CallExpr{Fun: goSelector("vela", "EscapeString"), Args: []goast.Expr{
+		&goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{value}},
 	}}, nil
 }

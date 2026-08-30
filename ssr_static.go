@@ -10,7 +10,7 @@ import (
 )
 
 func goWriteStringLiteral(value string) goast.Stmt {
-	return &goast.ExprStmt{X: &goast.CallExpr{Fun: goSelector("io", "WriteString"), Args: []goast.Expr{goast.NewIdent("w"), &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(value)}}}}
+	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(value)})
 }
 
 func BuildStaticSSRGoFile(plan *SSRRenderPlan, packageName string) (*goast.File, error) {
@@ -22,7 +22,10 @@ func BuildStaticSSRGoFile(plan *SSRRenderPlan, packageName string) (*goast.File,
 	if err != nil {
 		return nil, err
 	}
-	render := file.Decls[len(file.Decls)-1].(*goast.FuncDecl)
+	render, err := ssrRenderFunc(file, plan.ComponentName)
+	if err != nil {
+		return nil, err
+	}
 	render.Body.List = []goast.Stmt{goWriteStringLiteral(markup), &goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}}}
 	return file, nil
 }
@@ -68,6 +71,11 @@ func renderStaticSSRNode(node SSRPlanNode) (string, error) {
 				out.WriteByte(34)
 			}
 		}
+		if n.EventKey != "" {
+			out.WriteString(` data-vela-event="`)
+			out.WriteString(n.EventKey)
+			out.WriteByte(34)
+		}
 		out.WriteByte(62)
 		c, err := renderStaticSSRNodes(n.Children)
 		if err != nil {
@@ -107,8 +115,6 @@ func BuildStaticSSRGoFileWithTextProps(plan *SSRRenderPlan, packageName string) 
 	if !ok {
 		return nil, ssrExprUnsupported(0, "dynamic output requires a text node")
 	}
-	imports := file.Decls[0].(*goast.GenDecl)
-	imports.Specs = append(imports.Specs, &goast.ImportSpec{Path: &goast.BasicLit{Kind: token.STRING, Value: `"fmt"`}}, &goast.ImportSpec{Path: &goast.BasicLit{Kind: token.STRING, Value: `"html"`}})
 	ctx := NewSSRExprContext(plan)
 	body := make([]goast.Stmt, 0, len(text.Parts)+1)
 	for _, part := range text.Parts {
@@ -120,10 +126,14 @@ func BuildStaticSSRGoFileWithTextProps(plan *SSRRenderPlan, packageName string) 
 		if err != nil {
 			return nil, err
 		}
-		value := &goast.CallExpr{Fun: goSelector("html", "EscapeString"), Args: []goast.Expr{&goast.CallExpr{Fun: goSelector("fmt", "Sprint"), Args: []goast.Expr{x}}}}
-		body = append(body, &goast.ExprStmt{X: &goast.CallExpr{Fun: goSelector("io", "WriteString"), Args: []goast.Expr{goast.NewIdent("w"), value}}})
+		value := &goast.CallExpr{Fun: goSelector("vela", "EscapeString"), Args: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{x}}}}
+		body = append(body, goWriteSSRValue(value))
 	}
 	body = append(body, &goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}})
-	file.Decls[len(file.Decls)-1].(*goast.FuncDecl).Body.List = body
+	render, err := ssrRenderFunc(file, plan.ComponentName)
+	if err != nil {
+		return nil, err
+	}
+	render.Body.List = body
 	return file, nil
 }

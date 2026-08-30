@@ -29,7 +29,7 @@ func TestBuildSSRGoFileWithOutputPartsRendersElementTextProp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), "html.EscapeString(fmt.Sprint(props.Title))") || !strings.Contains(string(src), `io.WriteString(w, "<main class=\"app\"><p>Hello ")`) {
+	if !strings.Contains(string(src), "vela.EscapeString(vela.String(props.Title))") || !strings.Contains(string(src), `vela.WriteString(w, "<main class=\"app\"><p>Hello ")`) {
 		t.Fatalf("unexpected Go renderer:\n%s", src)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {
@@ -48,7 +48,7 @@ func TestBuildSSRGoFileWithOutputPartsRendersDynamicAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), `io.WriteString(w, "<main title=\"")`) || !strings.Contains(string(src), "html.EscapeString(fmt.Sprint(props.Title))") {
+	if !strings.Contains(string(src), `vela.WriteString(w, "<main title=\"")`) || !strings.Contains(string(src), "vela.EscapeString(vela.String(props.Title))") {
 		t.Fatalf("unexpected dynamic attribute renderer:\n%s", src)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {
@@ -73,7 +73,7 @@ func TestBuildSSRGoFileRendersIfBranches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), "if props.Visible {") || !strings.Contains(string(src), "} else {") || !strings.Contains(string(src), "html.EscapeString(fmt.Sprint(props.Title))") {
+	if !strings.Contains(string(src), "if props.Visible {") || !strings.Contains(string(src), "} else {") || !strings.Contains(string(src), "vela.EscapeString(vela.String(props.Title))") {
 		t.Fatalf("unexpected if renderer:\n%s", src)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {
@@ -101,7 +101,7 @@ func TestBuildSSRGoFileRendersEachAndEmptyBranch(t *testing.T) {
 	if !strings.Contains(string(src), "ssrEach0 := props.Items") || !strings.Contains(string(src), "if len(ssrEach0) == 0") || !strings.Contains(string(src), "for ssrEachIndex0, ssrEachItem0 := range ssrEach0") {
 		t.Fatalf("unexpected each renderer:\n%s", src)
 	}
-	if !strings.Contains(string(src), "fmt.Sprint(ssrEachItem0)") || !strings.Contains(string(src), "fmt.Sprint(ssrEachIndex0)") {
+	if !strings.Contains(string(src), "vela.String(ssrEachItem0)") || !strings.Contains(string(src), "vela.String(ssrEachIndex0)") {
 		t.Fatalf("missing each binding output:\n%s", src)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {

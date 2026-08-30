@@ -29,7 +29,12 @@ func TestGeneratedSSRRendererRunsInGoModule(t *testing.T) {
 	if err := os.MkdirAll(components, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/ssrfixture\n\ngo 1.22\n"), 0o644); err != nil {
+	compilerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := "module example.com/ssrfixture\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(components, "Page.go"), renderer, 0o644); err != nil {
