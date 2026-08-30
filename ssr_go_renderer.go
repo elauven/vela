@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	goast "go/ast"
 	"go/token"
 	"html"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -38,6 +40,7 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 		return nil, err
 	}
 	render.Body.List = body
+	appendSSRGoImports(file, emitter.imports)
 	return file, nil
 }
 
@@ -46,6 +49,7 @@ type ssrGoEmitter struct {
 	packageName   string
 	needsEscaping bool
 	eachNext      int
+	imports       map[string]string
 }
 
 func (e *ssrGoEmitter) nodes(nodes []SSRPlanNode) ([]goast.Stmt, error) {
@@ -85,8 +89,9 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	if node.Link == nil {
 		return nil, ssrExprUnsupported(node.Span.Start, "component %q is not linked to a local .vela import", node.Name)
 	}
-	if node.Link.PackageName != e.packageName {
-		return nil, ssrExprUnsupported(node.Span.Start, "component %q belongs to Go package %q; cross-package component calls are not lowered yet", node.Name, node.Link.PackageName)
+	prefix, err := e.componentPackagePrefix(node.Link)
+	if err != nil {
+		return nil, err
 	}
 	fields := make([]*goast.KeyValueExpr, 0, len(node.Attrs))
 	for _, attr := range node.Attrs {
@@ -108,12 +113,26 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 		}
 		fields = append(fields, &goast.KeyValueExpr{Key: goast.NewIdent(ssrGoExportName(attr.Name)), Value: value})
 	}
-	props := &goast.CompositeLit{Type: goast.NewIdent(node.Link.GoName + "Props"), Elts: make([]goast.Expr, len(fields))}
+	propsType := goast.Expr(goast.NewIdent(node.Link.GoName + "Props"))
+	slotsType := goast.Expr(goast.NewIdent(node.Link.GoName + "Slots"))
+	component := goast.Expr(goast.NewIdent(node.Link.GoName))
+	if prefix != "" {
+		propsType = goSelector(prefix, node.Link.GoName+"Props")
+		slotsType = goSelector(prefix, node.Link.GoName+"Slots")
+		component = goSelector(prefix, node.Link.GoName)
+	}
+	props := &goast.CompositeLit{Type: propsType, Elts: make([]goast.Expr, len(fields))}
 	for i, field := range fields {
 		props.Elts[i] = field
 	}
-	slots := &goast.CompositeLit{Type: goast.NewIdent(node.Link.GoName + "Slots")}
-	for name, children := range node.Slots {
+	slots := &goast.CompositeLit{Type: slotsType}
+	slotNames := make([]string, 0, len(node.Slots))
+	for name := range node.Slots {
+		slotNames = append(slotNames, name)
+	}
+	sort.Strings(slotNames)
+	for _, name := range slotNames {
+		children := node.Slots[name]
 		body, err := e.nodes(children)
 		if err != nil {
 			return nil, err
@@ -126,11 +145,70 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 		slots.Elts = append(slots.Elts, &goast.KeyValueExpr{Key: goast.NewIdent(ssrGoExportName(name)), Value: closure})
 	}
 	call := &goast.CallExpr{
-		Fun:  goast.NewIdent(node.Link.GoName),
+		Fun:  component,
 		Args: []goast.Expr{props, slots},
 	}
 	render := &goast.CallExpr{Fun: goSelectorExpr(call, "Render"), Args: []goast.Expr{goast.NewIdent("w")}}
 	return []goast.Stmt{goWriteSSRErr(render)}, nil
+}
+
+func (e *ssrGoEmitter) componentPackagePrefix(link *SSRComponentLink) (string, error) {
+	if link == nil {
+		return "", fmt.Errorf("ssr renderer: missing component link")
+	}
+	if link.PackageName == e.packageName {
+		return "", nil
+	}
+	if link.ImportPath == "" {
+		return "", ssrExprUnsupported(0, "component %q has no generated Go import path", link.LocalName)
+	}
+	if e.imports == nil {
+		e.imports = map[string]string{}
+	}
+	if alias, exists := e.imports[link.ImportPath]; exists {
+		return alias, nil
+	}
+	base := link.PackageName
+	alias := base
+	for suffix := 2; ; suffix++ {
+		collision := false
+		for _, existing := range e.imports {
+			if existing == alias {
+				collision = true
+				break
+			}
+		}
+		if !collision {
+			break
+		}
+		alias = base + "_" + strconv.Itoa(suffix)
+	}
+	e.imports[link.ImportPath] = alias
+	return alias, nil
+}
+
+func appendSSRGoImports(file *goast.File, imports map[string]string) {
+	if file == nil || len(imports) == 0 {
+		return
+	}
+	paths := make([]string, 0, len(imports))
+	for importPath := range imports {
+		paths = append(paths, importPath)
+	}
+	sort.Strings(paths)
+	for _, declaration := range file.Decls {
+		importDecl, ok := declaration.(*goast.GenDecl)
+		if !ok || importDecl.Tok != token.IMPORT {
+			continue
+		}
+		for _, importPath := range paths {
+			importDecl.Specs = append(importDecl.Specs, &goast.ImportSpec{
+				Name: goast.NewIdent(imports[importPath]),
+				Path: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(importPath)},
+			})
+		}
+		return
+	}
 }
 
 func (e *ssrGoEmitter) slot(node *SSRPlanSlot) ([]goast.Stmt, error) {

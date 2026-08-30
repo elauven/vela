@@ -185,6 +185,48 @@ func TestSSRProjectRendersSamePackageDefaultAndNamedSlots(t *testing.T) {
 	}
 }
 
+func TestSSRProjectRendersCrossPackageChildComponent(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	pagesDir := filepath.Join(srcRoot, "pages")
+	uiDir := filepath.Join(srcRoot, "ui")
+	if err := os.MkdirAll(pagesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(uiDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(pagesDir, "Parent.vela")
+	child := filepath.Join(uiDir, "Child.vela")
+	if err := os.WriteFile(parent, []byte(`<script>import { Child } from '../ui/Child.vela'; export let title="";</script><template><Child :title={title}><strong>body</strong><svelte:fragment slot="actions"><button>save</button></svelte:fragment></Child></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(child, []byte(`<script>export let title="";</script><template><article><h1>{title}</h1><slot>fallback</slot><footer><slot name="actions" /></footer></article></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/site/generated"}
+	if errors := buildSSRProject([]string{parent, child}, srcRoot, outRoot, opts, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	layout := NewSSRProjectLayoutWithModule(outRoot, opts.SSRModule)
+	parentSource, err := os.ReadFile(layout.serverPath(parent, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(parentSource)
+	for _, want := range []string{
+		`ui "example.com/site/generated/components/ui"`,
+		"ui.Child(ui.ChildProps{Title: props.Title}, ui.ChildSlots{",
+		"Default: func(w io.Writer) error",
+		"Actions: func(w io.Writer) error",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("cross-package parent misses %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestGoFileStemUsesLowerSnakeCase(t *testing.T) {
 	cases := map[string]string{
 		"UserPage":      "user_page",

@@ -9,6 +9,7 @@ import (
 	goparser "go/parser"
 	"go/token"
 	"go/types"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -179,20 +180,87 @@ func ValidateGeneratedSSRGo(filename string, source []byte) error {
 // source file in one generated package. It is used when a renderer depends on
 // a preserved *_props.go sidecar.
 func ValidateGeneratedSSRGoPackage(sources map[string][]byte) error {
-	fset := token.NewFileSet()
-	files := make([]*goast.File, 0, len(sources))
-	for filename, source := range sources {
-		file, err := goparser.ParseFile(fset, filename, source, goparser.AllErrors)
+	return ValidateGeneratedSSRGoGraph(map[string]map[string][]byte{"vela/generated": sources})
+}
+
+// ValidateGeneratedSSRGoGraph type-checks every generated package as one
+// import graph. Project output uses one Go package per source directory, so
+// validating directories independently would hide unresolved child-component
+// imports until a consumer tried to build the generated project.
+func ValidateGeneratedSSRGoGraph(packages map[string]map[string][]byte) error {
+	loader := &ssrGeneratedGraphImporter{
+		fallback: importer.Default(),
+		packages: packages,
+		cache:    map[string]*types.Package{},
+		checking: map[string]bool{},
+	}
+	paths := make([]string, 0, len(packages))
+	for importPath := range packages {
+		paths = append(paths, importPath)
+	}
+	sort.Strings(paths)
+	for _, importPath := range paths {
+		if _, err := loader.Import(importPath); err != nil {
+			return fmt.Errorf("ssr go AST: type-check generated Go package %s: %w", importPath, err)
+		}
+	}
+	return nil
+}
+
+type ssrGeneratedGraphImporter struct {
+	fallback types.Importer
+	packages map[string]map[string][]byte
+	cache    map[string]*types.Package
+	checking map[string]bool
+	runtime  *types.Package
+}
+
+func (loader *ssrGeneratedGraphImporter) Import(importPath string) (*types.Package, error) {
+	if importPath == SSRRuntimeImportPath {
+		if loader.runtime != nil {
+			return loader.runtime, nil
+		}
+		pkg, err := ssrRuntimeTypesPackage(loader.fallback)
 		if err != nil {
-			return fmt.Errorf("ssr go AST: parse generated Go: %w", err)
+			return nil, err
+		}
+		loader.runtime = pkg
+		return pkg, nil
+	}
+	if pkg, ok := loader.cache[importPath]; ok {
+		return pkg, nil
+	}
+	sources, generated := loader.packages[importPath]
+	if !generated {
+		return loader.fallback.Import(importPath)
+	}
+	if loader.checking[importPath] {
+		return nil, fmt.Errorf("generated import cycle includes %q", importPath)
+	}
+	loader.checking[importPath] = true
+	defer delete(loader.checking, importPath)
+
+	fset := token.NewFileSet()
+	filenames := make([]string, 0, len(sources))
+	for filename := range sources {
+		filenames = append(filenames, filename)
+	}
+	sort.Strings(filenames)
+	files := make([]*goast.File, 0, len(filenames))
+	for _, filename := range filenames {
+		file, err := goparser.ParseFile(fset, filename, sources[filename], goparser.AllErrors)
+		if err != nil {
+			return nil, fmt.Errorf("parse generated Go: %w", err)
 		}
 		files = append(files, file)
 	}
-	config := types.Config{Importer: ssrGeneratedImporter{fallback: importer.Default()}}
-	if _, err := config.Check("vela/generated", fset, files, nil); err != nil {
-		return fmt.Errorf("ssr go AST: type-check generated Go: %w", err)
+	config := types.Config{Importer: loader}
+	pkg, err := config.Check(importPath, fset, files, nil)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	loader.cache[importPath] = pkg
+	return pkg, nil
 }
 
 func isGoExportedIdentifier(name string) bool {
