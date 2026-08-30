@@ -59,3 +59,26 @@ func TestTranslateSSRExpressionReportsPositionedUnsupportedForm(t *testing.T) {
 		t.Fatalf("problem = %#v", problem)
 	}
 }
+
+func TestTranslateSSRExpressionLowersObjectPropMember(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let profile = {};</script><template>{profile.name}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := sfc.TemplateAST.Nodes[0].(*TextNode)
+	expr, err := TranslateSSRExpression(text.Parts[0].Expr, NewSSRExprContext(plan))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FormatSSRGoExpr(expr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `props.Profile["name"]`; got != want {
+		t.Fatalf("member output=%q want %q", got, want)
+	}
+}

@@ -139,6 +139,17 @@ func translateSSRLiteral(node *JsLiteral, pos int) (goast.Expr, error) {
 
 func translateSSRMember(node *JsMemberExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
 	if !node.Computed {
+		if object, ok := node.Obj.(*JsIdent); ok {
+			if property, ok := node.Prop.(*JsIdent); ok {
+				if prop, exists := ctx.Props[object.Name]; exists && prop.Type == SSRTypeObject {
+					return &goast.IndexExpr{
+						X:     &goast.SelectorExpr{X: goast.NewIdent("props"), Sel: goast.NewIdent(prop.GoName)},
+						Index: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(property.Name)},
+					}, nil
+				}
+			}
+		}
+
 		if property, ok := node.Prop.(*JsIdent); ok && property.Name == "length" {
 			object, err := translateSSRExpr(node.Obj, ctx, pos)
 			if err != nil {
