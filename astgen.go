@@ -296,6 +296,12 @@ type ASTGen struct {
 	analysis *Analysis
 	sfc      *SFC
 
+	// domAcquireMode is the structural DOM acquisition policy. CSR always
+	// creates nodes; the future hydrator walks matching server markers. Both
+	// modes are driven by domAcquirePlan, assembled in this same template walk.
+	domAcquireMode DOMAcquireMode
+	domAcquirePlan DOMAcquirePlan
+
 	// counter backs id() — the deterministic $$nN naming used for
 	// DOM-node variables.  Mirrors the legacy CodeGen.counter so
 	// generated names match between the two generators.
@@ -1238,19 +1244,38 @@ func buildProgramUnvalidated(
 	scopeID string,
 	cssExternal bool,
 ) *JsProgram {
+	prog, _ := buildProgramWithDOMAcquirePlan(name, sfc, nodes, analysis, scopeID, cssExternal, DOMAcquireCreate)
+	return prog
+}
+
+// buildProgramWithDOMAcquirePlan is the internal common construction path for
+// CSR and the future hydrate entry point. It deliberately keeps the existing
+// public compiler path in DOMAcquireCreate until the hydrate runtime has a
+// complete marker walker and mismatch diagnostics.
+func buildProgramWithDOMAcquirePlan(
+	name string,
+	sfc *SFC,
+	nodes []Node,
+	analysis *Analysis,
+	scopeID string,
+	cssExternal bool,
+	mode DOMAcquireMode,
+) (*JsProgram, DOMAcquirePlan) {
 	// Input validation consumes the immutable ScriptAST before this point.
 	// Lower callback assignments only while assembling target code, so the
 	// shared source tree cannot leak generated $$set_* names into user scopes.
 	analysis.lowerReactiveCallbackBodies()
 	g := &ASTGen{
-		name:        name,
-		scopeID:     scopeID,
-		analysis:    analysis,
-		sfc:         sfc,
-		fragCounter: -1,
-		cssExternal: cssExternal,
+		name:           name,
+		scopeID:        scopeID,
+		analysis:       analysis,
+		sfc:            sfc,
+		fragCounter:    -1,
+		cssExternal:    cssExternal,
+		domAcquireMode: mode,
+		domAcquirePlan: DOMAcquirePlan{Mode: mode},
 	}
-	return g.buildModule(nodes)
+	return g.buildModule(nodes), g.domAcquirePlan
 }
 
 func validateGeneratedProgram(prog *JsProgram) {
@@ -4195,7 +4220,7 @@ func (g *ASTGen) buildElement(el *ElementNode, varName, parentVar string, isRoot
 		// their $$fN names in component scope, producing duplicate lets.
 		g.declare(genLet(varName, genNull()))
 		g.body = append(g.body,
-			genAssignStmt(id(varName), genCall(genMember(id("document"), "createElement"), strLit(el.Tag))))
+			genAssignStmt(id(varName), g.acquireElementExpr(varName, el.Tag)))
 	} else {
 		g.body = append(g.body, g.createElementStmt(varName, el.Tag))
 	}
@@ -4974,9 +4999,20 @@ func isBlankText(s string) bool {
 	return true
 }
 
-// createElementStmt builds `const <varName> = document.createElement('<tag>');`
+// createElementStmt acquires a structural element through the component's
+// selected DOM mode. It is the canonical construction primitive for ordinary
+// template elements; runtime-only helper elements keep their own explicit
+// creation sites.
 func (g *ASTGen) createElementStmt(varName, tag string) JsStmt {
-	return genConst(varName, genCall(genMember(id("document"), "createElement"), strLit(tag)))
+	return genConst(varName, g.acquireElementExpr(varName, tag))
+}
+
+func (g *ASTGen) acquireElementExpr(varName, tag string) JsExpr {
+	g.domAcquirePlan.addElement(varName, tag)
+	if g.domAcquireMode == DOMAcquireHydrate {
+		return genCall(id("$$acquireElement"), id("$$walker"), strLit(tag))
+	}
+	return genCall(genMember(id("document"), "createElement"), strLit(tag))
 }
 
 // setAttrStmt builds `<varName>.setAttribute('<name>', '<value>');`
