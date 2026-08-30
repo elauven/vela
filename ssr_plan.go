@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -15,6 +16,7 @@ type SSRRenderPlan struct {
 	ComponentName string
 	ScopeID       string
 	Props         []SSRPlanProp
+	SlotNames     []string
 	// ReactiveNames is analysis metadata for diagnostics and bridge safety.
 	// It is not emitted into server code.
 	ReactiveNames []string
@@ -199,6 +201,7 @@ type ssrPlanBuilder struct {
 	links       map[string]SSRComponentLink
 	eventNext   int
 	dynamicNext int
+	slotNames   map[string]bool
 }
 
 // BuildSSRRenderPlan converts only the validated template AST into a typed
@@ -235,7 +238,7 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 	if err != nil {
 		return nil, err
 	}
-	b := &ssrPlanBuilder{links: links, plan: &SSRRenderPlan{
+	b := &ssrPlanBuilder{links: links, slotNames: map[string]bool{}, plan: &SSRRenderPlan{
 		ComponentName: componentName,
 		ScopeID:       scopeID,
 		Props:         props,
@@ -243,6 +246,10 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		ScopedCSS:     ExtractScopedCSS(sfc, scopeID),
 	}}
 	b.plan.Nodes = b.nodes(sfc.TemplateAST.Nodes)
+	for name := range b.slotNames {
+		b.plan.SlotNames = append(b.plan.SlotNames, name)
+	}
+	sort.Strings(b.plan.SlotNames)
 	return b.plan, nil
 }
 
@@ -268,6 +275,7 @@ func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
 		case *ComponentNode:
 			out = append(out, b.component(n))
 		case *SlotNode:
+			b.slotNames[n.Name] = true
 			out = append(out, &SSRPlanSlot{Span: n.Span, Name: n.Name, Fallback: b.nodes(n.Fallback)})
 		case *TextNode:
 			out = append(out, b.text(n))

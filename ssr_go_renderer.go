@@ -68,6 +68,8 @@ func (e *ssrGoEmitter) node(node SSRPlanNode) ([]goast.Stmt, error) {
 		return e.element(n)
 	case *SSRPlanComponent:
 		return e.component(n)
+	case *SSRPlanSlot:
+		return e.slot(n)
 	case *SSRPlanIf:
 		return e.ifBlock(n)
 	case *SSRPlanAwait:
@@ -85,9 +87,6 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	}
 	if node.Link.PackageName != e.packageName {
 		return nil, ssrExprUnsupported(node.Span.Start, "component %q belongs to Go package %q; cross-package component calls are not lowered yet", node.Name, node.Link.PackageName)
-	}
-	if len(node.Slots) > 0 {
-		return nil, ssrExprUnsupported(node.Span.Start, "component %q slots are not lowered yet", node.Name)
 	}
 	fields := make([]*goast.KeyValueExpr, 0, len(node.Attrs))
 	for _, attr := range node.Attrs {
@@ -113,12 +112,42 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	for i, field := range fields {
 		props.Elts[i] = field
 	}
+	slots := &goast.CompositeLit{Type: goast.NewIdent(node.Link.GoName + "Slots")}
+	for name, children := range node.Slots {
+		body, err := e.nodes(children)
+		if err != nil {
+			return nil, err
+		}
+		body = append(body, &goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}})
+		closure := &goast.FuncLit{Type: &goast.FuncType{
+			Params:  &goast.FieldList{List: []*goast.Field{{Names: []*goast.Ident{goast.NewIdent("w")}, Type: goSelector("io", "Writer")}}},
+			Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("error")}}},
+		}, Body: &goast.BlockStmt{List: body}}
+		slots.Elts = append(slots.Elts, &goast.KeyValueExpr{Key: goast.NewIdent(ssrGoExportName(name)), Value: closure})
+	}
 	call := &goast.CallExpr{
 		Fun:  goast.NewIdent(node.Link.GoName),
-		Args: []goast.Expr{props, &goast.CompositeLit{Type: goast.NewIdent(node.Link.GoName + "Slots")}},
+		Args: []goast.Expr{props, slots},
 	}
 	render := &goast.CallExpr{Fun: goSelectorExpr(call, "Render"), Args: []goast.Expr{goast.NewIdent("w")}}
 	return []goast.Stmt{goWriteSSRErr(render)}, nil
+}
+
+func (e *ssrGoEmitter) slot(node *SSRPlanSlot) ([]goast.Stmt, error) {
+	field := goSelectorExpr(goast.NewIdent("slots"), ssrGoExportName(node.Name))
+	call := &goast.CallExpr{Fun: field, Args: []goast.Expr{goast.NewIdent("w")}}
+	filled := &goast.IfStmt{
+		Cond: &goast.BinaryExpr{X: field, Op: token.NEQ, Y: goast.NewIdent("nil")},
+		Body: &goast.BlockStmt{List: []goast.Stmt{goWriteSSRErr(call)}},
+	}
+	if len(node.Fallback) > 0 {
+		fallback, err := e.nodes(node.Fallback)
+		if err != nil {
+			return nil, err
+		}
+		filled.Else = &goast.BlockStmt{List: fallback}
+	}
+	return []goast.Stmt{filled}, nil
 }
 
 func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {

@@ -49,7 +49,7 @@ func buildSSRGoSkeleton(plan *SSRRenderPlan, packageName string, includeProps bo
 		decls = append(decls, goPropsTypeDecl(propsName, plan.Props))
 	}
 	decls = append(decls,
-		goEmptyStructTypeDecl(slotsName),
+		goSlotsTypeDecl(slotsName, plan.SlotNames),
 		goRenderFuncDecl(component, propsName, slotsName),
 		goComponentRendererFuncDecl(component, propsName, slotsName),
 	)
@@ -96,6 +96,14 @@ func goEmptyStructTypeDecl(name string) *goast.GenDecl {
 			Type: &goast.StructType{Fields: &goast.FieldList{}},
 		}},
 	}
+}
+
+func goSlotsTypeDecl(name string, slots []string) *goast.GenDecl {
+	fields := make([]*goast.Field, 0, len(slots))
+	for _, slot := range slots {
+		fields = append(fields, &goast.Field{Names: []*goast.Ident{goast.NewIdent(ssrGoExportName(slot))}, Type: goSelector("vela", "Slot")})
+	}
+	return &goast.GenDecl{Tok: token.TYPE, Specs: []goast.Spec{&goast.TypeSpec{Name: goast.NewIdent(name), Type: &goast.StructType{Fields: &goast.FieldList{List: fields}}}}}
 }
 
 func goRenderFuncDecl(component, propsName, slotsName string) *goast.FuncDecl {

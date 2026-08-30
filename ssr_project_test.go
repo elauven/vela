@@ -147,6 +147,44 @@ func TestSSRProjectRendersSamePackageChildComponent(t *testing.T) {
 	}
 }
 
+func TestSSRProjectRendersSamePackageDefaultAndNamedSlots(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(srcRoot, "Parent.vela")
+	child := filepath.Join(srcRoot, "Child.vela")
+	if err := os.WriteFile(parent, []byte(`<script>import { Child } from './Child.vela';</script><template><Child><p>body</p><svelte:fragment slot="actions"><button>save</button></svelte:fragment></Child></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(child, []byte(`<template><main><slot>fallback</slot><footer><slot name="actions" /></footer></main></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if errors := buildSSRProject([]string{parent, child}, srcRoot, filepath.Join(root, "out"), CompileOptions{StatusWriter: io.Discard}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	layout := NewSSRProjectLayout(filepath.Join(root, "out"))
+	parentSource, err := os.ReadFile(layout.serverPath(parent, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	childSource, err := os.ReadFile(layout.serverPath(child, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"ChildSlots{", "Default: func(w io.Writer) error", "Actions: func(w io.Writer) error"} {
+		if !strings.Contains(string(parentSource), want) {
+			t.Fatalf("parent misses %q:\n%s", want, parentSource)
+		}
+	}
+	for _, want := range []string{"type ChildSlots struct", "Default vela.Slot", "Actions vela.Slot", "slots.Default(w)", "slots.Actions(w)"} {
+		if !strings.Contains(string(childSource), want) {
+			t.Fatalf("child misses %q:\n%s", want, childSource)
+		}
+	}
+}
+
 func TestGoFileStemUsesLowerSnakeCase(t *testing.T) {
 	cases := map[string]string{
 		"UserPage":      "user_page",
