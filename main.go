@@ -81,6 +81,7 @@ func main() {
 	unavailableCapabilities := flag.String("unavailable-capabilities", "", "comma-separated direct host capabilities to reject, e.g. fetch,indexedDB")
 	strict := flag.Bool("strict", false, "treat proven unresolved JavaScript reads as errors")
 	tracePath := flag.String("trace", "", "append source-free CompilationTraceV1 records as JSONL; use '-' for stdout")
+	ssr := flag.Bool("ssr", false, "emit SSR project outputs into client/, server/, and styles/")
 	flag.Parse()
 
 	targetProfile, err := ParseTargetProfile(*target)
@@ -118,8 +119,20 @@ func main() {
 
 	// ── Project mode ─────────────────────────────────────────────────────────
 	if *projectDir != "" {
+		if *ssr {
+			if *watch {
+				fmt.Fprintln(os.Stderr, "vela: --ssr does not support --watch yet")
+				os.Exit(2)
+			}
+			runSSRProject(*projectDir, *outDir, opts, *parallel)
+			return
+		}
 		runProject(*projectDir, *outDir, opts, *watch, *parallel)
 		return
+	}
+	if *ssr {
+		fmt.Fprintln(os.Stderr, "vela: --ssr requires --project")
+		os.Exit(2)
 	}
 
 	// ── File mode (original behaviour, flat output) ───────────────────────────
@@ -205,6 +218,41 @@ func splitCapabilityList(raw string) []string {
 // ─────────────────────────────────────────────────────────────────────────────
 //  Project mode
 // ─────────────────────────────────────────────────────────────────────────────
+
+func runSSRProject(srcRoot, outRoot string, opts CompileOptions, parallel bool) {
+	srcRoot = filepath.Clean(srcRoot)
+	absRoot, err := filepath.Abs(srcRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot resolve project path: %v\n", err)
+		os.Exit(1)
+	}
+	status := compilerStatusWriter(opts)
+	fmt.Fprintln(status, "Vela Compiler")
+	fmt.Fprintf(status, "   project   %s\n", absRoot)
+	fmt.Fprintf(status, "   out       %s (SSR layout)\n", filepath.Clean(outRoot))
+	if parallel {
+		fmt.Fprintln(status, "   parallel  on")
+	}
+	fmt.Fprintln(status)
+	start := time.Now()
+	files := collectVela(srcRoot)
+	if len(files) == 0 {
+		fmt.Fprintln(status, "  no .vela files found")
+		return
+	}
+	errors := buildSSRProject(files, srcRoot, outRoot, opts, parallel)
+	elapsed := time.Since(start).Round(time.Millisecond)
+	ok := len(files) - errors
+	if ok < 0 {
+		ok = 0
+	}
+	fmt.Fprintf(status, "\n  %d/%d SSR components emitted", ok, len(files))
+	if errors > 0 {
+		fmt.Fprintf(status, "  (%d error(s))\n", errors)
+		os.Exit(1)
+	}
+	fmt.Fprintf(status, "  in %s ✓\n", elapsed)
+}
 
 func runProject(srcRoot, outRoot string, opts CompileOptions, watch, parallel bool) {
 	srcRoot = filepath.Clean(srcRoot)
