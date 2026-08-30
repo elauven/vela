@@ -55,3 +55,28 @@ func TestBuildSSRGoFileWithOutputPartsRendersDynamicAttribute(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildSSRGoFileRendersIfBranches(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let visible=false; export let title="";</script><template>{#if visible}<p>{title}</p>{:else}<p>hidden</p>{/if}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "if props.Visible {") || !strings.Contains(string(src), "} else {") || !strings.Contains(string(src), "html.EscapeString(fmt.Sprint(props.Title))") {
+		t.Fatalf("unexpected if renderer:\n%s", src)
+	}
+	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {
+		t.Fatal(err)
+	}
+}
