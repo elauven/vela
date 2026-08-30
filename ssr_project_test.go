@@ -62,3 +62,26 @@ func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
 		t.Fatalf("missing client runtime: %v", err)
 	}
 }
+
+func TestGoFileStemUsesLowerSnakeCase(t *testing.T) {
+	cases := map[string]string{
+		"UserPage":      "user_page",
+		"HTTPServer":    "http_server",
+		"APIv2Client":   "ap_iv2_client",
+		"kebab-case":    "kebab_case",
+		"already_snake": "already_snake",
+	}
+	for input, want := range cases {
+		if got := goFileStem(input); got != want {
+			t.Errorf("goFileStem(%q)=%q want %q", input, got, want)
+		}
+	}
+}
+
+func TestSSRProjectLayoutMirrorsSnakeCaseGoPath(t *testing.T) {
+	layout := NewSSRProjectLayout("out")
+	got := filepath.ToSlash(layout.serverPath(filepath.Join("src", "admin", "HTTPServer.vela"), "src"))
+	if want := "out/server/components/admin/http_server.go"; got != want {
+		t.Fatalf("serverPath=%q want %q", got, want)
+	}
+}

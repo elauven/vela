@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode"
 )
 
 // SSRProjectLayout keeps the three output products independent: client modules
@@ -32,7 +34,7 @@ func (layout SSRProjectLayout) clientPath(src, srcRoot string) string {
 }
 
 func (layout SSRProjectLayout) serverPath(src, srcRoot string) string {
-	return mirrorPath(src, srcRoot, layout.ServerDir, ".go")
+	return mirrorGoPath(src, srcRoot, layout.ServerDir)
 }
 
 func (layout SSRProjectLayout) stylePath(src, srcRoot string) string {
@@ -112,4 +114,49 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		return err
 	}
 	return os.WriteFile(stylePath, []byte(plan.ScopedCSS), 0o644)
+}
+
+// mirrorGoPath preserves the component directory tree but applies Go source
+// filename convention to every emitted component file.
+func mirrorGoPath(src, srcRoot, outRoot string) string {
+	rel, err := filepath.Rel(srcRoot, src)
+	if err != nil {
+		rel = filepath.Base(src)
+	}
+	dir := filepath.Dir(rel)
+	stem := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
+	name := goFileStem(stem) + ".go"
+	if dir == "." {
+		return filepath.Join(outRoot, name)
+	}
+	return filepath.Join(outRoot, dir, name)
+}
+
+func goFileStem(name string) string {
+	runes := []rune(name)
+	var out []rune
+	separator := true
+	for index, current := range runes {
+		if !unicode.IsLetter(current) && !unicode.IsDigit(current) {
+			if !separator && len(out) > 0 {
+				out = append(out, rune('_'))
+				separator = true
+			}
+			continue
+		}
+		upper := unicode.IsUpper(current)
+		previousLowerOrDigit := index > 0 && (unicode.IsLower(runes[index-1]) || unicode.IsDigit(runes[index-1]))
+		nextLower := index+1 < len(runes) && unicode.IsLower(runes[index+1])
+		previousUpper := index > 0 && unicode.IsUpper(runes[index-1])
+		if upper && !separator && (previousLowerOrDigit || (previousUpper && nextLower)) {
+			out = append(out, rune('_'))
+		}
+		out = append(out, unicode.ToLower(current))
+		separator = false
+	}
+	stem := strings.Trim(string(out), "_")
+	if stem == "" {
+		return "component"
+	}
+	return stem
 }
