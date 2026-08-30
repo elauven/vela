@@ -212,7 +212,7 @@ func BuildSSRRenderPlanWithAnalysis(componentName string, sfc *SFC, analysis *An
 	if analysis == nil {
 		analysis = analyzeScriptAST(sfc.ScriptAST)
 	}
-	props, err := buildSSRPlanProps(analysis)
+	props, err := buildSSRPlanProps(analysis, sfc.ScriptAST)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +366,7 @@ func (b *ssrPlanBuilder) attrs(attrs []*Attr, domElement bool) ([]SSRPlanAttr, [
 	return out, events
 }
 
-func buildSSRPlanProps(analysis *Analysis) ([]SSRPlanProp, error) {
+func buildSSRPlanProps(analysis *Analysis, script *ScriptAST) ([]SSRPlanProp, error) {
 	if analysis == nil {
 		return nil, nil
 	}
@@ -384,7 +384,7 @@ func buildSSRPlanProps(analysis *Analysis) ([]SSRPlanProp, error) {
 		out = append(out, SSRPlanProp{
 			SourceName: prop.Name,
 			GoName:     goName,
-			Type:       inferSSRValueType(prop.DefaultAST),
+			Type:       inferSSRPropType(script, prop.Name, prop.DefaultAST),
 			Default:    prop.DefaultAST,
 			Bindable:   prop.Bindable,
 		})
@@ -419,4 +419,31 @@ func inferSSRValueType(expr JsExpr) SSRValueType {
 		return SSRTypeObject
 	}
 	return SSRTypeAny
+}
+
+func inferSSRPropType(script *ScriptAST, name string, fallback JsExpr) SSRValueType {
+	if script != nil {
+		for _, comment := range script.DocComments {
+			if comment.TargetName != name {
+				continue
+			}
+			switch comment.Type {
+			case JSDocTypeString:
+				return SSRTypeString
+			case JSDocTypeBool:
+				return SSRTypeBool
+			case JSDocTypeNumber:
+				return SSRTypeFloat
+			case JSDocTypeInteger:
+				return SSRTypeInt
+			case JSDocTypeSlice:
+				return SSRTypeSlice
+			case JSDocTypeObject:
+				return SSRTypeObject
+			case JSDocTypeAny:
+				return SSRTypeAny
+			}
+		}
+	}
+	return inferSSRValueType(fallback)
 }

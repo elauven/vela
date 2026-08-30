@@ -117,3 +117,39 @@ func TestBuildSSRRenderPlanRejectsMissingInputs(t *testing.T) {
 		t.Fatal("missing component name did not fail")
 	}
 }
+
+func TestBuildSSRRenderPlanUsesTypedJSDocProps(t *testing.T) {
+	sfc, err := parseSFC(`<script>
+/** @type {string} */
+export let title = null;
+/** @type {number[]} */
+export let values = null;
+/** @type {Record<string, unknown>} */
+export let config = null;
+const ignored = "/** @type {boolean} */ export let fake = null;";
+</script><template>{title}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sfc.ScriptAST.DocComments) != 3 {
+		t.Fatalf("JSDoc metadata=%#v", sfc.ScriptAST.DocComments)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]SSRValueType{}
+	for _, prop := range plan.Props {
+		got[prop.SourceName] = prop.Type
+	}
+	wants := map[string]SSRValueType{
+		"title":  SSRTypeString,
+		"values": SSRTypeSlice,
+		"config": SSRTypeObject,
+	}
+	for name, want := range wants {
+		if got[name] != want {
+			t.Errorf("prop %q type=%d want %d", name, got[name], want)
+		}
+	}
+}

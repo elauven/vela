@@ -54,11 +54,34 @@ type SectionSpan struct {
 // remain relative to Source; Span translates those positions to the component
 // source file. Diagnostics are structured parser failures collected during the
 // same parse, before any analyzer transform can mutate the program.
+type JSDocTypeKind uint8
+
+const (
+	JSDocTypeUnknown JSDocTypeKind = iota
+	JSDocTypeString
+	JSDocTypeBool
+	JSDocTypeNumber
+	JSDocTypeInteger
+	JSDocTypeSlice
+	JSDocTypeObject
+	JSDocTypeAny
+)
+
+// JSDocComment is parser-owned documentation metadata for one export let
+// declaration. It stores a normalized type rather than a raw comment string.
+type JSDocComment struct {
+	Start      int
+	End        int
+	TargetName string
+	Type       JSDocTypeKind
+}
+
 type ScriptAST struct {
 	Source      string
 	Span        SectionSpan
 	Program     *JsProgram
 	Diagnostics []JSParseDiagnostic
+	DocComments []JSDocComment
 }
 
 func newScriptAST(source string, offset int) *ScriptAST {
@@ -68,6 +91,7 @@ func newScriptAST(source string, offset int) *ScriptAST {
 		Span:        SectionSpan{Start: offset, End: offset + len(source)},
 		Program:     program,
 		Diagnostics: diagnostics,
+		DocComments: scanJSDocComments(source),
 	}
 }
 
@@ -2031,5 +2055,145 @@ func setTemplateNodeSpan(node Node, start, end int) {
 		n.Span = span
 	case *AwaitBlockNode:
 		n.Span = span
+	}
+}
+
+func scanJSDocComments(source string) []JSDocComment {
+	comments := []JSDocComment{}
+	for index := 0; index < len(source); {
+		switch source[index] {
+		case 39, 34, 96:
+			index = skipJSDocString(source, index)
+		case 47:
+			if index+1 >= len(source) {
+				index++
+				continue
+			}
+			if source[index+1] == 47 {
+				index += 2
+				for index < len(source) && source[index] != 10 {
+					index++
+				}
+				continue
+			}
+			if source[index+1] != 42 {
+				index++
+				continue
+			}
+			endOffset := strings.Index(source[index+2:], "*/")
+			if endOffset < 0 {
+				return comments
+			}
+			end := endOffset + index + 4
+			if index+2 < len(source) && source[index+2] == 42 {
+				if comment, ok := parseJSDocComment(source, index, end); ok {
+					comments = append(comments, comment)
+				}
+			}
+			index = end
+		default:
+			index++
+		}
+	}
+	return comments
+}
+
+func skipJSDocString(source string, start int) int {
+	quote := source[start]
+	index := start + 1
+	for index < len(source) {
+		if source[index] == 92 {
+			index += 2
+			continue
+		}
+		if source[index] == quote {
+			return index + 1
+		}
+		index++
+	}
+	return index
+}
+
+func parseJSDocComment(source string, start, end int) (JSDocComment, bool) {
+	body := source[start:end]
+	marker := strings.Index(body, "@type")
+	if marker < 0 {
+		return JSDocComment{}, false
+	}
+	open := strings.Index(body[marker+len("@type"):], "{")
+	if open < 0 {
+		return JSDocComment{}, false
+	}
+	open += marker + len("@type")
+	close := strings.Index(body[open+1:], "}")
+	if close < 0 {
+		return JSDocComment{}, false
+	}
+	close += open + 1
+	name, ok := jsdocExportLetName(source, end)
+	if !ok {
+		return JSDocComment{}, false
+	}
+	return JSDocComment{Start: start, End: end, TargetName: name, Type: parseJSDocType(body[open+1 : close])}, true
+}
+
+func jsdocExportLetName(source string, start int) (string, bool) {
+	index := skipJSDocSpace(source, start)
+	if !strings.HasPrefix(source[index:], "export") || !jsdocWordBoundary(source, index+len("export")) {
+		return "", false
+	}
+	index = skipJSDocSpace(source, index+len("export"))
+	if !strings.HasPrefix(source[index:], "let") || !jsdocWordBoundary(source, index+len("let")) {
+		return "", false
+	}
+	index = skipJSDocSpace(source, index+len("let"))
+	if index >= len(source) || !jsdocIdentifierStart(source[index]) {
+		return "", false
+	}
+	end := index + 1
+	for end < len(source) && jsdocIdentifierPart(source[end]) {
+		end++
+	}
+	return source[index:end], true
+}
+
+func skipJSDocSpace(source string, index int) int {
+	for index < len(source) && unicode.IsSpace(rune(source[index])) {
+		index++
+	}
+	return index
+}
+
+func jsdocWordBoundary(source string, index int) bool {
+	return index >= len(source) || !jsdocIdentifierPart(source[index])
+}
+
+func jsdocIdentifierStart(value byte) bool {
+	return value == 95 || value == 36 || unicode.IsLetter(rune(value))
+}
+
+func jsdocIdentifierPart(value byte) bool {
+	return jsdocIdentifierStart(value) || unicode.IsDigit(rune(value))
+}
+
+func parseJSDocType(value string) JSDocTypeKind {
+	value = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(value), " ", ""))
+	switch {
+	case value == "string":
+		return JSDocTypeString
+	case value == "boolean" || value == "bool":
+		return JSDocTypeBool
+	case value == "number" || value == "float" || value == "float64":
+		return JSDocTypeNumber
+	case value == "integer" || value == "int":
+		return JSDocTypeInteger
+	case value == "object" || strings.HasPrefix(value, "record<"):
+		return JSDocTypeObject
+	case strings.HasSuffix(value, "[]") || strings.HasPrefix(value, "array<"):
+		return JSDocTypeSlice
+	case value == "any" || value == "*":
+		return JSDocTypeAny
+	default:
+		return JSDocTypeUnknown
 	}
 }
