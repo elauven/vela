@@ -23,8 +23,8 @@ func (part SSRRenderOutputPart) Dynamic() bool {
 
 // BuildSSRRenderOutputParts lowers the static HTML shape into literal writes
 // and preserves dynamic text as typed expression writes. Blocks, components,
-// and dynamic attributes deliberately remain diagnostics until their lowering
-// semantics are implemented.
+// and dynamic text or attributes as typed expression writes. Blocks and components
+// deliberately remain diagnostics until their lowering semantics are implemented.
 func BuildSSRRenderOutputParts(nodes []SSRPlanNode) ([]SSRRenderOutputPart, error) {
 	builder := ssrOutputPartBuilder{}
 	if err := builder.nodes(nodes); err != nil {
@@ -39,6 +39,10 @@ type ssrOutputPartBuilder struct {
 
 func (b *ssrOutputPartBuilder) literal(value string) {
 	if value == "" {
+		return
+	}
+	if last := len(b.parts) - 1; last >= 0 && !b.parts[last].Dynamic() {
+		b.parts[last].Literal += value
 		return
 	}
 	b.parts = append(b.parts, SSRRenderOutputPart{Literal: value})
@@ -65,11 +69,9 @@ func (b *ssrOutputPartBuilder) node(node SSRPlanNode) error {
 		}
 		return nil
 	case *SSRPlanElement:
-		open, err := ssrStaticOpenTag(n)
-		if err != nil {
+		if err := b.openTag(n); err != nil {
 			return err
 		}
-		b.literal(open)
 		if err := b.nodes(n.Children); err != nil {
 			return err
 		}
@@ -80,6 +82,30 @@ func (b *ssrOutputPartBuilder) node(node SSRPlanNode) error {
 	default:
 		return ssrExprUnsupported(0, "SSR node %T is not lowered yet", node)
 	}
+}
+
+func (b *ssrOutputPartBuilder) openTag(node *SSRPlanElement) error {
+	b.literal("<" + node.Tag)
+	for _, attr := range node.Attrs {
+		b.literal(" " + attr.Name)
+		switch attr.Role {
+		case SSRAttrStatic:
+			if attr.ValueKind != AttrValueMissing {
+				b.literal("=\"" + html.EscapeString(attr.Value) + "\"")
+			}
+		case SSRAttrDynamic:
+			if attr.Expr == nil {
+				return ssrExprUnsupported(attr.Span.Start, "dynamic attribute %q has no cached expression", attr.Name)
+			}
+			b.literal("=\"")
+			b.parts = append(b.parts, SSRRenderOutputPart{Expr: attr.Expr, Pos: attr.Expr.Pos})
+			b.literal("\"")
+		default:
+			return ssrExprUnsupported(attr.Span.Start, "attribute %q with role %d is not lowered yet", attr.Name, attr.Role)
+		}
+	}
+	b.literal(">")
+	return nil
 }
 
 func ssrStaticOpenTag(node *SSRPlanElement) (string, error) {
