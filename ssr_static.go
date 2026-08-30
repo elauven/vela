@@ -53,6 +53,9 @@ func renderStaticSSRNode(node SSRPlanNode) (string, error) {
 		out.WriteByte(60)
 		out.WriteString(n.Tag)
 		for _, a := range n.Attrs {
+			if a.Role == SSRAttrEvent {
+				continue
+			}
 			if a.Role != SSRAttrStatic {
 				return "", ssrExprUnsupported(a.Span.Start, "dynamic attribute %q is not lowered yet", a.Name)
 			}

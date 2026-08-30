@@ -87,22 +87,28 @@ func (b *ssrOutputPartBuilder) node(node SSRPlanNode) error {
 func (b *ssrOutputPartBuilder) openTag(node *SSRPlanElement) error {
 	b.literal("<" + node.Tag)
 	for _, attr := range node.Attrs {
-		b.literal(" " + attr.Name)
 		switch attr.Role {
 		case SSRAttrStatic:
+			b.literal(" " + attr.Name)
 			if attr.ValueKind != AttrValueMissing {
 				b.literal("=\"" + html.EscapeString(attr.Value) + "\"")
 			}
 		case SSRAttrDynamic:
+			b.literal(" " + attr.Name)
 			if attr.Expr == nil {
 				return ssrExprUnsupported(attr.Span.Start, "dynamic attribute %q has no cached expression", attr.Name)
 			}
 			b.literal("=\"")
 			b.parts = append(b.parts, SSRRenderOutputPart{Expr: attr.Expr, Pos: attr.Expr.Pos})
 			b.literal("\"")
+		case SSRAttrEvent:
+			continue
 		default:
 			return ssrExprUnsupported(attr.Span.Start, "attribute %q with role %d is not lowered yet", attr.Name, attr.Role)
 		}
+	}
+	if node.EventKey != "" {
+		b.literal(` data-vela-event="` + node.EventKey + `"`)
 	}
 	b.literal(">")
 	return nil
@@ -113,6 +119,9 @@ func ssrStaticOpenTag(node *SSRPlanElement) (string, error) {
 	out.WriteByte('<')
 	out.WriteString(node.Tag)
 	for _, attr := range node.Attrs {
+		if attr.Role == SSRAttrEvent {
+			continue
+		}
 		if attr.Role != SSRAttrStatic {
 			return "", ssrExprUnsupported(attr.Span.Start, "dynamic attribute %q is not lowered yet", attr.Name)
 		}

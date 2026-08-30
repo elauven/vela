@@ -88,6 +88,8 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			if attr.ValueKind != AttrValueMissing {
 				open += "=\"" + html.EscapeString(attr.Value) + "\""
 			}
+		case SSRAttrEvent:
+			continue
 		case SSRAttrDynamic:
 			if attr.Expr == nil {
 				return nil, ssrExprUnsupported(attr.Span.Start, "dynamic attribute %q has no cached expression", attr.Name)
@@ -103,6 +105,9 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 		default:
 			return nil, ssrExprUnsupported(attr.Span.Start, "attribute %q with role %d is not lowered yet", attr.Name, attr.Role)
 		}
+	}
+	if node.EventKey != "" {
+		open += ` data-vela-event="` + node.EventKey + `"`
 	}
 	open += ">"
 	body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))

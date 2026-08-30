@@ -108,3 +108,35 @@ func TestBuildSSRGoFileRendersEachAndEmptyBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildSSRGoFileEmitsStableEventMarker(t *testing.T) {
+	sfc, err := parseSFC(`<template><button @click={() => {}}>Save</button></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Events) != 1 || plan.Events[0].EventKey != "vela-page-e0" {
+		t.Fatalf("unexpected planned events: %#v", plan.Events)
+	}
+	parts, err := BuildSSRRenderOutputParts(plan.Nodes)
+	if err != nil || len(parts) != 1 || !strings.Contains(parts[0].Literal, `data-vela-event="vela-page-e0"`) {
+		t.Fatalf("unexpected event output parts: %#v err=%v", parts, err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), `data-vela-event=\"vela-page-e0\"`) {
+		t.Fatalf("missing event marker:\n%s", src)
+	}
+	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {
+		t.Fatal(err)
+	}
+}
