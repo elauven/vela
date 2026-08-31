@@ -494,10 +494,10 @@ preclude it.
 Comment nodes are the recommended marker form:
 
 ```html
-<p>Hello <!--v0-->Alice<!--v0-->, count = <!--v1-->42<!--v1--></p>
+<p>Hello <!--v:vela-page:0-->Alice<!--/v:vela-page:0-->, count = <!--v:vela-page:1-->42<!--/v:vela-page:1--></p>
 ```
 
-Each `<!--vN-->` pair brackets a dynamic position. The client
+Each `<!--v:<component-id>:N-->` pair brackets a dynamic position. The client
 hydrator walks the DOM and assigns the cached element vars
 (`$$n0`, `$$n1`, ...) by finding the marker comments in order.
 
@@ -798,7 +798,7 @@ For quick reference, the recommendations from this design:
 | Component renderer shape | Both `Component(w, props)` and `Component(props).Render(w)` |
 | JS expression handling on server | Translator subset (option B) + per-expression escape hatch (C) |
 | Type system | Infer → JSDoc → `.d.go` override → reflection fallback |
-| Marker scheme | Paired comment nodes (`<!--v0-->...<!--v0-->`) |
+| Marker scheme | Component-scoped paired comment nodes (`<!--v:scope:0-->...<!--/v:scope:0-->`) |
 | State injection | `<script type="application/json">` with JSON payload |
 | Runtime helpers | Separate published Go module + JS module |
 | Hydration mode switching | Single `acquireElement` function in client codegen |

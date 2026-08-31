@@ -499,29 +499,31 @@ export function $$createHydrationWalker(root, componentId) {
   const stack = [];
   let node;
   while ((node = walker.nextNode())) {
-    const match = /^\/?v(\d+)$/.exec(String(node.data || '').trim());
+    const marker = String(node.data || '').trim();
+    const match = /^\/?v:([^:]+):(\d+)$/.exec(marker);
     if (!match) continue;
-    const id = Number(match[1]);
-    const closing = String(node.data || '').trim()[0] === '/';
+    if (match[1] !== componentId) continue;
+    const id = Number(match[2]);
+    const closing = marker[0] === '/';
     if (!closing) {
       if (ranges.has(id) || stack.some(entry => entry.id === id)) {
-        throw new Error(`Vela hydration mismatch [${label}]: duplicate start marker <!--v${id}-->`);
+        throw new Error(`Vela hydration mismatch [${label}]: duplicate start marker <!--v:${label}:${id}-->`);
       }
       stack.push({ id, start: node });
       continue;
     }
     const open = stack.pop();
     if (!open) {
-      throw new Error(`Vela hydration mismatch [${label}]: end marker <!--/v${id}--> has no start marker`);
+      throw new Error(`Vela hydration mismatch [${label}]: end marker <!--/v:${label}:${id}--> has no start marker`);
     }
     if (open.id !== id) {
-      throw new Error(`Vela hydration mismatch [${label}]: expected <!--/v${open.id}--> before <!--/v${id}-->`);
+      throw new Error(`Vela hydration mismatch [${label}]: expected <!--/v:${label}:${open.id}--> before <!--/v:${label}:${id}-->`);
     }
     ranges.set(id, { start: open.start, end: node });
   }
   if (stack.length) {
     const open = stack[stack.length - 1];
-    throw new Error(`Vela hydration mismatch [${label}]: start marker <!--v${open.id}--> has no end marker`);
+    throw new Error(`Vela hydration mismatch [${label}]: start marker <!--v:${label}:${open.id}--> has no end marker`);
   }
   return { root, componentId: label, ranges };
 }

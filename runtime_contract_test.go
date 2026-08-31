@@ -173,16 +173,16 @@ function markerRoot(markers, payloads = {}) {
   };
   return { ownerDocument: doc };
 }
-const hydratedRoot = markerRoot([marker('v0'), marker('v1'), marker('/v1'), marker('/v0')]);
+const hydratedRoot = markerRoot([marker('v:vela-test:0'), marker('v:child:0'), marker('/v:child:0'), marker('v:vela-test:1'), marker('/v:vela-test:1'), marker('/v:vela-test:0')]);
 const walker = $$createHydrationWalker(hydratedRoot, 'vela-test');
 const outer = $$acquireHydrationRange(walker, 0);
 const inner = $$acquireHydrationRange(walker, 1);
-assert(outer.start.data === 'v0' && outer.end.data === '/v0', 'walker must retain outer paired range');
-assert(inner.start.data === 'v1' && inner.end.data === '/v1', 'walker must retain nested paired range');
+assert(outer.start.data === 'v:vela-test:0' && outer.end.data === '/v:vela-test:0', 'walker must retain outer paired range');
+assert(inner.start.data === 'v:vela-test:1' && inner.end.data === '/v:vela-test:1', 'walker must retain nested paired range while ignoring child markers');
 let mismatch;
-try { $$createHydrationWalker(markerRoot([marker('v0'), marker('/v1')]), 'vela-test'); }
+try { $$createHydrationWalker(markerRoot([marker('v:vela-test:0'), marker('/v:vela-test:1')]), 'vela-test'); }
 catch (error) { mismatch = error; }
-assert(mismatch && mismatch.message.includes('expected <!--/v0--> before <!--/v1-->'),
+assert(mismatch && mismatch.message.includes('expected <!--/v:vela-test:0--> before <!--/v:vela-test:1-->'),
   'walker must diagnose crossed marker pairs');
 mismatch = undefined;
 try { $$acquireHydrationRange(walker, 9); }

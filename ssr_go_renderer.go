@@ -29,7 +29,7 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	if err != nil {
 		return nil, err
 	}
-	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName}
+	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID}
 	body, err := emitter.nodes(plan.Nodes)
 	if err != nil {
 		return nil, err
@@ -109,6 +109,7 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan) ([]goast.Stmt, error) {
 type ssrGoEmitter struct {
 	ctx           SSRExprContext
 	packageName   string
+	scopeID       string
 	needsEscaping bool
 	eachNext      int
 	imports       map[string]string
@@ -294,7 +295,7 @@ func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {
 	body := make([]goast.Stmt, 0, len(node.Parts)*3)
 	for _, part := range node.Parts {
 		if !part.Static {
-			body = append(body, ssrMarkerStart(part.DynamicID))
+			body = append(body, e.markerStart(part.DynamicID))
 		}
 		value, err := e.outputValue(part.Static, part.Value, part.Expr)
 		if err != nil {
@@ -302,7 +303,7 @@ func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {
 		}
 		body = append(body, goWriteSSRValue(value))
 		if !part.Static {
-			body = append(body, ssrMarkerEnd(part.DynamicID))
+			body = append(body, e.markerEnd(part.DynamicID))
 		}
 	}
 	return body, nil
@@ -432,7 +433,7 @@ func ssrStylePrefix(style string) string {
 func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
 	var body []goast.Stmt
 	if node.DynamicID >= 0 {
-		body = append(body, ssrMarkerStart(node.DynamicID))
+		body = append(body, e.markerStart(node.DynamicID))
 	}
 	if node.Key != nil {
 		if len(node.Branches) != 1 || node.Branches[0].Condition != nil {
@@ -444,7 +445,7 @@ func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
 		}
 		body = append(body, children...)
 		if node.DynamicID >= 0 {
-			body = append(body, ssrMarkerEnd(node.DynamicID))
+			body = append(body, e.markerEnd(node.DynamicID))
 		}
 		return body, nil
 	}
@@ -479,7 +480,7 @@ func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
 	}
 	body = append(body, first)
 	if node.DynamicID >= 0 {
-		body = append(body, ssrMarkerEnd(node.DynamicID))
+		body = append(body, e.markerEnd(node.DynamicID))
 	}
 	return body, nil
 }
@@ -520,14 +521,14 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	}
 	assign := &goast.AssignStmt{Lhs: []goast.Expr{iterIdent}, Tok: token.DEFINE, Rhs: []goast.Expr{iterable}}
 	if len(node.ElseChildren) == 0 {
-		return ssrMarkedStatements(node.DynamicID, []goast.Stmt{assign, rangeStmt}), nil
+		return e.markedStatements(node.DynamicID, []goast.Stmt{assign, rangeStmt}), nil
 	}
 	otherwise, err := e.nodes(node.ElseChildren)
 	if err != nil {
 		return nil, err
 	}
 	empty := &goast.BinaryExpr{X: &goast.CallExpr{Fun: goast.NewIdent("len"), Args: []goast.Expr{iterIdent}}, Op: token.EQL, Y: &goast.BasicLit{Kind: token.INT, Value: "0"}}
-	return ssrMarkedStatements(node.DynamicID, []goast.Stmt{assign, &goast.IfStmt{
+	return e.markedStatements(node.DynamicID, []goast.Stmt{assign, &goast.IfStmt{
 		Cond: empty,
 		Body: &goast.BlockStmt{List: otherwise},
 		Else: &goast.BlockStmt{List: []goast.Stmt{rangeStmt}},
@@ -564,24 +565,24 @@ func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ssrMarkedStatements(node.DynamicID, body), nil
+	return e.markedStatements(node.DynamicID, body), nil
 }
 
-func ssrMarkedStatements(id int, body []goast.Stmt) []goast.Stmt {
+func (e *ssrGoEmitter) markedStatements(id int, body []goast.Stmt) []goast.Stmt {
 	if id < 0 {
 		return body
 	}
 	marked := make([]goast.Stmt, 0, len(body)+2)
-	marked = append(marked, ssrMarkerStart(id))
+	marked = append(marked, e.markerStart(id))
 	marked = append(marked, body...)
-	marked = append(marked, ssrMarkerEnd(id))
+	marked = append(marked, e.markerEnd(id))
 	return marked
 }
 
-func ssrMarkerStart(id int) goast.Stmt {
-	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--v" + itoa(id) + "-->")})
+func (e *ssrGoEmitter) markerStart(id int) goast.Stmt {
+	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--v:" + e.scopeID + ":" + itoa(id) + "-->")})
 }
 
-func ssrMarkerEnd(id int) goast.Stmt {
-	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--/v" + itoa(id) + "-->")})
+func (e *ssrGoEmitter) markerEnd(id int) goast.Stmt {
+	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--/v:" + e.scopeID + ":" + itoa(id) + "-->")})
 }

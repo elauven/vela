@@ -90,7 +90,7 @@ func TestGeneratedSSRHydrateEntryAdoptsExistingServerData(t *testing.T) {
 	const runner = `import hydratePage from './Page.hydrate.js';
 function assert(value, message) { if (!value) throw new Error(message); }
 function marker(data) { return { data }; }
-const comments = [marker('v0'), marker('/v0')];
+const comments = [marker('v:vela-page:0'), marker('/v:vela-page:0')];
 const payload = { type: 'application/json', textContent: '{"component":"vela-page","props":{"Title":"server"},"state":{"count":1},"deep":["settings"],"incomplete":false}' };
 const document = {
   createTreeWalker() { let index = 0; return { nextNode() { return index < comments.length ? comments[index++] : null; } }; },

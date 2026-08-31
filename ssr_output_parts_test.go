@@ -263,7 +263,7 @@ func TestBuildSSRGoFileEmitsPairedMarkersForDynamicRanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"<!--v0-->", "<!--/v0-->", "<!--v1-->", "<!--/v1-->", "<!--v2-->", "<!--/v2-->"} {
+	for _, want := range []string{"<!--v:vela-page:0-->", "<!--/v:vela-page:0-->", "<!--v:vela-page:1-->", "<!--/v:vela-page:1-->", "<!--v:vela-page:2-->", "<!--/v:vela-page:2-->"} {
 		if !strings.Contains(string(source), want) {
 			t.Fatalf("generated renderer misses %q:\n%s", want, source)
 		}
