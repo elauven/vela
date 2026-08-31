@@ -71,7 +71,35 @@ func ssrHydrationEach(block *EachBlockNode) bool {
 	if block == nil || block.HasKey() {
 		return false
 	}
-	return ssrHydrationStaticChildren(block.Children) && ssrHydrationStaticChildren(block.ElseChildren)
+	if _, ok := ssrHydrationEachDynamicTextRow(block); !ok && !ssrHydrationStaticChildren(block.Children) {
+		return false
+	}
+	return ssrHydrationStaticChildren(block.ElseChildren)
+}
+
+// ssrHydrationEachDynamicTextRow accepts one ordinary row element with only
+// static attributes and direct text nodes. Text parts may refer to the each
+// item; replacement rows are built as DOM nodes, not HTML source strings.
+func ssrHydrationEachDynamicTextRow(block *EachBlockNode) (*ElementNode, bool) {
+	if block == nil || len(block.Children) != 1 {
+		return nil, false
+	}
+	row, ok := block.Children[0].(*ElementNode)
+	if !ok || row == nil {
+		return nil, false
+	}
+	for _, attr := range row.Attrs {
+		if attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+			return nil, false
+		}
+	}
+	for _, child := range row.Children {
+		tn, ok := child.(*TextNode)
+		if !ok || tn == nil {
+			return nil, false
+		}
+	}
+	return row, true
 }
 
 func ssrHydrationStaticChildren(nodes []Node) bool {

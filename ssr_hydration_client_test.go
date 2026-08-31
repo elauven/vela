@@ -55,6 +55,7 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"if with dynamic branch", `<template><main>{#if visible}<span>{title}</span>{/if}</main></template>`, false},
 		{"direct static each", `<template><main>{#each items as item}<span>Row</span>{/each}</main></template>`, true},
 		{"static each else", `<template><main>{#each items as item}<span>Row</span>{:else}<span>Empty</span>{/each}</main></template>`, true},
+		{"dynamic text each row", `<template><main>{#each items as item}<span>{item}</span>{/each}</main></template>`, true},
 		{"keyed each", `<template><main>{#each items as item (item.id)}<span>Row</span>{/each}</main></template>`, false},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, false},
@@ -98,6 +99,27 @@ func TestSSRHydrationClientAdoptsStaticEachRangeWithoutInitialRender(t *testing.
 	}
 }
 
+func TestSSRHydrationClientBuildsDynamicEachRowsFromAST(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let items=[];</script><template><main>{#each items as item}<span class="row">{item}</span>{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"const $$row = document.createElement('span');",
+		"$$row.appendChild(document.createTextNode(String($$item)));",
+		"$$frag.appendChild($$row);",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("dynamic each row lowering misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestSSRHydrationClientAdoptsStaticIfRangeWithoutInitialRender(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let visible=false;</script><template><main>{#if visible}<span>On</span>{:else}<span>Off</span>{/if}</main></template>`)
 	if err != nil {
@@ -132,7 +154,7 @@ func TestSSRHydrationClientAdoptsStaticIfRangeWithoutInitialRender(t *testing.T)
 
 func TestBrowserSSRHydrationStaticIfAdoptsThenReplacesRange(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let visible=false; export let items=[];</script><template><main>{#if visible}<span class="state">On</span>{:else}<span class="state">Off</span>{/if}{#each items as item}<span class="row">Row</span>{:else}<span class="empty">Empty</span>{/each}</main></template>`)
+	sfc, err := parseSFC(`<script>export let visible=false; export let items=[];</script><template><main>{#if visible}<span class="state">On</span>{:else}<span class="state">Off</span>{/if}{#each items as item}<span class="row">{item}</span>{:else}<span class="empty">Empty</span>{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,8 +177,8 @@ func TestBrowserSSRHydrationStaticIfAdoptsThenReplacesRange(t *testing.T) {
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
-<!--e:vela-page:0--><main vela-page=""><!--v:vela-page:0--><!--e:vela-page:2--><span vela-page="" class="state">Off</span><!--/e:vela-page:2--><!--/v:vela-page:0--><!--v:vela-page:1--><!--e:vela-page:4--><span vela-page="" class="empty">Empty</span><!--/e:vela-page:4--><!--/v:vela-page:1--></main><!--/e:vela-page:0-->
-<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Visible":false,"Items":[]},"state":{},"incomplete":false}</script>
+<!--e:vela-page:0--><main vela-page=""><!--v:vela-page:0--><!--e:vela-page:2--><span vela-page="" class="state">Off</span><!--/e:vela-page:2--><!--/v:vela-page:0--><!--v:vela-page:1--><!--e:vela-page:3--><span vela-page="" class="row"><!--v:vela-page:2-->1<!--/v:vela-page:2--></span><!--/e:vela-page:3--><!--e:vela-page:3--><span vela-page="" class="row"><!--v:vela-page:2-->2<!--/v:vela-page:2--></span><!--/e:vela-page:3--><!--/v:vela-page:1--></main><!--/e:vela-page:0-->
+<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Visible":false,"Items":[1,2]},"state":{},"incomplete":false}</script>
 <script type="module">
   import hydratePage from './Page.hydrate.js';
   window.__hydrationObserver = new MutationObserver(() => {});
@@ -193,9 +215,9 @@ server.listen(0, '127.0.0.1', async () => {
     catch (error) { throw new Error(String(error.stack || error) + '\\n' + errors.join('\\n')); }
     const initial = await page.evaluate(() => window.__initialMutations);
     await page.evaluate(() => window.__hydrated.component.set({visible:true, items:[1]}));
-    await page.waitForFunction(() => document.querySelector('.state')?.textContent === 'On' && document.querySelectorAll('.row').length === 1);
-    const result = await page.evaluate(() => ({ initial: window.__initialMutations, text: document.querySelector('.state')?.textContent, stateCount: document.querySelectorAll('main > .state').length, rowCount: document.querySelectorAll('main > .row').length, emptyCount: document.querySelectorAll('main > .empty').length }));
-    if (result.initial !== 0 || result.text !== 'On' || result.stateCount !== 1 || result.rowCount !== 1 || result.emptyCount !== 0) throw new Error(JSON.stringify(result));
+    await page.waitForFunction(() => document.querySelector('.state')?.textContent === 'On' && document.querySelectorAll('.row').length === 1 && document.querySelector('.row')?.textContent === '1');
+    const result = await page.evaluate(() => ({ initial: window.__initialMutations, text: document.querySelector('.state')?.textContent, stateCount: document.querySelectorAll('main > .state').length, rowCount: document.querySelectorAll('main > .row').length, rowText: document.querySelector('.row')?.textContent, emptyCount: document.querySelectorAll('main > .empty').length }));
+    if (result.initial !== 0 || result.text !== 'On' || result.stateCount !== 1 || result.rowCount !== 1 || result.rowText !== '1' || result.emptyCount !== 0) throw new Error(JSON.stringify(result));
     process.stdout.write('OK');
   } catch (error) {
     console.error(error && error.stack || error);

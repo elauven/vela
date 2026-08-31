@@ -497,7 +497,7 @@ export function $$createHydrationWalker(root, componentId) {
   const walker = doc.createTreeWalker(root, 128); // NodeFilter.SHOW_COMMENT
   const markers = { v: new Map(), e: new Map() };
   const stack = [];
-  let ignoredStructuralElements = 0;
+  const ignoredStructuralMarkers = [];
   let node;
   while ((node = walker.nextNode())) {
     const marker = String(node.data || '').trim();
@@ -513,14 +513,14 @@ export function $$createHydrationWalker(root, componentId) {
     // targets while enclosed by a dynamic v-range; that range's own lowering
     // owns the active nodes. Keep validating its v boundaries while skipping
     // repeated structural element pairs.
-    if (kind === 'e' && (ignoredStructuralElements > 0 || stack.some(entry => entry.kind === 'v'))) {
+    if (ignoredStructuralMarkers.length > 0 || (!closing && stack.some(entry => entry.kind === 'v'))) {
       if (closing) {
-        if (ignoredStructuralElements === 0) {
-          throw new Error(`Vela hydration mismatch [${label}]: structural element end marker has no start`);
+        const open = ignoredStructuralMarkers.pop();
+        if (!open || open.key !== key) {
+          throw new Error(`Vela hydration mismatch [${label}]: structural marker end does not match its start`);
         }
-        ignoredStructuralElements--;
       } else {
-        ignoredStructuralElements++;
+        ignoredStructuralMarkers.push({ key });
       }
       continue;
     }
@@ -544,8 +544,8 @@ export function $$createHydrationWalker(root, componentId) {
     const open = stack[stack.length - 1];
     throw new Error(`Vela hydration mismatch [${label}]: start marker <!--${open.kind}:${label}:${open.id}--> has no end marker`);
   }
-  if (ignoredStructuralElements !== 0) {
-    throw new Error(`Vela hydration mismatch [${label}]: structural element marker is not balanced`);
+  if (ignoredStructuralMarkers.length !== 0) {
+    throw new Error(`Vela hydration mismatch [${label}]: structural marker is not balanced`);
   }
   return { root, componentId: label, ranges: markers.v, elements: markers.e };
 }

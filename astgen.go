@@ -4650,11 +4650,8 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 		genConst(itemsVar, g.templateExpr(block.IterExpr)),
 		genLet(hasRowsVar, boolLit(false)),
 	}
-	html := emitStaticHTML(block.Children, g.scopeID)
-	rowBody := genBlock(
-		genAssignStmt(id(hasRowsVar), boolLit(true)),
-		genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(html))),
-	)
+	rowBody := g.hydrationEachRowBuild(block, "$$item", "$$frag")
+	rowBody.Body = append([]JsStmt{genAssignStmt(id(hasRowsVar), boolLit(true))}, rowBody.Body...)
 	updateBody = append(updateBody, genForOf("$$item", id(itemsVar), rowBody))
 	if len(block.ElseChildren) > 0 {
 		updateBody = append(updateBody, genIf(genUnary("!", id(hasRowsVar)),
@@ -4671,6 +4668,36 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+}
+
+// hydrationEachRowBuild creates one replacement row using typed DOM AST.
+// Static rows still take the compact insertHTML path; the dynamic-text subset
+// creates its element and text nodes directly so item expressions remain AST
+// expressions and never become interpolated executable strings.
+func (g *ASTGen) hydrationEachRowBuild(block *EachBlockNode, itemVar, fragmentVar string) *JsBlock {
+	if row, ok := ssrHydrationEachDynamicTextRow(block); ok {
+		body := []JsStmt{genConst("$$row", genCall(genMember(id("document"), "createElement"), strLit(row.Tag)))}
+		body = append(body, g.setAttrStmt("$$row", g.scopeID, ""))
+		for _, attr := range row.Attrs {
+			if attr == nil || attr.Expr != nil {
+				continue
+			}
+			body = append(body, g.setAttrStmt("$$row", attr.Name, attr.Value))
+		}
+		g.withTemplateBinding(block.ItemName, itemVar, func() {
+			for _, child := range row.Children {
+				tn, ok := child.(*TextNode)
+				if !ok || tn == nil {
+					continue
+				}
+				body = append(body, genExprStmt(genCall(genMember(id("$$row"), "appendChild"),
+					genCall(genMember(id("document"), "createTextNode"), g.textValueExpr(tn.Parts)))))
+			}
+		})
+		body = append(body, genExprStmt(genCall(genMember(id(fragmentVar), "appendChild"), id("$$row"))))
+		return genBlock(body...)
+	}
+	return genBlock(genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML(block.Children, g.scopeID)))))
 }
 
 // buildSlotNode projects a <slot> — an anchor comment plus an init
