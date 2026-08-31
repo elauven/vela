@@ -381,6 +381,14 @@ the exact missing, crossed, duplicate, or incomplete input. They are runtime
 building blocks only until the generated hydrate entry point wires them into
 the client acquire-plan.
 
+Project SSR output now writes a sibling lowercase snake-case module such as
+`client/user_page.hydrate.js`. Its exported `hydrateUserPage(root)` is an
+adoption preflight: it validates the marker graph and state payload, then
+returns `{ root, props, state, ranges }`. It intentionally does **not** call
+the CSR component factory, attach listeners, or write DOM yet. This makes the
+entry usable for integration validation without falsely claiming that reactive
+hydration has already completed.
+
 ---
 
 ## The type system

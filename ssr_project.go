@@ -71,6 +71,10 @@ func (layout SSRProjectLayout) eventBridgePath(src, srcRoot string) string {
 	return mirrorPath(src, srcRoot, layout.ClientDir, ".ssr-events.js")
 }
 
+func (layout SSRProjectLayout) hydratePath(src, srcRoot string) string {
+	return mirrorPath(src, srcRoot, layout.ClientDir, ".hydrate.js")
+}
+
 // buildSSRProject adds server and styles products around the established CSR
 // project build. The caller owns user-facing progress and exit handling.
 func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOptions, parallel bool) int {
@@ -162,6 +166,11 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	if err != nil {
 		return err
 	}
+	hydrate, err := BuildSSRHydrateEntry(plan)
+	if err != nil {
+		return err
+	}
+	hydrateSource := []byte(PrintJS(hydrate, PrintPretty))
 	file, err := BuildSSRGoRendererFile(plan, layout.packageName(src, srcRoot))
 	if err != nil {
 		return err
@@ -180,6 +189,13 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		return err
 	}
 	if err := os.WriteFile(serverPath, source, 0o644); err != nil {
+		return err
+	}
+	hydratePath := layout.hydratePath(src, srcRoot)
+	if err := os.MkdirAll(filepath.Dir(hydratePath), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(hydratePath, hydrateSource, 0o644); err != nil {
 		return err
 	}
 	if bridge != nil {
