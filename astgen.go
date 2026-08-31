@@ -316,6 +316,11 @@ type ASTGen struct {
 	// initialization path and pays no additional state-restore work.
 	hydrationStateInput bool
 
+	// hydrationComponents maps local Vela component bindings to their
+	// marker-aware hydrate entries. It is populated only for SSR hydration
+	// clients; normal CSR components retain their ordinary factory imports.
+	hydrationComponents map[string]bool
+
 	// counter backs id() — the deterministic $$nN naming used for
 	// DOM-node variables.  Mirrors the legacy CodeGen.counter so
 	// generated names match between the two generators.
@@ -1927,8 +1932,18 @@ func (g *ASTGen) buildImportDecls() []JsStmt {
 			if defaultName == "" && namespace == "" && len(specifiers) == 0 {
 				continue
 			}
+		} else if g.domAcquireMode == DOMAcquireHydrate && g.hydrationComponents != nil && g.hydrationComponents[defaultName] {
+			src = RewriteHydrationImportPath(src)
 		} else {
-			src = RewriteImportPath(src)
+			for _, spec := range specifiers {
+				if g.domAcquireMode == DOMAcquireHydrate && g.hydrationComponents != nil && g.hydrationComponents[spec.Local] {
+					src = RewriteHydrationImportPath(src)
+					break
+				}
+			}
+			if src == imp.Source {
+				src = RewriteImportPath(src)
+			}
 		}
 		out = append(out, &JsImportDecl{
 			baseStmt:    baseStmt{genNode()},
@@ -2785,7 +2800,7 @@ func (g *ASTGen) buildHydrationRootDOM(root *ElementNode) {
 	_ = g.id()
 	g.body = append(g.body, g.createElementStmt("$$root", root.Tag))
 	g.applyHydrationElementAttrs("$$root", root)
-	g.buildHydrationRootChildren(root.Children)
+	g.buildHydrationRootChildren(root.Children, "$$root")
 }
 
 // buildChainRootDOM builds DOM for a root list containing one or
@@ -3167,7 +3182,7 @@ func (g *ASTGen) buildHolesDOM(el *ElementNode) {
 	}
 	g.applyRootAttrs(el)
 	if g.domAcquireMode == DOMAcquireHydrate {
-		g.buildHydrationRootChildren(el.Children)
+		g.buildHydrationRootChildren(el.Children, "$$root")
 		return
 	}
 
@@ -4527,7 +4542,7 @@ func (g *ASTGen) buildTextNode(tn *TextNode, parentVar string) {
 // dynamic part has exactly one paired SSR `v` marker. Initial DOM already
 // contains the server value, so only the marker range is acquired here; later
 // setters call $$writeHydrationText when a dependency actually changes.
-func (g *ASTGen) buildHydrationRootChildren(children []Node) {
+func (g *ASTGen) buildHydrationRootChildren(children []Node, parentVar string) {
 	for _, child := range children {
 		switch current := child.(type) {
 		case *TextNode:
@@ -4538,6 +4553,8 @@ func (g *ASTGen) buildHydrationRootChildren(children []Node) {
 			g.buildHydrationRootIfChain(current)
 		case *EachBlockNode:
 			g.buildHydrationRootEach(current)
+		case *ComponentNode:
+			g.buildComponentNode(current, parentVar)
 		}
 	}
 }
@@ -4554,7 +4571,7 @@ func (g *ASTGen) buildHydrationElement(element *ElementNode) {
 	variable := g.id()
 	g.body = append(g.body, g.createElementStmt(variable, element.Tag))
 	g.applyHydrationElementAttrs(variable, element)
-	g.buildHydrationRootChildren(element.Children)
+	g.buildHydrationRootChildren(element.Children, variable)
 }
 
 // applyHydrationElementAttrs wires reactive work without replaying SSR's
@@ -5041,6 +5058,37 @@ func (g *ASTGen) slotFallbackStmts(fallback []Node, anchor string) []JsStmt {
 	return out
 }
 
+// buildHydrationComponentNode adopts a local child component already emitted by
+// the Go renderer. Its hydrate entry restores child payload before returning
+// the live client instance, so the parent must not replay initial props or
+// create a comment anchor. Parent reactive prop updates still use the
+// ordinary instance .set() path after adoption.
+func (g *ASTGen) buildHydrationComponentNode(comp *ComponentNode, parentVar string) {
+	inst := g.id() + "_comp"
+	g.declareInScope(genLet(inst, genNull()))
+
+	propsExpr := g.componentPropsExpr(comp.Attrs)
+	g.hydrationInitBody = append(g.hydrationInitBody, genIf(
+		genUnary("!", id(inst)),
+		genAssignStmt(id(inst), genMember(genCall(id(comp.Name), id(parentVar)), "component")),
+	))
+
+	setStmt := genIf(id(inst), genExprStmt(genCall(genMember(id(inst), "set"), propsExpr)))
+	deps := map[string]bool{}
+	for _, attr := range comp.Attrs {
+		if attr.IsEvent || attr.IsBindThis {
+			continue
+		}
+		for _, dep := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+			deps[dep] = true
+		}
+	}
+	for dep := range deps {
+		g.addUpdate(dep, setStmt)
+	}
+	g.cleanup = append(g.cleanup, genIf(id(inst), genExprStmt(genCall(genMember(id(inst), "destroy")))))
+}
+
 // buildComponentNode invokes a child component: a wrapper element,
 // an instance handle, the constructor call, a reactive .set() for
 // prop changes, and .destroy() teardown.
@@ -5049,6 +5097,10 @@ func (g *ASTGen) slotFallbackStmts(fallback []Node, anchor string) []JsStmt {
 // astComponentOK gates a component with slot content to the
 // splice.
 func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
+	if g.domAcquireMode == DOMAcquireHydrate && g.hydrationComponents[comp.Name] {
+		g.buildHydrationComponentNode(comp, parentVar)
+		return
+	}
 	inst := g.id() + "_comp"
 	wrap := inst + "_wrap"
 	g.compInstances = append(g.compInstances,

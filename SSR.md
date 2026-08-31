@@ -414,6 +414,9 @@ root event listeners. Components outside this deliberately narrow subset keep
 the validation-only entry; no file claims reactive hydration before its
 marker-aware lowering exists.
 
+A direct local `.vela` child component with ordinary one-way props is now also part of the executable subset. The parent client imports the child's generated `.hydrate.js` entry under the same local name, passes the existing parent element to it, and receives the child's live instance. The child entry restores its own server props and serializable state before that hand-off, so the parent does not replay initial props or create a CSR anchor. Later parent reactivity forwards only `.set(...)` updates. This is emitted only when every reachable local child has the same executable hydration capability; otherwise the parent remains validation-only. Slots, component events, two-way component bindings, and non-local component imports are intentionally excluded.
+
+
 For a supported direct `{#if}` the active server branch is adopted as the
 nodes between its `v` markers. No branch is rebuilt at hydration time. A later
 reactive condition change removes and materializes only that marker range;

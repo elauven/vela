@@ -105,6 +105,16 @@ func importRecordsFromProgram(script string, prog *JsProgram, lineOffset int) []
 //  2. .vela extension → replace with .js
 //  3. Already has .js/.mjs/.cjs/.ts extension → unchanged
 //  4. Extensionless relative path → append .js
+//
+// RewriteHydrationImportPath rewrites a local Vela component import to its
+// generated hydration entry. Non-component imports retain the normal rewrite.
+func RewriteHydrationImportPath(importPath string) string {
+	if strings.HasSuffix(importPath, ".vela") {
+		return strings.TrimSuffix(importPath, ".vela") + ".hydrate.js"
+	}
+	return RewriteImportPath(importPath)
+}
+
 func RewriteImportPath(importPath string) string {
 	// Node module — pass through unchanged
 	if !strings.HasPrefix(importPath, ".") && !strings.HasPrefix(importPath, "/") {

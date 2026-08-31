@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // CanBuildSSRHydrationClient reports whether the current marker-aware client
 // lowering can execute this component. This first vertical slice owns one
@@ -37,6 +40,10 @@ func ssrHydrationRootChildren(nodes []Node) bool {
 			if !ssrHydrationEach(current) {
 				return false
 			}
+		case *ComponentNode:
+			if !ssrHydrationComponent(current) {
+				return false
+			}
 		default:
 			return false
 		}
@@ -71,6 +78,10 @@ func ssrHydrationElement(element *ElementNode) bool {
 			}
 		case *EachBlockNode:
 			if !ssrHydrationEach(current) {
+				return false
+			}
+		case *ComponentNode:
+			if !ssrHydrationComponent(current) {
 				return false
 			}
 		default:
@@ -156,6 +167,21 @@ func ssrHydrationEachDynamicTextRow(block *EachBlockNode) (*ElementNode, bool) {
 	return row, true
 }
 
+// ssrHydrationComponent accepts a direct local child component with ordinary
+// one-way props. Its own hydrate entry restores server props and state; slots,
+// component events and two-way bindings need explicit cross-component plans.
+func ssrHydrationComponent(component *ComponentNode) bool {
+	if component == nil || len(component.Slots) != 0 {
+		return false
+	}
+	for _, attr := range component.Attrs {
+		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+			return false
+		}
+	}
+	return true
+}
+
 func ssrHydrationStaticChildren(nodes []Node) bool {
 	for _, node := range nodes {
 		switch current := node.(type) {
@@ -185,12 +211,110 @@ func ssrHydrationStaticChildren(nodes []Node) bool {
 // supported SSR subset. It acquires the root through the checked element
 // marker and never runs the CSR mount or initial DOM-write paths.
 func BuildSSRHydrationClientProgram(name string, sfc *SFC, analysis *Analysis, scopeID string) (*JsProgram, error) {
-	if sfc == nil || !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
-		return nil, fmt.Errorf("SSR hydration client currently requires one element root with static descendants and no DOM bindings")
+	components, err := ssrHydrationComponentNames(sfc, analysis)
+	if err != nil {
+		return nil, err
 	}
-	program, _ := buildProgramWithDOMAcquirePlanAndHydration(
-		name, sfc, sfc.TemplateAST.Nodes, analysis, scopeID, true, DOMAcquireHydrate, true,
-	)
+	return buildSSRHydrationClientProgramWithComponents(name, sfc, analysis, scopeID, components)
+}
+
+// buildSSRHydrationClientProgramWithComponents keeps the child-component import
+// map explicit. Project compilation supplies verified local .vela imports.
+func buildSSRHydrationClientProgramWithComponents(name string, sfc *SFC, analysis *Analysis, scopeID string, components map[string]bool) (*JsProgram, error) {
+	if sfc == nil || !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		return nil, fmt.Errorf("SSR hydration client requires one element root and supported marker-aware descendants")
+	}
+	if analysis != nil {
+		analysis.lowerReactiveCallbackBodies()
+	}
+	g := &ASTGen{
+		name: name, scopeID: scopeID, analysis: analysis, sfc: sfc, fragCounter: -1, cssExternal: true,
+		domAcquireMode: DOMAcquireHydrate, domAcquirePlan: DOMAcquirePlan{Mode: DOMAcquireHydrate},
+		hydrationStateInput: true, hydrationComponents: components,
+	}
+	program := g.buildModule(sfc.TemplateAST.Nodes)
 	validateGeneratedProgram(program)
 	return program, nil
+}
+
+// ssrHydrationUsedComponentNames returns only invocations present in template AST.
+// Imported but unused components do not constrain hydration capability.
+func ssrHydrationUsedComponentNames(nodes []Node) map[string]bool {
+	components := map[string]bool{}
+	var visit func([]Node)
+	visit = func(children []Node) {
+		for _, node := range children {
+			switch current := node.(type) {
+			case *ComponentNode:
+				components[current.Name] = true
+			case *ElementNode:
+				visit(current.Children)
+			case *IfChainNode:
+				for _, branch := range current.Branches {
+					if branch != nil {
+						visit(branch.Children)
+					}
+				}
+			case *EachBlockNode:
+				visit(current.Children)
+				visit(current.ElseChildren)
+			}
+		}
+	}
+	visit(nodes)
+	return components
+}
+
+func ssrHydrationComponentNames(sfc *SFC, analysis *Analysis) (map[string]bool, error) {
+	if sfc == nil {
+		return nil, fmt.Errorf("SSR hydration client: missing component")
+	}
+	imports := map[string]bool{}
+	if analysis != nil {
+		for _, imp := range analysis.Imports {
+			if imp == nil || !strings.HasSuffix(imp.Source, ".vela") {
+				continue
+			}
+			for _, local := range imp.Names {
+				imports[local] = true
+			}
+		}
+	}
+	components := map[string]bool{}
+	var visit func([]Node) error
+	visit = func(nodes []Node) error {
+		for _, node := range nodes {
+			switch current := node.(type) {
+			case *ComponentNode:
+				if !imports[current.Name] {
+					return fmt.Errorf("SSR hydration component %q must be imported from a local .vela module", current.Name)
+				}
+				components[current.Name] = true
+			case *ElementNode:
+				if err := visit(current.Children); err != nil {
+					return err
+				}
+			case *IfChainNode:
+				for _, branch := range current.Branches {
+					if branch != nil {
+						if err := visit(branch.Children); err != nil {
+							return err
+						}
+					}
+				}
+			case *EachBlockNode:
+				if err := visit(current.Children); err != nil {
+					return err
+				}
+				if err := visit(current.ElseChildren); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	if err := visit(sfc.TemplateAST.Nodes); err != nil {
+		return nil, err
+	}
+	return components, nil
 }

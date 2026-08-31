@@ -147,6 +147,40 @@ func ValidateSSRProjectPackages(layout SSRProjectLayout) error {
 	return nil
 }
 
+// canBuildSSRHydrationDependencies verifies every local component that appears in
+// the template graph. A parent executable client may only import a child
+// .hydrate.js entry when that entry will itself expose a live client instance.
+func canBuildSSRHydrationDependencies(nodes []Node, links map[string]SSRComponentLink, srcRoot string, visiting map[string]bool) bool {
+	for name := range ssrHydrationUsedComponentNames(nodes) {
+		link, ok := links[name]
+		if !ok || link.SourcePath == "" || visiting[link.SourcePath] {
+			return false
+		}
+		data, err := os.ReadFile(link.SourcePath)
+		if err != nil {
+			return false
+		}
+		child, err := parseSFC(string(data))
+		if err != nil || !CanBuildSSRHydrationClient(child.TemplateAST.Nodes) {
+			return false
+		}
+		analysis := analyzeScriptAST(child.ScriptAST)
+		childLinks, err := ResolveSSRLocalComponentLinks(link.SourcePath, srcRoot, analysis)
+		if err != nil {
+			return false
+		}
+		if _, err := ssrHydrationComponentNames(child, analysis); err != nil {
+			return false
+		}
+		visiting[link.SourcePath] = true
+		if !canBuildSSRHydrationDependencies(child.TemplateAST.Nodes, childLinks, srcRoot, visiting) {
+			return false
+		}
+		delete(visiting, link.SourcePath)
+	}
+	return true
+}
+
 func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
@@ -173,7 +207,7 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		return err
 	}
 	var hydrate *JsProgram
-	if CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+	if CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) && canBuildSSRHydrationDependencies(sfc.TemplateAST.Nodes, links, srcRoot, map[string]bool{src: true}) {
 		hydrationClient, err := BuildSSRHydrationClientProgram(componentName(src), sfc, analysis, scopeID)
 		if err != nil {
 			return err

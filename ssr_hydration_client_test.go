@@ -36,7 +36,7 @@ func TestSSRProjectWritesExecutableHydrationClientForSupportedSubset(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(entry), "import Page from './Page.hydrate_client.js';") {
+	if !strings.Contains(string(entry), "import $$client from './Page.hydrate_client.js';") {
 		t.Fatalf("hydrate entry does not invoke the supported client:\n%s", entry)
 	}
 }
@@ -931,5 +931,103 @@ console.log('OK');
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("hydration client output=%q", got)
+	}
+}
+
+func TestSSRHydrationClientAdoptsLocalChildComponent(t *testing.T) {
+	sfc, err := parseSFC(`<script>
+		import { Child } from "./Child.vela";
+		export let title = "server";
+	</script><template><main><Child :title={title} /></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		`import { Child } from './Child.hydrate.js';`,
+		`Child($$root).component`,
+		`.set({ title: title })`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("child hydration lowering misses %q:\n%s", want, source)
+		}
+	}
+	if strings.Contains(source, `createComment("comp")`) {
+		t.Fatalf("child hydration must not create a CSR component anchor:\n%s", source)
+	}
+}
+
+func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(srcRoot, "Child.vela")
+	if err := os.WriteFile(child, []byte(`<script>export let title = "";</script><template><p>{title}</p></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(srcRoot, "Parent.vela")
+	if err := os.WriteFile(parent, []byte(`<script>import { Child } from "./Child.vela"; export let title = "server";</script><template><main><Child :title={title} /></main></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	if errors := buildSSRProject([]string{child, parent}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	layout := NewSSRProjectLayout(outRoot)
+	client, err := os.ReadFile(layout.hydrationClientPath(parent, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`Child.hydrate.js`,
+		`Child($$root).component`,
+	} {
+		if !strings.Contains(string(client), want) {
+			t.Fatalf("parent hydration client misses %q:\n%s", want, client)
+		}
+	}
+	childEntry, err := os.ReadFile(layout.hydratePath(child, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(childEntry), `export function Child($$root)`) {
+		t.Fatalf("child hydrate entry misses component alias:\n%s", childEntry)
+	}
+}
+
+func TestSSRProjectSkipsParentHydrationClientForUnsupportedChild(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(srcRoot, "Child.vela")
+	if err := os.WriteFile(child, []byte(`<script>export let visible = false; export let title = "";</script><template><p>{#if visible}<span>{title}</span>{/if}</p></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(srcRoot, "Parent.vela")
+	if err := os.WriteFile(parent, []byte(`<script>import { Child } from "./Child.vela"; export let title = "server";</script><template><main><Child :title={title} /></main></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	if errors := buildSSRProject([]string{child, parent}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	layout := NewSSRProjectLayout(outRoot)
+	if _, err := os.Stat(layout.hydrationClientPath(parent, srcRoot)); !os.IsNotExist(err) {
+		t.Fatalf("parent hydration client for unsupported child: %v", err)
+	}
+	entry, err := os.ReadFile(layout.hydratePath(parent, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(entry), `.hydrate_client.js`) {
+		t.Fatalf("parent validation entry must not import a missing child client:\n%s", entry)
 	}
 }
