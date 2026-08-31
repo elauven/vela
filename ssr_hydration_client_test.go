@@ -312,6 +312,7 @@ func TestBrowserSSRHydrationBindingsAdoptLiveControlsThenUpdateState(t *testing.
 <script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Title":"server","Done":false},"state":{},"incomplete":false}</script>
 <script type="module">
   import hydratePage from './Page.hydrate.js';
+  if (new URLSearchParams(location.search).has('pre')) document.querySelector('.input').value = 'typed-before-hydration';
   window.__hydrationObserver = new MutationObserver(() => {});
   window.__hydrationObserver.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
   window.__hydrated = hydratePage(document.body);
@@ -328,7 +329,8 @@ const http = require('http');
 const { chromium } = require('playwright');
 const root = process.argv[1];
 const server = http.createServer((req, res) => {
-  const name = req.url === '/' ? 'index.html' : req.url.slice(1);
+  const requestPath = req.url.split('?')[0];
+  const name = requestPath === '/' ? 'index.html' : requestPath.slice(1);
   try { const body = fs.readFileSync(path.join(root, name)); res.writeHead(200, {'content-type': name.endsWith('.js') ? 'text/javascript' : 'text/html'}).end(body); }
   catch { res.writeHead(404).end(); }
 });
@@ -352,6 +354,10 @@ server.listen(0, '127.0.0.1', async () => {
     await page.waitForFunction(() => document.querySelector('.output')?.textContent === 'client:true');
     const result = await page.evaluate(() => ({ initial: window.__initialMutations, sameInput: document.querySelector('.input') === window.__input, sameCheck: document.querySelector('.check') === window.__check, value: document.querySelector('.input')?.value, checked: document.querySelector('.check')?.checked, text: document.querySelector('.output')?.textContent }));
     if (result.initial !== 0 || !result.sameInput || !result.sameCheck || result.value !== 'client' || !result.checked || result.text !== 'client:true') throw new Error(JSON.stringify(result));
+    await page.goto('http://127.0.0.1:' + server.address().port + '/?pre=1');
+    await page.waitForFunction(() => window.__hydrated && document.querySelector('.output')?.textContent === 'typed-before-hydration:false');
+    const preHydration = await page.evaluate(() => ({ value: document.querySelector('.input')?.value, text: document.querySelector('.output')?.textContent }));
+    if (preHydration.value !== 'typed-before-hydration' || preHydration.text !== 'typed-before-hydration:false') throw new Error(JSON.stringify(preHydration));
     process.stdout.write('OK');
   } catch (error) {
     console.error(error && error.stack || error);

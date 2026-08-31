@@ -349,7 +349,10 @@ that it cannot reproduce correctly:
 - `bind:value={exportedProp}` and checkbox `bind:checked={exportedBool}` have
   safe server representations. The renderer writes escaped `value` and emits
   bare `checked` only for true (never `checked="false"`); hydration attaches
-  the browser listener without rewriting either live control on startup.
+  the browser listener without rewriting either live control on startup. If a
+  user edits a control after SSR paint but before its module arrives, the
+  post-adoption hydration initialization reads that live value through the
+  normal setter rather than restoring the stale server payload.
   `bind:this={reactiveRef}` is omitted from server HTML and assigned only
   after the existing element is adopted; the reference is cleared on destroy.
   Component two-way bindings and other `bind:*` forms still fail with
