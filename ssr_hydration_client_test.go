@@ -263,7 +263,7 @@ func TestSSRHydrationClientDefersNestedAttributeWriteUntilUpdate(t *testing.T) {
 
 func TestBrowserSSRHydrationNestedTextAttributeAndEventAdoptThenUpdate(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let title='server'; function change() { title = 'client'; }</script><template><main><section><p class="title" :title={title} @click={change}>{title}</p></section></main></template>`)
+	sfc, err := parseSFC(`<script>export let title='server'; export let selected=false; export let color='red'; function change() { title = 'client'; selected = !selected; color = 'blue'; }</script><template><main><section><p class="title" :title={title} class:selected={selected} style:color={color} @click={change}>{title}</p></section></main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,8 +286,8 @@ func TestBrowserSSRHydrationNestedTextAttributeAndEventAdoptThenUpdate(t *testin
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
-<!--e:vela-page:0--><main vela-page=""><!--e:vela-page:1--><section vela-page=""><!--e:vela-page:2--><p vela-page="" class="title" title="server"><!--v:vela-page:0-->server<!--/v:vela-page:0--></p><!--/e:vela-page:2--></section><!--/e:vela-page:1--></main><!--/e:vela-page:0-->
-<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Title":"server"},"state":{},"incomplete":false}</script>
+<!--e:vela-page:0--><main vela-page=""><!--e:vela-page:1--><section vela-page=""><!--e:vela-page:2--><p vela-page="" class="title" title="server" style="color: red;"><!--v:vela-page:0-->server<!--/v:vela-page:0--></p><!--/e:vela-page:2--></section><!--/e:vela-page:1--></main><!--/e:vela-page:0-->
+<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Title":"server","Selected":false,"Color":"red"},"state":{},"incomplete":false}</script>
 <script type="module">
   import hydratePage from './Page.hydrate.js';
   window.__hydrationObserver = new MutationObserver(() => {});
@@ -325,9 +325,9 @@ server.listen(0, '127.0.0.1', async () => {
     await page.evaluate(() => { window.__paragraph = document.querySelector('.title'); });
     const initial = await page.evaluate(() => window.__initialMutations);
     await page.evaluate(() => document.querySelector('.title').click());
-    await page.waitForFunction(() => document.querySelector('.title')?.textContent === 'client' && document.querySelector('.title')?.getAttribute('title') === 'client');
-    const result = await page.evaluate(() => ({ initial: window.__initialMutations, sameParagraph: document.querySelector('.title') === window.__paragraph, text: document.querySelector('.title')?.textContent, title: document.querySelector('.title')?.getAttribute('title') }));
-    if (result.initial !== 0 || !result.sameParagraph || result.text !== 'client' || result.title !== 'client') throw new Error(JSON.stringify(result));
+    await page.waitForFunction(() => document.querySelector('.title')?.textContent === 'client' && document.querySelector('.title')?.getAttribute('title') === 'client' && document.querySelector('.title')?.classList.contains('selected') && document.querySelector('.title')?.style.color === 'blue');
+    const result = await page.evaluate(() => ({ initial: window.__initialMutations, sameParagraph: document.querySelector('.title') === window.__paragraph, text: document.querySelector('.title')?.textContent, title: document.querySelector('.title')?.getAttribute('title'), selected: document.querySelector('.title')?.classList.contains('selected'), color: document.querySelector('.title')?.style.color }));
+    if (result.initial !== 0 || !result.sameParagraph || result.text !== 'client' || result.title !== 'client' || !result.selected || result.color !== 'blue') throw new Error(JSON.stringify(result));
     process.stdout.write('OK');
   } catch (error) {
     console.error(error && error.stack || error);
