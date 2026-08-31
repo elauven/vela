@@ -28,7 +28,7 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 		"export function hydratePage($$root)",
 		"$$createHydrationWalker($$root, 'vela-page')",
 		"$$readHydrationPayload($$root, 'vela-page')",
-		"return { root: $$root, props: { title: $$payload.props.Title }, state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges, elements: { e0: $$acquireHydrationElement($$walker, 0, 'main') } };",
+		"return { root: $$root, props: { title: $$payload.props.Title }, componentProps: Object.assign({}, { title: $$payload.props.Title }, { $$velaState: $$payload.state }), state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges, elements: { e0: $$acquireHydrationElement($$walker, 0, 'main') } };",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("hydrate entry misses %q:\n%s", want, source)
@@ -105,6 +105,8 @@ const root = { ownerDocument: document };
 const adopted = hydratePage(root);
 assert(adopted.root === root, 'entry must retain the server root');
 assert(adopted.props.title === 'server', 'entry must map Go payload fields back to Vela props');
+assert(adopted.componentProps.title === 'server', 'component props must retain mapped Vela props');
+assert(adopted.componentProps.$$velaState.count === 1, 'component props must expose restored state to the SSR client module');
 assert(adopted.state.count === 1, 'entry must expose serialised state');
 assert(adopted.deep.join(',') === 'settings', 'entry must preserve deep-state metadata');
 assert(adopted.ranges.get(0).start === comments[1], 'entry must expose indexed marker ranges');

@@ -389,10 +389,13 @@ the client acquire-plan.
 Project SSR output now writes a sibling lowercase snake-case module such as
 `client/user_page.hydrate.js`. Its exported `hydrateUserPage(root)` is an
 adoption preflight: it validates the marker graph and state payload, then
-returns `{ root, props, state, ranges }`. It intentionally does **not** call
-the CSR component factory, attach listeners, or write DOM yet. This makes the
-entry usable for integration validation without falsely claiming that reactive
-hydration has already completed.
+returns `{ root, props, componentProps, state, deep, ranges, elements }`.
+`componentProps` combines Vela-named props with compiler-owned
+`$$velaState`; it is the exact props shape expected by the SSR client module
+once marker-aware component construction is enabled. It intentionally does
+**not** call the CSR component factory, attach listeners, or write DOM yet.
+This makes the entry usable for integration validation without falsely
+claiming that reactive hydration has already completed.
 
 The Go payload uses exported Go field names (`Title`) because it is marshalled
 from the generated props struct. The hydrate entry maps those fields back to
@@ -494,12 +497,14 @@ preclude it.
 Comment nodes are the recommended marker form:
 
 ```html
-<p>Hello <!--v:vela-page:0-->Alice<!--/v:vela-page:0-->, count = <!--v:vela-page:1-->42<!--/v:vela-page:1--></p>
+<!--e:vela-page:0--><p>Hello <!--v:vela-page:0-->Alice<!--/v:vela-page:0-->, count = <!--v:vela-page:1-->42<!--/v:vela-page:1--></p><!--/e:vela-page:0-->
 ```
 
-Each `<!--v:<component-id>:N-->` pair brackets a dynamic position. The client
-hydrator walks the DOM and assigns the cached element vars
-(`$$n0`, `$$n1`, ...) by finding the marker comments in order.
+Each `<!--v:<component-id>:N-->` pair brackets a dynamic position. Each
+`<!--e:<component-id>:N-->` pair surrounds one static element, which the
+hydrator acquires by tag without creating or replacing it. The client walks
+both marker namespaces, then assigns cached element vars (`$$n0`, `$$n1`,
+...) through the element ranges.
 
 Why comment nodes instead of `data-vh="N"` attributes:
 - Comments are invisible to CSS, accessibility tools, and the DOM

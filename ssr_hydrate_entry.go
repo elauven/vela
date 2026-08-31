@@ -23,6 +23,14 @@ func BuildSSRHydrateEntry(plan *SSRRenderPlan) (*JsProgram, error) {
 			Kind:     "init",
 		})
 	}
+	componentProps := genCall(
+		generatedMemberPath("Object.assign"),
+		&JsObjectExpr{baseExpr: baseExpr{genNode()}},
+		props,
+		&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+			{baseNode: genNode(), Key: id("$$velaState"), Value: genMember(id("$$payload"), "state"), Kind: "init"},
+		}},
+	)
 	elements := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
 	for _, element := range ssrPlanElements(plan.Nodes) {
 		elements.Props = append(elements.Props, &JsProp{
@@ -42,6 +50,7 @@ func BuildSSRHydrateEntry(plan *SSRRenderPlan) (*JsProgram, error) {
 			genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 				{baseNode: genNode(), Key: id("root"), Value: id("$$root"), Kind: "init"},
 				{baseNode: genNode(), Key: id("props"), Value: props, Kind: "init"},
+				{baseNode: genNode(), Key: id("componentProps"), Value: componentProps, Kind: "init"},
 				{baseNode: genNode(), Key: id("state"), Value: genMember(id("$$payload"), "state"), Kind: "init"},
 				{baseNode: genNode(), Key: id("deep"), Value: genLogical("||", genMember(id("$$payload"), "deep"), genArray()), Kind: "init"},
 				{baseNode: genNode(), Key: id("ranges"), Value: genMember(id("$$walker"), "ranges"), Kind: "init"},
