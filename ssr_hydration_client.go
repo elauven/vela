@@ -46,10 +46,9 @@ func ssrHydrationRootChildren(nodes []Node) bool {
 	return true
 }
 
-// ssrHydrationElement accepts the recursive text-only element subset.  Every
-// accepted descendant receives an `e` acquisition marker; dynamic text keeps
-// its `v` range at the original template position. Dynamic attributes and
-// listeners remain root-only until their no-initial-write lowering exists.
+// ssrHydrationElement accepts the recursive marker-aware element subset.
+// Every accepted descendant receives an `e` acquisition marker; dynamic text
+// and direct structural blocks retain their template-order `v` ranges.
 func ssrHydrationElement(element *ElementNode) bool {
 	if element == nil {
 		return false
@@ -68,6 +67,14 @@ func ssrHydrationElement(element *ElementNode) bool {
 			// `v` ranges cover every non-static part at any nesting depth.
 		case *ElementNode:
 			if !ssrHydrationElement(current) {
+				return false
+			}
+		case *IfChainNode:
+			if !ssrHydrationIfChain(current) {
+				return false
+			}
+		case *EachBlockNode:
+			if !ssrHydrationEach(current) {
 				return false
 			}
 		default:
