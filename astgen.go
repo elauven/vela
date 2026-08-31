@@ -4515,6 +4515,8 @@ func (g *ASTGen) buildHydrationRootChildren(children []Node) {
 			g.buildHydrationRootTextChildren([]Node{current})
 		case *IfChainNode:
 			g.buildHydrationRootIfChain(current)
+		case *EachBlockNode:
+			g.buildHydrationRootEach(current)
 		}
 	}
 }
@@ -4618,6 +4620,44 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		for _, dependency := range templateExprDeps(branch.Expr, g.reactiveNames()) {
 			g.addStructuralUpdate(dependency, genInvoke(fn))
 		}
+	}
+	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+}
+
+// buildHydrationRootEach adopts SSR rows for the initial unkeyed static-row
+// subset. A later collection replacement clears and materializes only the
+// paired range; it never remounts the already acquired component root.
+func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
+	if block == nil {
+		return
+	}
+	markerID := g.hydrationRangeNext
+	g.hydrationRangeNext++
+	name := "$$heach" + itoa(markerID)
+	rangeVar := name + "_range"
+	nodesVar := name + "_nodes"
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+	)
+
+	updateBody := []JsStmt{
+		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
+	}
+	html := emitStaticHTML(block.Children, g.scopeID)
+	updateBody = append(updateBody, genForOf("$$item", g.templateExpr(block.IterExpr),
+		genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(html))),
+	))
+	updateBody = append(updateBody,
+		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
+		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
+	)
+	fn := name + "_update"
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
+		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 }

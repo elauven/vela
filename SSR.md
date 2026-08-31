@@ -393,7 +393,8 @@ returns `{ root, props, componentProps, state, deep, ranges, elements }`.
 `componentProps` combines Vela-named props with compiler-owned
 `$$velaState`; it is the exact props shape expected by the SSR client module.
 For the first executable subset — one root element, static nested descendants,
-direct text interpolation, a direct static-branch `#if`, and no DOM bindings — project SSR also writes a sibling
+direct text interpolation, a direct static-branch `#if`, an unkeyed
+static-row `#each`, and no DOM bindings — project SSR also writes a sibling
 `client/user_page.hydrate_client.js` module. The entry invokes that module
 with the checked marker walker: it acquires the existing root element, skips
 CSR mount and all initial DOM writes, restores serializable state, and attaches
@@ -407,6 +408,13 @@ reactive condition change removes and materializes only that marker range;
 the root element and unrelated siblings are retained. The entry deliberately
 does not eagerly acquire elements inside structural ranges, because inactive
 branches do not exist in the server response.
+
+The initial `#each` slice follows the same rule. It adopts all existing row
+nodes in its outer `v` range and does no keyed diff or initial row rendering.
+When its collection changes, only that range is replaced. Row-local dynamic
+expressions, `{:else}`, and keyed preservation are deliberately deferred;
+repeated row `e` marker IDs are ignored by the entry because they are template
+positions, not global element identities.
 
 The Go payload uses exported Go field names (`Title`) because it is marshalled
 from the generated props struct. The hydrate entry maps those fields back to

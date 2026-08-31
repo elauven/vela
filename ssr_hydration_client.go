@@ -40,6 +40,10 @@ func ssrHydrationRootChildren(nodes []Node) bool {
 			if !ssrHydrationIfChain(current) {
 				return false
 			}
+		case *EachBlockNode:
+			if !ssrHydrationEach(current) {
+				return false
+			}
 		default:
 			return false
 		}
@@ -61,6 +65,13 @@ func ssrHydrationIfChain(chain *IfChainNode) bool {
 		}
 	}
 	return conditions == 1
+}
+
+func ssrHydrationEach(block *EachBlockNode) bool {
+	if block == nil || block.HasKey() || len(block.ElseChildren) != 0 {
+		return false
+	}
+	return ssrHydrationStaticChildren(block.Children)
 }
 
 func ssrHydrationStaticChildren(nodes []Node) bool {

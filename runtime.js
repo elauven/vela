@@ -497,6 +497,7 @@ export function $$createHydrationWalker(root, componentId) {
   const walker = doc.createTreeWalker(root, 128); // NodeFilter.SHOW_COMMENT
   const markers = { v: new Map(), e: new Map() };
   const stack = [];
+  let ignoredStructuralElements = 0;
   let node;
   while ((node = walker.nextNode())) {
     const marker = String(node.data || '').trim();
@@ -507,6 +508,22 @@ export function $$createHydrationWalker(root, componentId) {
     const id = Number(match[3]);
     const key = kind + ':' + id;
     const closing = marker[0] === '/';
+    // Element marker IDs describe template positions, so an #each renders
+    // the same inner e-id once per row. They are not global acquisition
+    // targets while enclosed by a dynamic v-range; that range's own lowering
+    // owns the active nodes. Keep validating its v boundaries while skipping
+    // repeated structural element pairs.
+    if (kind === 'e' && (ignoredStructuralElements > 0 || stack.some(entry => entry.kind === 'v'))) {
+      if (closing) {
+        if (ignoredStructuralElements === 0) {
+          throw new Error(`Vela hydration mismatch [${label}]: structural element end marker has no start`);
+        }
+        ignoredStructuralElements--;
+      } else {
+        ignoredStructuralElements++;
+      }
+      continue;
+    }
     if (!closing) {
       if (markers[kind].has(id) || stack.some(entry => entry.key === key)) {
         throw new Error(`Vela hydration mismatch [${label}]: duplicate start marker <!--${kind}:${label}:${id}-->`);
@@ -526,6 +543,9 @@ export function $$createHydrationWalker(root, componentId) {
   if (stack.length) {
     const open = stack[stack.length - 1];
     throw new Error(`Vela hydration mismatch [${label}]: start marker <!--${open.kind}:${label}:${open.id}--> has no end marker`);
+  }
+  if (ignoredStructuralElements !== 0) {
+    throw new Error(`Vela hydration mismatch [${label}]: structural element marker is not balanced`);
   }
   return { root, componentId: label, ranges: markers.v, elements: markers.e };
 }
