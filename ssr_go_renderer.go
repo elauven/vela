@@ -166,7 +166,7 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 				return nil, ssrExprUnsupported(attr.Span.Start, "component prop %q requires a value", attr.Name)
 			}
 			value = &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(attr.Value)}
-		case SSRAttrDynamic:
+		case SSRAttrDynamic, SSRAttrTwoWay:
 			var err error
 			value, err = TranslateSSRExpression(attr.Expr, e.ctx)
 			if err != nil {

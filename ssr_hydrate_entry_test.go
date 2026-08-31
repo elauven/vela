@@ -25,12 +25,12 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 	source := PrintJS(entry, PrintPretty)
 	for _, want := range []string{
 		"import { $$acquireHydrationElement, $$createHydrationWalker, $$readHydrationPayload } from './runtime.js';",
-		"export function hydratePage($$root)",
-		"export function Page($$root)",
+		"export function hydratePage($$root, $$overrides)",
+		"export function Page($$root, $$overrides)",
 		"$$createHydrationWalker($$root, 'vela-page')",
 		"$$readHydrationPayload($$root, 'vela-page')",
 		"const $$velaProps = { title: $$payload.props.Title };",
-		"const $$componentProps = Object.assign({}, { title: $$payload.props.Title }, { $$velaState: $$payload.state });",
+		"const $$componentProps = Object.assign({}, { title: $$payload.props.Title }, { $$velaState: $$payload.state }, $$overrides || {});",
 		"return { root: $$root, props: $$velaProps, componentProps: $$componentProps, state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges, elements: { e0: $$acquireHydrationElement($$walker, 0, 'main') } };",
 	} {
 		if !strings.Contains(source, want) {

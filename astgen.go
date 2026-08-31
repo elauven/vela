@@ -1194,7 +1194,7 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 		obj.Props = append(obj.Props, prop)
 		if attr.IsTwoWay && g.analysis != nil {
 			target, isIdent := templateExprIdent(attr.Expr)
-			if isIdent && g.analysis.isStateName(target) {
+			if isIdent && g.analysis.stateSet()[target] {
 				obj.Props = append(obj.Props, &JsProp{
 					baseNode: genNode(), Key: id("$$onChange_" + attr.Name),
 					Value: &JsArrowFunc{
@@ -5058,6 +5058,30 @@ func (g *ASTGen) slotFallbackStmts(fallback []Node, anchor string) []JsStmt {
 	return out
 }
 
+// hydrationComponentOverridesExpr contains only bindings that must exist before
+// the child factory runs. Passing the bound value again would replay a server
+// value into live DOM; the child payload already owns that initial value.
+func (g *ASTGen) hydrationComponentOverridesExpr(attrs []*Attr) JsExpr {
+	overrides := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+	for _, attr := range attrs {
+		if attr == nil || !attr.IsTwoWay || g.analysis == nil {
+			continue
+		}
+		target, isIdent := templateExprIdent(attr.Expr)
+		if !isIdent || !g.analysis.stateSet()[target] {
+			continue
+		}
+		overrides.Props = append(overrides.Props, &JsProp{
+			baseNode: genNode(), Key: id("$$onChange_" + attr.Name),
+			Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$v")}, Body: genCall(id("$$set_"+target), id("$$v"))},
+		})
+	}
+	if len(overrides.Props) == 0 {
+		return nil
+	}
+	return overrides
+}
+
 // buildHydrationComponentNode adopts a local child component already emitted by
 // the Go renderer. Its hydrate entry restores child payload before returning
 // the live client instance, so the parent must not replay initial props or
@@ -5068,9 +5092,14 @@ func (g *ASTGen) buildHydrationComponentNode(comp *ComponentNode, parentVar stri
 	g.declareInScope(genLet(inst, genNull()))
 
 	propsExpr := g.componentPropsExpr(comp.Attrs)
+	overrides := g.hydrationComponentOverridesExpr(comp.Attrs)
+	args := []JsExpr{id(parentVar)}
+	if overrides != nil {
+		args = append(args, overrides)
+	}
 	g.hydrationInitBody = append(g.hydrationInitBody, genIf(
 		genUnary("!", id(inst)),
-		genAssignStmt(id(inst), genMember(genCall(id(comp.Name), id(parentVar)), "component")),
+		genAssignStmt(id(inst), genMember(genCall(id(comp.Name), args...), "component")),
 	))
 
 	setStmt := genIf(id(inst), genExprStmt(genCall(genMember(id(inst), "set"), propsExpr)))
@@ -5562,7 +5591,7 @@ func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 	spec, ok := twoWayBindSpec(tag, attr.Name)
 	sv, isIdent := templateExprIdent(attr.Expr)
-	if attr.IsTwoWay && ok && isIdent && g.analysis != nil && g.analysis.isStateName(sv) {
+	if attr.IsTwoWay && ok && isIdent && g.analysis != nil && g.analysis.stateSet()[sv] {
 		hv := varName + "_bind_" + spec.event + "_h"
 		g.body = append(g.body, genConst(hv, &JsArrowFunc{
 			baseExpr: baseExpr{genNode()},

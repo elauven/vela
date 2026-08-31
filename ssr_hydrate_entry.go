@@ -43,6 +43,7 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 		&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 			{baseNode: genNode(), Key: id("$$velaState"), Value: genMember(id("$$payload"), "state"), Kind: "init"},
 		}},
+		genLogical("||", id("$$overrides"), &JsObjectExpr{baseExpr: baseExpr{genNode()}}),
 	)
 	elements := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
 	for _, element := range ssrPlanElements(plan.Nodes) {
@@ -86,7 +87,7 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 	entry := &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
 		Name:     functionName,
-		Params:   []JsExpr{id("$$root")},
+		Params:   []JsExpr{id("$$root"), id("$$overrides")},
 		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: body},
 	}
 	imports := []JsStmt{}
@@ -96,8 +97,8 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 	componentAlias := &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
 		Name:     plan.ComponentName,
-		Params:   []JsExpr{id("$$root")},
-		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: []JsStmt{genReturn(genCall(id(functionName), id("$$root")))}},
+		Params:   []JsExpr{id("$$root"), id("$$overrides")},
+		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: []JsStmt{genReturn(genCall(id(functionName), id("$$root"), id("$$overrides")))}},
 	}
 	imports = append(imports,
 		&JsImportDecl{baseStmt: baseStmt{genNode()}, Specifiers: []JsImportSpec{
