@@ -28,7 +28,9 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 		"export function hydratePage($$root)",
 		"$$createHydrationWalker($$root, 'vela-page')",
 		"$$readHydrationPayload($$root, 'vela-page')",
-		"return { root: $$root, props: { title: $$payload.props.Title }, componentProps: Object.assign({}, { title: $$payload.props.Title }, { $$velaState: $$payload.state }), state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges, elements: { e0: $$acquireHydrationElement($$walker, 0, 'main') } };",
+		"const $$velaProps = { title: $$payload.props.Title };",
+		"const $$componentProps = Object.assign({}, { title: $$payload.props.Title }, { $$velaState: $$payload.state });",
+		"return { root: $$root, props: $$velaProps, componentProps: $$componentProps, state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges, elements: { e0: $$acquireHydrationElement($$walker, 0, 'main') } };",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("hydrate entry misses %q:\n%s", want, source)

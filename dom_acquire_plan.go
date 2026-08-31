@@ -28,9 +28,11 @@ type DOMAcquirePlan struct {
 	Elements []DOMAcquireElement
 }
 
-func (plan *DOMAcquirePlan) addElement(variable, tag string) {
+func (plan *DOMAcquirePlan) addElement(variable, tag string) int {
 	if plan == nil {
-		return
+		return -1
 	}
+	id := len(plan.Elements)
 	plan.Elements = append(plan.Elements, DOMAcquireElement{Variable: variable, Tag: tag})
+	return id
 }

@@ -5,11 +5,25 @@ import (
 	"sort"
 )
 
-// BuildSSRHydrateEntry emits the first public browser entry for one SSR
-// component. It deliberately validates and adopts existing server data only:
-// no call to the CSR factory is made here, so this stage cannot clear, move,
-// or recreate DOM before the marker-aware component lowerings are complete.
+// BuildSSRHydrateEntry emits the validation-only browser entry for one SSR
+// component. Callers with a supported marker-aware factory use
+// BuildSSRHydrateEntryWithClient instead.
 func BuildSSRHydrateEntry(plan *SSRRenderPlan) (*JsProgram, error) {
+	return buildSSRHydrateEntry(plan, "")
+}
+
+// BuildSSRHydrateEntryWithClient emits an entry that validates the server
+// payload and invokes the supplied marker-aware client factory. The factory
+// receives existing DOM through the checked walker; it must never enter the
+// ordinary CSR creation or mount path.
+func BuildSSRHydrateEntryWithClient(plan *SSRRenderPlan, clientModule string) (*JsProgram, error) {
+	if clientModule == "" {
+		return nil, fmt.Errorf("ssr hydrate entry: missing hydration client module")
+	}
+	return buildSSRHydrateEntry(plan, clientModule)
+}
+
+func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram, error) {
 	if plan == nil || plan.ComponentName == "" || plan.ScopeID == "" {
 		return nil, fmt.Errorf("ssr hydrate entry: missing component identity")
 	}
@@ -40,25 +54,47 @@ func BuildSSRHydrateEntry(plan *SSRRenderPlan) (*JsProgram, error) {
 			Kind:     "init",
 		})
 	}
+	body := []JsStmt{
+		genConst("$$walker", genCall(id("$$createHydrationWalker"), id("$$root"), strLit(plan.ScopeID))),
+		genConst("$$payload", genCall(id("$$readHydrationPayload"), id("$$root"), strLit(plan.ScopeID))),
+		genConst("$$velaProps", props),
+		genConst("$$componentProps", componentProps),
+	}
+	if clientModule != "" {
+		body = append(body, genConst("$$component", genCall(
+			id(plan.ComponentName),
+			id("$$root"),
+			id("$$componentProps"),
+			&JsObjectExpr{baseExpr: baseExpr{genNode()}},
+			&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+				{baseNode: genNode(), Key: id("walker"), Value: id("$$walker"), Kind: "init"},
+			}},
+		)))
+	}
+	returnProps := []*JsProp{
+		{baseNode: genNode(), Key: id("root"), Value: id("$$root"), Kind: "init"},
+		{baseNode: genNode(), Key: id("props"), Value: id("$$velaProps"), Kind: "init"},
+		{baseNode: genNode(), Key: id("componentProps"), Value: id("$$componentProps"), Kind: "init"},
+		{baseNode: genNode(), Key: id("state"), Value: genMember(id("$$payload"), "state"), Kind: "init"},
+		{baseNode: genNode(), Key: id("deep"), Value: genLogical("||", genMember(id("$$payload"), "deep"), genArray()), Kind: "init"},
+		{baseNode: genNode(), Key: id("ranges"), Value: genMember(id("$$walker"), "ranges"), Kind: "init"},
+		{baseNode: genNode(), Key: id("elements"), Value: elements, Kind: "init"},
+	}
+	if clientModule != "" {
+		returnProps = append(returnProps, &JsProp{baseNode: genNode(), Key: id("component"), Value: id("$$component"), Kind: "init"})
+	}
+	body = append(body, genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: returnProps}))
 	entry := &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
 		Name:     functionName,
 		Params:   []JsExpr{id("$$root")},
-		Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: []JsStmt{
-			genConst("$$walker", genCall(id("$$createHydrationWalker"), id("$$root"), strLit(plan.ScopeID))),
-			genConst("$$payload", genCall(id("$$readHydrationPayload"), id("$$root"), strLit(plan.ScopeID))),
-			genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
-				{baseNode: genNode(), Key: id("root"), Value: id("$$root"), Kind: "init"},
-				{baseNode: genNode(), Key: id("props"), Value: props, Kind: "init"},
-				{baseNode: genNode(), Key: id("componentProps"), Value: componentProps, Kind: "init"},
-				{baseNode: genNode(), Key: id("state"), Value: genMember(id("$$payload"), "state"), Kind: "init"},
-				{baseNode: genNode(), Key: id("deep"), Value: genLogical("||", genMember(id("$$payload"), "deep"), genArray()), Kind: "init"},
-				{baseNode: genNode(), Key: id("ranges"), Value: genMember(id("$$walker"), "ranges"), Kind: "init"},
-				{baseNode: genNode(), Key: id("elements"), Value: elements, Kind: "init"},
-			}}),
-		}},
+		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: body},
 	}
-	program := &JsProgram{baseNode: genNode(), Body: []JsStmt{
+	imports := []JsStmt{}
+	if clientModule != "" {
+		imports = append(imports, &JsImportDecl{baseStmt: baseStmt{genNode()}, DefaultName: plan.ComponentName, Source: clientModule})
+	}
+	imports = append(imports,
 		&JsImportDecl{baseStmt: baseStmt{genNode()}, Specifiers: []JsImportSpec{
 			{Imported: "$$acquireHydrationElement"},
 			{Imported: "$$createHydrationWalker"},
@@ -66,7 +102,8 @@ func BuildSSRHydrateEntry(plan *SSRRenderPlan) (*JsProgram, error) {
 		}, Source: "./runtime.js"},
 		&JsExportDecl{baseStmt: baseStmt{genNode()}, Declaration: entry},
 		&JsExportDecl{baseStmt: baseStmt{genNode()}, Default: true, Declaration: genExprStmt(id(functionName))},
-	}}
+	)
+	program := &JsProgram{baseNode: genNode(), Body: imports}
 	validateGeneratedProgram(program)
 	return program, nil
 }

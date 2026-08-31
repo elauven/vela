@@ -1620,6 +1620,9 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	if g.hydrationStateInput {
 		fnBody.Body = append(fnBody.Body, genConst("$$velaState", genLogical("||", genMember(id("$$props"), "$$velaState"), genNull())))
 	}
+	if g.domAcquireMode == DOMAcquireHydrate {
+		fnBody.Body = append(fnBody.Body, genConst("$$walker", genMember(id("$$hydrate"), "walker")))
+	}
 
 	// ── Runtime helpers ──────────────────────────────────────
 	// $$dispatch, $$insertHTML and $$proxy used to be inlined in
@@ -1681,7 +1684,9 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	fnBody.Body = append(fnBody.Body, g.events...)
 
 	// ── Initial render (block 3) ─────────────────────────────
-	fnBody.Body = append(fnBody.Body, g.initBody...)
+	if g.domAcquireMode != DOMAcquireHydrate {
+		fnBody.Body = append(fnBody.Body, g.initBody...)
+	}
 
 	// ── Mount ────────────────────────────────────────────────
 	// $$target may be an Element (appendChild as a child) OR a
@@ -1689,12 +1694,14 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// at the anchor's slot rather than appended at the end of its
 	// container).  Comment-as-target is the wrapper-less mount
 	// path: the caller creates an anchor comment in document
-	mount := genIf(
-		genBinary("===", genMember(id("$$target"), "nodeType"), numLit(8)),
-		genExprStmt(genCall(genMember(genMember(id("$$target"), "parentNode"), "insertBefore"), id("$$root"), id("$$target"))),
-	)
-	mount.Else = genExprStmt(genCall(genMember(id("$$target"), "appendChild"), id("$$root")))
-	fnBody.Body = append(fnBody.Body, mount)
+	if g.domAcquireMode != DOMAcquireHydrate {
+		mount := genIf(
+			genBinary("===", genMember(id("$$target"), "nodeType"), numLit(8)),
+			genExprStmt(genCall(genMember(genMember(id("$$target"), "parentNode"), "insertBefore"), id("$$root"), id("$$target"))),
+		)
+		mount.Else = genExprStmt(genCall(genMember(id("$$target"), "appendChild"), id("$$root")))
+		fnBody.Body = append(fnBody.Body, mount)
+	}
 
 	// ── onMount callbacks (stage 1a) ─────────────────────────
 	// Run after the component's DOM is in the document.  Each
@@ -1715,10 +1722,11 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	fn := &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
 		Name:     g.name,
-		Params: []JsExpr{
-			id("$$target"), id("$$props"), id("$$slots"),
-		},
-		Body: fnBody,
+		Params:   []JsExpr{id("$$target"), id("$$props"), id("$$slots")},
+		Body:     fnBody,
+	}
+	if g.domAcquireMode == DOMAcquireHydrate {
+		fn.Params = append(fn.Params, id("$$hydrate"))
 	}
 	prog.Body = append(prog.Body, &JsExportDecl{
 		baseStmt:    baseStmt{genNode()},
@@ -1781,6 +1789,7 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	usesProxy := false
 	usesIsProxy := false
 	usesDefer := false
+	usesHydrationElement := g.domAcquireMode == DOMAcquireHydrate
 	if g.analysis != nil && (len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0) {
 		usesIsProxy = true
 		usesDefer = true
@@ -1825,6 +1834,9 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	}
 	if usesDefer {
 		specs = append(specs, JsImportSpec{Imported: "$$defer"})
+	}
+	if usesHydrationElement {
+		specs = append(specs, JsImportSpec{Imported: "$$acquireHydrationElement"})
 	}
 	if len(specs) > 0 {
 		imp := &JsImportDecl{
@@ -2083,6 +2095,9 @@ func (g *ASTGen) hasStyle() bool {
 // element whose textContent is the scope-transformed CSS, appended
 // to document.head.  Empty when the component has no <style>.
 func (g *ASTGen) buildStyleInjection() []JsStmt {
+	if g.domAcquireMode == DOMAcquireHydrate {
+		return nil
+	}
 	if !g.hasStyle() {
 		return nil
 	}
@@ -2727,7 +2742,9 @@ func (g *ASTGen) buildChainRootDOM(nodes []Node) {
 	// The wrapper <div> is named $$root literally — legacy does not
 	// call id() for it, so the chain numbering must not either.
 	g.body = append(g.body, g.createElementStmt("$$root", "div"))
-	g.body = append(g.body, g.setAttrStmt("$$root", g.scopeID, ""))
+	if g.domAcquireMode != DOMAcquireHydrate {
+		g.body = append(g.body, g.setAttrStmt("$$root", g.scopeID, ""))
+	}
 	g.body = append(g.body,
 		genAssignStmt(genMember(genMember(id("$$root"), "style"), "display"), strLit("contents")))
 
@@ -3090,8 +3107,13 @@ func (g *ASTGen) buildHolesDOM(el *ElementNode) {
 
 	// 1. Root element + attributes.
 	g.body = append(g.body, g.createElementStmt("$$root", el.Tag))
-	g.body = append(g.body, g.setAttrStmt("$$root", g.scopeID, ""))
+	if g.domAcquireMode != DOMAcquireHydrate {
+		g.body = append(g.body, g.setAttrStmt("$$root", g.scopeID, ""))
+	}
 	g.applyRootAttrs(el)
+	if g.domAcquireMode == DOMAcquireHydrate {
+		return
+	}
 
 	// 2-4. Children.
 	//
@@ -4206,6 +4228,9 @@ func (g *ASTGen) emitStaticRootElement(el *ElementNode) {
 	// Scope-ID attribute, then the element's own attributes.
 	g.body = append(g.body, g.setAttrStmt("$$root", g.scopeID, ""))
 	g.applyRootAttrs(el)
+	if g.domAcquireMode == DOMAcquireHydrate {
+		return
+	}
 	// Static child subtree → innerHTML.
 	if len(el.Children) > 0 {
 		html := emitStaticHTML(el.Children, g.scopeID)
@@ -4849,8 +4874,10 @@ func (g *ASTGen) applyElementAttrs(varName string, el *ElementNode) {
 		case attr.IsStyleDir:
 			g.emitStyleDir(varName, attr)
 		default:
-			g.body = append(g.body,
-				g.setAttrStmt(varName, attr.Name, attr.Value))
+			if g.domAcquireMode != DOMAcquireHydrate {
+				g.body = append(g.body,
+					g.setAttrStmt(varName, attr.Name, attr.Value))
+			}
 		}
 	}
 }
@@ -5075,9 +5102,9 @@ func (g *ASTGen) createElementStmt(varName, tag string) JsStmt {
 }
 
 func (g *ASTGen) acquireElementExpr(varName, tag string) JsExpr {
-	g.domAcquirePlan.addElement(varName, tag)
+	hydrationID := g.domAcquirePlan.addElement(varName, tag)
 	if g.domAcquireMode == DOMAcquireHydrate {
-		return genCall(id("$$acquireElement"), id("$$walker"), strLit(tag))
+		return genCall(id("$$acquireHydrationElement"), id("$$walker"), numLit(hydrationID), strLit(tag))
 	}
 	return genCall(genMember(id("document"), "createElement"), strLit(tag))
 }

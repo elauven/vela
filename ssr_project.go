@@ -75,6 +75,10 @@ func (layout SSRProjectLayout) hydratePath(src, srcRoot string) string {
 	return mirrorPath(src, srcRoot, layout.ClientDir, ".hydrate.js")
 }
 
+func (layout SSRProjectLayout) hydrationClientPath(src, srcRoot string) string {
+	return mirrorPath(src, srcRoot, layout.ClientDir, ".hydrate_client.js")
+}
+
 // buildSSRProject adds server and styles products around the established CSR
 // project build. The caller owns user-facing progress and exit handling.
 func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOptions, parallel bool) int {
@@ -168,7 +172,23 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	if err != nil {
 		return err
 	}
-	hydrate, err := BuildSSRHydrateEntry(plan)
+	var hydrate *JsProgram
+	if CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		hydrationClient, err := BuildSSRHydrationClientProgram(componentName(src), sfc, analysis, scopeID)
+		if err != nil {
+			return err
+		}
+		hydrationClientPath := layout.hydrationClientPath(src, srcRoot)
+		if err := os.MkdirAll(filepath.Dir(hydrationClientPath), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(hydrationClientPath, []byte(PrintJS(hydrationClient, PrintPretty)), 0o644); err != nil {
+			return err
+		}
+		hydrate, err = BuildSSRHydrateEntryWithClient(plan, "./"+filepath.Base(hydrationClientPath))
+	} else {
+		hydrate, err = BuildSSRHydrateEntry(plan)
+	}
 	if err != nil {
 		return err
 	}

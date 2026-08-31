@@ -391,11 +391,15 @@ Project SSR output now writes a sibling lowercase snake-case module such as
 adoption preflight: it validates the marker graph and state payload, then
 returns `{ root, props, componentProps, state, deep, ranges, elements }`.
 `componentProps` combines Vela-named props with compiler-owned
-`$$velaState`; it is the exact props shape expected by the SSR client module
-once marker-aware component construction is enabled. It intentionally does
-**not** call the CSR component factory, attach listeners, or write DOM yet.
-This makes the entry usable for integration validation without falsely
-claiming that reactive hydration has already completed.
+`$$velaState`; it is the exact props shape expected by the SSR client module.
+For the first executable subset — one root element, static descendants, and
+no DOM bindings — project SSR also writes a sibling
+`client/user_page.hydrate_client.js` module. The entry invokes that module
+with the checked marker walker: it acquires the existing root element, skips
+CSR mount and all initial DOM writes, restores serializable state, and attaches
+root event listeners. Components outside this deliberately narrow subset keep
+the validation-only entry; no file claims reactive hydration before its
+marker-aware lowering exists.
 
 The Go payload uses exported Go field names (`Title`) because it is marshalled
 from the generated props struct. The hydrate entry maps those fields back to
