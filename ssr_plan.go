@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -23,7 +26,19 @@ type SSRRenderPlan struct {
 	Nodes         []SSRPlanNode
 	Events        []SSRStaticEvent
 	Dynamics      []SSRDynamicSite
+	Hydration     SSRHydrationState
 	ScopedCSS     string
+}
+
+// SSRHydrationState is the inert, serializable portion of component state.
+// Props are serialized by the generated renderer because their values arrive
+// at render time; JSON holds only compiler-known $state initial values. When
+// an initializer is not a JSON literal tree, it is retained in Omitted so a
+// future hydrator can reject incomplete restoration explicitly.
+type SSRHydrationState struct {
+	JSON       string
+	Incomplete bool
+	Omitted    []string
 }
 
 // SSRPlanNode is a typed render-plan node. It deliberately mirrors the
@@ -249,12 +264,139 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		ReactiveNames: analysis.reactiveNames(),
 		ScopedCSS:     ExtractScopedCSS(sfc, scopeID),
 	}}
+	b.plan.Hydration = buildSSRHydrationState(analysis)
 	b.plan.Nodes = b.nodes(sfc.TemplateAST.Nodes)
 	for name := range b.slotNames {
 		b.plan.SlotNames = append(b.plan.SlotNames, name)
 	}
 	sort.Strings(b.plan.SlotNames)
 	return b.plan, nil
+}
+
+func buildSSRHydrationState(analysis *Analysis) SSRHydrationState {
+	values := map[string]any{}
+	state := SSRHydrationState{}
+	if analysis != nil {
+		for _, variable := range analysis.StateVars {
+			if variable == nil {
+				continue
+			}
+			value, ok := ssrJSONValue(variable.InitialAST)
+			if !ok {
+				state.Incomplete = true
+				state.Omitted = append(state.Omitted, variable.Name)
+				continue
+			}
+			values[variable.Name] = value
+		}
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		// ssrJSONValue produces only JSON-compatible Go values. Preserve a
+		// valid empty payload if that invariant is ever broken rather than
+		// allowing renderer construction to emit malformed JSON.
+		state.Incomplete = true
+		state.JSON = "{}"
+		return state
+	}
+	state.JSON = string(encoded)
+	return state
+}
+
+// ssrJSONValue converts only cached JavaScript literal trees. It intentionally
+// does not evaluate identifiers, calls, members, or expressions: evaluating
+// user JavaScript inside the compiler would make server and client state
+// diverge before hydration starts.
+func ssrJSONValue(expr JsExpr) (any, bool) {
+	switch node := expr.(type) {
+	case *JsLiteral:
+		switch node.Kind {
+		case "string":
+			value, err := decodeSSRJSONString(node)
+			return value, err == nil
+		case "number":
+			decoder := json.NewDecoder(bytes.NewBufferString(node.Raw))
+			decoder.UseNumber()
+			var value any
+			if err := decoder.Decode(&value); err != nil {
+				return nil, false
+			}
+			if _, ok := value.(json.Number); !ok {
+				return nil, false
+			}
+			return value, true
+		case "boolean":
+			value, err := strconv.ParseBool(node.Raw)
+			return value, err == nil
+		case "null":
+			return nil, true
+		}
+	case *JsArrayExpr:
+		values := make([]any, len(node.Elems))
+		for index, element := range node.Elems {
+			if element == nil {
+				continue // JavaScript array holes stringify to JSON null.
+			}
+			value, ok := ssrJSONValue(element)
+			if !ok {
+				return nil, false
+			}
+			values[index] = value
+		}
+		return values, true
+	case *JsObjectExpr:
+		values := map[string]any{}
+		for _, property := range node.Props {
+			if property == nil || property.Computed || property.Spread || property.Method || property.Kind != "init" {
+				return nil, false
+			}
+			key, ok := ssrJSONPropertyName(property.Key)
+			if !ok {
+				return nil, false
+			}
+			value, ok := ssrJSONValue(property.Value)
+			if !ok {
+				return nil, false
+			}
+			values[key] = value
+		}
+		return values, true
+	}
+	return nil, false
+}
+
+func ssrJSONPropertyName(key JsExpr) (string, bool) {
+	switch value := key.(type) {
+	case *JsIdent:
+		return value.Name, true
+	case *JsLiteral:
+		if value.Kind == "string" {
+			decoded, err := decodeSSRJSONString(value)
+			return decoded, err == nil
+		}
+		if value.Kind == "number" {
+			return value.Raw, true
+		}
+	}
+	return "", false
+}
+
+func decodeSSRJSONString(literal *JsLiteral) (string, error) {
+	if literal == nil {
+		return "", fmt.Errorf("missing string literal")
+	}
+	if literal.Decoded {
+		return literal.Value, nil
+	}
+	raw := literal.Raw
+	if len(raw) >= 2 && raw[0] == '\'' && raw[len(raw)-1] == '\'' {
+		// Go's strconv understands the overlapping escape repertoire once a
+		// JavaScript single-quoted string is converted to double quotes. The
+		// only escape that is invalid in a Go double-quoted literal is \' .
+		inner := strings.ReplaceAll(raw[1:len(raw)-1], `\'`, `'`)
+		raw = `"` + inner + `"`
+	}
+	return strconv.Unquote(raw)
 }
 
 func (b *ssrPlanBuilder) nextEventKey() string {

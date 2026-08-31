@@ -34,14 +34,68 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	if err != nil {
 		return nil, err
 	}
+	payload, err := buildSSRHydrationPayload(plan)
+	if err != nil {
+		return nil, err
+	}
+	body = append(body, payload...)
 	body = append(body, &goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}})
 	render, err := ssrRenderFunc(file, plan.ComponentName)
 	if err != nil {
 		return nil, err
 	}
 	render.Body.List = body
+	appendSSRGoImports(file, map[string]string{"encoding/json": "json"})
 	appendSSRGoImports(file, emitter.imports)
 	return file, nil
+}
+
+func buildSSRHydrationPayload(plan *SSRRenderPlan) ([]goast.Stmt, error) {
+	if plan == nil {
+		return nil, fmt.Errorf("ssr renderer: missing render plan for hydration payload")
+	}
+	componentID := strings.TrimSpace(plan.ScopeID)
+	if componentID == "" {
+		return nil, fmt.Errorf("ssr renderer: missing component scope ID for hydration payload")
+	}
+	stateJSON := plan.Hydration.JSON
+	if stateJSON == "" {
+		stateJSON = "{}"
+	}
+	typeFields := []*goast.Field{
+		{Names: []*goast.Ident{goast.NewIdent("Component")}, Type: goast.NewIdent("string"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"component\"`"}},
+		{Names: []*goast.Ident{goast.NewIdent("Props")}, Type: goast.NewIdent(plan.ComponentName + "Props"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"props\"`"}},
+		{Names: []*goast.Ident{goast.NewIdent("State")}, Type: goSelector("json", "RawMessage"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"state\"`"}},
+		{Names: []*goast.Ident{goast.NewIdent("Incomplete")}, Type: goast.NewIdent("bool"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"incomplete\"`"}},
+		{Names: []*goast.Ident{goast.NewIdent("Omitted")}, Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"omitted,omitempty\"`"}},
+	}
+	payloadValue := &goast.CompositeLit{
+		Type: &goast.StructType{Fields: &goast.FieldList{List: typeFields}},
+		Elts: []goast.Expr{
+			&goast.KeyValueExpr{Key: goast.NewIdent("Component"), Value: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(componentID)}},
+			&goast.KeyValueExpr{Key: goast.NewIdent("Props"), Value: goast.NewIdent("props")},
+			&goast.KeyValueExpr{Key: goast.NewIdent("State"), Value: &goast.CallExpr{Fun: goSelector("json", "RawMessage"), Args: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(stateJSON)}}}},
+			&goast.KeyValueExpr{Key: goast.NewIdent("Incomplete"), Value: goast.NewIdent(strconv.FormatBool(plan.Hydration.Incomplete))},
+		},
+	}
+	if len(plan.Hydration.Omitted) > 0 {
+		omitted := make([]goast.Expr, 0, len(plan.Hydration.Omitted))
+		for _, name := range plan.Hydration.Omitted {
+			omitted = append(omitted, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(name)})
+		}
+		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("Omitted"), Value: &goast.CompositeLit{Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Elts: omitted}})
+	}
+	marshal := &goast.CallExpr{Fun: goSelector("json", "Marshal"), Args: []goast.Expr{payloadValue}}
+	encode := &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("ssrPayload"), goast.NewIdent("err")}, Tok: token.DEFINE, Rhs: []goast.Expr{marshal}}
+	encoded := &goast.IfStmt{Cond: &goast.BinaryExpr{X: goast.NewIdent("err"), Op: token.NEQ, Y: goast.NewIdent("nil")}, Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("err")}}}}}
+	open := `<script type="application/json" id="vela-state-` + html.EscapeString(componentID) + `">`
+	return []goast.Stmt{
+		encode,
+		encoded,
+		goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}),
+		goWriteSSRValue(&goast.CallExpr{Fun: goast.NewIdent("string"), Args: []goast.Expr{goast.NewIdent("ssrPayload")}}),
+		goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("</script>")}),
+	}, nil
 }
 
 type ssrGoEmitter struct {

@@ -334,9 +334,9 @@ is **~1/3 the complexity of the JS backend**, not the same again.
 
 ### Current compiler contract before hydration
 
-Until Phase 3 adds state serialization and DOM adoption, the compiler applies
-the following deliberately strict rules. They prevent the server from
-advertising interactivity or values that it cannot reproduce correctly:
+Until DOM adoption is complete, the compiler applies the following deliberately
+strict rules. They prevent the server from advertising interactivity or values
+that it cannot reproduce correctly:
 
 - `<script>` is not executed by the generated Go renderer. `$effect` and
   lifecycle callbacks never run on the server.
@@ -352,6 +352,25 @@ advertising interactivity or values that it cannot reproduce correctly:
 - Unsupported JavaScript expressions fail at their template position. The
   future placeholder/Go escape-hatch design is not emitted yet: silently
   omitting server content would create an unbounded hydration mismatch.
+
+The in-progress Phase-3 renderer now appends an inert JSON payload after every
+component render range:
+
+```html
+<script type="application/json" id="vela-state-vela-abc123">
+  {"component":"vela-abc123","props":{...},"state":{...},"incomplete":false}
+</script>
+```
+
+`props` are marshalled by generated Go at render time. `state` contains only
+`$state` / `$state.deep` initializers that are cached JavaScript literal trees:
+null, booleans, JSON numbers and strings, arrays, and plain objects without
+computed keys, spreads, methods, or shorthand references. The compiler never
+evaluates user JavaScript to manufacture this payload. If an initializer is a
+call, identifier, member access, or another non-literal form, it is omitted
+and the payload carries `"incomplete":true` plus its source name in
+`"omitted"`. A future hydrator must refuse incomplete restoration with a
+diagnostic; it must not silently treat it as a valid client state.
 
 ---
 

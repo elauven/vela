@@ -153,3 +153,24 @@ const ignored = "/** @type {boolean} */ export let fake = null;";
 		}
 	}
 }
+
+func TestBuildSSRRenderPlanBuildsSafeHydrationStatePayload(t *testing.T) {
+	sfc, err := parseSFC(`<script>
+let count = $state(1);
+let config = $state.deep({ label: 'ready', enabled: true });
+let now = $state(Date.now());
+</script><template><p>ready</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := plan.Hydration.JSON, `{"config":{"enabled":true,"label":"ready"},"count":1}`; got != want {
+		t.Fatalf("hydration state JSON=%q want %q", got, want)
+	}
+	if !plan.Hydration.Incomplete || len(plan.Hydration.Omitted) != 1 || plan.Hydration.Omitted[0] != "now" {
+		t.Fatalf("hydration state completeness=%#v", plan.Hydration)
+	}
+}
