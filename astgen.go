@@ -4555,6 +4555,9 @@ func (g *ASTGen) buildHydrationRootChildren(children []Node, parentVar string) {
 			g.buildHydrationRootEach(current)
 		case *ComponentNode:
 			g.buildComponentNode(current, parentVar)
+		case *SlotNode:
+			// Static fallback or parent-projected slot content already exists in SSR DOM.
+			// It is intentionally owned by neither child nor parent hydration walker.
 		}
 	}
 }

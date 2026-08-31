@@ -44,6 +44,10 @@ func ssrHydrationRootChildren(nodes []Node) bool {
 			if !ssrHydrationComponent(current) {
 				return false
 			}
+		case *SlotNode:
+			if !ssrHydrationSlot(current) {
+				return false
+			}
 		default:
 			return false
 		}
@@ -82,6 +86,10 @@ func ssrHydrationElement(element *ElementNode) bool {
 			}
 		case *ComponentNode:
 			if !ssrHydrationComponent(current) {
+				return false
+			}
+		case *SlotNode:
+			if !ssrHydrationSlot(current) {
 				return false
 			}
 		default:
@@ -168,11 +176,16 @@ func ssrHydrationEachDynamicTextRow(block *EachBlockNode) (*ElementNode, bool) {
 }
 
 // ssrHydrationComponent accepts a direct local child with ordinary props, `@on:*`
-// component events, and bindable `bind:value`. Slots and other component
-// bindings still need explicit cross-component plans.
+// component events, bindable `bind:value`, and static slot content/fallbacks.
+// Dynamic slots and other component bindings still need explicit cross-component plans.
 func ssrHydrationComponent(component *ComponentNode) bool {
-	if component == nil || len(component.Slots) != 0 {
+	if component == nil {
 		return false
+	}
+	for _, slot := range component.Slots {
+		if !ssrHydrationStaticChildren(slot) {
+			return false
+		}
 	}
 	for _, attr := range component.Attrs {
 		if attr == nil || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
@@ -180,6 +193,12 @@ func ssrHydrationComponent(component *ComponentNode) bool {
 		}
 	}
 	return true
+}
+
+// ssrHydrationSlot is static because parent-owned slot DOM is already present
+// inside the child root. The child hydrator deliberately leaves it untouched.
+func ssrHydrationSlot(slot *SlotNode) bool {
+	return slot != nil && ssrHydrationStaticChildren(slot.Fallback)
 }
 
 func ssrHydrationStaticChildren(nodes []Node) bool {
