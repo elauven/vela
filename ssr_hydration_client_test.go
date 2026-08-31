@@ -1131,3 +1131,50 @@ server.listen(0, "127.0.0.1", async () => {
 		t.Fatalf("child hydration browser output=%q", got)
 	}
 }
+
+func TestSSRHydrationClientPassesNestedElementToLocalChild(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela";</script><template><main><section><Child /></section></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	if !strings.Contains(source, `Child($$n1).component`) {
+		t.Fatalf("nested child hydration must receive adopted parent element:\n%s", source)
+	}
+}
+
+func TestSSRProjectHydratesNestedLocalComponentGraph(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	grandchild := filepath.Join(srcRoot, "Grandchild.vela")
+	if err := os.WriteFile(grandchild, []byte(`<script>export let title = "";</script><template><span class="grandchild">{title}</span></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(srcRoot, "Child.vela")
+	if err := os.WriteFile(child, []byte(`<script>import { Grandchild } from "./Grandchild.vela"; export let title = "";</script><template><section><Grandchild :title={title} /></section></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(srcRoot, "Parent.vela")
+	if err := os.WriteFile(parent, []byte(`<script>import { Child } from "./Child.vela"; export let title = "server";</script><template><main><Child :title={title} /></main></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	if errors := buildSSRProject([]string{grandchild, child, parent}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	layout := NewSSRProjectLayout(outRoot)
+	childClient, err := os.ReadFile(layout.hydrationClientPath(child, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(childClient), `Grandchild.hydrate.js`) {
+		t.Fatalf("nested child hydration client misses grandchild entry:\n%s", childClient)
+	}
+}
