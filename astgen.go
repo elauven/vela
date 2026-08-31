@@ -4566,6 +4566,10 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 	if chain == nil || len(chain.Branches) == 0 {
 		return
 	}
+	if chain.HasKey() {
+		g.buildHydrationRootKeyBlock(chain)
+		return
+	}
 	markerID := g.hydrationRangeNext
 	conditions := 0
 	for _, branch := range chain.Branches {
@@ -4633,6 +4637,44 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		for _, dependency := range templateExprDeps(branch.Expr, g.reactiveNames()) {
 			g.addStructuralUpdate(dependency, genInvoke(fn))
 		}
+	}
+	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+}
+
+// buildHydrationRootKeyBlock adopts the rendered static {#key} child range.
+// Its key is retained as the cached template AST expression, and the range is
+// rebuilt only after that expression changes. Hydration itself therefore never
+// recreates the server subtree.
+func (g *ASTGen) buildHydrationRootKeyBlock(chain *IfChainNode) {
+	markerID := g.hydrationRangeNext
+	g.hydrationRangeNext++
+	name := "$$hkey" + itoa(markerID)
+	rangeVar := name + "_range"
+	nodesVar := name + "_nodes"
+	keyVar := name + "_prev"
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+		genLet(keyVar, g.templateExpr(chain.KeyAST)),
+	)
+	branch := chain.Branches[0]
+	updateBody := []JsStmt{
+		genConst("$$key", g.templateExpr(chain.KeyAST)),
+		genIf(genBinary("===", id("$$key"), id(keyVar)), genReturn(nil)),
+	}
+	updateBody = append(updateBody, genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))))
+	updateBody = append(updateBody,
+		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
+		genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(branch.Children, g.scopeID)))),
+		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
+		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
+		genAssignStmt(id(keyVar), id("$$key")),
+	)
+	fn := name + "_update"
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	for _, dependency := range templateExprDeps(chain.KeyAST, g.reactiveNames()) {
+		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 }

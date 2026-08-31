@@ -393,7 +393,7 @@ returns `{ root, props, componentProps, state, deep, ranges, elements }`.
 `componentProps` combines Vela-named props with compiler-owned
 `$$velaState`; it is the exact props shape expected by the SSR client module.
 For the first executable subset — one root element, static nested descendants,
-direct text interpolation, a direct static-branch `#if`, an unkeyed
+direct text interpolation, a direct static-branch `#if` / `#key`, an unkeyed
 static-row `#each`, and no DOM bindings — project SSR also writes a sibling
 `client/user_page.hydrate_client.js` module. The entry invokes that module
 with the checked marker walker: it acquires the existing root element, skips
@@ -408,6 +408,12 @@ reactive condition change removes and materializes only that marker range;
 the root element and unrelated siblings are retained. The entry deliberately
 does not eagerly acquire elements inside structural ranges, because inactive
 branches do not exist in the server response.
+
+A supported direct `{#key identity}` follows the same no-write adoption rule.
+The cached key expression is retained on the client; only when its value
+changes is the static range removed and rematerialized. It intentionally has
+the normal `#key` lifecycle semantics, unlike keyed `#each`, whose matching
+rows retain identity.
 
 The initial unkeyed `#each` slice follows the same rule. It adopts all existing
 row nodes in its outer `v` range and does no initial row rendering. When its
