@@ -4642,14 +4642,25 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
 	)
 
+	itemsVar := name + "_items"
+	hasRowsVar := name + "_hasRows"
 	updateBody := []JsStmt{
 		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
 		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
+		genConst(itemsVar, g.templateExpr(block.IterExpr)),
+		genLet(hasRowsVar, boolLit(false)),
 	}
 	html := emitStaticHTML(block.Children, g.scopeID)
-	updateBody = append(updateBody, genForOf("$$item", g.templateExpr(block.IterExpr),
+	rowBody := genBlock(
+		genAssignStmt(id(hasRowsVar), boolLit(true)),
 		genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(html))),
-	))
+	)
+	updateBody = append(updateBody, genForOf("$$item", id(itemsVar), rowBody))
+	if len(block.ElseChildren) > 0 {
+		updateBody = append(updateBody, genIf(genUnary("!", id(hasRowsVar)),
+			genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(block.ElseChildren, g.scopeID)))),
+		))
+	}
 	updateBody = append(updateBody,
 		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
 		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),

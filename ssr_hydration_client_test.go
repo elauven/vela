@@ -54,6 +54,7 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"direct static if", `<template><main>{#if visible}<span>On</span>{:else}<span>Off</span>{/if}</main></template>`, true},
 		{"if with dynamic branch", `<template><main>{#if visible}<span>{title}</span>{/if}</main></template>`, false},
 		{"direct static each", `<template><main>{#each items as item}<span>Row</span>{/each}</main></template>`, true},
+		{"static each else", `<template><main>{#each items as item}<span>Row</span>{:else}<span>Empty</span>{/each}</main></template>`, true},
 		{"keyed each", `<template><main>{#each items as item (item.id)}<span>Row</span>{/each}</main></template>`, false},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, false},
@@ -84,7 +85,8 @@ func TestSSRHydrationClientAdoptsStaticEachRangeWithoutInitialRender(t *testing.
 		"$$acquireHydrationRange($$walker, 0)",
 		"$$adoptHydrationRange($$heach0_range)",
 		"function $$heach0_update()",
-		"for (const $$item of items)",
+		"const $$heach0_items = items;",
+		"for (const $$item of $$heach0_items)",
 		"$$heach0_range.end.before($$frag)",
 	} {
 		if !strings.Contains(source, want) {
@@ -130,7 +132,7 @@ func TestSSRHydrationClientAdoptsStaticIfRangeWithoutInitialRender(t *testing.T)
 
 func TestBrowserSSRHydrationStaticIfAdoptsThenReplacesRange(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let visible=false; export let items=[];</script><template><main>{#if visible}<span class="state">On</span>{:else}<span class="state">Off</span>{/if}{#each items as item}<span class="row">Row</span>{/each}</main></template>`)
+	sfc, err := parseSFC(`<script>export let visible=false; export let items=[];</script><template><main>{#if visible}<span class="state">On</span>{:else}<span class="state">Off</span>{/if}{#each items as item}<span class="row">Row</span>{:else}<span class="empty">Empty</span>{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,8 +155,8 @@ func TestBrowserSSRHydrationStaticIfAdoptsThenReplacesRange(t *testing.T) {
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
-<!--e:vela-page:0--><main vela-page=""><!--v:vela-page:0--><!--e:vela-page:2--><span vela-page="" class="state">Off</span><!--/e:vela-page:2--><!--/v:vela-page:0--><!--v:vela-page:1--><!--e:vela-page:3--><span vela-page="" class="row">Row</span><!--/e:vela-page:3--><!--e:vela-page:3--><span vela-page="" class="row">Row</span><!--/e:vela-page:3--><!--/v:vela-page:1--></main><!--/e:vela-page:0-->
-<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Visible":false,"Items":[1,2]},"state":{},"incomplete":false}</script>
+<!--e:vela-page:0--><main vela-page=""><!--v:vela-page:0--><!--e:vela-page:2--><span vela-page="" class="state">Off</span><!--/e:vela-page:2--><!--/v:vela-page:0--><!--v:vela-page:1--><!--e:vela-page:4--><span vela-page="" class="empty">Empty</span><!--/e:vela-page:4--><!--/v:vela-page:1--></main><!--/e:vela-page:0-->
+<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Visible":false,"Items":[]},"state":{},"incomplete":false}</script>
 <script type="module">
   import hydratePage from './Page.hydrate.js';
   window.__hydrationObserver = new MutationObserver(() => {});
@@ -192,8 +194,8 @@ server.listen(0, '127.0.0.1', async () => {
     const initial = await page.evaluate(() => window.__initialMutations);
     await page.evaluate(() => window.__hydrated.component.set({visible:true, items:[1]}));
     await page.waitForFunction(() => document.querySelector('.state')?.textContent === 'On' && document.querySelectorAll('.row').length === 1);
-    const result = await page.evaluate(() => ({ initial: window.__initialMutations, text: document.querySelector('.state')?.textContent, stateCount: document.querySelectorAll('main > .state').length, rowCount: document.querySelectorAll('main > .row').length }));
-    if (result.initial !== 0 || result.text !== 'On' || result.stateCount !== 1 || result.rowCount !== 1) throw new Error(JSON.stringify(result));
+    const result = await page.evaluate(() => ({ initial: window.__initialMutations, text: document.querySelector('.state')?.textContent, stateCount: document.querySelectorAll('main > .state').length, rowCount: document.querySelectorAll('main > .row').length, emptyCount: document.querySelectorAll('main > .empty').length }));
+    if (result.initial !== 0 || result.text !== 'On' || result.stateCount !== 1 || result.rowCount !== 1 || result.emptyCount !== 0) throw new Error(JSON.stringify(result));
     process.stdout.write('OK');
   } catch (error) {
     console.error(error && error.stack || error);

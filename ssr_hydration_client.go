@@ -68,10 +68,10 @@ func ssrHydrationIfChain(chain *IfChainNode) bool {
 }
 
 func ssrHydrationEach(block *EachBlockNode) bool {
-	if block == nil || block.HasKey() || len(block.ElseChildren) != 0 {
+	if block == nil || block.HasKey() {
 		return false
 	}
-	return ssrHydrationStaticChildren(block.Children)
+	return ssrHydrationStaticChildren(block.Children) && ssrHydrationStaticChildren(block.ElseChildren)
 }
 
 func ssrHydrationStaticChildren(nodes []Node) bool {

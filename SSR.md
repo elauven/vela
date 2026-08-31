@@ -411,10 +411,12 @@ branches do not exist in the server response.
 
 The initial `#each` slice follows the same rule. It adopts all existing row
 nodes in its outer `v` range and does no keyed diff or initial row rendering.
-When its collection changes, only that range is replaced. Row-local dynamic
-expressions, `{:else}`, and keyed preservation are deliberately deferred;
-repeated row `e` marker IDs are ignored by the entry because they are template
-positions, not global element identities.
+When its collection changes, only that range is replaced. A static `{:else}`
+fallback follows the same rule: it is adopted when the initial collection is
+empty and materialized only after a later empty update. Row-local dynamic
+expressions and keyed preservation are deliberately deferred; repeated row
+`e` marker IDs are ignored by the entry because they are template positions,
+not global element identities.
 
 The Go payload uses exported Go field names (`Title`) because it is marshalled
 from the generated props struct. The hydrate entry maps those fields back to
