@@ -4561,12 +4561,14 @@ func (g *ASTGen) applyHydrationElementAttrs(variable string, element *ElementNod
 		return
 	}
 	for _, attr := range element.Attrs {
-		if attr == nil || attr.IsTwoWay || attr.IsBindThis {
+		if attr == nil || attr.IsBindThis {
 			continue
 		}
 		switch {
 		case attr.IsEvent:
 			g.emitEventHandler(variable, attr)
+		case attr.IsTwoWay:
+			g.emitHydrationBinding(variable, element.Tag, attr)
 		case attr.IsClassDir:
 			stmt := g.classDirStmtAST(variable, attr)
 			for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
@@ -4583,6 +4585,37 @@ func (g *ASTGen) applyHydrationElementAttrs(variable string, element *ElementNod
 				g.addUpdate(dependency, shareStmt(stmt))
 			}
 		}
+	}
+}
+
+// emitHydrationBinding retains browser-owned form state during adoption. The
+// live property is fed through the normal generated setter once, so text typed
+// between SSR paint and hydration is not erased. The guarded normal binding
+// write then keeps later state-to-DOM updates free of redundant property
+// assignments.
+func (g *ASTGen) emitHydrationBinding(variable, tag string, attr *Attr) {
+	spec, ok := twoWayBindSpec(tag, attr.Name)
+	if !ok {
+		return
+	}
+	state, isIdent := templateExprIdent(attr.Expr)
+	if !isIdent || g.analysis == nil || !g.analysis.isStateName(state) {
+		return
+	}
+	handler := variable + "_bind_" + spec.event + "_h"
+	g.body = append(g.body, genConst(handler, &JsArrowFunc{
+		baseExpr: baseExpr{genNode()},
+		Params:   []JsExpr{id("$e")},
+		Body:     genCall(id("$$set_"+state), genMember(genMember(id("$e"), "target"), spec.readProp)),
+	}))
+	g.emitListenerPair(&g.events, variable, spec.event, handler, nil, "", true)
+	// Adopt the live control value after listener construction. For unchanged
+	// SSR DOM the setter returns immediately; for pre-hydration user input it
+	// schedules the usual reactive cascade without a blind value write.
+	g.initBody = append(g.initBody, genInvoke("$$set_"+state, genMember(id(variable), spec.readProp)))
+	write := g.bindingWriteStmt(variable, attr)
+	for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+		g.addUpdate(dependency, shareStmt(write))
 	}
 }
 

@@ -14,10 +14,8 @@ func CanBuildSSRHydrationClient(nodes []Node) bool {
 	if !ok || root == nil {
 		return false
 	}
-	for _, attr := range root.Attrs {
-		if attr.IsTwoWay || attr.IsBindThis {
-			return false
-		}
+	if !ssrHydrationElementAttrs(root) {
+		return false
 	}
 	return ssrHydrationRootChildren(root.Children)
 }
@@ -56,10 +54,8 @@ func ssrHydrationElement(element *ElementNode) bool {
 	if _, rawText := rawTextProp(element.Tag); rawText {
 		return ssrHydrationStaticChildren(element.Children)
 	}
-	for _, attr := range element.Attrs {
-		if attr.IsTwoWay || attr.IsBindThis {
-			return false
-		}
+	if !ssrHydrationElementAttrs(element) {
+		return false
 	}
 	for _, child := range element.Children {
 		switch current := child.(type) {
@@ -79,6 +75,23 @@ func ssrHydrationElement(element *ElementNode) bool {
 			}
 		default:
 			return false
+		}
+	}
+	return true
+}
+
+func ssrHydrationElementAttrs(element *ElementNode) bool {
+	if element == nil {
+		return false
+	}
+	for _, attr := range element.Attrs {
+		if attr.IsBindThis {
+			return false
+		}
+		if attr.IsTwoWay {
+			if _, ok := twoWayBindSpec(element.Tag, attr.Name); !ok {
+				return false
+			}
 		}
 	}
 	return true
