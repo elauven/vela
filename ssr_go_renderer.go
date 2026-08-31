@@ -319,6 +319,8 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 	childSelectValue := e.selectValue
 	var optionValue SSRPlanAttr
 	hasOptionValue := false
+	hasSelectValueBinding := false
+	selectMultiple := false
 	classStatic, classDirectives, styleStatic, styleDirectives := ssrElementDirectives(node.Attrs)
 	if len(classDirectives) > 0 {
 		open += ` class="` + html.EscapeString(classStatic)
@@ -364,6 +366,9 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 		}
 		switch attr.Role {
 		case SSRAttrStatic:
+			if node.Tag == "select" && attr.Name == "multiple" {
+				selectMultiple = true
+			}
 			if e.selectValue != nil && node.Tag == "option" && attr.Name == "selected" {
 				// bind:value owns the initial selectedness. Leaving a static
 				// selected attribute here would make the server DOM disagree
@@ -395,6 +400,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			}
 			if attr.Name == "value" && node.Tag == "select" {
 				childSelectValue = attr.Expr
+				hasSelectValueBinding = true
 				continue
 			}
 			if attr.Name == "value" && node.Tag == "textarea" {
@@ -450,6 +456,9 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 		default:
 			return nil, ssrExprUnsupported(attr.Span.Start, "attribute %q with role %d is not lowered yet", attr.Name, attr.Role)
 		}
+	}
+	if hasSelectValueBinding && selectMultiple {
+		return nil, ssrExprUnsupported(node.Span.Start, "select multiple bind:value has no safe SSR representation yet")
 	}
 	if e.selectValue != nil && node.Tag == "option" && !hasOptionValue {
 		return nil, ssrExprUnsupported(node.Span.Start, "an option under select bind:value requires an explicit static value")

@@ -189,6 +189,21 @@ func TestBuildSSRGoFileRejectsSelectBindingOptionWithoutStaticValue(t *testing.T
 	}
 }
 
+func TestBuildSSRGoFileRejectsMultipleSelectValueBinding(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let choice="a";</script><template><select multiple bind:value={choice}><option value="a">A</option></select></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = BuildSSRGoFile(plan, "components")
+	if err == nil || !strings.Contains(err.Error(), "select multiple bind:value") {
+		t.Fatalf("multiple select binding error=%v", err)
+	}
+}
+
 func TestBuildSSRGoFileRendersCheckedBindingForHydration(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let done=false;</script><template><input type="checkbox" bind:checked={done} /></template>`)
 	if err != nil {
