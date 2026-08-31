@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$reconcileHydrationKeyedRows, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -222,6 +222,16 @@ try { $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a'
 catch (error) { mismatch = error; }
 assert(mismatch && mismatch.message.includes('duplicate keyed row a'),
   'keyed adoption must diagnose duplicate initial keys');
+const order = [];
+const keyedRange = { end: { before(row) { order.push(row.id); } } };
+const retained = { nodeType: 1, id: 'b', remove() { throw new Error('retained row removed'); } };
+const removed = { nodeType: 1, id: 'a', removed: false, remove() { this.removed = true; } };
+const reconciled = $$reconcileHydrationKeyedRows(keyedRange, new Map([['a', removed], ['b', retained]]), [{ id: 'b' }, { id: 'c' }], item => item.id,
+  item => ({ nodeType: 1, id: item.id, remove() {} }),
+  (row, item) => { row.updated = item.id; });
+assert(reconciled.get('b') === retained && retained.updated === 'b', 'keyed reconciliation must retain and update matching row');
+assert(reconciled.get('c').id === 'c' && removed.removed, 'keyed reconciliation must create new and remove orphaned rows');
+assert(order.join(',') === 'b,c', 'keyed reconciliation must place rows in new key order');
 const payloadRoot = markerRoot([], {
   'vela-state-vela-test': { type: 'application/json', textContent: '{"component":"vela-test","props":{"Title":"ok"},"state":{},"incomplete":false}' },
 });

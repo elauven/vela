@@ -636,6 +636,36 @@ export function $$adoptHydrationKeyedRows(range, iterable, keyOf, tag) {
   return blocks;
 }
 
+// $$reconcileHydrationKeyedRows preserves existing row elements by key and
+// places them in iterable order immediately before the structural end marker.
+// Callers provide typed generated create/update callbacks; this runtime never
+// evaluates template source or manufactures HTML from user expressions.
+export function $$reconcileHydrationKeyedRows(range, blocks, iterable, keyOf, create, update) {
+  if (!range?.end || !(blocks instanceof Map) || typeof keyOf !== 'function' || typeof create !== 'function') {
+    throw new Error('Vela hydration mismatch: invalid keyed row reconciliation inputs');
+  }
+  const next = new Map();
+  let index = 0;
+  for (const item of iterable || []) {
+    const key = keyOf(item, index);
+    if (next.has(key)) throw new Error(`Vela keyed update has duplicate key ${String(key)}`);
+    let row = blocks.get(key);
+    if (row) {
+      if (typeof update === 'function') update(row, item, index);
+    } else {
+      row = create(item, index);
+    }
+    if (!row || row.nodeType !== 1) throw new Error(`Vela keyed update cannot materialize key ${String(key)}`);
+    range.end.before(row);
+    next.set(key, row);
+    index++;
+  }
+  for (const [key, row] of blocks) {
+    if (!next.has(key)) row.remove();
+  }
+  return next;
+}
+
 // $$writeHydrationText updates exactly one text range after hydration. The
 // initial server text is left untouched; an empty server value gets a text
 // node only when a later reactive update first becomes non-empty.
