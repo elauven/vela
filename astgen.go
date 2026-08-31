@@ -5086,6 +5086,7 @@ func (g *ASTGen) buildHydrationComponentNode(comp *ComponentNode, parentVar stri
 	for dep := range deps {
 		g.addUpdate(dep, setStmt)
 	}
+	g.buildComponentEvents(comp, inst)
 	g.cleanup = append(g.cleanup, genIf(id(inst), genExprStmt(genCall(genMember(id(inst), "destroy")))))
 }
 
@@ -5259,9 +5260,20 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 		if handlerExpr == nil {
 			handlerExpr = id("undefined")
 		}
+		var invoke JsStmt = genExprStmt(genCall(handlerExpr, id("$e")))
+		if _, isIdent := templateExprIdent(attr.Expr); !isIdent && !templateExprIsHandler(attr.Expr) {
+			invoke = genExprStmt(handlerExpr)
+			if g.analysis != nil {
+				invoke = RewriteStatementAssignmentsAST(invoke, g.analysis.stateSet())
+			}
+			pos := g.sfc.TemplateOffset + attr.Expr.Pos
+			WalkNode(invoke, func(node JsNode) bool {
+				setTemplateOrigin(node, pos)
+				return true
+			})
+		}
 		handlerDecl := genConst(hv, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$e")}, Body: genBlock(
-			genIf(genBinary("instanceof", id("$e"), id("CustomEvent")),
-				genBlock(genExprStmt(genCall(handlerExpr, id("$e"))))),
+			genIf(genBinary("instanceof", id("$e"), id("CustomEvent")), genBlock(invoke)),
 		)})
 		if g.fragCounter >= 0 {
 			g.body = append(g.body, handlerDecl)
@@ -5269,7 +5281,9 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 			g.hoisted = append(g.hoisted, handlerDecl)
 		}
 		attach := &g.initBody
-		if g.fragCounter >= 0 {
+		if g.domAcquireMode == DOMAcquireHydrate {
+			attach = &g.hydrationInitBody
+		} else if g.fragCounter >= 0 {
 			// Row update() replays initBody; subscriptions attach only at mount.
 			attach = &g.events
 		}

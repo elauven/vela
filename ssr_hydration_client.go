@@ -169,13 +169,13 @@ func ssrHydrationEachDynamicTextRow(block *EachBlockNode) (*ElementNode, bool) {
 
 // ssrHydrationComponent accepts a direct local child component with ordinary
 // one-way props. Its own hydrate entry restores server props and state; slots,
-// component events and two-way bindings need explicit cross-component plans.
+// slots and two-way bindings need explicit cross-component plans.
 func ssrHydrationComponent(component *ComponentNode) bool {
 	if component == nil || len(component.Slots) != 0 {
 		return false
 	}
 	for _, attr := range component.Attrs {
-		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+		if attr == nil || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
 			return false
 		}
 	}
