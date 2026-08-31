@@ -26,6 +26,7 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 	for _, want := range []string{
 		"import { $$acquireHydrationElement, $$createHydrationWalker, $$readHydrationPayload } from './runtime.js';",
 		"export function hydratePage($$root)",
+		"export function Page($$root)",
 		"$$createHydrationWalker($$root, 'vela-page')",
 		"$$readHydrationPayload($$root, 'vela-page')",
 		"const $$velaProps = { title: $$payload.props.Title };",

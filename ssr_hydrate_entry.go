@@ -61,7 +61,7 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 	}
 	if clientModule != "" {
 		body = append(body, genConst("$$component", genCall(
-			id(plan.ComponentName),
+			id("$$client"),
 			id("$$root"),
 			id("$$componentProps"),
 			&JsObjectExpr{baseExpr: baseExpr{genNode()}},
@@ -91,7 +91,13 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 	}
 	imports := []JsStmt{}
 	if clientModule != "" {
-		imports = append(imports, &JsImportDecl{baseStmt: baseStmt{genNode()}, DefaultName: plan.ComponentName, Source: clientModule})
+		imports = append(imports, &JsImportDecl{baseStmt: baseStmt{genNode()}, DefaultName: "$$client", Source: clientModule})
+	}
+	componentAlias := &JsFuncDecl{
+		baseStmt: baseStmt{genNode()},
+		Name:     plan.ComponentName,
+		Params:   []JsExpr{id("$$root")},
+		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: []JsStmt{genReturn(genCall(id(functionName), id("$$root")))}},
 	}
 	imports = append(imports,
 		&JsImportDecl{baseStmt: baseStmt{genNode()}, Specifiers: []JsImportSpec{
@@ -100,6 +106,7 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 			{Imported: "$$readHydrationPayload"},
 		}, Source: "./runtime.js"},
 		&JsExportDecl{baseStmt: baseStmt{genNode()}, Declaration: entry},
+		&JsExportDecl{baseStmt: baseStmt{genNode()}, Declaration: componentAlias},
 		&JsExportDecl{baseStmt: baseStmt{genNode()}, Default: true, Declaration: genExprStmt(id(functionName))},
 	)
 	program := &JsProgram{baseNode: genNode(), Body: imports}
