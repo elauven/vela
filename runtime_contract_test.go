@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$acquireHydrationRange, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -189,6 +189,18 @@ try { $$acquireHydrationRange(walker, 9); }
 catch (error) { mismatch = error; }
 assert(mismatch && mismatch.message.includes('missing marker range v9'),
   'walker must diagnose a missing requested range');
+const elementStart = marker('e:vela-test:2');
+const elementEnd = marker('/e:vela-test:2');
+const existingMain = { nodeType: 1, tagName: 'MAIN', nextSibling: elementEnd };
+elementStart.nextSibling = existingMain;
+const elementWalker = $$createHydrationWalker(markerRoot([elementStart, elementEnd]), 'vela-test');
+assert($$acquireHydrationElement(elementWalker, 2, 'main') === existingMain,
+  'element acquisition must return the existing element in its marker range');
+mismatch = undefined;
+try { $$acquireHydrationElement(elementWalker, 2, 'section'); }
+catch (error) { mismatch = error; }
+assert(mismatch && mismatch.message.includes('expected <section> but found <main>'),
+  'element acquisition must diagnose a tag mismatch without replacement');
 const payloadRoot = markerRoot([], {
   'vela-state-vela-test': { type: 'application/json', textContent: '{"component":"vela-test","props":{"Title":"ok"},"state":{},"incomplete":false}' },
 });

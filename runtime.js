@@ -495,37 +495,63 @@ export function $$createHydrationWalker(root, componentId) {
     throw new Error(`Vela hydration mismatch [${label}]: missing DOM root for marker walk`);
   }
   const walker = doc.createTreeWalker(root, 128); // NodeFilter.SHOW_COMMENT
-  const ranges = new Map();
+  const markers = { v: new Map(), e: new Map() };
   const stack = [];
   let node;
   while ((node = walker.nextNode())) {
     const marker = String(node.data || '').trim();
-    const match = /^\/?v:([^:]+):(\d+)$/.exec(marker);
+    const match = /^\/?([ve]):([^:]+):(\d+)$/.exec(marker);
     if (!match) continue;
-    if (match[1] !== componentId) continue;
-    const id = Number(match[2]);
+    const kind = match[1];
+    if (match[2] !== componentId) continue;
+    const id = Number(match[3]);
+    const key = kind + ':' + id;
     const closing = marker[0] === '/';
     if (!closing) {
-      if (ranges.has(id) || stack.some(entry => entry.id === id)) {
-        throw new Error(`Vela hydration mismatch [${label}]: duplicate start marker <!--v:${label}:${id}-->`);
+      if (markers[kind].has(id) || stack.some(entry => entry.key === key)) {
+        throw new Error(`Vela hydration mismatch [${label}]: duplicate start marker <!--${kind}:${label}:${id}-->`);
       }
-      stack.push({ id, start: node });
+      stack.push({ kind, id, key, start: node });
       continue;
     }
     const open = stack.pop();
     if (!open) {
-      throw new Error(`Vela hydration mismatch [${label}]: end marker <!--/v:${label}:${id}--> has no start marker`);
+      throw new Error(`Vela hydration mismatch [${label}]: end marker <!--/${kind}:${label}:${id}--> has no start marker`);
     }
-    if (open.id !== id) {
-      throw new Error(`Vela hydration mismatch [${label}]: expected <!--/v:${label}:${open.id}--> before <!--/v:${label}:${id}-->`);
+    if (open.key !== key) {
+      throw new Error(`Vela hydration mismatch [${label}]: expected <!--/${open.kind}:${label}:${open.id}--> before <!--/${kind}:${label}:${id}-->`);
     }
-    ranges.set(id, { start: open.start, end: node });
+    markers[kind].set(id, { start: open.start, end: node });
   }
   if (stack.length) {
     const open = stack[stack.length - 1];
-    throw new Error(`Vela hydration mismatch [${label}]: start marker <!--v:${label}:${open.id}--> has no end marker`);
+    throw new Error(`Vela hydration mismatch [${label}]: start marker <!--${open.kind}:${label}:${open.id}--> has no end marker`);
   }
-  return { root, componentId: label, ranges };
+  return { root, componentId: label, ranges: markers.v, elements: markers.e };
+}
+
+// $$acquireHydrationElement returns the existing element bracketed by one
+// compiler-owned element range. It validates the tag rather than attempting a
+// repair, so a stale server page cannot be silently adopted as another view.
+export function $$acquireHydrationElement(walker, id, tag) {
+  if (!walker || !(walker.elements instanceof Map)) {
+    throw new Error('Vela hydration mismatch: invalid marker walker');
+  }
+  const range = walker.elements.get(id);
+  if (!range) {
+    throw new Error(`Vela hydration mismatch [${walker.componentId}]: missing element range e${id}`);
+  }
+  let node = range.start.nextSibling;
+  while (node && node !== range.end && node.nodeType !== 1) node = node.nextSibling;
+  if (!node || node === range.end) {
+    throw new Error(`Vela hydration mismatch [${walker.componentId}]: element range e${id} contains no element`);
+  }
+  const actual = String(node.tagName || '').toLowerCase();
+  const expected = String(tag || '').toLowerCase();
+  if (actual !== expected) {
+    throw new Error(`Vela hydration mismatch [${walker.componentId}]: element range e${id} expected <${expected}> but found <${actual || 'unknown'}>`);
+  }
+  return node;
 }
 
 // $$acquireHydrationRange returns an already indexed SSR range. A generated

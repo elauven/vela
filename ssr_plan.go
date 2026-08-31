@@ -71,11 +71,12 @@ type SSRPlanNode interface {
 }
 
 type SSRPlanElement struct {
-	Span     SectionSpan
-	Tag      string
-	Attrs    []SSRPlanAttr
-	Children []SSRPlanNode
-	EventKey string // compiler-owned data-vela-event key, empty without DOM events
+	Span        SectionSpan
+	Tag         string
+	Attrs       []SSRPlanAttr
+	Children    []SSRPlanNode
+	EventKey    string // compiler-owned data-vela-event key, empty without DOM events
+	HydrationID int    // paired element marker ID for non-creating DOM adoption
 }
 
 type SSRPlanComponent struct {
@@ -220,6 +221,7 @@ type ssrPlanBuilder struct {
 	plan        *SSRRenderPlan
 	links       map[string]SSRComponentLink
 	eventNext   int
+	elementNext int
 	dynamicNext int
 	slotNames   map[string]bool
 }
@@ -474,7 +476,9 @@ func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
 
 func (b *ssrPlanBuilder) element(node *ElementNode) *SSRPlanElement {
 	attrs, events := b.attrs(node.Attrs, true)
-	el := &SSRPlanElement{Span: node.Span, Tag: node.Tag, Attrs: attrs, Children: b.nodes(node.Children)}
+	hydrationID := b.elementNext
+	b.elementNext++
+	el := &SSRPlanElement{Span: node.Span, Tag: node.Tag, Attrs: attrs, Children: b.nodes(node.Children), HydrationID: hydrationID}
 	if len(events) > 0 {
 		el.EventKey = b.nextEventKey()
 		for i := range events {
@@ -488,8 +492,13 @@ func (b *ssrPlanBuilder) element(node *ElementNode) *SSRPlanElement {
 func (b *ssrPlanBuilder) component(node *ComponentNode) *SSRPlanComponent {
 	attrs, _ := b.attrs(node.Attrs, false)
 	slots := make(map[string][]SSRPlanNode, len(node.Slots))
-	for name, children := range node.Slots {
-		slots[name] = b.nodes(children)
+	names := make([]string, 0, len(node.Slots))
+	for name := range node.Slots {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		slots[name] = b.nodes(node.Slots[name])
 	}
 	component := &SSRPlanComponent{Span: node.Span, Name: node.Name, Attrs: attrs, Slots: slots}
 	if link, ok := b.links[node.Name]; ok {

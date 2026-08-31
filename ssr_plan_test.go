@@ -105,6 +105,29 @@ func TestBuildSSRRenderPlanDoesNotTreatComponentEventsAsDOMEvents(t *testing.T) 
 	}
 }
 
+func TestBuildSSRRenderPlanAssignsDeterministicElementMarkerIDs(t *testing.T) {
+	sfc, err := parseSFC(`<template><main><p>body</p><Child><svelte:fragment slot="z"><aside>z</aside></svelte:fragment><svelte:fragment slot="a"><nav>a</nav></svelte:fragment></Child></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := plan.Nodes[0].(*SSRPlanElement)
+	paragraph := main.Children[0].(*SSRPlanElement)
+	child := main.Children[1].(*SSRPlanComponent)
+	if main.HydrationID != 0 || paragraph.HydrationID != 1 {
+		t.Fatalf("root marker IDs = main:%d paragraph:%d", main.HydrationID, paragraph.HydrationID)
+	}
+	if got := child.Slots["a"][0].(*SSRPlanElement).HydrationID; got != 2 {
+		t.Fatalf("a slot marker ID=%d want 2", got)
+	}
+	if got := child.Slots["z"][0].(*SSRPlanElement).HydrationID; got != 3 {
+		t.Fatalf("z slot marker ID=%d want 3", got)
+	}
+}
+
 func TestBuildSSRRenderPlanRejectsMissingInputs(t *testing.T) {
 	if _, err := BuildSSRRenderPlan("Demo", nil, ""); err == nil {
 		t.Fatal("missing SFC did not fail")

@@ -311,6 +311,7 @@ func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {
 
 func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 	body := make([]goast.Stmt, 0, len(node.Attrs)+len(node.Children)+2)
+	body = append(body, e.elementMarkerStart(node.HydrationID))
 	open := "<" + node.Tag
 	classStatic, classDirectives, styleStatic, styleDirectives := ssrElementDirectives(node.Attrs)
 	if len(classDirectives) > 0 {
@@ -396,6 +397,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 	if !ssrVoidElement(node.Tag) {
 		body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("</" + node.Tag + ">")}))
 	}
+	body = append(body, e.elementMarkerEnd(node.HydrationID))
 	return body, nil
 }
 
@@ -585,4 +587,12 @@ func (e *ssrGoEmitter) markerStart(id int) goast.Stmt {
 
 func (e *ssrGoEmitter) markerEnd(id int) goast.Stmt {
 	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--/v:" + e.scopeID + ":" + itoa(id) + "-->")})
+}
+
+func (e *ssrGoEmitter) elementMarkerStart(id int) goast.Stmt {
+	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--e:" + e.scopeID + ":" + itoa(id) + "-->")})
+}
+
+func (e *ssrGoEmitter) elementMarkerEnd(id int) goast.Stmt {
+	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--/e:" + e.scopeID + ":" + itoa(id) + "-->")})
 }

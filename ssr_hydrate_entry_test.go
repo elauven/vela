@@ -24,11 +24,11 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 	}
 	source := PrintJS(entry, PrintPretty)
 	for _, want := range []string{
-		"import { $$createHydrationWalker, $$readHydrationPayload } from './runtime.js';",
+		"import { $$acquireHydrationElement, $$createHydrationWalker, $$readHydrationPayload } from './runtime.js';",
 		"export function hydratePage($$root)",
 		"$$createHydrationWalker($$root, 'vela-page')",
 		"$$readHydrationPayload($$root, 'vela-page')",
-		"return { root: $$root, props: { title: $$payload.props.Title }, state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges };",
+		"return { root: $$root, props: { title: $$payload.props.Title }, state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges, elements: { e0: $$acquireHydrationElement($$walker, 0, 'main') } };",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("hydrate entry misses %q:\n%s", want, source)
@@ -90,7 +90,12 @@ func TestGeneratedSSRHydrateEntryAdoptsExistingServerData(t *testing.T) {
 	const runner = `import hydratePage from './Page.hydrate.js';
 function assert(value, message) { if (!value) throw new Error(message); }
 function marker(data) { return { data }; }
-const comments = [marker('v:vela-page:0'), marker('/v:vela-page:0')];
+const element = { nodeType: 1, tagName: 'MAIN' };
+const elementStart = marker('e:vela-page:0');
+const elementEnd = marker('/e:vela-page:0');
+elementStart.nextSibling = element;
+element.nextSibling = elementEnd;
+const comments = [elementStart, marker('v:vela-page:0'), marker('/v:vela-page:0'), elementEnd];
 const payload = { type: 'application/json', textContent: '{"component":"vela-page","props":{"Title":"server"},"state":{"count":1},"deep":["settings"],"incomplete":false}' };
 const document = {
   createTreeWalker() { let index = 0; return { nextNode() { return index < comments.length ? comments[index++] : null; } }; },
@@ -102,7 +107,8 @@ assert(adopted.root === root, 'entry must retain the server root');
 assert(adopted.props.title === 'server', 'entry must map Go payload fields back to Vela props');
 assert(adopted.state.count === 1, 'entry must expose serialised state');
 assert(adopted.deep.join(',') === 'settings', 'entry must preserve deep-state metadata');
-assert(adopted.ranges.get(0).start === comments[0], 'entry must expose indexed marker ranges');
+assert(adopted.ranges.get(0).start === comments[1], 'entry must expose indexed marker ranges');
+assert(adopted.elements.e0 === element, 'entry must acquire existing server element without creating it');
 console.log('OK');
 `
 	if err := os.WriteFile(filepath.Join(dir, "run.mjs"), []byte(runner), 0o644); err != nil {
