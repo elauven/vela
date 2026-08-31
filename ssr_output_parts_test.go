@@ -118,10 +118,40 @@ func TestBuildSSRGoFileRendersValueBindingForHydration(t *testing.T) {
 	}
 }
 
+func TestBuildSSRGoFileRendersCheckedBindingForHydration(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let done=false;</script><template><input type="checkbox" bind:checked={done} /></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`vela.WriteString(w, "<input type=\"checkbox\"")`,
+		"if props.Done {",
+		`vela.WriteString(w, " checked")`,
+	} {
+		if !strings.Contains(string(source), want) {
+			t.Fatalf("bind:checked SSR output misses %q:\n%s", want, source)
+		}
+	}
+	if err := ValidateGeneratedSSRGo("page.go", source); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBuildSSRGoFileRejectsUnsafeBindings(t *testing.T) {
 	for _, source := range []string{
 		`<script>export let title="";</script><template><input bind:this={title} /></template>`,
-		`<script>export let done=false;</script><template><input type="checkbox" bind:checked={done} /></template>`,
 	} {
 		sfc, err := parseSFC(source)
 		if err != nil {

@@ -346,10 +346,10 @@ that it cannot reproduce correctly:
 - Normal DOM events receive the static event bridge only when an inline arrow
   handler is closed over browser-safe globals. A handler that captures reactive
   state or a component closure fails with `VELA-SSR-EVENT-REACTIVE`.
-- `bind:value={exportedProp}` has one safe server representation: the renderer
-  writes the escaped initial `value`, and the hydration client attaches the
-  browser listener without rewriting that live value on startup. It is the
-  only end-to-end DOM binding in the current subset. `bind:checked`,
+- `bind:value={exportedProp}` and checkbox `bind:checked={exportedBool}` have
+  safe server representations. The renderer writes escaped `value` and emits
+  bare `checked` only for true (never `checked="false"`); hydration attaches
+  the browser listener without rewriting either live control on startup.
   `bind:this`, component two-way bindings, and other `bind:*` forms still fail
   with `VELA-SSR-EXPR`; their HTML and browser-state semantics have not yet
   been made marker-aware.

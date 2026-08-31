@@ -365,15 +365,28 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 		case SSRAttrEvent:
 			continue
 		case SSRAttrTwoWay:
-			// bind:value has a faithful server representation: SSR writes the
-			// current one-way value, while the hydration client installs the
-			// input listener. Boolean and browser-owned binding variants need
-			// dedicated HTML semantics before they can join this path.
-			if attr.Name != "value" {
+			// bind:value and bind:checked have faithful server forms. The
+			// boolean form must be emitted conditionally: checked="false" is
+			// still true in HTML. Hydration installs the browser listener.
+			if attr.Name != "value" && attr.Name != "checked" {
 				return nil, ssrExprUnsupported(attr.Span.Start, "bind:%s has no safe SSR representation yet", attr.Name)
 			}
 			if attr.Expr == nil {
-				return nil, ssrExprUnsupported(attr.Span.Start, "bind:value has no cached expression")
+				return nil, ssrExprUnsupported(attr.Span.Start, "bind:%s has no cached expression", attr.Name)
+			}
+			if attr.Name == "checked" {
+				condition, err := TranslateSSRExpression(attr.Expr, e.ctx)
+				if err != nil {
+					return nil, err
+				}
+				if open != "" {
+					body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
+					open = ""
+				}
+				body = append(body, &goast.IfStmt{Cond: condition, Body: &goast.BlockStmt{List: []goast.Stmt{
+					goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(" checked")}),
+				}}})
+				continue
 			}
 			open += " value=\""
 			body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))

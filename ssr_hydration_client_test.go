@@ -261,9 +261,9 @@ func TestSSRHydrationClientDefersNestedAttributeWriteUntilUpdate(t *testing.T) {
 	}
 }
 
-func TestBrowserSSRHydrationBindingAdoptsLiveInputThenUpdatesState(t *testing.T) {
+func TestBrowserSSRHydrationBindingsAdoptLiveControlsThenUpdateState(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let title='server';</script><template><main><input class="input" bind:value={title} /><p class="output">{title}</p></main></template>`)
+	sfc, err := parseSFC(`<script>export let title='server'; export let done=false;</script><template><main><input class="input" bind:value={title} /><input class="check" type="checkbox" bind:checked={done} /><p class="output">{title}:{done}</p></main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,8 +286,8 @@ func TestBrowserSSRHydrationBindingAdoptsLiveInputThenUpdatesState(t *testing.T)
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
-<!--e:vela-page:0--><main vela-page=""><!--e:vela-page:1--><input vela-page="" class="input" value="server"><!--/e:vela-page:1--><!--e:vela-page:2--><p vela-page="" class="output"><!--v:vela-page:0-->server<!--/v:vela-page:0--></p><!--/e:vela-page:2--></main><!--/e:vela-page:0-->
-<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Title":"server"},"state":{},"incomplete":false}</script>
+<!--e:vela-page:0--><main vela-page=""><!--e:vela-page:1--><input vela-page="" class="input" value="server"><!--/e:vela-page:1--><!--e:vela-page:2--><input vela-page="" class="check" type="checkbox"><!--/e:vela-page:2--><!--e:vela-page:3--><p vela-page="" class="output"><!--v:vela-page:0-->server<!--/v:vela-page:0-->:<!--v:vela-page:1-->false<!--/v:vela-page:1--></p><!--/e:vela-page:3--></main><!--/e:vela-page:0-->
+<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Title":"server","Done":false},"state":{},"incomplete":false}</script>
 <script type="module">
   import hydratePage from './Page.hydrate.js';
   window.__hydrationObserver = new MutationObserver(() => {});
@@ -322,12 +322,14 @@ server.listen(0, '127.0.0.1', async () => {
     await page.goto('http://127.0.0.1:' + server.address().port + '/');
     try { await page.waitForFunction(() => window.__hydrated); }
     catch (error) { throw new Error(String(error.stack || error) + '\n' + errors.join('\n')); }
-    await page.evaluate(() => { window.__input = document.querySelector('.input'); });
+    await page.evaluate(() => { window.__input = document.querySelector('.input'); window.__check = document.querySelector('.check'); });
     const initial = await page.evaluate(() => window.__initialMutations);
     await page.locator('.input').fill('client');
-    await page.waitForFunction(() => document.querySelector('.output')?.textContent === 'client');
-    const result = await page.evaluate(() => ({ initial: window.__initialMutations, sameInput: document.querySelector('.input') === window.__input, value: document.querySelector('.input')?.value, text: document.querySelector('.output')?.textContent }));
-    if (result.initial !== 0 || !result.sameInput || result.value !== 'client' || result.text !== 'client') throw new Error(JSON.stringify(result));
+    await page.waitForFunction(() => document.querySelector('.output')?.textContent === 'client:false');
+    await page.locator('.check').check();
+    await page.waitForFunction(() => document.querySelector('.output')?.textContent === 'client:true');
+    const result = await page.evaluate(() => ({ initial: window.__initialMutations, sameInput: document.querySelector('.input') === window.__input, sameCheck: document.querySelector('.check') === window.__check, value: document.querySelector('.input')?.value, checked: document.querySelector('.check')?.checked, text: document.querySelector('.output')?.textContent }));
+    if (result.initial !== 0 || !result.sameInput || !result.sameCheck || result.value !== 'client' || !result.checked || result.text !== 'client:true') throw new Error(JSON.stringify(result));
     process.stdout.write('OK');
   } catch (error) {
     console.error(error && error.stack || error);
