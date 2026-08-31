@@ -600,9 +600,10 @@ func (b *ssrPlanBuilder) attrs(attrs []*Attr, domElement bool) ([]SSRPlanAttr, [
 			}
 			continue
 		}
-		if attr.Expr != nil {
-			b.dynamic(SSRDynamicAttribute, attr.Expr, attr.Span)
-		}
+		// Dynamic attributes are represented directly in SSRPlanAttr and do
+		// not emit paired `v` markers. Reserving a marker ID here would shift
+		// every later text/structural range away from the actual HTML marker
+		// stream (for example :title before {title}).
 	}
 	return out, events
 }

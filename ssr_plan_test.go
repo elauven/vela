@@ -68,7 +68,6 @@ export let items = [];
 	wantKinds := []SSRDynamicKind{
 		SSRDynamicText,
 		SSRDynamicIf,
-		SSRDynamicAttribute,
 		SSRDynamicText,
 		SSRDynamicEach,
 		SSRDynamicEachKey,
