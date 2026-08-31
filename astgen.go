@@ -302,6 +302,10 @@ type ASTGen struct {
 	domAcquireMode DOMAcquireMode
 	domAcquirePlan DOMAcquirePlan
 
+	// hydrationRangeNext follows the SSR render plan's dynamic marker order
+	// for the currently supported text-range subset.
+	hydrationRangeNext int
+
 	// hydrationStateInput enables the compiler-owned $$velaState input for
 	// SSR client modules only. Ordinary CSR output keeps its established
 	// initialization path and pays no additional state-restore work.
@@ -1790,6 +1794,7 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	usesIsProxy := false
 	usesDefer := false
 	usesHydrationElement := g.domAcquireMode == DOMAcquireHydrate
+	usesHydrationText := len(g.domAcquirePlan.TextRanges) > 0
 	if g.analysis != nil && (len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0) {
 		usesIsProxy = true
 		usesDefer = true
@@ -1837,6 +1842,10 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	}
 	if usesHydrationElement {
 		specs = append(specs, JsImportSpec{Imported: "$$acquireHydrationElement"})
+	}
+	if usesHydrationText {
+		specs = append(specs, JsImportSpec{Imported: "$$acquireHydrationRange"})
+		specs = append(specs, JsImportSpec{Imported: "$$writeHydrationText"})
 	}
 	if len(specs) > 0 {
 		imp := &JsImportDecl{
@@ -3112,6 +3121,7 @@ func (g *ASTGen) buildHolesDOM(el *ElementNode) {
 	}
 	g.applyRootAttrs(el)
 	if g.domAcquireMode == DOMAcquireHydrate {
+		g.buildHydrationRootTextChildren(el.Children)
 		return
 	}
 
@@ -4463,6 +4473,34 @@ func (g *ASTGen) buildTextNode(tn *TextNode, parentVar string) {
 	g.initBody = append(g.initBody, write)
 	for _, dep := range templatePartsDeps(tn.Parts, g.reactiveNames()) {
 		g.addUpdate(dep, shareStmt(write))
+	}
+}
+
+// buildHydrationRootTextChildren adopts direct root text interpolation ranges.
+// Its eligibility is deliberately narrow: nested content is static and each
+// dynamic part has exactly one paired SSR `v` marker. Initial DOM already
+// contains the server value, so only the marker range is acquired here; later
+// setters call $$writeHydrationText when a dependency actually changes.
+func (g *ASTGen) buildHydrationRootTextChildren(children []Node) {
+	for _, child := range children {
+		tn, ok := child.(*TextNode)
+		if !ok || tn == nil {
+			continue
+		}
+		for _, part := range tn.Parts {
+			if part == nil || part.Static {
+				continue
+			}
+			markerID := g.hydrationRangeNext
+			g.hydrationRangeNext++
+			rangeVar := "$$h" + itoa(markerID) + "_range"
+			g.domAcquirePlan.addTextRange(rangeVar, markerID)
+			g.body = append(g.body, genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))))
+			write := genExprStmt(genCall(id("$$writeHydrationText"), id(rangeVar), genString(g.templateExpr(part.Expr))))
+			for _, dependency := range templateExprDeps(part.Expr, g.reactiveNames()) {
+				g.addUpdate(dependency, shareStmt(write))
+			}
+		}
 	}
 }
 

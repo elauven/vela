@@ -19,13 +19,29 @@ type DOMAcquireElement struct {
 	Tag      string
 }
 
+// DOMAcquireTextRange is one dynamic text position bracketed by an SSR
+// `v` marker range. Unlike CSR text construction, acquiring it never creates
+// or rewrites the initial text node.
+type DOMAcquireTextRange struct {
+	Variable string
+	MarkerID int
+}
+
 // DOMAcquirePlan records the portion of the component DOM that is acquired as
 // live element nodes. Static child runs emitted through innerHTML and dynamic
 // structural blocks remain outside this first refactoring seam and will join
 // the plan when their marker-aware lowerings are introduced.
 type DOMAcquirePlan struct {
-	Mode     DOMAcquireMode
-	Elements []DOMAcquireElement
+	Mode       DOMAcquireMode
+	Elements   []DOMAcquireElement
+	TextRanges []DOMAcquireTextRange
+}
+
+func (plan *DOMAcquirePlan) addTextRange(variable string, markerID int) {
+	if plan == nil {
+		return
+	}
+	plan.TextRanges = append(plan.TextRanges, DOMAcquireTextRange{Variable: variable, MarkerID: markerID})
 }
 
 func (plan *DOMAcquirePlan) addElement(variable, tag string) int {

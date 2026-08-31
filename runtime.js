@@ -568,6 +568,31 @@ export function $$acquireHydrationRange(walker, id) {
   return range;
 }
 
+// $$writeHydrationText updates exactly one text range after hydration. The
+// initial server text is left untouched; an empty server value gets a text
+// node only when a later reactive update first becomes non-empty.
+export function $$writeHydrationText(range, value) {
+  if (!range || !range.start || !range.end) {
+    throw new Error('Vela hydration mismatch: invalid text range');
+  }
+  const next = String(value);
+  const first = range.start.nextSibling;
+  if (first === range.end) {
+    if (next === '') return;
+    const parent = range.end.parentNode;
+    const doc = range.end.ownerDocument || (parent && parent.ownerDocument);
+    if (!parent || !doc || typeof doc.createTextNode !== 'function') {
+      throw new Error('Vela hydration mismatch: cannot materialize text range');
+    }
+    parent.insertBefore(doc.createTextNode(next), range.end);
+    return;
+  }
+  if (first.nodeType !== 3 || first.nextSibling !== range.end) {
+    throw new Error('Vela hydration mismatch: text range contains unexpected DOM nodes');
+  }
+  if (first.data !== next) first.data = next;
+}
+
 // $$readHydrationPayload reads the inert server payload and verifies that it
 // belongs to this component. Incomplete payloads are explicitly rejected: a
 // future hydrator must not silently recreate state that SSR could not encode.

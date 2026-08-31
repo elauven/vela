@@ -19,7 +19,28 @@ func CanBuildSSRHydrationClient(nodes []Node) bool {
 			return false
 		}
 	}
-	return ssrHydrationStaticChildren(root.Children)
+	return ssrHydrationRootChildren(root.Children)
+}
+
+func ssrHydrationRootChildren(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			// Direct text parts are represented by SSR `v` ranges when dynamic.
+		case *ElementNode:
+			for _, attr := range current.Attrs {
+				if attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					return false
+				}
+			}
+			if !ssrHydrationStaticChildren(current.Children) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func ssrHydrationStaticChildren(nodes []Node) bool {
