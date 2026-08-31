@@ -513,7 +513,8 @@ export function $$createHydrationWalker(root, componentId) {
     // targets while enclosed by a dynamic v-range; that range's own lowering
     // owns the active nodes. Keep validating its v boundaries while skipping
     // repeated structural element pairs.
-    if (ignoredStructuralMarkers.length > 0 || (!closing && stack.some(entry => entry.kind === 'v'))) {
+    const repeatedStructuralMarker = !closing && stack.some(entry => entry.kind === 'v') && markers[kind].has(id);
+    if (ignoredStructuralMarkers.length > 0 || repeatedStructuralMarker) {
       if (closing) {
         const open = ignoredStructuralMarkers.pop();
         if (!open || open.key !== key) {
@@ -603,6 +604,36 @@ export function $$adoptHydrationRange(range) {
     throw new Error('Vela hydration mismatch: malformed structural range');
   }
   return nodes;
+}
+
+// $$adoptHydrationKeyedRows maps existing direct row elements to the initial
+// iterable. It is intentionally strict: a stale SSR response with a different
+// row count or duplicate key is rejected before keyed reconciliation can move
+// an unrelated DOM node under the wrong item.
+export function $$adoptHydrationKeyedRows(range, iterable, keyOf, tag) {
+  if (typeof keyOf !== 'function') {
+    throw new Error('Vela hydration mismatch: keyed row adoption requires a key function');
+  }
+  const values = Array.from(iterable || []);
+  const expected = String(tag || '').toLowerCase();
+  const rows = [];
+  for (let node = range?.start?.nextSibling; node && node !== range.end; node = node.nextSibling) {
+    if (node.nodeType !== 1) continue;
+    if (String(node.tagName || '').toLowerCase() !== expected) continue;
+    rows.push(node);
+  }
+  if (rows.length !== values.length) {
+    throw new Error(`Vela hydration mismatch: keyed row count ${rows.length} does not match iterable length ${values.length}`);
+  }
+  const blocks = new Map();
+  for (let index = 0; index < values.length; index++) {
+    const key = keyOf(values[index], index);
+    if (blocks.has(key)) {
+      throw new Error(`Vela hydration mismatch: duplicate keyed row ${String(key)}`);
+    }
+    blocks.set(key, rows[index]);
+  }
+  return blocks;
 }
 
 // $$writeHydrationText updates exactly one text range after hydration. The

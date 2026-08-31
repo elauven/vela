@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -201,6 +201,27 @@ try { $$acquireHydrationElement(elementWalker, 2, 'section'); }
 catch (error) { mismatch = error; }
 assert(mismatch && mismatch.message.includes('expected <section> but found <main>'),
   'element acquisition must diagnose a tag mismatch without replacement');
+const keyedStart = marker('v:vela-test:4');
+const keyedOne = { nodeType: 1, tagName: 'LI' };
+const keyedTwo = { nodeType: 1, tagName: 'LI' };
+const keyedEnd = marker('/v:vela-test:4');
+keyedStart.nextSibling = keyedOne;
+keyedOne.nextSibling = keyedTwo;
+keyedTwo.nextSibling = keyedEnd;
+keyedEnd.parentNode = {};
+const keyed = $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }, { id: 'b' }], item => item.id, 'li');
+assert(keyed.get('a') === keyedOne && keyed.get('b') === keyedTwo,
+  'keyed adoption must retain existing row identity by initial key');
+mismatch = undefined;
+try { $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }], item => item.id, 'li'); }
+catch (error) { mismatch = error; }
+assert(mismatch && mismatch.message.includes('row count 2 does not match iterable length 1'),
+  'keyed adoption must diagnose a stale row count');
+mismatch = undefined;
+try { $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }, { id: 'a' }], item => item.id, 'li'); }
+catch (error) { mismatch = error; }
+assert(mismatch && mismatch.message.includes('duplicate keyed row a'),
+  'keyed adoption must diagnose duplicate initial keys');
 const payloadRoot = markerRoot([], {
   'vela-state-vela-test': { type: 'application/json', textContent: '{"component":"vela-test","props":{"Title":"ok"},"state":{},"incomplete":false}' },
 });
