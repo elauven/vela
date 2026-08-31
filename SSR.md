@@ -350,9 +350,11 @@ that it cannot reproduce correctly:
   safe server representations. The renderer writes escaped `value` and emits
   bare `checked` only for true (never `checked="false"`); hydration attaches
   the browser listener without rewriting either live control on startup.
-  `bind:this`, component two-way bindings, and other `bind:*` forms still fail
-  with `VELA-SSR-EXPR`; their HTML and browser-state semantics have not yet
-  been made marker-aware.
+  `bind:this={reactiveRef}` is omitted from server HTML and assigned only
+  after the existing element is adopted; the reference is cleared on destroy.
+  Component two-way bindings and other `bind:*` forms still fail with
+  `VELA-SSR-EXPR`; their HTML and browser-state semantics have not yet been
+  made marker-aware.
 - Unsupported JavaScript expressions fail at their template position. The
   future placeholder/Go escape-hatch design is not emitted yet: silently
   omitting server content would create an unbounded hydration mismatch.

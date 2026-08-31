@@ -62,6 +62,7 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"keyed each else", `<template><main>{#each items as item (item.id)}<span>Row</span>{:else}<span>Empty</span>{/each}</main></template>`, false},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, true},
+		{"element reference", `<template><input bind:this={input} /></template>`, true},
 	} {
 		t.Run(source.name, func(t *testing.T) {
 			sfc, err := parseSFC(source.code)
@@ -258,6 +259,27 @@ func TestSSRHydrationClientDefersNestedAttributeWriteUntilUpdate(t *testing.T) {
 	}
 	if strings.Contains(source, "\n  $$n1.setAttribute('title', String(title));\n") {
 		t.Fatalf("nested attribute hydration lowering writes before a reactive update:\n%s", source)
+	}
+}
+
+func TestSSRHydrationClientAssignsBindThisAfterAdoption(t *testing.T) {
+	sfc, err := parseSFC(`<script>let input=$state(null);</script><template><input bind:this={input} /></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"const $$root = $$acquireHydrationElement($$walker, 0, 'input');",
+		"$$set_input($$root);",
+		"$$set_input(null);",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("bind:this hydration lowering misses %q:\n%s", want, source)
+		}
 	}
 }
 

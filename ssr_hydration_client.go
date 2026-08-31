@@ -85,9 +85,6 @@ func ssrHydrationElementAttrs(element *ElementNode) bool {
 		return false
 	}
 	for _, attr := range element.Attrs {
-		if attr.IsBindThis {
-			return false
-		}
 		if attr.IsTwoWay {
 			if _, ok := twoWayBindSpec(element.Tag, attr.Name); !ok {
 				return false

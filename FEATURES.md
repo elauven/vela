@@ -97,7 +97,7 @@ a tracked runtime-cost limitation (`tasks/023-make-each-row-updates-incremental.
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| SSR and hydration | **Experimental** | `--ssr` emits Go SSR renderers, marker/payload entries, and a narrow DOM-adopting client subset. Hydration currently supports one root element with recursively nested text interpolation, ordinary dynamic attributes, `class:` / `style:` directives, and events; static-branch `#if` / `#key` / `#each` at any element depth; unkeyed static/direct-text `#each`; a restricted keyed direct-text row; and DOM `bind:value={exportedProp}` / checkbox `bind:checked={exportedBool}`. Other bindings, components, `#await`, and general keyed rows remain unsupported. See `SSR.md`. |
+| SSR and hydration | **Experimental** | `--ssr` emits Go SSR renderers, marker/payload entries, and a narrow DOM-adopting client subset. Hydration currently supports one root element with recursively nested text interpolation, ordinary dynamic attributes, `class:` / `style:` directives, and events; static-branch `#if` / `#key` / `#each` at any element depth; unkeyed static/direct-text `#each`; a restricted keyed direct-text row; DOM `bind:value={exportedProp}` / checkbox `bind:checked={exportedBool}`; and `bind:this={reactiveRef}`. Other bindings, components, `#await`, and general keyed rows remain unsupported. See `SSR.md`. |
 | Source maps | **Experimental** | `--sourcemap` writes an external v3 `.js.map` for generated JS. Stable template expressions map directly to their individual source offsets; CSS mappings are not emitted. `--minify` is intentionally rejected. |
 | Dev server / HMR | **Planned** | Watch mode recompiles only. |
 | TypeScript | **Unsupported** | No `lang="ts"` pipeline or type checker. |

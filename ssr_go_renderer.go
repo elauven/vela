@@ -397,7 +397,10 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			body = append(body, goWriteSSRValue(value))
 			open = "\""
 		case SSRAttrBindThis:
-			return nil, ssrExprUnsupported(attr.Span.Start, "bind:this requires hydration and has no server HTML representation")
+			// Element references are client-only state. They have no HTML
+			// representation, so SSR leaves the attribute out and hydration
+			// assigns the already-adopted element through its reactive setter.
+			continue
 		case SSRAttrDynamic:
 			if attr.Expr == nil {
 				return nil, ssrExprUnsupported(attr.Span.Start, "dynamic attribute %q has no cached expression", attr.Name)

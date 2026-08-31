@@ -330,6 +330,10 @@ type ASTGen struct {
 	// the "initial render" statements that run after construction.
 	body     []JsStmt
 	initBody []JsStmt
+	// hydrationInitBody is the small post-adoption subset of initialization:
+	// it may synchronize browser-owned form state or assign bind:this refs,
+	// but must never recreate server DOM or replay normal initial writes.
+	hydrationInitBody []JsStmt
 
 	// events holds addEventListener calls; cleanup holds the
 	// matching removeEventListener calls placed in destroy().
@@ -1692,8 +1696,10 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// call $$set_X) are in scope.
 	fnBody.Body = append(fnBody.Body, g.events...)
 
-	// ── Initial render (block 3) ─────────────────────────────
-	if g.domAcquireMode != DOMAcquireHydrate {
+	// ── Initial render / post-adoption synchronization (block 3) ──
+	if g.domAcquireMode == DOMAcquireHydrate {
+		fnBody.Body = append(fnBody.Body, g.hydrationInitBody...)
+	} else {
 		fnBody.Body = append(fnBody.Body, g.initBody...)
 	}
 
@@ -4561,7 +4567,7 @@ func (g *ASTGen) applyHydrationElementAttrs(variable string, element *ElementNod
 		return
 	}
 	for _, attr := range element.Attrs {
-		if attr == nil || attr.IsBindThis {
+		if attr == nil {
 			continue
 		}
 		switch {
@@ -4569,6 +4575,8 @@ func (g *ASTGen) applyHydrationElementAttrs(variable string, element *ElementNod
 			g.emitEventHandler(variable, attr)
 		case attr.IsTwoWay:
 			g.emitHydrationBinding(variable, element.Tag, attr)
+		case attr.IsBindThis:
+			g.emitBindThisAST(variable, attr)
 		case attr.IsClassDir:
 			stmt := g.classDirStmtAST(variable, attr)
 			for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
@@ -4612,7 +4620,7 @@ func (g *ASTGen) emitHydrationBinding(variable, tag string, attr *Attr) {
 	// Adopt the live control value after listener construction. For unchanged
 	// SSR DOM the setter returns immediately; for pre-hydration user input it
 	// schedules the usual reactive cascade without a blind value write.
-	g.initBody = append(g.initBody, genInvoke("$$set_"+state, genMember(id(variable), spec.readProp)))
+	g.hydrationInitBody = append(g.hydrationInitBody, genInvoke("$$set_"+state, genMember(id(variable), spec.readProp)))
 	write := g.bindingWriteStmt(variable, attr)
 	for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
 		g.addUpdate(dependency, shareStmt(write))
@@ -5513,15 +5521,21 @@ func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 // assignment is used.  Mirrors the legacy emitBindThis.
 func (g *ASTGen) emitBindThisAST(varName string, attr *Attr) {
 	ref, isIdent := templateExprIdent(attr.Expr)
-	if isIdent && g.analysis != nil && g.analysis.isStateName(ref) {
-		g.initBody = append(g.initBody,
-			genInvoke("$$set_"+ref, id(varName)))
+	addInit := func(stmt JsStmt) {
+		if g.domAcquireMode == DOMAcquireHydrate {
+			g.hydrationInitBody = append(g.hydrationInitBody, stmt)
+			return
+		}
+		g.initBody = append(g.initBody, stmt)
+	}
+	if isIdent && g.analysis != nil && g.analysis.stateSet()[ref] {
+		addInit(genInvoke("$$set_"+ref, id(varName)))
 		g.cleanup = append(g.cleanup,
 			genInvoke("$$set_"+ref, genNull()))
 		return
 	}
 	refExpr := g.templateExpr(attr.Expr)
-	g.initBody = append(g.initBody, genAssignStmt(refExpr, id(varName)))
+	addInit(genAssignStmt(refExpr, id(varName)))
 	g.cleanup = append(g.cleanup, genAssignStmt(refExpr, genNull()))
 }
 

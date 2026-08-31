@@ -151,7 +151,7 @@ func TestBuildSSRGoFileRendersCheckedBindingForHydration(t *testing.T) {
 
 func TestBuildSSRGoFileRejectsUnsafeBindings(t *testing.T) {
 	for _, source := range []string{
-		`<script>export let title="";</script><template><input bind:this={title} /></template>`,
+		`<script>export let files=[];</script><template><input type="file" bind:files={files} /></template>`,
 	} {
 		sfc, err := parseSFC(source)
 		if err != nil {
@@ -165,6 +165,31 @@ func TestBuildSSRGoFileRejectsUnsafeBindings(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), SSRExpressionDiagnosticCode) {
 			t.Fatalf("binding error=%v", err)
 		}
+	}
+}
+
+func TestBuildSSRGoFileOmitsBindThisForHydration(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let input=null;</script><template><input bind:this={input} /></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(source), "bind:this") {
+		t.Fatalf("bind:this leaked into server HTML:\n%s", source)
+	}
+	if err := ValidateGeneratedSSRGo("page.go", source); err != nil {
+		t.Fatal(err)
 	}
 }
 
