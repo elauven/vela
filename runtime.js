@@ -568,6 +568,23 @@ export function $$acquireHydrationRange(walker, id) {
   return range;
 }
 
+// $$adoptHydrationRange snapshots the nodes already rendered between paired
+// markers. It performs no writes, so an SSR branch remains untouched until a
+// later reactive update explicitly replaces that structural range.
+export function $$adoptHydrationRange(range) {
+  if (!range || !range.start || !range.end) {
+    throw new Error('Vela hydration mismatch: invalid structural range');
+  }
+  const nodes = [];
+  for (let node = range.start.nextSibling; node && node !== range.end; node = node.nextSibling) {
+    nodes.push(node);
+  }
+  if (!range.end.parentNode || (!nodes.length && range.start.nextSibling !== range.end)) {
+    throw new Error('Vela hydration mismatch: malformed structural range');
+  }
+  return nodes;
+}
+
 // $$writeHydrationText updates exactly one text range after hydration. The
 // initial server text is left untouched; an empty server value gets a text
 // node only when a later reactive update first becomes non-empty.

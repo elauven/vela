@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"sort"
 )
 
 // BuildSSRHydrateEntry emits the validation-only browser entry for one SSR
@@ -117,28 +116,13 @@ func ssrPlanElements(nodes []SSRPlanNode) []*SSRPlanElement {
 			case *SSRPlanElement:
 				elements = append(elements, current)
 				visit(current.Children)
-			case *SSRPlanComponent:
-				slotNames := make([]string, 0, len(current.Slots))
-				for name := range current.Slots {
-					slotNames = append(slotNames, name)
-				}
-				sort.Strings(slotNames)
-				for _, name := range slotNames {
-					visit(current.Slots[name])
-				}
-			case *SSRPlanSlot:
-				visit(current.Fallback)
-			case *SSRPlanIf:
-				for _, branch := range current.Branches {
-					visit(branch.Children)
-				}
-			case *SSRPlanEach:
-				visit(current.Children)
-				visit(current.ElseChildren)
-			case *SSRPlanAwait:
-				visit(current.PendingChildren)
-				visit(current.ThenChildren)
-				visit(current.CatchChildren)
+			// Structural ranges and child components can contain alternatives
+			// that are not present in this server response. Their owning
+			// marker-aware lowerings acquire the active DOM on demand; eagerly
+			// indexing every theoretical element here would reject valid #if,
+			// #each, await and slot output as "missing".
+			case *SSRPlanComponent, *SSRPlanSlot, *SSRPlanIf, *SSRPlanEach, *SSRPlanAwait:
+				continue
 			}
 		}
 	}

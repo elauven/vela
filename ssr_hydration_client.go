@@ -36,11 +36,31 @@ func ssrHydrationRootChildren(nodes []Node) bool {
 			if !ssrHydrationStaticChildren(current.Children) {
 				return false
 			}
+		case *IfChainNode:
+			if !ssrHydrationIfChain(current) {
+				return false
+			}
 		default:
 			return false
 		}
 	}
 	return true
+}
+
+func ssrHydrationIfChain(chain *IfChainNode) bool {
+	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 || len(chain.Branches) > 2 {
+		return false
+	}
+	conditions := 0
+	for _, branch := range chain.Branches {
+		if branch == nil || !ssrHydrationStaticChildren(branch.Children) {
+			return false
+		}
+		if branch.HasCondition() {
+			conditions++
+		}
+	}
+	return conditions == 1
 }
 
 func ssrHydrationStaticChildren(nodes []Node) bool {

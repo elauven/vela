@@ -27,6 +27,14 @@ type DOMAcquireTextRange struct {
 	MarkerID int
 }
 
+// DOMAcquireStructuralRange owns an SSR range for a structural block. The
+// initial branch stays in place; the range is materialized only after a
+// reactive branch change.
+type DOMAcquireStructuralRange struct {
+	Variable string
+	MarkerID int
+}
+
 // DOMAcquirePlan records the portion of the component DOM that is acquired as
 // live element nodes. Static child runs emitted through innerHTML and dynamic
 // structural blocks remain outside this first refactoring seam and will join
@@ -35,6 +43,14 @@ type DOMAcquirePlan struct {
 	Mode       DOMAcquireMode
 	Elements   []DOMAcquireElement
 	TextRanges []DOMAcquireTextRange
+	Structures []DOMAcquireStructuralRange
+}
+
+func (plan *DOMAcquirePlan) addStructuralRange(variable string, markerID int) {
+	if plan == nil {
+		return
+	}
+	plan.Structures = append(plan.Structures, DOMAcquireStructuralRange{Variable: variable, MarkerID: markerID})
 }
 
 func (plan *DOMAcquirePlan) addTextRange(variable string, markerID int) {

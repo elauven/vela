@@ -1795,6 +1795,7 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	usesDefer := false
 	usesHydrationElement := g.domAcquireMode == DOMAcquireHydrate
 	usesHydrationText := len(g.domAcquirePlan.TextRanges) > 0
+	usesHydrationStructure := len(g.domAcquirePlan.Structures) > 0
 	if g.analysis != nil && (len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0) {
 		usesIsProxy = true
 		usesDefer = true
@@ -1843,9 +1844,14 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	if usesHydrationElement {
 		specs = append(specs, JsImportSpec{Imported: "$$acquireHydrationElement"})
 	}
-	if usesHydrationText {
+	if usesHydrationText || usesHydrationStructure {
 		specs = append(specs, JsImportSpec{Imported: "$$acquireHydrationRange"})
+	}
+	if usesHydrationText {
 		specs = append(specs, JsImportSpec{Imported: "$$writeHydrationText"})
+	}
+	if usesHydrationStructure {
+		specs = append(specs, JsImportSpec{Imported: "$$adoptHydrationRange"})
 	}
 	if len(specs) > 0 {
 		imp := &JsImportDecl{
@@ -2685,6 +2691,17 @@ func shareStmt(s JsStmt) JsStmt { return s }
 //   - all roots static  → buildStaticDOM (block 2)
 //   - single root with text holes → buildHolesDOM (block 3)
 func (g *ASTGen) buildDOM(nodes []Node) {
+	// The executable hydration subset owns one existing root element. Route it
+	// before the CSR strategy ladder: static children and structural ranges are
+	// already present in server DOM and must not fall through to recursive
+	// construction, anchors, or initial render calls.
+	if g.domAcquireMode == DOMAcquireHydrate && len(nodes) == 1 {
+		if root, ok := nodes[0].(*ElementNode); ok && root != nil {
+			g.buildHydrationRootDOM(root)
+			return
+		}
+	}
+
 	allStaticRoots := true
 	for _, n := range nodes {
 		el, ok := n.(*ElementNode)
@@ -2740,6 +2757,16 @@ func (g *ASTGen) buildDOM(nodes []Node) {
 	// the subtree aligns with legacy.
 	_ = g.id()
 	g.buildElement(el, "$$root", "$$target", true)
+}
+
+func (g *ASTGen) buildHydrationRootDOM(root *ElementNode) {
+	// Keep the historical id consumption for deterministic generated symbol
+	// names in the shared expression lowerings, even though $$root is adopted
+	// by a marker rather than newly created.
+	_ = g.id()
+	g.body = append(g.body, g.createElementStmt("$$root", root.Tag))
+	g.applyRootAttrs(root)
+	g.buildHydrationRootChildren(root.Children)
 }
 
 // buildChainRootDOM builds DOM for a root list containing one or
@@ -3121,7 +3148,7 @@ func (g *ASTGen) buildHolesDOM(el *ElementNode) {
 	}
 	g.applyRootAttrs(el)
 	if g.domAcquireMode == DOMAcquireHydrate {
-		g.buildHydrationRootTextChildren(el.Children)
+		g.buildHydrationRootChildren(el.Children)
 		return
 	}
 
@@ -4481,6 +4508,17 @@ func (g *ASTGen) buildTextNode(tn *TextNode, parentVar string) {
 // dynamic part has exactly one paired SSR `v` marker. Initial DOM already
 // contains the server value, so only the marker range is acquired here; later
 // setters call $$writeHydrationText when a dependency actually changes.
+func (g *ASTGen) buildHydrationRootChildren(children []Node) {
+	for _, child := range children {
+		switch current := child.(type) {
+		case *TextNode:
+			g.buildHydrationRootTextChildren([]Node{current})
+		case *IfChainNode:
+			g.buildHydrationRootIfChain(current)
+		}
+	}
+}
+
 func (g *ASTGen) buildHydrationRootTextChildren(children []Node) {
 	for _, child := range children {
 		tn, ok := child.(*TextNode)
@@ -4502,6 +4540,86 @@ func (g *ASTGen) buildHydrationRootTextChildren(children []Node) {
 			}
 		}
 	}
+}
+
+// buildHydrationRootIfChain adopts the branch rendered by SSR and retains it
+// until its condition changes. The supported shape is one conditional branch
+// with an optional else, both of whose descendants are static. On a later
+// change the range alone is replaced; the root and unrelated siblings stay
+// intact.
+func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
+	if chain == nil || len(chain.Branches) == 0 {
+		return
+	}
+	markerID := g.hydrationRangeNext
+	conditions := 0
+	for _, branch := range chain.Branches {
+		if branch != nil && branch.HasCondition() {
+			conditions++
+		}
+	}
+	// CanBuildSSRHydrationClient admits exactly one condition here. Keep the
+	// counter in lockstep with the SSR plan even if this internal contract is
+	// bypassed by a direct generator caller.
+	if conditions == 0 && chain.HasKey() {
+		conditions = 1
+	}
+	g.hydrationRangeNext += conditions
+
+	name := "$$hif" + itoa(markerID)
+	rangeVar := name + "_range"
+	nodesVar := name + "_nodes"
+	activeVar := name + "_active"
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+	)
+
+	activeExpr := JsExpr(numLit(-1))
+	for index := len(chain.Branches) - 1; index >= 0; index-- {
+		branch := chain.Branches[index]
+		if branch == nil {
+			continue
+		}
+		if !branch.HasCondition() {
+			activeExpr = numLit(index)
+			continue
+		}
+		activeExpr = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: activeExpr}
+	}
+	g.body = append(g.body, genLet(activeVar, activeExpr))
+
+	updateBody := []JsStmt{genLet("$$active", activeExpr)}
+	updateBody = append(updateBody, genIf(genBinary("===", id("$$active"), id(activeVar)), genReturn(nil)))
+	updateBody = append(updateBody, genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))))
+	updateBody = append(updateBody, genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))))
+	for index, branch := range chain.Branches {
+		if branch == nil {
+			continue
+		}
+		html := emitStaticHTML(branch.Children, g.scopeID)
+		updateBody = append(updateBody, genIf(
+			genBinary("===", id("$$active"), numLit(index)),
+			genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(html))),
+		))
+	}
+	updateBody = append(updateBody,
+		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
+		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
+		genAssignStmt(id(activeVar), id("$$active")),
+	)
+	fn := name + "_update"
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	for _, branch := range chain.Branches {
+		if branch == nil || !branch.HasCondition() {
+			continue
+		}
+		for _, dependency := range templateExprDeps(branch.Expr, g.reactiveNames()) {
+			g.addStructuralUpdate(dependency, genInvoke(fn))
+		}
+	}
+	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 }
 
 // buildSlotNode projects a <slot> — an anchor comment plus an init

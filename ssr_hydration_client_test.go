@@ -51,6 +51,8 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"direct dynamic text", `<template><p>{title}</p></template>`, true},
 		{"nested dynamic text", `<template><main><p>{title}</p></main></template>`, false},
 		{"nested dynamic attribute", `<template><main><button :disabled={saving}>Save</button></main></template>`, false},
+		{"direct static if", `<template><main>{#if visible}<span>On</span>{:else}<span>Off</span>{/if}</main></template>`, true},
+		{"if with dynamic branch", `<template><main>{#if visible}<span>{title}</span>{/if}</main></template>`, false},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, false},
 	} {
@@ -63,6 +65,124 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 				t.Fatalf("CanBuildSSRHydrationClient()=%t, want %t", got, source.want)
 			}
 		})
+	}
+}
+
+func TestSSRHydrationClientAdoptsStaticIfRangeWithoutInitialRender(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let visible=false;</script><template><main>{#if visible}<span>On</span>{:else}<span>Off</span>{/if}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"$$acquireHydrationRange($$walker, 0)",
+		"$$adoptHydrationRange($$hif0_range)",
+		"function $$hif0_update()",
+		"$$hif0_nodes = Array.from($$frag.childNodes)",
+		"$$hif0_range.end.before($$frag)",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("hydration if lowering misses %q:\n%s", want, source)
+		}
+	}
+	for _, forbidden := range []string{
+		"\n  $$hif0_update();\n",
+		"appendChild($$root)",
+		"document.createElement('main')",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Fatalf("hydration if lowering unexpectedly performs initial DOM work through %q:\n%s", forbidden, source)
+		}
+	}
+}
+
+func TestBrowserSSRHydrationStaticIfAdoptsThenReplacesRange(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>export let visible=false;</script><template><main>{#if visible}<span class="state">On</span>{:else}<span class="state">Off</span>{/if}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":             embeddedRuntime,
+		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
+		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
+		"index.html": []byte(`<!doctype html><body>
+<!--e:vela-page:0--><main vela-page=""><!--v:vela-page:0--><!--e:vela-page:1--><span vela-page="" class="state">Off</span><!--/e:vela-page:1--><!--/v:vela-page:0--></main><!--/e:vela-page:0-->
+<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Visible":false},"state":{},"incomplete":false}</script>
+<script type="module">
+  import hydratePage from './Page.hydrate.js';
+  window.__hydrationObserver = new MutationObserver(() => {});
+  window.__hydrationObserver.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+  window.__hydrated = hydratePage(document.body);
+  window.__initialMutations = window.__hydrationObserver.takeRecords().length;
+</script></body>`),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs = require('fs');
+const path = require('path');
+const http = require('http');
+const { chromium } = require('playwright');
+const root = process.argv[1];
+const server = http.createServer((req, res) => {
+  const name = req.url === '/' ? 'index.html' : req.url.slice(1);
+  try { const body = fs.readFileSync(path.join(root, name)); res.writeHead(200, {'content-type': name.endsWith('.js') ? 'text/javascript' : 'text/html'}).end(body); }
+  catch { res.writeHead(404).end(); }
+});
+server.listen(0, '127.0.0.1', async () => {
+  let browser;
+  try {
+    browser = await chromium.launch({headless:true});
+    const page = await browser.newPage();
+    page.setDefaultTimeout(5000);
+    const errors = [];
+    page.on('pageerror', error => errors.push(String(error.stack || error)));
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    await page.goto('http://127.0.0.1:' + server.address().port + '/');
+    try { await page.waitForFunction(() => window.__hydrated); }
+    catch (error) { throw new Error(String(error.stack || error) + '\\n' + errors.join('\\n')); }
+    const initial = await page.evaluate(() => window.__initialMutations);
+    await page.evaluate(() => window.__hydrated.component.set({visible:true}));
+    await page.waitForFunction(() => document.querySelector('.state')?.textContent === 'On');
+    const result = await page.evaluate(() => ({ initial: window.__initialMutations, text: document.querySelector('.state')?.textContent, count: document.querySelectorAll('main > .state').length }));
+    if (result.initial !== 0 || result.text !== 'On' || result.count !== 1) throw new Error(JSON.stringify(result));
+    process.stdout.write('OK');
+  } catch (error) {
+    console.error(error && error.stack || error);
+    process.exitCode = 1;
+  } finally {
+    await browser?.close();
+    server.close(() => process.exit());
+  }
+});`
+	command := exec.Command(node, "-e", browserScript, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("browser hydration fixture: %v\n%s", err, output)
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("browser hydration fixture output=%q", got)
 	}
 }
 
