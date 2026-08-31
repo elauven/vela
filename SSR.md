@@ -372,6 +372,15 @@ and the payload carries `"incomplete":true` plus its source name in
 `"omitted"`. A future hydrator must refuse incomplete restoration with a
 diagnostic; it must not silently treat it as a valid client state.
 
+The browser runtime now exposes the corresponding non-mutating validation
+primitives: `$$createHydrationWalker(root, componentID)` indexes and validates
+all paired comment markers, `$$acquireHydrationRange(walker, id)` retrieves a
+known range, and `$$readHydrationPayload(root, componentID)` validates the
+inert JSON payload. Their mismatch errors include the component identifier and
+the exact missing, crossed, duplicate, or incomplete input. They are runtime
+building blocks only until the generated hydrate entry point wires them into
+the client acquire-plan.
+
 ---
 
 ## The type system

@@ -484,6 +484,93 @@ export function $$dispatch($$target, name, detail) {
     new CustomEvent(name, { detail, bubbles: true }));
 }
 
+// $$createHydrationWalker indexes compiler-owned paired SSR markers without
+// creating, moving, or deleting DOM nodes. Markers may nest, so validation is
+// stack-based rather than a loose lookup by ID; crossed or duplicate ranges
+// become actionable errors before a component attaches listeners or setters.
+export function $$createHydrationWalker(root, componentId) {
+  const label = componentId || 'unknown component';
+  const doc = root && (root.ownerDocument || (root.nodeType === 9 ? root : null));
+  if (!doc || typeof doc.createTreeWalker !== 'function') {
+    throw new Error(`Vela hydration mismatch [${label}]: missing DOM root for marker walk`);
+  }
+  const walker = doc.createTreeWalker(root, 128); // NodeFilter.SHOW_COMMENT
+  const ranges = new Map();
+  const stack = [];
+  let node;
+  while ((node = walker.nextNode())) {
+    const match = /^\/?v(\d+)$/.exec(String(node.data || '').trim());
+    if (!match) continue;
+    const id = Number(match[1]);
+    const closing = String(node.data || '').trim()[0] === '/';
+    if (!closing) {
+      if (ranges.has(id) || stack.some(entry => entry.id === id)) {
+        throw new Error(`Vela hydration mismatch [${label}]: duplicate start marker <!--v${id}-->`);
+      }
+      stack.push({ id, start: node });
+      continue;
+    }
+    const open = stack.pop();
+    if (!open) {
+      throw new Error(`Vela hydration mismatch [${label}]: end marker <!--/v${id}--> has no start marker`);
+    }
+    if (open.id !== id) {
+      throw new Error(`Vela hydration mismatch [${label}]: expected <!--/v${open.id}--> before <!--/v${id}-->`);
+    }
+    ranges.set(id, { start: open.start, end: node });
+  }
+  if (stack.length) {
+    const open = stack[stack.length - 1];
+    throw new Error(`Vela hydration mismatch [${label}]: start marker <!--v${open.id}--> has no end marker`);
+  }
+  return { root, componentId: label, ranges };
+}
+
+// $$acquireHydrationRange returns an already indexed SSR range. A generated
+// hydrate entry point uses this for dynamic text and structural blocks; it
+// never repairs a mismatch by clearing or recreating the component tree.
+export function $$acquireHydrationRange(walker, id) {
+  if (!walker || !(walker.ranges instanceof Map)) {
+    throw new Error('Vela hydration mismatch: invalid marker walker');
+  }
+  const range = walker.ranges.get(id);
+  if (!range) {
+    throw new Error(`Vela hydration mismatch [${walker.componentId}]: missing marker range v${id}`);
+  }
+  return range;
+}
+
+// $$readHydrationPayload reads the inert server payload and verifies that it
+// belongs to this component. Incomplete payloads are explicitly rejected: a
+// future hydrator must not silently recreate state that SSR could not encode.
+export function $$readHydrationPayload(root, componentId) {
+  const label = componentId || 'unknown component';
+  const doc = root && (root.ownerDocument || (root.nodeType === 9 ? root : null));
+  const payloadNode = doc && typeof doc.getElementById === 'function'
+    ? doc.getElementById(`vela-state-${componentId}`) : null;
+  if (!payloadNode) {
+    throw new Error(`Vela hydration mismatch [${label}]: missing state payload`);
+  }
+  if (payloadNode.type !== 'application/json') {
+    throw new Error(`Vela hydration mismatch [${label}]: state payload is not application/json`);
+  }
+  let payload;
+  try {
+    payload = JSON.parse(payloadNode.textContent || '');
+  } catch {
+    throw new Error(`Vela hydration mismatch [${label}]: state payload is not valid JSON`);
+  }
+  if (!payload || payload.component !== componentId) {
+    throw new Error(`Vela hydration mismatch [${label}]: state payload belongs to another component`);
+  }
+  if (payload.incomplete) {
+    const omitted = Array.isArray(payload.omitted) && payload.omitted.length
+      ? `; omitted state: ${payload.omitted.join(', ')}` : '';
+    throw new Error(`Vela hydration mismatch [${label}]: state payload is incomplete${omitted}`);
+  }
+  return payload;
+}
+
 // $$eachRowsForMutations returns the distinct row indexes that can be safely
 // refreshed without a full keyed reconciliation. null is the conservative
 // fallback: structural array changes, key writes, unknown records, and empty

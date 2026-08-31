@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$defer, $$isProxy, $$proxy, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$acquireHydrationRange, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -161,6 +161,45 @@ beforeDeepMutation = deepNotifications;
 deep.nested.items.splice(0, 0, 'zero');
 assert(deepNotifications === beforeDeepMutation + 1,
   'one Array#splice must notify once, not once per Proxy trap');
+
+function marker(data) { return { data }; }
+function markerRoot(markers, payloads = {}) {
+  const doc = {
+    createTreeWalker() {
+      let index = 0;
+      return { nextNode() { return index < markers.length ? markers[index++] : null; } };
+    },
+    getElementById(id) { return payloads[id] || null; },
+  };
+  return { ownerDocument: doc };
+}
+const hydratedRoot = markerRoot([marker('v0'), marker('v1'), marker('/v1'), marker('/v0')]);
+const walker = $$createHydrationWalker(hydratedRoot, 'vela-test');
+const outer = $$acquireHydrationRange(walker, 0);
+const inner = $$acquireHydrationRange(walker, 1);
+assert(outer.start.data === 'v0' && outer.end.data === '/v0', 'walker must retain outer paired range');
+assert(inner.start.data === 'v1' && inner.end.data === '/v1', 'walker must retain nested paired range');
+let mismatch;
+try { $$createHydrationWalker(markerRoot([marker('v0'), marker('/v1')]), 'vela-test'); }
+catch (error) { mismatch = error; }
+assert(mismatch && mismatch.message.includes('expected <!--/v0--> before <!--/v1-->'),
+  'walker must diagnose crossed marker pairs');
+mismatch = undefined;
+try { $$acquireHydrationRange(walker, 9); }
+catch (error) { mismatch = error; }
+assert(mismatch && mismatch.message.includes('missing marker range v9'),
+  'walker must diagnose a missing requested range');
+const payloadRoot = markerRoot([], {
+  'vela-state-vela-test': { type: 'application/json', textContent: '{"component":"vela-test","props":{"Title":"ok"},"state":{},"incomplete":false}' },
+});
+const payload = $$readHydrationPayload(payloadRoot, 'vela-test');
+assert(payload.props.Title === 'ok', 'payload reader must return matching inert payload');
+payloadRoot.ownerDocument.getElementById = () => ({ type: 'application/json', textContent: '{"component":"vela-test","incomplete":true,"omitted":["now"]}' });
+mismatch = undefined;
+try { $$readHydrationPayload(payloadRoot, 'vela-test'); }
+catch (error) { mismatch = error; }
+assert(mismatch && mismatch.message.includes('state payload is incomplete; omitted state: now'),
+  'payload reader must reject incomplete state restoration');
 
 console.log('OK');
 
