@@ -28,7 +28,7 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 		"export function hydratePage($$root)",
 		"$$createHydrationWalker($$root, 'vela-page')",
 		"$$readHydrationPayload($$root, 'vela-page')",
-		"return { root: $$root, props: $$payload.props, state: $$payload.state, ranges: $$walker.ranges };",
+		"return { root: $$root, props: { title: $$payload.props.Title }, state: $$payload.state, ranges: $$walker.ranges };",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("hydrate entry misses %q:\n%s", want, source)
@@ -99,7 +99,7 @@ const document = {
 const root = { ownerDocument: document };
 const adopted = hydratePage(root);
 assert(adopted.root === root, 'entry must retain the server root');
-assert(adopted.props.Title === 'server', 'entry must expose server props');
+assert(adopted.props.title === 'server', 'entry must map Go payload fields back to Vela props');
 assert(adopted.state.count === 1, 'entry must expose serialised state');
 assert(adopted.ranges.get(0).start === comments[0], 'entry must expose indexed marker ranges');
 console.log('OK');

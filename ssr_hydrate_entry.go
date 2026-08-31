@@ -11,6 +11,15 @@ func BuildSSRHydrateEntry(plan *SSRRenderPlan) (*JsProgram, error) {
 		return nil, fmt.Errorf("ssr hydrate entry: missing component identity")
 	}
 	functionName := "hydrate" + plan.ComponentName
+	props := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+	for _, prop := range plan.Props {
+		props.Props = append(props.Props, &JsProp{
+			baseNode: genNode(),
+			Key:      id(prop.SourceName),
+			Value:    genMember(genMember(id("$$payload"), "props"), prop.GoName),
+			Kind:     "init",
+		})
+	}
 	entry := &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
 		Name:     functionName,
@@ -20,7 +29,7 @@ func BuildSSRHydrateEntry(plan *SSRRenderPlan) (*JsProgram, error) {
 			genConst("$$payload", genCall(id("$$readHydrationPayload"), id("$$root"), strLit(plan.ScopeID))),
 			genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 				{baseNode: genNode(), Key: id("root"), Value: id("$$root"), Kind: "init"},
-				{baseNode: genNode(), Key: id("props"), Value: genMember(id("$$payload"), "props"), Kind: "init"},
+				{baseNode: genNode(), Key: id("props"), Value: props, Kind: "init"},
 				{baseNode: genNode(), Key: id("state"), Value: genMember(id("$$payload"), "state"), Kind: "init"},
 				{baseNode: genNode(), Key: id("ranges"), Value: genMember(id("$$walker"), "ranges"), Kind: "init"},
 			}}),

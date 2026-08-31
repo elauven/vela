@@ -389,6 +389,12 @@ the CSR component factory, attach listeners, or write DOM yet. This makes the
 entry usable for integration validation without falsely claiming that reactive
 hydration has already completed.
 
+The Go payload uses exported Go field names (`Title`) because it is marshalled
+from the generated props struct. The hydrate entry maps those fields back to
+the original Vela prop names (`title`) using `SSRPlanProp` metadata before it
+returns `props`; consumers of the entry never need to infer that mapping from
+printed Go or JavaScript.
+
 ---
 
 ## The type system
