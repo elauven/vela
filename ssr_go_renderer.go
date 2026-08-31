@@ -313,6 +313,8 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 	body := make([]goast.Stmt, 0, len(node.Attrs)+len(node.Children)+2)
 	body = append(body, e.elementMarkerStart(node.HydrationID))
 	open := "<" + node.Tag
+	var textareaValue SSRPlanAttr
+	hasTextareaValue := false
 	classStatic, classDirectives, styleStatic, styleDirectives := ssrElementDirectives(node.Attrs)
 	if len(classDirectives) > 0 {
 		open += ` class="` + html.EscapeString(classStatic)
@@ -374,6 +376,14 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			if attr.Expr == nil {
 				return nil, ssrExprUnsupported(attr.Span.Start, "bind:%s has no cached expression", attr.Name)
 			}
+			if attr.Name == "value" && node.Tag == "textarea" {
+				if len(node.Children) != 0 {
+					return nil, ssrExprUnsupported(attr.Span.Start, "textarea bind:value cannot be combined with child content during SSR")
+				}
+				textareaValue = attr
+				hasTextareaValue = true
+				continue
+			}
 			if attr.Name == "checked" {
 				condition, err := TranslateSSRExpression(attr.Expr, e.ctx)
 				if err != nil {
@@ -422,6 +432,13 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 	}
 	open += ">"
 	body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
+	if hasTextareaValue {
+		value, err := e.outputValue(false, "", textareaValue.Expr)
+		if err != nil {
+			return nil, err
+		}
+		body = append(body, goWriteSSRValue(value))
+	}
 	children, err := e.nodes(node.Children)
 	if err != nil {
 		return nil, err

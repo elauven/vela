@@ -346,16 +346,17 @@ that it cannot reproduce correctly:
 - Normal DOM events receive the static event bridge only when an inline arrow
   handler is closed over browser-safe globals. A handler that captures reactive
   state or a component closure fails with `VELA-SSR-EVENT-REACTIVE`.
-- `bind:value={exportedProp}` and checkbox `bind:checked={exportedBool}` have
-  safe server representations. The renderer writes escaped `value` and emits
-  bare `checked` only for true (never `checked="false"`); hydration attaches
-  the browser listener without rewriting either live control on startup. If a
+- `<input bind:value={exportedProp}>`, `<textarea bind:value={exportedProp}>`,
+  and checkbox `bind:checked={exportedBool}` have safe server representations.
+  The renderer writes escaped `value`, textarea text content, and bare
+  `checked` only for true (never `checked="false"`); hydration attaches the
+  browser listener without rewriting either live control on startup. If a
   user edits a control after SSR paint but before its module arrives, the
   post-adoption hydration initialization reads that live value through the
   normal setter rather than restoring the stale server payload.
   `bind:this={reactiveRef}` is omitted from server HTML and assigned only
   after the existing element is adopted; the reference is cleared on destroy.
-  Component two-way bindings and other `bind:*` forms still fail with
+  `<select bind:value>`, component two-way bindings, and other `bind:*` forms still fail with
   `VELA-SSR-EXPR`; their HTML and browser-state semantics have not yet been
   made marker-aware.
 - Unsupported JavaScript expressions fail at their template position. The

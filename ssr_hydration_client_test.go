@@ -285,7 +285,7 @@ func TestSSRHydrationClientAssignsBindThisAfterAdoption(t *testing.T) {
 
 func TestBrowserSSRHydrationBindingsAdoptLiveControlsThenUpdateState(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let title='server'; export let done=false;</script><template><main><input class="input" bind:value={title} /><input class="check" type="checkbox" bind:checked={done} /><p class="output">{title}:{done}</p></main></template>`)
+	sfc, err := parseSFC(`<script>export let title='server'; export let done=false; export let note='server note';</script><template><main><input class="input" bind:value={title} /><input class="check" type="checkbox" bind:checked={done} /><textarea class="note" bind:value={note} /><p class="output">{title}:{done}</p><p class="note-output">{note}</p></main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,8 +308,8 @@ func TestBrowserSSRHydrationBindingsAdoptLiveControlsThenUpdateState(t *testing.
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
-<!--e:vela-page:0--><main vela-page=""><!--e:vela-page:1--><input vela-page="" class="input" value="server"><!--/e:vela-page:1--><!--e:vela-page:2--><input vela-page="" class="check" type="checkbox"><!--/e:vela-page:2--><!--e:vela-page:3--><p vela-page="" class="output"><!--v:vela-page:0-->server<!--/v:vela-page:0-->:<!--v:vela-page:1-->false<!--/v:vela-page:1--></p><!--/e:vela-page:3--></main><!--/e:vela-page:0-->
-<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Title":"server","Done":false},"state":{},"incomplete":false}</script>
+<!--e:vela-page:0--><main vela-page=""><!--e:vela-page:1--><input vela-page="" class="input" value="server"><!--/e:vela-page:1--><!--e:vela-page:2--><input vela-page="" class="check" type="checkbox"><!--/e:vela-page:2--><!--e:vela-page:3--><textarea vela-page="" class="note">server note</textarea><!--/e:vela-page:3--><!--e:vela-page:4--><p vela-page="" class="output"><!--v:vela-page:0-->server<!--/v:vela-page:0-->:<!--v:vela-page:1-->false<!--/v:vela-page:1--></p><!--/e:vela-page:4--><!--e:vela-page:5--><p vela-page="" class="note-output"><!--v:vela-page:2-->server note<!--/v:vela-page:2--></p><!--/e:vela-page:5--></main><!--/e:vela-page:0-->
+<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Title":"server","Done":false,"Note":"server note"},"state":{},"incomplete":false}</script>
 <script type="module">
   import hydratePage from './Page.hydrate.js';
   if (new URLSearchParams(location.search).has('pre')) document.querySelector('.input').value = 'typed-before-hydration';
@@ -346,14 +346,16 @@ server.listen(0, '127.0.0.1', async () => {
     await page.goto('http://127.0.0.1:' + server.address().port + '/');
     try { await page.waitForFunction(() => window.__hydrated); }
     catch (error) { throw new Error(String(error.stack || error) + '\n' + errors.join('\n')); }
-    await page.evaluate(() => { window.__input = document.querySelector('.input'); window.__check = document.querySelector('.check'); });
+    await page.evaluate(() => { window.__input = document.querySelector('.input'); window.__check = document.querySelector('.check'); window.__note = document.querySelector('.note'); });
     const initial = await page.evaluate(() => window.__initialMutations);
     await page.locator('.input').fill('client');
     await page.waitForFunction(() => document.querySelector('.output')?.textContent === 'client:false');
     await page.locator('.check').check();
     await page.waitForFunction(() => document.querySelector('.output')?.textContent === 'client:true');
-    const result = await page.evaluate(() => ({ initial: window.__initialMutations, sameInput: document.querySelector('.input') === window.__input, sameCheck: document.querySelector('.check') === window.__check, value: document.querySelector('.input')?.value, checked: document.querySelector('.check')?.checked, text: document.querySelector('.output')?.textContent }));
-    if (result.initial !== 0 || !result.sameInput || !result.sameCheck || result.value !== 'client' || !result.checked || result.text !== 'client:true') throw new Error(JSON.stringify(result));
+    await page.locator('.note').fill('client note');
+    await page.waitForFunction(() => document.querySelector('.note-output')?.textContent === 'client note');
+    const result = await page.evaluate(() => ({ initial: window.__initialMutations, sameInput: document.querySelector('.input') === window.__input, sameCheck: document.querySelector('.check') === window.__check, sameNote: document.querySelector('.note') === window.__note, value: document.querySelector('.input')?.value, checked: document.querySelector('.check')?.checked, note: document.querySelector('.note')?.value, text: document.querySelector('.output')?.textContent, noteText: document.querySelector('.note-output')?.textContent }));
+    if (result.initial !== 0 || !result.sameInput || !result.sameCheck || !result.sameNote || result.value !== 'client' || !result.checked || result.note !== 'client note' || result.text !== 'client:true' || result.noteText !== 'client note') throw new Error(JSON.stringify(result));
     await page.goto('http://127.0.0.1:' + server.address().port + '/?pre=1');
     await page.waitForFunction(() => window.__hydrated && document.querySelector('.output')?.textContent === 'typed-before-hydration:false');
     const preHydration = await page.evaluate(() => ({ value: document.querySelector('.input')?.value, text: document.querySelector('.output')?.textContent }));

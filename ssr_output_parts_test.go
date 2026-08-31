@@ -118,6 +118,31 @@ func TestBuildSSRGoFileRendersValueBindingForHydration(t *testing.T) {
 	}
 }
 
+func TestBuildSSRGoFileRendersTextareaValueBindingAsText(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let note="";</script><template><textarea bind:value={note} /></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(source), `textarea value=`) || !strings.Contains(string(source), `vela.WriteString(w, "<textarea>")`) || !strings.Contains(string(source), "vela.WriteString(w, vela.EscapeString(vela.String(props.Note)))") {
+		t.Fatalf("textarea bind:value SSR output is not text content:\n%s", source)
+	}
+	if err := ValidateGeneratedSSRGo("page.go", source); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBuildSSRGoFileRendersCheckedBindingForHydration(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let done=false;</script><template><input type="checkbox" bind:checked={done} /></template>`)
 	if err != nil {
