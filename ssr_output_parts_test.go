@@ -29,7 +29,7 @@ func TestBuildSSRGoFileWithOutputPartsRendersElementTextProp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), "vela.EscapeString(vela.String(props.Title))") || !strings.Contains(string(src), `vela.WriteString(w, "<main class=\"app\"><p>Hello ")`) {
+	if !strings.Contains(string(src), "vela.WriteString(w, vela.EscapeString(vela.String(props.Title)))") || !strings.Contains(string(src), `vela.WriteString(w, "<main class=\"app\"><p>Hello ")`) {
 		t.Fatalf("unexpected Go renderer:\n%s", src)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {
@@ -48,7 +48,7 @@ func TestBuildSSRGoFileWithOutputPartsRendersDynamicAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), `vela.WriteString(w, "<main title=\"")`) || !strings.Contains(string(src), "vela.EscapeString(vela.String(props.Title))") {
+	if !strings.Contains(string(src), `vela.WriteString(w, "<main title=\"")`) || !strings.Contains(string(src), "vela.WriteString(w, vela.EscapeString(vela.String(props.Title)))") {
 		t.Fatalf("unexpected dynamic attribute renderer:\n%s", src)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {
@@ -93,10 +93,35 @@ func TestBuildSSRGoFileRendersClassAndStyleDirectives(t *testing.T) {
 	}
 }
 
-func TestBuildSSRGoFileRejectsBindingsUntilHydration(t *testing.T) {
+func TestBuildSSRGoFileRendersValueBindingForHydration(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let title="";</script><template><input bind:value={title} /></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), `vela.WriteString(w, "<input value=\"")`) || !strings.Contains(string(source), "vela.WriteString(w, vela.EscapeString(vela.String(props.Title)))") {
+		t.Fatalf("bind:value SSR output missing initial value:\n%s", source)
+	}
+	if err := ValidateGeneratedSSRGo("page.go", source); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuildSSRGoFileRejectsUnsafeBindings(t *testing.T) {
 	for _, source := range []string{
-		`<script>export let title="";</script><template><input bind:value={title} /></template>`,
 		`<script>export let title="";</script><template><input bind:this={title} /></template>`,
+		`<script>export let done=false;</script><template><input type="checkbox" bind:checked={done} /></template>`,
 	} {
 		sfc, err := parseSFC(source)
 		if err != nil {
@@ -107,7 +132,7 @@ func TestBuildSSRGoFileRejectsBindingsUntilHydration(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, err = BuildSSRGoFile(plan, "components")
-		if err == nil || !strings.Contains(err.Error(), SSRExpressionDiagnosticCode) || !strings.Contains(err.Error(), "requires hydration") {
+		if err == nil || !strings.Contains(err.Error(), SSRExpressionDiagnosticCode) {
 			t.Fatalf("binding error=%v", err)
 		}
 	}
@@ -152,7 +177,7 @@ func TestBuildSSRGoFileRendersIfBranches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), "if props.Visible {") || !strings.Contains(string(src), "} else {") || !strings.Contains(string(src), "vela.EscapeString(vela.String(props.Title))") {
+	if !strings.Contains(string(src), "if props.Visible {") || !strings.Contains(string(src), "} else {") || !strings.Contains(string(src), "vela.WriteString(w, vela.EscapeString(vela.String(props.Title)))") {
 		t.Fatalf("unexpected if renderer:\n%s", src)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {

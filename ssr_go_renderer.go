@@ -365,7 +365,24 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 		case SSRAttrEvent:
 			continue
 		case SSRAttrTwoWay:
-			return nil, ssrExprUnsupported(attr.Span.Start, "bind:%s requires hydration; use :%s for server-only output", attr.Name, attr.Name)
+			// bind:value has a faithful server representation: SSR writes the
+			// current one-way value, while the hydration client installs the
+			// input listener. Boolean and browser-owned binding variants need
+			// dedicated HTML semantics before they can join this path.
+			if attr.Name != "value" {
+				return nil, ssrExprUnsupported(attr.Span.Start, "bind:%s has no safe SSR representation yet", attr.Name)
+			}
+			if attr.Expr == nil {
+				return nil, ssrExprUnsupported(attr.Span.Start, "bind:value has no cached expression")
+			}
+			open += " value=\""
+			body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
+			value, err := e.outputValue(false, "", attr.Expr)
+			if err != nil {
+				return nil, err
+			}
+			body = append(body, goWriteSSRValue(value))
+			open = "\""
 		case SSRAttrBindThis:
 			return nil, ssrExprUnsupported(attr.Span.Start, "bind:this requires hydration and has no server HTML representation")
 		case SSRAttrDynamic:

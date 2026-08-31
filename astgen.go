@@ -4599,7 +4599,7 @@ func (g *ASTGen) emitHydrationBinding(variable, tag string, attr *Attr) {
 		return
 	}
 	state, isIdent := templateExprIdent(attr.Expr)
-	if !isIdent || g.analysis == nil || !g.analysis.isStateName(state) {
+	if !isIdent || g.analysis == nil || !g.analysis.stateSet()[state] {
 		return
 	}
 	handler := variable + "_bind_" + spec.event + "_h"

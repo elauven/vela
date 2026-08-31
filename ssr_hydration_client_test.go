@@ -263,7 +263,7 @@ func TestSSRHydrationClientDefersNestedAttributeWriteUntilUpdate(t *testing.T) {
 
 func TestBrowserSSRHydrationBindingAdoptsLiveInputThenUpdatesState(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>let title=$state('server');</script><template><main><input class="input" bind:value={title} /><p class="output">{title}</p></main></template>`)
+	sfc, err := parseSFC(`<script>export let title='server';</script><template><main><input class="input" bind:value={title} /><p class="output">{title}</p></main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestBrowserSSRHydrationBindingAdoptsLiveInputThenUpdatesState(t *testing.T)
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
 <!--e:vela-page:0--><main vela-page=""><!--e:vela-page:1--><input vela-page="" class="input" value="server"><!--/e:vela-page:1--><!--e:vela-page:2--><p vela-page="" class="output"><!--v:vela-page:0-->server<!--/v:vela-page:0--></p><!--/e:vela-page:2--></main><!--/e:vela-page:0-->
-<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{"title":"server"},"incomplete":false}</script>
+<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Title":"server"},"state":{},"incomplete":false}</script>
 <script type="module">
   import hydratePage from './Page.hydrate.js';
   window.__hydrationObserver = new MutationObserver(() => {});

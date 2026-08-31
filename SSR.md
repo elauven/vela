@@ -346,9 +346,13 @@ that it cannot reproduce correctly:
 - Normal DOM events receive the static event bridge only when an inline arrow
   handler is closed over browser-safe globals. A handler that captures reactive
   state or a component closure fails with `VELA-SSR-EVENT-REACTIVE`.
-- `bind:value`, `bind:checked`, `bind:this`, component two-way bindings, and
-  any other `bind:*` form fail with `VELA-SSR-EXPR`. Use a one-way `:attribute`
-  for static server HTML; bindings become available after hydration.
+- `bind:value={exportedProp}` has one safe server representation: the renderer
+  writes the escaped initial `value`, and the hydration client attaches the
+  browser listener without rewriting that live value on startup. It is the
+  only end-to-end DOM binding in the current subset. `bind:checked`,
+  `bind:this`, component two-way bindings, and other `bind:*` forms still fail
+  with `VELA-SSR-EXPR`; their HTML and browser-state semantics have not yet
+  been made marker-aware.
 - Unsupported JavaScript expressions fail at their template position. The
   future placeholder/Go escape-hatch design is not emitted yet: silently
   omitting server content would create an unbounded hydration mismatch.
