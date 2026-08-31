@@ -66,6 +66,7 @@ type CompileOptions struct {
 	UnavailableCapabilities []string // direct known globals disabled by the host
 	Strict                  bool     // elevate proven unresolved reads to errors
 	SSRModule               string   // Go module import root for generated SSR server packages
+	HydrationSupport        bool     // internal: emit SSR client state-restoration hooks
 }
 
 func main() {
@@ -667,7 +668,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	var target *JsProgram
 	if trace != nil {
 		if err = trace.stage("build-target-ast", func() error {
-			target = buildProgramUnvalidated(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
+			target = buildProgramUnvalidatedWithHydration(name, sfc, tmpl, analysis, scope, opts.CSSExternal, opts.HydrationSupport)
 			trace.trace.Metrics.TargetNodes = countJSNodes(target)
 			return nil
 		}); err != nil {
@@ -680,7 +681,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 			return ds.All(), err
 		}
 	} else {
-		target = buildProgramCSS(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
+		target = buildProgramCSSWithHydration(name, sfc, tmpl, analysis, scope, opts.CSSExternal, opts.HydrationSupport)
 	}
 
 	if opts.GenAST {

@@ -79,7 +79,9 @@ func (layout SSRProjectLayout) hydratePath(src, srcRoot string) string {
 // project build. The caller owns user-facing progress and exit handling.
 func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOptions, parallel bool) int {
 	layout := NewSSRProjectLayoutWithModule(outRoot, opts.SSRModule)
-	errors := buildProject(files, srcRoot, layout.ClientDir, opts, parallel)
+	clientOpts := opts
+	clientOpts.HydrationSupport = true
+	errors := buildProject(files, srcRoot, layout.ClientDir, clientOpts, parallel)
 	for _, src := range files {
 		if err := compileSSRProjectFile(src, srcRoot, layout); err != nil {
 			fmt.Fprintf(os.Stderr, "  x  %s: SSR: %v\n", relOrBase(src, srcRoot), err)

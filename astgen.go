@@ -302,6 +302,11 @@ type ASTGen struct {
 	domAcquireMode DOMAcquireMode
 	domAcquirePlan DOMAcquirePlan
 
+	// hydrationStateInput enables the compiler-owned $$velaState input for
+	// SSR client modules only. Ordinary CSR output keeps its established
+	// initialization path and pays no additional state-restore work.
+	hydrationStateInput bool
+
 	// counter backs id() — the deterministic $$nN naming used for
 	// DOM-node variables.  Mirrors the legacy CodeGen.counter so
 	// generated names match between the two generators.
@@ -1214,7 +1219,19 @@ func buildProgramCSS(
 	scopeID string,
 	cssExternal bool,
 ) *JsProgram {
-	prog, _ := buildProgramWithInfo(name, sfc, nodes, analysis, scopeID, cssExternal)
+	return buildProgramCSSWithHydration(name, sfc, nodes, analysis, scopeID, cssExternal, false)
+}
+
+func buildProgramCSSWithHydration(
+	name string,
+	sfc *SFC,
+	nodes []Node,
+	analysis *Analysis,
+	scopeID string,
+	cssExternal bool,
+	hydrationStateInput bool,
+) *JsProgram {
+	prog, _ := buildProgramWithInfoAndHydration(name, sfc, nodes, analysis, scopeID, cssExternal, hydrationStateInput)
 	return prog
 }
 
@@ -1228,7 +1245,19 @@ func buildProgramWithInfo(
 	scopeID string,
 	cssExternal bool,
 ) (*JsProgram, bool) {
-	prog := buildProgramUnvalidated(name, sfc, nodes, analysis, scopeID, cssExternal)
+	return buildProgramWithInfoAndHydration(name, sfc, nodes, analysis, scopeID, cssExternal, false)
+}
+
+func buildProgramWithInfoAndHydration(
+	name string,
+	sfc *SFC,
+	nodes []Node,
+	analysis *Analysis,
+	scopeID string,
+	cssExternal bool,
+	hydrationStateInput bool,
+) (*JsProgram, bool) {
+	prog := buildProgramUnvalidatedWithHydration(name, sfc, nodes, analysis, scopeID, cssExternal, hydrationStateInput)
 	validateGeneratedProgram(prog)
 	return prog, false
 }
@@ -1244,7 +1273,19 @@ func buildProgramUnvalidated(
 	scopeID string,
 	cssExternal bool,
 ) *JsProgram {
-	prog, _ := buildProgramWithDOMAcquirePlan(name, sfc, nodes, analysis, scopeID, cssExternal, DOMAcquireCreate)
+	return buildProgramUnvalidatedWithHydration(name, sfc, nodes, analysis, scopeID, cssExternal, false)
+}
+
+func buildProgramUnvalidatedWithHydration(
+	name string,
+	sfc *SFC,
+	nodes []Node,
+	analysis *Analysis,
+	scopeID string,
+	cssExternal bool,
+	hydrationStateInput bool,
+) *JsProgram {
+	prog, _ := buildProgramWithDOMAcquirePlanAndHydration(name, sfc, nodes, analysis, scopeID, cssExternal, DOMAcquireCreate, hydrationStateInput)
 	return prog
 }
 
@@ -1261,19 +1302,33 @@ func buildProgramWithDOMAcquirePlan(
 	cssExternal bool,
 	mode DOMAcquireMode,
 ) (*JsProgram, DOMAcquirePlan) {
+	return buildProgramWithDOMAcquirePlanAndHydration(name, sfc, nodes, analysis, scopeID, cssExternal, mode, false)
+}
+
+func buildProgramWithDOMAcquirePlanAndHydration(
+	name string,
+	sfc *SFC,
+	nodes []Node,
+	analysis *Analysis,
+	scopeID string,
+	cssExternal bool,
+	mode DOMAcquireMode,
+	hydrationStateInput bool,
+) (*JsProgram, DOMAcquirePlan) {
 	// Input validation consumes the immutable ScriptAST before this point.
 	// Lower callback assignments only while assembling target code, so the
 	// shared source tree cannot leak generated $$set_* names into user scopes.
 	analysis.lowerReactiveCallbackBodies()
 	g := &ASTGen{
-		name:           name,
-		scopeID:        scopeID,
-		analysis:       analysis,
-		sfc:            sfc,
-		fragCounter:    -1,
-		cssExternal:    cssExternal,
-		domAcquireMode: mode,
-		domAcquirePlan: DOMAcquirePlan{Mode: mode},
+		name:                name,
+		scopeID:             scopeID,
+		analysis:            analysis,
+		sfc:                 sfc,
+		fragCounter:         -1,
+		cssExternal:         cssExternal,
+		domAcquireMode:      mode,
+		domAcquirePlan:      DOMAcquirePlan{Mode: mode},
+		hydrationStateInput: hydrationStateInput,
 	}
 	return g.buildModule(nodes), g.domAcquirePlan
 }
@@ -1562,6 +1617,9 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 		}),
 		genExprStmt(&JsUnaryExpr{baseExpr: baseExpr{genNode()}, Op: "void", Prefix: true, X: id("$$slots")}),
 	)
+	if g.hydrationStateInput {
+		fnBody.Body = append(fnBody.Body, genConst("$$velaState", genLogical("||", genMember(id("$$props"), "$$velaState"), genNull())))
+	}
 
 	// ── Runtime helpers ──────────────────────────────────────
 	// $$dispatch, $$insertHTML and $$proxy used to be inlined in
@@ -2096,6 +2154,15 @@ func (g *ASTGen) buildStateDecl(sv *StateVar) []JsStmt {
 	init := sv.InitialAST
 	if init == nil {
 		init = id("undefined")
+	}
+	if g.hydrationStateInput {
+		hasState := genCall(generatedMemberPath("Object.prototype.hasOwnProperty.call"), id("$$velaState"), strLit(sv.Name))
+		init = &JsConditionalExpr{
+			baseExpr: baseExpr{genNode()},
+			Test:     genLogical("&&", id("$$velaState"), hasState),
+			Then:     genMember(id("$$velaState"), sv.Name),
+			Else:     init,
+		}
 	}
 	if !sv.Deep {
 		return []JsStmt{genLet(sv.Name, init)}
