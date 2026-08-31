@@ -50,7 +50,7 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"root attributes and event", `<template><button class:active={selected} @click={toggle}>Save</button></template>`, true},
 		{"direct dynamic text", `<template><p>{title}</p></template>`, true},
 		{"nested dynamic text", `<template><main><p>{title}</p></main></template>`, true},
-		{"nested dynamic attribute", `<template><main><button :disabled={saving}>Save</button></main></template>`, false},
+		{"nested dynamic attribute", `<template><main><button :disabled={saving}>Save</button></main></template>`, true},
 		{"direct static if", `<template><main>{#if visible}<span>On</span>{:else}<span>Off</span>{/if}</main></template>`, true},
 		{"direct static key", `<template><main>{#key identity}<span>Row</span>{/key}</main></template>`, true},
 		{"if with dynamic branch", `<template><main>{#if visible}<span>{title}</span>{/if}</main></template>`, false},
@@ -236,9 +236,33 @@ func TestSSRHydrationClientAdoptsNestedTextRangeWithoutInitialRender(t *testing.
 	}
 }
 
-func TestBrowserSSRHydrationNestedTextAdoptsThenUpdatesRange(t *testing.T) {
+func TestSSRHydrationClientDefersNestedAttributeWriteUntilUpdate(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let title='server';</script><template><main><p :title={title}>{title}</p></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"const $$n1 = $$acquireHydrationElement($$walker, 1, 'p');",
+		"$$n1.setAttribute('title', String(title));",
+		"$$writeHydrationText($$h0_range, String(title));",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("nested attribute hydration lowering misses %q:\n%s", want, source)
+		}
+	}
+	if strings.Contains(source, "\n  $$n1.setAttribute('title', String(title));\n") {
+		t.Fatalf("nested attribute hydration lowering writes before a reactive update:\n%s", source)
+	}
+}
+
+func TestBrowserSSRHydrationNestedTextAttributeAndEventAdoptThenUpdate(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let title='server';</script><template><main><section><p class="title">{title}</p></section></main></template>`)
+	sfc, err := parseSFC(`<script>export let title='server'; function change() { title = 'client'; }</script><template><main><section><p class="title" :title={title} @click={change}>{title}</p></section></main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +285,7 @@ func TestBrowserSSRHydrationNestedTextAdoptsThenUpdatesRange(t *testing.T) {
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
-<!--e:vela-page:0--><main vela-page=""><!--e:vela-page:1--><section vela-page=""><!--e:vela-page:2--><p vela-page="" class="title"><!--v:vela-page:0-->server<!--/v:vela-page:0--></p><!--/e:vela-page:2--></section><!--/e:vela-page:1--></main><!--/e:vela-page:0-->
+<!--e:vela-page:0--><main vela-page=""><!--e:vela-page:1--><section vela-page=""><!--e:vela-page:2--><p vela-page="" class="title" title="server"><!--v:vela-page:0-->server<!--/v:vela-page:0--></p><!--/e:vela-page:2--></section><!--/e:vela-page:1--></main><!--/e:vela-page:0-->
 <script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Title":"server"},"state":{},"incomplete":false}</script>
 <script type="module">
   import hydratePage from './Page.hydrate.js';
@@ -299,10 +323,10 @@ server.listen(0, '127.0.0.1', async () => {
     catch (error) { throw new Error(String(error.stack || error) + '\n' + errors.join('\n')); }
     await page.evaluate(() => { window.__paragraph = document.querySelector('.title'); });
     const initial = await page.evaluate(() => window.__initialMutations);
-    await page.evaluate(() => window.__hydrated.component.set({title:'client'}));
-    await page.waitForFunction(() => document.querySelector('.title')?.textContent === 'client');
-    const result = await page.evaluate(() => ({ initial: window.__initialMutations, sameParagraph: document.querySelector('.title') === window.__paragraph, text: document.querySelector('.title')?.textContent }));
-    if (result.initial !== 0 || !result.sameParagraph || result.text !== 'client') throw new Error(JSON.stringify(result));
+    await page.evaluate(() => document.querySelector('.title').click());
+    await page.waitForFunction(() => document.querySelector('.title')?.textContent === 'client' && document.querySelector('.title')?.getAttribute('title') === 'client');
+    const result = await page.evaluate(() => ({ initial: window.__initialMutations, sameParagraph: document.querySelector('.title') === window.__paragraph, text: document.querySelector('.title')?.textContent, title: document.querySelector('.title')?.getAttribute('title') }));
+    if (result.initial !== 0 || !result.sameParagraph || result.text !== 'client' || result.title !== 'client') throw new Error(JSON.stringify(result));
     process.stdout.write('OK');
   } catch (error) {
     console.error(error && error.stack || error);

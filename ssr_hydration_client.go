@@ -58,7 +58,7 @@ func ssrHydrationElement(element *ElementNode) bool {
 		return ssrHydrationStaticChildren(element.Children)
 	}
 	for _, attr := range element.Attrs {
-		if attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+		if attr.IsTwoWay || attr.IsBindThis {
 			return false
 		}
 	}

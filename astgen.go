@@ -2778,7 +2778,7 @@ func (g *ASTGen) buildHydrationRootDOM(root *ElementNode) {
 	// by a marker rather than newly created.
 	_ = g.id()
 	g.body = append(g.body, g.createElementStmt("$$root", root.Tag))
-	g.applyRootAttrs(root)
+	g.applyHydrationElementAttrs("$$root", root)
 	g.buildHydrationRootChildren(root.Children)
 }
 
@@ -4547,7 +4547,43 @@ func (g *ASTGen) buildHydrationElement(element *ElementNode) {
 	}
 	variable := g.id()
 	g.body = append(g.body, g.createElementStmt(variable, element.Tag))
+	g.applyHydrationElementAttrs(variable, element)
 	g.buildHydrationRootChildren(element.Children)
+}
+
+// applyHydrationElementAttrs wires reactive work without replaying SSR's
+// initial attributes. Events may attach during adoption, but ordinary
+// attributes, class directives, and style directives are written only after a
+// reactive dependency changes. DOM bindings stay outside this subset because
+// their initial value must reconcile browser-owned form state first.
+func (g *ASTGen) applyHydrationElementAttrs(variable string, element *ElementNode) {
+	if element == nil {
+		return
+	}
+	for _, attr := range element.Attrs {
+		if attr == nil || attr.IsTwoWay || attr.IsBindThis {
+			continue
+		}
+		switch {
+		case attr.IsEvent:
+			g.emitEventHandler(variable, attr)
+		case attr.IsClassDir:
+			stmt := g.classDirStmtAST(variable, attr)
+			for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+				g.addUpdate(dependency, shareStmt(stmt))
+			}
+		case attr.IsStyleDir:
+			stmt := g.styleDirStmtAST(variable, attr)
+			for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+				g.addUpdate(dependency, shareStmt(stmt))
+			}
+		case attr.Expr != nil:
+			stmt := g.attrWriteStmt(variable, attr)
+			for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+				g.addUpdate(dependency, shareStmt(stmt))
+			}
+		}
+	}
 }
 
 func (g *ASTGen) buildHydrationRootTextChildren(children []Node) {
