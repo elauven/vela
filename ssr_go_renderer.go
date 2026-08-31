@@ -113,6 +113,7 @@ type ssrGoEmitter struct {
 	needsEscaping bool
 	eachNext      int
 	imports       map[string]string
+	selectValue   *TemplateExpr
 }
 
 func (e *ssrGoEmitter) nodes(nodes []SSRPlanNode) ([]goast.Stmt, error) {
@@ -315,6 +316,9 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 	open := "<" + node.Tag
 	var textareaValue SSRPlanAttr
 	hasTextareaValue := false
+	childSelectValue := e.selectValue
+	var optionValue SSRPlanAttr
+	hasOptionValue := false
 	classStatic, classDirectives, styleStatic, styleDirectives := ssrElementDirectives(node.Attrs)
 	if len(classDirectives) > 0 {
 		open += ` class="` + html.EscapeString(classStatic)
@@ -360,6 +364,19 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 		}
 		switch attr.Role {
 		case SSRAttrStatic:
+			if e.selectValue != nil && node.Tag == "option" && attr.Name == "selected" {
+				// bind:value owns the initial selectedness. Leaving a static
+				// selected attribute here would make the server DOM disagree
+				// with the bound value before hydration can adopt it.
+				continue
+			}
+			if e.selectValue != nil && node.Tag == "option" && attr.Name == "value" {
+				if attr.ValueKind == AttrValueMissing {
+					return nil, ssrExprUnsupported(attr.Span.Start, "an option under select bind:value requires an explicit value")
+				}
+				optionValue = attr
+				hasOptionValue = true
+			}
 			open += " " + attr.Name
 			if attr.ValueKind != AttrValueMissing {
 				open += "=\"" + html.EscapeString(attr.Value) + "\""
@@ -375,6 +392,10 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			}
 			if attr.Expr == nil {
 				return nil, ssrExprUnsupported(attr.Span.Start, "bind:%s has no cached expression", attr.Name)
+			}
+			if attr.Name == "value" && node.Tag == "select" {
+				childSelectValue = attr.Expr
+				continue
 			}
 			if attr.Name == "value" && node.Tag == "textarea" {
 				if len(node.Children) != 0 {
@@ -412,6 +433,9 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			// assigns the already-adopted element through its reactive setter.
 			continue
 		case SSRAttrDynamic:
+			if e.selectValue != nil && node.Tag == "option" && attr.Name == "selected" {
+				return nil, ssrExprUnsupported(attr.Span.Start, "option selected cannot be combined with parent select bind:value during SSR")
+			}
 			if attr.Expr == nil {
 				return nil, ssrExprUnsupported(attr.Span.Start, "dynamic attribute %q has no cached expression", attr.Name)
 			}
@@ -427,6 +451,22 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			return nil, ssrExprUnsupported(attr.Span.Start, "attribute %q with role %d is not lowered yet", attr.Name, attr.Role)
 		}
 	}
+	if e.selectValue != nil && node.Tag == "option" && !hasOptionValue {
+		return nil, ssrExprUnsupported(node.Span.Start, "an option under select bind:value requires an explicit static value")
+	}
+	if e.selectValue != nil && node.Tag == "option" {
+		selected, err := e.selectOptionCondition(e.selectValue, optionValue)
+		if err != nil {
+			return nil, err
+		}
+		if open != "" {
+			body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
+			open = ""
+		}
+		body = append(body, &goast.IfStmt{Cond: selected, Body: &goast.BlockStmt{List: []goast.Stmt{
+			goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(" selected")}),
+		}}})
+	}
 	if node.EventKey != "" {
 		open += ` data-vela-event="` + node.EventKey + `"`
 	}
@@ -439,7 +479,10 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 		}
 		body = append(body, goWriteSSRValue(value))
 	}
+	previousSelectValue := e.selectValue
+	e.selectValue = childSelectValue
 	children, err := e.nodes(node.Children)
+	e.selectValue = previousSelectValue
 	if err != nil {
 		return nil, err
 	}
@@ -607,6 +650,23 @@ func (e *ssrGoEmitter) outputValue(static bool, literal string, expr *TemplateEx
 	return &goast.CallExpr{Fun: goSelector("vela", "EscapeString"), Args: []goast.Expr{
 		&goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{value}},
 	}}, nil
+}
+
+// selectOptionCondition compares the browser-visible string values. Go SSR
+// prop inference can produce several concrete types, while the DOM's
+// HTMLSelectElement.value is always a string; vela.String keeps that semantic
+// boundary explicit without evaluating source text in the compiler.
+func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionValue SSRPlanAttr) (goast.Expr, error) {
+	selected, err := TranslateSSRExpression(selectValue, e.ctx)
+	if err != nil {
+		return nil, err
+	}
+	option := goast.Expr(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(optionValue.Value)})
+	return &goast.BinaryExpr{
+		X:  &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{selected}},
+		Op: token.EQL,
+		Y:  option,
+	}, nil
 }
 
 func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {

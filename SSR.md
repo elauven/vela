@@ -347,18 +347,20 @@ that it cannot reproduce correctly:
   handler is closed over browser-safe globals. A handler that captures reactive
   state or a component closure fails with `VELA-SSR-EVENT-REACTIVE`.
 - `<input bind:value={exportedProp}>`, `<textarea bind:value={exportedProp}>`,
-  and checkbox `bind:checked={exportedBool}` have safe server representations.
-  The renderer writes escaped `value`, textarea text content, and bare
-  `checked` only for true (never `checked="false"`); hydration attaches the
-  browser listener without rewriting either live control on startup. If a
-  user edits a control after SSR paint but before its module arrives, the
-  post-adoption hydration initialization reads that live value through the
+  checkbox `bind:checked={exportedBool}`, and a single-select
+  `<select bind:value={exportedProp}>` with explicit static option values have
+  safe server representations. The renderer writes escaped `value`, textarea
+  text content, bare `checked` only for true (never `checked="false"`), and
+  `selected` only on the option whose string value matches the bound prop.
+  Hydration attaches the browser listener without rewriting the live control
+  on startup. If a user edits a control after SSR paint but before its module
+  arrives, post-adoption initialization reads that live value through the
   normal setter rather than restoring the stale server payload.
   `bind:this={reactiveRef}` is omitted from server HTML and assigned only
   after the existing element is adopted; the reference is cleared on destroy.
-  `<select bind:value>`, component two-way bindings, and other `bind:*` forms still fail with
-  `VELA-SSR-EXPR`; their HTML and browser-state semantics have not yet been
-  made marker-aware.
+  `<select multiple>`, component two-way bindings, and other `bind:*` forms
+  still fail with `VELA-SSR-EXPR`; their HTML and browser-state semantics have
+  not yet been made marker-aware.
 - Unsupported JavaScript expressions fail at their template position. The
   future placeholder/Go escape-hatch design is not emitted yet: silently
   omitting server content would create an unbounded hydration mismatch.

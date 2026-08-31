@@ -143,6 +143,52 @@ func TestBuildSSRGoFileRendersTextareaValueBindingAsText(t *testing.T) {
 	}
 }
 
+func TestBuildSSRGoFileRendersSelectValueBindingForHydration(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let choice="b";</script><template><select bind:value={choice}><option value="a">A</option><option value="b">B</option></select></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := string(source)
+	for _, want := range []string{`vela.WriteString(w, "<select>")`, `if vela.String(props.Choice) == "a" {`, `if vela.String(props.Choice) == "b" {`, `vela.WriteString(w, " selected")`} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("select bind:value SSR output misses %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, `select value=`) {
+		t.Fatalf("select bind:value must select an option rather than render a select value attribute:\n%s", output)
+	}
+	if err := ValidateGeneratedSSRGo("page.go", source); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuildSSRGoFileRejectsSelectBindingOptionWithoutStaticValue(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let choice="a";</script><template><select bind:value={choice}><option>A</option></select></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = BuildSSRGoFile(plan, "components")
+	if err == nil || !strings.Contains(err.Error(), "requires an explicit static value") {
+		t.Fatalf("select binding without a static option value error=%v", err)
+	}
+}
+
 func TestBuildSSRGoFileRendersCheckedBindingForHydration(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let done=false;</script><template><input type="checkbox" bind:checked={done} /></template>`)
 	if err != nil {

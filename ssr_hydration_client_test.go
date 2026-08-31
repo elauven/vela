@@ -62,6 +62,7 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"keyed each else", `<template><main>{#each items as item (item.id)}<span>Row</span>{:else}<span>Empty</span>{/each}</main></template>`, false},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, true},
+		{"select binding", `<template><select bind:value={choice}><option value="a">A</option></select></template>`, true},
 		{"element reference", `<template><input bind:this={input} /></template>`, true},
 	} {
 		t.Run(source.name, func(t *testing.T) {
@@ -280,6 +281,94 @@ func TestSSRHydrationClientAssignsBindThisAfterAdoption(t *testing.T) {
 		if !strings.Contains(source, want) {
 			t.Fatalf("bind:this hydration lowering misses %q:\n%s", want, source)
 		}
+	}
+}
+
+func TestBrowserSSRHydrationSelectBindingAdoptsLiveValue(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>export let choice="a";</script><template><main><select class="choice" bind:value={choice}><option value="a">A</option><option value="b">B</option></select><p class="output">{choice}</p></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":             embeddedRuntime,
+		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
+		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
+		"index.html": []byte(`<!doctype html><body>
+<!--e:vela-page:0--><main vela-page=""><!--e:vela-page:1--><select vela-page="" class="choice"><!--e:vela-page:2--><option vela-page="" value="a" selected>A</option><!--/e:vela-page:2--><!--e:vela-page:3--><option vela-page="" value="b">B</option><!--/e:vela-page:3--></select><!--/e:vela-page:1--><!--e:vela-page:4--><p vela-page="" class="output"><!--v:vela-page:0-->a<!--/v:vela-page:0--></p><!--/e:vela-page:4--></main><!--/e:vela-page:0-->
+<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Choice":"a"},"state":{},"incomplete":false}</script>
+<script type="module">
+  import hydratePage from "./Page.hydrate.js";
+  if (new URLSearchParams(location.search).has("pre")) document.querySelector(".choice").value = "b";
+  window.__hydrationObserver = new MutationObserver(() => {});
+  window.__hydrationObserver.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+  window.__hydrated = hydratePage(document.body);
+  window.__initialMutations = window.__hydrationObserver.takeRecords().length;
+</script></body>`),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs = require("fs");
+const path = require("path");
+const http = require("http");
+const { chromium } = require("playwright");
+const root = process.argv[1];
+const server = http.createServer((req, res) => {
+  const requestPath = req.url.split("?")[0];
+  const name = requestPath === "/" ? "index.html" : requestPath.slice(1);
+  try { const body = fs.readFileSync(path.join(root, name)); res.writeHead(200, {"content-type": name.endsWith(".js") ? "text/javascript" : "text/html"}).end(body); }
+  catch { res.writeHead(404).end(); }
+});
+server.listen(0, "127.0.0.1", async () => {
+  let browser;
+  try {
+    browser = await chromium.launch({headless:true});
+    const page = await browser.newPage();
+    page.setDefaultTimeout(5000);
+    await page.goto("http://127.0.0.1:" + server.address().port + "/");
+    await page.waitForFunction(() => window.__hydrated);
+    await page.evaluate(() => { window.__choice = document.querySelector(".choice"); });
+    await page.selectOption(".choice", "b");
+    await page.waitForFunction(() => document.querySelector(".output")?.textContent === "b");
+    const result = await page.evaluate(() => ({ initial: window.__initialMutations, same: document.querySelector(".choice") === window.__choice, value: document.querySelector(".choice")?.value, output: document.querySelector(".output")?.textContent }));
+    if (result.initial !== 0 || !result.same || result.value !== "b" || result.output !== "b") throw new Error(JSON.stringify(result));
+    await page.goto("http://127.0.0.1:" + server.address().port + "/?pre=1");
+    await page.waitForFunction(() => window.__hydrated && document.querySelector(".output")?.textContent === "b");
+    const pre = await page.evaluate(() => ({ value: document.querySelector(".choice")?.value, output: document.querySelector(".output")?.textContent }));
+    if (pre.value !== "b" || pre.output !== "b") throw new Error(JSON.stringify(pre));
+    process.stdout.write("OK");
+  } catch (error) {
+    console.error(error && error.stack || error);
+    process.exitCode = 1;
+  } finally {
+    await browser?.close();
+    server.close(() => process.exit());
+  }
+});
+`
+	run := exec.Command(node, "-e", browserScript, dir)
+	output, err := run.CombinedOutput()
+	if err != nil {
+		t.Fatalf("select hydration browser fixture: %v\n%s", err, output)
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("select hydration browser output=%q", got)
 	}
 }
 
