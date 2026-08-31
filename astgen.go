@@ -4526,12 +4526,28 @@ func (g *ASTGen) buildHydrationRootChildren(children []Node) {
 		switch current := child.(type) {
 		case *TextNode:
 			g.buildHydrationRootTextChildren([]Node{current})
+		case *ElementNode:
+			g.buildHydrationElement(current)
 		case *IfChainNode:
 			g.buildHydrationRootIfChain(current)
 		case *EachBlockNode:
 			g.buildHydrationRootEach(current)
 		}
 	}
+}
+
+// buildHydrationElement acquires a nested server element and recursively
+// adopts its text ranges. Static attributes are already present in SSR HTML,
+// so this path emits neither attribute writes nor appendChild calls during
+// hydration. The normal acquire-plan therefore remains the one source of
+// structural ordering for root and descendant elements alike.
+func (g *ASTGen) buildHydrationElement(element *ElementNode) {
+	if element == nil {
+		return
+	}
+	variable := g.id()
+	g.body = append(g.body, g.createElementStmt(variable, element.Tag))
+	g.buildHydrationRootChildren(element.Children)
 }
 
 func (g *ASTGen) buildHydrationRootTextChildren(children []Node) {

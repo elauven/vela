@@ -392,8 +392,8 @@ adoption preflight: it validates the marker graph and state payload, then
 returns `{ root, props, componentProps, state, deep, ranges, elements }`.
 `componentProps` combines Vela-named props with compiler-owned
 `$$velaState`; it is the exact props shape expected by the SSR client module.
-For the first executable subset — one root element, static nested descendants,
-direct text interpolation, a direct static-branch `#if` / `#key`, an unkeyed
+For the first executable subset — one root element, static attributes and
+recursively nested text interpolation, a direct static-branch `#if` / `#key`, an unkeyed
 static-row `#each`, and no DOM bindings — project SSR also writes a sibling
 `client/user_page.hydrate_client.js` module. The entry invokes that module
 with the checked marker walker: it acquires the existing root element, skips

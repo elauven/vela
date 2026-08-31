@@ -28,12 +28,7 @@ func ssrHydrationRootChildren(nodes []Node) bool {
 		case *TextNode:
 			// Direct text parts are represented by SSR `v` ranges when dynamic.
 		case *ElementNode:
-			for _, attr := range current.Attrs {
-				if attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
-					return false
-				}
-			}
-			if !ssrHydrationStaticChildren(current.Children) {
+			if !ssrHydrationElement(current) {
 				return false
 			}
 		case *IfChainNode:
@@ -42,6 +37,37 @@ func ssrHydrationRootChildren(nodes []Node) bool {
 			}
 		case *EachBlockNode:
 			if !ssrHydrationEach(current) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ssrHydrationElement accepts the recursive text-only element subset.  Every
+// accepted descendant receives an `e` acquisition marker; dynamic text keeps
+// its `v` range at the original template position. Dynamic attributes and
+// listeners remain root-only until their no-initial-write lowering exists.
+func ssrHydrationElement(element *ElementNode) bool {
+	if element == nil {
+		return false
+	}
+	if _, rawText := rawTextProp(element.Tag); rawText {
+		return ssrHydrationStaticChildren(element.Children)
+	}
+	for _, attr := range element.Attrs {
+		if attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+			return false
+		}
+	}
+	for _, child := range element.Children {
+		switch current := child.(type) {
+		case *TextNode:
+			// `v` ranges cover every non-static part at any nesting depth.
+		case *ElementNode:
+			if !ssrHydrationElement(current) {
 				return false
 			}
 		default:

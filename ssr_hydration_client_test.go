@@ -49,7 +49,7 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 	}{
 		{"root attributes and event", `<template><button class:active={selected} @click={toggle}>Save</button></template>`, true},
 		{"direct dynamic text", `<template><p>{title}</p></template>`, true},
-		{"nested dynamic text", `<template><main><p>{title}</p></main></template>`, false},
+		{"nested dynamic text", `<template><main><p>{title}</p></main></template>`, true},
 		{"nested dynamic attribute", `<template><main><button :disabled={saving}>Save</button></main></template>`, false},
 		{"direct static if", `<template><main>{#if visible}<span>On</span>{:else}<span>Off</span>{/if}</main></template>`, true},
 		{"direct static key", `<template><main>{#key identity}<span>Row</span>{/key}</main></template>`, true},
@@ -209,6 +209,117 @@ func TestSSRHydrationClientAdoptsStaticKeyRangeWithoutInitialRender(t *testing.T
 	}
 	if strings.Contains(source, "\n  $$hkey0_update();\n") || strings.Contains(source, "appendChild($$root)") {
 		t.Fatalf("hydration key lowering unexpectedly performs initial DOM work:\n%s", source)
+	}
+}
+
+func TestSSRHydrationClientAdoptsNestedTextRangeWithoutInitialRender(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let title='server';</script><template><main><section><p class="title">{title}</p></section></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"const $$n1 = $$acquireHydrationElement($$walker, 1, 'section');",
+		"const $$n2 = $$acquireHydrationElement($$walker, 2, 'p');",
+		"const $$h0_range = $$acquireHydrationRange($$walker, 0);",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("nested text hydration lowering misses %q:\n%s", want, source)
+		}
+	}
+	if strings.Contains(source, "appendChild($$root)") || strings.Contains(source, "document.createElement('section')") {
+		t.Fatalf("nested text hydration lowering unexpectedly creates DOM:\n%s", source)
+	}
+}
+
+func TestBrowserSSRHydrationNestedTextAdoptsThenUpdatesRange(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>export let title='server';</script><template><main><section><p class="title">{title}</p></section></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":             embeddedRuntime,
+		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
+		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
+		"index.html": []byte(`<!doctype html><body>
+<!--e:vela-page:0--><main vela-page=""><!--e:vela-page:1--><section vela-page=""><!--e:vela-page:2--><p vela-page="" class="title"><!--v:vela-page:0-->server<!--/v:vela-page:0--></p><!--/e:vela-page:2--></section><!--/e:vela-page:1--></main><!--/e:vela-page:0-->
+<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Title":"server"},"state":{},"incomplete":false}</script>
+<script type="module">
+  import hydratePage from './Page.hydrate.js';
+  window.__hydrationObserver = new MutationObserver(() => {});
+  window.__hydrationObserver.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+  window.__hydrated = hydratePage(document.body);
+  window.__initialMutations = window.__hydrationObserver.takeRecords().length;
+</script></body>`),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs = require('fs');
+const path = require('path');
+const http = require('http');
+const { chromium } = require('playwright');
+const root = process.argv[1];
+const server = http.createServer((req, res) => {
+  const name = req.url === '/' ? 'index.html' : req.url.slice(1);
+  try { const body = fs.readFileSync(path.join(root, name)); res.writeHead(200, {'content-type': name.endsWith('.js') ? 'text/javascript' : 'text/html'}).end(body); }
+  catch { res.writeHead(404).end(); }
+});
+server.listen(0, '127.0.0.1', async () => {
+  let browser;
+  try {
+    browser = await chromium.launch({headless:true});
+    const page = await browser.newPage();
+    page.setDefaultTimeout(5000);
+    const errors = [];
+    page.on('pageerror', error => errors.push(String(error.stack || error)));
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    await page.goto('http://127.0.0.1:' + server.address().port + '/');
+    try { await page.waitForFunction(() => window.__hydrated); }
+    catch (error) { throw new Error(String(error.stack || error) + '\n' + errors.join('\n')); }
+    await page.evaluate(() => { window.__paragraph = document.querySelector('.title'); });
+    const initial = await page.evaluate(() => window.__initialMutations);
+    await page.evaluate(() => window.__hydrated.component.set({title:'client'}));
+    await page.waitForFunction(() => document.querySelector('.title')?.textContent === 'client');
+    const result = await page.evaluate(() => ({ initial: window.__initialMutations, sameParagraph: document.querySelector('.title') === window.__paragraph, text: document.querySelector('.title')?.textContent }));
+    if (result.initial !== 0 || !result.sameParagraph || result.text !== 'client') throw new Error(JSON.stringify(result));
+    process.stdout.write('OK');
+  } catch (error) {
+    console.error(error && error.stack || error);
+    process.exitCode = 1;
+  } finally {
+    await browser?.close();
+    server.close(() => process.exit());
+  }
+});`
+	command := exec.Command(node, "-e", browserScript, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("browser nested text hydration fixture: %v\n%s", err, output)
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("browser nested text hydration fixture output=%q", got)
 	}
 }
 
