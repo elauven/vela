@@ -173,4 +173,7 @@ let now = $state(Date.now());
 	if !plan.Hydration.Incomplete || len(plan.Hydration.Omitted) != 1 || plan.Hydration.Omitted[0] != "now" {
 		t.Fatalf("hydration state completeness=%#v", plan.Hydration)
 	}
+	if got := plan.Hydration.Deep; len(got) != 1 || got[0] != "config" {
+		t.Fatalf("hydration deep state=%#v want [config]", got)
+	}
 }

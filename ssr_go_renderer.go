@@ -66,6 +66,7 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan) ([]goast.Stmt, error) {
 		{Names: []*goast.Ident{goast.NewIdent("Component")}, Type: goast.NewIdent("string"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"component\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("Props")}, Type: goast.NewIdent(plan.ComponentName + "Props"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"props\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("State")}, Type: goSelector("json", "RawMessage"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"state\"`"}},
+		{Names: []*goast.Ident{goast.NewIdent("Deep")}, Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"deep,omitempty\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("Incomplete")}, Type: goast.NewIdent("bool"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"incomplete\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("Omitted")}, Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"omitted,omitempty\"`"}},
 	}
@@ -84,6 +85,13 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan) ([]goast.Stmt, error) {
 			omitted = append(omitted, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(name)})
 		}
 		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("Omitted"), Value: &goast.CompositeLit{Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Elts: omitted}})
+	}
+	if len(plan.Hydration.Deep) > 0 {
+		deep := make([]goast.Expr, 0, len(plan.Hydration.Deep))
+		for _, name := range plan.Hydration.Deep {
+			deep = append(deep, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(name)})
+		}
+		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("Deep"), Value: &goast.CompositeLit{Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Elts: deep}})
 	}
 	marshal := &goast.CallExpr{Fun: goSelector("json", "Marshal"), Args: []goast.Expr{payloadValue}}
 	encode := &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("ssrPayload"), goast.NewIdent("err")}, Tok: token.DEFINE, Rhs: []goast.Expr{marshal}}

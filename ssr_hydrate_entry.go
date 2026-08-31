@@ -31,6 +31,7 @@ func BuildSSRHydrateEntry(plan *SSRRenderPlan) (*JsProgram, error) {
 				{baseNode: genNode(), Key: id("root"), Value: id("$$root"), Kind: "init"},
 				{baseNode: genNode(), Key: id("props"), Value: props, Kind: "init"},
 				{baseNode: genNode(), Key: id("state"), Value: genMember(id("$$payload"), "state"), Kind: "init"},
+				{baseNode: genNode(), Key: id("deep"), Value: genLogical("||", genMember(id("$$payload"), "deep"), genArray()), Kind: "init"},
 				{baseNode: genNode(), Key: id("ranges"), Value: genMember(id("$$walker"), "ranges"), Kind: "init"},
 			}}),
 		}},

@@ -37,6 +37,7 @@ type SSRRenderPlan struct {
 // future hydrator can reject incomplete restoration explicitly.
 type SSRHydrationState struct {
 	JSON       string
+	Deep       []string
 	Incomplete bool
 	Omitted    []string
 }
@@ -288,6 +289,9 @@ func buildSSRHydrationState(analysis *Analysis) SSRHydrationState {
 				continue
 			}
 			values[variable.Name] = value
+			if variable.Deep {
+				state.Deep = append(state.Deep, variable.Name)
+			}
 		}
 	}
 	encoded, err := json.Marshal(values)
