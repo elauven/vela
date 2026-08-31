@@ -68,7 +68,7 @@ This makes normal native event registration an intentional compatibility layer w
 
 ## Future hydration wire contract
 
-The server and client will receive their node/dynamic ordering from one typed render plan. When hydration starts, each dynamic range will be delimited by paired comments, for example `<!--v0-->text<!--/v0-->`. The generated page will include a safely escaped inert payload:
+The server and client will receive their node/dynamic ordering from one typed render plan. When hydration starts, each dynamic range will be delimited by component-scoped paired comments, for example `<!--v:vela-card:0-->text<!--/v:vela-card:0-->`. The generated page will include a safely escaped inert payload:
 
 ```html
 <script type="application/json" id="vela-state-<component-id>">{...}</script>
