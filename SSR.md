@@ -372,6 +372,11 @@ and the payload carries `"incomplete":true` plus its source name in
 `"omitted"`. A future hydrator must refuse incomplete restoration with a
 diagnostic; it must not silently treat it as a valid client state.
 
+The payload additionally carries `"deep":[...]` for successfully serialized
+`$state.deep` bindings. The adoption entry returns this metadata unchanged;
+the forthcoming component lowering will use it to restore those bindings with
+the existing `$$proxy` runtime rather than treating them as shallow state.
+
 The browser runtime now exposes the corresponding non-mutating validation
 primitives: `$$createHydrationWalker(root, componentID)` indexes and validates
 all paired comment markers, `$$acquireHydrationRange(walker, id)` retrieves a
