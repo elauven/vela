@@ -56,7 +56,8 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"direct static each", `<template><main>{#each items as item}<span>Row</span>{/each}</main></template>`, true},
 		{"static each else", `<template><main>{#each items as item}<span>Row</span>{:else}<span>Empty</span>{/each}</main></template>`, true},
 		{"dynamic text each row", `<template><main>{#each items as item}<span>{item}</span>{/each}</main></template>`, true},
-		{"keyed each", `<template><main>{#each items as item (item.id)}<span>Row</span>{/each}</main></template>`, false},
+		{"keyed each", `<template><main>{#each items as item (item.id)}<span>Row</span>{/each}</main></template>`, true},
+		{"keyed each else", `<template><main>{#each items as item (item.id)}<span>Row</span>{:else}<span>Empty</span>{/each}</main></template>`, false},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, false},
 	} {
@@ -117,6 +118,38 @@ func TestSSRHydrationClientBuildsDynamicEachRowsFromAST(t *testing.T) {
 		if !strings.Contains(source, want) {
 			t.Fatalf("dynamic each row lowering misses %q:\n%s", want, source)
 		}
+	}
+}
+
+func TestSSRHydrationClientAdoptsKeyedEachRowsFromCachedAST(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let items=[];</script><template><main>{#each items as item, index (item.id + ':' + index)}<button class="row">{item.label}</button>{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := sfc.TemplateAST.Nodes[0].(*ElementNode).Children[0].(*EachBlockNode)
+	if block.KeyAST == nil {
+		t.Fatal("parser did not cache the keyed each expression")
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"$$adoptHydrationKeyedRows($$heach0_range, $$heach0_items, $$heach0_key, 'button')",
+		"const $$heach0_key = ($$item, $$index) => String($$item.id + ':' + $$index);",
+		"const $$heach0_create = ($$item, $$index) => {",
+		"$$row.appendChild(document.createTextNode(String($$item.label)));",
+		"$$row.textContent = String($$item.label);",
+		"$$clearHydrationKeyedRowMarkers($$heach0_range);",
+		"$$heach0_blocks = $$reconcileHydrationKeyedRows($$heach0_range, $$heach0_blocks, items, $$heach0_key, $$heach0_create, $$heach0_row_update);",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("keyed hydration lowering misses %q:\n%s", want, source)
+		}
+	}
+	if strings.Contains(source, "\n  $$heach0_update();\n") || strings.Contains(source, "appendChild($$root)") {
+		t.Fatalf("keyed hydration lowering unexpectedly performs initial DOM work:\n%s", source)
 	}
 }
 
@@ -235,6 +268,107 @@ server.listen(0, '127.0.0.1', async () => {
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("browser hydration fixture output=%q", got)
+	}
+}
+
+func TestBrowserSSRHydrationKeyedEachRetainsFocusedRowAcrossDeepReconcile(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>let items=$state.deep([{id:'a',label:'Alpha'},{id:'b',label:'Beta'}]); function updateRows() { items[1].label = 'Beta*'; items = [items[1], {id:'c',label:'Gamma'}]; }</script><template><main @click={updateRows}>{#each items as item (item.id)}<button class="row">{item.label}</button>{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":             embeddedRuntime,
+		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
+		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
+		"index.html": []byte(`<!doctype html><body>
+<!--e:vela-page:0--><main vela-page=""><!--v:vela-page:0--><!--e:vela-page:1--><button vela-page="" class="row"><!--v:vela-page:2-->Alpha<!--/v:vela-page:2--></button><!--/e:vela-page:1--><!--e:vela-page:1--><button vela-page="" class="row"><!--v:vela-page:2-->Beta<!--/v:vela-page:2--></button><!--/e:vela-page:1--><!--/v:vela-page:0--></main><!--/e:vela-page:0-->
+<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{"items":[{"id":"a","label":"Alpha"},{"id":"b","label":"Beta"}]},"deep":["items"],"incomplete":false}</script>
+<script type="module">
+  import hydratePage from './Page.hydrate.js';
+  window.__hydrationObserver = new MutationObserver(() => {});
+  window.__hydrationObserver.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+  window.__hydrated = hydratePage(document.body);
+  window.__initialMutations = window.__hydrationObserver.takeRecords().length;
+</script></body>`),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs = require('fs');
+const path = require('path');
+const http = require('http');
+const { chromium } = require('playwright');
+const root = process.argv[1];
+const server = http.createServer((req, res) => {
+  const name = req.url === '/' ? 'index.html' : req.url.slice(1);
+  try { const body = fs.readFileSync(path.join(root, name)); res.writeHead(200, {'content-type': name.endsWith('.js') ? 'text/javascript' : 'text/html'}).end(body); }
+  catch { res.writeHead(404).end(); }
+});
+server.listen(0, '127.0.0.1', async () => {
+  let browser;
+  try {
+    browser = await chromium.launch({headless:true});
+    const page = await browser.newPage();
+    page.setDefaultTimeout(5000);
+    const errors = [];
+    page.on('pageerror', error => errors.push(String(error.stack || error)));
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    await page.goto('http://127.0.0.1:' + server.address().port + '/');
+    try { await page.waitForFunction(() => window.__hydrated); }
+    catch (error) { throw new Error(String(error.stack || error) + '\n' + errors.join('\n')); }
+    await page.evaluate(() => {
+      window.__focusedRow = document.querySelectorAll('.row')[1];
+      window.__focusedRow.focus();
+	  window.__wasFocused = document.activeElement === window.__focusedRow;
+    });
+    const initial = await page.evaluate(() => window.__initialMutations);
+    await page.evaluate(() => document.querySelector('main').click());
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('.row')).map(row => row.textContent).join('|') === 'Beta*|Gamma');
+    const result = await page.evaluate(() => {
+      const rows = document.querySelectorAll('.row');
+      return {
+        initial: window.__initialMutations,
+		wasFocused: window.__wasFocused,
+        rowCount: rows.length,
+        firstRetained: rows[0] === window.__focusedRow,
+        focused: document.activeElement === window.__focusedRow,
+        text: Array.from(rows).map(row => row.textContent).join('|'),
+      };
+    });
+	if (result.initial !== 0 || !result.wasFocused || result.rowCount !== 2 || !result.firstRetained || !result.focused || result.text !== 'Beta*|Gamma') throw new Error(JSON.stringify(result));
+    process.stdout.write('OK');
+  } catch (error) {
+    console.error(error && error.stack || error);
+    process.exitCode = 1;
+  } finally {
+    await browser?.close();
+    server.close(() => process.exit());
+  }
+});`
+	command := exec.Command(node, "-e", browserScript, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("browser keyed hydration fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("browser keyed hydration fixture output=%q", got)
 	}
 }
 

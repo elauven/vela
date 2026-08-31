@@ -68,8 +68,16 @@ func ssrHydrationIfChain(chain *IfChainNode) bool {
 }
 
 func ssrHydrationEach(block *EachBlockNode) bool {
-	if block == nil || block.HasKey() {
+	if block == nil {
 		return false
+	}
+	if block.HasKey() {
+		// A keyed hydration row is adopted as one existing element.  Empty
+		// fallbacks and nested rows will join later with range-aware row
+		// handles; accepting either here would silently leave server fallback
+		// nodes outside the keyed map on the first client update.
+		_, ok := ssrHydrationEachDynamicTextRow(block)
+		return ok && len(block.ElseChildren) == 0
 	}
 	if _, ok := ssrHydrationEachDynamicTextRow(block); !ok && !ssrHydrationStaticChildren(block.Children) {
 		return false

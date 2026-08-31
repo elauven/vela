@@ -409,17 +409,27 @@ the root element and unrelated siblings are retained. The entry deliberately
 does not eagerly acquire elements inside structural ranges, because inactive
 branches do not exist in the server response.
 
-The initial `#each` slice follows the same rule. It adopts all existing row
-nodes in its outer `v` range and does no keyed diff or initial row rendering.
-When its collection changes, only that range is replaced. A static `{:else}`
-fallback follows the same rule: it is adopted when the initial collection is
-empty and materialized only after a later empty update. A row containing one
-element with direct text interpolation of the each item is also supported;
-replacement rows are assembled with generated `createElement` and
-`createTextNode` AST nodes rather than embedding item JavaScript in HTML text.
-Keyed preservation and richer row-local dynamic expressions are deliberately
-deferred. Repeated row `e` / `v` marker IDs are ignored by the entry because
-they are template positions, not global element identities.
+The initial unkeyed `#each` slice follows the same rule. It adopts all existing
+row nodes in its outer `v` range and does no initial row rendering. When its
+collection changes, only that range is replaced. A static `{:else}` fallback
+follows the same rule: it is adopted when the initial collection is empty and
+materialized only after a later empty update. A row containing one element
+with direct text interpolation of the each item is also supported; replacement
+rows are assembled with generated `createElement` and `createTextNode` AST
+nodes rather than embedding item JavaScript in HTML text.
+
+The executable subset now also covers a **keyed** `#each` with exactly one
+ordinary row element containing direct text nodes and no `{:else}`. Initial
+hydration maps the existing row elements to the initial iterable through the
+cached `KeyAST`, rejecting count and duplicate-key mismatches. A later update
+retains and reorders matching elements, creates only new rows, removes only
+orphans, and updates direct row text in place. Compiler row-marker comments
+are removed only on that first update, never during adoption. Chromium coverage
+proves identity and focused-row preservation across a deep field write,
+reorder, insertion, and deletion. Nested keyed ranges, dynamic row attributes,
+bindings, events, components, and keyed `{:else}` remain outside this subset.
+Repeated row `e` / `v` marker IDs are ignored by the entry because they are
+template positions, not global element identities.
 
 The Go payload uses exported Go field names (`Title`) because it is marshalled
 from the generated props struct. The hydrate entry maps those fields back to

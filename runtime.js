@@ -636,6 +636,22 @@ export function $$adoptHydrationKeyedRows(range, iterable, keyOf, tag) {
   return blocks;
 }
 
+// $$clearHydrationKeyedRowMarkers removes only direct compiler element
+// markers around adopted keyed rows. It is called immediately before the
+// first keyed update, never during hydration, so initial SSR DOM remains
+// untouched. Nested `v` markers belong to row text and are deliberately not
+// traversed here.
+export function $$clearHydrationKeyedRowMarkers(range) {
+  if (!range?.start || !range?.end) {
+    throw new Error('Vela hydration mismatch: invalid keyed row range');
+  }
+  for (let node = range.start.nextSibling; node && node !== range.end;) {
+    const next = node.nextSibling;
+    if (node.nodeType === 8 && /^(?:e:|\/e:)/.test(String(node.data || ''))) node.remove();
+    node = next;
+  }
+}
+
 // $$reconcileHydrationKeyedRows preserves existing row elements by key and
 // places them in iterable order immediately before the structural end marker.
 // Callers provide typed generated create/update callbacks; this runtime never
@@ -644,6 +660,13 @@ export function $$reconcileHydrationKeyedRows(range, blocks, iterable, keyOf, cr
   if (!range?.end || !(blocks instanceof Map) || typeof keyOf !== 'function' || typeof create !== 'function') {
     throw new Error('Vela hydration mismatch: invalid keyed row reconciliation inputs');
   }
+  // Moving an already-focused element within a parent makes Chromium clear
+  // document.activeElement even though the keyed row itself is retained.
+  // Preserve that native interaction state only for a retained old row; a
+  // removed row must never be focused again after reconciliation.
+  const doc = range.end.ownerDocument;
+  const active = doc && doc.activeElement;
+  const restoreFocus = active && Array.from(blocks.values()).some(row => row === active || row?.contains?.(active));
   const next = new Map();
   let index = 0;
   for (const item of iterable || []) {
@@ -663,6 +686,7 @@ export function $$reconcileHydrationKeyedRows(range, blocks, iterable, keyOf, cr
   for (const [key, row] of blocks) {
     if (!next.has(key)) row.remove();
   }
+  if (restoreFocus && active.isConnected && typeof active.focus === 'function') active.focus();
   return next;
 }
 

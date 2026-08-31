@@ -306,6 +306,11 @@ type ASTGen struct {
 	// for the currently supported text-range subset.
 	hydrationRangeNext int
 
+	// hydrationKeyedRows records that the narrow keyed-#each hydration
+	// lowering is present.  It keeps the helper import decision structural:
+	// generated calls never need to be discovered by parsing printed JS.
+	hydrationKeyedRows bool
+
 	// hydrationStateInput enables the compiler-owned $$velaState input for
 	// SSR client modules only. Ordinary CSR output keeps its established
 	// initialization path and pays no additional state-restore work.
@@ -1796,6 +1801,7 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	usesHydrationElement := g.domAcquireMode == DOMAcquireHydrate
 	usesHydrationText := len(g.domAcquirePlan.TextRanges) > 0
 	usesHydrationStructure := len(g.domAcquirePlan.Structures) > 0
+	usesHydrationKeyedRows := g.hydrationKeyedRows
 	if g.analysis != nil && (len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0) {
 		usesIsProxy = true
 		usesDefer = true
@@ -1852,6 +1858,13 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	}
 	if usesHydrationStructure {
 		specs = append(specs, JsImportSpec{Imported: "$$adoptHydrationRange"})
+	}
+	if usesHydrationKeyedRows {
+		specs = append(specs,
+			JsImportSpec{Imported: "$$adoptHydrationKeyedRows"},
+			JsImportSpec{Imported: "$$clearHydrationKeyedRowMarkers"},
+			JsImportSpec{Imported: "$$reconcileHydrationKeyedRows"},
+		)
 	}
 	if len(specs) > 0 {
 		imp := &JsImportDecl{
@@ -4631,6 +4644,10 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 	if block == nil {
 		return
 	}
+	if block.HasKey() {
+		g.buildHydrationRootKeyedEach(block)
+		return
+	}
 	markerID := g.hydrationRangeNext
 	g.hydrationRangeNext++
 	name := "$$heach" + itoa(markerID)
@@ -4668,6 +4685,143 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+}
+
+// buildHydrationRootKeyedEach adopts the SSR row elements into a key-to-node
+// map.  It never touches those rows during hydration.  The first later list
+// update removes only compiler marker comments, then the runtime reconciler
+// retains, reorders, creates, updates, and removes rows by their cached
+// KeyAST-derived identity.
+//
+// CanBuildSSRHydrationClient deliberately admits only one ordinary row
+// element with direct text children and no {:else} for this path.  That makes
+// a row an actual element (rather than a synthetic range) and keeps the
+// identity contract small and testable before nested keyed ranges are added.
+func (g *ASTGen) buildHydrationRootKeyedEach(block *EachBlockNode) {
+	markerID := g.hydrationRangeNext
+	// SSRPlan reserves one dynamic entry for the iterable and one for its
+	// key expression.  The latter has no standalone DOM range, but it still
+	// advances all following marker IDs.
+	g.hydrationRangeNext += 2
+	name := "$$heach" + itoa(markerID)
+	rangeVar := name + "_range"
+	itemsVar := name + "_items"
+	keyOfVar := name + "_key"
+	blocksVar := name + "_blocks"
+	markersVar := name + "_markers"
+	createVar := name + "_create"
+	updateVar := name + "_row_update"
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.hydrationKeyedRows = true
+
+	keyExpr := JsExpr(id("undefined"))
+	g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.IndexName, "$$index", func() {
+			keyExpr = genString(g.templateExpr(block.KeyAST))
+		})
+	})
+	keyOf := &JsArrowFunc{
+		baseExpr: baseExpr{genNode()},
+		Params:   []JsExpr{id("$$item"), id("$$index")},
+		Body:     keyExpr,
+	}
+	create := g.hydrationEachRowCreate(block)
+	update := g.hydrationEachRowUpdate(block)
+
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genConst(keyOfVar, keyOf),
+		genConst(itemsVar, g.templateExpr(block.IterExpr)),
+		genLet(blocksVar, genCall(id("$$adoptHydrationKeyedRows"), id(rangeVar), id(itemsVar), id(keyOfVar), strLit(g.hydrationEachRowTag(block)))),
+		genLet(markersVar, boolLit(true)),
+		genConst(createVar, create),
+		genConst(updateVar, update),
+	)
+
+	updateBody := []JsStmt{
+		genIf(id(markersVar), genBlock(
+			genExprStmt(genCall(id("$$clearHydrationKeyedRowMarkers"), id(rangeVar))),
+			genAssignStmt(id(markersVar), boolLit(false)),
+		)),
+		genAssignStmt(id(blocksVar), genCall(
+			id("$$reconcileHydrationKeyedRows"), id(rangeVar), id(blocksVar), g.templateExpr(block.IterExpr),
+			id(keyOfVar), id(createVar), id(updateVar),
+		)),
+	}
+	fn := name + "_update"
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
+		g.addStructuralUpdate(dependency, genInvoke(fn))
+	}
+	g.cleanup = append(g.cleanup, genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{
+		baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")},
+		Body: genCall(genMember(id("$$row"), "remove")),
+	})))
+}
+
+func (g *ASTGen) hydrationEachRowTag(block *EachBlockNode) string {
+	row, ok := ssrHydrationEachDynamicTextRow(block)
+	if !ok || row == nil {
+		return ""
+	}
+	return row.Tag
+}
+
+// hydrationEachRowCreate builds a single keyed row as typed JS AST.  Its
+// expressions are evaluated under item/index template bindings; neither the
+// key nor row content falls back to reparsing source strings.
+func (g *ASTGen) hydrationEachRowCreate(block *EachBlockNode) JsExpr {
+	row, _ := ssrHydrationEachDynamicTextRow(block)
+	body := []JsStmt{genConst("$$row", genCall(genMember(id("document"), "createElement"), strLit(row.Tag)))}
+	body = append(body, g.setAttrStmt("$$row", g.scopeID, ""))
+	for _, attr := range row.Attrs {
+		if attr != nil && attr.Expr == nil {
+			body = append(body, g.setAttrStmt("$$row", attr.Name, attr.Value))
+		}
+	}
+	g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.IndexName, "$$index", func() {
+			for _, child := range row.Children {
+				tn, ok := child.(*TextNode)
+				if ok && tn != nil {
+					body = append(body, genExprStmt(genCall(genMember(id("$$row"), "appendChild"),
+						genCall(genMember(id("document"), "createTextNode"), g.textValueExpr(tn.Parts)))))
+				}
+			}
+		})
+	})
+	body = append(body, genReturn(id("$$row")))
+	return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(body...)}
+}
+
+func (g *ASTGen) hydrationEachRowUpdate(block *EachBlockNode) JsExpr {
+	row, _ := ssrHydrationEachDynamicTextRow(block)
+	parts := []*Part{}
+	for _, child := range row.Children {
+		if tn, ok := child.(*TextNode); ok && tn != nil {
+			parts = append(parts, tn.Parts...)
+		}
+	}
+	hasDynamic := false
+	for _, part := range parts {
+		if part != nil && !part.Static {
+			hasDynamic = true
+			break
+		}
+	}
+	if !hasDynamic {
+		return genNull()
+	}
+	value := JsExpr(id("undefined"))
+	g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.IndexName, "$$index", func() {
+			value = g.textValueExpr(parts)
+		})
+	})
+	return &JsArrowFunc{
+		baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")},
+		Body: genBlock(genAssignStmt(genMember(id("$$row"), "textContent"), value)),
+	}
 }
 
 // hydrationEachRowBuild creates one replacement row using typed DOM AST.
