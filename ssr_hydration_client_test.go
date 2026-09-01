@@ -353,6 +353,10 @@ func TestBrowserSSRHydrationAwaitRetainsPendingThenReplacesRange(t *testing.T) {
     const mismatched = document.createElement("section");
     document.querySelector("main").replaceWith(mismatched);
   }
+  if (new URLSearchParams(location.search).has("payload")) {
+    document.getElementById("vela-state-vela-page").textContent = JSON.stringify({ component: "other-page", props: {}, state: {}, incomplete: false });
+  }
+
   window.__hydrationObserver.takeRecords();
   try {
     window.__hydrated = hydratePage(document.body);
@@ -432,6 +436,11 @@ server.listen(0, "127.0.0.1", async () => {
     if (!mismatch.error.includes("Vela hydration mismatch [vela-page]: element range e0 expected <main> but found <section>") || mismatch.mutations !== 0 || mismatch.hydrated || mismatch.tag !== "SECTION") throw new Error("unexpected hydration mismatch result: " + JSON.stringify(mismatch));
 
     if (destroyed.rootConnected || destroyed.doneConnected || destroyed.saved !== 1) throw new Error("hydration destroy leaked DOM or listener: " + JSON.stringify(destroyed));
+
+    await page.goto("http://127.0.0.1:" + server.address().port + "/?payload=1");
+    await page.waitForFunction(() => typeof window.__hydrationError === "string");
+    const payloadMismatch = await page.evaluate(() => ({ error: window.__hydrationError, mutations: window.__initialMutations, hydrated: !!window.__hydrated, pending: !!document.querySelector(".pending") }));
+    if (!payloadMismatch.error.includes("Vela hydration mismatch [vela-page]: state payload belongs to another component") || payloadMismatch.mutations !== 0 || payloadMismatch.hydrated || !payloadMismatch.pending) throw new Error("unexpected payload mismatch result: " + JSON.stringify(payloadMismatch));
 
     await page.goto("http://127.0.0.1:" + server.address().port + "/?reject=1");
     await page.waitForFunction(() => window.__hydrated && window.__rejectRequest);
