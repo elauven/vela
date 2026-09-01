@@ -4874,9 +4874,9 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	driverVar := name + "_drive"
 
 	plans := []hydrationAwaitBranchPlan{
-		g.buildHydrationAwaitBranch(block.PendingChildren, "", "", name+"_b0_frag"),
-		g.buildHydrationAwaitBranch(block.ThenChildren, block.ValueName, valueVar, name+"_b1_frag"),
-		g.buildHydrationAwaitBranch(block.CatchChildren, block.ErrorName, errorVar, name+"_b2_frag"),
+		g.buildHydrationAwaitBranch(block.PendingChildren, "", "", name+"_b0_frag", ""),
+		g.buildHydrationAwaitBranch(block.ThenChildren, block.ValueName, valueVar, name+"_b1_frag", name+"_b1_mounted"),
+		g.buildHydrationAwaitBranch(block.CatchChildren, block.ErrorName, errorVar, name+"_b2_frag", name+"_b2_mounted"),
 	}
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.body = append(g.body,
@@ -4888,6 +4888,11 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		genLet(errorVar, id("undefined")),
 		genLet(cellVar, genNull()),
 	)
+	for _, plan := range plans {
+		if plan.mounted != "" {
+			g.body = append(g.body, genLet(plan.mounted, boolLit(false)))
+		}
+	}
 
 	renderBody := []JsStmt{
 		genIf(genBinary("===", id(stateVar), id(activeVar)), genReturn(nil)),
@@ -4954,6 +4959,7 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 type hydrationAwaitBranchPlan struct {
 	build   []JsStmt
 	cleanup []JsStmt
+	mounted string
 }
 
 // buildHydrationAwaitBranch creates a branch that did not exist in SSR DOM.
@@ -4961,7 +4967,7 @@ type hydrationAwaitBranchPlan struct {
 // leaves the await range, so later parent-state flushes cannot write detached
 // nodes. The branch content still originates from TemplateAST through
 // buildHoleSubtree; no template text is re-parsed at code generation time.
-func (g *ASTGen) buildHydrationAwaitBranch(children []Node, bindingName, bindingValue, targetVar string) hydrationAwaitBranchPlan {
+func (g *ASTGen) buildHydrationAwaitBranch(children []Node, bindingName, bindingValue, targetVar, mountedVar string) hydrationAwaitBranchPlan {
 	if len(children) == 0 {
 		return hydrationAwaitBranchPlan{}
 	}
@@ -4972,14 +4978,30 @@ func (g *ASTGen) buildHydrationAwaitBranch(children []Node, bindingName, binding
 	}
 	var plan hydrationAwaitBranchPlan
 	g.withTemplateBinding(bindingName, bindingValue, func() {
-		sub := g.buildHoleSubtree(targetVar, children, true, "$$self", false, true)
+		wasBranchScope := g.inBranchScope
+		cap := g.captureScope(func() {
+			g.inBranchScope = true
+			wasAcquireMode := g.domAcquireMode
+			g.domAcquireMode = DOMAcquireCreate
+			defer func() {
+				g.inBranchScope = wasBranchScope
+				g.domAcquireMode = wasAcquireMode
+			}()
+			g.buildChildRun(children, targetVar)
+		})
+		plan.mounted = mountedVar
 		plan.build = append(plan.build, genConst(targetVar, id("$$frag")))
-		for _, decl := range sub.decls {
-			g.hoisted = append(g.hoisted, decl)
+		plan.build = append(plan.build, cap.body...)
+		plan.build = append(plan.build, cap.events...)
+		plan.build = append(plan.build, cap.initBody...)
+		plan.build = append(plan.build, genAssignStmt(id(mountedVar), boolLit(true)))
+		plan.cleanup = append(plan.cleanup, genAssignStmt(id(mountedVar), boolLit(false)))
+		plan.cleanup = append(plan.cleanup, cap.cleanup...)
+		for dep, statements := range cap.updates {
+			for _, statement := range statements {
+				g.addUpdate(dep, guardedTemplateStmt(statement, mountedVar))
+			}
 		}
-		plan.build = append(plan.build, sub.build...)
-		plan.build = append(plan.build, sub.initUpdates...)
-		plan.cleanup = append(plan.cleanup, nullCapturedStmts(sub.captured)...)
 	})
 	return plan
 }

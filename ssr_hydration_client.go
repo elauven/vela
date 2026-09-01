@@ -173,9 +173,9 @@ func ssrHydrationAwait(block *AwaitBlockNode) bool {
 }
 
 // ssrHydrationAwaitBranch permits static HTML plus text interpolation after a
-// promise settles. A settled branch is not present in server DOM, so element
-// dynamics, events, bindings, nested blocks, and components need a dedicated
-// lifecycle plan rather than being silently lowered as static HTML.
+// promise settles. It also permits DOM events and class/style directives.
+// One-way attributes and bindings, nested blocks, and components need a
+// dedicated lifecycle plan rather than being silently lowered as static HTML.
 func ssrHydrationAwaitBranch(nodes []Node) bool {
 	for _, node := range nodes {
 		switch current := node.(type) {
@@ -186,7 +186,7 @@ func ssrHydrationAwaitBranch(nodes []Node) bool {
 				return false
 			}
 			for _, attr := range current.Attrs {
-				if attr == nil || attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+				if attr == nil || attr.IsBind || attr.IsTwoWay || attr.IsBindThis {
 					return false
 				}
 			}

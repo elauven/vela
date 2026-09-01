@@ -62,7 +62,7 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"keyed each else", `<template><main>{#each items as item (item.id)}<span>Row</span>{:else}<span>Empty</span>{/each}</main></template>`, false},
 		{"static await", `<template><main>{#await request}<span>Loading</span>{:then value}<span>Done</span>{:catch error}<span>Failed</span>{/await}</main></template>`, true},
 		{"await with dynamic resolution", `<template><main>{#await request}<span>Loading</span>{:then value}<span>{value}</span>{/await}</main></template>`, true},
-		{"await with dynamic event", `<template><main>{#await request}<span>Loading</span>{:then value}<button @click={save}>{value}</button>{/await}</main></template>`, false},
+		{"await with dynamic event", `<template><main>{#await request}<span>Loading</span>{:then value}<button @click={save}>{value}</button>{/await}</main></template>`, true},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, true},
 		{"select binding", `<template><select bind:value={choice}><option value="a">A</option></select></template>`, true},
@@ -318,7 +318,7 @@ func TestSSRHydrationClientAssignsBindThisAfterAdoption(t *testing.T) {
 
 func TestBrowserSSRHydrationAwaitRetainsPendingThenReplacesRange(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>let resolveRequest, rejectRequest; const request = new Promise((resolve, reject) => { resolveRequest = resolve; rejectRequest = reject; window.__resolveRequest = resolve; window.__rejectRequest = reject; });</script><template><main>{#await request}<span class="pending">Loading</span>{:then value}<span class="done">{value}</span>{:catch error}<span class="failed">{error}</span>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>let resolveRequest, rejectRequest; const request = new Promise((resolve, reject) => { resolveRequest = resolve; rejectRequest = reject; window.__resolveRequest = resolve; window.__rejectRequest = reject; }); function save() { window.__saved = (window.__saved || 0) + 1; }</script><template><main>{#await request}<span class="pending">Loading</span>{:then value}<button class="done" @click={save}>{value}</button>{:catch error}<span class="failed">{error}</span>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,6 +372,7 @@ server.listen(0, "127.0.0.1", async () => {
   try {
     browser = await chromium.launch({headless:true});
     const page = await browser.newPage();
+    page.on("pageerror", error => console.error(error.stack || error));
     page.setDefaultTimeout(5000);
     await page.goto("http://127.0.0.1:" + server.address().port + "/");
     await page.waitForFunction(() => window.__hydrated && window.__resolveRequest);
@@ -381,6 +382,9 @@ server.listen(0, "127.0.0.1", async () => {
     await page.waitForFunction(() => document.querySelector(".done"));
     const settled = await page.evaluate(() => ({ pending: !!document.querySelector(".pending"), done: document.querySelector(".done")?.textContent, same: document.querySelector("main") === window.__rootBefore }));
     if (settled.pending || settled.done !== "ready" || !settled.same) throw new Error(JSON.stringify(settled));
+    await page.click(".done");
+    const saved = await page.evaluate(() => window.__saved);
+    if (saved !== 1) throw new Error("await branch event did not run: " + saved);
 
     await page.goto("http://127.0.0.1:" + server.address().port + "/?reject=1");
     await page.waitForFunction(() => window.__hydrated && window.__rejectRequest);
