@@ -349,8 +349,18 @@ func TestBrowserSSRHydrationAwaitRetainsPendingThenReplacesRange(t *testing.T) {
   window.__hydrationObserver = new MutationObserver(() => {});
   window.__hydrationObserver.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
   window.__rootBefore = document.querySelector("main");
-  window.__hydrated = hydratePage(document.body);
+  if (new URLSearchParams(location.search).has("mismatch")) {
+    const mismatched = document.createElement("section");
+    document.querySelector("main").replaceWith(mismatched);
+  }
+  window.__hydrationObserver.takeRecords();
+  try {
+    window.__hydrated = hydratePage(document.body);
+  } catch (error) {
+    window.__hydrationError = String(error && error.message || error);
+  }
   window.__initialMutations = window.__hydrationObserver.takeRecords().length;
+
 </script></body>`),
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
@@ -416,6 +426,11 @@ server.listen(0, "127.0.0.1", async () => {
       window.__doneBeforeDestroy.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     const destroyed = await page.evaluate(() => ({ rootConnected: window.__rootBefore.isConnected, doneConnected: window.__doneBeforeDestroy.isConnected, saved: window.__saved }));
+    await page.goto("http://127.0.0.1:" + server.address().port + "/?mismatch=1");
+    await page.waitForFunction(() => typeof window.__hydrationError === "string");
+    const mismatch = await page.evaluate(() => ({ error: window.__hydrationError, mutations: window.__initialMutations, hydrated: !!window.__hydrated, tag: document.querySelector("section")?.tagName }));
+    if (!mismatch.error.includes("Vela hydration mismatch [vela-page]: element range e0 expected <main> but found <section>") || mismatch.mutations !== 0 || mismatch.hydrated || mismatch.tag !== "SECTION") throw new Error("unexpected hydration mismatch result: " + JSON.stringify(mismatch));
+
     if (destroyed.rootConnected || destroyed.doneConnected || destroyed.saved !== 1) throw new Error("hydration destroy leaked DOM or listener: " + JSON.stringify(destroyed));
 
     await page.goto("http://127.0.0.1:" + server.address().port + "/?reject=1");
