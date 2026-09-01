@@ -176,8 +176,8 @@ func ssrHydrationEachDynamicTextRow(block *EachBlockNode) (*ElementNode, bool) {
 }
 
 // ssrHydrationComponent accepts a direct local child with ordinary props, `@on:*`
-// component events, bindable `bind:value`, static slot fallback, and parent-projected
-// direct text and recursively nested ordinary elements. Structural slot content stays excluded.
+// component events, bindable `bind:value`, static slot fallback, recursive ordinary
+// slot elements, and top-level #if/#key/#each nodes in the existing root subset.
 func ssrHydrationComponent(component *ComponentNode) bool {
 	if component == nil {
 		return false
@@ -210,6 +210,14 @@ func ssrHydrationSlotContent(nodes []Node) bool {
 			continue
 		case *ElementNode:
 			if !ssrHydrationSlotElement(current) {
+				return false
+			}
+		case *IfChainNode:
+			if !ssrHydrationIfChain(current) {
+				return false
+			}
+		case *EachBlockNode:
+			if !ssrHydrationEach(current) {
 				return false
 			}
 		default:
@@ -268,6 +276,42 @@ func ssrHydrationStaticChildren(nodes []Node) bool {
 	return true
 }
 
+// ssrHydrationElementMarkerIDs retains the canonical SSR marker ID for every
+// template element that can appear in this component output, including parent
+// slot content and inactive structural alternatives.
+func ssrHydrationElementMarkerIDs(nodes []SSRPlanNode) map[SectionSpan]int {
+	ids := map[SectionSpan]int{}
+	var visit func([]SSRPlanNode)
+	visit = func(children []SSRPlanNode) {
+		for _, node := range children {
+			switch current := node.(type) {
+			case *SSRPlanElement:
+				ids[current.Span] = current.HydrationID
+				visit(current.Children)
+			case *SSRPlanComponent:
+				for _, slot := range current.Slots {
+					visit(slot)
+				}
+			case *SSRPlanSlot:
+				visit(current.Fallback)
+			case *SSRPlanIf:
+				for _, branch := range current.Branches {
+					visit(branch.Children)
+				}
+			case *SSRPlanEach:
+				visit(current.Children)
+				visit(current.ElseChildren)
+			case *SSRPlanAwait:
+				visit(current.PendingChildren)
+				visit(current.ThenChildren)
+				visit(current.CatchChildren)
+			}
+		}
+	}
+	visit(nodes)
+	return ids
+}
+
 // BuildSSRHydrationClientProgram emits the executable browser factory for the
 // supported SSR subset. It acquires the root through the checked element
 // marker and never runs the CSR mount or initial DOM-write paths.
@@ -285,13 +329,17 @@ func buildSSRHydrationClientProgramWithComponents(name string, sfc *SFC, analysi
 	if sfc == nil || !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
 		return nil, fmt.Errorf("SSR hydration client requires one element root and supported marker-aware descendants")
 	}
+	plan, err := BuildSSRRenderPlanWithAnalysis(name, sfc, analysis, scopeID)
+	if err != nil {
+		return nil, err
+	}
 	if analysis != nil {
 		analysis.lowerReactiveCallbackBodies()
 	}
 	g := &ASTGen{
 		name: name, scopeID: scopeID, analysis: analysis, sfc: sfc, fragCounter: -1, cssExternal: true,
 		domAcquireMode: DOMAcquireHydrate, domAcquirePlan: DOMAcquirePlan{Mode: DOMAcquireHydrate},
-		hydrationStateInput: true, hydrationComponents: components,
+		hydrationStateInput: true, hydrationComponents: components, hydrationElementIDs: ssrHydrationElementMarkerIDs(plan.Nodes),
 	}
 	program := g.buildModule(sfc.TemplateAST.Nodes)
 	validateGeneratedProgram(program)

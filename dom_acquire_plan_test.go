@@ -12,7 +12,7 @@ func TestDOMAcquirePlanTracksStructuralElementsInTemplateOrder(t *testing.T) {
 	}
 	analysis := analyzeScriptAST(sfc.ScriptAST)
 	_, plan := buildProgramWithDOMAcquirePlan("App", sfc, sfc.TemplateAST.Nodes, analysis, "vela-test", false, DOMAcquireCreate)
-	if got, want := plan.Elements, []DOMAcquireElement{{Variable: "$$root", Tag: "main"}, {Variable: "$$n1", Tag: "button"}}; !sameDOMAcquireElements(got, want) {
+	if got, want := plan.Elements, []DOMAcquireElement{{Variable: "$$root", Tag: "main", HydrationID: 0}, {Variable: "$$n1", Tag: "button", HydrationID: 1}}; !sameDOMAcquireElements(got, want) {
 		t.Fatalf("acquire plan=%#v want %#v", got, want)
 	}
 }
@@ -24,11 +24,11 @@ func TestDOMAcquireHydrateModeUsesAcquirePrimitive(t *testing.T) {
 	}
 	analysis := analyzeScriptAST(sfc.ScriptAST)
 	prog, plan := buildProgramWithDOMAcquirePlan("App", sfc, sfc.TemplateAST.Nodes, analysis, "vela-test", false, DOMAcquireHydrate)
-	if plan.Mode != DOMAcquireHydrate || len(plan.Elements) != 1 {
+	if plan.Mode != DOMAcquireHydrate || len(plan.Elements) != 2 {
 		t.Fatalf("hydrate plan=%#v", plan)
 	}
 	source := PrintJS(prog, PrintPretty)
-	if !strings.Contains(source, `$$acquireElement($$walker, 'main')`) {
+	if !strings.Contains(source, `$$acquireHydrationElement($$walker, 0, 'main')`) {
 		t.Fatalf("hydrate mode did not use acquire primitive:\n%s", source)
 	}
 }

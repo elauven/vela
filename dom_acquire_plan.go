@@ -17,6 +17,9 @@ const (
 type DOMAcquireElement struct {
 	Variable string
 	Tag      string
+	// HydrationID is the canonical SSR element-marker ID; it can differ from
+	// the acquisition slice index when static structural ranges are skipped.
+	HydrationID int
 }
 
 // DOMAcquireTextRange is one dynamic text position bracketed by an SSR
@@ -65,6 +68,16 @@ func (plan *DOMAcquirePlan) addElement(variable, tag string) int {
 		return -1
 	}
 	id := len(plan.Elements)
-	plan.Elements = append(plan.Elements, DOMAcquireElement{Variable: variable, Tag: tag})
+	plan.Elements = append(plan.Elements, DOMAcquireElement{Variable: variable, Tag: tag, HydrationID: id})
 	return id
+}
+
+// addHydrationElement records an element acquired by its preassigned SSR plan
+// marker rather than its position among client lowering operations.
+func (plan *DOMAcquirePlan) addHydrationElement(variable, tag string, hydrationID int) int {
+	if plan == nil {
+		return hydrationID
+	}
+	plan.Elements = append(plan.Elements, DOMAcquireElement{Variable: variable, Tag: tag, HydrationID: hydrationID})
+	return hydrationID
 }

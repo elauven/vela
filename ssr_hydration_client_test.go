@@ -1495,7 +1495,7 @@ func TestSSRProjectBuildsStaticLocalComponentSlotsForHydration(t *testing.T) {
 	}
 }
 
-func TestBrowserSSRHydrationAdoptsReactiveLocalComponentSlotElement(t *testing.T) {
+func TestBrowserSSRHydrationAdoptsStructuralAndReactiveLocalComponentSlotContent(t *testing.T) {
 	node := requirePlaywright(t)
 	childSFC, err := parseSFC(`<template><section class="child"><slot><p>fallback</p></slot></section></template>`)
 	if err != nil {
@@ -1514,7 +1514,7 @@ func TestBrowserSSRHydrationAdoptsReactiveLocalComponentSlotElement(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let title = "server"; export let selected = false; function toggle() { selected = !selected; }</script><template><main><Child><button class="slotted" :title={title} class:active={selected} @click={toggle}>{title}</button></Child></main></template>`)
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let visible = true; export let title = "server"; export let selected = false; function toggle() { selected = !selected; }</script><template><main><Child>{#if visible}<p class="slot-state">shown</p>{:else}<p class="slot-state">hidden</p>{/if}<button class="slotted" :title={title} class:active={selected} @click={toggle}>{title}</button></Child></main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1539,8 +1539,8 @@ func TestBrowserSSRHydrationAdoptsReactiveLocalComponentSlotElement(t *testing.T
 		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
 		"Parent.hydrate.js":        []byte(PrintJS(parentEntry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
-<!--e:vela-parent:0--><main vela-parent=""><!--e:vela-child:0--><section vela-child="" class="child"><!--e:vela-parent:1--><button vela-parent="" class="slotted" title="server"><!--v:vela-parent:0-->server<!--/v:vela-parent:0--></button><!--/e:vela-parent:1--></section><!--/e:vela-child:0--><script type="application/json" id="vela-state-vela-child">{"component":"vela-child","props":{},"state":{},"incomplete":false}</script></main><!--/e:vela-parent:0-->
-<script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Title":"server","Selected":false},"state":{},"incomplete":false}</script>
+<!--e:vela-parent:0--><main vela-parent=""><!--e:vela-child:0--><section vela-child="" class="child"><!--v:vela-parent:0--><!--e:vela-parent:1--><p vela-parent="" class="slot-state">shown</p><!--/e:vela-parent:1--><!--/v:vela-parent:0--><!--e:vela-parent:3--><button vela-parent="" class="slotted" title="server"><!--v:vela-parent:1-->server<!--/v:vela-parent:1--></button><!--/e:vela-parent:3--></section><!--/e:vela-child:0--><script type="application/json" id="vela-state-vela-child">{"component":"vela-child","props":{},"state":{},"incomplete":false}</script></main><!--/e:vela-parent:0-->
+<script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Visible":true,"Title":"server","Selected":false},"state":{},"incomplete":false}</script>
 <script type="module">
   import hydrateParent from "./Parent.hydrate.js";
   window.__hydrationObserver = new MutationObserver(() => {});
@@ -1569,16 +1569,22 @@ server.listen(0, "127.0.0.1", async () => {
   try {
     browser = await chromium.launch({headless:true});
     const page = await browser.newPage();
+    const errors = [];
+    page.on("pageerror", error => errors.push(String(error.stack || error)));
+    page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
     page.setDefaultTimeout(5000);
     await page.goto("http://127.0.0.1:" + server.address().port + "/");
-    await page.waitForFunction(() => window.__hydrated);
+    try { await page.waitForFunction(() => window.__hydrated); }
+    catch (error) { throw new Error(String(error.stack || error) + "\n" + errors.join("\n")); }
     const initial = await page.evaluate(() => window.__initialMutations);
     await page.evaluate(() => window.__hydrated.component.set({title: "client"}));
     await page.waitForFunction(() => document.querySelector(".slotted")?.textContent === "client" && document.querySelector(".slotted")?.getAttribute("title") === "client");
     await page.evaluate(() => document.querySelector(".slotted").click());
     await page.waitForFunction(() => document.querySelector(".slotted")?.classList.contains("active"));
-    const result = await page.evaluate((initial) => ({ initial, same: document.querySelector(".slotted") === window.__slot, text: document.querySelector(".slotted")?.textContent, title: document.querySelector(".slotted")?.getAttribute("title"), active: document.querySelector(".slotted")?.classList.contains("active") }), initial);
-    if (result.initial !== 0 || !result.same || result.text !== "client" || result.title !== "client" || !result.active) throw new Error(JSON.stringify(result));
+    await page.evaluate(() => window.__hydrated.component.set({visible: false}));
+    await page.waitForFunction(() => document.querySelector(".slot-state")?.textContent === "hidden");
+    const result = await page.evaluate((initial) => ({ initial, same: document.querySelector(".slotted") === window.__slot, text: document.querySelector(".slotted")?.textContent, title: document.querySelector(".slotted")?.getAttribute("title"), active: document.querySelector(".slotted")?.classList.contains("active"), state: document.querySelector(".slot-state")?.textContent }), initial);
+    if (result.initial !== 0 || !result.same || result.text !== "client" || result.title !== "client" || !result.active || result.state !== "hidden") throw new Error(JSON.stringify(result));
     process.stdout.write("OK");
   } catch (error) {
     console.error(error && error.stack || error);
@@ -1639,12 +1645,30 @@ func TestSSRHydrationClientAdoptsReactiveLocalComponentSlotElement(t *testing.T)
 	}
 }
 
-func TestSSRHydrationRejectsStructuralLocalComponentSlotContent(t *testing.T) {
-	parent, err := parseSFC(`<script>import { Child } from "./Child.vela";</script><template><main><Child>{#if visible}<p>body</p>{/if}</Child></main></template>`)
+func TestSSRHydrationRejectsAwaitLocalComponentSlotContent(t *testing.T) {
+	parent, err := parseSFC(`<script>import { Child } from "./Child.vela";</script><template><main><Child>{#await pending}<p>body</p>{/await}</Child></main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if CanBuildSSRHydrationClient(parent.TemplateAST.Nodes) {
-		t.Fatal("structural slot content must stay outside the hydration subset")
+		t.Fatal("await slot content must stay outside the hydration subset")
+	}
+}
+
+func TestSSRHydrationClientUsesCanonicalElementMarkersAfterStructuralSlot(t *testing.T) {
+	parent, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let visible = true; export let title = "server"; function save() { title = "client"; }</script><template><main><Child>{#if visible}<p>branch</p>{/if}<button @click={save}>{title}</button></Child></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(parent.TemplateAST.Nodes) {
+		t.Fatal("static structural slot followed by reactive sibling should be hydration-capable")
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", parent, analyzeScriptAST(parent.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	if !strings.Contains(source, `$$acquireHydrationElement($$walker, 2, 'button')`) || strings.Contains(source, `$$acquireHydrationElement($$walker, 1, 'button')`) {
+		t.Fatalf("reactive sibling must keep the SSR-plan marker after a structural slot range:\n%s", source)
 	}
 }

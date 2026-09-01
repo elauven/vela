@@ -302,6 +302,9 @@ type ASTGen struct {
 	domAcquireMode DOMAcquireMode
 	domAcquirePlan DOMAcquirePlan
 
+	// hydrationElementIDs binds template element spans to the canonical SSR
+	// render-plan marker IDs. It is populated only for executable hydration.
+	hydrationElementIDs map[SectionSpan]int
 	// hydrationRangeNext follows the SSR render plan's dynamic marker order
 	// for the currently supported text-range subset.
 	hydrationRangeNext int
@@ -2798,7 +2801,7 @@ func (g *ASTGen) buildHydrationRootDOM(root *ElementNode) {
 	// names in the shared expression lowerings, even though $$root is adopted
 	// by a marker rather than newly created.
 	_ = g.id()
-	g.body = append(g.body, g.createElementStmt("$$root", root.Tag))
+	g.body = append(g.body, g.createHydrationTemplateElementStmt("$$root", root))
 	g.applyHydrationElementAttrs("$$root", root)
 	g.buildHydrationRootChildren(root.Children, "$$root")
 }
@@ -4572,7 +4575,7 @@ func (g *ASTGen) buildHydrationElement(element *ElementNode) {
 		return
 	}
 	variable := g.id()
-	g.body = append(g.body, g.createElementStmt(variable, element.Tag))
+	g.body = append(g.body, g.createHydrationTemplateElementStmt(variable, element))
 	g.applyHydrationElementAttrs(variable, element)
 	g.buildHydrationRootChildren(element.Children, variable)
 }
@@ -5732,6 +5735,25 @@ func isBlankText(s string) bool {
 		}
 	}
 	return true
+}
+
+// createHydrationTemplateElementStmt acquires a template element by the exact
+// marker ID reserved by the shared SSR render plan. Unlike the CSR plan order,
+// this remains correct when a preceding static structural range owns elements
+// that the client deliberately does not acquire.
+func (g *ASTGen) createHydrationTemplateElementStmt(varName string, element *ElementNode) JsStmt {
+	if element == nil {
+		panic("vela: missing template element during hydration lowering")
+	}
+	hydrationID, ok := g.hydrationElementIDs[element.Span]
+	if !ok {
+		if g.hydrationElementIDs == nil {
+			return g.createElementStmt(varName, element.Tag)
+		}
+		panic("vela: missing SSR element marker for hydration template span")
+	}
+	g.domAcquirePlan.addHydrationElement(varName, element.Tag, hydrationID)
+	return genConst(varName, genCall(id("$$acquireHydrationElement"), id("$$walker"), numLit(hydrationID), strLit(element.Tag)))
 }
 
 // createElementStmt acquires a structural element through the component's
