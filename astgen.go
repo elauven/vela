@@ -5094,7 +5094,7 @@ func (g *ASTGen) buildHydrationComponentSlotContent(slots map[string][]Node) {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		g.buildHydrationRootTextChildren(slots[name])
+		g.buildHydrationRootChildren(slots[name], "$$root")
 	}
 }
 

@@ -177,7 +177,7 @@ func ssrHydrationEachDynamicTextRow(block *EachBlockNode) (*ElementNode, bool) {
 
 // ssrHydrationComponent accepts a direct local child with ordinary props, `@on:*`
 // component events, bindable `bind:value`, static slot fallback, and parent-projected
-// direct text or otherwise-static slot content.
+// direct text and recursively nested ordinary elements. Structural slot content stays excluded.
 func ssrHydrationComponent(component *ComponentNode) bool {
 	if component == nil {
 		return false
@@ -201,15 +201,39 @@ func ssrHydrationSlot(slot *SlotNode) bool {
 	return slot != nil && ssrHydrationStaticChildren(slot.Fallback)
 }
 
-// ssrHydrationSlotContent admits parent-projected slot text ranges and
-// otherwise-static DOM. Parent owns the dynamic markers; child leaves them in place.
+// ssrHydrationSlotContent admits parent-projected text and recursive ordinary
+// elements. Parent owns their markers and reactive work; child leaves them in place.
 func ssrHydrationSlotContent(nodes []Node) bool {
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
 			continue
 		case *ElementNode:
-			if !ssrHydrationStaticChildren([]Node{current}) {
+			if !ssrHydrationSlotElement(current) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ssrHydrationSlotElement intentionally excludes structural blocks, nested
+// components, and nested slots. Their marker ownership needs a dedicated plan.
+func ssrHydrationSlotElement(element *ElementNode) bool {
+	if element == nil || !ssrHydrationElementAttrs(element) {
+		return false
+	}
+	if _, rawText := rawTextProp(element.Tag); rawText {
+		return ssrHydrationStaticChildren(element.Children)
+	}
+	for _, child := range element.Children {
+		switch current := child.(type) {
+		case *TextNode:
+			continue
+		case *ElementNode:
+			if !ssrHydrationSlotElement(current) {
 				return false
 			}
 		default:
