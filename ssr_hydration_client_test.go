@@ -318,7 +318,7 @@ func TestSSRHydrationClientAssignsBindThisAfterAdoption(t *testing.T) {
 
 func TestBrowserSSRHydrationAwaitRetainsPendingThenReplacesRange(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>let resolveRequest, rejectRequest; let draft = $state("server"); const request = new Promise((resolve, reject) => { resolveRequest = resolve; rejectRequest = reject; window.__resolveRequest = resolve; window.__rejectRequest = reject; }); function save() { window.__saved = (window.__saved || 0) + 1; }</script><template><main>{#await request}<span class="pending">Loading</span>{:then value}<button class="done" :title={value} @click={save}>{value}</button><input class="draft" bind:value={draft} /><p class="draft-output">{draft}</p>{:catch error}<span class="failed">{error}</span>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>let resolveRequest, rejectRequest; let draft = $state("server"); let visible = $state(false); const request = new Promise((resolve, reject) => { resolveRequest = resolve; rejectRequest = reject; window.__resolveRequest = resolve; window.__rejectRequest = reject; }); function save() { window.__saved = (window.__saved || 0) + 1; } function toggle() { visible = !visible; }</script><template><main>{#await request}<span class="pending">Loading</span>{:then value}<button class="done" :title={value} @click={save}>{value}</button><input class="draft" bind:value={draft} /><p class="draft-output">{draft}</p><button class="toggle" @click={toggle}>Toggle</button>{#if visible}<p class="branch">On</p>{:else}<p class="branch">Off</p>{/if}{:catch error}<span class="failed">{error}</span>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,6 +386,9 @@ server.listen(0, "127.0.0.1", async () => {
     if (draft.value !== "server" || draft.output !== "server") throw new Error(JSON.stringify(draft));
     await page.fill(".draft", "typed");
     await page.waitForFunction(() => document.querySelector(".draft-output")?.textContent === "typed");
+    if (await page.locator(".branch").textContent() !== "Off") throw new Error("nested await if did not mount its initial branch");
+    await page.click(".toggle");
+    await page.waitForFunction(() => document.querySelector(".branch")?.textContent === "On");
     await page.click(".done");
     const saved = await page.evaluate(() => window.__saved);
     if (saved !== 1) throw new Error("await branch event did not run: " + saved);

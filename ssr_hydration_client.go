@@ -174,13 +174,17 @@ func ssrHydrationAwait(block *AwaitBlockNode) bool {
 
 // ssrHydrationAwaitBranch permits static HTML plus text interpolation after a
 // promise settles. It also permits DOM events and class/style directives.
-// Nested blocks and components need a
-// dedicated lifecycle plan rather than being silently lowered as static HTML.
+// Nested static-branch if blocks are supported; each/await blocks and components
+// still need a dedicated lifecycle plan rather than being silently lowered as static HTML.
 func ssrHydrationAwaitBranch(nodes []Node) bool {
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
 			continue
+		case *IfChainNode:
+			if !ssrHydrationIfChain(current) {
+				return false
+			}
 		case *ElementNode:
 			if current == nil {
 				return false
