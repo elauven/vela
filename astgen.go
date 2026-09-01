@@ -3804,6 +3804,23 @@ func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap stri
 		Body: genBlock(
 			genIf(genUnary("!", genMember(id(anchor), "parentNode")), genReturn(nil)),
 			genBlock(fastPath...),
+			// Moving an already-focused keyed row can make Chromium clear
+			// document.activeElement. Remember focus only when it belongs to a
+			// retained old row, then restore that exact DOM node after the
+			// reconciliation has moved rows and removed dropped keys.
+			genConst("$$focusTarget", genMember(id("document"), "activeElement")),
+			genConst("$$restoreFocus", genLogical("&&", id("$$focusTarget"), genCall(
+				genMember(genCall(generatedMemberPath("Array.from"), genCall(genMember(id(keymap), "values"))), "some"),
+				&JsArrowFunc{
+					baseExpr: baseExpr{genNode()},
+					Params:   []JsExpr{id("$$row")},
+					Body: genLogical("||",
+						genBinary("===", genMember(id("$$row"), "el"), id("$$focusTarget")),
+						genCall(genMember(genMember(id("$$row"), "el"), "contains"), id("$$focusTarget")),
+					),
+				},
+			))),
+
 			genConst("$$newKeys", genNew(id("Set"))),
 			genConst("$$newBlocks", genArray()),
 			genExprStmt(genCall(genMember(genLogical("||", arr, genArray()), "forEach"), &JsFuncExpr{
@@ -3813,6 +3830,10 @@ func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap stri
 			})),
 			genExprStmt(genCall(genMember(id(keymap), "forEach"), removeDropped)),
 			genAssignStmt(id(blocks), id("$$newBlocks")),
+			genIf(genLogical("&&", id("$$restoreFocus"), genLogical("&&",
+				genMember(id("$$focusTarget"), "isConnected"),
+				genBinary("===", genUnary("typeof", genMember(id("$$focusTarget"), "focus")), strLit("function")),
+			)), genExprStmt(genCall(genMember(id("$$focusTarget"), "focus")))),
 		),
 	}
 }

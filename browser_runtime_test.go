@@ -150,6 +150,21 @@ func TestBrowserRuntimeKeepsFocusAcrossDeepEachUpdate(t *testing.T) {
 	})
 }
 
+func TestBrowserRuntimeKeyedEachRestoresFocusAfterReorder(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let items = $state([{ id: "a", label: "A" }, { id: "b", label: "B" }]);
+  function reorder() { items = [items[1], items[0]]; }
+</script>
+<template><div class="list" @keydown={reorder}>{#each items as item (item.id)}<div class="row"><input class="row-input" :value={item.label} /><span class="label">{item.label}</span></div>{/each}</div></template>`}, "App.js", []rtStep{
+		{"focus": "div.row:nth-of-type(1) input.row-input"},
+		// Dispatch from the focused input so the mutation itself does not
+		// move focus to a control that initiated the reorder.
+		{"keydown": "div.row:nth-of-type(1) input.row-input", "key": "ArrowRight"},
+		{"assertText": "div.row:nth-of-type(1) .label", "equals": "B"},
+		{"assertFocused": "div.row:nth-of-type(2) input.row-input"},
+	})
+}
+
 // The audit fixtures below are executable runtime-cost regression contracts.
 // Tasks 021 and 022 have already tightened the deep-state and synchronous
 // flush counts; the remaining fixtures describe the next optimisation targets.

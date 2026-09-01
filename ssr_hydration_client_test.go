@@ -397,8 +397,8 @@ server.listen(0, "127.0.0.1", async () => {
     if (keyedBefore !== "A") throw new Error("keyed each initial row missing");
     await page.evaluate(() => document.querySelector(".reorder").dispatchEvent(new MouseEvent("click", { bubbles: true })));
     await page.waitForFunction(() => document.querySelectorAll(".keyed-row")[0]?.textContent === "B");
-    const keyedAfter = await page.evaluate(() => ({ same: document.querySelectorAll(".keyed-row")[1] === window.__keyedA }));
-    if (!keyedAfter.same) throw new Error(JSON.stringify(keyedAfter));
+    const keyedAfter = await page.evaluate(() => ({ same: document.querySelectorAll(".keyed-row")[1] === window.__keyedA, focused: document.activeElement === window.__keyedA }));
+    if (!keyedAfter.same || !keyedAfter.focused) throw new Error(JSON.stringify(keyedAfter));
     await page.click(".done");
     const saved = await page.evaluate(() => window.__saved);
     if (saved !== 1) throw new Error("await branch event did not run: " + saved);
