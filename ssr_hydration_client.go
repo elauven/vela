@@ -174,7 +174,7 @@ func ssrHydrationAwait(block *AwaitBlockNode) bool {
 
 // ssrHydrationAwaitBranch permits static HTML plus text interpolation after a
 // promise settles. It also permits DOM events and class/style directives.
-// One-way attributes and bindings, nested blocks, and components need a
+// Two-way bindings, nested blocks, and components need a
 // dedicated lifecycle plan rather than being silently lowered as static HTML.
 func ssrHydrationAwaitBranch(nodes []Node) bool {
 	for _, node := range nodes {
@@ -186,7 +186,7 @@ func ssrHydrationAwaitBranch(nodes []Node) bool {
 				return false
 			}
 			for _, attr := range current.Attrs {
-				if attr == nil || attr.IsBind || attr.IsTwoWay || attr.IsBindThis {
+				if attr == nil || attr.IsTwoWay || attr.IsBindThis {
 					return false
 				}
 			}

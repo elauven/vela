@@ -318,7 +318,7 @@ func TestSSRHydrationClientAssignsBindThisAfterAdoption(t *testing.T) {
 
 func TestBrowserSSRHydrationAwaitRetainsPendingThenReplacesRange(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>let resolveRequest, rejectRequest; const request = new Promise((resolve, reject) => { resolveRequest = resolve; rejectRequest = reject; window.__resolveRequest = resolve; window.__rejectRequest = reject; }); function save() { window.__saved = (window.__saved || 0) + 1; }</script><template><main>{#await request}<span class="pending">Loading</span>{:then value}<button class="done" @click={save}>{value}</button>{:catch error}<span class="failed">{error}</span>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>let resolveRequest, rejectRequest; const request = new Promise((resolve, reject) => { resolveRequest = resolve; rejectRequest = reject; window.__resolveRequest = resolve; window.__rejectRequest = reject; }); function save() { window.__saved = (window.__saved || 0) + 1; }</script><template><main>{#await request}<span class="pending">Loading</span>{:then value}<button class="done" :title={value} @click={save}>{value}</button>{:catch error}<span class="failed">{error}</span>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,8 +380,8 @@ server.listen(0, "127.0.0.1", async () => {
     if (initial.mutations !== 0 || !initial.pending || !initial.same) throw new Error(JSON.stringify(initial));
     await page.evaluate(() => window.__resolveRequest("ready"));
     await page.waitForFunction(() => document.querySelector(".done"));
-    const settled = await page.evaluate(() => ({ pending: !!document.querySelector(".pending"), done: document.querySelector(".done")?.textContent, same: document.querySelector("main") === window.__rootBefore }));
-    if (settled.pending || settled.done !== "ready" || !settled.same) throw new Error(JSON.stringify(settled));
+    const settled = await page.evaluate(() => ({ pending: !!document.querySelector(".pending"), done: document.querySelector(".done")?.textContent, title: document.querySelector(".done")?.getAttribute("title"), same: document.querySelector("main") === window.__rootBefore }));
+    if (settled.pending || settled.done !== "ready" || settled.title !== "ready" || !settled.same) throw new Error(JSON.stringify(settled));
     await page.click(".done");
     const saved = await page.evaluate(() => window.__saved);
     if (saved !== 1) throw new Error("await branch event did not run: " + saved);

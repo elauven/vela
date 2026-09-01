@@ -406,7 +406,7 @@ returns `{ root, props, componentProps, state, deep, ranges, elements }`.
 `$$velaState`; it is the exact props shape expected by the SSR client module.
 For the first executable subset — one root element, static attributes and
 recursively nested text interpolation, ordinary dynamic attributes / `class:` / `style:` directives / DOM events, a static-branch `#if` / `#key` / `#each` at any element depth, an unkeyed
-static-row `#each`, and no DOM bindings, plus a `#await` with a static pending branch and static HTML plus dynamic text plus `class:` / `style:` directives and DOM events in then/catch branches, whose pending SSR DOM is retained until the client promise settles — project SSR also writes a sibling
+static-row `#each`, and no DOM bindings, plus a `#await` with a static pending branch and static HTML plus dynamic text, one-way attributes, `class:` / `style:` directives, and DOM events in then/catch branches, whose pending SSR DOM is retained until the client promise settles — project SSR also writes a sibling
 `client/user_page.hydrate_client.js` module. The entry invokes that module
 with the checked marker walker: it acquires the existing root element, skips
 CSR mount and all initial DOM writes, restores serializable state, and attaches
