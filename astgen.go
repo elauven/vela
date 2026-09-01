@@ -4913,6 +4913,9 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		if plan.mounted != "" {
 			g.body = append(g.body, genLet(plan.mounted, boolLit(false)))
 		}
+		if plan.cleanupVar != "" {
+			g.body = append(g.body, genLet(plan.cleanupVar, genNull()))
+		}
 	}
 
 	renderBody := []JsStmt{
@@ -4978,9 +4981,10 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 }
 
 type hydrationAwaitBranchPlan struct {
-	build   []JsStmt
-	cleanup []JsStmt
-	mounted string
+	build      []JsStmt
+	cleanup    []JsStmt
+	cleanupVar string
+	mounted    string
 }
 
 // buildHydrationAwaitBranch creates a branch that did not exist in SSR DOM.
@@ -4992,12 +4996,15 @@ func (g *ASTGen) buildHydrationAwaitBranch(children []Node, bindingName, binding
 	if len(children) == 0 {
 		return hydrationAwaitBranchPlan{}
 	}
+
 	if allStatic(children) {
 		return hydrationAwaitBranchPlan{build: []JsStmt{
 			genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(children, g.scopeID)))),
 		}}
 	}
+
 	var plan hydrationAwaitBranchPlan
+	plan.cleanupVar = targetVar + "_cleanup"
 	g.withTemplateBinding(bindingName, bindingValue, func() {
 		wasBranchScope := g.inBranchScope
 		cap := g.captureScope(func() {
@@ -5015,9 +5022,22 @@ func (g *ASTGen) buildHydrationAwaitBranch(children []Node, bindingName, binding
 		plan.build = append(plan.build, cap.body...)
 		plan.build = append(plan.build, cap.events...)
 		plan.build = append(plan.build, cap.initBody...)
+		if len(cap.cleanup) > 0 {
+			// cap.cleanup can reference handlers declared while this branch
+			// is built. Retain it as a closure rather than replaying it from
+			// the later render/destroy scope, where those branch locals do
+			// not exist.
+			plan.build = append(plan.build, genAssignStmt(id(plan.cleanupVar), &JsArrowFunc{
+				baseExpr: baseExpr{genNode()},
+				Body:     genBlock(cap.cleanup...),
+			}))
+			plan.cleanup = append(plan.cleanup, genIf(id(plan.cleanupVar), genBlock(
+				genInvoke(plan.cleanupVar),
+				genAssignStmt(id(plan.cleanupVar), genNull()),
+			)))
+		}
 		plan.build = append(plan.build, genAssignStmt(id(mountedVar), boolLit(true)))
 		plan.cleanup = append(plan.cleanup, genAssignStmt(id(mountedVar), boolLit(false)))
-		plan.cleanup = append(plan.cleanup, cap.cleanup...)
 		for dep, statements := range cap.updates {
 			for _, statement := range statements {
 				g.addUpdate(dep, guardedTemplateStmt(statement, mountedVar))

@@ -402,6 +402,13 @@ server.listen(0, "127.0.0.1", async () => {
     await page.click(".done");
     const saved = await page.evaluate(() => window.__saved);
     if (saved !== 1) throw new Error("await branch event did not run: " + saved);
+    await page.evaluate(() => {
+      window.__doneBeforeDestroy = document.querySelector(".done");
+      window.__hydrated.component.destroy();
+      window.__doneBeforeDestroy.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const destroyed = await page.evaluate(() => ({ rootConnected: window.__rootBefore.isConnected, doneConnected: window.__doneBeforeDestroy.isConnected, saved: window.__saved }));
+    if (destroyed.rootConnected || destroyed.doneConnected || destroyed.saved !== 1) throw new Error("hydration destroy leaked DOM or listener: " + JSON.stringify(destroyed));
 
     await page.goto("http://127.0.0.1:" + server.address().port + "/?reject=1");
     await page.waitForFunction(() => window.__hydrated && window.__rejectRequest);
