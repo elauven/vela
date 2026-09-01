@@ -5085,6 +5085,19 @@ func (g *ASTGen) hydrationComponentOverridesExpr(attrs []*Attr) JsExpr {
 	return overrides
 }
 
+// buildHydrationComponentSlotContent adopts parent-owned dynamic text markers
+// in deterministic slot-name order, matching SSR plan construction.
+func (g *ASTGen) buildHydrationComponentSlotContent(slots map[string][]Node) {
+	names := make([]string, 0, len(slots))
+	for name := range slots {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		g.buildHydrationRootTextChildren(slots[name])
+	}
+}
+
 // buildHydrationComponentNode adopts a local child component already emitted by
 // the Go renderer. Its hydrate entry restores child payload before returning
 // the live client instance, so the parent must not replay initial props or
@@ -5095,6 +5108,7 @@ func (g *ASTGen) buildHydrationComponentNode(comp *ComponentNode, parentVar stri
 	g.declareInScope(genLet(inst, genNull()))
 
 	propsExpr := g.componentPropsExpr(comp.Attrs)
+	g.buildHydrationComponentSlotContent(comp.Slots)
 	overrides := g.hydrationComponentOverridesExpr(comp.Attrs)
 	args := []JsExpr{id(parentVar)}
 	if overrides != nil {
