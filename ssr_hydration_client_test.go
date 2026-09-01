@@ -60,6 +60,8 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"dynamic text each row", `<template><main>{#each items as item}<span>{item}</span>{/each}</main></template>`, true},
 		{"keyed each", `<template><main>{#each items as item (item.id)}<span>Row</span>{/each}</main></template>`, true},
 		{"keyed each else", `<template><main>{#each items as item (item.id)}<span>Row</span>{:else}<span>Empty</span>{/each}</main></template>`, false},
+		{"static await", `<template><main>{#await request}<span>Loading</span>{:then value}<span>Done</span>{:catch error}<span>Failed</span>{/await}</main></template>`, true},
+		{"await with dynamic resolution", `<template><main>{#await request}<span>Loading</span>{:then value}<span>{value}</span>{/await}</main></template>`, false},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, true},
 		{"select binding", `<template><select bind:value={choice}><option value="a">A</option></select></template>`, true},
@@ -74,6 +76,33 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 				t.Fatalf("CanBuildSSRHydrationClient()=%t, want %t", got, source.want)
 			}
 		})
+	}
+}
+
+func TestSSRHydrationClientAdoptsPendingAwaitRangeWithoutInitialRender(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let request;</script><template><main>{#await request}<span>Loading</span>{:then value}<span>Done</span>{:catch error}<span>Failed</span>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"const $$hawait0_range = $$acquireHydrationRange($$walker, 0);",
+		"let $$hawait0_nodes = $$adoptHydrationRange($$hawait0_range);",
+		"function $$hawait0_render()",
+		"function $$hawait0_drive()",
+		"Promise.resolve(request)",
+		"$$hawait0_range.end.before($$frag)",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("hydration await lowering misses %q:\n%s", want, source)
+		}
+	}
+	if strings.Contains(source, "appendChild($$root)") || strings.Contains(source, "document.createElement('main')") {
+		t.Fatalf("hydration await lowering unexpectedly creates initial DOM:\n%s", source)
 	}
 }
 
@@ -281,6 +310,91 @@ func TestSSRHydrationClientAssignsBindThisAfterAdoption(t *testing.T) {
 		if !strings.Contains(source, want) {
 			t.Fatalf("bind:this hydration lowering misses %q:\n%s", want, source)
 		}
+	}
+}
+
+func TestBrowserSSRHydrationAwaitRetainsPendingThenReplacesRange(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>let resolveRequest; const request = new Promise((resolve) => { resolveRequest = resolve; window.__resolveRequest = resolve; });</script><template><main>{#await request}<span class="pending">Loading</span>{:then value}<span class="done">Done</span>{:catch error}<span class="failed">Failed</span>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":             embeddedRuntime,
+		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
+		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
+		"index.html": []byte(`<!doctype html><body>
+<!--e:vela-page:0--><main vela-page=""><!--v:vela-page:0--><span vela-page="" class="pending">Loading</span><!--/v:vela-page:0--></main><!--/e:vela-page:0-->
+<script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"incomplete":false}</script>
+<script type="module">
+  import hydratePage from "./Page.hydrate.js";
+  window.__hydrationObserver = new MutationObserver(() => {});
+  window.__hydrationObserver.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+  window.__rootBefore = document.querySelector("main");
+  window.__hydrated = hydratePage(document.body);
+  window.__initialMutations = window.__hydrationObserver.takeRecords().length;
+</script></body>`),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs = require("fs");
+const path = require("path");
+const http = require("http");
+const { chromium } = require("playwright");
+const root = process.argv[1];
+const server = http.createServer((req, res) => {
+  const requestPath = req.url.split("?")[0];
+  const name = requestPath === "/" ? "index.html" : requestPath.slice(1);
+  try { const body = fs.readFileSync(path.join(root, name)); res.writeHead(200, {"content-type": name.endsWith(".js") ? "text/javascript" : "text/html"}).end(body); }
+  catch { res.writeHead(404).end(); }
+});
+server.listen(0, "127.0.0.1", async () => {
+  let browser;
+  try {
+    browser = await chromium.launch({headless:true});
+    const page = await browser.newPage();
+    page.setDefaultTimeout(5000);
+    await page.goto("http://127.0.0.1:" + server.address().port + "/");
+    await page.waitForFunction(() => window.__hydrated && window.__resolveRequest);
+    const initial = await page.evaluate(() => ({ mutations: window.__initialMutations, pending: !!document.querySelector(".pending"), same: document.querySelector("main") === window.__rootBefore }));
+    if (initial.mutations !== 0 || !initial.pending || !initial.same) throw new Error(JSON.stringify(initial));
+    await page.evaluate(() => window.__resolveRequest("ready"));
+    await page.waitForFunction(() => document.querySelector(".done"));
+    const settled = await page.evaluate(() => ({ pending: !!document.querySelector(".pending"), done: !!document.querySelector(".done"), same: document.querySelector("main") === window.__rootBefore }));
+    if (settled.pending || !settled.done || !settled.same) throw new Error(JSON.stringify(settled));
+    process.stdout.write("OK");
+  } catch (error) {
+    console.error(error && error.stack || error);
+    process.exitCode = 1;
+  } finally {
+    await browser?.close();
+    server.close(() => process.exit());
+  }
+});
+`
+	run := exec.Command(node, "-e", browserScript, dir)
+	output, err := run.CombinedOutput()
+	if err != nil {
+		t.Fatalf("browser await hydration fixture failed: %v\n%s", err, output)
+	}
+	if strings.TrimSpace(string(output)) != "OK" {
+		t.Fatalf("browser await hydration fixture output=%q", output)
 	}
 }
 

@@ -40,6 +40,10 @@ func ssrHydrationRootChildren(nodes []Node) bool {
 			if !ssrHydrationEach(current) {
 				return false
 			}
+		case *AwaitBlockNode:
+			if !ssrHydrationAwait(current) {
+				return false
+			}
 		case *ComponentNode:
 			if !ssrHydrationComponent(current) {
 				return false
@@ -82,6 +86,10 @@ func ssrHydrationElement(element *ElementNode) bool {
 			}
 		case *EachBlockNode:
 			if !ssrHydrationEach(current) {
+				return false
+			}
+		case *AwaitBlockNode:
+			if !ssrHydrationAwait(current) {
 				return false
 			}
 		case *ComponentNode:
@@ -148,6 +156,20 @@ func ssrHydrationEach(block *EachBlockNode) bool {
 		return false
 	}
 	return ssrHydrationStaticChildren(block.ElseChildren)
+}
+
+// ssrHydrationAwait admits the first marker-aware await subset. SSR always
+// renders the pending branch, so hydration can retain that exact DOM and only
+// replace its range once the client-side promise settles. Branches are static
+// in this slice: named then/catch values need their own range-aware subtree
+// lowering before expressions such as {value.name} can be adopted safely.
+func ssrHydrationAwait(block *AwaitBlockNode) bool {
+	if block == nil || len(block.PendingChildren) == 0 {
+		return false
+	}
+	return ssrHydrationStaticChildren(block.PendingChildren) &&
+		ssrHydrationStaticChildren(block.ThenChildren) &&
+		ssrHydrationStaticChildren(block.CatchChildren)
 }
 
 // ssrHydrationEachDynamicTextRow accepts one ordinary row element with only

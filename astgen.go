@@ -4556,6 +4556,8 @@ func (g *ASTGen) buildHydrationRootChildren(children []Node, parentVar string) {
 			g.buildHydrationRootIfChain(current)
 		case *EachBlockNode:
 			g.buildHydrationRootEach(current)
+		case *AwaitBlockNode:
+			g.buildHydrationRootAwait(current)
 		case *ComponentNode:
 			g.buildComponentNode(current, parentVar)
 		case *SlotNode:
@@ -4841,6 +4843,90 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
+	}
+	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+}
+
+// buildHydrationRootAwait retains the pending branch emitted by SSR, then
+// drives only the paired marker range after the browser promise settles. The
+// initial active state is deliberately pending, so invoking the driver during
+// hydration attaches promise callbacks without recreating or rewriting the
+// server DOM.
+//
+// CanBuildSSRHydrationClient limits this lowering to static branches. That
+// lets replacement HTML stay compiler-authored while a later lowering can add
+// marker-aware dynamic then/catch subtrees without changing this adoption
+// contract.
+func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
+	if block == nil {
+		return
+	}
+	markerID := g.hydrationRangeNext
+	g.hydrationRangeNext++
+	name := "$$hawait" + itoa(markerID)
+	rangeVar := name + "_range"
+	nodesVar := name + "_nodes"
+	activeVar := name + "_active"
+	stateVar := name + "_state"
+	valueVar := name + "_value"
+	errorVar := name + "_error"
+	cellVar := name + "_cell"
+	renderVar := name + "_render"
+	driverVar := name + "_drive"
+
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+		genLet(activeVar, numLit(0)),
+		genLet(stateVar, numLit(0)),
+		genLet(valueVar, id("undefined")),
+		genLet(errorVar, id("undefined")),
+		genLet(cellVar, genNull()),
+	)
+
+	renderBody := []JsStmt{
+		genIf(genBinary("===", id(stateVar), id(activeVar)), genReturn(nil)),
+		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
+	}
+	for state, children := range [][]Node{block.PendingChildren, block.ThenChildren, block.CatchChildren} {
+		if len(children) == 0 {
+			continue
+		}
+		renderBody = append(renderBody, genIf(
+			genBinary("===", id(stateVar), numLit(state)),
+			genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(children, g.scopeID)))),
+		))
+	}
+	renderBody = append(renderBody,
+		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
+		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
+		genAssignStmt(id(activeVar), id(stateVar)),
+	)
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: renderVar, Body: genBlock(renderBody...)})
+
+	settle := func(param, target string, state int) JsExpr {
+		return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(param)}, Body: genBlock(
+			genIf(genBinary("!==", id(cellVar), id("$$p")), genReturn(nil)),
+			genAssignStmt(id(target), id(param)),
+			genAssignStmt(id(stateVar), numLit(state)),
+			genInvoke(renderVar),
+		)}
+	}
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: driverVar, Body: genBlock(
+		genConst("$$p", genCall(genMember(id("Promise"), "resolve"), g.templateExpr(block.Expr))),
+		genIf(genBinary("===", id(cellVar), id("$$p")), genReturn(nil)),
+		genAssignStmt(id(cellVar), id("$$p")),
+		genAssignStmt(id(stateVar), numLit(0)),
+		genAssignStmt(id(valueVar), id("undefined")),
+		genAssignStmt(id(errorVar), id("undefined")),
+		genInvoke(renderVar),
+		genExprStmt(genCall(genMember(id("$$p"), "then"), settle("$$value", valueVar, 1), settle("$$error", errorVar, 2))),
+	)})
+	g.hydrationInitBody = append(g.hydrationInitBody, genInvoke(driverVar))
+	for _, dependency := range templateExprDeps(block.Expr, g.reactiveNames()) {
+		g.addStructuralUpdate(dependency, genInvoke(driverVar))
 	}
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 }
