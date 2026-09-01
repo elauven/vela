@@ -319,7 +319,7 @@ func TestSSRHydrationClientAssignsBindThisAfterAdoption(t *testing.T) {
 
 func TestBrowserSSRHydrationAwaitRetainsPendingThenReplacesRange(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>let resolveRequest, rejectRequest; let draft = $state("server"); let visible = $state(false); let items = $state(["A"]); let keyed = $state([{ id: "a", label: "A" }, { id: "b", label: "B" }]); const request = new Promise((resolve, reject) => { resolveRequest = resolve; rejectRequest = reject; window.__resolveRequest = resolve; window.__rejectRequest = reject; }); function save() { window.__saved = (window.__saved || 0) + 1; } function toggle() { visible = !visible; } function addItem() { items = [...items, "B"]; } function reorder() { keyed = [keyed[1], keyed[0]]; }</script><template><main>{#await request}<span class="pending">Loading</span>{:then value}<button class="done" :title={value} @click={save}>{value}</button><input class="draft" bind:value={draft} /><p class="draft-output">{draft}</p><button class="toggle" @click={toggle}>Toggle</button>{#if visible}<p class="branch">On</p>{:else}<p class="branch">Off</p>{/if}<button class="add" @click={addItem}>Add</button>{#each items as item}<p class="row">{item}</p>{/each}<button class="reorder" @click={reorder}>Reorder</button>{#each keyed as item (item.id)}<button class="keyed-row">{item.label}</button>{/each}{:catch error}<span class="failed">{error}</span>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>let resolveRequest, rejectRequest; let draft = $state("server"); let visible = $state(false); let items = $state(["A"]); let keyed = $state([{ id: "a", label: "A" }, { id: "b", label: "B" }]); function createRequest() { return new Promise((resolve, reject) => { resolveRequest = resolve; rejectRequest = reject; window.__resolveRequest = resolve; window.__rejectRequest = reject; }); } let request = $state(createRequest()); function restartRequest() { request = createRequest(); } window.__restartRequest = restartRequest; function save() { window.__saved = (window.__saved || 0) + 1; } function toggle() { visible = !visible; } function addItem() { items = [...items, "B"]; } function reorder() { keyed = [keyed[1], keyed[0]]; }</script><template><main>{#await request}<span class="pending">Loading</span>{:then value}<button class="done" :title={value} @click={save}>{value}</button><input class="draft" bind:value={draft} /><p class="draft-output">{draft}</p><button class="toggle" @click={toggle}>Toggle</button>{#if visible}<p class="branch">On</p>{:else}<p class="branch">Off</p>{/if}<button class="add" @click={addItem}>Add</button>{#each items as item}<p class="row">{item}</p>{/each}<button class="reorder" @click={reorder}>Reorder</button>{#each keyed as item (item.id)}<button class="keyed-row">{item.label}</button>{/each}{:catch error}<span class="failed">{error}</span>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,6 +402,14 @@ server.listen(0, "127.0.0.1", async () => {
     await page.click(".done");
     const saved = await page.evaluate(() => window.__saved);
     if (saved !== 1) throw new Error("await branch event did not run: " + saved);
+    await page.evaluate(() => { window.__doneBeforeRestart = document.querySelector(".done"); window.__restartRequest(); });
+    await page.waitForFunction(() => document.querySelector(".pending"));
+    await page.evaluate(() => window.__doneBeforeRestart.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const restarted = await page.evaluate(() => ({ oldDoneConnected: window.__doneBeforeRestart.isConnected, saved: window.__saved }));
+    if (restarted.oldDoneConnected || restarted.saved !== 1) throw new Error("await branch replacement leaked listener: " + JSON.stringify(restarted));
+    await page.evaluate(() => window.__resolveRequest("again"));
+    await page.waitForFunction(() => document.querySelector(".done")?.textContent === "again");
+
     await page.evaluate(() => {
       window.__doneBeforeDestroy = document.querySelector(".done");
       window.__hydrated.component.destroy();
