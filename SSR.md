@@ -865,3 +865,91 @@ For quick reference, the recommendations from this design:
 | `{#await}` server-side | Render pending state; client takes over |
 | Scope creep guardrail | Translator is intentionally small; escape hatch covers the rest |
 | First concrete step | Corpus collection + hand-written Card.go example |
+
+---
+
+## Opt-in project route manifest
+
+Route discovery is a project metadata pass for SSR. It is not an HTTP server,
+JavaScript router, loader, redirect system, or authorization layer. Existing
+`vela --project` builds never read routes and keep their current output.
+
+The planned SSR-only option is `--routes=off|auto|manifest`; `off` is the
+default. `auto` discovers filesystem pages and merges a manifest when one
+exists. `manifest` requires `vela.routes.json`. The compiler never enables
+routing only because a directory happens to be named `routes`.
+
+### Filesystem pages
+
+Pages live below `<project>/routes` and use `+page.vela`:
+
+| Source | Route pattern |
+| --- | --- |
+| `routes/+page.vela` | `/` |
+| `routes/about/+page.vela` | `/about` |
+| `routes/blog/[slug]/+page.vela` | `/blog/:slug` |
+| `routes/files/[...path]/+page.vela` | `/files/*path` |
+
+Static segments are `[A-Za-z0-9_-]+`; parameters are `[name]`, where `name`
+matches `[A-Za-z][A-Za-z0-9_]*`; and `[...name]` is a final-only catch-all.
+Optional catch-alls, route groups, regexp segments, and encoded segment syntax
+are not v1 features. `+layout.vela` is discovered and recorded as an ordered
+root-to-leaf layout chain, but v1 does not compose or render layouts implicitly.
+
+### `vela.routes.json`
+
+The optional manifest is relative to the project root and contains only route
+metadata:
+
+```json
+{
+  "version": 1,
+  "mode": "extend",
+  "routes": [
+    {"id":"documentation","path":"/docs/:slug","component":"routes/docs/[slug]/+page.vela"},
+    {"id":"home","path":"/","component":"pages/Landing.vela","override":true}
+  ]
+}
+```
+
+`extend` is the default. A manifest route that collides with a discovered path
+requires `override: true` and replaces that one entry. Two explicit entries for
+one path, or an override without a discovered target, are errors. `replace`
+uses only manifest entries. Component paths must remain inside the project and
+target `.vela` files. No loader, middleware, auth, environment, or secret
+fields exist in v1.
+
+### Artefacts and application contract
+
+Enabled route mode emits `out/routes.json` and optionally
+`out/server/routes/routes_gen.go`. They contain only normalized route id,
+pattern, ordered params, generated server renderer identity, client entry path,
+and layout identity; never `.vela` source, rendered HTML, script values, or
+user data. Entries are sorted by normalized pattern then id.
+
+`routes_gen.go` is a standalone metadata package with `Entry`, `Match`,
+`Entries`, and a pure `MatchPath(string)` helper. It neither reads HTTP
+requests nor calls renderers. The application owns request handling, data,
+auth, status codes, and typed props:
+
+```go
+match, ok := routes.MatchPath(r.URL.Path)
+if !ok { http.NotFound(w, r); return }
+switch match.ID {
+case "documentation":
+    docs.Render(w, docs.DocsProps{Slug: match.Params["slug"]})
+}
+```
+
+### Diagnostics and fixture matrix
+
+The route pass reports `VELA-ROUTE-DUPLICATE`,
+`VELA-ROUTE-INVALID-SEGMENT`, `VELA-ROUTE-CATCHALL-POSITION`,
+`VELA-ROUTE-OVERRIDE`, and `VELA-ROUTE-COMPONENT` with the offending
+component path segment or manifest location. Its implementation fixtures cover
+index, nested static and parameter pages, catch-all, layout chain, manifest
+extend/replace/override, duplicates, invalid names, and source positions.
+
+The pass consumes the existing canonical `.vela` list only after component
+compilation and generated server package validation. It must not alter template
+code generation, component linking, or browser runtime behavior.
