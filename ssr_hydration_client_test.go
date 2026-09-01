@@ -63,6 +63,7 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"static await", `<template><main>{#await request}<span>Loading</span>{:then value}<span>Done</span>{:catch error}<span>Failed</span>{/await}</main></template>`, true},
 		{"await with dynamic resolution", `<template><main>{#await request}<span>Loading</span>{:then value}<span>{value}</span>{/await}</main></template>`, true},
 		{"await with dynamic event", `<template><main>{#await request}<span>Loading</span>{:then value}<button @click={save}>{value}</button>{/await}</main></template>`, true},
+		{"await with static each", `<template><main>{#await request}<span>Loading</span>{:then value}{#each items as item}<span>{item}</span>{/each}{/await}</main></template>`, true},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, true},
 		{"select binding", `<template><select bind:value={choice}><option value="a">A</option></select></template>`, true},
