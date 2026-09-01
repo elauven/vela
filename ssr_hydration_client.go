@@ -160,16 +160,49 @@ func ssrHydrationEach(block *EachBlockNode) bool {
 
 // ssrHydrationAwait admits the first marker-aware await subset. SSR always
 // renders the pending branch, so hydration can retain that exact DOM and only
-// replace its range once the client-side promise settles. Branches are static
-// in this slice: named then/catch values need their own range-aware subtree
-// lowering before expressions such as {value.name} can be adopted safely.
+// replace its range once the client-side promise settles. The pending branch
+// is static; then/catch support static HTML frames with dynamic text holes
+// bound to the settled value or error.
 func ssrHydrationAwait(block *AwaitBlockNode) bool {
 	if block == nil || len(block.PendingChildren) == 0 {
 		return false
 	}
 	return ssrHydrationStaticChildren(block.PendingChildren) &&
-		ssrHydrationStaticChildren(block.ThenChildren) &&
-		ssrHydrationStaticChildren(block.CatchChildren)
+		ssrHydrationAwaitBranch(block.ThenChildren) &&
+		ssrHydrationAwaitBranch(block.CatchChildren)
+}
+
+// ssrHydrationAwaitBranch permits static HTML plus text interpolation after a
+// promise settles. A settled branch is not present in server DOM, so element
+// dynamics, events, bindings, nested blocks, and components need a dedicated
+// lifecycle plan rather than being silently lowered as static HTML.
+func ssrHydrationAwaitBranch(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			continue
+		case *ElementNode:
+			if current == nil {
+				return false
+			}
+			for _, attr := range current.Attrs {
+				if attr == nil || attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					return false
+				}
+			}
+			if _, rawText := rawTextProp(current.Tag); rawText {
+				if _, interpolation := singleInterpolation(current.Children); interpolation {
+					return false
+				}
+			}
+			if !ssrHydrationAwaitBranch(current.Children) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // ssrHydrationEachDynamicTextRow accepts one ordinary row element with only

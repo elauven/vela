@@ -61,7 +61,8 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"keyed each", `<template><main>{#each items as item (item.id)}<span>Row</span>{/each}</main></template>`, true},
 		{"keyed each else", `<template><main>{#each items as item (item.id)}<span>Row</span>{:else}<span>Empty</span>{/each}</main></template>`, false},
 		{"static await", `<template><main>{#await request}<span>Loading</span>{:then value}<span>Done</span>{:catch error}<span>Failed</span>{/await}</main></template>`, true},
-		{"await with dynamic resolution", `<template><main>{#await request}<span>Loading</span>{:then value}<span>{value}</span>{/await}</main></template>`, false},
+		{"await with dynamic resolution", `<template><main>{#await request}<span>Loading</span>{:then value}<span>{value}</span>{/await}</main></template>`, true},
+		{"await with dynamic event", `<template><main>{#await request}<span>Loading</span>{:then value}<button @click={save}>{value}</button>{/await}</main></template>`, false},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, true},
 		{"select binding", `<template><select bind:value={choice}><option value="a">A</option></select></template>`, true},
@@ -80,7 +81,7 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 }
 
 func TestSSRHydrationClientAdoptsPendingAwaitRangeWithoutInitialRender(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let request;</script><template><main>{#await request}<span>Loading</span>{:then value}<span>Done</span>{:catch error}<span>Failed</span>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>export let request;</script><template><main>{#await request}<span>Loading</span>{:then value}<span>{value}</span>{:catch error}<span>{error}</span>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +96,8 @@ func TestSSRHydrationClientAdoptsPendingAwaitRangeWithoutInitialRender(t *testin
 		"function $$hawait0_render()",
 		"function $$hawait0_drive()",
 		"Promise.resolve(request)",
+		"String($$hawait0_value)",
+		"String($$hawait0_error)",
 		"$$hawait0_range.end.before($$frag)",
 	} {
 		if !strings.Contains(source, want) {
@@ -315,7 +318,7 @@ func TestSSRHydrationClientAssignsBindThisAfterAdoption(t *testing.T) {
 
 func TestBrowserSSRHydrationAwaitRetainsPendingThenReplacesRange(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>let resolveRequest; const request = new Promise((resolve) => { resolveRequest = resolve; window.__resolveRequest = resolve; });</script><template><main>{#await request}<span class="pending">Loading</span>{:then value}<span class="done">Done</span>{:catch error}<span class="failed">Failed</span>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>let resolveRequest, rejectRequest; const request = new Promise((resolve, reject) => { resolveRequest = resolve; rejectRequest = reject; window.__resolveRequest = resolve; window.__rejectRequest = reject; });</script><template><main>{#await request}<span class="pending">Loading</span>{:then value}<span class="done">{value}</span>{:catch error}<span class="failed">{error}</span>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,8 +379,17 @@ server.listen(0, "127.0.0.1", async () => {
     if (initial.mutations !== 0 || !initial.pending || !initial.same) throw new Error(JSON.stringify(initial));
     await page.evaluate(() => window.__resolveRequest("ready"));
     await page.waitForFunction(() => document.querySelector(".done"));
-    const settled = await page.evaluate(() => ({ pending: !!document.querySelector(".pending"), done: !!document.querySelector(".done"), same: document.querySelector("main") === window.__rootBefore }));
-    if (settled.pending || !settled.done || !settled.same) throw new Error(JSON.stringify(settled));
+    const settled = await page.evaluate(() => ({ pending: !!document.querySelector(".pending"), done: document.querySelector(".done")?.textContent, same: document.querySelector("main") === window.__rootBefore }));
+    if (settled.pending || settled.done !== "ready" || !settled.same) throw new Error(JSON.stringify(settled));
+
+    await page.goto("http://127.0.0.1:" + server.address().port + "/?reject=1");
+    await page.waitForFunction(() => window.__hydrated && window.__rejectRequest);
+    const rejectedInitial = await page.evaluate(() => ({ mutations: window.__initialMutations, pending: !!document.querySelector(".pending"), same: document.querySelector("main") === window.__rootBefore }));
+    if (rejectedInitial.mutations !== 0 || !rejectedInitial.pending || !rejectedInitial.same) throw new Error(JSON.stringify(rejectedInitial));
+    await page.evaluate(() => window.__rejectRequest("broken"));
+    await page.waitForFunction(() => document.querySelector(".failed")?.textContent === "broken");
+    const rejected = await page.evaluate(() => ({ pending: !!document.querySelector(".pending"), failed: document.querySelector(".failed")?.textContent, same: document.querySelector("main") === window.__rootBefore }));
+    if (rejected.pending || rejected.failed !== "broken" || !rejected.same) throw new Error(JSON.stringify(rejected));
     process.stdout.write("OK");
   } catch (error) {
     console.error(error && error.stack || error);

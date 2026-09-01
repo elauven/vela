@@ -4853,10 +4853,9 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 // hydration attaches promise callbacks without recreating or rewriting the
 // server DOM.
 //
-// CanBuildSSRHydrationClient limits this lowering to static branches. That
-// lets replacement HTML stay compiler-authored while a later lowering can add
-// marker-aware dynamic then/catch subtrees without changing this adoption
-// contract.
+// CanBuildSSRHydrationClient requires a static pending branch and limits
+// then/catch to static HTML plus text holes. Those holes are still lowered
+// from cached TemplateAST and bind to the settled value or error.
 func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	if block == nil {
 		return
@@ -4874,6 +4873,11 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	renderVar := name + "_render"
 	driverVar := name + "_drive"
 
+	plans := []hydrationAwaitBranchPlan{
+		g.buildHydrationAwaitBranch(block.PendingChildren, "", "", name+"_b0_frag"),
+		g.buildHydrationAwaitBranch(block.ThenChildren, block.ValueName, valueVar, name+"_b1_frag"),
+		g.buildHydrationAwaitBranch(block.CatchChildren, block.ErrorName, errorVar, name+"_b2_frag"),
+	}
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.body = append(g.body,
 		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
@@ -4887,16 +4891,27 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 
 	renderBody := []JsStmt{
 		genIf(genBinary("===", id(stateVar), id(activeVar)), genReturn(nil)),
+	}
+	for state, plan := range plans {
+		if len(plan.cleanup) == 0 {
+			continue
+		}
+		renderBody = append(renderBody, genIf(
+			genBinary("===", id(activeVar), numLit(state)),
+			genBlock(plan.cleanup...),
+		))
+	}
+	renderBody = append(renderBody,
 		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
 		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
-	}
-	for state, children := range [][]Node{block.PendingChildren, block.ThenChildren, block.CatchChildren} {
-		if len(children) == 0 {
+	)
+	for state, plan := range plans {
+		if len(plan.build) == 0 {
 			continue
 		}
 		renderBody = append(renderBody, genIf(
 			genBinary("===", id(stateVar), numLit(state)),
-			genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(children, g.scopeID)))),
+			genBlock(plan.build...),
 		))
 	}
 	renderBody = append(renderBody,
@@ -4928,7 +4943,45 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	for _, dependency := range templateExprDeps(block.Expr, g.reactiveNames()) {
 		g.addStructuralUpdate(dependency, genInvoke(driverVar))
 	}
-	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+	cleanup := []JsStmt{}
+	for _, plan := range plans {
+		cleanup = append(cleanup, plan.cleanup...)
+	}
+	cleanup = append(cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+	g.cleanup = append(g.cleanup, cleanup...)
+}
+
+type hydrationAwaitBranchPlan struct {
+	build   []JsStmt
+	cleanup []JsStmt
+}
+
+// buildHydrationAwaitBranch creates a branch that did not exist in SSR DOM.
+// Its text-hole references are component-scoped and nulled when the branch
+// leaves the await range, so later parent-state flushes cannot write detached
+// nodes. The branch content still originates from TemplateAST through
+// buildHoleSubtree; no template text is re-parsed at code generation time.
+func (g *ASTGen) buildHydrationAwaitBranch(children []Node, bindingName, bindingValue, targetVar string) hydrationAwaitBranchPlan {
+	if len(children) == 0 {
+		return hydrationAwaitBranchPlan{}
+	}
+	if allStatic(children) {
+		return hydrationAwaitBranchPlan{build: []JsStmt{
+			genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(children, g.scopeID)))),
+		}}
+	}
+	var plan hydrationAwaitBranchPlan
+	g.withTemplateBinding(bindingName, bindingValue, func() {
+		sub := g.buildHoleSubtree(targetVar, children, true, "$$self", false, true)
+		plan.build = append(plan.build, genConst(targetVar, id("$$frag")))
+		for _, decl := range sub.decls {
+			g.hoisted = append(g.hoisted, decl)
+		}
+		plan.build = append(plan.build, sub.build...)
+		plan.build = append(plan.build, sub.initUpdates...)
+		plan.cleanup = append(plan.cleanup, nullCapturedStmts(sub.captured)...)
+	})
+	return plan
 }
 
 // buildHydrationRootKeyedEach adopts the SSR row elements into a key-to-node
