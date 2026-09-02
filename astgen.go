@@ -324,6 +324,12 @@ type ASTGen struct {
 	// clients; normal CSR components retain their ordinary factory imports.
 	hydrationComponents map[string]bool
 
+	// hydrationCSRComponents maps components which can be materialized only
+	// after hydration (inside a supported structural branch) to a distinct
+	// ordinary CSR factory binding. The hydrate entry and CSR factory must
+	// never share the same local binding.
+	hydrationCSRComponents map[string]string
+
 	// counter backs id() — the deterministic $$nN naming used for
 	// DOM-node variables.  Mirrors the legacy CodeGen.counter so
 	// generated names match between the two generators.
@@ -1948,6 +1954,21 @@ func (g *ASTGen) buildImportDecls() []JsStmt {
 				src = RewriteImportPath(src)
 			}
 		}
+		if g.domAcquireMode == DOMAcquireHydrate && strings.HasSuffix(imp.Source, ".vela") && len(g.hydrationCSRComponents) > 0 {
+			csr := &JsImportDecl{baseStmt: baseStmt{genNode()}, Source: RewriteImportPath(imp.Source)}
+			if alias, ok := g.hydrationCSRComponents[defaultName]; ok {
+				csr.DefaultName = alias
+			}
+			for _, spec := range specifiers {
+				if alias, ok := g.hydrationCSRComponents[spec.Local]; ok {
+					csr.Specifiers = append(csr.Specifiers, JsImportSpec{Imported: spec.Imported, Local: alias})
+				}
+			}
+			if csr.DefaultName != "" || len(csr.Specifiers) > 0 {
+				out = append(out, csr)
+			}
+		}
+
 		out = append(out, &JsImportDecl{
 			baseStmt:    baseStmt{genNode()},
 			DefaultName: defaultName,

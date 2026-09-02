@@ -1147,6 +1147,35 @@ func TestSSRHydrationClientAdoptsLocalChildComponent(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationStructuralChildImportsKeepCSRFactoryDistinct(t *testing.T) {
+	sfc, err := parseSFC(`<script>
+		import { Child } from "./Child.vela";
+		let visible = $state(true);
+	</script><template><main>{#if visible}<Child />{:else}<p>Hidden</p>{/if}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliases := ssrHydrationStructuralComponentAliases(sfc.TemplateAST.Nodes)
+	if got, want := aliases["Child"], "$$csr_Child"; got != want {
+		t.Fatalf("CSR child alias=%q, want %q", got, want)
+	}
+	g := &ASTGen{
+		analysis:               analyzeScriptAST(sfc.ScriptAST),
+		domAcquireMode:         DOMAcquireHydrate,
+		hydrationComponents:    map[string]bool{"Child": true},
+		hydrationCSRComponents: aliases,
+	}
+	source := PrintJS(&JsProgram{Body: g.buildImportDecls()}, PrintPretty)
+	for _, want := range []string{
+		"import { Child } from \x27./Child.hydrate.js\x27;",
+		"import { Child as $$csr_Child } from \x27./Child.js\x27;",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("structural child imports miss %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -1182,7 +1211,7 @@ func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(childEntry), `export function Child($$root)`) {
+	if !strings.Contains(string(childEntry), `export function Child($$root, $$overrides)`) {
 		t.Fatalf("child hydrate entry misses component alias:\n%s", childEntry)
 	}
 }

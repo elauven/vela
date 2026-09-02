@@ -402,7 +402,7 @@ func buildSSRHydrationClientProgramWithComponents(name string, sfc *SFC, analysi
 	g := &ASTGen{
 		name: name, scopeID: scopeID, analysis: analysis, sfc: sfc, fragCounter: -1, cssExternal: true,
 		domAcquireMode: DOMAcquireHydrate, domAcquirePlan: DOMAcquirePlan{Mode: DOMAcquireHydrate},
-		hydrationStateInput: true, hydrationComponents: components, hydrationElementIDs: ssrHydrationElementMarkerIDs(plan.Nodes),
+		hydrationStateInput: true, hydrationComponents: components, hydrationCSRComponents: ssrHydrationStructuralComponentAliases(sfc.TemplateAST.Nodes), hydrationElementIDs: ssrHydrationElementMarkerIDs(plan.Nodes),
 	}
 	program := g.buildModule(sfc.TemplateAST.Nodes)
 	validateGeneratedProgram(program)
@@ -435,6 +435,41 @@ func ssrHydrationUsedComponentNames(nodes []Node) map[string]bool {
 	}
 	visit(nodes)
 	return components
+}
+
+// ssrHydrationStructuralComponentAliases reserves a separate ordinary CSR
+// factory binding for a direct local component located in an #if branch. The
+// hydrate binding owns only server DOM adoption; a later materialized branch
+// must call the ordinary client factory instead. This scanner intentionally
+// prepares aliases before the branch lifecycle lowering is enabled.
+func ssrHydrationStructuralComponentAliases(nodes []Node) map[string]string {
+	aliases := map[string]string{}
+	var visit func([]Node)
+	visit = func(children []Node) {
+		for _, node := range children {
+			switch current := node.(type) {
+			case *ElementNode:
+				visit(current.Children)
+			case *IfChainNode:
+				for _, branch := range current.Branches {
+					if branch == nil {
+						continue
+					}
+					if len(branch.Children) == 1 {
+						if component, ok := branch.Children[0].(*ComponentNode); ok && component != nil && len(component.Slots) == 0 {
+							aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
+						}
+					}
+					visit(branch.Children)
+				}
+			case *EachBlockNode:
+				visit(current.Children)
+				visit(current.ElseChildren)
+			}
+		}
+	}
+	visit(nodes)
+	return aliases
 }
 
 func ssrHydrationComponentNames(sfc *SFC, analysis *Analysis) (map[string]bool, error) {
