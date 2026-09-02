@@ -545,6 +545,143 @@ the props type, and the compiler type-checks both files as one Go package.
 
 ---
 
+## SSR v2 completion contract
+
+The first delivery described above proves the renderer, marker protocol, and
+DOM-adoption approach. It is not the final definition of SSR support. This
+section extends the task from a supported-subset renderer to a compatibility
+contract: a CSR-valid Vela project must receive a classified SSR outcome,
+not an accidental compile failure because an otherwise supported feature is
+nested or used by a child component.
+
+### One execution decision per AST site
+
+The compiler will classify every cached script and template AST site into one
+of four explicit modes. The classification is part of analysis and the typed
+SSR render plan; neither the Go renderer nor the JS printer rediscovers it
+from source text.
+
+| Mode | Server behaviour | Client behaviour | Typical use |
+| --- | --- | --- | --- |
+| `server-native` | Generated Go evaluates the construct. | Hydration adopts its result and continues normal updates. | Pure expression, supported control flow, portable helper. |
+| `server-host` | Generated Go calls a declared user-owned Go binding. | The original JS remains the source of later client updates. | `MakeMarkdown(value)`, domain formatting, authenticated server service. |
+| `client-deferred` | The renderer emits a deterministic fallback inside an owned marker range. | The normal hydrator evaluates and replaces or updates that range. | `window`, DOM APIs, browser-only libraries, client async work. |
+| `unsupported` | Generation stops with a positioned diagnostic and a reason chain. | No partial artifact is emitted. | Invalid AST, unsafe ambiguous boundary, or a missing required host declaration. |
+
+`unsupported` is therefore not a synonym for "not yet translated to Go".
+Non-portable but valid browser code normally has the `client-deferred` path.
+An error is reserved for code whose server boundary is ambiguous or whose
+developer contract is incomplete.
+
+### Host bindings for portable domain logic
+
+The stable solution for an application helper is a non-generated host package
+plus a project manifest that maps a JS-visible symbol to a Go symbol. The
+generated renderer imports the declared package through `go/ast`; it never
+rewrites or overwrites the developer's implementation.
+
+Proposed manifest shape:
+
+```json
+{
+  "hostFunctions": {
+    "MakeMarkdown": {
+      "package": "example.com/site/ssrhost",
+      "symbol": "MakeMarkdown"
+    }
+  }
+}
+```
+
+For this template:
+
+```vela
+<p>{MakeMarkdown(state)}</p>
+```
+
+analysis resolves `MakeMarkdown` as `server-host`; generated Go calls
+`ssrhost.MakeMarkdown(state)` and propagates its ordinary Go `error`. The
+binding signature is checked against inferred/JSDoc prop types where possible,
+then falls back to an explicit `any` contract only when the manifest permits
+it. The exact manifest filename and signature grammar are Phase 6 design
+deliverables, but the user-owned-package and non-destructive rules are fixed.
+
+### Client-deferred boundaries
+
+Leaf expressions can receive a compiler-owned fallback in their existing text
+or attribute marker range. For example, a DOM measurement may render an empty
+text fallback and be filled by the hydrator.
+
+A client-only value that decides structure is different: the server cannot
+safely guess the active `#if`, `#each`, `#await`, key, component choice, or
+slot shape. Such a site requires an explicit client boundary with a declared
+server fallback. The syntax and exact fallback API will be designed before
+implementation, but it is a full-app hydration boundary, not an island: the
+parent still owns its markers, lifecycle, payload collection, and teardown.
+
+This distinction prevents both false server HTML and a flash caused by an
+implicit empty structural range. A diagnostic must name the controlling
+expression and offer the host-binding or client-boundary remedies.
+
+### Recursive template contract
+
+The final renderer must lower these nodes recursively, at any depth and in
+any valid combination allowed by the Vela feature matrix:
+
+| Template node | Required SSR/hydration behaviour |
+| --- | --- |
+| Element, text, dynamic attribute, `class:`, `style:` | Server output plus owned element/text marker; adopt without initial write. |
+| DOM event and DOM binding | Emit server representation; attach listener/binding after adoption; clean it on owner destroy. |
+| `#if` and `#key` | Adopt the selected range; replace only that range after a dependency change. |
+| Unkeyed `#each` | Adopt all rows; replace only the list range when its identity model requires it. |
+| Keyed `#each` | Give every row an instance path; retain/reorder matching rows and their children. |
+| `#await` | Adopt pending server DOM; own pending/then/catch ranges and their async cleanup. |
+| Local component | Adopt or CSR-mount a distinct instance; retain prop, event, binding, slot, style, payload, and destroy ownership. |
+| Slot projection | Preserve parent ownership of projected ranges while child owns its fallback and instance lifecycle. |
+
+The implementation vehicle is a typed recursive structural lifecycle plan with
+five operations: `adopt`, `mountCSR`, `update`, `destroy`, and
+`collectPayload`. It replaces root-only and static-child special cases. A
+component instance ID is derived from its structural path, including a stable
+key for keyed rows, rather than only its component name. This is essential for
+multiple copies of the same child in an `#each`: marker namespaces and payload
+lookup must remain unique without duplicate document IDs.
+
+### JavaScript and Browser API compatibility matrix
+
+`ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that
+inventory into a Vela-specific, test-backed matrix. Categories are not judged
+by syntax alone: a construct is server-native only when its observable Vela
+semantics can be reproduced in Go.
+
+| Category | Initial preferred mode | Notes |
+| --- | --- | --- |
+| Literals, operators, property/index reads, conditionals | `server-native` | Existing expression translator foundation. |
+| Pure declarations, named/arrow functions, lexical closures | `server-native` when capture graph is representable | Generated Go closures preserve only documented value semantics. |
+| Arrays, objects, iteration, map/filter/reduce-like transforms | `server-native` or `server-host` | Equality, ordering, holes, and mutation semantics require dedicated tests. |
+| String, JSON, Math, URI helpers, selected `Intl` formatting | `server-native` where a Go-equivalent is specified | Locale/time-zone differences must be explicit. |
+| Date, RegExp, BigInt, Map/Set, typed arrays | Start as `server-host` | Promote only after compatibility fixtures establish semantics. |
+| Imports and application helpers | `server-host` for declared pure Go equivalents | Unmapped imports are not silently executed by Go. |
+| Promise, async/await, timers, fetch | `client-deferred` by default | Server data loading is a separate explicit API, not accidental JS execution. |
+| `window`, `document`, DOM events, storage, history, location, media, canvas | `client-deferred` | Browser state has no faithful server equivalent. |
+| Workers, WebSocket, WebRTC, Service Worker, observers | `client-deferred` | May have separate server services, but not JS-to-Go translation. |
+| `eval`, dynamic import with unknown target, Proxy/Reflect metaprogramming | `unsupported` or explicit boundary | No implicit server execution or partial emulation. |
+
+The matrix must separately cover language syntax, built-ins, imports,
+asynchronous primitives, Browser APIs, type assumptions, execution mode,
+fallback semantics, and a fixture link. Unsupported behaviour is a published
+contract, not a gap hidden in a code generator.
+
+### Release proof
+
+Completion requires a generated nesting corpus and real applications compiled
+in both CSR and SSR modes. For every supported combination, Chromium tests
+must prove initial marker adoption, correct reactive updates, instance/row
+identity where retention is promised, listener and payload cleanup, and no
+unrelated DOM writes. Generated Go must continue to parse, type-check, and
+execute fixtures. `vela ssr --check` will expose all server-host and
+client-deferred decisions with the full component path before artifact output.
+
 ## Hydration mechanics
 
 For Phase 3 — covered here so the Phase 1/2 decisions don't
