@@ -4730,6 +4730,10 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		g.buildHydrationRootKeyBlock(chain)
 		return
 	}
+	if component, componentIndex, ok := ssrHydrationIfComponentBranch(chain); ok {
+		g.buildHydrationRootIfComponentChain(chain, component, componentIndex)
+		return
+	}
 	markerID := g.hydrationRangeNext
 	conditions := 0
 	for _, branch := range chain.Branches {
@@ -4799,6 +4803,107 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		}
 	}
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+}
+
+// buildHydrationRootIfComponentChain owns the lifecycle of one direct child
+// component in an otherwise static #if range. The initial server branch is
+// adopted through the child's hydrate entry. Once that range is replaced, the
+// same child is mounted through its distinct normal CSR import, so no second
+// hydration walker or stale server payload is involved.
+func (g *ASTGen) buildHydrationRootIfComponentChain(chain *IfChainNode, component *ComponentNode, componentIndex int) {
+	markerID := g.hydrationRangeNext
+	g.hydrationRangeNext++
+	name := "$$hif" + itoa(markerID)
+	rangeVar := name + "_range"
+	nodesVar := name + "_nodes"
+	activeVar := name + "_active"
+	instanceVar := name + "_component"
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.declareInScope(genLet(instanceVar, genNull()))
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+	)
+
+	activeExpr := JsExpr(numLit(-1))
+	for index := len(chain.Branches) - 1; index >= 0; index-- {
+		branch := chain.Branches[index]
+		if branch == nil {
+			continue
+		}
+		if !branch.HasCondition() {
+			activeExpr = numLit(index)
+			continue
+		}
+		activeExpr = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: activeExpr}
+	}
+	g.body = append(g.body, genLet(activeVar, activeExpr))
+
+	propsExpr := g.componentPropsExpr(component.Attrs)
+	g.hydrationInitBody = append(g.hydrationInitBody, genIf(
+		genBinary("===", id(activeVar), numLit(componentIndex)),
+		genAssignStmt(id(instanceVar), genMember(genCall(id(component.Name), id("$$root")), "component")),
+	))
+	setStmt := genIf(id(instanceVar), genExprStmt(genCall(genMember(id(instanceVar), "set"), propsExpr)))
+	deps := map[string]bool{}
+	for _, attr := range component.Attrs {
+		for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+			deps[dependency] = true
+		}
+	}
+	for dependency := range deps {
+		g.addUpdate(dependency, shareStmt(setStmt))
+	}
+
+	updateBody := []JsStmt{
+		genLet("$$active", activeExpr),
+		genIf(genBinary("===", id("$$active"), id(activeVar)), genReturn(nil)),
+		genIf(id(instanceVar), genBlock(
+			genExprStmt(genCall(genMember(id(instanceVar), "destroy"))),
+			genAssignStmt(id(instanceVar), genNull()),
+		)),
+		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
+	}
+	csrFactory := g.hydrationCSRComponents[component.Name]
+	for index, branch := range chain.Branches {
+		if branch == nil {
+			continue
+		}
+		if index == componentIndex {
+			updateBody = append(updateBody, genIf(
+				genBinary("===", id("$$active"), numLit(index)),
+				genAssignStmt(id(instanceVar), genCall(id(csrFactory), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+			))
+			continue
+		}
+		updateBody = append(updateBody, genIf(
+			genBinary("===", id("$$active"), numLit(index)),
+			genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(branch.Children, g.scopeID)))),
+		))
+	}
+	updateBody = append(updateBody,
+		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
+		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
+		genAssignStmt(id(activeVar), id("$$active")),
+	)
+	fn := name + "_update"
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	for _, branch := range chain.Branches {
+		if branch == nil || !branch.HasCondition() {
+			continue
+		}
+		for _, dependency := range templateExprDeps(branch.Expr, g.reactiveNames()) {
+			g.addStructuralUpdate(dependency, genInvoke(fn))
+		}
+	}
+	g.cleanup = append(g.cleanup,
+		genIf(id(instanceVar), genBlock(
+			genExprStmt(genCall(genMember(id(instanceVar), "destroy"))),
+			genAssignStmt(id(instanceVar), genNull()),
+		)),
+		genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)),
+	)
 }
 
 // buildHydrationRootKeyBlock adopts the rendered static {#key} child range.

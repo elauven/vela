@@ -52,6 +52,8 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"nested dynamic text", `<template><main><p>{title}</p></main></template>`, true},
 		{"nested dynamic attribute", `<template><main><button :disabled={saving}>Save</button></main></template>`, true},
 		{"direct static if", `<template><main>{#if visible}<span>On</span>{:else}<span>Off</span>{/if}</main></template>`, true},
+		{"if with direct child lifecycle", `<template><main>{#if visible}<Child :title={title} />{:else}<span>Off</span>{/if}</main></template>`, true},
+		{"if child lifecycle rejects component event", `<template><main>{#if visible}<Child @on:close={close} />{:else}<span>Off</span>{/if}</main></template>`, false},
 		{"nested static if and each", `<template><main><section>{#if visible}<span>On</span>{:else}<span>Off</span>{/if}{#each items as item}<span>{item}</span>{/each}</section></main></template>`, true},
 		{"direct static key", `<template><main>{#key identity}<span>Row</span>{/key}</main></template>`, true},
 		{"if with dynamic branch", `<template><main>{#if visible}<span>{title}</span>{/if}</main></template>`, false},
@@ -1176,6 +1178,40 @@ func TestSSRHydrationStructuralChildImportsKeepCSRFactoryDistinct(t *testing.T) 
 	}
 }
 
+func TestSSRHydrationIfChildAdoptsThenRemountsWithCSRFactory(t *testing.T) {
+	sfc, err := parseSFC(`<script>
+		import { Child } from "./Child.vela";
+		export let visible = true;
+		export let title = "server";
+	</script><template><main>{#if visible}<Child :title={title} />{:else}<p>Hidden</p>{/if}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"import { Child } from \x27./Child.hydrate.js\x27;",
+		"import { Child as $$csr_Child } from \x27./Child.js\x27;",
+		"let $$hif0_component = null;",
+		"$$hif0_component = Child($$root).component;",
+		"$$hif0_component.set({ title: title });",
+		"$$hif0_component = $$csr_Child($$frag, { title: title }, {});",
+		"$$hif0_component.destroy();",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("structural child lifecycle misses %q:\\n%s", want, source)
+		}
+	}
+	destroyAt := strings.Index(source, "$$hif0_component.destroy();")
+	removeAt := strings.Index(source, "$$node.remove();")
+	if destroyAt < 0 || removeAt < 0 || destroyAt > removeAt {
+		t.Fatalf("structural child must destroy before removing its SSR range:\\n%s", source)
+	}
+}
+
 func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -1344,6 +1380,130 @@ server.listen(0, "127.0.0.1", async () => {
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("child hydration browser output=%q", got)
+	}
+}
+
+func TestBrowserSSRHydrationIfChildAdoptsDestroysAndCSRRemounts(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<script>
+		import { onDestroy } from "vela";
+		export let title = "";
+		onDestroy(() => { window.__childDestroyCount = (window.__childDestroyCount || 0) + 1; });
+	</script><template><p class="child">{title}</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis := analyzeScriptAST(childSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, analyzeScriptAST(childSFC.ScriptAST), "vela-child", false, DOMAcquireCreate)
+
+	parentSFC, err := parseSFC(`<script>
+		import { Child } from "./Child.vela";
+		export let visible = true;
+		export let title = "server";
+	</script><template><main>{#if visible}<Child :title={title} />{:else}<p class="hidden">Hidden</p>{/if}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysis("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":               embeddedRuntime,
+		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
+		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
+		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
+		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
+		"Parent.hydrate.js":        []byte(PrintJS(parentEntry, PrintPretty)),
+		"index.html": []byte(`<!doctype html><body>
+<!--e:vela-parent:0--><main vela-parent=""><!--v:vela-parent:0--><!--e:vela-child:0--><p vela-child="" class="child"><!--v:vela-child:0-->server<!--/v:vela-child:0--></p><!--/e:vela-child:0--><script type="application/json" id="vela-state-vela-child">{"component":"vela-child","props":{"Title":"server"},"state":{},"incomplete":false}</script><!--/v:vela-parent:0--></main><!--/e:vela-parent:0-->
+<script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Visible":true,"Title":"server"},"state":{},"incomplete":false}</script>
+<script type="module">
+  import hydrateParent from './Parent.hydrate.js';
+  window.__hydrationObserver = new MutationObserver(() => {});
+  window.__hydrationObserver.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+  window.__hydrated = hydrateParent(document.body);
+  window.__initialMutations = window.__hydrationObserver.takeRecords().length;
+</script></body>`),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs = require('fs');
+const path = require('path');
+const http = require('http');
+const { chromium } = require('playwright');
+const root = process.argv[1];
+const server = http.createServer((req, res) => {
+  const name = req.url === '/' ? 'index.html' : req.url.slice(1);
+  try { const body = fs.readFileSync(path.join(root, name)); res.writeHead(200, {'content-type': name.endsWith('.js') ? 'text/javascript' : 'text/html'}).end(body); }
+  catch { res.writeHead(404).end(); }
+});
+server.listen(0, '127.0.0.1', async () => {
+  let browser;
+  try {
+    browser = await chromium.launch({headless:true});
+    const page = await browser.newPage();
+    page.setDefaultTimeout(5000);
+    await page.goto('http://127.0.0.1:' + server.address().port + '/');
+    await page.waitForFunction(() => window.__hydrated);
+    await page.evaluate(() => { window.__firstChild = document.querySelector('.child'); window.__hydrated.component.set({title:'client'}); });
+    await page.waitForFunction(() => document.querySelector('.child')?.textContent === 'client');
+    await page.evaluate(() => window.__hydrated.component.set({visible:false}));
+    await page.waitForFunction(() => document.querySelector('.hidden'));
+    await page.evaluate(() => { window.__payloadRemoved = !document.getElementById('vela-state-vela-child'); window.__hydrated.component.set({visible:true}); });
+    await page.waitForFunction(() => document.querySelector('.child')?.textContent === 'client');
+    await page.evaluate(() => window.__hydrated.component.set({title:'remounted'}));
+    await page.waitForFunction(() => document.querySelector('.child')?.textContent === 'remounted');
+    const result = await page.evaluate(() => ({
+      initial: window.__initialMutations,
+      firstDetached: !window.__firstChild.isConnected,
+      remounted: document.querySelector('.child') !== window.__firstChild,
+      payloadRemoved: window.__payloadRemoved,
+      destroyed: window.__childDestroyCount,
+      text: document.querySelector('.child')?.textContent,
+    }));
+    if (result.initial !== 0 || !result.firstDetached || !result.remounted || !result.payloadRemoved || result.destroyed !== 1 || result.text !== 'remounted') throw new Error(JSON.stringify(result));
+    process.stdout.write('OK');
+  } catch (error) {
+    console.error(error && error.stack || error);
+    process.exitCode = 1;
+  } finally {
+    await browser?.close();
+    server.close(() => process.exit());
+  }
+});`
+	command := exec.Command(node, "-e", browserScript, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("structural child hydration browser fixture: %v\\n%s", err, output)
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("structural child hydration browser output=%q", got)
 	}
 }
 

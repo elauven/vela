@@ -122,6 +122,9 @@ func ssrHydrationElementAttrs(element *ElementNode) bool {
 }
 
 func ssrHydrationIfChain(chain *IfChainNode) bool {
+	if _, _, ok := ssrHydrationIfComponentBranch(chain); ok {
+		return true
+	}
 	if chain == nil || len(chain.Branches) == 0 || len(chain.Branches) > 2 {
 		return false
 	}
@@ -138,6 +141,53 @@ func ssrHydrationIfChain(chain *IfChainNode) bool {
 		}
 	}
 	return conditions == 1
+}
+
+// ssrHydrationIfComponentBranch recognizes the first structural-component
+// lifecycle slice: exactly one direct local child with ordinary one-way props
+// in a normal #if branch, with static sibling branches. The child can adopt
+// its server DOM on the initial branch and an ordinary CSR factory can mount
+// it after a later branch switch. Slots, component events, and bindings need
+// separate ownership and callback lifecycles, so they remain outside this
+// narrow shape.
+func ssrHydrationIfComponentBranch(chain *IfChainNode) (*ComponentNode, int, bool) {
+	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 || len(chain.Branches) > 2 {
+		return nil, 0, false
+	}
+	conditions := 0
+	componentIndex := -1
+	var component *ComponentNode
+	for index, branch := range chain.Branches {
+		if branch == nil {
+			return nil, 0, false
+		}
+		if branch.HasCondition() {
+			conditions++
+		}
+		if len(branch.Children) == 1 {
+			if candidate, ok := branch.Children[0].(*ComponentNode); ok && candidate != nil {
+				if component != nil || len(candidate.Slots) != 0 || !ssrHydrationStructuralComponentAttrs(candidate) {
+					return nil, 0, false
+				}
+				component = candidate
+				componentIndex = index
+				continue
+			}
+		}
+		if !ssrHydrationStaticChildren(branch.Children) {
+			return nil, 0, false
+		}
+	}
+	return component, componentIndex, component != nil && conditions == 1
+}
+
+func ssrHydrationStructuralComponentAttrs(component *ComponentNode) bool {
+	for _, attr := range component.Attrs {
+		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+			return false
+		}
+	}
+	return true
 }
 
 func ssrHydrationEach(block *EachBlockNode) bool {
