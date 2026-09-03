@@ -78,6 +78,11 @@ type SSRStructuralLifecyclePlan struct {
 	TemplatePath string
 	Span         SectionSpan
 	Kind         SSRLifecyclePlanKind
+	// TemplateNode retains the immutable source AST node for ordinary template
+	// sites. Synthetic if/await branch nodes deliberately leave it nil. This
+	// lets lowerers consume plan ownership and typed source metadata together
+	// without scanning template children a second time.
+	TemplateNode Node
 	InstancePath SSRInstancePath
 	Capability   *SSRCapability
 	Operations   []SSRLifecycleOperation
@@ -152,7 +157,7 @@ func buildSSRStructuralLifecycleNodes(nodes []Node, capabilities []*SSRCapabilit
 }
 
 func buildSSRStructuralLifecycleNode(node Node, capability *SSRCapability, path SSRInstancePath, fallbackTemplatePath string) *SSRStructuralLifecyclePlan {
-	plan := &SSRStructuralLifecyclePlan{Capability: capability, InstancePath: path}
+	plan := &SSRStructuralLifecyclePlan{TemplateNode: node, Capability: capability, InstancePath: path}
 	if capability != nil {
 		plan.TemplatePath = capability.Path
 		plan.Span = capability.Span

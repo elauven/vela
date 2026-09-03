@@ -692,6 +692,14 @@ typed slot plan in sorted slot-name order. Individual `#if`, `#each`, and
 `#await` lowerers still implement the current subset internally; later slices
 replace those implementations without reintroducing a second tree traversal.
 
+The existing direct local child in an `#if` branch is also selected from this
+plan. Ordinary plan nodes retain their immutable template-AST reference while
+synthetic branch nodes remain structural-only; the hydration lowerer and the
+distinct CSR-factory import scanner therefore find the component through a
+typed branch child, not by independently scanning raw branch arrays. This
+preserves the current one-direct-child subset and is the migration seam for
+multiple and nested branch children.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that

@@ -50,10 +50,11 @@ func buildSSRHydrationClientProgramWithComponents(name string, sfc *SFC, analysi
 	if analysis != nil {
 		analysis.lowerReactiveCallbackBodies()
 	}
+	lifecyclePlan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes)
 	g := &ASTGen{
 		name: name, scopeID: scopeID, analysis: analysis, sfc: sfc, fragCounter: -1, cssExternal: true,
 		domAcquireMode: DOMAcquireHydrate, domAcquirePlan: DOMAcquirePlan{Mode: DOMAcquireHydrate},
-		hydrationStateInput: true, hydrationComponents: components, hydrationCSRComponents: ssrHydrationStructuralComponentAliases(sfc.TemplateAST.Nodes), hydrationMarkers: ssrHydrationMarkerIDs(plan.Nodes), hydrationLifecyclePlan: BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes),
+		hydrationStateInput: true, hydrationComponents: components, hydrationCSRComponents: ssrHydrationStructuralComponentAliasesForPlan(lifecyclePlan), hydrationMarkers: ssrHydrationMarkerIDs(plan.Nodes), hydrationLifecyclePlan: lifecyclePlan,
 	}
 	program := g.buildModule(sfc.TemplateAST.Nodes)
 	validateGeneratedProgram(program)
@@ -94,33 +95,58 @@ func ssrHydrationUsedComponentNames(nodes []Node) map[string]bool {
 // must call the ordinary client factory instead. This scanner intentionally
 // prepares aliases before the branch lifecycle lowering is enabled.
 func ssrHydrationStructuralComponentAliases(nodes []Node) map[string]string {
+	return ssrHydrationStructuralComponentAliasesForPlan(BuildSSRStructuralLifecyclePlan(nodes))
+}
+
+// ssrHydrationStructuralComponentAliasesForPlan reserves a distinct CSR
+// factory for each direct local child selected from a typed #if branch plan.
+// The scanner deliberately consumes lifecycle ownership instead of rewalking
+// the template AST for its own branch shape classification.
+func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecyclePlan) map[string]string {
 	aliases := map[string]string{}
-	var visit func([]Node)
-	visit = func(children []Node) {
-		for _, node := range children {
-			switch current := node.(type) {
-			case *ElementNode:
-				visit(current.Children)
-			case *IfChainNode:
-				for _, branch := range current.Branches {
-					if branch == nil {
-						continue
-					}
-					if len(branch.Children) == 1 {
-						if component, ok := branch.Children[0].(*ComponentNode); ok && component != nil && len(component.Slots) == 0 {
-							aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
-						}
-					}
-					visit(branch.Children)
-				}
-			case *EachBlockNode:
-				visit(current.Children)
-				visit(current.ElseChildren)
+	var visit func(*SSRStructuralLifecyclePlan)
+	visit = func(current *SSRStructuralLifecyclePlan) {
+		if current == nil {
+			return
+		}
+		if current.Kind == SSRLifecyclePlanIf {
+			if component, _, ok := ssrHydrationDirectIfComponent(current); ok {
+				aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
 			}
 		}
+		for _, child := range current.Children {
+			visit(child)
+		}
 	}
-	visit(nodes)
+	visit(plan)
 	return aliases
+}
+
+// ssrHydrationDirectIfComponent is the current direct-child lifecycle subset.
+// Its input is a typed #if plan, so callers do not re-derive structure by
+// inspecting raw template AST branch lists. Phase 5 expands this helper into
+// branch lifecycle lowering for multiple and nested children.
+func ssrHydrationDirectIfComponent(plan *SSRStructuralLifecyclePlan) (*ComponentNode, int, bool) {
+	if plan == nil || plan.Kind != SSRLifecyclePlanIf {
+		return nil, 0, false
+	}
+	var component *ComponentNode
+	componentIndex := -1
+	for index, branch := range plan.Children {
+		if branch == nil || branch.Kind != SSRLifecyclePlanIfBranch || len(branch.Children) != 1 {
+			continue
+		}
+		candidate, ok := branch.Children[0].TemplateNode.(*ComponentNode)
+		if !ok || candidate == nil || len(candidate.Slots) != 0 {
+			continue
+		}
+		if component != nil {
+			return nil, 0, false
+		}
+		component = candidate
+		componentIndex = index
+	}
+	return component, componentIndex, component != nil
 }
 
 func ssrHydrationComponentNames(sfc *SFC, analysis *Analysis) (map[string]bool, error) {

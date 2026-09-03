@@ -4772,7 +4772,7 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		g.buildHydrationRootKeyBlock(chain)
 		return
 	}
-	if component, componentIndex, ok := ssrCapabilityCurrentIfComponentBranch(chain); ok {
+	if component, componentIndex, ok := ssrHydrationDirectIfComponent(g.hydrationLifecycleNode(SSRLifecyclePlanIf, chain.Span)); ok {
 		g.buildHydrationRootIfComponentChain(chain, component, componentIndex)
 		return
 	}

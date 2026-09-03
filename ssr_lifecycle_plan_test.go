@@ -74,6 +74,19 @@ func TestSSRStructuralLifecyclePlanFindsDynamicTextOwner(t *testing.T) {
 	}
 }
 
+func TestSSRStructuralLifecyclePlanFindsDirectIfComponent(t *testing.T) {
+	sfc, err := parseSFC(`<template><main>{#if visible}<Child />{:else}<p>Hidden</p>{/if}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes)
+	ifPlan := plan.Find(SSRLifecyclePlanIf, sfc.TemplateAST.Nodes[0].(*ElementNode).Children[0].(*IfChainNode).Span)
+	component, index, ok := ssrHydrationDirectIfComponent(ifPlan)
+	if !ok || component == nil || component.Name != "Child" || index != 0 {
+		t.Fatalf("direct if component=%#v index=%d ok=%t", component, index, ok)
+	}
+}
+
 func hasSSRStructuralOperation(plan *SSRStructuralLifecyclePlan, operation SSRLifecycleOperation) bool {
 	for _, current := range plan.Operations {
 		if current == operation {
