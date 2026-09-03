@@ -1237,6 +1237,51 @@ func TestSSRHydrationIfChildRemountsStaticSiblingsInTemplateOrder(t *testing.T) 
 	}
 }
 
+func TestSSRHydrationIfBranchOwnsMultipleDistinctChildHandles(t *testing.T) {
+	sfc, err := parseSFC(`<script>
+		import { Alpha } from "./Alpha.vela";
+		import { Beta } from "./Beta.vela";
+		export let visible = true;
+		export let title = "server";
+	</script><template><main>{#if visible}<p>Before</p><Alpha :title={title} /><Beta :title={title} /><p>After</p>{:else}<p>Hidden</p>{/if}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("multiple distinct direct #if children must be hydration-eligible")
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"let $$hif0_component_0 = null;",
+		"let $$hif0_component_1 = null;",
+		"$$hif0_component_0 = Alpha($$root).component;",
+		"$$hif0_component_1 = Beta($$root).component;",
+		"$$hif0_component_0 = $$csr_Alpha($$frag, { title: title }, {});",
+		"$$hif0_component_1 = $$csr_Beta($$frag, { title: title }, {});",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("multi-child lifecycle misses %q:\n%s", want, source)
+		}
+	}
+	if first, second := strings.Index(source, "$$hif0_component_1.destroy();"), strings.Index(source, "$$hif0_component_0.destroy();"); first < 0 || second < 0 || first > second {
+		t.Fatalf("multi-child handles must destroy in reverse order:\n%s", source)
+	}
+}
+
+func TestSSRHydrationIfBranchRejectsRepeatedChildBindingUntilPayloadNamespaced(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let visible = true;</script><template><main>{#if visible}<Child /><Child />{:else}<p>Hidden</p>{/if}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("repeated structural child binding requires path-scoped payload namespaces")
+	}
+}
+
 func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")

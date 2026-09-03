@@ -4772,8 +4772,8 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		g.buildHydrationRootKeyBlock(chain)
 		return
 	}
-	if component, componentIndex, ok := ssrHydrationDirectIfComponent(g.hydrationLifecycleNode(SSRLifecyclePlanIf, chain.Span)); ok {
-		g.buildHydrationRootIfComponentChain(chain, component, componentIndex)
+	if components, componentIndex, ok := ssrHydrationDirectIfComponents(g.hydrationLifecycleNode(SSRLifecyclePlanIf, chain.Span)); ok {
+		g.buildHydrationRootIfComponentChain(chain, components, componentIndex)
 		return
 	}
 	markerID := g.hydrationIfMarkerID(chain)
@@ -4834,20 +4834,37 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 }
 
-// buildHydrationRootIfComponentChain owns the lifecycle of one direct child
-// component in an otherwise static #if range. The initial server branch is
-// adopted through the child's hydrate entry. Once that range is replaced, the
-// same child is mounted through its distinct normal CSR import, so no second
-// hydration walker or stale server payload is involved.
-func (g *ASTGen) buildHydrationRootIfComponentChain(chain *IfChainNode, component *ComponentNode, componentIndex int) {
+// buildHydrationRootIfComponentChain owns a set of direct local children in
+// one otherwise static #if branch. Every child has an independent instance
+// handle and payload namespace (unique local component bindings only). The
+// initial server branch is adopted through hydrate entries; later branch
+// materialization mounts every child through its normal CSR factory.
+func (g *ASTGen) buildHydrationRootIfComponentChain(chain *IfChainNode, components []*ComponentNode, componentIndex int) {
+	if len(components) == 0 {
+		panic("vela: missing structural component lifecycle")
+	}
 	markerID := g.hydrationIfMarkerID(chain)
 	name := "$$hif" + itoa(markerID)
 	rangeVar := name + "_range"
 	nodesVar := name + "_nodes"
 	activeVar := name + "_active"
-	instanceVar := name + "_component"
+	handles := make([]hydrationIfComponentHandle, 0, len(components))
+	for index, component := range components {
+		instanceVar := name + "_component"
+		if len(components) > 1 {
+			instanceVar += "_" + itoa(index)
+		}
+		handles = append(handles, hydrationIfComponentHandle{
+			component: component, instanceVar: instanceVar, propsExpr: g.componentPropsExpr(component.Attrs), csrFactory: g.hydrationCSRComponents[component.Name],
+		})
+	}
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
-	g.declareInScope(genLet(instanceVar, genNull()))
+	for _, handle := range handles {
+		if handle.csrFactory == "" {
+			panic("vela: missing structural component CSR factory")
+		}
+		g.declareInScope(genLet(handle.instanceVar, genNull()))
+	}
 	g.body = append(g.body,
 		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
 		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
@@ -4867,39 +4884,44 @@ func (g *ASTGen) buildHydrationRootIfComponentChain(chain *IfChainNode, componen
 	}
 	g.body = append(g.body, genLet(activeVar, activeExpr))
 
-	propsExpr := g.componentPropsExpr(component.Attrs)
-	g.hydrationInitBody = append(g.hydrationInitBody, genIf(
-		genBinary("===", id(activeVar), numLit(componentIndex)),
-		genAssignStmt(id(instanceVar), genMember(genCall(id(component.Name), id("$$root")), "component")),
-	))
-	setStmt := genIf(id(instanceVar), genExprStmt(genCall(genMember(id(instanceVar), "set"), propsExpr)))
-	deps := map[string]bool{}
-	for _, attr := range component.Attrs {
-		for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
-			deps[dependency] = true
+	for _, handle := range handles {
+		g.hydrationInitBody = append(g.hydrationInitBody, genIf(
+			genBinary("===", id(activeVar), numLit(componentIndex)),
+			genAssignStmt(id(handle.instanceVar), genMember(genCall(id(handle.component.Name), id("$$root")), "component")),
+		))
+		setStmt := genIf(id(handle.instanceVar), genExprStmt(genCall(genMember(id(handle.instanceVar), "set"), handle.propsExpr)))
+		deps := map[string]bool{}
+		for _, attr := range handle.component.Attrs {
+			for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+				deps[dependency] = true
+			}
 		}
-	}
-	for dependency := range deps {
-		g.addUpdate(dependency, shareStmt(setStmt))
+		for dependency := range deps {
+			g.addUpdate(dependency, shareStmt(setStmt))
+		}
 	}
 
 	updateBody := []JsStmt{
 		genLet("$$active", activeExpr),
 		genIf(genBinary("===", id("$$active"), id(activeVar)), genReturn(nil)),
-		genIf(id(instanceVar), genBlock(
-			genExprStmt(genCall(genMember(id(instanceVar), "destroy"))),
-			genAssignStmt(id(instanceVar), genNull()),
-		)),
+	}
+	for index := len(handles) - 1; index >= 0; index-- {
+		handle := handles[index]
+		updateBody = append(updateBody, genIf(id(handle.instanceVar), genBlock(
+			genExprStmt(genCall(genMember(id(handle.instanceVar), "destroy"))),
+			genAssignStmt(id(handle.instanceVar), genNull()),
+		)))
+	}
+	updateBody = append(updateBody,
 		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
 		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
-	}
-	csrFactory := g.hydrationCSRComponents[component.Name]
+	)
 	for index, branch := range chain.Branches {
 		if branch == nil {
 			continue
 		}
 		if index == componentIndex {
-			mount := g.hydrationIfComponentBranchMount(branch, component, csrFactory, instanceVar, propsExpr)
+			mount := g.hydrationIfComponentBranchMount(branch, handles)
 			updateBody = append(updateBody, genIf(genBinary("===", id("$$active"), numLit(index)), genBlock(mount...)))
 			continue
 		}
@@ -4923,27 +4945,44 @@ func (g *ASTGen) buildHydrationRootIfComponentChain(chain *IfChainNode, componen
 			g.addStructuralUpdate(dependency, genInvoke(fn))
 		}
 	}
-	g.cleanup = append(g.cleanup,
-		genIf(id(instanceVar), genBlock(
-			genExprStmt(genCall(genMember(id(instanceVar), "destroy"))),
-			genAssignStmt(id(instanceVar), genNull()),
-		)),
-		genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)),
-	)
+	for index := len(handles) - 1; index >= 0; index-- {
+		handle := handles[index]
+		g.cleanup = append(g.cleanup, genIf(id(handle.instanceVar), genBlock(
+			genExprStmt(genCall(genMember(id(handle.instanceVar), "destroy"))),
+			genAssignStmt(id(handle.instanceVar), genNull()),
+		)))
+	}
+	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 }
 
-// hydrationIfComponentBranchMount recreates the current narrow structural
-// component branch after its range changes. Static siblings are emitted in
-// original template order around the one owned child instance; only the child
-// uses its normal CSR factory.
-func (g *ASTGen) hydrationIfComponentBranchMount(branch *IfBranch, component *ComponentNode, csrFactory, instanceVar string, propsExpr JsExpr) []JsStmt {
-	if branch == nil || component == nil || csrFactory == "" {
+type hydrationIfComponentHandle struct {
+	component   *ComponentNode
+	instanceVar string
+	propsExpr   JsExpr
+	csrFactory  string
+}
+
+// hydrationIfComponentBranchMount recreates static siblings and every owned
+// direct child in original template order after a branch replacement.
+func (g *ASTGen) hydrationIfComponentBranchMount(branch *IfBranch, handles []hydrationIfComponentHandle) []JsStmt {
+	if branch == nil || len(handles) == 0 {
 		panic("vela: missing structural component branch lifecycle metadata")
 	}
 	var body []JsStmt
 	for _, child := range branch.Children {
-		if child == component {
-			body = append(body, genAssignStmt(id(instanceVar), genCall(id(csrFactory), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})))
+		if component, ok := child.(*ComponentNode); ok {
+			matched := false
+			for _, handle := range handles {
+				if component != handle.component {
+					continue
+				}
+				body = append(body, genAssignStmt(id(handle.instanceVar), genCall(id(handle.csrFactory), id("$$frag"), handle.propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})))
+				matched = true
+				break
+			}
+			if !matched {
+				panic("vela: structural component branch does not match lifecycle handles")
+			}
 			continue
 		}
 		body = append(body, genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML([]Node{child}, g.scopeID)))))

@@ -436,13 +436,14 @@ func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
 // The child can adopt its server DOM on the initial branch and an ordinary CSR
 // factory can mount it after a later branch switch. Slots, component events,
 // bindings, and a second child still need separate ownership lifecycles.
-func ssrCapabilityCurrentIfComponentBranch(chain *IfChainNode) (*ComponentNode, int, bool) {
+func ssrCapabilityCurrentIfComponentBranch(chain *IfChainNode) ([]*ComponentNode, int, bool) {
 	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 || len(chain.Branches) > 2 {
 		return nil, 0, false
 	}
 	conditions := 0
 	componentIndex := -1
-	var component *ComponentNode
+	var components []*ComponentNode
+	names := map[string]bool{}
 	for index, branch := range chain.Branches {
 		if branch == nil {
 			return nil, 0, false
@@ -457,17 +458,21 @@ func ssrCapabilityCurrentIfComponentBranch(chain *IfChainNode) (*ComponentNode, 
 				staticChildren = append(staticChildren, child)
 				continue
 			}
-			if component != nil || len(candidate.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(candidate) {
+			if len(candidate.Slots) != 0 || names[candidate.Name] || !ssrCapabilityCurrentStructuralComponentAttrs(candidate) {
 				return nil, 0, false
 			}
-			component = candidate
+			names[candidate.Name] = true
+			if componentIndex >= 0 && componentIndex != index {
+				return nil, 0, false
+			}
+			components = append(components, candidate)
 			componentIndex = index
 		}
 		if !ssrCapabilityCurrentStaticChildren(staticChildren) {
 			return nil, 0, false
 		}
 	}
-	return component, componentIndex, component != nil && conditions == 1
+	return components, componentIndex, len(components) > 0 && conditions == 1
 }
 
 func ssrCapabilityCurrentStructuralComponentAttrs(component *ComponentNode) bool {

@@ -708,6 +708,15 @@ siblings in template order and mounts the child through its ordinary CSR
 factory at the same relative position. Chromium coverage proves zero initial
 mutations, teardown, remount, and sibling order.
 
+A branch may now contain several direct local children when their component
+bindings are distinct. The hydration client creates one handle per child,
+adopts and forwards props independently, destroys handles in reverse source
+order before range removal, then recreates static siblings and CSR children in
+source order. Repeating the same local component binding remains an explicit
+capability boundary: current payload IDs and marker namespaces are component
+scoped, so Phase 4 must first make them structural-path scoped rather than
+adopting ambiguous server payloads.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that

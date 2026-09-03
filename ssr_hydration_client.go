@@ -110,8 +110,10 @@ func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecycleP
 			return
 		}
 		if current.Kind == SSRLifecyclePlanIf {
-			if component, _, ok := ssrHydrationDirectIfComponent(current); ok {
-				aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
+			if components, _, ok := ssrHydrationDirectIfComponents(current); ok {
+				for _, component := range components {
+					aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
+				}
 			}
 		}
 		for _, child := range current.Children {
@@ -122,15 +124,16 @@ func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecycleP
 	return aliases
 }
 
-// ssrHydrationDirectIfComponent is the current direct-child lifecycle subset.
+// ssrHydrationDirectIfComponents is the current direct-child lifecycle subset.
 // Its input is a typed #if plan, so callers do not re-derive structure by
 // inspecting raw template AST branch lists. Phase 5 expands this helper into
 // branch lifecycle lowering for multiple and nested children.
-func ssrHydrationDirectIfComponent(plan *SSRStructuralLifecyclePlan) (*ComponentNode, int, bool) {
+func ssrHydrationDirectIfComponents(plan *SSRStructuralLifecyclePlan) ([]*ComponentNode, int, bool) {
 	if plan == nil || plan.Kind != SSRLifecyclePlanIf {
 		return nil, 0, false
 	}
-	var component *ComponentNode
+	var components []*ComponentNode
+	names := map[string]bool{}
 	componentIndex := -1
 	for index, branch := range plan.Children {
 		if branch == nil || branch.Kind != SSRLifecyclePlanIfBranch {
@@ -141,14 +144,18 @@ func ssrHydrationDirectIfComponent(plan *SSRStructuralLifecyclePlan) (*Component
 			if !ok || candidate == nil || len(candidate.Slots) != 0 {
 				continue
 			}
-			if component != nil {
+			if names[candidate.Name] {
 				return nil, 0, false
 			}
-			component = candidate
+			names[candidate.Name] = true
+			if componentIndex >= 0 && componentIndex != index {
+				return nil, 0, false
+			}
+			components = append(components, candidate)
 			componentIndex = index
 		}
 	}
-	return component, componentIndex, component != nil
+	return components, componentIndex, len(components) > 0
 }
 
 func ssrHydrationComponentNames(sfc *SFC, analysis *Analysis) (map[string]bool, error) {

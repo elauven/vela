@@ -81,9 +81,9 @@ func TestSSRStructuralLifecyclePlanFindsDirectIfComponent(t *testing.T) {
 	}
 	plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes)
 	ifPlan := plan.Find(SSRLifecyclePlanIf, sfc.TemplateAST.Nodes[0].(*ElementNode).Children[0].(*IfChainNode).Span)
-	component, index, ok := ssrHydrationDirectIfComponent(ifPlan)
-	if !ok || component == nil || component.Name != "Child" || index != 0 {
-		t.Fatalf("direct if component=%#v index=%d ok=%t", component, index, ok)
+	components, index, ok := ssrHydrationDirectIfComponents(ifPlan)
+	if !ok || len(components) != 1 || components[0].Name != "Child" || index != 0 {
+		t.Fatalf("direct if components=%#v index=%d ok=%t", components, index, ok)
 	}
 }
 
