@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAnalyzeSSRCapabilityMirrorsCurrentHydrationSubset(t *testing.T) {
 	for _, source := range []struct {
@@ -50,5 +53,28 @@ func TestAnalyzeSSRCapabilityRetainsNestedStructuralPathAndOwnership(t *testing.
 	}
 	if len(eachNode.Children) != 1 || eachNode.Children[0].Marker != SSRMarkerComponentBoundary {
 		t.Fatalf("component ownership=%#v", eachNode.Children)
+	}
+}
+
+func TestSSRCapabilityReportsMostSpecificHydrationBoundary(t *testing.T) {
+	sfc, err := parseSFC(`<template><main><section>{#each rows as row}<Child :row={row} />{/each}</section></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capability := AnalyzeSSRCapability(sfc.TemplateAST.Nodes)
+	issues := capability.HydrationIssues()
+	if len(issues) != 1 {
+		t.Fatalf("issues=%#v, want one specific issue", issues)
+	}
+	issue := issues[0]
+	if issue.Path != "template[0].children[0].children[0]" || issue.NodeKind != "each" {
+		t.Fatalf("issue=%#v", issue)
+	}
+	if !strings.Contains(issue.Reason, "recursive instance and range lifecycle") {
+		t.Fatalf("issue reason=%q", issue.Reason)
+	}
+	_, err = BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err == nil || !strings.Contains(err.Error(), issue.Path) || !strings.Contains(err.Error(), issue.Reason) {
+		t.Fatalf("hydration error=%v, want capability reason for %s", err, issue.Path)
 	}
 }

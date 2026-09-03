@@ -65,10 +65,62 @@ type SSRCapability struct {
 	Children  []*SSRCapability
 }
 
+// SSRCapabilityIssue is a compact, source-addressable explanation for an
+// execution boundary. It is intentionally independent of CLI diagnostics so
+// `vela ssr --check` and project compilation can render the same reason chain.
+type SSRCapabilityIssue struct {
+	Path      string
+	Span      SectionSpan
+	NodeKind  string
+	Execution SSRExecutionMode
+	Hydration SSRHydrationMode
+	Reason    string
+}
+
 // ExecutableHydration reports whether this node belongs to the currently
 // emitted marker-aware hydration subset.
 func (c *SSRCapability) ExecutableHydration() bool {
 	return c != nil && c.Hydration == SSRHydrationExecutable
+}
+
+// HydrationIssues returns the most specific non-executable sites in template
+// order. A parent that merely summarizes a child's limitation is omitted, so
+// callers receive actionable paths instead of a cascade of generic messages.
+func (c *SSRCapability) HydrationIssues() []SSRCapabilityIssue {
+	var issues []SSRCapabilityIssue
+	var visit func(*SSRCapability) bool
+	visit = func(current *SSRCapability) bool {
+		if current == nil {
+			return false
+		}
+		hasChildIssue := false
+		for _, child := range current.Children {
+			if visit(child) {
+				hasChildIssue = true
+			}
+		}
+		if current.Hydration == SSRHydrationExecutable {
+			return hasChildIssue
+		}
+		if !hasChildIssue && current.Reason != "" {
+			issues = append(issues, SSRCapabilityIssue{
+				Path: current.Path, Span: current.Span, NodeKind: current.NodeKind,
+				Execution: current.Execution, Hydration: current.Hydration, Reason: current.Reason,
+			})
+		}
+		return true
+	}
+	visit(c)
+	return issues
+}
+
+// FirstHydrationIssue returns the first deterministic actionable boundary.
+func (c *SSRCapability) FirstHydrationIssue() (SSRCapabilityIssue, bool) {
+	issues := c.HydrationIssues()
+	if len(issues) == 0 {
+		return SSRCapabilityIssue{}, false
+	}
+	return issues[0], true
 }
 
 // AnalyzeSSRCapability returns a complete template tree even when the current

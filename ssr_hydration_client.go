@@ -419,6 +419,16 @@ func ssrHydrationElementMarkerIDs(nodes []SSRPlanNode) map[SectionSpan]int {
 // supported SSR subset. It acquires the root through the checked element
 // marker and never runs the CSR mount or initial DOM-write paths.
 func BuildSSRHydrationClientProgram(name string, sfc *SFC, analysis *Analysis, scopeID string) (*JsProgram, error) {
+	if sfc == nil {
+		return nil, fmt.Errorf("SSR hydration client: missing component")
+	}
+	capability := AnalyzeSSRCapability(sfc.TemplateAST.Nodes)
+	if !capability.ExecutableHydration() {
+		if issue, ok := capability.FirstHydrationIssue(); ok {
+			return nil, fmt.Errorf("SSR hydration client requires marker-aware lifecycle at %s (%s): %s", issue.Path, issue.NodeKind, issue.Reason)
+		}
+		return nil, fmt.Errorf("SSR hydration client requires one element root and supported marker-aware descendants")
+	}
 	components, err := ssrHydrationComponentNames(sfc, analysis)
 	if err != nil {
 		return nil, err
@@ -429,8 +439,11 @@ func BuildSSRHydrationClientProgram(name string, sfc *SFC, analysis *Analysis, s
 // buildSSRHydrationClientProgramWithComponents keeps the child-component import
 // map explicit. Project compilation supplies verified local .vela imports.
 func buildSSRHydrationClientProgramWithComponents(name string, sfc *SFC, analysis *Analysis, scopeID string, components map[string]bool) (*JsProgram, error) {
-	if sfc == nil || !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
-		return nil, fmt.Errorf("SSR hydration client requires one element root and supported marker-aware descendants")
+	if sfc == nil {
+		return nil, fmt.Errorf("SSR hydration client: missing component")
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		return nil, fmt.Errorf("SSR hydration client requires a capability-checked template")
 	}
 	plan, err := BuildSSRRenderPlanWithAnalysis(name, sfc, analysis, scopeID)
 	if err != nil {

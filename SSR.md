@@ -653,6 +653,9 @@ mode, marker ownership, lifecycle requirement, and current hydration status.
 The existing hydration eligibility API reads this tree, while the old narrow
 shape checks remain an internal compatibility adapter until their lifecycle
 rules are migrated one by one. This changes no emitted component output yet.
+When the current hydrator cannot execute a tree, client generation now reports
+the most specific capability boundary with its template path, node kind, and
+missing lifecycle rather than a component-wide generic subset failure.
 
 ### JavaScript and Browser API compatibility matrix
 
