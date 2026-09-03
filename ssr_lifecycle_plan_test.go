@@ -60,6 +60,20 @@ func TestSSRStructuralLifecyclePlanRetainsAwaitBranches(t *testing.T) {
 	}
 }
 
+func TestSSRStructuralLifecyclePlanFindsDynamicTextOwner(t *testing.T) {
+	sfc, err := parseSFC(`<template><main><p>Hello, {name}</p></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes)
+	text := sfc.TemplateAST.Nodes[0].(*ElementNode).Children[0].(*ElementNode).Children[0].(*TextNode)
+	part := text.Parts[1]
+	owner := plan.Find(SSRLifecyclePlanText, part.Span)
+	if owner == nil || owner.Span != text.Span || !owner.hasOperation(SSRLifecycleUpdate) {
+		t.Fatalf("text lifecycle owner=%#v", owner)
+	}
+}
+
 func hasSSRStructuralOperation(plan *SSRStructuralLifecyclePlan, operation SSRLifecycleOperation) bool {
 	for _, current := range plan.Operations {
 		if current == operation {

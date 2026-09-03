@@ -306,6 +306,10 @@ type ASTGen struct {
 	// render-plan ID. Inactive structural alternatives still reserve IDs, so
 	// hydration must not reproduce dynamic traversal order with a local counter.
 	hydrationMarkers SSRHydrationMarkerIDs
+	// hydrationLifecyclePlan is the typed ownership graph for this component.
+	// During the incremental migration each hydration lowering site verifies its
+	// matching operation here before emitted JS acquires server DOM.
+	hydrationLifecyclePlan *SSRStructuralLifecyclePlan
 
 	// hydrationKeyedRows records that the narrow keyed-#each hydration
 	// lowering is present.  It keeps the helper import decision structural:
@@ -5411,6 +5415,9 @@ func (g *ASTGen) buildHydrationComponentSlotContent(slots map[string][]Node) {
 // create a comment anchor. Parent reactive prop updates still use the
 // ordinary instance .set() path after adoption.
 func (g *ASTGen) buildHydrationComponentNode(comp *ComponentNode, parentVar string) {
+	if comp != nil {
+		g.requireHydrationLifecycle(SSRLifecyclePlanComponent, comp.Span, SSRLifecycleAdopt)
+	}
 	inst := g.id() + "_comp"
 	g.declareInScope(genLet(inst, genNull()))
 
@@ -6049,6 +6056,7 @@ func (g *ASTGen) createHydrationTemplateElementStmt(varName string, element *Ele
 	if element == nil {
 		panic("vela: missing template element during hydration lowering")
 	}
+	g.requireHydrationLifecycle(SSRLifecyclePlanElement, element.Span, SSRLifecycleAdopt)
 	hydrationID, ok := g.hydrationMarkers.Elements[element.Span]
 	if !ok {
 		if g.hydrationMarkers.Elements == nil {

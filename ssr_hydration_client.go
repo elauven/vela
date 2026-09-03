@@ -53,7 +53,7 @@ func buildSSRHydrationClientProgramWithComponents(name string, sfc *SFC, analysi
 	g := &ASTGen{
 		name: name, scopeID: scopeID, analysis: analysis, sfc: sfc, fragCounter: -1, cssExternal: true,
 		domAcquireMode: DOMAcquireHydrate, domAcquirePlan: DOMAcquirePlan{Mode: DOMAcquireHydrate},
-		hydrationStateInput: true, hydrationComponents: components, hydrationCSRComponents: ssrHydrationStructuralComponentAliases(sfc.TemplateAST.Nodes), hydrationMarkers: ssrHydrationMarkerIDs(plan.Nodes),
+		hydrationStateInput: true, hydrationComponents: components, hydrationCSRComponents: ssrHydrationStructuralComponentAliases(sfc.TemplateAST.Nodes), hydrationMarkers: ssrHydrationMarkerIDs(plan.Nodes), hydrationLifecyclePlan: BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes),
 	}
 	program := g.buildModule(sfc.TemplateAST.Nodes)
 	validateGeneratedProgram(program)

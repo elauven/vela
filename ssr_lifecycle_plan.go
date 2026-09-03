@@ -84,6 +84,43 @@ type SSRStructuralLifecyclePlan struct {
 	Children     []*SSRStructuralLifecyclePlan
 }
 
+// Find returns the unique plan node for one typed template site. It is used by
+// incremental lowerers while they migrate from AST-shape dispatch to direct
+// lifecycle-plan dispatch. Matching both kind and span keeps synthetic branch
+// nodes distinct from their structural owner. A dynamic text Part belongs to
+// the enclosing TextNode, so text lookup accepts a contained part span.
+func (p *SSRStructuralLifecyclePlan) Find(kind SSRLifecyclePlanKind, span SectionSpan) *SSRStructuralLifecyclePlan {
+	if p == nil {
+		return nil
+	}
+	if p.Kind == kind {
+		if p.Span == span {
+			return p
+		}
+		if kind == SSRLifecyclePlanText && p.Span.Start <= span.Start && span.End <= p.Span.End {
+			return p
+		}
+	}
+	for _, child := range p.Children {
+		if found := child.Find(kind, span); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func (p *SSRStructuralLifecyclePlan) hasOperation(operation SSRLifecycleOperation) bool {
+	if p == nil {
+		return false
+	}
+	for _, current := range p.Operations {
+		if current == operation {
+			return true
+		}
+	}
+	return false
+}
+
 // BuildSSRStructuralLifecyclePlan preserves every template descendant even
 // when its current Hydration status is needs-lifecycle. This makes the plan a
 // forward-compatible ownership graph rather than another subset predicate.

@@ -89,6 +89,8 @@ func (markers SSRHydrationMarkerIDs) awaitID(span SectionSpan) (int, bool) {
 }
 
 func (g *ASTGen) hydrationTextMarkerID(part *Part) int {
+	g.requireHydrationLifecycle(SSRLifecyclePlanText, part.Span, SSRLifecycleAdopt)
+	g.requireHydrationLifecycle(SSRLifecyclePlanText, part.Span, SSRLifecycleUpdate)
 	if id, ok := g.hydrationMarkers.textID(part); ok {
 		return id
 	}
@@ -96,6 +98,11 @@ func (g *ASTGen) hydrationTextMarkerID(part *Part) int {
 }
 
 func (g *ASTGen) hydrationIfMarkerID(chain *IfChainNode) int {
+	if chain != nil {
+		g.requireHydrationLifecycle(SSRLifecyclePlanIf, chain.Span, SSRLifecycleAdopt)
+		g.requireHydrationLifecycle(SSRLifecyclePlanIf, chain.Span, SSRLifecycleUpdate)
+		g.requireHydrationLifecycle(SSRLifecyclePlanIf, chain.Span, SSRLifecycleDestroy)
+	}
 	if chain != nil {
 		if id, ok := g.hydrationMarkers.ifID(chain.Span); ok {
 			return id
@@ -106,6 +113,11 @@ func (g *ASTGen) hydrationIfMarkerID(chain *IfChainNode) int {
 
 func (g *ASTGen) hydrationEachMarkerID(block *EachBlockNode) int {
 	if block != nil {
+		g.requireHydrationLifecycle(SSRLifecyclePlanEach, block.Span, SSRLifecycleAdopt)
+		g.requireHydrationLifecycle(SSRLifecyclePlanEach, block.Span, SSRLifecycleUpdate)
+		g.requireHydrationLifecycle(SSRLifecyclePlanEach, block.Span, SSRLifecycleDestroy)
+	}
+	if block != nil {
 		if id, ok := g.hydrationMarkers.eachID(block.Span); ok {
 			return id
 		}
@@ -115,9 +127,27 @@ func (g *ASTGen) hydrationEachMarkerID(block *EachBlockNode) int {
 
 func (g *ASTGen) hydrationAwaitMarkerID(block *AwaitBlockNode) int {
 	if block != nil {
+		g.requireHydrationLifecycle(SSRLifecyclePlanAwait, block.Span, SSRLifecycleAdopt)
+		g.requireHydrationLifecycle(SSRLifecyclePlanAwait, block.Span, SSRLifecycleUpdate)
+		g.requireHydrationLifecycle(SSRLifecyclePlanAwait, block.Span, SSRLifecycleDestroy)
+	}
+	if block != nil {
 		if id, ok := g.hydrationMarkers.awaitID(block.Span); ok {
 			return id
 		}
 	}
 	panic("vela: missing SSR await marker for hydration template span")
+}
+
+func (g *ASTGen) requireHydrationLifecycle(kind SSRLifecyclePlanKind, span SectionSpan, operation SSRLifecycleOperation) {
+	if g.hydrationLifecyclePlan == nil {
+		panic("vela: missing SSR structural lifecycle plan during hydration lowering")
+	}
+	plan := g.hydrationLifecyclePlan.Find(kind, span)
+	if plan == nil {
+		panic("vela: missing SSR structural lifecycle node during hydration lowering")
+	}
+	if !plan.hasOperation(operation) {
+		panic("vela: SSR structural lifecycle node does not own required hydration operation")
+	}
 }

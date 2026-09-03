@@ -676,6 +676,14 @@ and `#await` markers by their source spans. The generator no longer maintains a
 private dynamic counter, so marker IDs reserved by a preceding key expression
 or inactive structural alternative cannot shift a later client acquisition.
 
+The executable hydration builder now passes `SSRStructuralLifecyclePlan` into
+`ASTGen`. Before lowering an acquired element, dynamic text range, structural
+range, or local child component, the generator resolves the matching typed
+node and checks that it owns the required lifecycle operation. Text-part spans
+resolve to their enclosing text node; all structural and component spans stay
+exact. This is the first consumer of the lifecycle graph; dispatch still uses
+the existing supported subset until the recursive lowerer replaces it.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that
