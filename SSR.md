@@ -700,6 +700,14 @@ typed branch child, not by independently scanning raw branch arrays. This
 preserves the current one-direct-child subset and is the migration seam for
 multiple and nested branch children.
 
+That subset now allows static siblings before and after the owned local child
+in either `#if` branch. Initial hydration adopts the child while leaving the
+server-rendered siblings untouched. When the branch changes, the child is
+destroyed before its range is removed; a fresh fragment then emits static
+siblings in template order and mounts the child through its ordinary CSR
+factory at the same relative position. Chromium coverage proves zero initial
+mutations, teardown, remount, and sibling order.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that

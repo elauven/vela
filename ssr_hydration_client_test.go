@@ -1212,6 +1212,31 @@ func TestSSRHydrationIfChildAdoptsThenRemountsWithCSRFactory(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationIfChildRemountsStaticSiblingsInTemplateOrder(t *testing.T) {
+	sfc, err := parseSFC(`<script>
+		import { Child } from "./Child.vela";
+		export let visible = true;
+		export let title = "server";
+	</script><template><main>{#if visible}<p class="before">Before</p><Child :title={title} /><p class="after">After</p>{:else}<p>Hidden</p>{/if}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("static siblings around direct #if child must be hydration-eligible")
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	before := strings.Index(source, "Before")
+	mount := strings.Index(source, "$$hif0_component = $$csr_Child")
+	after := strings.Index(source, "After")
+	if before < 0 || mount < 0 || after < 0 || !(before < mount && mount < after) {
+		t.Fatalf("static sibling remount order is not template order:\n%s", source)
+	}
+}
+
 func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -1412,7 +1437,7 @@ func TestBrowserSSRHydrationIfChildAdoptsDestroysAndCSRRemounts(t *testing.T) {
 		import { Child } from "./Child.vela";
 		export let visible = true;
 		export let title = "server";
-	</script><template><main>{#if visible}<Child :title={title} />{:else}<p class="hidden">Hidden</p>{/if}</main></template>`)
+	</script><template><main>{#if visible}<p class="before">Before</p><Child :title={title} /><p class="after">After</p>{:else}<p class="hidden">Hidden</p>{/if}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1438,7 +1463,7 @@ func TestBrowserSSRHydrationIfChildAdoptsDestroysAndCSRRemounts(t *testing.T) {
 		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
 		"Parent.hydrate.js":        []byte(PrintJS(parentEntry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
-<!--e:vela-parent:0--><main vela-parent=""><!--v:vela-parent:0--><!--e:vela-child:0--><p vela-child="" class="child"><!--v:vela-child:0-->server<!--/v:vela-child:0--></p><!--/e:vela-child:0--><script type="application/json" id="vela-state-vela-child">{"component":"vela-child","props":{"Title":"server"},"state":{},"incomplete":false}</script><!--/v:vela-parent:0--></main><!--/e:vela-parent:0-->
+<!--e:vela-parent:0--><main vela-parent=""><!--v:vela-parent:0--><p vela-parent="" class="before">Before</p><!--e:vela-child:0--><p vela-child="" class="child"><!--v:vela-child:0-->server<!--/v:vela-child:0--></p><!--/e:vela-child:0--><script type="application/json" id="vela-state-vela-child">{"component":"vela-child","props":{"Title":"server"},"state":{},"incomplete":false}</script><p vela-parent="" class="after">After</p><!--/v:vela-parent:0--></main><!--/e:vela-parent:0-->
 <script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Visible":true,"Title":"server"},"state":{},"incomplete":false}</script>
 <script type="module">
   import hydrateParent from './Parent.hydrate.js';
@@ -1475,7 +1500,7 @@ server.listen(0, '127.0.0.1', async () => {
     await page.evaluate(() => window.__hydrated.component.set({visible:false}));
     await page.waitForFunction(() => document.querySelector('.hidden'));
     await page.evaluate(() => { window.__payloadRemoved = !document.getElementById('vela-state-vela-child'); window.__hydrated.component.set({visible:true}); });
-    await page.waitForFunction(() => document.querySelector('.child')?.textContent === 'client');
+    await page.waitForFunction(() => document.querySelector('.child')?.textContent === 'client' && document.querySelector('.before') && document.querySelector('.after'));
     await page.evaluate(() => window.__hydrated.component.set({title:'remounted'}));
     await page.waitForFunction(() => document.querySelector('.child')?.textContent === 'remounted');
     const result = await page.evaluate(() => ({
@@ -1485,8 +1510,9 @@ server.listen(0, '127.0.0.1', async () => {
       payloadRemoved: window.__payloadRemoved,
       destroyed: window.__childDestroyCount,
       text: document.querySelector('.child')?.textContent,
+      order: Array.from(document.querySelector('main').children).map((node) => node.className).join(','),
     }));
-    if (result.initial !== 0 || !result.firstDetached || !result.remounted || !result.payloadRemoved || result.destroyed !== 1 || result.text !== 'remounted') throw new Error(JSON.stringify(result));
+    if (result.initial !== 0 || !result.firstDetached || !result.remounted || !result.payloadRemoved || result.destroyed !== 1 || result.text !== 'remounted' || result.order !== 'before,child,after') throw new Error(JSON.stringify(result));
     process.stdout.write('OK');
   } catch (error) {
     console.error(error && error.stack || error);

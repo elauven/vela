@@ -133,18 +133,20 @@ func ssrHydrationDirectIfComponent(plan *SSRStructuralLifecyclePlan) (*Component
 	var component *ComponentNode
 	componentIndex := -1
 	for index, branch := range plan.Children {
-		if branch == nil || branch.Kind != SSRLifecyclePlanIfBranch || len(branch.Children) != 1 {
+		if branch == nil || branch.Kind != SSRLifecyclePlanIfBranch {
 			continue
 		}
-		candidate, ok := branch.Children[0].TemplateNode.(*ComponentNode)
-		if !ok || candidate == nil || len(candidate.Slots) != 0 {
-			continue
+		for _, child := range branch.Children {
+			candidate, ok := child.TemplateNode.(*ComponentNode)
+			if !ok || candidate == nil || len(candidate.Slots) != 0 {
+				continue
+			}
+			if component != nil {
+				return nil, 0, false
+			}
+			component = candidate
+			componentIndex = index
 		}
-		if component != nil {
-			return nil, 0, false
-		}
-		component = candidate
-		componentIndex = index
 	}
 	return component, componentIndex, component != nil
 }

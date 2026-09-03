@@ -432,11 +432,10 @@ func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
 
 // ssrCapabilityCurrentIfComponentBranch recognizes the first structural-component
 // lifecycle slice: exactly one direct local child with ordinary one-way props
-// in a normal #if branch, with static sibling branches. The child can adopt
-// its server DOM on the initial branch and an ordinary CSR factory can mount
-// it after a later branch switch. Slots, component events, and bindings need
-// separate ownership and callback lifecycles, so they remain outside this
-// narrow shape.
+// in a normal #if branch, plus any number of static siblings in either branch.
+// The child can adopt its server DOM on the initial branch and an ordinary CSR
+// factory can mount it after a later branch switch. Slots, component events,
+// bindings, and a second child still need separate ownership lifecycles.
 func ssrCapabilityCurrentIfComponentBranch(chain *IfChainNode) (*ComponentNode, int, bool) {
 	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 || len(chain.Branches) > 2 {
 		return nil, 0, false
@@ -451,17 +450,20 @@ func ssrCapabilityCurrentIfComponentBranch(chain *IfChainNode) (*ComponentNode, 
 		if branch.HasCondition() {
 			conditions++
 		}
-		if len(branch.Children) == 1 {
-			if candidate, ok := branch.Children[0].(*ComponentNode); ok && candidate != nil {
-				if component != nil || len(candidate.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(candidate) {
-					return nil, 0, false
-				}
-				component = candidate
-				componentIndex = index
+		staticChildren := make([]Node, 0, len(branch.Children))
+		for _, child := range branch.Children {
+			candidate, ok := child.(*ComponentNode)
+			if !ok || candidate == nil {
+				staticChildren = append(staticChildren, child)
 				continue
 			}
+			if component != nil || len(candidate.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(candidate) {
+				return nil, 0, false
+			}
+			component = candidate
+			componentIndex = index
 		}
-		if !ssrCapabilityCurrentStaticChildren(branch.Children) {
+		if !ssrCapabilityCurrentStaticChildren(staticChildren) {
 			return nil, 0, false
 		}
 	}

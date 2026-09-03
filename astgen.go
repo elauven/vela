@@ -4899,10 +4899,8 @@ func (g *ASTGen) buildHydrationRootIfComponentChain(chain *IfChainNode, componen
 			continue
 		}
 		if index == componentIndex {
-			updateBody = append(updateBody, genIf(
-				genBinary("===", id("$$active"), numLit(index)),
-				genAssignStmt(id(instanceVar), genCall(id(csrFactory), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
-			))
+			mount := g.hydrationIfComponentBranchMount(branch, component, csrFactory, instanceVar, propsExpr)
+			updateBody = append(updateBody, genIf(genBinary("===", id("$$active"), numLit(index)), genBlock(mount...)))
 			continue
 		}
 		updateBody = append(updateBody, genIf(
@@ -4932,6 +4930,25 @@ func (g *ASTGen) buildHydrationRootIfComponentChain(chain *IfChainNode, componen
 		)),
 		genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)),
 	)
+}
+
+// hydrationIfComponentBranchMount recreates the current narrow structural
+// component branch after its range changes. Static siblings are emitted in
+// original template order around the one owned child instance; only the child
+// uses its normal CSR factory.
+func (g *ASTGen) hydrationIfComponentBranchMount(branch *IfBranch, component *ComponentNode, csrFactory, instanceVar string, propsExpr JsExpr) []JsStmt {
+	if branch == nil || component == nil || csrFactory == "" {
+		panic("vela: missing structural component branch lifecycle metadata")
+	}
+	var body []JsStmt
+	for _, child := range branch.Children {
+		if child == component {
+			body = append(body, genAssignStmt(id(instanceVar), genCall(id(csrFactory), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})))
+			continue
+		}
+		body = append(body, genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML([]Node{child}, g.scopeID)))))
+	}
+	return body
 }
 
 // buildHydrationRootKeyBlock adopts the rendered static {#key} child range.
