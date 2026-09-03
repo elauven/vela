@@ -717,6 +717,15 @@ capability boundary: current payload IDs and marker namespaces are component
 scoped, so Phase 4 must first make them structural-path scoped rather than
 adopting ambiguous server payloads.
 
+`SSRComponentInstanceIdentity` now records every component occurrence from the
+structural lifecycle graph. Its immutable typed path, not a tag name, is the
+source of identity; a diagnostic namespace makes static occurrences visible
+to tests and tooling. Recipes crossing `#key` or `#each` are explicitly marked
+runtime-scoped, since their final marker/payload namespace must contain the
+evaluated key. This is analysis-only until the renderer and hydrate entry
+accept an instance namespace; it prevents a later implementation from falling
+back to parsing expression text or component-name IDs.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that
