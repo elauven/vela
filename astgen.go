@@ -302,12 +302,10 @@ type ASTGen struct {
 	domAcquireMode DOMAcquireMode
 	domAcquirePlan DOMAcquirePlan
 
-	// hydrationElementIDs binds template element spans to the canonical SSR
-	// render-plan marker IDs. It is populated only for executable hydration.
-	hydrationElementIDs map[SectionSpan]int
-	// hydrationRangeNext follows the SSR render plan's dynamic marker order
-	// for the currently supported text-range subset.
-	hydrationRangeNext int
+	// hydrationMarkers bind every acquired template marker to the canonical SSR
+	// render-plan ID. Inactive structural alternatives still reserve IDs, so
+	// hydration must not reproduce dynamic traversal order with a local counter.
+	hydrationMarkers SSRHydrationMarkerIDs
 
 	// hydrationKeyedRows records that the narrow keyed-#each hydration
 	// lowering is present.  It keeps the helper import decision structural:
@@ -4704,8 +4702,7 @@ func (g *ASTGen) buildHydrationRootTextChildren(children []Node) {
 			if part == nil || part.Static {
 				continue
 			}
-			markerID := g.hydrationRangeNext
-			g.hydrationRangeNext++
+			markerID := g.hydrationTextMarkerID(part)
 			rangeVar := "$$h" + itoa(markerID) + "_range"
 			g.domAcquirePlan.addTextRange(rangeVar, markerID)
 			g.body = append(g.body, genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))))
@@ -4734,20 +4731,7 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		g.buildHydrationRootIfComponentChain(chain, component, componentIndex)
 		return
 	}
-	markerID := g.hydrationRangeNext
-	conditions := 0
-	for _, branch := range chain.Branches {
-		if branch != nil && branch.HasCondition() {
-			conditions++
-		}
-	}
-	// CanBuildSSRHydrationClient admits exactly one condition here. Keep the
-	// counter in lockstep with the SSR plan even if this internal contract is
-	// bypassed by a direct generator caller.
-	if conditions == 0 && chain.HasKey() {
-		conditions = 1
-	}
-	g.hydrationRangeNext += conditions
+	markerID := g.hydrationIfMarkerID(chain)
 
 	name := "$$hif" + itoa(markerID)
 	rangeVar := name + "_range"
@@ -4811,8 +4795,7 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 // same child is mounted through its distinct normal CSR import, so no second
 // hydration walker or stale server payload is involved.
 func (g *ASTGen) buildHydrationRootIfComponentChain(chain *IfChainNode, component *ComponentNode, componentIndex int) {
-	markerID := g.hydrationRangeNext
-	g.hydrationRangeNext++
+	markerID := g.hydrationIfMarkerID(chain)
 	name := "$$hif" + itoa(markerID)
 	rangeVar := name + "_range"
 	nodesVar := name + "_nodes"
@@ -4911,8 +4894,7 @@ func (g *ASTGen) buildHydrationRootIfComponentChain(chain *IfChainNode, componen
 // rebuilt only after that expression changes. Hydration itself therefore never
 // recreates the server subtree.
 func (g *ASTGen) buildHydrationRootKeyBlock(chain *IfChainNode) {
-	markerID := g.hydrationRangeNext
-	g.hydrationRangeNext++
+	markerID := g.hydrationIfMarkerID(chain)
 	name := "$$hkey" + itoa(markerID)
 	rangeVar := name + "_range"
 	nodesVar := name + "_nodes"
@@ -4955,8 +4937,7 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 		g.buildHydrationRootKeyedEach(block)
 		return
 	}
-	markerID := g.hydrationRangeNext
-	g.hydrationRangeNext++
+	markerID := g.hydrationEachMarkerID(block)
 	name := "$$heach" + itoa(markerID)
 	rangeVar := name + "_range"
 	nodesVar := name + "_nodes"
@@ -5007,8 +4988,7 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	if block == nil {
 		return
 	}
-	markerID := g.hydrationRangeNext
-	g.hydrationRangeNext++
+	markerID := g.hydrationAwaitMarkerID(block)
 	name := "$$hawait" + itoa(markerID)
 	rangeVar := name + "_range"
 	nodesVar := name + "_nodes"
@@ -5184,11 +5164,7 @@ func (g *ASTGen) buildHydrationAwaitBranch(children []Node, bindingName, binding
 // a row an actual element (rather than a synthetic range) and keeps the
 // identity contract small and testable before nested keyed ranges are added.
 func (g *ASTGen) buildHydrationRootKeyedEach(block *EachBlockNode) {
-	markerID := g.hydrationRangeNext
-	// SSRPlan reserves one dynamic entry for the iterable and one for its
-	// key expression.  The latter has no standalone DOM range, but it still
-	// advances all following marker IDs.
-	g.hydrationRangeNext += 2
+	markerID := g.hydrationEachMarkerID(block)
 	name := "$$heach" + itoa(markerID)
 	rangeVar := name + "_range"
 	itemsVar := name + "_items"
@@ -6073,9 +6049,9 @@ func (g *ASTGen) createHydrationTemplateElementStmt(varName string, element *Ele
 	if element == nil {
 		panic("vela: missing template element during hydration lowering")
 	}
-	hydrationID, ok := g.hydrationElementIDs[element.Span]
+	hydrationID, ok := g.hydrationMarkers.Elements[element.Span]
 	if !ok {
-		if g.hydrationElementIDs == nil {
+		if g.hydrationMarkers.Elements == nil {
 			return g.createElementStmt(varName, element.Tag)
 		}
 		panic("vela: missing SSR element marker for hydration template span")

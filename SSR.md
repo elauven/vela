@@ -670,6 +670,12 @@ instances without synthesizing document IDs at analysis time. The plan is
 currently analysis-only: it deliberately does not alter emitted HTML or client
 code until marker emission and hydration lowering consume the same graph.
 
+Hydration now also derives every acquired marker from the same typed SSR render
+plan. `SSRHydrationMarkerIDs` indexes element, text, `#if` / `#key`, `#each`,
+and `#await` markers by their source spans. The generator no longer maintains a
+private dynamic counter, so marker IDs reserved by a preceding key expression
+or inactive structural alternative cannot shift a later client acquisition.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that
