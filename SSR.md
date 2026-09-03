@@ -656,6 +656,10 @@ rules are migrated one by one. This changes no emitted component output yet.
 When the current hydrator cannot execute a tree, client generation now reports
 the most specific capability boundary with its template path, node kind, and
 missing lifecycle rather than a component-wide generic subset failure.
+The old policy predicates have also moved out of the hydration generator into
+the capability module as a temporary current-subset policy. This leaves one
+authoritative analysis boundary while later Phase 4 work replaces individual
+shape rules with recursive lifecycle-plan decisions.
 
 ### JavaScript and Browser API compatibility matrix
 

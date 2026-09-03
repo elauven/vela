@@ -4730,7 +4730,7 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		g.buildHydrationRootKeyBlock(chain)
 		return
 	}
-	if component, componentIndex, ok := ssrHydrationIfComponentBranch(chain); ok {
+	if component, componentIndex, ok := ssrCapabilityCurrentIfComponentBranch(chain); ok {
 		g.buildHydrationRootIfComponentChain(chain, component, componentIndex)
 		return
 	}
@@ -5246,7 +5246,7 @@ func (g *ASTGen) buildHydrationRootKeyedEach(block *EachBlockNode) {
 }
 
 func (g *ASTGen) hydrationEachRowTag(block *EachBlockNode) string {
-	row, ok := ssrHydrationEachDynamicTextRow(block)
+	row, ok := ssrCapabilityCurrentEachDynamicTextRow(block)
 	if !ok || row == nil {
 		return ""
 	}
@@ -5257,7 +5257,7 @@ func (g *ASTGen) hydrationEachRowTag(block *EachBlockNode) string {
 // expressions are evaluated under item/index template bindings; neither the
 // key nor row content falls back to reparsing source strings.
 func (g *ASTGen) hydrationEachRowCreate(block *EachBlockNode) JsExpr {
-	row, _ := ssrHydrationEachDynamicTextRow(block)
+	row, _ := ssrCapabilityCurrentEachDynamicTextRow(block)
 	body := []JsStmt{genConst("$$row", genCall(genMember(id("document"), "createElement"), strLit(row.Tag)))}
 	body = append(body, g.setAttrStmt("$$row", g.scopeID, ""))
 	for _, attr := range row.Attrs {
@@ -5281,7 +5281,7 @@ func (g *ASTGen) hydrationEachRowCreate(block *EachBlockNode) JsExpr {
 }
 
 func (g *ASTGen) hydrationEachRowUpdate(block *EachBlockNode) JsExpr {
-	row, _ := ssrHydrationEachDynamicTextRow(block)
+	row, _ := ssrCapabilityCurrentEachDynamicTextRow(block)
 	parts := []*Part{}
 	for _, child := range row.Children {
 		if tn, ok := child.(*TextNode); ok && tn != nil {
@@ -5315,7 +5315,7 @@ func (g *ASTGen) hydrationEachRowUpdate(block *EachBlockNode) JsExpr {
 // creates its element and text nodes directly so item expressions remain AST
 // expressions and never become interpolated executable strings.
 func (g *ASTGen) hydrationEachRowBuild(block *EachBlockNode, itemVar, fragmentVar string) *JsBlock {
-	if row, ok := ssrHydrationEachDynamicTextRow(block); ok {
+	if row, ok := ssrCapabilityCurrentEachDynamicTextRow(block); ok {
 		body := []JsStmt{genConst("$$row", genCall(genMember(id("document"), "createElement"), strLit(row.Tag)))}
 		body = append(body, g.setAttrStmt("$$row", g.scopeID, ""))
 		for _, attr := range row.Attrs {

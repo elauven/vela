@@ -150,7 +150,7 @@ func AnalyzeSSRCapability(nodes []Node) *SSRCapability {
 		root.Reason = "current hydration root must be an element"
 		return root
 	}
-	if ssrHydrationRootChildren(nodes[0].(*ElementNode).Children) && ssrHydrationElementAttrs(nodes[0].(*ElementNode)) {
+	if ssrCapabilityCurrentRootChildren(nodes[0].(*ElementNode).Children) && ssrCapabilityCurrentElementAttrs(nodes[0].(*ElementNode)) {
 		root.Hydration = SSRHydrationExecutable
 		root.Reason = ""
 		return root
@@ -194,7 +194,7 @@ func analyzeSSRCapabilityNode(node Node, path string) *SSRCapability {
 		capability.Marker = SSRMarkerElement
 		capability.Lifecycle = SSRLifecycleElement
 		capability.Children = analyzeSSRCapabilityChildren(current.Children, path+".children")
-		if !ssrHydrationElement(current) {
+		if !ssrCapabilityCurrentElement(current) {
 			capability.Hydration = SSRHydrationNeedsLifecycle
 			capability.Reason = "element descendants or bindings require additional hydration lifecycle lowering"
 		}
@@ -221,7 +221,7 @@ func analyzeSSRCapabilityNode(node Node, path string) *SSRCapability {
 			}
 			capability.Children = append(capability.Children, branchCapability)
 		}
-		if !ssrHydrationIfChain(current) {
+		if !ssrCapabilityCurrentIfChain(current) {
 			capability.Hydration = SSRHydrationNeedsLifecycle
 			capability.Reason = "if/key branches require recursive structural lifecycle lowering"
 		}
@@ -235,7 +235,7 @@ func analyzeSSRCapabilityNode(node Node, path string) *SSRCapability {
 		capability.Lifecycle = SSRLifecycleStructural
 		capability.Children = append(capability.Children, analyzeSSRCapabilityChildren(current.Children, path+".rows")...)
 		capability.Children = append(capability.Children, analyzeSSRCapabilityChildren(current.ElseChildren, path+".else")...)
-		if !ssrHydrationEach(current) {
+		if !ssrCapabilityCurrentEach(current) {
 			capability.Hydration = SSRHydrationNeedsLifecycle
 			capability.Reason = "each rows require recursive instance and range lifecycle lowering"
 		}
@@ -250,7 +250,7 @@ func analyzeSSRCapabilityNode(node Node, path string) *SSRCapability {
 		capability.Children = append(capability.Children, analyzeSSRCapabilityChildren(current.PendingChildren, path+".pending")...)
 		capability.Children = append(capability.Children, analyzeSSRCapabilityChildren(current.ThenChildren, path+".then")...)
 		capability.Children = append(capability.Children, analyzeSSRCapabilityChildren(current.CatchChildren, path+".catch")...)
-		if !ssrHydrationAwait(current) {
+		if !ssrCapabilityCurrentAwait(current) {
 			capability.Hydration = SSRHydrationNeedsLifecycle
 			capability.Reason = "await branches require recursive component and cleanup lifecycle lowering"
 		}
@@ -270,7 +270,7 @@ func analyzeSSRCapabilityNode(node Node, path string) *SSRCapability {
 		for _, name := range names {
 			capability.Children = append(capability.Children, analyzeSSRCapabilityChildren(current.Slots[name], path+".slots."+name)...)
 		}
-		if !ssrHydrationComponent(current) {
+		if !ssrCapabilityCurrentComponent(current) {
 			capability.Hydration = SSRHydrationNeedsLifecycle
 			capability.Reason = "component props, slots, or callbacks require recursive lifecycle lowering"
 		}
@@ -283,7 +283,7 @@ func analyzeSSRCapabilityNode(node Node, path string) *SSRCapability {
 		capability.Marker = SSRMarkerSlotProjection
 		capability.Lifecycle = SSRLifecycleSlot
 		capability.Children = analyzeSSRCapabilityChildren(current.Fallback, path+".fallback")
-		if !ssrHydrationSlot(current) {
+		if !ssrCapabilityCurrentSlot(current) {
 			capability.Hydration = SSRHydrationNeedsLifecycle
 			capability.Reason = "slot fallback requires recursive projection lifecycle lowering"
 		}
@@ -303,4 +303,375 @@ func unsupportedSSRCapability(path, kind string, span SectionSpan, reason string
 		Hydration: SSRHydrationUnavailable, Marker: SSRMarkerNone,
 		Lifecycle: SSRLifecycleStatic, Reason: reason,
 	}
+}
+
+// Current hydration policy lives beside SSRCapability while the recursive
+// structural lifecycle is being introduced. These helpers preserve the
+// established executable subset; later Phase 4 slices replace their narrow
+// shape rules with lifecycle-plan decisions.
+
+func ssrCapabilityCurrentRootChildren(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			// Direct text parts are represented by SSR `v` ranges when dynamic.
+		case *ElementNode:
+			if !ssrCapabilityCurrentElement(current) {
+				return false
+			}
+		case *IfChainNode:
+			if !ssrCapabilityCurrentIfChain(current) {
+				return false
+			}
+		case *EachBlockNode:
+			if !ssrCapabilityCurrentEach(current) {
+				return false
+			}
+		case *AwaitBlockNode:
+			if !ssrCapabilityCurrentAwait(current) {
+				return false
+			}
+		case *ComponentNode:
+			if !ssrCapabilityCurrentComponent(current) {
+				return false
+			}
+		case *SlotNode:
+			if !ssrCapabilityCurrentSlot(current) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ssrCapabilityCurrentElement accepts the recursive marker-aware element subset.
+// Every accepted descendant receives an `e` acquisition marker; dynamic text
+// and direct structural blocks retain their template-order `v` ranges.
+func ssrCapabilityCurrentElement(element *ElementNode) bool {
+	if element == nil {
+		return false
+	}
+	if _, rawText := rawTextProp(element.Tag); rawText {
+		return ssrCapabilityCurrentStaticChildren(element.Children)
+	}
+	if !ssrCapabilityCurrentElementAttrs(element) {
+		return false
+	}
+	for _, child := range element.Children {
+		switch current := child.(type) {
+		case *TextNode:
+			// `v` ranges cover every non-static part at any nesting depth.
+		case *ElementNode:
+			if !ssrCapabilityCurrentElement(current) {
+				return false
+			}
+		case *IfChainNode:
+			if !ssrCapabilityCurrentIfChain(current) {
+				return false
+			}
+		case *EachBlockNode:
+			if !ssrCapabilityCurrentEach(current) {
+				return false
+			}
+		case *AwaitBlockNode:
+			if !ssrCapabilityCurrentAwait(current) {
+				return false
+			}
+		case *ComponentNode:
+			if !ssrCapabilityCurrentComponent(current) {
+				return false
+			}
+		case *SlotNode:
+			if !ssrCapabilityCurrentSlot(current) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func ssrCapabilityCurrentElementAttrs(element *ElementNode) bool {
+	if element == nil {
+		return false
+	}
+	for _, attr := range element.Attrs {
+		if attr.IsTwoWay {
+			if _, ok := twoWayBindSpec(element.Tag, attr.Name); !ok {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
+	if _, _, ok := ssrCapabilityCurrentIfComponentBranch(chain); ok {
+		return true
+	}
+	if chain == nil || len(chain.Branches) == 0 || len(chain.Branches) > 2 {
+		return false
+	}
+	if chain.HasKey() {
+		return len(chain.Branches) == 1 && !chain.Branches[0].HasCondition() && ssrCapabilityCurrentStaticChildren(chain.Branches[0].Children)
+	}
+	conditions := 0
+	for _, branch := range chain.Branches {
+		if branch == nil || !ssrCapabilityCurrentStaticChildren(branch.Children) {
+			return false
+		}
+		if branch.HasCondition() {
+			conditions++
+		}
+	}
+	return conditions == 1
+}
+
+// ssrCapabilityCurrentIfComponentBranch recognizes the first structural-component
+// lifecycle slice: exactly one direct local child with ordinary one-way props
+// in a normal #if branch, with static sibling branches. The child can adopt
+// its server DOM on the initial branch and an ordinary CSR factory can mount
+// it after a later branch switch. Slots, component events, and bindings need
+// separate ownership and callback lifecycles, so they remain outside this
+// narrow shape.
+func ssrCapabilityCurrentIfComponentBranch(chain *IfChainNode) (*ComponentNode, int, bool) {
+	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 || len(chain.Branches) > 2 {
+		return nil, 0, false
+	}
+	conditions := 0
+	componentIndex := -1
+	var component *ComponentNode
+	for index, branch := range chain.Branches {
+		if branch == nil {
+			return nil, 0, false
+		}
+		if branch.HasCondition() {
+			conditions++
+		}
+		if len(branch.Children) == 1 {
+			if candidate, ok := branch.Children[0].(*ComponentNode); ok && candidate != nil {
+				if component != nil || len(candidate.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(candidate) {
+					return nil, 0, false
+				}
+				component = candidate
+				componentIndex = index
+				continue
+			}
+		}
+		if !ssrCapabilityCurrentStaticChildren(branch.Children) {
+			return nil, 0, false
+		}
+	}
+	return component, componentIndex, component != nil && conditions == 1
+}
+
+func ssrCapabilityCurrentStructuralComponentAttrs(component *ComponentNode) bool {
+	for _, attr := range component.Attrs {
+		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+			return false
+		}
+	}
+	return true
+}
+
+func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
+	if block == nil {
+		return false
+	}
+	if block.HasKey() {
+		// A keyed hydration row is adopted as one existing element.  Empty
+		// fallbacks and nested rows will join later with range-aware row
+		// handles; accepting either here would silently leave server fallback
+		// nodes outside the keyed map on the first client update.
+		_, ok := ssrCapabilityCurrentEachDynamicTextRow(block)
+		return ok && len(block.ElseChildren) == 0
+	}
+	if _, ok := ssrCapabilityCurrentEachDynamicTextRow(block); !ok && !ssrCapabilityCurrentStaticChildren(block.Children) {
+		return false
+	}
+	return ssrCapabilityCurrentStaticChildren(block.ElseChildren)
+}
+
+// ssrCapabilityCurrentAwait admits the first marker-aware await subset. SSR always
+// renders the pending branch, so hydration can retain that exact DOM and only
+// replace its range once the client-side promise settles. The pending branch
+// is static; then/catch support static HTML frames with dynamic text holes
+// bound to the settled value or error.
+func ssrCapabilityCurrentAwait(block *AwaitBlockNode) bool {
+	if block == nil || len(block.PendingChildren) == 0 {
+		return false
+	}
+	return ssrCapabilityCurrentStaticChildren(block.PendingChildren) &&
+		ssrCapabilityCurrentAwaitBranch(block.ThenChildren) &&
+		ssrCapabilityCurrentAwaitBranch(block.CatchChildren)
+}
+
+// ssrCapabilityCurrentAwaitBranch permits static HTML plus text interpolation after a
+// promise settles. It also permits DOM events and class/style directives.
+// Nested static-branch if blocks and supported each forms are available; nested await blocks and components
+// still need a dedicated lifecycle plan rather than being silently lowered as static HTML.
+func ssrCapabilityCurrentAwaitBranch(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			continue
+		case *IfChainNode:
+			if !ssrCapabilityCurrentIfChain(current) {
+				return false
+			}
+		case *ElementNode:
+			if current == nil {
+				return false
+			}
+			for _, attr := range current.Attrs {
+				if attr == nil || attr.IsBindThis {
+					return false
+				}
+			}
+			if _, rawText := rawTextProp(current.Tag); rawText {
+				if _, interpolation := singleInterpolation(current.Children); interpolation {
+					return false
+				}
+			}
+			if !ssrCapabilityCurrentAwaitBranch(current.Children) {
+				return false
+			}
+		case *EachBlockNode:
+			if !ssrCapabilityCurrentEach(current) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ssrCapabilityCurrentEachDynamicTextRow accepts one ordinary row element with only
+// static attributes and direct text nodes. Text parts may refer to the each
+// item; replacement rows are built as DOM nodes, not HTML source strings.
+func ssrCapabilityCurrentEachDynamicTextRow(block *EachBlockNode) (*ElementNode, bool) {
+	if block == nil || len(block.Children) != 1 {
+		return nil, false
+	}
+	row, ok := block.Children[0].(*ElementNode)
+	if !ok || row == nil {
+		return nil, false
+	}
+	for _, attr := range row.Attrs {
+		if attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+			return nil, false
+		}
+	}
+	for _, child := range row.Children {
+		tn, ok := child.(*TextNode)
+		if !ok || tn == nil {
+			return nil, false
+		}
+	}
+	return row, true
+}
+
+// ssrCapabilityCurrentComponent accepts a direct local child with ordinary props, `@on:*`
+// component events, bindable `bind:value`, static slot fallback, recursive ordinary
+// slot elements, and top-level #if/#key/#each nodes in the existing root subset.
+func ssrCapabilityCurrentComponent(component *ComponentNode) bool {
+	if component == nil {
+		return false
+	}
+	for _, slot := range component.Slots {
+		if !ssrCapabilityCurrentSlotContent(slot) {
+			return false
+		}
+	}
+	for _, attr := range component.Attrs {
+		if attr == nil || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+			return false
+		}
+	}
+	return true
+}
+
+// ssrCapabilityCurrentSlot is static because parent-owned slot DOM is already present
+// inside the child root. The child hydrator deliberately leaves it untouched.
+func ssrCapabilityCurrentSlot(slot *SlotNode) bool {
+	return slot != nil && ssrCapabilityCurrentStaticChildren(slot.Fallback)
+}
+
+// ssrCapabilityCurrentSlotContent admits parent-projected text and recursive ordinary
+// elements. Parent owns their markers and reactive work; child leaves them in place.
+func ssrCapabilityCurrentSlotContent(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			continue
+		case *ElementNode:
+			if !ssrCapabilityCurrentSlotElement(current) {
+				return false
+			}
+		case *IfChainNode:
+			if !ssrCapabilityCurrentIfChain(current) {
+				return false
+			}
+		case *EachBlockNode:
+			if !ssrCapabilityCurrentEach(current) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ssrCapabilityCurrentSlotElement intentionally excludes structural blocks, nested
+// components, and nested slots. Their marker ownership needs a dedicated plan.
+func ssrCapabilityCurrentSlotElement(element *ElementNode) bool {
+	if element == nil || !ssrCapabilityCurrentElementAttrs(element) {
+		return false
+	}
+	if _, rawText := rawTextProp(element.Tag); rawText {
+		return ssrCapabilityCurrentStaticChildren(element.Children)
+	}
+	for _, child := range element.Children {
+		switch current := child.(type) {
+		case *TextNode:
+			continue
+		case *ElementNode:
+			if !ssrCapabilityCurrentSlotElement(current) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func ssrCapabilityCurrentStaticChildren(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			for _, part := range current.Parts {
+				if !part.Static {
+					return false
+				}
+			}
+		case *ElementNode:
+			for _, attr := range current.Attrs {
+				if attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					return false
+				}
+			}
+			if !ssrCapabilityCurrentStaticChildren(current.Children) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
