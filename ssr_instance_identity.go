@@ -48,6 +48,48 @@ func BuildSSRComponentInstanceIdentities(nodes []Node) []SSRComponentInstanceIde
 	return identities
 }
 
+// SSRComponentInstanceIdentityIndex makes structural identity available to
+// target lowerers by immutable component source span. A component span is
+// unique inside a parsed component and avoids using its display name as an
+// identity key.
+func SSRComponentInstanceIdentityIndex(nodes []Node) map[SectionSpan]SSRComponentInstanceIdentity {
+	identities := BuildSSRComponentInstanceIdentities(nodes)
+	index := make(map[SectionSpan]SSRComponentInstanceIdentity, len(identities))
+	for _, identity := range identities {
+		if _, exists := index[identity.TemplateSpan]; exists {
+			panic("vela: duplicate component source span in instance identity index")
+		}
+		index[identity.TemplateSpan] = identity
+	}
+	return index
+}
+
+// ssrRuntimeComponentSuffix retains only the static path following the final
+// runtime #each/#key segment. The backend prefixes it with the evaluated
+// runtime scope, making siblings in one row distinct without putting source
+// expressions into output IDs.
+func ssrRuntimeComponentSuffix(identity SSRComponentInstanceIdentity) string {
+	namespace := identity.Namespace
+	cut := strings.LastIndex(namespace, "/row")
+	if keyCut := strings.LastIndex(namespace, "/key"); keyCut > cut {
+		cut = keyCut
+		if cut >= 0 {
+			cut += len("/key")
+		}
+	} else if cut >= 0 {
+		cut += len("/row")
+	}
+	if cut < 0 || cut >= len(namespace) {
+		panic("vela: runtime component identity has no runtime path suffix")
+	}
+	suffix := strings.TrimPrefix(namespace[cut:], "/")
+	suffix = strings.ReplaceAll(suffix, "/", "--")
+	if suffix == "" {
+		panic("vela: runtime component identity has empty path suffix")
+	}
+	return suffix
+}
+
 // SSRStaticRepeatedComponentInstanceSuffixes returns the structural suffixes
 // required for repeated statically-addressable child component bindings. The
 // enclosing component scope remains the prefix at runtime; this helper owns

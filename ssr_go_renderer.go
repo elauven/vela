@@ -29,7 +29,7 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	if err != nil {
 		return nil, err
 	}
-	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, scopeExpr: goast.NewIdent("instanceID"), componentInstanceSuffixes: plan.ComponentInstanceSuffixes}
+	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, scopeExpr: goast.NewIdent("instanceID"), componentInstanceSuffixes: plan.ComponentInstanceSuffixes, componentInstanceIdentities: plan.ComponentInstanceIdentities}
 	body, err := emitter.nodes(plan.Nodes)
 	if err != nil {
 		return nil, err
@@ -110,15 +110,16 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID goast.Expr) ([]go
 }
 
 type ssrGoEmitter struct {
-	ctx                       SSRExprContext
-	packageName               string
-	scopeID                   string
-	scopeExpr                 goast.Expr
-	componentInstanceSuffixes map[SectionSpan]string
-	needsEscaping             bool
-	eachNext                  int
-	imports                   map[string]string
-	selectValue               *TemplateExpr
+	ctx                         SSRExprContext
+	packageName                 string
+	scopeID                     string
+	scopeExpr                   goast.Expr
+	componentInstanceSuffixes   map[SectionSpan]string
+	componentInstanceIdentities map[SectionSpan]SSRComponentInstanceIdentity
+	needsEscaping               bool
+	eachNext                    int
+	imports                     map[string]string
+	selectValue                 *TemplateExpr
 }
 
 func (e *ssrGoEmitter) nodes(nodes []SSRPlanNode) ([]goast.Stmt, error) {
@@ -215,7 +216,12 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 		slots.Elts = append(slots.Elts, &goast.KeyValueExpr{Key: goast.NewIdent(ssrGoExportName(name)), Value: closure})
 	}
 	args := []goast.Expr{props, slots}
-	if suffix := e.componentInstanceSuffixes[node.Span]; suffix != "" {
+	suffix := e.componentInstanceSuffixes[node.Span]
+	identity, hasIdentity := e.componentInstanceIdentities[node.Span]
+	if hasIdentity && identity.RuntimeScoped {
+		suffix = ssrRuntimeComponentSuffix(identity)
+	}
+	if suffix != "" {
 		componentName += "At"
 		if prefix != "" {
 			component = goSelector(prefix, componentName)
@@ -556,10 +562,18 @@ func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
 		if len(node.Branches) != 1 || node.Branches[0].Condition != nil {
 			return nil, ssrExprUnsupported(node.Span.Start, "SSR key block has an invalid branch shape")
 		}
-		children, err := e.nodes(node.Branches[0].Children)
+		key, err := TranslateSSRExpression(node.Key, e.ctx)
 		if err != nil {
 			return nil, err
 		}
+		child := *e
+		child.scopeExpr = child.runtimeScope("key-"+itoa(node.Span.Start), key)
+		children, err := child.nodes(node.Branches[0].Children)
+		if err != nil {
+			return nil, err
+		}
+		e.eachNext = child.eachNext
+		e.needsEscaping = e.needsEscaping || child.needsEscaping
 		body = append(body, children...)
 		if node.DynamicID >= 0 {
 			body = append(body, e.markerEnd(node.DynamicID))
@@ -611,10 +625,7 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	e.eachNext++
 	iterName := "ssrEach" + itoa(id)
 	itemName := "ssrEachItem" + itoa(id)
-	indexName := "_"
-	if node.IndexName != "" {
-		indexName = "ssrEachIndex" + itoa(id)
-	}
+	indexName := "ssrEachIndex" + itoa(id)
 	iterIdent := goast.NewIdent(iterName)
 	itemIdent := goast.NewIdent(itemName)
 	child := *e
@@ -623,6 +634,14 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	if node.IndexName != "" {
 		child.ctx.Bindings[node.IndexName] = goast.NewIdent(indexName)
 	}
+	runtimeValue := goast.Expr(goast.NewIdent(indexName))
+	if node.Key != nil {
+		runtimeValue, err = TranslateSSRExpression(node.Key, child.ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	child.scopeExpr = child.runtimeScope("each-"+itoa(node.Span.Start), runtimeValue)
 	children, err := child.nodes(node.Children)
 	if err != nil {
 		return nil, err
@@ -650,6 +669,17 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 		Body: &goast.BlockStmt{List: otherwise},
 		Else: &goast.BlockStmt{List: []goast.Stmt{rangeStmt}},
 	}}), nil
+}
+
+// runtimeScope adds one evaluated structural segment to the component instance
+// namespace. vela.String defines the same visible-value conversion already
+// used for SSR text and select values.
+func (e *ssrGoEmitter) runtimeScope(kind string, value goast.Expr) goast.Expr {
+	return ssrGoStringConcat(
+		e.scopeExpr,
+		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("--" + kind + "-")},
+		&goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{value}},
+	)
 }
 
 func ssrContextWithBindings(base SSRExprContext) SSRExprContext {

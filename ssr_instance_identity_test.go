@@ -39,3 +39,24 @@ func TestSSRStaticRepeatedComponentInstanceSuffixesUseStructuralPaths(t *testing
 		seen[suffix] = true
 	}
 }
+
+func TestSSRComponentInstanceIdentityIndexAndRuntimeSuffix(t *testing.T) {
+	sfc, err := parseSFC(`<template><main>{#each rows as row (row.id)}<Child /><Child />{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identities := BuildSSRComponentInstanceIdentities(sfc.TemplateAST.Nodes)
+	index := SSRComponentInstanceIdentityIndex(sfc.TemplateAST.Nodes)
+	if len(identities) != 2 || len(index) != 2 {
+		t.Fatalf("identities=%#v index=%#v", identities, index)
+	}
+	for _, identity := range identities {
+		indexed, ok := index[identity.TemplateSpan]
+		if !ok || !indexed.RuntimeScoped {
+			t.Fatalf("missing runtime identity for %#v", identity)
+		}
+		if suffix := ssrRuntimeComponentSuffix(indexed); suffix == "" {
+			t.Fatalf("empty runtime suffix for %#v", indexed)
+		}
+	}
+}

@@ -34,6 +34,10 @@ type SSRRenderPlan struct {
 	// Runtime-scoped #each/#key occurrences are intentionally absent until
 	// their evaluated identity can be lowered on both server and client.
 	ComponentInstanceSuffixes map[SectionSpan]string
+	// ComponentInstanceIdentities retains the typed structural recipe for every
+	// local child occurrence. Backends use RuntimeScoped to select an evaluated
+	// #each/#key instance scope instead of collapsing row children to a tag name.
+	ComponentInstanceIdentities map[SectionSpan]SSRComponentInstanceIdentity
 }
 
 // SSRHydrationState is the inert, serializable portion of component state.
@@ -267,12 +271,13 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		return nil, err
 	}
 	b := &ssrPlanBuilder{links: links, slotNames: map[string]bool{}, plan: &SSRRenderPlan{
-		ComponentName:             componentName,
-		ScopeID:                   scopeID,
-		Props:                     props,
-		ReactiveNames:             analysis.reactiveNames(),
-		ScopedCSS:                 ExtractScopedCSS(sfc, scopeID),
-		ComponentInstanceSuffixes: SSRStaticRepeatedComponentInstanceSuffixes(sfc.TemplateAST.Nodes),
+		ComponentName:               componentName,
+		ScopeID:                     scopeID,
+		Props:                       props,
+		ReactiveNames:               analysis.reactiveNames(),
+		ScopedCSS:                   ExtractScopedCSS(sfc, scopeID),
+		ComponentInstanceSuffixes:   SSRStaticRepeatedComponentInstanceSuffixes(sfc.TemplateAST.Nodes),
+		ComponentInstanceIdentities: SSRComponentInstanceIdentityIndex(sfc.TemplateAST.Nodes),
 	}}
 	b.plan.Hydration = buildSSRHydrationState(analysis)
 	b.plan.Nodes = b.nodes(sfc.TemplateAST.Nodes)

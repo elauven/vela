@@ -738,6 +738,16 @@ passes structural recipes into these APIs on both targets. The next checkpoint
 is runtime identity lowering for `#each` / `#key`, followed by recursive
 component lifecycle ownership in nested structural branches.
 
+Go SSR now also lowers runtime structural scope without reparsing JavaScript:
+an unkeyed `#each` appends its generated loop index, a keyed `#each` appends
+the value of its cached key AST, and `#key` appends its cached key value. A
+runtime-scoped child then receives `ComponentAt(..., parentRuntimeScope +
+staticPathAfterRuntimeSegment)`. Thus repeated children in different rows or
+key values have distinct markers and state payload IDs in server output.
+Hydration does not yet adopt child instances inside those row/key ranges; that
+remains a Phase 5 lifecycle lowering task, so this checkpoint does not claim
+browser parity for those combinations.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that

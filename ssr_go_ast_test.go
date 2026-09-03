@@ -90,6 +90,38 @@ func TestBuildSSRGoFileUsesInstanceAwareRendererForRepeatedStaticChildren(t *tes
 	}
 }
 
+func TestBuildSSRGoFileScopesEachAndKeyChildrenByRuntimeIdentity(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let rows = []; export let selected = "a";</script><template><main>{#each rows as row}<Child /><Child />{/each}{#key selected}<Child />{/key}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent", map[string]SSRComponentLink{
+		"Child": {LocalName: "Child", GoName: "Child", PackageName: "child", ImportPath: "example.com/project/child"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(source)
+	for _, want := range []string{
+		`vela.String(ssrEachIndex0)`,
+		`child.ChildAt(child.ChildProps{}, child.ChildSlots{}, instanceID+"--each-`,
+		`vela.String(props.Selected)`,
+		`instanceID+"--key-`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("runtime child scope misses %q:\\n%s", want, got)
+		}
+	}
+}
+
 func TestValidateGeneratedSSRGoRejectsMalformedSource(t *testing.T) {
 	if err := ValidateGeneratedSSRGo("broken.go", []byte("package components\nfunc {")); err == nil {
 		t.Fatal("malformed generated source did not fail")
