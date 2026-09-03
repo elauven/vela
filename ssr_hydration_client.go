@@ -10,17 +10,7 @@ import (
 // existing root element; its descendants are static server DOM, while root
 // attributes and ordinary DOM events remain reactive after adoption.
 func CanBuildSSRHydrationClient(nodes []Node) bool {
-	if len(nodes) != 1 {
-		return false
-	}
-	root, ok := nodes[0].(*ElementNode)
-	if !ok || root == nil {
-		return false
-	}
-	if !ssrHydrationElementAttrs(root) {
-		return false
-	}
-	return ssrHydrationRootChildren(root.Children)
+	return AnalyzeSSRCapability(nodes).ExecutableHydration()
 }
 
 func ssrHydrationRootChildren(nodes []Node) bool {

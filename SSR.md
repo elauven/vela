@@ -647,6 +647,13 @@ key for keyed rows, rather than only its component name. This is essential for
 multiple copies of the same child in an `#each`: marker namespaces and payload
 lookup must remain unique without duplicate document IDs.
 
+The first Phase 4 checkpoint is present in the compiler: `SSRCapability` now
+walks every template node and records a deterministic AST path, execution
+mode, marker ownership, lifecycle requirement, and current hydration status.
+The existing hydration eligibility API reads this tree, while the old narrow
+shape checks remain an internal compatibility adapter until their lifecycle
+rules are migrated one by one. This changes no emitted component output yet.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that
