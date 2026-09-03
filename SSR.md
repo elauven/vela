@@ -661,6 +661,15 @@ the capability module as a temporary current-subset policy. This leaves one
 authoritative analysis boundary while later Phase 4 work replaces individual
 shape rules with recursive lifecycle-plan decisions.
 
+The next checkpoint is also now represented in code as
+`SSRStructuralLifecyclePlan`. It mirrors the cached template AST without
+dropping unsupported-yet descendants and assigns typed ownership operations
+and an immutable structural instance recipe to every node. Row recipes retain
+the cached `KeyAST`; branch, component, and slot segments distinguish repeated
+instances without synthesizing document IDs at analysis time. The plan is
+currently analysis-only: it deliberately does not alter emitted HTML or client
+code until marker emission and hydration lowering consume the same graph.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that
