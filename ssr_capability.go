@@ -494,10 +494,28 @@ func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
 		_, ok := ssrCapabilityCurrentEachDynamicTextRow(block)
 		return ok && len(block.ElseChildren) == 0
 	}
+	if _, ok := ssrCapabilityCurrentEachComponentRow(block); ok {
+		return ssrCapabilityCurrentStaticChildren(block.ElseChildren)
+	}
 	if _, ok := ssrCapabilityCurrentEachDynamicTextRow(block); !ok && !ssrCapabilityCurrentStaticChildren(block.Children) {
 		return false
 	}
 	return ssrCapabilityCurrentStaticChildren(block.ElseChildren)
+}
+
+// ssrCapabilityCurrentEachComponentRow is the first list-child lifecycle
+// subset: one direct local child per unkeyed row, no slots/events/bindings.
+// The outer range remains the row ownership boundary, so a later list update
+// destroys every adopted child before rebuilding that range through CSR.
+func ssrCapabilityCurrentEachComponentRow(block *EachBlockNode) (*ComponentNode, bool) {
+	if block == nil || block.HasKey() || len(block.Children) != 1 {
+		return nil, false
+	}
+	component, ok := block.Children[0].(*ComponentNode)
+	if !ok || component == nil || len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) {
+		return nil, false
+	}
+	return component, true
 }
 
 // ssrCapabilityCurrentAwait admits the first marker-aware await subset. SSR always

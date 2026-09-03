@@ -54,7 +54,7 @@ func buildSSRHydrationClientProgramWithComponents(name string, sfc *SFC, analysi
 	g := &ASTGen{
 		name: name, scopeID: scopeID, analysis: analysis, sfc: sfc, fragCounter: -1, cssExternal: true,
 		domAcquireMode: DOMAcquireHydrate, domAcquirePlan: DOMAcquirePlan{Mode: DOMAcquireHydrate},
-		hydrationStateInput: true, hydrationComponents: components, hydrationCSRComponents: ssrHydrationStructuralComponentAliasesForPlan(lifecyclePlan), hydrationMarkers: ssrHydrationMarkerIDs(plan.Nodes), hydrationLifecyclePlan: lifecyclePlan, hydrationComponentInstanceSuffixes: plan.ComponentInstanceSuffixes,
+		hydrationStateInput: true, hydrationComponents: components, hydrationCSRComponents: ssrHydrationStructuralComponentAliasesForPlan(lifecyclePlan), hydrationMarkers: ssrHydrationMarkerIDs(plan.Nodes), hydrationLifecyclePlan: lifecyclePlan, hydrationComponentInstanceSuffixes: plan.ComponentInstanceSuffixes, hydrationComponentInstanceIdentities: plan.ComponentInstanceIdentities,
 	}
 	program := g.buildModule(sfc.TemplateAST.Nodes)
 	validateGeneratedProgram(program)
@@ -116,12 +116,38 @@ func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecycleP
 				}
 			}
 		}
+		if current.Kind == SSRLifecyclePlanEach {
+			if component, ok := ssrHydrationDirectUnkeyedEachComponent(current); ok {
+				aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
+			}
+		}
 		for _, child := range current.Children {
 			visit(child)
 		}
 	}
 	visit(plan)
 	return aliases
+}
+
+// ssrHydrationDirectUnkeyedEachComponent reads the first component-row
+// lifecycle slice from the typed structural plan. Keyed rows need retained
+// row instance handles and therefore remain a separate reconciliation phase.
+func ssrHydrationDirectUnkeyedEachComponent(plan *SSRStructuralLifecyclePlan) (*ComponentNode, bool) {
+	if plan == nil || plan.Kind != SSRLifecyclePlanEach {
+		return nil, false
+	}
+	var component *ComponentNode
+	for _, child := range plan.Children {
+		candidate, ok := child.TemplateNode.(*ComponentNode)
+		if !ok || candidate == nil {
+			continue
+		}
+		if component != nil || len(candidate.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(candidate) {
+			return nil, false
+		}
+		component = candidate
+	}
+	return component, component != nil
 }
 
 // ssrHydrationDirectIfComponents is the current direct-child lifecycle subset.

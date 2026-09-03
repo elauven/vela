@@ -336,6 +336,9 @@ type ASTGen struct {
 	// repeated child identities. The hydrate entry supplies the current parent
 	// scope through $$hydrate.instanceID.
 	hydrationComponentInstanceSuffixes map[SectionSpan]string
+	// hydrationComponentInstanceIdentities complements static suffixes for
+	// #each/#key children, whose final scope also contains a runtime value.
+	hydrationComponentInstanceIdentities map[SectionSpan]SSRComponentInstanceIdentity
 
 	// counter backs id() — the deterministic $$nN naming used for
 	// DOM-node variables.  Mirrors the legacy CodeGen.counter so
@@ -5046,6 +5049,10 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 		g.buildHydrationRootKeyedEach(block)
 		return
 	}
+	if component, ok := ssrHydrationDirectUnkeyedEachComponent(g.hydrationLifecycleNode(SSRLifecyclePlanEach, block.Span)); ok {
+		g.buildHydrationRootEachComponent(block, component)
+		return
+	}
 	markerID := g.hydrationEachMarkerID(block)
 	name := "$$heach" + itoa(markerID)
 	rangeVar := name + "_range"
@@ -5082,6 +5089,93 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+}
+
+// buildHydrationRootEachComponent adopts one direct local child per unkeyed
+// SSR row. The current unkeyed reconciler replaces the whole range, so its
+// ownership model is explicit: destroy all adopted instances, remove the
+// range, then materialize fresh CSR children in list order.
+func (g *ASTGen) buildHydrationRootEachComponent(block *EachBlockNode, component *ComponentNode) {
+	if block == nil || component == nil {
+		panic("vela: missing unkeyed each component lifecycle")
+	}
+	markerID := g.hydrationEachMarkerID(block)
+	name := "$$heach" + itoa(markerID)
+	rangeVar := name + "_range"
+	nodesVar := name + "_nodes"
+	instancesVar := name + "_components"
+	itemsVar := name + "_items"
+	indexVar := name + "_index"
+	csrFactory := g.hydrationCSRComponents[component.Name]
+	if csrFactory == "" {
+		panic("vela: missing unkeyed each component CSR factory")
+	}
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+		genLet(instancesVar, genArray()),
+		genConst(itemsVar, g.templateExpr(block.IterExpr)),
+		genLet(indexVar, numLit(0)),
+	)
+	adoptScope := g.hydrationEachInstanceScope(block, id(indexVar))
+	g.hydrationInitBody = append(g.hydrationInitBody, genForOf("$$item", id(itemsVar), genBlock(
+		genExprStmt(genCall(genMember(id(instancesVar), "push"), genMember(g.hydrationComponentCallAt(component, id("$$root"), nil, adoptScope), "component"))),
+		genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))),
+	)))
+
+	propsExpr := g.hydrationEachComponentProps(block, component, "$$item", indexVar)
+	updateBody := []JsStmt{
+		genForOf("$$component", id(instancesVar), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
+		genAssignStmt(id(instancesVar), genArray()),
+		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
+		genConst(itemsVar, g.templateExpr(block.IterExpr)),
+		genLet(indexVar, numLit(0)),
+	}
+	mount := genAssignStmt(id("$$component"), genCall(id(csrFactory), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}}))
+	updateBody = append(updateBody, genForOf("$$item", id(itemsVar), genBlock(
+		mount,
+		genExprStmt(genCall(genMember(id(instancesVar), "push"), id("$$component"))),
+		genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))),
+	)))
+	if len(block.ElseChildren) > 0 {
+		updateBody = append(updateBody, genIf(
+			genBinary("===", genMember(id(itemsVar), "length"), numLit(0)),
+			genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(block.ElseChildren, g.scopeID)))),
+		))
+	}
+	updateBody = append(updateBody,
+		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
+		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
+	)
+	fn := name + "_update"
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
+		g.addStructuralUpdate(dependency, genInvoke(fn))
+	}
+	g.cleanup = append(g.cleanup,
+		genForOf("$$component", id(instancesVar), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
+		genAssignStmt(id(instancesVar), genArray()),
+		genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)),
+	)
+}
+
+func (g *ASTGen) hydrationEachComponentProps(block *EachBlockNode, component *ComponentNode, itemVar, indexVar string) JsExpr {
+	props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
+	g.withTemplateBinding(block.ItemName, itemVar, func() {
+		g.withTemplateBinding(block.IndexName, indexVar, func() {
+			props = g.componentPropsExpr(component.Attrs)
+		})
+	})
+	return props
+}
+
+func (g *ASTGen) hydrationEachInstanceScope(block *EachBlockNode, index JsExpr) JsExpr {
+	return genBinary("+",
+		genBinary("+", id("$$instanceID"), strLit("--each-"+itoa(block.Span.Start)+"-")),
+		genString(index),
+	)
 }
 
 // buildHydrationRootAwait retains the pending branch emitted by SSR, then
@@ -5573,10 +5667,17 @@ func (g *ASTGen) buildHydrationComponentNode(comp *ComponentNode, parentVar stri
 // entry calls for ordinary children. Repeated static bindings additionally
 // receive the parent runtime scope plus their structural suffix.
 func (g *ASTGen) hydrationComponentCall(comp *ComponentNode, parent JsExpr, overrides JsExpr) JsExpr {
+	return g.hydrationComponentCallAt(comp, parent, overrides, id("$$instanceID"))
+}
+
+func (g *ASTGen) hydrationComponentCallAt(comp *ComponentNode, parent JsExpr, overrides, instanceScope JsExpr) JsExpr {
 	args := []JsExpr{parent}
 	suffix := ""
 	if comp != nil {
 		suffix = g.hydrationComponentInstanceSuffixes[comp.Span]
+		if identity, ok := g.hydrationComponentInstanceIdentities[comp.Span]; ok && identity.RuntimeScoped {
+			suffix = ssrRuntimeComponentSuffix(identity)
+		}
 	}
 	if overrides != nil || suffix != "" {
 		if overrides == nil {
@@ -5586,7 +5687,7 @@ func (g *ASTGen) hydrationComponentCall(comp *ComponentNode, parent JsExpr, over
 		}
 	}
 	if suffix != "" {
-		args = append(args, genBinary("+", id("$$instanceID"), strLit("--"+suffix)))
+		args = append(args, genBinary("+", instanceScope, strLit("--"+suffix)))
 	}
 	return genCall(id(comp.Name), args...)
 }

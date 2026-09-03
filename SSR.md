@@ -745,8 +745,14 @@ runtime-scoped child then receives `ComponentAt(..., parentRuntimeScope +
 staticPathAfterRuntimeSegment)`. Thus repeated children in different rows or
 key values have distinct markers and state payload IDs in server output.
 Hydration does not yet adopt child instances inside those row/key ranges; that
-remains a Phase 5 lifecycle lowering task, so this checkpoint does not claim
-browser parity for those combinations.
+remains a Phase 5 lifecycle lowering task, except for the first unkeyed-row
+slice: one direct local child with ordinary one-way props can now be adopted
+once for every server row using the same index-based namespace as Go SSR. On
+a later list update the parent destroys all adopted row children, removes only
+the outer list range, and mounts fresh CSR children in source order. This is
+deliberately not a keyed reconciler: it makes no identity-retention claim and
+does not yet cover row events/bindings, slots, multiple/nested children, or
+`#key`-scoped child adoption.
 
 ### JavaScript and Browser API compatibility matrix
 

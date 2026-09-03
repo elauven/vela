@@ -1296,6 +1296,32 @@ func TestSSRHydrationIfBranchNamespacesRepeatedChildBinding(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationUnkeyedEachAdoptsAndRebuildsDirectChildRows(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let rows = []; </script><template><main>{#each rows as row, index}<Child :value={row.value} :index={index} />{:else}<p>Empty</p>{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("unkeyed direct child rows must be hydration-eligible")
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"let $$heach0_components = [];",
+		"Child($$root, null, $$instanceID + '--each-",
+		"$$heach0_components.push($$component);",
+		"$$csr_Child($$frag, { value: $$item.value, index: $$heach0_index }, {});",
+		"$$component.destroy();",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("unkeyed child each lifecycle misses %q:\\n%s", want, source)
+		}
+	}
+}
+
 func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
