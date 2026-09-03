@@ -2824,9 +2824,10 @@ func (g *ASTGen) buildHydrationRootDOM(root *ElementNode) {
 	// names in the shared expression lowerings, even though $$root is adopted
 	// by a marker rather than newly created.
 	_ = g.id()
+	rootPlan := g.hydrationLifecycleNode(SSRLifecyclePlanElement, root.Span)
 	g.body = append(g.body, g.createHydrationTemplateElementStmt("$$root", root))
 	g.applyHydrationElementAttrs("$$root", root)
-	g.buildHydrationRootChildren(root.Children, "$$root")
+	g.buildHydrationRootChildren(root.Children, rootPlan.Children, "$$root")
 }
 
 // buildChainRootDOM builds DOM for a root list containing one or
@@ -3208,7 +3209,8 @@ func (g *ASTGen) buildHolesDOM(el *ElementNode) {
 	}
 	g.applyRootAttrs(el)
 	if g.domAcquireMode == DOMAcquireHydrate {
-		g.buildHydrationRootChildren(el.Children, "$$root")
+		rootPlan := g.hydrationLifecycleNode(SSRLifecyclePlanElement, el.Span)
+		g.buildHydrationRootChildren(el.Children, rootPlan.Children, "$$root")
 		return
 	}
 
@@ -4589,24 +4591,60 @@ func (g *ASTGen) buildTextNode(tn *TextNode, parentVar string) {
 // dynamic part has exactly one paired SSR `v` marker. Initial DOM already
 // contains the server value, so only the marker range is acquired here; later
 // setters call $$writeHydrationText when a dependency actually changes.
-func (g *ASTGen) buildHydrationRootChildren(children []Node, parentVar string) {
-	for _, child := range children {
-		switch current := child.(type) {
-		case *TextNode:
+func (g *ASTGen) buildHydrationRootChildren(children []Node, plans []*SSRStructuralLifecyclePlan, parentVar string) {
+	if len(children) != len(plans) {
+		panic("vela: hydration lifecycle plan does not match template child count")
+	}
+	for index, child := range children {
+		plan := plans[index]
+		if plan == nil {
+			panic("vela: missing hydration lifecycle child plan")
+		}
+		switch plan.Kind {
+		case SSRLifecyclePlanText:
+			current, ok := child.(*TextNode)
+			if !ok || current == nil {
+				panic("vela: hydration lifecycle text plan does not match template node")
+			}
 			g.buildHydrationRootTextChildren([]Node{current})
-		case *ElementNode:
-			g.buildHydrationElement(current)
-		case *IfChainNode:
+		case SSRLifecyclePlanElement:
+			current, ok := child.(*ElementNode)
+			if !ok || current == nil {
+				panic("vela: hydration lifecycle element plan does not match template node")
+			}
+			g.buildHydrationElement(current, plan)
+		case SSRLifecyclePlanIf:
+			current, ok := child.(*IfChainNode)
+			if !ok || current == nil {
+				panic("vela: hydration lifecycle if plan does not match template node")
+			}
 			g.buildHydrationRootIfChain(current)
-		case *EachBlockNode:
+		case SSRLifecyclePlanEach:
+			current, ok := child.(*EachBlockNode)
+			if !ok || current == nil {
+				panic("vela: hydration lifecycle each plan does not match template node")
+			}
 			g.buildHydrationRootEach(current)
-		case *AwaitBlockNode:
+		case SSRLifecyclePlanAwait:
+			current, ok := child.(*AwaitBlockNode)
+			if !ok || current == nil {
+				panic("vela: hydration lifecycle await plan does not match template node")
+			}
 			g.buildHydrationRootAwait(current)
-		case *ComponentNode:
-			g.buildComponentNode(current, parentVar)
-		case *SlotNode:
+		case SSRLifecyclePlanComponent:
+			current, ok := child.(*ComponentNode)
+			if !ok || current == nil {
+				panic("vela: hydration lifecycle component plan does not match template node")
+			}
+			g.buildHydrationComponentNode(current, parentVar, plan)
+		case SSRLifecyclePlanSlot:
+			if _, ok := child.(*SlotNode); !ok {
+				panic("vela: hydration lifecycle slot plan does not match template node")
+			}
 			// Static fallback or parent-projected slot content already exists in SSR DOM.
 			// It is intentionally owned by neither child nor parent hydration walker.
+		default:
+			panic("vela: unsupported hydration lifecycle plan node")
 		}
 	}
 }
@@ -4616,14 +4654,17 @@ func (g *ASTGen) buildHydrationRootChildren(children []Node, parentVar string) {
 // so this path emits neither attribute writes nor appendChild calls during
 // hydration. The normal acquire-plan therefore remains the one source of
 // structural ordering for root and descendant elements alike.
-func (g *ASTGen) buildHydrationElement(element *ElementNode) {
+func (g *ASTGen) buildHydrationElement(element *ElementNode, plan *SSRStructuralLifecyclePlan) {
 	if element == nil {
 		return
+	}
+	if plan == nil || plan.Kind != SSRLifecyclePlanElement || plan.Span != element.Span {
+		panic("vela: hydration lifecycle element plan does not match template span")
 	}
 	variable := g.id()
 	g.body = append(g.body, g.createHydrationTemplateElementStmt(variable, element))
 	g.applyHydrationElementAttrs(variable, element)
-	g.buildHydrationRootChildren(element.Children, variable)
+	g.buildHydrationRootChildren(element.Children, plan.Children, variable)
 }
 
 // applyHydrationElementAttrs wires reactive work without replaying SSR's
@@ -5398,14 +5439,31 @@ func (g *ASTGen) hydrationComponentOverridesExpr(attrs []*Attr) JsExpr {
 
 // buildHydrationComponentSlotContent adopts parent-owned dynamic text markers
 // in deterministic slot-name order, matching SSR plan construction.
-func (g *ASTGen) buildHydrationComponentSlotContent(slots map[string][]Node) {
+func (g *ASTGen) buildHydrationComponentSlotContent(slots map[string][]Node, componentPlan *SSRStructuralLifecyclePlan) {
+	if componentPlan == nil || componentPlan.Kind != SSRLifecyclePlanComponent {
+		panic("vela: hydration lifecycle component plan is missing slot ownership")
+	}
 	names := make([]string, 0, len(slots))
 	for name := range slots {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		g.buildHydrationRootChildren(slots[name], "$$root")
+		var slotPlan *SSRStructuralLifecyclePlan
+		for _, child := range componentPlan.Children {
+			if child == nil || child.Kind != SSRLifecyclePlanSlot || len(child.InstancePath.Segments) == 0 {
+				continue
+			}
+			segment := child.InstancePath.Segments[len(child.InstancePath.Segments)-1]
+			if segment.Kind == SSRInstanceSlot && segment.Name == name {
+				slotPlan = child
+				break
+			}
+		}
+		if slotPlan == nil {
+			panic("vela: hydration lifecycle component slot plan does not match template slot")
+		}
+		g.buildHydrationRootChildren(slots[name], slotPlan.Children, "$$root")
 	}
 }
 
@@ -5414,15 +5472,16 @@ func (g *ASTGen) buildHydrationComponentSlotContent(slots map[string][]Node) {
 // the live client instance, so the parent must not replay initial props or
 // create a comment anchor. Parent reactive prop updates still use the
 // ordinary instance .set() path after adoption.
-func (g *ASTGen) buildHydrationComponentNode(comp *ComponentNode, parentVar string) {
-	if comp != nil {
-		g.requireHydrationLifecycle(SSRLifecyclePlanComponent, comp.Span, SSRLifecycleAdopt)
+func (g *ASTGen) buildHydrationComponentNode(comp *ComponentNode, parentVar string, plan *SSRStructuralLifecyclePlan) {
+	if comp == nil || plan == nil || plan.Kind != SSRLifecyclePlanComponent || plan.Span != comp.Span {
+		panic("vela: hydration lifecycle component plan does not match template span")
 	}
+	g.requireHydrationLifecycle(SSRLifecyclePlanComponent, comp.Span, SSRLifecycleAdopt)
 	inst := g.id() + "_comp"
 	g.declareInScope(genLet(inst, genNull()))
 
 	propsExpr := g.componentPropsExpr(comp.Attrs)
-	g.buildHydrationComponentSlotContent(comp.Slots)
+	g.buildHydrationComponentSlotContent(comp.Slots, plan)
 	overrides := g.hydrationComponentOverridesExpr(comp.Attrs)
 	args := []JsExpr{id(parentVar)}
 	if overrides != nil {
@@ -5459,7 +5518,7 @@ func (g *ASTGen) buildHydrationComponentNode(comp *ComponentNode, parentVar stri
 // splice.
 func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	if g.domAcquireMode == DOMAcquireHydrate && g.hydrationComponents[comp.Name] {
-		g.buildHydrationComponentNode(comp, parentVar)
+		g.buildHydrationComponentNode(comp, parentVar, g.hydrationLifecycleNode(SSRLifecyclePlanComponent, comp.Span))
 		return
 	}
 	inst := g.id() + "_comp"

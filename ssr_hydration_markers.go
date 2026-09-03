@@ -140,6 +140,13 @@ func (g *ASTGen) hydrationAwaitMarkerID(block *AwaitBlockNode) int {
 }
 
 func (g *ASTGen) requireHydrationLifecycle(kind SSRLifecyclePlanKind, span SectionSpan, operation SSRLifecycleOperation) {
+	plan := g.hydrationLifecycleNode(kind, span)
+	if !plan.hasOperation(operation) {
+		panic("vela: SSR structural lifecycle node does not own required hydration operation")
+	}
+}
+
+func (g *ASTGen) hydrationLifecycleNode(kind SSRLifecyclePlanKind, span SectionSpan) *SSRStructuralLifecyclePlan {
 	if g.hydrationLifecyclePlan == nil {
 		panic("vela: missing SSR structural lifecycle plan during hydration lowering")
 	}
@@ -147,7 +154,5 @@ func (g *ASTGen) requireHydrationLifecycle(kind SSRLifecyclePlanKind, span Secti
 	if plan == nil {
 		panic("vela: missing SSR structural lifecycle node during hydration lowering")
 	}
-	if !plan.hasOperation(operation) {
-		panic("vela: SSR structural lifecycle node does not own required hydration operation")
-	}
+	return plan
 }

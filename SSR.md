@@ -684,6 +684,14 @@ resolve to their enclosing text node; all structural and component spans stay
 exact. This is the first consumer of the lifecycle graph; dispatch still uses
 the existing supported subset until the recursive lowerer replaces it.
 
+The supported hydration walker is now plan-driven at its recursive boundary:
+it walks paired template AST and lifecycle-plan children, dispatches by
+`SSRLifecyclePlanKind`, and rejects a node-kind, child-count, or span mismatch
+as an internal generator error. Component slot content is matched to its
+typed slot plan in sorted slot-name order. Individual `#if`, `#each`, and
+`#await` lowerers still implement the current subset internally; later slices
+replace those implementations without reintroducing a second tree traversal.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that
