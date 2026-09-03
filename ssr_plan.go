@@ -28,6 +28,12 @@ type SSRRenderPlan struct {
 	Dynamics      []SSRDynamicSite
 	Hydration     SSRHydrationState
 	ScopedCSS     string
+	// ComponentInstanceSuffixes assigns a deterministic static structural
+	// suffix to repeated local component bindings. It is keyed by source span,
+	// never by component name, so equal tags retain independent payload IDs.
+	// Runtime-scoped #each/#key occurrences are intentionally absent until
+	// their evaluated identity can be lowered on both server and client.
+	ComponentInstanceSuffixes map[SectionSpan]string
 }
 
 // SSRHydrationState is the inert, serializable portion of component state.
@@ -261,11 +267,12 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		return nil, err
 	}
 	b := &ssrPlanBuilder{links: links, slotNames: map[string]bool{}, plan: &SSRRenderPlan{
-		ComponentName: componentName,
-		ScopeID:       scopeID,
-		Props:         props,
-		ReactiveNames: analysis.reactiveNames(),
-		ScopedCSS:     ExtractScopedCSS(sfc, scopeID),
+		ComponentName:             componentName,
+		ScopeID:                   scopeID,
+		Props:                     props,
+		ReactiveNames:             analysis.reactiveNames(),
+		ScopedCSS:                 ExtractScopedCSS(sfc, scopeID),
+		ComponentInstanceSuffixes: SSRStaticRepeatedComponentInstanceSuffixes(sfc.TemplateAST.Nodes),
 	}}
 	b.plan.Hydration = buildSSRHydrationState(analysis)
 	b.plan.Nodes = b.nodes(sfc.TemplateAST.Nodes)

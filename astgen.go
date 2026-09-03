@@ -332,6 +332,11 @@ type ASTGen struct {
 	// never share the same local binding.
 	hydrationCSRComponents map[string]string
 
+	// hydrationComponentInstanceSuffixes carries the static structural part of
+	// repeated child identities. The hydrate entry supplies the current parent
+	// scope through $$hydrate.instanceID.
+	hydrationComponentInstanceSuffixes map[SectionSpan]string
+
 	// counter backs id() — the deterministic $$nN naming used for
 	// DOM-node variables.  Mirrors the legacy CodeGen.counter so
 	// generated names match between the two generators.
@@ -1650,7 +1655,10 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 		fnBody.Body = append(fnBody.Body, genConst("$$velaState", genLogical("||", genMember(id("$$props"), "$$velaState"), genNull())))
 	}
 	if g.domAcquireMode == DOMAcquireHydrate {
-		fnBody.Body = append(fnBody.Body, genConst("$$walker", genMember(id("$$hydrate"), "walker")))
+		fnBody.Body = append(fnBody.Body,
+			genConst("$$walker", genMember(id("$$hydrate"), "walker")),
+			genConst("$$instanceID", genLogical("||", genMember(id("$$hydrate"), "instanceID"), strLit(g.scopeID))),
+		)
 	}
 
 	// ── Runtime helpers ──────────────────────────────────────
@@ -4887,7 +4895,7 @@ func (g *ASTGen) buildHydrationRootIfComponentChain(chain *IfChainNode, componen
 	for _, handle := range handles {
 		g.hydrationInitBody = append(g.hydrationInitBody, genIf(
 			genBinary("===", id(activeVar), numLit(componentIndex)),
-			genAssignStmt(id(handle.instanceVar), genMember(genCall(id(handle.component.Name), id("$$root")), "component")),
+			genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), nil), "component")),
 		))
 		setStmt := genIf(id(handle.instanceVar), genExprStmt(genCall(genMember(id(handle.instanceVar), "set"), handle.propsExpr)))
 		deps := map[string]bool{}
@@ -5539,13 +5547,9 @@ func (g *ASTGen) buildHydrationComponentNode(comp *ComponentNode, parentVar stri
 	propsExpr := g.componentPropsExpr(comp.Attrs)
 	g.buildHydrationComponentSlotContent(comp.Slots, plan)
 	overrides := g.hydrationComponentOverridesExpr(comp.Attrs)
-	args := []JsExpr{id(parentVar)}
-	if overrides != nil {
-		args = append(args, overrides)
-	}
 	g.hydrationInitBody = append(g.hydrationInitBody, genIf(
 		genUnary("!", id(inst)),
-		genAssignStmt(id(inst), genMember(genCall(id(comp.Name), args...), "component")),
+		genAssignStmt(id(inst), genMember(g.hydrationComponentCall(comp, id(parentVar), overrides), "component")),
 	))
 
 	setStmt := genIf(id(inst), genExprStmt(genCall(genMember(id(inst), "set"), propsExpr)))
@@ -5563,6 +5567,28 @@ func (g *ASTGen) buildHydrationComponentNode(comp *ComponentNode, parentVar stri
 	}
 	g.buildComponentEvents(comp, inst)
 	g.cleanup = append(g.cleanup, genIf(id(inst), genExprStmt(genCall(genMember(id(inst), "destroy")))))
+}
+
+// hydrationComponentCall preserves the established two-argument hydrate
+// entry calls for ordinary children. Repeated static bindings additionally
+// receive the parent runtime scope plus their structural suffix.
+func (g *ASTGen) hydrationComponentCall(comp *ComponentNode, parent JsExpr, overrides JsExpr) JsExpr {
+	args := []JsExpr{parent}
+	suffix := ""
+	if comp != nil {
+		suffix = g.hydrationComponentInstanceSuffixes[comp.Span]
+	}
+	if overrides != nil || suffix != "" {
+		if overrides == nil {
+			args = append(args, genNull())
+		} else {
+			args = append(args, overrides)
+		}
+	}
+	if suffix != "" {
+		args = append(args, genBinary("+", id("$$instanceID"), strLit("--"+suffix)))
+	}
+	return genCall(id(comp.Name), args...)
 }
 
 // buildComponentNode invokes a child component: a wrapper element,

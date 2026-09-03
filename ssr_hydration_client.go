@@ -54,7 +54,7 @@ func buildSSRHydrationClientProgramWithComponents(name string, sfc *SFC, analysi
 	g := &ASTGen{
 		name: name, scopeID: scopeID, analysis: analysis, sfc: sfc, fragCounter: -1, cssExternal: true,
 		domAcquireMode: DOMAcquireHydrate, domAcquirePlan: DOMAcquirePlan{Mode: DOMAcquireHydrate},
-		hydrationStateInput: true, hydrationComponents: components, hydrationCSRComponents: ssrHydrationStructuralComponentAliasesForPlan(lifecyclePlan), hydrationMarkers: ssrHydrationMarkerIDs(plan.Nodes), hydrationLifecyclePlan: lifecyclePlan,
+		hydrationStateInput: true, hydrationComponents: components, hydrationCSRComponents: ssrHydrationStructuralComponentAliasesForPlan(lifecyclePlan), hydrationMarkers: ssrHydrationMarkerIDs(plan.Nodes), hydrationLifecyclePlan: lifecyclePlan, hydrationComponentInstanceSuffixes: plan.ComponentInstanceSuffixes,
 	}
 	program := g.buildModule(sfc.TemplateAST.Nodes)
 	validateGeneratedProgram(program)
@@ -133,7 +133,6 @@ func ssrHydrationDirectIfComponents(plan *SSRStructuralLifecyclePlan) ([]*Compon
 		return nil, 0, false
 	}
 	var components []*ComponentNode
-	names := map[string]bool{}
 	componentIndex := -1
 	for index, branch := range plan.Children {
 		if branch == nil || branch.Kind != SSRLifecyclePlanIfBranch {
@@ -144,10 +143,6 @@ func ssrHydrationDirectIfComponents(plan *SSRStructuralLifecyclePlan) ([]*Compon
 			if !ok || candidate == nil || len(candidate.Slots) != 0 {
 				continue
 			}
-			if names[candidate.Name] {
-				return nil, 0, false
-			}
-			names[candidate.Name] = true
 			if componentIndex >= 0 && componentIndex != index {
 				return nil, 0, false
 			}

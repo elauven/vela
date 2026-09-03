@@ -443,7 +443,6 @@ func ssrCapabilityCurrentIfComponentBranch(chain *IfChainNode) ([]*ComponentNode
 	conditions := 0
 	componentIndex := -1
 	var components []*ComponentNode
-	names := map[string]bool{}
 	for index, branch := range chain.Branches {
 		if branch == nil {
 			return nil, 0, false
@@ -458,10 +457,9 @@ func ssrCapabilityCurrentIfComponentBranch(chain *IfChainNode) ([]*ComponentNode
 				staticChildren = append(staticChildren, child)
 				continue
 			}
-			if len(candidate.Slots) != 0 || names[candidate.Name] || !ssrCapabilityCurrentStructuralComponentAttrs(candidate) {
+			if len(candidate.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(candidate) {
 				return nil, 0, false
 			}
-			names[candidate.Name] = true
 			if componentIndex >= 0 && componentIndex != index {
 				return nil, 0, false
 			}

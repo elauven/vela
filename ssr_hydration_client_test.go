@@ -1272,13 +1272,27 @@ func TestSSRHydrationIfBranchOwnsMultipleDistinctChildHandles(t *testing.T) {
 	}
 }
 
-func TestSSRHydrationIfBranchRejectsRepeatedChildBindingUntilPayloadNamespaced(t *testing.T) {
+func TestSSRHydrationIfBranchNamespacesRepeatedChildBinding(t *testing.T) {
 	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let visible = true;</script><template><main>{#if visible}<Child /><Child />{:else}<p>Hidden</p>{/if}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
-		t.Fatal("repeated structural child binding requires path-scoped payload namespaces")
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("repeated structural child bindings have static path-scoped payload namespaces")
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"const $$instanceID = $$hydrate.instanceID || 'vela-parent';",
+		"Child($$root, null, $$instanceID + '--n0--n0--if0--n0--component-Child').component",
+		"Child($$root, null, $$instanceID + '--n0--n0--if0--n1--component-Child').component",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("repeated child hydration misses %q:\\n%s", want, source)
+		}
 	}
 }
 

@@ -29,7 +29,7 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	if err != nil {
 		return nil, err
 	}
-	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, scopeExpr: goast.NewIdent("instanceID")}
+	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, scopeExpr: goast.NewIdent("instanceID"), componentInstanceSuffixes: plan.ComponentInstanceSuffixes}
 	body, err := emitter.nodes(plan.Nodes)
 	if err != nil {
 		return nil, err
@@ -110,14 +110,15 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID goast.Expr) ([]go
 }
 
 type ssrGoEmitter struct {
-	ctx           SSRExprContext
-	packageName   string
-	scopeID       string
-	scopeExpr     goast.Expr
-	needsEscaping bool
-	eachNext      int
-	imports       map[string]string
-	selectValue   *TemplateExpr
+	ctx                       SSRExprContext
+	packageName               string
+	scopeID                   string
+	scopeExpr                 goast.Expr
+	componentInstanceSuffixes map[SectionSpan]string
+	needsEscaping             bool
+	eachNext                  int
+	imports                   map[string]string
+	selectValue               *TemplateExpr
 }
 
 func (e *ssrGoEmitter) nodes(nodes []SSRPlanNode) ([]goast.Stmt, error) {
@@ -183,11 +184,12 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	}
 	propsType := goast.Expr(goast.NewIdent(node.Link.GoName + "Props"))
 	slotsType := goast.Expr(goast.NewIdent(node.Link.GoName + "Slots"))
-	component := goast.Expr(goast.NewIdent(node.Link.GoName))
+	componentName := node.Link.GoName
+	component := goast.Expr(goast.NewIdent(componentName))
 	if prefix != "" {
 		propsType = goSelector(prefix, node.Link.GoName+"Props")
 		slotsType = goSelector(prefix, node.Link.GoName+"Slots")
-		component = goSelector(prefix, node.Link.GoName)
+		component = goSelector(prefix, componentName)
 	}
 	props := &goast.CompositeLit{Type: propsType, Elts: make([]goast.Expr, len(fields))}
 	for i, field := range fields {
@@ -212,10 +214,17 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 		}, Body: &goast.BlockStmt{List: body}}
 		slots.Elts = append(slots.Elts, &goast.KeyValueExpr{Key: goast.NewIdent(ssrGoExportName(name)), Value: closure})
 	}
-	call := &goast.CallExpr{
-		Fun:  component,
-		Args: []goast.Expr{props, slots},
+	args := []goast.Expr{props, slots}
+	if suffix := e.componentInstanceSuffixes[node.Span]; suffix != "" {
+		componentName += "At"
+		if prefix != "" {
+			component = goSelector(prefix, componentName)
+		} else {
+			component = goast.NewIdent(componentName)
+		}
+		args = append(args, ssrGoStringConcat(e.scopeExpr, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("--" + suffix)}))
 	}
+	call := &goast.CallExpr{Fun: component, Args: args}
 	render := &goast.CallExpr{Fun: goSelectorExpr(call, "Render"), Args: []goast.Expr{goast.NewIdent("w")}}
 	return []goast.Stmt{goWriteSSRErr(render)}, nil
 }

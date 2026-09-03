@@ -21,3 +21,21 @@ func TestSSRComponentInstanceIdentitiesAreStructuralAndOrdered(t *testing.T) {
 		t.Fatalf("each identity=%#v", identities[2])
 	}
 }
+
+func TestSSRStaticRepeatedComponentInstanceSuffixesUseStructuralPaths(t *testing.T) {
+	sfc, err := parseSFC(`<template><main>{#if visible}<Child /><Child />{:else}<Child />{/if}{#each rows as row (row.id)}<Child :row={row} />{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	suffixes := SSRStaticRepeatedComponentInstanceSuffixes(sfc.TemplateAST.Nodes)
+	if len(suffixes) != 3 {
+		t.Fatalf("static repeated suffixes=%#v", suffixes)
+	}
+	seen := map[string]bool{}
+	for _, suffix := range suffixes {
+		if suffix == "" || seen[suffix] {
+			t.Fatalf("suffixes must be non-empty and unique: %#v", suffixes)
+		}
+		seen[suffix] = true
+	}
+}

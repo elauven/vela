@@ -708,14 +708,16 @@ siblings in template order and mounts the child through its ordinary CSR
 factory at the same relative position. Chromium coverage proves zero initial
 mutations, teardown, remount, and sibling order.
 
-A branch may now contain several direct local children when their component
-bindings are distinct. The hydration client creates one handle per child,
-adopts and forwards props independently, destroys handles in reverse source
-order before range removal, then recreates static siblings and CSR children in
-source order. Repeating the same local component binding remains an explicit
-capability boundary: current payload IDs and marker namespaces are component
-scoped, so Phase 4 must first make them structural-path scoped rather than
-adopting ambiguous server payloads.
+A branch may now contain several direct local children. The hydration client
+creates one handle per child, adopts and forwards props independently, destroys
+handles in reverse source order before range removal, then recreates static
+siblings and CSR children in source order. Repeated static bindings use a
+path-derived suffix, so server Go lowering calls `ChildAt` with
+`parentInstanceID + suffix` and the hydration client passes that exact value to
+the child entry. This gives every child its own marker namespace and payload
+script while preserving the legacy marker contract for ordinary singleton
+children. Runtime `#each` and `#key` paths remain deliberately excluded: they
+need their evaluated row/key identity, not a suffix based on source text.
 
 `SSRComponentInstanceIdentity` now records every component occurrence from the
 structural lifecycle graph. Its immutable typed path, not a tag name, is the
@@ -731,8 +733,10 @@ instanceID)` and `ComponentAt(props, slots, instanceID)` in addition to the
 existing default-scope APIs. Their marker comments, payload `component` field,
 and `vela-state-*` script ID use the supplied namespace. Hydrate entries
 accept the matching optional third `instanceID` argument and fall back to the
-component scope when omitted. Parent-to-child lowering has not yet passed
-structural recipes into these APIs; that is the next integration checkpoint.
+component scope when omitted. Static repeated parent-to-child lowering now
+passes structural recipes into these APIs on both targets. The next checkpoint
+is runtime identity lowering for `#each` / `#key`, followed by recursive
+component lifecycle ownership in nested structural branches.
 
 ### JavaScript and Browser API compatibility matrix
 

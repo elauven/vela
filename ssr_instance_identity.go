@@ -1,5 +1,7 @@
 package main
 
+import "strings"
+
 // SSRComponentInstanceIdentity describes one component occurrence in a parent
 // template. Namespace is diagnostic metadata only; the cached Path remains the
 // authoritative recipe consumed later by Go SSR and hydration lowering.
@@ -44,6 +46,34 @@ func BuildSSRComponentInstanceIdentities(nodes []Node) []SSRComponentInstanceIde
 	}
 	visit(plan)
 	return identities
+}
+
+// SSRStaticRepeatedComponentInstanceSuffixes returns the structural suffixes
+// required for repeated statically-addressable child component bindings. The
+// enclosing component scope remains the prefix at runtime; this helper owns
+// only the deterministic compile-time portion. Runtime #each and #key paths
+// remain deliberately excluded until their evaluated identity is available.
+func SSRStaticRepeatedComponentInstanceSuffixes(nodes []Node) map[SectionSpan]string {
+	identities := BuildSSRComponentInstanceIdentities(nodes)
+	counts := map[string]int{}
+	for _, identity := range identities {
+		if !identity.RuntimeScoped {
+			counts[identity.ComponentName]++
+		}
+	}
+	suffixes := map[SectionSpan]string{}
+	for _, identity := range identities {
+		if identity.RuntimeScoped || counts[identity.ComponentName] < 2 {
+			continue
+		}
+		namespace := strings.TrimPrefix(identity.Namespace, "root/")
+		namespace = strings.ReplaceAll(namespace, "/", "--")
+		if namespace == "" || namespace == "root" {
+			panic("vela: repeated component instance has empty structural namespace")
+		}
+		suffixes[identity.TemplateSpan] = namespace
+	}
+	return suffixes
 }
 
 func ssrInstancePathNeedsRuntimeScope(path SSRInstancePath) bool {
