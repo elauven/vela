@@ -29,12 +29,12 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	if err != nil {
 		return nil, err
 	}
-	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID}
+	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, scopeExpr: goast.NewIdent("instanceID")}
 	body, err := emitter.nodes(plan.Nodes)
 	if err != nil {
 		return nil, err
 	}
-	payload, err := buildSSRHydrationPayload(plan)
+	payload, err := buildSSRHydrationPayload(plan, emitter.scopeExpr)
 	if err != nil {
 		return nil, err
 	}
@@ -50,12 +50,11 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	return file, nil
 }
 
-func buildSSRHydrationPayload(plan *SSRRenderPlan) ([]goast.Stmt, error) {
+func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID goast.Expr) ([]goast.Stmt, error) {
 	if plan == nil {
 		return nil, fmt.Errorf("ssr renderer: missing render plan for hydration payload")
 	}
-	componentID := strings.TrimSpace(plan.ScopeID)
-	if componentID == "" {
+	if strings.TrimSpace(plan.ScopeID) == "" || componentID == nil {
 		return nil, fmt.Errorf("ssr renderer: missing component scope ID for hydration payload")
 	}
 	stateJSON := plan.Hydration.JSON
@@ -73,7 +72,7 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan) ([]goast.Stmt, error) {
 	payloadValue := &goast.CompositeLit{
 		Type: &goast.StructType{Fields: &goast.FieldList{List: typeFields}},
 		Elts: []goast.Expr{
-			&goast.KeyValueExpr{Key: goast.NewIdent("Component"), Value: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(componentID)}},
+			&goast.KeyValueExpr{Key: goast.NewIdent("Component"), Value: componentID},
 			&goast.KeyValueExpr{Key: goast.NewIdent("Props"), Value: goast.NewIdent("props")},
 			&goast.KeyValueExpr{Key: goast.NewIdent("State"), Value: &goast.CallExpr{Fun: goSelector("json", "RawMessage"), Args: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(stateJSON)}}}},
 			&goast.KeyValueExpr{Key: goast.NewIdent("Incomplete"), Value: goast.NewIdent(strconv.FormatBool(plan.Hydration.Incomplete))},
@@ -96,11 +95,15 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan) ([]goast.Stmt, error) {
 	marshal := &goast.CallExpr{Fun: goSelector("json", "Marshal"), Args: []goast.Expr{payloadValue}}
 	encode := &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("ssrPayload"), goast.NewIdent("err")}, Tok: token.DEFINE, Rhs: []goast.Expr{marshal}}
 	encoded := &goast.IfStmt{Cond: &goast.BinaryExpr{X: goast.NewIdent("err"), Op: token.NEQ, Y: goast.NewIdent("nil")}, Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("err")}}}}}
-	open := `<script type="application/json" id="vela-state-` + html.EscapeString(componentID) + `">`
+	open := ssrGoStringConcat(
+		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(`<script type="application/json" id="vela-state-`)},
+		&goast.CallExpr{Fun: goSelector("vela", "EscapeString"), Args: []goast.Expr{componentID}},
+		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(`">`)},
+	)
 	return []goast.Stmt{
 		encode,
 		encoded,
-		goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}),
+		goWriteSSRValue(open),
 		goWriteSSRValue(&goast.CallExpr{Fun: goast.NewIdent("string"), Args: []goast.Expr{goast.NewIdent("ssrPayload")}}),
 		goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("</script>")}),
 	}, nil
@@ -110,6 +113,7 @@ type ssrGoEmitter struct {
 	ctx           SSRExprContext
 	packageName   string
 	scopeID       string
+	scopeExpr     goast.Expr
 	needsEscaping bool
 	eachNext      int
 	imports       map[string]string
@@ -701,17 +705,40 @@ func (e *ssrGoEmitter) markedStatements(id int, body []goast.Stmt) []goast.Stmt 
 }
 
 func (e *ssrGoEmitter) markerStart(id int) goast.Stmt {
-	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--v:" + e.scopeID + ":" + itoa(id) + "-->")})
+	return goWriteSSRValue(e.markerValue("<!--v:", ":"+itoa(id)+"-->"))
 }
 
 func (e *ssrGoEmitter) markerEnd(id int) goast.Stmt {
-	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--/v:" + e.scopeID + ":" + itoa(id) + "-->")})
+	return goWriteSSRValue(e.markerValue("<!--/v:", ":"+itoa(id)+"-->"))
 }
 
 func (e *ssrGoEmitter) elementMarkerStart(id int) goast.Stmt {
-	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--e:" + e.scopeID + ":" + itoa(id) + "-->")})
+	return goWriteSSRValue(e.markerValue("<!--e:", ":"+itoa(id)+"-->"))
 }
 
 func (e *ssrGoEmitter) elementMarkerEnd(id int) goast.Stmt {
-	return goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("<!--/e:" + e.scopeID + ":" + itoa(id) + "-->")})
+	return goWriteSSRValue(e.markerValue("<!--/e:", ":"+itoa(id)+"-->"))
+}
+
+func (e *ssrGoEmitter) markerValue(prefix, suffix string) goast.Expr {
+	scope := e.scopeExpr
+	if scope == nil {
+		scope = &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(e.scopeID)}
+	}
+	return ssrGoStringConcat(
+		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(prefix)},
+		scope,
+		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(suffix)},
+	)
+}
+
+func ssrGoStringConcat(parts ...goast.Expr) goast.Expr {
+	if len(parts) == 0 {
+		return &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("")}
+	}
+	result := parts[0]
+	for _, part := range parts[1:] {
+		result = &goast.BinaryExpr{X: result, Op: token.ADD, Y: part}
+	}
+	return result
 }

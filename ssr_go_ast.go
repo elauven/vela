@@ -51,8 +51,10 @@ func buildSSRGoSkeleton(plan *SSRRenderPlan, packageName string, includeProps bo
 	}
 	decls = append(decls,
 		goSlotsTypeDecl(slotsName, plan.SlotNames),
-		goRenderFuncDecl(component, propsName, slotsName),
-		goComponentRendererFuncDecl(component, propsName, slotsName),
+		goRenderAtFuncDecl(component, propsName, slotsName),
+		goRenderFuncDecl(component, propsName, slotsName, plan.ScopeID),
+		goComponentRendererAtFuncDecl(component, propsName, slotsName),
+		goComponentRendererFuncDecl(component, propsName, slotsName, plan.ScopeID),
 	)
 	file := &goast.File{Name: goast.NewIdent(packageName), Decls: decls}
 	return file, nil
@@ -107,7 +109,25 @@ func goSlotsTypeDecl(name string, slots []string) *goast.GenDecl {
 	return &goast.GenDecl{Tok: token.TYPE, Specs: []goast.Spec{&goast.TypeSpec{Name: goast.NewIdent(name), Type: &goast.StructType{Fields: &goast.FieldList{List: fields}}}}}
 }
 
-func goRenderFuncDecl(component, propsName, slotsName string) *goast.FuncDecl {
+func goRenderAtFuncDecl(component, propsName, slotsName string) *goast.FuncDecl {
+	return &goast.FuncDecl{
+		Name: goast.NewIdent("Render" + component + "At"),
+		Type: &goast.FuncType{
+			Params: &goast.FieldList{List: []*goast.Field{
+				{Names: []*goast.Ident{goast.NewIdent("w")}, Type: goSelector("io", "Writer")},
+				{Names: []*goast.Ident{goast.NewIdent("props")}, Type: goast.NewIdent(propsName)},
+				{Names: []*goast.Ident{goast.NewIdent("slots")}, Type: goast.NewIdent(slotsName)},
+				{Names: []*goast.Ident{goast.NewIdent("instanceID")}, Type: goast.NewIdent("string")},
+			}},
+			Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("error")}}},
+		},
+		Body: &goast.BlockStmt{List: []goast.Stmt{
+			&goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}},
+		}},
+	}
+}
+
+func goRenderFuncDecl(component, propsName, slotsName, scopeID string) *goast.FuncDecl {
 	return &goast.FuncDecl{
 		Name: goast.NewIdent("Render" + component),
 		Type: &goast.FuncType{
@@ -118,22 +138,41 @@ func goRenderFuncDecl(component, propsName, slotsName string) *goast.FuncDecl {
 			}},
 			Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("error")}}},
 		},
-		Body: &goast.BlockStmt{List: []goast.Stmt{
-			&goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}},
-		}},
+		Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{
+			&goast.CallExpr{Fun: goast.NewIdent("Render" + component + "At"), Args: []goast.Expr{
+				goast.NewIdent("w"), goast.NewIdent("props"), goast.NewIdent("slots"), &goast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", scopeID)},
+			}},
+		}}}},
 	}
 }
 
-func goComponentRendererFuncDecl(component, propsName, slotsName string) *goast.FuncDecl {
+func goComponentRendererAtFuncDecl(component, propsName, slotsName string) *goast.FuncDecl {
 	wrapper := &goast.FuncLit{
 		Type: &goast.FuncType{
 			Params:  &goast.FieldList{List: []*goast.Field{{Names: []*goast.Ident{goast.NewIdent("w")}, Type: goSelector("io", "Writer")}}},
 			Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("error")}}},
 		},
 		Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{
-			&goast.CallExpr{Fun: goast.NewIdent("Render" + component), Args: []goast.Expr{goast.NewIdent("w"), goast.NewIdent("props"), goast.NewIdent("slots")}},
+			&goast.CallExpr{Fun: goast.NewIdent("Render" + component + "At"), Args: []goast.Expr{goast.NewIdent("w"), goast.NewIdent("props"), goast.NewIdent("slots"), goast.NewIdent("instanceID")}},
 		}}}},
 	}
+	return &goast.FuncDecl{
+		Name: goast.NewIdent(component + "At"),
+		Type: &goast.FuncType{
+			Params: &goast.FieldList{List: []*goast.Field{
+				{Names: []*goast.Ident{goast.NewIdent("props")}, Type: goast.NewIdent(propsName)},
+				{Names: []*goast.Ident{goast.NewIdent("slots")}, Type: goast.NewIdent(slotsName)},
+				{Names: []*goast.Ident{goast.NewIdent("instanceID")}, Type: goast.NewIdent("string")},
+			}},
+			Results: &goast.FieldList{List: []*goast.Field{{Type: goSelector("vela", "Renderer")}}},
+		},
+		Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{
+			&goast.CallExpr{Fun: goSelector("vela", "RendererFunc"), Args: []goast.Expr{wrapper}},
+		}}}},
+	}
+}
+
+func goComponentRendererFuncDecl(component, propsName, slotsName, scopeID string) *goast.FuncDecl {
 	return &goast.FuncDecl{
 		Name: goast.NewIdent(component),
 		Type: &goast.FuncType{
@@ -144,7 +183,9 @@ func goComponentRendererFuncDecl(component, propsName, slotsName string) *goast.
 			Results: &goast.FieldList{List: []*goast.Field{{Type: goSelector("vela", "Renderer")}}},
 		},
 		Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{
-			&goast.CallExpr{Fun: goSelector("vela", "RendererFunc"), Args: []goast.Expr{wrapper}},
+			&goast.CallExpr{Fun: goast.NewIdent(component + "At"), Args: []goast.Expr{
+				goast.NewIdent("props"), goast.NewIdent("slots"), &goast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", scopeID)},
+			}},
 		}}}},
 	}
 }
@@ -373,7 +414,7 @@ func ssrRenderFunc(file *goast.File, component string) (*goast.FuncDecl, error) 
 	if file == nil {
 		return nil, fmt.Errorf("ssr go AST: missing generated file")
 	}
-	name := "Render" + component
+	name := "Render" + component + "At"
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*goast.FuncDecl)
 		if ok && function.Name != nil && function.Name.Name == name {

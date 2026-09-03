@@ -726,6 +726,14 @@ evaluated key. This is analysis-only until the renderer and hydrate entry
 accept an instance namespace; it prevents a later implementation from falling
 back to parsing expression text or component-name IDs.
 
+Generated Go renderers now expose `RenderComponentAt(w, props, slots,
+instanceID)` and `ComponentAt(props, slots, instanceID)` in addition to the
+existing default-scope APIs. Their marker comments, payload `component` field,
+and `vela-state-*` script ID use the supplied namespace. Hydrate entries
+accept the matching optional third `instanceID` argument and fall back to the
+component scope when omitted. Parent-to-child lowering has not yet passed
+structural recipes into these APIs; that is the next integration checkpoint.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that

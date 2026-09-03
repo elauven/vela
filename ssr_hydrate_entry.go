@@ -55,8 +55,9 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 		})
 	}
 	body := []JsStmt{
-		genConst("$$walker", genCall(id("$$createHydrationWalker"), id("$$root"), strLit(plan.ScopeID))),
-		genConst("$$payload", genCall(id("$$readHydrationPayload"), id("$$root"), strLit(plan.ScopeID))),
+		genConst("$$scopeID", genLogical("||", id("$$instanceID"), strLit(plan.ScopeID))),
+		genConst("$$walker", genCall(id("$$createHydrationWalker"), id("$$root"), id("$$scopeID"))),
+		genConst("$$payload", genCall(id("$$readHydrationPayload"), id("$$root"), id("$$scopeID"))),
 		genConst("$$velaProps", props),
 		genConst("$$componentProps", componentProps),
 	}
@@ -68,6 +69,7 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 			&JsObjectExpr{baseExpr: baseExpr{genNode()}},
 			&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 				{baseNode: genNode(), Key: id("walker"), Value: id("$$walker"), Kind: "init"},
+				{baseNode: genNode(), Key: id("instanceID"), Value: id("$$scopeID"), Kind: "init"},
 			}},
 		)))
 	}
@@ -87,7 +89,7 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 	entry := &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
 		Name:     functionName,
-		Params:   []JsExpr{id("$$root"), id("$$overrides")},
+		Params:   []JsExpr{id("$$root"), id("$$overrides"), id("$$instanceID")},
 		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: body},
 	}
 	imports := []JsStmt{}
@@ -97,8 +99,8 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 	componentAlias := &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
 		Name:     plan.ComponentName,
-		Params:   []JsExpr{id("$$root"), id("$$overrides")},
-		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: []JsStmt{genReturn(genCall(id(functionName), id("$$root"), id("$$overrides")))}},
+		Params:   []JsExpr{id("$$root"), id("$$overrides"), id("$$instanceID")},
+		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: []JsStmt{genReturn(genCall(id(functionName), id("$$root"), id("$$overrides"), id("$$instanceID")))}},
 	}
 	imports = append(imports,
 		&JsImportDecl{baseStmt: baseStmt{genNode()}, Specifiers: []JsImportSpec{
