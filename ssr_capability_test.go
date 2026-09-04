@@ -12,7 +12,7 @@ func TestAnalyzeSSRCapabilityMirrorsCurrentHydrationSubset(t *testing.T) {
 	}{
 		{`<template><main><p>{title}</p></main></template>`, true},
 		{`<template><main>{#if visible}<Child :title={title} />{:else}<p>Hidden</p>{/if}</main></template>`, true},
-		{`<template><main>{#each rows as row}<Child :row={row} />{/each}</main></template>`, false},
+		{`<template><main>{#each rows as row}<Child :row={row} />{/each}</main></template>`, true},
 	} {
 		sfc, err := parseSFC(source.code)
 		if err != nil {
@@ -57,7 +57,7 @@ func TestAnalyzeSSRCapabilityRetainsNestedStructuralPathAndOwnership(t *testing.
 }
 
 func TestSSRCapabilityReportsMostSpecificHydrationBoundary(t *testing.T) {
-	sfc, err := parseSFC(`<template><main><section>{#each rows as row}<Child :row={row} />{/each}</section></main></template>`)
+	sfc, err := parseSFC(`<template><main><section>{#each rows as row}<Child :row={row}><p>slot</p></Child>{/each}</section></main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}

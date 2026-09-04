@@ -1544,7 +1544,7 @@ func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(childEntry), `export function Child($$root, $$overrides)`) {
+	if !strings.Contains(string(childEntry), `export function Child($$root, $$overrides, $$instanceID)`) {
 		t.Fatalf("child hydrate entry misses component alias:\n%s", childEntry)
 	}
 }
