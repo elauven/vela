@@ -68,6 +68,7 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"await with static each", `<template><main>{#await request}<span>Loading</span>{:then value}{#each items as item}<span>{item}</span>{/each}{/await}</main></template>`, true},
 		{"await with direct child lifecycle", `<template><main>{#await request}<Child :title={title} />{:then value}<Child :title={value} />{:catch error}<Child :title={error} />{/await}</main></template>`, true},
 		{"await pending nested if child lifecycle", `<template><main>{#await request}{#if visible}<Child :title={title} />{:else}<span>Waiting</span>{/if}{:then value}<span>{value}</span>{/await}</main></template>`, true},
+		{"await pending nested key child lifecycle", `<template><main>{#await request}{#key identity}<Child :title={title} />{/key}{:then value}<span>{value}</span>{/await}</main></template>`, true},
 		{"await then nested if child lifecycle", `<template><main>{#await request}<p>Loading</p>{:then value}{#if visible}<Child :title={value} />{:else}<p>Hidden</p>{/if}{/await}</main></template>`, true},
 		{"await child lifecycle rejects component event", `<template><main>{#await request}<Child @on:close={close} />{:then value}<p>Done</p>{/await}</main></template>`, false},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
@@ -192,6 +193,31 @@ func TestSSRHydrationPendingAwaitNestedIfAdoptsChildAndOwnsTeardown(t *testing.T
 	}
 	if strings.Contains(source, `$$csr_Child($$root`) {
 		t.Fatalf("initial nested pending child must be adopted rather than CSR-mounted:\n%s", source)
+	}
+}
+
+func TestSSRHydrationPendingAwaitNestedKeyAdoptsChildWithKeyScope(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let identity = "one"; export let title = "pending";</script><template><main>{#await request}{#key identity}<Child :title={title} />{/key}{:then value}<p>{value}</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	dollars := string([]byte{36, 36})
+	for _, want := range []string{
+		"--key-",
+		"Child(" + dollars + "root, null,",
+		".destroy();",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("pending await-key adoption misses %q:\n%s", want, source)
+		}
+	}
+	if strings.Contains(source, dollars+"csr_Child("+dollars+"root") {
+		t.Fatalf("initial nested pending key child must be adopted rather than CSR-mounted:\n%s", source)
 	}
 }
 

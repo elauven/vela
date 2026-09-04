@@ -664,8 +664,12 @@ func ssrHydrationPendingAwaitIfChain(block *AwaitBlockNode) (*IfChainNode, bool)
 		return nil, false
 	}
 	chain, ok := block.PendingChildren[0].(*IfChainNode)
-	if !ok || chain == nil || chain.HasKey() {
+	if !ok || chain == nil {
 		return nil, false
+	}
+	if chain.HasKey() {
+		_, ok := ssrCapabilityCurrentKeyComponents(chain)
+		return chain, ok
 	}
 	if _, _, ok := ssrCapabilityCurrentIfComponentBranch(chain); !ok {
 		return nil, false
