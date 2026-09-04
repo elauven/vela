@@ -619,7 +619,13 @@ export function $$adoptHydrationKeyedRows(range, iterable, keyOf, tag) {
   const rows = [];
   for (let node = range?.start?.nextSibling; node && node !== range.end; node = node.nextSibling) {
     if (node.nodeType !== 1) continue;
-    if (String(node.tagName || '').toLowerCase() !== expected) continue;
+	// Ordinary keyed rows supply their element tag. A direct component row has
+	// no parent-visible tag in its AST, so an empty expected tag accepts every
+	// direct element between the range markers; capability analysis guarantees
+	// one component root per row before generated code reaches this helper.
+    const tagName = String(node.tagName || '').toLowerCase();
+    if (!expected && tagName === 'script' && String(node.id || '').startsWith('vela-state-')) continue;
+    if (expected && tagName !== expected) continue;
     rows.push(node);
   }
   if (rows.length !== values.length) {

@@ -5046,6 +5046,10 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 		return
 	}
 	if block.HasKey() {
+		if component, ok := ssrHydrationDirectKeyedEachComponent(g.hydrationLifecycleNode(SSRLifecyclePlanEach, block.Span)); ok {
+			g.buildHydrationRootKeyedEachComponent(block, component)
+			return
+		}
 		g.buildHydrationRootKeyedEach(block)
 		return
 	}
@@ -5172,10 +5176,127 @@ func (g *ASTGen) hydrationEachComponentProps(block *EachBlockNode, component *Co
 }
 
 func (g *ASTGen) hydrationEachInstanceScope(block *EachBlockNode, index JsExpr) JsExpr {
+	value := index
+	if block != nil && block.HasKey() {
+		g.withTemplateBinding(block.ItemName, "$$item", func() {
+			g.withTemplateBinding(block.IndexName, "$$index", func() {
+				value = g.templateExpr(block.KeyAST)
+			})
+		})
+	}
 	return genBinary("+",
 		genBinary("+", id("$$instanceID"), strLit("--each-"+itoa(block.Span.Start)+"-")),
-		genString(index),
+		genString(value),
 	)
+}
+
+// buildHydrationRootKeyedEachComponent keeps the existing keyed DOM-row
+// reconciler authoritative for DOM identity while a parallel map owns child
+// component instances. Retained keys preserve both the row and child; removed
+// keys destroy their child before the runtime removes its row; new keys mount
+// one CSR child and return its root element to the reconciler.
+func (g *ASTGen) buildHydrationRootKeyedEachComponent(block *EachBlockNode, component *ComponentNode) {
+	if block == nil || component == nil || !block.HasKey() {
+		panic("vela: missing keyed each component lifecycle")
+	}
+	markerID := g.hydrationEachMarkerID(block)
+	name := "$$heach" + itoa(markerID)
+	rangeVar := name + "_range"
+	itemsVar := name + "_items"
+	keyOfVar := name + "_key"
+	blocksVar := name + "_blocks"
+	instancesVar := name + "_components"
+	markersVar := name + "_markers"
+	createVar := name + "_create"
+	updateVar := name + "_row_update"
+	csrFactory := g.hydrationCSRComponents[component.Name]
+	if csrFactory == "" {
+		panic("vela: missing keyed each component CSR factory")
+	}
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.hydrationKeyedRows = true
+
+	keyExpr := JsExpr(id("undefined"))
+	g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.IndexName, "$$index", func() {
+			keyExpr = genString(g.templateExpr(block.KeyAST))
+		})
+	})
+	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
+	propsExpr := g.hydrationEachComponentProps(block, component, "$$item", "$$index")
+	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(
+		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
+		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id("$$index"))),
+		genConst("$$component", genCall(id(csrFactory), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+		genExprStmt(genCall(genMember(id(instancesVar), "set"), id("$$key"), id("$$component"))),
+		genReturn(genMember(id("$$component"), "el")),
+	)}
+	update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(
+		genConst("$$component", genCall(genMember(id(instancesVar), "get"), genCall(id(keyOfVar), id("$$item"), id("$$index")))),
+		genIf(id("$$component"), genExprStmt(genCall(genMember(id("$$component"), "set"), propsExpr))),
+	)}
+
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genConst(keyOfVar, keyOf),
+		genConst(itemsVar, g.templateExpr(block.IterExpr)),
+		genLet(blocksVar, genCall(id("$$adoptHydrationKeyedRows"), id(rangeVar), id(itemsVar), id(keyOfVar), strLit(g.hydrationKeyedComponentRowTag(component)))),
+		genLet(instancesVar, genNew(id("Map"))),
+		genLet(markersVar, boolLit(true)),
+		genConst(createVar, create),
+		genConst(updateVar, update),
+	)
+	initialIndex := name + "_index"
+	initialScope := g.hydrationEachInstanceScope(block, id(initialIndex))
+	g.hydrationInitBody = append(g.hydrationInitBody,
+		genLet(initialIndex, numLit(0)),
+		genForOf("$$item", id(itemsVar), genBlock(
+			genConst("$$key", genCall(id(keyOfVar), id("$$item"), id(initialIndex))),
+			genExprStmt(genCall(genMember(id(instancesVar), "set"), id("$$key"), genMember(g.hydrationComponentCallAt(component, id("$$root"), nil, initialScope), "component"))),
+			genAssignStmt(id(initialIndex), genBinary("+", id(initialIndex), numLit(1))),
+		)),
+	)
+
+	updateBody := []JsStmt{
+		genConst("$$nextItems", g.templateExpr(block.IterExpr)),
+		genConst("$$nextKeys", genNew(id("Set"))),
+		genLet("$$index", numLit(0)),
+		genForOf("$$item", id("$$nextItems"), genBlock(
+			genExprStmt(genCall(genMember(id("$$nextKeys"), "add"), genCall(id(keyOfVar), id("$$item"), id("$$index")))),
+			genAssignStmt(id("$$index"), genBinary("+", id("$$index"), numLit(1))),
+		)),
+		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$component"), id("$$key")}, Body: genBlock(
+			genIf(genUnary("!", genCall(genMember(id("$$nextKeys"), "has"), id("$$key"))), genBlock(
+				genExprStmt(genCall(genMember(id("$$component"), "destroy"))),
+				genExprStmt(genCall(genMember(id(instancesVar), "delete"), id("$$key"))),
+			)),
+		)})),
+		genIf(id(markersVar), genBlock(
+			genExprStmt(genCall(id("$$clearHydrationKeyedRowMarkers"), id(rangeVar))),
+			genAssignStmt(id(markersVar), boolLit(false)),
+		)),
+		genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRows"), id(rangeVar), id(blocksVar), id("$$nextItems"), id(keyOfVar), id(createVar), id(updateVar))),
+	}
+	fn := name + "_update"
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
+		g.addStructuralUpdate(dependency, genInvoke(fn))
+	}
+	g.cleanup = append(g.cleanup,
+		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$component")}, Body: genBlock(genExprStmt(genCall(genMember(id("$$component"), "destroy"))))})),
+		genExprStmt(genCall(genMember(id(instancesVar), "clear"))),
+		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genExprStmt(genCall(genMember(id("$$row"), "remove"))))})),
+	)
+}
+
+func (g *ASTGen) hydrationKeyedComponentRowTag(component *ComponentNode) string {
+	if component == nil {
+		return ""
+	}
+	// SSR child roots are the direct keyed rows. The hydration walker validates
+	// exact element tags through component markers; an empty tag asks the
+	// runtime to count every direct element inside this capability-checked row.
+	return ""
 }
 
 // buildHydrationRootAwait retains the pending branch emitted by SSR, then

@@ -1322,6 +1322,33 @@ func TestSSRHydrationUnkeyedEachAdoptsAndRebuildsDirectChildRows(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationKeyedEachRetainsDirectChildInstances(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let rows = []; </script><template><main>{#each rows as row (row.id)}<Child :value={row.value} />{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("keyed direct child rows must be hydration-eligible")
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"let $$heach0_components = new Map();",
+		"$$heach0_components.set($$key, Child($$root, null, $$instanceID + '--each-",
+		"$$heach0_components.get($$heach0_key($$item, $$index))",
+		"$$component.set({ value: $$item.value });",
+		"$$heach0_components.delete($$key);",
+		"$$csr_Child($$frag, { value: $$item.value }, {});",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("keyed child each lifecycle misses %q:\\n%s", want, source)
+		}
+	}
+}
+
 func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")

@@ -754,6 +754,21 @@ deliberately not a keyed reconciler: it makes no identity-retention claim and
 does not yet cover row events/bindings, slots, multiple/nested children, or
 `#key`-scoped child adoption.
 
+The next keyed-row slice is also executable for one direct local child with
+ordinary one-way props and no `{:else}`. The existing runtime still owns
+`Map<key, rowElement>` reconciliation. Generated hydration code owns a paired
+`Map<key, childInstance>`: retained keys preserve their DOM and receive
+`.set(...)`; deleted keys call `destroy()` before the runtime removes their
+row; and a create callback mounts only a new CSR child. The component row has
+no parent-visible root-tag declaration, so keyed adoption accepts direct
+elements while excluding only `vela-state-*` payload scripts. Every executable
+hydrate entry also wraps `component.destroy()` to remove that instance's inert
+payload script, including when a structural parent owns teardown.
+
+This remains intentionally narrower than final keyed component parity: slots,
+component events/bindings, several children per row, nested structural content,
+and Chromium identity/focus fixtures are still Phase 5 work.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that

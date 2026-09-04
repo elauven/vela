@@ -72,6 +72,18 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 				{baseNode: genNode(), Key: id("instanceID"), Value: id("$$scopeID"), Kind: "init"},
 			}},
 		)))
+		// The payload belongs to this hydrated instance, not to its parent
+		// range. Wrapping destroy makes all owners (ordinary children, #if,
+		// unkeyed and keyed rows) release inert state metadata together with
+		// the live component without a second, feature-specific cleanup path.
+		body = append(body,
+			genConst("$$destroy", genMember(id("$$component"), "destroy")),
+			genAssignStmt(genMember(id("$$component"), "destroy"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				genInvoke("$$destroy"),
+				genConst("$$payloadNode", genCall(genMember(id("document"), "getElementById"), genBinary("+", strLit("vela-state-"), id("$$scopeID")))),
+				genIf(id("$$payloadNode"), genExprStmt(genCall(genMember(id("$$payloadNode"), "remove")))),
+			)}),
+		)
 	}
 	returnProps := []*JsProp{
 		{baseNode: genNode(), Key: id("root"), Value: id("$$root"), Kind: "init"},

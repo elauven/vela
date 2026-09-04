@@ -64,6 +64,32 @@ func TestSSRProjectWritesHydrateEntryAlongsideClientModule(t *testing.T) {
 	}
 }
 
+func TestSSRHydrateEntryReleasesInstancePayloadOnDestroy(t *testing.T) {
+	sfc, err := parseSFC(`<template><main>ok</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(entry, PrintPretty)
+	for _, want := range []string{
+		"const $$destroy = $$component.destroy;",
+		"$$component.destroy = () => {",
+		"document.getElementById('vela-state-' + $$scopeID)",
+		"$$payloadNode.remove();",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("executable hydrate entry misses %q:\\n%s", want, source)
+		}
+	}
+}
+
 func TestGeneratedSSRHydrateEntryAdoptsExistingServerData(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

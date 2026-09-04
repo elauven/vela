@@ -204,14 +204,19 @@ assert(mismatch && mismatch.message.includes('expected <section> but found <main
 const keyedStart = marker('v:vela-test:4');
 const keyedOne = { nodeType: 1, tagName: 'LI' };
 const keyedTwo = { nodeType: 1, tagName: 'LI' };
+const keyedPayload = { nodeType: 1, tagName: 'SCRIPT', id: 'vela-state-row-b' };
 const keyedEnd = marker('/v:vela-test:4');
 keyedStart.nextSibling = keyedOne;
 keyedOne.nextSibling = keyedTwo;
-keyedTwo.nextSibling = keyedEnd;
+keyedTwo.nextSibling = keyedPayload;
+keyedPayload.nextSibling = keyedEnd;
 keyedEnd.parentNode = {};
 const keyed = $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }, { id: 'b' }], item => item.id, 'li');
 assert(keyed.get('a') === keyedOne && keyed.get('b') === keyedTwo,
   'keyed adoption must retain existing row identity by initial key');
+const componentRows = $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }, { id: 'b' }], item => item.id, '');
+assert(componentRows.get('a') === keyedOne && componentRows.get('b') === keyedTwo,
+  'keyed component adoption must accept capability-checked direct roots without a parent-visible tag');
 mismatch = undefined;
 try { $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }], item => item.id, 'li'); }
 catch (error) { mismatch = error; }

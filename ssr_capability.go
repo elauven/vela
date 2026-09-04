@@ -487,6 +487,9 @@ func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
 		return false
 	}
 	if block.HasKey() {
+		if _, ok := ssrCapabilityCurrentEachComponentRow(block); ok {
+			return len(block.ElseChildren) == 0
+		}
 		// A keyed hydration row is adopted as one existing element.  Empty
 		// fallbacks and nested rows will join later with range-aware row
 		// handles; accepting either here would silently leave server fallback
@@ -508,7 +511,7 @@ func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
 // The outer range remains the row ownership boundary, so a later list update
 // destroys every adopted child before rebuilding that range through CSR.
 func ssrCapabilityCurrentEachComponentRow(block *EachBlockNode) (*ComponentNode, bool) {
-	if block == nil || block.HasKey() || len(block.Children) != 1 {
+	if block == nil || len(block.Children) != 1 {
 		return nil, false
 	}
 	component, ok := block.Children[0].(*ComponentNode)
