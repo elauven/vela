@@ -89,6 +89,20 @@ type SSRStructuralLifecyclePlan struct {
 	Children     []*SSRStructuralLifecyclePlan
 }
 
+// AwaitBranch returns one synthetic pending/then/catch branch from a typed
+// await lifecycle node. It keeps lowerers on the shared plan rather than
+// re-deriving branch ownership by scanning template children.
+func (p *SSRStructuralLifecyclePlan) AwaitBranch(index int) *SSRStructuralLifecyclePlan {
+	if p == nil || p.Kind != SSRLifecyclePlanAwait || index < 0 || index >= len(p.Children) {
+		return nil
+	}
+	branch := p.Children[index]
+	if branch == nil || branch.Kind != SSRLifecyclePlanAwaitBranch {
+		return nil
+	}
+	return branch
+}
+
 // Find returns the unique plan node for one typed template site. It is used by
 // incremental lowerers while they migrate from AST-shape dispatch to direct
 // lifecycle-plan dispatch. Matching both kind and span keeps synthetic branch

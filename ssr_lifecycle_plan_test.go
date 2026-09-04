@@ -58,6 +58,13 @@ func TestSSRStructuralLifecyclePlanRetainsAwaitBranches(t *testing.T) {
 			t.Fatalf("await branch %d=%#v", index, branch)
 		}
 	}
+	pending := awaitPlan.AwaitBranch(0)
+	if pending == nil || pending != awaitPlan.Children[0] || len(pending.Children) != 1 || pending.Children[0].Kind != SSRLifecyclePlanComponent {
+		t.Fatalf("typed pending branch=%#v", pending)
+	}
+	if awaitPlan.AwaitBranch(3) != nil {
+		t.Fatal("out-of-range await branch must not produce a lifecycle node")
+	}
 }
 
 func TestSSRStructuralLifecyclePlanFindsDynamicTextOwner(t *testing.T) {
