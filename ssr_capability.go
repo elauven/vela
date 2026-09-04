@@ -518,7 +518,7 @@ func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
 		return false
 	}
 	if block.HasKey() {
-		if _, ok := ssrCapabilityCurrentEachComponentRow(block); ok {
+		if _, ok := ssrCapabilityCurrentKeyedEachComponents(block); ok {
 			return len(block.ElseChildren) == 0
 		}
 		// A keyed hydration row is adopted as one existing element.  Empty
@@ -535,6 +535,21 @@ func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
 		return false
 	}
 	return ssrCapabilityCurrentStaticChildren(block.ElseChildren)
+}
+
+func ssrCapabilityCurrentKeyedEachComponents(block *EachBlockNode) ([]*ComponentNode, bool) {
+	if block == nil || !block.HasKey() || len(block.Children) == 0 {
+		return nil, false
+	}
+	components := make([]*ComponentNode, 0, len(block.Children))
+	for _, child := range block.Children {
+		component, ok := child.(*ComponentNode)
+		if !ok || component == nil || len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) {
+			return nil, false
+		}
+		components = append(components, component)
+	}
+	return components, len(components) > 0
 }
 
 func ssrCapabilityCurrentUnkeyedEachComponents(block *EachBlockNode) ([]*ComponentNode, bool) {

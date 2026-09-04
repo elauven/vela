@@ -127,8 +127,10 @@ func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecycleP
 					aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
 				}
 			}
-			if component, ok := ssrHydrationDirectKeyedEachComponent(current); ok {
-				aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
+			if components, ok := ssrHydrationDirectKeyedEachComponents(current); ok {
+				for _, component := range components {
+					aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
+				}
 			}
 		}
 		for _, child := range current.Children {
@@ -164,11 +166,15 @@ func ssrHydrationDirectUnkeyedEachComponents(plan *SSRStructuralLifecyclePlan) (
 	return ssrCapabilityCurrentUnkeyedEachComponents(block)
 }
 
-func ssrHydrationDirectKeyedEachComponent(plan *SSRStructuralLifecyclePlan) (*ComponentNode, bool) {
+func ssrHydrationDirectKeyedEachComponents(plan *SSRStructuralLifecyclePlan) ([]*ComponentNode, bool) {
 	if plan == nil || plan.Kind != SSRLifecyclePlanEach || !ssrHydrationEachPlanHasKey(plan) {
 		return nil, false
 	}
-	return ssrHydrationDirectEachComponent(plan)
+	block, ok := plan.TemplateNode.(*EachBlockNode)
+	if !ok {
+		return nil, false
+	}
+	return ssrCapabilityCurrentKeyedEachComponents(block)
 }
 
 func ssrHydrationDirectEachComponent(plan *SSRStructuralLifecyclePlan) (*ComponentNode, bool) {

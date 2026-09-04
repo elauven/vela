@@ -1361,14 +1361,41 @@ func TestSSRHydrationKeyedEachRetainsDirectChildInstances(t *testing.T) {
 	source := PrintJS(program, PrintPretty)
 	for _, want := range []string{
 		"let $$heach0_components = new Map();",
-		"$$heach0_components.set($$key, Child($$root, null, $$instanceID + '--each-",
+		"const $$components = [];",
+		"$$components.push(Child($$root, null, $$instanceID + '--each-",
+		"$$heach0_components.set($$key, $$components);",
 		"$$heach0_components.get($$heach0_key($$item, $$index))",
-		"$$component.set({ value: $$item.value });",
+		"$$components[0].set({ value: $$item.value });",
+		"for (const $$component of $$components)",
 		"$$heach0_components.delete($$key);",
 		"$$csr_Child($$frag, { value: $$item.value }, {});",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("keyed child each lifecycle misses %q:\\n%s", want, source)
+		}
+	}
+}
+
+func TestSSRHydrationKeyedEachOwnsChildChains(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Alpha } from "./Alpha.vela"; import { Beta } from "./Beta.vela"; export let rows = [];</script><template><main>{#each rows as row (row.id)}<Alpha :value={row.value} /><Beta :value={row.value} />{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("keyed child chains must be hydration-eligible")
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"$$component_0 = $$csr_Alpha", "$$component_1 = $$csr_Beta",
+		"$$components[0].set({ value: $$item.value });", "$$components[1].set({ value: $$item.value });",
+		"$$components.push(Alpha($$root, null, $$instanceID + '--each-", "$$components.push(Beta($$root, null, $$instanceID + '--each-",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("keyed child chain misses %q:\n%s", want, source)
 		}
 	}
 }
