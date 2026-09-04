@@ -5413,7 +5413,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachComponents(block *EachBlockNode, com
 		)),
 		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$components"), id("$$key")}, Body: genBlock(
 			genIf(genUnary("!", genCall(genMember(id("$$nextKeys"), "has"), id("$$key"))), genBlock(
-				genForOf("$$component", id("$$components"), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
+				genForOf("$$component", genCall(genMember(genCall(genMember(id("$$components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
 				genExprStmt(genCall(genMember(id(instancesVar), "delete"), id("$$key"))),
 			)),
 		)})),
@@ -5429,7 +5429,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachComponents(block *EachBlockNode, com
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
 	g.cleanup = append(g.cleanup,
-		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$components")}, Body: genBlock(genForOf("$$component", id("$$components"), genExprStmt(genCall(genMember(id("$$component"), "destroy")))))})),
+		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$components")}, Body: genBlock(genForOf("$$component", genCall(genMember(genCall(genMember(id("$$components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))))})),
 		genExprStmt(genCall(genMember(id(instancesVar), "clear"))),
 		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))))})),
 	)

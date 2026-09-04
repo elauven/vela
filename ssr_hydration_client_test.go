@@ -1394,6 +1394,7 @@ func TestSSRHydrationKeyedEachOwnsChildChains(t *testing.T) {
 		"before</p>", "after</p>",
 		"$$components[0].set({ value: $$item.value });", "$$components[1].set({ value: $$item.value });",
 		"$$components.push(Alpha($$root, null, $$instanceID + '--each-", "$$components.push(Beta($$root, null, $$instanceID + '--each-",
+		"$$components.slice().reverse()",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("keyed child chain misses %q:\n%s", want, source)
