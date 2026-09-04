@@ -692,7 +692,7 @@ func ssrCapabilityCurrentAwaitBranch(nodes []Node) bool {
 		case *TextNode:
 			continue
 		case *IfChainNode:
-			if !ssrCapabilityCurrentIfChain(current) || ssrCapabilityAwaitStructuralChildren(current.Branches) {
+			if !ssrCapabilityCurrentIfChain(current) {
 				return false
 			}
 		case *ElementNode:
@@ -713,7 +713,7 @@ func ssrCapabilityCurrentAwaitBranch(nodes []Node) bool {
 				return false
 			}
 		case *EachBlockNode:
-			if !ssrCapabilityCurrentEach(current) || ssrCapabilityAwaitStructuralNodes(current.Children) || ssrCapabilityAwaitStructuralNodes(current.ElseChildren) {
+			if !ssrCapabilityCurrentEach(current) {
 				return false
 			}
 		default:

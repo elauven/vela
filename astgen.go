@@ -889,7 +889,8 @@ type capturedScope struct {
 	// deep nesting until consumed.  Outside a fragment (no
 	// enclosing row), buildComponentNode hoists to component
 	// scope directly and this channel stays empty.
-	fragHoisted []JsStmt
+	fragHoisted     []JsStmt
+	nestedTeardowns []JsStmt
 }
 
 // captureScope runs fn with the generator's emission buffers
@@ -908,6 +909,7 @@ func (g *ASTGen) captureScope(fn func()) capturedScope {
 	saveUpdates := g.updates
 	saveComps := g.compInstances
 	saveFragHoisted := g.fragHoisted
+	saveNestedTeardowns := g.nestedTeardowns
 
 	// Restore on the way out — via defer so a panic inside fn()
 	// cannot leave the generator's buffers swapped out.  The
@@ -921,6 +923,7 @@ func (g *ASTGen) captureScope(fn func()) capturedScope {
 		g.updates = saveUpdates
 		g.compInstances = saveComps
 		g.fragHoisted = saveFragHoisted
+		g.nestedTeardowns = saveNestedTeardowns
 	}()
 
 	g.body, g.initBody = nil, nil
@@ -928,17 +931,19 @@ func (g *ASTGen) captureScope(fn func()) capturedScope {
 	g.updates = map[string][]JsStmt{}
 	g.compInstances = nil
 	g.fragHoisted = nil
+	g.nestedTeardowns = nil
 
 	fn()
 
 	return capturedScope{
-		body:        g.body,
-		initBody:    g.initBody,
-		events:      g.events,
-		cleanup:     g.cleanup,
-		updates:     g.updates,
-		comps:       g.compInstances,
-		fragHoisted: g.fragHoisted,
+		body:            g.body,
+		initBody:        g.initBody,
+		events:          g.events,
+		cleanup:         g.cleanup,
+		updates:         g.updates,
+		comps:           g.compInstances,
+		fragHoisted:     g.fragHoisted,
+		nestedTeardowns: g.nestedTeardowns,
 	}
 }
 
@@ -4321,6 +4326,8 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 				genAssignStmt(id(cleanupVar), genNull()),
 			)))
 			teardown = append(teardown, genIf(id(bv), genBlock(removeNodesStmts(bv)...)))
+			teardown = append(teardown, destroyCompStmts(plans[i].comps)...)
+			teardown = append(teardown, plans[i].nestedTeardowns...)
 		}
 		teardown = append(teardown,
 			genAssignStmt(id(anchor), genNull()),
@@ -5795,6 +5802,7 @@ func (g *ASTGen) buildHydrationAwaitBranch(children []Node, bindingName, binding
 				genAssignStmt(id(plan.cleanupVar), genNull()),
 			)))
 		}
+		plan.cleanup = append(plan.cleanup, cap.nestedTeardowns...)
 		plan.build = append(plan.build, genAssignStmt(id(mountedVar), boolLit(true)))
 		plan.cleanup = append(plan.cleanup, genAssignStmt(id(mountedVar), boolLit(false)))
 		for dep, statements := range cap.updates {

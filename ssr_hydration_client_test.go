@@ -67,6 +67,7 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"await with dynamic event", `<template><main>{#await request}<span>Loading</span>{:then value}<button @click={save}>{value}</button>{/await}</main></template>`, true},
 		{"await with static each", `<template><main>{#await request}<span>Loading</span>{:then value}{#each items as item}<span>{item}</span>{/each}{/await}</main></template>`, true},
 		{"await with direct child lifecycle", `<template><main>{#await request}<Child :title={title} />{:then value}<Child :title={value} />{:catch error}<Child :title={error} />{/await}</main></template>`, true},
+		{"await then nested if child lifecycle", `<template><main>{#await request}<p>Loading</p>{:then value}{#if visible}<Child :title={value} />{:else}<p>Hidden</p>{/if}{/await}</main></template>`, true},
 		{"await child lifecycle rejects component event", `<template><main>{#await request}<Child @on:close={close} />{:then value}<p>Done</p>{/await}</main></template>`, false},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, true},
@@ -142,6 +143,28 @@ func TestSSRHydrationAwaitChildBranchesAdoptAndMountWithCSRFactories(t *testing.
 	}
 	if strings.Contains(source, `$$csr_Child($$root`) {
 		t.Fatalf("initial pending child must be adopted rather than CSR-mounted:\n%s", source)
+	}
+}
+
+func TestSSRHydrationAwaitThenNestedIfOwnsChildCleanup(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let visible = true;</script><template><main>{#await request}<p>Loading</p>{:then value}{#if visible}<Child :title={value} />{:else}<p>Hidden</p>{/if}{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		`import { Child as $$csr_Child } from './Child.js';`,
+		`$$n3_comp = $$csr_Child(`,
+		`$$n3_comp.destroy();`,
+		`if ($$hawait0_active === 1) {`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("nested await-if ownership misses %q:\n%s", want, source)
+		}
 	}
 }
 
