@@ -67,6 +67,19 @@ func TestSSRStructuralLifecyclePlanRetainsAwaitBranches(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationPendingAwaitComponentsUsesTypedBranchPlan(t *testing.T) {
+	sfc, err := parseSFC(`<template><main>{#await request}{#if shown}<Child /><Child />{/if}{:then value}<p>{value}</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	await := sfc.TemplateAST.Nodes[0].(*ElementNode).Children[0].(*AwaitBlockNode)
+	plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes).Find(SSRLifecyclePlanAwait, await.Span)
+	components := ssrHydrationPendingAwaitComponents(plan)
+	if len(components) != 2 || components[0].Name != "Child" || components[1].Name != "Child" {
+		t.Fatalf("pending components=%#v", components)
+	}
+}
+
 func TestSSRStructuralLifecyclePlanFindsDynamicTextOwner(t *testing.T) {
 	sfc, err := parseSFC(`<template><main><p>Hello, {name}</p></main></template>`)
 	if err != nil {

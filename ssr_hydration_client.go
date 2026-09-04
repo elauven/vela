@@ -167,6 +167,36 @@ func ssrHydrationDirectAwaitComponents(plan *SSRStructuralLifecyclePlan) ([][]*C
 	return ssrCapabilityCurrentAwaitComponentBranches(block)
 }
 
+// ssrHydrationPendingAwaitComponents returns component boundaries owned by
+// the server-rendered pending branch. Unlike the direct await slice, this
+// walks the typed lifecycle plan recursively so a future adoption lowerer can
+// acquire nested structural ranges and component payloads as one outer-owned
+// pending handle.
+func ssrHydrationPendingAwaitComponents(plan *SSRStructuralLifecyclePlan) []*ComponentNode {
+	pending := plan.AwaitBranch(0)
+	if pending == nil {
+		return nil
+	}
+	var components []*ComponentNode
+	var visit func(*SSRStructuralLifecyclePlan)
+	visit = func(current *SSRStructuralLifecyclePlan) {
+		if current == nil {
+			return
+		}
+		if current.Kind == SSRLifecyclePlanComponent {
+			component, ok := current.TemplateNode.(*ComponentNode)
+			if ok && component != nil {
+				components = append(components, component)
+			}
+		}
+		for _, child := range current.Children {
+			visit(child)
+		}
+	}
+	visit(pending)
+	return components
+}
+
 func ssrHydrationDirectKeyComponents(plan *SSRStructuralLifecyclePlan) ([]*ComponentNode, bool) {
 	if plan == nil || plan.Kind != SSRLifecyclePlanIf {
 		return nil, false
