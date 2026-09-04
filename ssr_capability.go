@@ -601,9 +601,46 @@ func ssrCapabilityCurrentAwait(block *AwaitBlockNode) bool {
 	if block == nil || len(block.PendingChildren) == 0 {
 		return false
 	}
-	return ssrCapabilityCurrentStaticChildren(block.PendingChildren) &&
+	if ssrCapabilityCurrentStaticChildren(block.PendingChildren) &&
 		ssrCapabilityCurrentAwaitBranch(block.ThenChildren) &&
-		ssrCapabilityCurrentAwaitBranch(block.CatchChildren)
+		ssrCapabilityCurrentAwaitBranch(block.CatchChildren) {
+		return true
+	}
+	_, ok := ssrCapabilityCurrentAwaitComponentBranches(block)
+	return ok
+}
+
+// ssrCapabilityCurrentAwaitComponentBranches admits the first await child
+// lifecycle slice. Every branch may contain direct local components with
+// ordinary one-way props and static siblings. The pending branch is adopted
+// from SSR; settled branches are materialized with ordinary CSR factories.
+// Dynamic DOM holes remain on the existing await-only lowering path.
+func ssrCapabilityCurrentAwaitComponentBranches(block *AwaitBlockNode) ([][]*ComponentNode, bool) {
+	if block == nil || len(block.PendingChildren) == 0 {
+		return nil, false
+	}
+	branches := [][]Node{block.PendingChildren, block.ThenChildren, block.CatchChildren}
+	result := make([][]*ComponentNode, len(branches))
+	found := false
+	for index, children := range branches {
+		staticChildren := make([]Node, 0, len(children))
+		for _, child := range children {
+			component, ok := child.(*ComponentNode)
+			if !ok || component == nil {
+				staticChildren = append(staticChildren, child)
+				continue
+			}
+			if len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) {
+				return nil, false
+			}
+			result[index] = append(result[index], component)
+			found = true
+		}
+		if !ssrCapabilityCurrentStaticChildren(staticChildren) {
+			return nil, false
+		}
+	}
+	return result, found
 }
 
 // ssrCapabilityCurrentAwaitBranch permits static HTML plus text interpolation after a

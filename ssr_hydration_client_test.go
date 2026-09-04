@@ -66,6 +66,8 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"await with dynamic resolution", `<template><main>{#await request}<span>Loading</span>{:then value}<span>{value}</span>{/await}</main></template>`, true},
 		{"await with dynamic event", `<template><main>{#await request}<span>Loading</span>{:then value}<button @click={save}>{value}</button>{/await}</main></template>`, true},
 		{"await with static each", `<template><main>{#await request}<span>Loading</span>{:then value}{#each items as item}<span>{item}</span>{/each}{/await}</main></template>`, true},
+		{"await with direct child lifecycle", `<template><main>{#await request}<Child :title={title} />{:then value}<Child :title={value} />{:catch error}<Child :title={error} />{/await}</main></template>`, true},
+		{"await child lifecycle rejects component event", `<template><main>{#await request}<Child @on:close={close} />{:then value}<p>Done</p>{/await}</main></template>`, false},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, true},
 		{"select binding", `<template><select bind:value={choice}><option value="a">A</option></select></template>`, true},
@@ -109,6 +111,37 @@ func TestSSRHydrationClientAdoptsPendingAwaitRangeWithoutInitialRender(t *testin
 	}
 	if strings.Contains(source, "appendChild($$root)") || strings.Contains(source, "document.createElement('main')") {
 		t.Fatalf("hydration await lowering unexpectedly creates initial DOM:\n%s", source)
+	}
+}
+
+func TestSSRHydrationAwaitChildBranchesAdoptAndMountWithCSRFactories(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let title = "pending";</script><template><main>{#await request}<p class="before">Waiting</p><Child :title={title} /><p class="after">Soon</p>{:then value}<Child :title={value} />{:catch error}<Child :title={error} />{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		`import { Child as $$csr_Child } from './Child.js';`,
+		`import { Child } from './Child.hydrate.js';`,
+		`const $$hawait0_range = $$acquireHydrationRange($$walker, 0);`,
+		`$$hawait0_b0_component_0 = Child($$root, null,`,
+		`$$hawait0_b1_component_0 = $$csr_Child($$frag, { title: $$hawait0_value }, {});`,
+		`$$hawait0_b2_component_0 = $$csr_Child($$frag, { title: $$hawait0_error }, {});`,
+		`$$hawait0_b0_component_0.destroy();`,
+		`$$hawait0_b1_component_0.destroy();`,
+		`$$hawait0_b2_component_0.destroy();`,
+		`$$hawait0_range.end.before($$frag);`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("await child lifecycle misses %q:\n%s", want, source)
+		}
+	}
+	if strings.Contains(source, `$$csr_Child($$root`) {
+		t.Fatalf("initial pending child must be adopted rather than CSR-mounted:\n%s", source)
 	}
 }
 
@@ -2125,6 +2158,122 @@ server.listen(0, '127.0.0.1', async () => {
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("structural child hydration browser output=%q", got)
+	}
+}
+
+func TestBrowserSSRHydrationAwaitChildAdoptsSettlesAndCleansPayload(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<script>import { onDestroy } from "vela"; export let title = ""; onDestroy(() => { window.__awaitChildDestroys = (window.__awaitChildDestroys || 0) + 1; });</script><template><p class="child">{title}</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis := analyzeScriptAST(childSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
+
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let title = "server";</script><template><main>{#await request}<p class="before">Waiting</p><Child :title={title} /><p class="after">Soon</p>{:then value}<Child :title={value} /><p class="settled">Done</p>{:catch error}<Child :title={error} /><p class="failed">Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysis("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := parentSFC.TemplateAST.Nodes[0].(*ElementNode)
+	await := main.Children[0].(*AwaitBlockNode)
+	pending := await.PendingChildren[1].(*ComponentNode)
+	awaitID, ok := ssrHydrationMarkerIDs(parentPlan.Nodes).awaitID(await.Span)
+	if !ok {
+		t.Fatal("parent await marker is missing")
+	}
+	childScope := "vela-parent--" + parentPlan.ComponentInstanceSuffixes[pending.Span]
+	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(awaitID) + "--><p vela-parent=\"\" class=\"before\">Waiting</p><!--e:" + childScope + ":0--><p vela-child=\"\" class=\"child\"><!--v:" + childScope + ":0-->server<!--/v:" + childScope + ":0--></p><!--/e:" + childScope + ":0--><script type=\"application/json\" id=\"vela-state-" + childScope + "\">{\"component\":\"" + childScope + "\",\"props\":{\"Title\":\"server\"},\"state\":{},\"incomplete\":false}</script><p vela-parent=\"\" class=\"after\">Soon</p><!--/v:vela-parent:" + itoa(awaitID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Title\":\"server\"},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from './Parent.hydrate.js'; window.__request = new Promise(resolve => { window.__resolveRequest = resolve; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { request: window.__request }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":               embeddedRuntime,
+		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
+		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
+		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
+		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
+		"Parent.hydrate.js":        []byte(PrintJS(parentEntry, PrintPretty)),
+		"index.html":               []byte(serverHTML),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	browserScript := `const fs = require('fs');
+const path = require('path');
+const http = require('http');
+const { chromium } = require('playwright');
+const root = process.argv[1];
+const server = http.createServer((req, res) => {
+  const name = req.url === '/' ? 'index.html' : req.url.slice(1);
+  try { const body = fs.readFileSync(path.join(root, name)); res.writeHead(200, {'content-type': name.endsWith('.js') ? 'text/javascript' : 'text/html'}).end(body); }
+  catch { res.writeHead(404).end(); }
+});
+server.listen(0, '127.0.0.1', async () => {
+  let browser;
+  try {
+    browser = await chromium.launch({headless:true});
+    const page = await browser.newPage();
+    page.setDefaultTimeout(5000);
+    await page.goto('http://127.0.0.1:' + server.address().port + '/');
+    await page.waitForFunction(() => window.__hydrated);
+    await page.evaluate(() => { window.__pendingChild = document.querySelector('.child'); window.__hydrated.component.set({title:'updated'}); });
+    await page.waitForFunction(() => document.querySelector('.child')?.textContent === 'updated');
+    await page.evaluate(() => window.__resolveRequest('settled'));
+    await page.waitForFunction(() => document.querySelector('.child')?.textContent === 'settled' && document.querySelector('.settled'));
+    const result = await page.evaluate(() => ({
+      initial: window.__initialMutations,
+      pendingDetached: !window.__pendingChild.isConnected,
+      remounted: document.querySelector('.child') !== window.__pendingChild,
+      payloadRemoved: !document.getElementById('vela-state-__VELA_SCOPE__'),
+      destroys: window.__awaitChildDestroys,
+      before: !!document.querySelector('.before'),
+      after: !!document.querySelector('.after'),
+      settled: !!document.querySelector('.settled'),
+      text: document.querySelector('.child')?.textContent,
+    }));
+    if (result.initial !== 0 || !result.pendingDetached || !result.remounted || !result.payloadRemoved || result.destroys !== 1 || result.before || result.after || !result.settled || result.text !== 'settled') throw new Error(JSON.stringify(result));
+    process.stdout.write('OK');
+  } catch (error) {
+    console.error(error && error.stack || error);
+    process.exitCode = 1;
+  } finally {
+    await browser?.close();
+    server.close(() => process.exit());
+  }
+});`
+	browserScript = strings.Replace(browserScript, "__VELA_SCOPE__", childScope, 1)
+	command := exec.Command(node, "-e", browserScript, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("await child hydration browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(parentClient, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("await child hydration browser output=%q", got)
 	}
 }
 

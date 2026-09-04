@@ -5458,6 +5458,10 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	if block == nil {
 		return
 	}
+	if branches, ok := ssrHydrationDirectAwaitComponents(g.hydrationLifecycleNode(SSRLifecyclePlanAwait, block.Span)); ok {
+		g.buildHydrationRootAwaitComponentBranches(block, branches)
+		return
+	}
 	markerID := g.hydrationAwaitMarkerID(block)
 	name := "$$hawait" + itoa(markerID)
 	rangeVar := name + "_range"
@@ -5554,6 +5558,185 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	}
 	cleanup = append(cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 	g.cleanup = append(g.cleanup, cleanup...)
+}
+
+type hydrationAwaitComponentHandle struct {
+	component   *ComponentNode
+	instanceVar string
+	propsExpr   JsExpr
+	csrFactory  string
+	branch      int
+}
+
+// buildHydrationRootAwaitComponentBranches owns direct local child chains in
+// an await range. SSR always supplies the pending branch, so only its handles
+// are adopted. Once a promise settles, every branch is materialized from the
+// source-ordered typed children with ordinary CSR factories.
+func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode, branches [][]*ComponentNode) {
+	if block == nil || len(branches) != 3 {
+		panic("vela: missing await component lifecycle")
+	}
+	markerID := g.hydrationAwaitMarkerID(block)
+	name := "$$hawait" + itoa(markerID)
+	rangeVar := name + "_range"
+	nodesVar := name + "_nodes"
+	activeVar := name + "_active"
+	stateVar := name + "_state"
+	valueVar := name + "_value"
+	errorVar := name + "_error"
+	cellVar := name + "_cell"
+	renderVar := name + "_render"
+	driverVar := name + "_drive"
+	bindingNames := []string{"", block.ValueName, block.ErrorName}
+	bindingValues := []string{"", valueVar, errorVar}
+	children := [][]Node{block.PendingChildren, block.ThenChildren, block.CatchChildren}
+	handles := make([]hydrationAwaitComponentHandle, 0)
+	for branch, components := range branches {
+		for index, component := range components {
+			handle := hydrationAwaitComponentHandle{
+				component:   component,
+				instanceVar: name + "_b" + itoa(branch) + "_component_" + itoa(index),
+				csrFactory:  g.hydrationCSRComponents[component.Name],
+				branch:      branch,
+			}
+			if handle.csrFactory == "" {
+				panic("vela: missing await component CSR factory")
+			}
+			if bindingNames[branch] == "" {
+				handle.propsExpr = g.componentPropsExpr(component.Attrs)
+			} else {
+				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
+					handle.propsExpr = g.componentPropsExpr(component.Attrs)
+				})
+			}
+			handles = append(handles, handle)
+		}
+	}
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	for _, handle := range handles {
+		g.declareInScope(genLet(handle.instanceVar, genNull()))
+	}
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+		genLet(activeVar, numLit(0)),
+		genLet(stateVar, numLit(0)),
+		genLet(valueVar, id("undefined")),
+		genLet(errorVar, id("undefined")),
+		genLet(cellVar, genNull()),
+	)
+	for _, handle := range handles {
+		if handle.branch != 0 {
+			continue
+		}
+		g.hydrationInitBody = append(g.hydrationInitBody,
+			genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), nil), "component")),
+		)
+	}
+	for _, handle := range handles {
+		setStmt := genIf(
+			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: genBinary("===", id(activeVar), numLit(handle.branch)), R: id(handle.instanceVar)},
+			genExprStmt(genCall(genMember(id(handle.instanceVar), "set"), handle.propsExpr)),
+		)
+		deps := map[string]bool{}
+		for _, attr := range handle.component.Attrs {
+			for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+				deps[dependency] = true
+			}
+		}
+		for dependency := range deps {
+			g.addUpdate(dependency, shareStmt(setStmt))
+		}
+	}
+
+	renderBody := []JsStmt{
+		genIf(genBinary("===", id(stateVar), id(activeVar)), genReturn(nil)),
+	}
+	for index := len(handles) - 1; index >= 0; index-- {
+		handle := handles[index]
+		renderBody = append(renderBody, genIf(id(handle.instanceVar), genBlock(
+			genExprStmt(genCall(genMember(id(handle.instanceVar), "destroy"))),
+			genAssignStmt(id(handle.instanceVar), genNull()),
+		)))
+	}
+	renderBody = append(renderBody,
+		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
+	)
+	for branch := range children {
+		mount := g.hydrationAwaitComponentBranchMount(children[branch], handles, branch)
+		renderBody = append(renderBody, genIf(
+			genBinary("===", id(stateVar), numLit(branch)),
+			genBlock(mount...),
+		))
+	}
+	renderBody = append(renderBody,
+		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
+		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
+		genAssignStmt(id(activeVar), id(stateVar)),
+	)
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: renderVar, Body: genBlock(renderBody...)})
+
+	settle := func(param, target string, state int) JsExpr {
+		return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(param)}, Body: genBlock(
+			genIf(genBinary("!==", id(cellVar), id("$$p")), genReturn(nil)),
+			genAssignStmt(id(target), id(param)),
+			genAssignStmt(id(stateVar), numLit(state)),
+			genInvoke(renderVar),
+		)}
+	}
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: driverVar, Body: genBlock(
+		genConst("$$p", genCall(genMember(id("Promise"), "resolve"), g.templateExpr(block.Expr))),
+		genIf(genBinary("===", id(cellVar), id("$$p")), genReturn(nil)),
+		genAssignStmt(id(cellVar), id("$$p")),
+		genAssignStmt(id(stateVar), numLit(0)),
+		genAssignStmt(id(valueVar), id("undefined")),
+		genAssignStmt(id(errorVar), id("undefined")),
+		genInvoke(renderVar),
+		genExprStmt(genCall(genMember(id("$$p"), "then"), settle("$$value", valueVar, 1), settle("$$error", errorVar, 2))),
+	)})
+	g.hydrationInitBody = append(g.hydrationInitBody, genInvoke(driverVar))
+	for _, dependency := range templateExprDeps(block.Expr, g.reactiveNames()) {
+		g.addStructuralUpdate(dependency, genInvoke(driverVar))
+	}
+	for index := len(handles) - 1; index >= 0; index-- {
+		handle := handles[index]
+		g.cleanup = append(g.cleanup, genIf(id(handle.instanceVar), genBlock(
+			genExprStmt(genCall(genMember(id(handle.instanceVar), "destroy"))),
+			genAssignStmt(id(handle.instanceVar), genNull()),
+		)))
+	}
+	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+}
+
+// hydrationAwaitComponentBranchMount recreates one await branch in exact
+// source order. Static siblings are emitted through the existing typed static
+// HTML printer, while components use their CSR aliases and retain handles for
+// subsequent prop updates and deterministic teardown.
+func (g *ASTGen) hydrationAwaitComponentBranchMount(children []Node, handles []hydrationAwaitComponentHandle, branch int) []JsStmt {
+	body := make([]JsStmt, 0, len(children))
+	for _, child := range children {
+		component, isComponent := child.(*ComponentNode)
+		if !isComponent {
+			body = append(body, genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML([]Node{child}, g.scopeID)))))
+			continue
+		}
+		var handle *hydrationAwaitComponentHandle
+		for index := range handles {
+			current := &handles[index]
+			if current.branch == branch && current.component == component {
+				handle = current
+				break
+			}
+		}
+		if handle == nil {
+			panic("vela: await component branch does not match lifecycle handles")
+		}
+		body = append(body, genAssignStmt(id(handle.instanceVar), genCall(
+			id(handle.csrFactory), id("$$frag"), handle.propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}},
+		)))
+	}
+	return body
 }
 
 type hydrationAwaitBranchPlan struct {

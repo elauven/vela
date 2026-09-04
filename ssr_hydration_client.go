@@ -82,6 +82,10 @@ func ssrHydrationUsedComponentNames(nodes []Node) map[string]bool {
 			case *EachBlockNode:
 				visit(current.Children)
 				visit(current.ElseChildren)
+			case *AwaitBlockNode:
+				visit(current.PendingChildren)
+				visit(current.ThenChildren)
+				visit(current.CatchChildren)
 			}
 		}
 	}
@@ -133,12 +137,34 @@ func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecycleP
 				}
 			}
 		}
+		if current.Kind == SSRLifecyclePlanAwait {
+			if branches, ok := ssrHydrationDirectAwaitComponents(current); ok {
+				for _, components := range branches {
+					for _, component := range components {
+						aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
+					}
+				}
+			}
+		}
 		for _, child := range current.Children {
 			visit(child)
 		}
 	}
 	visit(plan)
 	return aliases
+}
+
+// ssrHydrationDirectAwaitComponents reads the direct await-child subset from
+// the typed lifecycle plan. Branch positions are pending, then, then catch.
+func ssrHydrationDirectAwaitComponents(plan *SSRStructuralLifecyclePlan) ([][]*ComponentNode, bool) {
+	if plan == nil || plan.Kind != SSRLifecyclePlanAwait {
+		return nil, false
+	}
+	block, ok := plan.TemplateNode.(*AwaitBlockNode)
+	if !ok || block == nil {
+		return nil, false
+	}
+	return ssrCapabilityCurrentAwaitComponentBranches(block)
 }
 
 func ssrHydrationDirectKeyComponents(plan *SSRStructuralLifecyclePlan) ([]*ComponentNode, bool) {
@@ -273,6 +299,16 @@ func ssrHydrationComponentNames(sfc *SFC, analysis *Analysis) (map[string]bool, 
 					return err
 				}
 				if err := visit(current.ElseChildren); err != nil {
+					return err
+				}
+			case *AwaitBlockNode:
+				if err := visit(current.PendingChildren); err != nil {
+					return err
+				}
+				if err := visit(current.ThenChildren); err != nil {
+					return err
+				}
+				if err := visit(current.CatchChildren); err != nil {
 					return err
 				}
 			}
