@@ -6154,6 +6154,14 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 		g.buildHydrationComponentNode(comp, parentVar, g.hydrationLifecycleNode(SSRLifecyclePlanComponent, comp.Span))
 		return
 	}
+	factoryName := comp.Name
+	// A hydrate client imports local children from their .hydrate.js entry so
+	// existing SSR DOM can be adopted. Branches materialized after hydration
+	// must instead use the ordinary CSR factory, including recursively built
+	// #if/#each/#await content captured by another structural lifecycle.
+	if g.domAcquireMode == DOMAcquireCreate && g.hydrationCSRComponents[comp.Name] != "" {
+		factoryName = g.hydrationCSRComponents[comp.Name]
+	}
 	inst := g.id() + "_comp"
 	wrap := inst + "_wrap"
 	g.compInstances = append(g.compInstances,
@@ -6219,7 +6227,7 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 	// Initial mount. propsExpr and slotsObj are both typed AST, so their
 	// user-origin subexpressions never cross a printer/parser boundary.
 	g.initBody = append(g.initBody, genIf(genUnary("!", id(inst)),
-		genAssignStmt(id(inst), genCall(id(comp.Name), id(wrap), propsExpr, slotsObj))))
+		genAssignStmt(id(inst), genCall(id(factoryName), id(wrap), propsExpr, slotsObj))))
 
 	g.initBody = append(g.initBody, genIf(
 		&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(inst), R: genMember(id(inst), "el")},

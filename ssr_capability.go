@@ -346,6 +346,45 @@ func ssrCapabilityCurrentRootChildren(nodes []Node) bool {
 	return true
 }
 
+// Nested structural components inside an await branch need ownership-aware
+// cleanup tied to the outer range. Until that recursive lifecycle lowering is
+// present, do not let the generic await branch builder silently materialize
+// them and leave live child handles after the range is replaced.
+func ssrCapabilityAwaitStructuralChildren(branches []*IfBranch) bool {
+	for _, branch := range branches {
+		if branch != nil && ssrCapabilityAwaitStructuralNodes(branch.Children) {
+			return true
+		}
+	}
+	return false
+}
+
+func ssrCapabilityAwaitStructuralNodes(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *ComponentNode:
+			return true
+		case *ElementNode:
+			if ssrCapabilityAwaitStructuralNodes(current.Children) {
+				return true
+			}
+		case *IfChainNode:
+			if ssrCapabilityAwaitStructuralChildren(current.Branches) {
+				return true
+			}
+		case *EachBlockNode:
+			if ssrCapabilityAwaitStructuralNodes(current.Children) || ssrCapabilityAwaitStructuralNodes(current.ElseChildren) {
+				return true
+			}
+		case *AwaitBlockNode:
+			if ssrCapabilityAwaitStructuralNodes(current.PendingChildren) || ssrCapabilityAwaitStructuralNodes(current.ThenChildren) || ssrCapabilityAwaitStructuralNodes(current.CatchChildren) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ssrCapabilityCurrentElement accepts the recursive marker-aware element subset.
 // Every accepted descendant receives an `e` acquisition marker; dynamic text
 // and direct structural blocks retain their template-order `v` ranges.
@@ -653,7 +692,7 @@ func ssrCapabilityCurrentAwaitBranch(nodes []Node) bool {
 		case *TextNode:
 			continue
 		case *IfChainNode:
-			if !ssrCapabilityCurrentIfChain(current) {
+			if !ssrCapabilityCurrentIfChain(current) || ssrCapabilityAwaitStructuralChildren(current.Branches) {
 				return false
 			}
 		case *ElementNode:
@@ -674,7 +713,7 @@ func ssrCapabilityCurrentAwaitBranch(nodes []Node) bool {
 				return false
 			}
 		case *EachBlockNode:
-			if !ssrCapabilityCurrentEach(current) {
+			if !ssrCapabilityCurrentEach(current) || ssrCapabilityAwaitStructuralNodes(current.Children) || ssrCapabilityAwaitStructuralNodes(current.ElseChildren) {
 				return false
 			}
 		default:
