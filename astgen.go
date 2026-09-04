@@ -5243,11 +5243,17 @@ func (g *ASTGen) buildHydrationRootEachComponents(block *EachBlockNode, componen
 		genLet(indexVar, numLit(0)),
 	}
 	mountBody := []JsStmt{}
-	for _, component := range components {
+	for index, child := range block.Children {
+		component, ok := child.(*ComponentNode)
+		if !ok || component == nil {
+			mountBody = append(mountBody, genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML([]Node{child}, g.scopeID)))))
+			continue
+		}
 		propsExpr := g.hydrationEachComponentProps(block, component, "$$item", indexVar)
+		componentVar := "$$component_" + itoa(index)
 		mountBody = append(mountBody,
-			genConst("$$component", genCall(id(g.hydrationCSRComponents[component.Name]), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
-			genExprStmt(genCall(genMember(id(instancesVar), "push"), id("$$component"))),
+			genConst(componentVar, genCall(id(g.hydrationCSRComponents[component.Name]), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+			genExprStmt(genCall(genMember(id(instancesVar), "push"), id(componentVar))),
 		)
 	}
 	mountBody = append(mountBody, genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))))
