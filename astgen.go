@@ -5157,8 +5157,8 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 		g.buildHydrationRootKeyedEach(block)
 		return
 	}
-	if component, ok := ssrHydrationDirectUnkeyedEachComponent(g.hydrationLifecycleNode(SSRLifecyclePlanEach, block.Span)); ok {
-		g.buildHydrationRootEachComponent(block, component)
+	if components, ok := ssrHydrationDirectUnkeyedEachComponents(g.hydrationLifecycleNode(SSRLifecyclePlanEach, block.Span)); ok {
+		g.buildHydrationRootEachComponents(block, components)
 		return
 	}
 	markerID := g.hydrationEachMarkerID(block)
@@ -5199,12 +5199,12 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 }
 
-// buildHydrationRootEachComponent adopts one direct local child per unkeyed
+// buildHydrationRootEachComponents adopts a source-ordered direct child chain per unkeyed
 // SSR row. The current unkeyed reconciler replaces the whole range, so its
 // ownership model is explicit: destroy all adopted instances, remove the
 // range, then materialize fresh CSR children in list order.
-func (g *ASTGen) buildHydrationRootEachComponent(block *EachBlockNode, component *ComponentNode) {
-	if block == nil || component == nil {
+func (g *ASTGen) buildHydrationRootEachComponents(block *EachBlockNode, components []*ComponentNode) {
+	if block == nil || len(components) == 0 {
 		panic("vela: missing unkeyed each component lifecycle")
 	}
 	markerID := g.hydrationEachMarkerID(block)
@@ -5214,9 +5214,10 @@ func (g *ASTGen) buildHydrationRootEachComponent(block *EachBlockNode, component
 	instancesVar := name + "_components"
 	itemsVar := name + "_items"
 	indexVar := name + "_index"
-	csrFactory := g.hydrationCSRComponents[component.Name]
-	if csrFactory == "" {
-		panic("vela: missing unkeyed each component CSR factory")
+	for _, component := range components {
+		if g.hydrationCSRComponents[component.Name] == "" {
+			panic("vela: missing unkeyed each component CSR factory")
+		}
 	}
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.body = append(g.body,
@@ -5227,12 +5228,12 @@ func (g *ASTGen) buildHydrationRootEachComponent(block *EachBlockNode, component
 		genLet(indexVar, numLit(0)),
 	)
 	adoptScope := g.hydrationEachInstanceScope(block, id(indexVar))
-	g.hydrationInitBody = append(g.hydrationInitBody, genForOf("$$item", id(itemsVar), genBlock(
-		genExprStmt(genCall(genMember(id(instancesVar), "push"), genMember(g.hydrationComponentCallAt(component, id("$$root"), nil, adoptScope), "component"))),
-		genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))),
-	)))
-
-	propsExpr := g.hydrationEachComponentProps(block, component, "$$item", indexVar)
+	adoptBody := []JsStmt{}
+	for _, component := range components {
+		adoptBody = append(adoptBody, genExprStmt(genCall(genMember(id(instancesVar), "push"), genMember(g.hydrationComponentCallAt(component, id("$$root"), nil, adoptScope), "component"))))
+	}
+	adoptBody = append(adoptBody, genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))))
+	g.hydrationInitBody = append(g.hydrationInitBody, genForOf("$$item", id(itemsVar), genBlock(adoptBody...)))
 	updateBody := []JsStmt{
 		genForOf("$$component", id(instancesVar), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
 		genAssignStmt(id(instancesVar), genArray()),
@@ -5241,12 +5242,16 @@ func (g *ASTGen) buildHydrationRootEachComponent(block *EachBlockNode, component
 		genConst(itemsVar, g.templateExpr(block.IterExpr)),
 		genLet(indexVar, numLit(0)),
 	}
-	mount := genAssignStmt(id("$$component"), genCall(id(csrFactory), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}}))
-	updateBody = append(updateBody, genForOf("$$item", id(itemsVar), genBlock(
-		mount,
-		genExprStmt(genCall(genMember(id(instancesVar), "push"), id("$$component"))),
-		genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))),
-	)))
+	mountBody := []JsStmt{}
+	for _, component := range components {
+		propsExpr := g.hydrationEachComponentProps(block, component, "$$item", indexVar)
+		mountBody = append(mountBody,
+			genConst("$$component", genCall(id(g.hydrationCSRComponents[component.Name]), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+			genExprStmt(genCall(genMember(id(instancesVar), "push"), id("$$component"))),
+		)
+	}
+	mountBody = append(mountBody, genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))))
+	updateBody = append(updateBody, genForOf("$$item", id(itemsVar), genBlock(mountBody...)))
 	if len(block.ElseChildren) > 0 {
 		updateBody = append(updateBody, genIf(
 			genBinary("===", genMember(id(itemsVar), "length"), numLit(0)),

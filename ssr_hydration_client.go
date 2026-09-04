@@ -122,8 +122,10 @@ func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecycleP
 			}
 		}
 		if current.Kind == SSRLifecyclePlanEach {
-			if component, ok := ssrHydrationDirectUnkeyedEachComponent(current); ok {
-				aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
+			if components, ok := ssrHydrationDirectUnkeyedEachComponents(current); ok {
+				for _, component := range components {
+					aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
+				}
 			}
 			if component, ok := ssrHydrationDirectKeyedEachComponent(current); ok {
 				aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
@@ -151,11 +153,15 @@ func ssrHydrationDirectKeyComponents(plan *SSRStructuralLifecyclePlan) ([]*Compo
 // ssrHydrationDirectUnkeyedEachComponent reads the first component-row
 // lifecycle slice from the typed structural plan. Keyed rows need retained
 // row instance handles and therefore remain a separate reconciliation phase.
-func ssrHydrationDirectUnkeyedEachComponent(plan *SSRStructuralLifecyclePlan) (*ComponentNode, bool) {
+func ssrHydrationDirectUnkeyedEachComponents(plan *SSRStructuralLifecyclePlan) ([]*ComponentNode, bool) {
 	if plan == nil || plan.Kind != SSRLifecyclePlanEach || ssrHydrationEachPlanHasKey(plan) {
 		return nil, false
 	}
-	return ssrHydrationDirectEachComponent(plan)
+	block, ok := plan.TemplateNode.(*EachBlockNode)
+	if !ok {
+		return nil, false
+	}
+	return ssrCapabilityCurrentUnkeyedEachComponents(block)
 }
 
 func ssrHydrationDirectKeyedEachComponent(plan *SSRStructuralLifecyclePlan) (*ComponentNode, bool) {

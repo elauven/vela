@@ -528,13 +528,28 @@ func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
 		_, ok := ssrCapabilityCurrentEachDynamicTextRow(block)
 		return ok && len(block.ElseChildren) == 0
 	}
-	if _, ok := ssrCapabilityCurrentEachComponentRow(block); ok {
+	if _, ok := ssrCapabilityCurrentUnkeyedEachComponents(block); ok {
 		return ssrCapabilityCurrentStaticChildren(block.ElseChildren)
 	}
 	if _, ok := ssrCapabilityCurrentEachDynamicTextRow(block); !ok && !ssrCapabilityCurrentStaticChildren(block.Children) {
 		return false
 	}
 	return ssrCapabilityCurrentStaticChildren(block.ElseChildren)
+}
+
+func ssrCapabilityCurrentUnkeyedEachComponents(block *EachBlockNode) ([]*ComponentNode, bool) {
+	if block == nil || block.HasKey() || len(block.Children) == 0 {
+		return nil, false
+	}
+	components := make([]*ComponentNode, 0, len(block.Children))
+	for _, child := range block.Children {
+		component, ok := child.(*ComponentNode)
+		if !ok || component == nil || len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) {
+			return nil, false
+		}
+		components = append(components, component)
+	}
+	return components, len(components) > 0
 }
 
 // ssrCapabilityCurrentEachComponentRow is the first list-child lifecycle

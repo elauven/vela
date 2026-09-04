@@ -1322,6 +1322,29 @@ func TestSSRHydrationUnkeyedEachAdoptsAndRebuildsDirectChildRows(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationUnkeyedEachAdoptsAndRebuildsChildChains(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Alpha } from "./Alpha.vela"; import { Beta } from "./Beta.vela"; export let rows = [];</script><template><main>{#each rows as row}<Alpha :value={row.value} /><Beta :value={row.value} />{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("unkeyed child chains must be hydration-eligible")
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"Alpha($$root, null, $$instanceID + '--each-", "Beta($$root, null, $$instanceID + '--each-",
+		"$$csr_Alpha($$frag, { value: $$item.value }, {});", "$$csr_Beta($$frag, { value: $$item.value }, {});",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("unkeyed child chain misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestSSRHydrationKeyedEachRetainsDirectChildInstances(t *testing.T) {
 	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let rows = []; </script><template><main>{#each rows as row (row.id)}<Child :value={row.value} />{/each}</main></template>`)
 	if err != nil {
