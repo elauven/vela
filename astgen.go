@@ -1902,8 +1902,11 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	if usesHydrationKeyedRows {
 		specs = append(specs,
 			JsImportSpec{Imported: "$$adoptHydrationKeyedRows"},
+			JsImportSpec{Imported: "$$adoptHydrationKeyedRowRanges"},
 			JsImportSpec{Imported: "$$clearHydrationKeyedRowMarkers"},
 			JsImportSpec{Imported: "$$reconcileHydrationKeyedRows"},
+			JsImportSpec{Imported: "$$reconcileHydrationKeyedRowRanges"},
+			JsImportSpec{Imported: "$$removeHydrationKeyedRowRange"},
 		)
 	}
 	if len(specs) > 0 {
@@ -5342,9 +5345,13 @@ func (g *ASTGen) buildHydrationRootKeyedEachComponent(block *EachBlockNode, comp
 	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(
 		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id("$$index"))),
+		genConst("$$start", genCall(genMember(id("document"), "createComment"), strLit("r"))),
+		genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$start"))),
 		genConst("$$component", genCall(id(csrFactory), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
+		genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$end"))),
 		genExprStmt(genCall(genMember(id(instancesVar), "set"), id("$$key"), id("$$component"))),
-		genReturn(genMember(id("$$component"), "el")),
+		genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
 	)}
 	update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(
 		genConst("$$component", genCall(genMember(id(instancesVar), "get"), genCall(id(keyOfVar), id("$$item"), id("$$index")))),
@@ -5355,7 +5362,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachComponent(block *EachBlockNode, comp
 		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
 		genConst(keyOfVar, keyOf),
 		genConst(itemsVar, g.templateExpr(block.IterExpr)),
-		genLet(blocksVar, genCall(id("$$adoptHydrationKeyedRows"), id(rangeVar), id(itemsVar), id(keyOfVar), strLit(g.hydrationKeyedComponentRowTag(component)))),
+		genLet(blocksVar, genCall(id("$$adoptHydrationKeyedRowRanges"), id(rangeVar), id(itemsVar), id(keyOfVar), numLit(markerID))),
 		genLet(instancesVar, genNew(id("Map"))),
 		genLet(markersVar, boolLit(true)),
 		genConst(createVar, create),
@@ -5390,7 +5397,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachComponent(block *EachBlockNode, comp
 			genExprStmt(genCall(id("$$clearHydrationKeyedRowMarkers"), id(rangeVar))),
 			genAssignStmt(id(markersVar), boolLit(false)),
 		)),
-		genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRows"), id(rangeVar), id(blocksVar), id("$$nextItems"), id(keyOfVar), id(createVar), id(updateVar))),
+		genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(rangeVar), id(blocksVar), id("$$nextItems"), id(keyOfVar), id(createVar), id(updateVar))),
 	}
 	fn := name + "_update"
 	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
@@ -5400,7 +5407,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachComponent(block *EachBlockNode, comp
 	g.cleanup = append(g.cleanup,
 		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$component")}, Body: genBlock(genExprStmt(genCall(genMember(id("$$component"), "destroy"))))})),
 		genExprStmt(genCall(genMember(id(instancesVar), "clear"))),
-		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genExprStmt(genCall(genMember(id("$$row"), "remove"))))})),
+		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))))})),
 	)
 }
 

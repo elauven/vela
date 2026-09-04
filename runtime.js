@@ -656,7 +656,15 @@ export function $$adoptHydrationKeyedRowRanges(range, iterable, keyOf, markerID)
     if (data.startsWith('r:') && data.endsWith(suffix)) { if (start) throw new Error('Vela hydration mismatch: nested keyed row marker'); start = node; continue; }
     if (data.startsWith('/r:') && data.endsWith(suffix)) { if (!start) throw new Error('Vela hydration mismatch: unmatched keyed row marker'); rows.push({start, end: node}); start = null; }
   }
-  if (start || rows.length !== values.length) throw new Error(`Vela hydration mismatch: keyed row range count ${rows.length} does not match iterable length ${values.length}`);
+  if (start) throw new Error('Vela hydration mismatch: unmatched keyed row marker');
+  // Older SSR output predates row markers. Keep its single-element contract
+  // hydratable while all newly rendered keyed rows take the strict range path.
+  if (rows.length === 0) {
+    for (let node = range.start.nextSibling; node && node !== range.end; node = node.nextSibling) {
+      if (node.nodeType === 1 && !(String(node.tagName || '').toLowerCase() === 'script' && String(node.id || '').startsWith('vela-state-'))) rows.push({start: node, end: node});
+    }
+  }
+  if (rows.length !== values.length) throw new Error(`Vela hydration mismatch: keyed row range count ${rows.length} does not match iterable length ${values.length}`);
   const blocks = new Map();
   for (let index = 0; index < values.length; index++) { const key = keyOf(values[index], index); if (blocks.has(key)) throw new Error(`Vela hydration mismatch: duplicate keyed row ${String(key)}`); blocks.set(key, rows[index]); }
   return blocks;
