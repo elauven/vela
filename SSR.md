@@ -771,8 +771,10 @@ root nodes, a retained child receives a prop update, a new key creates only
 one CSR child, and destroying an orphan removes its `vela-state-*` payload.
 
 This remains intentionally narrower than final keyed component parity: slots,
-component events/bindings, several children per row, nested structural content,
-and Chromium identity/focus fixtures are still Phase 5 work.
+component events/bindings and nested structural content are still Phase 5 work.
+Direct source-ordered child chains and static siblings in a keyed row are
+already adopted through paired row-range markers and covered by Chromium
+identity, reorder, update, insertion, deletion, and payload-cleanup fixtures.
 
 A `{#key}` block now supports static siblings and multiple direct local child
 components with ordinary one-way props. Each hydrate entry receives the same
