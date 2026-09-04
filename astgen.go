@@ -5504,6 +5504,11 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		g.body = append(g.body, adopted.body...)
 		g.hydrationInitBody = append(g.hydrationInitBody, adopted.hydrationInitBody...)
 		plans[0].cleanup = append(plans[0].cleanup, adopted.cleanup...)
+		for dependency, statements := range adopted.updates {
+			for _, statement := range statements {
+				g.addUpdate(dependency, statement)
+			}
+		}
 	}
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.body = append(g.body,
