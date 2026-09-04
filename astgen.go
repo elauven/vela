@@ -1367,6 +1367,13 @@ func buildProgramWithDOMAcquirePlanAndHydration(
 		domAcquirePlan:      DOMAcquirePlan{Mode: mode},
 		hydrationStateInput: hydrationStateInput,
 	}
+	// Low-level callers used by DOM-acquire tests may select hydration mode
+	// without going through BuildSSRHydrationClientProgram. Preserve that
+	// constructor contract by providing the same immutable lifecycle ownership
+	// graph locally; the public SSR path still supplies its shared plan/index.
+	if mode == DOMAcquireHydrate {
+		g.hydrationLifecyclePlan = BuildSSRStructuralLifecyclePlan(nodes)
+	}
 	return g.buildModule(nodes), g.domAcquirePlan
 }
 
