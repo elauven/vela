@@ -5498,17 +5498,13 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	// recreating that same branch with CSR factories after a later promise
 	// replacement.
 	if pendingIf, ok := ssrHydrationPendingAwaitIfChain(block); ok {
-		adopted := g.captureScope(func() {
+		g.adoptHydrationPendingAwaitPlan(func() {
 			g.buildHydrationRootIfChain(pendingIf)
-		})
-		g.body = append(g.body, adopted.body...)
-		g.hydrationInitBody = append(g.hydrationInitBody, adopted.hydrationInitBody...)
-		plans[0].cleanup = append(plans[0].cleanup, adopted.cleanup...)
-		for dependency, statements := range adopted.updates {
-			for _, statement := range statements {
-				g.addUpdate(dependency, statement)
-			}
-		}
+		}, &plans[0])
+	} else if pendingEach, ok := ssrHydrationPendingAwaitEachBlock(block); ok {
+		g.adoptHydrationPendingAwaitPlan(func() {
+			g.buildHydrationRootEach(pendingEach)
+		}, &plans[0])
 	}
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.body = append(g.body,
@@ -5589,6 +5585,25 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	}
 	cleanup = append(cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 	g.cleanup = append(g.cleanup, cleanup...)
+}
+
+// adoptHydrationPendingAwaitPlan captures a structural pending lifecycle that
+// must adopt existing SSR DOM before the outer await begins driving promises.
+// Its declarations and hydration initialization remain component-scoped, while
+// its cleanup is explicitly owned by the pending await branch.
+func (g *ASTGen) adoptHydrationPendingAwaitPlan(build func(), plan *hydrationAwaitBranchPlan) {
+	if build == nil || plan == nil {
+		panic("vela: missing pending await adoption lifecycle")
+	}
+	adopted := g.captureScope(build)
+	g.body = append(g.body, adopted.body...)
+	g.hydrationInitBody = append(g.hydrationInitBody, adopted.hydrationInitBody...)
+	plan.cleanup = append(plan.cleanup, adopted.cleanup...)
+	for dependency, statements := range adopted.updates {
+		for _, statement := range statements {
+			g.addUpdate(dependency, statement)
+		}
+	}
 }
 
 type hydrationAwaitComponentHandle struct {

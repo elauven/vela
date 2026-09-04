@@ -645,7 +645,7 @@ func ssrCapabilityCurrentAwait(block *AwaitBlockNode) bool {
 		ssrCapabilityCurrentAwaitBranch(block.CatchChildren) {
 		return true
 	}
-	if _, ok := ssrHydrationPendingAwaitIfChain(block); ok &&
+	if ssrHydrationPendingAwaitStructural(block) &&
 		ssrCapabilityCurrentAwaitBranch(block.ThenChildren) &&
 		ssrCapabilityCurrentAwaitBranch(block.CatchChildren) {
 		return true
@@ -659,6 +659,28 @@ func ssrCapabilityCurrentAwait(block *AwaitBlockNode) bool {
 // whose direct child lifecycle is already supported by the #if hydrator.
 // The outer await owns that inner range while pending and disposes it before
 // removing the complete await range on settlement or promise replacement.
+func ssrHydrationPendingAwaitStructural(block *AwaitBlockNode) bool {
+	if _, ok := ssrHydrationPendingAwaitIfChain(block); ok {
+		return true
+	}
+	_, ok := ssrHydrationPendingAwaitEachBlock(block)
+	return ok
+}
+
+// ssrHydrationPendingAwaitEachBlock recognizes one direct list structural
+// branch. The normal each hydrator owns row adoption, child payload lookup,
+// row replacement, and child destruction; the outer await owns its lifetime.
+func ssrHydrationPendingAwaitEachBlock(block *AwaitBlockNode) (*EachBlockNode, bool) {
+	if block == nil || len(block.PendingChildren) != 1 {
+		return nil, false
+	}
+	each, ok := block.PendingChildren[0].(*EachBlockNode)
+	if !ok || each == nil || each.HasKey() || !ssrCapabilityCurrentEach(each) {
+		return nil, false
+	}
+	return each, true
+}
+
 func ssrHydrationPendingAwaitIfChain(block *AwaitBlockNode) (*IfChainNode, bool) {
 	if block == nil || len(block.PendingChildren) != 1 {
 		return nil, false
