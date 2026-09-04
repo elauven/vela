@@ -1595,11 +1595,17 @@ func TestBrowserSSRHydrationKeyedEachRetainsDirectChildInstances(t *testing.T) {
 	childScope := func(key string) string {
 		return "vela-parent--each-" + itoa(block.Span.Start) + "-" + key + "--" + suffix
 	}
+	rowScope := func(key string) string {
+		return "vela-parent--each-" + itoa(block.Span.Start) + "-" + key
+	}
 	childHTML := func(key, value string) string {
 		scope := childScope(key)
 		return "<!--e:" + scope + ":0--><p vela-child=\"\" class=\"child\" data-id=\"" + key + "\"><!--v:" + scope + ":0-->" + value + "<!--/v:" + scope + ":0--></p><!--/e:" + scope + ":0--><script type=\"application/json\" id=\"vela-state-" + scope + "\">{\"component\":\"" + scope + "\",\"props\":{\"Id\":\"" + key + "\",\"Value\":\"" + value + "\"},\"state\":{},\"incomplete\":false}</script>"
 	}
-	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(eachID) + "-->" + childHTML("a", "Alpha") + childHTML("b", "Beta") + "<!--/v:vela-parent:" + itoa(eachID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Rows\":[{\"id\":\"a\",\"value\":\"Alpha\"},{\"id\":\"b\",\"value\":\"Beta\"}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from './Parent.hydrate.js'; window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
+	rowHTML := func(key, value string) string {
+		return "<!--r:" + rowScope(key) + ":" + itoa(eachID) + "-->" + childHTML(key, value) + "<!--/r:" + rowScope(key) + ":" + itoa(eachID) + "-->"
+	}
+	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(eachID) + "-->" + rowHTML("a", "Alpha") + rowHTML("b", "Beta") + "<!--/v:vela-parent:" + itoa(eachID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Rows\":[{\"id\":\"a\",\"value\":\"Alpha\"},{\"id\":\"b\",\"value\":\"Beta\"}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from './Parent.hydrate.js'; window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
