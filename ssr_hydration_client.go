@@ -145,6 +145,9 @@ func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecycleP
 					}
 				}
 			}
+			for _, pending := range ssrHydrationPendingAwaitComponentPlans(current) {
+				aliases[pending.Component.Name] = "$$csr_" + sanitizeIdent(pending.Component.Name)
+			}
 		}
 		for _, child := range current.Children {
 			visit(child)
