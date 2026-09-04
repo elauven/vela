@@ -5349,13 +5349,20 @@ func (g *ASTGen) buildHydrationRootKeyedEachComponents(block *EachBlockNode, com
 		genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$start"))),
 		genConst("$$components", genArray()),
 	}
-	for index, current := range components {
+	componentIndex := 0
+	for _, child := range block.Children {
+		current, ok := child.(*ComponentNode)
+		if !ok || current == nil {
+			createBody = append(createBody, genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML([]Node{child}, g.scopeID)))))
+			continue
+		}
 		props := g.hydrationEachComponentProps(block, current, "$$item", "$$index")
-		instance := "$$component_" + itoa(index)
+		instance := "$$component_" + itoa(componentIndex)
 		createBody = append(createBody,
 			genConst(instance, genCall(id(g.hydrationCSRComponents[current.Name]), id("$$frag"), props, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
 			genExprStmt(genCall(genMember(id("$$components"), "push"), id(instance))),
 		)
+		componentIndex++
 	}
 	createBody = append(createBody,
 		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),

@@ -542,14 +542,19 @@ func ssrCapabilityCurrentKeyedEachComponents(block *EachBlockNode) ([]*Component
 		return nil, false
 	}
 	components := make([]*ComponentNode, 0, len(block.Children))
+	staticChildren := make([]Node, 0, len(block.Children))
 	for _, child := range block.Children {
 		component, ok := child.(*ComponentNode)
-		if !ok || component == nil || len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) {
+		if !ok || component == nil {
+			staticChildren = append(staticChildren, child)
+			continue
+		}
+		if len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) {
 			return nil, false
 		}
 		components = append(components, component)
 	}
-	return components, len(components) > 0
+	return components, len(components) > 0 && ssrCapabilityCurrentStaticChildren(staticChildren)
 }
 
 func ssrCapabilityCurrentUnkeyedEachComponents(block *EachBlockNode) ([]*ComponentNode, bool) {

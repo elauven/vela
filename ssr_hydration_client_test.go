@@ -1377,7 +1377,7 @@ func TestSSRHydrationKeyedEachRetainsDirectChildInstances(t *testing.T) {
 }
 
 func TestSSRHydrationKeyedEachOwnsChildChains(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Alpha } from "./Alpha.vela"; import { Beta } from "./Beta.vela"; export let rows = [];</script><template><main>{#each rows as row (row.id)}<Alpha :value={row.value} /><Beta :value={row.value} />{/each}</main></template>`)
+	sfc, err := parseSFC(`<script>import { Alpha } from "./Alpha.vela"; import { Beta } from "./Beta.vela"; export let rows = [];</script><template><main>{#each rows as row (row.id)}<p>before</p><Alpha :value={row.value} /><Beta :value={row.value} /><p>after</p>{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1391,6 +1391,7 @@ func TestSSRHydrationKeyedEachOwnsChildChains(t *testing.T) {
 	source := PrintJS(program, PrintPretty)
 	for _, want := range []string{
 		"$$component_0 = $$csr_Alpha", "$$component_1 = $$csr_Beta",
+		"before</p>", "after</p>",
 		"$$components[0].set({ value: $$item.value });", "$$components[1].set({ value: $$item.value });",
 		"$$components.push(Alpha($$root, null, $$instanceID + '--each-", "$$components.push(Beta($$root, null, $$instanceID + '--each-",
 	} {
