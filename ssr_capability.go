@@ -645,8 +645,32 @@ func ssrCapabilityCurrentAwait(block *AwaitBlockNode) bool {
 		ssrCapabilityCurrentAwaitBranch(block.CatchChildren) {
 		return true
 	}
+	if _, ok := ssrHydrationPendingAwaitIfChain(block); ok &&
+		ssrCapabilityCurrentAwaitBranch(block.ThenChildren) &&
+		ssrCapabilityCurrentAwaitBranch(block.CatchChildren) {
+		return true
+	}
 	_, ok := ssrCapabilityCurrentAwaitComponentBranches(block)
 	return ok
+}
+
+// ssrHydrationPendingAwaitIfChain recognizes the first recursive pending
+// adoption slice: the server-pending branch consists of one ordinary #if
+// whose direct child lifecycle is already supported by the #if hydrator.
+// The outer await owns that inner range while pending and disposes it before
+// removing the complete await range on settlement or promise replacement.
+func ssrHydrationPendingAwaitIfChain(block *AwaitBlockNode) (*IfChainNode, bool) {
+	if block == nil || len(block.PendingChildren) != 1 {
+		return nil, false
+	}
+	chain, ok := block.PendingChildren[0].(*IfChainNode)
+	if !ok || chain == nil || chain.HasKey() {
+		return nil, false
+	}
+	if _, _, ok := ssrCapabilityCurrentIfComponentBranch(chain); !ok {
+		return nil, false
+	}
+	return chain, true
 }
 
 // ssrCapabilityCurrentAwaitComponentBranches admits the first await child

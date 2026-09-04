@@ -868,12 +868,13 @@ func planWithoutIndex(indices []int, unwanted int) []int {
 // while the generator's component-scope buffers were redirected —
 // see captureScope.
 type capturedScope struct {
-	body     []JsStmt            // DOM construction
-	initBody []JsStmt            // initial-render statements
-	events   []JsStmt            // addEventListener calls
-	cleanup  []JsStmt            // teardown statements
-	updates  map[string][]JsStmt // reactive dep → update statements
-	comps    []compInstance      // component instances built here
+	body              []JsStmt            // DOM construction
+	initBody          []JsStmt            // initial-render statements
+	hydrationInitBody []JsStmt            // server-DOM adoption statements
+	events            []JsStmt            // addEventListener calls
+	cleanup           []JsStmt            // teardown statements
+	updates           map[string][]JsStmt // reactive dep → update statements
+	comps             []compInstance      // component instances built here
 
 	// fragHoisted carries declarations that must escape any
 	// enclosing branch-build closures to land at the top of the
@@ -905,6 +906,7 @@ type capturedScope struct {
 // the AST-side mechanism (E3.6).
 func (g *ASTGen) captureScope(fn func()) capturedScope {
 	saveBody, saveInit := g.body, g.initBody
+	saveHydrationInit := g.hydrationInitBody
 	saveEvents, saveCleanup := g.events, g.cleanup
 	saveUpdates := g.updates
 	saveComps := g.compInstances
@@ -919,6 +921,7 @@ func (g *ASTGen) captureScope(fn func()) capturedScope {
 	// partial state, masking the original failure.
 	defer func() {
 		g.body, g.initBody = saveBody, saveInit
+		g.hydrationInitBody = saveHydrationInit
 		g.events, g.cleanup = saveEvents, saveCleanup
 		g.updates = saveUpdates
 		g.compInstances = saveComps
@@ -927,6 +930,7 @@ func (g *ASTGen) captureScope(fn func()) capturedScope {
 	}()
 
 	g.body, g.initBody = nil, nil
+	g.hydrationInitBody = nil
 	g.events, g.cleanup = nil, nil
 	g.updates = map[string][]JsStmt{}
 	g.compInstances = nil
@@ -936,14 +940,15 @@ func (g *ASTGen) captureScope(fn func()) capturedScope {
 	fn()
 
 	return capturedScope{
-		body:            g.body,
-		initBody:        g.initBody,
-		events:          g.events,
-		cleanup:         g.cleanup,
-		updates:         g.updates,
-		comps:           g.compInstances,
-		fragHoisted:     g.fragHoisted,
-		nestedTeardowns: g.nestedTeardowns,
+		body:              g.body,
+		initBody:          g.initBody,
+		hydrationInitBody: g.hydrationInitBody,
+		events:            g.events,
+		cleanup:           g.cleanup,
+		updates:           g.updates,
+		comps:             g.compInstances,
+		fragHoisted:       g.fragHoisted,
+		nestedTeardowns:   g.nestedTeardowns,
 	}
 }
 
@@ -5486,6 +5491,20 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		g.buildHydrationAwaitBranch(block.ThenChildren, block.ValueName, valueVar, name+"_b1_frag", name+"_b1_mounted"),
 		g.buildHydrationAwaitBranch(block.CatchChildren, block.ErrorName, errorVar, name+"_b2_frag", name+"_b2_mounted"),
 	}
+	// The initial pending branch is already present in server DOM. For the
+	// narrow nested-if slice, build its marker-aware adoption lifecycle into
+	// a temporary scope, then give its destroy handles to the outer await
+	// range. The generic await branch builder above remains responsible for
+	// recreating that same branch with CSR factories after a later promise
+	// replacement.
+	if pendingIf, ok := ssrHydrationPendingAwaitIfChain(block); ok {
+		adopted := g.captureScope(func() {
+			g.buildHydrationRootIfChain(pendingIf)
+		})
+		g.body = append(g.body, adopted.body...)
+		g.hydrationInitBody = append(g.hydrationInitBody, adopted.hydrationInitBody...)
+		plans[0].cleanup = append(plans[0].cleanup, adopted.cleanup...)
+	}
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.body = append(g.body,
 		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
@@ -5803,8 +5822,10 @@ func (g *ASTGen) buildHydrationAwaitBranch(children []Node, bindingName, binding
 			)))
 		}
 		plan.cleanup = append(plan.cleanup, cap.nestedTeardowns...)
-		plan.build = append(plan.build, genAssignStmt(id(mountedVar), boolLit(true)))
-		plan.cleanup = append(plan.cleanup, genAssignStmt(id(mountedVar), boolLit(false)))
+		if mountedVar != "" {
+			plan.build = append(plan.build, genAssignStmt(id(mountedVar), boolLit(true)))
+			plan.cleanup = append(plan.cleanup, genAssignStmt(id(mountedVar), boolLit(false)))
+		}
 		for dep, statements := range cap.updates {
 			for _, statement := range statements {
 				g.addUpdate(dep, guardedTemplateStmt(statement, mountedVar))

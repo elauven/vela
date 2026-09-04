@@ -79,20 +79,13 @@ func TestSSRCapabilityReportsMostSpecificHydrationBoundary(t *testing.T) {
 	}
 }
 
-func TestSSRCapabilityRejectsPendingAwaitNestedChildUntilItOwnsPayload(t *testing.T) {
+func TestSSRCapabilityAdmitsPendingAwaitNestedIfChildLifecycle(t *testing.T) {
 	sfc, err := parseSFC(`<template><main>{#await request}{#if shown}<Child :title={title} />{:else}<p>Waiting</p>{/if}{:then value}<p>{value}</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	capability := AnalyzeSSRCapability(sfc.TemplateAST.Nodes)
-	if capability.ExecutableHydration() {
-		t.Fatal("pending nested child must not be executable before its range and payload are jointly adopted")
-	}
-	issue, ok := capability.FirstHydrationIssue()
-	if !ok || issue.NodeKind != "await" {
-		t.Fatalf("pending nested child issue=%#v, want await boundary", issue)
-	}
-	if !strings.Contains(issue.Reason, "recursive component and cleanup lifecycle") {
-		t.Fatalf("pending nested child reason=%q", issue.Reason)
+	if !capability.ExecutableHydration() {
+		t.Fatalf("pending nested child capability issues=%#v", capability.HydrationIssues())
 	}
 }
