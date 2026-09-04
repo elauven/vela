@@ -115,6 +115,9 @@ func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecycleP
 					aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
 				}
 			}
+			if component, ok := ssrHydrationDirectKeyComponent(current); ok {
+				aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
+			}
 		}
 		if current.Kind == SSRLifecyclePlanEach {
 			if component, ok := ssrHydrationDirectUnkeyedEachComponent(current); ok {
@@ -130,6 +133,17 @@ func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecycleP
 	}
 	visit(plan)
 	return aliases
+}
+
+func ssrHydrationDirectKeyComponent(plan *SSRStructuralLifecyclePlan) (*ComponentNode, bool) {
+	if plan == nil || plan.Kind != SSRLifecyclePlanIf {
+		return nil, false
+	}
+	chain, ok := plan.TemplateNode.(*IfChainNode)
+	if !ok || chain == nil {
+		return nil, false
+	}
+	return ssrCapabilityCurrentKeyComponent(chain)
 }
 
 // ssrHydrationDirectUnkeyedEachComponent reads the first component-row

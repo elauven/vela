@@ -774,6 +774,12 @@ This remains intentionally narrower than final keyed component parity: slots,
 component events/bindings, several children per row, nested structural content,
 and Chromium identity/focus fixtures are still Phase 5 work.
 
+A direct local child is now also supported inside a `#key` block. Its hydrate
+entry receives the same evaluated key namespace as Go SSR. Changing the key
+destroys the adopted child, removes its payload through the common destroy
+wrapper, and mounts one fresh CSR child into only the keyed range. Changing a
+one-way prop without changing the key retains the child and forwards `.set(...)`.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that

@@ -4780,6 +4780,10 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		return
 	}
 	if chain.HasKey() {
+		if component, ok := ssrHydrationDirectKeyComponent(g.hydrationLifecycleNode(SSRLifecyclePlanIf, chain.Span)); ok {
+			g.buildHydrationRootKeyComponent(chain, component)
+			return
+		}
 		g.buildHydrationRootKeyBlock(chain)
 		return
 	}
@@ -4843,6 +4847,75 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		}
 	}
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+}
+
+// buildHydrationRootKeyComponent adopts the server child owned by a #key
+// range. The cached key AST supplies the same runtime namespace used by Go
+// SSR; changing it destroys the old hydrated child and mounts one CSR child
+// into only that range.
+func (g *ASTGen) buildHydrationRootKeyComponent(chain *IfChainNode, component *ComponentNode) {
+	if chain == nil || component == nil || !chain.HasKey() {
+		panic("vela: missing key component lifecycle")
+	}
+	markerID := g.hydrationIfMarkerID(chain)
+	name := "$$hkey" + itoa(markerID)
+	rangeVar := name + "_range"
+	nodesVar := name + "_nodes"
+	keyVar := name + "_prev"
+	instanceVar := name + "_component"
+	csrFactory := g.hydrationCSRComponents[component.Name]
+	if csrFactory == "" {
+		panic("vela: missing key component CSR factory")
+	}
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.declareInScope(genLet(instanceVar, genNull()))
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+		genLet(keyVar, g.templateExpr(chain.KeyAST)),
+	)
+	g.hydrationInitBody = append(g.hydrationInitBody,
+		genAssignStmt(id(instanceVar), genMember(g.hydrationComponentCallAt(component, id("$$root"), nil, g.hydrationKeyInstanceScope(chain)), "component")),
+	)
+	propsExpr := g.componentPropsExpr(component.Attrs)
+	for _, attr := range component.Attrs {
+		for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+			g.addUpdate(dependency, genIf(id(instanceVar), genExprStmt(genCall(genMember(id(instanceVar), "set"), propsExpr))))
+		}
+	}
+	updateBody := []JsStmt{
+		genConst("$$key", g.templateExpr(chain.KeyAST)),
+		genIf(genBinary("===", id("$$key"), id(keyVar)), genReturn(nil)),
+		genIf(id(instanceVar), genBlock(
+			genExprStmt(genCall(genMember(id(instanceVar), "destroy"))),
+			genAssignStmt(id(instanceVar), genNull()),
+		)),
+		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
+		genAssignStmt(id(instanceVar), genCall(id(csrFactory), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
+		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
+		genAssignStmt(id(keyVar), id("$$key")),
+	}
+	fn := name + "_update"
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	for _, dependency := range templateExprDeps(chain.KeyAST, g.reactiveNames()) {
+		g.addStructuralUpdate(dependency, genInvoke(fn))
+	}
+	g.cleanup = append(g.cleanup,
+		genIf(id(instanceVar), genBlock(
+			genExprStmt(genCall(genMember(id(instanceVar), "destroy"))),
+			genAssignStmt(id(instanceVar), genNull()),
+		)),
+		genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)),
+	)
+}
+
+func (g *ASTGen) hydrationKeyInstanceScope(chain *IfChainNode) JsExpr {
+	return genBinary("+",
+		genBinary("+", id("$$instanceID"), strLit("--key-"+itoa(chain.Span.Start)+"-")),
+		genString(g.templateExpr(chain.KeyAST)),
+	)
 }
 
 // buildHydrationRootIfComponentChain owns a set of direct local children in

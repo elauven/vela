@@ -1349,6 +1349,32 @@ func TestSSRHydrationKeyedEachRetainsDirectChildInstances(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationKeyBlockAdoptsAndRemountsDirectChild(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let version = "a"; export let value = "server";</script><template><main>{#key version}<Child :value={value} />{/key}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("direct child in #key must be hydration-eligible")
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"let $$hkey0_component = null;",
+		"Child($$root, null, $$instanceID + '--key-",
+		"$$hkey0_component.set({ value: value });",
+		"$$hkey0_component.destroy();",
+		"$$csr_Child($$frag, { value: value }, {});",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("key child lifecycle misses %q:\\n%s", want, source)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationKeyedEachRetainsDirectChildInstances(t *testing.T) {
 	node := requirePlaywright(t)
 	childSFC, err := parseSFC(`<script>export let id = ""; export let value = "";</script><template><p class="child" :data-id={id}>{value}</p></template>`)

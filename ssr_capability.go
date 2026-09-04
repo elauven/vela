@@ -416,6 +416,9 @@ func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
 		return false
 	}
 	if chain.HasKey() {
+		if _, ok := ssrCapabilityCurrentKeyComponent(chain); ok {
+			return true
+		}
 		return len(chain.Branches) == 1 && !chain.Branches[0].HasCondition() && ssrCapabilityCurrentStaticChildren(chain.Branches[0].Children)
 	}
 	conditions := 0
@@ -428,6 +431,20 @@ func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
 		}
 	}
 	return conditions == 1
+}
+
+// ssrCapabilityCurrentKeyComponent accepts the first #key component
+// lifecycle slice. The key range owns exactly one direct local child; a key
+// transition destroys that instance and materializes one fresh CSR child.
+func ssrCapabilityCurrentKeyComponent(chain *IfChainNode) (*ComponentNode, bool) {
+	if chain == nil || !chain.HasKey() || len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() || len(chain.Branches[0].Children) != 1 {
+		return nil, false
+	}
+	component, ok := chain.Branches[0].Children[0].(*ComponentNode)
+	if !ok || component == nil || len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) {
+		return nil, false
+	}
+	return component, true
 }
 
 // ssrCapabilityCurrentIfComponentBranch recognizes the first structural-component
