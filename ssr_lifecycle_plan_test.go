@@ -78,6 +78,10 @@ func TestSSRHydrationPendingAwaitComponentsUsesTypedBranchPlan(t *testing.T) {
 	if len(components) != 2 || components[0].Name != "Child" || components[1].Name != "Child" {
 		t.Fatalf("pending components=%#v", components)
 	}
+	entries := ssrHydrationPendingAwaitComponentPlans(plan)
+	if len(entries) != 2 || entries[0].Component != components[0] || entries[0].Plan == nil || entries[0].Plan.InstancePath.Segments[len(entries[0].Plan.InstancePath.Segments)-1].Kind != SSRInstanceComponent {
+		t.Fatalf("pending component plans=%#v", entries)
+	}
 }
 
 func TestSSRStructuralLifecyclePlanFindsDynamicTextOwner(t *testing.T) {

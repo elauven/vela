@@ -197,6 +197,38 @@ func ssrHydrationPendingAwaitComponents(plan *SSRStructuralLifecyclePlan) []*Com
 	return components
 }
 
+// ssrHydrationPendingAwaitComponent describes one server-rendered pending
+// component boundary. The structural plan supplies ordering; the render plan
+// later supplies its static instance suffix and payload namespace.
+type ssrHydrationPendingAwaitComponent struct {
+	Component *ComponentNode
+	Plan      *SSRStructuralLifecyclePlan
+}
+
+func ssrHydrationPendingAwaitComponentPlans(plan *SSRStructuralLifecyclePlan) []ssrHydrationPendingAwaitComponent {
+	pending := plan.AwaitBranch(0)
+	if pending == nil {
+		return nil
+	}
+	var components []ssrHydrationPendingAwaitComponent
+	var visit func(*SSRStructuralLifecyclePlan)
+	visit = func(current *SSRStructuralLifecyclePlan) {
+		if current == nil {
+			return
+		}
+		if current.Kind == SSRLifecyclePlanComponent {
+			if component, ok := current.TemplateNode.(*ComponentNode); ok && component != nil {
+				components = append(components, ssrHydrationPendingAwaitComponent{Component: component, Plan: current})
+			}
+		}
+		for _, child := range current.Children {
+			visit(child)
+		}
+	}
+	visit(pending)
+	return components
+}
+
 func ssrHydrationDirectKeyComponents(plan *SSRStructuralLifecyclePlan) ([]*ComponentNode, bool) {
 	if plan == nil || plan.Kind != SSRLifecyclePlanIf {
 		return nil, false
