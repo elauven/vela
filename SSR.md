@@ -783,6 +783,10 @@ changing a one-way prop without changing the key retains every child and
 forwards `.set(...)`. Slots, component events/bindings, and nested structural
 content inside that keyed branch remain outside this slice.
 
+Chromium coverage verifies that a keyed chain adopts without initial DOM writes,
+forwards ordinary prop changes while retaining both child roots, and replaces
+the complete component/static-sibling branch only when the key changes.
+
 ### JavaScript and Browser API compatibility matrix
 
 `ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that
