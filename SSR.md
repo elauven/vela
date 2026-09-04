@@ -765,6 +765,11 @@ elements while excluding only `vela-state-*` payload scripts. Every executable
 hydrate entry also wraps `component.destroy()` to remove that instance's inert
 payload script, including when a structural parent owns teardown.
 
+Chromium coverage now verifies this lifecycle end-to-end: initial keyed child
+adoption produces zero mutations, reordering retains the exact hydrated child
+root nodes, a retained child receives a prop update, a new key creates only
+one CSR child, and destroying an orphan removes its `vela-state-*` payload.
+
 This remains intentionally narrower than final keyed component parity: slots,
 component events/bindings, several children per row, nested structural content,
 and Chromium identity/focus fixtures are still Phase 5 work.

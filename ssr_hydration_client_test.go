@@ -1349,6 +1349,140 @@ func TestSSRHydrationKeyedEachRetainsDirectChildInstances(t *testing.T) {
 	}
 }
 
+func TestBrowserSSRHydrationKeyedEachRetainsDirectChildInstances(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<script>export let id = ""; export let value = "";</script><template><p class="child" :data-id={id}>{value}</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis := analyzeScriptAST(childSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
+
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let rows = [];</script><template><main>{#each rows as row (row.id)}<Child :id={row.id} :value={row.value} />{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysis("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := parentSFC.TemplateAST.Nodes[0].(*ElementNode)
+	block := main.Children[0].(*EachBlockNode)
+	component := block.Children[0].(*ComponentNode)
+	identity := parentPlan.ComponentInstanceIdentities[component.Span]
+	suffix := ssrRuntimeComponentSuffix(identity)
+	eachID, ok := ssrHydrationMarkerIDs(parentPlan.Nodes).eachID(block.Span)
+	if !ok {
+		t.Fatal("parent each marker is missing")
+	}
+	childScope := func(key string) string {
+		return "vela-parent--each-" + itoa(block.Span.Start) + "-" + key + "--" + suffix
+	}
+	childHTML := func(key, value string) string {
+		scope := childScope(key)
+		return "<!--e:" + scope + ":0--><p vela-child=\"\" class=\"child\" data-id=\"" + key + "\"><!--v:" + scope + ":0-->" + value + "<!--/v:" + scope + ":0--></p><!--/e:" + scope + ":0--><script type=\"application/json\" id=\"vela-state-" + scope + "\">{\"component\":\"" + scope + "\",\"props\":{\"Id\":\"" + key + "\",\"Value\":\"" + value + "\"},\"state\":{},\"incomplete\":false}</script>"
+	}
+	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(eachID) + "-->" + childHTML("a", "Alpha") + childHTML("b", "Beta") + "<!--/v:vela-parent:" + itoa(eachID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Rows\":[{\"id\":\"a\",\"value\":\"Alpha\"},{\"id\":\"b\",\"value\":\"Beta\"}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from './Parent.hydrate.js'; window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":               embeddedRuntime,
+		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
+		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
+		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
+		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
+		"Parent.hydrate.js":        []byte(PrintJS(parentEntry, PrintPretty)),
+		"index.html":               []byte(serverHTML),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs = require('fs');
+const path = require('path');
+const http = require('http');
+const { chromium } = require('playwright');
+const root = process.argv[1];
+const server = http.createServer((req, res) => {
+  const name = req.url === '/' ? 'index.html' : req.url.slice(1);
+  try { const body = fs.readFileSync(path.join(root, name)); res.writeHead(200, {'content-type': name.endsWith('.js') ? 'text/javascript' : 'text/html'}).end(body); }
+  catch { res.writeHead(404).end(); }
+});
+server.listen(0, '127.0.0.1', async () => {
+  let browser;
+  try {
+    browser = await chromium.launch({headless:true});
+    const page = await browser.newPage();
+    page.setDefaultTimeout(5000);
+    await page.goto('http://127.0.0.1:' + server.address().port + '/');
+    await page.waitForFunction(() => window.__hydrated);
+    await page.evaluate(() => {
+      window.__a = document.querySelector('.child[data-id="a"]');
+      window.__b = document.querySelector('.child[data-id="b"]');
+      window.__hydrated.component.set({rows:[{id:'b',value:'Beta*'},{id:'a',value:'Alpha*'},{id:'c',value:'Gamma'}]});
+    });
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('.child')).map(node => node.dataset.id + ':' + node.textContent).join('|') === 'b:Beta*|a:Alpha*|c:Gamma');
+    await page.evaluate(() => { window.__retained = {
+      initial: window.__initialMutations,
+      a: document.querySelector('.child[data-id="a"]') === window.__a,
+      b: document.querySelector('.child[data-id="b"]') === window.__b,
+    }; });
+    await page.evaluate(() => window.__hydrated.component.set({rows:[{id:'b',value:'Beta final'}]}));
+    await page.waitForFunction(() => document.querySelectorAll('.child').length === 1 && document.querySelector('.child')?.textContent === 'Beta final');
+    const result = await page.evaluate(() => ({
+      initial: window.__retained.initial,
+      a: window.__retained.a,
+      b: window.__retained.b,
+      payloadA: !!document.getElementById('vela-state-' + window.__aScope),
+      payloadB: !!document.getElementById('vela-state-' + window.__bScope),
+    }));
+    if (result.initial !== 0 || !result.a || !result.b || result.payloadA || !result.payloadB) throw new Error(JSON.stringify(result));
+    process.stdout.write('OK');
+  } catch (error) {
+    console.error(error && error.stack || error);
+    process.exitCode = 1;
+  } finally {
+    await browser?.close();
+    server.close(() => process.exit());
+  }
+});`
+	// Pass the actual server namespaces through globals instead of duplicating
+	// their structural-path recipe inside the browser script.
+	serverHTML = strings.Replace(serverHTML, "window.__initialMutations", "window.__aScope='"+childScope("a")+"'; window.__bScope='"+childScope("b")+"'; window.__initialMutations", 1)
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte(serverHTML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(node, "-e", browserScript, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("keyed child browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(parentClient, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("keyed child browser fixture output=%q", got)
+	}
+}
+
 func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
