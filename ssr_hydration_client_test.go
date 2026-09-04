@@ -1375,6 +1375,44 @@ func TestSSRHydrationKeyBlockAdoptsAndRemountsDirectChild(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationKeyBlockOwnsChildChainInTemplateOrder(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Alpha } from "./Alpha.vela"; import { Beta } from "./Beta.vela"; export let version = "a"; export let title = "server";</script><template><main>{#key version}<p>before</p><Alpha :title={title} /><Beta :title={title} /><p>after</p>{/key}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("#key child chain with static siblings must be hydration-eligible")
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"let $$hkey0_component_0 = null;",
+		"let $$hkey0_component_1 = null;",
+		"Alpha($$root, null, $$instanceID + '--key-",
+		"Beta($$root, null, $$instanceID + '--key-",
+		"$$hkey0_component_0.set({ title: title });",
+		"$$hkey0_component_1.set({ title: title });",
+		"$$hkey0_component_1.destroy();",
+		"$$hkey0_component_0.destroy();",
+		"$$csr_Alpha($$frag, { title: title }, {});",
+		"$$csr_Beta($$frag, { title: title }, {});",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("key child chain lifecycle misses %q:\n%s", want, source)
+		}
+	}
+	before := strings.Index(source, "before</p>")
+	alpha := strings.Index(source, "$$csr_Alpha($$frag")
+	beta := strings.Index(source, "$$csr_Beta($$frag")
+	after := strings.Index(source, "after</p>")
+	if before < 0 || alpha < before || beta < alpha || after < beta {
+		t.Fatalf("key child chain does not preserve static/component source order:\n%s", source)
+	}
+}
+
 func TestBrowserSSRHydrationKeyedEachRetainsDirectChildInstances(t *testing.T) {
 	node := requirePlaywright(t)
 	childSFC, err := parseSFC(`<script>export let id = ""; export let value = "";</script><template><p class="child" :data-id={id}>{value}</p></template>`)

@@ -416,7 +416,7 @@ func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
 		return false
 	}
 	if chain.HasKey() {
-		if _, ok := ssrCapabilityCurrentKeyComponent(chain); ok {
+		if _, ok := ssrCapabilityCurrentKeyComponents(chain); ok {
 			return true
 		}
 		return len(chain.Branches) == 1 && !chain.Branches[0].HasCondition() && ssrCapabilityCurrentStaticChildren(chain.Branches[0].Children)
@@ -433,18 +433,32 @@ func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
 	return conditions == 1
 }
 
-// ssrCapabilityCurrentKeyComponent accepts the first #key component
-// lifecycle slice. The key range owns exactly one direct local child; a key
-// transition destroys that instance and materializes one fresh CSR child.
-func ssrCapabilityCurrentKeyComponent(chain *IfChainNode) (*ComponentNode, bool) {
-	if chain == nil || !chain.HasKey() || len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() || len(chain.Branches[0].Children) != 1 {
+// ssrCapabilityCurrentKeyComponents recognizes the component-owned #key
+// lifecycle slice. The keyed range may contain static siblings and any number
+// of direct local children. A key transition disposes every owned child before
+// rebuilding the complete branch through ordinary CSR factories.
+func ssrCapabilityCurrentKeyComponents(chain *IfChainNode) ([]*ComponentNode, bool) {
+	if chain == nil || !chain.HasKey() || len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() {
 		return nil, false
 	}
-	component, ok := chain.Branches[0].Children[0].(*ComponentNode)
-	if !ok || component == nil || len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) {
+	branch := chain.Branches[0]
+	components := make([]*ComponentNode, 0, len(branch.Children))
+	staticChildren := make([]Node, 0, len(branch.Children))
+	for _, child := range branch.Children {
+		component, ok := child.(*ComponentNode)
+		if !ok || component == nil {
+			staticChildren = append(staticChildren, child)
+			continue
+		}
+		if len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) {
+			return nil, false
+		}
+		components = append(components, component)
+	}
+	if len(components) == 0 || !ssrCapabilityCurrentStaticChildren(staticChildren) {
 		return nil, false
 	}
-	return component, true
+	return components, true
 }
 
 // ssrCapabilityCurrentIfComponentBranch recognizes the first structural-component
