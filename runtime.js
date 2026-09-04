@@ -642,6 +642,64 @@ export function $$adoptHydrationKeyedRows(range, iterable, keyOf, tag) {
   return blocks;
 }
 
+// $$adoptHydrationKeyedRowRanges is the multi-root successor to element-row
+// adoption. SSR emits r markers around every keyed iteration, so static
+// siblings, several child roots, and payload scripts move as one row without
+// a synthetic wrapper element.
+export function $$adoptHydrationKeyedRowRanges(range, iterable, keyOf, markerID) {
+  if (!range?.start || !range?.end || typeof keyOf !== 'function') throw new Error('Vela hydration mismatch: invalid keyed row range adoption');
+  const values = Array.from(iterable || []), rows = [], suffix = ':' + String(markerID);
+  let start = null;
+  for (let node = range.start.nextSibling; node && node !== range.end; node = node.nextSibling) {
+    if (node.nodeType !== 8) continue;
+    const data = String(node.data || '');
+    if (data.startsWith('r:') && data.endsWith(suffix)) { if (start) throw new Error('Vela hydration mismatch: nested keyed row marker'); start = node; continue; }
+    if (data.startsWith('/r:') && data.endsWith(suffix)) { if (!start) throw new Error('Vela hydration mismatch: unmatched keyed row marker'); rows.push({start, end: node}); start = null; }
+  }
+  if (start || rows.length !== values.length) throw new Error(`Vela hydration mismatch: keyed row range count ${rows.length} does not match iterable length ${values.length}`);
+  const blocks = new Map();
+  for (let index = 0; index < values.length; index++) { const key = keyOf(values[index], index); if (blocks.has(key)) throw new Error(`Vela hydration mismatch: duplicate keyed row ${String(key)}`); blocks.set(key, rows[index]); }
+  return blocks;
+}
+
+export function $$moveHydrationKeyedRowRange(end, row) {
+  if (!end || !row?.start || !row?.end) throw new Error('Vela hydration mismatch: invalid keyed row range');
+  const nodes = [];
+  for (let node = row.start; node; node = node.nextSibling) { nodes.push(node); if (node === row.end) break; }
+  if (nodes[nodes.length - 1] !== row.end) throw new Error('Vela hydration mismatch: detached keyed row range');
+  for (const node of nodes) end.before(node);
+}
+
+export function $$removeHydrationKeyedRowRange(row) {
+  if (!row?.start || !row?.end) throw new Error('Vela hydration mismatch: invalid keyed row range');
+  for (let node = row.start; node;) {
+    const next = node.nextSibling;
+    node.remove();
+    if (node === row.end) return;
+    node = next;
+  }
+  throw new Error('Vela hydration mismatch: detached keyed row range');
+}
+
+// $$reconcileHydrationKeyedRowRanges is the range-aware counterpart of the
+// legacy element reconciler. `create` returns {start,end}; range boundaries
+// travel with every child root and inert payload script as one keyed row.
+export function $$reconcileHydrationKeyedRowRanges(range, blocks, iterable, keyOf, create, update) {
+  if (!range?.end || !(blocks instanceof Map) || typeof keyOf !== 'function' || typeof create !== 'function') throw new Error('Vela hydration mismatch: invalid keyed row range reconciliation inputs');
+  const next = new Map(); let index = 0;
+  for (const item of iterable || []) {
+    const key = keyOf(item, index);
+    if (next.has(key)) throw new Error(`Vela keyed update has duplicate key ${String(key)}`);
+    let row = blocks.get(key);
+    if (row) { if (typeof update === 'function') update(row, item, index); }
+    else row = create(item, index);
+    $$moveHydrationKeyedRowRange(range.end, row);
+    next.set(key, row); index++;
+  }
+  for (const [key, row] of blocks) if (!next.has(key)) $$removeHydrationKeyedRowRange(row);
+  return next;
+}
+
 // $$clearHydrationKeyedRowMarkers removes only direct compiler element
 // markers around adopted keyed rows. It is called immediately before the
 // first keyed update, never during hydration, so initial SSR DOM remains

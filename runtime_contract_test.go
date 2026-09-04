@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$reconcileHydrationKeyedRows, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
+const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$reconcileHydrationKeyedRows, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -217,6 +217,13 @@ assert(keyed.get('a') === keyedOne && keyed.get('b') === keyedTwo,
 const componentRows = $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }, { id: 'b' }], item => item.id, '');
 assert(componentRows.get('a') === keyedOne && componentRows.get('b') === keyedTwo,
   'keyed component adoption must accept capability-checked direct roots without a parent-visible tag');
+const rowStartA = marker('r:vela-test--each-4-a:4'), rowEndA = marker('/r:vela-test--each-4-a:4');
+const rowStartB = marker('r:vela-test--each-4-b:4'), rowEndB = marker('/r:vela-test--each-4-b:4');
+rowStartA.nodeType = rowEndA.nodeType = rowStartB.nodeType = rowEndB.nodeType = 8;
+keyedStart.nextSibling = rowStartA; rowStartA.nextSibling = keyedOne; keyedOne.nextSibling = rowEndA; rowEndA.nextSibling = rowStartB; rowStartB.nextSibling = keyedTwo; keyedTwo.nextSibling = rowEndB; rowEndB.nextSibling = keyedEnd;
+const rowRanges = $$adoptHydrationKeyedRowRanges({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }, { id: 'b' }], item => item.id, 4);
+assert(rowRanges.get('a').start === rowStartA && rowRanges.get('b').end === rowEndB,
+  'keyed row-range adoption must retain paired SSR boundaries by initial key');
 mismatch = undefined;
 try { $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }], item => item.id, 'li'); }
 catch (error) { mismatch = error; }
