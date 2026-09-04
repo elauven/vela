@@ -441,6 +441,30 @@ func TestBuildSSRGoFileEmitsPairedMarkersForDynamicRanges(t *testing.T) {
 	}
 }
 
+func TestBuildSSRGoFileEmitsPairedMarkersForKeyedEachRows(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let items=[];</script><template><main>{#each items as item (item)}<p>{item}</p>{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"<!--r:"+(instanceID+"--each-`, `"<!--/r:"+(instanceID+"--each-`} {
+		if !strings.Contains(string(source), want) {
+			t.Fatalf("keyed row marker missing %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestBuildSSRGoFileRejectsAwaitWithoutPending(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request=null;</script><template>{#await request then value}<p>{value}</p>{/await}</template>`)
 	if err != nil {

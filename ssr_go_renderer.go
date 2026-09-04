@@ -646,6 +646,9 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+	if node.Key != nil && node.DynamicID >= 0 {
+		children = append([]goast.Stmt{child.rowMarkerStart(node.DynamicID)}, append(children, child.rowMarkerEnd(node.DynamicID))...)
+	}
 	e.eachNext = child.eachNext
 	e.needsEscaping = e.needsEscaping || child.needsEscaping
 	rangeStmt := &goast.RangeStmt{
@@ -757,6 +760,18 @@ func (e *ssrGoEmitter) elementMarkerStart(id int) goast.Stmt {
 
 func (e *ssrGoEmitter) elementMarkerEnd(id int) goast.Stmt {
 	return goWriteSSRValue(e.markerValue("<!--/e:", ":"+itoa(id)+"-->"))
+}
+
+// Keyed rows need an ownership boundary distinct from element markers: one
+// logical row may contain static siblings, child roots, and payload scripts.
+// The comments stay inside the enclosing each range and are intentionally
+// scope-qualified like every other SSR marker.
+func (e *ssrGoEmitter) rowMarkerStart(id int) goast.Stmt {
+	return goWriteSSRValue(e.markerValue("<!--r:", ":"+itoa(id)+"-->"))
+}
+
+func (e *ssrGoEmitter) rowMarkerEnd(id int) goast.Stmt {
+	return goWriteSSRValue(e.markerValue("<!--/r:", ":"+itoa(id)+"-->"))
 }
 
 func (e *ssrGoEmitter) markerValue(prefix, suffix string) goast.Expr {
