@@ -1064,7 +1064,7 @@ func templateExprIsHandler(expr *TemplateExpr) bool {
 }
 
 func (g *ASTGen) templateExpr(expr *TemplateExpr) JsExpr {
-	root := templateExprRoot(expr)
+	root := cloneJsExpr(templateExprRoot(expr))
 	if root == nil {
 		return id("undefined")
 	}
