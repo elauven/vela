@@ -593,6 +593,9 @@ func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
 	if block == nil {
 		return false
 	}
+	if _, _, _, ok := ssrHydrationEachNestedIfComponentRow(block); ok {
+		return ssrCapabilityCurrentStaticChildren(block.ElseChildren)
+	}
 	if block.HasKey() {
 		if _, ok := ssrCapabilityCurrentKeyedEachComponents(block); ok {
 			return len(block.ElseChildren) == 0
@@ -651,6 +654,30 @@ func ssrCapabilityCurrentUnkeyedEachComponents(block *EachBlockNode) ([]*Compone
 		components = append(components, component)
 	}
 	return components, len(components) > 0 && ssrCapabilityCurrentStaticChildren(staticChildren)
+}
+
+// ssrHydrationEachNestedIfComponentRow recognizes the first per-row
+// structural-child slice: an unkeyed row contains one ordinary #if whose
+// component branch contains exactly one direct child. The unkeyed row owner
+// may replace its complete range on change, so this preserves correct child
+// ownership before row-local marker reconciliation is introduced.
+func ssrHydrationEachNestedIfComponentRow(block *EachBlockNode) (*IfChainNode, *ComponentNode, int, bool) {
+	if block == nil || block.HasKey() || len(block.Children) != 1 {
+		return nil, nil, 0, false
+	}
+	chain, ok := block.Children[0].(*IfChainNode)
+	if !ok || chain == nil || chain.HasKey() {
+		return nil, nil, 0, false
+	}
+	components, componentIndex, ok := ssrCapabilityCurrentIfComponentBranch(chain)
+	if !ok || len(components) != 1 || componentIndex < 0 || componentIndex >= len(chain.Branches) {
+		return nil, nil, 0, false
+	}
+	branch := chain.Branches[componentIndex]
+	if branch == nil || len(branch.Children) != 1 || branch.Children[0] != components[0] {
+		return nil, nil, 0, false
+	}
+	return chain, components[0], componentIndex, true
 }
 
 // ssrCapabilityCurrentEachComponentRow is the first list-child lifecycle
