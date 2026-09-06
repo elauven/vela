@@ -454,6 +454,9 @@ func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
 	if _, _, ok := ssrHydrationIfNestedEachBranch(chain); ok {
 		return true
 	}
+	if _, _, ok := ssrHydrationIfNestedAwaitBranch(chain); ok {
+		return true
+	}
 	if chain == nil || len(chain.Branches) == 0 || len(chain.Branches) > 2 {
 		return false
 	}
@@ -578,6 +581,39 @@ func ssrHydrationIfNestedEachBranch(chain *IfChainNode) (*EachBlockNode, int, bo
 		}
 	}
 	return each, eachIndex, each != nil && conditions == 1
+}
+
+// ssrHydrationIfNestedAwaitBranch recognizes a normal two-branch #if whose
+// one structural branch is an await block. The sibling branch stays static;
+// the await lowerer retains ownership of pending, settled, and child cleanup.
+func ssrHydrationIfNestedAwaitBranch(chain *IfChainNode) (*AwaitBlockNode, int, bool) {
+	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 || len(chain.Branches) > 2 {
+		return nil, 0, false
+	}
+	conditions := 0
+	awaitIndex := -1
+	var block *AwaitBlockNode
+	for index, branch := range chain.Branches {
+		if branch == nil {
+			return nil, 0, false
+		}
+		if branch.HasCondition() {
+			conditions++
+		}
+		if len(branch.Children) == 1 {
+			if candidate, ok := branch.Children[0].(*AwaitBlockNode); ok && ssrCapabilityCurrentAwait(candidate) {
+				if block != nil {
+					return nil, 0, false
+				}
+				block, awaitIndex = candidate, index
+				continue
+			}
+		}
+		if !ssrCapabilityCurrentStaticChildren(branch.Children) {
+			return nil, 0, false
+		}
+	}
+	return block, awaitIndex, block != nil && conditions == 1
 }
 
 func ssrCapabilityCurrentStructuralComponentAttrs(component *ComponentNode) bool {

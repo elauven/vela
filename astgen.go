@@ -4818,6 +4818,10 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		g.buildHydrationRootIfNestedEachChain(chain, each, eachIndex)
 		return
 	}
+	if await, awaitIndex, ok := ssrHydrationIfNestedAwaitBranch(chain); ok {
+		g.buildHydrationRootIfNestedAwaitChain(chain, await, awaitIndex)
+		return
+	}
 	markerID := g.hydrationIfMarkerID(chain)
 
 	name := "$$hif" + itoa(markerID)
@@ -4876,13 +4880,25 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 }
 
-// buildHydrationRootIfNestedEachChain composes the initial marker-aware #each
-// adoption with its parent conditional. SSR DOM stays untouched during setup;
-// on a branch transition the conditional runs the inner ownership cleanup before
-// removing its range, while a later return creates a fresh CSR list branch.
+// buildHydrationRootIfNestedEachChain composes an inner list lifecycle with
+// its parent conditional.
 func (g *ASTGen) buildHydrationRootIfNestedEachChain(chain *IfChainNode, each *EachBlockNode, eachIndex int) {
-	if chain == nil || each == nil || eachIndex < 0 || eachIndex >= len(chain.Branches) {
-		panic("vela: missing nested if each hydration lifecycle")
+	g.buildHydrationRootIfNestedStructuralChain(chain, eachIndex, g.hydrationLifecycleNode(SSRLifecyclePlanEach, each.Span), func() { g.buildHydrationRootEach(each) })
+}
+
+// buildHydrationRootIfNestedAwaitChain composes an inner await lifecycle with
+// its parent conditional.
+func (g *ASTGen) buildHydrationRootIfNestedAwaitChain(chain *IfChainNode, block *AwaitBlockNode, awaitIndex int) {
+	g.buildHydrationRootIfNestedStructuralChain(chain, awaitIndex, g.hydrationLifecycleNode(SSRLifecyclePlanAwait, block.Span), func() { g.buildHydrationRootAwait(block) })
+}
+
+// buildHydrationRootIfNestedStructuralChain transfers one initial SSR-owned
+// structural child into a normal conditional. It separates its initial
+// adoption from the CSR branch re-entry plan, so callers can compose #each,
+// #await, and later structural kinds without falling back to static HTML.
+func (g *ASTGen) buildHydrationRootIfNestedStructuralChain(chain *IfChainNode, structuralIndex int, lifecycle *SSRStructuralLifecyclePlan, build func()) {
+	if chain == nil || lifecycle == nil || build == nil || structuralIndex < 0 || structuralIndex >= len(chain.Branches) {
+		panic("vela: missing nested if structural hydration lifecycle")
 	}
 	markerID := g.hydrationIfMarkerID(chain)
 	name := "$$hif" + itoa(markerID)
@@ -4899,11 +4915,11 @@ func (g *ASTGen) buildHydrationRootIfNestedEachChain(chain *IfChainNode, each *E
 		plans[index] = g.buildHydrationAwaitBranch(branch.Children, "", "", name+"_b"+itoa(index)+"_frag", name+"_b"+itoa(index)+"_mounted")
 	}
 	adapter := g.captureHydrationStructuralAdapter(
-		g.hydrationLifecycleNode(SSRLifecyclePlanEach, each.Span),
-		plans[eachIndex],
-		func() { g.buildHydrationRootEach(each) },
+		lifecycle,
+		plans[structuralIndex],
+		build,
 	)
-	g.installHydrationStructuralAdapter(adapter, &plans[eachIndex])
+	g.installHydrationStructuralAdapter(adapter, &plans[structuralIndex])
 
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.body = append(g.body,
