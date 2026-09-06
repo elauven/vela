@@ -339,6 +339,10 @@ type ASTGen struct {
 	// hydrationComponentInstanceIdentities complements static suffixes for
 	// #each/#key children, whose final scope also contains a runtime value.
 	hydrationComponentInstanceIdentities map[SectionSpan]SSRComponentInstanceIdentity
+	// hydrationComponentScope temporarily overrides the parent scope used by
+	// hydrate entries while lowering a child of a runtime structural owner.
+	// It keeps SSR payload lookup aligned with #key/#each instance identities.
+	hydrationComponentScope JsExpr
 
 	// counter backs id() — the deterministic $$nN naming used for
 	// DOM-node variables.  Mirrors the legacy CodeGen.counter so
@@ -5087,6 +5091,13 @@ func (g *ASTGen) buildHydrationRootKeyComponents(chain *IfChainNode, components 
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 }
 
+func (g *ASTGen) withHydrationComponentScope(scope JsExpr, build func()) {
+	previous := g.hydrationComponentScope
+	g.hydrationComponentScope = scope
+	defer func() { g.hydrationComponentScope = previous }()
+	build()
+}
+
 func (g *ASTGen) hydrationKeyInstanceScope(chain *IfChainNode) JsExpr {
 	return genBinary("+",
 		genBinary("+", id("$$instanceID"), strLit("--key-"+itoa(chain.Span.Start)+"-")),
@@ -5264,7 +5275,9 @@ func (g *ASTGen) buildHydrationRootKeyNestedStructuralChain(chain *IfChainNode, 
 	nodesVar := name + "_nodes"
 	keyVar := name + "_prev"
 	branch := g.buildHydrationAwaitBranch(chain.Branches[0].Children, "", "", name+"_frag", name+"_mounted")
-	adapter := g.captureHydrationStructuralAdapter(lifecycle, branch, build)
+	adapter := g.captureHydrationStructuralAdapter(lifecycle, branch, func() {
+		g.withHydrationComponentScope(g.hydrationKeyInstanceScope(chain), build)
+	})
 	g.installHydrationStructuralAdapter(adapter, &branch)
 
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
@@ -6938,7 +6951,11 @@ func (g *ASTGen) buildHydrationComponentNode(comp *ComponentNode, parentVar stri
 // entry calls for ordinary children. Repeated static bindings additionally
 // receive the parent runtime scope plus their structural suffix.
 func (g *ASTGen) hydrationComponentCall(comp *ComponentNode, parent JsExpr, overrides JsExpr) JsExpr {
-	return g.hydrationComponentCallAt(comp, parent, overrides, id("$$instanceID"))
+	scope := JsExpr(id("$$instanceID"))
+	if g.hydrationComponentScope != nil {
+		scope = g.hydrationComponentScope
+	}
+	return g.hydrationComponentCallAt(comp, parent, overrides, scope)
 }
 
 func (g *ASTGen) hydrationComponentCallAt(comp *ComponentNode, parent JsExpr, overrides, instanceScope JsExpr) JsExpr {
