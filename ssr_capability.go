@@ -640,6 +640,9 @@ func ssrCapabilityCurrentStructuralComponentAttrs(component *ComponentNode) bool
 }
 
 func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
+	if _, _, ok := ssrHydrationEachNestedAwaitComponentRow(block); ok {
+		return ssrCapabilityCurrentStaticChildren(block.ElseChildren)
+	}
 	if block == nil {
 		return false
 	}
@@ -713,6 +716,34 @@ func ssrCapabilityCurrentUnkeyedEachComponents(block *EachBlockNode) ([]*Compone
 		components = append(components, component)
 	}
 	return components, len(components) > 0 && ssrCapabilityCurrentStaticChildren(staticChildren)
+}
+
+// ssrHydrationEachNestedAwaitComponentRow recognizes the first inverse await
+// slice: one unkeyed row owns one await whose pending branch has a direct local
+// child. The promise must not depend on the row binding, so one shared driver
+// can retain every SSR pending child and rebuild the outer range coherently.
+func ssrHydrationEachNestedAwaitComponentRow(block *EachBlockNode) (*AwaitBlockNode, *ComponentNode, bool) {
+	if block == nil || block.HasKey() || len(block.Children) != 1 {
+		return nil, nil, false
+	}
+	await, ok := block.Children[0].(*AwaitBlockNode)
+	if !ok || await == nil || len(await.PendingChildren) != 1 || !ssrCapabilityCurrentStaticChildren(await.ThenChildren) || !ssrCapabilityCurrentStaticChildren(await.CatchChildren) {
+		return nil, nil, false
+	}
+	component, ok := await.PendingChildren[0].(*ComponentNode)
+	if !ok || component == nil || len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) || ssrTemplateExprReferencesBinding(await.Expr, block.ItemName) || ssrTemplateExprReferencesBinding(await.Expr, block.IndexName) {
+		return nil, nil, false
+	}
+	return await, component, true
+}
+
+func ssrTemplateExprReferencesBinding(expr *TemplateExpr, name string) bool {
+	if expr == nil || expr.Program == nil || name == "" {
+		return false
+	}
+	found := false
+	visitItemRefs(expr.Program, name, func(*JsIdent) { found = true })
+	return found
 }
 
 // ssrHydrationEachNestedKeyComponentRow recognizes one direct #key per

@@ -5376,6 +5376,10 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 		g.buildHydrationRootKeyedEach(block)
 		return
 	}
+	if await, component, ok := ssrHydrationEachNestedAwaitComponentRow(block); ok {
+		g.buildHydrationRootEachNestedAwaitComponentRow(block, await, component)
+		return
+	}
 	if components, ok := ssrHydrationDirectUnkeyedEachComponents(g.hydrationLifecycleNode(SSRLifecyclePlanEach, block.Span)); ok {
 		g.buildHydrationRootEachComponents(block, components)
 		return
@@ -5424,6 +5428,131 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+}
+
+// buildHydrationRootEachNestedAwaitComponentRow retains the pending child for
+// every unkeyed SSR row. A row does not yet own an independent await range,
+// therefore any list or promise transition replaces the outer range exactly
+// once. The shared-promise restriction is enforced by the capability gate.
+func (g *ASTGen) buildHydrationRootEachNestedAwaitComponentRow(block *EachBlockNode, await *AwaitBlockNode, component *ComponentNode) {
+	if block == nil || await == nil || component == nil {
+		panic("vela: missing nested each await component lifecycle")
+	}
+	csrFactory := g.hydrationCSRComponents[component.Name]
+	if csrFactory == "" {
+		panic("vela: missing nested each await component CSR factory")
+	}
+	markerID := g.hydrationEachMarkerID(block)
+	name := "$$heach" + itoa(markerID)
+	rangeVar := name + "_range"
+	nodesVar := name + "_nodes"
+	instancesVar := name + "_components"
+	itemsVar := name + "_items"
+	indexVar := name + "_index"
+	stateVar := name + "_state"
+	cellVar := name + "_cell"
+	aliveVar := name + "_alive"
+	initialVar := name + "_initial"
+	queuedVar := name + "_queued"
+	renderVar := name + "_render"
+	driverVar := name + "_drive"
+	scheduleVar := name + "_schedule"
+	propsFor := func(itemVar, currentIndex string) JsExpr {
+		return g.hydrationEachComponentProps(block, component, itemVar, currentIndex)
+	}
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+		genLet(instancesVar, genArray()),
+		genConst(itemsVar, g.templateExpr(block.IterExpr)),
+		genLet(indexVar, numLit(0)),
+		genLet(stateVar, numLit(0)),
+		genLet(cellVar, genNull()),
+		genLet(aliveVar, boolLit(true)),
+		genLet(initialVar, boolLit(true)),
+		genLet(queuedVar, boolLit(false)),
+	)
+	initialScope := g.hydrationEachInstanceScope(block, id(indexVar))
+	g.hydrationInitBody = append(g.hydrationInitBody, genForOf("$$item", id(itemsVar), genBlock(
+		genExprStmt(genCall(genMember(id(instancesVar), "push"), genMember(g.hydrationComponentCallAt(component, id("$$root"), nil, initialScope), "component"))),
+		genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))),
+	)))
+	renderBody := []JsStmt{
+		genForOf("$$component", id(instancesVar), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
+		genAssignStmt(id(instancesVar), genArray()),
+		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
+		genConst(itemsVar, g.templateExpr(block.IterExpr)),
+		genLet(indexVar, numLit(0)),
+	}
+	pendingMount := genForOf("$$item", id(itemsVar), genBlock(
+		genConst("$$component", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", indexVar), &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+		genExprStmt(genCall(genMember(id(instancesVar), "push"), id("$$component"))),
+		genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))),
+	))
+	renderBody = append(renderBody, genIf(genBinary("===", id(stateVar), numLit(0)), pendingMount))
+	if len(await.ThenChildren) > 0 {
+		renderBody = append(renderBody, genIf(genBinary("===", id(stateVar), numLit(1)), genForOf("$$item", id(itemsVar), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(await.ThenChildren, g.scopeID)))))))
+	}
+	if len(await.CatchChildren) > 0 {
+		renderBody = append(renderBody, genIf(genBinary("===", id(stateVar), numLit(2)), genForOf("$$item", id(itemsVar), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(await.CatchChildren, g.scopeID)))))))
+	}
+	if len(block.ElseChildren) > 0 {
+		renderBody = append(renderBody, genIf(genBinary("===", genMember(id(itemsVar), "length"), numLit(0)), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(block.ElseChildren, g.scopeID))))))
+	}
+	renderBody = append(renderBody,
+		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
+		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
+	)
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: renderVar, Body: genBlock(renderBody...)})
+	settle := func(state int) JsExpr {
+		return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$value")}, Body: genBlock(
+			genIf(genLogical("||", genUnary("!", id(aliveVar)), genBinary("!==", id(cellVar), id("$$p"))), genReturn(nil)),
+			genAssignStmt(id(stateVar), numLit(state)),
+			genInvoke(renderVar),
+		)}
+	}
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: driverVar, Body: genBlock(
+		genConst("$$p", genCall(genMember(id("Promise"), "resolve"), g.templateExpr(await.Expr))),
+		genIf(genBinary("===", id(cellVar), id("$$p")), genReturn(boolLit(false))),
+		genAssignStmt(id(cellVar), id("$$p")),
+		genAssignStmt(id(stateVar), numLit(0)),
+		genIf(genUnary("!", id(initialVar)), genInvoke(renderVar)),
+		genExprStmt(genCall(genMember(id("$$p"), "then"), settle(1), settle(2))),
+		genReturn(boolLit(true)),
+	)})
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: scheduleVar, Body: genBlock(
+		genIf(genLogical("||", genUnary("!", id(aliveVar)), id(queuedVar)), genReturn(nil)),
+		genAssignStmt(id(queuedVar), boolLit(true)),
+		genExprStmt(genCall(id("queueMicrotask"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genAssignStmt(id(queuedVar), boolLit(false)),
+			genIf(genUnary("!", id(aliveVar)), genReturn(nil)),
+			genIf(genUnary("!", genCall(id(driverVar))), genInvoke(renderVar)),
+		)})),
+	)})
+	g.hydrationInitBody = append(g.hydrationInitBody, genInvoke(driverVar), genAssignStmt(id(initialVar), boolLit(false)))
+	deps := map[string]bool{}
+	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
+		deps[dependency] = true
+	}
+	for _, dependency := range templateExprDeps(await.Expr, g.reactiveNames()) {
+		deps[dependency] = true
+	}
+	for _, attr := range component.Attrs {
+		for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+			deps[dependency] = true
+		}
+	}
+	for dependency := range deps {
+		g.addStructuralUpdate(dependency, genInvoke(scheduleVar))
+	}
+	g.cleanup = append(g.cleanup,
+		genAssignStmt(id(aliveVar), boolLit(false)),
+		genForOf("$$component", id(instancesVar), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
+		genAssignStmt(id(instancesVar), genArray()),
+		genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)),
+	)
 }
 
 // buildHydrationRootEachComponents adopts a source-ordered direct child chain per unkeyed

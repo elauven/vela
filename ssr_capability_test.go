@@ -28,6 +28,41 @@ func TestAnalyzeSSRCapabilityMirrorsCurrentHydrationSubset(t *testing.T) {
 	}
 }
 
+func TestSSRCapabilityAdmitsUnkeyedEachNestedSharedAwaitChild(t *testing.T) {
+	for _, tc := range []struct {
+		code string
+		want bool
+	}{
+		{`<template><main>{#each rows as row}{#await request}<Child :title={row.title} />{:then value}<p>Done</p>{:catch error}<p>Failed</p>{/await}{/each}</main></template>`, true},
+		{`<template><main>{#each rows as row}{#await row.request}<Child :title={row.title} />{:then value}<p>Done</p>{/await}{/each}</main></template>`, false},
+	} {
+		sfc, err := parseSFC(tc.code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes); got != tc.want {
+			t.Fatalf("CanBuildSSRHydrationClient=%t, want %t for %s", got, tc.want, tc.code)
+		}
+	}
+}
+
+func TestSSRHydrationClientBuildsUnkeyedEachNestedSharedAwaitChild(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let rows = [];</script><template><main>{#each rows as row}{#await request}<Child :title={row.title} />{:then value}<p>Done</p>{:catch error}<p>Failed</p>{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, fragment := range []string{"queueMicrotask", "$$heach", "$$acquireHydrationRange", "$$csr_Child"} {
+		if !strings.Contains(code, fragment) {
+			t.Fatalf("hydration client misses %q:\n%s", fragment, code)
+		}
+	}
+}
+
 func TestAnalyzeSSRCapabilityRetainsNestedStructuralPathAndOwnership(t *testing.T) {
 	sfc, err := parseSFC(`<template><main>{#if visible}<section>{#each rows as row (row.id)}<Child :row={row} />{/each}</section>{/if}</main></template>`)
 	if err != nil {
