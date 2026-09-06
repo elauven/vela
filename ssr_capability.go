@@ -599,6 +599,12 @@ func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
 		}
 		return ssrCapabilityCurrentStaticChildren(block.ElseChildren)
 	}
+	if _, _, ok := ssrHydrationEachNestedKeyComponentRow(block); ok {
+		if block.HasKey() {
+			return len(block.ElseChildren) == 0
+		}
+		return ssrCapabilityCurrentStaticChildren(block.ElseChildren)
+	}
 	if block.HasKey() {
 		if _, ok := ssrCapabilityCurrentKeyedEachComponents(block); ok {
 			return len(block.ElseChildren) == 0
@@ -657,6 +663,29 @@ func ssrCapabilityCurrentUnkeyedEachComponents(block *EachBlockNode) ([]*Compone
 		components = append(components, component)
 	}
 	return components, len(components) > 0 && ssrCapabilityCurrentStaticChildren(staticChildren)
+}
+
+// ssrHydrationEachNestedKeyComponentRow recognizes one direct #key per
+// list row. The keyed subtree has one direct local component with ordinary
+// one-way props; outer keyed rows can preserve it across reorder while the
+// inner key controls deliberate replacement.
+func ssrHydrationEachNestedKeyComponentRow(block *EachBlockNode) (*IfChainNode, *ComponentNode, bool) {
+	if block == nil || len(block.Children) != 1 {
+		return nil, nil, false
+	}
+	chain, ok := block.Children[0].(*IfChainNode)
+	if !ok || chain == nil || !chain.HasKey() || len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() {
+		return nil, nil, false
+	}
+	branch := chain.Branches[0]
+	if len(branch.Children) != 1 {
+		return nil, nil, false
+	}
+	component, ok := branch.Children[0].(*ComponentNode)
+	if !ok || component == nil || len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) {
+		return nil, nil, false
+	}
+	return chain, component, true
 }
 
 // ssrHydrationEachNestedIfComponentRow recognizes the first per-row
