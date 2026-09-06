@@ -451,6 +451,9 @@ func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
 	if _, _, ok := ssrCapabilityCurrentIfComponentBranch(chain); ok {
 		return true
 	}
+	if _, _, ok := ssrHydrationIfNestedEachBranch(chain); ok {
+		return true
+	}
 	if chain == nil || len(chain.Branches) == 0 || len(chain.Branches) > 2 {
 		return false
 	}
@@ -541,6 +544,40 @@ func ssrCapabilityCurrentIfComponentBranch(chain *IfChainNode) ([]*ComponentNode
 		}
 	}
 	return components, componentIndex, len(components) > 0 && conditions == 1
+}
+
+// ssrHydrationIfNestedEachBranch recognizes a normal two-branch #if with
+// exactly one direct #each branch. The list retains its own marker-aware
+// lifecycle, while the outer conditional owns its entry and removal. The
+// sibling branch remains static in this first composable slice.
+func ssrHydrationIfNestedEachBranch(chain *IfChainNode) (*EachBlockNode, int, bool) {
+	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 || len(chain.Branches) > 2 {
+		return nil, 0, false
+	}
+	conditions := 0
+	eachIndex := -1
+	var each *EachBlockNode
+	for index, branch := range chain.Branches {
+		if branch == nil {
+			return nil, 0, false
+		}
+		if branch.HasCondition() {
+			conditions++
+		}
+		if len(branch.Children) == 1 {
+			if candidate, ok := branch.Children[0].(*EachBlockNode); ok && ssrCapabilityCurrentEach(candidate) {
+				if each != nil {
+					return nil, 0, false
+				}
+				each, eachIndex = candidate, index
+				continue
+			}
+		}
+		if !ssrCapabilityCurrentStaticChildren(branch.Children) {
+			return nil, 0, false
+		}
+	}
+	return each, eachIndex, each != nil && conditions == 1
 }
 
 func ssrCapabilityCurrentStructuralComponentAttrs(component *ComponentNode) bool {

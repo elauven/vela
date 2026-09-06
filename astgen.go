@@ -4813,6 +4813,10 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		g.buildHydrationRootIfComponentChain(chain, components, componentIndex)
 		return
 	}
+	if each, eachIndex, ok := ssrHydrationIfNestedEachBranch(chain); ok {
+		g.buildHydrationRootIfNestedEachChain(chain, each, eachIndex)
+		return
+	}
 	markerID := g.hydrationIfMarkerID(chain)
 
 	name := "$$hif" + itoa(markerID)
@@ -4869,6 +4873,111 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		}
 	}
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+}
+
+// buildHydrationRootIfNestedEachChain composes the initial marker-aware #each
+// adoption with its parent conditional. SSR DOM stays untouched during setup;
+// on a branch transition the conditional runs the inner ownership cleanup before
+// removing its range, while a later return creates a fresh CSR list branch.
+func (g *ASTGen) buildHydrationRootIfNestedEachChain(chain *IfChainNode, each *EachBlockNode, eachIndex int) {
+	if chain == nil || each == nil || eachIndex < 0 || eachIndex >= len(chain.Branches) {
+		panic("vela: missing nested if each hydration lifecycle")
+	}
+	markerID := g.hydrationIfMarkerID(chain)
+	name := "$$hif" + itoa(markerID)
+	rangeVar := name + "_range"
+	nodesVar := name + "_nodes"
+	activeVar := name + "_active"
+	renderVar := name + "_render"
+
+	plans := make([]hydrationAwaitBranchPlan, len(chain.Branches))
+	for index, branch := range chain.Branches {
+		if branch == nil {
+			continue
+		}
+		plans[index] = g.buildHydrationAwaitBranch(branch.Children, "", "", name+"_b"+itoa(index)+"_frag", name+"_b"+itoa(index)+"_mounted")
+	}
+	adapter := g.captureHydrationStructuralAdapter(
+		g.hydrationLifecycleNode(SSRLifecyclePlanEach, each.Span),
+		plans[eachIndex],
+		func() { g.buildHydrationRootEach(each) },
+	)
+	g.installHydrationStructuralAdapter(adapter, &plans[eachIndex])
+
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+	)
+	for _, plan := range plans {
+		if plan.mounted != "" {
+			g.body = append(g.body, genLet(plan.mounted, boolLit(false)))
+		}
+		if plan.cleanupVar != "" {
+			g.body = append(g.body, genLet(plan.cleanupVar, genNull()))
+		}
+	}
+
+	activeExpr := JsExpr(numLit(-1))
+	for index := len(chain.Branches) - 1; index >= 0; index-- {
+		branch := chain.Branches[index]
+		if branch == nil {
+			continue
+		}
+		if !branch.HasCondition() {
+			activeExpr = numLit(index)
+			continue
+		}
+		activeExpr = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: activeExpr}
+	}
+	g.body = append(g.body, genLet(activeVar, activeExpr))
+
+	renderBody := []JsStmt{
+		genLet("$$active", activeExpr),
+		genIf(genBinary("===", id("$$active"), id(activeVar)), genReturn(nil)),
+	}
+	for index, plan := range plans {
+		if len(plan.cleanup) == 0 {
+			continue
+		}
+		renderBody = append(renderBody, genIf(
+			genBinary("===", id(activeVar), numLit(index)),
+			genBlock(plan.cleanup...),
+		))
+	}
+	renderBody = append(renderBody,
+		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
+	)
+	for index, plan := range plans {
+		if len(plan.build) == 0 {
+			continue
+		}
+		renderBody = append(renderBody, genIf(
+			genBinary("===", id("$$active"), numLit(index)),
+			genBlock(plan.build...),
+		))
+	}
+	renderBody = append(renderBody,
+		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
+		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
+		genAssignStmt(id(activeVar), id("$$active")),
+	)
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: renderVar, Body: genBlock(renderBody...)})
+	for _, branch := range chain.Branches {
+		if branch == nil || !branch.HasCondition() {
+			continue
+		}
+		for _, dependency := range templateExprDeps(branch.Expr, g.reactiveNames()) {
+			g.addStructuralUpdate(dependency, genInvoke(renderVar))
+		}
+	}
+	cleanup := []JsStmt{}
+	for _, plan := range plans {
+		cleanup = append(cleanup, plan.cleanup...)
+	}
+	cleanup = append(cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+	g.cleanup = append(g.cleanup, cleanup...)
 }
 
 // buildHydrationRootKeyComponents adopts every server child owned by a #key
@@ -5595,6 +5704,7 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 // compose adapters instead of falling back to static HTML.
 type hydrationStructuralAdapter struct {
 	plan          *SSRStructuralLifecyclePlan
+	adopted       string
 	adoptBody     []JsStmt
 	adoptInitBody []JsStmt
 	mountCSR      []JsStmt
@@ -5608,7 +5718,12 @@ func (g *ASTGen) captureHydrationStructuralAdapter(plan *SSRStructuralLifecycleP
 		panic("vela: missing structural hydration adapter lifecycle")
 	}
 	captured := g.captureScope(build)
-	return hydrationStructuralAdapter{plan: plan, adoptBody: captured.body, adoptInitBody: captured.hydrationInitBody, mountCSR: append([]JsStmt(nil), csr.build...), destroySSR: captured.cleanup, destroyCSR: append([]JsStmt(nil), csr.cleanup...), updates: captured.updates}
+	adopted := "$$hssr" + itoa(plan.Span.Start) + "_" + itoa(plan.Span.End)
+	destroySSR := append([]JsStmt(nil), captured.cleanup...)
+	if len(destroySSR) > 0 {
+		destroySSR = []JsStmt{genIf(id(adopted), genBlock(append(destroySSR, genAssignStmt(id(adopted), boolLit(false)))...))}
+	}
+	return hydrationStructuralAdapter{plan: plan, adopted: adopted, adoptBody: captured.body, adoptInitBody: captured.hydrationInitBody, mountCSR: append([]JsStmt(nil), csr.build...), destroySSR: destroySSR, destroyCSR: append([]JsStmt(nil), csr.cleanup...), updates: captured.updates}
 }
 
 // installHydrationStructuralAdapter transfers a captured structural subtree to
@@ -5619,6 +5734,7 @@ func (g *ASTGen) installHydrationStructuralAdapter(adapter hydrationStructuralAd
 	if adapter.plan == nil || branch == nil {
 		panic("vela: missing pending await structural adapter")
 	}
+	g.body = append(g.body, genLet(adapter.adopted, boolLit(true)))
 	g.body = append(g.body, adapter.adoptBody...)
 	g.hydrationInitBody = append(g.hydrationInitBody, adapter.adoptInitBody...)
 	branch.build = append(branch.build[:0], adapter.mountCSR...)
@@ -5626,7 +5742,7 @@ func (g *ASTGen) installHydrationStructuralAdapter(adapter hydrationStructuralAd
 	branch.cleanup = append(branch.cleanup, adapter.destroySSR...)
 	for dependency, statements := range adapter.updates {
 		for _, statement := range statements {
-			g.addUpdate(dependency, statement)
+			g.addUpdate(dependency, guardedTemplateStmt(statement, adapter.adopted))
 		}
 	}
 }
