@@ -689,6 +689,24 @@ export function $$removeHydrationKeyedRowRange(row) {
   throw new Error('Vela hydration mismatch: detached keyed row range');
 }
 
+// $$replaceHydrationKeyedRowContents replaces only the nodes enclosed by an
+// existing keyed row boundary. The boundary itself remains stable so the
+// reconciler can still reorder the retained key without remounting it.
+export function $$replaceHydrationKeyedRowContents(row, fragment) {
+  if (!row?.start || !row?.end || !row.end.parentNode) {
+    throw new Error("Vela hydration mismatch: invalid keyed row replacement");
+  }
+  for (let node = row.start.nextSibling; node && node !== row.end;) {
+    const next = node.nextSibling;
+    node.remove();
+    node = next;
+  }
+  if (row.start.nextSibling !== row.end) {
+    throw new Error("Vela hydration mismatch: detached keyed row range");
+  }
+  row.end.before(fragment);
+}
+
 // $$reconcileHydrationKeyedRowRanges is the range-aware counterpart of the
 // legacy element reconciler. `create` returns {start,end}; range boundaries
 // travel with every child root and inert payload script as one keyed row.

@@ -594,6 +594,9 @@ func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
 		return false
 	}
 	if _, _, _, ok := ssrHydrationEachNestedIfComponentRow(block); ok {
+		if block.HasKey() {
+			return len(block.ElseChildren) == 0
+		}
 		return ssrCapabilityCurrentStaticChildren(block.ElseChildren)
 	}
 	if block.HasKey() {
@@ -662,7 +665,7 @@ func ssrCapabilityCurrentUnkeyedEachComponents(block *EachBlockNode) ([]*Compone
 // may replace its complete range on change, so this preserves correct child
 // ownership before row-local marker reconciliation is introduced.
 func ssrHydrationEachNestedIfComponentRow(block *EachBlockNode) (*IfChainNode, *ComponentNode, int, bool) {
-	if block == nil || block.HasKey() || len(block.Children) != 1 {
+	if block == nil || len(block.Children) != 1 {
 		return nil, nil, 0, false
 	}
 	chain, ok := block.Children[0].(*IfChainNode)
