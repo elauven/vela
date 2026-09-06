@@ -4807,6 +4807,10 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 			g.buildHydrationRootKeyComponents(chain, components)
 			return
 		}
+		if block, ok := ssrHydrationKeyNestedAwaitBlock(chain); ok {
+			g.buildHydrationRootKeyNestedStructuralChain(chain, g.hydrationLifecycleNode(SSRLifecyclePlanAwait, block.Span), func() { g.buildHydrationRootAwait(block) })
+			return
+		}
 		g.buildHydrationRootKeyBlock(chain)
 		return
 	}
@@ -5244,6 +5248,59 @@ func (g *ASTGen) hydrationIfComponentBranchMount(branch *IfBranch, handles []hyd
 		body = append(body, genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML([]Node{child}, g.scopeID)))))
 	}
 	return body
+}
+
+// buildHydrationRootKeyNestedStructuralChain composes one marker-aware inner
+// structural lifecycle with a #key range. The initial SSR subtree is adopted
+// through the inner plan; a key transition destroys it before replacing the
+// outer range with the ordinary CSR structural branch.
+func (g *ASTGen) buildHydrationRootKeyNestedStructuralChain(chain *IfChainNode, lifecycle *SSRStructuralLifecyclePlan, build func()) {
+	if chain == nil || !chain.HasKey() || lifecycle == nil || build == nil || len(chain.Branches) != 1 || chain.Branches[0] == nil {
+		panic("vela: missing nested key structural hydration lifecycle")
+	}
+	markerID := g.hydrationIfMarkerID(chain)
+	name := "$$hkey" + itoa(markerID)
+	rangeVar := name + "_range"
+	nodesVar := name + "_nodes"
+	keyVar := name + "_prev"
+	branch := g.buildHydrationAwaitBranch(chain.Branches[0].Children, "", "", name+"_frag", name+"_mounted")
+	adapter := g.captureHydrationStructuralAdapter(lifecycle, branch, build)
+	g.installHydrationStructuralAdapter(adapter, &branch)
+
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.body = append(g.body,
+		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genLet(nodesVar, genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+		genLet(keyVar, g.templateExpr(chain.KeyAST)),
+	)
+	if branch.mounted != "" {
+		g.body = append(g.body, genLet(branch.mounted, boolLit(false)))
+	}
+	if branch.cleanupVar != "" {
+		g.body = append(g.body, genLet(branch.cleanupVar, genNull()))
+	}
+	updateBody := []JsStmt{
+		genConst("$$key", g.templateExpr(chain.KeyAST)),
+		genIf(genBinary("===", id("$$key"), id(keyVar)), genReturn(nil)),
+	}
+	updateBody = append(updateBody, branch.cleanup...)
+	updateBody = append(updateBody,
+		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
+	)
+	updateBody = append(updateBody, branch.build...)
+	updateBody = append(updateBody,
+		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
+		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
+		genAssignStmt(id(keyVar), id("$$key")),
+	)
+	fn := name + "_update"
+	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	for _, dependency := range templateExprDeps(chain.KeyAST, g.reactiveNames()) {
+		g.addStructuralUpdate(dependency, genInvoke(fn))
+	}
+	g.cleanup = append(g.cleanup, branch.cleanup...)
+	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 }
 
 // buildHydrationRootKeyBlock adopts the rendered static {#key} child range.

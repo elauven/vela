@@ -242,6 +242,23 @@ func TestSSRHydrationIfNestedAwaitAdoptsChildAndBuildsCSRReturnPath(t *testing.T
 		}
 	}
 }
+func TestSSRHydrationKeyNestedAwaitAdoptsChildAndBuildsCSRReturnPath(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let identity = "one"; export let request;</script><template><main>{#key identity}{#await request}<Child :title={"pending"} />{:then value}<Child :title={value} />{/await}{/key}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	dollars := string([]byte{36, 36})
+	for _, want := range []string{"acquireHydrationRange(" + dollars + "walker, 0)", "acquireHydrationRange(" + dollars + "walker, 1)", "Child(" + dollars + "root", dollars + "csr_Child(", ".destroy();"} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("nested key-await hydration misses %q:\n%s", want, source)
+		}
+	}
+}
 
 func TestSSRHydrationEachNestedKeyAdoptsAndBuildsCSRReturnPath(t *testing.T) {
 	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let rows = [];</script><template><main>{#each rows as row}{#key row.version}<Child :title={row.title} />{/key}{/each}</main></template>`)

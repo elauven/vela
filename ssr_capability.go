@@ -457,6 +457,9 @@ func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
 	if _, _, ok := ssrHydrationIfNestedAwaitBranch(chain); ok {
 		return true
 	}
+	if _, ok := ssrHydrationKeyNestedAwaitBlock(chain); ok {
+		return true
+	}
 	if chain == nil || len(chain.Branches) == 0 || len(chain.Branches) > 2 {
 		return false
 	}
@@ -476,6 +479,17 @@ func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
 		}
 	}
 	return conditions == 1
+}
+
+// ssrHydrationKeyNestedAwaitBlock recognizes one await block owned by a #key
+// range. The key range owns replacement while the await lowerer owns the
+// pending, settled, and child branch lifecycle inside that range.
+func ssrHydrationKeyNestedAwaitBlock(chain *IfChainNode) (*AwaitBlockNode, bool) {
+	if chain == nil || !chain.HasKey() || len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() || len(chain.Branches[0].Children) != 1 {
+		return nil, false
+	}
+	block, ok := chain.Branches[0].Children[0].(*AwaitBlockNode)
+	return block, ok && block != nil && ssrCapabilityCurrentAwait(block)
 }
 
 // ssrCapabilityCurrentKeyComponents recognizes the component-owned #key
