@@ -5498,13 +5498,15 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	// recreating that same branch with CSR factories after a later promise
 	// replacement.
 	if pendingIf, ok := ssrHydrationPendingAwaitIfChain(block); ok {
-		g.installHydrationStructuralAdapter(g.captureHydrationStructuralAdapter(g.hydrationLifecycleNode(SSRLifecyclePlanIf, pendingIf.Span), func() {
+		adapter := g.captureHydrationStructuralAdapter(g.hydrationLifecycleNode(SSRLifecyclePlanIf, pendingIf.Span), plans[0], func() {
 			g.buildHydrationRootIfChain(pendingIf)
-		}), &plans[0])
+		})
+		g.installHydrationStructuralAdapter(adapter, &plans[0])
 	} else if pendingEach, ok := ssrHydrationPendingAwaitEachBlock(block); ok {
-		g.installHydrationStructuralAdapter(g.captureHydrationStructuralAdapter(g.hydrationLifecycleNode(SSRLifecyclePlanEach, pendingEach.Span), func() {
+		adapter := g.captureHydrationStructuralAdapter(g.hydrationLifecycleNode(SSRLifecyclePlanEach, pendingEach.Span), plans[0], func() {
 			g.buildHydrationRootEach(pendingEach)
-		}), &plans[0])
+		})
+		g.installHydrationStructuralAdapter(adapter, &plans[0])
 	}
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.body = append(g.body,
@@ -5588,23 +5590,25 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 }
 
 // hydrationStructuralAdapter is the common ownership transfer unit for a
-// server-rendered structural subtree. A later recursive lowerer will also
-// populate mountCSR; today the existing structural builders supply adopt,
-// update, and destroy while retaining their proven per-block algorithms.
+// server-rendered structural subtree. It owns the initial SSR adoption and
+// the existing CSR re-entry plan separately, so a recursive lowerer can later
+// compose adapters instead of falling back to static HTML.
 type hydrationStructuralAdapter struct {
 	plan          *SSRStructuralLifecyclePlan
 	adoptBody     []JsStmt
 	adoptInitBody []JsStmt
-	destroy       []JsStmt
+	mountCSR      []JsStmt
+	destroySSR    []JsStmt
+	destroyCSR    []JsStmt
 	updates       map[string][]JsStmt
 }
 
-func (g *ASTGen) captureHydrationStructuralAdapter(plan *SSRStructuralLifecyclePlan, build func()) hydrationStructuralAdapter {
+func (g *ASTGen) captureHydrationStructuralAdapter(plan *SSRStructuralLifecyclePlan, csr hydrationAwaitBranchPlan, build func()) hydrationStructuralAdapter {
 	if plan == nil || !plan.hasOperation(SSRLifecycleAdopt) || !plan.hasOperation(SSRLifecycleDestroy) || build == nil {
 		panic("vela: missing structural hydration adapter lifecycle")
 	}
 	captured := g.captureScope(build)
-	return hydrationStructuralAdapter{plan: plan, adoptBody: captured.body, adoptInitBody: captured.hydrationInitBody, destroy: captured.cleanup, updates: captured.updates}
+	return hydrationStructuralAdapter{plan: plan, adoptBody: captured.body, adoptInitBody: captured.hydrationInitBody, mountCSR: append([]JsStmt(nil), csr.build...), destroySSR: captured.cleanup, destroyCSR: append([]JsStmt(nil), csr.cleanup...), updates: captured.updates}
 }
 
 // installHydrationStructuralAdapter transfers a captured structural subtree to
@@ -5617,7 +5621,9 @@ func (g *ASTGen) installHydrationStructuralAdapter(adapter hydrationStructuralAd
 	}
 	g.body = append(g.body, adapter.adoptBody...)
 	g.hydrationInitBody = append(g.hydrationInitBody, adapter.adoptInitBody...)
-	branch.cleanup = append(branch.cleanup, adapter.destroy...)
+	branch.build = append(branch.build[:0], adapter.mountCSR...)
+	branch.cleanup = append(branch.cleanup[:0], adapter.destroyCSR...)
+	branch.cleanup = append(branch.cleanup, adapter.destroySSR...)
 	for dependency, statements := range adapter.updates {
 		for _, statement := range statements {
 			g.addUpdate(dependency, statement)
