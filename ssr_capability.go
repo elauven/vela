@@ -675,7 +675,7 @@ func ssrHydrationPendingAwaitEachBlock(block *AwaitBlockNode) (*EachBlockNode, b
 		return nil, false
 	}
 	each, ok := block.PendingChildren[0].(*EachBlockNode)
-	if !ok || each == nil || each.HasKey() || !ssrCapabilityCurrentEach(each) {
+	if !ok || each == nil || !ssrCapabilityCurrentEach(each) {
 		return nil, false
 	}
 	return each, true
