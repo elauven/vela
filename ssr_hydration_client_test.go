@@ -225,6 +225,31 @@ func TestSSRHydrationIfNestedEachAdoptsChildRowsAndBuildsCSRReturnPath(t *testin
 	}
 }
 
+func TestSSRHydrationIfNestedKeyedEachAdoptsAndBuildsCSRReturnPath(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let shown = true; export let rows = [];</script><template><main>{#if shown}{#each rows as row (row.id)}<Child :id={row.id} :title={row.title} />{/each}{:else}<p>Hidden</p>{/if}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	dollars := string([]byte{36, 36})
+	for _, want := range []string{
+		"adoptHydrationKeyedRowRanges",
+		"reconcileHydrationKeyedRowRanges",
+		"new Map()",
+		"if (" + dollars + "hif0_active === 0)",
+		"createDocumentFragment",
+		".destroy();",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("nested if-keyed each hydration misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestSSRHydrationPendingAwaitUnkeyedEachAdoptsChildRows(t *testing.T) {
 	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let items = [];</script><template><main>{#await request}{#each items as item}<Child :title={item.title} />{/each}{:then value}<p>{value}</p>{/await}</main></template>`)
 	if err != nil {
@@ -2724,6 +2749,85 @@ func TestBrowserSSRHydrationIfNestedEachAdoptsAndReentersChildRows(t *testing.T)
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("nested if-each browser output=%q", got)
+	}
+}
+
+func TestBrowserSSRHydrationIfNestedKeyedEachRetainsAndReentersChildRows(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<script>import { onDestroy } from "vela"; export let id = ""; export let title = ""; onDestroy(() => { window.__ifKeyedEachDestroys = (window.__ifKeyedEachDestroys || 0) + 1; });</script><template><p class="child" :data-id={id}>{title}</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis := analyzeScriptAST(childSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let shown = true; export let rows = [];</script><template><main>{#if shown}{#each rows as row (row.id)}<Child :id={row.id} :title={row.title} />{/each}{:else}<p class="hidden">Hidden</p>{/if}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysis("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := parentSFC.TemplateAST.Nodes[0].(*ElementNode)
+	chain := main.Children[0].(*IfChainNode)
+	each := chain.Branches[0].Children[0].(*EachBlockNode)
+	child := each.Children[0].(*ComponentNode)
+	markers := ssrHydrationMarkerIDs(parentPlan.Nodes)
+	ifID, ok := markers.ifID(chain.Span)
+	if !ok {
+		t.Fatal("if marker is missing")
+	}
+	eachID, ok := markers.eachID(each.Span)
+	if !ok {
+		t.Fatal("each marker is missing")
+	}
+	identity := parentPlan.ComponentInstanceIdentities[child.Span]
+	if !identity.RuntimeScoped {
+		t.Fatal("keyed child must be runtime-scoped")
+	}
+	suffix := ssrRuntimeComponentSuffix(identity)
+	rowScope := func(key string) string { return "vela-parent--each-" + itoa(each.Span.Start) + "-" + key }
+	rowHTML := func(key, title string) string {
+		scope := rowScope(key) + "--" + suffix
+		return "<!--r:" + rowScope(key) + ":" + itoa(eachID) + "--><!--e:" + scope + ":0--><p vela-child=\"\" class=\"child\" data-id=\"" + key + "\"><!--v:" + scope + ":0-->" + title + "<!--/v:" + scope + ":0--></p><!--/e:" + scope + ":0--><script type=\"application/json\" id=\"vela-state-" + scope + "\">{\"component\":\"" + scope + "\",\"props\":{\"Id\":\"" + key + "\",\"Title\":\"" + title + "\"},\"state\":{},\"incomplete\":false}</script><!--/r:" + rowScope(key) + ":" + itoa(eachID) + "-->"
+	}
+	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(ifID) + "--><!--v:vela-parent:" + itoa(eachID) + "-->" + rowHTML("a", "Alpha") + rowHTML("b", "Beta") + "<!--/v:vela-parent:" + itoa(eachID) + "--><!--/v:vela-parent:" + itoa(ifID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Shown\":true,\"Rows\":[{\"id\":\"a\",\"title\":\"Alpha\"},{\"id\":\"b\",\"title\":\"Beta\"}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.__hydrated);await p.evaluate(()=>{window.__a=document.querySelector("[data-id=a]");window.__b=document.querySelector("[data-id=b]");window.__hydrated.component.set({rows:[{id:"b",title:"Beta*"},{id:"a",title:"Alpha*"},{id:"c",title:"Gamma"}]})});await p.waitForFunction(()=>Array.from(document.querySelectorAll(".child")).map(x=>x.dataset.id+":"+x.textContent).join("|")==="b:Beta*|a:Alpha*|c:Gamma");await p.evaluate(()=>{window.__retained=window.__a===document.querySelector("[data-id=a]")&&window.__b===document.querySelector("[data-id=b]");window.__hydrated.component.set({rows:[{id:"b",title:"Final"}]})});await p.waitForFunction(()=>Array.from(document.querySelectorAll(".child")).map(x=>x.dataset.id+":"+x.textContent).join("|")==="b:Final");await p.evaluate(()=>{window.__payloadsRemoved=!Array.from(document.querySelectorAll("script")).some(x=>x.id.includes("-a--"));window.__hydrated.component.set({shown:false})});await p.waitForFunction(()=>document.querySelector(".hidden"));await p.evaluate(()=>window.__hydrated.component.set({shown:true}));await p.waitForFunction(()=>Array.from(document.querySelectorAll(".child")).map(x=>x.dataset.id+":"+x.textContent).join("|")==="b:Final");await p.evaluate(()=>{window.__reentered=Array.from(document.querySelectorAll(".child"));window.__hydrated.component.destroy()});const x=await p.evaluate(()=>({initial:window.__initialMutations,retained:window.__retained,payloadsRemoved:window.__payloadsRemoved,detached:window.__reentered.every(n=>!n.isConnected),destroys:window.__ifKeyedEachDestroys,children:document.querySelectorAll(".child").length}));if(x.initial!==0||!x.retained||!x.payloadsRemoved||!x.detached||x.destroys!==4||x.children!==0)throw new Error(JSON.stringify(x));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browserScript, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("nested if-keyed each browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(parentClient, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("nested if-keyed each browser output=%q", got)
 	}
 }
 
