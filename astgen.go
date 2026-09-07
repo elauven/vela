@@ -5932,7 +5932,13 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					updates := []JsStmt{}
 					rowBody := []JsStmt{genConst(rowRef, genCall(genMember(id("document"), "createElement"), strLit(row.Tag))), g.setAttrStmt(rowRef, g.scopeID, "")}
 					for _, attr := range row.Attrs {
-						if attr.IsClassDir || attr.IsStyleDir {
+						if attr.IsEvent && attr.Expr != nil {
+							var eventStmts []JsStmt
+							g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
+								g.withTemplateBinding(nestedEach.IndexName, innerIndex, func() { eventStmts = eventAttachFor(attr, branch, rowRef) })
+							})
+							rowBody = append(rowBody, eventStmts...)
+						} else if attr.IsClassDir || attr.IsStyleDir {
 							updates = append(updates, innerDirectiveWrite(attr, rowRef))
 						} else if attr.Expr != nil {
 							updates = append(updates, innerAttrWrite(attr, rowRef))
