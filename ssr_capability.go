@@ -926,11 +926,37 @@ func ssrCapabilityCurrentAwaitComponentBranches(block *AwaitBlockNode) ([][]*Com
 			result[index] = append(result[index], component)
 			found = true
 		}
-		if !ssrCapabilityCurrentStaticChildren(staticChildren) {
+		if index == 0 {
+			if !ssrCapabilityCurrentStaticChildren(staticChildren) {
+				return nil, false
+			}
+		} else if !ssrCapabilityCurrentAwaitTextChildren(staticChildren) {
 			return nil, false
+		}
+		if index > 0 && !allStatic(staticChildren) {
+			found = true
 		}
 	}
 	return result, found
+}
+
+// ssrCapabilityCurrentAwaitTextChildren is the first direct-DOM subset for
+// a settled keyed-row await branch. Dynamic text is materialized by the
+// row-owned renderer; elements remain static until attribute ownership lands.
+func ssrCapabilityCurrentAwaitTextChildren(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			continue
+		case *ElementNode:
+			if !ssrCapabilityCurrentStaticChildren([]Node{current}) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // ssrCapabilityCurrentAwaitBranch permits static HTML plus text interpolation after a

@@ -107,6 +107,23 @@ func TestSSRHydrationKeyedEachAwaitUsesPerRowState(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitSettledTextUsesRowOwnedDOMUpdater(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let rows = []; let prefix = $state("ready: ");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Loading</p>{:then value}{prefix}{value}{:catch error}{prefix}{error}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{"updates", "createTextNode", "_update", "replaceHydrationKeyedRowContents"} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("keyed each-await direct text lowering misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestSSRHydrationClientAdoptsPendingAwaitRangeWithoutInitialRender(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request;</script><template><main>{#await request}<span>Loading</span>{:then value}<span>{value}</span>{:catch error}<span>{error}</span>{/await}</main></template>`)
 	if err != nil {

@@ -5607,21 +5607,50 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		})
 		return props
 	}
+	textUpdateDeps := map[string]bool{}
+	textWriteFor := func(text *TextNode, branch int, ref string) JsStmt {
+		var write JsStmt
+		g.withTemplateBinding(block.ItemName, "$$item", func() {
+			g.withTemplateBinding(block.IndexName, "$$index", func() {
+				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
+					write = g.textWriteStmt(ref, text.Parts)
+				})
+			})
+		})
+		for _, dependency := range templatePartsDeps(text.Parts, g.reactiveNames()) {
+			textUpdateDeps[dependency] = true
+		}
+		return write
+	}
+
 	stateExpr := func() JsExpr {
 		return &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 			{Key: id("cell"), Value: genNull()}, {Key: id("active"), Value: numLit(0)},
 			{Key: id("value"), Value: id("undefined")}, {Key: id("error"), Value: id("undefined")},
-			{Key: id("components"), Value: genArray()}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()},
+			{Key: id("components"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()},
 		}}
 	}
 	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(
 		genForOf("$$component", genCall(genMember(genCall(genMember(genMember(id("$$state"), "components"), "slice")), "reverse")), genIf(id("$$component"), genExprStmt(genCall(genMember(id("$$component"), "destroy"))))),
 		genAssignStmt(genMember(id("$$state"), "components"), genArray()),
+		genAssignStmt(genMember(id("$$state"), "updates"), genArray()),
 	)}
 	mount := func(branch int) []JsStmt {
 		body := []JsStmt{}
 		componentIndex := 0
 		for _, child := range children[branch] {
+			if text, ok := child.(*TextNode); ok && !textNodeAllStatic(text) {
+				ref := g.id()
+				update := ref + "_update"
+				body = append(body,
+					genConst(ref, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
+					genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(ref))),
+					genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(textWriteFor(text, branch, ref))}),
+					genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))),
+					genInvoke(update),
+				)
+				continue
+			}
 			component, ok := child.(*ComponentNode)
 			if !ok || component == nil {
 				body = append(body, genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML([]Node{child}, g.scopeID)))))
@@ -5682,6 +5711,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genAssignStmt(genMember(id("$$state"), "index"), id("$$index")),
 		genAssignStmt(genMember(id("$$state"), "key"), id("$$key")),
 		genInvoke(driveVar, id("$$state"), id("$$row"), id("$$item"), id("$$index"), boolLit(false)),
+		genIf(genLogical("&&", genMember(genMember(id("$$state"), "updates"), "length"), genBinary("!==", genMember(id("$$state"), "active"), numLit(0))), genInvoke(renderVar, id("$$state"), id("$$row"), id("$$item"), id("$$index"), genMember(id("$$state"), "active"))),
 	}
 	for branch, components := range branches {
 		for index, component := range components {
@@ -5771,6 +5801,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				}
 			}
 		}
+	}
+	for dependency := range textUpdateDeps {
+		deps[dependency] = true
 	}
 	for dependency := range deps {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
