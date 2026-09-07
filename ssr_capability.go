@@ -640,6 +640,9 @@ func ssrCapabilityCurrentStructuralComponentAttrs(component *ComponentNode) bool
 }
 
 func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
+	if _, _, ok := ssrHydrationKeyedEachAwaitComponentRow(block); ok {
+		return true
+	}
 	if _, _, ok := ssrHydrationEachNestedAwaitComponentRow(block); ok {
 		return ssrCapabilityCurrentStaticChildren(block.ElseChildren)
 	}
@@ -735,6 +738,27 @@ func ssrHydrationEachNestedAwaitComponentRow(block *EachBlockNode) (*AwaitBlockN
 		return nil, nil, false
 	}
 	return await, component, true
+}
+
+// ssrHydrationKeyedEachAwaitComponentRow recognizes the per-row inverse
+// await slice. Unlike the unkeyed predecessor, a keyed row has an enduring
+// range and can therefore own an independent promise cell. Direct branch
+// content is limited to lifecycle-safe local child chains with one-way props
+// and static siblings; slots, component callbacks/bindings, and nested
+// structural children still require recursive row ownership.
+func ssrHydrationKeyedEachAwaitComponentRow(block *EachBlockNode) (*AwaitBlockNode, [][]*ComponentNode, bool) {
+	if block == nil || !block.HasKey() || len(block.Children) != 1 || len(block.ElseChildren) != 0 {
+		return nil, nil, false
+	}
+	await, ok := block.Children[0].(*AwaitBlockNode)
+	if !ok || await == nil {
+		return nil, nil, false
+	}
+	branches, ok := ssrCapabilityCurrentAwaitComponentBranches(await)
+	if !ok {
+		return nil, nil, false
+	}
+	return await, branches, true
 }
 
 func ssrTemplateExprReferencesBinding(expr *TemplateExpr, name string) bool {

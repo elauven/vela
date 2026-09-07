@@ -90,6 +90,23 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitUsesPerRowState(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let rows = [];</script><template><main>{#each rows as row (row.id)}{#await row.request}<Child :title={row.title} />{:then value}<Child :title={value} />{:catch error}<Child :title={error} />{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{"_await_states", "adoptHydrationKeyedRowRanges", "reconcileHydrationKeyedRowRanges", "replaceHydrationKeyedRowContents", ".cell !==", "_destroy"} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("keyed each-await lowering misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestSSRHydrationClientAdoptsPendingAwaitRangeWithoutInitialRender(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request;</script><template><main>{#await request}<span>Loading</span>{:then value}<span>{value}</span>{:catch error}<span>{error}</span>{/await}</main></template>`)
 	if err != nil {
