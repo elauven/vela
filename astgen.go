@@ -5860,6 +5860,25 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				body = append(body, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock()}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))), genInvoke(update))
 				continue
 			}
+			if nestedEach, ok := child.(*EachBlockNode); ok && ssrCapabilityKeyedAwaitStaticEach(nestedEach) {
+				for _, dependency := range templateExprDeps(nestedEach.IterExpr, g.reactiveNames()) {
+					textUpdateDeps[dependency] = true
+				}
+				items := g.id()
+				itemsExpr := JsExpr(genArray())
+				g.withTemplateBinding(block.ItemName, "$$item", func() {
+					g.withTemplateBinding(block.IndexName, "$$index", func() {
+						g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() { itemsExpr = g.templateExpr(nestedEach.IterExpr) })
+					})
+				})
+				body = append(body, genConst(items, itemsExpr), genForOf("$$nested_item", id(items), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(nestedEach.Children, g.scopeID))))))
+				if len(nestedEach.ElseChildren) > 0 {
+					body = append(body, genIf(genBinary("===", genMember(id(items), "length"), numLit(0)), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(nestedEach.ElseChildren, g.scopeID))))))
+				}
+				update := g.id() + "_each_update"
+				body = append(body, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock()}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))), genInvoke(update))
+				continue
+			}
 			component, ok := child.(*ComponentNode)
 			if !ok || component == nil {
 				body = append(body, genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML([]Node{child}, g.scopeID)))))

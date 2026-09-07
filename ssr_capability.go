@@ -959,11 +959,22 @@ func ssrCapabilityKeyedAwaitDirectChildren(nodes []Node) bool {
 			if !ssrCapabilityKeyedAwaitDirectIfChain(current) {
 				return false
 			}
+		case *EachBlockNode:
+			if !ssrCapabilityKeyedAwaitStaticEach(current) {
+				return false
+			}
 		default:
 			return false
 		}
 	}
 	return true
+}
+
+// ssrCapabilityKeyedAwaitStaticEach permits the first nested-list lifecycle
+// slice. The outer keyed-await row owns replacement; individual inner rows
+// are intentionally static until their own reconciliation plan is introduced.
+func ssrCapabilityKeyedAwaitStaticEach(block *EachBlockNode) bool {
+	return block != nil && !block.HasKey() && ssrCapabilityCurrentStaticChildren(block.Children) && ssrCapabilityCurrentStaticChildren(block.ElseChildren)
 }
 
 // ssrCapabilityKeyedAwaitDirectIfChain permits a plain direct #if in a
