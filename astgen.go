@@ -5750,7 +5750,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				)
 				continue
 			}
-			if element, ok := child.(*ElementNode); ok && ssrCapabilityCurrentAwaitDirectElement(element) {
+			if element, ok := child.(*ElementNode); ok && ssrCapabilityKeyedAwaitDirectElement(element) {
 				ref := g.id()
 				updates := []JsStmt{}
 				body = append(body,
@@ -5773,8 +5773,18 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					}
 				}
 
-				if len(element.Children) > 0 {
+				if len(element.Children) > 0 && ssrCapabilityCurrentStaticChildren(element.Children) {
 					body = append(body, genExprStmt(genCall(id("$$insertHTML"), id(ref), strLit(emitStaticHTML(element.Children, g.scopeID)))))
+				} else {
+					for _, childText := range element.Children {
+						text, ok := childText.(*TextNode)
+						if !ok || text == nil {
+							continue
+						}
+						textRef := g.id()
+						body = append(body, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(ref), "appendChild"), id(textRef))))
+						updates = append(updates, textWriteFor(text, branch, textRef))
+					}
 				}
 				if len(updates) > 0 {
 					update := ref + "_update"

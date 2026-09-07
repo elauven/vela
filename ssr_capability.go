@@ -754,7 +754,7 @@ func ssrHydrationKeyedEachAwaitComponentRow(block *EachBlockNode) (*AwaitBlockNo
 	if !ok || await == nil {
 		return nil, nil, false
 	}
-	branches, ok := ssrCapabilityCurrentAwaitComponentBranches(await)
+	branches, ok := ssrCapabilityKeyedAwaitComponentBranches(await)
 	if !ok {
 		return nil, nil, false
 	}
@@ -905,7 +905,7 @@ func ssrHydrationPendingAwaitIfChain(block *AwaitBlockNode) (*IfChainNode, bool)
 // ordinary one-way props and static siblings. The pending branch is adopted
 // from SSR; settled branches are materialized with ordinary CSR factories.
 // Dynamic DOM holes remain on the existing await-only lowering path.
-func ssrCapabilityCurrentAwaitComponentBranches(block *AwaitBlockNode) ([][]*ComponentNode, bool) {
+func ssrCapabilityAwaitComponentBranches(block *AwaitBlockNode, directChildren func([]Node) bool) ([][]*ComponentNode, bool) {
 	if block == nil || len(block.PendingChildren) == 0 {
 		return nil, false
 	}
@@ -930,7 +930,7 @@ func ssrCapabilityCurrentAwaitComponentBranches(block *AwaitBlockNode) ([][]*Com
 			if !ssrCapabilityCurrentStaticChildren(staticChildren) {
 				return nil, false
 			}
-		} else if !ssrCapabilityCurrentAwaitDirectChildren(staticChildren) {
+		} else if !directChildren(staticChildren) {
 			return nil, false
 		}
 		if index > 0 && !allStatic(staticChildren) {
@@ -938,6 +938,42 @@ func ssrCapabilityCurrentAwaitComponentBranches(block *AwaitBlockNode) ([][]*Com
 		}
 	}
 	return result, found
+}
+func ssrCapabilityCurrentAwaitComponentBranches(block *AwaitBlockNode) ([][]*ComponentNode, bool) {
+	return ssrCapabilityAwaitComponentBranches(block, ssrCapabilityCurrentAwaitDirectChildren)
+}
+
+func ssrCapabilityKeyedAwaitComponentBranches(block *AwaitBlockNode) ([][]*ComponentNode, bool) {
+	return ssrCapabilityAwaitComponentBranches(block, ssrCapabilityKeyedAwaitDirectChildren)
+}
+
+func ssrCapabilityKeyedAwaitDirectChildren(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+		case *ElementNode:
+			if current == nil || !ssrCapabilityKeyedAwaitDirectElement(current) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func ssrCapabilityKeyedAwaitDirectElement(element *ElementNode) bool {
+	if element == nil {
+		return false
+	}
+	for _, child := range element.Children {
+		if _, ok := child.(*TextNode); !ok {
+			return false
+		}
+	}
+	copy := *element
+	copy.Children = nil
+	return ssrCapabilityCurrentAwaitDirectElement(&copy)
 }
 
 // ssrCapabilityCurrentAwaitDirectChildren is the first direct-DOM subset for
