@@ -5871,7 +5871,46 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() { itemsExpr = g.templateExpr(nestedEach.IterExpr) })
 					})
 				})
-				body = append(body, genConst(items, itemsExpr), genForOf("$$nested_item", id(items), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(nestedEach.Children, g.scopeID))))))
+				row, dynamicRow := ssrCapabilityCurrentEachDynamicTextRow(nestedEach)
+				if dynamicRow {
+					innerIndex := g.id()
+					innerTextWrite := func(text *TextNode, ref string) JsStmt {
+						var write JsStmt
+						g.withTemplateBinding(block.ItemName, "$$item", func() {
+							g.withTemplateBinding(block.IndexName, "$$index", func() {
+								g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
+									g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
+										g.withTemplateBinding(nestedEach.IndexName, innerIndex, func() { write = g.textWriteStmt(ref, text.Parts) })
+									})
+								})
+							})
+						})
+						for _, dependency := range templatePartsDeps(text.Parts, g.reactiveNames()) {
+							textUpdateDeps[dependency] = true
+						}
+						return write
+					}
+					rowRef := g.id()
+					updates := []JsStmt{}
+					rowBody := []JsStmt{genConst(rowRef, genCall(genMember(id("document"), "createElement"), strLit(row.Tag))), g.setAttrStmt(rowRef, g.scopeID, "")}
+					for _, attr := range row.Attrs {
+						rowBody = append(rowBody, g.setAttrStmt(rowRef, attr.Name, attr.Value))
+					}
+					for _, rowChild := range row.Children {
+						text := rowChild.(*TextNode)
+						textRef := g.id()
+						rowBody = append(rowBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(rowRef), "appendChild"), id(textRef))))
+						updates = append(updates, innerTextWrite(text, textRef))
+					}
+					if len(updates) > 0 {
+						rowUpdate := g.id() + "_update"
+						rowBody = append(rowBody, genConst(rowUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updates...)}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(rowUpdate))), genInvoke(rowUpdate))
+					}
+					rowBody = append(rowBody, genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(rowRef))), genAssignStmt(id(innerIndex), genBinary("+", id(innerIndex), numLit(1))))
+					body = append(body, genConst(items, itemsExpr), genLet(innerIndex, numLit(0)), genForOf("$$nested_item", id(items), genBlock(rowBody...)))
+				} else {
+					body = append(body, genConst(items, itemsExpr), genForOf("$$nested_item", id(items), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(nestedEach.Children, g.scopeID))))))
+				}
 				if len(nestedEach.ElseChildren) > 0 {
 					body = append(body, genIf(genBinary("===", genMember(id(items), "length"), numLit(0)), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(nestedEach.ElseChildren, g.scopeID))))))
 				}

@@ -971,10 +971,17 @@ func ssrCapabilityKeyedAwaitDirectChildren(nodes []Node) bool {
 }
 
 // ssrCapabilityKeyedAwaitStaticEach permits the first nested-list lifecycle
-// slice. The outer keyed-await row owns replacement; individual inner rows
-// are intentionally static until their own reconciliation plan is introduced.
+// slice. The outer keyed-await row owns replacement; an inner row may be a
+// single static-attribute element with item-dependent direct text, but has no
+// independent keyed identity yet.
 func ssrCapabilityKeyedAwaitStaticEach(block *EachBlockNode) bool {
-	return block != nil && !block.HasKey() && ssrCapabilityCurrentStaticChildren(block.Children) && ssrCapabilityCurrentStaticChildren(block.ElseChildren)
+	if block == nil || block.HasKey() || !ssrCapabilityCurrentStaticChildren(block.ElseChildren) {
+		return false
+	}
+	if _, ok := ssrCapabilityCurrentEachDynamicTextRow(block); ok {
+		return true
+	}
+	return ssrCapabilityCurrentStaticChildren(block.Children)
 }
 
 // ssrCapabilityKeyedAwaitDirectIfChain permits a plain direct #if in a
