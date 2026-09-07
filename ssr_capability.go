@@ -632,7 +632,7 @@ func ssrHydrationIfNestedAwaitBranch(chain *IfChainNode) (*AwaitBlockNode, int, 
 
 func ssrCapabilityCurrentStructuralComponentAttrs(component *ComponentNode) bool {
 	for _, attr := range component.Attrs {
-		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
 			return false
 		}
 	}
@@ -993,10 +993,10 @@ func ssrCapabilityKeyedAwaitDynamicEachRow(block *EachBlockNode) (*ElementNode, 
 		return nil, false
 	}
 	for _, attr := range row.Attrs {
-		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
 			return nil, false
 		}
-		if attr.Expr != nil && !(attr.IsBind && !attr.IsTwoWay) {
+		if attr.Expr != nil && !(attr.IsBind && !attr.IsTwoWay) && !attr.IsClassDir && !attr.IsStyleDir {
 			return nil, false
 		}
 	}

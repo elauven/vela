@@ -5906,11 +5906,35 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						}
 						return write
 					}
+					innerDirectiveWrite := func(attr *Attr, ref string) JsStmt {
+						var write JsStmt
+						g.withTemplateBinding(block.ItemName, "$$item", func() {
+							g.withTemplateBinding(block.IndexName, "$$index", func() {
+								g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
+									g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
+										g.withTemplateBinding(nestedEach.IndexName, innerIndex, func() {
+											if attr.IsClassDir {
+												write = g.classDirStmtAST(ref, attr)
+											} else {
+												write = g.styleDirStmtAST(ref, attr)
+											}
+										})
+									})
+								})
+							})
+						})
+						for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+							directiveUpdateDeps[dependency] = true
+						}
+						return write
+					}
 					rowRef := g.id()
 					updates := []JsStmt{}
 					rowBody := []JsStmt{genConst(rowRef, genCall(genMember(id("document"), "createElement"), strLit(row.Tag))), g.setAttrStmt(rowRef, g.scopeID, "")}
 					for _, attr := range row.Attrs {
-						if attr.Expr != nil {
+						if attr.IsClassDir || attr.IsStyleDir {
+							updates = append(updates, innerDirectiveWrite(attr, rowRef))
+						} else if attr.Expr != nil {
 							updates = append(updates, innerAttrWrite(attr, rowRef))
 						} else {
 							rowBody = append(rowBody, g.setAttrStmt(rowRef, attr.Name, attr.Value))
