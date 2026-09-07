@@ -5682,6 +5682,44 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		}
 	}
 
+	bindingUpdateDeps := map[string]bool{}
+	bindingWriteFor := func(tag string, attr *Attr, branch int, ref string) JsStmt {
+		spec, ok := twoWayBindSpec(tag, attr.Name)
+		if !ok {
+			return genBlock()
+		}
+		cache := g.id()
+		var value JsExpr
+		g.withTemplateBinding(block.ItemName, "$$item", func() {
+			g.withTemplateBinding(block.IndexName, "$$index", func() {
+				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
+					value = g.templateExpr(attr.Expr)
+				})
+			})
+		})
+		if attr.Name == "checked" {
+			value = genBool(value)
+		}
+		for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+			bindingUpdateDeps[dependency] = true
+		}
+		return genBlock(genConst(cache, value), genIf(genBinary("!==", genMember(id(ref), spec.readProp), id(cache)), genAssignStmt(genMember(id(ref), spec.readProp), id(cache))))
+	}
+
+	bindingListenerFor := func(tag string, attr *Attr, ref string) []JsStmt {
+		spec, ok := twoWayBindSpec(tag, attr.Name)
+		state, isIdent := templateExprIdent(attr.Expr)
+		if !ok || !isIdent || g.analysis == nil || !g.analysis.stateSet()[state] {
+			return nil
+		}
+		handler := g.id()
+		return []JsStmt{
+			genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genCall(id("$$set_"+state), genMember(genMember(id("$event"), "target"), spec.readProp))}),
+			genExprStmt(genCall(genMember(id(ref), "addEventListener"), strLit(spec.event), id(handler))),
+			genExprStmt(genCall(genMember(genMember(id("$$state"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(spec.event), id(handler))))})),
+		}
+	}
+
 	stateExpr := func() JsExpr {
 		return &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 			{Key: id("cell"), Value: genNull()}, {Key: id("active"), Value: numLit(0)},
@@ -5721,6 +5759,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				)
 				for _, attr := range element.Attrs {
 					switch {
+					case attr.IsTwoWay && attr.Expr != nil:
+						updates = append(updates, bindingWriteFor(element.Tag, attr, branch, ref))
+						body = append(body, bindingListenerFor(element.Tag, attr, ref)...)
 					case attr.IsBind && !attr.IsTwoWay && attr.Expr != nil:
 						updates = append(updates, attrWriteFor(attr, branch, ref))
 					case (attr.IsClassDir || attr.IsStyleDir) && attr.Expr != nil:
@@ -5904,6 +5945,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		deps[dependency] = true
 	}
 	for dependency := range directiveUpdateDeps {
+		deps[dependency] = true
+	}
+	for dependency := range bindingUpdateDeps {
 		deps[dependency] = true
 	}
 

@@ -967,6 +967,15 @@ func ssrCapabilityCurrentAwaitDirectElement(element *ElementNode) bool {
 		if attr == nil {
 			return false
 		}
+		if attr.IsTwoWay {
+			if attr.Expr == nil {
+				return false
+			}
+			if _, ok := twoWayBindSpec(element.Tag, attr.Name); !ok {
+				return false
+			}
+			continue
+		}
 		if ((attr.IsBind && !attr.IsTwoWay) || attr.IsClassDir || attr.IsStyleDir || attr.IsEvent) && attr.Expr != nil {
 			continue
 		}
