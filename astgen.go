@@ -5734,6 +5734,48 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genAssignStmt(genMember(id("$$state"), "listeners"), genArray()),
 		genAssignStmt(genMember(id("$$state"), "updates"), genArray()),
 	)}
+	// buildSettledElement owns a complete direct-DOM subtree for one settled
+	// keyed-await row. Dynamic leaves share the row update list; listener
+	// cleanups remain owned by the row state.
+	var buildSettledElement func(*ElementNode, string, int, *[]JsStmt) []JsStmt
+	buildSettledElement = func(element *ElementNode, parent string, branch int, updates *[]JsStmt) []JsStmt {
+		ref := g.id()
+		body := []JsStmt{
+			genConst(ref, genCall(genMember(id("document"), "createElement"), strLit(element.Tag))),
+			g.setAttrStmt(ref, g.scopeID, ""),
+		}
+		for _, attr := range element.Attrs {
+			switch {
+			case attr.IsTwoWay && attr.Expr != nil:
+				*updates = append(*updates, bindingWriteFor(element.Tag, attr, branch, ref))
+				body = append(body, bindingListenerFor(element.Tag, attr, ref)...)
+			case attr.IsBind && !attr.IsTwoWay && attr.Expr != nil:
+				*updates = append(*updates, attrWriteFor(attr, branch, ref))
+			case (attr.IsClassDir || attr.IsStyleDir) && attr.Expr != nil:
+				*updates = append(*updates, directiveWriteFor(attr, branch, ref))
+			case attr.IsEvent && attr.Expr != nil:
+				body = append(body, eventAttachFor(attr, branch, ref)...)
+			default:
+				body = append(body, g.setAttrStmt(ref, attr.Name, attr.Value))
+			}
+		}
+		if len(element.Children) > 0 && ssrCapabilityCurrentStaticChildren(element.Children) {
+			body = append(body, genExprStmt(genCall(id("$$insertHTML"), id(ref), strLit(emitStaticHTML(element.Children, g.scopeID)))))
+		} else {
+			for _, child := range element.Children {
+				switch current := child.(type) {
+				case *TextNode:
+					textRef := g.id()
+					body = append(body, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(ref), "appendChild"), id(textRef))))
+					*updates = append(*updates, textWriteFor(current, branch, textRef))
+				case *ElementNode:
+					body = append(body, buildSettledElement(current, ref, branch, updates)...)
+				}
+			}
+		}
+		body = append(body, genExprStmt(genCall(genMember(id(parent), "appendChild"), id(ref))))
+		return body
+	}
 	mount := func(branch int) []JsStmt {
 		body := []JsStmt{}
 		componentIndex := 0
@@ -5751,50 +5793,16 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				continue
 			}
 			if element, ok := child.(*ElementNode); ok && ssrCapabilityKeyedAwaitDirectElement(element) {
-				ref := g.id()
 				updates := []JsStmt{}
-				body = append(body,
-					genConst(ref, genCall(genMember(id("document"), "createElement"), strLit(element.Tag))),
-					g.setAttrStmt(ref, g.scopeID, ""),
-				)
-				for _, attr := range element.Attrs {
-					switch {
-					case attr.IsTwoWay && attr.Expr != nil:
-						updates = append(updates, bindingWriteFor(element.Tag, attr, branch, ref))
-						body = append(body, bindingListenerFor(element.Tag, attr, ref)...)
-					case attr.IsBind && !attr.IsTwoWay && attr.Expr != nil:
-						updates = append(updates, attrWriteFor(attr, branch, ref))
-					case (attr.IsClassDir || attr.IsStyleDir) && attr.Expr != nil:
-						updates = append(updates, directiveWriteFor(attr, branch, ref))
-					case attr.IsEvent && attr.Expr != nil:
-						body = append(body, eventAttachFor(attr, branch, ref)...)
-					default:
-						body = append(body, g.setAttrStmt(ref, attr.Name, attr.Value))
-					}
-				}
-
-				if len(element.Children) > 0 && ssrCapabilityCurrentStaticChildren(element.Children) {
-					body = append(body, genExprStmt(genCall(id("$$insertHTML"), id(ref), strLit(emitStaticHTML(element.Children, g.scopeID)))))
-				} else {
-					for _, childText := range element.Children {
-						text, ok := childText.(*TextNode)
-						if !ok || text == nil {
-							continue
-						}
-						textRef := g.id()
-						body = append(body, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(ref), "appendChild"), id(textRef))))
-						updates = append(updates, textWriteFor(text, branch, textRef))
-					}
-				}
+				body = append(body, buildSettledElement(element, "$$frag", branch, &updates)...)
 				if len(updates) > 0 {
-					update := ref + "_update"
+					update := g.id() + "_update"
 					body = append(body,
 						genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updates...)}),
 						genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))),
 						genInvoke(update),
 					)
 				}
-				body = append(body, genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(ref))))
 				continue
 			}
 			component, ok := child.(*ComponentNode)

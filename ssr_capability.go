@@ -966,14 +966,24 @@ func ssrCapabilityKeyedAwaitDirectElement(element *ElementNode) bool {
 	if element == nil {
 		return false
 	}
+	copy := *element
+	copy.Children = nil
+	if !ssrCapabilityCurrentAwaitDirectElement(&copy) {
+		return false
+	}
 	for _, child := range element.Children {
-		if _, ok := child.(*TextNode); !ok {
+		switch current := child.(type) {
+		case *TextNode:
+			continue
+		case *ElementNode:
+			if !ssrCapabilityKeyedAwaitDirectElement(current) {
+				return false
+			}
+		default:
 			return false
 		}
 	}
-	copy := *element
-	copy.Children = nil
-	return ssrCapabilityCurrentAwaitDirectElement(&copy)
+	return true
 }
 
 // ssrCapabilityCurrentAwaitDirectChildren is the first direct-DOM subset for
