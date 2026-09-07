@@ -5675,6 +5675,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id("$$index"))),
 		genConst("$$state", genCall(genMember(id(statesVar), "get"), id("$$key"))),
 		genIf(genUnary("!", id("$$state")), genReturn(nil)),
+		genConst("$$value", genMember(id("$$state"), "value")),
+		genConst("$$error", genMember(id("$$state"), "error")),
 		genAssignStmt(genMember(id("$$state"), "row"), id("$$row")),
 		genAssignStmt(genMember(id("$$state"), "item"), id("$$item")),
 		genAssignStmt(genMember(id("$$state"), "index"), id("$$index")),

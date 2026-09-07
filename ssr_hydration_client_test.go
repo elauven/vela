@@ -4337,3 +4337,84 @@ func TestBrowserSSRHydrationUnkeyedEachNestedAwaitAdoptsSettlesAndRebuildsOnce(t
 		t.Fatalf("nested each-await browser output=%q", got)
 	}
 }
+
+func TestBrowserSSRHydrationKeyedEachPerRowAwaitAdoptsSettlesReordersAndSuppressesLateCallbacks(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<script>import { onDestroy } from "vela"; export let id = ""; export let title = ""; onDestroy(() => { window.__keyedRowAwaitDestroys = (window.__keyedRowAwaitDestroys || 0) + 1; });</script><template><p class="child" :data-id={id}>{title}</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis := analyzeScriptAST(childSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let rows = [];</script><template><main>{#each rows as row (row.id)}{#await row.request}<Child :id={row.id} :title={row.title} />{:then value}<Child :id={row.id} :title={value} />{:catch error}<Child :id={row.id} :title={error} />{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysis("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := parentSFC.TemplateAST.Nodes[0].(*ElementNode)
+	each := main.Children[0].(*EachBlockNode)
+	await := each.Children[0].(*AwaitBlockNode)
+	child := await.PendingChildren[0].(*ComponentNode)
+	markers := ssrHydrationMarkerIDs(parentPlan.Nodes)
+	eachID, ok := markers.eachID(each.Span)
+	if !ok {
+		t.Fatal("keyed each marker is missing")
+	}
+	awaitID, ok := markers.awaitID(await.Span)
+	if !ok {
+		t.Fatal("per-row await marker is missing")
+	}
+	identity := parentPlan.ComponentInstanceIdentities[child.Span]
+	if !identity.RuntimeScoped {
+		t.Fatal("per-row pending child must be runtime-scoped")
+	}
+	rowScope := func(key string) string { return "vela-parent--each-" + itoa(each.Span.Start) + "-" + key }
+	childHTML := func(key, title string) string {
+		scope := rowScope(key) + "--" + ssrRuntimeComponentSuffix(identity)
+		return `<!--e:` + scope + `:0--><p vela-child="" class="child" data-id="` + key + `"><!--v:` + scope + `:0-->` + title + `<!--/v:` + scope + `:0--></p><!--/e:` + scope + `:0--><script type="application/json" id="vela-state-` + scope + `">{"component":"` + scope + `","props":{"Id":"` + key + `","Title":"` + title + `"},"state":{},"incomplete":false}</script>`
+	}
+	rowHTML := func(key, title string) string {
+		return `<!--r:` + rowScope(key) + `:` + itoa(eachID) + `--><!--v:vela-parent:` + itoa(awaitID) + `-->` + childHTML(key, title) + `<!--/v:vela-parent:` + itoa(awaitID) + `--><!--/r:` + rowScope(key) + `:` + itoa(eachID) + `-->`
+	}
+	serverHTML := `<!doctype html><body><!--e:vela-parent:0--><main vela-parent=""><!--v:vela-parent:` + itoa(eachID) + `-->` + rowHTML("a", "Alpha") + rowHTML("b", "Beta") + `<!--/v:vela-parent:` + itoa(eachID) + `--></main><!--/e:vela-parent:0--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Rows":[{"id":"a","title":"Alpha"},{"id":"b","title":"Beta"}]},"state":{},"incomplete":false}</script><script type="module">import hydrateParent from "./Parent.hydrate.js"; window.__aPromise = new Promise(resolve => { window.__resolveA = resolve; }); window.__bPromise = new Promise((resolve, reject) => { window.__resolveOldB = resolve; window.__rejectOldB = reject; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { rows: [{id:"a",title:"Alpha",request:window.__aPromise},{id:"b",title:"Beta",request:window.__bPromise}] }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.__hydrated);await p.evaluate(()=>{window.__bNode=document.querySelector("[data-id=b]");window.__resolveA("A done")});await p.waitForFunction(()=>document.querySelector("[data-id=a]")?.textContent==="A done");await p.evaluate(()=>window.__hydrated.component.set({rows:[{id:"b",title:"Beta*",request:window.__bPromise},{id:"a",title:"Alpha",request:window.__aPromise}]}));await p.waitForFunction(()=>Array.from(document.querySelectorAll(".child")).map(x=>x.dataset.id+":"+x.textContent).join("|")==="b:Beta*|a:A done");await p.evaluate(()=>{window.__retained=window.__bNode===document.querySelector("[data-id=b]");window.__newBPromise=new Promise((resolve,reject)=>{window.__resolveNewB=resolve;window.__rejectNewB=reject});window.__hydrated.component.set({rows:[{id:"b",title:"Beta new",request:window.__newBPromise},{id:"a",title:"Alpha",request:window.__aPromise}]})});await p.waitForFunction(()=>document.querySelector("[data-id=b]")?.textContent==="Beta new");await p.evaluate(()=>{window.__oldBDetached=!window.__bNode.isConnected;window.__resolveOldB("late")});await p.waitForTimeout(20);await p.evaluate(()=>window.__rejectNewB("bad"));await p.waitForFunction(()=>document.querySelector("[data-id=b]")?.textContent==="bad");await p.evaluate(()=>window.__hydrated.component.set({rows:[{id:"b",title:"Beta new",request:window.__newBPromise}]}));await p.waitForFunction(()=>!document.querySelector("[data-id=a]"));await p.evaluate(()=>{window.__payloadsRemoved=!document.querySelector("[id^=vela-state-vela-parent--each-]");window.__hydrated.component.destroy()});const x=await p.evaluate(()=>({initial:window.__initialMutations,retained:window.__retained,oldBDetached:window.__oldBDetached,payloadsRemoved:window.__payloadsRemoved,destroys:window.__keyedRowAwaitDestroys,children:document.querySelectorAll(".child").length}));if(x.initial!==0||!x.retained||!x.oldBDetached||!x.payloadsRemoved||x.destroys!==5||x.children!==0)throw new Error(JSON.stringify(x));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browserScript, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("keyed per-row each-await browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(parentClient, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("keyed per-row each-await browser output=%q", got)
+	}
+}
