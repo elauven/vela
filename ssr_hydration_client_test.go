@@ -4435,3 +4435,57 @@ func TestBrowserSSRHydrationKeyedEachPerRowAwaitAdoptsSettlesReordersAndSuppress
 		t.Fatalf("keyed per-row each-await browser output=%q", got)
 	}
 }
+
+func TestBrowserSSRHydrationKeyedEachAwaitSettledTextUpdatesPerRow(t *testing.T) {
+	node := requirePlaywright(t)
+	parentSFC, err := parseSFC(`<script>export let rows = []; export let prefix = "ready: ";</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{prefix}{value}{:catch error}{prefix}{error}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysis("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := parentSFC.TemplateAST.Nodes[0].(*ElementNode)
+	each := main.Children[0].(*EachBlockNode)
+	await := each.Children[0].(*AwaitBlockNode)
+	markers := ssrHydrationMarkerIDs(parentPlan.Nodes)
+	eachID, ok := markers.eachID(each.Span)
+	if !ok {
+		t.Fatal("keyed each marker is missing")
+	}
+	awaitID, ok := markers.awaitID(await.Span)
+	if !ok {
+		t.Fatal("per-row await marker is missing")
+	}
+	rowScope := func(key string) string { return "vela-parent--each-" + itoa(each.Span.Start) + "-" + key }
+	rowHTML := func(key string) string {
+		return `<!--r:` + rowScope(key) + `:` + itoa(eachID) + `--><!--v:vela-parent:` + itoa(awaitID) + `--><p vela-parent="" class="pending">Loading</p><!--/v:vela-parent:` + itoa(awaitID) + `--><!--/r:` + rowScope(key) + `:` + itoa(eachID) + `-->`
+	}
+	serverHTML := `<!doctype html><body><!--e:vela-parent:0--><main vela-parent=""><!--v:vela-parent:` + itoa(eachID) + `-->` + rowHTML("a") + rowHTML("b") + `<!--/v:vela-parent:` + itoa(eachID) + `--></main><!--/e:vela-parent:0--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Rows":[{"id":"a"},{"id":"b"}],"Prefix":"ready: "},"state":{},"incomplete":false}</script><script type="module">import hydrateParent from "./Parent.hydrate.js"; window.__aPromise = new Promise(resolve => { window.__resolveA = resolve; }); window.__bPromise = new Promise((resolve, reject) => { window.__resolveB = resolve; window.__rejectB = reject; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { rows: [{id:"a",request:window.__aPromise},{id:"b",request:window.__bPromise}] }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.__hydrated);await p.evaluate(()=>{window.__pendingB=document.querySelectorAll(".pending")[1];window.__resolveA("A")});await p.waitForFunction(()=>document.querySelector("main")?.textContent.includes("ready: A"));await p.evaluate(()=>window.__hydrated.component.set({prefix:"next: "}));await p.waitForFunction(()=>document.querySelector("main")?.textContent.includes("next: A"));await p.evaluate(()=>{window.__pendingBRetained=window.__pendingB===document.querySelector(".pending");window.__rejectB("B failed")});await p.waitForFunction(()=>document.querySelector("main")?.textContent.includes("next: B failed"));await p.evaluate(()=>window.__hydrated.component.destroy());const x=await p.evaluate(()=>({initial:window.__initialMutations,pendingBRetained:window.__pendingBRetained,main:document.querySelector("main")}));if(x.initial!==0||!x.pendingBRetained||x.main)throw new Error(JSON.stringify(x));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browserScript, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("keyed each-await settled text browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(parentClient, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("keyed each-await settled text browser output=%q", got)
+	}
+}
