@@ -4240,3 +4240,83 @@ func TestSSRHydrationClientUsesCanonicalElementMarkersAfterStructuralSlot(t *tes
 		t.Fatalf("reactive sibling must keep the SSR-plan marker after a structural slot range:\n%s", source)
 	}
 }
+
+func TestBrowserSSRHydrationUnkeyedEachNestedAwaitAdoptsSettlesAndRebuildsOnce(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<script>import { onDestroy } from "vela"; export let title = ""; onDestroy(() => { window.__eachAwaitDestroys = (window.__eachAwaitDestroys || 0) + 1; });</script><template><p class="child">{title}</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis := analyzeScriptAST(childSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let rows = [];</script><template><main>{#each rows as row}{#await request}<Child :title={row.title} />{:then value}<p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysis("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := parentSFC.TemplateAST.Nodes[0].(*ElementNode)
+	each := main.Children[0].(*EachBlockNode)
+	await := each.Children[0].(*AwaitBlockNode)
+	child := await.PendingChildren[0].(*ComponentNode)
+	markers := ssrHydrationMarkerIDs(parentPlan.Nodes)
+	eachID, ok := markers.eachID(each.Span)
+	if !ok {
+		t.Fatal("outer each marker is missing")
+	}
+	awaitID, ok := markers.awaitID(await.Span)
+	if !ok {
+		t.Fatal("nested await marker is missing")
+	}
+	identity := parentPlan.ComponentInstanceIdentities[child.Span]
+	if !identity.RuntimeScoped {
+		t.Fatal("nested await child must be runtime-scoped")
+	}
+	rowScope := func(index int) string {
+		return "vela-parent--each-" + itoa(each.Span.Start) + "-" + itoa(index) + "--" + ssrRuntimeComponentSuffix(identity)
+	}
+	rowHTML := func(index int, title string) string {
+		scope := rowScope(index)
+		return "<!--v:vela-parent:" + itoa(awaitID) + "--><!--e:" + scope + ":0--><p vela-child=\"\" class=\"child\"><!--v:" + scope + ":0-->" + title + "<!--/v:" + scope + ":0--></p><!--/e:" + scope + ":0--><script type=\"application/json\" id=\"vela-state-" + scope + "\">{\"component\":\"" + scope + "\",\"props\":{\"Title\":\"" + title + "\"},\"state\":{},\"incomplete\":false}</script><!--/v:vela-parent:" + itoa(awaitID) + "-->"
+	}
+	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(eachID) + "-->" + rowHTML(0, "one") + rowHTML(1, "two") + "<!--/v:vela-parent:" + itoa(eachID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Rows\":[{\"title\":\"one\"},{\"title\":\"two\"}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__request = new Promise(resolve => { window.__resolveOld = resolve; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { request: window.__request }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.__hydrated);await p.evaluate(()=>{window.__first=Array.from(document.querySelectorAll(".child"));window.__nextRequest=new Promise(resolve=>{window.__resolveNext=resolve});window.__hydrated.component.set({rows:[{title:"next"}],request:window.__nextRequest})});await p.waitForFunction(()=>document.querySelectorAll(".child").length===1&&document.querySelector(".child")?.textContent==="next");await p.evaluate(()=>{window.__next=document.querySelector(".child");window.__payloadsRemoved=!document.querySelector("[id^=vela-state-vela-parent--each-]");window.__resolveNext("done")});await p.waitForFunction(()=>document.querySelectorAll(".settled").length===1);await p.evaluate(()=>window.__hydrated.component.destroy());const x=await p.evaluate(()=>({initial:window.__initialMutations,firstDetached:window.__first.every(n=>!n.isConnected),nextDetached:!window.__next.isConnected,payloadsRemoved:window.__payloadsRemoved,destroys:window.__eachAwaitDestroys,children:document.querySelectorAll(".child").length,settled:document.querySelectorAll(".settled").length}));if(x.initial!==0||!x.firstDetached||!x.nextDetached||!x.payloadsRemoved||x.destroys!==3||x.children!==0||x.settled!==0)throw new Error(JSON.stringify(x));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browserScript, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("nested each-await browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(parentClient, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("nested each-await browser output=%q", got)
+	}
+}
