@@ -972,16 +972,40 @@ func ssrCapabilityKeyedAwaitDirectChildren(nodes []Node) bool {
 
 // ssrCapabilityKeyedAwaitStaticEach permits the first nested-list lifecycle
 // slice. The outer keyed-await row owns replacement; an inner row may be a
-// single static-attribute element with item-dependent direct text, but has no
+// single element with item-dependent direct text and ordinary dynamic attributes, but has no
 // independent keyed identity yet.
 func ssrCapabilityKeyedAwaitStaticEach(block *EachBlockNode) bool {
 	if block == nil || block.HasKey() || !ssrCapabilityCurrentStaticChildren(block.ElseChildren) {
 		return false
 	}
-	if _, ok := ssrCapabilityCurrentEachDynamicTextRow(block); ok {
+	if _, ok := ssrCapabilityKeyedAwaitDynamicEachRow(block); ok {
 		return true
 	}
 	return ssrCapabilityCurrentStaticChildren(block.Children)
+}
+
+func ssrCapabilityKeyedAwaitDynamicEachRow(block *EachBlockNode) (*ElementNode, bool) {
+	if block == nil || block.HasKey() || len(block.Children) != 1 {
+		return nil, false
+	}
+	row, ok := block.Children[0].(*ElementNode)
+	if !ok || row == nil {
+		return nil, false
+	}
+	for _, attr := range row.Attrs {
+		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+			return nil, false
+		}
+		if attr.Expr != nil && !(attr.IsBind && !attr.IsTwoWay) {
+			return nil, false
+		}
+	}
+	for _, child := range row.Children {
+		if _, ok := child.(*TextNode); !ok {
+			return nil, false
+		}
+	}
+	return row, true
 }
 
 // ssrCapabilityKeyedAwaitDirectIfChain permits a plain direct #if in a
