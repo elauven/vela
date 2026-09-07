@@ -5639,6 +5639,26 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		return write
 	}
 
+	directiveUpdateDeps := map[string]bool{}
+	directiveWriteFor := func(attr *Attr, branch int, ref string) JsStmt {
+		var write JsStmt
+		g.withTemplateBinding(block.ItemName, "$$item", func() {
+			g.withTemplateBinding(block.IndexName, "$$index", func() {
+				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
+					if attr.IsClassDir {
+						write = g.classDirStmtAST(ref, attr)
+					} else {
+						write = g.styleDirStmtAST(ref, attr)
+					}
+				})
+			})
+		})
+		for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+			directiveUpdateDeps[dependency] = true
+		}
+		return write
+	}
+
 	stateExpr := func() JsExpr {
 		return &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 			{Key: id("cell"), Value: genNull()}, {Key: id("active"), Value: numLit(0)},
@@ -5675,12 +5695,16 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					g.setAttrStmt(ref, g.scopeID, ""),
 				)
 				for _, attr := range element.Attrs {
-					if attr.IsBind && !attr.IsTwoWay && attr.Expr != nil {
+					switch {
+					case attr.IsBind && !attr.IsTwoWay && attr.Expr != nil:
 						updates = append(updates, attrWriteFor(attr, branch, ref))
-					} else {
+					case (attr.IsClassDir || attr.IsStyleDir) && attr.Expr != nil:
+						updates = append(updates, directiveWriteFor(attr, branch, ref))
+					default:
 						body = append(body, g.setAttrStmt(ref, attr.Name, attr.Value))
 					}
 				}
+
 				if len(element.Children) > 0 {
 					body = append(body, genExprStmt(genCall(id("$$insertHTML"), id(ref), strLit(emitStaticHTML(element.Children, g.scopeID)))))
 				}
@@ -5852,6 +5876,10 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	for dependency := range attrUpdateDeps {
 		deps[dependency] = true
 	}
+	for dependency := range directiveUpdateDeps {
+		deps[dependency] = true
+	}
+
 	for dependency := range deps {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}

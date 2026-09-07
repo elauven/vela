@@ -967,10 +967,10 @@ func ssrCapabilityCurrentAwaitDirectElement(element *ElementNode) bool {
 		if attr == nil {
 			return false
 		}
-		if attr.IsBind && !attr.IsTwoWay && attr.Expr != nil {
+		if ((attr.IsBind && !attr.IsTwoWay) || attr.IsClassDir || attr.IsStyleDir) && attr.Expr != nil {
 			continue
 		}
-		if attr.Expr != nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+		if attr.Expr != nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
 			return false
 		}
 	}
