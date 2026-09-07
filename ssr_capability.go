@@ -930,7 +930,7 @@ func ssrCapabilityCurrentAwaitComponentBranches(block *AwaitBlockNode) ([][]*Com
 			if !ssrCapabilityCurrentStaticChildren(staticChildren) {
 				return nil, false
 			}
-		} else if !ssrCapabilityCurrentAwaitTextChildren(staticChildren) {
+		} else if !ssrCapabilityCurrentAwaitDirectChildren(staticChildren) {
 			return nil, false
 		}
 		if index > 0 && !allStatic(staticChildren) {
@@ -940,19 +940,37 @@ func ssrCapabilityCurrentAwaitComponentBranches(block *AwaitBlockNode) ([][]*Com
 	return result, found
 }
 
-// ssrCapabilityCurrentAwaitTextChildren is the first direct-DOM subset for
-// a settled keyed-row await branch. Dynamic text is materialized by the
-// row-owned renderer; elements remain static until attribute ownership lands.
-func ssrCapabilityCurrentAwaitTextChildren(nodes []Node) bool {
+// ssrCapabilityCurrentAwaitDirectChildren is the first direct-DOM subset for
+// a settled keyed-row await branch. Dynamic text and one-way attributes are materialized by the
+// row-owned renderer; elements may carry one-way dynamic attributes while children remain static.
+func ssrCapabilityCurrentAwaitDirectChildren(nodes []Node) bool {
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
 			continue
 		case *ElementNode:
-			if !ssrCapabilityCurrentStaticChildren([]Node{current}) {
+			if !ssrCapabilityCurrentAwaitDirectElement(current) {
 				return false
 			}
 		default:
+			return false
+		}
+	}
+	return true
+}
+
+func ssrCapabilityCurrentAwaitDirectElement(element *ElementNode) bool {
+	if element == nil || !ssrCapabilityCurrentStaticChildren(element.Children) {
+		return false
+	}
+	for _, attr := range element.Attrs {
+		if attr == nil {
+			return false
+		}
+		if attr.IsBind && !attr.IsTwoWay && attr.Expr != nil {
+			continue
+		}
+		if attr.Expr != nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
 			return false
 		}
 	}

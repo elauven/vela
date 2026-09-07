@@ -5623,6 +5623,22 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		return write
 	}
 
+	attrUpdateDeps := map[string]bool{}
+	attrWriteFor := func(attr *Attr, branch int, ref string) JsStmt {
+		var write JsStmt
+		g.withTemplateBinding(block.ItemName, "$$item", func() {
+			g.withTemplateBinding(block.IndexName, "$$index", func() {
+				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
+					write = g.attrWriteStmt(ref, attr)
+				})
+			})
+		})
+		for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+			attrUpdateDeps[dependency] = true
+		}
+		return write
+	}
+
 	stateExpr := func() JsExpr {
 		return &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 			{Key: id("cell"), Value: genNull()}, {Key: id("active"), Value: numLit(0)},
@@ -5649,6 +5665,34 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))),
 					genInvoke(update),
 				)
+				continue
+			}
+			if element, ok := child.(*ElementNode); ok && ssrCapabilityCurrentAwaitDirectElement(element) {
+				ref := g.id()
+				updates := []JsStmt{}
+				body = append(body,
+					genConst(ref, genCall(genMember(id("document"), "createElement"), strLit(element.Tag))),
+					g.setAttrStmt(ref, g.scopeID, ""),
+				)
+				for _, attr := range element.Attrs {
+					if attr.IsBind && !attr.IsTwoWay && attr.Expr != nil {
+						updates = append(updates, attrWriteFor(attr, branch, ref))
+					} else {
+						body = append(body, g.setAttrStmt(ref, attr.Name, attr.Value))
+					}
+				}
+				if len(element.Children) > 0 {
+					body = append(body, genExprStmt(genCall(id("$$insertHTML"), id(ref), strLit(emitStaticHTML(element.Children, g.scopeID)))))
+				}
+				if len(updates) > 0 {
+					update := ref + "_update"
+					body = append(body,
+						genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updates...)}),
+						genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))),
+						genInvoke(update),
+					)
+				}
+				body = append(body, genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(ref))))
 				continue
 			}
 			component, ok := child.(*ComponentNode)
@@ -5803,6 +5847,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		}
 	}
 	for dependency := range textUpdateDeps {
+		deps[dependency] = true
+	}
+	for dependency := range attrUpdateDeps {
 		deps[dependency] = true
 	}
 	for dependency := range deps {
