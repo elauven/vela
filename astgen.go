@@ -5659,16 +5659,41 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		return write
 	}
 
+	eventAttachFor := func(attr *Attr, branch int, ref string) []JsStmt {
+		var handlerExpr JsExpr
+		g.withTemplateBinding(block.ItemName, "$$item", func() {
+			g.withTemplateBinding(block.IndexName, "$$index", func() {
+				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
+					handlerExpr = g.eventHandlerExpr(attr)
+				})
+			})
+		})
+		if handlerExpr == nil {
+			handlerExpr = id("undefined")
+		}
+		if !templateExprIsHandler(attr.Expr) {
+			handlerExpr = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))}
+		}
+		handler := g.id()
+		return []JsStmt{
+			genConst(handler, handlerExpr),
+			genExprStmt(genCall(genMember(id(ref), "addEventListener"), strLit(attr.Name), id(handler))),
+			genExprStmt(genCall(genMember(genMember(id("$$state"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(attr.Name), id(handler))))})),
+		}
+	}
+
 	stateExpr := func() JsExpr {
 		return &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 			{Key: id("cell"), Value: genNull()}, {Key: id("active"), Value: numLit(0)},
 			{Key: id("value"), Value: id("undefined")}, {Key: id("error"), Value: id("undefined")},
-			{Key: id("components"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()},
+			{Key: id("components"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()},
 		}}
 	}
 	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(
 		genForOf("$$component", genCall(genMember(genCall(genMember(genMember(id("$$state"), "components"), "slice")), "reverse")), genIf(id("$$component"), genExprStmt(genCall(genMember(id("$$component"), "destroy"))))),
 		genAssignStmt(genMember(id("$$state"), "components"), genArray()),
+		genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id("$$state"), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
+		genAssignStmt(genMember(id("$$state"), "listeners"), genArray()),
 		genAssignStmt(genMember(id("$$state"), "updates"), genArray()),
 	)}
 	mount := func(branch int) []JsStmt {
@@ -5700,6 +5725,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						updates = append(updates, attrWriteFor(attr, branch, ref))
 					case (attr.IsClassDir || attr.IsStyleDir) && attr.Expr != nil:
 						updates = append(updates, directiveWriteFor(attr, branch, ref))
+					case attr.IsEvent && attr.Expr != nil:
+						body = append(body, eventAttachFor(attr, branch, ref)...)
 					default:
 						body = append(body, g.setAttrStmt(ref, attr.Name, attr.Value))
 					}
