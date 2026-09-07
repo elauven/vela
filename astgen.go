@@ -5814,6 +5814,30 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						textUpdateDeps[dependency] = true
 					}
 				}
+				mountIfChildren := func(nodes []Node) []JsStmt {
+					body := []JsStmt{}
+					for _, branchChild := range nodes {
+						if text, ok := branchChild.(*TextNode); ok {
+							if textNodeAllStatic(text) {
+								body = append(body, genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML([]Node{text}, g.scopeID)))))
+								continue
+							}
+							ref := g.id()
+							update := ref + "_update"
+							body = append(body, genConst(ref, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(ref))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(textWriteFor(text, branch, ref))}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))), genInvoke(update))
+							continue
+						}
+						if element, ok := branchChild.(*ElementNode); ok && ssrCapabilityKeyedAwaitDirectElement(element) {
+							updates := []JsStmt{}
+							body = append(body, buildSettledElement(element, "$$frag", branch, &updates)...)
+							if len(updates) > 0 {
+								update := g.id() + "_update"
+								body = append(body, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updates...)}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))), genInvoke(update))
+							}
+						}
+					}
+					return body
+				}
 				var mountIfBranch func(int) []JsStmt
 				mountIfBranch = func(index int) []JsStmt {
 					if index >= len(chain.Branches) || chain.Branches[index] == nil {
@@ -5821,7 +5845,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					}
 					ifBranch := chain.Branches[index]
 					if !ifBranch.HasCondition() {
-						return []JsStmt{genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(ifBranch.Children, g.scopeID))))}
+						return mountIfChildren(ifBranch.Children)
 					}
 					condition := JsExpr(boolLit(false))
 					g.withTemplateBinding(block.ItemName, "$$item", func() {
@@ -5829,7 +5853,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() { condition = g.templateExpr(ifBranch.Expr) })
 						})
 					})
-					return []JsStmt{&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: condition, Then: genBlock(genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(ifBranch.Children, g.scopeID))))), Else: genBlock(mountIfBranch(index + 1)...)}}
+					return []JsStmt{&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: condition, Then: genBlock(mountIfChildren(ifBranch.Children)...), Else: genBlock(mountIfBranch(index + 1)...)}}
 				}
 				body = append(body, mountIfBranch(0)...)
 				update := g.id() + "_if_update"

@@ -471,7 +471,7 @@ func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
 	}
 	conditions := 0
 	for _, branch := range chain.Branches {
-		if branch == nil || !ssrCapabilityCurrentStaticChildren(branch.Children) {
+		if branch == nil || !ssrCapabilityKeyedAwaitDirectIfChildren(branch.Children) {
 			return false
 		}
 		if branch.HasCondition() {
@@ -590,7 +590,7 @@ func ssrHydrationIfNestedEachBranch(chain *IfChainNode) (*EachBlockNode, int, bo
 				continue
 			}
 		}
-		if !ssrCapabilityCurrentStaticChildren(branch.Children) {
+		if !ssrCapabilityKeyedAwaitDirectIfChildren(branch.Children) {
 			return nil, 0, false
 		}
 	}
@@ -623,7 +623,7 @@ func ssrHydrationIfNestedAwaitBranch(chain *IfChainNode) (*AwaitBlockNode, int, 
 				continue
 			}
 		}
-		if !ssrCapabilityCurrentStaticChildren(branch.Children) {
+		if !ssrCapabilityKeyedAwaitDirectIfChildren(branch.Children) {
 			return nil, 0, false
 		}
 	}
@@ -969,12 +969,27 @@ func ssrCapabilityKeyedAwaitDirectChildren(nodes []Node) bool {
 // ssrCapabilityKeyedAwaitDirectIfChain permits a plain direct #if in a
 // settled keyed-await row. Its active branch is replaced within the enclosing
 // keyed row range; deeper structural nesting needs an inner range lifecycle.
+func ssrCapabilityKeyedAwaitDirectIfChildren(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+		case *ElementNode:
+			if current == nil || !ssrCapabilityKeyedAwaitDirectElement(current) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func ssrCapabilityKeyedAwaitDirectIfChain(chain *IfChainNode) bool {
 	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 {
 		return false
 	}
 	for _, branch := range chain.Branches {
-		if branch == nil || !ssrCapabilityCurrentStaticChildren(branch.Children) {
+		if branch == nil || !ssrCapabilityKeyedAwaitDirectIfChildren(branch.Children) {
 			return false
 		}
 	}
