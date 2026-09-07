@@ -5805,6 +5805,37 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				}
 				continue
 			}
+			if chain, ok := child.(*IfChainNode); ok && ssrCapabilityKeyedAwaitDirectIfChain(chain) {
+				for _, ifBranch := range chain.Branches {
+					if ifBranch == nil || !ifBranch.HasCondition() {
+						continue
+					}
+					for _, dependency := range templateExprDeps(ifBranch.Expr, g.reactiveNames()) {
+						textUpdateDeps[dependency] = true
+					}
+				}
+				var mountIfBranch func(int) []JsStmt
+				mountIfBranch = func(index int) []JsStmt {
+					if index >= len(chain.Branches) || chain.Branches[index] == nil {
+						return nil
+					}
+					ifBranch := chain.Branches[index]
+					if !ifBranch.HasCondition() {
+						return []JsStmt{genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(ifBranch.Children, g.scopeID))))}
+					}
+					condition := JsExpr(boolLit(false))
+					g.withTemplateBinding(block.ItemName, "$$item", func() {
+						g.withTemplateBinding(block.IndexName, "$$index", func() {
+							g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() { condition = g.templateExpr(ifBranch.Expr) })
+						})
+					})
+					return []JsStmt{&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: condition, Then: genBlock(genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(ifBranch.Children, g.scopeID))))), Else: genBlock(mountIfBranch(index + 1)...)}}
+				}
+				body = append(body, mountIfBranch(0)...)
+				update := g.id() + "_if_update"
+				body = append(body, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock()}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))), genInvoke(update))
+				continue
+			}
 			component, ok := child.(*ComponentNode)
 			if !ok || component == nil {
 				body = append(body, genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML([]Node{child}, g.scopeID)))))

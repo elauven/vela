@@ -955,7 +955,26 @@ func ssrCapabilityKeyedAwaitDirectChildren(nodes []Node) bool {
 			if current == nil || !ssrCapabilityKeyedAwaitDirectElement(current) {
 				return false
 			}
+		case *IfChainNode:
+			if !ssrCapabilityKeyedAwaitDirectIfChain(current) {
+				return false
+			}
 		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ssrCapabilityKeyedAwaitDirectIfChain permits a plain direct #if in a
+// settled keyed-await row. Its active branch is replaced within the enclosing
+// keyed row range; deeper structural nesting needs an inner range lifecycle.
+func ssrCapabilityKeyedAwaitDirectIfChain(chain *IfChainNode) bool {
+	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 {
+		return false
+	}
+	for _, branch := range chain.Branches {
+		if branch == nil || !ssrCapabilityCurrentStaticChildren(branch.Children) {
 			return false
 		}
 	}
