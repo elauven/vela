@@ -6009,6 +6009,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id("$$inner"), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
 							genAssignStmt(genMember(id("$$inner"), "listeners"), genArray()),
 							genAssignStmt(genMember(id("$$inner"), "updates"), genArray()),
+							genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRows"), "delete"), id(innerKey))),
 						)}
 					}
 					innerBindingWrite := func(tag string, attr *Attr, ref string) JsStmt {
