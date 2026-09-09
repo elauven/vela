@@ -4489,3 +4489,35 @@ func TestBrowserSSRHydrationKeyedEachAwaitSettledTextUpdatesPerRow(t *testing.T)
 		t.Fatalf("keyed each-await settled text browser output=%q", got)
 	}
 }
+
+func TestSSRHydrationKeyedEachAwaitNestedEachBindings(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		attr  string
+		state string
+	}{
+		{name: "value", attr: "bind:value={draft}", state: "draft"},
+		{name: "checked", attr: "bind:checked={checked}", state: "checked"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := `<script>export let rows = []; let draft = $state(""); let checked = $state(false);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Loading</p>{:then value}{#each row.labels as label}<input class="field" :data-label={label} ` + tc.attr + ` />{/each}{/await}{/each}</main></template>`
+			sfc, err := parseSFC(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+				t.Fatal("nested keyed-await binding was rejected by capability analysis")
+			}
+			program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+			if err != nil {
+				t.Fatal(err)
+			}
+			code := PrintJS(program, PrintPretty)
+			for _, want := range []string{"addEventListener", "$$set_" + tc.state, "removeEventListener"} {
+				if !strings.Contains(code, want) {
+					t.Fatalf("nested keyed-await binding lowering misses %q", want)
+				}
+			}
+		})
+	}
+}
