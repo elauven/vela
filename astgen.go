@@ -5984,6 +5984,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							})
 						})
 					}
+					innerOwner := "$$state"
 					innerBindingWrite := func(tag string, attr *Attr, ref string) JsStmt {
 						spec, ok := twoWayBindSpec(tag, attr.Name)
 						if !ok {
@@ -6033,11 +6034,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						for _, attr := range row.Attrs {
 							if attr.IsTwoWay && attr.Expr != nil {
 								updates = append(updates, innerBindingWrite(row.Tag, attr, rowRef))
-								elementBody = append(elementBody, innerBindingListener(row.Tag, attr, rowRef, "$$state")...)
+								elementBody = append(elementBody, innerBindingListener(row.Tag, attr, rowRef, innerOwner)...)
 							} else if attr.IsEvent && attr.Expr != nil {
 								var eventStmts []JsStmt
 								g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
-									g.withTemplateBinding(nestedEach.IndexName, innerIndex, func() { eventStmts = eventAttachFor(attr, branch, rowRef, "") })
+									g.withTemplateBinding(nestedEach.IndexName, innerIndex, func() { eventStmts = eventAttachFor(attr, branch, rowRef, innerOwner) })
 								})
 								elementBody = append(elementBody, eventStmts...)
 							} else if attr.IsClassDir || attr.IsStyleDir {
@@ -6056,7 +6057,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						}
 						if len(updates) > 0 {
 							rowUpdate := g.id() + "_update"
-							elementBody = append(elementBody, genConst(rowUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updates...)}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(rowUpdate))), genInvoke(rowUpdate))
+							elementBody = append(elementBody, genConst(rowUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updates...)}), genExprStmt(genCall(genMember(genMember(id(innerOwner), "updates"), "push"), id(rowUpdate))), genInvoke(rowUpdate))
 						}
 						elementBody = append(elementBody, genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(rowRef))))
 						rowBody = append(rowBody, elementBody...)
