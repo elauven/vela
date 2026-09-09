@@ -6555,17 +6555,15 @@ func (g *ASTGen) hydrationEachNestedKeyInstanceScope(block *EachBlockNode, chain
 // lexical generated bindings, while the key remains the parser-owned cached
 // AST. This is intentionally the only path for nested keyed marker scopes.
 func (g *ASTGen) hydrationEachInstanceScopeFrom(baseScope JsExpr, block *EachBlockNode, itemVar, indexVar string) JsExpr {
-	if block == nil {
-		panic("vela: missing each block for hydration instance scope")
+	if block == nil || !block.HasKey() {
+		panic("vela: keyed hydration instance scope requires a keyed each block")
 	}
-	value := JsExpr(id(indexVar))
-	if block.HasKey() {
-		g.withTemplateBinding(block.ItemName, itemVar, func() {
-			g.withTemplateBinding(block.IndexName, indexVar, func() {
-				value = g.templateExpr(block.KeyAST)
-			})
+	value := JsExpr(id("undefined"))
+	g.withTemplateBinding(block.ItemName, itemVar, func() {
+		g.withTemplateBinding(block.IndexName, indexVar, func() {
+			value = g.templateExpr(block.KeyAST)
 		})
-	}
+	})
 	return genBinary("+",
 		genBinary("+", baseScope, strLit("--each-"+itoa(block.Span.Start)+"-")),
 		genString(value),
@@ -6573,6 +6571,15 @@ func (g *ASTGen) hydrationEachInstanceScopeFrom(baseScope JsExpr, block *EachBlo
 }
 
 func (g *ASTGen) hydrationEachInstanceScope(block *EachBlockNode, index JsExpr) JsExpr {
+	if block == nil {
+		panic("vela: missing each block for hydration instance scope")
+	}
+	if !block.HasKey() {
+		return genBinary("+",
+			genBinary("+", id("$$instanceID"), strLit("--each-"+itoa(block.Span.Start)+"-")),
+			genString(index),
+		)
+	}
 	return g.hydrationEachInstanceScopeFrom(id("$$instanceID"), block, "$$item", "$$index")
 }
 
