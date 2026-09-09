@@ -5610,6 +5610,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	destroyVar, renderVar, driveVar := name+"_destroy", name+"_render", name+"_drive"
 	createVar, updateVar := name+"_create", name+"_row_update"
 	innerRefreshVar := name + "_inner_refresh"
+	rowItemVar := name + "_item"
 	children := [][]Node{await.PendingChildren, await.ThenChildren, await.CatchChildren}
 	bindingNames := []string{"", await.ValueName, await.ErrorName}
 	bindingValues := []string{"", "$$value", "$$error"}
@@ -5635,7 +5636,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	}
 	propsFor := func(component *ComponentNode, branch int) JsExpr {
 		props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
-		g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 			g.withTemplateBinding(block.IndexName, "$$index", func() {
 				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
 					props = g.componentPropsExpr(component.Attrs)
@@ -5648,7 +5649,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	innerEachDeps := map[string]bool{}
 	textWriteFor := func(text *TextNode, branch int, ref string) JsStmt {
 		var write JsStmt
-		g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 			g.withTemplateBinding(block.IndexName, "$$index", func() {
 				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
 					write = g.textWriteStmt(ref, text.Parts)
@@ -5664,7 +5665,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	attrUpdateDeps := map[string]bool{}
 	attrWriteFor := func(attr *Attr, branch int, ref string) JsStmt {
 		var write JsStmt
-		g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 			g.withTemplateBinding(block.IndexName, "$$index", func() {
 				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
 					write = g.attrWriteStmt(ref, attr)
@@ -5680,7 +5681,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	directiveUpdateDeps := map[string]bool{}
 	directiveWriteFor := func(attr *Attr, branch int, ref string) JsStmt {
 		var write JsStmt
-		g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 			g.withTemplateBinding(block.IndexName, "$$index", func() {
 				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
 					if attr.IsClassDir {
@@ -5702,7 +5703,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			owner = "$$state"
 		}
 		var handlerExpr JsExpr
-		g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 			g.withTemplateBinding(block.IndexName, "$$index", func() {
 				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
 					handlerExpr = g.eventHandlerExpr(attr)
@@ -5731,7 +5732,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		}
 		cache := g.id()
 		var value JsExpr
-		g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 			g.withTemplateBinding(block.IndexName, "$$index", func() {
 				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
 					value = g.templateExpr(attr.Expr)
@@ -5768,7 +5769,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		return &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 			{Key: id("cell"), Value: genNull()}, {Key: id("active"), Value: numLit(0)},
 			{Key: id("value"), Value: id("undefined")}, {Key: id("error"), Value: id("undefined")},
-			{Key: id("components"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("innerRows"), Value: genNew(id("Map"))}, {Key: id("innerRefresh"), Value: genArray()}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()},
+			{Key: id("components"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("innerRows"), Value: genNew(id("Map"))}, {Key: id("innerRefresh"), Value: genArray()}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()}, {Key: id("setItem"), Value: genNull()},
 		}}
 	}
 	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(
@@ -5898,7 +5899,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						return mountIfChildren(ifBranch.Children)
 					}
 					condition := JsExpr(boolLit(false))
-					g.withTemplateBinding(block.ItemName, "$$item", func() {
+					g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 						g.withTemplateBinding(block.IndexName, "$$index", func() {
 							g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() { condition = g.templateExpr(ifBranch.Expr) })
 						})
@@ -5920,7 +5921,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				}
 				items := g.id()
 				itemsExpr := JsExpr(genArray())
-				g.withTemplateBinding(block.ItemName, "$$item", func() {
+				g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 					g.withTemplateBinding(block.IndexName, "$$index", func() {
 						g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() { itemsExpr = g.templateExpr(nestedEach.IterExpr) })
 					})
@@ -5930,7 +5931,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					innerIndex := g.id()
 					innerTextWrite := func(text *TextNode, ref string) JsStmt {
 						var write JsStmt
-						g.withTemplateBinding(block.ItemName, "$$item", func() {
+						g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 							g.withTemplateBinding(block.IndexName, "$$index", func() {
 								g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
 									g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
@@ -5947,7 +5948,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					innerAttrWrite := func(attr *Attr, ref string) JsStmt {
 						var write JsStmt
 
-						g.withTemplateBinding(block.ItemName, "$$item", func() {
+						g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 							g.withTemplateBinding(block.IndexName, "$$index", func() {
 								g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
 									g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
@@ -5963,7 +5964,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					}
 					innerDirectiveWrite := func(attr *Attr, ref string) JsStmt {
 						var write JsStmt
-						g.withTemplateBinding(block.ItemName, "$$item", func() {
+						g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 							g.withTemplateBinding(block.IndexName, "$$index", func() {
 								g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
 									g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
@@ -5984,7 +5985,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						return write
 					}
 					withNestedBindings := func(callback func()) {
-						g.withTemplateBinding(block.ItemName, "$$item", func() {
+						g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 							g.withTemplateBinding(block.IndexName, "$$index", func() {
 								g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
 									g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
@@ -6137,7 +6138,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						innerUpdate := g.id()
 						innerRefresh := g.id()
 						innerKeyFor := JsExpr(nil)
-						g.withTemplateBinding(block.ItemName, "$$item", func() {
+						g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 							g.withTemplateBinding(block.IndexName, "$$index", func() {
 								g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
 									g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
@@ -6193,6 +6194,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	}
 	renderBody := []JsStmt{
 		genInvoke(destroyVar, id("$$state")),
+		genLet(rowItemVar, id("$$item")),
+		genAssignStmt(genMember(id("$$state"), "setItem"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item")}, Body: genBlock(genAssignStmt(id(rowItemVar), id("$$next_item")))}),
 		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
 		genConst("$$value", genMember(id("$$state"), "value")),
 		genConst("$$error", genMember(id("$$state"), "error")),
@@ -6235,9 +6238,14 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genAssignStmt(genMember(id("$$state"), "row"), id("$$row")),
 		genAssignStmt(genMember(id("$$state"), "item"), id("$$item")),
 		genAssignStmt(genMember(id("$$state"), "index"), id("$$index")),
+		genIf(genMember(id("$$state"), "setItem"), genExprStmt(genCall(genMember(id("$$state"), "setItem"), id("$$item")))),
 		genAssignStmt(genMember(id("$$state"), "key"), id("$$key")),
 		genInvoke(driveVar, id("$$state"), id("$$row"), id("$$item"), id("$$index"), boolLit(false)),
-		genIf(genLogical("&&", genMember(genMember(id("$$state"), "updates"), "length"), genBinary("!==", genMember(id("$$state"), "active"), numLit(0))), genInvoke(renderVar, id("$$state"), id("$$row"), id("$$item"), id("$$index"), genMember(id("$$state"), "active"))),
+		genIf(genLogical("&&", genBinary("!==", genMember(id("$$state"), "active"), numLit(0)), genMember(genMember(id("$$state"), "innerRefresh"), "length")), genBlock(
+			genForOf("$$update", genMember(id("$$state"), "updates"), genInvoke("$$update")),
+			genForOf("$$refresh", genMember(id("$$state"), "innerRefresh"), genInvoke("$$refresh")),
+		)),
+		genIf(genLogical("&&", genLogical("&&", genBinary("!==", genMember(id("$$state"), "active"), numLit(0)), genUnary("!", genMember(genMember(id("$$state"), "innerRefresh"), "length"))), genMember(genMember(id("$$state"), "updates"), "length")), genInvoke(renderVar, id("$$state"), id("$$row"), id("$$item"), id("$$index"), genMember(id("$$state"), "active"))),
 	}
 	for branch, components := range branches {
 		for index, component := range components {
