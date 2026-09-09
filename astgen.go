@@ -5611,6 +5611,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	createVar, updateVar := name+"_create", name+"_row_update"
 	innerRefreshVar := name + "_inner_refresh"
 	rowItemVar := name + "_item"
+	incrementalPlan := g.eachIncrementalPlanFor(block)
+	updateFn := name + "_update"
 	children := [][]Node{await.PendingChildren, await.ThenChildren, await.CatchChildren}
 	bindingNames := []string{"", await.ValueName, await.ErrorName}
 	bindingValues := []string{"", "$$value", "$$error"}
@@ -6278,12 +6280,32 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	)
 	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
 
-	innerRefreshEach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(
-		genForOf("$$refresh", genMember(id("$$state"), "innerRefresh"), genInvoke("$$refresh")),
-	)}
-	innerRefresh := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-		genExprStmt(genCall(genMember(id(statesVar), "forEach"), innerRefreshEach)),
-	)}
+	refreshRow := func(state JsExpr) []JsStmt {
+		return []JsStmt{
+			genForOf("$$update", genMember(state, "updates"), genInvoke("$$update")),
+			genForOf("$$refresh", genMember(state, "innerRefresh"), genInvoke("$$refresh")),
+		}
+	}
+	innerRefreshEach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(refreshRow(id("$$state"))...)}
+	innerRefreshBody := []JsStmt{genExprStmt(genCall(genMember(id(statesVar), "forEach"), innerRefreshEach))}
+	if incrementalPlan != nil {
+		dirtyRows := "$$dirtyRows"
+		rowIndex := "$$rowIndex"
+		refreshDirtyRow := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(rowIndex)}, Body: genBlock(
+			genConst("$$item", genComputedMember(id(incrementalPlan.stateName), id(rowIndex))),
+			genIf(genUnary("!", id("$$item")), genReturn(nil)),
+			genConst("$$key", genCall(id(keyOfVar), id("$$item"), id(rowIndex))),
+			genConst("$$state", genCall(genMember(id(statesVar), "get"), id("$$key"))),
+			genIf(genUnary("!", id("$$state")), genReturn(nil)),
+			genBlock(refreshRow(id("$$state"))...),
+		)}
+		innerRefreshBody = []JsStmt{
+			genConst(dirtyRows, genCall(id("$$eachRowsForMutations"), id("$$activeMutations_"+incrementalPlan.stateName), strLit(incrementalPlan.keyField))),
+			genIf(genUnary("!", id(dirtyRows)), genBlock(genInvoke(updateFn), genReturn(nil))),
+			genForOf(rowIndex, id(dirtyRows), genExprStmt(genCall(refreshDirtyRow, id(rowIndex)))),
+		}
+	}
+	innerRefresh := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerRefreshBody...)}
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.hydrationKeyedRows = true
 	g.body = append(g.body,
@@ -6327,7 +6349,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genIf(id(markersVar), genBlock(genExprStmt(genCall(id("$$clearHydrationKeyedRowMarkers"), id(rangeVar))), genAssignStmt(id(markersVar), boolLit(false)))),
 		genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(rangeVar), id(blocksVar), id("$$nextItems"), id(keyOfVar), id(createVar), id(updateVar))),
 	}
-	fn := name + "_update"
+	fn := updateFn
 	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	deps := map[string]bool{}
 	for _, expr := range []*TemplateExpr{block.IterExpr, await.Expr, block.KeyAST} {
@@ -6361,6 +6383,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		g.addStructuralUpdate(dependency, genInvoke(innerRefreshVar))
 	}
 	for dependency := range deps {
+		if incrementalPlan != nil && dependency == incrementalPlan.stateName && innerEachDeps[dependency] {
+			continue
+		}
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
 	g.cleanup = append(g.cleanup,
