@@ -722,7 +722,7 @@ export function $$reconcileHydrationKeyedRowRanges(range, blocks, iterable, keyO
     $$moveHydrationKeyedRowRange(range.end, row);
     next.set(key, row); index++;
   }
-  for (const [key, row] of blocks) if (!next.has(key)) $$removeHydrationKeyedRowRange(row);
+  for (const [key, row] of blocks) if (!next.has(key)) { if (typeof row?.controller?.destroy === 'function') row.controller.destroy(); $$removeHydrationKeyedRowRange(row); }
   return next;
 }
 
