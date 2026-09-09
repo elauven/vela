@@ -6135,6 +6135,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					if nestedEach.HasKey() {
 						innerRange := g.id()
 						innerBlocks := g.id()
+						innerItems := g.id()
+						innerEmptyNodes := g.id()
 						innerKeyOf := g.id()
 						innerCreate := g.id()
 						innerUpdate := g.id()
@@ -6152,18 +6154,36 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						createBody := []JsStmt{genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))), genLet(innerIndex, id("$$nested_index"))}
 						createBody = append(createBody, rowBody...)
 						createBody = append(createBody, genReturn(id("$$inner_row")))
+						refreshBody := []JsStmt{
+							genConst(innerItems, itemsExpr),
+							genAssignStmt(id(innerBlocks), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(innerRange), id(innerBlocks), id(innerItems), id(innerKeyOf), id(innerCreate), id(innerUpdate))),
+						}
+						if len(nestedEach.ElseChildren) > 0 {
+							emptyFragment := g.id()
+							emptyBody := genBlock(
+								genConst(emptyFragment, genCall(genMember(id("document"), "createDocumentFragment"))),
+								genExprStmt(genCall(id("$$insertHTML"), id(emptyFragment), strLit(emitStaticHTML(nestedEach.ElseChildren, g.scopeID)))),
+								genAssignStmt(id(innerEmptyNodes), genCall(generatedMemberPath("Array.from"), genMember(id(emptyFragment), "childNodes"))),
+								genExprStmt(genCall(genMember(genMember(id(innerRange), "end"), "before"), id(emptyFragment))),
+							)
+							refreshBody = append(refreshBody,
+								genIf(genMember(id(innerBlocks), "size"), genIf(id(innerEmptyNodes), genBlock(removeNodesStmts(innerEmptyNodes)...))),
+								genIf(genLogical("&&", genUnary("!", genMember(id(innerBlocks), "size")), genUnary("!", id(innerEmptyNodes))), emptyBody),
+							)
+						}
 						body = append(body,
 							genConst(innerRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("i"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/i"))}}}),
 							genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(innerRange), "start"))),
 							genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(innerRange), "end"))),
 							genConst(innerKeyOf, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$nested_item"), id("$$nested_index")}, Body: innerKeyFor}),
 							genLet(innerBlocks, genNew(id("Map"))),
+							genLet(innerEmptyNodes, genNull()),
 							genConst(innerCreate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$nested_item"), id("$$nested_index")}, Body: genBlock(createBody...)}),
 							genConst(innerUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$inner_row"), id("$$nested_item"), id("$$nested_index")}, Body: genBlock(
 								genIf(genUnary("!", genMember(id("$$inner_row"), "controller")), genReturn(nil)),
 								genExprStmt(genCall(genMember(genMember(id("$$inner_row"), "controller"), "update"), id("$$nested_item"), id("$$nested_index"))),
 							)}),
-							genConst(innerRefresh, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genAssignStmt(id(innerBlocks), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(innerRange), id(innerBlocks), itemsExpr, id(innerKeyOf), id(innerCreate), id(innerUpdate))))}),
+							genConst(innerRefresh, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(refreshBody...)}),
 							genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRefresh"), "push"), id(innerRefresh))),
 							genInvoke(innerRefresh),
 						)
@@ -6173,7 +6193,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				} else {
 					body = append(body, genConst(items, itemsExpr), genForOf("$$nested_item", id(items), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(nestedEach.Children, g.scopeID))))))
 				}
-				if len(nestedEach.ElseChildren) > 0 {
+				if len(nestedEach.ElseChildren) > 0 && !nestedEach.HasKey() {
 					body = append(body, genIf(genBinary("===", genMember(id(items), "length"), numLit(0)), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(nestedEach.ElseChildren, g.scopeID))))))
 				}
 				update := g.id() + "_each_update"

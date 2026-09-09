@@ -320,7 +320,13 @@ func buildSSRStructuralLifecycleNode(node Node, capability *SSRCapability, path 
 // Attribute validation reuses the established keyed-await direct-DOM subset so
 // this plan cannot promise a leaf operation the existing DOM lowerer rejects.
 func ssrKeyedEachDirectLeafRows(block *EachBlockNode) bool {
-	if block == nil || !block.HasKey() || len(block.Children) == 0 || len(block.ElseChildren) != 0 {
+	if block == nil || !block.HasKey() || len(block.Children) == 0 {
+		return false
+	}
+	// The empty branch has no row identity. Permit only static content until it
+	// receives its own direct-DOM update plan; the keyed range owns inserting
+	// and removing that static fragment around row reconciliation.
+	if !ssrCapabilityCurrentStaticChildren(block.ElseChildren) {
 		return false
 	}
 	for _, node := range block.Children {
