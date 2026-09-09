@@ -5786,6 +5786,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	// cleanups remain owned by the row state.
 	var buildSettledElement func(*ElementNode, string, int, string, *[]JsStmt) []JsStmt
 	buildSettledElement = func(element *ElementNode, parent string, branch int, owner string, updates *[]JsStmt) []JsStmt {
+		if parent == "" {
+			parent = "$$frag"
+		}
 		ref := g.id()
 		body := []JsStmt{
 			genConst(ref, genCall(genMember(id("document"), "createElement"), strLit(element.Tag))),

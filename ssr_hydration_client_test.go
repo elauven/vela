@@ -4616,7 +4616,7 @@ func TestSSRHydrationKeyedEachAwaitNestedEachSiblingElements(t *testing.T) {
 
 func TestBrowserSSRHydrationKeyedEachAwaitNestedEachSiblingElements(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let rows = []; export let draft = "";</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.labels as label}<input class="nested-input" :data-label={label} bind:value={draft} /><button class="nested-button" @click={() => draft = label}>{label}</button>{/each}<p class="output">{draft}</p>{/await}{/each}</main></template>`)
+	sfc, err := parseSFC(`<script>export let rows = []; export let draft = "";</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.labels as label (label)}<input class="nested-input" :data-label={label} bind:value={draft} /><button class="nested-button" @click={() => draft = label}>{label}</button>{/each}<p class="output">{draft}</p>{/await}{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
