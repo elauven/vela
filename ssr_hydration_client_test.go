@@ -4648,3 +4648,93 @@ func TestBrowserSSRHydrationKeyedEachAwaitNestedEachSiblingElements(t *testing.T
 		t.Fatalf("nested keyed-await sibling browser output=%q", got)
 	}
 }
+
+func TestSSRHydrationKeyedEachAwaitNestedEachDeepItemBinding(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Loading</p>{:then value}{#each row.fields as field}<input bind:value={field.title} /><p>{field.title}</p>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("deep item binding was rejected by capability analysis")
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"$$nested_item.title = $event.target.value", "addEventListener", "removeEventListener", "$$set_rows_notify"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("deep item binding lowering misses %q:\n%s", want, code)
+		}
+	}
+}
+
+func TestBrowserSSRHydrationKeyedEachAwaitNestedEachDeepItemBinding(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>let rows = $state.deep(window.__rows || []);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field}<input class="field" :data-id={field.id} bind:value={field.title} /><p class="value">{field.title}</p>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := sfc.TemplateAST.Nodes[0].(*ElementNode)
+	each := main.Children[0].(*EachBlockNode)
+	await := each.Children[0].(*AwaitBlockNode)
+	markers := ssrHydrationMarkerIDs(plan.Nodes)
+	eachID, ok := markers.eachID(each.Span)
+	if !ok {
+		t.Fatal("keyed each marker is missing")
+	}
+	awaitID, ok := markers.awaitID(await.Span)
+	if !ok {
+		t.Fatal("await marker is missing")
+	}
+	rowScope := "vela-page--each-" + itoa(each.Span.Start) + "-a"
+	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><p vela-page="" class="pending">Loading</p><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
+	serverHTML := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-page:` + itoa(eachID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"incomplete":false}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"one",title:"One"},{id:"two",title:"Two"}]}];window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);await p.evaluate(()=>window.resolve("done"));await p.waitForFunction(()=>document.querySelectorAll(".field").length===2);await p.evaluate(()=>{window.old=document.querySelector("[data-id=two]");window.old.value="Changed";window.old.dispatchEvent(new Event("input",{bubbles:true}))});await p.waitForFunction(()=>Array.from(document.querySelectorAll(".value")).map(x=>x.textContent).join("|")==="One|Changed");await p.evaluate(async()=>{window.old.value="stale";window.old.dispatchEvent(new Event("input",{bubbles:true}));await new Promise(resolve=>setTimeout(resolve,0));window.stale=Array.from(document.querySelectorAll(".value")).map(x=>x.textContent).join("|")});if((await p.evaluate(()=>window.stale))!=="One|Changed")throw new Error("stale deep item binding listener remained attached");await p.evaluate(()=>window.hydrated.component.destroy());const result=await p.evaluate(()=>({initial:window.initial,main:document.querySelector("main")}));if(result.initial!==0||result.main)throw new Error(JSON.stringify(result));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("deep item binding browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("deep item binding browser output=%q", got)
+	}
+}
+
+func TestSSRHydrationKeyedEachAwaitNestedEachShallowItemBindingReplacesList(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows = $state([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Loading</p>{:then value}{#each row.fields as field}<input bind:value={field.title} />{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"$$nested_item.title = $event.target.value", "$$set_rows(rows.slice())"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("shallow item binding lowering misses %q:\n%s", want, code)
+		}
+	}
+}

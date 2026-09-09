@@ -1002,7 +1002,9 @@ func ssrCapabilityKeyedAwaitDynamicEachRows(block *EachBlockNode) ([]*ElementNod
 					return nil, false
 				}
 				if _, ok := templateExprIdent(attr.Expr); !ok {
-					return nil, false
+					if _, ok := templateExprMemberBindingRoot(attr.Expr); !ok {
+						return nil, false
+					}
 				}
 				continue
 			}

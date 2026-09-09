@@ -1058,6 +1058,30 @@ func templateExprIdent(expr *TemplateExpr) (string, bool) {
 	return ident.Name, true
 }
 
+// templateExprMemberBindingRoot recognizes an assignable non-optional member
+// path and returns its lexical root, for example item.title returns item.
+func templateExprMemberBindingRoot(expr *TemplateExpr) (string, bool) {
+	current, ok := templateExprRoot(expr).(*JsMemberExpr)
+	if !ok || current.Optional {
+		return "", false
+	}
+	for {
+		member, ok := current.Obj.(*JsMemberExpr)
+		if !ok {
+			break
+		}
+		if member.Optional {
+			return "", false
+		}
+		current = member
+	}
+	ident, ok := current.Obj.(*JsIdent)
+	if !ok || ident.Name == "" {
+		return "", false
+	}
+	return ident.Name, true
+}
+
 func templateExprIsHandler(expr *TemplateExpr) bool {
 	switch templateExprRoot(expr).(type) {
 	case *JsArrowFunc, *JsFuncExpr:
@@ -2240,6 +2264,18 @@ func ExtractScopedCSS(sfc *SFC, scopeID string) string {
 // embedders and focused tests that construct an SFC directly. Parsed SFCs
 // always own StyleAST; only the latter compatibility boundary needs a local
 // stylesheet parse before scoping.
+func (g *ASTGen) isDeepState(name string) bool {
+	if g.analysis == nil || name == "" {
+		return false
+	}
+	for _, state := range g.analysis.StateVars {
+		if state.Name == name && state.Deep {
+			return true
+		}
+	}
+	return false
+}
+
 func scopedCSSForSFC(sfc *SFC, scopeID string) string {
 	if sfc == nil || strings.TrimSpace(sfc.Style) == "" {
 		return ""
@@ -5892,6 +5928,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					}
 					innerAttrWrite := func(attr *Attr, ref string) JsStmt {
 						var write JsStmt
+
 						g.withTemplateBinding(block.ItemName, "$$item", func() {
 							g.withTemplateBinding(block.IndexName, "$$index", func() {
 								g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
@@ -5928,6 +5965,58 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						}
 						return write
 					}
+					withNestedBindings := func(callback func()) {
+						g.withTemplateBinding(block.ItemName, "$$item", func() {
+							g.withTemplateBinding(block.IndexName, "$$index", func() {
+								g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
+									g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
+										g.withTemplateBinding(nestedEach.IndexName, innerIndex, callback)
+									})
+								})
+							})
+						})
+					}
+					innerBindingWrite := func(tag string, attr *Attr, ref string) JsStmt {
+						spec, ok := twoWayBindSpec(tag, attr.Name)
+						if !ok {
+							return genBlock()
+						}
+						cache := g.id()
+						var value JsExpr
+						withNestedBindings(func() { value = g.templateExpr(attr.Expr) })
+						if attr.Name == "checked" {
+							value = genBool(value)
+						}
+						if state, ok := templateExprIdent(block.IterExpr); ok {
+							bindingUpdateDeps[state] = true
+						}
+						return genBlock(genConst(cache, value), genIf(genBinary("!==", genMember(id(ref), spec.readProp), id(cache)), genAssignStmt(genMember(id(ref), spec.readProp), id(cache))))
+					}
+					innerBindingListener := func(tag string, attr *Attr, ref string) []JsStmt {
+						if _, isIdent := templateExprIdent(attr.Expr); isIdent {
+							return bindingListenerFor(tag, attr, ref)
+						}
+						spec, ok := twoWayBindSpec(tag, attr.Name)
+						root, rootOK := templateExprMemberBindingRoot(attr.Expr)
+						state, stateOK := templateExprIdent(block.IterExpr)
+						if !ok || !rootOK || !stateOK || (root != block.ItemName && root != nestedEach.ItemName) || g.analysis == nil || !g.analysis.stateSet()[state] {
+							return nil
+						}
+						var target JsExpr
+						withNestedBindings(func() { target = g.templateExpr(attr.Expr) })
+						value := genMember(genMember(id("$event"), "target"), spec.readProp)
+						handlerBody := JsNode(&JsAssignExpr{baseExpr: baseExpr{genNode()}, Op: "=", L: target, R: value})
+						if !g.isDeepState(state) {
+							handlerBody = genBlock(genAssignStmt(target, value), genInvoke("$$set_"+state, genCall(genMember(id(state), "slice"))))
+						}
+						handler := g.id()
+						return []JsStmt{
+							genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: handlerBody}),
+							genExprStmt(genCall(genMember(id(ref), "addEventListener"), strLit(spec.event), id(handler))),
+							genExprStmt(genCall(genMember(genMember(id("$$state"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(spec.event), id(handler))))})),
+						}
+					}
+
 					rowBody := []JsStmt{}
 					for _, row := range rows {
 						rowRef := g.id()
@@ -5935,8 +6024,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						elementBody := []JsStmt{genConst(rowRef, genCall(genMember(id("document"), "createElement"), strLit(row.Tag))), g.setAttrStmt(rowRef, g.scopeID, "")}
 						for _, attr := range row.Attrs {
 							if attr.IsTwoWay && attr.Expr != nil {
-								updates = append(updates, bindingWriteFor(row.Tag, attr, branch, rowRef))
-								elementBody = append(elementBody, bindingListenerFor(row.Tag, attr, rowRef)...)
+								updates = append(updates, innerBindingWrite(row.Tag, attr, rowRef))
+								elementBody = append(elementBody, innerBindingListener(row.Tag, attr, rowRef)...)
 							} else if attr.IsEvent && attr.Expr != nil {
 								var eventStmts []JsStmt
 								g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
