@@ -702,7 +702,7 @@ func ssrCapabilityCurrentKeyedEachComponents(block *EachBlockNode) ([]*Component
 }
 
 func ssrCapabilityCurrentUnkeyedEachComponents(block *EachBlockNode) ([]*ComponentNode, bool) {
-	if block == nil || block.HasKey() || len(block.Children) == 0 {
+	if block == nil || len(block.Children) == 0 {
 		return nil, false
 	}
 	components := make([]*ComponentNode, 0, len(block.Children))
@@ -974,7 +974,11 @@ func ssrCapabilityKeyedAwaitDirectChildren(nodes []Node) bool {
 // the first nested-list lifecycle slice. The outer keyed-await row owns all
 // replacement; inner rows have no independent keyed identity yet.
 func ssrCapabilityKeyedAwaitStaticEach(block *EachBlockNode) bool {
-	if block == nil || block.HasKey() || !ssrCapabilityCurrentStaticChildren(block.ElseChildren) {
+	if block != nil && block.HasKey() {
+		_, ok := ssrCapabilityKeyedAwaitDynamicEachRows(block)
+		return ok && ssrKeyedEachDirectLeafRows(block)
+	}
+	if block == nil || !ssrCapabilityCurrentStaticChildren(block.ElseChildren) {
 		return false
 	}
 	if _, ok := ssrCapabilityKeyedAwaitDynamicEachRows(block); ok {
@@ -984,7 +988,7 @@ func ssrCapabilityKeyedAwaitStaticEach(block *EachBlockNode) bool {
 }
 
 func ssrCapabilityKeyedAwaitDynamicEachRows(block *EachBlockNode) ([]*ElementNode, bool) {
-	if block == nil || block.HasKey() || len(block.Children) == 0 {
+	if block == nil || len(block.Children) == 0 {
 		return nil, false
 	}
 	rows := make([]*ElementNode, 0, len(block.Children))

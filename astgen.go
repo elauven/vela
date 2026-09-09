@@ -5609,6 +5609,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	statesVar, aliveVar, markersVar := name+"_await_states", name+"_alive", name+"_markers"
 	destroyVar, renderVar, driveVar := name+"_destroy", name+"_render", name+"_drive"
 	createVar, updateVar := name+"_create", name+"_row_update"
+	innerRefreshVar := name + "_inner_refresh"
 	children := [][]Node{await.PendingChildren, await.ThenChildren, await.CatchChildren}
 	bindingNames := []string{"", await.ValueName, await.ErrorName}
 	bindingValues := []string{"", "$$value", "$$error"}
@@ -5644,6 +5645,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		return props
 	}
 	textUpdateDeps := map[string]bool{}
+	innerEachDeps := map[string]bool{}
 	textWriteFor := func(text *TextNode, branch int, ref string) JsStmt {
 		var write JsStmt
 		g.withTemplateBinding(block.ItemName, "$$item", func() {
@@ -5766,7 +5768,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		return &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 			{Key: id("cell"), Value: genNull()}, {Key: id("active"), Value: numLit(0)},
 			{Key: id("value"), Value: id("undefined")}, {Key: id("error"), Value: id("undefined")},
-			{Key: id("components"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("innerRows"), Value: genNew(id("Map"))}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()},
+			{Key: id("components"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("innerRows"), Value: genNew(id("Map"))}, {Key: id("innerRefresh"), Value: genArray()}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()},
 		}}
 	}
 	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(
@@ -5776,6 +5778,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genAssignStmt(genMember(id("$$state"), "components"), genArray()),
 		genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id("$$state"), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
 		genAssignStmt(genMember(id("$$state"), "listeners"), genArray()),
+		genAssignStmt(genMember(id("$$state"), "innerRefresh"), genArray()),
 		genAssignStmt(genMember(id("$$state"), "updates"), genArray()),
 	)}
 	// buildSettledElement owns a complete direct-DOM subtree for one settled
@@ -5906,7 +5909,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			}
 			if nestedEach, ok := child.(*EachBlockNode); ok && ssrCapabilityKeyedAwaitStaticEach(nestedEach) {
 				for _, dependency := range templateExprDeps(nestedEach.IterExpr, g.reactiveNames()) {
-					textUpdateDeps[dependency] = true
+					if nestedEach.HasKey() {
+						innerEachDeps[dependency] = true
+					} else {
+						textUpdateDeps[dependency] = true
+					}
 				}
 				items := g.id()
 				itemsExpr := JsExpr(genArray())
@@ -6061,6 +6068,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 								{Key: id("row"), Value: genNull()},
 								{Key: id("updates"), Value: genArray()},
 								{Key: id("listeners"), Value: genArray()},
+								{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
+									genAssignStmt(id("$$nested_item"), id("$$next_item")),
+									genAssignStmt(id(innerIndex), id("$$next_index")),
+									genForOf("$$update", genMember(id("$$inner"), "updates"), genExprStmt(genCall(id("$$update")))),
+								)}},
 								{Key: id("destroy"), Value: innerDestroy},
 							}}),
 							genConst("$$inner_start", genCall(genMember(id("document"), "createComment"), innerStartMarker)),
@@ -6114,7 +6126,44 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						)
 					}
 					rowBody = append(rowBody, genAssignStmt(id(innerIndex), genBinary("+", id(innerIndex), numLit(1))))
-					body = append(body, genConst(items, itemsExpr), genLet(innerIndex, numLit(0)), genForOf("$$nested_item", id(items), genBlock(rowBody...)))
+					if nestedEach.HasKey() {
+						innerRange := g.id()
+						innerBlocks := g.id()
+						innerKeyOf := g.id()
+						innerCreate := g.id()
+						innerUpdate := g.id()
+						innerRefresh := g.id()
+						innerKeyFor := JsExpr(nil)
+						g.withTemplateBinding(block.ItemName, "$$item", func() {
+							g.withTemplateBinding(block.IndexName, "$$index", func() {
+								g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
+									g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
+										g.withTemplateBinding(nestedEach.IndexName, "$$nested_index", func() { innerKeyFor = g.templateExpr(nestedEach.KeyAST) })
+									})
+								})
+							})
+						})
+						createBody := []JsStmt{genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))), genLet(innerIndex, id("$$nested_index"))}
+						createBody = append(createBody, rowBody...)
+						createBody = append(createBody, genReturn(id("$$inner_row")))
+						body = append(body,
+							genConst(innerRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("i"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/i"))}}}),
+							genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(innerRange), "start"))),
+							genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(innerRange), "end"))),
+							genConst(innerKeyOf, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$nested_item"), id("$$nested_index")}, Body: innerKeyFor}),
+							genLet(innerBlocks, genNew(id("Map"))),
+							genConst(innerCreate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$nested_item"), id("$$nested_index")}, Body: genBlock(createBody...)}),
+							genConst(innerUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$inner_row"), id("$$nested_item"), id("$$nested_index")}, Body: genBlock(
+								genIf(genUnary("!", genMember(id("$$inner_row"), "controller")), genReturn(nil)),
+								genExprStmt(genCall(genMember(genMember(id("$$inner_row"), "controller"), "update"), id("$$nested_item"), id("$$nested_index"))),
+							)}),
+							genConst(innerRefresh, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genAssignStmt(id(innerBlocks), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(innerRange), id(innerBlocks), itemsExpr, id(innerKeyOf), id(innerCreate), id(innerUpdate))))}),
+							genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRefresh"), "push"), id(innerRefresh))),
+							genInvoke(innerRefresh),
+						)
+					} else {
+						body = append(body, genConst(items, itemsExpr), genLet(innerIndex, numLit(0)), genForOf("$$nested_item", id(items), genBlock(rowBody...)))
+					}
 				} else {
 					body = append(body, genConst(items, itemsExpr), genForOf("$$nested_item", id(items), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(nestedEach.Children, g.scopeID))))))
 				}
@@ -6218,6 +6267,12 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	)
 	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
 
+	innerRefreshEach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(
+		genForOf("$$refresh", genMember(id("$$state"), "innerRefresh"), genInvoke("$$refresh")),
+	)}
+	innerRefresh := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genExprStmt(genCall(genMember(id(statesVar), "forEach"), innerRefreshEach)),
+	)}
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.hydrationKeyedRows = true
 	g.body = append(g.body,
@@ -6225,6 +6280,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genConst(keyOfVar, keyOf), genConst(itemsVar, g.templateExpr(block.IterExpr)),
 		genLet(blocksVar, genCall(id("$$adoptHydrationKeyedRowRanges"), id(rangeVar), id(itemsVar), id(keyOfVar), numLit(markerID))),
 		genLet(statesVar, genNew(id("Map"))), genLet(aliveVar, boolLit(true)), genLet(markersVar, boolLit(true)),
+		genConst(innerRefreshVar, innerRefresh),
+
 		genConst(destroyVar, destroy), genConst(renderVar, render), genConst(driveVar, drive), genConst(createVar, create), genConst(updateVar, rowUpdate),
 	)
 	initialIndex := name + "_index"
@@ -6289,6 +6346,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		deps[dependency] = true
 	}
 
+	for dependency := range innerEachDeps {
+		g.addStructuralUpdate(dependency, genInvoke(innerRefreshVar))
+	}
 	for dependency := range deps {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}

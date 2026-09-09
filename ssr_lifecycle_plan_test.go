@@ -142,8 +142,8 @@ func TestSSRStructuralLifecyclePlanRetainsInnerKeyedEachRecipe(t *testing.T) {
 	if !ssrInstancePathNeedsRuntimeScope(recipe.OuterScope) || !ssrInstancePathNeedsRuntimeScope(recipe.RowScope) {
 		t.Fatalf("nested keyed scopes must retain outer runtime identity: outer=%#v row=%#v", recipe.OuterScope, recipe.RowScope)
 	}
-	if CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
-		t.Fatal("inner keyed await each must remain capability-gated until its range lowerer is implemented")
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("inner keyed await each direct-leaf range must be hydration-capable")
 	}
 }
 
