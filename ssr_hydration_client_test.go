@@ -4490,6 +4490,23 @@ func TestBrowserSSRHydrationKeyedEachAwaitSettledTextUpdatesPerRow(t *testing.T)
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitOwnsNestedRowControllers(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let rows = [];</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Loading</p>{:then value}<p>{value}</p>{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"innerRows: new Map()", "innerRows.forEach", "innerRows.clear"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("keyed await row ownership misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestSSRHydrationKeyedEachAwaitNestedEachBindings(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

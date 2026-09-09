@@ -5760,10 +5760,12 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		return &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 			{Key: id("cell"), Value: genNull()}, {Key: id("active"), Value: numLit(0)},
 			{Key: id("value"), Value: id("undefined")}, {Key: id("error"), Value: id("undefined")},
-			{Key: id("components"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()},
+			{Key: id("components"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("innerRows"), Value: genNew(id("Map"))}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()},
 		}}
 	}
 	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(
+		genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRows"), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$inner")}, Body: genBlock(genExprStmt(genCall(genMember(id("$$inner"), "destroy"))))})),
+		genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRows"), "clear"))),
 		genForOf("$$component", genCall(genMember(genCall(genMember(genMember(id("$$state"), "components"), "slice")), "reverse")), genIf(id("$$component"), genExprStmt(genCall(genMember(id("$$component"), "destroy"))))),
 		genAssignStmt(genMember(id("$$state"), "components"), genArray()),
 		genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id("$$state"), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
