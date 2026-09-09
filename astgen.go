@@ -5695,7 +5695,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		return write
 	}
 
-	eventAttachFor := func(attr *Attr, branch int, ref string) []JsStmt {
+	eventAttachFor := func(attr *Attr, branch int, ref, owner string) []JsStmt {
 		var handlerExpr JsExpr
 		g.withTemplateBinding(block.ItemName, "$$item", func() {
 			g.withTemplateBinding(block.IndexName, "$$index", func() {
@@ -5714,7 +5714,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		return []JsStmt{
 			genConst(handler, handlerExpr),
 			genExprStmt(genCall(genMember(id(ref), "addEventListener"), strLit(attr.Name), id(handler))),
-			genExprStmt(genCall(genMember(genMember(id("$$state"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(attr.Name), id(handler))))})),
+			genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(attr.Name), id(handler))))})),
 		}
 	}
 
@@ -5742,7 +5742,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		return genBlock(genConst(cache, value), genIf(genBinary("!==", genMember(id(ref), spec.readProp), id(cache)), genAssignStmt(genMember(id(ref), spec.readProp), id(cache))))
 	}
 
-	bindingListenerFor := func(tag string, attr *Attr, ref string) []JsStmt {
+	bindingListenerFor := func(tag string, attr *Attr, ref, owner string) []JsStmt {
 		spec, ok := twoWayBindSpec(tag, attr.Name)
 		state, isIdent := templateExprIdent(attr.Expr)
 		if !ok || !isIdent || g.analysis == nil || !g.analysis.stateSet()[state] {
@@ -5786,13 +5786,13 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			switch {
 			case attr.IsTwoWay && attr.Expr != nil:
 				*updates = append(*updates, bindingWriteFor(element.Tag, attr, branch, ref))
-				body = append(body, bindingListenerFor(element.Tag, attr, ref)...)
+				body = append(body, bindingListenerFor(element.Tag, attr, ref, "")...)
 			case attr.IsBind && !attr.IsTwoWay && attr.Expr != nil:
 				*updates = append(*updates, attrWriteFor(attr, branch, ref))
 			case (attr.IsClassDir || attr.IsStyleDir) && attr.Expr != nil:
 				*updates = append(*updates, directiveWriteFor(attr, branch, ref))
 			case attr.IsEvent && attr.Expr != nil:
-				body = append(body, eventAttachFor(attr, branch, ref)...)
+				body = append(body, eventAttachFor(attr, branch, ref, "")...)
 			default:
 				body = append(body, g.setAttrStmt(ref, attr.Name, attr.Value))
 			}
@@ -5996,7 +5996,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					}
 					innerBindingListener := func(tag string, attr *Attr, ref string) []JsStmt {
 						if _, isIdent := templateExprIdent(attr.Expr); isIdent {
-							return bindingListenerFor(tag, attr, ref)
+							return bindingListenerFor(tag, attr, ref, "")
 						}
 						spec, ok := twoWayBindSpec(tag, attr.Name)
 						root, rootOK := templateExprMemberBindingRoot(attr.Expr)
@@ -6031,7 +6031,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							} else if attr.IsEvent && attr.Expr != nil {
 								var eventStmts []JsStmt
 								g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
-									g.withTemplateBinding(nestedEach.IndexName, innerIndex, func() { eventStmts = eventAttachFor(attr, branch, rowRef) })
+									g.withTemplateBinding(nestedEach.IndexName, innerIndex, func() { eventStmts = eventAttachFor(attr, branch, rowRef, "") })
 								})
 								elementBody = append(elementBody, eventStmts...)
 							} else if attr.IsClassDir || attr.IsStyleDir {
