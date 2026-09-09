@@ -71,6 +71,25 @@ func (p SSRInstancePath) append(segment SSRInstanceSegment) SSRInstancePath {
 	return next
 }
 
+// SSRKeyedEachLifecycleRecipe is the typed identity contract for a keyed
+// #each range. Collection and Key retain the parser-owned cached expression
+// ASTs; lowerers must evaluate those nodes and must never reconstruct either
+// expression from EachExpr or EachKey source text. OuterScope and RowScope
+// identify, respectively, the enclosing range and one runtime inner row.
+//
+// The recipe is deliberately attached to the structural plan even before a
+// particular keyed range is executable for hydration. This lets a later
+// lowerer add a bounded lifecycle slice without repeating template-shape
+// analysis or inventing marker namespaces from printed JavaScript.
+type SSRKeyedEachLifecycleRecipe struct {
+	Collection *TemplateExpr
+	Key        *TemplateExpr
+	ItemName   string
+	IndexName  string
+	OuterScope SSRInstancePath
+	RowScope   SSRInstancePath
+}
+
 // SSRStructuralLifecyclePlan is the recursive ownership plan shared by future
 // SSR marker emission and hydration lowering. Capability points at the same
 // typed analysis node that decided the current execution boundary.
@@ -87,6 +106,9 @@ type SSRStructuralLifecyclePlan struct {
 	Capability   *SSRCapability
 	Operations   []SSRLifecycleOperation
 	Children     []*SSRStructuralLifecyclePlan
+	// KeyedEach is present exactly for a keyed EachBlockNode. It is the
+	// source-ordered recipe a future keyed range lowerer consumes.
+	KeyedEach *SSRKeyedEachLifecycleRecipe
 }
 
 // AwaitBranch returns one synthetic pending/then/catch branch from a typed
@@ -214,6 +236,16 @@ func buildSSRStructuralLifecycleNode(node Node, capability *SSRCapability, path 
 		plan.Kind = SSRLifecyclePlanEach
 		plan.Operations = structuralLifecycleOperations()
 		rowPath := plan.InstancePath.append(SSRInstanceSegment{Kind: SSRInstanceEachRow, Index: -1, Key: current.KeyAST})
+		if current.HasKey() {
+			plan.KeyedEach = &SSRKeyedEachLifecycleRecipe{
+				Collection: current.IterExpr,
+				Key:        current.KeyAST,
+				ItemName:   current.ItemName,
+				IndexName:  current.IndexName,
+				OuterScope: plan.InstancePath,
+				RowScope:   rowPath,
+			}
+		}
 		rowCapabilities, elseCapabilities := splitEachCapabilityChildren(capability, len(current.Children))
 		plan.Children = append(plan.Children, buildSSRStructuralLifecycleNodes(current.Children, rowCapabilities, rowPath, plan.TemplatePath+".rows")...)
 		plan.Children = append(plan.Children, buildSSRStructuralLifecycleNodes(current.ElseChildren, elseCapabilities, plan.InstancePath, plan.TemplatePath+".else")...)

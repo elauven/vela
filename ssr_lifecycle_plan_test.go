@@ -111,6 +111,39 @@ func TestSSRStructuralLifecyclePlanFindsDirectIfComponent(t *testing.T) {
 	}
 }
 
+func TestSSRStructuralLifecyclePlanRetainsInnerKeyedEachRecipe(t *testing.T) {
+	sfc, err := parseSFC(`<template><main>{#each rows as row (row.id)}{#await row.request}<p>Loading</p>{:then value}{#each row.fields as field, index (field.id)}<input bind:value={field.title} />{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer := sfc.TemplateAST.Nodes[0].(*ElementNode).Children[0].(*EachBlockNode)
+	await := outer.Children[0].(*AwaitBlockNode)
+	inner := await.ThenChildren[0].(*EachBlockNode)
+	plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes)
+	outerPlan := plan.Find(SSRLifecyclePlanEach, outer.Span)
+	innerPlan := plan.Find(SSRLifecyclePlanEach, inner.Span)
+	if outerPlan == nil || innerPlan == nil || outerPlan.KeyedEach == nil || innerPlan.KeyedEach == nil {
+		t.Fatalf("keyed each plans outer=%#v inner=%#v", outerPlan, innerPlan)
+	}
+	recipe := innerPlan.KeyedEach
+	if recipe.Collection != inner.IterExpr || recipe.Key != inner.KeyAST || recipe.ItemName != "field" || recipe.IndexName != "index" {
+		t.Fatalf("inner keyed recipe=%#v", recipe)
+	}
+	if len(recipe.OuterScope.Segments) == 0 || len(recipe.RowScope.Segments) != len(recipe.OuterScope.Segments)+1 {
+		t.Fatalf("inner keyed scopes outer=%#v row=%#v", recipe.OuterScope, recipe.RowScope)
+	}
+	rowSegment := recipe.RowScope.Segments[len(recipe.RowScope.Segments)-1]
+	if rowSegment.Kind != SSRInstanceEachRow || rowSegment.Key != inner.KeyAST {
+		t.Fatalf("inner keyed row scope=%#v", recipe.RowScope)
+	}
+	if !ssrInstancePathNeedsRuntimeScope(recipe.OuterScope) || !ssrInstancePathNeedsRuntimeScope(recipe.RowScope) {
+		t.Fatalf("nested keyed scopes must retain outer runtime identity: outer=%#v row=%#v", recipe.OuterScope, recipe.RowScope)
+	}
+	if CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("inner keyed await each must remain capability-gated until its range lowerer is implemented")
+	}
+}
+
 func hasSSRStructuralOperation(plan *SSRStructuralLifecyclePlan, operation SSRLifecycleOperation) bool {
 	for _, current := range plan.Operations {
 		if current == operation {
