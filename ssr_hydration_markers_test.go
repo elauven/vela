@@ -36,4 +36,12 @@ func TestSSRHydrationMarkerIDsFollowSharedRenderPlan(t *testing.T) {
 	if !(text.Parts[0].DynamicID < ifNode.DynamicID && ifNode.DynamicID < eachNode.DynamicID && eachNode.DynamicID < awaitNode.DynamicID) {
 		t.Fatalf("unexpected dynamic marker order: text=%d if=%d each=%d await=%d", text.Parts[0].DynamicID, ifNode.DynamicID, eachNode.DynamicID, awaitNode.DynamicID)
 	}
+	structural := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes)
+	keyedPlan := structural.Find(SSRLifecyclePlanEach, sfc.TemplateAST.Nodes[0].(*ElementNode).Children[2].(*EachBlockNode).Span)
+	if keyedPlan == nil || keyedPlan.KeyedEach == nil {
+		t.Fatalf("missing keyed lifecycle recipe: %#v", keyedPlan)
+	}
+	if got, ok := markers.keyedEachID(keyedPlan.KeyedEach); !ok || got != eachNode.DynamicID {
+		t.Fatalf("typed keyed marker=%d,%t want %d", got, ok, eachNode.DynamicID)
+	}
 }

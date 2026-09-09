@@ -82,6 +82,7 @@ func (p SSRInstancePath) append(segment SSRInstanceSegment) SSRInstancePath {
 // lowerer add a bounded lifecycle slice without repeating template-shape
 // analysis or inventing marker namespaces from printed JavaScript.
 type SSRKeyedEachLifecycleRecipe struct {
+	Span       SectionSpan
 	Collection *TemplateExpr
 	Key        *TemplateExpr
 	ItemName   string
@@ -243,6 +244,7 @@ func buildSSRStructuralLifecycleNode(node Node, capability *SSRCapability, path 
 		rowPath := plan.InstancePath.append(SSRInstanceSegment{Kind: SSRInstanceEachRow, Index: -1, Key: current.KeyAST})
 		if current.HasKey() {
 			plan.KeyedEach = &SSRKeyedEachLifecycleRecipe{
+				Span:           current.Span,
 				Collection:     current.IterExpr,
 				Key:            current.KeyAST,
 				ItemName:       current.ItemName,
