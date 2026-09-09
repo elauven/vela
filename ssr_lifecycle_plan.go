@@ -88,6 +88,11 @@ type SSRKeyedEachLifecycleRecipe struct {
 	IndexName  string
 	OuterScope SSRInstancePath
 	RowScope   SSRInstancePath
+	// DirectLeafRows identifies the deliberately narrow first lowering slice:
+	// direct text plus ordinary sibling elements with direct text leaves and
+	// currently supported attribute/directive/event/native-binding operations.
+	// It excludes else, components, and deeper structural ownership.
+	DirectLeafRows bool
 }
 
 // SSRStructuralLifecyclePlan is the recursive ownership plan shared by future
@@ -238,12 +243,13 @@ func buildSSRStructuralLifecycleNode(node Node, capability *SSRCapability, path 
 		rowPath := plan.InstancePath.append(SSRInstanceSegment{Kind: SSRInstanceEachRow, Index: -1, Key: current.KeyAST})
 		if current.HasKey() {
 			plan.KeyedEach = &SSRKeyedEachLifecycleRecipe{
-				Collection: current.IterExpr,
-				Key:        current.KeyAST,
-				ItemName:   current.ItemName,
-				IndexName:  current.IndexName,
-				OuterScope: plan.InstancePath,
-				RowScope:   rowPath,
+				Collection:     current.IterExpr,
+				Key:            current.KeyAST,
+				ItemName:       current.ItemName,
+				IndexName:      current.IndexName,
+				OuterScope:     plan.InstancePath,
+				RowScope:       rowPath,
+				DirectLeafRows: ssrKeyedEachDirectLeafRows(current),
 			}
 		}
 		rowCapabilities, elseCapabilities := splitEachCapabilityChildren(capability, len(current.Children))
@@ -304,6 +310,37 @@ func buildSSRStructuralLifecycleNode(node Node, capability *SSRCapability, path 
 		plan.Operations = []SSRLifecycleOperation{SSRLifecycleDestroy}
 	}
 	return plan
+}
+
+// ssrKeyedEachDirectLeafRows describes the first independently reconciled
+// inner keyed-row slice. It deliberately permits no structural descendants:
+// their ownership requires nested marker ranges rather than a leaf row map.
+// Attribute validation reuses the established keyed-await direct-DOM subset so
+// this plan cannot promise a leaf operation the existing DOM lowerer rejects.
+func ssrKeyedEachDirectLeafRows(block *EachBlockNode) bool {
+	if block == nil || !block.HasKey() || len(block.Children) == 0 || len(block.ElseChildren) != 0 {
+		return false
+	}
+	for _, node := range block.Children {
+		switch current := node.(type) {
+		case *TextNode:
+			if current == nil {
+				return false
+			}
+		case *ElementNode:
+			if current == nil || !ssrCapabilityKeyedAwaitDirectElement(current) {
+				return false
+			}
+			for _, child := range current.Children {
+				if _, ok := child.(*TextNode); !ok {
+					return false
+				}
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func structuralLifecycleOperations() []SSRLifecycleOperation {

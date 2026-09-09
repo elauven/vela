@@ -126,7 +126,7 @@ func TestSSRStructuralLifecyclePlanRetainsInnerKeyedEachRecipe(t *testing.T) {
 		t.Fatalf("keyed each plans outer=%#v inner=%#v", outerPlan, innerPlan)
 	}
 	recipe := innerPlan.KeyedEach
-	if recipe.Collection != inner.IterExpr || recipe.Key != inner.KeyAST || recipe.ItemName != "field" || recipe.IndexName != "index" {
+	if recipe.Collection != inner.IterExpr || recipe.Key != inner.KeyAST || recipe.ItemName != "field" || recipe.IndexName != "index" || !recipe.DirectLeafRows {
 		t.Fatalf("inner keyed recipe=%#v", recipe)
 	}
 	if len(recipe.OuterScope.Segments) == 0 || len(recipe.RowScope.Segments) != len(recipe.OuterScope.Segments)+1 {
@@ -141,6 +141,36 @@ func TestSSRStructuralLifecyclePlanRetainsInnerKeyedEachRecipe(t *testing.T) {
 	}
 	if CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
 		t.Fatal("inner keyed await each must remain capability-gated until its range lowerer is implemented")
+	}
+}
+
+func TestSSRKeyedEachLifecycleRecipeGatesDirectLeafRows(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+		want   bool
+	}{
+		{name: "direct dynamic leaves", source: `<template>{#each fields as field (field.id)}<input bind:value={field.title} /><button class:selected={field.selected} style:color={field.color} ={() => field.selected = !field.selected}>{field.title}</button>{/each}</template>`, want: true},
+		{name: "else branch", source: `<template>{#each fields as field (field.id)}<p>{field.title}</p>{:else}<p>Empty</p>{/each}</template>`, want: false},
+		{name: "nested element", source: `<template>{#each fields as field (field.id)}<p><span>{field.title}</span></p>{/each}</template>`, want: false},
+		{name: "structural child", source: `<template>{#each fields as field (field.id)}{#if field.visible}<p>{field.title}</p>{/if}{/each}</template>`, want: false},
+		{name: "component child", source: `<template>{#each fields as field (field.id)}<Child :field={field} />{/each}</template>`, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sfc, err := parseSFC(tc.source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			each := sfc.TemplateAST.Nodes[0].(*EachBlockNode)
+			plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes).Find(SSRLifecyclePlanEach, each.Span)
+			if plan == nil || plan.KeyedEach == nil {
+				t.Fatalf("keyed lifecycle plan=%#v", plan)
+			}
+			if got := plan.KeyedEach.DirectLeafRows; got != tc.want {
+				t.Fatalf("DirectLeafRows=%t, want %t", got, tc.want)
+			}
+		})
 	}
 }
 
