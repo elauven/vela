@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSSRStructuralLifecyclePlanRetainsNestedInstanceRecipe(t *testing.T) {
 	sfc, err := parseSFC(`<template><main>{#if visible}<section>{#each rows as row (row.id)}<Child :row={row} />{/each}</section>{:else}<p>Empty</p>{/if}</main></template>`)
@@ -171,6 +174,26 @@ func TestSSRKeyedEachLifecycleRecipeGatesDirectLeafRows(t *testing.T) {
 				t.Fatalf("DirectLeafRows=%t, want %t", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestHydrationEachInstanceScopeFromUsesCachedInnerKey(t *testing.T) {
+	sfc, err := parseSFC(`<template>{#each rows as row (row.id)}{#await row.request}{:then value}{#each row.fields as field (field.id)}<p>{field.title}</p>{/each}{/await}{/each}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer := sfc.TemplateAST.Nodes[0].(*EachBlockNode)
+	await := outer.Children[0].(*AwaitBlockNode)
+	inner := await.ThenChildren[0].(*EachBlockNode)
+	g := &ASTGen{sfc: sfc}
+	expr := g.hydrationEachInstanceScopeFrom(id("$$outerScope"), inner, "$$field", "$$fieldIndex")
+	program := &JsProgram{Body: []JsStmt{genConst("scope", expr)}}
+	output := PrintJS(program, PrintPretty)
+	if !strings.Contains(output, "$$outerScope + '--each-"+itoa(inner.Span.Start)+"-' + String($$field.id)") {
+		t.Fatalf("inner scope does not use cached item key AST:\n%s", output)
+	}
+	if strings.Contains(output, inner.KeyAST.Source) && inner.KeyAST.Source != "field.id" {
+		t.Fatalf("inner scope reparsed key source: %s", output)
 	}
 }
 
