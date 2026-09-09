@@ -5801,13 +5801,13 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			switch {
 			case attr.IsTwoWay && attr.Expr != nil:
 				*updates = append(*updates, bindingWriteFor(element.Tag, attr, branch, ref))
-				body = append(body, bindingListenerFor(element.Tag, attr, ref, "")...)
+				body = append(body, bindingListenerFor(element.Tag, attr, ref, owner)...)
 			case attr.IsBind && !attr.IsTwoWay && attr.Expr != nil:
 				*updates = append(*updates, attrWriteFor(attr, branch, ref))
 			case (attr.IsClassDir || attr.IsStyleDir) && attr.Expr != nil:
 				*updates = append(*updates, directiveWriteFor(attr, branch, ref))
 			case attr.IsEvent && attr.Expr != nil:
-				body = append(body, eventAttachFor(attr, branch, ref, "")...)
+				body = append(body, eventAttachFor(attr, branch, ref, owner)...)
 			default:
 				body = append(body, g.setAttrStmt(ref, attr.Name, attr.Value))
 			}
@@ -6160,15 +6160,63 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						}
 						if len(nestedEach.ElseChildren) > 0 {
 							emptyFragment := g.id()
-							emptyBody := genBlock(
+							emptyVar := "$$empty"
+							emptyUpdates := []JsStmt{}
+							emptyDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+								genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(emptyVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
+								genAssignStmt(genMember(id(emptyVar), "listeners"), genArray()),
+								genAssignStmt(genMember(id(emptyVar), "updates"), genArray()),
+								genForOf("$$node", genMember(id(emptyVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+								genAssignStmt(genMember(id(emptyVar), "nodes"), genArray()),
+								genAssignStmt(id(innerEmptyNodes), genNull()),
+							)}
+							emptyController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+								{Key: id("nodes"), Value: genArray()},
+								{Key: id("updates"), Value: genArray()},
+								{Key: id("listeners"), Value: genArray()},
+								{Key: id("destroy"), Value: emptyDestroy},
+							}}
+							emptyBuild := []JsStmt{
 								genConst(emptyFragment, genCall(genMember(id("document"), "createDocumentFragment"))),
-								genExprStmt(genCall(id("$$insertHTML"), id(emptyFragment), strLit(emitStaticHTML(nestedEach.ElseChildren, g.scopeID)))),
-								genAssignStmt(id(innerEmptyNodes), genCall(generatedMemberPath("Array.from"), genMember(id(emptyFragment), "childNodes"))),
+								genConst(emptyVar, emptyController),
+							}
+							for _, emptyChild := range nestedEach.ElseChildren {
+								switch current := emptyChild.(type) {
+								case *TextNode:
+									if textNodeAllStatic(current) {
+										emptyBuild = append(emptyBuild, genExprStmt(genCall(id("$$insertHTML"), id(emptyFragment), strLit(emitStaticHTML([]Node{current}, g.scopeID)))))
+										continue
+									}
+									textRef := g.id()
+									emptyUpdate := g.id() + "_update"
+									emptyBuild = append(emptyBuild,
+										genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
+										genExprStmt(genCall(genMember(id(emptyFragment), "appendChild"), id(textRef))),
+										genConst(emptyUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(textWriteFor(current, branch, textRef))}),
+										genExprStmt(genCall(genMember(genMember(id(emptyVar), "updates"), "push"), id(emptyUpdate))),
+										genInvoke(emptyUpdate),
+									)
+								case *ElementNode:
+									emptyBuild = append(emptyBuild, buildSettledElement(current, emptyFragment, branch, emptyVar, &emptyUpdates)...)
+								}
+							}
+							if len(emptyUpdates) > 0 {
+								emptyUpdate := g.id() + "_update"
+								emptyBuild = append(emptyBuild,
+									genConst(emptyUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(emptyUpdates...)}),
+									genExprStmt(genCall(genMember(genMember(id(emptyVar), "updates"), "push"), id(emptyUpdate))),
+									genInvoke(emptyUpdate),
+								)
+							}
+							emptyBuild = append(emptyBuild,
+								genAssignStmt(genMember(id(emptyVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(emptyFragment), "childNodes"))),
+								genAssignStmt(id(innerEmptyNodes), id(emptyVar)),
 								genExprStmt(genCall(genMember(genMember(id(innerRange), "end"), "before"), id(emptyFragment))),
 							)
 							refreshBody = append(refreshBody,
-								genIf(genMember(id(innerBlocks), "size"), genIf(id(innerEmptyNodes), genBlock(removeNodesStmts(innerEmptyNodes)...))),
-								genIf(genLogical("&&", genUnary("!", genMember(id(innerBlocks), "size")), genUnary("!", id(innerEmptyNodes))), emptyBody),
+								genIf(genMember(id(innerBlocks), "size"), genIf(id(innerEmptyNodes), genExprStmt(genCall(genMember(id(innerEmptyNodes), "destroy"))))),
+								genIf(genLogical("&&", genUnary("!", genMember(id(innerBlocks), "size")), genUnary("!", id(innerEmptyNodes))), genBlock(emptyBuild...)),
+								genIf(id(innerEmptyNodes), genForOf("$$update", genMember(id(innerEmptyNodes), "updates"), genInvoke("$$update"))),
 							)
 						}
 						body = append(body,
@@ -6178,6 +6226,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							genConst(innerKeyOf, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$nested_item"), id("$$nested_index")}, Body: innerKeyFor}),
 							genLet(innerBlocks, genNew(id("Map"))),
 							genLet(innerEmptyNodes, genNull()),
+							genExprStmt(genCall(genMember(genMember(id("$$state"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genIf(id(innerEmptyNodes), genExprStmt(genCall(genMember(id(innerEmptyNodes), "destroy")))))})),
 							genConst(innerCreate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$nested_item"), id("$$nested_index")}, Body: genBlock(createBody...)}),
 							genConst(innerUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$inner_row"), id("$$nested_item"), id("$$nested_index")}, Body: genBlock(
 								genIf(genUnary("!", genMember(id("$$inner_row"), "controller")), genReturn(nil)),

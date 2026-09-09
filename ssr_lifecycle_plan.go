@@ -323,10 +323,11 @@ func ssrKeyedEachDirectLeafRows(block *EachBlockNode) bool {
 	if block == nil || !block.HasKey() || len(block.Children) == 0 {
 		return false
 	}
-	// The empty branch has no row identity. Permit only static content until it
-	// receives its own direct-DOM update plan; the keyed range owns inserting
-	// and removing that static fragment around row reconciliation.
-	if !ssrCapabilityCurrentStaticChildren(block.ElseChildren) {
+	// The empty branch has no row identity. It is instead owned by one
+	// temporary direct-DOM controller alongside the keyed row map. Keep the
+	// same direct-DOM boundary as a settled keyed-await branch: components and
+	// deeper structural blocks require their own lifecycle recipes.
+	if !ssrCapabilityKeyedAwaitDirectIfChildren(block.ElseChildren) {
 		return false
 	}
 	for _, node := range block.Children {
