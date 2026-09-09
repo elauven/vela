@@ -2264,18 +2264,6 @@ func ExtractScopedCSS(sfc *SFC, scopeID string) string {
 // embedders and focused tests that construct an SFC directly. Parsed SFCs
 // always own StyleAST; only the latter compatibility boundary needs a local
 // stylesheet parse before scoping.
-func (g *ASTGen) isDeepState(name string) bool {
-	if g.analysis == nil || name == "" {
-		return false
-	}
-	for _, state := range g.analysis.StateVars {
-		if state.Name == name && state.Deep {
-			return true
-		}
-	}
-	return false
-}
-
 func scopedCSSForSFC(sfc *SFC, scopeID string) string {
 	if sfc == nil || strings.TrimSpace(sfc.Style) == "" {
 		return ""
@@ -2295,6 +2283,18 @@ func (g *ASTGen) hasDeepState() bool {
 	}
 	for _, sv := range g.analysis.StateVars {
 		if sv.Deep {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *ASTGen) isDeepState(name string) bool {
+	if g.analysis == nil || name == "" {
+		return false
+	}
+	for _, state := range g.analysis.StateVars {
+		if state.Name == name && state.Deep {
 			return true
 		}
 	}
