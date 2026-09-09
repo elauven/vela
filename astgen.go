@@ -5775,8 +5775,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	// buildSettledElement owns a complete direct-DOM subtree for one settled
 	// keyed-await row. Dynamic leaves share the row update list; listener
 	// cleanups remain owned by the row state.
-	var buildSettledElement func(*ElementNode, string, int, *[]JsStmt) []JsStmt
-	buildSettledElement = func(element *ElementNode, parent string, branch int, updates *[]JsStmt) []JsStmt {
+	var buildSettledElement func(*ElementNode, string, int, string, *[]JsStmt) []JsStmt
+	buildSettledElement = func(element *ElementNode, parent string, branch int, owner string, updates *[]JsStmt) []JsStmt {
 		ref := g.id()
 		body := []JsStmt{
 			genConst(ref, genCall(genMember(id("document"), "createElement"), strLit(element.Tag))),
@@ -5807,7 +5807,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					body = append(body, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(ref), "appendChild"), id(textRef))))
 					*updates = append(*updates, textWriteFor(current, branch, textRef))
 				case *ElementNode:
-					body = append(body, buildSettledElement(current, ref, branch, updates)...)
+					body = append(body, buildSettledElement(current, ref, branch, owner, updates)...)
 				}
 			}
 		}
@@ -5832,7 +5832,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			}
 			if element, ok := child.(*ElementNode); ok && ssrCapabilityKeyedAwaitDirectElement(element) {
 				updates := []JsStmt{}
-				body = append(body, buildSettledElement(element, "$$frag", branch, &updates)...)
+				body = append(body, buildSettledElement(element, "", branch, "", &updates)...)
 				if len(updates) > 0 {
 					update := g.id() + "_update"
 					body = append(body,
@@ -5867,7 +5867,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						}
 						if element, ok := branchChild.(*ElementNode); ok && ssrCapabilityKeyedAwaitDirectElement(element) {
 							updates := []JsStmt{}
-							body = append(body, buildSettledElement(element, "$$frag", branch, &updates)...)
+							body = append(body, buildSettledElement(element, "", branch, "", &updates)...)
 							if len(updates) > 0 {
 								update := g.id() + "_update"
 								body = append(body, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updates...)}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))), genInvoke(update))
