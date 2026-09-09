@@ -4573,3 +4573,26 @@ func TestBrowserSSRHydrationKeyedEachAwaitNestedEachValueBinding(t *testing.T) {
 		t.Fatalf("nested keyed-await binding browser output=%q", got)
 	}
 }
+
+func TestSSRHydrationKeyedEachAwaitNestedEachSiblingElements(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let rows = []; let draft = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Loading</p>{:then value}{#each row.labels as label}<input bind:value={draft} /><button @click={() => draft = label}>{label}</button>{/each}<p>{draft}</p>{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("nested keyed-await sibling row was rejected by capability analysis")
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	if got := strings.Count(code, "document.createElement"); got < 4 {
+		t.Fatalf("sibling row lowering created %d elements, want pending/input/button/output:\n%s", got, code)
+	}
+	for _, want := range []string{"$$set_draft", "addEventListener", "removeEventListener"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("sibling row lowering misses %q:\n%s", want, code)
+		}
+	}
+}

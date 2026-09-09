@@ -5871,8 +5871,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() { itemsExpr = g.templateExpr(nestedEach.IterExpr) })
 					})
 				})
-				row, dynamicRow := ssrCapabilityKeyedAwaitDynamicEachRow(nestedEach)
-				if dynamicRow {
+				rows, dynamicRows := ssrCapabilityKeyedAwaitDynamicEachRows(nestedEach)
+				if dynamicRows {
 					innerIndex := g.id()
 					innerTextWrite := func(text *TextNode, ref string) JsStmt {
 						var write JsStmt
@@ -5928,38 +5928,43 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						}
 						return write
 					}
-					rowRef := g.id()
-					updates := []JsStmt{}
-					rowBody := []JsStmt{genConst(rowRef, genCall(genMember(id("document"), "createElement"), strLit(row.Tag))), g.setAttrStmt(rowRef, g.scopeID, "")}
-					for _, attr := range row.Attrs {
-						if attr.IsTwoWay && attr.Expr != nil {
-							updates = append(updates, bindingWriteFor(row.Tag, attr, branch, rowRef))
-							rowBody = append(rowBody, bindingListenerFor(row.Tag, attr, rowRef)...)
-						} else if attr.IsEvent && attr.Expr != nil {
-							var eventStmts []JsStmt
-							g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
-								g.withTemplateBinding(nestedEach.IndexName, innerIndex, func() { eventStmts = eventAttachFor(attr, branch, rowRef) })
-							})
-							rowBody = append(rowBody, eventStmts...)
-						} else if attr.IsClassDir || attr.IsStyleDir {
-							updates = append(updates, innerDirectiveWrite(attr, rowRef))
-						} else if attr.Expr != nil {
-							updates = append(updates, innerAttrWrite(attr, rowRef))
-						} else {
-							rowBody = append(rowBody, g.setAttrStmt(rowRef, attr.Name, attr.Value))
+					rowBody := []JsStmt{}
+					for _, row := range rows {
+						rowRef := g.id()
+						updates := []JsStmt{}
+						elementBody := []JsStmt{genConst(rowRef, genCall(genMember(id("document"), "createElement"), strLit(row.Tag))), g.setAttrStmt(rowRef, g.scopeID, "")}
+						for _, attr := range row.Attrs {
+							if attr.IsTwoWay && attr.Expr != nil {
+								updates = append(updates, bindingWriteFor(row.Tag, attr, branch, rowRef))
+								elementBody = append(elementBody, bindingListenerFor(row.Tag, attr, rowRef)...)
+							} else if attr.IsEvent && attr.Expr != nil {
+								var eventStmts []JsStmt
+								g.withTemplateBinding(nestedEach.ItemName, "$$nested_item", func() {
+									g.withTemplateBinding(nestedEach.IndexName, innerIndex, func() { eventStmts = eventAttachFor(attr, branch, rowRef) })
+								})
+								elementBody = append(elementBody, eventStmts...)
+							} else if attr.IsClassDir || attr.IsStyleDir {
+								updates = append(updates, innerDirectiveWrite(attr, rowRef))
+							} else if attr.Expr != nil {
+								updates = append(updates, innerAttrWrite(attr, rowRef))
+							} else {
+								elementBody = append(elementBody, g.setAttrStmt(rowRef, attr.Name, attr.Value))
+							}
 						}
+						for _, rowChild := range row.Children {
+							text := rowChild.(*TextNode)
+							textRef := g.id()
+							elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(rowRef), "appendChild"), id(textRef))))
+							updates = append(updates, innerTextWrite(text, textRef))
+						}
+						if len(updates) > 0 {
+							rowUpdate := g.id() + "_update"
+							elementBody = append(elementBody, genConst(rowUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updates...)}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(rowUpdate))), genInvoke(rowUpdate))
+						}
+						elementBody = append(elementBody, genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(rowRef))))
+						rowBody = append(rowBody, elementBody...)
 					}
-					for _, rowChild := range row.Children {
-						text := rowChild.(*TextNode)
-						textRef := g.id()
-						rowBody = append(rowBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(rowRef), "appendChild"), id(textRef))))
-						updates = append(updates, innerTextWrite(text, textRef))
-					}
-					if len(updates) > 0 {
-						rowUpdate := g.id() + "_update"
-						rowBody = append(rowBody, genConst(rowUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updates...)}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(rowUpdate))), genInvoke(rowUpdate))
-					}
-					rowBody = append(rowBody, genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(rowRef))), genAssignStmt(id(innerIndex), genBinary("+", id(innerIndex), numLit(1))))
+					rowBody = append(rowBody, genAssignStmt(id(innerIndex), genBinary("+", id(innerIndex), numLit(1))))
 					body = append(body, genConst(items, itemsExpr), genLet(innerIndex, numLit(0)), genForOf("$$nested_item", id(items), genBlock(rowBody...)))
 				} else {
 					body = append(body, genConst(items, itemsExpr), genForOf("$$nested_item", id(items), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(nestedEach.Children, g.scopeID))))))

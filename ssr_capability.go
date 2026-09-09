@@ -970,51 +970,54 @@ func ssrCapabilityKeyedAwaitDirectChildren(nodes []Node) bool {
 	return true
 }
 
-// ssrCapabilityKeyedAwaitStaticEach permits the first nested-list lifecycle
-// slice. The outer keyed-await row owns replacement; an inner row may be a
-// single element with item-dependent direct text and ordinary dynamic attributes, but has no
-// independent keyed identity yet.
+// ssrCapabilityKeyedAwaitStaticEach permits direct sibling ordinary elements in
+// the first nested-list lifecycle slice. The outer keyed-await row owns all
+// replacement; inner rows have no independent keyed identity yet.
 func ssrCapabilityKeyedAwaitStaticEach(block *EachBlockNode) bool {
 	if block == nil || block.HasKey() || !ssrCapabilityCurrentStaticChildren(block.ElseChildren) {
 		return false
 	}
-	if _, ok := ssrCapabilityKeyedAwaitDynamicEachRow(block); ok {
+	if _, ok := ssrCapabilityKeyedAwaitDynamicEachRows(block); ok {
 		return true
 	}
 	return ssrCapabilityCurrentStaticChildren(block.Children)
 }
 
-func ssrCapabilityKeyedAwaitDynamicEachRow(block *EachBlockNode) (*ElementNode, bool) {
-	if block == nil || block.HasKey() || len(block.Children) != 1 {
+func ssrCapabilityKeyedAwaitDynamicEachRows(block *EachBlockNode) ([]*ElementNode, bool) {
+	if block == nil || block.HasKey() || len(block.Children) == 0 {
 		return nil, false
 	}
-	row, ok := block.Children[0].(*ElementNode)
-	if !ok || row == nil {
-		return nil, false
-	}
-	for _, attr := range row.Attrs {
-		if attr == nil || attr.IsBindThis {
+	rows := make([]*ElementNode, 0, len(block.Children))
+	for _, node := range block.Children {
+		row, ok := node.(*ElementNode)
+		if !ok || row == nil {
 			return nil, false
 		}
-		if attr.IsTwoWay {
-			if _, ok := twoWayBindSpec(row.Tag, attr.Name); !ok {
+		for _, attr := range row.Attrs {
+			if attr == nil || attr.IsBindThis {
 				return nil, false
 			}
-			if _, ok := templateExprIdent(attr.Expr); !ok {
+			if attr.IsTwoWay {
+				if _, ok := twoWayBindSpec(row.Tag, attr.Name); !ok {
+					return nil, false
+				}
+				if _, ok := templateExprIdent(attr.Expr); !ok {
+					return nil, false
+				}
+				continue
+			}
+			if attr.Expr != nil && !(attr.IsBind && !attr.IsTwoWay) && !attr.IsClassDir && !attr.IsStyleDir && !attr.IsEvent {
 				return nil, false
 			}
-			continue
 		}
-		if attr.Expr != nil && !(attr.IsBind && !attr.IsTwoWay) && !attr.IsClassDir && !attr.IsStyleDir && !attr.IsEvent {
-			return nil, false
+		for _, child := range row.Children {
+			if _, ok := child.(*TextNode); !ok {
+				return nil, false
+			}
 		}
+		rows = append(rows, row)
 	}
-	for _, child := range row.Children {
-		if _, ok := child.(*TextNode); !ok {
-			return nil, false
-		}
-	}
-	return row, true
+	return rows, true
 }
 
 // ssrCapabilityKeyedAwaitDirectIfChain permits a plain direct #if in a
