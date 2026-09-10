@@ -1100,7 +1100,7 @@ func ssrKeyedEachDirectConditionalElement(element *ElementNode) bool {
 		return false
 	}
 	for _, attr := range element.Attrs {
-		if attr == nil || attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsClassDir || attr.IsStyleDir {
+		if attr == nil || attr.IsBindThis || attr.IsEvent || attr.IsTwoWay {
 			return false
 		}
 	}
