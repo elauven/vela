@@ -6176,8 +6176,63 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 											elementBody = append(elementBody, genExprStmt(genCall(genMember(id(keyFragment), "appendChild"), id(elementRef))))
 											keyMount = append(keyMount, elementBody...)
 										case *EachBlockNode:
-											if !ssrKeyedEachDirectKeyEachRows(current) || current.HasKey() || len(current.ElseChildren) != 0 {
+											if !ssrKeyedEachDirectKeyEachRows(current) || len(current.ElseChildren) != 0 {
 												panic("vela: missing direct nested each key lifecycle recipe")
+											}
+											if current.HasKey() {
+												listVar, listRange, listRender, listKeyOf := g.id(), g.id()+"_range", g.id()+"_render", g.id()+"_key"
+												listCreate, listUpdate, listItems, listItem, listIndex := g.id()+"_create", g.id()+"_update", g.id()+"_items", "$$key_item", "$$key_index"
+												listExpr, listKeyExpr := JsExpr(id("[]")), JsExpr(id("undefined"))
+												withNestedBindings(func() { listExpr = g.templateExpr(current.IterExpr) })
+												g.withTemplateBinding(current.ItemName, listItem, func() {
+													g.withTemplateBinding(current.IndexName, listIndex, func() { withNestedBindings(func() { listKeyExpr = g.templateExpr(current.KeyAST) }) })
+												})
+												rowBody := []JsStmt{}
+												g.withTemplateBinding(current.ItemName, listItem, func() {
+													g.withTemplateBinding(current.IndexName, listIndex, func() {
+														for _, listChild := range current.Children {
+															switch listNode := listChild.(type) {
+															case *TextNode:
+																textRef, update := g.id(), g.id()+"_update"
+																rowBody = append(rowBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(listNode, textRef))}), genExprStmt(genCall(genMember(genMember(id("$$row_controller"), "updates"), "push"), id(update))), genInvoke(update))
+															case *ElementNode:
+																elementRef := g.id()
+																elementBody := []JsStmt{genConst(elementRef, genCall(genMember(id("document"), "createElement"), strLit(listNode.Tag))), g.setAttrStmt(elementRef, g.scopeID, "")}
+																for _, elementChild := range listNode.Children {
+																	text := elementChild.(*TextNode)
+																	textRef, update := g.id(), g.id()+"_update"
+																	elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(text, textRef))}), genExprStmt(genCall(genMember(genMember(id("$$row_controller"), "updates"), "push"), id(update))), genInvoke(update))
+																}
+																elementBody = append(elementBody, genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(elementRef))))
+																rowBody = append(rowBody, elementBody...)
+															}
+														}
+													})
+												})
+												rowDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id("$$row_controller"), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))), genAssignStmt(genMember(id("$$row_controller"), "listeners"), genArray()), genAssignStmt(genMember(id("$$row_controller"), "updates"), genArray()))}
+												rowController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+													{Key: id("updates"), Value: genArray()},
+													{Key: id("listeners"), Value: genArray()},
+													{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
+														genAssignStmt(id(listItem), id("$$next_item")), genAssignStmt(id(listIndex), id("$$next_index")),
+														genForOf("$$update", genMember(id("$$row_controller"), "updates"), genInvoke("$$update")),
+													)}},
+													{Key: id("destroy"), Value: rowDestroy},
+												}}
+												createBody := []JsStmt{genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))), genConst("$$row_start", genCall(genMember(id("document"), "createComment"), strLit("r"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$row_start"))), genConst("$$row_controller", rowController)}
+												createBody = append(createBody, rowBody...)
+												createBody = append(createBody, genConst("$$row_end", genCall(genMember(id("document"), "createComment"), strLit("/r"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$row_end"))), genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$row_start")}, {Key: id("end"), Value: id("$$row_end")}, {Key: id("controller"), Value: id("$$row_controller")}}}))
+												listDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+													genExprStmt(genCall(genMember(genMember(id(listVar), "blocks"), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
+														genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "destroy"))),
+														genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))),
+													)})),
+													genExprStmt(genCall(genMember(genMember(id(listVar), "blocks"), "clear"))),
+												)}
+												listController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("blocks"), Value: genNew(id("Map"))}, {Key: id("destroy"), Value: listDestroy}}}
+												listRenderBody := []JsStmt{genConst(listItems, listExpr), genAssignStmt(genMember(id(listVar), "blocks"), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(listRange), genMember(id(listVar), "blocks"), id(listItems), id(listKeyOf), id(listCreate), id(listUpdate)))}
+												keyMount = append(keyMount, genConst(listRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("each"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/each"))}}}), genExprStmt(genCall(genMember(id(keyFragment), "append"), genMember(id(listRange), "start"))), genExprStmt(genCall(genMember(id(keyFragment), "append"), genMember(id(listRange), "end"))), genConst(listVar, listController), genConst(listKeyOf, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(listItem), id(listIndex)}, Body: listKeyExpr}), genConst(listCreate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(listItem), id(listIndex)}, Body: genBlock(createBody...)}), genConst(listUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id(listItem), id(listIndex)}, Body: genBlock(genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id(listItem), id(listIndex))))}), genConst(listRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(listRenderBody...)}), genExprStmt(genCall(genMember(genMember(id(keyVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(listVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(listRender))), genInvoke(listRender))
+												continue
 											}
 											listVar, listRange, listRender := g.id(), g.id()+"_range", g.id()+"_render"
 											listFragment, listItems, listItem, listIndex := g.id()+"_fragment", g.id()+"_items", "$$key_item", g.id()+"_index"

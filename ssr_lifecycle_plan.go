@@ -445,10 +445,9 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 			}
 			hasConditional = true
 		case *EachBlockNode:
-			// The first nested-list slice is deliberately unkeyed and has no
-			// fallback. Its controller is owned by the surrounding #key range;
-			// keyed rows, empty ranges and nested structures need marker recipes.
-			if current == nil || current.HasKey() || len(current.ElseChildren) != 0 || !ssrKeyedEachDirectKeyEachRows(current) || hasEach {
+			// The nested-list controller owns one direct-DOM range per row. Both
+			// keyed and unkeyed lists exclude fallback and deeper structures here.
+			if current == nil || len(current.ElseChildren) != 0 || !ssrKeyedEachDirectKeyEachRows(current) || hasEach {
 				return false
 			}
 			hasEach = true
