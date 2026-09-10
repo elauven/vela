@@ -5891,14 +5891,14 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					}
 					return body
 				}
-				var mountIfBranch func(int) []JsStmt
-				mountIfBranch = func(index int) []JsStmt {
+				var mountIfBranch func(int, string, string) []JsStmt
+				mountIfBranch = func(index int, parent, owner string) []JsStmt {
 					if index >= len(chain.Branches) || chain.Branches[index] == nil {
 						return nil
 					}
 					ifBranch := chain.Branches[index]
 					if !ifBranch.HasCondition() {
-						return mountIfChildren(ifBranch.Children, "$$frag", "$$state")
+						return mountIfChildren(ifBranch.Children, parent, owner)
 					}
 					condition := JsExpr(boolLit(false))
 					g.withTemplateBinding(block.ItemName, rowItemVar, func() {
@@ -5906,17 +5906,42 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() { condition = g.templateExpr(ifBranch.Expr) })
 						})
 					})
-					return []JsStmt{&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: condition, Then: genBlock(mountIfChildren(ifBranch.Children, "$$frag", "$$state")...), Else: genBlock(mountIfBranch(index + 1)...)}}
+					return []JsStmt{&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: condition, Then: genBlock(mountIfChildren(ifBranch.Children, parent, owner)...), Else: genBlock(mountIfBranch(index+1, parent, owner)...)}}
 				}
-				body = append(body, mountIfBranch(0)...)
-				// The direct branch is mounted into the row fragment, so a retained
-				// keyed row must rebuild that fragment when the condition changes.
-				// A later controller lowering can replace this conservative boundary
-				// without changing the row's range ownership contract.
-				update := g.id() + "_if_update"
-				body = append(body, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-					genInvoke(renderVar, id("$$state"), genMember(id("$$state"), "row"), genMember(id("$$state"), "item"), genMember(id("$$state"), "index"), genMember(id("$$state"), "active")),
-				)}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))))
+				ifVar, ifRange, ifRender := g.id(), g.id()+"_range", g.id()+"_render"
+				ifFragment, ifNext := g.id()+"_fragment", g.id()+"_next"
+				active := JsExpr(numLit(-1))
+				for index := len(chain.Branches) - 1; index >= 0; index-- {
+					current := chain.Branches[index]
+					if current == nil {
+						continue
+					}
+					if !current.HasCondition() {
+						active = numLit(index)
+						continue
+					}
+					condition := JsExpr(boolLit(false))
+					g.withTemplateBinding(block.ItemName, rowItemVar, func() {
+						g.withTemplateBinding(block.IndexName, "$$index", func() {
+							g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() { condition = g.templateExpr(current.Expr) })
+						})
+					})
+					active = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: condition, Then: numLit(index), Else: active}
+				}
+				destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(ifVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
+					genAssignStmt(genMember(id(ifVar), "listeners"), genArray()), genAssignStmt(genMember(id(ifVar), "updates"), genArray()),
+					genForOf("$$node", genMember(id(ifVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(ifVar), "nodes"), genArray()), genAssignStmt(genMember(id(ifVar), "active"), numLit(-1)),
+				)}
+				controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("destroy"), Value: destroy}}}
+				renderBody := []JsStmt{genConst(ifNext, active), genIf(genBinary("===", genMember(id(ifVar), "active"), id(ifNext)), genBlock(genForOf("$$update", genMember(id(ifVar), "updates"), genInvoke("$$update")), genReturn(nil))), genExprStmt(genCall(genMember(id(ifVar), "destroy"))), genAssignStmt(genMember(id(ifVar), "active"), id(ifNext)), genConst(ifFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
+				renderBody = append(renderBody, mountIfBranch(0, ifFragment, ifVar)...)
+				renderBody = append(renderBody, genAssignStmt(genMember(id(ifVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(ifFragment), "childNodes"))), genExprStmt(genCall(genMember(genMember(id(ifRange), "end"), "before"), id(ifFragment))))
+				body = append(body,
+					genConst(ifRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("if"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/if"))}}}),
+					genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(ifRange), "start"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(ifRange), "end"))), genConst(ifVar, controller), genConst(ifRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(renderBody...)}),
+					genExprStmt(genCall(genMember(genMember(id("$$state"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ifVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(ifRender))), genInvoke(ifRender),
+				)
 				continue
 			}
 			if nestedEach, ok := child.(*EachBlockNode); ok && ssrCapabilityKeyedAwaitStaticEach(nestedEach) {
