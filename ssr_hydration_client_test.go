@@ -4723,6 +4723,58 @@ func TestSSRHydrationKeyedEachAwaitNestedUnkeyedRowsOwnDynamicFallback(t *testin
 	}
 }
 
+func TestBrowserSSRHydrationKeyedEachAwaitNestedUnkeyedRowsDynamicFallback(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>let rows = $state.deep(window.__rows || []); let selected = $state(""); let draft = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}{#each field.tags as tag}<input class="tag" :data-tag={tag} bind:value={draft} @click={() => selected = tag} />{:else}<input class="empty" :data-draft={draft} class:active={draft === "empty"} style:color={draft ? "red" : "blue"} bind:value={draft} @click={() => selected = "fallback"} />{/each}{/key}{/each}<button class="clear" @click={() => { rows[0].fields[0].tags = []; selected = ""; draft = "empty" }}>Clear</button><p class="selected">{selected}</p><p class="draft">{draft}</p>{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := sfc.TemplateAST.Nodes[0].(*ElementNode)
+	each := main.Children[0].(*EachBlockNode)
+	await := each.Children[0].(*AwaitBlockNode)
+	markers := ssrHydrationMarkerIDs(plan.Nodes)
+	eachID, ok := markers.eachID(each.Span)
+	if !ok {
+		t.Fatal("keyed each marker is missing")
+	}
+	awaitID, ok := markers.awaitID(await.Span)
+	if !ok {
+		t.Fatal("await marker is missing")
+	}
+	rowScope := "vela-page--each-" + itoa(each.Span.Start) + "-a"
+	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><p vela-page="" class="pending">Loading</p><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
+	serverHTML := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-page:` + itoa(eachID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":["rows"],"incomplete":false}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"a",version:0,tags:["one"]}]}];window.hydrated=hydratePage(document.body)</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);await p.evaluate(()=>window.resolve("done"));await p.waitForFunction(()=>document.querySelector(".tag"));await p.evaluate(()=>{window.oldTag=document.querySelector(".tag");document.querySelector(".clear").click()});await p.waitForFunction(()=>{const x=document.querySelector(".empty");return !document.querySelector(".tag")&&x?.value==="empty"&&x.dataset.draft==="empty"&&x.classList.contains("active")&&x.style.color==="red"});await p.evaluate(async()=>{window.oldTag.click();window.oldTag.value="stale";window.oldTag.dispatchEvent(new Event("input",{bubbles:true}));await new Promise(resolve=>setTimeout(resolve,0));window.stale={selected:document.querySelector("p.selected").textContent,draft:document.querySelector(".draft").textContent};const x=document.querySelector(".empty");x.click();x.value="fresh";x.dispatchEvent(new Event("input",{bubbles:true}))});const stale=await p.evaluate(()=>window.stale);if(stale.selected!==""||stale.draft!=="empty")throw new Error("removed unkeyed row retained listener or binding: "+JSON.stringify(stale));await p.waitForFunction(()=>{const x=document.querySelector(".empty");return document.querySelector("p.selected")?.textContent==="fallback"&&document.querySelector(".draft")?.textContent==="fresh"&&x.dataset.draft==="fresh"&&!x.classList.contains("active")&&x.style.color==="red"});await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browserScript, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("nested unkeyed fallback browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("nested unkeyed fallback browser output=%q", got)
+	}
+}
+
 func TestBrowserSSRHydrationKeyedEachAwaitNestedKeyedRowsReplaceInnerKeyRange(t *testing.T) {
 	node := requirePlaywright(t)
 	sfc, err := parseSFC(`<script>let rows = $state.deep(window.__rows || []); let selected = $state(""); let draft = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<input class="field" :data-id={field.id} class:chosen={selected === field.id} style:color={selected ? "red" : "blue"} bind:value={draft} @click={() => selected = field.id} />{/key}{/each}<button class="bump" @click={() => { rows[0].fields[0].version++; selected = ""; draft = "reset" }}>Bump</button><p class="selected">{selected}</p><p class="draft">{draft}</p>{/await}{/each}</main></template>`)
