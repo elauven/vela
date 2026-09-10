@@ -446,8 +446,10 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 			hasConditional = true
 		case *EachBlockNode:
 			// The nested-list controller owns one direct-DOM range per row. Both
-			// keyed and unkeyed lists exclude fallback and deeper structures here.
-			if current == nil || len(current.ElseChildren) != 0 || !ssrKeyedEachDirectKeyEachRows(current) || hasEach {
+			// keyed and unkeyed lists exclude deeper structures here. A fully
+			// static fallback is owned by the list controller rather than the row
+			// map, so it can appear only while the keyed list is empty.
+			if current == nil || !ssrKeyedEachDirectKeyEachRows(current) || !ssrKeyedEachDirectKeyEachElse(current.ElseChildren) || hasEach {
 				return false
 			}
 			hasEach = true
@@ -482,6 +484,15 @@ func ssrKeyedEachDirectKeyEachRows(block *EachBlockNode) bool {
 		}
 	}
 	return true
+}
+
+// ssrKeyedEachDirectKeyEachElse deliberately starts with the narrowest safe
+// fallback recipe. The keyed row reconciler owns live row controllers, while
+// this branch owns a separate static DOM range when no rows exist. Dynamic
+// fallback content needs its own update/listener controller and is added by a
+// later recipe rather than being silently emitted without reactivity.
+func ssrKeyedEachDirectKeyEachElse(nodes []Node) bool {
+	return len(nodes) == 0 || allStatic(nodes)
 }
 
 func structuralLifecycleOperations() []SSRLifecycleOperation {
