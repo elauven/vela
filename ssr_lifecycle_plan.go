@@ -446,10 +446,9 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 			hasConditional = true
 		case *EachBlockNode:
 			// The nested-list controller owns one direct-DOM range per row. Both
-			// keyed and unkeyed lists exclude deeper structures here. A fully
-			// static fallback is owned by the list controller rather than the row
-			// map, so it can appear only while the keyed list is empty.
-			if current == nil || !ssrKeyedEachDirectKeyEachRows(current) || !ssrKeyedEachDirectKeyEachElse(current.ElseChildren) || (!current.HasKey() && !allStatic(current.ElseChildren)) || hasEach {
+			// keyed and unkeyed lists exclude deeper structures here. Their
+			// fallback is owned by the list controller rather than the row map.
+			if current == nil || !ssrKeyedEachDirectKeyEachRows(current) || !ssrKeyedEachDirectKeyEachElse(current.ElseChildren) || hasEach {
 				return false
 			}
 			hasEach = true

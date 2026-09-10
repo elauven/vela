@@ -6176,7 +6176,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 											elementBody = append(elementBody, genExprStmt(genCall(genMember(id(keyFragment), "appendChild"), id(elementRef))))
 											keyMount = append(keyMount, elementBody...)
 										case *EachBlockNode:
-											if !ssrKeyedEachDirectKeyEachRows(current) || !ssrKeyedEachDirectKeyEachElse(current.ElseChildren) || (!current.HasKey() && !allStatic(current.ElseChildren)) {
+											if !ssrKeyedEachDirectKeyEachRows(current) || !ssrKeyedEachDirectKeyEachElse(current.ElseChildren) {
 												panic("vela: missing direct nested each key lifecycle recipe")
 											}
 											if current.HasKey() {
@@ -6352,8 +6352,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 											listFragment, listItems, listItem, listIndex := g.id()+"_fragment", g.id()+"_items", "$$key_item", g.id()+"_index"
 											listExpr := JsExpr(id("[]"))
 											withNestedBindings(func() { listExpr = g.templateExpr(current.IterExpr) })
-											listDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genForOf("$$node", genMember(id(listVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(listVar), "nodes"), genArray()))}
-											listController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("destroy"), Value: listDestroy}}}
+											listDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(listVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))), genAssignStmt(genMember(id(listVar), "listeners"), genArray()), genForOf("$$node", genMember(id(listVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(listVar), "nodes"), genArray()))}
+											listController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("destroy"), Value: listDestroy}}}
 											listRows := []JsStmt{}
 											g.withTemplateBinding(current.ItemName, listItem, func() {
 												g.withTemplateBinding(current.IndexName, listIndex, func() {
@@ -6374,9 +6374,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																switch {
 																case attr.IsTwoWay && attr.Expr != nil:
 																	elementUpdates = append(elementUpdates, innerBindingWrite(listNode.Tag, attr, elementRef))
-																	elementBody = append(elementBody, innerBindingListener(listNode.Tag, attr, elementRef, "$$row_controller")...)
+																	elementBody = append(elementBody, innerBindingListener(listNode.Tag, attr, elementRef, listVar)...)
 																case attr.IsEvent && attr.Expr != nil:
-																	elementBody = append(elementBody, eventAttachFor(attr, branch, elementRef, "$$row_controller")...)
+																	var eventStmts []JsStmt
+																	withNestedBindings(func() { eventStmts = eventAttachFor(attr, branch, elementRef, listVar) })
+																	elementBody = append(elementBody, eventStmts...)
 																case attr.IsClassDir || attr.IsStyleDir:
 																	elementUpdates = append(elementUpdates, innerDirectiveWrite(attr, elementRef))
 																case attr.Expr != nil:
@@ -6395,8 +6397,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																}
 															}
 															if len(elementUpdates) > 0 {
-																update := g.id() + "_update"
-																elementBody = append(elementBody, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id("$$row_controller"), "updates"), "push"), id(update))), genInvoke(update))
+																elementBody = append(elementBody, elementUpdates...)
 															}
 															elementBody = append(elementBody, genExprStmt(genCall(genMember(id(listFragment), "appendChild"), id(elementRef))))
 															listRows = append(listRows, elementBody...)
@@ -6404,9 +6405,56 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 													}
 												})
 											})
+											listElseRows := []JsStmt{}
+											if len(current.ElseChildren) > 0 {
+												withNestedBindings(func() {
+													for _, elseChild := range current.ElseChildren {
+														switch elseNode := elseChild.(type) {
+														case *TextNode:
+															if textNodeAllStatic(elseNode) {
+																listElseRows = append(listElseRows, genExprStmt(genCall(id("$$insertHTML"), id(listFragment), strLit(emitStaticHTML([]Node{elseNode}, g.scopeID)))))
+																continue
+															}
+															textRef := g.id()
+															listElseRows = append(listElseRows, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(listFragment), "appendChild"), id(textRef))), innerTextWrite(elseNode, textRef))
+														case *ElementNode:
+															elementRef := g.id()
+															elementBody := []JsStmt{genConst(elementRef, genCall(genMember(id("document"), "createElement"), strLit(elseNode.Tag))), g.setAttrStmt(elementRef, g.scopeID, "")}
+															elementUpdates := []JsStmt{}
+															for _, attr := range elseNode.Attrs {
+																switch {
+																case attr.IsTwoWay && attr.Expr != nil:
+																	elementUpdates = append(elementUpdates, innerBindingWrite(elseNode.Tag, attr, elementRef))
+																	elementBody = append(elementBody, innerBindingListener(elseNode.Tag, attr, elementRef, listVar)...)
+																case attr.IsEvent && attr.Expr != nil:
+																	elementBody = append(elementBody, eventAttachFor(attr, branch, elementRef, listVar)...)
+																case attr.IsClassDir || attr.IsStyleDir:
+																	elementUpdates = append(elementUpdates, innerDirectiveWrite(attr, elementRef))
+																case attr.Expr != nil:
+																	elementUpdates = append(elementUpdates, innerAttrWrite(attr, elementRef))
+																default:
+																	elementBody = append(elementBody, g.setAttrStmt(elementRef, attr.Name, attr.Value))
+																}
+															}
+															for _, elementChild := range elseNode.Children {
+																text := elementChild.(*TextNode)
+																if textNodeAllStatic(text) {
+																	elementBody = append(elementBody, genExprStmt(genCall(id("$$insertHTML"), id(elementRef), strLit(emitStaticHTML([]Node{text}, g.scopeID)))))
+																} else {
+																	textRef := g.id()
+																	elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), innerTextWrite(text, textRef))
+																}
+															}
+															elementBody = append(elementBody, elementUpdates...)
+															elementBody = append(elementBody, genExprStmt(genCall(genMember(id(listFragment), "appendChild"), id(elementRef))))
+															listElseRows = append(listElseRows, elementBody...)
+														}
+													}
+												})
+											}
 											listRenderBody := []JsStmt{genExprStmt(genCall(genMember(id(listVar), "destroy"))), genConst(listFragment, genCall(genMember(id("document"), "createDocumentFragment"))), genConst(listItems, listExpr), genLet(listIndex, numLit(0)), genForOf(listItem, id(listItems), genBlock(append(listRows, genAssignStmt(id(listIndex), genBinary("+", id(listIndex), numLit(1))))...))}
 											if len(current.ElseChildren) > 0 {
-												listRenderBody = append(listRenderBody, genIf(genBinary("===", genMember(id(listItems), "length"), numLit(0)), genExprStmt(genCall(id("$$insertHTML"), id(listFragment), strLit(emitStaticHTML(current.ElseChildren, g.scopeID))))))
+												listRenderBody = append(listRenderBody, genIf(genBinary("===", genMember(id(listItems), "length"), numLit(0)), genBlock(listElseRows...)))
 											}
 											listRenderBody = append(listRenderBody, genAssignStmt(genMember(id(listVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(listFragment), "childNodes"))), genExprStmt(genCall(genMember(genMember(id(listRange), "end"), "before"), id(listFragment))))
 											keyMount = append(keyMount,

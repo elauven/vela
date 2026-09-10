@@ -4702,23 +4702,23 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnDynamicFallbackController(t
 	}
 }
 
-func TestSSRHydrationKeyedEachAwaitNestedUnkeyedRowsOwnStaticFallback(t *testing.T) {
-	sfc, err := parseSFC(`<script>let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}{#each field.tags as tag}<p>{tag}</p>{:else}<p class="empty">No tags</p>{/each}{/key}{/each}{/await}{/each}</main></template>`)
+func TestSSRHydrationKeyedEachAwaitNestedUnkeyedRowsOwnDynamicFallback(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let draft = $state(""); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}{#each field.tags as tag}<p>{tag}</p>{:else}<input class="empty" :data-draft={draft} class:active={draft === "empty"} style:color={draft ? "red" : "blue"} bind:value={draft} @click={() => selected = "fallback"} />{/each}{/key}{/each}{/await}{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	analysis := analyzeScriptAST(sfc.ScriptAST)
 	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
-		t.Fatal("static fallback in nested unkeyed key row was rejected")
+		t.Fatal("dynamic fallback in nested unkeyed key row was rejected")
 	}
 	program, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
 	if err != nil {
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"No tags", ".length === 0", "createComment('each')", "destroy"} {
+	for _, want := range []string{".length === 0", "listeners: []", "addEventListener", "removeEventListener", "classList.toggle", "style.setProperty", "$$set_draft", "createComment('each')", "destroy"} {
 		if !strings.Contains(code, want) {
-			t.Fatalf("nested unkeyed each static fallback misses %q:\n%s", want, code)
+			t.Fatalf("nested unkeyed each dynamic fallback misses %q:\n%s", want, code)
 		}
 	}
 }
