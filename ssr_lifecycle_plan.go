@@ -94,6 +94,10 @@ type SSRKeyedEachLifecycleRecipe struct {
 	// currently supported attribute/directive/event/native-binding operations.
 	// It excludes else, components, and deeper structural ownership.
 	DirectLeafRows bool
+	// DirectConditionalRows records the next bounded inner-row slice: direct
+	// `#if` content whose branches stay within the recursive direct-DOM subset.
+	// It is analysis metadata until the inner range controller consumes it.
+	DirectConditionalRows bool
 }
 
 // SSRStructuralLifecyclePlan is the recursive ownership plan shared by future
@@ -244,14 +248,15 @@ func buildSSRStructuralLifecycleNode(node Node, capability *SSRCapability, path 
 		rowPath := plan.InstancePath.append(SSRInstanceSegment{Kind: SSRInstanceEachRow, Index: -1, Key: current.KeyAST})
 		if current.HasKey() {
 			plan.KeyedEach = &SSRKeyedEachLifecycleRecipe{
-				Span:           current.Span,
-				Collection:     current.IterExpr,
-				Key:            current.KeyAST,
-				ItemName:       current.ItemName,
-				IndexName:      current.IndexName,
-				OuterScope:     plan.InstancePath,
-				RowScope:       rowPath,
-				DirectLeafRows: ssrKeyedEachDirectLeafRows(current),
+				Span:                  current.Span,
+				Collection:            current.IterExpr,
+				Key:                   current.KeyAST,
+				ItemName:              current.ItemName,
+				IndexName:             current.IndexName,
+				OuterScope:            plan.InstancePath,
+				RowScope:              rowPath,
+				DirectLeafRows:        ssrKeyedEachDirectLeafRows(current),
+				DirectConditionalRows: ssrKeyedEachDirectConditionalRows(current),
 			}
 		}
 		rowCapabilities, elseCapabilities := splitEachCapabilityChildren(capability, len(current.Children))
@@ -350,6 +355,42 @@ func ssrKeyedEachDirectLeafRows(block *EachBlockNode) bool {
 		}
 	}
 	return true
+}
+
+// ssrKeyedEachDirectConditionalRows is deliberately separate from
+// DirectLeafRows. It preserves the existing executable boundary while the
+// lifecycle plan records exactly which rows can later be lowered through an
+// inner range controller rather than a whole outer-row replacement.
+func ssrKeyedEachDirectConditionalRows(block *EachBlockNode) bool {
+	if block == nil || !block.HasKey() || len(block.Children) == 0 || len(block.ElseChildren) > 0 {
+		return false
+	}
+	found := false
+	for _, node := range block.Children {
+		switch current := node.(type) {
+		case *TextNode:
+			if current == nil {
+				return false
+			}
+		case *ElementNode:
+			if current == nil || !ssrCapabilityKeyedAwaitDirectElement(current) {
+				return false
+			}
+			for _, child := range current.Children {
+				if _, ok := child.(*TextNode); !ok {
+					return false
+				}
+			}
+		case *IfChainNode:
+			if !ssrCapabilityKeyedAwaitDirectIfChain(current) {
+				return false
+			}
+			found = true
+		default:
+			return false
+		}
+	}
+	return found
 }
 
 func structuralLifecycleOperations() []SSRLifecycleOperation {

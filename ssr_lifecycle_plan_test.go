@@ -177,6 +177,33 @@ func TestSSRKeyedEachLifecycleRecipeGatesDirectLeafRows(t *testing.T) {
 	}
 }
 
+func TestSSRKeyedEachLifecycleRecipeRecordsDirectConditionalRows(t *testing.T) {
+	cases := []struct {
+		name, source string
+		want         bool
+	}{
+		{name: "direct if", source: `<template>{#each fields as field (field.id)}{#if field.visible}<p>{field.title}</p>{:else}<button @click={() => field.visible = true}>Show</button>{/if}{/each}</template>`, want: true},
+		{name: "nested structural", source: `<template>{#each fields as field (field.id)}{#if field.visible}{#each field.tags as tag}<p>{tag}</p>{/each}{/if}{/each}</template>`, want: false},
+		{name: "row else", source: `<template>{#each fields as field (field.id)}{#if field.visible}<p>{field.title}</p>{/if}{:else}<p>Empty</p>{/each}</template>`, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sfc, err := parseSFC(tc.source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			each := sfc.TemplateAST.Nodes[0].(*EachBlockNode)
+			plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes).Find(SSRLifecyclePlanEach, each.Span)
+			if plan == nil || plan.KeyedEach == nil {
+				t.Fatalf("keyed lifecycle plan=%#v", plan)
+			}
+			if got := plan.KeyedEach.DirectConditionalRows; got != tc.want {
+				t.Fatalf("DirectConditionalRows=%t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestHydrationEachInstanceScopeFromUsesCachedInnerKey(t *testing.T) {
 	sfc, err := parseSFC(`<template>{#each rows as row (row.id)}{#await row.request}{:then value}{#each row.fields as field (field.id)}<p>{field.title}</p>{/each}{/await}{/each}</template>`)
 	if err != nil {
