@@ -6263,19 +6263,85 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 												if listEmpty != "" {
 													emptyFragment := g.id()
 													emptyDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+														genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(listEmpty), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
+														genAssignStmt(genMember(id(listEmpty), "listeners"), genArray()),
+														genAssignStmt(genMember(id(listEmpty), "updates"), genArray()),
 														genForOf("$$node", genMember(id(listEmpty), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
 														genAssignStmt(genMember(id(listEmpty), "nodes"), genArray()),
 													)}
-													emptyController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("destroy"), Value: emptyDestroy}}}
+													emptyController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("destroy"), Value: emptyDestroy}}}
 													emptyBuild := []JsStmt{
 														genConst(emptyFragment, genCall(genMember(id("document"), "createDocumentFragment"))),
-														genExprStmt(genCall(id("$$insertHTML"), id(emptyFragment), strLit(emitStaticHTML(current.ElseChildren, g.scopeID)))),
+													}
+													for _, emptyChild := range current.ElseChildren {
+														switch emptyNode := emptyChild.(type) {
+														case *TextNode:
+															if textNodeAllStatic(emptyNode) {
+																emptyBuild = append(emptyBuild, genExprStmt(genCall(id("$$insertHTML"), id(emptyFragment), strLit(emitStaticHTML([]Node{emptyNode}, g.scopeID)))))
+																continue
+															}
+															textRef, update := g.id(), g.id()+"_update"
+															emptyBuild = append(emptyBuild,
+																genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
+																genExprStmt(genCall(genMember(id(emptyFragment), "appendChild"), id(textRef))),
+																genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(emptyNode, textRef))}),
+																genExprStmt(genCall(genMember(genMember(id(listEmpty), "updates"), "push"), id(update))),
+																genInvoke(update),
+															)
+														case *ElementNode:
+															elementRef := g.id()
+															elementBody := []JsStmt{genConst(elementRef, genCall(genMember(id("document"), "createElement"), strLit(emptyNode.Tag))), g.setAttrStmt(elementRef, g.scopeID, "")}
+															elementUpdates := []JsStmt{}
+															for _, attr := range emptyNode.Attrs {
+																switch {
+																case attr.IsTwoWay && attr.Expr != nil:
+																	elementUpdates = append(elementUpdates, innerBindingWrite(emptyNode.Tag, attr, elementRef))
+																	elementBody = append(elementBody, innerBindingListener(emptyNode.Tag, attr, elementRef, listEmpty)...)
+																case attr.IsEvent && attr.Expr != nil:
+																	var eventStmts []JsStmt
+																	withNestedBindings(func() { eventStmts = eventAttachFor(attr, branch, elementRef, listEmpty) })
+																	elementBody = append(elementBody, eventStmts...)
+																case attr.IsClassDir || attr.IsStyleDir:
+																	elementUpdates = append(elementUpdates, innerDirectiveWrite(attr, elementRef))
+																case attr.Expr != nil:
+																	elementUpdates = append(elementUpdates, innerAttrWrite(attr, elementRef))
+																default:
+																	elementBody = append(elementBody, g.setAttrStmt(elementRef, attr.Name, attr.Value))
+																}
+															}
+															for _, elementChild := range emptyNode.Children {
+																text := elementChild.(*TextNode)
+																if textNodeAllStatic(text) {
+																	elementBody = append(elementBody, genExprStmt(genCall(id("$$insertHTML"), id(elementRef), strLit(emitStaticHTML([]Node{text}, g.scopeID)))))
+																	continue
+																}
+																textRef, update := g.id(), g.id()+"_update"
+																elementBody = append(elementBody,
+																	genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
+																	genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))),
+																	genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(text, textRef))}),
+																	genExprStmt(genCall(genMember(genMember(id(listEmpty), "updates"), "push"), id(update))),
+																	genInvoke(update),
+																)
+															}
+															if len(elementUpdates) > 0 {
+																update := g.id() + "_update"
+																elementBody = append(elementBody, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id(listEmpty), "updates"), "push"), id(update))), genInvoke(update))
+															}
+															elementBody = append(elementBody, genExprStmt(genCall(genMember(id(emptyFragment), "appendChild"), id(elementRef))))
+															emptyBuild = append(emptyBuild, elementBody...)
+														}
+													}
+													emptyBuild = append(emptyBuild,
 														genAssignStmt(genMember(id(listEmpty), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(emptyFragment), "childNodes"))),
 														genExprStmt(genCall(genMember(genMember(id(listRange), "end"), "before"), id(emptyFragment))),
-													}
+													)
+													emptyRefresh := genIf(genUnary("!", genMember(genMember(id(listEmpty), "nodes"), "length")), genBlock(emptyBuild...))
+													emptyRefresh.Else = genBlock(genForOf("$$update", genMember(id(listEmpty), "updates"), genInvoke("$$update")))
+													emptyRefreshWhenEmpty := genIf(genUnary("!", genMember(genMember(id(listVar), "blocks"), "size")), emptyRefresh)
 													listRenderBody = append(listRenderBody,
 														genIf(genMember(genMember(id(listVar), "blocks"), "size"), genExprStmt(genCall(genMember(id(listEmpty), "destroy")))),
-														genIf(genLogical("&&", genUnary("!", genMember(genMember(id(listVar), "blocks"), "size")), genUnary("!", genMember(genMember(id(listEmpty), "nodes"), "length"))), genBlock(emptyBuild...)),
+														emptyRefreshWhenEmpty,
 													)
 													keyMount = append(keyMount, genConst(listEmpty, emptyController))
 												}

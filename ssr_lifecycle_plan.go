@@ -486,13 +486,11 @@ func ssrKeyedEachDirectKeyEachRows(block *EachBlockNode) bool {
 	return true
 }
 
-// ssrKeyedEachDirectKeyEachElse deliberately starts with the narrowest safe
-// fallback recipe. The keyed row reconciler owns live row controllers, while
-// this branch owns a separate static DOM range when no rows exist. Dynamic
-// fallback content needs its own update/listener controller and is added by a
-// later recipe rather than being silently emitted without reactivity.
+// ssrKeyedEachDirectKeyEachElse accepts the same direct-DOM shape as a list
+// row. The fallback has a dedicated controller, so text/attribute updates and
+// listener teardown are not shared with the keyed row map.
 func ssrKeyedEachDirectKeyEachElse(nodes []Node) bool {
-	return len(nodes) == 0 || allStatic(nodes)
+	return ssrKeyedEachDirectConditionalBranch(nodes)
 }
 
 func structuralLifecycleOperations() []SSRLifecycleOperation {
