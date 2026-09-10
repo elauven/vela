@@ -5909,8 +5909,14 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					return []JsStmt{&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: condition, Then: genBlock(mountIfChildren(ifBranch.Children)...), Else: genBlock(mountIfBranch(index + 1)...)}}
 				}
 				body = append(body, mountIfBranch(0)...)
+				// The direct branch is mounted into the row fragment, so a retained
+				// keyed row must rebuild that fragment when the condition changes.
+				// A later controller lowering can replace this conservative boundary
+				// without changing the row's range ownership contract.
 				update := g.id() + "_if_update"
-				body = append(body, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock()}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))), genInvoke(update))
+				body = append(body, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genInvoke(renderVar, id("$$state"), genMember(id("$$state"), "row"), genMember(id("$$state"), "item"), genMember(id("$$state"), "index"), genMember(id("$$state"), "active")),
+				)}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))))
 				continue
 			}
 			if nestedEach, ok := child.(*EachBlockNode); ok && ssrCapabilityKeyedAwaitStaticEach(nestedEach) {
@@ -6452,7 +6458,10 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		g.addStructuralUpdate(dependency, genInvoke(innerRefreshVar))
 	}
 	for dependency := range deps {
-		if incrementalPlan != nil && dependency == incrementalPlan.stateName && innerEachDeps[dependency] {
+		// A deep list can drive both a nested keyed refresh and a direct sibling
+		// expression (for example `{#if row.visible}`).  Skip the outer
+		// reconciler only when the list is exclusively owned by inner rows.
+		if incrementalPlan != nil && dependency == incrementalPlan.stateName && innerEachDeps[dependency] && !textUpdateDeps[dependency] && !attrUpdateDeps[dependency] && !directiveUpdateDeps[dependency] && !bindingUpdateDeps[dependency] {
 			continue
 		}
 		g.addStructuralUpdate(dependency, genInvoke(fn))
