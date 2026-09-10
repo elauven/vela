@@ -4765,6 +4765,42 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedChildRendersStaticSlots(t *testing
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitNestedKeyedChildUpdatesDynamicSlots(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child :title={field.title}><span class="slot-body" :data-title={field.title}>{field.title}:{selected}</span></Child>{/key}{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("dynamic text and attribute slot in a nested keyed await child were rejected")
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"slot-body", "data-title", "$$set_selected", ".updates.push", "createTextNode", ".data ="} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("nested keyed child dynamic slot lowering misses %q:\n%s", want, code)
+		}
+	}
+}
+
+func TestSSRHydrationKeyedEachAwaitNestedKeyedChildRejectsUnownedDynamicSlotLifecycle(t *testing.T) {
+	for _, source := range []string{
+		`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]); let selected = $state(false);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child><button @click={() => selected = !selected}>Toggle</button></Child>{/key}{/each}{/await}{/each}</main></template>`,
+		`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]); let selected = $state(false);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child>{#if selected}<span>On</span>{/if}</Child>{/key}{/each}{/await}{/each}</main></template>`,
+	} {
+		sfc, err := parseSFC(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+			t.Fatalf("dynamic slot lifecycle was accepted before it has an owner recipe:\n%s", source)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationNestedKeyedAwaitDirectChildLifecycle(t *testing.T) {
 	node := requirePlaywright(t)
 	childSFC, err := parseSFC(`<script>import { onDestroy } from "vela"; export let id = ""; export let title = ""; export let value = $bindable(""); onDestroy(() => { window.__nestedDirectChildDestroys = (window.__nestedDirectChildDestroys || 0) + 1; });</script><template><p class="child" :data-id={id} :data-title={title}>{title}<slot><span class="child-fallback">fallback</span></slot><slot name="actions"></slot><button class="child-set" @click={() => value = "bound"}>Bind</button></p></template>`)
@@ -4785,7 +4821,7 @@ func TestBrowserSSRHydrationNestedKeyedAwaitDirectChildLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
-	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; let rows = $state.deep(window.__rows || []); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child :id={field.id} :title={field.title} bind:value={selected}><span class="slot-body">Static body</span><svelte:fragment slot="actions"><button class="slot-action">Save</button></svelte:fragment></Child>{/key}{/each}<button class="update" @click={() => rows[0].fields[0].title = "updated"}>Update</button><button class="replace" @click={() => rows[0].fields[0].version++}>Replace</button><button class="remove" @click={() => rows = []}>Remove</button><p class="selected">{selected}</p>{/await}{/each}</main></template>`)
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; let rows = $state.deep(window.__rows || []); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child :id={field.id} :title={field.title} bind:value={selected}><span class="slot-body" :data-title={field.title}>{field.title}:{selected}</span><svelte:fragment slot="actions"><button class="slot-action">Save</button></svelte:fragment></Child>{/key}{/each}<button class="update" @click={() => rows[0].fields[0].title = "updated"}>Update</button><button class="choose" @click={() => selected = "chosen"}>Choose</button><button class="replace" @click={() => rows[0].fields[0].version++}>Replace</button><button class="remove" @click={() => rows = []}>Remove</button><p class="selected">{selected}</p>{/await}{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4823,7 +4859,7 @@ func TestBrowserSSRHydrationNestedKeyedAwaitDirectChildLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	const script = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);await p.evaluate(()=>window.resolve("done"));await p.waitForFunction(()=>document.querySelector(".child")?.dataset.title==="initial"&&document.querySelector(".slot-body")?.textContent==="Static body"&&document.querySelector(".slot-action")?.textContent==="Save");await p.evaluate(()=>document.querySelector(".child-set").click());await p.waitForFunction(()=>document.querySelector("p.selected")?.textContent==="bound");await p.evaluate(()=>{window.first=document.querySelector(".child");window.firstSlot=document.querySelector(".slot-body");document.querySelector(".update").click()});await p.waitForFunction(()=>document.querySelector(".child")?.dataset.title==="updated");if(!(await p.evaluate(()=>window.first===document.querySelector(".child")&&window.firstSlot===document.querySelector(".slot-body"))))throw new Error("child or static slot was recreated instead of set");await p.evaluate(()=>{document.querySelector(".replace").click()});await p.waitForFunction(()=>document.querySelector(".child")?.dataset.title==="updated"&&document.querySelector(".child")!==window.first&&document.querySelector(".slot-body")!==window.firstSlot);await p.evaluate(()=>{window.second=document.querySelector(".child");document.querySelector(".remove").click()});await p.waitForFunction(()=>!document.querySelector(".child"));const beforeDestroy=await p.evaluate(()=>({first:!window.first.isConnected,second:!window.second.isConnected,destroys:window.__nestedDirectChildDestroys}));if(!beforeDestroy.first||!beforeDestroy.second||beforeDestroy.destroys!==2)throw new Error(JSON.stringify(beforeDestroy));await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	const script = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);await p.evaluate(()=>window.resolve("done"));await p.waitForFunction(()=>document.querySelector(".child")?.dataset.title==="initial"&&document.querySelector(".slot-body")?.textContent==="initial:"&&document.querySelector(".slot-body")?.dataset.title==="initial"&&document.querySelector(".slot-action")?.textContent==="Save");await p.evaluate(()=>document.querySelector(".child-set").click());await p.waitForFunction(()=>document.querySelector("p.selected")?.textContent==="bound"&&document.querySelector(".slot-body")?.textContent==="initial:bound");await p.evaluate(()=>{window.first=document.querySelector(".child");window.firstSlot=document.querySelector(".slot-body");document.querySelector(".update").click()});await p.waitForFunction(()=>document.querySelector(".child")?.dataset.title==="updated"&&document.querySelector(".slot-body")?.textContent==="updated:bound"&&document.querySelector(".slot-body")?.dataset.title==="updated");if(!(await p.evaluate(()=>window.first===document.querySelector(".child")&&window.firstSlot===document.querySelector(".slot-body"))))throw new Error("child or dynamic slot was recreated instead of set");await p.evaluate(()=>document.querySelector(".choose").click());await p.waitForFunction(()=>document.querySelector(".slot-body")?.textContent==="updated:chosen");await p.evaluate(()=>{document.querySelector(".replace").click()});await p.waitForFunction(()=>document.querySelector(".child")?.dataset.title==="updated"&&document.querySelector(".child")!==window.first&&document.querySelector(".slot-body")!==window.firstSlot&&document.querySelector(".slot-body")?.textContent==="updated:chosen");await p.evaluate(()=>{window.second=document.querySelector(".child");document.querySelector(".remove").click()});await p.waitForFunction(()=>!document.querySelector(".child"));const beforeDestroy=await p.evaluate(()=>({first:!window.first.isConnected,second:!window.second.isConnected,destroys:window.__nestedDirectChildDestroys}));if(!beforeDestroy.first||!beforeDestroy.second||beforeDestroy.destroys!==2)throw new Error(JSON.stringify(beforeDestroy));await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
 	command := exec.Command(node, "-e", script, dir)
 	command.Dir = "/projects/compiler"
 	output, err := command.CombinedOutput()

@@ -6182,16 +6182,71 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 											}
 											props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
 											withNestedBindings(func() { props = g.componentPropsExpr(current.Attrs) })
+											// Slot DOM belongs to the surrounding #key controller, not
+											// to the component-global setter cascade. Every dynamic
+											// node registers its callback on keyVar; key.destroy()
+											// drops that list before removing the keyed range.
+											slotFactory := func(slotNodes []Node) JsExpr {
+												fragment := g.id() + "_slot"
+												factoryBody := []JsStmt{genConst(fragment, genCall(genMember(id("document"), "createDocumentFragment")))}
+												var appendSlotNodes func([]Node, string) []JsStmt
+												appendSlotNodes = func(nodes []Node, parent string) []JsStmt {
+													body := []JsStmt{}
+													for _, slotNode := range nodes {
+														if allStatic([]Node{slotNode}) {
+															body = append(body, genExprStmt(genCall(id("$$insertHTML"), id(parent), strLit(emitStaticHTML([]Node{slotNode}, g.scopeID)))))
+															continue
+														}
+														switch slotCurrent := slotNode.(type) {
+														case *TextNode:
+															textRef, update := g.id(), g.id()+"_update"
+															body = append(body,
+																genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
+																genExprStmt(genCall(genMember(id(parent), "appendChild"), id(textRef))),
+																genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(slotCurrent, textRef))}),
+																genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))),
+																genInvoke(update),
+															)
+														case *ElementNode:
+															elementRef := g.id()
+															elementBody := []JsStmt{genConst(elementRef, genCall(genMember(id("document"), "createElement"), strLit(slotCurrent.Tag))), g.setAttrStmt(elementRef, g.scopeID, "")}
+															elementUpdates := []JsStmt{}
+															for _, attr := range slotCurrent.Attrs {
+																switch {
+																case attr.IsClassDir || attr.IsStyleDir:
+																	elementUpdates = append(elementUpdates, innerDirectiveWrite(attr, elementRef))
+																case attr.Expr != nil:
+																	elementUpdates = append(elementUpdates, innerAttrWrite(attr, elementRef))
+																default:
+																	elementBody = append(elementBody, g.setAttrStmt(elementRef, attr.Name, attr.Value))
+																}
+															}
+															elementBody = append(elementBody, appendSlotNodes(slotCurrent.Children, elementRef)...)
+															if len(elementUpdates) > 0 {
+																update := g.id() + "_update"
+																elementBody = append(elementBody,
+																	genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}),
+																	genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))),
+																	genInvoke(update),
+																)
+															}
+															elementBody = append(elementBody, genExprStmt(genCall(genMember(id(parent), "appendChild"), id(elementRef))))
+															body = append(body, elementBody...)
+														default:
+															panic("vela: unsupported dynamic slot node in nested keyed await component")
+														}
+													}
+													return body
+												}
+												factoryBody = append(factoryBody, appendSlotNodes(slotNodes, fragment)...)
+												factoryBody = append(factoryBody, genReturn(id(fragment)))
+												return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(factoryBody...)}
+											}
 											slots := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
 											if len(current.Slots) > 0 {
 												names := sortedSlotNames(current.Slots)
 												for _, name := range names {
-													fragment := g.id() + "_slot"
-													slots.Props = append(slots.Props, &JsProp{baseNode: genNode(), Key: strLit(name), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-														genConst(fragment, genCall(genMember(id("document"), "createDocumentFragment"))),
-														genExprStmt(genCall(id("$$insertHTML"), id(fragment), strLit(emitStaticHTML(current.Slots[name], g.scopeID)))),
-														genReturn(id(fragment)),
-													)}})
+													slots.Props = append(slots.Props, &JsProp{baseNode: genNode(), Key: strLit(name), Value: slotFactory(current.Slots[name])})
 												}
 											}
 											instance, update := g.id(), g.id()+"_update"
