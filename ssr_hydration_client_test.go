@@ -4744,6 +4744,76 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnDirectKeyComponentControlle
 	}
 }
 
+func TestBrowserSSRHydrationNestedKeyedAwaitDirectChildLifecycle(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<script>import { onDestroy } from "vela"; export let id = ""; export let title = ""; onDestroy(() => { window.__nestedDirectChildDestroys = (window.__nestedDirectChildDestroys || 0) + 1; });</script><template><p class="child" :data-id={id}>{title}</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis := analyzeScriptAST(childSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; let rows = $state.deep(window.__rows || []);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child :id={field.id} :title={field.title} />{/key}{/each}<button class="update" @click={() => rows[0].fields[0].title = "updated"}>Update</button><button class="replace" @click={() => rows[0].fields[0].version++}>Replace</button><button class="remove" @click={() => rows = []}>Remove</button>{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysis("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := parentSFC.TemplateAST.Nodes[0].(*ElementNode)
+	each := main.Children[0].(*EachBlockNode)
+	await := each.Children[0].(*AwaitBlockNode)
+	markers := ssrHydrationMarkerIDs(parentPlan.Nodes)
+	eachID, ok := markers.eachID(each.Span)
+	if !ok {
+		t.Fatal("outer each marker is missing")
+	}
+	awaitID, ok := markers.awaitID(await.Span)
+	if !ok {
+		t.Fatal("nested await marker is missing")
+	}
+	rowScope := "vela-parent--each-" + itoa(each.Span.Start) + "-a"
+	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-parent:` + itoa(awaitID) + `--><p vela-parent="" class="pending">Loading</p><!--/v:vela-parent:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
+	html := `<!doctype html><body><!--e:vela-parent:0--><main vela-parent=""><!--v:vela-parent:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-parent:` + itoa(eachID) + `--></main><!--/e:vela-parent:0--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{},"state":{},"deep":["rows"],"incomplete":false}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"f",title:"initial",version:0}]}];window.hydrated=hydrateParent(document.body)</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(html)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const script = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);await p.evaluate(()=>window.resolve("done"));await p.waitForFunction(()=>document.querySelector(".child")?.textContent==="initial");await p.evaluate(()=>{window.first=document.querySelector(".child");document.querySelector(".update").click()});await p.waitForFunction(()=>document.querySelector(".child")?.textContent==="updated");if(!(await p.evaluate(()=>window.first===document.querySelector(".child"))))throw new Error("child was recreated instead of set");await p.evaluate(()=>{document.querySelector(".replace").click()});await p.waitForFunction(()=>document.querySelector(".child")?.textContent==="updated"&&document.querySelector(".child")!==window.first);await p.evaluate(()=>{window.second=document.querySelector(".child");document.querySelector(".remove").click()});await p.waitForFunction(()=>!document.querySelector(".child"));const beforeDestroy=await p.evaluate(()=>({first:!window.first.isConnected,second:!window.second.isConnected,destroys:window.__nestedDirectChildDestroys}));if(!beforeDestroy.first||!beforeDestroy.second||beforeDestroy.destroys!==2)throw new Error(JSON.stringify(beforeDestroy));await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", script, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("nested keyed await child browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(parentClient, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("nested keyed await child browser output=%q", got)
+	}
+}
+
 func TestBrowserSSRHydrationKeyedEachAwaitNestedUnkeyedRowsDynamicFallback(t *testing.T) {
 	node := requirePlaywright(t)
 	sfc, err := parseSFC(`<script>let rows = $state.deep(window.__rows || []); let selected = $state(""); let draft = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}{#each field.tags as tag}<input class="tag" :data-tag={tag} bind:value={draft} @click={() => selected = tag} />{:else}<input class="empty" :data-draft={draft} class:active={draft === "empty"} style:color={draft ? "red" : "blue"} bind:value={draft} @click={() => selected = "fallback"} />{/each}{/key}{/each}<button class="clear" @click={() => { rows[0].fields[0].tags = []; selected = ""; draft = "empty" }}>Clear</button><p class="selected">{selected}</p><p class="draft">{draft}</p>{/await}{/each}</main></template>`)
