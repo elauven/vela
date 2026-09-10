@@ -421,6 +421,7 @@ func ssrKeyedEachDirectKeyRows(block *EachBlockNode) bool {
 }
 
 func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
+	hasConditional := false
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
@@ -438,6 +439,10 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 			if current == nil || current.HasKey() || !ssrCapabilityKeyedAwaitDirectIfChain(current) {
 				return false
 			}
+			if hasConditional {
+				return false
+			}
+			hasConditional = true
 		default:
 			return false
 		}
