@@ -205,7 +205,7 @@ func TestSSRKeyedEachLifecycleRecipeRecordsDirectConditionalRows(t *testing.T) {
 }
 
 func TestSSRKeyedEachLifecycleRecipeRecordsDirectKeyRows(t *testing.T) {
-	sfc, err := parseSFC(`<template>{#each fields as field (field.id)}{#key field.version}<p>{field.title}</p>{/key}{/each}</template>`)
+	sfc, err := parseSFC(`<template>{#each fields as field (field.id)}{#key field.version}<p>Title</p>{/key}{/each}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}

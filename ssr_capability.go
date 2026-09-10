@@ -665,6 +665,12 @@ func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
 		if _, ok := ssrCapabilityCurrentKeyedEachComponents(block); ok {
 			return len(block.ElseChildren) == 0
 		}
+		if ssrKeyedEachDirectConditionalRows(block) {
+			return len(block.ElseChildren) == 0
+		}
+		if ssrKeyedEachDirectKeyRows(block) {
+			return true
+		}
 		// A keyed hydration row is adopted as one existing element.  Empty
 		// fallbacks and nested rows will join later with range-aware row
 		// handles; accepting either here would silently leave server fallback
@@ -999,6 +1005,13 @@ func ssrCapabilityKeyedAwaitDynamicEachRows(block *EachBlockNode) ([]Node, bool)
 	rows := make([]Node, 0, len(block.Children))
 	for _, node := range block.Children {
 		if chain, ok := node.(*IfChainNode); ok {
+			if chain.HasKey() {
+				if len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() || !allStatic(chain.Branches[0].Children) {
+					return nil, false
+				}
+				rows = append(rows, chain)
+				continue
+			}
 			if !ssrCapabilityKeyedAwaitDirectIfChain(chain) {
 				return nil, false
 			}

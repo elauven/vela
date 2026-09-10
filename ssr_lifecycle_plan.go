@@ -417,7 +417,7 @@ func ssrKeyedEachDirectKeyRows(block *EachBlockNode) bool {
 	if !ok || chain == nil || !chain.HasKey() || len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() {
 		return false
 	}
-	return ssrKeyedEachDirectConditionalBranch(chain.Branches[0].Children)
+	return ssrKeyedEachDirectConditionalBranch(chain.Branches[0].Children) && allStatic(chain.Branches[0].Children)
 }
 
 func structuralLifecycleOperations() []SSRLifecycleOperation {
