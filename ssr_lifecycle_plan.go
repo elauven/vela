@@ -434,11 +434,22 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 				return false
 			}
 		case *ComponentNode:
-			if current == nil || len(current.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(current) {
+			if current == nil || len(current.Slots) != 0 {
 				return false
 			}
 			for _, attr := range current.Attrs {
-				if attr == nil {
+				if attr == nil || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					return false
+				}
+				if attr.IsTwoWay {
+					if attr.Expr == nil {
+						return false
+					}
+					if _, ok := templateExprIdent(attr.Expr); !ok {
+						return false
+					}
+				}
+				if attr.IsEvent && attr.Expr == nil {
 					return false
 				}
 			}
