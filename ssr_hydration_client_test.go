@@ -4639,6 +4639,27 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnKeyController(t *testing.T)
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnConditionalKeyController(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}{#if field.visible}<button class="shown" @click={() => selected = field.id}>{field.title}</button>{:else}<input class="hidden" bind:value={selected} />{/if}{/key}{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("direct if in nested keyed key row was rejected")
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"createComment('key')", "active: -1", "addEventListener", "removeEventListener", "destroy"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("nested keyed conditional controller misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationKeyedEachAwaitNestedKeyedRowsReplaceInnerKeyRange(t *testing.T) {
 	node := requirePlaywright(t)
 	sfc, err := parseSFC(`<script>let rows = $state.deep(window.__rows || []); let selected = $state(""); let draft = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<input class="field" :data-id={field.id} class:chosen={selected === field.id} style:color={selected ? "red" : "blue"} bind:value={draft} @click={() => selected = field.id} />{/key}{/each}<button class="bump" @click={() => { rows[0].fields[0].version++; selected = ""; draft = "reset" }}>Bump</button><p class="selected">{selected}</p><p class="draft">{draft}</p>{/await}{/each}</main></template>`)
@@ -4688,6 +4709,58 @@ func TestBrowserSSRHydrationKeyedEachAwaitNestedKeyedRowsReplaceInnerKeyRange(t 
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("nested keyed key browser output=%q", got)
+	}
+}
+
+func TestBrowserSSRHydrationKeyedEachAwaitNestedKeyedRowsSwitchKeyConditional(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>let rows = $state.deep(window.__rows || []); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}{#if field.visible}<button class="shown" @click={() => selected = "shown"}>{field.title}</button>{:else}<button class="hidden" @click={() => selected = "hidden"}>{field.title}</button>{/if}{/key}{/each}<button class="toggle" @click={() => { rows[0].fields[0].visible = !rows[0].fields[0].visible; selected = "" }}>Toggle</button><button class="bump" @click={() => { rows[0].fields[0].version++; selected = "" }}>Bump</button><p class="selected">{selected}</p>{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := sfc.TemplateAST.Nodes[0].(*ElementNode)
+	each := main.Children[0].(*EachBlockNode)
+	await := each.Children[0].(*AwaitBlockNode)
+	markers := ssrHydrationMarkerIDs(plan.Nodes)
+	eachID, ok := markers.eachID(each.Span)
+	if !ok {
+		t.Fatal("keyed each marker is missing")
+	}
+	awaitID, ok := markers.awaitID(await.Span)
+	if !ok {
+		t.Fatal("await marker is missing")
+	}
+	rowScope := "vela-page--each-" + itoa(each.Span.Start) + "-a"
+	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><p vela-page="" class="pending">Loading</p><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
+	serverHTML := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-page:` + itoa(eachID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":["rows"],"incomplete":false}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"a",title:"A",version:0,visible:true}]}];window.hydrated=hydratePage(document.body)</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browserScript = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);await p.evaluate(()=>window.resolve("done"));await p.waitForFunction(()=>document.querySelector(".shown")?.textContent==="A");await p.evaluate(()=>{window.oldShown=document.querySelector(".shown");window.oldShown.click()});await p.waitForFunction(()=>document.querySelector(".selected")?.textContent==="shown");await p.evaluate(()=>document.querySelector(".toggle").click());await p.waitForFunction(()=>document.querySelector(".hidden")?.textContent==="A"&&!document.querySelector(".shown"));await p.evaluate(async()=>{window.oldShown.click();await new Promise(resolve=>setTimeout(resolve,0));window.afterShown=document.querySelector(".selected").textContent;window.oldHidden=document.querySelector(".hidden");window.oldHidden.click()});if((await p.evaluate(()=>window.afterShown))!=="")throw new Error("shown branch listener survived replacement");await p.waitForFunction(()=>document.querySelector(".selected")?.textContent==="hidden");await p.evaluate(()=>document.querySelector(".toggle").click());await p.waitForFunction(()=>document.querySelector(".shown")?.textContent==="A"&&!document.querySelector(".hidden"));await p.evaluate(async()=>{window.oldHidden.click();await new Promise(resolve=>setTimeout(resolve,0));window.afterHidden=document.querySelector(".selected").textContent;window.oldShownAfterBranch=document.querySelector(".shown");document.querySelector(".bump").click()});if((await p.evaluate(()=>window.afterHidden))!=="")throw new Error("hidden branch listener survived replacement");await p.waitForFunction(()=>document.querySelector(".shown")!==window.oldShownAfterBranch);await p.evaluate(async()=>{window.oldShownAfterBranch.click();await new Promise(resolve=>setTimeout(resolve,0));window.afterKey=document.querySelector(".selected").textContent});if((await p.evaluate(()=>window.afterKey))!=="")throw new Error("old key listener survived replacement");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browserScript, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("nested keyed conditional browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("nested keyed conditional browser output=%q", got)
 	}
 }
 

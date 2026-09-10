@@ -228,6 +228,18 @@ func TestSSRKeyedEachLifecycleRecipeAllowsDynamicTextInDirectKeyRows(t *testing.
 	}
 }
 
+func TestSSRKeyedEachLifecycleRecipeAllowsDirectIfInKeyRows(t *testing.T) {
+	sfc, err := parseSFC(`<template>{#each fields as field (field.id)}{#key field.version}{#if field.visible}<p>{field.title}</p>{:else}<button>Hidden</button>{/if}{/key}{/each}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	each := sfc.TemplateAST.Nodes[0].(*EachBlockNode)
+	plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes).Find(SSRLifecyclePlanEach, each.Span)
+	if plan == nil || plan.KeyedEach == nil || !plan.KeyedEach.DirectKeyRows {
+		t.Fatalf("DirectKeyRows recipe=%#v", plan)
+	}
+}
+
 func TestHydrationEachInstanceScopeFromUsesCachedInnerKey(t *testing.T) {
 	sfc, err := parseSFC(`<template>{#each rows as row (row.id)}{#await row.request}{:then value}{#each row.fields as field (field.id)}<p>{field.title}</p>{/each}{/await}{/each}</template>`)
 	if err != nil {

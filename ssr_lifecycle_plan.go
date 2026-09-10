@@ -431,6 +431,13 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 			if !ssrKeyedEachDirectConditionalElement(current) {
 				return false
 			}
+		case *IfChainNode:
+			// A plain direct conditional is owned by the surrounding #key
+			// controller.  It may replace only that key range when its active
+			// branch changes; nested #key/component ranges need another recipe.
+			if current == nil || current.HasKey() || !ssrCapabilityKeyedAwaitDirectIfChain(current) {
+				return false
+			}
 		default:
 			return false
 		}

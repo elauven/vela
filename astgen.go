@@ -6123,60 +6123,91 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 									panic("vela: missing direct key inner-row lifecycle recipe")
 								}
 								keyVar, keyRange, keyRender := g.id(), g.id()+"_range", g.id()+"_render"
-								keyFragment, nextKey := g.id()+"_fragment", g.id()+"_next"
+								keyFragment, nextKey, nextActive := g.id()+"_fragment", g.id()+"_next", g.id()+"_active"
 								keyExpr := JsExpr(id("undefined"))
 								withNestedBindings(func() { keyExpr = g.templateExpr(chain.KeyAST) })
-								destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(keyVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))), genAssignStmt(genMember(id(keyVar), "listeners"), genArray()), genAssignStmt(genMember(id(keyVar), "updates"), genArray()), genForOf("$$node", genMember(id(keyVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(keyVar), "nodes"), genArray()), genAssignStmt(genMember(id(keyVar), "key"), genNull()))}
-								controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("key"), Value: genNull()}, {Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("destroy"), Value: destroy}}}
-								keyMount := []JsStmt{}
-								for _, keyChild := range chain.Branches[0].Children {
-									switch current := keyChild.(type) {
-									case *TextNode:
-										if textNodeAllStatic(current) {
-											keyMount = append(keyMount, genExprStmt(genCall(id("$$insertHTML"), id(keyFragment), strLit(emitStaticHTML([]Node{current}, g.scopeID)))))
-										} else {
-											textRef, update := g.id(), g.id()+"_update"
-											keyMount = append(keyMount, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(keyFragment), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(current, textRef))}), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))), genInvoke(update))
-										}
-									case *ElementNode:
-										elementRef := g.id()
-										elementBody := []JsStmt{genConst(elementRef, genCall(genMember(id("document"), "createElement"), strLit(current.Tag))), g.setAttrStmt(elementRef, g.scopeID, "")}
-										elementUpdates := []JsStmt{}
-										for _, attr := range current.Attrs {
-											switch {
-											case attr.IsTwoWay && attr.Expr != nil:
-												elementUpdates = append(elementUpdates, innerBindingWrite(current.Tag, attr, elementRef))
-												elementBody = append(elementBody, innerBindingListener(current.Tag, attr, elementRef, keyVar)...)
-											case attr.IsEvent && attr.Expr != nil:
-												var eventStmts []JsStmt
-												withNestedBindings(func() { eventStmts = eventAttachFor(attr, branch, elementRef, keyVar) })
-												elementBody = append(elementBody, eventStmts...)
-											case attr.IsClassDir || attr.IsStyleDir:
-												elementUpdates = append(elementUpdates, innerDirectiveWrite(attr, elementRef))
-											case attr.Expr != nil:
-												elementUpdates = append(elementUpdates, innerAttrWrite(attr, elementRef))
-											default:
-												elementBody = append(elementBody, g.setAttrStmt(elementRef, attr.Name, attr.Value))
+								destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(keyVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))), genAssignStmt(genMember(id(keyVar), "listeners"), genArray()), genAssignStmt(genMember(id(keyVar), "updates"), genArray()), genForOf("$$node", genMember(id(keyVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(keyVar), "nodes"), genArray()), genAssignStmt(genMember(id(keyVar), "key"), genNull()), genAssignStmt(genMember(id(keyVar), "active"), numLit(-1)))}
+								controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("key"), Value: genNull()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("destroy"), Value: destroy}}}
+								keyMountNodes := func(keyNodes []Node) []JsStmt {
+									keyMount := []JsStmt{}
+									for _, keyChild := range keyNodes {
+										switch current := keyChild.(type) {
+										case *TextNode:
+											if textNodeAllStatic(current) {
+												keyMount = append(keyMount, genExprStmt(genCall(id("$$insertHTML"), id(keyFragment), strLit(emitStaticHTML([]Node{current}, g.scopeID)))))
+											} else {
+												textRef, update := g.id(), g.id()+"_update"
+												keyMount = append(keyMount, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(keyFragment), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(current, textRef))}), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))), genInvoke(update))
 											}
+										case *ElementNode:
+											elementRef := g.id()
+											elementBody := []JsStmt{genConst(elementRef, genCall(genMember(id("document"), "createElement"), strLit(current.Tag))), g.setAttrStmt(elementRef, g.scopeID, "")}
+											elementUpdates := []JsStmt{}
+											for _, attr := range current.Attrs {
+												switch {
+												case attr.IsTwoWay && attr.Expr != nil:
+													elementUpdates = append(elementUpdates, innerBindingWrite(current.Tag, attr, elementRef))
+													elementBody = append(elementBody, innerBindingListener(current.Tag, attr, elementRef, keyVar)...)
+												case attr.IsEvent && attr.Expr != nil:
+													var eventStmts []JsStmt
+													withNestedBindings(func() { eventStmts = eventAttachFor(attr, branch, elementRef, keyVar) })
+													elementBody = append(elementBody, eventStmts...)
+												case attr.IsClassDir || attr.IsStyleDir:
+													elementUpdates = append(elementUpdates, innerDirectiveWrite(attr, elementRef))
+												case attr.Expr != nil:
+													elementUpdates = append(elementUpdates, innerAttrWrite(attr, elementRef))
+												default:
+													elementBody = append(elementBody, g.setAttrStmt(elementRef, attr.Name, attr.Value))
+												}
+											}
+											for _, elementChild := range current.Children {
+												text := elementChild.(*TextNode)
+												if textNodeAllStatic(text) {
+													elementBody = append(elementBody, genExprStmt(genCall(id("$$insertHTML"), id(elementRef), strLit(emitStaticHTML([]Node{text}, g.scopeID)))))
+													continue
+												}
+												textRef, update := g.id(), g.id()+"_update"
+												elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(text, textRef))}), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))), genInvoke(update))
+											}
+											if len(elementUpdates) > 0 {
+												update := g.id() + "_update"
+												elementBody = append(elementBody, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))), genInvoke(update))
+											}
+											elementBody = append(elementBody, genExprStmt(genCall(genMember(id(keyFragment), "appendChild"), id(elementRef))))
+											keyMount = append(keyMount, elementBody...)
 										}
-										for _, elementChild := range current.Children {
-											text := elementChild.(*TextNode)
-											if textNodeAllStatic(text) {
-												elementBody = append(elementBody, genExprStmt(genCall(id("$$insertHTML"), id(elementRef), strLit(emitStaticHTML([]Node{text}, g.scopeID)))))
+									}
+									return keyMount
+								}
+								keyMount := []JsStmt{}
+								keyActive := JsExpr(numLit(-1))
+								for _, keyChild := range chain.Branches[0].Children {
+									if conditional, ok := keyChild.(*IfChainNode); ok {
+										active := JsExpr(numLit(-1))
+										for index := len(conditional.Branches) - 1; index >= 0; index-- {
+											keyBranch := conditional.Branches[index]
+											if keyBranch == nil {
 												continue
 											}
-											textRef, update := g.id(), g.id()+"_update"
-											elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(text, textRef))}), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))), genInvoke(update))
+											if !keyBranch.HasCondition() {
+												active = numLit(index)
+												continue
+											}
+											condition := JsExpr(boolLit(false))
+											withNestedBindings(func() { condition = g.templateExpr(keyBranch.Expr) })
+											active = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: condition, Then: numLit(index), Else: active}
 										}
-										if len(elementUpdates) > 0 {
-											update := g.id() + "_update"
-											elementBody = append(elementBody, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))), genInvoke(update))
+										keyActive = active
+										for index, keyBranch := range conditional.Branches {
+											if keyBranch != nil {
+												keyMount = append(keyMount, genIf(genBinary("===", id(nextActive), numLit(index)), genBlock(keyMountNodes(keyBranch.Children)...)))
+											}
 										}
-										elementBody = append(elementBody, genExprStmt(genCall(genMember(id(keyFragment), "appendChild"), id(elementRef))))
-										keyMount = append(keyMount, elementBody...)
+										continue
 									}
+									keyMount = append(keyMount, keyMountNodes([]Node{keyChild})...)
 								}
-								renderBody := []JsStmt{genConst(nextKey, keyExpr), genIf(genBinary("===", genMember(id(keyVar), "key"), id(nextKey)), genBlock(genForOf("$$update", genMember(id(keyVar), "updates"), genInvoke("$$update")), genReturn(nil))), genExprStmt(genCall(genMember(id(keyVar), "destroy"))), genAssignStmt(genMember(id(keyVar), "key"), id(nextKey)), genConst(keyFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
+								renderBody := []JsStmt{genConst(nextKey, keyExpr), genConst(nextActive, keyActive), genIf(genBinary("&&", genBinary("===", genMember(id(keyVar), "key"), id(nextKey)), genBinary("===", genMember(id(keyVar), "active"), id(nextActive))), genBlock(genForOf("$$update", genMember(id(keyVar), "updates"), genInvoke("$$update")), genReturn(nil))), genExprStmt(genCall(genMember(id(keyVar), "destroy"))), genAssignStmt(genMember(id(keyVar), "key"), id(nextKey)), genAssignStmt(genMember(id(keyVar), "active"), id(nextActive)), genConst(keyFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
 								renderBody = append(renderBody, keyMount...)
 								renderBody = append(renderBody, genAssignStmt(genMember(id(keyVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(keyFragment), "childNodes"))), genExprStmt(genCall(genMember(genMember(id(keyRange), "end"), "before"), id(keyFragment))))
 								render := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(renderBody...)}
