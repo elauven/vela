@@ -240,7 +240,34 @@ func ssrHydrationDirectKeyComponents(plan *SSRStructuralLifecyclePlan) ([]*Compo
 	if !ok || chain == nil {
 		return nil, false
 	}
-	return ssrCapabilityCurrentKeyComponents(chain)
+	return ssrHydrationDirectKeyComponentsForCSR(chain)
+}
+
+// ssrHydrationDirectKeyComponentsForCSR is intentionally narrower than a
+// generic slot lifecycle: it only reserves an ordinary CSR import for a
+// component that will be materialized by a keyed structural owner. Static
+// slots are safe here because every invocation builds a fresh fragment and
+// neither callbacks nor reactive parent updates are captured by that fragment.
+// Dynamic slots remain rejected until they have an owner-aware lifecycle.
+func ssrHydrationDirectKeyComponentsForCSR(chain *IfChainNode) ([]*ComponentNode, bool) {
+	if chain == nil || !chain.HasKey() || len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() {
+		return nil, false
+	}
+	branch := chain.Branches[0]
+	// Keep alias selection identical to the nested keyed-await recipe.  That
+	// recipe accepts direct component events and simple two-way bindings in
+	// addition to ordinary props, while the older structural-component helper
+	// intentionally accepts only one-way props.
+	if !ssrKeyedEachDirectKeyBranch(branch.Children) {
+		return nil, false
+	}
+	components := make([]*ComponentNode, 0, len(branch.Children))
+	for _, child := range branch.Children {
+		if component, ok := child.(*ComponentNode); ok && component != nil {
+			components = append(components, component)
+		}
+	}
+	return components, len(components) > 0
 }
 
 // ssrHydrationDirectUnkeyedEachComponent reads the first component-row

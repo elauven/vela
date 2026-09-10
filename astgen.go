@@ -6182,9 +6182,21 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 											}
 											props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
 											withNestedBindings(func() { props = g.componentPropsExpr(current.Attrs) })
+											slots := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+											if len(current.Slots) > 0 {
+												names := sortedSlotNames(current.Slots)
+												for _, name := range names {
+													fragment := g.id() + "_slot"
+													slots.Props = append(slots.Props, &JsProp{baseNode: genNode(), Key: strLit(name), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+														genConst(fragment, genCall(genMember(id("document"), "createDocumentFragment"))),
+														genExprStmt(genCall(id("$$insertHTML"), id(fragment), strLit(emitStaticHTML(current.Slots[name], g.scopeID)))),
+														genReturn(id(fragment)),
+													)}})
+												}
+											}
 											instance, update := g.id(), g.id()+"_update"
 											keyMount = append(keyMount,
-												genConst(instance, genCall(id(csrFactory), id(keyFragment), props, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+												genConst(instance, genCall(id(csrFactory), id(keyFragment), props, slots)),
 												genExprStmt(genCall(genMember(genMember(id(keyVar), "components"), "push"), id(instance))),
 												genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(instance), "set"), props)))}),
 												genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))),

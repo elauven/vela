@@ -434,8 +434,13 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 				return false
 			}
 		case *ComponentNode:
-			if current == nil || len(current.Slots) != 0 {
+			if current == nil {
 				return false
+			}
+			for _, slot := range current.Slots {
+				if !allStatic(slot) {
+					return false
+				}
 			}
 			for _, attr := range current.Attrs {
 				if attr == nil || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
