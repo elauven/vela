@@ -504,6 +504,12 @@ func ssrKeyedEachDirectKeySlot(nodes []Node) bool {
 			if !ssrKeyedEachDirectKeySlotElement(current) {
 				return false
 			}
+		case *ComponentNode:
+			// The first child-row recipe mounts only an ordinary local child. Its
+			// own slot projection is a separate ownership boundary.
+			if current == nil || len(current.Slots) != 0 {
+				return false
+			}
 		case *IfChainNode:
 			if current == nil || len(current.Branches) == 0 {
 				return false

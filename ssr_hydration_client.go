@@ -113,6 +113,15 @@ func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecycleP
 		if current == nil {
 			return
 		}
+		// Every component occurrence in the typed lifecycle graph can later be
+		// materialized by a structural owner.  Collecting it here avoids a
+		// second template-shape scan and includes component nodes projected
+		// through nested slot rows.
+		if current.Kind == SSRLifecyclePlanComponent {
+			if component, ok := current.TemplateNode.(*ComponentNode); ok && component != nil {
+				aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
+			}
+		}
 		if current.Kind == SSRLifecyclePlanIf {
 			if components, _, ok := ssrHydrationDirectIfComponents(current); ok {
 				for _, component := range components {
