@@ -4702,6 +4702,27 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnDynamicFallbackController(t
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitNestedUnkeyedRowsOwnStaticFallback(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}{#each field.tags as tag}<p>{tag}</p>{:else}<p class="empty">No tags</p>{/each}{/key}{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("static fallback in nested unkeyed key row was rejected")
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"No tags", ".length === 0", "createComment('each')", "destroy"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("nested unkeyed each static fallback misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationKeyedEachAwaitNestedKeyedRowsReplaceInnerKeyRange(t *testing.T) {
 	node := requirePlaywright(t)
 	sfc, err := parseSFC(`<script>let rows = $state.deep(window.__rows || []); let selected = $state(""); let draft = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<input class="field" :data-id={field.id} class:chosen={selected === field.id} style:color={selected ? "red" : "blue"} bind:value={draft} @click={() => selected = field.id} />{/key}{/each}<button class="bump" @click={() => { rows[0].fields[0].version++; selected = ""; draft = "reset" }}>Bump</button><p class="selected">{selected}</p><p class="draft">{draft}</p>{/await}{/each}</main></template>`)

@@ -276,15 +276,15 @@ func TestSSRKeyedEachLifecycleRecipeAllowsStaticFallbackInKeyedDirectEachInKeyRo
 	}
 }
 
-func TestSSRKeyedEachLifecycleRecipeRejectsFallbackInUnkeyedDirectEachInKeyRows(t *testing.T) {
+func TestSSRKeyedEachLifecycleRecipeAllowsStaticFallbackInUnkeyedDirectEachInKeyRows(t *testing.T) {
 	sfc, err := parseSFC(`<template>{#each fields as field (field.id)}{#key field.version}{#each field.tags as tag}<p>{tag}</p>{:else}<p>No tags</p>{/each}{/key}{/each}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	each := sfc.TemplateAST.Nodes[0].(*EachBlockNode)
 	plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes).Find(SSRLifecyclePlanEach, each.Span)
-	if plan == nil || plan.KeyedEach == nil || plan.KeyedEach.DirectKeyRows {
-		t.Fatalf("unkeyed fallback must not select keyed fallback recipe: %#v", plan)
+	if plan == nil || plan.KeyedEach == nil || !plan.KeyedEach.DirectKeyRows {
+		t.Fatalf("DirectKeyRows recipe=%#v", plan)
 	}
 }
 
