@@ -1003,7 +1003,7 @@ func ssrCapabilityKeyedAwaitDynamicEachRows(block *EachBlockNode) ([]Node, bool)
 				return nil, false
 			}
 			for _, branch := range chain.Branches {
-				if branch == nil || !allStatic(branch.Children) {
+				if branch == nil || !ssrKeyedEachDirectConditionalBranch(branch.Children) {
 					return nil, false
 				}
 			}
@@ -1067,6 +1067,28 @@ func ssrCapabilityKeyedAwaitDirectIfChain(chain *IfChainNode) bool {
 	}
 	for _, branch := range chain.Branches {
 		if branch == nil || !ssrCapabilityKeyedAwaitDirectIfChildren(branch.Children) {
+			return false
+		}
+	}
+	return true
+}
+
+// ssrKeyedEachDirectConditionalBranch is the first executable conditional
+// inner-row shape. Text may be dynamic because the inner controller owns its
+// update callback; ordinary elements stay static until their dynamic work is
+// collected by the same controller.
+func ssrKeyedEachDirectConditionalBranch(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			if current == nil {
+				return false
+			}
+		case *ElementNode:
+			if current == nil || !allStatic([]Node{current}) {
+				return false
+			}
+		default:
 			return false
 		}
 	}

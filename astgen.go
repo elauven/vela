@@ -6145,9 +6145,24 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("destroy"), Value: destroy}}}
 							renderBody := []JsStmt{genConst(ifNext, active), genIf(genBinary("===", genMember(id(ifVar), "active"), id(ifNext)), genBlock(genForOf("$$update", genMember(id(ifVar), "updates"), genInvoke("$$update")), genReturn(nil))), genExprStmt(genCall(genMember(id(ifVar), "destroy"))), genAssignStmt(genMember(id(ifVar), "active"), id(ifNext)), genConst(ifFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
 							for index, ifBranch := range chain.Branches {
-								if ifBranch != nil {
-									renderBody = append(renderBody, genIf(genBinary("===", id(ifNext), numLit(index)), genExprStmt(genCall(id("$$insertHTML"), id(ifFragment), strLit(emitStaticHTML(ifBranch.Children, g.scopeID))))))
+								if ifBranch == nil {
+									continue
 								}
+								branchBody := []JsStmt{}
+								for _, branchChild := range ifBranch.Children {
+									switch current := branchChild.(type) {
+									case *TextNode:
+										if textNodeAllStatic(current) {
+											branchBody = append(branchBody, genExprStmt(genCall(id("$$insertHTML"), id(ifFragment), strLit(emitStaticHTML([]Node{current}, g.scopeID)))))
+											continue
+										}
+										textRef, update := g.id(), g.id()+"_update"
+										branchBody = append(branchBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(ifFragment), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(current, textRef))}), genExprStmt(genCall(genMember(genMember(id(ifVar), "updates"), "push"), id(update))), genInvoke(update))
+									case *ElementNode:
+										branchBody = append(branchBody, genExprStmt(genCall(id("$$insertHTML"), id(ifFragment), strLit(emitStaticHTML([]Node{current}, g.scopeID)))))
+									}
+								}
+								renderBody = append(renderBody, genIf(genBinary("===", id(ifNext), numLit(index)), genBlock(branchBody...)))
 							}
 							renderBody = append(renderBody, genAssignStmt(genMember(id(ifVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(ifFragment), "childNodes"))), genExprStmt(genCall(genMember(genMember(id(ifRange), "end"), "before"), id(ifFragment))))
 							rowBody = append(rowBody,

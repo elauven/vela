@@ -389,7 +389,7 @@ func ssrKeyedEachDirectConditionalRows(block *EachBlockNode) bool {
 			// but branches are static DOM. Dynamic branch leaves are added only
 			// once they have a row-owned update collector.
 			for _, branch := range current.Branches {
-				if branch == nil || !allStatic(branch.Children) {
+				if branch == nil || !ssrKeyedEachDirectConditionalBranch(branch.Children) {
 					return false
 				}
 			}
