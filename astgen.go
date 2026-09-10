@@ -6036,7 +6036,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					innerEndMarker := JsExpr(strLit("/r"))
 					if nestedEach.HasKey() {
 						innerPlan := g.hydrationLifecycleNode(SSRLifecyclePlanEach, nestedEach.Span)
-						if innerPlan.KeyedEach == nil || !innerPlan.KeyedEach.DirectLeafRows {
+						if innerPlan.KeyedEach == nil || (!innerPlan.KeyedEach.DirectLeafRows && !innerPlan.KeyedEach.DirectConditionalRows) {
 							panic("vela: missing direct keyed inner-row lifecycle recipe")
 						}
 						innerMarkerID, ok := g.hydrationMarkers.keyedEachID(innerPlan.KeyedEach)
