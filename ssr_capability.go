@@ -1006,7 +1006,7 @@ func ssrCapabilityKeyedAwaitDynamicEachRows(block *EachBlockNode) ([]Node, bool)
 	for _, node := range block.Children {
 		if chain, ok := node.(*IfChainNode); ok {
 			if chain.HasKey() {
-				if len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() || !allStatic(chain.Branches[0].Children) {
+				if len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() || !ssrKeyedEachDirectKeyBranch(chain.Branches[0].Children) {
 					return nil, false
 				}
 				rows = append(rows, chain)

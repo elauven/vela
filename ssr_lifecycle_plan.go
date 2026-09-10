@@ -417,7 +417,25 @@ func ssrKeyedEachDirectKeyRows(block *EachBlockNode) bool {
 	if !ok || chain == nil || !chain.HasKey() || len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() {
 		return false
 	}
-	return ssrKeyedEachDirectConditionalBranch(chain.Branches[0].Children) && allStatic(chain.Branches[0].Children)
+	return ssrKeyedEachDirectKeyBranch(chain.Branches[0].Children)
+}
+
+func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			if current == nil {
+				return false
+			}
+		case *ElementNode:
+			if current == nil || !allStatic([]Node{current}) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func structuralLifecycleOperations() []SSRLifecycleOperation {
