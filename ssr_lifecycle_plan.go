@@ -505,7 +505,10 @@ func ssrKeyedEachDirectKeySlot(nodes []Node) bool {
 				return false
 			}
 		case *IfChainNode:
-			if current == nil || current.HasKey() || len(current.Branches) == 0 {
+			if current == nil || len(current.Branches) == 0 {
+				return false
+			}
+			if current.HasKey() && (len(current.Branches) != 1 || current.Branches[0] == nil || current.Branches[0].HasCondition()) {
 				return false
 			}
 			for _, branch := range current.Branches {

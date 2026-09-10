@@ -6240,6 +6240,44 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															elementBody = append(elementBody, genExprStmt(genCall(genMember(id(parent), "appendChild"), id(elementRef))))
 															body = append(body, elementBody...)
 														case *IfChainNode:
+															if slotCurrent.HasKey() {
+																if len(slotCurrent.Branches) != 1 || slotCurrent.Branches[0] == nil || slotCurrent.Branches[0].HasCondition() {
+																	panic("vela: missing nested keyed slot lifecycle recipe")
+																}
+																keyRange, keyVar, keyRender := g.id()+"_slot_key_range", g.id()+"_slot_key", g.id()+"_slot_key_render"
+																keyFragment, nextKey := g.id()+"_slot_key_fragment", g.id()+"_slot_next_key"
+																keyExpr := JsExpr(id("undefined"))
+																withNestedBindings(func() { keyExpr = g.templateExpr(slotCurrent.KeyAST) })
+																for _, dependency := range templateExprDeps(slotCurrent.KeyAST, g.reactiveNames()) {
+																	textUpdateDeps[dependency] = true
+																}
+																keyDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+																	genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(keyVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
+																	genAssignStmt(genMember(id(keyVar), "listeners"), genArray()),
+																	genAssignStmt(genMember(id(keyVar), "updates"), genArray()),
+																	genForOf("$$node", genMember(id(keyVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+																	genAssignStmt(genMember(id(keyVar), "nodes"), genArray()),
+																	genAssignStmt(genMember(id(keyVar), "key"), genNull()),
+																)}
+																keyController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("key"), Value: genNull()}, {Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("destroy"), Value: keyDestroy}}}
+																keyRenderBody := []JsStmt{genConst(nextKey, keyExpr), genIf(genBinary("===", genMember(id(keyVar), "key"), id(nextKey)), genBlock(genForOf("$$update", genMember(id(keyVar), "updates"), genInvoke("$$update")), genReturn(nil))), genExprStmt(genCall(genMember(id(keyVar), "destroy"))), genAssignStmt(genMember(id(keyVar), "key"), id(nextKey)), genConst(keyFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
+																keyRenderBody = append(keyRenderBody, appendSlotNodes(slotCurrent.Branches[0].Children, keyFragment, keyVar)...)
+																keyRenderBody = append(keyRenderBody,
+																	genAssignStmt(genMember(id(keyVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(keyFragment), "childNodes"))),
+																	genExprStmt(genCall(genMember(genMember(id(keyRange), "end"), "before"), id(keyFragment))),
+																)
+																body = append(body,
+																	genConst(keyRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("slot-key"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/slot-key"))}}}),
+																	genExprStmt(genCall(genMember(id(parent), "append"), genMember(id(keyRange), "start"))),
+																	genExprStmt(genCall(genMember(id(parent), "append"), genMember(id(keyRange), "end"))),
+																	genConst(keyVar, keyController),
+																	genConst(keyRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(keyRenderBody...)}),
+																	genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(keyVar), "destroy"))))})),
+																	genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(keyRender))),
+																	genInvoke(keyRender),
+																)
+																continue
+															}
 															ifRange, ifVar, ifRender := g.id()+"_slot_range", g.id()+"_slot_if", g.id()+"_slot_render"
 															ifFragment, ifNext := g.id()+"_slot_fragment", g.id()+"_slot_next"
 															active := JsExpr(numLit(-1))
