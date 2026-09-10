@@ -362,7 +362,10 @@ func ssrKeyedEachDirectLeafRows(block *EachBlockNode) bool {
 // lifecycle plan records exactly which rows can later be lowered through an
 // inner range controller rather than a whole outer-row replacement.
 func ssrKeyedEachDirectConditionalRows(block *EachBlockNode) bool {
-	if block == nil || !block.HasKey() || len(block.Children) == 0 || len(block.ElseChildren) > 0 {
+	if block == nil || !block.HasKey() || len(block.Children) == 0 {
+		return false
+	}
+	if !ssrCapabilityKeyedAwaitDirectIfChildren(block.ElseChildren) {
 		return false
 	}
 	found := false
