@@ -6198,10 +6198,30 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															case *ElementNode:
 																elementRef := g.id()
 																elementBody := []JsStmt{genConst(elementRef, genCall(genMember(id("document"), "createElement"), strLit(listNode.Tag))), g.setAttrStmt(elementRef, g.scopeID, "")}
+																elementUpdates := []JsStmt{}
+																for _, attr := range listNode.Attrs {
+																	switch {
+																	case attr.IsTwoWay && attr.Expr != nil:
+																		elementUpdates = append(elementUpdates, innerBindingWrite(listNode.Tag, attr, elementRef))
+																		elementBody = append(elementBody, innerBindingListener(listNode.Tag, attr, elementRef, "$$row_controller")...)
+																	case attr.IsEvent && attr.Expr != nil:
+																		elementBody = append(elementBody, eventAttachFor(attr, branch, elementRef, "$$row_controller")...)
+																	case attr.IsClassDir || attr.IsStyleDir:
+																		elementUpdates = append(elementUpdates, innerDirectiveWrite(attr, elementRef))
+																	case attr.Expr != nil:
+																		elementUpdates = append(elementUpdates, innerAttrWrite(attr, elementRef))
+																	default:
+																		elementBody = append(elementBody, g.setAttrStmt(elementRef, attr.Name, attr.Value))
+																	}
+																}
 																for _, elementChild := range listNode.Children {
 																	text := elementChild.(*TextNode)
 																	textRef, update := g.id(), g.id()+"_update"
 																	elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(text, textRef))}), genExprStmt(genCall(genMember(genMember(id("$$row_controller"), "updates"), "push"), id(update))), genInvoke(update))
+																}
+																if len(elementUpdates) > 0 {
+																	update := g.id() + "_update"
+																	elementBody = append(elementBody, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id("$$row_controller"), "updates"), "push"), id(update))), genInvoke(update))
 																}
 																elementBody = append(elementBody, genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(elementRef))))
 																rowBody = append(rowBody, elementBody...)
@@ -6255,6 +6275,22 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 														case *ElementNode:
 															elementRef := g.id()
 															elementBody := []JsStmt{genConst(elementRef, genCall(genMember(id("document"), "createElement"), strLit(listNode.Tag))), g.setAttrStmt(elementRef, g.scopeID, "")}
+															elementUpdates := []JsStmt{}
+															for _, attr := range listNode.Attrs {
+																switch {
+																case attr.IsTwoWay && attr.Expr != nil:
+																	elementUpdates = append(elementUpdates, innerBindingWrite(listNode.Tag, attr, elementRef))
+																	elementBody = append(elementBody, innerBindingListener(listNode.Tag, attr, elementRef, "$$row_controller")...)
+																case attr.IsEvent && attr.Expr != nil:
+																	elementBody = append(elementBody, eventAttachFor(attr, branch, elementRef, "$$row_controller")...)
+																case attr.IsClassDir || attr.IsStyleDir:
+																	elementUpdates = append(elementUpdates, innerDirectiveWrite(attr, elementRef))
+																case attr.Expr != nil:
+																	elementUpdates = append(elementUpdates, innerAttrWrite(attr, elementRef))
+																default:
+																	elementBody = append(elementBody, g.setAttrStmt(elementRef, attr.Name, attr.Value))
+																}
+															}
 															for _, elementChild := range listNode.Children {
 																text := elementChild.(*TextNode)
 																if textNodeAllStatic(text) {
@@ -6263,6 +6299,10 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																	textRef := g.id()
 																	elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), innerTextWrite(text, textRef))
 																}
+															}
+															if len(elementUpdates) > 0 {
+																update := g.id() + "_update"
+																elementBody = append(elementBody, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id("$$row_controller"), "updates"), "push"), id(update))), genInvoke(update))
 															}
 															elementBody = append(elementBody, genExprStmt(genCall(genMember(id(listFragment), "appendChild"), id(elementRef))))
 															listRows = append(listRows, elementBody...)

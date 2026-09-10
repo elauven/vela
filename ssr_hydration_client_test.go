@@ -4661,7 +4661,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnConditionalKeyController(t 
 }
 
 func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnNestedEachKeyController(t *testing.T) {
-	sfc, err := parseSFC(`<script>let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}{#each field.tags as tag (tag)}<p>{tag}</p>{/each}{/key}{/each}{/await}{/each}</main></template>`)
+	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let selected = $state(""); let draft = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}{#each field.tags as tag (tag)}<input :data-tag={tag} class:selected={selected === tag} style:color={selected ? "red" : "blue"} bind:value={draft} @click={() => selected = tag} />{/each}{/key}{/each}{/await}{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4674,7 +4674,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnNestedEachKeyController(t *
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"createComment('key')", "createComment('each')", "createComment('/each')", "new Map()", "reconcileHydrationKeyedRowRanges", "destroy"} {
+	for _, want := range []string{"createComment('key')", "createComment('each')", "createComment('/each')", "new Map()", "reconcileHydrationKeyedRowRanges", "addEventListener", "removeEventListener", "classList.toggle", "style.setProperty", "$$set_draft", "destroy"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested keyed each controller misses %q:\n%s", want, code)
 		}

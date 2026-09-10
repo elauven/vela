@@ -469,7 +469,7 @@ func ssrKeyedEachDirectKeyEachRows(block *EachBlockNode) bool {
 				return false
 			}
 		case *ElementNode:
-			if current == nil || len(current.Attrs) != 0 {
+			if current == nil || !ssrKeyedEachDirectConditionalElement(current) {
 				return false
 			}
 			for _, child := range current.Children {
