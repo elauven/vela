@@ -6189,8 +6189,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 											slotFactory := func(slotNodes []Node) JsExpr {
 												fragment := g.id() + "_slot"
 												factoryBody := []JsStmt{genConst(fragment, genCall(genMember(id("document"), "createDocumentFragment")))}
-												var appendSlotNodes func([]Node, string) []JsStmt
-												appendSlotNodes = func(nodes []Node, parent string) []JsStmt {
+												var appendSlotNodes func([]Node, string, string) []JsStmt
+												appendSlotNodes = func(nodes []Node, parent, owner string) []JsStmt {
 													body := []JsStmt{}
 													for _, slotNode := range nodes {
 														if allStatic([]Node{slotNode}) {
@@ -6204,7 +6204,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
 																genExprStmt(genCall(genMember(id(parent), "appendChild"), id(textRef))),
 																genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(slotCurrent, textRef))}),
-																genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))),
+																genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(update))),
 																genInvoke(update),
 															)
 														case *ElementNode:
@@ -6215,10 +6215,10 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																switch {
 																case attr.IsTwoWay && attr.Expr != nil:
 																	elementUpdates = append(elementUpdates, innerBindingWrite(slotCurrent.Tag, attr, elementRef))
-																	elementBody = append(elementBody, innerBindingListener(slotCurrent.Tag, attr, elementRef, keyVar)...)
+																	elementBody = append(elementBody, innerBindingListener(slotCurrent.Tag, attr, elementRef, owner)...)
 																case attr.IsEvent && attr.Expr != nil:
 																	var eventStmts []JsStmt
-																	withNestedBindings(func() { eventStmts = eventAttachFor(attr, branch, elementRef, keyVar) })
+																	withNestedBindings(func() { eventStmts = eventAttachFor(attr, branch, elementRef, owner) })
 																	elementBody = append(elementBody, eventStmts...)
 																case attr.IsClassDir || attr.IsStyleDir:
 																	elementUpdates = append(elementUpdates, innerDirectiveWrite(attr, elementRef))
@@ -6228,24 +6228,70 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																	elementBody = append(elementBody, g.setAttrStmt(elementRef, attr.Name, attr.Value))
 																}
 															}
-															elementBody = append(elementBody, appendSlotNodes(slotCurrent.Children, elementRef)...)
+															elementBody = append(elementBody, appendSlotNodes(slotCurrent.Children, elementRef, owner)...)
 															if len(elementUpdates) > 0 {
 																update := g.id() + "_update"
 																elementBody = append(elementBody,
 																	genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}),
-																	genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))),
+																	genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(update))),
 																	genInvoke(update),
 																)
 															}
 															elementBody = append(elementBody, genExprStmt(genCall(genMember(id(parent), "appendChild"), id(elementRef))))
 															body = append(body, elementBody...)
+														case *IfChainNode:
+															ifRange, ifVar, ifRender := g.id()+"_slot_range", g.id()+"_slot_if", g.id()+"_slot_render"
+															ifFragment, ifNext := g.id()+"_slot_fragment", g.id()+"_slot_next"
+															active := JsExpr(numLit(-1))
+															for index := len(slotCurrent.Branches) - 1; index >= 0; index-- {
+																ifBranch := slotCurrent.Branches[index]
+																if ifBranch == nil {
+																	continue
+																}
+																if !ifBranch.HasCondition() {
+																	active = numLit(index)
+																	continue
+																}
+																condition := JsExpr(boolLit(false))
+																withNestedBindings(func() { condition = g.templateExpr(ifBranch.Expr) })
+																for _, dependency := range templateExprDeps(ifBranch.Expr, g.reactiveNames()) {
+																	textUpdateDeps[dependency] = true
+																}
+																active = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: condition, Then: numLit(index), Else: active}
+															}
+															ifDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+																genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(ifVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
+																genAssignStmt(genMember(id(ifVar), "listeners"), genArray()),
+																genAssignStmt(genMember(id(ifVar), "updates"), genArray()),
+																genForOf("$$node", genMember(id(ifVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+																genAssignStmt(genMember(id(ifVar), "nodes"), genArray()),
+																genAssignStmt(genMember(id(ifVar), "active"), numLit(-1)),
+															)}
+															ifController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("destroy"), Value: ifDestroy}}}
+															renderBody := []JsStmt{genConst(ifNext, active), genIf(genBinary("===", genMember(id(ifVar), "active"), id(ifNext)), genBlock(genForOf("$$update", genMember(id(ifVar), "updates"), genInvoke("$$update")), genReturn(nil))), genExprStmt(genCall(genMember(id(ifVar), "destroy"))), genAssignStmt(genMember(id(ifVar), "active"), id(ifNext)), genConst(ifFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
+															for index, ifBranch := range slotCurrent.Branches {
+																if ifBranch != nil {
+																	renderBody = append(renderBody, genIf(genBinary("===", id(ifNext), numLit(index)), genBlock(appendSlotNodes(ifBranch.Children, ifFragment, ifVar)...)))
+																}
+															}
+															renderBody = append(renderBody, genAssignStmt(genMember(id(ifVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(ifFragment), "childNodes"))), genExprStmt(genCall(genMember(genMember(id(ifRange), "end"), "before"), id(ifFragment))))
+															body = append(body,
+																genConst(ifRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("slot-if"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/slot-if"))}}}),
+																genExprStmt(genCall(genMember(id(parent), "append"), genMember(id(ifRange), "start"))),
+																genExprStmt(genCall(genMember(id(parent), "append"), genMember(id(ifRange), "end"))),
+																genConst(ifVar, ifController),
+																genConst(ifRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(renderBody...)}),
+																genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ifVar), "destroy"))))})),
+																genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(ifRender))),
+																genInvoke(ifRender),
+															)
 														default:
 															panic("vela: unsupported dynamic slot node in nested keyed await component")
 														}
 													}
 													return body
 												}
-												factoryBody = append(factoryBody, appendSlotNodes(slotNodes, fragment)...)
+												factoryBody = append(factoryBody, appendSlotNodes(slotNodes, fragment, keyVar)...)
 												factoryBody = append(factoryBody, genReturn(id(fragment)))
 												return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(factoryBody...)}
 											}

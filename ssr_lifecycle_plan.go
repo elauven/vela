@@ -504,6 +504,15 @@ func ssrKeyedEachDirectKeySlot(nodes []Node) bool {
 			if !ssrKeyedEachDirectKeySlotElement(current) {
 				return false
 			}
+		case *IfChainNode:
+			if current == nil || current.HasKey() || len(current.Branches) == 0 {
+				return false
+			}
+			for _, branch := range current.Branches {
+				if branch == nil || !ssrKeyedEachDirectKeySlot(branch.Children) {
+					return false
+				}
+			}
 		default:
 			return false
 		}
