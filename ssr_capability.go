@@ -1085,10 +1085,27 @@ func ssrKeyedEachDirectConditionalBranch(nodes []Node) bool {
 				return false
 			}
 		case *ElementNode:
-			if current == nil || !allStatic([]Node{current}) {
+			if !ssrKeyedEachDirectConditionalElement(current) {
 				return false
 			}
 		default:
+			return false
+		}
+	}
+	return true
+}
+
+func ssrKeyedEachDirectConditionalElement(element *ElementNode) bool {
+	if element == nil {
+		return false
+	}
+	for _, attr := range element.Attrs {
+		if attr == nil || attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsClassDir || attr.IsStyleDir {
+			return false
+		}
+	}
+	for _, child := range element.Children {
+		if _, ok := child.(*TextNode); !ok {
 			return false
 		}
 	}

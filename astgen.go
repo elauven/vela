@@ -6159,7 +6159,22 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 										textRef, update := g.id(), g.id()+"_update"
 										branchBody = append(branchBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(ifFragment), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(current, textRef))}), genExprStmt(genCall(genMember(genMember(id(ifVar), "updates"), "push"), id(update))), genInvoke(update))
 									case *ElementNode:
-										branchBody = append(branchBody, genExprStmt(genCall(id("$$insertHTML"), id(ifFragment), strLit(emitStaticHTML([]Node{current}, g.scopeID)))))
+										elementRef := g.id()
+										elementBody := []JsStmt{genConst(elementRef, genCall(genMember(id("document"), "createElement"), strLit(current.Tag))), g.setAttrStmt(elementRef, g.scopeID, "")}
+										for _, attr := range current.Attrs {
+											elementBody = append(elementBody, g.setAttrStmt(elementRef, attr.Name, attr.Value))
+										}
+										for _, elementChild := range current.Children {
+											text := elementChild.(*TextNode)
+											if textNodeAllStatic(text) {
+												elementBody = append(elementBody, genExprStmt(genCall(id("$$insertHTML"), id(elementRef), strLit(emitStaticHTML([]Node{text}, g.scopeID)))))
+												continue
+											}
+											textRef, update := g.id(), g.id()+"_update"
+											elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(text, textRef))}), genExprStmt(genCall(genMember(genMember(id(ifVar), "updates"), "push"), id(update))), genInvoke(update))
+										}
+										elementBody = append(elementBody, genExprStmt(genCall(genMember(id(ifFragment), "appendChild"), id(elementRef))))
+										branchBody = append(branchBody, elementBody...)
 									}
 								}
 								renderBody = append(renderBody, genIf(genBinary("===", id(ifNext), numLit(index)), genBlock(branchBody...)))
