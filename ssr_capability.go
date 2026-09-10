@@ -467,6 +467,13 @@ func ssrCapabilityCurrentIfChain(chain *IfChainNode) bool {
 		if _, ok := ssrCapabilityCurrentKeyComponents(chain); ok {
 			return true
 		}
+		// The keyed-await inner-row lowerer owns this direct structural subset
+		// through the surrounding #key controller.  Keep the capability aligned
+		// with its typed recipe so a valid nested list is not rejected before
+		// code generation can select that controller.
+		if len(chain.Branches) == 1 && !chain.Branches[0].HasCondition() && ssrKeyedEachDirectKeyBranch(chain.Branches[0].Children) {
+			return true
+		}
 		return len(chain.Branches) == 1 && !chain.Branches[0].HasCondition() && ssrCapabilityCurrentStaticChildren(chain.Branches[0].Children)
 	}
 	conditions := 0

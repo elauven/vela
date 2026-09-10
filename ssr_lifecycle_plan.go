@@ -422,6 +422,7 @@ func ssrKeyedEachDirectKeyRows(block *EachBlockNode) bool {
 
 func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 	hasConditional := false
+	hasEach := false
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
@@ -443,6 +444,40 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 				return false
 			}
 			hasConditional = true
+		case *EachBlockNode:
+			// The first nested-list slice is deliberately unkeyed and has no
+			// fallback. Its controller is owned by the surrounding #key range;
+			// keyed rows, empty ranges and nested structures need marker recipes.
+			if current == nil || current.HasKey() || len(current.ElseChildren) != 0 || !ssrKeyedEachDirectKeyEachRows(current) || hasEach {
+				return false
+			}
+			hasEach = true
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func ssrKeyedEachDirectKeyEachRows(block *EachBlockNode) bool {
+	if block == nil || len(block.Children) == 0 {
+		return false
+	}
+	for _, node := range block.Children {
+		switch current := node.(type) {
+		case *TextNode:
+			if current == nil {
+				return false
+			}
+		case *ElementNode:
+			if current == nil || len(current.Attrs) != 0 {
+				return false
+			}
+			for _, child := range current.Children {
+				if _, ok := child.(*TextNode); !ok {
+					return false
+				}
+			}
 		default:
 			return false
 		}
