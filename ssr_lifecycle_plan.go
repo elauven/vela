@@ -449,7 +449,7 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 			// keyed and unkeyed lists exclude deeper structures here. A fully
 			// static fallback is owned by the list controller rather than the row
 			// map, so it can appear only while the keyed list is empty.
-			if current == nil || !ssrKeyedEachDirectKeyEachRows(current) || !ssrKeyedEachDirectKeyEachElse(current.ElseChildren) || hasEach {
+			if current == nil || !ssrKeyedEachDirectKeyEachRows(current) || !ssrKeyedEachDirectKeyEachElse(current.ElseChildren) || (!current.HasKey() && len(current.ElseChildren) != 0) || hasEach {
 				return false
 			}
 			hasEach = true
