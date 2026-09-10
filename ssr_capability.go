@@ -1100,7 +1100,19 @@ func ssrKeyedEachDirectConditionalElement(element *ElementNode) bool {
 		return false
 	}
 	for _, attr := range element.Attrs {
-		if attr == nil || attr.IsBindThis || attr.IsEvent || attr.IsTwoWay {
+		if attr == nil || attr.IsBindThis {
+			return false
+		}
+		if attr.IsTwoWay {
+			if attr.Expr == nil {
+				return false
+			}
+			if _, ok := twoWayBindSpec(element.Tag, attr.Name); !ok {
+				return false
+			}
+			continue
+		}
+		if attr.IsEvent && attr.Expr == nil {
 			return false
 		}
 	}

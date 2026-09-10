@@ -4592,7 +4592,7 @@ func TestSSRHydrationKeyedEachAwaitNestedEachBindings(t *testing.T) {
 }
 
 func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnStaticIfController(t *testing.T) {
-	sfc, err := parseSFC(`<script>let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#if field.visible}<p class="shown">Shown</p>{:else}<p class="hidden">Hidden</p>{/if}{/each}{/await}{/each}</main></template>`)
+	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#if field.visible}<button class="shown" @click={() => selected = field.id}>Shown</button>{:else}<p class="hidden">Hidden</p>{/if}{/each}{/await}{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4605,7 +4605,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnStaticIfController(t *testi
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"innerRows", "createComment('if')", "createComment('/if')", "listeners", "destroy"} {
+	for _, want := range []string{"innerRows", "createComment('if')", "createComment('/if')", "addEventListener", "removeEventListener", "listeners", "destroy"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested keyed conditional controller misses %q:\n%s", want, code)
 		}

@@ -6164,6 +6164,13 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 										elementUpdates := []JsStmt{}
 										for _, attr := range current.Attrs {
 											switch {
+											case attr.IsTwoWay && attr.Expr != nil:
+												elementUpdates = append(elementUpdates, innerBindingWrite(current.Tag, attr, elementRef))
+												elementBody = append(elementBody, innerBindingListener(current.Tag, attr, elementRef, ifVar)...)
+											case attr.IsEvent && attr.Expr != nil:
+												var eventStmts []JsStmt
+												withNestedBindings(func() { eventStmts = eventAttachFor(attr, branch, elementRef, ifVar) })
+												elementBody = append(elementBody, eventStmts...)
 											case attr.IsClassDir || attr.IsStyleDir:
 												elementUpdates = append(elementUpdates, innerDirectiveWrite(attr, elementRef))
 											case attr.Expr != nil:
