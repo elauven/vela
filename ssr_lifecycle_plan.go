@@ -428,7 +428,7 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 				return false
 			}
 		case *ElementNode:
-			if current == nil || !allStatic([]Node{current}) {
+			if !ssrKeyedEachDirectConditionalElement(current) {
 				return false
 			}
 		default:

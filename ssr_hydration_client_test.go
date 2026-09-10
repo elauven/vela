@@ -4618,6 +4618,27 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnStaticIfController(t *testi
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnKeyController(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<button class:chosen={selected === field.id} :data-id={field.id} @click={() => selected = field.id}>{field.title}</button>{/key}{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("direct key in nested keyed row was rejected")
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"createComment('key')", "createComment('/key')", "addEventListener", "removeEventListener", "classList.toggle", "listeners", "destroy"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("nested keyed key controller misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationKeyedEachAwaitNestedEachValueBinding(t *testing.T) {
 	node := requirePlaywright(t)
 	sfc, err := parseSFC(`<script>export let rows = []; export let draft = "";</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.labels as label}<input class="nested-input" :data-label={label} bind:value={draft} />{/each}<p class="output">{draft}</p>{/await}{/each}</main></template>`)

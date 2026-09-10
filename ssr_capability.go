@@ -982,7 +982,7 @@ func ssrCapabilityKeyedAwaitDirectChildren(nodes []Node) bool {
 func ssrCapabilityKeyedAwaitStaticEach(block *EachBlockNode) bool {
 	if block != nil && block.HasKey() {
 		_, ok := ssrCapabilityKeyedAwaitDynamicEachRows(block)
-		return ok && (ssrKeyedEachDirectLeafRows(block) || ssrKeyedEachDirectConditionalRows(block))
+		return ok && (ssrKeyedEachDirectLeafRows(block) || ssrKeyedEachDirectConditionalRows(block) || ssrKeyedEachDirectKeyRows(block))
 	}
 	if block == nil || !ssrCapabilityCurrentStaticChildren(block.ElseChildren) {
 		return false
