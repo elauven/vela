@@ -514,7 +514,17 @@ func ssrKeyedEachDirectKeySlot(nodes []Node) bool {
 				}
 			}
 		case *EachBlockNode:
-			if current == nil || current.HasKey() || !ssrKeyedEachDirectKeySlot(current.Children) || !ssrKeyedEachDirectKeySlot(current.ElseChildren) {
+			if current == nil || !ssrKeyedEachDirectKeySlot(current.Children) {
+				return false
+			}
+			// A keyed slot list has a range-aware row controller.  Its empty
+			// branch needs a separate structural controller, which is deliberately
+			// kept for the next recipe rather than silently falling back to a
+			// destructive list rebuild.
+			if current.HasKey() && len(current.ElseChildren) > 0 {
+				return false
+			}
+			if !current.HasKey() && !ssrKeyedEachDirectKeySlot(current.ElseChildren) {
 				return false
 			}
 		default:
