@@ -154,7 +154,7 @@ func TestSSRKeyedEachLifecycleRecipeGatesDirectLeafRows(t *testing.T) {
 		want   bool
 	}{
 		{name: "direct dynamic leaves", source: `<template>{#each fields as field (field.id)}<input bind:value={field.title} /><button class:selected={field.selected} style:color={field.color} ={() => field.selected = !field.selected}>{field.title}</button>{/each}</template>`, want: true},
-		{name: "else branch", source: `<template>{#each fields as field (field.id)}<p>{field.title}</p>{:else}<p>Empty</p>{/each}</template>`, want: false},
+		{name: "else branch", source: `<template>{#each fields as field (field.id)}<p>{field.title}</p>{:else}<p>Empty</p>{/each}</template>`, want: true},
 		{name: "nested element", source: `<template>{#each fields as field (field.id)}<p><span>{field.title}</span></p>{/each}</template>`, want: false},
 		{name: "structural child", source: `<template>{#each fields as field (field.id)}{#if field.visible}<p>{field.title}</p>{/if}{/each}</template>`, want: false},
 		{name: "component child", source: `<template>{#each fields as field (field.id)}<Child :field={field} />{/each}</template>`, want: false},
@@ -184,7 +184,7 @@ func TestSSRKeyedEachLifecycleRecipeRecordsDirectConditionalRows(t *testing.T) {
 	}{
 		{name: "direct if", source: `<template>{#each fields as field (field.id)}{#if field.visible}<p>{field.title}</p>{:else}<button @click={() => field.visible = true}>Show</button>{/if}{/each}</template>`, want: true},
 		{name: "nested structural", source: `<template>{#each fields as field (field.id)}{#if field.visible}{#each field.tags as tag}<p>{tag}</p>{/each}{/if}{/each}</template>`, want: false},
-		{name: "row else", source: `<template>{#each fields as field (field.id)}{#if field.visible}<p>{field.title}</p>{/if}{:else}<p>Empty</p>{/each}</template>`, want: false},
+		{name: "row else", source: `<template>{#each fields as field (field.id)}{#if field.visible}<p>{field.title}</p>{/if}{:else}<p>Empty</p>{/each}</template>`, want: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -201,6 +201,18 @@ func TestSSRKeyedEachLifecycleRecipeRecordsDirectConditionalRows(t *testing.T) {
 				t.Fatalf("DirectConditionalRows=%t, want %t", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSSRKeyedEachLifecycleRecipeRecordsDirectKeyRows(t *testing.T) {
+	sfc, err := parseSFC(`<template>{#each fields as field (field.id)}{#key field.version}<p>{field.title}</p>{/key}{/each}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	each := sfc.TemplateAST.Nodes[0].(*EachBlockNode)
+	plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes).Find(SSRLifecyclePlanEach, each.Span)
+	if plan == nil || plan.KeyedEach == nil || !plan.KeyedEach.DirectKeyRows {
+		t.Fatalf("DirectKeyRows recipe=%#v", plan)
 	}
 }
 

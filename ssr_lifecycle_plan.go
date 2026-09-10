@@ -98,6 +98,10 @@ type SSRKeyedEachLifecycleRecipe struct {
 	// `#if` content whose branches stay within the recursive direct-DOM subset.
 	// It is analysis metadata until the inner range controller consumes it.
 	DirectConditionalRows bool
+	// DirectKeyRows reserves the adjacent direct-DOM `#key` slice. Its
+	// evaluated key owns a nested range inside an already keyed row; execution
+	// remains gated until the range controller is lowered on both SSR/CSR paths.
+	DirectKeyRows bool
 }
 
 // SSRStructuralLifecyclePlan is the recursive ownership plan shared by future
@@ -257,6 +261,7 @@ func buildSSRStructuralLifecycleNode(node Node, capability *SSRCapability, path 
 				RowScope:              rowPath,
 				DirectLeafRows:        ssrKeyedEachDirectLeafRows(current),
 				DirectConditionalRows: ssrKeyedEachDirectConditionalRows(current),
+				DirectKeyRows:         ssrKeyedEachDirectKeyRows(current),
 			}
 		}
 		rowCapabilities, elseCapabilities := splitEachCapabilityChildren(capability, len(current.Children))
@@ -402,6 +407,17 @@ func ssrKeyedEachDirectConditionalRows(block *EachBlockNode) bool {
 		}
 	}
 	return found
+}
+
+func ssrKeyedEachDirectKeyRows(block *EachBlockNode) bool {
+	if block == nil || !block.HasKey() || len(block.Children) != 1 || len(block.ElseChildren) != 0 {
+		return false
+	}
+	chain, ok := block.Children[0].(*IfChainNode)
+	if !ok || chain == nil || !chain.HasKey() || len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() {
+		return false
+	}
+	return ssrKeyedEachDirectConditionalBranch(chain.Branches[0].Children)
 }
 
 func structuralLifecycleOperations() []SSRLifecycleOperation {
