@@ -976,7 +976,7 @@ func ssrCapabilityKeyedAwaitDirectChildren(nodes []Node) bool {
 func ssrCapabilityKeyedAwaitStaticEach(block *EachBlockNode) bool {
 	if block != nil && block.HasKey() {
 		_, ok := ssrCapabilityKeyedAwaitDynamicEachRows(block)
-		return ok && ssrKeyedEachDirectLeafRows(block)
+		return ok && (ssrKeyedEachDirectLeafRows(block) || ssrKeyedEachDirectConditionalRows(block))
 	}
 	if block == nil || !ssrCapabilityCurrentStaticChildren(block.ElseChildren) {
 		return false
@@ -998,6 +998,18 @@ func ssrCapabilityKeyedAwaitDynamicEachRows(block *EachBlockNode) ([]Node, bool)
 	}
 	rows := make([]Node, 0, len(block.Children))
 	for _, node := range block.Children {
+		if chain, ok := node.(*IfChainNode); ok {
+			if !ssrCapabilityKeyedAwaitDirectIfChain(chain) {
+				return nil, false
+			}
+			for _, branch := range chain.Branches {
+				if branch == nil || !allStatic(branch.Children) {
+					return nil, false
+				}
+			}
+			rows = append(rows, chain)
+			continue
+		}
 		row, ok := node.(*ElementNode)
 		if !ok || row == nil {
 			return nil, false

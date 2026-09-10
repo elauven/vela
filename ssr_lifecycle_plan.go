@@ -385,6 +385,14 @@ func ssrKeyedEachDirectConditionalRows(block *EachBlockNode) bool {
 			if !ssrCapabilityKeyedAwaitDirectIfChain(current) {
 				return false
 			}
+			// First executable inner-controller slice: the condition is dynamic,
+			// but branches are static DOM. Dynamic branch leaves are added only
+			// once they have a row-owned update collector.
+			for _, branch := range current.Branches {
+				if branch == nil || !allStatic(branch.Children) {
+					return false
+				}
+			}
 			found = true
 		default:
 			return false

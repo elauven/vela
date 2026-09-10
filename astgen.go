@@ -6117,6 +6117,46 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						)
 					}
 					for _, rowNode := range rows {
+						if chain, ok := rowNode.(*IfChainNode); ok {
+							if !nestedEach.HasKey() || !ssrCapabilityKeyedAwaitDirectIfChain(chain) {
+								panic("vela: missing conditional inner-row lifecycle recipe")
+							}
+							ifVar, ifRange, ifRender := g.id(), g.id()+"_range", g.id()+"_render"
+							ifFragment, ifNext := g.id()+"_fragment", g.id()+"_next"
+							active := JsExpr(numLit(-1))
+							for index := len(chain.Branches) - 1; index >= 0; index-- {
+								ifBranch := chain.Branches[index]
+								if ifBranch == nil {
+									continue
+								}
+								if !ifBranch.HasCondition() {
+									active = numLit(index)
+									continue
+								}
+								condition := JsExpr(boolLit(false))
+								withNestedBindings(func() { condition = g.templateExpr(ifBranch.Expr) })
+								active = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: condition, Then: numLit(index), Else: active}
+							}
+							destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+								genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(ifVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
+								genAssignStmt(genMember(id(ifVar), "listeners"), genArray()), genAssignStmt(genMember(id(ifVar), "updates"), genArray()),
+								genForOf("$$node", genMember(id(ifVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(ifVar), "nodes"), genArray()), genAssignStmt(genMember(id(ifVar), "active"), numLit(-1)),
+							)}
+							controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("destroy"), Value: destroy}}}
+							renderBody := []JsStmt{genConst(ifNext, active), genIf(genBinary("===", genMember(id(ifVar), "active"), id(ifNext)), genBlock(genForOf("$$update", genMember(id(ifVar), "updates"), genInvoke("$$update")), genReturn(nil))), genExprStmt(genCall(genMember(id(ifVar), "destroy"))), genAssignStmt(genMember(id(ifVar), "active"), id(ifNext)), genConst(ifFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
+							for index, ifBranch := range chain.Branches {
+								if ifBranch != nil {
+									renderBody = append(renderBody, genIf(genBinary("===", id(ifNext), numLit(index)), genExprStmt(genCall(id("$$insertHTML"), id(ifFragment), strLit(emitStaticHTML(ifBranch.Children, g.scopeID))))))
+								}
+							}
+							renderBody = append(renderBody, genAssignStmt(genMember(id(ifVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(ifFragment), "childNodes"))), genExprStmt(genCall(genMember(genMember(id(ifRange), "end"), "before"), id(ifFragment))))
+							rowBody = append(rowBody,
+								genConst(ifRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("if"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/if"))}}}),
+								genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(ifRange), "start"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(ifRange), "end"))), genConst(ifVar, controller), genConst(ifRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(renderBody...)}),
+								genExprStmt(genCall(genMember(genMember(id(innerOwner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ifVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id(innerOwner), "updates"), "push"), id(ifRender))), genInvoke(ifRender),
+							)
+							continue
+						}
 						// The capability contract preserves source nodes. This lowering
 						// currently handles the direct element recipe; later recipes
 						// dispatch `IfChainNode` through an inner range controller.
