@@ -4724,7 +4724,7 @@ func TestSSRHydrationKeyedEachAwaitNestedUnkeyedRowsOwnDynamicFallback(t *testin
 }
 
 func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnDirectKeyComponentController(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child :id={field.id} :title={field.title} />{/key}{/each}{/await}{/each}</main></template>`)
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]); let calls = $state(0);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child :id={field.id} :title={field.title} @on:close={() => calls++} />{/key}{/each}{/await}{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4737,7 +4737,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnDirectKeyComponentControlle
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"$$csr_Child", "components: []", ".components.push", ".set(", ".destroy"} {
+	for _, want := range []string{"$$csr_Child", "components: []", ".components.push", ".set(", "addEventListener", "removeEventListener", "instanceof CustomEvent", "$$set_calls", ".destroy"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested keyed child controller misses %q:\n%s", want, code)
 		}

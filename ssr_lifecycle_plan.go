@@ -438,7 +438,7 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 				return false
 			}
 			for _, attr := range current.Attrs {
-				if attr == nil || attr.IsEvent {
+				if attr == nil {
 					return false
 				}
 			}

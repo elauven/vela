@@ -6189,6 +6189,26 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 												genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(instance), "set"), props)))}),
 												genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))),
 											)
+											for _, attr := range current.Attrs {
+												if !attr.IsEvent {
+													continue
+												}
+												handler := g.id()
+												handlerExpr := JsExpr(id("undefined"))
+												withNestedBindings(func() { handlerExpr = g.eventHandlerExpr(attr) })
+												invoke := JsStmt(genExprStmt(genCall(handlerExpr, id("$event"))))
+												if _, isIdent := templateExprIdent(attr.Expr); !isIdent && !templateExprIsHandler(attr.Expr) {
+													invoke = genExprStmt(handlerExpr)
+													if g.analysis != nil {
+														invoke = RewriteStatementAssignmentsAST(invoke, g.analysis.stateSet())
+													}
+												}
+												keyMount = append(keyMount,
+													genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genIf(genBinary("instanceof", id("$event"), id("CustomEvent")), genBlock(invoke)))}),
+													genExprStmt(genCall(genMember(genMember(id(instance), "el"), "addEventListener"), strLit(strings.TrimPrefix(attr.Name, "on:")), id(handler))),
+													genExprStmt(genCall(genMember(genMember(id(keyVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(genMember(id(instance), "el"), "removeEventListener"), strLit(strings.TrimPrefix(attr.Name, "on:")), id(handler))))})),
+												)
+											}
 										case *EachBlockNode:
 											if !ssrKeyedEachDirectKeyEachRows(current) || !ssrKeyedEachDirectKeyEachElse(current.ElseChildren) {
 												panic("vela: missing direct nested each key lifecycle recipe")
