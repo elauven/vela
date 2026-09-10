@@ -987,11 +987,16 @@ func ssrCapabilityKeyedAwaitStaticEach(block *EachBlockNode) bool {
 	return ssrCapabilityCurrentStaticChildren(block.Children)
 }
 
-func ssrCapabilityKeyedAwaitDynamicEachRows(block *EachBlockNode) ([]*ElementNode, bool) {
+// ssrCapabilityKeyedAwaitDynamicEachRows returns source-ordered row content,
+// rather than a pre-lowered element-only representation. The current direct
+// leaf subset still accepts ordinary elements only; keeping the typed template
+// nodes here lets the lifecycle recipe grow to `IfChainNode` without a second
+// source walk or an unsafe conversion at the hydration boundary.
+func ssrCapabilityKeyedAwaitDynamicEachRows(block *EachBlockNode) ([]Node, bool) {
 	if block == nil || len(block.Children) == 0 {
 		return nil, false
 	}
-	rows := make([]*ElementNode, 0, len(block.Children))
+	rows := make([]Node, 0, len(block.Children))
 	for _, node := range block.Children {
 		row, ok := node.(*ElementNode)
 		if !ok || row == nil {

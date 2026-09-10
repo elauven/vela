@@ -6116,7 +6116,14 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$inner_start"))),
 						)
 					}
-					for _, row := range rows {
+					for _, rowNode := range rows {
+						// The capability contract preserves source nodes. This lowering
+						// currently handles the direct element recipe; later recipes
+						// dispatch `IfChainNode` through an inner range controller.
+						row, ok := rowNode.(*ElementNode)
+						if !ok || row == nil {
+							panic("vela: missing direct element inner-row recipe")
+						}
 						rowRef := g.id()
 						updates := []JsStmt{}
 						elementBody := []JsStmt{genConst(rowRef, genCall(genMember(id("document"), "createElement"), strLit(row.Tag))), g.setAttrStmt(rowRef, g.scopeID, "")}
