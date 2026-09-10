@@ -433,6 +433,15 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 			if !ssrKeyedEachDirectConditionalElement(current) {
 				return false
 			}
+		case *ComponentNode:
+			if current == nil || len(current.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(current) {
+				return false
+			}
+			for _, attr := range current.Attrs {
+				if attr == nil || attr.IsEvent {
+					return false
+				}
+			}
 		case *IfChainNode:
 			// A plain direct conditional is owned by the surrounding #key
 			// controller.  It may replace only that key range when its active

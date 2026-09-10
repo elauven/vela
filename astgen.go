@@ -6126,8 +6126,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 								keyFragment, nextKey, nextActive := g.id()+"_fragment", g.id()+"_next", g.id()+"_active"
 								keyExpr := JsExpr(id("undefined"))
 								withNestedBindings(func() { keyExpr = g.templateExpr(chain.KeyAST) })
-								destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(keyVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))), genAssignStmt(genMember(id(keyVar), "listeners"), genArray()), genAssignStmt(genMember(id(keyVar), "updates"), genArray()), genForOf("$$node", genMember(id(keyVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(keyVar), "nodes"), genArray()), genAssignStmt(genMember(id(keyVar), "key"), genNull()), genAssignStmt(genMember(id(keyVar), "active"), numLit(-1)))}
-								controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("key"), Value: genNull()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("destroy"), Value: destroy}}}
+								destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(keyVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))), genAssignStmt(genMember(id(keyVar), "listeners"), genArray()), genForOf("$$component", genCall(genMember(genCall(genMember(genMember(id(keyVar), "components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))), genAssignStmt(genMember(id(keyVar), "components"), genArray()), genAssignStmt(genMember(id(keyVar), "updates"), genArray()), genForOf("$$node", genMember(id(keyVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(keyVar), "nodes"), genArray()), genAssignStmt(genMember(id(keyVar), "key"), genNull()), genAssignStmt(genMember(id(keyVar), "active"), numLit(-1)))}
+								controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("key"), Value: genNull()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("components"), Value: genArray()}, {Key: id("destroy"), Value: destroy}}}
 								keyMountNodes := func(keyNodes []Node) []JsStmt {
 									keyMount := []JsStmt{}
 									for _, keyChild := range keyNodes {
@@ -6175,6 +6175,20 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 											}
 											elementBody = append(elementBody, genExprStmt(genCall(genMember(id(keyFragment), "appendChild"), id(elementRef))))
 											keyMount = append(keyMount, elementBody...)
+										case *ComponentNode:
+											csrFactory := g.hydrationCSRComponents[current.Name]
+											if csrFactory == "" {
+												panic("vela: missing nested keyed await component CSR factory")
+											}
+											props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
+											withNestedBindings(func() { props = g.componentPropsExpr(current.Attrs) })
+											instance, update := g.id(), g.id()+"_update"
+											keyMount = append(keyMount,
+												genConst(instance, genCall(id(csrFactory), id(keyFragment), props, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+												genExprStmt(genCall(genMember(genMember(id(keyVar), "components"), "push"), id(instance))),
+												genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(instance), "set"), props)))}),
+												genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))),
+											)
 										case *EachBlockNode:
 											if !ssrKeyedEachDirectKeyEachRows(current) || !ssrKeyedEachDirectKeyEachElse(current.ElseChildren) {
 												panic("vela: missing direct nested each key lifecycle recipe")
