@@ -513,6 +513,10 @@ func ssrKeyedEachDirectKeySlot(nodes []Node) bool {
 					return false
 				}
 			}
+		case *EachBlockNode:
+			if current == nil || current.HasKey() || !ssrKeyedEachDirectKeySlot(current.Children) || !ssrKeyedEachDirectKeySlot(current.ElseChildren) {
+				return false
+			}
 		default:
 			return false
 		}

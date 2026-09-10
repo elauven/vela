@@ -4766,7 +4766,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedChildRendersStaticSlots(t *testing
 }
 
 func TestSSRHydrationKeyedEachAwaitNestedKeyedChildUpdatesDynamicSlots(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child :title={field.title}><span class="slot-body" :data-title={field.title}>{field.title}:{selected}</span><input class="slot-input" bind:value={selected} @click={() => selected = "clicked"} />{#if selected}<span class="slot-if">Selected {selected}</span>{:else}<span class="slot-if">Empty</span>{/if}</Child>{/key}{/each}{/await}{/each}</main></template>`)
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child :title={field.title}><span class="slot-body" :data-title={field.title}>{field.title}:{selected}</span><input class="slot-input" bind:value={selected} @click={() => selected = "clicked"} />{#if selected}<span class="slot-if">Selected {selected}</span>{:else}<span class="slot-if">Empty</span>{/if}{#each field.tags as tag}<button class="slot-tag" @click={() => selected = tag}>{tag}:{selected}</button>{:else}<p class="slot-empty">Empty tags</p>{/each}</Child>{/key}{/each}{/await}{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4779,7 +4779,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedChildUpdatesDynamicSlots(t *testin
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"slot-body", "slot-input", "slot-if", "data-title", "$$set_selected", ".updates.push", "createTextNode", ".data =", "addEventListener", "removeEventListener"} {
+	for _, want := range []string{"slot-body", "slot-input", "slot-if", "slot-tag", "slot-each", "data-title", "$$set_selected", ".updates.push", "createTextNode", ".data =", "addEventListener", "removeEventListener"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested keyed child dynamic slot lowering misses %q:\n%s", want, code)
 		}
@@ -4788,7 +4788,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedChildUpdatesDynamicSlots(t *testin
 
 func TestSSRHydrationKeyedEachAwaitNestedKeyedChildRejectsUnownedDynamicSlotLifecycle(t *testing.T) {
 	for _, source := range []string{
-		`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]); let selected = $state(false);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child>{#each row.tags as tag}<span>{tag}</span>{/each}</Child>{/key}{/each}{/await}{/each}</main></template>`,
+		`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child>{#each row.tags as tag (tag)}<span>{tag}</span>{/each}</Child>{/key}{/each}{/await}{/each}</main></template>`,
 		`<script>import { Child, Grandchild } from "./Child.vela"; let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child><Grandchild /></Child>{/key}{/each}{/await}{/each}</main></template>`,
 	} {
 		sfc, err := parseSFC(source)
@@ -4821,7 +4821,7 @@ func TestBrowserSSRHydrationNestedKeyedAwaitDirectChildLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
-	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; let rows = $state.deep(window.__rows || []); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child :id={field.id} :title={field.title} bind:value={selected}><span class="slot-body" :data-title={field.title}>{field.title}:{selected}</span><input class="slot-input" bind:value={selected} @click={() => selected = "clicked"} />{#if selected}<span class="slot-if">Selected {selected}</span>{:else}<span class="slot-if">Empty</span>{/if}<svelte:fragment slot="actions"><button class="slot-action">Save</button></svelte:fragment></Child>{/key}{/each}<button class="update" @click={() => rows[0].fields[0].title = "updated"}>Update</button><button class="choose" @click={() => selected = "chosen"}>Choose</button><button class="replace" @click={() => rows[0].fields[0].version++}>Replace</button><button class="remove" @click={() => rows = []}>Remove</button><p class="selected">{selected}</p>{/await}{/each}</main></template>`)
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; let rows = $state.deep(window.__rows || []); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child :id={field.id} :title={field.title} bind:value={selected}><span class="slot-body" :data-title={field.title}>{field.title}:{selected}</span><input class="slot-input" bind:value={selected} @click={() => selected = "clicked"} />{#if selected}<span class="slot-if">Selected {selected}</span>{:else}<span class="slot-if">Empty</span>{/if}{#each field.tags as tag}<button class="slot-tag" @click={() => selected = tag}>{tag}:{selected}</button>{:else}<p class="slot-empty">Empty tags</p>{/each}<svelte:fragment slot="actions"><button class="slot-action">Save</button></svelte:fragment></Child>{/key}{/each}<button class="update" @click={() => rows[0].fields[0].title = "updated"}>Update</button><button class="choose" @click={() => selected = "chosen"}>Choose</button><button class="replace" @click={() => rows[0].fields[0].version++}>Replace</button><button class="remove" @click={() => rows = []}>Remove</button><p class="selected">{selected}</p>{/await}{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4852,7 +4852,7 @@ func TestBrowserSSRHydrationNestedKeyedAwaitDirectChildLifecycle(t *testing.T) {
 	}
 	rowScope := "vela-parent--each-" + itoa(each.Span.Start) + "-a"
 	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-parent:` + itoa(awaitID) + `--><p vela-parent="" class="pending">Loading</p><!--/v:vela-parent:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
-	html := `<!doctype html><body><!--e:vela-parent:0--><main vela-parent=""><!--v:vela-parent:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-parent:` + itoa(eachID) + `--></main><!--/e:vela-parent:0--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{},"state":{},"deep":["rows"],"incomplete":false}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"f",title:"initial",version:0}]}];window.hydrated=hydrateParent(document.body)</script></body>`
+	html := `<!doctype html><body><!--e:vela-parent:0--><main vela-parent=""><!--v:vela-parent:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-parent:` + itoa(eachID) + `--></main><!--/e:vela-parent:0--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{},"state":{},"deep":["rows"],"incomplete":false}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"f",title:"initial",version:0,tags:["one","two"]}]}];window.hydrated=hydrateParent(document.body)</script></body>`
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
