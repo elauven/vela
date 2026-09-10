@@ -486,10 +486,10 @@ func ssrKeyedEachDirectKeyBranch(nodes []Node) bool {
 
 // ssrKeyedEachDirectKeySlot accepts static slot trees and the first dynamic
 // slot recipe used by a nested keyed await child. Dynamic values are limited
-// to text and ordinary element attributes: those DOM references and update
-// callbacks can be owned by the enclosing #key controller. Structural blocks,
-// nested components, DOM events, and bindings need their own slot lifecycle
-// controller and remain outside this slice.
+// to text and ordinary element attributes, events, and native bindings: those
+// DOM references, listeners, and update callbacks can be owned by the
+// enclosing #key controller. Structural blocks and nested components still
+// need their own slot lifecycle controller and remain outside this slice.
 func ssrKeyedEachDirectKeySlot(nodes []Node) bool {
 	if allStatic(nodes) {
 		return true
@@ -518,7 +518,7 @@ func ssrKeyedEachDirectKeySlotElement(element *ElementNode) bool {
 	for _, attr := range element.Attrs {
 		// IsBind is the parser representation for canonical :name={expr}
 		// one-way attributes. Two-way bind:value is tracked separately.
-		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
+		if attr == nil || attr.IsBindThis || ((attr.IsEvent || attr.IsTwoWay) && attr.Expr == nil) {
 			return false
 		}
 	}

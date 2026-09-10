@@ -6067,8 +6067,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						if attr.Name == "checked" {
 							value = genBool(value)
 						}
-						if state, ok := templateExprIdent(block.IterExpr); ok {
-							bindingUpdateDeps[state] = true
+						for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+							bindingUpdateDeps[dependency] = true
 						}
 						return genBlock(genConst(cache, value), genIf(genBinary("!==", genMember(id(ref), spec.readProp), id(cache)), genAssignStmt(genMember(id(ref), spec.readProp), id(cache))))
 					}
@@ -6213,6 +6213,13 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															elementUpdates := []JsStmt{}
 															for _, attr := range slotCurrent.Attrs {
 																switch {
+																case attr.IsTwoWay && attr.Expr != nil:
+																	elementUpdates = append(elementUpdates, innerBindingWrite(slotCurrent.Tag, attr, elementRef))
+																	elementBody = append(elementBody, innerBindingListener(slotCurrent.Tag, attr, elementRef, keyVar)...)
+																case attr.IsEvent && attr.Expr != nil:
+																	var eventStmts []JsStmt
+																	withNestedBindings(func() { eventStmts = eventAttachFor(attr, branch, elementRef, keyVar) })
+																	elementBody = append(elementBody, eventStmts...)
 																case attr.IsClassDir || attr.IsStyleDir:
 																	elementUpdates = append(elementUpdates, innerDirectiveWrite(attr, elementRef))
 																case attr.Expr != nil:
