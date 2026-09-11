@@ -4914,6 +4914,122 @@ func TestSSRHydrationKeyedSlotRowProjectedStructuralCombinationCorpus(t *testing
 	}
 }
 
+func TestBrowserSSRHydrationKeyedSlotRowProjectedStructuralCombinationCorpus(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<template><section class="slot-host"><slot></slot></section></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis := analyzeScriptAST(childSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
+	grandchildSFC, err := parseSFC(`<script>export let label = "";</script><template><button class="grandchild" :data-label={label}><slot></slot></button></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grandchildAnalysis := analyzeScriptAST(grandchildSFC.ScriptAST)
+	grandchildCSR, _ := buildProgramWithDOMAcquirePlan("Grandchild", grandchildSFC, grandchildSFC.TemplateAST.Nodes, grandchildAnalysis, "vela-grandchild", false, DOMAcquireCreate)
+	nestedSFC, err := parseSFC(`<script>export let label = "";</script><template><b class="nested" :data-label={label}>{label}</b></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nestedAnalysis := analyzeScriptAST(nestedSFC.ScriptAST)
+	nestedCSR, _ := buildProgramWithDOMAcquirePlan("Nested", nestedSFC, nestedSFC.TemplateAST.Nodes, nestedAnalysis, "vela-nested", false, DOMAcquireCreate)
+
+	const prefix = `<script>import { Child } from "./Child.vela"; import { Grandchild } from "./Grandchild.vela"; import { Nested } from "./Nested.vela"; let rows = $state.deep(window.__rows || []); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child>{#each field.tags as tag (tag)}<Grandchild :label={tag + ":" + selected}>`
+	const suffix = `</Grandchild>{/each}</Child>{/key}{/each}{/await}{/each}</main></template>`
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "if-key-keyed-each",
+			body: `{#if selected}{#key selected}{#each field.labels as label (label)}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="empty">Empty</span>{/each}{/key}{:else}<span class="off">Off</span>{/if}`,
+		},
+		{
+			name: "key-if-keyed-each",
+			body: `{#key selected}{#if selected}{#each field.labels as label (label)}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="empty">Empty</span>{/each}{:else}<span class="off">Off</span>{/if}{/key}`,
+		},
+		{
+			name: "keyed-each-if-key",
+			body: `{#each field.labels as label (label)}{#if selected}{#key selected}<Nested :label={tag + ":" + label + ":" + selected} />{/key}{:else}<span class="off">Off</span>{/if}{:else}<span class="empty">Empty</span>{/each}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sfc, err := parseSFC(prefix + tc.body + suffix)
+			if err != nil {
+				t.Fatal(err)
+			}
+			analysis := analyzeScriptAST(sfc.ScriptAST)
+			plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+			if err != nil {
+				t.Fatal(err)
+			}
+			client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+			if err != nil {
+				t.Fatal(err)
+			}
+			main := sfc.TemplateAST.Nodes[0].(*ElementNode)
+			each := main.Children[0].(*EachBlockNode)
+			await := each.Children[0].(*AwaitBlockNode)
+			markers := ssrHydrationMarkerIDs(plan.Nodes)
+			eachID, ok := markers.eachID(each.Span)
+			if !ok {
+				t.Fatal("outer keyed each marker is missing")
+			}
+			awaitID, ok := markers.awaitID(await.Span)
+			if !ok {
+				t.Fatal("await marker is missing")
+			}
+			rowScope := "vela-page--each-" + itoa(each.Span.Start) + "-a"
+			rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><p vela-page="" class="pending">Pending</p><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
+			html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-page:` + itoa(eachID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":["rows"],"incomplete":false}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"f",version:0,tags:["one"],labels:["x","y"]}]}];window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length</script></body>`
+			dir := t.TempDir()
+			for name, data := range map[string][]byte{
+				"runtime.js":              embeddedRuntime,
+				"Child.js":                []byte(PrintJS(childCSR, PrintPretty)),
+				"Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)),
+				"Child.hydrate.js":        []byte(PrintJS(childEntry, PrintPretty)),
+				"Grandchild.js":           []byte(PrintJS(grandchildCSR, PrintPretty)),
+				"Nested.js":               []byte(PrintJS(nestedCSR, PrintPretty)),
+				"Page.hydrate_client.js":  []byte(PrintJS(client, PrintPretty)),
+				"Page.hydrate.js":         []byte(PrintJS(entry, PrintPretty)),
+				"index.html":              []byte(html),
+			} {
+				if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("pending adoption mutated DOM");await p.evaluate(()=>window.resolve("done"));await p.waitForFunction(()=>document.querySelector(".off"));await p.evaluate(()=>window.hydrated.component.set({selected:"ready"}));await p.waitForFunction(()=>document.querySelectorAll(".nested").length===2&&Array.from(document.querySelectorAll(".nested")).every(x=>x.dataset.label.endsWith(":ready")));await p.evaluate(()=>{window.retained=document.querySelector(".grandchild");window.hydrated.component.set({rows:[{id:"a",request:window.promise,fields:[{id:"f",version:0,tags:["one"],labels:[]}]}]})});await p.waitForFunction(()=>document.querySelector(".grandchild")===window.retained&&document.querySelector(".empty")&&!document.querySelector(".nested"));await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+			command := exec.Command(node, "-e", browser, dir)
+			command.Dir = "/projects/compiler"
+			output, err := command.CombinedOutput()
+			if err != nil {
+				t.Fatalf("projected structural browser corpus: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+			}
+			if got := strings.TrimSpace(string(output)); got != "OK" {
+				t.Fatalf("projected structural browser corpus output=%q", got)
+			}
+		})
+	}
+}
+
 func TestSSRHydrationKeyedEachAwaitNestedKeyedChildRejectsUnownedDynamicSlotLifecycle(t *testing.T) {
 	for _, source := range []string{
 		`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child>{#each row.tags as tag (tag)}{#await row.request}<span>{tag}</span>{/await}{/each}</Child>{/key}{/each}{/await}{/each}</main></template>`,
