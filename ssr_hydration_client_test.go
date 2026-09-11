@@ -4965,6 +4965,18 @@ func TestBrowserSSRHydrationKeyedSlotRowProjectedStructuralCombinationCorpus(t *
 			name: "keyed-each-if-key",
 			body: `{#each field.labels as label (label)}{#if selected}{#key selected}<Nested :label={tag + ":" + label + ":" + selected} />{/key}{:else}<span class="off">Off</span>{/if}{:else}<span class="empty">Empty</span>{/each}`,
 		},
+		{
+			name: "if-keyed-each-key",
+			body: `{#if selected}{#each field.labels as label (label)}{#key selected}<Nested :label={tag + ":" + label + ":" + selected} />{/key}{:else}<span class="empty">Empty</span>{/each}{:else}<span class="off">Off</span>{/if}`,
+		},
+		{
+			name: "key-keyed-each-if",
+			body: `{#key selected}{#each field.labels as label (label)}{#if selected}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="off">Off</span>{/if}{:else}<span class="empty">Empty</span>{/each}{/key}`,
+		},
+		{
+			name: "keyed-each-key-if",
+			body: `{#each field.labels as label (label)}{#key selected}{#if selected}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="off">Off</span>{/if}{/key}{:else}<span class="empty">Empty</span>{/each}`,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
