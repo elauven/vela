@@ -4786,6 +4786,27 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedChildUpdatesDynamicSlots(t *testin
 	}
 }
 
+func TestSSRHydrationKeyedSlotRowChildOwnsEventsAndBinding(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; import { Grandchild } from "./Grandchild.vela"; let rows = $state.deep([]); let selected = $state(""); let calls = $state(0);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child>{#each field.tags as tag (tag)}<Grandchild :label={tag + ":" + selected} bind:value={selected} @on:close={() => calls++} />{/each}</Child>{/key}{/each}<p>{calls}:{selected}</p>{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("event and $bindable child in a keyed slot row were rejected")
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"$$csr_Grandchild", "$$onChange_value", "$$set_selected", "$$set_calls", "instanceof CustomEvent", "addEventListener", "removeEventListener", "components: []", ".components.push", ".destroy"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("keyed slot row child event/binding lowering misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestSSRHydrationKeyedEachAwaitNestedKeyedChildRejectsUnownedDynamicSlotLifecycle(t *testing.T) {
 	for _, source := range []string{
 		`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child>{#each row.tags as tag (tag)}{#await row.request}<span>{tag}</span>{/await}{/each}</Child>{/key}{/each}{/await}{/each}</main></template>`,
