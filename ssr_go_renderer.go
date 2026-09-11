@@ -817,7 +817,7 @@ func ssrAwaitSnapshotTextBranch(nodes []SSRPlanNode, binding string) bool {
 			}
 		case *SSRPlanElement:
 			for _, attr := range current.Attrs {
-				if attr.Role != SSRAttrStatic && attr.Role != SSRAttrEvent {
+				if attr.Role != SSRAttrStatic {
 					return false
 				}
 			}
