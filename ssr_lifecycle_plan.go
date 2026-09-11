@@ -505,10 +505,17 @@ func ssrKeyedEachDirectKeySlot(nodes []Node) bool {
 				return false
 			}
 		case *ComponentNode:
-			// The first child-row recipe mounts only an ordinary local child. Its
-			// own slot projection is a separate ownership boundary.
-			if current == nil || len(current.Slots) != 0 {
+			// A static projection is safe in the first child-row recipe: it is
+			// created only with the CSR child instance and therefore has the same
+			// lifetime as the row-owned component controller. Dynamic projection
+			// still needs its own update and structural-range ownership.
+			if current == nil {
 				return false
+			}
+			for _, slot := range current.Slots {
+				if !allStatic(slot) {
+					return false
+				}
 			}
 		case *IfChainNode:
 			if current == nil || len(current.Branches) == 0 {

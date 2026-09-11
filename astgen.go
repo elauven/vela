@@ -6485,15 +6485,25 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																genInvoke(eachRender),
 															)
 														case *ComponentNode:
-															if len(slotCurrent.Slots) != 0 {
-																panic("vela: projected slots in a nested keyed slot child need a dedicated lifecycle recipe")
-															}
 															csrFactory := g.hydrationCSRComponents[slotCurrent.Name]
 															if csrFactory == "" {
 																panic("vela: missing nested keyed slot child CSR factory")
 															}
 															props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
 															withNestedBindings(func() { props = g.componentPropsExpr(slotCurrent.Attrs) })
+															slots := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+															for _, slotName := range sortedSlotNames(slotCurrent.Slots) {
+																slotNodes := slotCurrent.Slots[slotName]
+																if !allStatic(slotNodes) {
+																	panic("vela: dynamic projected slots in a nested keyed slot child need a dedicated lifecycle recipe")
+																}
+																slotFragment := g.id() + "_slot"
+																slots.Props = append(slots.Props, &JsProp{baseNode: genNode(), Key: strLit(slotName), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+																	genConst(slotFragment, genCall(genMember(id("document"), "createDocumentFragment"))),
+																	genExprStmt(genCall(id("$$insertHTML"), id(slotFragment), strLit(emitStaticHTML(slotNodes, g.scopeID)))),
+																	genReturn(id(slotFragment)),
+																)}})
+															}
 															for _, attr := range slotCurrent.Attrs {
 																for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
 																	textUpdateDeps[dependency] = true
@@ -6501,7 +6511,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															}
 															instance, update := g.id()+"_slot_component", g.id()+"_slot_component_update"
 															body = append(body,
-																genConst(instance, genCall(id(csrFactory), id(parent), props, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+																genConst(instance, genCall(id(csrFactory), id(parent), props, slots)),
 																genExprStmt(genCall(genMember(genMember(id(owner), "components"), "push"), id(instance))),
 																genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(instance), "set"), props)))}),
 																genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(update))),
