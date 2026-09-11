@@ -45,19 +45,47 @@ func buildSSRGoSkeleton(plan *SSRRenderPlan, packageName string, includeProps bo
 
 	propsName := component + "Props"
 	slotsName := component + "Slots"
+	awaitSnapshotName := component + "AwaitSnapshot"
+	renderOptionsName := component + "RenderOptions"
 	decls := []goast.Decl{goSSRImportDecl()}
 	if includeProps {
 		decls = append(decls, goPropsTypeDecl(propsName, plan.Props))
 	}
 	decls = append(decls,
 		goSlotsTypeDecl(slotsName, plan.SlotNames),
-		goRenderAtFuncDecl(component, propsName, slotsName),
+		goAwaitSnapshotTypeDecl(awaitSnapshotName),
+		goRenderOptionsTypeDecl(renderOptionsName, awaitSnapshotName),
+		goRenderWithOptionsAtFuncDecl(component, propsName, slotsName, renderOptionsName),
+		goRenderAtFuncDecl(component, propsName, slotsName, renderOptionsName),
+		goRenderWithOptionsFuncDecl(component, propsName, slotsName, renderOptionsName, plan.ScopeID),
 		goRenderFuncDecl(component, propsName, slotsName, plan.ScopeID),
 		goComponentRendererAtFuncDecl(component, propsName, slotsName),
 		goComponentRendererFuncDecl(component, propsName, slotsName, plan.ScopeID),
 	)
 	file := &goast.File{Name: goast.NewIdent(packageName), Decls: decls}
 	return file, nil
+}
+
+// goAwaitSnapshotTypeDecl declares the server-owned result of one await
+// boundary. The compiler never evaluates JavaScript promises: an application
+// data loader explicitly chooses pending, then, or catch for a canonical
+// marker ID before invoking the renderer.
+func goAwaitSnapshotTypeDecl(name string) *goast.GenDecl {
+	return &goast.GenDecl{Tok: token.TYPE, Specs: []goast.Spec{&goast.TypeSpec{
+		Name: goast.NewIdent(name),
+		Type: &goast.StructType{Fields: &goast.FieldList{List: []*goast.Field{
+			{Names: []*goast.Ident{goast.NewIdent("State")}, Type: goast.NewIdent("string"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"state\"`"}},
+		}}},
+	}}}
+}
+
+func goRenderOptionsTypeDecl(name, awaitSnapshotName string) *goast.GenDecl {
+	return &goast.GenDecl{Tok: token.TYPE, Specs: []goast.Spec{&goast.TypeSpec{
+		Name: goast.NewIdent(name),
+		Type: &goast.StructType{Fields: &goast.FieldList{List: []*goast.Field{
+			{Names: []*goast.Ident{goast.NewIdent("Await")}, Type: &goast.MapType{Key: goast.NewIdent("int"), Value: goast.NewIdent(awaitSnapshotName)}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"await,omitempty\"`"}},
+		}}},
+	}}}
 }
 
 // BuildSSRGoPropsFile emits the inferred prop contract as its own Go file.
@@ -109,14 +137,15 @@ func goSlotsTypeDecl(name string, slots []string) *goast.GenDecl {
 	return &goast.GenDecl{Tok: token.TYPE, Specs: []goast.Spec{&goast.TypeSpec{Name: goast.NewIdent(name), Type: &goast.StructType{Fields: &goast.FieldList{List: fields}}}}}
 }
 
-func goRenderAtFuncDecl(component, propsName, slotsName string) *goast.FuncDecl {
+func goRenderWithOptionsAtFuncDecl(component, propsName, slotsName, optionsName string) *goast.FuncDecl {
 	return &goast.FuncDecl{
-		Name: goast.NewIdent("Render" + component + "At"),
+		Name: goast.NewIdent("Render" + component + "WithOptionsAt"),
 		Type: &goast.FuncType{
 			Params: &goast.FieldList{List: []*goast.Field{
 				{Names: []*goast.Ident{goast.NewIdent("w")}, Type: goSelector("io", "Writer")},
 				{Names: []*goast.Ident{goast.NewIdent("props")}, Type: goast.NewIdent(propsName)},
 				{Names: []*goast.Ident{goast.NewIdent("slots")}, Type: goast.NewIdent(slotsName)},
+				{Names: []*goast.Ident{goast.NewIdent("options")}, Type: goast.NewIdent(optionsName)},
 				{Names: []*goast.Ident{goast.NewIdent("instanceID")}, Type: goast.NewIdent("string")},
 			}},
 			Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("error")}}},
@@ -124,6 +153,42 @@ func goRenderAtFuncDecl(component, propsName, slotsName string) *goast.FuncDecl 
 		Body: &goast.BlockStmt{List: []goast.Stmt{
 			&goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}},
 		}},
+	}
+}
+
+func goRenderAtFuncDecl(component, propsName, slotsName, optionsName string) *goast.FuncDecl {
+	return &goast.FuncDecl{
+		Name: goast.NewIdent("Render" + component + "At"),
+		Type: &goast.FuncType{Params: &goast.FieldList{List: []*goast.Field{
+			{Names: []*goast.Ident{goast.NewIdent("w")}, Type: goSelector("io", "Writer")},
+			{Names: []*goast.Ident{goast.NewIdent("props")}, Type: goast.NewIdent(propsName)},
+			{Names: []*goast.Ident{goast.NewIdent("slots")}, Type: goast.NewIdent(slotsName)},
+			{Names: []*goast.Ident{goast.NewIdent("instanceID")}, Type: goast.NewIdent("string")},
+		}}, Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("error")}}}},
+		Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{&goast.CallExpr{
+			Fun: goast.NewIdent("Render" + component + "WithOptionsAt"), Args: []goast.Expr{
+				goast.NewIdent("w"), goast.NewIdent("props"), goast.NewIdent("slots"),
+				&goast.CompositeLit{Type: goast.NewIdent(optionsName)}, goast.NewIdent("instanceID"),
+			},
+		}}}}},
+	}
+}
+
+func goRenderWithOptionsFuncDecl(component, propsName, slotsName, optionsName, scopeID string) *goast.FuncDecl {
+	return &goast.FuncDecl{
+		Name: goast.NewIdent("Render" + component + "WithOptions"),
+		Type: &goast.FuncType{Params: &goast.FieldList{List: []*goast.Field{
+			{Names: []*goast.Ident{goast.NewIdent("w")}, Type: goSelector("io", "Writer")},
+			{Names: []*goast.Ident{goast.NewIdent("props")}, Type: goast.NewIdent(propsName)},
+			{Names: []*goast.Ident{goast.NewIdent("slots")}, Type: goast.NewIdent(slotsName)},
+			{Names: []*goast.Ident{goast.NewIdent("options")}, Type: goast.NewIdent(optionsName)},
+		}}, Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("error")}}}},
+		Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{&goast.CallExpr{
+			Fun: goast.NewIdent("Render" + component + "WithOptionsAt"), Args: []goast.Expr{
+				goast.NewIdent("w"), goast.NewIdent("props"), goast.NewIdent("slots"), goast.NewIdent("options"),
+				&goast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", scopeID)},
+			},
+		}}}}},
 	}
 }
 
@@ -414,7 +479,7 @@ func ssrRenderFunc(file *goast.File, component string) (*goast.FuncDecl, error) 
 	if file == nil {
 		return nil, fmt.Errorf("ssr go AST: missing generated file")
 	}
-	name := "Render" + component + "At"
+	name := "Render" + component + "WithOptionsAt"
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*goast.FuncDecl)
 		if ok && function.Name != nil && function.Name.Name == name {

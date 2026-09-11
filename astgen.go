@@ -8207,6 +8207,8 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	valueVar := name + "_value"
 	errorVar := name + "_error"
 	cellVar := name + "_cell"
+	initialVar := name + "_initial"
+	snapshotVar := name + "_snapshot"
 	renderVar := name + "_render"
 	driverVar := name + "_drive"
 
@@ -8241,7 +8243,21 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		genLet(valueVar, id("undefined")),
 		genLet(errorVar, id("undefined")),
 		genLet(cellVar, genNull()),
+		genLet(initialVar, boolLit(true)),
+		genConst(snapshotVar, genLogical("&&", genMember(id("$$props"), "$$velaAwait"), genComputedMember(genMember(id("$$props"), "$$velaAwait"), numLit(markerID)))),
 	)
+	if allStatic(block.ThenChildren) {
+		g.body = append(g.body, genIf(
+			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("then"))},
+			genBlock(genAssignStmt(id(activeVar), numLit(1)), genAssignStmt(id(stateVar), numLit(1))),
+		))
+	}
+	if allStatic(block.CatchChildren) {
+		g.body = append(g.body, genIf(
+			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("catch"))},
+			genBlock(genAssignStmt(id(activeVar), numLit(2)), genAssignStmt(id(stateVar), numLit(2))),
+		))
+	}
 	for _, plan := range plans {
 		if plan.mounted != "" {
 			g.body = append(g.body, genLet(plan.mounted, boolLit(false)))
@@ -8295,10 +8311,14 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		genConst("$$p", genCall(genMember(id("Promise"), "resolve"), g.templateExpr(block.Expr))),
 		genIf(genBinary("===", id(cellVar), id("$$p")), genReturn(nil)),
 		genAssignStmt(id(cellVar), id("$$p")),
-		genAssignStmt(id(stateVar), numLit(0)),
-		genAssignStmt(id(valueVar), id("undefined")),
-		genAssignStmt(id(errorVar), id("undefined")),
-		genInvoke(renderVar),
+		&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: id(initialVar), Then: genBlock(
+			genAssignStmt(id(initialVar), boolLit(false)),
+		), Else: genBlock(
+			genAssignStmt(id(stateVar), numLit(0)),
+			genAssignStmt(id(valueVar), id("undefined")),
+			genAssignStmt(id(errorVar), id("undefined")),
+			genInvoke(renderVar),
+		)},
 		genExprStmt(genCall(genMember(id("$$p"), "then"), settle("$$value", valueVar, 1), settle("$$error", errorVar, 2))),
 	)})
 	g.hydrationInitBody = append(g.hydrationInitBody, genInvoke(driverVar))

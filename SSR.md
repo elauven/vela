@@ -415,6 +415,36 @@ the validation-only entry; no file claims reactive hydration before its
 marker-aware lowering exists.
 Dynamic `#await` branches retain their event and binding teardown as a closure created with the branch itself. This keeps branch-local handler references valid when the promise branch is replaced or the hydrated component is destroyed; detached nodes cannot continue to update disposed state.
 
+### Explicit server await snapshots
+
+The Go renderer does not execute JavaScript promises. A server data loader may,
+however, explicitly declare the branch already known at render time through the
+generated component-specific options API:
+
+```go
+components.RenderPageWithOptionsAt(w, props, slots,
+    components.PageRenderOptions{
+        Await: map[int]components.PageAwaitSnapshot{
+            3: {State: "then"}, // `3` is the compiler-owned await marker ID
+        },
+    },
+    "vela-page-instance",
+)
+```
+
+`State` is exactly `"pending"`, `"then"`, or `"catch"`. The legacy
+`RenderPage` and `RenderPageAt` APIs remain unchanged and always select
+`pending`. A selected snapshot is emitted in the component's inert payload as
+`await`, so hydration can adopt the same initial branch rather than briefly
+rebuild it as pending.
+
+The first executable snapshot slice deliberately accepts only static `then` /
+`catch` content. It covers zero-write adoption, same-branch client settlement,
+branch replacement, and teardown. A selected non-static branch produces an
+explicit Go render error instead of guessing an untyped `value` or `error`.
+Snapshot values, child component lifecycle, and nested structural content need
+their own marker-aware acquisition recipes and remain later work.
+
 A direct local `.vela` child component with ordinary one-way props, `@on:*` component events, `bind:value` to a `$bindable` child prop, a static slot fallback, and parent-projected direct text and recursively nested ordinary element slot content, plus top-level `#if` / `#key` / `#each` blocks within the existing static/direct-text subset are now also part of the executable subset. The parent owns markers for its dynamic projected text and acquires those ranges in deterministic slot-name order; the child leaves projected DOM untouched. The parent client imports the child's generated `.hydrate.js` entry under the same local name, passes the existing parent element to it, and receives the child's live instance. The child entry restores its own server props and serializable state before that hand-off, so the parent does not replay initial props or create a CSR anchor. Later parent reactivity forwards only `.set(...)` updates. This is emitted only when every reachable local child has the same executable hydration capability; otherwise the parent remains validation-only. Nested or unsupported structural slot content, other component bindings, and non-local component imports are intentionally excluded.
 
 The first dynamic structural-child lifecycle slice is also executable: a normal `{#if}` with one direct local child branch using only ordinary one-way props and static sibling branches. Hydration adopts the active server child via its `.hydrate.js` entry without DOM recreation; later prop changes call `.set(...)` on that adopted instance. Switching away destroys the child before removing its marker range (which also removes its inert payload), and switching back mounts a new instance through a distinct ordinary `.js` factory import.

@@ -29,12 +29,12 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	if err != nil {
 		return nil, err
 	}
-	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, scopeExpr: goast.NewIdent("instanceID"), componentInstanceSuffixes: plan.ComponentInstanceSuffixes, componentInstanceIdentities: plan.ComponentInstanceIdentities}
+	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, scopeExpr: goast.NewIdent("instanceID"), awaitOptions: goast.NewIdent("options"), componentInstanceSuffixes: plan.ComponentInstanceSuffixes, componentInstanceIdentities: plan.ComponentInstanceIdentities}
 	body, err := emitter.nodes(plan.Nodes)
 	if err != nil {
 		return nil, err
 	}
-	payload, err := buildSSRHydrationPayload(plan, emitter.scopeExpr)
+	payload, err := buildSSRHydrationPayload(plan, emitter.scopeExpr, emitter.awaitOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	return file, nil
 }
 
-func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID goast.Expr) ([]goast.Stmt, error) {
+func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goast.Expr) ([]goast.Stmt, error) {
 	if plan == nil {
 		return nil, fmt.Errorf("ssr renderer: missing render plan for hydration payload")
 	}
@@ -68,6 +68,7 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID goast.Expr) ([]go
 		{Names: []*goast.Ident{goast.NewIdent("Deep")}, Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"deep,omitempty\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("Incomplete")}, Type: goast.NewIdent("bool"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"incomplete\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("Omitted")}, Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"omitted,omitempty\"`"}},
+		{Names: []*goast.Ident{goast.NewIdent("Await")}, Type: &goast.MapType{Key: goast.NewIdent("int"), Value: goast.NewIdent(plan.ComponentName + "AwaitSnapshot")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"await,omitempty\"`"}},
 	}
 	payloadValue := &goast.CompositeLit{
 		Type: &goast.StructType{Fields: &goast.FieldList{List: typeFields}},
@@ -91,6 +92,9 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID goast.Expr) ([]go
 			deep = append(deep, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(name)})
 		}
 		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("Deep"), Value: &goast.CompositeLit{Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Elts: deep}})
+	}
+	if awaitOptions != nil {
+		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("Await"), Value: &goast.SelectorExpr{X: awaitOptions, Sel: goast.NewIdent("Await")}})
 	}
 	marshal := &goast.CallExpr{Fun: goSelector("json", "Marshal"), Args: []goast.Expr{payloadValue}}
 	encode := &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("ssrPayload"), goast.NewIdent("err")}, Tok: token.DEFINE, Rhs: []goast.Expr{marshal}}
@@ -116,6 +120,7 @@ type ssrGoEmitter struct {
 	scopeExpr                   goast.Expr
 	componentInstanceSuffixes   map[SectionSpan]string
 	componentInstanceIdentities map[SectionSpan]SSRComponentInstanceIdentity
+	awaitOptions                goast.Expr
 	needsEscaping               bool
 	eachNext                    int
 	imports                     map[string]string
@@ -728,11 +733,66 @@ func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
 	if len(node.PendingChildren) == 0 {
 		return nil, ssrExprUnsupported(node.Span.Start, "SSR await requires an explicit pending branch until hydration")
 	}
-	body, err := e.nodes(node.PendingChildren)
+	pending, err := e.nodes(node.PendingChildren)
 	if err != nil {
 		return nil, err
 	}
+	if node.DynamicID < 0 || e.awaitOptions == nil {
+		return e.markedStatements(node.DynamicID, pending), nil
+	}
+
+	thenBody, thenStatic := e.staticAwaitSnapshotBranch(node.ThenChildren)
+	catchBody, catchStatic := e.staticAwaitSnapshotBranch(node.CatchChildren)
+	snapshot := "ssrAwaitSnapshot" + itoa(node.DynamicID)
+	if e.imports == nil {
+		e.imports = map[string]string{}
+	}
+	e.imports["fmt"] = "fmt"
+	state := &goast.SelectorExpr{X: goast.NewIdent(snapshot), Sel: goast.NewIdent("State")}
+	unsupported := func(branch string) goast.Stmt {
+		return &goast.ReturnStmt{Results: []goast.Expr{&goast.CallExpr{Fun: goSelector("fmt", "Errorf"), Args: []goast.Expr{
+			&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("SSR await snapshot " + itoa(node.DynamicID) + " " + branch + " branch requires static template content")},
+		}}}}
+	}
+	thenCase := []goast.Stmt{unsupported("then")}
+	if thenStatic {
+		thenCase = thenBody
+	}
+	catchCase := []goast.Stmt{unsupported("catch")}
+	if catchStatic {
+		catchCase = catchBody
+	}
+	invalid := &goast.ReturnStmt{Results: []goast.Expr{&goast.CallExpr{Fun: goSelector("fmt", "Errorf"), Args: []goast.Expr{
+		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("SSR await snapshot " + itoa(node.DynamicID) + " has an invalid state")},
+	}}}}
+	body := []goast.Stmt{
+		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(snapshot)}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.IndexExpr{X: &goast.SelectorExpr{X: e.awaitOptions, Sel: goast.NewIdent("Await")}, Index: &goast.BasicLit{Kind: token.INT, Value: itoa(node.DynamicID)}}}},
+		&goast.SwitchStmt{Tag: state, Body: &goast.BlockStmt{List: []goast.Stmt{
+			&goast.CaseClause{List: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("")}, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("pending")}}, Body: pending},
+			&goast.CaseClause{List: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("then")}}, Body: thenCase},
+			&goast.CaseClause{List: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("catch")}}, Body: catchCase},
+			&goast.CaseClause{Body: []goast.Stmt{invalid}},
+		}}},
+	}
 	return e.markedStatements(node.DynamicID, body), nil
+}
+
+// staticAwaitSnapshotBranch admits only content that the typed static renderer
+// can prove independent of the unresolved JavaScript value. Dynamic settled
+// values require their own marker-aware acquisition recipe and are not
+// silently rendered from an untyped server snapshot.
+func (e *ssrGoEmitter) staticAwaitSnapshotBranch(nodes []SSRPlanNode) ([]goast.Stmt, bool) {
+	if len(nodes) == 0 {
+		return nil, false
+	}
+	if _, err := renderStaticSSRNodes(nodes); err != nil {
+		return nil, false
+	}
+	body, err := e.nodes(nodes)
+	if err != nil {
+		return nil, false
+	}
+	return body, true
 }
 
 func (e *ssrGoEmitter) markedStatements(id int, body []goast.Stmt) []goast.Stmt {
