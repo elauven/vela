@@ -777,16 +777,17 @@ func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
 	return e.markedStatements(node.DynamicID, body), nil
 }
 
-// awaitSnapshotBranch admits static content plus direct text interpolation of
-// the declared then/catch binding. Its value stays a string because a Go data
-// loader must not smuggle an untyped JavaScript object into a server renderer.
-// Attributes, events, components, and structural descendants are intentionally
-// deferred until their settled-branch hydration ownership exists.
+// awaitSnapshotBranch admits static content plus direct text and one-way
+// attribute interpolation of the declared then/catch binding. Its value stays
+// a string because a Go data loader must not smuggle an untyped JavaScript
+// object into a server renderer. Events, bindings, components, and structural
+// descendants are intentionally deferred until their settled-branch hydration
+// ownership exists.
 func (e *ssrGoEmitter) awaitSnapshotBranch(nodes []SSRPlanNode, binding string, value goast.Expr) ([]goast.Stmt, bool) {
 	if len(nodes) == 0 {
 		return nil, false
 	}
-	if !ssrAwaitSnapshotTextBranch(nodes, binding) {
+	if !ssrAwaitSnapshotLeafBranch(nodes, binding) {
 		return nil, false
 	}
 	previous := e.ctx
@@ -802,7 +803,7 @@ func (e *ssrGoEmitter) awaitSnapshotBranch(nodes []SSRPlanNode, binding string, 
 	return body, true
 }
 
-func ssrAwaitSnapshotTextBranch(nodes []SSRPlanNode, binding string) bool {
+func ssrAwaitSnapshotLeafBranch(nodes []SSRPlanNode, binding string) bool {
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *SSRPlanText:
@@ -817,11 +818,18 @@ func ssrAwaitSnapshotTextBranch(nodes []SSRPlanNode, binding string) bool {
 			}
 		case *SSRPlanElement:
 			for _, attr := range current.Attrs {
-				if attr.Role != SSRAttrStatic {
+				if attr.Role == SSRAttrStatic {
+					continue
+				}
+				if attr.Role != SSRAttrDynamic {
+					return false
+				}
+				name, ok := templateExprIdent(attr.Expr)
+				if !ok || name != binding {
 					return false
 				}
 			}
-			if !ssrAwaitSnapshotTextBranch(current.Children, binding) {
+			if !ssrAwaitSnapshotLeafBranch(current.Children, binding) {
 				return false
 			}
 		default:

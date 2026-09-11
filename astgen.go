@@ -8219,10 +8219,10 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		g.buildHydrationAwaitBranch(block.CatchChildren, block.ErrorName, errorVar, name+"_b2_frag", name+"_b2_mounted"),
 	}
 	if !allStatic(block.ThenChildren) {
-		plans[1].snapshot = g.buildHydrationAwaitSnapshotTextBranch(block.ThenChildren, block.ValueName, valueVar)
+		plans[1].snapshot = g.buildHydrationAwaitSnapshotLeafBranch(block.ThenChildren, block.ValueName, valueVar)
 	}
 	if !allStatic(block.CatchChildren) {
-		plans[2].snapshot = g.buildHydrationAwaitSnapshotTextBranch(block.CatchChildren, block.ErrorName, errorVar)
+		plans[2].snapshot = g.buildHydrationAwaitSnapshotLeafBranch(block.CatchChildren, block.ErrorName, errorVar)
 	}
 	// The initial pending branch is already present in server DOM. For the
 	// narrow nested-if slice, build its marker-aware adoption lifecycle into
@@ -8592,14 +8592,14 @@ type hydrationAwaitBranchPlan struct {
 	cleanup    []JsStmt
 	cleanupVar string
 	mounted    string
-	snapshot   hydrationAwaitSnapshotTextPlan
+	snapshot   hydrationAwaitSnapshotLeafPlan
 }
 
-// hydrationAwaitSnapshotTextPlan owns text ranges already emitted by an
-// independently server-rendered then/catch branch. Ranges are declared in the
-// component scope, acquired only for the payload-selected branch, and cleared
-// when that branch is replaced.
-type hydrationAwaitSnapshotTextPlan struct {
+// hydrationAwaitSnapshotLeafPlan owns dynamic text ranges and one-way
+// attributes already emitted by an independently server-rendered then/catch
+// branch. Handles are acquired only for the payload-selected branch and are
+// cleared when that branch is replaced.
+type hydrationAwaitSnapshotLeafPlan struct {
 	decls     []JsStmt
 	adopt     []JsStmt
 	refresh   []JsStmt
@@ -8607,11 +8607,11 @@ type hydrationAwaitSnapshotTextPlan struct {
 	supported bool
 }
 
-func (g *ASTGen) buildHydrationAwaitSnapshotTextBranch(children []Node, bindingName, bindingValue string) hydrationAwaitSnapshotTextPlan {
-	if bindingName == "" || !hydrationAwaitSnapshotTextNodes(children, bindingName) {
-		return hydrationAwaitSnapshotTextPlan{}
+func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingName, bindingValue string) hydrationAwaitSnapshotLeafPlan {
+	if bindingName == "" || !hydrationAwaitSnapshotLeafNodes(children, bindingName) {
+		return hydrationAwaitSnapshotLeafPlan{}
 	}
-	plan := hydrationAwaitSnapshotTextPlan{supported: true}
+	plan := hydrationAwaitSnapshotLeafPlan{supported: true}
 	g.withTemplateBinding(bindingName, bindingValue, func() {
 		var visit func([]Node)
 		visit = func(nodes []Node) {
@@ -8632,6 +8632,29 @@ func (g *ASTGen) buildHydrationAwaitSnapshotTextBranch(children []Node, bindingN
 						plan.cleanup = append(plan.cleanup, genAssignStmt(id(rangeVar), genNull()))
 					}
 				case *ElementNode:
+					markerID, ok := g.hydrationMarkers.Elements[current.Span]
+					if !ok {
+						panic("vela: missing SSR element marker for await snapshot attribute")
+					}
+					elementVar := "$$hawait" + itoa(markerID) + "_snapshot_element"
+					adoptedElement := false
+					for attrIndex, attr := range current.Attrs {
+						if attr == nil || !attr.IsBind || attr.Expr == nil {
+							continue
+						}
+						if !adoptedElement {
+							plan.adopt = append(plan.adopt, g.createHydrationTemplateElementStmt(elementVar, current))
+							adoptedElement = true
+						}
+						refreshVar := elementVar + "_" + itoa(attrIndex) + "_refresh"
+						plan.decls = append(plan.decls, genLet(refreshVar, genNull()))
+						plan.adopt = append(plan.adopt, genAssignStmt(id(refreshVar), &JsArrowFunc{
+							baseExpr: baseExpr{genNode()},
+							Body:     genBlock(g.hydrationAwaitSnapshotAttrWriteStmt(elementVar, attr, refreshVar)),
+						}))
+						plan.refresh = append(plan.refresh, genIf(id(refreshVar), genExprStmt(genCall(id(refreshVar)))))
+						plan.cleanup = append(plan.cleanup, genAssignStmt(id(refreshVar), genNull()))
+					}
 					visit(current.Children)
 				}
 			}
@@ -8641,7 +8664,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotTextBranch(children []Node, bindingN
 	return plan
 }
 
-func hydrationAwaitSnapshotTextNodes(nodes []Node, bindingName string) bool {
+func hydrationAwaitSnapshotLeafNodes(nodes []Node, bindingName string) bool {
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
@@ -8656,11 +8679,21 @@ func hydrationAwaitSnapshotTextNodes(nodes []Node, bindingName string) bool {
 			}
 		case *ElementNode:
 			for _, attr := range current.Attrs {
-				if attr == nil || attr.IsEvent || attr.IsBind || attr.IsClassDir || attr.IsStyleDir || attr.IsBindThis || attr.Expr != nil {
+				if attr == nil {
+					continue
+				}
+				if attr.IsBind {
+					name, ok := templateExprIdent(attr.Expr)
+					if ok && name == bindingName {
+						continue
+					}
+					return false
+				}
+				if attr.IsEvent || attr.IsClassDir || attr.IsStyleDir || attr.IsBindThis || attr.IsTwoWay || attr.Expr != nil {
 					return false
 				}
 			}
-			if !hydrationAwaitSnapshotTextNodes(current.Children, bindingName) {
+			if !hydrationAwaitSnapshotLeafNodes(current.Children, bindingName) {
 				return false
 			}
 		default:
@@ -8668,6 +8701,30 @@ func hydrationAwaitSnapshotTextNodes(nodes []Node, bindingName string) bool {
 		}
 	}
 	return true
+}
+
+// hydrationAwaitSnapshotAttrWriteStmt keeps a settled snapshot's ordinary
+// one-way attribute aligned with the eventual client promise. The guarded
+// write preserves the no-mutation adoption contract when the client resolves
+// to exactly the server snapshot value.
+func (g *ASTGen) hydrationAwaitSnapshotAttrWriteStmt(elementVar string, attr *Attr, suffix string) JsStmt {
+	valueVar := suffix + "_value"
+	if isBoolAttr(attr.Name) {
+		return genBlock(
+			genConst(valueVar, genBool(g.templateExpr(attr.Expr))),
+			genIf(genBinary("!==", genMember(id(elementVar), attr.Name), id(valueVar)), genAssignStmt(genMember(id(elementVar), attr.Name), id(valueVar))),
+		)
+	}
+	if attr.Name == "class" {
+		return genBlock(
+			genConst(valueVar, genString(g.templateExpr(attr.Expr))),
+			genIf(genBinary("!==", genMember(id(elementVar), "className"), id(valueVar)), genAssignStmt(genMember(id(elementVar), "className"), id(valueVar))),
+		)
+	}
+	return genBlock(
+		genConst(valueVar, genString(g.templateExpr(attr.Expr))),
+		genIf(genBinary("!==", genCall(genMember(id(elementVar), "getAttribute"), strLit(attr.Name)), id(valueVar)), genExprStmt(genCall(genMember(id(elementVar), "setAttribute"), strLit(attr.Name), id(valueVar)))),
+	)
 }
 
 // buildHydrationAwaitBranch creates a branch that did not exist in SSR DOM.
