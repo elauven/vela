@@ -741,9 +741,9 @@ func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
 		return e.markedStatements(node.DynamicID, pending), nil
 	}
 
-	thenBody, thenStatic := e.staticAwaitSnapshotBranch(node.ThenChildren)
-	catchBody, catchStatic := e.staticAwaitSnapshotBranch(node.CatchChildren)
 	snapshot := "ssrAwaitSnapshot" + itoa(node.DynamicID)
+	thenBody, thenStatic := e.awaitSnapshotBranch(node.ThenChildren, node.ValueName, &goast.SelectorExpr{X: goast.NewIdent(snapshot), Sel: goast.NewIdent("Value")})
+	catchBody, catchStatic := e.awaitSnapshotBranch(node.CatchChildren, node.ErrorName, &goast.SelectorExpr{X: goast.NewIdent(snapshot), Sel: goast.NewIdent("Error")})
 	if e.imports == nil {
 		e.imports = map[string]string{}
 	}
@@ -777,22 +777,58 @@ func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
 	return e.markedStatements(node.DynamicID, body), nil
 }
 
-// staticAwaitSnapshotBranch admits only content that the typed static renderer
-// can prove independent of the unresolved JavaScript value. Dynamic settled
-// values require their own marker-aware acquisition recipe and are not
-// silently rendered from an untyped server snapshot.
-func (e *ssrGoEmitter) staticAwaitSnapshotBranch(nodes []SSRPlanNode) ([]goast.Stmt, bool) {
+// awaitSnapshotBranch admits static content plus direct text interpolation of
+// the declared then/catch binding. Its value stays a string because a Go data
+// loader must not smuggle an untyped JavaScript object into a server renderer.
+// Attributes, events, components, and structural descendants are intentionally
+// deferred until their settled-branch hydration ownership exists.
+func (e *ssrGoEmitter) awaitSnapshotBranch(nodes []SSRPlanNode, binding string, value goast.Expr) ([]goast.Stmt, bool) {
 	if len(nodes) == 0 {
 		return nil, false
 	}
-	if _, err := renderStaticSSRNodes(nodes); err != nil {
+	if !ssrAwaitSnapshotTextBranch(nodes, binding) {
 		return nil, false
 	}
+	previous := e.ctx
+	e.ctx = ssrContextWithBindings(e.ctx)
+	if binding != "" {
+		e.ctx.Bindings[binding] = value
+	}
 	body, err := e.nodes(nodes)
+	e.ctx = previous
 	if err != nil {
 		return nil, false
 	}
 	return body, true
+}
+
+func ssrAwaitSnapshotTextBranch(nodes []SSRPlanNode, binding string) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *SSRPlanText:
+			for _, part := range current.Parts {
+				if part.Static {
+					continue
+				}
+				name, ok := templateExprIdent(part.Expr)
+				if !ok || name != binding {
+					return false
+				}
+			}
+		case *SSRPlanElement:
+			for _, attr := range current.Attrs {
+				if attr.Role != SSRAttrStatic && attr.Role != SSRAttrEvent {
+					return false
+				}
+			}
+			if !ssrAwaitSnapshotTextBranch(current.Children, binding) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (e *ssrGoEmitter) markedStatements(id int, body []goast.Stmt) []goast.Stmt {

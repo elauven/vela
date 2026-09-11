@@ -5036,6 +5036,7 @@ func (g *ASTGen) buildHydrationRootIfNestedStructuralChain(chain *IfChainNode, s
 	cleanup := []JsStmt{}
 	for _, plan := range plans {
 		cleanup = append(cleanup, plan.cleanup...)
+		cleanup = append(cleanup, plan.snapshot.cleanup...)
 	}
 	cleanup = append(cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
 	g.cleanup = append(g.cleanup, cleanup...)
@@ -8217,6 +8218,12 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		g.buildHydrationAwaitBranch(block.ThenChildren, block.ValueName, valueVar, name+"_b1_frag", name+"_b1_mounted"),
 		g.buildHydrationAwaitBranch(block.CatchChildren, block.ErrorName, errorVar, name+"_b2_frag", name+"_b2_mounted"),
 	}
+	if !allStatic(block.ThenChildren) {
+		plans[1].snapshot = g.buildHydrationAwaitSnapshotTextBranch(block.ThenChildren, block.ValueName, valueVar)
+	}
+	if !allStatic(block.CatchChildren) {
+		plans[2].snapshot = g.buildHydrationAwaitSnapshotTextBranch(block.CatchChildren, block.ErrorName, errorVar)
+	}
 	// The initial pending branch is already present in server DOM. For the
 	// narrow nested-if slice, build its marker-aware adoption lifecycle into
 	// a temporary scope, then give its destroy handles to the outer await
@@ -8246,16 +8253,16 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		genLet(initialVar, boolLit(true)),
 		genConst(snapshotVar, genLogical("&&", genMember(id("$$props"), "$$velaAwait"), genComputedMember(genMember(id("$$props"), "$$velaAwait"), numLit(markerID)))),
 	)
-	if allStatic(block.ThenChildren) {
+	if allStatic(block.ThenChildren) || plans[1].snapshot.supported {
 		g.body = append(g.body, genIf(
 			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("then"))},
-			genBlock(genAssignStmt(id(activeVar), numLit(1)), genAssignStmt(id(stateVar), numLit(1))),
+			genBlock(genAssignStmt(id(activeVar), numLit(1)), genAssignStmt(id(stateVar), numLit(1)), genAssignStmt(id(valueVar), genMember(id(snapshotVar), "value"))),
 		))
 	}
-	if allStatic(block.CatchChildren) {
+	if allStatic(block.CatchChildren) || plans[2].snapshot.supported {
 		g.body = append(g.body, genIf(
 			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("catch"))},
-			genBlock(genAssignStmt(id(activeVar), numLit(2)), genAssignStmt(id(stateVar), numLit(2))),
+			genBlock(genAssignStmt(id(activeVar), numLit(2)), genAssignStmt(id(stateVar), numLit(2)), genAssignStmt(id(errorVar), genMember(id(snapshotVar), "error"))),
 		))
 	}
 	for _, plan := range plans {
@@ -8265,11 +8272,30 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		if plan.cleanupVar != "" {
 			g.body = append(g.body, genLet(plan.cleanupVar, genNull()))
 		}
+		g.body = append(g.body, plan.snapshot.decls...)
+	}
+	for state, plan := range plans {
+		if !plan.snapshot.supported || len(plan.snapshot.adopt) == 0 {
+			continue
+		}
+		stateName := "then"
+		if state == 2 {
+			stateName = "catch"
+		}
+		g.hydrationInitBody = append(g.hydrationInitBody, genIf(
+			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit(stateName))},
+			genBlock(plan.snapshot.adopt...),
+		))
 	}
 
-	renderBody := []JsStmt{
-		genIf(genBinary("===", id(stateVar), id(activeVar)), genReturn(nil)),
+	sameState := []JsStmt{}
+	for state, plan := range plans {
+		if len(plan.snapshot.refresh) > 0 {
+			sameState = append(sameState, genIf(genBinary("===", id(activeVar), numLit(state)), genBlock(plan.snapshot.refresh...)))
+		}
 	}
+	sameState = append(sameState, genReturn(nil))
+	renderBody := []JsStmt{genIf(genBinary("===", id(stateVar), id(activeVar)), genBlock(sameState...))}
 	for state, plan := range plans {
 		if len(plan.cleanup) == 0 {
 			continue
@@ -8566,6 +8592,82 @@ type hydrationAwaitBranchPlan struct {
 	cleanup    []JsStmt
 	cleanupVar string
 	mounted    string
+	snapshot   hydrationAwaitSnapshotTextPlan
+}
+
+// hydrationAwaitSnapshotTextPlan owns text ranges already emitted by an
+// independently server-rendered then/catch branch. Ranges are declared in the
+// component scope, acquired only for the payload-selected branch, and cleared
+// when that branch is replaced.
+type hydrationAwaitSnapshotTextPlan struct {
+	decls     []JsStmt
+	adopt     []JsStmt
+	refresh   []JsStmt
+	cleanup   []JsStmt
+	supported bool
+}
+
+func (g *ASTGen) buildHydrationAwaitSnapshotTextBranch(children []Node, bindingName, bindingValue string) hydrationAwaitSnapshotTextPlan {
+	if bindingName == "" || !hydrationAwaitSnapshotTextNodes(children, bindingName) {
+		return hydrationAwaitSnapshotTextPlan{}
+	}
+	plan := hydrationAwaitSnapshotTextPlan{supported: true}
+	g.withTemplateBinding(bindingName, bindingValue, func() {
+		var visit func([]Node)
+		visit = func(nodes []Node) {
+			for _, node := range nodes {
+				switch current := node.(type) {
+				case *TextNode:
+					for _, part := range current.Parts {
+						if part == nil || part.Static {
+							continue
+						}
+						markerID := g.hydrationTextMarkerID(part)
+						rangeVar := "$$hawait" + itoa(markerID) + "_snapshot_range"
+						g.domAcquirePlan.addTextRange(rangeVar, markerID)
+						plan.decls = append(plan.decls, genLet(rangeVar, genNull()))
+						plan.adopt = append(plan.adopt, genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))))
+						write := genExprStmt(genCall(id("$$writeHydrationText"), id(rangeVar), genString(g.templateExpr(part.Expr))))
+						plan.refresh = append(plan.refresh, genIf(id(rangeVar), write))
+						plan.cleanup = append(plan.cleanup, genAssignStmt(id(rangeVar), genNull()))
+					}
+				case *ElementNode:
+					visit(current.Children)
+				}
+			}
+		}
+		visit(children)
+	})
+	return plan
+}
+
+func hydrationAwaitSnapshotTextNodes(nodes []Node, bindingName string) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			for _, part := range current.Parts {
+				if part == nil || part.Static {
+					continue
+				}
+				name, ok := templateExprIdent(part.Expr)
+				if !ok || name != bindingName {
+					return false
+				}
+			}
+		case *ElementNode:
+			for _, attr := range current.Attrs {
+				if attr == nil || attr.IsEvent || attr.IsBind || attr.IsClassDir || attr.IsStyleDir || attr.IsBindThis || attr.Expr != nil {
+					return false
+				}
+			}
+			if !hydrationAwaitSnapshotTextNodes(current.Children, bindingName) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // buildHydrationAwaitBranch creates a branch that did not exist in SSR DOM.

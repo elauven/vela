@@ -404,7 +404,7 @@ func TestBuildSSRGoFileRendersKeyAndAwaitPending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), "key body") || !strings.Contains(string(src), "loading") || strings.Contains(string(src), "value") {
+	if !strings.Contains(string(src), "key body") || !strings.Contains(string(src), "loading") || !strings.Contains(string(src), `case "then":`) || !strings.Contains(string(src), `ssrAwaitSnapshot1.Value`) {
 		t.Fatalf("unexpected static key or await output:\n%s", src)
 	}
 	if err := ValidateGeneratedSSRGo("page.go", src); err != nil {

@@ -75,6 +75,8 @@ func goAwaitSnapshotTypeDecl(name string) *goast.GenDecl {
 		Name: goast.NewIdent(name),
 		Type: &goast.StructType{Fields: &goast.FieldList{List: []*goast.Field{
 			{Names: []*goast.Ident{goast.NewIdent("State")}, Type: goast.NewIdent("string"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"state\"`"}},
+			{Names: []*goast.Ident{goast.NewIdent("Value")}, Type: goast.NewIdent("string"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"value,omitempty\"`"}},
+			{Names: []*goast.Ident{goast.NewIdent("Error")}, Type: goast.NewIdent("string"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"error,omitempty\"`"}},
 		}}},
 	}}}
 }
