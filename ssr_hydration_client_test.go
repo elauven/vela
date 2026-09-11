@@ -4870,6 +4870,50 @@ func TestSSRHydrationKeyedSlotRowChildAdmitsStructuralProjection(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationKeyedSlotRowProjectedStructuralCombinationCorpus(t *testing.T) {
+	const prefix = `<script>import { Child } from "./Child.vela"; import { Grandchild } from "./Grandchild.vela"; import { Nested } from "./Nested.vela"; let rows = $state.deep([]); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child>{#each field.tags as tag (tag)}<Grandchild>`
+	const suffix = `</Grandchild>{/each}</Child>{/key}{/each}{/await}{/each}</main></template>`
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "if-key-keyed-each-child",
+			body: `{#if selected}{#key selected}{#each field.labels as label (label)}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="empty">Empty</span>{/each}{/key}{:else}<span class="off">Off</span>{/if}`,
+		},
+		{
+			name: "key-if-keyed-each-child",
+			body: `{#key selected}{#if selected}{#each field.labels as label (label)}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="empty">Empty</span>{/each}{:else}<span class="off">Off</span>{/if}{/key}`,
+		},
+		{
+			name: "keyed-each-if-key-child",
+			body: `{#each field.labels as label (label)}{#if selected}{#key selected}<Nested :label={tag + ":" + label + ":" + selected} />{/key}{:else}<button class="off" @click={() => selected = label}>{label}</button>{/if}{:else}<span class="empty">Empty</span>{/each}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sfc, err := parseSFC(prefix + tc.body + suffix)
+			if err != nil {
+				t.Fatal(err)
+			}
+			analysis := analyzeScriptAST(sfc.ScriptAST)
+			if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+				t.Fatalf("combination was rejected:\n%s", tc.body)
+			}
+			program, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+			if err != nil {
+				t.Fatal(err)
+			}
+			code := PrintJS(program, PrintPretty)
+			for _, want := range []string{"$$csr_Nested", "slot-if", "slot-key", "slot-each", "$$reconcileHydrationKeyedRowRanges", "components: []", "listeners: []", ".destroy"} {
+				if !strings.Contains(code, want) {
+					t.Fatalf("combination lowering misses %q:\n%s", want, code)
+				}
+			}
+		})
+	}
+}
+
 func TestSSRHydrationKeyedEachAwaitNestedKeyedChildRejectsUnownedDynamicSlotLifecycle(t *testing.T) {
 	for _, source := range []string{
 		`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child>{#each row.tags as tag (tag)}{#await row.request}<span>{tag}</span>{/await}{/each}</Child>{/key}{/each}{/await}{/each}</main></template>`,
