@@ -8297,6 +8297,12 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	sameState = append(sameState, genReturn(nil))
 	renderBody := []JsStmt{genIf(genBinary("===", id(stateVar), id(activeVar)), genBlock(sameState...))}
 	for state, plan := range plans {
+		if len(plan.snapshot.cleanup) > 0 {
+			renderBody = append(renderBody, genIf(
+				genBinary("===", id(activeVar), numLit(state)),
+				genBlock(plan.snapshot.cleanup...),
+			))
+		}
 		if len(plan.cleanup) == 0 {
 			continue
 		}
@@ -8353,6 +8359,7 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	}
 	cleanup := []JsStmt{}
 	for _, plan := range plans {
+		cleanup = append(cleanup, plan.snapshot.cleanup...)
 		cleanup = append(cleanup, plan.cleanup...)
 	}
 	cleanup = append(cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
@@ -8609,7 +8616,7 @@ type hydrationAwaitSnapshotLeafPlan struct {
 }
 
 func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingName, bindingValue string) hydrationAwaitSnapshotLeafPlan {
-	if bindingName == "" || !hydrationAwaitSnapshotLeafNodes(children, bindingName) {
+	if bindingName == "" || !g.hydrationAwaitSnapshotLeafNodes(children, bindingName) {
 		return hydrationAwaitSnapshotLeafPlan{}
 	}
 	plan := hydrationAwaitSnapshotLeafPlan{supported: true}
@@ -8640,7 +8647,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingN
 					elementVar := "$$hawait" + itoa(markerID) + "_snapshot_element"
 					adoptedElement := false
 					for attrIndex, attr := range current.Attrs {
-						if attr == nil || attr.Expr == nil || (!attr.IsBind && !attr.IsEvent) {
+						if attr == nil || attr.Expr == nil || (!attr.IsBind && !attr.IsEvent && !attr.IsTwoWay) {
 							continue
 						}
 						if !adoptedElement {
@@ -8649,6 +8656,10 @@ func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingN
 						}
 						if attr.IsEvent {
 							g.buildHydrationAwaitSnapshotEvent(&plan, elementVar, attr, attrIndex)
+							continue
+						}
+						if attr.IsTwoWay {
+							g.buildHydrationAwaitSnapshotBinding(&plan, elementVar, current.Tag, attr, attrIndex)
 							continue
 						}
 						refreshVar := elementVar + "_" + itoa(attrIndex) + "_refresh"
@@ -8670,7 +8681,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingN
 	return plan
 }
 
-func hydrationAwaitSnapshotLeafNodes(nodes []Node, bindingName string) bool {
+func (g *ASTGen) hydrationAwaitSnapshotLeafNodes(nodes []Node, bindingName string) bool {
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
@@ -8691,6 +8702,16 @@ func hydrationAwaitSnapshotLeafNodes(nodes []Node, bindingName string) bool {
 				if attr.IsEvent {
 					continue
 				}
+				if attr.IsTwoWay {
+					target, ok := templateExprIdent(attr.Expr)
+					if !ok || target == bindingName || !g.hasReactiveSetter(target) {
+						return false
+					}
+					if _, ok := twoWayBindSpec(current.Tag, attr.Name); !ok {
+						return false
+					}
+					continue
+				}
 				if attr.IsBind {
 					name, ok := templateExprIdent(attr.Expr)
 					if ok && name == bindingName {
@@ -8698,11 +8719,11 @@ func hydrationAwaitSnapshotLeafNodes(nodes []Node, bindingName string) bool {
 					}
 					return false
 				}
-				if attr.IsEvent || attr.IsClassDir || attr.IsStyleDir || attr.IsBindThis || attr.IsTwoWay || attr.Expr != nil {
+				if attr.IsEvent || attr.IsClassDir || attr.IsStyleDir || attr.IsBindThis || attr.Expr != nil {
 					return false
 				}
 			}
-			if !hydrationAwaitSnapshotLeafNodes(current.Children, bindingName) {
+			if !g.hydrationAwaitSnapshotLeafNodes(current.Children, bindingName) {
 				return false
 			}
 		default:
@@ -8710,6 +8731,73 @@ func hydrationAwaitSnapshotLeafNodes(nodes []Node, bindingName string) bool {
 		}
 	}
 	return true
+}
+
+func (g *ASTGen) hasReactiveSetter(name string) bool {
+	if name == "" || g.analysis == nil {
+		return false
+	}
+	if g.analysis.stateSet()[name] {
+		return true
+	}
+	for _, prop := range g.analysis.Props {
+		if prop != nil && prop.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// buildHydrationAwaitSnapshotBinding adopts browser-owned form state before
+// installing the normal state-to-DOM writer. The writer is branch-owned, so a
+// later prop/state update cannot touch a detached settled range.
+func (g *ASTGen) buildHydrationAwaitSnapshotBinding(plan *hydrationAwaitSnapshotLeafPlan, elementVar, tag string, attr *Attr, attrIndex int) {
+	if plan == nil || attr == nil || attr.Expr == nil {
+		return
+	}
+	spec, ok := twoWayBindSpec(tag, attr.Name)
+	target, isIdent := templateExprIdent(attr.Expr)
+	if !ok || !isIdent || !g.hasReactiveSetter(target) {
+		return
+	}
+	prefix := elementVar + "_" + itoa(attrIndex) + "_bind"
+	writeVar := prefix + "_write"
+	cleanupVar := prefix + "_cleanup"
+	handler := prefix + "_handler"
+	plan.decls = append(plan.decls, genLet(writeVar, genNull()), genLet(cleanupVar, genNull()))
+	plan.adopt = append(plan.adopt,
+		genAssignStmt(id(writeVar), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			g.hydrationAwaitSnapshotBindingWriteStmt(elementVar, attr, writeVar),
+		)}),
+		genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genCall(id("$$set_"+target), genMember(genMember(id("$event"), "target"), spec.readProp))}),
+		genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(spec.event), id(handler))),
+		genAssignStmt(id(cleanupVar), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(spec.event), id(handler))),
+			genAssignStmt(id(writeVar), genNull()),
+		)}),
+		// Preserve input typed after SSR paint. If it differs from the snapshot,
+		// the regular setter drives every other dependent DOM site; the guarded
+		// writer sees that this control already owns the same live value.
+		genInvoke("$$set_"+target, genMember(id(elementVar), spec.readProp)),
+	)
+	plan.listenerCleanup = append([]JsStmt{genIf(id(cleanupVar), genBlock(
+		genExprStmt(genCall(id(cleanupVar))),
+		genAssignStmt(id(cleanupVar), genNull()),
+	))}, plan.listenerCleanup...)
+	g.addUpdate(target, genIf(id(writeVar), genExprStmt(genCall(id(writeVar)))))
+}
+
+func (g *ASTGen) hydrationAwaitSnapshotBindingWriteStmt(elementVar string, attr *Attr, suffix string) JsStmt {
+	valueVar := suffix + "_value"
+	value := g.templateExpr(attr.Expr)
+	if attr.Name == "checked" {
+		value = genBool(value)
+	}
+	target := genMember(id(elementVar), attr.Name)
+	return genBlock(
+		genConst(valueVar, value),
+		genIf(genBinary("!==", target, id(valueVar)), genAssignStmt(target, id(valueVar))),
+	)
 }
 
 // buildHydrationAwaitSnapshotEvent attaches one DOM listener to a settled

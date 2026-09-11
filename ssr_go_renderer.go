@@ -781,9 +781,10 @@ func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
 // attribute interpolation of the declared then/catch binding. Its value stays
 // a string because a Go data loader must not smuggle an untyped JavaScript
 // object into a server renderer. Ordinary DOM events are emitted as inert
-// server markup and attached by the branch-owned hydrator. Bindings,
-// components, and structural descendants are intentionally deferred until
-// their settled-branch hydration ownership exists.
+// server markup and attached by the branch-owned hydrator. Native value and
+// checked bindings use the same branch-owned lifecycle. Components and
+// structural descendants are intentionally deferred until their settled-branch
+// hydration ownership exists.
 func (e *ssrGoEmitter) awaitSnapshotBranch(nodes []SSRPlanNode, binding string, value goast.Expr) ([]goast.Stmt, bool) {
 	if len(nodes) == 0 {
 		return nil, false
@@ -824,6 +825,12 @@ func ssrAwaitSnapshotLeafBranch(nodes []SSRPlanNode, binding string) bool {
 				}
 				if attr.Role == SSRAttrEvent {
 					continue
+				}
+				if attr.Role == SSRAttrTwoWay {
+					if attr.Name == "value" || attr.Name == "checked" {
+						continue
+					}
+					return false
 				}
 				if attr.Role != SSRAttrDynamic {
 					return false
