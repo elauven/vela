@@ -440,14 +440,16 @@ rebuild it as pending.
 
 The executable snapshot slice accepts static content plus direct leaf reads of
 the declared branch name inside a static element tree: `{value}` / `{error}`
-text and ordinary one-way attributes such as `:title={value}`. `Value` and
-`Error` are explicit strings on `ComponentAwaitSnapshot`, escaped by the Go
-renderer and retained in their canonical marker range by hydration. Initial
-adoption performs no DOM write; same-branch settlement updates only the owned
-text ranges and changed attributes, retaining the settled element. The dynamic
-attribute expression must be the branch binding itself — composed expressions,
-directives, DOM events/bindings, child lifecycle, and nested structural content
-still require their own marker-aware recipes and remain later work.
+text and ordinary one-way attributes such as `:title={value}`. It also accepts
+ordinary DOM events. `Value` and `Error` are explicit strings on
+`ComponentAwaitSnapshot`, escaped by the Go renderer and retained in their
+canonical marker range by hydration. Initial adoption performs no DOM write;
+it attaches each event listener to its acquired element marker and gives the
+settled range a reverse-order listener cleanup. Same-branch settlement updates
+only owned text ranges and changed attributes, retaining the settled element.
+The dynamic attribute expression must be the branch binding itself — composed
+expressions, directives, DOM bindings, child lifecycle, and nested structural
+content still require their own marker-aware recipes and remain later work.
 
 A direct local `.vela` child component with ordinary one-way props, `@on:*` component events, `bind:value` to a `$bindable` child prop, a static slot fallback, and parent-projected direct text and recursively nested ordinary element slot content, plus top-level `#if` / `#key` / `#each` blocks within the existing static/direct-text subset are now also part of the executable subset. The parent owns markers for its dynamic projected text and acquires those ranges in deterministic slot-name order; the child leaves projected DOM untouched. The parent client imports the child's generated `.hydrate.js` entry under the same local name, passes the existing parent element to it, and receives the child's live instance. The child entry restores its own server props and serializable state before that hand-off, so the parent does not replay initial props or create a CSR anchor. Later parent reactivity forwards only `.set(...)` updates. This is emitted only when every reachable local child has the same executable hydration capability; otherwise the parent remains validation-only. Nested or unsupported structural slot content, other component bindings, and non-local component imports are intentionally excluded.
 

@@ -780,9 +780,10 @@ func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
 // awaitSnapshotBranch admits static content plus direct text and one-way
 // attribute interpolation of the declared then/catch binding. Its value stays
 // a string because a Go data loader must not smuggle an untyped JavaScript
-// object into a server renderer. Events, bindings, components, and structural
-// descendants are intentionally deferred until their settled-branch hydration
-// ownership exists.
+// object into a server renderer. Ordinary DOM events are emitted as inert
+// server markup and attached by the branch-owned hydrator. Bindings,
+// components, and structural descendants are intentionally deferred until
+// their settled-branch hydration ownership exists.
 func (e *ssrGoEmitter) awaitSnapshotBranch(nodes []SSRPlanNode, binding string, value goast.Expr) ([]goast.Stmt, bool) {
 	if len(nodes) == 0 {
 		return nil, false
@@ -819,6 +820,9 @@ func ssrAwaitSnapshotLeafBranch(nodes []SSRPlanNode, binding string) bool {
 		case *SSRPlanElement:
 			for _, attr := range current.Attrs {
 				if attr.Role == SSRAttrStatic {
+					continue
+				}
+				if attr.Role == SSRAttrEvent {
 					continue
 				}
 				if attr.Role != SSRAttrDynamic {

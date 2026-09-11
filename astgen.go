@@ -8600,11 +8600,12 @@ type hydrationAwaitBranchPlan struct {
 // branch. Handles are acquired only for the payload-selected branch and are
 // cleared when that branch is replaced.
 type hydrationAwaitSnapshotLeafPlan struct {
-	decls     []JsStmt
-	adopt     []JsStmt
-	refresh   []JsStmt
-	cleanup   []JsStmt
-	supported bool
+	decls           []JsStmt
+	adopt           []JsStmt
+	refresh         []JsStmt
+	listenerCleanup []JsStmt
+	cleanup         []JsStmt
+	supported       bool
 }
 
 func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingName, bindingValue string) hydrationAwaitSnapshotLeafPlan {
@@ -8639,12 +8640,16 @@ func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingN
 					elementVar := "$$hawait" + itoa(markerID) + "_snapshot_element"
 					adoptedElement := false
 					for attrIndex, attr := range current.Attrs {
-						if attr == nil || !attr.IsBind || attr.Expr == nil {
+						if attr == nil || attr.Expr == nil || (!attr.IsBind && !attr.IsEvent) {
 							continue
 						}
 						if !adoptedElement {
 							plan.adopt = append(plan.adopt, g.createHydrationTemplateElementStmt(elementVar, current))
 							adoptedElement = true
+						}
+						if attr.IsEvent {
+							g.buildHydrationAwaitSnapshotEvent(&plan, elementVar, attr, attrIndex)
+							continue
 						}
 						refreshVar := elementVar + "_" + itoa(attrIndex) + "_refresh"
 						plan.decls = append(plan.decls, genLet(refreshVar, genNull()))
@@ -8661,6 +8666,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingN
 		}
 		visit(children)
 	})
+	plan.cleanup = append(plan.listenerCleanup, plan.cleanup...)
 	return plan
 }
 
@@ -8682,6 +8688,9 @@ func hydrationAwaitSnapshotLeafNodes(nodes []Node, bindingName string) bool {
 				if attr == nil {
 					continue
 				}
+				if attr.IsEvent {
+					continue
+				}
 				if attr.IsBind {
 					name, ok := templateExprIdent(attr.Expr)
 					if ok && name == bindingName {
@@ -8701,6 +8710,46 @@ func hydrationAwaitSnapshotLeafNodes(nodes []Node, bindingName string) bool {
 		}
 	}
 	return true
+}
+
+// buildHydrationAwaitSnapshotEvent attaches one DOM listener to a settled
+// branch already rendered by SSR. Its cleanup closure captures the exact
+// element and handler, so a later range replacement cannot leave a detached
+// node able to update live component state.
+func (g *ASTGen) buildHydrationAwaitSnapshotEvent(plan *hydrationAwaitSnapshotLeafPlan, elementVar string, attr *Attr, attrIndex int) {
+	if plan == nil || attr == nil || attr.Expr == nil {
+		return
+	}
+	prefix := elementVar + "_" + itoa(attrIndex) + "_event"
+	cleanupVar := prefix + "_cleanup"
+	handlerName := prefix + "_handler"
+	handler, isIdent := templateExprIdent(attr.Expr)
+	handlerExpr := g.eventHandlerExpr(attr)
+	if handlerExpr == nil {
+		handlerExpr = id("undefined")
+	}
+	listener := handlerExpr
+	if !isIdent {
+		decl := genConst(handlerName, handlerExpr)
+		if !templateExprIsHandler(attr.Expr) {
+			decl = genConst(handlerName, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))})
+		}
+		plan.adopt = append(plan.adopt, decl)
+		listener = id(handlerName)
+	} else {
+		listener = id(handler)
+	}
+	plan.decls = append(plan.decls, genLet(cleanupVar, genNull()))
+	plan.adopt = append(plan.adopt,
+		genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(attr.Name), listener)),
+		genAssignStmt(id(cleanupVar), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(attr.Name), listener)),
+		)}),
+	)
+	plan.listenerCleanup = append([]JsStmt{genIf(id(cleanupVar), genBlock(
+		genExprStmt(genCall(id(cleanupVar))),
+		genAssignStmt(id(cleanupVar), genNull()),
+	))}, plan.listenerCleanup...)
 }
 
 // hydrationAwaitSnapshotAttrWriteStmt keeps a settled snapshot's ordinary
