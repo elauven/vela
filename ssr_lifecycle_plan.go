@@ -505,15 +505,16 @@ func ssrKeyedEachDirectKeySlot(nodes []Node) bool {
 				return false
 			}
 		case *ComponentNode:
-			// A static projection is safe in the first child-row recipe: it is
-			// created only with the CSR child instance and therefore has the same
-			// lifetime as the row-owned component controller. Dynamic projection
-			// still needs its own update and structural-range ownership.
+			// A projected child slot is safe when every projected node belongs to
+			// the existing direct-DOM subset. Its callbacks and nested ranges are
+			// registered on the surrounding keyed-row controller, so both static
+			// and dynamic projection share the child instance lifetime without a
+			// second global subscription path.
 			if current == nil {
 				return false
 			}
 			for _, slot := range current.Slots {
-				if !allStatic(slot) {
+				if !ssrKeyedEachDirectKeySlot(slot) {
 					return false
 				}
 			}

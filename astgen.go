@@ -6494,15 +6494,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															slots := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
 															for _, slotName := range sortedSlotNames(slotCurrent.Slots) {
 																slotNodes := slotCurrent.Slots[slotName]
-																if !allStatic(slotNodes) {
-																	panic("vela: dynamic projected slots in a nested keyed slot child need a dedicated lifecycle recipe")
-																}
 																slotFragment := g.id() + "_slot"
-																slots.Props = append(slots.Props, &JsProp{baseNode: genNode(), Key: strLit(slotName), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-																	genConst(slotFragment, genCall(genMember(id("document"), "createDocumentFragment"))),
-																	genExprStmt(genCall(id("$$insertHTML"), id(slotFragment), strLit(emitStaticHTML(slotNodes, g.scopeID)))),
-																	genReturn(id(slotFragment)),
-																)}})
+																slotBody := []JsStmt{genConst(slotFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
+																slotBody = append(slotBody, appendSlotNodes(slotNodes, slotFragment, owner)...)
+																slotBody = append(slotBody, genReturn(id(slotFragment)))
+																slots.Props = append(slots.Props, &JsProp{baseNode: genNode(), Key: strLit(slotName), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(slotBody...)}})
 															}
 															for _, attr := range slotCurrent.Attrs {
 																for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
