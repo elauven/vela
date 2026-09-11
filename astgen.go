@@ -6494,6 +6494,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															}
 															props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
 															withNestedBindings(func() { props = g.componentPropsExpr(slotCurrent.Attrs) })
+															for _, attr := range slotCurrent.Attrs {
+																for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+																	textUpdateDeps[dependency] = true
+																}
+															}
 															instance, update := g.id()+"_slot_component", g.id()+"_slot_component_update"
 															body = append(body,
 																genConst(instance, genCall(id(csrFactory), id(parent), props, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
