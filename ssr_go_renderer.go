@@ -843,6 +843,18 @@ func ssrAwaitSnapshotLeafBranch(nodes []SSRPlanNode, binding string) bool {
 			if !ssrAwaitSnapshotLeafBranch(current.Children, binding) {
 				return false
 			}
+		case *SSRPlanComponent:
+			if current.Link == nil || len(current.Slots) != 0 {
+				return false
+			}
+			for _, attr := range current.Attrs {
+				if attr.Role == SSRAttrStatic {
+					continue
+				}
+				if attr.Role != SSRAttrDynamic || attr.Expr == nil {
+					return false
+				}
+			}
 		default:
 			return false
 		}

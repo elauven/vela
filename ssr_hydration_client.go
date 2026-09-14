@@ -103,21 +103,18 @@ func ssrHydrationStructuralComponentAliases(nodes []Node) map[string]string {
 }
 
 // ssrHydrationStructuralComponentAliasesForPlan reserves a distinct CSR
-// factory for each direct local child selected from a typed #if branch plan.
-// The scanner deliberately consumes lifecycle ownership instead of rewalking
-// the template AST for its own branch shape classification.
+// factory only for a child selected by a typed lifecycle that can actually
+// materialize new DOM. Ordinary adopted children never need a CSR import:
+// retaining one would make every hydration page require an otherwise unused
+// .js module and could stop ESM evaluation before hydration starts.
 func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecyclePlan) map[string]string {
 	aliases := map[string]string{}
-	var visit func(*SSRStructuralLifecyclePlan)
-	visit = func(current *SSRStructuralLifecyclePlan) {
+	var visit func(*SSRStructuralLifecyclePlan, bool)
+	visit = func(current *SSRStructuralLifecyclePlan, insideStructuralOwner bool) {
 		if current == nil {
 			return
 		}
-		// Every component occurrence in the typed lifecycle graph can later be
-		// materialized by a structural owner.  Collecting it here avoids a
-		// second template-shape scan and includes component nodes projected
-		// through nested slot rows.
-		if current.Kind == SSRLifecyclePlanComponent {
+		if insideStructuralOwner && current.Kind == SSRLifecyclePlanComponent {
 			if component, ok := current.TemplateNode.(*ComponentNode); ok && component != nil {
 				aliases[component.Name] = "$$csr_" + sanitizeIdent(component.Name)
 			}
@@ -158,11 +155,12 @@ func ssrHydrationStructuralComponentAliasesForPlan(plan *SSRStructuralLifecycleP
 				aliases[pending.Component.Name] = "$$csr_" + sanitizeIdent(pending.Component.Name)
 			}
 		}
+		childStructuralOwner := insideStructuralOwner || current.Kind == SSRLifecyclePlanIf || current.Kind == SSRLifecyclePlanEach || current.Kind == SSRLifecyclePlanAwait
 		for _, child := range current.Children {
-			visit(child)
+			visit(child, childStructuralOwner)
 		}
 	}
-	visit(plan)
+	visit(plan, false)
 	return aliases
 }
 

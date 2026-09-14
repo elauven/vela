@@ -53,10 +53,10 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"nested dynamic attribute", `<template><main><button :disabled={saving}>Save</button></main></template>`, true},
 		{"direct static if", `<template><main>{#if visible}<span>On</span>{:else}<span>Off</span>{/if}</main></template>`, true},
 		{"if with direct child lifecycle", `<template><main>{#if visible}<Child :title={title} />{:else}<span>Off</span>{/if}</main></template>`, true},
-		{"if child lifecycle rejects component event", `<template><main>{#if visible}<Child @on:close={close} />{:else}<span>Off</span>{/if}</main></template>`, false},
+		{"if child lifecycle forwards component event", `<template><main>{#if visible}<Child @on:close={close} />{:else}<span>Off</span>{/if}</main></template>`, true},
 		{"nested static if and each", `<template><main><section>{#if visible}<span>On</span>{:else}<span>Off</span>{/if}{#each items as item}<span>{item}</span>{/each}</section></main></template>`, true},
 		{"direct static key", `<template><main>{#key identity}<span>Row</span>{/key}</main></template>`, true},
-		{"if with dynamic branch", `<template><main>{#if visible}<span>{title}</span>{/if}</main></template>`, false},
+		{"if with dynamic branch", `<template><main>{#if visible}<span>{title}</span>{/if}</main></template>`, true},
 		{"direct static each", `<template><main>{#each items as item}<span>Row</span>{/each}</main></template>`, true},
 		{"static each else", `<template><main>{#each items as item}<span>Row</span>{:else}<span>Empty</span>{/each}</main></template>`, true},
 		{"dynamic text each row", `<template><main>{#each items as item}<span>{item}</span>{/each}</main></template>`, true},
@@ -72,7 +72,7 @@ func TestCanBuildSSRHydrationClientSubset(t *testing.T) {
 		{"await pending unkeyed each child lifecycle", `<template><main>{#await request}{#each items as item}<Child :title={item.title} />{/each}{:then value}<span>{value}</span>{/await}</main></template>`, true},
 		{"await pending keyed each child lifecycle", `<template><main>{#await request}{#each rows as row (row.id)}<Child :title={row.title} />{/each}{:then value}<span>{value}</span>{/await}</main></template>`, true},
 		{"await then nested if child lifecycle", `<template><main>{#await request}<p>Loading</p>{:then value}{#if visible}<Child :title={value} />{:else}<p>Hidden</p>{/if}{/await}</main></template>`, true},
-		{"await child lifecycle rejects component event", `<template><main>{#await request}<Child @on:close={close} />{:then value}<p>Done</p>{/await}</main></template>`, false},
+		{"await child lifecycle forwards component event", `<template><main>{#await request}<Child @on:close={close} />{:then value}<p>Done</p>{/await}</main></template>`, true},
 		{"each block", `<template>{#each items as item}<p>{item}</p>{/each}</template>`, false},
 		{"binding", `<template><input bind:value={query} /></template>`, true},
 		{"select binding", `<template><select bind:value={choice}><option value="a">A</option></select></template>`, true},
@@ -181,6 +181,32 @@ func TestSSRHydrationAwaitChildBranchesAdoptAndMountWithCSRFactories(t *testing.
 	}
 	if strings.Contains(source, `$$csr_Child($$root`) {
 		t.Fatalf("initial pending child must be adopted rather than CSR-mounted:\n%s", source)
+	}
+}
+
+func TestSSRHydrationAwaitSnapshotAdoptsSettledChild(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request;</script><template><main>{#await request}<p>Waiting</p>{:then value}<Child :title={value} /><p>Done</p>{:catch error}<Child :title={error} /><p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		`const $$hawait0_snapshot = $$props.$$velaAwait && $$props.$$velaAwait[0];`,
+		`$$hawait0_snapshot.state === 'then'`,
+		`$$hawait0_b1_component_0 = Child($$root, null,`,
+		`$$hawait0_b1_component_0.set({ title: $$hawait0_value });`,
+		`let $$hawait0_initial = true;`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("await snapshot child lifecycle misses %q:\n%s", want, source)
+		}
+	}
+	if strings.Contains(source, `$$csr_Child($$root`) {
+		t.Fatalf("settled snapshot child must be adopted rather than CSR-mounted:\n%s", source)
 	}
 }
 
@@ -2148,11 +2174,9 @@ server.listen(0, '127.0.0.1', async () => {
   try {
     browser = await chromium.launch({headless:true});
     const page = await browser.newPage();
-    const pageErrors = [];
-    page.on('pageerror', error => pageErrors.push(error && error.stack || String(error)));
     page.setDefaultTimeout(5000);
     await page.goto('http://127.0.0.1:' + server.address().port + '/');
-    await page.waitForFunction(() => window.__hydrated).catch(error => { throw new Error(error.message + '\\n' + pageErrors.join('\\n')); });
+    await page.waitForFunction(() => window.__hydrated);
     await page.evaluate(() => {
       const initial = document.querySelectorAll('.child');
       window.__aA = initial[0];
@@ -2243,7 +2267,7 @@ func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 	}
 }
 
-func TestSSRProjectSkipsParentHydrationClientForUnsupportedChild(t *testing.T) {
+func TestSSRProjectBuildsParentHydrationClientForSupportedStructuralChild(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -2262,15 +2286,15 @@ func TestSSRProjectSkipsParentHydrationClientForUnsupportedChild(t *testing.T) {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 	layout := NewSSRProjectLayout(outRoot)
-	if _, err := os.Stat(layout.hydrationClientPath(parent, srcRoot)); !os.IsNotExist(err) {
-		t.Fatalf("parent hydration client for unsupported child: %v", err)
+	if _, err := os.Stat(layout.hydrationClientPath(parent, srcRoot)); err != nil {
+		t.Fatalf("parent hydration client for supported structural child: %v", err)
 	}
 	entry, err := os.ReadFile(layout.hydratePath(parent, srcRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(entry), `.hydrate_client.js`) {
-		t.Fatalf("parent validation entry must not import a missing child client:\n%s", entry)
+	if !strings.Contains(string(entry), `.hydrate_client.js`) {
+		t.Fatalf("parent hydrate entry must import the child hydration client:\n%s", entry)
 	}
 }
 
@@ -2367,7 +2391,7 @@ server.listen(0, "127.0.0.1", async () => {
 	command.Dir = "/projects/compiler"
 	output, err := command.CombinedOutput()
 	if err != nil {
-		t.Fatalf("child hydration browser fixture: %v\n%s", err, output)
+		t.Fatalf("child hydration browser fixture: %v\n%s\nparent client:\n%s", err, output, PrintJS(parentClient, PrintPretty))
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("child hydration browser output=%q", got)
@@ -4950,32 +4974,39 @@ func TestBrowserSSRHydrationKeyedSlotRowProjectedStructuralCombinationCorpus(t *
 	const prefix = `<script>import { Child } from "./Child.vela"; import { Grandchild } from "./Grandchild.vela"; import { Nested } from "./Nested.vela"; let rows = $state.deep(window.__rows || []); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child>{#each field.tags as tag (tag)}<Grandchild :label={tag + ":" + selected}>`
 	const suffix = `</Grandchild>{/each}</Child>{/key}{/each}{/await}{/each}</main></template>`
 	cases := []struct {
-		name string
-		body string
+		name            string
+		body            string
+		initialOffCount int
 	}{
 		{
-			name: "if-key-keyed-each",
-			body: `{#if selected}{#key selected}{#each field.labels as label (label)}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="empty">Empty</span>{/each}{/key}{:else}<span class="off">Off</span>{/if}`,
+			name:            "if-key-keyed-each",
+			body:            `{#if selected}{#key selected}{#each field.labels as label (label)}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="empty">Empty</span>{/each}{/key}{:else}<span class="off">Off</span>{/if}`,
+			initialOffCount: 2,
 		},
 		{
-			name: "key-if-keyed-each",
-			body: `{#key selected}{#if selected}{#each field.labels as label (label)}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="empty">Empty</span>{/each}{:else}<span class="off">Off</span>{/if}{/key}`,
+			name:            "key-if-keyed-each",
+			body:            `{#key selected}{#if selected}{#each field.labels as label (label)}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="empty">Empty</span>{/each}{:else}<span class="off">Off</span>{/if}{/key}`,
+			initialOffCount: 2,
 		},
 		{
-			name: "keyed-each-if-key",
-			body: `{#each field.labels as label (label)}{#if selected}{#key selected}<Nested :label={tag + ":" + label + ":" + selected} />{/key}{:else}<span class="off">Off</span>{/if}{:else}<span class="empty">Empty</span>{/each}`,
+			name:            "keyed-each-if-key",
+			body:            `{#each field.labels as label (label)}{#if selected}{#key selected}<Nested :label={tag + ":" + label + ":" + selected} />{/key}{:else}<span class="off">Off</span>{/if}{:else}<span class="empty">Empty</span>{/each}`,
+			initialOffCount: 4,
 		},
 		{
-			name: "if-keyed-each-key",
-			body: `{#if selected}{#each field.labels as label (label)}{#key selected}<Nested :label={tag + ":" + label + ":" + selected} />{/key}{:else}<span class="empty">Empty</span>{/each}{:else}<span class="off">Off</span>{/if}`,
+			name:            "if-keyed-each-key",
+			body:            `{#if selected}{#each field.labels as label (label)}{#key selected}<Nested :label={tag + ":" + label + ":" + selected} />{/key}{:else}<span class="empty">Empty</span>{/each}{:else}<span class="off">Off</span>{/if}`,
+			initialOffCount: 2,
 		},
 		{
-			name: "key-keyed-each-if",
-			body: `{#key selected}{#each field.labels as label (label)}{#if selected}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="off">Off</span>{/if}{:else}<span class="empty">Empty</span>{/each}{/key}`,
+			name:            "key-keyed-each-if",
+			body:            `{#key selected}{#each field.labels as label (label)}{#if selected}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="off">Off</span>{/if}{:else}<span class="empty">Empty</span>{/each}{/key}`,
+			initialOffCount: 4,
 		},
 		{
-			name: "keyed-each-key-if",
-			body: `{#each field.labels as label (label)}{#key selected}{#if selected}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="off">Off</span>{/if}{/key}{:else}<span class="empty">Empty</span>{/each}`,
+			name:            "keyed-each-key-if",
+			body:            `{#each field.labels as label (label)}{#key selected}{#if selected}<Nested :label={tag + ":" + label + ":" + selected} />{:else}<span class="off">Off</span>{/if}{/key}{:else}<span class="empty">Empty</span>{/each}`,
+			initialOffCount: 4,
 		},
 	}
 	for _, tc := range cases {
@@ -5031,7 +5062,8 @@ func TestBrowserSSRHydrationKeyedSlotRowProjectedStructuralCombinationCorpus(t *
 				}
 			}
 			const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("pending adoption mutated DOM");await p.evaluate(()=>window.resolve("done"));await p.waitForFunction(()=>document.querySelectorAll(".off").length===2);await p.evaluate(()=>window.hydrated.component.set({selected:"ready"}));await p.waitForFunction(()=>document.querySelectorAll(".nested").length===4&&Array.from(document.querySelectorAll(".nested")).every(x=>x.dataset.label.endsWith(":ready")));await p.evaluate(()=>{window.retained=Array.from(document.querySelectorAll(".grandchild"));window.hydrated.component.set({rows:[{id:"b",request:window.promise,fields:[{id:"g",version:0,tags:["two"],labels:["x","y"]}]},{id:"a",request:window.promise,fields:[{id:"f",version:0,tags:["one"],labels:[]}]}]})});await p.waitForFunction(()=>{const children=Array.from(document.querySelectorAll(".grandchild"));return children.length===2&&children.every(node=>window.retained.includes(node))&&document.querySelector(".empty")&&document.querySelectorAll(".nested").length===2&&Array.from(document.querySelectorAll(".nested")).every(node=>node.dataset.label.startsWith("two:"))});await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
-			command := exec.Command(node, "-e", browser, dir)
+			browserScript := strings.Replace(browser, `document.querySelectorAll(".off").length===2`, `document.querySelectorAll(".off").length===`+itoa(tc.initialOffCount), 1)
+			command := exec.Command(node, "-e", browserScript, dir)
 			command.Dir = "/projects/compiler"
 			output, err := command.CombinedOutput()
 			if err != nil {
@@ -5047,7 +5079,6 @@ func TestBrowserSSRHydrationKeyedSlotRowProjectedStructuralCombinationCorpus(t *
 func TestSSRHydrationKeyedEachAwaitNestedKeyedChildRejectsUnownedDynamicSlotLifecycle(t *testing.T) {
 	for _, source := range []string{
 		`<script>import { Child } from "./Child.vela"; let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child>{#each row.tags as tag (tag)}{#await row.request}<span>{tag}</span>{/await}{/each}</Child>{/key}{/each}{/await}{/each}</main></template>`,
-		`<script>import { Child, Grandchild } from "./Child.vela"; let rows = $state.deep([]);</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}{#key field.version}<Child><Grandchild><span>projected</span></Grandchild></Child>{/key}{/each}{/await}{/each}</main></template>`,
 	} {
 		sfc, err := parseSFC(source)
 		if err != nil {

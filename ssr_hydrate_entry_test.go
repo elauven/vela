@@ -31,7 +31,7 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 		"$$createHydrationWalker($$root, $$scopeID)",
 		"$$readHydrationPayload($$root, $$scopeID)",
 		"const $$velaProps = { title: $$payload.props.Title };",
-		"const $$componentProps = Object.assign({}, { title: $$payload.props.Title }, { $$velaState: $$payload.state }, $$overrides || {});",
+		"const $$componentProps = Object.assign({}, { title: $$payload.props.Title }, { $$velaState: $$payload.state, $$velaAwait: $$payload.await || {} }, $$overrides || {});",
 		"return { root: $$root, props: $$velaProps, componentProps: $$componentProps, state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges, elements: { e0: $$acquireHydrationElement($$walker, 0, 'main') } };",
 	} {
 		if !strings.Contains(source, want) {

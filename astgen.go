@@ -4208,7 +4208,6 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 				// captured as a branch-local AST plan.  Its element references are
 				// hoisted by inBranchScope so setter cascades can safely update a
 				// mounted branch and no source-bearing expression is serialized.
-				tdMark := len(g.nestedTeardowns)
 				wasBranchScope := g.inBranchScope
 				cap := g.captureScope(func() {
 					g.inBranchScope = true
@@ -4219,7 +4218,11 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 				plans[i].init = cap.initBody
 				plans[i].cleanup = cap.cleanup
 				plans[i].comps = cap.comps
-				plans[i].nestedTeardowns = append([]JsStmt{}, g.nestedTeardowns[tdMark:]...)
+				// captureScope restores g.nestedTeardowns before returning, so
+				// the branch must retain the captured contribution directly.
+				// Otherwise an outer structural branch removes only its anchor
+				// and leaves the nested range mounted before that anchor.
+				plans[i].nestedTeardowns = append([]JsStmt{}, cap.nestedTeardowns...)
 				g.fragHoisted = append(g.fragHoisted, cap.fragHoisted...)
 				g.compInstances = append(g.compInstances, cap.comps...)
 				for dep, stmts := range cap.updates {
@@ -5648,6 +5651,20 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		})
 		return props
 	}
+	// row_update is a separate closure from render/create. It must evaluate
+	// component props against its own arguments, rather than rowItemVar which
+	// belongs only to the currently mounted branch controller.
+	propsForRowUpdate := func(component *ComponentNode, branch int) JsExpr {
+		props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
+		g.withTemplateBinding(block.ItemName, "$$item", func() {
+			g.withTemplateBinding(block.IndexName, "$$index", func() {
+				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
+					props = g.componentPropsExpr(component.Attrs)
+				})
+			})
+		})
+		return props
+	}
 	textUpdateDeps := map[string]bool{}
 	innerEachDeps := map[string]bool{}
 	textWriteFor := func(text *TextNode, branch int, ref string) JsStmt {
@@ -6510,7 +6527,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															body = append(body,
 																genConst(instance, genCall(id(csrFactory), id(parent), props, slots)),
 																genExprStmt(genCall(genMember(genMember(id(owner), "components"), "push"), id(instance))),
-																genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(instance), "set"), props)))}),
+																genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(optionalComponentSetStmt(id(instance), props))}),
 																genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(update))),
 															)
 															for _, attr := range slotCurrent.Attrs {
@@ -6554,7 +6571,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 											keyMount = append(keyMount,
 												genConst(instance, genCall(id(csrFactory), id(keyFragment), props, slots)),
 												genExprStmt(genCall(genMember(genMember(id(keyVar), "components"), "push"), id(instance))),
-												genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(instance), "set"), props)))}),
+												genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(optionalComponentSetStmt(id(instance), props))}),
 												genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))),
 											)
 											for _, attr := range current.Attrs {
@@ -7234,7 +7251,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		for index, component := range components {
 			rowUpdateBody = append(rowUpdateBody, genIf(
 				genLogical("&&", genBinary("===", genMember(id("$$state"), "active"), numLit(branch)), genComputedMember(genMember(id("$$state"), "components"), numLit(index))),
-				genExprStmt(genCall(genMember(genComputedMember(genMember(id("$$state"), "components"), numLit(index)), "set"), propsFor(component, branch))),
+				optionalComponentSetStmt(genComputedMember(genMember(id("$$state"), "components"), numLit(index)), propsForRowUpdate(component, branch)),
 			))
 		}
 	}
@@ -7245,6 +7262,10 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genConst("$$start", genCall(genMember(id("document"), "createComment"), strLit("r"))),
 		genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$start"))),
 		genConst("$$state", stateExpr()),
+		// mount() evaluates component props through rowItemVar. A newly created
+		// row needs the same mutable binding as a row which was re-rendered.
+		genLet(rowItemVar, id("$$item")),
+		genAssignStmt(genMember(id("$$state"), "setItem"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item")}, Body: genBlock(genAssignStmt(id(rowItemVar), id("$$next_item")))}),
 		genExprStmt(genCall(genMember(id(statesVar), "set"), id("$$key"), id("$$state"))),
 	}
 	createBody = append(createBody, mount(0)...)
@@ -7673,6 +7694,17 @@ func (g *ASTGen) hydrationEachComponentProps(block *EachBlockNode, component *Co
 		})
 	})
 	return props
+}
+
+// optionalComponentSetStmt keeps structural lifecycle controllers compatible
+// with static CSR components. Such components deliberately omit set() when
+// they expose no mutable props; their owned slot controllers still receive
+// refreshes through the surrounding update list.
+func optionalComponentSetStmt(instance, props JsExpr) JsStmt {
+	return genIf(
+		genMember(instance, "set"),
+		genExprStmt(genCall(genMember(instance, "set"), props)),
+	)
 }
 
 // hydrationEachNestedKeyInstanceScope mirrors the SSR scope order: outer each
@@ -8440,6 +8472,8 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 	valueVar := name + "_value"
 	errorVar := name + "_error"
 	cellVar := name + "_cell"
+	initialVar := name + "_initial"
+	snapshotVar := name + "_snapshot"
 	renderVar := name + "_render"
 	driverVar := name + "_drive"
 	bindingNames := []string{"", block.ValueName, block.ErrorName}
@@ -8479,14 +8513,44 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 		genLet(valueVar, id("undefined")),
 		genLet(errorVar, id("undefined")),
 		genLet(cellVar, genNull()),
+		genLet(initialVar, boolLit(true)),
+		genConst(snapshotVar, genLogical("&&", genMember(id("$$props"), "$$velaAwait"), genComputedMember(genMember(id("$$props"), "$$velaAwait"), numLit(markerID)))),
 	)
+	snapshotBranches := []bool{
+		false,
+		g.hydrationAwaitSnapshotComponentBranch(block.ThenChildren, block.ValueName),
+		g.hydrationAwaitSnapshotComponentBranch(block.CatchChildren, block.ErrorName),
+	}
+	if snapshotBranches[1] {
+		g.body = append(g.body, genIf(
+			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("then"))},
+			genBlock(genAssignStmt(id(activeVar), numLit(1)), genAssignStmt(id(stateVar), numLit(1)), genAssignStmt(id(valueVar), genMember(id(snapshotVar), "value"))),
+		))
+	}
+	if snapshotBranches[2] {
+		g.body = append(g.body, genIf(
+			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("catch"))},
+			genBlock(genAssignStmt(id(activeVar), numLit(2)), genAssignStmt(id(stateVar), numLit(2)), genAssignStmt(id(errorVar), genMember(id(snapshotVar), "error"))),
+		))
+	}
 	for _, handle := range handles {
-		if handle.branch != 0 {
+		if handle.branch != 0 && !snapshotBranches[handle.branch] {
 			continue
 		}
-		g.hydrationInitBody = append(g.hydrationInitBody,
-			genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), nil), "component")),
-		)
+		if handle.branch == 0 {
+			g.hydrationInitBody = append(g.hydrationInitBody,
+				genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), nil), "component")),
+			)
+			continue
+		}
+		stateName := "then"
+		if handle.branch == 2 {
+			stateName = "catch"
+		}
+		g.hydrationInitBody = append(g.hydrationInitBody, genIf(
+			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit(stateName))},
+			genBlock(genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), nil), "component"))),
+		))
 	}
 	for _, handle := range handles {
 		setStmt := genIf(
@@ -8504,9 +8568,18 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 		}
 	}
 
-	renderBody := []JsStmt{
-		genIf(genBinary("===", id(stateVar), id(activeVar)), genReturn(nil)),
+	sameState := []JsStmt{}
+	for _, handle := range handles {
+		if handle.branch == 0 {
+			continue
+		}
+		sameState = append(sameState, genIf(
+			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: genBinary("===", id(activeVar), numLit(handle.branch)), R: id(handle.instanceVar)},
+			genExprStmt(genCall(genMember(id(handle.instanceVar), "set"), handle.propsExpr)),
+		))
 	}
+	sameState = append(sameState, genReturn(nil))
+	renderBody := []JsStmt{genIf(genBinary("===", id(stateVar), id(activeVar)), genBlock(sameState...))}
 	for index := len(handles) - 1; index >= 0; index-- {
 		handle := handles[index]
 		renderBody = append(renderBody, genIf(id(handle.instanceVar), genBlock(
@@ -8544,10 +8617,14 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 		genConst("$$p", genCall(genMember(id("Promise"), "resolve"), g.templateExpr(block.Expr))),
 		genIf(genBinary("===", id(cellVar), id("$$p")), genReturn(nil)),
 		genAssignStmt(id(cellVar), id("$$p")),
-		genAssignStmt(id(stateVar), numLit(0)),
-		genAssignStmt(id(valueVar), id("undefined")),
-		genAssignStmt(id(errorVar), id("undefined")),
-		genInvoke(renderVar),
+		&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: id(initialVar), Then: genBlock(
+			genAssignStmt(id(initialVar), boolLit(false)),
+		), Else: genBlock(
+			genAssignStmt(id(stateVar), numLit(0)),
+			genAssignStmt(id(valueVar), id("undefined")),
+			genAssignStmt(id(errorVar), id("undefined")),
+			genInvoke(renderVar),
+		)},
 		genExprStmt(genCall(genMember(id("$$p"), "then"), settle("$$value", valueVar, 1), settle("$$error", errorVar, 2))),
 	)})
 	g.hydrationInitBody = append(g.hydrationInitBody, genInvoke(driverVar))
@@ -8562,6 +8639,43 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 		)))
 	}
 	g.cleanup = append(g.cleanup, genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)))
+}
+
+// hydrationAwaitSnapshotComponentBranch recognizes the first settled snapshot
+// child recipe: direct local children with static siblings and ordinary
+// one-way props. The component entry owns its payload and internal DOM; the
+// outer await owns only the range and child instance handle.
+func (g *ASTGen) hydrationAwaitSnapshotComponentBranch(children []Node, bindingName string) bool {
+	if bindingName == "" || len(children) == 0 {
+		return false
+	}
+	found := false
+	for _, child := range children {
+		switch current := child.(type) {
+		case *TextNode, *ElementNode:
+			if !allStatic([]Node{child}) {
+				return false
+			}
+		case *ComponentNode:
+			if current == nil || len(current.Slots) != 0 {
+				return false
+			}
+			for _, attr := range current.Attrs {
+				if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					return false
+				}
+				if attr.IsBind {
+					if _, ok := templateExprIdent(attr.Expr); !ok {
+						return false
+					}
+				}
+			}
+			found = true
+		default:
+			return false
+		}
+	}
+	return found
 }
 
 // hydrationAwaitComponentBranchMount recreates one await branch in exact

@@ -453,7 +453,7 @@ guarded normal setter/write path for later state changes; listener and writer
 are cleared with the settled range. Same-branch settlement updates only owned
 text ranges and changed attributes, retaining the settled element. The dynamic
 attribute expression must be the branch binding itself — composed expressions,
-directives, child lifecycle, and nested structural content still require their
+directives, and nested structural content still require their
 own marker-aware recipes and remain later work.
 
 A direct local `.vela` child component with ordinary one-way props, `@on:*` component events, `bind:value` to a `$bindable` child prop, a static slot fallback, and parent-projected direct text and recursively nested ordinary element slot content, plus top-level `#if` / `#key` / `#each` blocks within the existing static/direct-text subset are now also part of the executable subset. The parent owns markers for its dynamic projected text and acquires those ranges in deterministic slot-name order; the child leaves projected DOM untouched. The parent client imports the child's generated `.hydrate.js` entry under the same local name, passes the existing parent element to it, and receives the child's live instance. The child entry restores its own server props and serializable state before that hand-off, so the parent does not replay initial props or create a CSR anchor. Later parent reactivity forwards only `.set(...)` updates. This is emitted only when every reachable local child has the same executable hydration capability; otherwise the parent remains validation-only. Nested or unsupported structural slot content, other component bindings, and non-local component imports are intentionally excluded.
@@ -468,6 +468,15 @@ branch mounts direct local children through ordinary CSR factories in source
 order. This slice accepts only one-way props and static siblings in the three
 branches. Slots, component events/bindings, and nested structural component
 branches remain later work.
+
+Independently selected `then` and `catch` snapshots additionally adopt a
+direct local child component with ordinary one-way props and static siblings.
+The child retains its server DOM and inert payload while the initial promise is
+pending. If that promise settles into the same branch, the adopted child
+receives `.set(...)` with the client value or error instead of being remounted.
+Changing to a different branch destroys the child before its range and payload
+are removed. Slots, component events and bindings, child chains, and nested
+structural content in a settled snapshot remain future lifecycle work.
 
 
 For a supported direct `{#if}` the active server branch is adopted as the
