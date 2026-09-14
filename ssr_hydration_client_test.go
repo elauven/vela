@@ -185,7 +185,7 @@ func TestSSRHydrationAwaitChildBranchesAdoptAndMountWithCSRFactories(t *testing.
 }
 
 func TestSSRHydrationAwaitSnapshotAdoptsSettledChild(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request;</script><template><main>{#await request}<p>Waiting</p>{:then value}<Child :title={value} /><p>Done</p>{:catch error}<Child :title={error} /><p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; function close() {}</script><template><main>{#await request}<p>Waiting</p>{:then value}<Child :title={value} @on:close={close} /><p>Done</p>{:catch error}<Child :title={error} @on:close={close} /><p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,6 +199,8 @@ func TestSSRHydrationAwaitSnapshotAdoptsSettledChild(t *testing.T) {
 		`$$hawait0_snapshot.state === 'then'`,
 		`$$hawait0_b1_component_0 = Child($$root, null,`,
 		`$$hawait0_b1_component_0.set({ title: $$hawait0_value });`,
+		`$$hawait0_b1_component_0.el.addEventListener('close', $$hawait0_b1_component_0_on_close_h);`,
+		`$$hawait0_b1_component_0.el.removeEventListener('close', $$hawait0_b1_component_0_on_close_h);`,
 		`let $$hawait0_initial = true;`,
 	} {
 		if !strings.Contains(source, want) {
