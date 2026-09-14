@@ -915,9 +915,10 @@ func ssrHydrationPendingAwaitIfChain(block *AwaitBlockNode) (*IfChainNode, bool)
 
 // ssrCapabilityCurrentAwaitComponentBranches admits the first await child
 // lifecycle slice. Every branch may contain direct local components with
-// ordinary one-way props and static siblings. The pending branch is adopted
-// from SSR; settled branches are materialized with ordinary CSR factories.
-// Dynamic DOM holes remain on the existing await-only lowering path.
+// ordinary one-way props, a simple identifier component binding, and static
+// siblings. The pending branch is adopted from SSR; settled branches are
+// materialized with ordinary CSR factories. Dynamic DOM holes remain on the
+// existing await-only lowering path.
 func ssrCapabilityAwaitComponentBranches(block *AwaitBlockNode, directChildren func([]Node) bool) ([][]*ComponentNode, bool) {
 	if block == nil || len(block.PendingChildren) == 0 {
 		return nil, false
@@ -933,7 +934,7 @@ func ssrCapabilityAwaitComponentBranches(block *AwaitBlockNode, directChildren f
 				staticChildren = append(staticChildren, child)
 				continue
 			}
-			if len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) {
+			if len(component.Slots) != 0 || !ssrCapabilityCurrentAwaitComponentAttrs(component) {
 				return nil, false
 			}
 			result[index] = append(result[index], component)
@@ -951,6 +952,27 @@ func ssrCapabilityAwaitComponentBranches(block *AwaitBlockNode, directChildren f
 		}
 	}
 	return result, found
+}
+
+// ssrCapabilityCurrentAwaitComponentAttrs accepts the direct await child
+// subset. A component binding has to target an identifier; the AST lowerer
+// later verifies that it is an actual reactive parent state binding before it
+// emits the callback override used during adoption.
+func ssrCapabilityCurrentAwaitComponentAttrs(component *ComponentNode) bool {
+	if component == nil {
+		return false
+	}
+	for _, attr := range component.Attrs {
+		if attr == nil || attr.IsBindThis {
+			return false
+		}
+		if attr.IsTwoWay {
+			if _, ok := templateExprIdent(attr.Expr); !ok {
+				return false
+			}
+		}
+	}
+	return true
 }
 func ssrCapabilityCurrentAwaitComponentBranches(block *AwaitBlockNode) ([][]*ComponentNode, bool) {
 	return ssrCapabilityAwaitComponentBranches(block, ssrCapabilityCurrentAwaitDirectChildren)

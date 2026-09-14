@@ -854,6 +854,9 @@ func ssrAwaitSnapshotLeafBranch(nodes []SSRPlanNode, binding string) bool {
 				if attr.Role == SSRAttrEvent {
 					continue
 				}
+				if attr.Role == SSRAttrTwoWay {
+					continue
+				}
 				if attr.Role != SSRAttrDynamic || attr.Expr == nil {
 					return false
 				}

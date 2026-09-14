@@ -124,6 +124,30 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotChild(t *testing.T) {
 	}
 }
 
+func TestGeneratedSSRRendererSelectsAwaitSnapshotBindableChild(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let draft = "server";</script><template><main>{#await request}<p>Pending</p>{:then value}<Child bind:value={draft} /><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent", map[string]SSRComponentLink{
+		"Child": {LocalName: "Child", GoName: "Child", PackageName: "child", ImportPath: "example.com/project/child"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), `child.Child(child.ChildProps{Value: props.Draft}, child.ChildSlots{})`) {
+		t.Fatalf("SSR snapshot bindable child renderer misses bound prop:\n%s", source)
+	}
+}
+
 func TestSSRHydrationStaticAwaitSnapshotKeepsSettledRange(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request;</script><template><main>{#await request}<p>Pending</p>{:then value}<p>Settled</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
@@ -332,5 +356,82 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotChild(t *testing.T) {
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("await snapshot child browser output=%q", got)
+	}
+}
+
+func TestBrowserSSRHydrationAdoptsAwaitSnapshotBindableChild(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<script>export let value = $bindable("");</script><template><input class="snapshot-bindable" bind:value={value} /></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis := analyzeScriptAST(childSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
+
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; let draft = $state("server");</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Child bind:value={draft} /><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}<p class="parent-value">{draft}</p></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", parentSFC, parentAnalysis, "vela-parent", map[string]SSRComponentLink{
+		"Child": {LocalName: "Child", SourcePath: "Child.vela", GoName: "Child", PackageName: "child", ImportPath: "example.com/project/child"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentRoot := parentPlan.Nodes[0].(*SSRPlanElement)
+	awaitNode := parentSFC.TemplateAST.Nodes[0].(*ElementNode).Children[0].(*AwaitBlockNode)
+	awaitID, ok := ssrHydrationMarkerIDs(parentPlan.Nodes).awaitID(awaitNode.Span)
+	if !ok {
+		t.Fatal("parent await marker is missing")
+	}
+	valueElement := parentRoot.Children[1].(*SSRPlanElement)
+	valueText := valueElement.Children[0].(*SSRPlanText).Parts[0]
+	childRoot := childPlan.Nodes[0].(*SSRPlanElement)
+	childScope := childPlan.ScopeID
+	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><main vela-parent=""><!--v:vela-parent:` + itoa(awaitID) + `--><!--e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><input vela-child="" class="snapshot-bindable" value="server"><!--/e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><script type="application/json" id="vela-state-` + childScope + `">{"component":"` + childScope + `","props":{"Value":"server"},"state":{},"incomplete":false}</script><p vela-parent="" class="settled">Done</p><!--/v:vela-parent:` + itoa(awaitID) + `--><!--e:vela-parent:` + itoa(valueElement.HydrationID) + `--><p vela-parent="" class="parent-value"><!--v:vela-parent:` + itoa(valueText.DynamicID) + `-->server<!--/v:vela-parent:` + itoa(valueText.DynamicID) + `--></p><!--/e:vela-parent:` + itoa(valueElement.HydrationID) + `--></main><!--/e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{},"state":{"draft":"server"},"incomplete":false,"await":{"` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":               embeddedRuntime,
+		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
+		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
+		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
+		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
+		"Parent.hydrate.js":        []byte(PrintJS(parentEntry, PrintPretty)),
+		"index.html":               []byte(html),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],scope=process.argv[2],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("bindable snapshot hydration mutated DOM");await p.evaluate(()=>{window.input=document.querySelector(".snapshot-bindable")});await p.locator(".snapshot-bindable").fill("client");await p.waitForFunction(()=>document.querySelector(".parent-value")?.textContent==="client");await p.evaluate(()=>window.resolveRequest("same"));await p.waitForFunction(()=>document.querySelector(".snapshot-bindable")===window.input&&document.querySelector(".snapshot-bindable")?.value==="client");await p.evaluate(()=>window.hydrated.component.set({draft:"external"}));await p.waitForFunction(()=>document.querySelector(".snapshot-bindable")?.value==="external"&&document.querySelector(".parent-value")?.textContent==="external");await p.evaluate(()=>{window.nextRequest=new Promise(()=>{});window.hydrated.component.set({request:window.nextRequest})});await p.waitForFunction(()=>document.querySelector(".pending"));await p.evaluate(async()=>{window.input.value="stale";window.input.dispatchEvent(new Event("input",{bubbles:true}));await new Promise(resolve=>setTimeout(resolve,0));window.afterDetached=document.querySelector(".parent-value").textContent});if(await p.evaluate(()=>window.afterDetached)!=="external")throw new Error("detached bindable child still updated parent");const state=await p.evaluate(scope=>({detached:!window.input.isConnected,payload:!document.getElementById("vela-state-"+scope)}),scope);if(!state.detached||!state.payload)throw new Error(JSON.stringify(state));await p.evaluate(()=>window.hydrated.component.destroy());process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir, childScope)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("await snapshot bindable child browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(parentClient, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("await snapshot bindable child browser output=%q", got)
 	}
 }

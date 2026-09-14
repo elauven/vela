@@ -8451,9 +8451,13 @@ type hydrationAwaitComponentHandle struct {
 	component   *ComponentNode
 	instanceVar string
 	propsExpr   JsExpr
-	csrFactory  string
-	branch      int
-	events      []hydrationAwaitComponentEvent
+	// overridesExpr contains only the $bindable callbacks that must be
+	// present before an SSR-owned child begins hydration. Its initial prop
+	// value remains in the child payload, preserving zero-write adoption.
+	overridesExpr JsExpr
+	csrFactory    string
+	branch        int
+	events        []hydrationAwaitComponentEvent
 }
 
 // hydrationAwaitComponentEvent is owned by one component instance inside an
@@ -8503,6 +8507,7 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 			}
 			buildHandle := func() {
 				handle.propsExpr = g.componentPropsExpr(component.Attrs)
+				handle.overridesExpr = g.hydrationComponentOverridesExpr(component.Attrs)
 				for _, attr := range component.Attrs {
 					if !attr.IsEvent {
 						continue
@@ -8571,7 +8576,7 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 		}
 		if handle.branch == 0 {
 			g.hydrationInitBody = append(g.hydrationInitBody,
-				genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), nil), "component")),
+				genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), handle.overridesExpr), "component")),
 			)
 			g.hydrationInitBody = append(g.hydrationInitBody, hydrationAwaitComponentEventAttach(handle)...)
 			continue
@@ -8582,7 +8587,7 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 		}
 		g.hydrationInitBody = append(g.hydrationInitBody, genIf(
 			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit(stateName))},
-			genBlock(append([]JsStmt{genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), nil), "component"))}, hydrationAwaitComponentEventAttach(handle)...)...),
+			genBlock(append([]JsStmt{genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), handle.overridesExpr), "component"))}, hydrationAwaitComponentEventAttach(handle)...)...),
 		))
 	}
 	for _, handle := range handles {
@@ -8696,8 +8701,15 @@ func (g *ASTGen) hydrationAwaitSnapshotComponentBranch(children []Node, bindingN
 				return false
 			}
 			for _, attr := range current.Attrs {
-				if attr == nil || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+				if attr == nil || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
 					return false
+				}
+				if attr.IsTwoWay {
+					target, ok := templateExprIdent(attr.Expr)
+					if !ok || g.analysis == nil || !g.analysis.stateSet()[target] {
+						return false
+					}
+					continue
 				}
 				if attr.IsEvent {
 					continue

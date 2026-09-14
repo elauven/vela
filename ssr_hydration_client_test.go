@@ -223,6 +223,32 @@ func TestSSRHydrationAwaitSnapshotAdoptsSettledChild(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationAwaitSnapshotAdoptsBindableChild(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; let draft = $state("server");</script><template><main>{#await request}<p>Waiting</p>{:then value}<Child bind:value={draft} /><p>Done</p>{:catch error}<p>Failed</p>{/await}<p>{draft}</p></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("await snapshot bindable child was rejected")
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		`Child($$root, { $$onChange_value: ($$v) => $$set_draft($$v) }).component`,
+		`$$hawait0_b1_component_0.set({ value: draft, $$onChange_value: ($$v) => $$set_draft($$v) });`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("await snapshot bindable child lowering misses %q:\n%s", want, source)
+		}
+	}
+	if strings.Contains(source, `Child($$root, { value: draft`) {
+		t.Fatalf("await snapshot child hydration must not replay bound server prop:\n%s", source)
+	}
+}
+
 func TestSSRHydrationAwaitThenNestedIfOwnsChildCleanup(t *testing.T) {
 	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let visible = true;</script><template><main>{#await request}<p>Loading</p>{:then value}{#if visible}<Child :title={value} />{:else}<p>Hidden</p>{/if}{/await}</main></template>`)
 	if err != nil {
