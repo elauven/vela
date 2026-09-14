@@ -185,7 +185,7 @@ func TestSSRHydrationAwaitChildBranchesAdoptAndMountWithCSRFactories(t *testing.
 }
 
 func TestSSRHydrationAwaitSnapshotAdoptsSettledChild(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; function close() {}</script><template><main>{#await request}<p>Waiting</p>{:then value}<Child :title={value} @on:close={close} /><p>Done</p>{:catch error}<Child :title={error} @on:close={close} /><p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; function close() {}</script><template><main>{#await request}<p>Waiting</p>{:then value}<Child :title={value} @on:close={close} /><p>Between</p><Child :title={value} @on:close={close} /><p>Done</p>{:catch error}<Child :title={error} @on:close={close} /><p>Between failed</p><Child :title={error} @on:close={close} /><p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,6 +201,10 @@ func TestSSRHydrationAwaitSnapshotAdoptsSettledChild(t *testing.T) {
 		`$$hawait0_b1_component_0.set({ title: $$hawait0_value });`,
 		`$$hawait0_b1_component_0.el.addEventListener('close', $$hawait0_b1_component_0_on_close_h);`,
 		`$$hawait0_b1_component_0.el.removeEventListener('close', $$hawait0_b1_component_0_on_close_h);`,
+		`$$hawait0_b1_component_1 = Child($$root, null,`,
+		`$$hawait0_b1_component_1.set({ title: $$hawait0_value });`,
+		`$$hawait0_b1_component_1.el.addEventListener('close', $$hawait0_b1_component_1_on_close_h);`,
+		`$$hawait0_b1_component_1.el.removeEventListener('close', $$hawait0_b1_component_1_on_close_h);`,
 		`let $$hawait0_initial = true;`,
 	} {
 		if !strings.Contains(source, want) {
@@ -209,6 +213,13 @@ func TestSSRHydrationAwaitSnapshotAdoptsSettledChild(t *testing.T) {
 	}
 	if strings.Contains(source, `$$csr_Child($$root`) {
 		t.Fatalf("settled snapshot child must be adopted rather than CSR-mounted:\n%s", source)
+	}
+	firstSet := strings.Index(source, `$$hawait0_b1_component_0.set({ title: $$hawait0_value });`)
+	secondSet := strings.Index(source, `$$hawait0_b1_component_1.set({ title: $$hawait0_value });`)
+	secondDestroy := strings.Index(source, `$$hawait0_b1_component_1.destroy();`)
+	firstDestroy := strings.Index(source, `$$hawait0_b1_component_0.destroy();`)
+	if firstSet < 0 || secondSet < firstSet || secondDestroy < 0 || firstDestroy < secondDestroy {
+		t.Fatalf("await snapshot child chain lost source/update or reverse destroy order:\n%s", source)
 	}
 }
 

@@ -470,15 +470,15 @@ branches. Slots, component events/bindings, and nested structural component
 branches remain later work.
 
 Independently selected `then` and `catch` snapshots additionally adopt a
-direct local child component with ordinary one-way props, `@on:*` component
-events, and static siblings. The child retains its server DOM and inert payload
-while the initial promise is pending. If that promise settles into the same
-branch, the adopted child receives `.set(...)` with the client value or error
-instead of being remounted. Component-event listeners are attached after child
-adoption and removed before branch replacement. Changing to a different branch
-destroys the child before its range and payload are removed. Slots, component
-bindings, child chains, and nested structural content in a settled snapshot
-remain future lifecycle work.
+source-ordered direct local child chain with ordinary one-way props, `@on:*`
+component events, and static siblings. Each child retains its server DOM and
+inert payload while the initial promise is pending. If that promise settles
+into the same branch, every adopted child receives `.set(...)` with the client
+value or error instead of being remounted. Component-event listeners are
+attached after child adoption and removed in reverse source order before branch
+replacement. Changing to a different branch destroys every child before its
+range and payload are removed. Slots, component bindings, and nested structural
+content in a settled snapshot remain future lifecycle work.
 
 
 For a supported direct `{#if}` the active server branch is adopted as the

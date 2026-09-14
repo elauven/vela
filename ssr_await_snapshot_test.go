@@ -90,7 +90,7 @@ func main() {
 }
 
 func TestGeneratedSSRRendererSelectsAwaitSnapshotChild(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request;</script><template><main>{#await request}<p>Pending</p>{:then value}<Child :title={value} /><p>Done</p>{:catch error}<Child :title={error} /><p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request;</script><template><main>{#await request}<p>Pending</p>{:then value}<Child :title={value} /><p>Between</p><Child :title={value} /><p>Done</p>{:catch error}<Child :title={error} /><p>Between failed</p><Child :title={error} /><p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,10 +111,16 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotChild(t *testing.T) {
 	for _, want := range []string{
 		`case "then":`,
 		`child.ChildAt(child.ChildProps{Title: ssrAwaitSnapshot0.Value}, child.ChildSlots{}, instanceID+"--n0--n0--await-then--n0--component-Child")`,
+		`child.ChildAt(child.ChildProps{Title: ssrAwaitSnapshot0.Value}, child.ChildSlots{}, instanceID+"--n0--n0--await-then--n2--component-Child")`,
 	} {
 		if !strings.Contains(string(source), want) {
 			t.Fatalf("SSR snapshot child renderer misses %q:\n%s", want, source)
 		}
+	}
+	first := strings.Index(string(source), `await-then--n0--component-Child`)
+	second := strings.Index(string(source), `await-then--n2--component-Child`)
+	if first < 0 || second < first {
+		t.Fatalf("SSR snapshot child chain does not preserve source order:\n%s", source)
 	}
 }
 
@@ -260,7 +266,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotChild(t *testing.T) {
 	}
 	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
 
-	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; function record() { window.snapshotChildEvents = (window.snapshotChildEvents || 0) + 1; }</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Child :title={value} @on:close={record} /><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; function record() { window.snapshotChildEvents = (window.snapshotChildEvents || 0) + 1; }</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Child :title={value} @on:close={record} /><p class="between">Between</p><Child :title={value} @on:close={record} /><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,10 +291,24 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotChild(t *testing.T) {
 	if !ok {
 		t.Fatal("parent await marker is missing")
 	}
-	childScope := childPlan.ScopeID
 	childRoot := childPlan.Nodes[0].(*SSRPlanElement)
 	childText := childRoot.Children[0].(*SSRPlanText).Parts[0]
-	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentPlan.Nodes[0].(*SSRPlanElement).HydrationID) + `--><main vela-parent=""><!--v:vela-parent:` + itoa(awaitID) + `--><!--e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><button vela-child="" class="snapshot-child" data-vela-event="` + childScope + `-e0"><!--v:` + childScope + `:` + itoa(childText.DynamicID) + `-->server<!--/v:` + childScope + `:` + itoa(childText.DynamicID) + `--></button><!--/e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><script type="application/json" id="vela-state-` + childScope + `">{"component":"` + childScope + `","props":{"Title":"server"},"state":{},"incomplete":false}</script><p vela-parent="" class="settled">Done</p><!--/v:vela-parent:` + itoa(awaitID) + `--></main><!--/e:vela-parent:` + itoa(parentPlan.Nodes[0].(*SSRPlanElement).HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{},"state":{},"incomplete":false,"await":{"` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.snapshotChildEvents=0;window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	thenChildren := awaitNode.ThenChildren
+	firstChild := thenChildren[0].(*ComponentNode)
+	secondChild := thenChildren[2].(*ComponentNode)
+	childScope := func(component *ComponentNode) string {
+		suffix := parentPlan.ComponentInstanceSuffixes[component.Span]
+		if suffix == "" {
+			t.Fatalf("snapshot child chain is missing static instance suffix")
+		}
+		return parentPlan.ScopeID + "--" + suffix
+	}
+	childHTML := func(scope string) string {
+		return `<!--e:` + scope + `:` + itoa(childRoot.HydrationID) + `--><button vela-child="" class="snapshot-child" data-vela-event="` + scope + `-e0"><!--v:` + scope + `:` + itoa(childText.DynamicID) + `-->server<!--/v:` + scope + `:` + itoa(childText.DynamicID) + `--></button><!--/e:` + scope + `:` + itoa(childRoot.HydrationID) + `--><script type="application/json" id="vela-state-` + scope + `">{"component":"` + scope + `","props":{"Title":"server"},"state":{},"incomplete":false}</script>`
+	}
+	firstScope := childScope(firstChild)
+	secondScope := childScope(secondChild)
+	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentPlan.Nodes[0].(*SSRPlanElement).HydrationID) + `--><main vela-parent=""><!--v:vela-parent:` + itoa(awaitID) + `-->` + childHTML(firstScope) + `<p vela-parent="" class="between">Between</p>` + childHTML(secondScope) + `<p vela-parent="" class="settled">Done</p><!--/v:vela-parent:` + itoa(awaitID) + `--></main><!--/e:vela-parent:` + itoa(parentPlan.Nodes[0].(*SSRPlanElement).HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{},"state":{},"incomplete":false,"await":{"` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.snapshotChildEvents=0;window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
@@ -303,8 +323,8 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotChild(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],scope=process.argv[2],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("snapshot child hydration mutated DOM");await p.evaluate(()=>{window.child=document.querySelector(".snapshot-child");window.child.click()});await p.waitForFunction(()=>window.snapshotChildEvents===1);await p.evaluate(()=>window.resolveRequest("client"));await p.waitForFunction(()=>document.querySelector(".snapshot-child")?.textContent==="client");const same=await p.evaluate(()=>document.querySelector(".snapshot-child")===window.child);if(!same)throw new Error("snapshot child was remounted on same-branch settle");await p.evaluate(()=>window.child.click());await p.waitForFunction(()=>window.snapshotChildEvents===2);await p.evaluate(()=>{window.nextRequest=new Promise(()=>{});window.hydrated.component.set({request:window.nextRequest})});await p.waitForFunction(()=>document.querySelector(".pending"));await p.evaluate(()=>window.child.click());if(await p.evaluate(()=>window.snapshotChildEvents)!==2)throw new Error("detached snapshot child listener remained active");const state=await p.evaluate(scope=>({detached:!window.child.isConnected,payload:!document.getElementById("vela-state-"+scope),destroys:window.snapshotChildDestroys}),scope);if(!state.detached||!state.payload||state.destroys!==1)throw new Error(JSON.stringify(state));await p.evaluate(()=>window.hydrated.component.destroy());process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
-	command := exec.Command(node, "-e", browser, dir, childScope)
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],scopes=process.argv.slice(2),server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("snapshot child hydration mutated DOM");await p.evaluate(()=>{window.children=[...document.querySelectorAll(".snapshot-child")];if(window.children.length!==2)throw new Error("expected two adopted snapshot children");window.children.forEach(child=>child.click())});await p.waitForFunction(()=>window.snapshotChildEvents===2);await p.evaluate(()=>window.resolveRequest("client"));await p.waitForFunction(()=>[...document.querySelectorAll(".snapshot-child")].length===2&&[...document.querySelectorAll(".snapshot-child")].every(child=>child.textContent==="client"));const same=await p.evaluate(()=>{const chain=[...document.querySelectorAll("main > .snapshot-child, main > .between")];return [...document.querySelectorAll(".snapshot-child")].every((child,index)=>child===window.children[index])&&chain[0]===window.children[0]&&chain[1]===document.querySelector(".between")&&chain[2]===window.children[1]});if(!same)throw new Error("snapshot child chain was remounted or reordered on same-branch settle");await p.evaluate(()=>window.children.forEach(child=>child.click()));await p.waitForFunction(()=>window.snapshotChildEvents===4);await p.evaluate(()=>{window.nextRequest=new Promise(()=>{});window.hydrated.component.set({request:window.nextRequest})});await p.waitForFunction(()=>document.querySelector(".pending"));await p.evaluate(()=>window.children.forEach(child=>child.click()));if(await p.evaluate(()=>window.snapshotChildEvents)!==4)throw new Error("detached snapshot child listener remained active");const state=await p.evaluate(scopes=>({detached:window.children.every(child=>!child.isConnected),payloads:scopes.every(scope=>!document.getElementById("vela-state-"+scope)),destroys:window.snapshotChildDestroys}),scopes);if(!state.detached||!state.payloads||state.destroys!==2)throw new Error(JSON.stringify(state));await p.evaluate(()=>window.hydrated.component.destroy());process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir, firstScope, secondScope)
 	command.Dir = "/projects/compiler"
 	output, err := command.CombinedOutput()
 	if err != nil {
