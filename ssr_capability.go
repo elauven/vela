@@ -955,10 +955,10 @@ func ssrCapabilityAwaitComponentBranches(block *AwaitBlockNode, directChildren f
 }
 
 // ssrCapabilityCurrentAwaitComponentSlots admits static projected content in a
-// pending child, and simple identifier text interpolation in an independently
-// selected then/catch snapshot. The latter has parent-owned text markers that
-// are acquired during adoption; both shapes rebuild through a CSR slot closure
-// after a later await transition.
+// pending child, and simple identifier text/one-way-attribute expressions in
+// an independently selected then/catch snapshot. The latter has parent-owned
+// markers that are acquired during adoption; both shapes rebuild through a CSR
+// slot closure after a later await transition.
 func ssrCapabilityCurrentAwaitComponentSlots(component *ComponentNode, branch int) bool {
 	if component == nil {
 		return false
@@ -967,14 +967,14 @@ func ssrCapabilityCurrentAwaitComponentSlots(component *ComponentNode, branch in
 		if branch == 0 && !allStatic(children) {
 			return false
 		}
-		if branch != 0 && !ssrCapabilityCurrentAwaitSnapshotSlotTextNodes(children) {
+		if branch != 0 && !ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(children) {
 			return false
 		}
 	}
 	return true
 }
 
-func ssrCapabilityCurrentAwaitSnapshotSlotTextNodes(nodes []Node) bool {
+func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
@@ -988,11 +988,17 @@ func ssrCapabilityCurrentAwaitSnapshotSlotTextNodes(nodes []Node) bool {
 			}
 		case *ElementNode:
 			for _, attr := range current.Attrs {
-				if attr == nil || attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+				if attr == nil || attr.Expr == nil {
+					continue
+				}
+				if !attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					return false
+				}
+				if _, ok := templateExprIdent(attr.Expr); !ok {
 					return false
 				}
 			}
-			if !ssrCapabilityCurrentAwaitSnapshotSlotTextNodes(current.Children) {
+			if !ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(current.Children) {
 				return false
 			}
 		default:

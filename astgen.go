@@ -8521,7 +8521,7 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 					// markers from the parent walker.
 					handle.slotsExpr = g.buildCSRSlotClosures(component)
 					if branch != 0 {
-						handle.slotSnapshot = g.buildHydrationAwaitSnapshotSlotTextPlan(component.Slots, bindingNames[branch], bindingValues[branch])
+						handle.slotSnapshot = g.buildHydrationAwaitSnapshotSlotPlan(component.Slots, bindingNames[branch], bindingValues[branch])
 					}
 				} else {
 					handle.slotsExpr = &JsObjectExpr{baseExpr: baseExpr{genNode()}}
@@ -8732,7 +8732,7 @@ func (g *ASTGen) hydrationAwaitSnapshotComponentBranch(children []Node, bindingN
 				return false
 			}
 		case *ComponentNode:
-			if current == nil || !g.hydrationAwaitSnapshotSlotTextSlots(current.Slots, bindingName) {
+			if current == nil || !g.hydrationAwaitSnapshotSlotLeafNodes(current.Slots, bindingName) {
 				return false
 			}
 			for _, attr := range current.Attrs {
@@ -8776,11 +8776,12 @@ func hydrationAwaitSnapshotStaticSlots(slots map[string][]Node) bool {
 	return true
 }
 
-// buildHydrationAwaitSnapshotSlotTextPlan owns parent-projected text markers
-// inside one independently selected then/catch child. The initial SSR range is
-// only acquired; a future CSR remount uses the ordinary typed slot closure.
-func (g *ASTGen) buildHydrationAwaitSnapshotSlotTextPlan(slots map[string][]Node, bindingName, bindingValue string) hydrationAwaitSnapshotLeafPlan {
-	if !g.hydrationAwaitSnapshotSlotTextSlots(slots, bindingName) {
+// buildHydrationAwaitSnapshotSlotPlan owns parent-projected dynamic text and
+// one-way attribute markers inside one independently selected then/catch
+// child. The initial SSR DOM is only acquired; a future CSR remount uses the
+// ordinary typed slot closure.
+func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bindingName, bindingValue string) hydrationAwaitSnapshotLeafPlan {
+	if !g.hydrationAwaitSnapshotSlotLeafNodes(slots, bindingName) {
 		return hydrationAwaitSnapshotLeafPlan{}
 	}
 	plan := hydrationAwaitSnapshotLeafPlan{supported: true, deps: map[string]bool{}}
@@ -8807,6 +8808,32 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotTextPlan(slots map[string][]Node
 						}
 					}
 				case *ElementNode:
+					markerID, ok := g.hydrationMarkers.Elements[current.Span]
+					if !ok {
+						panic("vela: missing SSR element marker for await snapshot slot attribute")
+					}
+					elementVar := "$$hawait" + itoa(markerID) + "_slot_element"
+					adoptedElement := false
+					for attrIndex, attr := range current.Attrs {
+						if attr == nil || attr.Expr == nil || !attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+							continue
+						}
+						if !adoptedElement {
+							plan.adopt = append(plan.adopt, g.createHydrationTemplateElementStmt(elementVar, current))
+							adoptedElement = true
+						}
+						refreshVar := elementVar + "_" + itoa(attrIndex) + "_refresh"
+						plan.decls = append(plan.decls, genLet(refreshVar, genNull()))
+						plan.adopt = append(plan.adopt, genAssignStmt(id(refreshVar), &JsArrowFunc{
+							baseExpr: baseExpr{genNode()},
+							Body:     genBlock(g.hydrationAwaitSnapshotAttrWriteStmt(elementVar, attr, refreshVar)),
+						}))
+						plan.refresh = append(plan.refresh, genIf(id(refreshVar), genExprStmt(genCall(id(refreshVar)))))
+						plan.cleanup = append(plan.cleanup, genAssignStmt(id(refreshVar), genNull()))
+						for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+							plan.deps[dependency] = true
+						}
+					}
 					visit(current.Children)
 				}
 			}
@@ -8815,13 +8842,16 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotTextPlan(slots map[string][]Node
 			visit(slots[name])
 		}
 	})
+	plan.cleanup = append(plan.listenerCleanup, plan.cleanup...)
 	return plan
 }
 
-// hydrationAwaitSnapshotSlotTextSlots permits dynamic text identifiers within
-// a static ordinary-element tree. A branch value is rewritten through the
-// current template binding; parent reactive names register ordinary updates.
-func (g *ASTGen) hydrationAwaitSnapshotSlotTextSlots(slots map[string][]Node, bindingName string) bool {
+// hydrationAwaitSnapshotSlotLeafNodes permits simple identifier text and
+// one-way attribute expressions within an ordinary-element tree. A branch
+// value is rewritten through the current template binding; parent reactive
+// names register ordinary updates. Directives, listeners, bindings, nested
+// components, and structural blocks deliberately remain later recipes.
+func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bindingName string) bool {
 	var check func([]Node) bool
 	check = func(nodes []Node) bool {
 		for _, node := range nodes {
@@ -8837,7 +8867,16 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotTextSlots(slots map[string][]Node, bi
 				}
 			case *ElementNode:
 				for _, attr := range current.Attrs {
-					if attr == nil || attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					if attr == nil {
+						continue
+					}
+					if attr.Expr == nil {
+						continue
+					}
+					if !attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+						return false
+					}
+					if _, ok := templateExprIdent(attr.Expr); !ok {
 						return false
 					}
 				}
@@ -10003,8 +10042,16 @@ func (g *ASTGen) applyRootAttrs(el *ElementNode) {
 // expression. Keeping one statement instance preserves its template origin.
 func (g *ASTGen) registerReactiveTemplateStmt(stmt JsStmt, expr *TemplateExpr) {
 	g.initBody = append(g.initBody, stmt)
+	update := stmt
+	// A projected slot can be retained from SSR and never opened through its
+	// CSR factory. Its DOM refs are consequently still null while parent
+	// setters run. The initial write above belongs to the factory; every later
+	// callback must wait until the slot cache proves that factory owns live DOM.
+	if g.inSlotScope && g.slotGuard != "" {
+		update = genIf(id(g.slotGuard), stmt)
+	}
 	for _, dep := range templateExprDeps(expr, g.reactiveNames()) {
-		g.addUpdate(dep, stmt)
+		g.addUpdate(dep, update)
 	}
 }
 

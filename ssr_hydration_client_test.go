@@ -273,8 +273,8 @@ func TestSSRHydrationAwaitSnapshotAdoptsStaticSlotChild(t *testing.T) {
 	}
 }
 
-func TestSSRHydrationAwaitSnapshotAdoptsReactiveSlotTextChild(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let title = "server";</script><template><main>{#await request}<p>Waiting</p>{:then value}<Child><p class="slotted">{title}</p></Child><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
+func TestSSRHydrationAwaitSnapshotAdoptsReactiveSlotLeafChild(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let title = "server";</script><template><main>{#await request}<p>Waiting</p>{:then value}<Child><p class="slotted" :title={title}>{title}</p></Child><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,6 +288,9 @@ func TestSSRHydrationAwaitSnapshotAdoptsReactiveSlotTextChild(t *testing.T) {
 	source := PrintJS(program, PrintPretty)
 	for _, want := range []string{
 		`Child($$root).component`,
+		`$$acquireHydrationElement($$walker,`,
+		`getAttribute('title')`,
+		`setAttribute('title'`,
 		`$$acquireHydrationRange($$walker, 1)`,
 		`$$writeHydrationText`,
 		`$$csr_Child($$frag, {}, { 'default': () => {`,
