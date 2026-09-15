@@ -475,13 +475,18 @@ component events, a `$bindable` component binding of the form
 `bind:name={parentState}`, and static siblings. `parentState` must be a simple
 reactive parent-state identifier; it is passed as an `$$onChange_name` callback
 to the hydrate entry without replaying the server prop into the live child DOM.
+Static projected default and named slots are also retained during adoption;
+when a later branch transition mounts a fresh CSR child, it receives the same
+typed static slot factories. Slot text interpolation, reactive attributes,
+events, bindings, child components, and structural blocks are not yet part of
+this selected-snapshot slot recipe.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.
 Component-event listeners are attached after child adoption and removed in
 reverse source order before branch replacement. Changing to a different branch
 destroys every child before its range and payload are removed. Slots and nested
-structural content in a settled snapshot remain future lifecycle work.
+structural content beyond the static slot subset remain future lifecycle work.
 
 
 For a supported direct `{#if}` the active server branch is adopted as the

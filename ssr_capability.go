@@ -934,7 +934,7 @@ func ssrCapabilityAwaitComponentBranches(block *AwaitBlockNode, directChildren f
 				staticChildren = append(staticChildren, child)
 				continue
 			}
-			if len(component.Slots) != 0 || !ssrCapabilityCurrentAwaitComponentAttrs(component) {
+			if !ssrCapabilityCurrentAwaitComponentSlots(component) || !ssrCapabilityCurrentAwaitComponentAttrs(component) {
 				return nil, false
 			}
 			result[index] = append(result[index], component)
@@ -952,6 +952,22 @@ func ssrCapabilityAwaitComponentBranches(block *AwaitBlockNode, directChildren f
 		}
 	}
 	return result, found
+}
+
+// ssrCapabilityCurrentAwaitComponentSlots admits only static parent-projected
+// content. It remains in the SSR child DOM during adoption and can be rebuilt
+// from a typed slot closure only when a later await transition mounts CSR DOM.
+// Dynamic projection needs branch-owned marker adoption and stays gated.
+func ssrCapabilityCurrentAwaitComponentSlots(component *ComponentNode) bool {
+	if component == nil {
+		return false
+	}
+	for _, children := range component.Slots {
+		if !allStatic(children) {
+			return false
+		}
+	}
+	return true
 }
 
 // ssrCapabilityCurrentAwaitComponentAttrs accepts the direct await child

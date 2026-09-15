@@ -148,6 +148,36 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotBindableChild(t *testing.T) {
 	}
 }
 
+func TestGeneratedSSRRendererSelectsAwaitSnapshotStaticSlotChild(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request;</script><template><main>{#await request}<p>Pending</p>{:then value}<Child><p class="slotted">Body</p></Child><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent", map[string]SSRComponentLink{
+		"Child": {LocalName: "Child", GoName: "Child", PackageName: "child", ImportPath: "example.com/project/child"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`child.Child(child.ChildProps{}, child.ChildSlots{`,
+		`Default: func(w io.Writer) error {`,
+		`vela.WriteString(w, "<p class=\"slotted\">")`,
+	} {
+		if !strings.Contains(string(source), want) {
+			t.Fatalf("SSR snapshot static-slot child renderer misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestSSRHydrationStaticAwaitSnapshotKeepsSettledRange(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request;</script><template><main>{#await request}<p>Pending</p>{:then value}<p>Settled</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
@@ -433,5 +463,83 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotBindableChild(t *testing.T) {
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("await snapshot bindable child browser output=%q", got)
+	}
+}
+
+func TestBrowserSSRHydrationAdoptsAwaitSnapshotStaticSlotChild(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<template><section class="snapshot-slot-child"><slot><p class="fallback">Fallback</p></slot></section></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis := analyzeScriptAST(childSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
+
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request;</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Child><p class="snapshot-slot">Body</p></Child><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", parentSFC, parentAnalysis, "vela-parent", map[string]SSRComponentLink{
+		"Child": {LocalName: "Child", SourcePath: "Child.vela", GoName: "Child", PackageName: "child", ImportPath: "example.com/project/child"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentRoot := parentPlan.Nodes[0].(*SSRPlanElement)
+	awaitPlan := parentRoot.Children[0].(*SSRPlanAwait)
+	awaitNode := parentSFC.TemplateAST.Nodes[0].(*ElementNode).Children[0].(*AwaitBlockNode)
+	awaitID, ok := ssrHydrationMarkerIDs(parentPlan.Nodes).awaitID(awaitNode.Span)
+	if !ok {
+		t.Fatal("parent await marker is missing")
+	}
+	componentPlan := awaitPlan.ThenChildren[0].(*SSRPlanComponent)
+	slotElement := componentPlan.Slots["default"][0].(*SSRPlanElement)
+	childRoot := childPlan.Nodes[0].(*SSRPlanElement)
+	childScope := childPlan.ScopeID
+	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><main vela-parent=""><!--v:vela-parent:` + itoa(awaitID) + `--><!--e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><section vela-child="" class="snapshot-slot-child"><!--e:vela-parent:` + itoa(slotElement.HydrationID) + `--><p vela-parent="" class="snapshot-slot">Body</p><!--/e:vela-parent:` + itoa(slotElement.HydrationID) + `--></section><!--/e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><script type="application/json" id="vela-state-` + childScope + `">{"component":"` + childScope + `","props":{},"state":{},"incomplete":false}</script><p vela-parent="" class="settled">Done</p><!--/v:vela-parent:` + itoa(awaitID) + `--></main><!--/e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{},"state":{},"incomplete":false,"await":{"` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":               embeddedRuntime,
+		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
+		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
+		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
+		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
+		"Parent.hydrate.js":        []byte(PrintJS(parentEntry, PrintPretty)),
+		"index.html":               []byte(html),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],scope=process.argv[2],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("snapshot slot hydration mutated DOM");await p.evaluate(()=>{window.child=document.querySelector(".snapshot-slot-child");window.slot=document.querySelector(".snapshot-slot")});await p.evaluate(()=>{window.nextRequest=new Promise(resolve=>{window.resolveNext=resolve});window.hydrated.component.set({request:window.nextRequest})});await p.waitForFunction(()=>document.querySelector(".pending"));const removed=await p.evaluate(scope=>({child:!window.child.isConnected,slot:!window.slot.isConnected,payload:!document.getElementById("vela-state-"+scope)}),scope);if(!removed.child||!removed.slot||!removed.payload)throw new Error(JSON.stringify(removed));await p.evaluate(()=>window.resolveNext("again"));await p.waitForFunction(()=>document.querySelector(".snapshot-slot-child")&&document.querySelector(".snapshot-slot")?.textContent==="Body");const remounted=await p.evaluate(()=>({sameChild:document.querySelector(".snapshot-slot-child")===window.child,sameSlot:document.querySelector(".snapshot-slot")===window.slot}));if(remounted.sameChild||remounted.sameSlot)throw new Error("snapshot slot child reused detached DOM instead of CSR remount");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir, childScope)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("await snapshot static-slot child browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(parentClient, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("await snapshot static-slot child browser output=%q", got)
 	}
 }

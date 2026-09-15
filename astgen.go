@@ -8455,9 +8455,12 @@ type hydrationAwaitComponentHandle struct {
 	// present before an SSR-owned child begins hydration. Its initial prop
 	// value remains in the child payload, preserving zero-write adoption.
 	overridesExpr JsExpr
-	csrFactory    string
-	branch        int
-	events        []hydrationAwaitComponentEvent
+	// slotsExpr is used only for a later CSR remount. During initial adoption
+	// the child retains the static projected DOM already emitted by SSR.
+	slotsExpr  JsExpr
+	csrFactory string
+	branch     int
+	events     []hydrationAwaitComponentEvent
 }
 
 // hydrationAwaitComponentEvent is owned by one component instance inside an
@@ -8508,6 +8511,11 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 			buildHandle := func() {
 				handle.propsExpr = g.componentPropsExpr(component.Attrs)
 				handle.overridesExpr = g.hydrationComponentOverridesExpr(component.Attrs)
+				if len(component.Slots) != 0 {
+					handle.slotsExpr = g.buildSlotClosures(component)
+				} else {
+					handle.slotsExpr = &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+				}
 				for _, attr := range component.Attrs {
 					if !attr.IsEvent {
 						continue
@@ -8697,7 +8705,7 @@ func (g *ASTGen) hydrationAwaitSnapshotComponentBranch(children []Node, bindingN
 				return false
 			}
 		case *ComponentNode:
-			if current == nil || len(current.Slots) != 0 {
+			if current == nil || !hydrationAwaitSnapshotStaticSlots(current.Slots) {
 				return false
 			}
 			for _, attr := range current.Attrs {
@@ -8726,6 +8734,19 @@ func (g *ASTGen) hydrationAwaitSnapshotComponentBranch(children []Node, bindingN
 		}
 	}
 	return found
+}
+
+// hydrationAwaitSnapshotStaticSlots is the first settled-snapshot projection
+// recipe. These nodes need no initial marker acquisition: their SSR DOM is
+// already inside the adopted child range. The typed slot closure is retained
+// for an ordinary CSR remount after a later branch transition.
+func hydrationAwaitSnapshotStaticSlots(slots map[string][]Node) bool {
+	for _, children := range slots {
+		if !allStatic(children) {
+			return false
+		}
+	}
+	return true
 }
 
 func hydrationAwaitComponentEventAttach(handle hydrationAwaitComponentHandle) []JsStmt {
@@ -8775,7 +8796,7 @@ func (g *ASTGen) hydrationAwaitComponentBranchMount(children []Node, handles []h
 			panic("vela: await component branch does not match lifecycle handles")
 		}
 		body = append(body, genAssignStmt(id(handle.instanceVar), genCall(
-			id(handle.csrFactory), id("$$frag"), handle.propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}},
+			id(handle.csrFactory), id("$$frag"), handle.propsExpr, handle.slotsExpr,
 		)))
 		body = append(body, hydrationAwaitComponentEventAttach(*handle)...)
 	}
