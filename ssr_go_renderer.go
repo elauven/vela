@@ -878,7 +878,10 @@ func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
 					if attr.Role == SSRAttrStatic {
 						continue
 					}
-					if attr.Role != SSRAttrDynamic || attr.Expr == nil {
+					if attr.Role != SSRAttrDynamic && attr.Role != SSRAttrClassDirective && attr.Role != SSRAttrStyleDirective {
+						return false
+					}
+					if attr.Expr == nil {
 						return false
 					}
 					if _, ok := templateExprIdent(attr.Expr); !ok {

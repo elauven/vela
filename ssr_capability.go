@@ -955,10 +955,10 @@ func ssrCapabilityAwaitComponentBranches(block *AwaitBlockNode, directChildren f
 }
 
 // ssrCapabilityCurrentAwaitComponentSlots admits static projected content in a
-// pending child, and simple identifier text/one-way-attribute expressions in
-// an independently selected then/catch snapshot. The latter has parent-owned
-// markers that are acquired during adoption; both shapes rebuild through a CSR
-// slot closure after a later await transition.
+// pending child, and simple identifier text/one-way-attribute/class/style
+// expressions in an independently selected then/catch snapshot. The latter
+// has parent-owned markers that are acquired during adoption; both shapes
+// rebuild through a CSR slot closure after a later await transition.
 func ssrCapabilityCurrentAwaitComponentSlots(component *ComponentNode, branch int) bool {
 	if component == nil {
 		return false
@@ -991,7 +991,10 @@ func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 				if attr == nil || attr.Expr == nil {
 					continue
 				}
-				if !attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+				if !attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir {
+					return false
+				}
+				if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
 					return false
 				}
 				if _, ok := templateExprIdent(attr.Expr); !ok {

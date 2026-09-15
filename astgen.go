@@ -8776,10 +8776,10 @@ func hydrationAwaitSnapshotStaticSlots(slots map[string][]Node) bool {
 	return true
 }
 
-// buildHydrationAwaitSnapshotSlotPlan owns parent-projected dynamic text and
-// one-way attribute markers inside one independently selected then/catch
-// child. The initial SSR DOM is only acquired; a future CSR remount uses the
-// ordinary typed slot closure.
+// buildHydrationAwaitSnapshotSlotPlan owns parent-projected dynamic text,
+// one-way attributes, and class/style directives inside one independently
+// selected then/catch child. The initial SSR DOM is only acquired; a future
+// CSR remount uses the ordinary typed slot closure.
 func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bindingName, bindingValue string) hydrationAwaitSnapshotLeafPlan {
 	if !g.hydrationAwaitSnapshotSlotLeafNodes(slots, bindingName) {
 		return hydrationAwaitSnapshotLeafPlan{}
@@ -8815,7 +8815,10 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 					elementVar := "$$hawait" + itoa(markerID) + "_slot_element"
 					adoptedElement := false
 					for attrIndex, attr := range current.Attrs {
-						if attr == nil || attr.Expr == nil || !attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+						if attr == nil || attr.Expr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
+							continue
+						}
+						if !attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir {
 							continue
 						}
 						if !adoptedElement {
@@ -8824,9 +8827,15 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 						}
 						refreshVar := elementVar + "_" + itoa(attrIndex) + "_refresh"
 						plan.decls = append(plan.decls, genLet(refreshVar, genNull()))
+						write := g.hydrationAwaitSnapshotAttrWriteStmt(elementVar, attr, refreshVar)
+						if attr.IsClassDir {
+							write = g.classDirStmtAST(elementVar, attr)
+						} else if attr.IsStyleDir {
+							write = g.styleDirStmtAST(elementVar, attr)
+						}
 						plan.adopt = append(plan.adopt, genAssignStmt(id(refreshVar), &JsArrowFunc{
 							baseExpr: baseExpr{genNode()},
-							Body:     genBlock(g.hydrationAwaitSnapshotAttrWriteStmt(elementVar, attr, refreshVar)),
+							Body:     genBlock(write),
 						}))
 						plan.refresh = append(plan.refresh, genIf(id(refreshVar), genExprStmt(genCall(id(refreshVar)))))
 						plan.cleanup = append(plan.cleanup, genAssignStmt(id(refreshVar), genNull()))
@@ -8847,10 +8856,11 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 }
 
 // hydrationAwaitSnapshotSlotLeafNodes permits simple identifier text and
-// one-way attribute expressions within an ordinary-element tree. A branch
-// value is rewritten through the current template binding; parent reactive
-// names register ordinary updates. Directives, listeners, bindings, nested
-// components, and structural blocks deliberately remain later recipes.
+// one-way attributes, and class/style directive expressions within an
+// ordinary-element tree. A branch value is rewritten through the current
+// template binding; parent reactive names register ordinary updates. Listeners,
+// bindings, nested components, and structural blocks deliberately remain later
+// recipes.
 func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bindingName string) bool {
 	var check func([]Node) bool
 	check = func(nodes []Node) bool {
@@ -8873,7 +8883,10 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bi
 					if attr.Expr == nil {
 						continue
 					}
-					if !attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					if !attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir {
+						return false
+					}
+					if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
 						return false
 					}
 					if _, ok := templateExprIdent(attr.Expr); !ok {
