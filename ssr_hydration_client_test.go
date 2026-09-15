@@ -274,7 +274,7 @@ func TestSSRHydrationAwaitSnapshotAdoptsStaticSlotChild(t *testing.T) {
 }
 
 func TestSSRHydrationAwaitSnapshotAdoptsReactiveSlotLeafChild(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let title = "server"; export let active = false; export let color = "red";</script><template><main>{#await request}<p>Waiting</p>{:then value}<Child><p class="slotted" :title={title} class:active={active} style:color={color}>{title}</p></Child><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let title = "server"; export let active = false; export let color = "red"; function increment() {}</script><template><main>{#await request}<p>Waiting</p>{:then value}<Child><p class="slotted" :title={title} class:active={active} style:color={color}>{title}</p><button @click={increment}>Increment</button></Child><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,6 +293,8 @@ func TestSSRHydrationAwaitSnapshotAdoptsReactiveSlotLeafChild(t *testing.T) {
 		`setAttribute('title'`,
 		`classList.toggle('active'`,
 		`style.setProperty('color'`,
+		`addEventListener('click', increment)`,
+		`removeEventListener('click', increment)`,
 		`$$acquireHydrationRange($$walker, 1)`,
 		`$$writeHydrationText`,
 		`$$csr_Child($$frag, {}, { 'default': () => {`,

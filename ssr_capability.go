@@ -991,6 +991,9 @@ func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 				if attr == nil || attr.Expr == nil {
 					continue
 				}
+				if attr.IsEvent {
+					continue
+				}
 				if !attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir {
 					return false
 				}

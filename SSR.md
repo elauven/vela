@@ -479,15 +479,16 @@ Static projected default and named slots are also retained during adoption;
 when a later branch transition mounts a fresh CSR child, it receives the same
 typed static slot factories. A default or named slot may additionally contain
 `{name}` text interpolation, `:attribute={name}` one-way attributes, and
-`class:name={value}` / `style:property={value}` directives, where each value
-is a single parent identifier or the selected `then` / `catch` binding,
-recursively inside ordinary elements. The parent owns and acquires the
-canonical text and element markers, updates them in place for parent changes
-or same-branch promise settlement, and clears their handles before the branch
-range is removed. A subsequent CSR remount deliberately builds fresh slot DOM
-instead of reusing consumed SSR markers. DOM events, bindings, child
-components, and structural blocks remain outside this selected-snapshot slot
-recipe.
+`class:name={value}` / `style:property={value}` directives, and ordinary DOM
+`@event` listeners, where each value is a single parent identifier or the
+selected `then` / `catch` binding, recursively inside ordinary elements. The
+parent owns and acquires the canonical text and element markers, updates them
+in place for parent changes or same-branch promise settlement, and clears
+their handles before the branch range is removed. Event listeners attach after
+child adoption and are removed before branch replacement or destroy; a
+subsequent CSR remount builds fresh slot DOM and listener ownership rather than
+reusing consumed SSR markers. Bindings, child components, and structural
+blocks remain outside this selected-snapshot slot recipe.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.

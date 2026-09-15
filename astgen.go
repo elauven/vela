@@ -8461,9 +8461,13 @@ type hydrationAwaitComponentHandle struct {
 	// slotSnapshot owns reactive projected text only while this selected
 	// then/catch child remains active. CSR remounts use slotsExpr instead.
 	slotSnapshot hydrationAwaitSnapshotLeafPlan
-	csrFactory   string
-	branch       int
-	events       []hydrationAwaitComponentEvent
+	// slotCSRCleanup owns listeners and nested lifecycle resources created by
+	// slotsExpr after a later CSR remount. Projected DOM belongs to the parent
+	// branch, not to the child instance that consumes its slot closure.
+	slotCSRCleanup []JsStmt
+	csrFactory     string
+	branch         int
+	events         []hydrationAwaitComponentEvent
 }
 
 // hydrationAwaitComponentEvent is owned by one component instance inside an
@@ -8519,7 +8523,7 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 					// the hydrated await branch changes.  It must therefore create
 					// fresh slot DOM rather than trying to acquire the initial SSR
 					// markers from the parent walker.
-					handle.slotsExpr = g.buildCSRSlotClosures(component)
+					handle.slotsExpr, handle.slotCSRCleanup = g.buildCSRSlotClosures(component)
 					if branch != 0 {
 						handle.slotSnapshot = g.buildHydrationAwaitSnapshotSlotPlan(component.Slots, bindingNames[branch], bindingValues[branch])
 					}
@@ -8653,7 +8657,8 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 	renderBody := []JsStmt{genIf(genBinary("===", id(stateVar), id(activeVar)), genBlock(sameState...))}
 	for index := len(handles) - 1; index >= 0; index-- {
 		handle := handles[index]
-		destroyBody := append(append([]JsStmt{}, handle.slotSnapshot.cleanup...), hydrationAwaitComponentEventDetach(handle)...)
+		destroyBody := append(append([]JsStmt{}, handle.slotSnapshot.cleanup...), handle.slotCSRCleanup...)
+		destroyBody = append(destroyBody, hydrationAwaitComponentEventDetach(handle)...)
 		destroyBody = append(destroyBody,
 			genExprStmt(genCall(genMember(id(handle.instanceVar), "destroy"))),
 			genAssignStmt(id(handle.instanceVar), genNull()),
@@ -8706,7 +8711,8 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 	}
 	for index := len(handles) - 1; index >= 0; index-- {
 		handle := handles[index]
-		destroyBody := append(append([]JsStmt{}, handle.slotSnapshot.cleanup...), hydrationAwaitComponentEventDetach(handle)...)
+		destroyBody := append(append([]JsStmt{}, handle.slotSnapshot.cleanup...), handle.slotCSRCleanup...)
+		destroyBody = append(destroyBody, hydrationAwaitComponentEventDetach(handle)...)
 		destroyBody = append(destroyBody,
 			genExprStmt(genCall(genMember(id(handle.instanceVar), "destroy"))),
 			genAssignStmt(id(handle.instanceVar), genNull()),
@@ -8815,15 +8821,19 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 					elementVar := "$$hawait" + itoa(markerID) + "_slot_element"
 					adoptedElement := false
 					for attrIndex, attr := range current.Attrs {
-						if attr == nil || attr.Expr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
+						if attr == nil || attr.Expr == nil || attr.IsTwoWay || attr.IsBindThis {
 							continue
 						}
-						if !attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir {
+						if !attr.IsEvent && !attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir {
 							continue
 						}
 						if !adoptedElement {
 							plan.adopt = append(plan.adopt, g.createHydrationTemplateElementStmt(elementVar, current))
 							adoptedElement = true
+						}
+						if attr.IsEvent {
+							g.buildHydrationAwaitSnapshotEvent(&plan, elementVar, attr, attrIndex)
+							continue
 						}
 						refreshVar := elementVar + "_" + itoa(attrIndex) + "_refresh"
 						plan.decls = append(plan.decls, genLet(refreshVar, genNull()))
@@ -8856,11 +8866,12 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 }
 
 // hydrationAwaitSnapshotSlotLeafNodes permits simple identifier text and
-// one-way attributes, and class/style directive expressions within an
-// ordinary-element tree. A branch value is rewritten through the current
-// template binding; parent reactive names register ordinary updates. Listeners,
-// bindings, nested components, and structural blocks deliberately remain later
-// recipes.
+// one-way attributes, class/style directive expressions, and DOM events
+// within an ordinary-element tree. DOM events are attached after the selected
+// child is adopted and removed before its range disappears. A branch value is
+// rewritten through the current template binding; parent reactive names
+// register ordinary updates. Bindings, nested components, and structural
+// blocks deliberately remain later recipes.
 func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bindingName string) bool {
 	var check func([]Node) bool
 	check = func(nodes []Node) bool {
@@ -8881,6 +8892,9 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bi
 						continue
 					}
 					if attr.Expr == nil {
+						continue
+					}
+					if attr.IsEvent {
 						continue
 					}
 					if !attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir {
@@ -9930,7 +9944,7 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) JsExpr {
 		// child component's init call) must run inside the closure
 		// too — they were being dropped, so components in a slot
 		// had no event wiring.
-		initStmts := append(append([]JsStmt{}, cap.events...), cap.initBody...)
+		initStmts := append([]JsStmt{}, cap.initBody...)
 
 		// Teardown emitted by slot content (component .destroy(),
 		// removeEventListener) runs at component scope.
@@ -9980,6 +9994,7 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) JsExpr {
 
 		firstOpen := []JsStmt{genConst(fragVar, newFragment())}
 		firstOpen = append(firstOpen, cap.body...)
+		firstOpen = append(firstOpen, cap.events...)
 		firstOpen = append(firstOpen, initStmts...)
 		firstOpen = append(firstOpen,
 			genAssignStmt(id(cacheVar), genCall(genMember(id("Array"), "from"), genMember(id(fragVar), "childNodes"))),
@@ -10006,11 +10021,15 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) JsExpr {
 // that was initially adopted from SSR markup.  The closure is called only if
 // that branch is later remounted on the client, so hydration acquisition would
 // incorrectly search for already-consumed (or removed) server markers.
-func (g *ASTGen) buildCSRSlotClosures(comp *ComponentNode) JsExpr {
+func (g *ASTGen) buildCSRSlotClosures(comp *ComponentNode) (JsExpr, []JsStmt) {
 	savedMode := g.domAcquireMode
 	g.domAcquireMode = DOMAcquireCreate
 	defer func() { g.domAcquireMode = savedMode }()
-	return g.buildSlotClosures(comp)
+	cleanupStart := len(g.cleanup)
+	slots := g.buildSlotClosures(comp)
+	cleanup := append([]JsStmt(nil), g.cleanup[cleanupStart:]...)
+	g.cleanup = g.cleanup[:cleanupStart]
+	return slots, cleanup
 }
 
 // applyElementAttrs wires every attribute of an element to the
@@ -10116,9 +10135,13 @@ func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 	if handlerExpr == nil {
 		handlerExpr = id("undefined")
 	}
-	addCleanup := !g.inSlotScope
+	addCleanup := true
+	cleanupGuard := ""
+	if g.inSlotScope {
+		cleanupGuard = g.slotGuard
+	}
 	if isIdent {
-		g.emitListenerPair(&g.events, varName, attr.Name, handler, handlerExpr, "", addCleanup)
+		g.emitListenerPair(&g.events, varName, attr.Name, handler, handlerExpr, cleanupGuard, addCleanup)
 		return
 	}
 	hv := varName + "_" + attr.Name + "_h"
@@ -10126,8 +10149,13 @@ func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 	if !templateExprIsHandler(attr.Expr) {
 		decl = genConst(hv, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))})
 	}
-	g.body = append(g.body, decl)
-	g.emitListenerPair(&g.events, varName, attr.Name, hv, nil, "", addCleanup)
+	if g.inSlotScope {
+		g.declareInScope(genLet(hv, genNull()))
+		g.body = append(g.body, genAssignStmt(id(hv), handlerExpr))
+	} else {
+		g.body = append(g.body, decl)
+	}
+	g.emitListenerPair(&g.events, varName, attr.Name, hv, nil, cleanupGuard, addCleanup)
 }
 
 // emitBinding wires a bind:value / bind:checked attribute — both
