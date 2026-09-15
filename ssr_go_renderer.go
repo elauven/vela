@@ -844,7 +844,7 @@ func ssrAwaitSnapshotLeafBranch(nodes []SSRPlanNode, binding string) bool {
 				return false
 			}
 		case *SSRPlanComponent:
-			if current.Link == nil || !ssrAwaitSnapshotStaticSlotNodes(current.Slots) {
+			if current.Link == nil || !ssrAwaitSnapshotSlotTextNodes(current.Slots) {
 				return false
 			}
 			for _, attr := range current.Attrs {
@@ -868,23 +868,18 @@ func ssrAwaitSnapshotLeafBranch(nodes []SSRPlanNode, binding string) bool {
 	return true
 }
 
-func ssrAwaitSnapshotStaticSlotNodes(slots map[string][]SSRPlanNode) bool {
+func ssrAwaitSnapshotSlotTextNodes(slots map[string][]SSRPlanNode) bool {
 	for _, children := range slots {
 		for _, node := range children {
 			switch current := node.(type) {
 			case *SSRPlanText:
-				for _, part := range current.Parts {
-					if !part.Static {
-						return false
-					}
-				}
 			case *SSRPlanElement:
 				for _, attr := range current.Attrs {
 					if attr.Role != SSRAttrStatic {
 						return false
 					}
 				}
-				if !ssrAwaitSnapshotStaticSlotNodes(map[string][]SSRPlanNode{"": current.Children}) {
+				if !ssrAwaitSnapshotSlotTextNodes(map[string][]SSRPlanNode{"": current.Children}) {
 					return false
 				}
 			default:

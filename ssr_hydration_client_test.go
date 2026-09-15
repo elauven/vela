@@ -273,6 +273,32 @@ func TestSSRHydrationAwaitSnapshotAdoptsStaticSlotChild(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationAwaitSnapshotAdoptsReactiveSlotTextChild(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let title = "server";</script><template><main>{#await request}<p>Waiting</p>{:then value}<Child><p class="slotted">{title}</p></Child><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("await snapshot reactive-slot child was rejected")
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		`Child($$root).component`,
+		`$$acquireHydrationRange($$walker, 1)`,
+		`$$writeHydrationText`,
+		`$$csr_Child($$frag, {}, { 'default': () => {`,
+		`document.createElement('p')`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("await snapshot reactive-slot child lowering misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestSSRHydrationAwaitThenNestedIfOwnsChildCleanup(t *testing.T) {
 	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let visible = true;</script><template><main>{#await request}<p>Loading</p>{:then value}{#if visible}<Child :title={value} />{:else}<p>Hidden</p>{/if}{/await}</main></template>`)
 	if err != nil {

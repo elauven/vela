@@ -178,6 +178,36 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotStaticSlotChild(t *testing.T) {
 	}
 }
 
+func TestGeneratedSSRRendererSelectsAwaitSnapshotReactiveSlotTextChild(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let title = "server";</script><template><main>{#await request}<p>Pending</p>{:then value}<Child><p class="slotted">{title}</p></Child><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent", map[string]SSRComponentLink{
+		"Child": {LocalName: "Child", GoName: "Child", PackageName: "child", ImportPath: "example.com/project/child"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`child.Child(child.ChildProps{}, child.ChildSlots{`,
+		`Default: func(w io.Writer) error {`,
+		`vela.EscapeString(vela.String(props.Title))`,
+	} {
+		if !strings.Contains(string(source), want) {
+			t.Fatalf("SSR snapshot reactive-slot child renderer misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestSSRHydrationStaticAwaitSnapshotKeepsSettledRange(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request;</script><template><main>{#await request}<p>Pending</p>{:then value}<p>Settled</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
@@ -466,7 +496,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotBindableChild(t *testing.T) {
 	}
 }
 
-func TestBrowserSSRHydrationAdoptsAwaitSnapshotStaticSlotChild(t *testing.T) {
+func TestBrowserSSRHydrationAdoptsAwaitSnapshotReactiveSlotTextChild(t *testing.T) {
 	node := requirePlaywright(t)
 	childSFC, err := parseSFC(`<template><section class="snapshot-slot-child"><slot><p class="fallback">Fallback</p></slot></section></template>`)
 	if err != nil {
@@ -487,7 +517,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotStaticSlotChild(t *testing.T) {
 	}
 	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
 
-	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request;</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Child><p class="snapshot-slot">Body</p></Child><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let title = "server";</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Child><p class="snapshot-slot">{title}</p><p class="snapshot-value">{value}</p></Child><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -515,9 +545,12 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotStaticSlotChild(t *testing.T) {
 	}
 	componentPlan := awaitPlan.ThenChildren[0].(*SSRPlanComponent)
 	slotElement := componentPlan.Slots["default"][0].(*SSRPlanElement)
+	slotText := slotElement.Children[0].(*SSRPlanText).Parts[0]
+	slotValueElement := componentPlan.Slots["default"][1].(*SSRPlanElement)
+	slotValueText := slotValueElement.Children[0].(*SSRPlanText).Parts[0]
 	childRoot := childPlan.Nodes[0].(*SSRPlanElement)
 	childScope := childPlan.ScopeID
-	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><main vela-parent=""><!--v:vela-parent:` + itoa(awaitID) + `--><!--e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><section vela-child="" class="snapshot-slot-child"><!--e:vela-parent:` + itoa(slotElement.HydrationID) + `--><p vela-parent="" class="snapshot-slot">Body</p><!--/e:vela-parent:` + itoa(slotElement.HydrationID) + `--></section><!--/e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><script type="application/json" id="vela-state-` + childScope + `">{"component":"` + childScope + `","props":{},"state":{},"incomplete":false}</script><p vela-parent="" class="settled">Done</p><!--/v:vela-parent:` + itoa(awaitID) + `--></main><!--/e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{},"state":{},"incomplete":false,"await":{"` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><main vela-parent=""><!--v:vela-parent:` + itoa(awaitID) + `--><!--e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><section vela-child="" class="snapshot-slot-child"><!--e:vela-parent:` + itoa(slotElement.HydrationID) + `--><p vela-parent="" class="snapshot-slot"><!--v:vela-parent:` + itoa(slotText.DynamicID) + `-->server<!--/v:vela-parent:` + itoa(slotText.DynamicID) + `--></p><!--/e:vela-parent:` + itoa(slotElement.HydrationID) + `--><!--e:vela-parent:` + itoa(slotValueElement.HydrationID) + `--><p vela-parent="" class="snapshot-value"><!--v:vela-parent:` + itoa(slotValueText.DynamicID) + `-->server<!--/v:vela-parent:` + itoa(slotValueText.DynamicID) + `--></p><!--/e:vela-parent:` + itoa(slotValueElement.HydrationID) + `--></section><!--/e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><script type="application/json" id="vela-state-` + childScope + `">{"component":"` + childScope + `","props":{},"state":{},"incomplete":false}</script><p vela-parent="" class="settled">Done</p><!--/v:vela-parent:` + itoa(awaitID) + `--></main><!--/e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Title":"server"},"state":{},"incomplete":false,"await":{"` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
@@ -532,7 +565,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotStaticSlotChild(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],scope=process.argv[2],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("snapshot slot hydration mutated DOM");await p.evaluate(()=>{window.child=document.querySelector(".snapshot-slot-child");window.slot=document.querySelector(".snapshot-slot")});await p.evaluate(()=>{window.nextRequest=new Promise(resolve=>{window.resolveNext=resolve});window.hydrated.component.set({request:window.nextRequest})});await p.waitForFunction(()=>document.querySelector(".pending"));const removed=await p.evaluate(scope=>({child:!window.child.isConnected,slot:!window.slot.isConnected,payload:!document.getElementById("vela-state-"+scope)}),scope);if(!removed.child||!removed.slot||!removed.payload)throw new Error(JSON.stringify(removed));await p.evaluate(()=>window.resolveNext("again"));await p.waitForFunction(()=>document.querySelector(".snapshot-slot-child")&&document.querySelector(".snapshot-slot")?.textContent==="Body");const remounted=await p.evaluate(()=>({sameChild:document.querySelector(".snapshot-slot-child")===window.child,sameSlot:document.querySelector(".snapshot-slot")===window.slot}));if(remounted.sameChild||remounted.sameSlot)throw new Error("snapshot slot child reused detached DOM instead of CSR remount");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],scope=process.argv[2],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("snapshot slot hydration mutated DOM");await p.evaluate(()=>{window.child=document.querySelector(".snapshot-slot-child");window.slot=document.querySelector(".snapshot-slot");window.valueSlot=document.querySelector(".snapshot-value");window.hydrated.component.set({title:"client"})});await p.waitForFunction(()=>document.querySelector(".snapshot-slot")?.textContent==="client");if(!(await p.evaluate(()=>document.querySelector(".snapshot-slot")===window.slot)))throw new Error("reactive snapshot slot was replaced");await p.evaluate(()=>window.resolveRequest("settled"));await p.waitForFunction(()=>document.querySelector(".snapshot-value")?.textContent==="settled");if(!(await p.evaluate(()=>document.querySelector(".snapshot-value")===window.valueSlot)))throw new Error("same-branch snapshot slot value was replaced");await p.evaluate(()=>{window.nextRequest=new Promise(resolve=>{window.resolveNext=resolve});window.hydrated.component.set({request:window.nextRequest})});await p.waitForFunction(()=>document.querySelector(".pending"));const removed=await p.evaluate(scope=>({child:!window.child.isConnected,slot:!window.slot.isConnected,value:!window.valueSlot.isConnected,payload:!document.getElementById("vela-state-"+scope)}),scope);if(!removed.child||!removed.slot||!removed.value||!removed.payload)throw new Error(JSON.stringify(removed));await p.evaluate(()=>window.resolveNext("again"));await p.waitForFunction(()=>document.querySelector(".snapshot-slot-child")&&document.querySelector(".snapshot-slot")?.textContent==="client"&&document.querySelector(".snapshot-value")?.textContent==="again");const remounted=await p.evaluate(()=>({sameChild:document.querySelector(".snapshot-slot-child")===window.child,sameSlot:document.querySelector(".snapshot-slot")===window.slot,sameValue:document.querySelector(".snapshot-value")===window.valueSlot}));if(remounted.sameChild||remounted.sameSlot||remounted.sameValue)throw new Error("snapshot slot child reused detached DOM instead of CSR remount");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
 	command := exec.Command(node, "-e", browser, dir, childScope)
 	command.Dir = "/projects/compiler"
 	output, err := command.CombinedOutput()

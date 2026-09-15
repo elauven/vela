@@ -8457,10 +8457,13 @@ type hydrationAwaitComponentHandle struct {
 	overridesExpr JsExpr
 	// slotsExpr is used only for a later CSR remount. During initial adoption
 	// the child retains the static projected DOM already emitted by SSR.
-	slotsExpr  JsExpr
-	csrFactory string
-	branch     int
-	events     []hydrationAwaitComponentEvent
+	slotsExpr JsExpr
+	// slotSnapshot owns reactive projected text only while this selected
+	// then/catch child remains active. CSR remounts use slotsExpr instead.
+	slotSnapshot hydrationAwaitSnapshotLeafPlan
+	csrFactory   string
+	branch       int
+	events       []hydrationAwaitComponentEvent
 }
 
 // hydrationAwaitComponentEvent is owned by one component instance inside an
@@ -8512,7 +8515,14 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 				handle.propsExpr = g.componentPropsExpr(component.Attrs)
 				handle.overridesExpr = g.hydrationComponentOverridesExpr(component.Attrs)
 				if len(component.Slots) != 0 {
-					handle.slotsExpr = g.buildSlotClosures(component)
+					// The closure is retained solely for a later CSR remount after
+					// the hydrated await branch changes.  It must therefore create
+					// fresh slot DOM rather than trying to acquire the initial SSR
+					// markers from the parent walker.
+					handle.slotsExpr = g.buildCSRSlotClosures(component)
+					if branch != 0 {
+						handle.slotSnapshot = g.buildHydrationAwaitSnapshotSlotTextPlan(component.Slots, bindingNames[branch], bindingValues[branch])
+					}
 				} else {
 					handle.slotsExpr = &JsObjectExpr{baseExpr: baseExpr{genNode()}}
 				}
@@ -8561,6 +8571,9 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 		genLet(initialVar, boolLit(true)),
 		genConst(snapshotVar, genLogical("&&", genMember(id("$$props"), "$$velaAwait"), genComputedMember(genMember(id("$$props"), "$$velaAwait"), numLit(markerID)))),
 	)
+	for _, handle := range handles {
+		g.body = append(g.body, handle.slotSnapshot.decls...)
+	}
 	snapshotBranches := []bool{
 		false,
 		g.hydrationAwaitSnapshotComponentBranch(block.ThenChildren, block.ValueName),
@@ -8595,7 +8608,7 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 		}
 		g.hydrationInitBody = append(g.hydrationInitBody, genIf(
 			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit(stateName))},
-			genBlock(append([]JsStmt{genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), handle.overridesExpr), "component"))}, hydrationAwaitComponentEventAttach(handle)...)...),
+			genBlock(append(append([]JsStmt{genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), handle.overridesExpr), "component"))}, hydrationAwaitComponentEventAttach(handle)...), handle.slotSnapshot.adopt...)...),
 		))
 	}
 	for _, handle := range handles {
@@ -8612,6 +8625,12 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 		for dependency := range deps {
 			g.addUpdate(dependency, shareStmt(setStmt))
 		}
+		if len(handle.slotSnapshot.refresh) != 0 {
+			refresh := genIf(genBinary("===", id(activeVar), numLit(handle.branch)), genBlock(handle.slotSnapshot.refresh...))
+			for dependency := range handle.slotSnapshot.deps {
+				g.addUpdate(dependency, shareStmt(refresh))
+			}
+		}
 	}
 
 	sameState := []JsStmt{}
@@ -8623,12 +8642,19 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: genBinary("===", id(activeVar), numLit(handle.branch)), R: id(handle.instanceVar)},
 			optionalComponentSetStmt(id(handle.instanceVar), handle.propsExpr),
 		))
+		if len(handle.slotSnapshot.refresh) != 0 {
+			sameState = append(sameState, genIf(
+				genBinary("===", id(activeVar), numLit(handle.branch)),
+				genBlock(handle.slotSnapshot.refresh...),
+			))
+		}
 	}
 	sameState = append(sameState, genReturn(nil))
 	renderBody := []JsStmt{genIf(genBinary("===", id(stateVar), id(activeVar)), genBlock(sameState...))}
 	for index := len(handles) - 1; index >= 0; index-- {
 		handle := handles[index]
-		destroyBody := append(hydrationAwaitComponentEventDetach(handle),
+		destroyBody := append(append([]JsStmt{}, handle.slotSnapshot.cleanup...), hydrationAwaitComponentEventDetach(handle)...)
+		destroyBody = append(destroyBody,
 			genExprStmt(genCall(genMember(id(handle.instanceVar), "destroy"))),
 			genAssignStmt(id(handle.instanceVar), genNull()),
 		)
@@ -8680,7 +8706,8 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 	}
 	for index := len(handles) - 1; index >= 0; index-- {
 		handle := handles[index]
-		destroyBody := append(hydrationAwaitComponentEventDetach(handle),
+		destroyBody := append(append([]JsStmt{}, handle.slotSnapshot.cleanup...), hydrationAwaitComponentEventDetach(handle)...)
+		destroyBody = append(destroyBody,
 			genExprStmt(genCall(genMember(id(handle.instanceVar), "destroy"))),
 			genAssignStmt(id(handle.instanceVar), genNull()),
 		)
@@ -8705,7 +8732,7 @@ func (g *ASTGen) hydrationAwaitSnapshotComponentBranch(children []Node, bindingN
 				return false
 			}
 		case *ComponentNode:
-			if current == nil || !hydrationAwaitSnapshotStaticSlots(current.Slots) {
+			if current == nil || !g.hydrationAwaitSnapshotSlotTextSlots(current.Slots, bindingName) {
 				return false
 			}
 			for _, attr := range current.Attrs {
@@ -8743,6 +8770,89 @@ func (g *ASTGen) hydrationAwaitSnapshotComponentBranch(children []Node, bindingN
 func hydrationAwaitSnapshotStaticSlots(slots map[string][]Node) bool {
 	for _, children := range slots {
 		if !allStatic(children) {
+			return false
+		}
+	}
+	return true
+}
+
+// buildHydrationAwaitSnapshotSlotTextPlan owns parent-projected text markers
+// inside one independently selected then/catch child. The initial SSR range is
+// only acquired; a future CSR remount uses the ordinary typed slot closure.
+func (g *ASTGen) buildHydrationAwaitSnapshotSlotTextPlan(slots map[string][]Node, bindingName, bindingValue string) hydrationAwaitSnapshotLeafPlan {
+	if !g.hydrationAwaitSnapshotSlotTextSlots(slots, bindingName) {
+		return hydrationAwaitSnapshotLeafPlan{}
+	}
+	plan := hydrationAwaitSnapshotLeafPlan{supported: true, deps: map[string]bool{}}
+	g.withTemplateBinding(bindingName, bindingValue, func() {
+		var visit func([]Node)
+		visit = func(nodes []Node) {
+			for _, node := range nodes {
+				switch current := node.(type) {
+				case *TextNode:
+					for _, part := range current.Parts {
+						if part == nil || part.Static {
+							continue
+						}
+						markerID := g.hydrationTextMarkerID(part)
+						rangeVar := "$$hawait" + itoa(markerID) + "_slot_range"
+						g.domAcquirePlan.addTextRange(rangeVar, markerID)
+						plan.decls = append(plan.decls, genLet(rangeVar, genNull()))
+						plan.adopt = append(plan.adopt, genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))))
+						write := genExprStmt(genCall(id("$$writeHydrationText"), id(rangeVar), genString(g.templateExpr(part.Expr))))
+						plan.refresh = append(plan.refresh, genIf(id(rangeVar), write))
+						plan.cleanup = append(plan.cleanup, genAssignStmt(id(rangeVar), genNull()))
+						for _, dependency := range templateExprDeps(part.Expr, g.reactiveNames()) {
+							plan.deps[dependency] = true
+						}
+					}
+				case *ElementNode:
+					visit(current.Children)
+				}
+			}
+		}
+		for _, name := range sortedSlotNames(slots) {
+			visit(slots[name])
+		}
+	})
+	return plan
+}
+
+// hydrationAwaitSnapshotSlotTextSlots permits dynamic text identifiers within
+// a static ordinary-element tree. A branch value is rewritten through the
+// current template binding; parent reactive names register ordinary updates.
+func (g *ASTGen) hydrationAwaitSnapshotSlotTextSlots(slots map[string][]Node, bindingName string) bool {
+	var check func([]Node) bool
+	check = func(nodes []Node) bool {
+		for _, node := range nodes {
+			switch current := node.(type) {
+			case *TextNode:
+				for _, part := range current.Parts {
+					if part == nil || part.Static {
+						continue
+					}
+					if _, ok := templateExprIdent(part.Expr); !ok {
+						return false
+					}
+				}
+			case *ElementNode:
+				for _, attr := range current.Attrs {
+					if attr == nil || attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+						return false
+					}
+				}
+				if !check(current.Children) {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+		return true
+	}
+	_ = bindingName
+	for _, children := range slots {
+		if !check(children) {
 			return false
 		}
 	}
@@ -8821,6 +8931,7 @@ type hydrationAwaitSnapshotLeafPlan struct {
 	refresh         []JsStmt
 	listenerCleanup []JsStmt
 	cleanup         []JsStmt
+	deps            map[string]bool
 	supported       bool
 }
 
@@ -9837,6 +9948,17 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) JsExpr {
 		})
 	}
 	return slots
+}
+
+// buildCSRSlotClosures produces projected content for a structural branch
+// that was initially adopted from SSR markup.  The closure is called only if
+// that branch is later remounted on the client, so hydration acquisition would
+// incorrectly search for already-consumed (or removed) server markers.
+func (g *ASTGen) buildCSRSlotClosures(comp *ComponentNode) JsExpr {
+	savedMode := g.domAcquireMode
+	g.domAcquireMode = DOMAcquireCreate
+	defer func() { g.domAcquireMode = savedMode }()
+	return g.buildSlotClosures(comp)
 }
 
 // applyElementAttrs wires every attribute of an element to the

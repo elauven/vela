@@ -934,7 +934,7 @@ func ssrCapabilityAwaitComponentBranches(block *AwaitBlockNode, directChildren f
 				staticChildren = append(staticChildren, child)
 				continue
 			}
-			if !ssrCapabilityCurrentAwaitComponentSlots(component) || !ssrCapabilityCurrentAwaitComponentAttrs(component) {
+			if !ssrCapabilityCurrentAwaitComponentSlots(component, index) || !ssrCapabilityCurrentAwaitComponentAttrs(component) {
 				return nil, false
 			}
 			result[index] = append(result[index], component)
@@ -954,16 +954,48 @@ func ssrCapabilityAwaitComponentBranches(block *AwaitBlockNode, directChildren f
 	return result, found
 }
 
-// ssrCapabilityCurrentAwaitComponentSlots admits only static parent-projected
-// content. It remains in the SSR child DOM during adoption and can be rebuilt
-// from a typed slot closure only when a later await transition mounts CSR DOM.
-// Dynamic projection needs branch-owned marker adoption and stays gated.
-func ssrCapabilityCurrentAwaitComponentSlots(component *ComponentNode) bool {
+// ssrCapabilityCurrentAwaitComponentSlots admits static projected content in a
+// pending child, and simple identifier text interpolation in an independently
+// selected then/catch snapshot. The latter has parent-owned text markers that
+// are acquired during adoption; both shapes rebuild through a CSR slot closure
+// after a later await transition.
+func ssrCapabilityCurrentAwaitComponentSlots(component *ComponentNode, branch int) bool {
 	if component == nil {
 		return false
 	}
 	for _, children := range component.Slots {
-		if !allStatic(children) {
+		if branch == 0 && !allStatic(children) {
+			return false
+		}
+		if branch != 0 && !ssrCapabilityCurrentAwaitSnapshotSlotTextNodes(children) {
+			return false
+		}
+	}
+	return true
+}
+
+func ssrCapabilityCurrentAwaitSnapshotSlotTextNodes(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			for _, part := range current.Parts {
+				if part == nil || part.Static {
+					continue
+				}
+				if _, ok := templateExprIdent(part.Expr); !ok {
+					return false
+				}
+			}
+		case *ElementNode:
+			for _, attr := range current.Attrs {
+				if attr == nil || attr.Expr != nil || attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					return false
+				}
+			}
+			if !ssrCapabilityCurrentAwaitSnapshotSlotTextNodes(current.Children) {
+				return false
+			}
+		default:
 			return false
 		}
 	}
