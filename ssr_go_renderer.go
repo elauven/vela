@@ -172,6 +172,10 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	for _, attr := range node.Attrs {
 		var value goast.Expr
 		switch attr.Role {
+		case SSRAttrEvent:
+			// Component events are a browser lifecycle concern. They have no
+			// serializable server prop and attach after hydration adoption.
+			continue
 		case SSRAttrStatic:
 			if attr.ValueKind == AttrValueMissing {
 				return nil, ssrExprUnsupported(attr.Span.Start, "component prop %q requires a value", attr.Name)
@@ -906,7 +910,10 @@ func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
 					return false
 				}
 				for _, attr := range current.Attrs {
-					if attr.Role != SSRAttrStatic && attr.Role != SSRAttrDynamic {
+					if attr.Role == SSRAttrEvent {
+						continue
+					}
+					if attr.Role != SSRAttrStatic && attr.Role != SSRAttrDynamic && attr.Role != SSRAttrTwoWay {
 						return false
 					}
 				}

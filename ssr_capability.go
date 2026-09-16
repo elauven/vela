@@ -1024,8 +1024,17 @@ func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 				return false
 			}
 			for _, attr := range current.Attrs {
-				if attr == nil || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir || attr.IsEvent || attr.IsTwoWay {
+				if attr == nil || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
 					return false
+				}
+				if attr.IsEvent {
+					continue
+				}
+				if attr.IsTwoWay {
+					if _, ok := templateExprIdent(attr.Expr); !ok {
+						return false
+					}
+					continue
 				}
 				if attr.IsBind {
 					if _, ok := templateExprIdent(attr.Expr); !ok {

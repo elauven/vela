@@ -261,13 +261,40 @@ func TestGeneratedSSRRendererAndHydratorSelectAwaitSnapshotProjectedChild(t *tes
 	}
 }
 
+func TestSSRHydrationAwaitSnapshotProjectedChildSupportsEventAndBindable(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; let selected = $state("server"); let closes = $state(0); function closed() { closes++; }</script><template><main>{#await request}<p>Pending</p>{:then value}<Outer><Inner bind:value={selected} @on:close={closed} /></Outer><p>Done</p>{:catch error}<p>Failed</p>{/await}<p>{selected}:{closes}</p></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("projected await snapshot child event/binding shape was rejected")
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		`Inner($$root, { $$onChange_value: ($$v) => $$set_selected($$v) }).component`,
+		`addEventListener('close'`,
+		`removeEventListener('close'`,
+		`$$set_selected`,
+		`$$set_closes`,
+		`$$csr_Inner`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("projected snapshot child event/binding lowering misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	node := requirePlaywright(t)
 	outerSFC, err := parseSFC(`<template><section class="snapshot-outer"><slot /></section></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	innerSFC, err := parseSFC(`<script>import { onDestroy } from "vela"; export let title = ""; function clicked() { window.snapshotInnerClicks = (window.snapshotInnerClicks || 0) + 1; } onDestroy(() => { window.snapshotInnerDestroys = (window.snapshotInnerDestroys || 0) + 1; });</script><template><button class="snapshot-inner" @click={clicked}>{title}</button></template>`)
+	innerSFC, err := parseSFC(`<script>import { onDestroy } from "vela"; export let title = ""; export let value = $bindable(""); function clicked() { window.snapshotInnerClicks = (window.snapshotInnerClicks || 0) + 1; } function close() { $$dispatch("close"); } onDestroy(() => { window.snapshotInnerDestroys = (window.snapshotInnerDestroys || 0) + 1; });</script><template><section class="snapshot-inner-wrap"><input class="snapshot-inner-value" bind:value={value} /><button class="snapshot-inner-close" @click={close}>Close</button><button class="snapshot-inner" @click={clicked}>{title}</button></section></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +327,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	outerCSR, _ := buildProgramWithDOMAcquirePlan("Outer", outerSFC, outerSFC.TemplateAST.Nodes, outerAnalysis, "vela-outer", false, DOMAcquireCreate)
 	innerCSR, _ := buildProgramWithDOMAcquirePlan("Inner", innerSFC, innerSFC.TemplateAST.Nodes, innerAnalysis, "vela-inner", false, DOMAcquireCreate)
 
-	parentSFC, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let title = "server";</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Outer><Inner :title={title} /></Outer><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	parentSFC, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let title = "server"; let selected = $state("server"); function closed() { window.snapshotBound = selected; window.snapshotCloses = (window.snapshotCloses || 0) + 1; }</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Outer><Inner :title={title} bind:value={selected} @on:close={closed} /></Outer><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,11 +358,14 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	}
 	outerRoot := outerPlan.Nodes[0].(*SSRPlanElement)
 	innerRoot := innerPlan.Nodes[0].(*SSRPlanElement)
-	innerText := innerRoot.Children[0].(*SSRPlanText).Parts[0]
+	innerInput := innerRoot.Children[0].(*SSRPlanElement)
+	innerClose := innerRoot.Children[1].(*SSRPlanElement)
+	innerButton := innerRoot.Children[2].(*SSRPlanElement)
+	innerText := innerButton.Children[0].(*SSRPlanText).Parts[0]
 	if outerComponent.Link == nil || innerComponent.Link == nil {
 		t.Fatal("projected component links are missing")
 	}
-	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><main><!--v:vela-parent:` + itoa(awaitID) + `--><!--e:vela-outer:` + itoa(outerRoot.HydrationID) + `--><section class="snapshot-outer"><!--e:vela-inner:` + itoa(innerRoot.HydrationID) + `--><button class="snapshot-inner"><!--v:vela-inner:` + itoa(innerText.DynamicID) + `-->server<!--/v:vela-inner:` + itoa(innerText.DynamicID) + `--></button><!--/e:vela-inner:` + itoa(innerRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-inner">{"component":"vela-inner","props":{"Title":"server"},"state":{},"incomplete":false}</script></section><!--/e:vela-outer:` + itoa(outerRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-outer">{"component":"vela-outer","props":{},"state":{},"incomplete":false}</script><p class="settled">Done</p><!--/v:vela-parent:` + itoa(awaitID) + `--></main><!--/e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Title":"server"},"state":{},"incomplete":false,"await":{"` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.snapshotInnerClicks=0;window.snapshotInnerDestroys=0;window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><main><!--v:vela-parent:` + itoa(awaitID) + `--><!--e:vela-outer:` + itoa(outerRoot.HydrationID) + `--><section class="snapshot-outer"><!--e:vela-inner:` + itoa(innerRoot.HydrationID) + `--><section class="snapshot-inner-wrap"><!--e:vela-inner:` + itoa(innerInput.HydrationID) + `--><input class="snapshot-inner-value" value="server"><!--/e:vela-inner:` + itoa(innerInput.HydrationID) + `--><!--e:vela-inner:` + itoa(innerClose.HydrationID) + `--><button class="snapshot-inner-close">Close</button><!--/e:vela-inner:` + itoa(innerClose.HydrationID) + `--><!--e:vela-inner:` + itoa(innerButton.HydrationID) + `--><button class="snapshot-inner"><!--v:vela-inner:` + itoa(innerText.DynamicID) + `-->server<!--/v:vela-inner:` + itoa(innerText.DynamicID) + `--></button><!--/e:vela-inner:` + itoa(innerButton.HydrationID) + `--></section><!--/e:vela-inner:` + itoa(innerRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-inner">{"component":"vela-inner","props":{"Title":"server","Value":"server"},"state":{},"incomplete":false}</script></section><!--/e:vela-outer:` + itoa(outerRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-outer">{"component":"vela-outer","props":{},"state":{},"incomplete":false}</script><p class="settled">Done</p><!--/v:vela-parent:` + itoa(awaitID) + `--></main><!--/e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Title":"server"},"state":{},"incomplete":false,"await":{"` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.snapshotInnerClicks=0;window.snapshotInnerDestroys=0;window.snapshotCloses=0;window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
@@ -353,7 +383,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("projected child hydration mutated DOM");await p.evaluate(()=>{window.inner=document.querySelector(".snapshot-inner");window.inner.click();window.hydrated.component.set({title:"client"})});await p.waitForFunction(()=>window.snapshotInnerClicks===1&&document.querySelector(".snapshot-inner")?.textContent==="client");if(!(await p.evaluate(()=>document.querySelector(".snapshot-inner")===window.inner)))throw new Error("projected child was remounted for prop update");await p.evaluate(()=>{window.nextRequest=new Promise(resolve=>{window.resolveNext=resolve});window.hydrated.component.set({request:window.nextRequest})});await p.waitForFunction(()=>document.querySelector(".pending"));const removed=await p.evaluate(()=>{window.inner.click();return {detached:!window.inner.isConnected,destroys:window.snapshotInnerDestroys,payload:!document.getElementById("vela-state-vela-inner"),clicks:window.snapshotInnerClicks}});if(!removed.detached||!removed.payload||removed.destroys!==1||removed.clicks!==1)throw new Error(JSON.stringify(removed));await p.evaluate(()=>window.resolveNext("again"));await p.waitForFunction(()=>document.querySelector(".snapshot-inner")?.textContent==="client");await p.evaluate(()=>document.querySelector(".snapshot-inner").click());await p.waitForFunction(()=>window.snapshotInnerClicks===2);await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>window.snapshotInnerDestroys)!==2)throw new Error("remounted projected child was not destroyed");if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("projected child hydration mutated DOM");await p.evaluate(()=>{window.inner=document.querySelector(".snapshot-inner");window.input=document.querySelector(".snapshot-inner-value");window.close=document.querySelector(".snapshot-inner-close");window.input.value="bound";window.input.dispatchEvent(new Event("input",{bubbles:true}));window.close.click();window.inner.click();window.hydrated.component.set({title:"client"})});await p.waitForFunction(()=>window.snapshotBound==="bound"&&window.snapshotCloses===1&&window.snapshotInnerClicks===1&&document.querySelector(".snapshot-inner")?.textContent==="client");if(!(await p.evaluate(()=>document.querySelector(".snapshot-inner")===window.inner)))throw new Error("projected child was remounted for prop update");await p.evaluate(()=>{window.nextRequest=new Promise(resolve=>{window.resolveNext=resolve});window.hydrated.component.set({request:window.nextRequest})});await p.waitForFunction(()=>document.querySelector(".pending"));const removed=await p.evaluate(()=>{window.input.value="stale";window.input.dispatchEvent(new Event("input",{bubbles:true}));window.close.click();window.inner.click();return {detached:!window.inner.isConnected,destroys:window.snapshotInnerDestroys,payload:!document.getElementById("vela-state-vela-inner"),clicks:window.snapshotInnerClicks,closes:window.snapshotCloses}});if(!removed.detached||!removed.payload||removed.destroys!==1||removed.clicks!==1||removed.closes!==1)throw new Error(JSON.stringify(removed));await p.evaluate(()=>window.resolveNext("again"));await p.waitForFunction(()=>document.querySelector(".snapshot-inner")?.textContent==="client"&&document.querySelector(".snapshot-inner-value")?.value==="bound");await p.evaluate(()=>{window.remountedInput=document.querySelector(".snapshot-inner-value");window.remountedInput.value="again";window.remountedInput.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector(".snapshot-inner-close").click();document.querySelector(".snapshot-inner").click()});await p.waitForFunction(()=>window.snapshotBound==="again"&&window.snapshotCloses===2&&window.snapshotInnerClicks===2);await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>window.snapshotInnerDestroys)!==2)throw new Error("remounted projected child was not destroyed");if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
 	command := exec.Command(node, "-e", browser, dir)
 	command.Dir = "/projects/compiler"
 	output, err := command.CombinedOutput()

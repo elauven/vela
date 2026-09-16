@@ -8810,12 +8810,14 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 						propsExpr:   g.componentPropsExpr(current.Attrs),
 						overrides:   g.hydrationComponentOverridesExpr(current.Attrs),
 					}
+					handle.events = g.buildHydrationAwaitSnapshotSlotComponentEvents(current, handle.instanceVar)
 					plan.components = append(plan.components, handle)
 					plan.decls = append(plan.decls, genLet(handle.instanceVar, genNull()))
 					plan.adopt = append(plan.adopt, genAssignStmt(
 						id(handle.instanceVar),
 						genMember(g.hydrationComponentCall(current, id("$$root"), handle.overrides), "component"),
 					))
+					plan.adopt = append(plan.adopt, hydrationAwaitSnapshotSlotComponentEventAttach(handle)...)
 					for _, attr := range current.Attrs {
 						for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
 							plan.deps[dependency] = true
@@ -8897,8 +8899,10 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 		handle := plan.components[index]
 		componentCleanup = append(componentCleanup,
 			genIf(id(handle.instanceVar), genBlock(
-				genExprStmt(genCall(genMember(id(handle.instanceVar), "destroy"))),
-				genAssignStmt(id(handle.instanceVar), genNull()),
+				append(hydrationAwaitSnapshotSlotComponentEventDetach(handle),
+					genExprStmt(genCall(genMember(id(handle.instanceVar), "destroy"))),
+					genAssignStmt(id(handle.instanceVar), genNull()),
+				)...,
 			)),
 		)
 	}
@@ -8971,8 +8975,15 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bi
 					if attr == nil || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
 						return false
 					}
-					if attr.IsEvent || attr.IsTwoWay {
-						return false
+					if attr.IsEvent {
+						continue
+					}
+					if attr.IsTwoWay {
+						target, ok := templateExprIdent(attr.Expr)
+						if !ok || g.analysis == nil || !g.analysis.stateSet()[target] {
+							return false
+						}
+						continue
 					}
 					if attr.IsBind {
 						if _, ok := templateExprIdent(attr.Expr); !ok {
@@ -9007,6 +9018,58 @@ func hydrationAwaitComponentEventAttach(handle hydrationAwaitComponentHandle) []
 }
 
 func hydrationAwaitComponentEventDetach(handle hydrationAwaitComponentHandle) []JsStmt {
+	statements := make([]JsStmt, 0, len(handle.events))
+	for index := len(handle.events) - 1; index >= 0; index-- {
+		event := handle.events[index]
+		statements = append(statements, genExprStmt(genCall(
+			genMember(genMember(id(handle.instanceVar), "el"), "removeEventListener"),
+			strLit(event.name), id(event.handler),
+		)))
+	}
+	return statements
+}
+
+func (g *ASTGen) buildHydrationAwaitSnapshotSlotComponentEvents(component *ComponentNode, instanceVar string) []hydrationAwaitComponentEvent {
+	if component == nil {
+		return nil
+	}
+	events := []hydrationAwaitComponentEvent{}
+	for _, attr := range component.Attrs {
+		if attr == nil || !attr.IsEvent {
+			continue
+		}
+		handler := instanceVar + "_" + sanitizeIdent(attr.Name) + "_h"
+		handlerExpr := g.eventHandlerExpr(attr)
+		if handlerExpr == nil {
+			handlerExpr = id("undefined")
+		}
+		invoke := JsStmt(genExprStmt(genCall(handlerExpr, id("$event"))))
+		if _, isIdent := templateExprIdent(attr.Expr); !isIdent && !templateExprIsHandler(attr.Expr) {
+			invoke = genExprStmt(handlerExpr)
+			if g.analysis != nil {
+				invoke = RewriteStatementAssignmentsAST(invoke, g.analysis.stateSet())
+			}
+		}
+		g.declareInScope(genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(
+			genIf(genBinary("instanceof", id("$event"), id("CustomEvent")), genBlock(invoke)),
+		)}))
+		events = append(events, hydrationAwaitComponentEvent{name: strings.TrimPrefix(attr.Name, "on:"), handler: handler})
+	}
+	return events
+}
+
+func hydrationAwaitSnapshotSlotComponentEventAttach(handle hydrationAwaitSnapshotSlotComponent) []JsStmt {
+	statements := make([]JsStmt, 0, len(handle.events))
+	for _, event := range handle.events {
+		statements = append(statements, genIf(id(handle.instanceVar), genExprStmt(genCall(
+			genMember(genMember(id(handle.instanceVar), "el"), "addEventListener"),
+			strLit(event.name), id(event.handler),
+		))))
+	}
+	return statements
+}
+
+func hydrationAwaitSnapshotSlotComponentEventDetach(handle hydrationAwaitSnapshotSlotComponent) []JsStmt {
 	statements := make([]JsStmt, 0, len(handle.events))
 	for index := len(handle.events) - 1; index >= 0; index-- {
 		event := handle.events[index]
@@ -9082,6 +9145,7 @@ type hydrationAwaitSnapshotSlotComponent struct {
 	instanceVar string
 	propsExpr   JsExpr
 	overrides   JsExpr
+	events      []hydrationAwaitComponentEvent
 }
 
 func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingName, bindingValue string) hydrationAwaitSnapshotLeafPlan {
