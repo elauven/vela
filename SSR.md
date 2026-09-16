@@ -487,8 +487,13 @@ in place for parent changes or same-branch promise settlement, and clears
 their handles before the branch range is removed. Event listeners attach after
 child adoption and are removed before branch replacement or destroy; a
 subsequent CSR remount builds fresh slot DOM and listener ownership rather than
-reusing consumed SSR markers. Bindings, child components, and structural
-blocks remain outside this selected-snapshot slot recipe.
+reusing consumed SSR markers. Native `bind:value` and `bind:checked` are also
+accepted on ordinary projected slot elements when their target is a simple
+reactive parent state/prop identifier (not the `then`/`catch` binding). The
+hydrator first reads the live browser control value, then owns both its setter
+writer and listener cleanup within the selected slot range. Projected child
+components and nested structural blocks remain outside this selected-snapshot
+slot recipe.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.

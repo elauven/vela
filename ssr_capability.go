@@ -994,6 +994,15 @@ func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 				if attr.IsEvent {
 					continue
 				}
+				if attr.IsTwoWay {
+					if _, ok := templateExprIdent(attr.Expr); !ok {
+						return false
+					}
+					if _, ok := twoWayBindSpec(current.Tag, attr.Name); !ok {
+						return false
+					}
+					continue
+				}
 				if !attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir {
 					return false
 				}

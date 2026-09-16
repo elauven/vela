@@ -881,6 +881,9 @@ func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
 					if attr.Role == SSRAttrEvent {
 						continue
 					}
+					if attr.Role == SSRAttrTwoWay {
+						continue
+					}
 					if attr.Role != SSRAttrDynamic && attr.Role != SSRAttrClassDirective && attr.Role != SSRAttrStyleDirective {
 						return false
 					}

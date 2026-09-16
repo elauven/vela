@@ -8821,10 +8821,10 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 					elementVar := "$$hawait" + itoa(markerID) + "_slot_element"
 					adoptedElement := false
 					for attrIndex, attr := range current.Attrs {
-						if attr == nil || attr.Expr == nil || attr.IsTwoWay || attr.IsBindThis {
+						if attr == nil || attr.Expr == nil || attr.IsBindThis {
 							continue
 						}
-						if !attr.IsEvent && !attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir {
+						if !attr.IsEvent && !attr.IsBind && !attr.IsTwoWay && !attr.IsClassDir && !attr.IsStyleDir {
 							continue
 						}
 						if !adoptedElement {
@@ -8833,6 +8833,10 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 						}
 						if attr.IsEvent {
 							g.buildHydrationAwaitSnapshotEvent(&plan, elementVar, attr, attrIndex)
+							continue
+						}
+						if attr.IsTwoWay {
+							g.buildHydrationAwaitSnapshotBinding(&plan, elementVar, current.Tag, attr, attrIndex)
 							continue
 						}
 						refreshVar := elementVar + "_" + itoa(attrIndex) + "_refresh"
@@ -8870,7 +8874,8 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 // within an ordinary-element tree. DOM events are attached after the selected
 // child is adopted and removed before its range disappears. A branch value is
 // rewritten through the current template binding; parent reactive names
-// register ordinary updates. Bindings, nested components, and structural
+// register ordinary updates. Native value/checked bindings adopt browser-owned
+// state and register a branch-owned writer. Nested components and structural
 // blocks deliberately remain later recipes.
 func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bindingName string) bool {
 	var check func([]Node) bool
@@ -8895,6 +8900,16 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bi
 						continue
 					}
 					if attr.IsEvent {
+						continue
+					}
+					if attr.IsTwoWay {
+						target, ok := templateExprIdent(attr.Expr)
+						if !ok || target == bindingName || !g.hasReactiveSetter(target) {
+							return false
+						}
+						if _, ok := twoWayBindSpec(current.Tag, attr.Name); !ok {
+							return false
+						}
 						continue
 					}
 					if !attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir {
@@ -10166,14 +10181,25 @@ func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 	spec, ok := twoWayBindSpec(tag, attr.Name)
 	sv, isIdent := templateExprIdent(attr.Expr)
-	if attr.IsTwoWay && ok && isIdent && g.analysis != nil && g.analysis.stateSet()[sv] {
+	if attr.IsTwoWay && ok && isIdent && g.hasReactiveSetter(sv) {
 		hv := varName + "_bind_" + spec.event + "_h"
-		g.body = append(g.body, genConst(hv, &JsArrowFunc{
+		handler := &JsArrowFunc{
 			baseExpr: baseExpr{genNode()},
 			Params:   []JsExpr{id("$e")},
 			Body:     genCall(id("$$set_"+sv), genMember(genMember(id("$e"), "target"), spec.readProp)),
-		}))
-		g.emitListenerPair(&g.events, varName, spec.event, hv, nil, "", true)
+		}
+		cleanupGuard := ""
+		if g.inSlotScope {
+			// A selected SSR snapshot may be destroyed before this CSR slot is
+			// ever mounted. Keep both the hoisted handler and its teardown in
+			// the slot ownership boundary in that case.
+			cleanupGuard = g.slotGuard
+			g.declareInScope(genLet(hv, genNull()))
+			g.body = append(g.body, genAssignStmt(id(hv), handler))
+		} else {
+			g.body = append(g.body, genConst(hv, handler))
+		}
+		g.emitListenerPair(&g.events, varName, spec.event, hv, nil, cleanupGuard, true)
 	}
 	write := g.attrWriteStmt(varName, attr)
 	if attr.IsTwoWay && ok {
