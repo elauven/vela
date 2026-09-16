@@ -8796,6 +8796,32 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 		visit = func(nodes []Node) {
 			for _, node := range nodes {
 				switch current := node.(type) {
+				case *ComponentNode:
+					// This deliberately narrow recipe adopts a direct local child
+					// already emitted by the parent slot renderer. Its own slots and
+					// structural descendants need a nested ownership controller and
+					// remain a later slice.
+					if current == nil {
+						continue
+					}
+					handle := hydrationAwaitSnapshotSlotComponent{
+						component:   current,
+						instanceVar: "$$hawait_slot_component_" + itoa(len(plan.components)),
+						propsExpr:   g.componentPropsExpr(current.Attrs),
+						overrides:   g.hydrationComponentOverridesExpr(current.Attrs),
+					}
+					plan.components = append(plan.components, handle)
+					plan.decls = append(plan.decls, genLet(handle.instanceVar, genNull()))
+					plan.adopt = append(plan.adopt, genAssignStmt(
+						id(handle.instanceVar),
+						genMember(g.hydrationComponentCall(current, id("$$root"), handle.overrides), "component"),
+					))
+					for _, attr := range current.Attrs {
+						for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+							plan.deps[dependency] = true
+						}
+					}
+					plan.refresh = append(plan.refresh, genIf(id(handle.instanceVar), optionalComponentSetStmt(id(handle.instanceVar), handle.propsExpr)))
 				case *TextNode:
 					for _, part := range current.Parts {
 						if part == nil || part.Static {
@@ -8865,7 +8891,19 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 			visit(slots[name])
 		}
 	})
-	plan.cleanup = append(plan.listenerCleanup, plan.cleanup...)
+	leafCleanup := append([]JsStmt(nil), plan.cleanup...)
+	componentCleanup := make([]JsStmt, 0, len(plan.components)*2)
+	for index := len(plan.components) - 1; index >= 0; index-- {
+		handle := plan.components[index]
+		componentCleanup = append(componentCleanup,
+			genIf(id(handle.instanceVar), genBlock(
+				genExprStmt(genCall(genMember(id(handle.instanceVar), "destroy"))),
+				genAssignStmt(id(handle.instanceVar), genNull()),
+			)),
+		)
+	}
+	plan.cleanup = append(componentCleanup, plan.listenerCleanup...)
+	plan.cleanup = append(plan.cleanup, leafCleanup...)
 	return plan
 }
 
@@ -8924,6 +8962,23 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bi
 				}
 				if !check(current.Children) {
 					return false
+				}
+			case *ComponentNode:
+				if current == nil || len(current.Slots) != 0 {
+					return false
+				}
+				for _, attr := range current.Attrs {
+					if attr == nil || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+						return false
+					}
+					if attr.IsEvent || attr.IsTwoWay {
+						return false
+					}
+					if attr.IsBind {
+						if _, ok := templateExprIdent(attr.Expr); !ok {
+							return false
+						}
+					}
 				}
 			default:
 				return false
@@ -9012,8 +9067,21 @@ type hydrationAwaitSnapshotLeafPlan struct {
 	refresh         []JsStmt
 	listenerCleanup []JsStmt
 	cleanup         []JsStmt
+	components      []hydrationAwaitSnapshotSlotComponent
 	deps            map[string]bool
 	supported       bool
+}
+
+// hydrationAwaitSnapshotSlotComponent is a parent-owned child component
+// projected through an already adopted selected-await child. Its markers and
+// payload remain globally discoverable from the parent root, while its
+// lifetime is bounded by the projected slot range rather than by the outer
+// child's internal DOM lifecycle.
+type hydrationAwaitSnapshotSlotComponent struct {
+	component   *ComponentNode
+	instanceVar string
+	propsExpr   JsExpr
+	overrides   JsExpr
 }
 
 func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingName, bindingValue string) hydrationAwaitSnapshotLeafPlan {

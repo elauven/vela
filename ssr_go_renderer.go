@@ -897,6 +897,19 @@ func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
 				if !ssrAwaitSnapshotSlotLeafNodes(map[string][]SSRPlanNode{"": current.Children}) {
 					return false
 				}
+			case *SSRPlanComponent:
+				// The selected-snapshot slot lifecycle currently owns a direct
+				// local projected child without child slots of its own. Its normal
+				// Go renderer call is already recursive; hydration supplies the
+				// matching browser ownership recipe.
+				if current == nil || current.Link == nil || len(current.Slots) != 0 {
+					return false
+				}
+				for _, attr := range current.Attrs {
+					if attr.Role != SSRAttrStatic && attr.Role != SSRAttrDynamic {
+						return false
+					}
+				}
 			default:
 				return false
 			}

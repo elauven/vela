@@ -1016,6 +1016,23 @@ func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 			if !ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(current.Children) {
 				return false
 			}
+		case *ComponentNode:
+			// A direct projected local child is adopted by the parent-selected
+			// snapshot lifecycle. Nested slot content and component event/binding
+			// ownership need their own controller and stay capability-gated.
+			if current == nil || len(current.Slots) != 0 {
+				return false
+			}
+			for _, attr := range current.Attrs {
+				if attr == nil || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir || attr.IsEvent || attr.IsTwoWay {
+					return false
+				}
+				if attr.IsBind {
+					if _, ok := templateExprIdent(attr.Expr); !ok {
+						return false
+					}
+				}
+			}
 		default:
 			return false
 		}

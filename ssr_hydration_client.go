@@ -372,15 +372,49 @@ func ssrHydrationComponentNames(sfc *SFC, analysis *Analysis) (map[string]bool, 
 		}
 	}
 	components := map[string]bool{}
+	addComponent := func(component *ComponentNode) error {
+		if component == nil {
+			return nil
+		}
+		if !imports[component.Name] {
+			return fmt.Errorf("SSR hydration component %q must be imported from a local .vela module", component.Name)
+		}
+		components[component.Name] = true
+		return nil
+	}
+	// Selected await snapshots own a narrow projected-child recipe. Do not
+	// recurse through arbitrary component slots here: those trees may still be
+	// capability-gated and importing their hydrate modules would change an
+	// otherwise validation-only module graph. The lowerer accepts only direct
+	// local children with no child slots of their own.
+	visitSnapshotSlots := func(nodes []Node) error {
+		for _, node := range nodes {
+			component, ok := node.(*ComponentNode)
+			if !ok || component == nil || !ssrCapabilityCurrentAwaitComponentSlots(component, 1) {
+				continue
+			}
+			for _, name := range sortedSlotNames(component.Slots) {
+				for _, projected := range component.Slots[name] {
+					inner, ok := projected.(*ComponentNode)
+					if !ok || inner == nil || len(inner.Slots) != 0 {
+						continue
+					}
+					if err := addComponent(inner); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	}
 	var visit func([]Node) error
 	visit = func(nodes []Node) error {
 		for _, node := range nodes {
 			switch current := node.(type) {
 			case *ComponentNode:
-				if !imports[current.Name] {
-					return fmt.Errorf("SSR hydration component %q must be imported from a local .vela module", current.Name)
+				if err := addComponent(current); err != nil {
+					return err
 				}
-				components[current.Name] = true
 			case *ElementNode:
 				if err := visit(current.Children); err != nil {
 					return err
@@ -408,6 +442,12 @@ func ssrHydrationComponentNames(sfc *SFC, analysis *Analysis) (map[string]bool, 
 					return err
 				}
 				if err := visit(current.CatchChildren); err != nil {
+					return err
+				}
+				if err := visitSnapshotSlots(current.ThenChildren); err != nil {
+					return err
+				}
+				if err := visitSnapshotSlots(current.CatchChildren); err != nil {
 					return err
 				}
 			}
