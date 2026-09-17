@@ -371,7 +371,7 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotSupportsStaticIf(t *testi
 		t.Fatal(err)
 	}
 	source := PrintJS(program, PrintPretty)
-	for _, want := range []string{`$$acquireHydrationRange`, `$$adoptHydrationRange`, `$$insertHTML`, `slot-on`, `slot-off`} {
+	for _, want := range []string{`$$acquireHydrationRange`, `$$adoptHydrationRange`, `$$insertHTML`, `slot-on`, `slot-off`, `updates: []`, `listeners: []`, `children: []`, `adopt: () =>`, `mountCSR: (`, `update: () =>`, `destroy: () =>`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("projected child own-slot #if lowering misses %q:\n%s", want, source)
 		}

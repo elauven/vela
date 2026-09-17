@@ -9060,48 +9060,74 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 	}
 	markerID := g.hydrationIfMarkerID(chain)
 	prefix := "$$hawait" + itoa(markerID) + "_slot_if"
-	rangeVar, nodesVar, activeVar := prefix+"_range", prefix+"_nodes", prefix+"_active"
+	rangeVar, controllerVar := prefix+"_range", prefix+"_controller"
 	activeExpr := g.hydrationAwaitSnapshotSlotIfActiveExpr(chain)
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	plan.decls = append(plan.decls,
 		genLet(rangeVar, genNull()),
-		genLet(nodesVar, genNull()),
-		genLet(activeVar, numLit(-1)),
-	)
-	plan.adopt = append(plan.adopt,
-		genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
-		genAssignStmt(id(nodesVar), genCall(id("$$adoptHydrationRange"), id(rangeVar))),
-		genAssignStmt(id(activeVar), activeExpr),
+		genLet(controllerVar, genNull()),
 	)
 	nextVar := prefix + "_next"
 	fragmentVar := prefix + "_fragment"
-	update := []JsStmt{
-		genForOf("$$node", id(nodesVar), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
-		genConst(fragmentVar, genCall(genMember(id("document"), "createDocumentFragment"))),
-	}
+	mountBody := []JsStmt{genConst(fragmentVar, genCall(genMember(id("document"), "createDocumentFragment")))}
 	for index, branch := range chain.Branches {
 		if branch == nil {
 			continue
 		}
-		update = append(update, genIf(
+		mountBody = append(mountBody, genIf(
 			genBinary("===", id(nextVar), numLit(index)),
 			genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML(branch.Children, g.scopeID)))),
 		))
 	}
-	update = append(update,
-		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id(fragmentVar), "childNodes"))),
-		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id(fragmentVar))),
-		genAssignStmt(id(activeVar), id(nextVar)),
+	mountBody = append(mountBody,
+		genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(fragmentVar), "childNodes"))),
+		genExprStmt(genCall(genMember(genMember(id(controllerVar), "end"), "before"), id(fragmentVar))),
 	)
-	plan.refresh = append(plan.refresh, genBlock(
-		genConst(nextVar, activeExpr),
-		genIf(genBinary("!==", id(nextVar), id(activeVar)), genBlock(update...)),
-	))
+	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(controllerVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
+		genAssignStmt(genMember(id(controllerVar), "listeners"), genArray()),
+		genForOf("$$child", genCall(genMember(genCall(genMember(genMember(id(controllerVar), "children"), "slice")), "reverse")), genIf(id("$$child"), genIf(genMember(id("$$child"), "destroy"), genExprStmt(genCall(genMember(id("$$child"), "destroy")))))),
+		genAssignStmt(genMember(id(controllerVar), "children"), genArray()),
+		genAssignStmt(genMember(id(controllerVar), "updates"), genArray()),
+		genForOf("$$node", genMember(id(controllerVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genAssignStmt(genMember(id(controllerVar), "nodes"), genArray()),
+		genAssignStmt(genMember(id(controllerVar), "active"), numLit(-1)),
+	)}
+	controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+		{Key: id("start"), Value: genMember(id(rangeVar), "start")},
+		{Key: id("end"), Value: genMember(id(rangeVar), "end")},
+		{Key: id("active"), Value: numLit(-1)},
+		{Key: id("nodes"), Value: genArray()},
+		{Key: id("updates"), Value: genArray()},
+		{Key: id("listeners"), Value: genArray()},
+		{Key: id("children"), Value: genArray()},
+		{Key: id("adopt"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+			genAssignStmt(genMember(id(controllerVar), "active"), activeExpr),
+		)}},
+		{Key: id("mountCSR"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(nextVar)}, Body: genBlock(mountBody...)}},
+		{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genConst(nextVar, activeExpr),
+			genIf(genBinary("===", id(nextVar), genMember(id(controllerVar), "active")), genBlock(
+				genForOf("$$update", genMember(id(controllerVar), "updates"), genInvoke("$$update")),
+				genReturn(nil),
+			)),
+			genExprStmt(genCall(genMember(id(controllerVar), "destroy"))),
+			genAssignStmt(genMember(id(controllerVar), "active"), id(nextVar)),
+			genExprStmt(genCall(genMember(id(controllerVar), "mountCSR"), id(nextVar))),
+		)}},
+		{Key: id("destroy"), Value: destroy},
+	}}
+	plan.adopt = append(plan.adopt,
+		genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genAssignStmt(id(controllerVar), controller),
+		genExprStmt(genCall(genMember(id(controllerVar), "adopt"))),
+	)
+	plan.refresh = append(plan.refresh, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "update")))))
 	plan.cleanup = append(plan.cleanup, genBlock(
-		genIf(id(nodesVar), genBlock(removeNodesStmts(nodesVar)...)),
-		genAssignStmt(id(nodesVar), genNull()),
+		genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "destroy")))),
+		genAssignStmt(id(controllerVar), genNull()),
 		genAssignStmt(id(rangeVar), genNull()),
-		genAssignStmt(id(activeVar), numLit(-1)),
 	))
 	for _, branch := range chain.Branches {
 		if branch == nil || !branch.HasCondition() {

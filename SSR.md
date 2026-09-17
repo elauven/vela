@@ -521,8 +521,9 @@ only those owned nodes and inserts the selected static branch before the same
 end marker, so the enclosing projected child, nested local children, and
 unrelated slot siblings retain identity. `{:else if}`, dynamic branch leaves,
 branch-owned listeners or bindings, local child lifecycle inside a branch,
-`#key`, `#each`, and nested `#await` still require the general structural
-range controller.
+`#key`, `#each`, and nested `#await` still require extensions of this
+structural range controller for their evaluated identity, row, and promise
+lifecycle.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.
