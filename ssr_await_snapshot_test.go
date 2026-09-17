@@ -347,6 +347,37 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotSupportsNativeBindings(t 
 	}
 }
 
+func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotSupportsStaticIf(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let show = true;</script><template><main>{#await request}<p>Pending</p>{:then result}<Outer><Inner>{#if show}<p class="slot-on">On</p>{:else}<p class="slot-off">Off</p>{/if}</Inner></Outer>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("static #if in projected-child own slot was rejected")
+	}
+	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", sfc, analysis, "vela-parent", map[string]SSRComponentLink{
+		"Outer": {LocalName: "Outer", SourcePath: "Outer.vela", GoName: "Outer", PackageName: "outer", ImportPath: "example.com/project/outer"},
+		"Inner": {LocalName: "Inner", SourcePath: "Inner.vela", GoName: "Inner", PackageName: "inner", ImportPath: "example.com/project/inner"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildSSRGoFile(plan, "parent"); err != nil {
+		t.Fatalf("SSR renderer rejected projected-child own slot #if: %v", err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{`$$acquireHydrationRange`, `$$adoptHydrationRange`, `$$insertHTML`, `slot-on`, `slot-off`} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("projected child own-slot #if lowering misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	node := requirePlaywright(t)
 	outerSFC, err := parseSFC(`<template><section class="snapshot-outer"><slot /></section></template>`)
@@ -404,7 +435,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	innerCSR, _ := buildProgramWithDOMAcquirePlan("Inner", innerSFC, innerSFC.TemplateAST.Nodes, innerAnalysis, "vela-inner", false, DOMAcquireCreate)
 	leafCSR, _ := buildProgramWithDOMAcquirePlan("Leaf", leafSFC, leafSFC.TemplateAST.Nodes, leafAnalysis, "vela-leaf", false, DOMAcquireCreate)
 
-	parentSFC, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; import { Leaf } from "./Leaf.vela"; export let request; export let title = "server"; export let active = false; export let color = "red"; export let draft = "server"; export let enabled = false; let selected = $state("server"); function closed() { window.snapshotBound = selected; window.snapshotCloses = (window.snapshotCloses || 0) + 1; } function slotClicked() { window.snapshotSlotClicks = (window.snapshotSlotClicks || 0) + 1; window.snapshotSlotDraft = draft; window.snapshotSlotEnabled = enabled; }</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Outer><Inner :title={title} bind:value={selected} @on:close={closed}><p class="snapshot-inner-slot" :title={title} class:active={active} style:color={color} @click={slotClicked}>{title}</p><Leaf :title={title} /><input class="snapshot-inner-slot-value" bind:value={draft} /><input class="snapshot-inner-slot-enabled" type="checkbox" bind:checked={enabled} /><svelte:fragment slot="actions"><button class="snapshot-inner-action">Action</button></svelte:fragment></Inner></Outer><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	parentSFC, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; import { Leaf } from "./Leaf.vela"; export let request; export let title = "server"; export let active = false; export let color = "red"; export let show = true; export let draft = "server"; export let enabled = false; let selected = $state("server"); function closed() { window.snapshotBound = selected; window.snapshotCloses = (window.snapshotCloses || 0) + 1; } function slotClicked() { window.snapshotSlotClicks = (window.snapshotSlotClicks || 0) + 1; window.snapshotSlotDraft = draft; window.snapshotSlotEnabled = enabled; }</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Outer><Inner :title={title} bind:value={selected} @on:close={closed}><p class="snapshot-inner-slot" :title={title} class:active={active} style:color={color} @click={slotClicked}>{title}</p><Leaf :title={title} />{#if show}<p class="snapshot-inner-on">On</p>{:else}<p class="snapshot-inner-off">Off</p>{/if}<input class="snapshot-inner-slot-value" bind:value={draft} /><input class="snapshot-inner-slot-enabled" type="checkbox" bind:checked={enabled} /><svelte:fragment slot="actions"><button class="snapshot-inner-action">Action</button></svelte:fragment></Inner></Outer><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,15 +474,16 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	innerSlot := innerComponent.Slots["default"][0].(*SSRPlanElement)
 	innerSlotText := innerSlot.Children[0].(*SSRPlanText).Parts[0]
 	leafComponent := innerComponent.Slots["default"][1].(*SSRPlanComponent)
-	innerSlotInput := innerComponent.Slots["default"][2].(*SSRPlanElement)
-	innerSlotEnabled := innerComponent.Slots["default"][3].(*SSRPlanElement)
+	innerSlotIf := innerComponent.Slots["default"][2].(*SSRPlanIf)
+	innerSlotInput := innerComponent.Slots["default"][3].(*SSRPlanElement)
+	innerSlotEnabled := innerComponent.Slots["default"][4].(*SSRPlanElement)
 	leafRoot := leafPlan.Nodes[0].(*SSRPlanElement)
 	leafText := leafRoot.Children[0].(*SSRPlanText).Parts[0]
 	if outerComponent.Link == nil || innerComponent.Link == nil || leafComponent.Link == nil {
 		t.Fatal("projected component links are missing")
 	}
 	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><main><!--v:vela-parent:` + itoa(awaitID) + `--><!--e:vela-outer:` + itoa(outerRoot.HydrationID) + `--><section class="snapshot-outer"><!--e:vela-inner:` + itoa(innerRoot.HydrationID) + `--><section class="snapshot-inner-wrap"><!--e:vela-inner:` + itoa(innerInput.HydrationID) + `--><input class="snapshot-inner-value" value="server"><!--/e:vela-inner:` + itoa(innerInput.HydrationID) + `--><!--e:vela-inner:` + itoa(innerClose.HydrationID) + `--><button class="snapshot-inner-close">Close</button><!--/e:vela-inner:` + itoa(innerClose.HydrationID) + `--><!--e:vela-inner:` + itoa(innerButton.HydrationID) + `--><button class="snapshot-inner"><!--v:vela-inner:` + itoa(innerText.DynamicID) + `-->server<!--/v:vela-inner:` + itoa(innerText.DynamicID) + `--></button><!--/e:vela-inner:` + itoa(innerButton.HydrationID) + `--></section><!--/e:vela-inner:` + itoa(innerRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-inner">{"component":"vela-inner","props":{"Title":"server","Value":"server"},"state":{},"incomplete":false}</script></section><!--/e:vela-outer:` + itoa(outerRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-outer">{"component":"vela-outer","props":{},"state":{},"incomplete":false}</script><p class="settled">Done</p><!--/v:vela-parent:` + itoa(awaitID) + `--></main><!--/e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Title":"server"},"state":{},"incomplete":false,"await":{"` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.snapshotInnerClicks=0;window.snapshotInnerDestroys=0;window.snapshotCloses=0;window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
-	innerStaticSlots := `<!--e:vela-parent:` + itoa(innerSlot.HydrationID) + `--><p vela-parent="" class="snapshot-inner-slot" title="server" style="color:red"><!--v:vela-parent:` + itoa(innerSlotText.DynamicID) + `-->server<!--/v:vela-parent:` + itoa(innerSlotText.DynamicID) + `--></p><!--/e:vela-parent:` + itoa(innerSlot.HydrationID) + `--><!--e:vela-leaf:` + itoa(leafRoot.HydrationID) + `--><button class="snapshot-leaf"><!--v:vela-leaf:` + itoa(leafText.DynamicID) + `-->server<!--/v:vela-leaf:` + itoa(leafText.DynamicID) + `--></button><!--/e:vela-leaf:` + itoa(leafRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-leaf">{"component":"vela-leaf","props":{"Title":"server"},"state":{},"incomplete":false}</script><!--e:vela-parent:` + itoa(innerSlotInput.HydrationID) + `--><input vela-parent="" class="snapshot-inner-slot-value" value="server"><!--/e:vela-parent:` + itoa(innerSlotInput.HydrationID) + `--><!--e:vela-parent:` + itoa(innerSlotEnabled.HydrationID) + `--><input vela-parent="" class="snapshot-inner-slot-enabled" type="checkbox"><!--/e:vela-parent:` + itoa(innerSlotEnabled.HydrationID) + `--><button class="snapshot-inner-action">Action</button>`
+	innerStaticSlots := `<!--e:vela-parent:` + itoa(innerSlot.HydrationID) + `--><p vela-parent="" class="snapshot-inner-slot" title="server" style="color:red"><!--v:vela-parent:` + itoa(innerSlotText.DynamicID) + `-->server<!--/v:vela-parent:` + itoa(innerSlotText.DynamicID) + `--></p><!--/e:vela-parent:` + itoa(innerSlot.HydrationID) + `--><!--e:vela-leaf:` + itoa(leafRoot.HydrationID) + `--><button class="snapshot-leaf"><!--v:vela-leaf:` + itoa(leafText.DynamicID) + `-->server<!--/v:vela-leaf:` + itoa(leafText.DynamicID) + `--></button><!--/e:vela-leaf:` + itoa(leafRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-leaf">{"component":"vela-leaf","props":{"Title":"server"},"state":{},"incomplete":false}</script><!--v:vela-parent:` + itoa(innerSlotIf.DynamicID) + `--><p vela-parent="" class="snapshot-inner-on">On</p><!--/v:vela-parent:` + itoa(innerSlotIf.DynamicID) + `--><!--e:vela-parent:` + itoa(innerSlotInput.HydrationID) + `--><input vela-parent="" class="snapshot-inner-slot-value" value="server"><!--/e:vela-parent:` + itoa(innerSlotInput.HydrationID) + `--><!--e:vela-parent:` + itoa(innerSlotEnabled.HydrationID) + `--><input vela-parent="" class="snapshot-inner-slot-enabled" type="checkbox"><!--/e:vela-parent:` + itoa(innerSlotEnabled.HydrationID) + `--><button class="snapshot-inner-action">Action</button>`
 	html = strings.Replace(html,
 		`<!--/e:vela-inner:`+itoa(innerButton.HydrationID)+`--></section>`,
 		`<!--/e:vela-inner:`+itoa(innerButton.HydrationID)+`-->`+innerStaticSlots+`</section>`,
@@ -480,7 +512,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("projected child hydration mutated DOM");await p.evaluate(()=>{window.inner=document.querySelector(".snapshot-inner");window.input=document.querySelector(".snapshot-inner-value");window.close=document.querySelector(".snapshot-inner-close");window.input.value="bound";window.input.dispatchEvent(new Event("input",{bubbles:true}));window.close.click();window.inner.click();window.hydrated.component.set({title:"client"})});await p.waitForFunction(()=>window.snapshotBound==="bound"&&window.snapshotCloses===1&&window.snapshotInnerClicks===1&&document.querySelector(".snapshot-inner")?.textContent==="client");if(!(await p.evaluate(()=>document.querySelector(".snapshot-inner")===window.inner)))throw new Error("projected child was remounted for prop update");await p.evaluate(()=>{window.nextRequest=new Promise(resolve=>{window.resolveNext=resolve});window.hydrated.component.set({request:window.nextRequest})});await p.waitForFunction(()=>document.querySelector(".pending"));const removed=await p.evaluate(()=>{window.input.value="stale";window.input.dispatchEvent(new Event("input",{bubbles:true}));window.close.click();window.inner.click();return {detached:!window.inner.isConnected,destroys:window.snapshotInnerDestroys,payload:!document.getElementById("vela-state-vela-inner"),clicks:window.snapshotInnerClicks,closes:window.snapshotCloses}});if(!removed.detached||!removed.payload||removed.destroys!==1||removed.clicks!==1||removed.closes!==1)throw new Error(JSON.stringify(removed));await p.evaluate(()=>window.resolveNext("again"));await p.waitForFunction(()=>document.querySelector(".snapshot-inner")?.textContent==="client"&&document.querySelector(".snapshot-inner-value")?.value==="bound");await p.evaluate(()=>{window.remountedInput=document.querySelector(".snapshot-inner-value");window.remountedInput.value="again";window.remountedInput.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector(".snapshot-inner-close").click();document.querySelector(".snapshot-inner").click()});await p.waitForFunction(()=>window.snapshotBound==="again"&&window.snapshotCloses===2&&window.snapshotInnerClicks===2);await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>window.snapshotInnerDestroys)!==2)throw new Error("remounted projected child was not destroyed");if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
 	browser = strings.ReplaceAll(browser,
 		`window.hydrated.component.set({title:"client"})`,
-		`window.hydrated.component.set({title:"client",active:true,color:"blue",draft:"external",enabled:false})`,
+		`window.hydrated.component.set({title:"client",active:true,color:"blue",show:false,draft:"external",enabled:false})`,
 	)
 	browser = strings.ReplaceAll(browser,
 		`window.snapshotCloses=0;`,
@@ -488,15 +520,15 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	)
 	browser = strings.ReplaceAll(browser,
 		`window.close=document.querySelector(".snapshot-inner-close");window.input.value`,
-		`window.close=document.querySelector(".snapshot-inner-close");window.leaf=document.querySelector(".snapshot-leaf");window.slot=document.querySelector(".snapshot-inner-slot");window.slotInput=document.querySelector(".snapshot-inner-slot-value");window.slotEnabled=document.querySelector(".snapshot-inner-slot-enabled");window.slotInput.value="typed-before-update";window.slotInput.dispatchEvent(new Event("input",{bubbles:true}));window.slotEnabled.checked=true;window.slotEnabled.dispatchEvent(new Event("change",{bubbles:true}));window.slot.click();window.input.value`,
+		`window.close=document.querySelector(".snapshot-inner-close");window.leaf=document.querySelector(".snapshot-leaf");window.conditional=document.querySelector(".snapshot-inner-on");window.slot=document.querySelector(".snapshot-inner-slot");window.slotInput=document.querySelector(".snapshot-inner-slot-value");window.slotEnabled=document.querySelector(".snapshot-inner-slot-enabled");window.slotInput.value="typed-before-update";window.slotInput.dispatchEvent(new Event("input",{bubbles:true}));window.slotEnabled.checked=true;window.slotEnabled.dispatchEvent(new Event("change",{bubbles:true}));window.slot.click();window.input.value`,
 	)
 	browser = strings.ReplaceAll(browser,
 		`window.snapshotInnerClicks===1&&document.querySelector(".snapshot-inner")?.textContent===`,
-		`window.snapshotSlotClicks===1&&window.snapshotSlotDraft==="typed-before-update"&&window.snapshotSlotEnabled===true&&window.snapshotInnerClicks===1&&document.querySelector(".snapshot-inner-slot-value")?.value==="external"&&!document.querySelector(".snapshot-inner-slot-enabled")?.checked&&document.querySelector(".snapshot-leaf")?.textContent==="client"&&document.querySelector(".snapshot-inner")?.textContent===`,
+		`window.snapshotSlotClicks===1&&window.snapshotSlotDraft==="typed-before-update"&&window.snapshotSlotEnabled===true&&window.snapshotInnerClicks===1&&document.querySelector(".snapshot-inner-slot-value")?.value==="external"&&!document.querySelector(".snapshot-inner-slot-enabled")?.checked&&document.querySelector(".snapshot-leaf")?.textContent==="client"&&document.querySelector(".snapshot-inner-off")?.textContent==="Off"&&document.querySelector(".snapshot-inner")?.textContent===`,
 	)
 	browser = strings.ReplaceAll(browser,
 		`if(!(await p.evaluate(()=>document.querySelector(".snapshot-inner")===window.inner)))throw new Error("projected child was remounted for prop update")`,
-		`if(!(await p.evaluate(()=>document.querySelector(".snapshot-inner")===window.inner&&document.querySelector(".snapshot-leaf")===window.leaf)))throw new Error("projected child or nested leaf was remounted for prop update")`,
+		`if(!(await p.evaluate(()=>document.querySelector(".snapshot-inner")===window.inner&&document.querySelector(".snapshot-leaf")===window.leaf&&document.querySelector(".snapshot-inner-off")!==window.conditional)))throw new Error("projected child, nested leaf, or inner #if range was not updated correctly")`,
 	)
 	browser = strings.ReplaceAll(browser,
 		`window.close.click();window.inner.click();return`,
@@ -524,7 +556,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	)
 	browser = strings.ReplaceAll(browser,
 		`document.querySelector(".snapshot-inner")?.textContent==="client"`,
-		`document.querySelector(".snapshot-inner")?.textContent==="client"&&document.querySelector(".snapshot-inner-slot")?.textContent==="client"&&document.querySelector(".snapshot-inner-slot")?.title==="client"&&document.querySelector(".snapshot-inner-slot")?.classList.contains("active")&&document.querySelector(".snapshot-inner-slot")?.style.color==="blue"&&document.querySelector(".snapshot-inner-slot-value")?.value==="external"&&!document.querySelector(".snapshot-inner-slot-enabled")?.checked&&document.querySelector(".snapshot-leaf")?.textContent==="client"`,
+		`document.querySelector(".snapshot-inner")?.textContent==="client"&&document.querySelector(".snapshot-inner-slot")?.textContent==="client"&&document.querySelector(".snapshot-inner-slot")?.title==="client"&&document.querySelector(".snapshot-inner-slot")?.classList.contains("active")&&document.querySelector(".snapshot-inner-slot")?.style.color==="blue"&&document.querySelector(".snapshot-inner-slot-value")?.value==="external"&&!document.querySelector(".snapshot-inner-slot-enabled")?.checked&&document.querySelector(".snapshot-leaf")?.textContent==="client"&&document.querySelector(".snapshot-inner-off")?.textContent==="Off"`,
 	)
 	command := exec.Command(node, "-e", browser, dir)
 	command.Dir = "/projects/compiler"

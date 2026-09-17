@@ -512,8 +512,17 @@ installs a guarded writer and listener owned by the selected range. Nested
 local child components are also supported: each is adopted through its named
 hydrate entry, retains its own inert payload, receives later `.set(...)`
 updates, and is destroyed in reverse source order before the enclosing child
-or selected range is removed. Structural blocks remain outside this
-selected-snapshot slot recipe.
+or selected range is removed. The first structural extension of this
+selected-snapshot slot recipe is a marker-aware ordinary `#if` / `{:else}`
+with a simple parent-identifier condition and fully static ordinary-DOM
+branches. The selected await-range owner acquires the canonical `v` range and
+adopts its existing nodes without an initial write. A condition change removes
+only those owned nodes and inserts the selected static branch before the same
+end marker, so the enclosing projected child, nested local children, and
+unrelated slot siblings retain identity. `{:else if}`, dynamic branch leaves,
+branch-owned listeners or bindings, local child lifecycle inside a branch,
+`#key`, `#each`, and nested `#await` still require the general structural
+range controller.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.

@@ -1064,8 +1064,29 @@ func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, a
 					}
 				}
 			}
+		case *IfChainNode:
+			if !ssrCapabilityCurrentAwaitSnapshotSlotStaticIf(current) {
+				return false
+			}
 		default:
 			return false
+		}
+	}
+	return true
+}
+
+func ssrCapabilityCurrentAwaitSnapshotSlotStaticIf(chain *IfChainNode) bool {
+	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 {
+		return false
+	}
+	for _, branch := range chain.Branches {
+		if branch == nil || !allStatic(branch.Children) {
+			return false
+		}
+		if branch.HasCondition() {
+			if _, ok := templateExprIdent(branch.Expr); !ok {
+				return false
+			}
 		}
 	}
 	return true

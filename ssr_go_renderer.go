@@ -936,9 +936,55 @@ func ssrAwaitSnapshotSlotPlanNodes(slots map[string][]SSRPlanNode, allowComponen
 						return false
 					}
 				}
+			case *SSRPlanIf:
+				if !ssrAwaitSnapshotSlotStaticIf(current) {
+					return false
+				}
 			default:
 				return false
 			}
+		}
+	}
+	return true
+}
+
+func ssrAwaitSnapshotSlotStaticIf(node *SSRPlanIf) bool {
+	if node == nil || node.Key != nil || len(node.Branches) == 0 {
+		return false
+	}
+	for _, branch := range node.Branches {
+		if branch.Condition != nil {
+			if _, ok := templateExprIdent(branch.Condition); !ok {
+				return false
+			}
+		}
+		if !ssrAwaitSnapshotSlotStaticPlanNodes(branch.Children) {
+			return false
+		}
+	}
+	return true
+}
+
+func ssrAwaitSnapshotSlotStaticPlanNodes(nodes []SSRPlanNode) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *SSRPlanText:
+			for _, part := range current.Parts {
+				if !part.Static {
+					return false
+				}
+			}
+		case *SSRPlanElement:
+			for _, attr := range current.Attrs {
+				if attr.Role != SSRAttrStatic {
+					return false
+				}
+			}
+			if !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) {
+				return false
+			}
+		default:
+			return false
 		}
 	}
 	return true
