@@ -214,7 +214,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotReactiveSlotLeafChild(t *testin
 }
 
 func TestGeneratedSSRRendererAndHydratorSelectAwaitSnapshotProjectedChild(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let title = "server"; export let active = false; export let color = "red"; export let draft = "server"; export let enabled = false;</script><template><main>{#await request}<p>Pending</p>{:then value}<Outer><Inner :title={title}><p class="inner-slot" :title={title} class:active={active} style:color={color}>{title}</p><input bind:value={draft} /><input type="checkbox" bind:checked={enabled} /><svelte:fragment slot="actions"><button>Action</button></svelte:fragment></Inner></Outer><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; import { Leaf } from "./Leaf.vela"; export let request; export let title = "server"; export let active = false; export let color = "red"; export let draft = "server"; export let enabled = false;</script><template><main>{#await request}<p>Pending</p>{:then value}<Outer><Inner :title={title}><p class="inner-slot" :title={title} class:active={active} style:color={color}>{title}</p><Leaf :title={title} /><input bind:value={draft} /><input type="checkbox" bind:checked={enabled} /><svelte:fragment slot="actions"><button>Action</button></svelte:fragment></Inner></Outer><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,6 +227,7 @@ func TestGeneratedSSRRendererAndHydratorSelectAwaitSnapshotProjectedChild(t *tes
 	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", sfc, analysis, "vela-parent", map[string]SSRComponentLink{
 		"Outer": {LocalName: "Outer", SourcePath: "Outer.vela", GoName: "Outer", PackageName: "outer", ImportPath: "example.com/project/outer"},
 		"Inner": {LocalName: "Inner", SourcePath: "Inner.vela", GoName: "Inner", PackageName: "inner", ImportPath: "example.com/project/inner"},
+		"Leaf":  {LocalName: "Leaf", SourcePath: "Leaf.vela", GoName: "Leaf", PackageName: "leaf", ImportPath: "example.com/project/leaf"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -249,6 +250,7 @@ func TestGeneratedSSRRendererAndHydratorSelectAwaitSnapshotProjectedChild(t *tes
 		`vela.String(props.Color)`,
 		`vela.String(props.Draft)`,
 		`if props.Enabled {`,
+		`leaf.Leaf(leaf.LeafProps{Title: props.Title}, leaf.LeafSlots{})`,
 	} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("SSR renderer misses projected child static slot %q:\n%s", want, server)
@@ -263,8 +265,12 @@ func TestGeneratedSSRRendererAndHydratorSelectAwaitSnapshotProjectedChild(t *tes
 		`from './Outer.hydrate.js'`,
 		`from './Inner.hydrate.js'`,
 		`from './Inner.js'`,
+		`from './Leaf.hydrate.js'`,
+		`from './Leaf.js'`,
 		`$$csr_Inner`,
+		`$$csr_Leaf`,
 		`Inner($$root).component`,
+		`Leaf($$root).component`,
 		`$$csr_Inner($$n`,
 	} {
 		if !strings.Contains(generated, want) {
@@ -351,13 +357,22 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	leafSFC, err := parseSFC(`<script>import { onDestroy } from "vela"; export let title = ""; onDestroy(() => { window.snapshotLeafDestroys = (window.snapshotLeafDestroys || 0) + 1; window.snapshotLeafInnerAlive = !!document.querySelector(".snapshot-inner-wrap")?.isConnected; });</script><template><button class="snapshot-leaf">{title}</button></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
 	outerAnalysis := analyzeScriptAST(outerSFC.ScriptAST)
 	innerAnalysis := analyzeScriptAST(innerSFC.ScriptAST)
+	leafAnalysis := analyzeScriptAST(leafSFC.ScriptAST)
 	outerPlan, err := BuildSSRRenderPlanWithAnalysis("Outer", outerSFC, outerAnalysis, "vela-outer")
 	if err != nil {
 		t.Fatal(err)
 	}
 	innerPlan, err := BuildSSRRenderPlanWithAnalysis("Inner", innerSFC, innerAnalysis, "vela-inner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafPlan, err := BuildSSRRenderPlanWithAnalysis("Leaf", leafSFC, leafAnalysis, "vela-leaf")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,6 +384,10 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	leafClient, err := BuildSSRHydrationClientProgram("Leaf", leafSFC, leafAnalysis, "vela-leaf")
+	if err != nil {
+		t.Fatal(err)
+	}
 	outerEntry, err := BuildSSRHydrateEntryWithClient(outerPlan, "./Outer.hydrate_client.js")
 	if err != nil {
 		t.Fatal(err)
@@ -377,10 +396,15 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	leafEntry, err := BuildSSRHydrateEntryWithClient(leafPlan, "./Leaf.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
 	outerCSR, _ := buildProgramWithDOMAcquirePlan("Outer", outerSFC, outerSFC.TemplateAST.Nodes, outerAnalysis, "vela-outer", false, DOMAcquireCreate)
 	innerCSR, _ := buildProgramWithDOMAcquirePlan("Inner", innerSFC, innerSFC.TemplateAST.Nodes, innerAnalysis, "vela-inner", false, DOMAcquireCreate)
+	leafCSR, _ := buildProgramWithDOMAcquirePlan("Leaf", leafSFC, leafSFC.TemplateAST.Nodes, leafAnalysis, "vela-leaf", false, DOMAcquireCreate)
 
-	parentSFC, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let title = "server"; export let active = false; export let color = "red"; export let draft = "server"; export let enabled = false; let selected = $state("server"); function closed() { window.snapshotBound = selected; window.snapshotCloses = (window.snapshotCloses || 0) + 1; } function slotClicked() { window.snapshotSlotClicks = (window.snapshotSlotClicks || 0) + 1; window.snapshotSlotDraft = draft; window.snapshotSlotEnabled = enabled; }</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Outer><Inner :title={title} bind:value={selected} @on:close={closed}><p class="snapshot-inner-slot" :title={title} class:active={active} style:color={color} @click={slotClicked}>{title}</p><input class="snapshot-inner-slot-value" bind:value={draft} /><input class="snapshot-inner-slot-enabled" type="checkbox" bind:checked={enabled} /><svelte:fragment slot="actions"><button class="snapshot-inner-action">Action</button></svelte:fragment></Inner></Outer><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	parentSFC, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; import { Leaf } from "./Leaf.vela"; export let request; export let title = "server"; export let active = false; export let color = "red"; export let draft = "server"; export let enabled = false; let selected = $state("server"); function closed() { window.snapshotBound = selected; window.snapshotCloses = (window.snapshotCloses || 0) + 1; } function slotClicked() { window.snapshotSlotClicks = (window.snapshotSlotClicks || 0) + 1; window.snapshotSlotDraft = draft; window.snapshotSlotEnabled = enabled; }</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Outer><Inner :title={title} bind:value={selected} @on:close={closed}><p class="snapshot-inner-slot" :title={title} class:active={active} style:color={color} @click={slotClicked}>{title}</p><Leaf :title={title} /><input class="snapshot-inner-slot-value" bind:value={draft} /><input class="snapshot-inner-slot-enabled" type="checkbox" bind:checked={enabled} /><svelte:fragment slot="actions"><button class="snapshot-inner-action">Action</button></svelte:fragment></Inner></Outer><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,6 +412,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	parentPlan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", parentSFC, parentAnalysis, "vela-parent", map[string]SSRComponentLink{
 		"Outer": {LocalName: "Outer", SourcePath: "Outer.vela", GoName: "Outer", PackageName: "outer", ImportPath: "example.com/project/outer"},
 		"Inner": {LocalName: "Inner", SourcePath: "Inner.vela", GoName: "Inner", PackageName: "inner", ImportPath: "example.com/project/inner"},
+		"Leaf":  {LocalName: "Leaf", SourcePath: "Leaf.vela", GoName: "Leaf", PackageName: "leaf", ImportPath: "example.com/project/leaf"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -417,13 +442,16 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	innerText := innerButton.Children[0].(*SSRPlanText).Parts[0]
 	innerSlot := innerComponent.Slots["default"][0].(*SSRPlanElement)
 	innerSlotText := innerSlot.Children[0].(*SSRPlanText).Parts[0]
-	innerSlotInput := innerComponent.Slots["default"][1].(*SSRPlanElement)
-	innerSlotEnabled := innerComponent.Slots["default"][2].(*SSRPlanElement)
-	if outerComponent.Link == nil || innerComponent.Link == nil {
+	leafComponent := innerComponent.Slots["default"][1].(*SSRPlanComponent)
+	innerSlotInput := innerComponent.Slots["default"][2].(*SSRPlanElement)
+	innerSlotEnabled := innerComponent.Slots["default"][3].(*SSRPlanElement)
+	leafRoot := leafPlan.Nodes[0].(*SSRPlanElement)
+	leafText := leafRoot.Children[0].(*SSRPlanText).Parts[0]
+	if outerComponent.Link == nil || innerComponent.Link == nil || leafComponent.Link == nil {
 		t.Fatal("projected component links are missing")
 	}
 	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><main><!--v:vela-parent:` + itoa(awaitID) + `--><!--e:vela-outer:` + itoa(outerRoot.HydrationID) + `--><section class="snapshot-outer"><!--e:vela-inner:` + itoa(innerRoot.HydrationID) + `--><section class="snapshot-inner-wrap"><!--e:vela-inner:` + itoa(innerInput.HydrationID) + `--><input class="snapshot-inner-value" value="server"><!--/e:vela-inner:` + itoa(innerInput.HydrationID) + `--><!--e:vela-inner:` + itoa(innerClose.HydrationID) + `--><button class="snapshot-inner-close">Close</button><!--/e:vela-inner:` + itoa(innerClose.HydrationID) + `--><!--e:vela-inner:` + itoa(innerButton.HydrationID) + `--><button class="snapshot-inner"><!--v:vela-inner:` + itoa(innerText.DynamicID) + `-->server<!--/v:vela-inner:` + itoa(innerText.DynamicID) + `--></button><!--/e:vela-inner:` + itoa(innerButton.HydrationID) + `--></section><!--/e:vela-inner:` + itoa(innerRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-inner">{"component":"vela-inner","props":{"Title":"server","Value":"server"},"state":{},"incomplete":false}</script></section><!--/e:vela-outer:` + itoa(outerRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-outer">{"component":"vela-outer","props":{},"state":{},"incomplete":false}</script><p class="settled">Done</p><!--/v:vela-parent:` + itoa(awaitID) + `--></main><!--/e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Title":"server"},"state":{},"incomplete":false,"await":{"` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.snapshotInnerClicks=0;window.snapshotInnerDestroys=0;window.snapshotCloses=0;window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
-	innerStaticSlots := `<!--e:vela-parent:` + itoa(innerSlot.HydrationID) + `--><p vela-parent="" class="snapshot-inner-slot" title="server" style="color:red"><!--v:vela-parent:` + itoa(innerSlotText.DynamicID) + `-->server<!--/v:vela-parent:` + itoa(innerSlotText.DynamicID) + `--></p><!--/e:vela-parent:` + itoa(innerSlot.HydrationID) + `--><!--e:vela-parent:` + itoa(innerSlotInput.HydrationID) + `--><input vela-parent="" class="snapshot-inner-slot-value" value="server"><!--/e:vela-parent:` + itoa(innerSlotInput.HydrationID) + `--><!--e:vela-parent:` + itoa(innerSlotEnabled.HydrationID) + `--><input vela-parent="" class="snapshot-inner-slot-enabled" type="checkbox"><!--/e:vela-parent:` + itoa(innerSlotEnabled.HydrationID) + `--><button class="snapshot-inner-action">Action</button>`
+	innerStaticSlots := `<!--e:vela-parent:` + itoa(innerSlot.HydrationID) + `--><p vela-parent="" class="snapshot-inner-slot" title="server" style="color:red"><!--v:vela-parent:` + itoa(innerSlotText.DynamicID) + `-->server<!--/v:vela-parent:` + itoa(innerSlotText.DynamicID) + `--></p><!--/e:vela-parent:` + itoa(innerSlot.HydrationID) + `--><!--e:vela-leaf:` + itoa(leafRoot.HydrationID) + `--><button class="snapshot-leaf"><!--v:vela-leaf:` + itoa(leafText.DynamicID) + `-->server<!--/v:vela-leaf:` + itoa(leafText.DynamicID) + `--></button><!--/e:vela-leaf:` + itoa(leafRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-leaf">{"component":"vela-leaf","props":{"Title":"server"},"state":{},"incomplete":false}</script><!--e:vela-parent:` + itoa(innerSlotInput.HydrationID) + `--><input vela-parent="" class="snapshot-inner-slot-value" value="server"><!--/e:vela-parent:` + itoa(innerSlotInput.HydrationID) + `--><!--e:vela-parent:` + itoa(innerSlotEnabled.HydrationID) + `--><input vela-parent="" class="snapshot-inner-slot-enabled" type="checkbox"><!--/e:vela-parent:` + itoa(innerSlotEnabled.HydrationID) + `--><button class="snapshot-inner-action">Action</button>`
 	html = strings.Replace(html,
 		`<!--/e:vela-inner:`+itoa(innerButton.HydrationID)+`--></section>`,
 		`<!--/e:vela-inner:`+itoa(innerButton.HydrationID)+`-->`+innerStaticSlots+`</section>`,
@@ -438,6 +466,9 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 		"Inner.js":                 []byte(PrintJS(innerCSR, PrintPretty)),
 		"Inner.hydrate_client.js":  []byte(PrintJS(innerClient, PrintPretty)),
 		"Inner.hydrate.js":         []byte(PrintJS(innerEntry, PrintPretty)),
+		"Leaf.js":                  []byte(PrintJS(leafCSR, PrintPretty)),
+		"Leaf.hydrate_client.js":   []byte(PrintJS(leafClient, PrintPretty)),
+		"Leaf.hydrate.js":          []byte(PrintJS(leafEntry, PrintPretty)),
 		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
 		"Parent.hydrate.js":        []byte(PrintJS(parentEntry, PrintPretty)),
 		"index.html":               []byte(html),
@@ -453,15 +484,19 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	)
 	browser = strings.ReplaceAll(browser,
 		`window.snapshotCloses=0;`,
-		`window.snapshotCloses=0;window.snapshotSlotClicks=0;`,
+		`window.snapshotCloses=0;window.snapshotLeafDestroys=0;window.snapshotSlotClicks=0;`,
 	)
 	browser = strings.ReplaceAll(browser,
 		`window.close=document.querySelector(".snapshot-inner-close");window.input.value`,
-		`window.close=document.querySelector(".snapshot-inner-close");window.slot=document.querySelector(".snapshot-inner-slot");window.slotInput=document.querySelector(".snapshot-inner-slot-value");window.slotEnabled=document.querySelector(".snapshot-inner-slot-enabled");window.slotInput.value="typed-before-update";window.slotInput.dispatchEvent(new Event("input",{bubbles:true}));window.slotEnabled.checked=true;window.slotEnabled.dispatchEvent(new Event("change",{bubbles:true}));window.slot.click();window.input.value`,
+		`window.close=document.querySelector(".snapshot-inner-close");window.leaf=document.querySelector(".snapshot-leaf");window.slot=document.querySelector(".snapshot-inner-slot");window.slotInput=document.querySelector(".snapshot-inner-slot-value");window.slotEnabled=document.querySelector(".snapshot-inner-slot-enabled");window.slotInput.value="typed-before-update";window.slotInput.dispatchEvent(new Event("input",{bubbles:true}));window.slotEnabled.checked=true;window.slotEnabled.dispatchEvent(new Event("change",{bubbles:true}));window.slot.click();window.input.value`,
 	)
 	browser = strings.ReplaceAll(browser,
 		`window.snapshotInnerClicks===1&&document.querySelector(".snapshot-inner")?.textContent===`,
-		`window.snapshotSlotClicks===1&&window.snapshotSlotDraft==="typed-before-update"&&window.snapshotSlotEnabled===true&&window.snapshotInnerClicks===1&&document.querySelector(".snapshot-inner-slot-value")?.value==="external"&&!document.querySelector(".snapshot-inner-slot-enabled")?.checked&&document.querySelector(".snapshot-inner")?.textContent===`,
+		`window.snapshotSlotClicks===1&&window.snapshotSlotDraft==="typed-before-update"&&window.snapshotSlotEnabled===true&&window.snapshotInnerClicks===1&&document.querySelector(".snapshot-inner-slot-value")?.value==="external"&&!document.querySelector(".snapshot-inner-slot-enabled")?.checked&&document.querySelector(".snapshot-leaf")?.textContent==="client"&&document.querySelector(".snapshot-inner")?.textContent===`,
+	)
+	browser = strings.ReplaceAll(browser,
+		`if(!(await p.evaluate(()=>document.querySelector(".snapshot-inner")===window.inner)))throw new Error("projected child was remounted for prop update")`,
+		`if(!(await p.evaluate(()=>document.querySelector(".snapshot-inner")===window.inner&&document.querySelector(".snapshot-leaf")===window.leaf)))throw new Error("projected child or nested leaf was remounted for prop update")`,
 	)
 	browser = strings.ReplaceAll(browser,
 		`window.close.click();window.inner.click();return`,
@@ -469,15 +504,15 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	)
 	browser = strings.ReplaceAll(browser,
 		`clicks:window.snapshotInnerClicks,closes:window.snapshotCloses`,
-		`clicks:window.snapshotInnerClicks,slotClicks:window.snapshotSlotClicks,closes:window.snapshotCloses`,
+		`clicks:window.snapshotInnerClicks,slotClicks:window.snapshotSlotClicks,leaf:!window.leaf.isConnected,leafDestroys:window.snapshotLeafDestroys,leafInnerAlive:window.snapshotLeafInnerAlive,leafPayload:!document.getElementById("vela-state-vela-leaf"),closes:window.snapshotCloses`,
 	)
 	browser = strings.ReplaceAll(browser,
 		`||removed.clicks!==1||removed.closes!==1`,
-		`||removed.clicks!==1||removed.slotClicks!==1||removed.closes!==1`,
+		`||removed.clicks!==1||removed.slotClicks!==1||!removed.leaf||removed.leafDestroys!==1||!removed.leafInnerAlive||!removed.leafPayload||removed.closes!==1`,
 	)
 	browser = strings.ReplaceAll(browser,
 		`document.querySelector(".snapshot-inner-close").click();document.querySelector(".snapshot-inner").click()`,
-		`document.querySelector(".snapshot-inner-close").click();document.querySelector(".snapshot-inner").click();window.remountedSlot=document.querySelector(".snapshot-inner-slot");window.remountedSlotInput=document.querySelector(".snapshot-inner-slot-value");window.remountedSlotEnabled=document.querySelector(".snapshot-inner-slot-enabled");window.remountedSlotInput.value="fresh";window.remountedSlotInput.dispatchEvent(new Event("input",{bubbles:true}));window.remountedSlotEnabled.checked=true;window.remountedSlotEnabled.dispatchEvent(new Event("change",{bubbles:true}));window.remountedSlot.click()`,
+		`document.querySelector(".snapshot-inner-close").click();document.querySelector(".snapshot-inner").click();window.remountedLeaf=document.querySelector(".snapshot-leaf");window.remountedSlot=document.querySelector(".snapshot-inner-slot");window.remountedSlotInput=document.querySelector(".snapshot-inner-slot-value");window.remountedSlotEnabled=document.querySelector(".snapshot-inner-slot-enabled");window.remountedSlotInput.value="fresh";window.remountedSlotInput.dispatchEvent(new Event("input",{bubbles:true}));window.remountedSlotEnabled.checked=true;window.remountedSlotEnabled.dispatchEvent(new Event("change",{bubbles:true}));window.remountedSlot.click()`,
 	)
 	browser = strings.ReplaceAll(browser,
 		`window.snapshotBound==="again"&&window.snapshotCloses===2&&window.snapshotInnerClicks===2`,
@@ -485,11 +520,11 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	)
 	browser = strings.ReplaceAll(browser,
 		`await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>window.snapshotInnerDestroys)!==2)`,
-		`await p.evaluate(()=>{window.hydrated.component.destroy();window.remountedSlotInput.value="stale-after-destroy";window.remountedSlotInput.dispatchEvent(new Event("input",{bubbles:true}));window.remountedSlotEnabled.checked=false;window.remountedSlotEnabled.dispatchEvent(new Event("change",{bubbles:true}));window.remountedSlot.click();if(window.snapshotSlotClicks!==2)throw new Error("destroyed slot event still fired")});if(await p.evaluate(()=>window.snapshotInnerDestroys)!==2)`,
+		`await p.evaluate(()=>{if(window.remountedLeaf===window.leaf)throw new Error("nested leaf reused detached DOM instead of CSR remount");window.hydrated.component.destroy();window.remountedSlotInput.value="stale-after-destroy";window.remountedSlotInput.dispatchEvent(new Event("input",{bubbles:true}));window.remountedSlotEnabled.checked=false;window.remountedSlotEnabled.dispatchEvent(new Event("change",{bubbles:true}));window.remountedSlot.click();if(window.snapshotSlotClicks!==2)throw new Error("destroyed slot event still fired")});if(await p.evaluate(()=>window.snapshotInnerDestroys!==2||window.snapshotLeafDestroys!==2))`,
 	)
 	browser = strings.ReplaceAll(browser,
 		`document.querySelector(".snapshot-inner")?.textContent==="client"`,
-		`document.querySelector(".snapshot-inner")?.textContent==="client"&&document.querySelector(".snapshot-inner-slot")?.textContent==="client"&&document.querySelector(".snapshot-inner-slot")?.title==="client"&&document.querySelector(".snapshot-inner-slot")?.classList.contains("active")&&document.querySelector(".snapshot-inner-slot")?.style.color==="blue"&&document.querySelector(".snapshot-inner-slot-value")?.value==="external"&&!document.querySelector(".snapshot-inner-slot-enabled")?.checked`,
+		`document.querySelector(".snapshot-inner")?.textContent==="client"&&document.querySelector(".snapshot-inner-slot")?.textContent==="client"&&document.querySelector(".snapshot-inner-slot")?.title==="client"&&document.querySelector(".snapshot-inner-slot")?.classList.contains("active")&&document.querySelector(".snapshot-inner-slot")?.style.color==="blue"&&document.querySelector(".snapshot-inner-slot-value")?.value==="external"&&!document.querySelector(".snapshot-inner-slot-enabled")?.checked&&document.querySelector(".snapshot-leaf")?.textContent==="client"`,
 	)
 	command := exec.Command(node, "-e", browser, dir)
 	command.Dir = "/projects/compiler"

@@ -877,10 +877,10 @@ func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
 }
 
 // ssrAwaitSnapshotSlotDirectDOMPlanNodes is the Go-plan counterpart of the
-// child-slot hydration recipe. It accepts direct DOM only; another component
-// would need a nested client lifecycle owner.
+// child-slot hydration recipe. Nested local components are represented by
+// separately owned client handles beneath the selected await range.
 func ssrAwaitSnapshotSlotDirectDOMPlanNodes(slots map[string][]SSRPlanNode) bool {
-	return ssrAwaitSnapshotSlotPlanNodes(slots, false, true, true, true)
+	return ssrAwaitSnapshotSlotPlanNodes(slots, true, true, true, true)
 }
 
 func ssrAwaitSnapshotSlotPlanNodes(slots map[string][]SSRPlanNode, allowComponents, allowDirectives, allowEvents, allowBindings bool) bool {

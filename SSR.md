@@ -509,8 +509,11 @@ and detach before the child or selected range is destroyed. `bind:value` and
 checkbox `bind:checked` are supported for a simple reactive parent
 state/prop identifier: hydration preserves browser-owned control state, then
 installs a guarded writer and listener owned by the selected range. Nested
-child components and structural blocks remain outside this selected-snapshot
-slot recipe.
+local child components are also supported: each is adopted through its named
+hydrate entry, retains its own inert payload, receives later `.set(...)`
+updates, and is destroyed in reverse source order before the enclosing child
+or selected range is removed. Structural blocks remain outside this
+selected-snapshot slot recipe.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.

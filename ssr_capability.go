@@ -979,11 +979,11 @@ func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 }
 
 // ssrCapabilityCurrentAwaitSnapshotSlotDirectDOMNodes is the recursive
-// direct-DOM subset for slots owned by a direct projected child. It excludes
-// another component instance because that needs a nested hydration owner.
+// recursive subset for slots owned by a direct projected child. Nested local
+// components are adopted as handles owned by the selected await range.
 func ssrCapabilityCurrentAwaitSnapshotSlotDirectDOMNodes(slots map[string][]Node) bool {
 	for _, nodes := range slots {
-		if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, false, true, true, true) {
+		if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, true, true, true, true) {
 			return false
 		}
 	}

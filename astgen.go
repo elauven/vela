@@ -8912,11 +8912,11 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bi
 	return g.hydrationAwaitSnapshotSlotNodes(slots, bindingName, true, true, true, true)
 }
 
-// hydrationAwaitSnapshotSlotDirectDOMNodes permits the dynamic DOM subset in
-// a direct projected child's own slots. Another component needs a nested
-// instance owner and remains outside this phase.
+// hydrationAwaitSnapshotSlotDirectDOMNodes permits the recursive dynamic
+// subset in a direct projected child's own slots. Nested local components are
+// adopted as separately tracked handles by the selected await-range owner.
 func (g *ASTGen) hydrationAwaitSnapshotSlotDirectDOMNodes(slots map[string][]Node, bindingName string) bool {
-	return g.hydrationAwaitSnapshotSlotNodes(slots, bindingName, false, true, true, true)
+	return g.hydrationAwaitSnapshotSlotNodes(slots, bindingName, true, true, true, true)
 }
 
 func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindingName string, allowComponents, allowDirectives, allowEvents, allowBindings bool) bool {
