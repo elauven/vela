@@ -880,7 +880,7 @@ func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
 // child-slot hydration recipe. It accepts direct DOM only; another component
 // would need a nested client lifecycle owner.
 func ssrAwaitSnapshotSlotDirectDOMPlanNodes(slots map[string][]SSRPlanNode) bool {
-	return ssrAwaitSnapshotSlotPlanNodes(slots, false, true, true, false)
+	return ssrAwaitSnapshotSlotPlanNodes(slots, false, true, true, true)
 }
 
 func ssrAwaitSnapshotSlotPlanNodes(slots map[string][]SSRPlanNode, allowComponents, allowDirectives, allowEvents, allowBindings bool) bool {

@@ -8916,7 +8916,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bi
 // a direct projected child's own slots. Another component needs a nested
 // instance owner and remains outside this phase.
 func (g *ASTGen) hydrationAwaitSnapshotSlotDirectDOMNodes(slots map[string][]Node, bindingName string) bool {
-	return g.hydrationAwaitSnapshotSlotNodes(slots, bindingName, false, true, true, false)
+	return g.hydrationAwaitSnapshotSlotNodes(slots, bindingName, false, true, true, true)
 }
 
 func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindingName string, allowComponents, allowDirectives, allowEvents, allowBindings bool) bool {

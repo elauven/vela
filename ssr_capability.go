@@ -983,7 +983,7 @@ func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 // another component instance because that needs a nested hydration owner.
 func ssrCapabilityCurrentAwaitSnapshotSlotDirectDOMNodes(slots map[string][]Node) bool {
 	for _, nodes := range slots {
-		if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, false, true, true, false) {
+		if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, false, true, true, true) {
 			return false
 		}
 	}
