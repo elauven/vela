@@ -348,7 +348,7 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotSupportsNativeBindings(t 
 }
 
 func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotSupportsStaticIf(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let show = true;</script><template><main>{#await request}<p>Pending</p>{:then result}<Outer><Inner>{#if show}<p class="slot-on">On</p>{:else}<p class="slot-off">Off</p>{/if}</Inner></Outer>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let show = true; export let later = false;</script><template><main>{#await request}<p>Pending</p>{:then result}<Outer><Inner>{#if show}<p class="slot-on">On</p>{:else if later}<p class="slot-later">Later</p>{:else}<p class="slot-off">Off</p>{/if}</Inner></Outer>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotSupportsStaticIf(t *testi
 		t.Fatal(err)
 	}
 	source := PrintJS(program, PrintPretty)
-	for _, want := range []string{`$$acquireHydrationRange`, `$$adoptHydrationRange`, `$$insertHTML`, `slot-on`, `slot-off`, `updates: []`, `listeners: []`, `children: []`, `adopt: () =>`, `mountCSR: (`, `update: () =>`, `destroy: () =>`} {
+	for _, want := range []string{`$$acquireHydrationRange`, `$$adoptHydrationRange`, `$$insertHTML`, `slot-on`, `slot-later`, `slot-off`, `updates: []`, `listeners: []`, `children: []`, `adopt: () =>`, `mountCSR: (`, `update: () =>`, `destroy: () =>`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("projected child own-slot #if lowering misses %q:\n%s", want, source)
 		}

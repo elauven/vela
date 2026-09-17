@@ -513,13 +513,13 @@ local child components are also supported: each is adopted through its named
 hydrate entry, retains its own inert payload, receives later `.set(...)`
 updates, and is destroyed in reverse source order before the enclosing child
 or selected range is removed. The first structural extension of this
-selected-snapshot slot recipe is a marker-aware ordinary `#if` / `{:else}`
-with a simple parent-identifier condition and fully static ordinary-DOM
-branches. The selected await-range owner acquires the canonical `v` range and
-adopts its existing nodes without an initial write. A condition change removes
-only those owned nodes and inserts the selected static branch before the same
-end marker, so the enclosing projected child, nested local children, and
-unrelated slot siblings retain identity. `{:else if}`, dynamic branch leaves,
+selected-snapshot slot recipe is a marker-aware ordinary `#if` / `{:else if}`
+/ `{:else}` with simple parent-identifier conditions and fully static
+ordinary-DOM branches. The selected await-range owner acquires the canonical
+`v` range and adopts its existing nodes without an initial write. A condition
+change removes only those owned nodes and inserts the selected static branch
+before the same end marker, so the enclosing projected child, nested local
+children, and unrelated slot siblings retain identity. Dynamic branch leaves,
 branch-owned listeners or bindings, local child lifecycle inside a branch,
 `#key`, `#each`, and nested `#await` still require extensions of this
 structural range controller for their evaluated identity, row, and promise
