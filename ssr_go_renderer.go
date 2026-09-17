@@ -873,6 +873,17 @@ func ssrAwaitSnapshotLeafBranch(nodes []SSRPlanNode, binding string) bool {
 }
 
 func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
+	return ssrAwaitSnapshotSlotPlanNodes(slots, true, true)
+}
+
+// ssrAwaitSnapshotSlotDirectDOMPlanNodes is the Go-plan counterpart of the
+// child-slot hydration recipe. It accepts direct DOM only; another component
+// would need a nested client lifecycle owner.
+func ssrAwaitSnapshotSlotDirectDOMPlanNodes(slots map[string][]SSRPlanNode) bool {
+	return ssrAwaitSnapshotSlotPlanNodes(slots, false, false)
+}
+
+func ssrAwaitSnapshotSlotPlanNodes(slots map[string][]SSRPlanNode, allowComponents, allowInteractive bool) bool {
 	for _, children := range slots {
 		for _, node := range children {
 			switch current := node.(type) {
@@ -883,10 +894,19 @@ func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
 						continue
 					}
 					if attr.Role == SSRAttrEvent {
+						if !allowInteractive {
+							return false
+						}
 						continue
 					}
 					if attr.Role == SSRAttrTwoWay {
+						if !allowInteractive {
+							return false
+						}
 						continue
+					}
+					if !allowInteractive && (attr.Role == SSRAttrClassDirective || attr.Role == SSRAttrStyleDirective) {
+						return false
 					}
 					if attr.Role != SSRAttrDynamic && attr.Role != SSRAttrClassDirective && attr.Role != SSRAttrStyleDirective {
 						return false
@@ -898,14 +918,14 @@ func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
 						return false
 					}
 				}
-				if !ssrAwaitSnapshotSlotLeafNodes(map[string][]SSRPlanNode{"": current.Children}) {
+				if !ssrAwaitSnapshotSlotPlanNodes(map[string][]SSRPlanNode{"": current.Children}, allowComponents, allowInteractive) {
 					return false
 				}
 			case *SSRPlanComponent:
 				// The selected-snapshot slot lifecycle owns a direct local
-				// projected child. Its fully static own slots are rendered by the
-				// normal recursive Go call and retained unchanged during adoption.
-				if current == nil || current.Link == nil || !ssrAwaitSnapshotStaticPlanSlots(current.Slots) {
+				// projected child. Its direct-DOM slots are rendered by the normal
+				// recursive Go call and acquired by the same selected await owner.
+				if !allowComponents || current == nil || current.Link == nil || !ssrAwaitSnapshotSlotDirectDOMPlanNodes(current.Slots) {
 					return false
 				}
 				for _, attr := range current.Attrs {
@@ -915,37 +935,6 @@ func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
 					if attr.Role != SSRAttrStatic && attr.Role != SSRAttrDynamic && attr.Role != SSRAttrTwoWay {
 						return false
 					}
-				}
-			default:
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// ssrAwaitSnapshotStaticPlanSlots mirrors the client-side static-slot recipe
-// for a direct projected child in a selected await snapshot. Only text and
-// ordinary elements with static attributes can be retained without creating a
-// nested hydration ownership controller.
-func ssrAwaitSnapshotStaticPlanSlots(slots map[string][]SSRPlanNode) bool {
-	for _, children := range slots {
-		for _, node := range children {
-			switch current := node.(type) {
-			case *SSRPlanText:
-				for _, part := range current.Parts {
-					if !part.Static {
-						return false
-					}
-				}
-			case *SSRPlanElement:
-				for _, attr := range current.Attrs {
-					if attr.Role != SSRAttrStatic {
-						return false
-					}
-				}
-				if !ssrAwaitSnapshotStaticPlanSlots(map[string][]SSRPlanNode{"": current.Children}) {
-					return false
 				}
 			default:
 				return false

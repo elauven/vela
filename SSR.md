@@ -501,8 +501,11 @@ factory after a branch remount. The parent imports its named hydrate entry,
 gives the binding callback to it before adoption, attaches CustomEvent
 listeners afterward, forwards later props with `.set(...)`, and
 detaches/destroys the payload-owning instance before the selected range is
-removed. Dynamic child slots and nested structural blocks remain outside this
-selected-snapshot slot recipe.
+removed. Within an ordinary-element tree in those child slots, simple parent
+identifier text interpolation and one-way dynamic attributes are acquired and
+refreshed by the selected await-range owner without replacing child DOM.
+`class:` / `style:`, DOM events, native bindings, nested child components, and
+structural blocks remain outside this selected-snapshot slot recipe.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.

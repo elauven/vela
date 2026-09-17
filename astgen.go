@@ -8769,19 +8769,6 @@ func (g *ASTGen) hydrationAwaitSnapshotComponentBranch(children []Node, bindingN
 	return found
 }
 
-// hydrationAwaitSnapshotStaticSlots is the first settled-snapshot projection
-// recipe. These nodes need no initial marker acquisition: their SSR DOM is
-// already inside the adopted child range. The typed slot closure is retained
-// for an ordinary CSR remount after a later branch transition.
-func hydrationAwaitSnapshotStaticSlots(slots map[string][]Node) bool {
-	for _, children := range slots {
-		if !allStatic(children) {
-			return false
-		}
-	}
-	return true
-}
-
 // buildHydrationAwaitSnapshotSlotPlan owns parent-projected dynamic text,
 // one-way attributes, and class/style directives inside one independently
 // selected then/catch child. The initial SSR DOM is only acquired; a future
@@ -8797,10 +8784,9 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 			for _, node := range nodes {
 				switch current := node.(type) {
 				case *ComponentNode:
-					// This deliberately narrow recipe adopts a direct local child
-					// already emitted by the parent slot renderer. Its own slots and
-					// structural descendants need a nested ownership controller and
-					// remain a later slice.
+					// The direct local child is already emitted by the parent slot
+					// renderer. Its direct-DOM slots belong to the same selected
+					// await range; nested child instances remain a later recipe.
 					if current == nil {
 						continue
 					}
@@ -8824,6 +8810,9 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 						}
 					}
 					plan.refresh = append(plan.refresh, genIf(id(handle.instanceVar), optionalComponentSetStmt(id(handle.instanceVar), handle.propsExpr)))
+					for _, name := range sortedSlotNames(current.Slots) {
+						visit(current.Slots[name])
+					}
 				case *TextNode:
 					for _, part := range current.Parts {
 						if part == nil || part.Static {
@@ -8920,6 +8909,17 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 // state and register a branch-owned writer. Nested components and structural
 // blocks deliberately remain later recipes.
 func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bindingName string) bool {
+	return g.hydrationAwaitSnapshotSlotNodes(slots, bindingName, true, true)
+}
+
+// hydrationAwaitSnapshotSlotDirectDOMNodes permits the dynamic DOM subset in
+// a direct projected child's own slots. Another component needs a nested
+// instance owner and remains outside this phase.
+func (g *ASTGen) hydrationAwaitSnapshotSlotDirectDOMNodes(slots map[string][]Node, bindingName string) bool {
+	return g.hydrationAwaitSnapshotSlotNodes(slots, bindingName, false, false)
+}
+
+func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindingName string, allowComponents, allowInteractive bool) bool {
 	var check func([]Node) bool
 	check = func(nodes []Node) bool {
 		for _, node := range nodes {
@@ -8942,9 +8942,15 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bi
 						continue
 					}
 					if attr.IsEvent {
+						if !allowInteractive {
+							return false
+						}
 						continue
 					}
 					if attr.IsTwoWay {
+						if !allowInteractive {
+							return false
+						}
 						target, ok := templateExprIdent(attr.Expr)
 						if !ok || target == bindingName || !g.hasReactiveSetter(target) {
 							return false
@@ -8954,7 +8960,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bi
 						}
 						continue
 					}
-					if !attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir {
+					if (!allowInteractive && (attr.IsClassDir || attr.IsStyleDir)) || (!attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir) {
 						return false
 					}
 					if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
@@ -8968,11 +8974,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bi
 					return false
 				}
 			case *ComponentNode:
-				// A projected child can retain static content in its own slots:
-				// the server DOM is already owned by that child and no parent
-				// update handle has to acquire it. Dynamic slot content needs a
-				// recursive controller, so it remains outside this narrow recipe.
-				if current == nil || !hydrationAwaitSnapshotStaticSlots(current.Slots) {
+				if !allowComponents || current == nil || !g.hydrationAwaitSnapshotSlotDirectDOMNodes(current.Slots, bindingName) {
 					return false
 				}
 				for _, attr := range current.Attrs {

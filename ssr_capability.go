@@ -975,6 +975,22 @@ func ssrCapabilityCurrentAwaitComponentSlots(component *ComponentNode, branch in
 }
 
 func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
+	return ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, true, true)
+}
+
+// ssrCapabilityCurrentAwaitSnapshotSlotDirectDOMNodes is the recursive
+// direct-DOM subset for slots owned by a direct projected child. It excludes
+// another component instance because that needs a nested hydration owner.
+func ssrCapabilityCurrentAwaitSnapshotSlotDirectDOMNodes(slots map[string][]Node) bool {
+	for _, nodes := range slots {
+		if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, false, false) {
+			return false
+		}
+	}
+	return true
+}
+
+func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, allowInteractive bool) bool {
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
@@ -992,9 +1008,15 @@ func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 					continue
 				}
 				if attr.IsEvent {
+					if !allowInteractive {
+						return false
+					}
 					continue
 				}
 				if attr.IsTwoWay {
+					if !allowInteractive {
+						return false
+					}
 					if _, ok := templateExprIdent(attr.Expr); !ok {
 						return false
 					}
@@ -1003,7 +1025,7 @@ func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 					}
 					continue
 				}
-				if !attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir {
+				if (!allowInteractive && (attr.IsClassDir || attr.IsStyleDir)) || (!attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir) {
 					return false
 				}
 				if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
@@ -1013,15 +1035,14 @@ func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 					return false
 				}
 			}
-			if !ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(current.Children) {
+			if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(current.Children, allowComponents, allowInteractive) {
 				return false
 			}
 		case *ComponentNode:
 			// A direct projected local child is adopted by the parent-selected
-			// snapshot lifecycle. Its own fully static slots retain server DOM
-			// without an additional owner; dynamic slot content still needs a
-			// recursive controller and remains capability-gated.
-			if current == nil || !hydrationAwaitSnapshotStaticSlots(current.Slots) {
+			// snapshot lifecycle. Its direct-DOM slots share that owner's marker
+			// handles; another child component still needs a recursive controller.
+			if !allowComponents || current == nil || !ssrCapabilityCurrentAwaitSnapshotSlotDirectDOMNodes(current.Slots) {
 				return false
 			}
 			for _, attr := range current.Attrs {
