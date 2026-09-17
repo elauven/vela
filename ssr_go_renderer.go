@@ -873,17 +873,17 @@ func ssrAwaitSnapshotLeafBranch(nodes []SSRPlanNode, binding string) bool {
 }
 
 func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
-	return ssrAwaitSnapshotSlotPlanNodes(slots, true, true, true)
+	return ssrAwaitSnapshotSlotPlanNodes(slots, true, true, true, true)
 }
 
 // ssrAwaitSnapshotSlotDirectDOMPlanNodes is the Go-plan counterpart of the
 // child-slot hydration recipe. It accepts direct DOM only; another component
 // would need a nested client lifecycle owner.
 func ssrAwaitSnapshotSlotDirectDOMPlanNodes(slots map[string][]SSRPlanNode) bool {
-	return ssrAwaitSnapshotSlotPlanNodes(slots, false, true, false)
+	return ssrAwaitSnapshotSlotPlanNodes(slots, false, true, true, false)
 }
 
-func ssrAwaitSnapshotSlotPlanNodes(slots map[string][]SSRPlanNode, allowComponents, allowDirectives, allowInteractive bool) bool {
+func ssrAwaitSnapshotSlotPlanNodes(slots map[string][]SSRPlanNode, allowComponents, allowDirectives, allowEvents, allowBindings bool) bool {
 	for _, children := range slots {
 		for _, node := range children {
 			switch current := node.(type) {
@@ -894,13 +894,13 @@ func ssrAwaitSnapshotSlotPlanNodes(slots map[string][]SSRPlanNode, allowComponen
 						continue
 					}
 					if attr.Role == SSRAttrEvent {
-						if !allowInteractive {
+						if !allowEvents {
 							return false
 						}
 						continue
 					}
 					if attr.Role == SSRAttrTwoWay {
-						if !allowInteractive {
+						if !allowBindings {
 							return false
 						}
 						continue
@@ -918,7 +918,7 @@ func ssrAwaitSnapshotSlotPlanNodes(slots map[string][]SSRPlanNode, allowComponen
 						return false
 					}
 				}
-				if !ssrAwaitSnapshotSlotPlanNodes(map[string][]SSRPlanNode{"": current.Children}, allowComponents, allowDirectives, allowInteractive) {
+				if !ssrAwaitSnapshotSlotPlanNodes(map[string][]SSRPlanNode{"": current.Children}, allowComponents, allowDirectives, allowEvents, allowBindings) {
 					return false
 				}
 			case *SSRPlanComponent:

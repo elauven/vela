@@ -504,9 +504,10 @@ detaches/destroys the payload-owning instance before the selected range is
 removed. Within an ordinary-element tree in those child slots, simple parent
 identifier text interpolation, one-way dynamic attributes, and `class:` /
 `style:` directives are acquired and refreshed by the selected await-range
-owner without replacing child DOM. DOM events, native bindings, nested child
-components, and structural blocks remain outside this selected-snapshot slot
-recipe.
+owner without replacing child DOM. Ordinary DOM events attach after adoption
+and detach before the child or selected range is destroyed. Native bindings,
+nested child components, and structural blocks remain outside this
+selected-snapshot slot recipe.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.

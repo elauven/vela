@@ -975,7 +975,7 @@ func ssrCapabilityCurrentAwaitComponentSlots(component *ComponentNode, branch in
 }
 
 func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
-	return ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, true, true, true)
+	return ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, true, true, true, true)
 }
 
 // ssrCapabilityCurrentAwaitSnapshotSlotDirectDOMNodes is the recursive
@@ -983,14 +983,14 @@ func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 // another component instance because that needs a nested hydration owner.
 func ssrCapabilityCurrentAwaitSnapshotSlotDirectDOMNodes(slots map[string][]Node) bool {
 	for _, nodes := range slots {
-		if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, false, true, false) {
+		if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, false, true, true, false) {
 			return false
 		}
 	}
 	return true
 }
 
-func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, allowDirectives, allowInteractive bool) bool {
+func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, allowDirectives, allowEvents, allowBindings bool) bool {
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
@@ -1008,13 +1008,13 @@ func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, a
 					continue
 				}
 				if attr.IsEvent {
-					if !allowInteractive {
+					if !allowEvents {
 						return false
 					}
 					continue
 				}
 				if attr.IsTwoWay {
-					if !allowInteractive {
+					if !allowBindings {
 						return false
 					}
 					if _, ok := templateExprIdent(attr.Expr); !ok {
@@ -1035,7 +1035,7 @@ func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, a
 					return false
 				}
 			}
-			if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(current.Children, allowComponents, allowDirectives, allowInteractive) {
+			if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(current.Children, allowComponents, allowDirectives, allowEvents, allowBindings) {
 				return false
 			}
 		case *ComponentNode:

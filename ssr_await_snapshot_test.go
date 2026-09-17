@@ -299,13 +299,33 @@ func TestSSRHydrationAwaitSnapshotProjectedChildSupportsEventAndBindable(t *test
 	}
 }
 
-func TestSSRHydrationAwaitSnapshotProjectedChildRejectsInteractiveOwnSlot(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; function click() {}</script><template>{#await request}<p>Pending</p>{:then value}<Outer><Inner><button @click={click}>Click</button></Inner></Outer>{/await}</template>`)
+func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotSupportsDOMEvent(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; function click() {}</script><template><main>{#await request}<p>Pending</p>{:then value}<Outer><Inner><button @click={click}>Click</button></Inner></Outer>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("DOM event in projected-child own slot was rejected")
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{`addEventListener('click'`, `removeEventListener('click'`} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("projected child own-slot event lowering misses %q:\n%s", want, source)
+		}
+	}
+}
+
+func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotRejectsNativeBinding(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; let value = $state("");</script><template><main>{#await request}<p>Pending</p>{:then result}<Outer><Inner><input bind:value={value} /></Inner></Outer>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
-		t.Fatal("interactive projected-child own slot was accepted before its lifecycle fixture exists")
+		t.Fatal("native binding in projected-child own slot was accepted before its lifecycle recipe exists")
 	}
 }
 
@@ -348,7 +368,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	outerCSR, _ := buildProgramWithDOMAcquirePlan("Outer", outerSFC, outerSFC.TemplateAST.Nodes, outerAnalysis, "vela-outer", false, DOMAcquireCreate)
 	innerCSR, _ := buildProgramWithDOMAcquirePlan("Inner", innerSFC, innerSFC.TemplateAST.Nodes, innerAnalysis, "vela-inner", false, DOMAcquireCreate)
 
-	parentSFC, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let title = "server"; export let active = false; export let color = "red"; let selected = $state("server"); function closed() { window.snapshotBound = selected; window.snapshotCloses = (window.snapshotCloses || 0) + 1; }</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Outer><Inner :title={title} bind:value={selected} @on:close={closed}><p class="snapshot-inner-slot" :title={title} class:active={active} style:color={color}>{title}</p><svelte:fragment slot="actions"><button class="snapshot-inner-action">Action</button></svelte:fragment></Inner></Outer><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	parentSFC, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let title = "server"; export let active = false; export let color = "red"; let selected = $state("server"); function closed() { window.snapshotBound = selected; window.snapshotCloses = (window.snapshotCloses || 0) + 1; } function slotClicked() { window.snapshotSlotClicks = (window.snapshotSlotClicks || 0) + 1; }</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Outer><Inner :title={title} bind:value={selected} @on:close={closed}><p class="snapshot-inner-slot" :title={title} class:active={active} style:color={color} @click={slotClicked}>{title}</p><svelte:fragment slot="actions"><button class="snapshot-inner-action">Action</button></svelte:fragment></Inner></Outer><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,6 +436,42 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	browser = strings.ReplaceAll(browser,
 		`window.hydrated.component.set({title:"client"})`,
 		`window.hydrated.component.set({title:"client",active:true,color:"blue"})`,
+	)
+	browser = strings.ReplaceAll(browser,
+		`window.snapshotCloses=0;`,
+		`window.snapshotCloses=0;window.snapshotSlotClicks=0;`,
+	)
+	browser = strings.ReplaceAll(browser,
+		`window.close=document.querySelector(".snapshot-inner-close");window.input.value`,
+		`window.close=document.querySelector(".snapshot-inner-close");window.slot=document.querySelector(".snapshot-inner-slot");window.slot.click();window.input.value`,
+	)
+	browser = strings.ReplaceAll(browser,
+		`window.snapshotInnerClicks===1&&document.querySelector(".snapshot-inner")?.textContent===`,
+		`window.snapshotSlotClicks===1&&window.snapshotInnerClicks===1&&document.querySelector(".snapshot-inner")?.textContent===`,
+	)
+	browser = strings.ReplaceAll(browser,
+		`window.close.click();window.inner.click();return`,
+		`window.close.click();window.inner.click();window.slot.click();return`,
+	)
+	browser = strings.ReplaceAll(browser,
+		`clicks:window.snapshotInnerClicks,closes:window.snapshotCloses`,
+		`clicks:window.snapshotInnerClicks,slotClicks:window.snapshotSlotClicks,closes:window.snapshotCloses`,
+	)
+	browser = strings.ReplaceAll(browser,
+		`||removed.clicks!==1||removed.closes!==1`,
+		`||removed.clicks!==1||removed.slotClicks!==1||removed.closes!==1`,
+	)
+	browser = strings.ReplaceAll(browser,
+		`document.querySelector(".snapshot-inner-close").click();document.querySelector(".snapshot-inner").click()`,
+		`document.querySelector(".snapshot-inner-close").click();document.querySelector(".snapshot-inner").click();window.remountedSlot=document.querySelector(".snapshot-inner-slot");window.remountedSlot.click()`,
+	)
+	browser = strings.ReplaceAll(browser,
+		`window.snapshotBound==="again"&&window.snapshotCloses===2&&window.snapshotInnerClicks===2`,
+		`window.snapshotBound==="again"&&window.snapshotCloses===2&&window.snapshotInnerClicks===2&&window.snapshotSlotClicks===2`,
+	)
+	browser = strings.ReplaceAll(browser,
+		`await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>window.snapshotInnerDestroys)!==2)`,
+		`await p.evaluate(()=>{window.hydrated.component.destroy();window.remountedSlot.click();if(window.snapshotSlotClicks!==2)throw new Error("destroyed slot event still fired")});if(await p.evaluate(()=>window.snapshotInnerDestroys)!==2)`,
 	)
 	browser = strings.ReplaceAll(browser,
 		`document.querySelector(".snapshot-inner")?.textContent==="client"`,

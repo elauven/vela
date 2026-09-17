@@ -8909,17 +8909,17 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 // state and register a branch-owned writer. Nested components and structural
 // blocks deliberately remain later recipes.
 func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bindingName string) bool {
-	return g.hydrationAwaitSnapshotSlotNodes(slots, bindingName, true, true, true)
+	return g.hydrationAwaitSnapshotSlotNodes(slots, bindingName, true, true, true, true)
 }
 
 // hydrationAwaitSnapshotSlotDirectDOMNodes permits the dynamic DOM subset in
 // a direct projected child's own slots. Another component needs a nested
 // instance owner and remains outside this phase.
 func (g *ASTGen) hydrationAwaitSnapshotSlotDirectDOMNodes(slots map[string][]Node, bindingName string) bool {
-	return g.hydrationAwaitSnapshotSlotNodes(slots, bindingName, false, true, false)
+	return g.hydrationAwaitSnapshotSlotNodes(slots, bindingName, false, true, true, false)
 }
 
-func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindingName string, allowComponents, allowDirectives, allowInteractive bool) bool {
+func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindingName string, allowComponents, allowDirectives, allowEvents, allowBindings bool) bool {
 	var check func([]Node) bool
 	check = func(nodes []Node) bool {
 		for _, node := range nodes {
@@ -8942,13 +8942,13 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindin
 						continue
 					}
 					if attr.IsEvent {
-						if !allowInteractive {
+						if !allowEvents {
 							return false
 						}
 						continue
 					}
 					if attr.IsTwoWay {
-						if !allowInteractive {
+						if !allowBindings {
 							return false
 						}
 						target, ok := templateExprIdent(attr.Expr)
