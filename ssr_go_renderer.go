@@ -902,11 +902,10 @@ func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
 					return false
 				}
 			case *SSRPlanComponent:
-				// The selected-snapshot slot lifecycle currently owns a direct
-				// local projected child without child slots of its own. Its normal
-				// Go renderer call is already recursive; hydration supplies the
-				// matching browser ownership recipe.
-				if current == nil || current.Link == nil || len(current.Slots) != 0 {
+				// The selected-snapshot slot lifecycle owns a direct local
+				// projected child. Its fully static own slots are rendered by the
+				// normal recursive Go call and retained unchanged during adoption.
+				if current == nil || current.Link == nil || !ssrAwaitSnapshotStaticPlanSlots(current.Slots) {
 					return false
 				}
 				for _, attr := range current.Attrs {
@@ -916,6 +915,37 @@ func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
 					if attr.Role != SSRAttrStatic && attr.Role != SSRAttrDynamic && attr.Role != SSRAttrTwoWay {
 						return false
 					}
+				}
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// ssrAwaitSnapshotStaticPlanSlots mirrors the client-side static-slot recipe
+// for a direct projected child in a selected await snapshot. Only text and
+// ordinary elements with static attributes can be retained without creating a
+// nested hydration ownership controller.
+func ssrAwaitSnapshotStaticPlanSlots(slots map[string][]SSRPlanNode) bool {
+	for _, children := range slots {
+		for _, node := range children {
+			switch current := node.(type) {
+			case *SSRPlanText:
+				for _, part := range current.Parts {
+					if !part.Static {
+						return false
+					}
+				}
+			case *SSRPlanElement:
+				for _, attr := range current.Attrs {
+					if attr.Role != SSRAttrStatic {
+						return false
+					}
+				}
+				if !ssrAwaitSnapshotStaticPlanSlots(map[string][]SSRPlanNode{"": current.Children}) {
+					return false
 				}
 			default:
 				return false

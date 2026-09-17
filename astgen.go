@@ -8968,7 +8968,11 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotLeafNodes(slots map[string][]Node, bi
 					return false
 				}
 			case *ComponentNode:
-				if current == nil || len(current.Slots) != 0 {
+				// A projected child can retain static content in its own slots:
+				// the server DOM is already owned by that child and no parent
+				// update handle has to acquire it. Dynamic slot content needs a
+				// recursive controller, so it remains outside this narrow recipe.
+				if current == nil || !hydrationAwaitSnapshotStaticSlots(current.Slots) {
 					return false
 				}
 				for _, attr := range current.Attrs {

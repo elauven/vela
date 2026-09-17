@@ -214,7 +214,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotReactiveSlotLeafChild(t *testin
 }
 
 func TestGeneratedSSRRendererAndHydratorSelectAwaitSnapshotProjectedChild(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let title = "server";</script><template><main>{#await request}<p>Pending</p>{:then value}<Outer><Inner :title={title} /></Outer><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let title = "server";</script><template><main>{#await request}<p>Pending</p>{:then value}<Outer><Inner :title={title}><p>Static inner slot</p><svelte:fragment slot="actions"><button>Action</button></svelte:fragment></Inner></Outer><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,8 +239,15 @@ func TestGeneratedSSRRendererAndHydratorSelectAwaitSnapshotProjectedChild(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(server), `inner.Inner(inner.InnerProps{Title: props.Title}, inner.InnerSlots{})`) {
-		t.Fatalf("SSR renderer misses projected child scope:\n%s", server)
+	for _, want := range []string{
+		`inner.Inner(inner.InnerProps{Title: props.Title}, inner.InnerSlots{`,
+		`Default: func(w io.Writer) error {`,
+		`Actions: func(w io.Writer) error {`,
+		`Static inner slot`,
+	} {
+		if !strings.Contains(string(server), want) {
+			t.Fatalf("SSR renderer misses projected child static slot %q:\n%s", want, server)
+		}
 	}
 	client, err := BuildSSRHydrationClientProgram("Parent", sfc, analysis, "vela-parent")
 	if err != nil {
@@ -262,7 +269,7 @@ func TestGeneratedSSRRendererAndHydratorSelectAwaitSnapshotProjectedChild(t *tes
 }
 
 func TestSSRHydrationAwaitSnapshotProjectedChildSupportsEventAndBindable(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; let selected = $state("server"); let closes = $state(0); function closed() { closes++; }</script><template><main>{#await request}<p>Pending</p>{:then value}<Outer><Inner bind:value={selected} @on:close={closed} /></Outer><p>Done</p>{:catch error}<p>Failed</p>{/await}<p>{selected}:{closes}</p></main></template>`)
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; let selected = $state("server"); let closes = $state(0); function closed() { closes++; }</script><template><main>{#await request}<p>Pending</p>{:then value}<Outer><Inner bind:value={selected} @on:close={closed}><p>Static child slot</p></Inner></Outer><p>Done</p>{:catch error}<p>Failed</p>{/await}<p>{selected}:{closes}</p></main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,6 +288,7 @@ func TestSSRHydrationAwaitSnapshotProjectedChildSupportsEventAndBindable(t *test
 		`$$set_selected`,
 		`$$set_closes`,
 		`$$csr_Inner`,
+		`Static child slot`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("projected snapshot child event/binding lowering misses %q:\n%s", want, source)
@@ -294,7 +302,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	innerSFC, err := parseSFC(`<script>import { onDestroy } from "vela"; export let title = ""; export let value = $bindable(""); function clicked() { window.snapshotInnerClicks = (window.snapshotInnerClicks || 0) + 1; } function close() { $$dispatch("close"); } onDestroy(() => { window.snapshotInnerDestroys = (window.snapshotInnerDestroys || 0) + 1; });</script><template><section class="snapshot-inner-wrap"><input class="snapshot-inner-value" bind:value={value} /><button class="snapshot-inner-close" @click={close}>Close</button><button class="snapshot-inner" @click={clicked}>{title}</button></section></template>`)
+	innerSFC, err := parseSFC(`<script>import { onDestroy } from "vela"; export let title = ""; export let value = $bindable(""); function clicked() { window.snapshotInnerClicks = (window.snapshotInnerClicks || 0) + 1; } function close() { $$dispatch("close"); } onDestroy(() => { window.snapshotInnerDestroys = (window.snapshotInnerDestroys || 0) + 1; });</script><template><section class="snapshot-inner-wrap"><input class="snapshot-inner-value" bind:value={value} /><button class="snapshot-inner-close" @click={close}>Close</button><button class="snapshot-inner" @click={clicked}>{title}</button><slot /><slot name="actions" /></section></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +335,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	outerCSR, _ := buildProgramWithDOMAcquirePlan("Outer", outerSFC, outerSFC.TemplateAST.Nodes, outerAnalysis, "vela-outer", false, DOMAcquireCreate)
 	innerCSR, _ := buildProgramWithDOMAcquirePlan("Inner", innerSFC, innerSFC.TemplateAST.Nodes, innerAnalysis, "vela-inner", false, DOMAcquireCreate)
 
-	parentSFC, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let title = "server"; let selected = $state("server"); function closed() { window.snapshotBound = selected; window.snapshotCloses = (window.snapshotCloses || 0) + 1; }</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Outer><Inner :title={title} bind:value={selected} @on:close={closed} /></Outer><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	parentSFC, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let title = "server"; let selected = $state("server"); function closed() { window.snapshotBound = selected; window.snapshotCloses = (window.snapshotCloses || 0) + 1; }</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Outer><Inner :title={title} bind:value={selected} @on:close={closed}><p class="snapshot-inner-slot">Static slot</p><svelte:fragment slot="actions"><button class="snapshot-inner-action">Action</button></svelte:fragment></Inner></Outer><p class="settled">Done</p>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,6 +374,12 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 		t.Fatal("projected component links are missing")
 	}
 	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><main><!--v:vela-parent:` + itoa(awaitID) + `--><!--e:vela-outer:` + itoa(outerRoot.HydrationID) + `--><section class="snapshot-outer"><!--e:vela-inner:` + itoa(innerRoot.HydrationID) + `--><section class="snapshot-inner-wrap"><!--e:vela-inner:` + itoa(innerInput.HydrationID) + `--><input class="snapshot-inner-value" value="server"><!--/e:vela-inner:` + itoa(innerInput.HydrationID) + `--><!--e:vela-inner:` + itoa(innerClose.HydrationID) + `--><button class="snapshot-inner-close">Close</button><!--/e:vela-inner:` + itoa(innerClose.HydrationID) + `--><!--e:vela-inner:` + itoa(innerButton.HydrationID) + `--><button class="snapshot-inner"><!--v:vela-inner:` + itoa(innerText.DynamicID) + `-->server<!--/v:vela-inner:` + itoa(innerText.DynamicID) + `--></button><!--/e:vela-inner:` + itoa(innerButton.HydrationID) + `--></section><!--/e:vela-inner:` + itoa(innerRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-inner">{"component":"vela-inner","props":{"Title":"server","Value":"server"},"state":{},"incomplete":false}</script></section><!--/e:vela-outer:` + itoa(outerRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-outer">{"component":"vela-outer","props":{},"state":{},"incomplete":false}</script><p class="settled">Done</p><!--/v:vela-parent:` + itoa(awaitID) + `--></main><!--/e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Title":"server"},"state":{},"incomplete":false,"await":{"` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.snapshotInnerClicks=0;window.snapshotInnerDestroys=0;window.snapshotCloses=0;window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	innerStaticSlots := `<p class="snapshot-inner-slot">Static slot</p><button class="snapshot-inner-action">Action</button>`
+	html = strings.Replace(html,
+		`<!--/e:vela-inner:`+itoa(innerButton.HydrationID)+`--></section>`,
+		`<!--/e:vela-inner:`+itoa(innerButton.HydrationID)+`-->`+innerStaticSlots+`</section>`,
+		1,
+	)
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,

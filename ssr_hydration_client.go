@@ -386,7 +386,7 @@ func ssrHydrationComponentNames(sfc *SFC, analysis *Analysis) (map[string]bool, 
 	// recurse through arbitrary component slots here: those trees may still be
 	// capability-gated and importing their hydrate modules would change an
 	// otherwise validation-only module graph. The lowerer accepts only direct
-	// local children with no child slots of their own.
+	// local children whose own slots are fully static.
 	visitSnapshotSlots := func(nodes []Node) error {
 		for _, node := range nodes {
 			component, ok := node.(*ComponentNode)
@@ -396,7 +396,7 @@ func ssrHydrationComponentNames(sfc *SFC, analysis *Analysis) (map[string]bool, 
 			for _, name := range sortedSlotNames(component.Slots) {
 				for _, projected := range component.Slots[name] {
 					inner, ok := projected.(*ComponentNode)
-					if !ok || inner == nil || len(inner.Slots) != 0 {
+					if !ok || inner == nil || !hydrationAwaitSnapshotStaticSlots(inner.Slots) {
 						continue
 					}
 					if err := addComponent(inner); err != nil {

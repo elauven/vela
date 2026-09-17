@@ -493,13 +493,15 @@ reactive parent state/prop identifier (not the `then`/`catch` binding). The
 hydrator first reads the live browser control value, then owns both its setter
 writer and listener cleanup within the selected slot range. One direct local
 projected child component with ordinary one-way props, one simple `$bindable`
-binding to parent `$state`, and `@on:*` component events is also supported,
-provided that child has no slots of its own. The parent imports its named
-hydrate entry, gives the binding callback to it before adoption, attaches
-CustomEvent listeners afterward, forwards later props with `.set(...)`, and
+binding to parent `$state`, and `@on:*` component events is also supported.
+That direct child may in turn receive fully static default and named slots
+(ordinary text and elements with static attributes), which are retained as
+part of its server DOM during adoption and recreated by the ordinary CSR slot
+factory after a branch remount. The parent imports its named hydrate entry,
+gives the binding callback to it before adoption, attaches CustomEvent
+listeners afterward, forwards later props with `.set(...)`, and
 detaches/destroys the payload-owning instance before the selected range is
-removed. A later branch remount uses the separate ordinary CSR factory.
-Projected child slots and nested structural blocks remain outside this
+removed. Dynamic child slots and nested structural blocks remain outside this
 selected-snapshot slot recipe.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
