@@ -975,7 +975,7 @@ func ssrCapabilityCurrentAwaitComponentSlots(component *ComponentNode, branch in
 }
 
 func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
-	return ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, true, true)
+	return ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, true, true, true)
 }
 
 // ssrCapabilityCurrentAwaitSnapshotSlotDirectDOMNodes is the recursive
@@ -983,14 +983,14 @@ func ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(nodes []Node) bool {
 // another component instance because that needs a nested hydration owner.
 func ssrCapabilityCurrentAwaitSnapshotSlotDirectDOMNodes(slots map[string][]Node) bool {
 	for _, nodes := range slots {
-		if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, false, false) {
+		if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes, false, true, false) {
 			return false
 		}
 	}
 	return true
 }
 
-func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, allowInteractive bool) bool {
+func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, allowDirectives, allowInteractive bool) bool {
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
@@ -1025,7 +1025,7 @@ func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, a
 					}
 					continue
 				}
-				if (!allowInteractive && (attr.IsClassDir || attr.IsStyleDir)) || (!attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir) {
+				if (!allowDirectives && (attr.IsClassDir || attr.IsStyleDir)) || (!attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir) {
 					return false
 				}
 				if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
@@ -1035,7 +1035,7 @@ func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, a
 					return false
 				}
 			}
-			if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(current.Children, allowComponents, allowInteractive) {
+			if !ssrCapabilityCurrentAwaitSnapshotSlotNodes(current.Children, allowComponents, allowDirectives, allowInteractive) {
 				return false
 			}
 		case *ComponentNode:
