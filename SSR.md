@@ -514,16 +514,18 @@ hydrate entry, retains its own inert payload, receives later `.set(...)`
 updates, and is destroyed in reverse source order before the enclosing child
 or selected range is removed. The first structural extension of this
 selected-snapshot slot recipe is a marker-aware ordinary `#if` / `{:else if}`
-/ `{:else}` with simple parent-identifier conditions and fully static
-ordinary-DOM branches. The selected await-range owner acquires the canonical
-`v` range and adopts its existing nodes without an initial write. A condition
-change removes only those owned nodes and inserts the selected static branch
-before the same end marker, so the enclosing projected child, nested local
-children, and unrelated slot siblings retain identity. Dynamic branch leaves,
-branch-owned listeners or bindings, local child lifecycle inside a branch,
-`#key`, `#each`, and nested `#await` still require extensions of this
-structural range controller for their evaluated identity, row, and promise
-lifecycle.
+/ `{:else}` with simple parent-identifier conditions, fully static
+ordinary-DOM branches, or direct text parts that each read one parent
+identifier. The selected await-range owner acquires the canonical structural
+and text `v` ranges and adopts their existing nodes without an initial write.
+A same-branch parent update writes only its owned text range; a condition
+change removes only the inner structural range and inserts the selected branch
+before the same end marker. The enclosing projected child, nested local
+children, and unrelated slot siblings retain identity. Dynamic
+elements/attributes/directives, branch-owned listeners or bindings, local
+child lifecycle inside a branch, `#key`, `#each`, and nested `#await` still
+require extensions of this structural range controller for their evaluated
+identity, row, and promise lifecycle.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.

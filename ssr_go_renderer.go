@@ -937,7 +937,7 @@ func ssrAwaitSnapshotSlotPlanNodes(slots map[string][]SSRPlanNode, allowComponen
 					}
 				}
 			case *SSRPlanIf:
-				if !ssrAwaitSnapshotSlotStaticIf(current) {
+				if !ssrAwaitSnapshotSlotTextIf(current) {
 					return false
 				}
 			default:
@@ -948,7 +948,7 @@ func ssrAwaitSnapshotSlotPlanNodes(slots map[string][]SSRPlanNode, allowComponen
 	return true
 }
 
-func ssrAwaitSnapshotSlotStaticIf(node *SSRPlanIf) bool {
+func ssrAwaitSnapshotSlotTextIf(node *SSRPlanIf) bool {
 	if node == nil || node.Key != nil || len(node.Branches) == 0 {
 		return false
 	}
@@ -958,7 +958,34 @@ func ssrAwaitSnapshotSlotStaticIf(node *SSRPlanIf) bool {
 				return false
 			}
 		}
-		if !ssrAwaitSnapshotSlotStaticPlanNodes(branch.Children) {
+		if !ssrAwaitSnapshotSlotTextPlanNodes(branch.Children) {
+			return false
+		}
+	}
+	return true
+}
+
+func ssrAwaitSnapshotSlotTextPlanNodes(nodes []SSRPlanNode) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *SSRPlanText:
+			for _, part := range current.Parts {
+				if !part.Static {
+					if _, ok := templateExprIdent(part.Expr); !ok {
+						return false
+					}
+				}
+			}
+		case *SSRPlanElement:
+			for _, attr := range current.Attrs {
+				if attr.Role != SSRAttrStatic {
+					return false
+				}
+			}
+			if !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) {
+				return false
+			}
+		default:
 			return false
 		}
 	}

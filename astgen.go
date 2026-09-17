@@ -9000,7 +9000,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindin
 					}
 				}
 			case *IfChainNode:
-				if !g.hydrationAwaitSnapshotSlotStaticIf(current) {
+				if !g.hydrationAwaitSnapshotSlotTextIf(current) {
 					return false
 				}
 			default:
@@ -9018,19 +9018,42 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindin
 	return true
 }
 
-// hydrationAwaitSnapshotSlotStaticIf is the first branch-owned structural
-// slice for a projected child slot. Its canonical range is retained from SSR;
-// only a condition change recreates fully static DOM within that inner range.
-func (g *ASTGen) hydrationAwaitSnapshotSlotStaticIf(chain *IfChainNode) bool {
+// hydrationAwaitSnapshotSlotTextIf is the first branch-owned structural
+// slice for a projected child slot. It accepts text-only branches with simple
+// reactive reads: canonical SSR text markers are adopted and later writes are
+// retained by the branch controller instead of rebuilding its enclosing slot.
+func (g *ASTGen) hydrationAwaitSnapshotSlotTextIf(chain *IfChainNode) bool {
 	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 {
 		return false
 	}
 	for _, branch := range chain.Branches {
-		if branch == nil || !allStatic(branch.Children) {
+		if branch == nil {
 			return false
 		}
 		if branch.HasCondition() {
 			if _, ok := templateExprIdent(branch.Expr); !ok {
+				return false
+			}
+		}
+		for _, node := range branch.Children {
+			switch current := node.(type) {
+			case *TextNode:
+				if current == nil {
+					return false
+				}
+				for _, part := range current.Parts {
+					if part == nil || part.Static {
+						continue
+					}
+					if _, ok := templateExprIdent(part.Expr); !ok {
+						return false
+					}
+				}
+			case *ElementNode:
+				if current == nil || !allStatic([]Node{current}) {
+					return false
+				}
+			default:
 				return false
 			}
 		}
@@ -9055,7 +9078,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfActiveExpr(chain *IfChainNode) JsEx
 }
 
 func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSnapshotLeafPlan, chain *IfChainNode) {
-	if plan == nil || !g.hydrationAwaitSnapshotSlotStaticIf(chain) {
+	if plan == nil || !g.hydrationAwaitSnapshotSlotTextIf(chain) {
 		return
 	}
 	markerID := g.hydrationIfMarkerID(chain)
@@ -9074,10 +9097,33 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 		if branch == nil {
 			continue
 		}
-		mountBody = append(mountBody, genIf(
-			genBinary("===", id(nextVar), numLit(index)),
-			genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML(branch.Children, g.scopeID)))),
-		))
+		branchMount := []JsStmt{}
+		for _, node := range branch.Children {
+			text, ok := node.(*TextNode)
+			if !ok {
+				branchMount = append(branchMount, genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML([]Node{node}, g.scopeID)))))
+				continue
+			}
+			for partIndex, part := range text.Parts {
+				if part == nil {
+					continue
+				}
+				if part.Static {
+					branchMount = append(branchMount, genExprStmt(genCall(genMember(id(fragmentVar), "appendChild"), genCall(genMember(id("document"), "createTextNode"), strLit(part.Value)))))
+					continue
+				}
+				refVar := prefix + "_b" + itoa(index) + "_text" + itoa(partIndex)
+				updateVar := refVar + "_update"
+				branchMount = append(branchMount,
+					genConst(refVar, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
+					genExprStmt(genCall(genMember(id(fragmentVar), "appendChild"), id(refVar))),
+					genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genAssignStmt(genMember(id(refVar), "data"), genString(g.templateExpr(part.Expr))))}),
+					genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(updateVar))),
+					genInvoke(updateVar),
+				)
+			}
+		}
+		mountBody = append(mountBody, genIf(genBinary("===", id(nextVar), numLit(index)), genBlock(branchMount...)))
 	}
 	mountBody = append(mountBody,
 		genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(fragmentVar), "childNodes"))),
@@ -9093,6 +9139,39 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 		genAssignStmt(genMember(id(controllerVar), "nodes"), genArray()),
 		genAssignStmt(genMember(id(controllerVar), "active"), numLit(-1)),
 	)}
+	adoptBody := []JsStmt{}
+	for branchIndex, branch := range chain.Branches {
+		if branch == nil {
+			continue
+		}
+		branchAdopt := []JsStmt{}
+		for _, node := range branch.Children {
+			text, ok := node.(*TextNode)
+			if !ok {
+				continue
+			}
+			for partIndex, part := range text.Parts {
+				if part == nil || part.Static {
+					continue
+				}
+				markerID := g.hydrationTextMarkerID(part)
+				rangeVar := prefix + "_b" + itoa(branchIndex) + "_text" + itoa(partIndex) + "_range"
+				updateVar := rangeVar + "_update"
+				g.domAcquirePlan.addTextRange(rangeVar, markerID)
+				branchAdopt = append(branchAdopt,
+					genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+					genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(id("$$writeHydrationText"), id(rangeVar), genString(g.templateExpr(part.Expr)))))}),
+					genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(updateVar))),
+				)
+			}
+		}
+		adoptBody = append(adoptBody, genIf(genBinary("===", genMember(id(controllerVar), "active"), numLit(branchIndex)), genBlock(branchAdopt...)))
+	}
+	adoptStmts := []JsStmt{
+		genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+		genAssignStmt(genMember(id(controllerVar), "active"), activeExpr),
+	}
+	adoptStmts = append(adoptStmts, adoptBody...)
 	controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 		{Key: id("start"), Value: genMember(id(rangeVar), "start")},
 		{Key: id("end"), Value: genMember(id(rangeVar), "end")},
@@ -9101,10 +9180,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 		{Key: id("updates"), Value: genArray()},
 		{Key: id("listeners"), Value: genArray()},
 		{Key: id("children"), Value: genArray()},
-		{Key: id("adopt"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-			genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar))),
-			genAssignStmt(genMember(id(controllerVar), "active"), activeExpr),
-		)}},
+		{Key: id("adopt"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(adoptStmts...)}},
 		{Key: id("mountCSR"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(nextVar)}, Body: genBlock(mountBody...)}},
 		{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 			genConst(nextVar, activeExpr),
@@ -9135,6 +9211,15 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 		}
 		for _, dependency := range templateExprDeps(branch.Expr, g.reactiveNames()) {
 			plan.deps[dependency] = true
+		}
+		for _, node := range branch.Children {
+			text, ok := node.(*TextNode)
+			if !ok {
+				continue
+			}
+			for _, dependency := range templatePartsDeps(text.Parts, g.reactiveNames()) {
+				plan.deps[dependency] = true
+			}
 		}
 	}
 }

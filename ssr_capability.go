@@ -1065,7 +1065,7 @@ func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, a
 				}
 			}
 		case *IfChainNode:
-			if !ssrCapabilityCurrentAwaitSnapshotSlotStaticIf(current) {
+			if !ssrCapabilityCurrentAwaitSnapshotSlotTextIf(current) {
 				return false
 			}
 		default:
@@ -1075,16 +1075,38 @@ func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, a
 	return true
 }
 
-func ssrCapabilityCurrentAwaitSnapshotSlotStaticIf(chain *IfChainNode) bool {
+func ssrCapabilityCurrentAwaitSnapshotSlotTextIf(chain *IfChainNode) bool {
 	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 {
 		return false
 	}
 	for _, branch := range chain.Branches {
-		if branch == nil || !allStatic(branch.Children) {
+		if branch == nil {
 			return false
 		}
 		if branch.HasCondition() {
 			if _, ok := templateExprIdent(branch.Expr); !ok {
+				return false
+			}
+		}
+		for _, node := range branch.Children {
+			switch current := node.(type) {
+			case *TextNode:
+				if current == nil {
+					return false
+				}
+				for _, part := range current.Parts {
+					if part == nil || part.Static {
+						continue
+					}
+					if _, ok := templateExprIdent(part.Expr); !ok {
+						return false
+					}
+				}
+			case *ElementNode:
+				if current == nil || !allStatic([]Node{current}) {
+					return false
+				}
+			default:
 				return false
 			}
 		}
