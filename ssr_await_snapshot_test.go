@@ -153,9 +153,47 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotStaticKeyedEach(t *testing.T) {
 	}
 }
 
-func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotStaticKeyedEach(t *testing.T) {
+func TestGeneratedSSRRendererSelectsAwaitSnapshotKeyedEachDirectRowText(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row)}<p class="settled-row">{row}</p>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("simple keyed row text snapshot was rejected")
+	}
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`ssrEachItem0`, `<!--v:`, `settled-row`} {
+		if !strings.Contains(string(server), want) {
+			t.Fatalf("dynamic keyed row SSR renderer misses %q:\n%s", want, server)
+		}
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(client, PrintPretty)
+	for _, want := range []string{`_find_text`, `createTreeWalker`, `$$writeHydrationText`, `createTextNode`, `$$rowItem`} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("dynamic keyed row hydration client misses %q:\n%s", want, code)
+		}
+	}
+}
+
+func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectRowText(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}{#each rows as row (row)}<p class="settled-row">Row</p>{/each}{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}{#each rows as row (row)}<p class="settled-row">{row}</p>{/each}{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,10 +214,11 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotStaticKeyedEach(t *testing
 	await := main.Children[0].(*SSRPlanAwait)
 	each := await.ThenChildren[0].(*SSRPlanEach)
 	rowElement := each.Children[0].(*SSRPlanElement)
+	rowText := rowElement.Children[0].(*SSRPlanText)
 	rowScope := func(key string) string { return "vela-page--each-" + itoa(each.Span.Start) + "-" + key }
 	rowHTML := func(key string) string {
 		scope := rowScope(key)
-		return `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><p vela-page="" class="settled-row">Row</p><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
+		return `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><p vela-page="" class="settled-row"><!--v:` + scope + `:` + itoa(rowText.Parts[0].DynamicID) + `-->` + key + `<!--/v:` + scope + `:` + itoa(rowText.Parts[0].DynamicID) + `--></p><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
 	}
 	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a") + rowHTML("b") + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":["a","b"]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
@@ -198,10 +237,10 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotStaticKeyedEach(t *testing
 	command.Dir = "/projects/compiler"
 	output, err := command.CombinedOutput()
 	if err != nil {
-		t.Fatalf("settled keyed await snapshot browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+		t.Fatalf("dynamic settled keyed await snapshot browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
-		t.Fatalf("settled keyed await snapshot browser output=%q", got)
+		t.Fatalf("dynamic settled keyed await snapshot browser output=%q", got)
 	}
 }
 

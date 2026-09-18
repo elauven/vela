@@ -995,7 +995,7 @@ func ssrAwaitSnapshotSlotStaticEach(node *SSRPlanEach) bool {
 }
 
 func ssrAwaitSnapshotSlotStaticKeyedEach(node *SSRPlanEach) bool {
-	if node == nil || node.Key == nil || !ssrAwaitSnapshotSlotStaticPlanNodes(node.ElseChildren) || !ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(node.Children) {
+	if node == nil || node.Key == nil || !ssrAwaitSnapshotSlotStaticPlanNodes(node.ElseChildren) || !ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(node.Children, node.ItemName) {
 		return false
 	}
 	if _, ok := templateExprIdent(node.Iterable); !ok {
@@ -1005,7 +1005,10 @@ func ssrAwaitSnapshotSlotStaticKeyedEach(node *SSRPlanEach) bool {
 	return ok
 }
 
-func ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(nodes []SSRPlanNode) bool {
+func ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(nodes []SSRPlanNode, itemName string) bool {
+	if ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes, itemName) {
+		return true
+	}
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *SSRPlanText:
@@ -1034,6 +1037,37 @@ func ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(nodes []SSRPlanNode) bool {
 		}
 	}
 	return true
+}
+
+func ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes []SSRPlanNode, itemName string) bool {
+	if itemName == "" || len(nodes) != 1 {
+		return false
+	}
+	element, ok := nodes[0].(*SSRPlanElement)
+	if !ok || element == nil || len(element.Children) != 1 {
+		return false
+	}
+	for _, attr := range element.Attrs {
+		if attr.Role != SSRAttrStatic {
+			return false
+		}
+	}
+	text, ok := element.Children[0].(*SSRPlanText)
+	if !ok || text == nil {
+		return false
+	}
+	dynamic := false
+	for _, part := range text.Parts {
+		if part.Static {
+			continue
+		}
+		name, ok := templateExprIdent(part.Expr)
+		if !ok || name != itemName {
+			return false
+		}
+		dynamic = true
+	}
+	return dynamic
 }
 
 func ssrAwaitSnapshotSlotStaticKey(node *SSRPlanIf) bool {
