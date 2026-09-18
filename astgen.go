@@ -8876,7 +8876,11 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 					}
 					visit(current.Children)
 				case *IfChainNode:
-					g.buildHydrationAwaitSnapshotSlotStaticIf(&plan, current)
+					if current.HasKey() {
+						g.buildHydrationAwaitSnapshotSlotStaticKey(&plan, current)
+					} else {
+						g.buildHydrationAwaitSnapshotSlotStaticIf(&plan, current)
+					}
 				}
 			}
 		}
@@ -9000,6 +9004,12 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindin
 					}
 				}
 			case *IfChainNode:
+				if current.HasKey() {
+					if !g.hydrationAwaitSnapshotSlotStaticKey(current) {
+						return false
+					}
+					continue
+				}
 				if !g.hydrationAwaitSnapshotSlotTextIf(current) {
 					return false
 				}
@@ -9016,6 +9026,17 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindin
 		}
 	}
 	return true
+}
+
+// hydrationAwaitSnapshotSlotStaticKey is the initial key-controller slice:
+// a single static branch keyed by one simple reactive identifier. Dynamic
+// leaves and child handles are deliberately deferred until they can share the
+// controller's ownership arrays.
+func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKey(chain *IfChainNode) bool {
+	return chain != nil && chain.HasKey() && len(chain.Branches) == 1 && chain.Branches[0] != nil && !chain.Branches[0].HasCondition() && allStatic(chain.Branches[0].Children) && func() bool {
+		_, ok := templateExprIdent(chain.KeyAST)
+		return ok
+	}()
 }
 
 // hydrationAwaitSnapshotSlotTextIf is the first branch-owned structural
@@ -9389,6 +9410,54 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 				}
 			}
 		}
+	}
+}
+
+// buildHydrationAwaitSnapshotSlotStaticKey retains the server key range on
+// adoption. A changed key disposes only the owned inner nodes and materializes
+// a fresh static fragment before the same end marker.
+func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKey(plan *hydrationAwaitSnapshotLeafPlan, chain *IfChainNode) {
+	if plan == nil || !g.hydrationAwaitSnapshotSlotStaticKey(chain) {
+		return
+	}
+	markerID := g.hydrationIfMarkerID(chain)
+	prefix := "$$hawait" + itoa(markerID) + "_slot_key"
+	rangeVar, controllerVar := prefix+"_range", prefix+"_controller"
+	nextVar, fragmentVar := prefix+"_next", prefix+"_fragment"
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	plan.decls = append(plan.decls, genLet(rangeVar, genNull()), genLet(controllerVar, genNull()))
+	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(controllerVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
+		genAssignStmt(genMember(id(controllerVar), "listeners"), genArray()),
+		genAssignStmt(genMember(id(controllerVar), "updates"), genArray()),
+		genForOf("$$node", genMember(id(controllerVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genAssignStmt(genMember(id(controllerVar), "nodes"), genArray()),
+	)}
+	mount := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genConst(fragmentVar, genCall(genMember(id("document"), "createDocumentFragment"))),
+		genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML(chain.Branches[0].Children, g.scopeID)))),
+		genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(fragmentVar), "childNodes"))),
+		genExprStmt(genCall(genMember(genMember(id(controllerVar), "end"), "before"), id(fragmentVar))),
+	)}
+	controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+		{Key: id("start"), Value: genMember(id(rangeVar), "start")}, {Key: id("end"), Value: genMember(id(rangeVar), "end")},
+		{Key: id("key"), Value: g.templateExpr(chain.KeyAST)}, {Key: id("nodes"), Value: genArray()},
+		{Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()},
+		{Key: id("adopt"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar))))}},
+		{Key: id("mountCSR"), Value: mount},
+		{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genConst(nextVar, g.templateExpr(chain.KeyAST)),
+			genIf(genBinary("===", id(nextVar), genMember(id(controllerVar), "key")), genReturn(nil)),
+			genExprStmt(genCall(genMember(id(controllerVar), "destroy"))),
+			genAssignStmt(genMember(id(controllerVar), "key"), id(nextVar)),
+			genExprStmt(genCall(genMember(id(controllerVar), "mountCSR"))),
+		)}}, {Key: id("destroy"), Value: destroy},
+	}}
+	plan.adopt = append(plan.adopt, genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))), genAssignStmt(id(controllerVar), controller), genExprStmt(genCall(genMember(id(controllerVar), "adopt"))))
+	plan.refresh = append(plan.refresh, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "update")))))
+	plan.cleanup = append(plan.cleanup, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "destroy")))), genAssignStmt(id(controllerVar), genNull()), genAssignStmt(id(rangeVar), genNull()))
+	for _, dependency := range templateExprDeps(chain.KeyAST, g.reactiveNames()) {
+		plan.deps[dependency] = true
 	}
 }
 

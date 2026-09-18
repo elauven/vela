@@ -536,6 +536,13 @@ dynamic element descendants,
 local child lifecycle inside a branch, `#key`, `#each`, and nested `#await`
 still require extensions of this structural range controller for their
 evaluated identity, row, and promise lifecycle.
+
+The first projected-slot `{#key identity}` slice is a single unconditional
+branch with fully static content and a simple reactive identifier key. Its
+controller adopts the canonical server `v` range without rewriting it, caches
+the client key, and replaces only that inner range when the key changes.
+Dynamic leaves, native controls, handlers, and child instances inside the key
+range remain intentionally gated until they share its ownership arrays.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.

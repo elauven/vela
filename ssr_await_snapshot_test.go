@@ -471,6 +471,37 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotIfOwnsNativeBindings(t *t
 	}
 }
 
+func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotStaticKey(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let identity = "server";</script><template><main>{#await request}<p>Pending</p>{:then result}<Outer><Inner>{#key identity}<p class="keyed">Stable branch</p>{/key}</Inner></Outer>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("static #key in projected-child own slot was rejected")
+	}
+	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", sfc, analysis, "vela-parent", map[string]SSRComponentLink{
+		"Outer": {LocalName: "Outer", SourcePath: "Outer.vela", GoName: "Outer", PackageName: "outer", ImportPath: "example.com/project/outer"},
+		"Inner": {LocalName: "Inner", SourcePath: "Inner.vela", GoName: "Inner", PackageName: "inner", ImportPath: "example.com/project/inner"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildSSRGoFile(plan, "parent"); err != nil {
+		t.Fatalf("SSR renderer rejected projected-child own-slot static #key: %v", err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{`$$acquireHydrationRange`, `$$adoptHydrationRange`, `$$insertHTML`, `key: identity`, `Stable branch`} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("projected child own-slot #key lowering misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	node := requirePlaywright(t)
 	outerSFC, err := parseSFC(`<template><section class="snapshot-outer"><slot /></section></template>`)

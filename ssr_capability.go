@@ -1065,6 +1065,12 @@ func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, a
 				}
 			}
 		case *IfChainNode:
+			if current.HasKey() {
+				if !ssrCapabilityCurrentAwaitSnapshotSlotStaticKey(current) {
+					return false
+				}
+				continue
+			}
 			if !ssrCapabilityCurrentAwaitSnapshotSlotTextIf(current) {
 				return false
 			}
@@ -1073,6 +1079,14 @@ func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, a
 		}
 	}
 	return true
+}
+
+func ssrCapabilityCurrentAwaitSnapshotSlotStaticKey(chain *IfChainNode) bool {
+	if chain == nil || !chain.HasKey() || len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() || !allStatic(chain.Branches[0].Children) {
+		return false
+	}
+	_, ok := templateExprIdent(chain.KeyAST)
+	return ok
 }
 
 func ssrCapabilityCurrentAwaitSnapshotSlotTextIf(chain *IfChainNode) bool {
