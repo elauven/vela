@@ -9150,25 +9150,53 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKeyedEachNodes(nodes []Node, it
 // direct text node means the row controller can resolve the server text range
 // locally, while newly inserted CSR rows can create the same Text node without
 // serialising a template expression through an HTML string.
+type hydrationKeyedEachDirectRowDescriptor struct {
+	Element *ElementNode
+	Text    *TextNode
+	Attr    *Attr
+}
+
 func hydrationAwaitSnapshotKeyedEachDirectTextRow(nodes []Node, itemName string) (*ElementNode, *TextNode, bool) {
-	if itemName == "" || len(nodes) != 1 {
+	descriptor, ok := hydrationAwaitSnapshotKeyedEachDirectRow(nodes, itemName)
+	if !ok || descriptor.Attr != nil {
 		return nil, nil, false
+	}
+	return descriptor.Element, descriptor.Text, true
+}
+
+func hydrationAwaitSnapshotKeyedEachDirectRow(nodes []Node, itemName string) (hydrationKeyedEachDirectRowDescriptor, bool) {
+	if itemName == "" || len(nodes) != 1 {
+		return hydrationKeyedEachDirectRowDescriptor{}, false
 	}
 	element, ok := nodes[0].(*ElementNode)
 	if !ok || element == nil || len(element.Children) != 1 {
-		return nil, nil, false
+		return hydrationKeyedEachDirectRowDescriptor{}, false
 	}
+	dynamicAttrs := 0
+	var dynamicAttr *Attr
 	for _, attr := range element.Attrs {
 		if attr == nil {
 			continue
 		}
-		if attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
-			return nil, nil, false
+		if attr.IsBind && attr.Expr != nil {
+			name, ok := templateExprBindingRoot(attr.Expr)
+			if !ok || name != itemName {
+				return hydrationKeyedEachDirectRowDescriptor{}, false
+			}
+			dynamicAttrs++
+			dynamicAttr = attr
+			continue
 		}
+		if attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+			return hydrationKeyedEachDirectRowDescriptor{}, false
+		}
+	}
+	if dynamicAttrs > 1 {
+		return hydrationKeyedEachDirectRowDescriptor{}, false
 	}
 	text, ok := element.Children[0].(*TextNode)
 	if !ok || text == nil {
-		return nil, nil, false
+		return hydrationKeyedEachDirectRowDescriptor{}, false
 	}
 	dynamic := false
 	for _, part := range text.Parts {
@@ -9177,11 +9205,11 @@ func hydrationAwaitSnapshotKeyedEachDirectTextRow(nodes []Node, itemName string)
 		}
 		name, ok := templateExprBindingRoot(part.Expr)
 		if !ok || name != itemName {
-			return nil, nil, false
+			return hydrationKeyedEachDirectRowDescriptor{}, false
 		}
 		dynamic = true
 	}
-	return element, text, dynamic
+	return hydrationKeyedEachDirectRowDescriptor{Element: element, Text: text, Attr: dynamicAttr}, dynamic
 }
 
 func firstDynamicTextPart(text *TextNode) *Part {
