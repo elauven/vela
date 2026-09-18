@@ -154,7 +154,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotStaticKeyedEach(t *testing.T) {
 }
 
 func TestGeneratedSSRRendererSelectsAwaitSnapshotKeyedEachDirectRowText(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<p class="settled-row">{row.title}</p>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<p class="settled-row" :title={row.title}>{row.title}</p>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotKeyedEachDirectRowText(t *testi
 		t.Fatal(err)
 	}
 	code := PrintJS(client, PrintPretty)
-	for _, want := range []string{`_find_text`, `createTreeWalker`, `$$writeHydrationText`, `createTextNode`, `$$rowItem`} {
+	for _, want := range []string{`_find_text`, `createTreeWalker`, `$$writeHydrationText`, `createTextNode`, `$$rowItem`, `attrValue`, `getAttribute`, `setAttribute`} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("dynamic keyed row hydration client misses %q:\n%s", want, code)
 		}
@@ -193,7 +193,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotKeyedEachDirectRowText(t *testi
 
 func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectRowText(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}{#each rows as row (row)}<p class="settled-row">{row}</p>{/each}{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}{#each rows as row (row.id)}<p class="settled-row" :title={row.title}>{row.title}</p>{/each}{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,12 +215,12 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectRowText(t *
 	each := await.ThenChildren[0].(*SSRPlanEach)
 	rowElement := each.Children[0].(*SSRPlanElement)
 	rowText := rowElement.Children[0].(*SSRPlanText)
-	rowScope := func(key string) string { return "vela-page--each-" + itoa(each.Span.Start) + "-" + key }
-	rowHTML := func(key string) string {
-		scope := rowScope(key)
-		return `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><p vela-page="" class="settled-row"><!--v:` + scope + `:` + itoa(rowText.Parts[0].DynamicID) + `-->` + key + `<!--/v:` + scope + `:` + itoa(rowText.Parts[0].DynamicID) + `--></p><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
+	rowScope := func(id string) string { return "vela-page--each-" + itoa(each.Span.Start) + "-" + id }
+	rowHTML := func(id, title string) string {
+		scope := rowScope(id)
+		return `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><p vela-page="" class="settled-row" title="` + title + `"><!--v:` + scope + `:` + itoa(rowText.Parts[0].DynamicID) + `-->` + title + `<!--/v:` + scope + `:` + itoa(rowText.Parts[0].DynamicID) + `--></p><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
 	}
-	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a") + rowHTML("b") + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":["a","b"]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "Alpha") + rowHTML("b", "Beta") + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","title":"Alpha"},{"id":"b","title":"Beta"}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
@@ -232,7 +232,7 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectRowText(t *
 			t.Fatal(err)
 		}
 	}
-	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("settled keyed await snapshot hydration mutated DOM");await p.evaluate(()=>{window.a=document.querySelectorAll(".settled-row")[0];window.b=document.querySelectorAll(".settled-row")[1];window.hydrated.component.set({rows:["b","a","c"]})});await p.waitForFunction(()=>document.querySelectorAll(".settled-row").length===3);if(!(await p.evaluate(()=>{const rows=[...document.querySelectorAll(".settled-row")];return rows[0]===window.b&&rows[1]===window.a&&rows[2]!==window.a&&rows[2]!==window.b})))throw new Error("settled keyed rows lost identity during reorder");await p.evaluate(()=>{window.removed=window.a;window.hydrated.component.set({rows:["b","c"]})});await p.waitForFunction(()=>document.querySelectorAll(".settled-row").length===2);if(!(await p.evaluate(()=>!window.removed.isConnected)))throw new Error("removed settled keyed row remained connected");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("settled keyed await snapshot hydration mutated DOM");await p.evaluate(()=>{window.a=document.querySelectorAll(".settled-row")[0];window.b=document.querySelectorAll(".settled-row")[1];window.hydrated.component.set({rows:[{id:"b",title:"Beta 2"},{id:"a",title:"Alpha"},{id:"c",title:"Gamma"}]})});await p.waitForFunction(()=>document.querySelectorAll(".settled-row").length===3);if(!(await p.evaluate(()=>{const rows=[...document.querySelectorAll(".settled-row")];return rows[0]===window.b&&rows[0].textContent==="Beta 2"&&rows[0].getAttribute("title")==="Beta 2"&&rows[1]===window.a&&rows[2]!==window.a&&rows[2]!==window.b&&rows[2].getAttribute("title")==="Gamma"})))throw new Error("settled keyed rows lost identity or dynamic attribute during reorder");await p.evaluate(()=>{window.removed=window.a;window.hydrated.component.set({rows:[{id:"b",title:"Beta 2"},{id:"c",title:"Gamma"}]})});await p.waitForFunction(()=>document.querySelectorAll(".settled-row").length===2);if(!(await p.evaluate(()=>!window.removed.isConnected)))throw new Error("removed settled keyed row remained connected");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
 	command := exec.Command(node, "-e", browser, dir)
 	command.Dir = "/projects/compiler"
 	output, err := command.CombinedOutput()

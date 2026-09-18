@@ -1047,10 +1047,25 @@ func ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes []SSRPlanNode, itemName st
 	if !ok || element == nil || len(element.Children) != 1 {
 		return false
 	}
+	dynamicAttrs := 0
 	for _, attr := range element.Attrs {
-		if attr.Role != SSRAttrStatic {
+		switch attr.Role {
+		case SSRAttrStatic:
+		case SSRAttrDynamic:
+			if attr.Name == "" || isBoolAttr(attr.Name) || attr.Expr == nil {
+				return false
+			}
+			name, ok := templateExprBindingRoot(attr.Expr)
+			if !ok || name != itemName {
+				return false
+			}
+			dynamicAttrs++
+		default:
 			return false
 		}
+	}
+	if dynamicAttrs > 1 {
+		return false
 	}
 	text, ok := element.Children[0].(*SSRPlanText)
 	if !ok || text == nil {

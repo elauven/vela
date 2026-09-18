@@ -1224,7 +1224,7 @@ func ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(block *EachBlockNode) 
 }
 
 func ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEachNodes(nodes []Node, itemName string) bool {
-	if _, _, ok := hydrationAwaitSnapshotKeyedEachDirectTextRow(nodes, itemName); ok {
+	if _, ok := hydrationAwaitSnapshotKeyedEachDirectRow(nodes, itemName); ok {
 		return true
 	}
 	for _, node := range nodes {
