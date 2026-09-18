@@ -995,7 +995,7 @@ func ssrAwaitSnapshotSlotStaticEach(node *SSRPlanEach) bool {
 }
 
 func ssrAwaitSnapshotSlotStaticKeyedEach(node *SSRPlanEach) bool {
-	if node == nil || node.Key == nil || len(node.ElseChildren) != 0 || !ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(node.Children) {
+	if node == nil || node.Key == nil || !ssrAwaitSnapshotSlotStaticPlanNodes(node.ElseChildren) || !ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(node.Children) {
 		return false
 	}
 	if _, ok := templateExprIdent(node.Iterable); !ok {

@@ -216,6 +216,13 @@ func ssrProjectedSnapshotLifecycleSpans(nodes []Node) (map[SectionSpan]bool, map
 			case *AwaitBlockNode:
 				for _, branch := range [][]Node{value.ThenChildren, value.CatchChildren} {
 					for _, child := range branch {
+						if each, ok := child.(*EachBlockNode); ok && ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(each) {
+							// Root selected-await snapshots use the same canonical row
+							// controller as projected slots. Mark this narrow static
+							// recipe after generic capability analysis so it does not
+							// broaden keyed-each eligibility outside an await snapshot.
+							keyedEachSpans[each.Span] = true
+						}
 						if component, ok := child.(*ComponentNode); ok {
 							visitComponent(component)
 						}
@@ -942,6 +949,15 @@ func ssrCapabilityCurrentAwait(block *AwaitBlockNode) bool {
 		ssrCapabilityCurrentAwaitBranch(block.CatchChildren) {
 		return true
 	}
+	// A selected server snapshot can own one static keyed range even though a
+	// generic await branch cannot yet compose arbitrary structural children.
+	// Keep this predicate intentionally narrow; the corresponding client
+	// lowerer adopts exactly the same marker-aware controller recipe.
+	if ssrCapabilityCurrentStaticChildren(block.PendingChildren) &&
+		ssrCapabilityCurrentAwaitSnapshotStaticEachBranch(block.ThenChildren) &&
+		ssrCapabilityCurrentAwaitSnapshotStaticEachBranch(block.CatchChildren) {
+		return true
+	}
 	if ssrHydrationPendingAwaitStructural(block) &&
 		ssrCapabilityCurrentAwaitBranch(block.ThenChildren) &&
 		ssrCapabilityCurrentAwaitBranch(block.CatchChildren) {
@@ -949,6 +965,17 @@ func ssrCapabilityCurrentAwait(block *AwaitBlockNode) bool {
 	}
 	_, ok := ssrCapabilityCurrentAwaitComponentBranches(block)
 	return ok
+}
+
+func ssrCapabilityCurrentAwaitSnapshotStaticEachBranch(nodes []Node) bool {
+	if ssrCapabilityCurrentAwaitBranch(nodes) {
+		return true
+	}
+	if len(nodes) != 1 {
+		return false
+	}
+	each, ok := nodes[0].(*EachBlockNode)
+	return ok && ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(each)
 }
 
 // ssrHydrationPendingAwaitIfChain recognizes the first recursive pending
@@ -1186,7 +1213,7 @@ func ssrCapabilityCurrentAwaitSnapshotSlotStaticEach(block *EachBlockNode) bool 
 // retained-row hydration recipe. Its server output has canonical r boundaries
 // and its client side owns only static row DOM at this stage.
 func ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(block *EachBlockNode) bool {
-	if block == nil || !block.HasKey() || len(block.ElseChildren) != 0 || !ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEachNodes(block.Children) {
+	if block == nil || !block.HasKey() || !allStatic(block.ElseChildren) || !ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEachNodes(block.Children) {
 		return false
 	}
 	if _, ok := templateExprIdent(block.IterExpr); !ok {

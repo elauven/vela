@@ -9086,7 +9086,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotStaticEach(block *EachBlockNode) bool
 // handles deliberately remain gated until they can populate the same typed
 // controller contract.
 func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKeyedEach(block *EachBlockNode) bool {
-	if block == nil || !block.HasKey() || len(block.ElseChildren) != 0 || !g.hydrationAwaitSnapshotSlotStaticKeyedEachNodes(block.Children) {
+	if block == nil || !block.HasKey() || !allStatic(block.ElseChildren) || !g.hydrationAwaitSnapshotSlotStaticKeyedEachNodes(block.Children) {
 		return false
 	}
 	if _, ok := templateExprIdent(block.IterExpr); !ok {
@@ -9613,6 +9613,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	markerID := g.hydrationEachMarkerID(block)
 	prefix := "$$hawait" + itoa(markerID) + "_slot_keyed_each"
 	rangeVar, itemsVar, blocksVar := prefix+"_range", prefix+"_items", prefix+"_blocks"
+	emptyNodesVar := prefix + "_empty_nodes"
 	keyOfVar, createVar, updateVar := prefix+"_key", prefix+"_create", prefix+"_update"
 	controllerVar, findVar, attachVar := prefix+"_controller", prefix+"_find_element", prefix+"_attach"
 	initialIndex := prefix + "_initial_index"
@@ -9710,12 +9711,10 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	)}
 
 	plan.decls = append(plan.decls,
-		genLet(rangeVar, genNull()), genLet(itemsVar, genArray()), genLet(blocksVar, genNew(id("Map"))),
+		genLet(rangeVar, genNull()), genLet(itemsVar, genArray()), genLet(blocksVar, genNew(id("Map"))), genLet(emptyNodesVar, genNull()),
 		genConst(keyOfVar, keyOf), genConst(findVar, findElement), genConst(controllerVar, controller), genConst(attachVar, attach), genConst(createVar, create), genConst(updateVar, update),
 	)
-	plan.adopt = append(plan.adopt,
-		genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
-		genAssignStmt(id(itemsVar), g.templateExpr(block.IterExpr)),
+	adoptRows := []JsStmt{
 		genAssignStmt(id(blocksVar), genCall(id("$$adoptHydrationKeyedRowRanges"), id(rangeVar), id(itemsVar), id(keyOfVar), numLit(markerID))),
 		genLet(initialIndex, numLit(0)),
 		genForOf("$$item", id(itemsVar), genBlock(
@@ -9728,11 +9727,44 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			)),
 			genAssignStmt(id(initialIndex), genBinary("+", id(initialIndex), numLit(1))),
 		)),
-	)
-	plan.refresh = append(plan.refresh, genIf(id(rangeVar), genBlock(
+	}
+	plan.adopt = append(plan.adopt,
+		genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
 		genAssignStmt(id(itemsVar), g.templateExpr(block.IterExpr)),
-		genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(rangeVar), id(blocksVar), id(itemsVar), id(keyOfVar), id(createVar), id(updateVar))),
-	)))
+	)
+	if len(block.ElseChildren) > 0 {
+		emptyFragmentVar := prefix + "_empty_fragment"
+		emptyRemove := append([]JsStmt{}, removeNodesStmts(emptyNodesVar)...)
+		emptyRemove = append(emptyRemove, genAssignStmt(id(emptyNodesVar), genNull()))
+		emptyMount := []JsStmt{
+			genConst(emptyFragmentVar, genCall(genMember(id("document"), "createDocumentFragment"))),
+			genExprStmt(genCall(id("$$insertHTML"), id(emptyFragmentVar), strLit(emitStaticHTML(block.ElseChildren, g.scopeID)))),
+			genAssignStmt(id(emptyNodesVar), genCall(generatedMemberPath("Array.from"), genMember(id(emptyFragmentVar), "childNodes"))),
+			genExprStmt(genCall(genMember(genMember(id(rangeVar), "end"), "before"), id(emptyFragmentVar))),
+		}
+		// A static {:else} is not a keyed row. Do not ask the row adopter to
+		// interpret its element markers as legacy rows when the server iterable
+		// is empty; retain the complete range as the empty branch instead.
+		plan.adopt = append(plan.adopt, &JsIfStmt{
+			baseStmt: baseStmt{genNode()},
+			Test:     genMember(id(itemsVar), "length"),
+			Then:     genBlock(adoptRows...),
+			Else:     genBlock(genAssignStmt(id(emptyNodesVar), genCall(id("$$adoptHydrationRange"), id(rangeVar)))),
+		})
+		plan.refresh = append(plan.refresh, genIf(id(rangeVar), genBlock(
+			genAssignStmt(id(itemsVar), g.templateExpr(block.IterExpr)),
+			genIf(genLogical("&&", genMember(id(itemsVar), "length"), id(emptyNodesVar)), genBlock(emptyRemove...)),
+			genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(rangeVar), id(blocksVar), id(itemsVar), id(keyOfVar), id(createVar), id(updateVar))),
+			genIf(genLogical("&&", genUnary("!", genMember(id(blocksVar), "size")), genUnary("!", id(emptyNodesVar))), genBlock(emptyMount...)),
+		)))
+		plan.cleanup = append(plan.cleanup, genIf(id(emptyNodesVar), genBlock(emptyRemove...)))
+	} else {
+		plan.adopt = append(plan.adopt, adoptRows...)
+		plan.refresh = append(plan.refresh, genIf(id(rangeVar), genBlock(
+			genAssignStmt(id(itemsVar), g.templateExpr(block.IterExpr)),
+			genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(rangeVar), id(blocksVar), id(itemsVar), id(keyOfVar), id(createVar), id(updateVar))),
+		)))
+	}
 	plan.cleanup = append(plan.cleanup,
 		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
 			genIf(genMember(id("$$row"), "controller"), genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "destroy")))),
