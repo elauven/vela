@@ -660,8 +660,16 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	}
 	e.eachNext = child.eachNext
 	e.needsEscaping = e.needsEscaping || child.needsEscaping
+	rangeKey := goast.Expr(goast.NewIdent(indexName))
+	// A keyed row derives its runtime scope from Key, so an omitted template
+	// index must not become an unused generated Go binding. Keep the normal
+	// index name whenever it is observable by the template or needed by an
+	// unkeyed row's scope.
+	if node.Key != nil && node.IndexName == "" {
+		rangeKey = goast.NewIdent("_")
+	}
 	rangeStmt := &goast.RangeStmt{
-		Key:   goast.NewIdent(indexName),
+		Key:   rangeKey,
 		Value: itemIdent,
 		Tok:   token.DEFINE,
 		X:     iterIdent,
@@ -845,6 +853,20 @@ func ssrAwaitSnapshotLeafBranch(nodes []SSRPlanNode, binding string) bool {
 				}
 			}
 			if !ssrAwaitSnapshotLeafBranch(current.Children, binding) {
+				return false
+			}
+		case *SSRPlanEach:
+			// The regular each emitter already owns typed Go loop lowering and
+			// canonical keyed-row markers. Admit only the existing static-row
+			// snapshot subset so the selected await branch can be adopted rather
+			// than recreated on the first client render.
+			if current.Key != nil {
+				if !ssrAwaitSnapshotSlotStaticKeyedEach(current) {
+					return false
+				}
+				continue
+			}
+			if !ssrAwaitSnapshotSlotStaticEach(current) {
 				return false
 			}
 		case *SSRPlanComponent:

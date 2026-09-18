@@ -62,6 +62,7 @@ func main() {
   }, "vela-page-instance")
   if err != nil { panic(err) }
 }
+
 `
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(mainSource), 0o644); err != nil {
 		t.Fatal(err)
@@ -86,6 +87,120 @@ func main() {
 	}
 	if strings.Contains(got, "Pending") || strings.Contains(got, "Failed") {
 		t.Fatalf("SSR settled snapshot rendered another await branch:\n%s", got)
+	}
+}
+
+func TestGeneratedSSRRendererSelectsAwaitSnapshotStaticKeyedEach(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row)}<p class="settled-row">Row</p>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateGeneratedSSRGo("page.go", renderer); err != nil {
+		t.Fatalf("ValidateGeneratedSSRGo: %v\n%s", err, renderer)
+	}
+	main := sfc.TemplateAST.Nodes[0].(*ElementNode)
+	await := main.Children[0].(*AwaitBlockNode)
+	each := await.ThenChildren[0].(*EachBlockNode)
+	markers := ssrHydrationMarkerIDs(plan.Nodes)
+	awaitID, ok := markers.awaitID(await.Span)
+	if !ok {
+		t.Fatal("await marker is missing")
+	}
+	eachID, ok := markers.eachID(each.Span)
+	if !ok {
+		t.Fatal("keyed each marker is missing")
+	}
+	for _, want := range []string{
+		`case "then":`,
+		`for _, ssrEachItem0 := range ssrEach0`,
+		`<!--r:`,
+		`:` + itoa(eachID) + `-->`,
+		`"await,omitempty"`,
+		itoa(awaitID),
+	} {
+		if !strings.Contains(string(renderer), want) {
+			t.Fatalf("settled keyed each SSR renderer misses %q:\n%s", want, renderer)
+		}
+	}
+
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(client, PrintPretty)
+	for _, want := range []string{
+		`$$hawait` + itoa(eachID) + `_slot_keyed_each_range = $$acquireHydrationRange`,
+		`$$adoptHydrationKeyedRowRanges`,
+		`$$reconcileHydrationKeyedRowRanges`,
+		`$$hawait` + itoa(eachID) + `_slot_keyed_each_controller`,
+	} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("settled keyed each snapshot hydrate client misses %q:\n%s", want, code)
+		}
+	}
+}
+
+func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotStaticKeyedEach(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}{#each rows as row (row)}<p class="settled-row">Row</p>{/each}{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := plan.Nodes[0].(*SSRPlanElement)
+	await := main.Children[0].(*SSRPlanAwait)
+	each := await.ThenChildren[0].(*SSRPlanEach)
+	rowElement := each.Children[0].(*SSRPlanElement)
+	rowScope := func(key string) string { return "vela-page--each-" + itoa(each.Span.Start) + "-" + key }
+	rowHTML := func(key string) string {
+		scope := rowScope(key)
+		return `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><p vela-page="" class="settled-row">Row</p><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
+	}
+	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a") + rowHTML("b") + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":["a","b"]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":             embeddedRuntime,
+		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
+		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
+		"index.html":             []byte(html),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("settled keyed await snapshot hydration mutated DOM");await p.evaluate(()=>{window.a=document.querySelectorAll(".settled-row")[0];window.b=document.querySelectorAll(".settled-row")[1];window.hydrated.component.set({rows:["b","a","c"]})});await p.waitForFunction(()=>document.querySelectorAll(".settled-row").length===3);if(!(await p.evaluate(()=>{const rows=[...document.querySelectorAll(".settled-row")];return rows[0]===window.b&&rows[1]===window.a&&rows[2]!==window.a&&rows[2]!==window.b})))throw new Error("settled keyed rows lost identity during reorder");await p.evaluate(()=>{window.removed=window.a;window.hydrated.component.set({rows:["b","c"]})});await p.waitForFunction(()=>document.querySelectorAll(".settled-row").length===2);if(!(await p.evaluate(()=>!window.removed.isConnected)))throw new Error("removed settled keyed row remained connected");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("settled keyed await snapshot browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("settled keyed await snapshot browser output=%q", got)
 	}
 }
 

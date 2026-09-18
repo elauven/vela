@@ -8325,6 +8325,19 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		if len(plan.snapshot.refresh) > 0 {
 			sameState = append(sameState, genIf(genBinary("===", id(activeVar), numLit(state)), genBlock(plan.snapshot.refresh...)))
 		}
+		// A selected server snapshot owns its structural leaf callbacks until
+		// that await branch is replaced. Register them directly with the
+		// component scheduler: the ordinary CSR branch builder is deliberately
+		// not mounted during zero-write adoption, so it cannot service these
+		// updates on the snapshot's behalf.
+		if len(plan.snapshot.refresh) > 0 {
+			for dependency := range plan.snapshot.deps {
+				g.addUpdate(dependency, shareStmt(genIf(
+					genBinary("===", id(activeVar), numLit(state)),
+					genBlock(plan.snapshot.refresh...),
+				)))
+			}
+		}
 	}
 	sameState = append(sameState, genReturn(nil))
 	renderBody := []JsStmt{genIf(genBinary("===", id(stateVar), id(activeVar)), genBlock(sameState...))}
@@ -9878,7 +9891,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingN
 	if bindingName == "" || !g.hydrationAwaitSnapshotLeafNodes(children, bindingName) {
 		return hydrationAwaitSnapshotLeafPlan{}
 	}
-	plan := hydrationAwaitSnapshotLeafPlan{supported: true}
+	plan := hydrationAwaitSnapshotLeafPlan{supported: true, deps: map[string]bool{}}
 	g.withTemplateBinding(bindingName, bindingValue, func() {
 		var visit func([]Node)
 		visit = func(nodes []Node) {
@@ -9933,6 +9946,12 @@ func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingN
 					visit(current.Children)
 				case *IfChainNode:
 					g.buildHydrationAwaitSnapshotSlotStaticIf(&plan, current)
+				case *EachBlockNode:
+					if current.HasKey() {
+						g.buildHydrationAwaitSnapshotSlotStaticKeyedEach(&plan, current)
+					} else {
+						g.buildHydrationAwaitSnapshotSlotStaticEach(&plan, current)
+					}
 				}
 			}
 		}
@@ -9985,6 +10004,19 @@ func (g *ASTGen) hydrationAwaitSnapshotLeafNodes(nodes []Node, bindingName strin
 				}
 			}
 			if !g.hydrationAwaitSnapshotLeafNodes(current.Children, bindingName) {
+				return false
+			}
+		case *EachBlockNode:
+			// Reuse the projected snapshot list contract. Go SSR emits the same
+			// marker recipe, while the hydration plan acquires its range and lets
+			// the keyed reconciler retain rows on later collection updates.
+			if current.HasKey() {
+				if !g.hydrationAwaitSnapshotSlotStaticKeyedEach(current) {
+					return false
+				}
+				continue
+			}
+			if !g.hydrationAwaitSnapshotSlotStaticEach(current) {
 				return false
 			}
 		default:
