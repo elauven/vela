@@ -1075,6 +1075,12 @@ func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, a
 				return false
 			}
 		case *EachBlockNode:
+			if current.HasKey() {
+				if !ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(current) {
+					return false
+				}
+				continue
+			}
 			if !ssrCapabilityCurrentAwaitSnapshotSlotStaticEach(current) {
 				return false
 			}
@@ -1090,6 +1096,20 @@ func ssrCapabilityCurrentAwaitSnapshotSlotStaticEach(block *EachBlockNode) bool 
 		return false
 	}
 	_, ok := templateExprIdent(block.IterExpr)
+	return ok
+}
+
+// ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach mirrors the first
+// retained-row hydration recipe. Its server output has canonical r boundaries
+// and its client side owns only static row DOM at this stage.
+func ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(block *EachBlockNode) bool {
+	if block == nil || !block.HasKey() || len(block.ElseChildren) != 0 || !allStatic(block.Children) {
+		return false
+	}
+	if _, ok := templateExprIdent(block.IterExpr); !ok {
+		return false
+	}
+	_, ok := templateExprIdent(block.KeyAST)
 	return ok
 }
 

@@ -549,6 +549,17 @@ collection identifier, static row content, and static `{:else}` content. Its
 controller adopts the server list range without a write; a collection update
 replaces that range as one unit. Keyed row retention and row-local lifecycle
 are separate later recipes.
+
+The first projected-slot keyed `{#each rows as row (key)}` slice accepts a
+simple reactive collection identifier, a simple identifier key expression, no
+`{:else}`, and fully static multi-root row content. SSR emits canonical `r`
+boundaries for every row. Hydration attaches a typed controller to every
+adopted row before reconciliation; the controller carries its row range plus
+`updates`, `listeners`, and `children` ownership arrays. Reconciliation keeps
+the same range and controller for a retained key, moves that range on reorder,
+creates a controller only for a new key, and calls `destroy()` before the
+runtime deletes an orphan range. Dynamic row leaves, row listeners/bindings,
+and child instances are still intentionally outside this initial slice.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.

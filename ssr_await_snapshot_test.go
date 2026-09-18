@@ -533,6 +533,45 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotStaticEach(t *testing.T) 
 	}
 }
 
+func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotStaticKeyedEach(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then result}<Outer><Inner>{#each rows as row (row)}<p class="row">Row</p><span class="detail">Static</span>{/each}</Inner></Outer>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("static keyed projected-slot #each was rejected")
+	}
+	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", sfc, analysis, "vela-parent", map[string]SSRComponentLink{
+		"Outer": {LocalName: "Outer", SourcePath: "Outer.vela", GoName: "Outer", PackageName: "outer", ImportPath: "example.com/project/outer"},
+		"Inner": {LocalName: "Inner", SourcePath: "Inner.vela", GoName: "Inner", PackageName: "inner", ImportPath: "example.com/project/inner"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildSSRGoFile(plan, "parent"); err != nil {
+		t.Fatalf("SSR renderer rejected projected-slot static keyed each: %v", err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		`$$adoptHydrationKeyedRowRanges`,
+		`$$reconcileHydrationKeyedRowRanges`,
+		`createComment('r')`,
+		`createComment('/r')`,
+		`controller: $$controller`,
+		`children: []`,
+		`listeners.slice().reverse()`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("projected-slot static keyed each lowering misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	node := requirePlaywright(t)
 	outerSFC, err := parseSFC(`<template><section class="snapshot-outer"><slot /></section></template>`)

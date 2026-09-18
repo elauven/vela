@@ -8882,7 +8882,11 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 						g.buildHydrationAwaitSnapshotSlotStaticIf(&plan, current)
 					}
 				case *EachBlockNode:
-					g.buildHydrationAwaitSnapshotSlotStaticEach(&plan, current)
+					if current.HasKey() {
+						g.buildHydrationAwaitSnapshotSlotStaticKeyedEach(&plan, current)
+					} else {
+						g.buildHydrationAwaitSnapshotSlotStaticEach(&plan, current)
+					}
 				}
 			}
 		}
@@ -9016,6 +9020,12 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindin
 					return false
 				}
 			case *EachBlockNode:
+				if current.HasKey() {
+					if !g.hydrationAwaitSnapshotSlotStaticKeyedEach(current) {
+						return false
+					}
+					continue
+				}
 				if !g.hydrationAwaitSnapshotSlotStaticEach(current) {
 					return false
 				}
@@ -9053,6 +9063,23 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotStaticEach(block *EachBlockNode) bool
 		return false
 	}
 	_, ok := templateExprIdent(block.IterExpr)
+	return ok
+}
+
+// hydrationAwaitSnapshotSlotStaticKeyedEach is the first retained-row slice
+// for a projected child slot. SSR owns the canonical r boundaries; the
+// hydration controller therefore adopts and moves those ranges without an
+// initial DOM write. Row-local dynamic leaves, listeners, bindings, and child
+// handles deliberately remain gated until they can populate the same typed
+// controller contract.
+func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKeyedEach(block *EachBlockNode) bool {
+	if block == nil || !block.HasKey() || len(block.ElseChildren) != 0 || !allStatic(block.Children) {
+		return false
+	}
+	if _, ok := templateExprIdent(block.IterExpr); !ok {
+		return false
+	}
+	_, ok := templateExprIdent(block.KeyAST)
 	return ok
 }
 
@@ -9519,6 +9546,110 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticEach(plan *hydrationAwaitS
 	plan.adopt = append(plan.adopt, genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))), genAssignStmt(id(controllerVar), controller), genExprStmt(genCall(genMember(id(controllerVar), "adopt"))))
 	plan.refresh = append(plan.refresh, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "update")))))
 	plan.cleanup = append(plan.cleanup, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "destroy")))), genAssignStmt(id(controllerVar), genNull()), genAssignStmt(id(rangeVar), genNull()))
+	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
+		plan.deps[dependency] = true
+	}
+}
+
+// buildHydrationAwaitSnapshotSlotStaticKeyedEach adopts SSR row ranges and
+// delegates retention, movement, insertion, and orphan cleanup to the typed
+// keyed-range runtime primitive. The row controller deliberately has a full
+// ownership surface even though this first slice has no row-local dynamic
+// resources yet. Later row recipes append callbacks and child handles to the
+// same controller instead of creating a parallel lifetime path.
+func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationAwaitSnapshotLeafPlan, block *EachBlockNode) {
+	if plan == nil || !g.hydrationAwaitSnapshotSlotStaticKeyedEach(block) {
+		return
+	}
+	markerID := g.hydrationEachMarkerID(block)
+	prefix := "$$hawait" + itoa(markerID) + "_slot_keyed_each"
+	rangeVar, itemsVar, blocksVar := prefix+"_range", prefix+"_items", prefix+"_blocks"
+	keyOfVar, createVar, updateVar := prefix+"_key", prefix+"_create", prefix+"_update"
+	controllerVar := prefix + "_controller"
+	initialIndex := prefix + "_initial_index"
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	g.hydrationKeyedRows = true
+
+	keyExpr := JsExpr(id("undefined"))
+	g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.IndexName, "$$index", func() {
+			keyExpr = genString(g.templateExpr(block.KeyAST))
+		})
+	})
+	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
+
+	controller := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(
+		genLet("$$rowItem", id("$$item")),
+		genLet("$$rowIndex", id("$$index")),
+		genConst("$$controller", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+			{Key: id("row"), Value: genNull()},
+			{Key: id("updates"), Value: genArray()},
+			{Key: id("listeners"), Value: genArray()},
+			{Key: id("children"), Value: genArray()},
+			{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$nextItem"), id("$$nextIndex")}, Body: genBlock(
+				genAssignStmt(id("$$rowItem"), id("$$nextItem")),
+				genAssignStmt(id("$$rowIndex"), id("$$nextIndex")),
+				genForOf("$$update", genMember(id("$$controller"), "updates"), genInvoke("$$update")),
+			)}},
+			{Key: id("destroy"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id("$$controller"), "listeners"), "slice")), "reverse")), genInvoke("$$cleanup")),
+				genAssignStmt(genMember(id("$$controller"), "listeners"), genArray()),
+				genForOf("$$child", genCall(genMember(genCall(genMember(genMember(id("$$controller"), "children"), "slice")), "reverse")), genIf(genMember(id("$$child"), "destroy"), genExprStmt(genCall(genMember(id("$$child"), "destroy"))))),
+				genAssignStmt(genMember(id("$$controller"), "children"), genArray()),
+				genAssignStmt(genMember(id("$$controller"), "updates"), genArray()),
+			)}},
+		}}),
+		genReturn(id("$$controller")),
+	)}
+
+	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(
+		genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
+		genConst("$$start", genCall(genMember(id("document"), "createComment"), strLit("r"))),
+		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$start"))),
+		genExprStmt(genCall(id("$$insertHTML"), id("$$fragment"), strLit(emitStaticHTML(block.Children, g.scopeID)))),
+		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
+		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$end"))),
+		genConst("$$controller", genCall(id(controllerVar), id("$$item"), id("$$index"))),
+		genConst("$$row", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+			{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}, {Key: id("controller"), Value: id("$$controller")},
+		}}),
+		genAssignStmt(genMember(id("$$controller"), "row"), id("$$row")),
+		genReturn(id("$$row")),
+	)}
+	update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(
+		genIf(genMember(id("$$row"), "controller"), genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id("$$item"), id("$$index")))),
+	)}
+
+	plan.decls = append(plan.decls,
+		genLet(rangeVar, genNull()), genLet(itemsVar, genArray()), genLet(blocksVar, genNew(id("Map"))),
+		genConst(keyOfVar, keyOf), genConst(controllerVar, controller), genConst(createVar, create), genConst(updateVar, update),
+	)
+	plan.adopt = append(plan.adopt,
+		genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
+		genAssignStmt(id(itemsVar), g.templateExpr(block.IterExpr)),
+		genAssignStmt(id(blocksVar), genCall(id("$$adoptHydrationKeyedRowRanges"), id(rangeVar), id(itemsVar), id(keyOfVar), numLit(markerID))),
+		genLet(initialIndex, numLit(0)),
+		genForOf("$$item", id(itemsVar), genBlock(
+			genConst("$$key", genCall(id(keyOfVar), id("$$item"), id(initialIndex))),
+			genConst("$$row", genCall(genMember(id(blocksVar), "get"), id("$$key"))),
+			genIf(id("$$row"), genBlock(
+				genAssignStmt(genMember(id("$$row"), "controller"), genCall(id(controllerVar), id("$$item"), id(initialIndex))),
+				genAssignStmt(genMember(genMember(id("$$row"), "controller"), "row"), id("$$row")),
+			)),
+			genAssignStmt(id(initialIndex), genBinary("+", id(initialIndex), numLit(1))),
+		)),
+	)
+	plan.refresh = append(plan.refresh, genIf(id(rangeVar), genBlock(
+		genAssignStmt(id(itemsVar), g.templateExpr(block.IterExpr)),
+		genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(rangeVar), id(blocksVar), id(itemsVar), id(keyOfVar), id(createVar), id(updateVar))),
+	)))
+	plan.cleanup = append(plan.cleanup,
+		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
+			genIf(genMember(id("$$row"), "controller"), genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "destroy")))),
+		)})),
+		genExprStmt(genCall(genMember(id(blocksVar), "clear"))),
+		genAssignStmt(id(rangeVar), genNull()),
+	)
 	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		plan.deps[dependency] = true
 	}
