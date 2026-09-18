@@ -410,7 +410,7 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotIfUpdatesDirectText(t *te
 }
 
 func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotIfUpdatesDirectElement(t *testing.T) {
-	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let show = true; export let title = "server"; export let active = false; export let color = "red";</script><template><main>{#await request}<p>Pending</p>{:then result}<Outer><Inner>{#if show}<p :title={title} class:selected={active} style:color={color}>Branch</p>{:else}<p>Off</p>{/if}</Inner></Outer>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let show = true; export let title = "server"; export let active = false; export let color = "red"; function branchClicked() {}</script><template><main>{#await request}<p>Pending</p>{:then result}<Outer><Inner>{#if show}<p :title={title} class:selected={active} style:color={color} @click={branchClicked}>Branch</p>{:else}<p>Off</p>{/if}</Inner></Outer>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +433,7 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotIfUpdatesDirectElement(t 
 		t.Fatal(err)
 	}
 	source := PrintJS(program, PrintPretty)
-	for _, want := range []string{`$$acquireHydrationElement`, `getAttribute('title')`, `classList.toggle('selected'`, `style.setProperty('color'`, `createElement('p')`, `Branch`} {
+	for _, want := range []string{`$$acquireHydrationElement`, `getAttribute('title')`, `classList.toggle('selected'`, `style.setProperty('color'`, `createElement('p')`, `addEventListener('click', branchClicked)`, `removeEventListener('click', branchClicked)`, `Branch`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("projected child own-slot dynamic #if element lowering misses %q:\n%s", want, source)
 		}

@@ -9069,7 +9069,13 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfElement(element *ElementNode) bool 
 		if attr == nil || attr.Expr == nil {
 			continue
 		}
-		if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || (!attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir) {
+		if attr.IsEvent {
+			if _, ok := templateExprIdent(attr.Expr); !ok {
+				return false
+			}
+			continue
+		}
+		if attr.IsTwoWay || attr.IsBindThis || (!attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir) {
 			return false
 		}
 		if _, ok := templateExprIdent(attr.Expr); !ok {
@@ -9077,6 +9083,22 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfElement(element *ElementNode) bool 
 		}
 	}
 	return true
+}
+
+func (g *ASTGen) hydrationAwaitSnapshotSlotIfEventAttach(elementVar, controllerVar string, attr *Attr) []JsStmt {
+	if attr == nil || attr.Expr == nil {
+		return nil
+	}
+	handler, ok := templateExprIdent(attr.Expr)
+	if !ok {
+		return nil
+	}
+	return []JsStmt{
+		genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(attr.Name), id(handler))),
+		genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(attr.Name), id(handler))),
+		)})),
+	}
 }
 
 func (g *ASTGen) hydrationAwaitSnapshotSlotIfElementWrite(elementVar, updateVar string, attr *Attr) JsStmt {
@@ -9104,6 +9126,10 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfMountElement(element *ElementNode, 
 			body = append(body, g.setAttrStmt(elementVar, attr.Name, attr.Value))
 			continue
 		}
+		if attr.IsEvent {
+			body = append(body, g.hydrationAwaitSnapshotSlotIfEventAttach(elementVar, controllerVar, attr)...)
+			continue
+		}
 		updateVar := prefix + "_attr" + itoa(attrIndex) + "_update"
 		body = append(body,
 			genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(g.hydrationAwaitSnapshotSlotIfElementWrite(elementVar, updateVar, attr))}),
@@ -9123,6 +9149,10 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfAdoptElement(element *ElementNode, 
 	body := []JsStmt{g.createHydrationTemplateElementStmt(elementVar, element)}
 	for attrIndex, attr := range element.Attrs {
 		if attr == nil || attr.Expr == nil {
+			continue
+		}
+		if attr.IsEvent {
+			body = append(body, g.hydrationAwaitSnapshotSlotIfEventAttach(elementVar, controllerVar, attr)...)
 			continue
 		}
 		updateVar := prefix + "_attr" + itoa(attrIndex) + "_update"

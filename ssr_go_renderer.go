@@ -995,7 +995,7 @@ func ssrAwaitSnapshotSlotIfElement(element *SSRPlanElement) bool {
 		switch attr.Role {
 		case SSRAttrStatic:
 			continue
-		case SSRAttrDynamic, SSRAttrClassDirective, SSRAttrStyleDirective:
+		case SSRAttrDynamic, SSRAttrClassDirective, SSRAttrStyleDirective, SSRAttrEvent:
 			if _, ok := templateExprIdent(attr.Expr); !ok {
 				return false
 			}

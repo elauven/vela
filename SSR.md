@@ -525,7 +525,10 @@ children, and unrelated slot siblings retain identity. A direct ordinary
 element with fully static descendants may additionally use one-way
 `:attribute`, `class:`, and `style:` reads of one parent identifier; its
 canonical `e` marker is adopted and its guarded writers live in the same
-controller update list. Events, native bindings, dynamic element descendants,
+controller update list. A named DOM handler (`@event={handler}` where
+`handler` is a simple identifier) is attached after adoption or CSR mounting,
+and its remover is controller-owned so it runs before branch-range deletion.
+Inline handler expressions, native bindings, dynamic element descendants,
 local child lifecycle inside a branch, `#key`, `#each`, and nested `#await`
 still require extensions of this structural range controller for their
 evaluated identity, row, and promise lifecycle.
