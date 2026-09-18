@@ -9073,7 +9073,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotStaticEach(block *EachBlockNode) bool
 // handles deliberately remain gated until they can populate the same typed
 // controller contract.
 func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKeyedEach(block *EachBlockNode) bool {
-	if block == nil || !block.HasKey() || len(block.ElseChildren) != 0 || !allStatic(block.Children) {
+	if block == nil || !block.HasKey() || len(block.ElseChildren) != 0 || !g.hydrationAwaitSnapshotSlotStaticKeyedEachNodes(block.Children) {
 		return false
 	}
 	if _, ok := templateExprIdent(block.IterExpr); !ok {
@@ -9081,6 +9081,42 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKeyedEach(block *EachBlockNode)
 	}
 	_, ok := templateExprIdent(block.KeyAST)
 	return ok
+}
+
+// hydrationAwaitSnapshotSlotStaticKeyedEachNodes permits the first row-local
+// resource: named DOM events on direct root elements. Their descendants stay
+// static, so a row can discover the exact event host from its r range without
+// a second template walk or repeated element-marker acquisition.
+func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKeyedEachNodes(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			if !isFullyStatic(current) {
+				return false
+			}
+		case *ElementNode:
+			for _, attr := range current.Attrs {
+				if attr == nil {
+					continue
+				}
+				if attr.IsEvent {
+					if _, ok := templateExprIdent(attr.Expr); !ok {
+						return false
+					}
+					continue
+				}
+				if attr.Expr != nil || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					return false
+				}
+			}
+			if !allStatic(current.Children) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // hydrationAwaitSnapshotSlotTextIf is the first branch-owned structural
@@ -9565,7 +9601,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	prefix := "$$hawait" + itoa(markerID) + "_slot_keyed_each"
 	rangeVar, itemsVar, blocksVar := prefix+"_range", prefix+"_items", prefix+"_blocks"
 	keyOfVar, createVar, updateVar := prefix+"_key", prefix+"_create", prefix+"_update"
-	controllerVar := prefix + "_controller"
+	controllerVar, findVar, attachVar := prefix+"_controller", prefix+"_find_element", prefix+"_attach"
 	initialIndex := prefix + "_initial_index"
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.hydrationKeyedRows = true
@@ -9577,6 +9613,18 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		})
 	})
 	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
+	findElement := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$targetIndex")}, Body: genBlock(
+		genLet("$$node", genMember(genMember(id("$$row"), "start"), "nextSibling")),
+		genLet("$$elementIndex", numLit(0)),
+		&JsWhileStmt{baseStmt: baseStmt{genNode()}, Test: genLogical("&&", id("$$node"), genBinary("!==", id("$$node"), genMember(id("$$row"), "end"))), Body: genBlock(
+			genIf(genBinary("===", genMember(id("$$node"), "nodeType"), numLit(1)), genBlock(
+				genIf(genBinary("===", id("$$elementIndex"), id("$$targetIndex")), genReturn(id("$$node"))),
+				genAssignStmt(id("$$elementIndex"), genBinary("+", id("$$elementIndex"), numLit(1))),
+			)),
+			genAssignStmt(id("$$node"), genMember(id("$$node"), "nextSibling")),
+		)},
+		genReturn(genNull()),
+	)}
 
 	controller := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(
 		genLet("$$rowItem", id("$$item")),
@@ -9601,12 +9649,39 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		}}),
 		genReturn(id("$$controller")),
 	)}
+	attachBody := []JsStmt{}
+	for nodeIndex, node := range block.Children {
+		element, ok := node.(*ElementNode)
+		if !ok || element == nil {
+			continue
+		}
+		for attrIndex, attr := range element.Attrs {
+			if attr == nil || !attr.IsEvent {
+				continue
+			}
+			handler := g.eventHandlerExpr(attr)
+			if handler == nil {
+				continue
+			}
+			elementVar := prefix + "_event_" + itoa(nodeIndex) + "_" + itoa(attrIndex)
+			attachBody = append(attachBody,
+				genConst(elementVar, genCall(id(findVar), genMember(id("$$controller"), "row"), numLit(nodeIndex))),
+				genIf(id(elementVar), genBlock(
+					genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(attr.Name), handler)),
+					genExprStmt(genCall(genMember(genMember(id("$$controller"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+						genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(attr.Name), handler)),
+					)})),
+				)),
+			)
+		}
+	}
+	attach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$controller")}, Body: genBlock(attachBody...)}
 
 	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(
 		genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
 		genConst("$$start", genCall(genMember(id("document"), "createComment"), strLit("r"))),
 		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$start"))),
-		genExprStmt(genCall(id("$$insertHTML"), id("$$fragment"), strLit(emitStaticHTML(block.Children, g.scopeID)))),
+		genExprStmt(genCall(id("$$insertHTML"), id("$$fragment"), strLit(emitStaticHTMLWithoutEvents(block.Children, g.scopeID)))),
 		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
 		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$end"))),
 		genConst("$$controller", genCall(id(controllerVar), id("$$item"), id("$$index"))),
@@ -9614,6 +9689,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}, {Key: id("controller"), Value: id("$$controller")},
 		}}),
 		genAssignStmt(genMember(id("$$controller"), "row"), id("$$row")),
+		genExprStmt(genCall(id(attachVar), id("$$controller"))),
 		genReturn(id("$$row")),
 	)}
 	update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(
@@ -9622,7 +9698,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 
 	plan.decls = append(plan.decls,
 		genLet(rangeVar, genNull()), genLet(itemsVar, genArray()), genLet(blocksVar, genNew(id("Map"))),
-		genConst(keyOfVar, keyOf), genConst(controllerVar, controller), genConst(createVar, create), genConst(updateVar, update),
+		genConst(keyOfVar, keyOf), genConst(findVar, findElement), genConst(controllerVar, controller), genConst(attachVar, attach), genConst(createVar, create), genConst(updateVar, update),
 	)
 	plan.adopt = append(plan.adopt,
 		genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
@@ -9635,6 +9711,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			genIf(id("$$row"), genBlock(
 				genAssignStmt(genMember(id("$$row"), "controller"), genCall(id(controllerVar), id("$$item"), id(initialIndex))),
 				genAssignStmt(genMember(genMember(id("$$row"), "controller"), "row"), id("$$row")),
+				genExprStmt(genCall(id(attachVar), genMember(id("$$row"), "controller"))),
 			)),
 			genAssignStmt(id(initialIndex), genBinary("+", id(initialIndex), numLit(1))),
 		)),

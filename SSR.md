@@ -559,7 +559,12 @@ adopted row before reconciliation; the controller carries its row range plus
 the same range and controller for a retained key, moves that range on reorder,
 creates a controller only for a new key, and calls `destroy()` before the
 runtime deletes an orphan range. Dynamic row leaves, row listeners/bindings,
-and child instances are still intentionally outside this initial slice.
+and child instances are still intentionally outside this initial slice. A
+direct root element may use a named DOM event such as
+`@click={handler}`. Hydration locates that root inside the adopted row range,
+registers its listener through the row controller, and removes it before an
+orphan range is deleted. Nested event hosts and inline handler expressions
+remain outside this slice.
 The generated CSR fallback may exist before that fallback is mounted (while
 the adopted SSR controller owns the row range); its reconciler treats a null
 anchor as a no-op rather than dereferencing it. This lets later CSR remounts

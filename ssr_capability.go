@@ -142,6 +142,8 @@ func AnalyzeSSRCapability(nodes []Node) *SSRCapability {
 			root.Span = element.Span
 		}
 	}
+	keyedEachSpans, componentSpans := ssrProjectedSnapshotLifecycleSpans(nodes)
+	markSSRProjectedSnapshotKeyedEachCapabilities(root, keyedEachSpans, componentSpans)
 	if len(nodes) != 1 {
 		root.Reason = "current hydration requires exactly one element root"
 		return root
@@ -157,6 +159,87 @@ func AnalyzeSSRCapability(nodes []Node) *SSRCapability {
 	}
 	root.Reason = "one or more descendants require a marker-aware structural lifecycle"
 	return root
+}
+
+// The generic capability tree is intentionally context-free: a keyed each
+// does not normally know that its row range will be owned by a selected await
+// snapshot slot. Mark the narrowly recognised projected-slot rows after that
+// tree is built, so their specialised controller can be executable without
+// broadening the root keyed-each contract.
+func markSSRProjectedSnapshotKeyedEachCapabilities(capability *SSRCapability, keyedEachSpans, componentSpans map[SectionSpan]bool) {
+	if capability == nil || (len(keyedEachSpans) == 0 && len(componentSpans) == 0) {
+		return
+	}
+	if capability.NodeKind == "each" && keyedEachSpans[capability.Span] {
+		capability.Hydration = SSRHydrationExecutable
+		capability.Reason = ""
+	}
+	if capability.NodeKind == "component" && componentSpans[capability.Span] {
+		capability.Hydration = SSRHydrationExecutable
+		capability.Reason = ""
+	}
+	for _, child := range capability.Children {
+		markSSRProjectedSnapshotKeyedEachCapabilities(child, keyedEachSpans, componentSpans)
+	}
+}
+
+func ssrProjectedSnapshotLifecycleSpans(nodes []Node) (map[SectionSpan]bool, map[SectionSpan]bool) {
+	keyedEachSpans := map[SectionSpan]bool{}
+	componentSpans := map[SectionSpan]bool{}
+	var visitNodes func([]Node)
+	var visitComponent func(*ComponentNode)
+	visitComponent = func(component *ComponentNode) {
+		if component == nil {
+			return
+		}
+		supported := true
+		for _, slot := range component.Slots {
+			if !ssrCapabilityCurrentAwaitSnapshotSlotLeafNodes(slot) {
+				supported = false
+			}
+			for _, node := range slot {
+				if each, ok := node.(*EachBlockNode); ok && ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(each) {
+					keyedEachSpans[each.Span] = true
+				}
+				if nested, ok := node.(*ComponentNode); ok {
+					visitComponent(nested)
+				}
+			}
+		}
+		if supported {
+			componentSpans[component.Span] = true
+		}
+	}
+	visitNodes = func(current []Node) {
+		for _, node := range current {
+			switch value := node.(type) {
+			case *AwaitBlockNode:
+				for _, branch := range [][]Node{value.ThenChildren, value.CatchChildren} {
+					for _, child := range branch {
+						if component, ok := child.(*ComponentNode); ok {
+							visitComponent(component)
+						}
+					}
+				}
+				visitNodes(value.PendingChildren)
+				visitNodes(value.ThenChildren)
+				visitNodes(value.CatchChildren)
+			case *ElementNode:
+				visitNodes(value.Children)
+			case *IfChainNode:
+				for _, branch := range value.Branches {
+					if branch != nil {
+						visitNodes(branch.Children)
+					}
+				}
+			case *EachBlockNode:
+				visitNodes(value.Children)
+				visitNodes(value.ElseChildren)
+			}
+		}
+	}
+	visitNodes(nodes)
+	return keyedEachSpans, componentSpans
 }
 
 func analyzeSSRCapabilityChildren(nodes []Node, path string) []*SSRCapability {
@@ -1103,7 +1186,7 @@ func ssrCapabilityCurrentAwaitSnapshotSlotStaticEach(block *EachBlockNode) bool 
 // retained-row hydration recipe. Its server output has canonical r boundaries
 // and its client side owns only static row DOM at this stage.
 func ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(block *EachBlockNode) bool {
-	if block == nil || !block.HasKey() || len(block.ElseChildren) != 0 || !allStatic(block.Children) {
+	if block == nil || !block.HasKey() || len(block.ElseChildren) != 0 || !ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEachNodes(block.Children) {
 		return false
 	}
 	if _, ok := templateExprIdent(block.IterExpr); !ok {
@@ -1111,6 +1194,38 @@ func ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(block *EachBlockNode) 
 	}
 	_, ok := templateExprIdent(block.KeyAST)
 	return ok
+}
+
+func ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEachNodes(nodes []Node) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			if !isFullyStatic(current) {
+				return false
+			}
+		case *ElementNode:
+			for _, attr := range current.Attrs {
+				if attr == nil {
+					continue
+				}
+				if attr.IsEvent {
+					if _, ok := templateExprIdent(attr.Expr); !ok {
+						return false
+					}
+					continue
+				}
+				if attr.Expr != nil || attr.IsBind || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					return false
+				}
+			}
+			if !allStatic(current.Children) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func ssrCapabilityCurrentAwaitSnapshotSlotStaticKey(chain *IfChainNode) bool {

@@ -946,6 +946,56 @@ func emitStaticHTML(nodes []Node, scopeID string) string {
 	return b.String()
 }
 
+// emitStaticHTMLWithoutEvents is the static CSR mount counterpart for a
+// subtree whose named DOM listeners are attached through a typed lifecycle
+// controller. Event attributes are not HTML attributes; serialising them
+// would leave misleading `click=""`-style artefacts on newly created nodes.
+func emitStaticHTMLWithoutEvents(nodes []Node, scopeID string) string {
+	var b strings.Builder
+	for _, node := range nodes {
+		emitStaticHTMLNodeWithoutEvents(&b, node, scopeID)
+	}
+	return b.String()
+}
+
+func emitStaticHTMLNodeWithoutEvents(b *strings.Builder, node Node, scopeID string) {
+	switch n := node.(type) {
+	case *TextNode:
+		for _, p := range n.Parts {
+			b.WriteString(escapeHTMLText(p.Value))
+		}
+	case *ElementNode:
+		b.WriteByte('<')
+		b.WriteString(n.Tag)
+		if scopeID != "" {
+			b.WriteByte(' ')
+			b.WriteString(scopeID)
+			b.WriteString(`=""`)
+		}
+		for _, attr := range n.Attrs {
+			if attr.IsEvent {
+				continue
+			}
+			b.WriteByte(' ')
+			b.WriteString(attr.Name)
+			b.WriteString(`="`)
+			b.WriteString(escapeHTMLAttr(attr.Value))
+			b.WriteByte('"')
+		}
+		if voidTags[strings.ToLower(n.Tag)] {
+			b.WriteString("/>")
+			return
+		}
+		b.WriteByte('>')
+		for _, child := range n.Children {
+			emitStaticHTMLNodeWithoutEvents(b, child, scopeID)
+		}
+		b.WriteString("</")
+		b.WriteString(n.Tag)
+		b.WriteByte('>')
+	}
+}
+
 func emitStaticHTMLNode(b *strings.Builder, node Node, scopeID string) {
 	switch n := node.(type) {
 	case *TextNode:

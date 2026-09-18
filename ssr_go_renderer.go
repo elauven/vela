@@ -973,7 +973,7 @@ func ssrAwaitSnapshotSlotStaticEach(node *SSRPlanEach) bool {
 }
 
 func ssrAwaitSnapshotSlotStaticKeyedEach(node *SSRPlanEach) bool {
-	if node == nil || node.Key == nil || len(node.ElseChildren) != 0 || !ssrAwaitSnapshotSlotStaticPlanNodes(node.Children) {
+	if node == nil || node.Key == nil || len(node.ElseChildren) != 0 || !ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(node.Children) {
 		return false
 	}
 	if _, ok := templateExprIdent(node.Iterable); !ok {
@@ -981,6 +981,37 @@ func ssrAwaitSnapshotSlotStaticKeyedEach(node *SSRPlanEach) bool {
 	}
 	_, ok := templateExprIdent(node.Key)
 	return ok
+}
+
+func ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(nodes []SSRPlanNode) bool {
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *SSRPlanText:
+			for _, part := range current.Parts {
+				if !part.Static {
+					return false
+				}
+			}
+		case *SSRPlanElement:
+			for _, attr := range current.Attrs {
+				if attr.Role == SSRAttrStatic {
+					continue
+				}
+				if attr.Role != SSRAttrEvent {
+					return false
+				}
+				if _, ok := templateExprIdent(attr.Expr); !ok {
+					return false
+				}
+			}
+			if !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func ssrAwaitSnapshotSlotStaticKey(node *SSRPlanIf) bool {
