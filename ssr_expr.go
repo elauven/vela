@@ -168,6 +168,16 @@ func translateSSRMember(node *JsMemberExpr, ctx SSRExprContext, pos int) (goast.
 			}
 			return &goast.CallExpr{Fun: goast.NewIdent("len"), Args: []goast.Expr{object}}, nil
 		}
+		if property, ok := node.Prop.(*JsIdent); ok {
+			object, err := translateSSRExpr(node.Obj, ctx, pos)
+			if err != nil {
+				return nil, err
+			}
+			return &goast.CallExpr{Fun: goSelector("vela", "Get"), Args: []goast.Expr{
+				object,
+				&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(property.Name)},
+			}}, nil
+		}
 	}
 	if node.Computed {
 		object, err := translateSSRExpr(node.Obj, ctx, pos)

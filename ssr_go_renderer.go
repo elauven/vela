@@ -1001,7 +1001,7 @@ func ssrAwaitSnapshotSlotStaticKeyedEach(node *SSRPlanEach) bool {
 	if _, ok := templateExprIdent(node.Iterable); !ok {
 		return false
 	}
-	_, ok := templateExprIdent(node.Key)
+	_, ok := templateExprBindingRoot(node.Key)
 	return ok
 }
 
@@ -1061,7 +1061,7 @@ func ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes []SSRPlanNode, itemName st
 		if part.Static {
 			continue
 		}
-		name, ok := templateExprIdent(part.Expr)
+		name, ok := templateExprBindingRoot(part.Expr)
 		if !ok || name != itemName {
 			return false
 		}

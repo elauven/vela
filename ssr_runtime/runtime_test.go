@@ -25,3 +25,15 @@ func TestStringAndEscapeString(t *testing.T) {
 		t.Fatalf("EscapeString=%q", got)
 	}
 }
+
+func TestGet(t *testing.T) {
+	if got := Get(map[string]any{"title": "ready"}, "title"); got != "ready" {
+		t.Fatalf("Get map value = %#v", got)
+	}
+	if got := Get(map[string]any{}, "missing"); got != nil {
+		t.Fatalf("Get missing value = %#v", got)
+	}
+	if got := Get("not-an-object", "title"); got != nil {
+		t.Fatalf("Get scalar value = %#v", got)
+	}
+}

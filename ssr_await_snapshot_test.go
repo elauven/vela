@@ -154,7 +154,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotStaticKeyedEach(t *testing.T) {
 }
 
 func TestGeneratedSSRRendererSelectsAwaitSnapshotKeyedEachDirectRowText(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row)}<p class="settled-row">{row}</p>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<p class="settled-row">{row.title}</p>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotKeyedEachDirectRowText(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`ssrEachItem0`, `<!--v:`, `settled-row`} {
+	for _, want := range []string{`vela.Get(ssrEachItem0, "id")`, `vela.Get(ssrEachItem0, "title")`, `<!--v:`, `settled-row`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("dynamic keyed row SSR renderer misses %q:\n%s", want, server)
 		}

@@ -34,6 +34,25 @@ func String(value any) string {
 	return fmt.Sprint(value)
 }
 
+// Get reads one plain JavaScript-style object field from data supplied to an
+// SSR renderer. Vela's current generated prop surface represents unknown JS
+// object values as map[string]any; absent or non-object fields intentionally
+// become nil, matching an undefined-like render value instead of panicking.
+func Get(value any, key string) any {
+	switch object := value.(type) {
+	case map[string]any:
+		return object[key]
+	case map[string]string:
+		return object[key]
+	case map[string]bool:
+		return object[key]
+	case map[string]float64:
+		return object[key]
+	default:
+		return nil
+	}
+}
+
 // EscapeString escapes text and attribute content for HTML output.
 func EscapeString(value string) string {
 	return html.EscapeString(value)

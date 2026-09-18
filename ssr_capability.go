@@ -1219,7 +1219,7 @@ func ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(block *EachBlockNode) 
 	if _, ok := templateExprIdent(block.IterExpr); !ok {
 		return false
 	}
-	_, ok := templateExprIdent(block.KeyAST)
+	_, ok := templateExprBindingRoot(block.KeyAST)
 	return ok
 }
 

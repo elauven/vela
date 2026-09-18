@@ -1082,6 +1082,16 @@ func templateExprMemberBindingRoot(expr *TemplateExpr) (string, bool) {
 	return ident.Name, true
 }
 
+// templateExprBindingRoot accepts the two non-effectful lexical reads that
+// can be safely rebound by an each-row controller: a bare identifier and a
+// non-optional member path rooted at that identifier.
+func templateExprBindingRoot(expr *TemplateExpr) (string, bool) {
+	if name, ok := templateExprIdent(expr); ok {
+		return name, true
+	}
+	return templateExprMemberBindingRoot(expr)
+}
+
 func templateExprIsHandler(expr *TemplateExpr) bool {
 	switch templateExprRoot(expr).(type) {
 	case *JsArrowFunc, *JsFuncExpr:
@@ -9092,7 +9102,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKeyedEach(block *EachBlockNode)
 	if _, ok := templateExprIdent(block.IterExpr); !ok {
 		return false
 	}
-	_, ok := templateExprIdent(block.KeyAST)
+	_, ok := templateExprBindingRoot(block.KeyAST)
 	return ok
 }
 
@@ -9165,7 +9175,7 @@ func hydrationAwaitSnapshotKeyedEachDirectTextRow(nodes []Node, itemName string)
 		if part == nil || part.Static {
 			continue
 		}
-		name, ok := templateExprIdent(part.Expr)
+		name, ok := templateExprBindingRoot(part.Expr)
 		if !ok || name != itemName {
 			return nil, nil, false
 		}
