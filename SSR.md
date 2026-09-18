@@ -521,11 +521,14 @@ and text `v` ranges and adopts their existing nodes without an initial write.
 A same-branch parent update writes only its owned text range; a condition
 change removes only the inner structural range and inserts the selected branch
 before the same end marker. The enclosing projected child, nested local
-children, and unrelated slot siblings retain identity. Dynamic
-elements/attributes/directives, branch-owned listeners or bindings, local
-child lifecycle inside a branch, `#key`, `#each`, and nested `#await` still
-require extensions of this structural range controller for their evaluated
-identity, row, and promise lifecycle.
+children, and unrelated slot siblings retain identity. A direct ordinary
+element with fully static descendants may additionally use one-way
+`:attribute`, `class:`, and `style:` reads of one parent identifier; its
+canonical `e` marker is adopted and its guarded writers live in the same
+controller update list. Events, native bindings, dynamic element descendants,
+local child lifecycle inside a branch, `#key`, `#each`, and nested `#await`
+still require extensions of this structural range controller for their
+evaluated identity, row, and promise lifecycle.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.

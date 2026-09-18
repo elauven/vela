@@ -1103,12 +1103,30 @@ func ssrCapabilityCurrentAwaitSnapshotSlotTextIf(chain *IfChainNode) bool {
 					}
 				}
 			case *ElementNode:
-				if current == nil || !allStatic([]Node{current}) {
+				if !ssrCapabilityCurrentAwaitSnapshotSlotIfElement(current) {
 					return false
 				}
 			default:
 				return false
 			}
+		}
+	}
+	return true
+}
+
+func ssrCapabilityCurrentAwaitSnapshotSlotIfElement(element *ElementNode) bool {
+	if element == nil || !allStatic(element.Children) {
+		return false
+	}
+	for _, attr := range element.Attrs {
+		if attr == nil || attr.Expr == nil {
+			continue
+		}
+		if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || (!attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir) {
+			return false
+		}
+		if _, ok := templateExprIdent(attr.Expr); !ok {
+			return false
 		}
 	}
 	return true

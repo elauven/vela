@@ -9050,7 +9050,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotTextIf(chain *IfChainNode) bool {
 					}
 				}
 			case *ElementNode:
-				if current == nil || !allStatic([]Node{current}) {
+				if !g.hydrationAwaitSnapshotSlotIfElement(current) {
 					return false
 				}
 			default:
@@ -9059,6 +9059,79 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotTextIf(chain *IfChainNode) bool {
 		}
 	}
 	return true
+}
+
+func (g *ASTGen) hydrationAwaitSnapshotSlotIfElement(element *ElementNode) bool {
+	if element == nil || !allStatic(element.Children) {
+		return false
+	}
+	for _, attr := range element.Attrs {
+		if attr == nil || attr.Expr == nil {
+			continue
+		}
+		if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || (!attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir) {
+			return false
+		}
+		if _, ok := templateExprIdent(attr.Expr); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func (g *ASTGen) hydrationAwaitSnapshotSlotIfElementWrite(elementVar, updateVar string, attr *Attr) JsStmt {
+	write := g.hydrationAwaitSnapshotAttrWriteStmt(elementVar, attr, updateVar)
+	if attr.IsClassDir {
+		return g.classDirStmtAST(elementVar, attr)
+	}
+	if attr.IsStyleDir {
+		return g.styleDirStmtAST(elementVar, attr)
+	}
+	return write
+}
+
+func (g *ASTGen) hydrationAwaitSnapshotSlotIfMountElement(element *ElementNode, parentVar, controllerVar, prefix string) []JsStmt {
+	elementVar := prefix + "_element"
+	body := []JsStmt{
+		genConst(elementVar, genCall(genMember(id("document"), "createElement"), strLit(element.Tag))),
+		g.setAttrStmt(elementVar, g.scopeID, ""),
+	}
+	for attrIndex, attr := range element.Attrs {
+		if attr == nil {
+			continue
+		}
+		if attr.Expr == nil {
+			body = append(body, g.setAttrStmt(elementVar, attr.Name, attr.Value))
+			continue
+		}
+		updateVar := prefix + "_attr" + itoa(attrIndex) + "_update"
+		body = append(body,
+			genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(g.hydrationAwaitSnapshotSlotIfElementWrite(elementVar, updateVar, attr))}),
+			genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(updateVar))),
+			genInvoke(updateVar),
+		)
+	}
+	if len(element.Children) > 0 {
+		body = append(body, genExprStmt(genCall(id("$$insertHTML"), id(elementVar), strLit(emitStaticHTML(element.Children, g.scopeID)))))
+	}
+	body = append(body, genExprStmt(genCall(genMember(id(parentVar), "appendChild"), id(elementVar))))
+	return body
+}
+
+func (g *ASTGen) hydrationAwaitSnapshotSlotIfAdoptElement(element *ElementNode, controllerVar, prefix string) []JsStmt {
+	elementVar := prefix + "_element"
+	body := []JsStmt{g.createHydrationTemplateElementStmt(elementVar, element)}
+	for attrIndex, attr := range element.Attrs {
+		if attr == nil || attr.Expr == nil {
+			continue
+		}
+		updateVar := prefix + "_attr" + itoa(attrIndex) + "_update"
+		body = append(body,
+			genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(g.hydrationAwaitSnapshotSlotIfElementWrite(elementVar, updateVar, attr))}),
+			genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(updateVar))),
+		)
+	}
+	return body
 }
 
 func (g *ASTGen) hydrationAwaitSnapshotSlotIfActiveExpr(chain *IfChainNode) JsExpr {
@@ -9098,10 +9171,10 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 			continue
 		}
 		branchMount := []JsStmt{}
-		for _, node := range branch.Children {
+		for nodeIndex, node := range branch.Children {
 			text, ok := node.(*TextNode)
 			if !ok {
-				branchMount = append(branchMount, genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML([]Node{node}, g.scopeID)))))
+				branchMount = append(branchMount, g.hydrationAwaitSnapshotSlotIfMountElement(node.(*ElementNode), fragmentVar, controllerVar, prefix+"_b"+itoa(index)+"_node"+itoa(nodeIndex))...)
 				continue
 			}
 			for partIndex, part := range text.Parts {
@@ -9145,9 +9218,10 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 			continue
 		}
 		branchAdopt := []JsStmt{}
-		for _, node := range branch.Children {
+		for nodeIndex, node := range branch.Children {
 			text, ok := node.(*TextNode)
 			if !ok {
+				branchAdopt = append(branchAdopt, g.hydrationAwaitSnapshotSlotIfAdoptElement(node.(*ElementNode), controllerVar, prefix+"_b"+itoa(branchIndex)+"_node"+itoa(nodeIndex))...)
 				continue
 			}
 			for partIndex, part := range text.Parts {

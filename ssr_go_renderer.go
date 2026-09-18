@@ -977,12 +977,26 @@ func ssrAwaitSnapshotSlotTextPlanNodes(nodes []SSRPlanNode) bool {
 				}
 			}
 		case *SSRPlanElement:
-			for _, attr := range current.Attrs {
-				if attr.Role != SSRAttrStatic {
-					return false
-				}
+			if !ssrAwaitSnapshotSlotIfElement(current) {
+				return false
 			}
-			if !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) {
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func ssrAwaitSnapshotSlotIfElement(element *SSRPlanElement) bool {
+	if element == nil || !ssrAwaitSnapshotSlotStaticPlanNodes(element.Children) {
+		return false
+	}
+	for _, attr := range element.Attrs {
+		switch attr.Role {
+		case SSRAttrStatic:
+			continue
+		case SSRAttrDynamic, SSRAttrClassDirective, SSRAttrStyleDirective:
+			if _, ok := templateExprIdent(attr.Expr); !ok {
 				return false
 			}
 		default:
