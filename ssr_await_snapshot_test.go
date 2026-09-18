@@ -440,6 +440,37 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotIfUpdatesDirectElement(t 
 	}
 }
 
+func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotIfOwnsNativeBindings(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let show = true; export let draft = "server"; export let enabled = false;</script><template><main>{#await request}<p>Pending</p>{:then result}<Outer><Inner>{#if show}<input type="text" bind:value={draft} /><input type="checkbox" bind:checked={enabled} />{:else}<p>Off</p>{/if}</Inner></Outer>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("native bindings in projected-child own-slot #if were rejected")
+	}
+	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", sfc, analysis, "vela-parent", map[string]SSRComponentLink{
+		"Outer": {LocalName: "Outer", SourcePath: "Outer.vela", GoName: "Outer", PackageName: "outer", ImportPath: "example.com/project/outer"},
+		"Inner": {LocalName: "Inner", SourcePath: "Inner.vela", GoName: "Inner", PackageName: "inner", ImportPath: "example.com/project/inner"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildSSRGoFile(plan, "parent"); err != nil {
+		t.Fatalf("SSR renderer rejected projected-child own-slot #if bindings: %v", err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{`$$set_draft`, `$$set_enabled`, `addEventListener('input'`, `addEventListener('change'`, `removeEventListener('input'`, `removeEventListener('change'`, `updates.push`} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("projected child own-slot #if binding lowering misses %q:\n%s", want, source)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	node := requirePlaywright(t)
 	outerSFC, err := parseSFC(`<template><section class="snapshot-outer"><slot /></section></template>`)

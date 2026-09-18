@@ -528,7 +528,11 @@ canonical `e` marker is adopted and its guarded writers live in the same
 controller update list. A named DOM handler (`@event={handler}` where
 `handler` is a simple identifier) is attached after adoption or CSR mounting,
 and its remover is controller-owned so it runs before branch-range deletion.
-Inline handler expressions, native bindings, dynamic element descendants,
+A standard `bind:value` or checkbox `bind:checked` whose target is a simple
+reactive identifier likewise belongs to that controller: adoption preserves a
+browser-edited value, later writes are guarded, and listener cleanup precedes
+range deletion. Inline handler expressions, nonstandard native bindings,
+dynamic element descendants,
 local child lifecycle inside a branch, `#key`, `#each`, and nested `#await`
 still require extensions of this structural range controller for their
 evaluated identity, row, and promise lifecycle.

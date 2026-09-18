@@ -999,6 +999,13 @@ func ssrAwaitSnapshotSlotIfElement(element *SSRPlanElement) bool {
 			if _, ok := templateExprIdent(attr.Expr); !ok {
 				return false
 			}
+		case SSRAttrTwoWay:
+			if attr.Name != "value" && attr.Name != "checked" {
+				return false
+			}
+			if _, ok := templateExprIdent(attr.Expr); !ok {
+				return false
+			}
 		default:
 			return false
 		}

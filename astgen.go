@@ -9019,9 +9019,10 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindin
 }
 
 // hydrationAwaitSnapshotSlotTextIf is the first branch-owned structural
-// slice for a projected child slot. It accepts text-only branches with simple
-// reactive reads: canonical SSR text markers are adopted and later writes are
-// retained by the branch controller instead of rebuilding its enclosing slot.
+// slice for a projected child slot. It accepts direct text and direct
+// ordinary elements with simple reactive reads. Canonical SSR markers are
+// adopted and later writes remain in the branch controller instead of
+// rebuilding its enclosing slot.
 func (g *ASTGen) hydrationAwaitSnapshotSlotTextIf(chain *IfChainNode) bool {
 	if chain == nil || chain.HasKey() || len(chain.Branches) == 0 {
 		return false
@@ -9075,7 +9076,17 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfElement(element *ElementNode) bool 
 			}
 			continue
 		}
-		if attr.IsTwoWay || attr.IsBindThis || (!attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir) {
+		if attr.IsTwoWay {
+			target, ok := templateExprIdent(attr.Expr)
+			if !ok || !g.hasReactiveSetter(target) {
+				return false
+			}
+			if _, ok := twoWayBindSpec(element.Tag, attr.Name); !ok {
+				return false
+			}
+			continue
+		}
+		if attr.IsBindThis || (!attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir) {
 			return false
 		}
 		if _, ok := templateExprIdent(attr.Expr); !ok {
@@ -9099,6 +9110,43 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfEventAttach(elementVar, controllerV
 			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(attr.Name), id(handler))),
 		)})),
 	}
+}
+
+// hydrationAwaitSnapshotSlotIfBindingAttach keeps native form ownership inside
+// one branch controller.  SSR adoption reads an already edited control before
+// installing its guarded DOM writer; a CSR-mounted branch instead writes the
+// current reactive value.  In both cases the listener is removed by the
+// controller before its marker range is deleted.
+func (g *ASTGen) hydrationAwaitSnapshotSlotIfBindingAttach(elementVar, controllerVar, tag, prefix string, attr *Attr, adopt bool) []JsStmt {
+	if attr == nil || attr.Expr == nil {
+		return nil
+	}
+	spec, ok := twoWayBindSpec(tag, attr.Name)
+	target, isIdent := templateExprIdent(attr.Expr)
+	if !ok || !isIdent || !g.hasReactiveSetter(target) {
+		return nil
+	}
+	writeVar := prefix + "_write"
+	handlerVar := prefix + "_handler"
+	body := []JsStmt{
+		genConst(writeVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			g.hydrationAwaitSnapshotBindingWriteStmt(elementVar, attr, writeVar),
+		)}),
+		genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(writeVar))),
+		genConst(handlerVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genCall(
+			id("$$set_"+target), genMember(genMember(id("$event"), "target"), spec.readProp),
+		)}),
+		genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(spec.event), id(handlerVar))),
+		genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(spec.event), id(handlerVar))),
+		)})),
+	}
+	if adopt {
+		body = append(body, genInvoke("$$set_"+target, genMember(id(elementVar), spec.readProp)))
+	} else {
+		body = append(body, genInvoke(writeVar))
+	}
+	return body
 }
 
 func (g *ASTGen) hydrationAwaitSnapshotSlotIfElementWrite(elementVar, updateVar string, attr *Attr) JsStmt {
@@ -9126,6 +9174,10 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfMountElement(element *ElementNode, 
 			body = append(body, g.setAttrStmt(elementVar, attr.Name, attr.Value))
 			continue
 		}
+		if attr.IsTwoWay {
+			body = append(body, g.hydrationAwaitSnapshotSlotIfBindingAttach(elementVar, controllerVar, element.Tag, prefix+"_attr"+itoa(attrIndex)+"_bind", attr, false)...)
+			continue
+		}
 		if attr.IsEvent {
 			body = append(body, g.hydrationAwaitSnapshotSlotIfEventAttach(elementVar, controllerVar, attr)...)
 			continue
@@ -9149,6 +9201,10 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfAdoptElement(element *ElementNode, 
 	body := []JsStmt{g.createHydrationTemplateElementStmt(elementVar, element)}
 	for attrIndex, attr := range element.Attrs {
 		if attr == nil || attr.Expr == nil {
+			continue
+		}
+		if attr.IsTwoWay {
+			body = append(body, g.hydrationAwaitSnapshotSlotIfBindingAttach(elementVar, controllerVar, element.Tag, prefix+"_attr"+itoa(attrIndex)+"_bind", attr, true)...)
 			continue
 		}
 		if attr.IsEvent {
@@ -9317,12 +9373,20 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 			plan.deps[dependency] = true
 		}
 		for _, node := range branch.Children {
-			text, ok := node.(*TextNode)
-			if !ok {
-				continue
-			}
-			for _, dependency := range templatePartsDeps(text.Parts, g.reactiveNames()) {
-				plan.deps[dependency] = true
+			switch current := node.(type) {
+			case *TextNode:
+				for _, dependency := range templatePartsDeps(current.Parts, g.reactiveNames()) {
+					plan.deps[dependency] = true
+				}
+			case *ElementNode:
+				for _, attr := range current.Attrs {
+					if attr == nil || attr.Expr == nil {
+						continue
+					}
+					for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+						plan.deps[dependency] = true
+					}
+				}
 			}
 		}
 	}

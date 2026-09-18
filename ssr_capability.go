@@ -1128,7 +1128,16 @@ func ssrCapabilityCurrentAwaitSnapshotSlotIfElement(element *ElementNode) bool {
 			}
 			continue
 		}
-		if attr.IsTwoWay || attr.IsBindThis || (!attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir) {
+		if attr.IsTwoWay {
+			if _, ok := templateExprIdent(attr.Expr); !ok {
+				return false
+			}
+			if _, ok := twoWayBindSpec(element.Tag, attr.Name); !ok {
+				return false
+			}
+			continue
+		}
+		if attr.IsBindThis || (!attr.IsBind && !attr.IsClassDir && !attr.IsStyleDir) {
 			return false
 		}
 		if _, ok := templateExprIdent(attr.Expr); !ok {
