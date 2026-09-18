@@ -572,6 +572,92 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotStaticKeyedEach(t *testin
 	}
 }
 
+func TestBrowserSSRHydrationProjectedSlotStaticKeyedEachRows(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<template><section class="projected-keyed-child"><slot /></section></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis := analyzeScriptAST(childSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
+
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let rows = [];</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Child>{#each rows as row (row)}<p class="projected-keyed-row">Row</p><span class="projected-keyed-detail">Static</span>{/each}</Child>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", parentSFC, parentAnalysis, "vela-parent", map[string]SSRComponentLink{
+		"Child": {LocalName: "Child", SourcePath: "Child.vela", GoName: "Child", PackageName: "child", ImportPath: "example.com/project/child"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parentRoot := parentPlan.Nodes[0].(*SSRPlanElement)
+	awaitPlan := parentRoot.Children[0].(*SSRPlanAwait)
+	componentPlan := awaitPlan.ThenChildren[0].(*SSRPlanComponent)
+	eachPlan := componentPlan.Slots["default"][0].(*SSRPlanEach)
+	rowElement := eachPlan.Children[0].(*SSRPlanElement)
+	detailElement := eachPlan.Children[1].(*SSRPlanElement)
+	awaitNode := parentSFC.TemplateAST.Nodes[0].(*ElementNode).Children[0].(*AwaitBlockNode)
+	componentNode := awaitNode.ThenChildren[0].(*ComponentNode)
+	childSuffix := parentPlan.ComponentInstanceSuffixes[componentNode.Span]
+	childScope := childPlan.ScopeID
+	if childSuffix != "" {
+		childScope = parentPlan.ScopeID + "--" + childSuffix
+	}
+	childRoot := childPlan.Nodes[0].(*SSRPlanElement)
+	rowHTML := func() string {
+		return `<!--r:vela-parent:` + itoa(eachPlan.DynamicID) + `--><!--e:vela-parent:` + itoa(rowElement.HydrationID) + `--><p vela-parent="" class="projected-keyed-row">Row</p><!--/e:vela-parent:` + itoa(rowElement.HydrationID) + `--><!--e:vela-parent:` + itoa(detailElement.HydrationID) + `--><span vela-parent="" class="projected-keyed-detail">Static</span><!--/e:vela-parent:` + itoa(detailElement.HydrationID) + `--><!--/r:vela-parent:` + itoa(eachPlan.DynamicID) + `-->`
+	}
+	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><main vela-parent=""><!--v:vela-parent:` + itoa(awaitPlan.DynamicID) + `--><!--e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><section vela-child="" class="projected-keyed-child"><!--v:vela-parent:` + itoa(eachPlan.DynamicID) + `-->` + rowHTML() + rowHTML() + `<!--/v:vela-parent:` + itoa(eachPlan.DynamicID) + `--></section><!--/e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><script type="application/json" id="vela-state-` + childScope + `">{"component":"` + childScope + `","props":{},"state":{},"incomplete":false}</script><!--/v:vela-parent:` + itoa(awaitPlan.DynamicID) + `--></main><!--/e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Rows":["a","b"]},"state":{},"incomplete":false,"await":{"` + itoa(awaitPlan.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":               embeddedRuntime,
+		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
+		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
+		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
+		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
+		"Parent.hydrate.js":        []byte(PrintJS(parentEntry, PrintPretty)),
+		"index.html":               []byte(html),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("projected keyed hydration mutated DOM");await p.evaluate(()=>{window.rows=[...document.querySelectorAll(".projected-keyed-row")];window.details=[...document.querySelectorAll(".projected-keyed-detail")];window.hydrated.component.set({rows:["b","a"]})});await p.waitForFunction(()=>document.querySelectorAll(".projected-keyed-row").length===2);const reordered=await p.evaluate(()=>{const rows=[...document.querySelectorAll(".projected-keyed-row")],details=[...document.querySelectorAll(".projected-keyed-detail")];return rows[0]===window.rows[1]&&rows[1]===window.rows[0]&&details[0]===window.details[1]&&details[1]===window.details[0]});if(!reordered)throw new Error("keyed row ranges were not retained during reorder");await p.evaluate(()=>window.hydrated.component.set({rows:["b","c","a"]}));await p.waitForFunction(()=>document.querySelectorAll(".projected-keyed-row").length===3);const inserted=await p.evaluate(()=>{const rows=[...document.querySelectorAll(".projected-keyed-row")];window.removed=rows[0];window.retained=rows[2];return rows[0]===window.rows[1]&&rows[2]===window.rows[0]&&rows[1]!==window.rows[0]&&rows[1]!==window.rows[1]});if(!inserted)throw new Error("keyed insertion did not preserve retained rows");await p.evaluate(()=>window.hydrated.component.set({rows:["c","a"]}));await p.waitForFunction(()=>document.querySelectorAll(".projected-keyed-row").length===2);const result=await p.evaluate(()=>({initial:window.initial,removedDetached:!window.removed.isConnected,retained:document.querySelectorAll(".projected-keyed-row")[1]===window.retained,details:document.querySelectorAll(".projected-keyed-detail").length,child:!!document.querySelector(".projected-keyed-child")}));if(result.initial!==0||!result.removedDetached||!result.retained||result.details!==2||!result.child)throw new Error(JSON.stringify(result));await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("projected keyed each browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(parentClient, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("projected keyed each browser output=%q", got)
+	}
+}
+
 func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	node := requirePlaywright(t)
 	outerSFC, err := parseSFC(`<template><section class="snapshot-outer"><slot /></section></template>`)

@@ -560,6 +560,10 @@ the same range and controller for a retained key, moves that range on reorder,
 creates a controller only for a new key, and calls `destroy()` before the
 runtime deletes an orphan range. Dynamic row leaves, row listeners/bindings,
 and child instances are still intentionally outside this initial slice.
+The generated CSR fallback may exist before that fallback is mounted (while
+the adopted SSR controller owns the row range); its reconciler treats a null
+anchor as a no-op rather than dereferencing it. This lets later CSR remounts
+reuse the fallback without competing with the hydrated range.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.

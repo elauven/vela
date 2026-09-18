@@ -3811,7 +3811,7 @@ func (g *ASTGen) eachReconcilerUnkeyed(eachFn, fragFn, anchor, blocks, itemVar, 
 		Name:     eachFn,
 		Params:   []JsExpr{arr},
 		Body: genBlock(
-			genIf(genUnary("!", genMember(id(anchor), "parentNode")), genReturn(nil)),
+			genIf(genUnary("!", genLogical("&&", id(anchor), genMember(id(anchor), "parentNode"))), genReturn(nil)),
 			genAssignStmt(arr, genLogical("||", arr, genArray())),
 			genConst("$$sameRef", genBinary("===", genMember(id(eachFn), "_arr"), arr)),
 			genConst("$$stillLive", genLogical("||",
@@ -3899,7 +3899,7 @@ func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap stri
 		Name:     eachFn,
 		Params:   []JsExpr{arr, id("$$mutations")},
 		Body: genBlock(
-			genIf(genUnary("!", genMember(id(anchor), "parentNode")), genReturn(nil)),
+			genIf(genUnary("!", genLogical("&&", id(anchor), genMember(id(anchor), "parentNode"))), genReturn(nil)),
 			genBlock(fastPath...),
 			// Moving an already-focused keyed row can make Chromium clear
 			// document.activeElement. Remember focus only when it belongs to a
