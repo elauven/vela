@@ -1074,11 +1074,23 @@ func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, a
 			if !ssrCapabilityCurrentAwaitSnapshotSlotTextIf(current) {
 				return false
 			}
+		case *EachBlockNode:
+			if !ssrCapabilityCurrentAwaitSnapshotSlotStaticEach(current) {
+				return false
+			}
 		default:
 			return false
 		}
 	}
 	return true
+}
+
+func ssrCapabilityCurrentAwaitSnapshotSlotStaticEach(block *EachBlockNode) bool {
+	if block == nil || block.HasKey() || !allStatic(block.Children) || !allStatic(block.ElseChildren) {
+		return false
+	}
+	_, ok := templateExprIdent(block.IterExpr)
+	return ok
 }
 
 func ssrCapabilityCurrentAwaitSnapshotSlotStaticKey(chain *IfChainNode) bool {

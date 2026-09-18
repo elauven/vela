@@ -543,6 +543,12 @@ controller adopts the canonical server `v` range without rewriting it, caches
 the client key, and replaces only that inner range when the key changes.
 Dynamic leaves, native controls, handlers, and child instances inside the key
 range remain intentionally gated until they share its ownership arrays.
+
+The initial projected-slot unkeyed `{#each}` slice accepts a simple reactive
+collection identifier, static row content, and static `{:else}` content. Its
+controller adopts the server list range without a write; a collection update
+replaces that range as one unit. Keyed row retention and row-local lifecycle
+are separate later recipes.
 Each child retains its server DOM and inert payload while the initial promise
 is pending. If that promise settles into the same branch, every adopted child
 receives `.set(...)` with the client value or error instead of being remounted.

@@ -946,12 +946,24 @@ func ssrAwaitSnapshotSlotPlanNodes(slots map[string][]SSRPlanNode, allowComponen
 				if !ssrAwaitSnapshotSlotTextIf(current) {
 					return false
 				}
+			case *SSRPlanEach:
+				if !ssrAwaitSnapshotSlotStaticEach(current) {
+					return false
+				}
 			default:
 				return false
 			}
 		}
 	}
 	return true
+}
+
+func ssrAwaitSnapshotSlotStaticEach(node *SSRPlanEach) bool {
+	if node == nil || node.Key != nil || !ssrAwaitSnapshotSlotStaticPlanNodes(node.Children) || !ssrAwaitSnapshotSlotStaticPlanNodes(node.ElseChildren) {
+		return false
+	}
+	_, ok := templateExprIdent(node.Iterable)
+	return ok
 }
 
 func ssrAwaitSnapshotSlotStaticKey(node *SSRPlanIf) bool {

@@ -8881,6 +8881,8 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 					} else {
 						g.buildHydrationAwaitSnapshotSlotStaticIf(&plan, current)
 					}
+				case *EachBlockNode:
+					g.buildHydrationAwaitSnapshotSlotStaticEach(&plan, current)
 				}
 			}
 		}
@@ -9013,6 +9015,10 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindin
 				if !g.hydrationAwaitSnapshotSlotTextIf(current) {
 					return false
 				}
+			case *EachBlockNode:
+				if !g.hydrationAwaitSnapshotSlotStaticEach(current) {
+					return false
+				}
 			default:
 				return false
 			}
@@ -9037,6 +9043,17 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKey(chain *IfChainNode) bool {
 		_, ok := templateExprIdent(chain.KeyAST)
 		return ok
 	}()
+}
+
+// hydrationAwaitSnapshotSlotStaticEach is the safe whole-range list slice.
+// The row body intentionally has no item reads yet: a collection transition
+// replaces this controller's range atomically, without row identity claims.
+func (g *ASTGen) hydrationAwaitSnapshotSlotStaticEach(block *EachBlockNode) bool {
+	if block == nil || block.HasKey() || !allStatic(block.Children) || !allStatic(block.ElseChildren) {
+		return false
+	}
+	_, ok := templateExprIdent(block.IterExpr)
+	return ok
 }
 
 // hydrationAwaitSnapshotSlotTextIf is the first branch-owned structural
@@ -9457,6 +9474,52 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKey(plan *hydrationAwaitSn
 	plan.refresh = append(plan.refresh, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "update")))))
 	plan.cleanup = append(plan.cleanup, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "destroy")))), genAssignStmt(id(controllerVar), genNull()), genAssignStmt(id(rangeVar), genNull()))
 	for _, dependency := range templateExprDeps(chain.KeyAST, g.reactiveNames()) {
+		plan.deps[dependency] = true
+	}
+}
+
+// buildHydrationAwaitSnapshotSlotStaticEach owns one unkeyed list range. It
+// deliberately performs whole-range replacement: row retention is reserved
+// for the later keyed-row controller recipe.
+func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticEach(plan *hydrationAwaitSnapshotLeafPlan, block *EachBlockNode) {
+	if plan == nil || !g.hydrationAwaitSnapshotSlotStaticEach(block) {
+		return
+	}
+	markerID := g.hydrationEachMarkerID(block)
+	prefix := "$$hawait" + itoa(markerID) + "_slot_each"
+	rangeVar, controllerVar := prefix+"_range", prefix+"_controller"
+	itemsVar, fragmentVar, hasRowsVar := prefix+"_items", prefix+"_fragment", prefix+"_has_rows"
+	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
+	plan.decls = append(plan.decls, genLet(rangeVar, genNull()), genLet(controllerVar, genNull()))
+	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genAssignStmt(genMember(id(controllerVar), "updates"), genArray()),
+		genForOf("$$node", genMember(id(controllerVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genAssignStmt(genMember(id(controllerVar), "nodes"), genArray()),
+	)}
+	mountBody := []JsStmt{
+		genConst(fragmentVar, genCall(genMember(id("document"), "createDocumentFragment"))),
+		genConst(itemsVar, g.templateExpr(block.IterExpr)), genLet(hasRowsVar, boolLit(false)),
+		genForOf("$$item", id(itemsVar), genBlock(genAssignStmt(id(hasRowsVar), boolLit(true)), genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML(block.Children, g.scopeID)))))),
+	}
+	if len(block.ElseChildren) > 0 {
+		mountBody = append(mountBody, genIf(genUnary("!", id(hasRowsVar)), genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML(block.ElseChildren, g.scopeID))))))
+	}
+	mountBody = append(mountBody,
+		genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(fragmentVar), "childNodes"))),
+		genExprStmt(genCall(genMember(genMember(id(controllerVar), "end"), "before"), id(fragmentVar))),
+	)
+	controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+		{Key: id("start"), Value: genMember(id(rangeVar), "start")}, {Key: id("end"), Value: genMember(id(rangeVar), "end")},
+		{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()},
+		{Key: id("adopt"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar))))}},
+		{Key: id("mountCSR"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(mountBody...)}},
+		{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(controllerVar), "destroy"))), genExprStmt(genCall(genMember(id(controllerVar), "mountCSR"))))}},
+		{Key: id("destroy"), Value: destroy},
+	}}
+	plan.adopt = append(plan.adopt, genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))), genAssignStmt(id(controllerVar), controller), genExprStmt(genCall(genMember(id(controllerVar), "adopt"))))
+	plan.refresh = append(plan.refresh, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "update")))))
+	plan.cleanup = append(plan.cleanup, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "destroy")))), genAssignStmt(id(controllerVar), genNull()), genAssignStmt(id(rangeVar), genNull()))
+	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		plan.deps[dependency] = true
 	}
 }
