@@ -149,10 +149,11 @@ func TestSSRStructuralLifecyclePlanRetainsInnerKeyedEachRecipe(t *testing.T) {
 
 func TestSSRStructuralLifecyclePlanRetainsDirectControlRowRecipe(t *testing.T) {
 	for _, tc := range []struct {
-		name, source, bind string
+		name, source, bind, tag string
 	}{
-		{name: "value", source: `<template>{#each rows as row (row.id)}<input bind:value={row.title} />{/each}</template>`, bind: "value"},
-		{name: "checked", source: `<template>{#each rows as row (row.id)}<input type="checkbox" bind:checked={row.done} />{/each}</template>`, bind: "checked"},
+		{name: "value", source: `<template>{#each rows as row (row.id)}<input bind:value={row.title} />{/each}</template>`, bind: "value", tag: "input"},
+		{name: "checked", source: `<template>{#each rows as row (row.id)}<input type="checkbox" bind:checked={row.done} />{/each}</template>`, bind: "checked", tag: "input"},
+		{name: "textarea value", source: `<template>{#each rows as row (row.id)}<textarea bind:value={row.title} />{/each}</template>`, bind: "value", tag: "textarea"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sfc, err := parseSFC(tc.source)
@@ -165,7 +166,7 @@ func TestSSRStructuralLifecyclePlanRetainsDirectControlRowRecipe(t *testing.T) {
 				t.Fatalf("direct-control lifecycle recipe=%#v", plan)
 			}
 			block, element, attr, ok := ssrHydrationDirectKeyedEachControl(plan)
-			if !ok || block != each || element.Tag != "input" || attr.Name != tc.bind {
+			if !ok || block != each || element.Tag != tc.tag || attr.Name != tc.bind {
 				t.Fatalf("direct-control hydration adapter block=%#v element=%#v attr=%#v ok=%t", block, element, attr, ok)
 			}
 		})

@@ -1050,7 +1050,7 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 		return false
 	}
 	element, ok := nodes[0].(*SSRPlanElement)
-	if !ok || element == nil || element.Tag != "input" || len(element.Children) != 0 {
+	if !ok || element == nil || (element.Tag != "input" && element.Tag != "textarea") || len(element.Children) != 0 {
 		return false
 	}
 	bindings := 0
@@ -1063,6 +1063,9 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 			}
 		case SSRAttrTwoWay:
 			if (attr.Name != "value" && attr.Name != "checked") || attr.Expr == nil {
+				return false
+			}
+			if attr.Name == "checked" && element.Tag != "input" {
 				return false
 			}
 			root, ok := templateExprMemberBindingRoot(attr.Expr)

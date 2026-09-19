@@ -336,7 +336,7 @@ func ssrKeyedEachDirectControlRows(block *EachBlockNode) bool {
 		return false
 	}
 	element, ok := block.Children[0].(*ElementNode)
-	if !ok || element == nil || element.Tag != "input" || len(element.Children) != 0 {
+	if !ok || element == nil || (element.Tag != "input" && element.Tag != "textarea") || len(element.Children) != 0 {
 		return false
 	}
 	bindings := 0
@@ -347,6 +347,9 @@ func ssrKeyedEachDirectControlRows(block *EachBlockNode) bool {
 		}
 		if attr.IsTwoWay {
 			if (attr.Name != "value" && attr.Name != "checked") || attr.Expr == nil {
+				return false
+			}
+			if attr.Name == "checked" && element.Tag != "input" {
 				return false
 			}
 			root, ok := templateExprMemberBindingRoot(attr.Expr)

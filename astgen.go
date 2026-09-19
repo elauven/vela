@@ -9185,7 +9185,7 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 		return hydrationKeyedEachDirectControlDescriptor{}, false
 	}
 	element, ok := nodes[0].(*ElementNode)
-	if !ok || element == nil || element.Tag != "input" || len(element.Children) != 0 {
+	if !ok || element == nil || (element.Tag != "input" && element.Tag != "textarea") || len(element.Children) != 0 {
 		return hydrationKeyedEachDirectControlDescriptor{}, false
 	}
 	var bind *Attr
@@ -9196,6 +9196,9 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 		}
 		if attr.IsTwoWay {
 			if (attr.Name != "value" && attr.Name != "checked") || attr.Expr == nil || bind != nil {
+				return hydrationKeyedEachDirectControlDescriptor{}, false
+			}
+			if attr.Name == "checked" && element.Tag != "input" {
 				return hydrationKeyedEachDirectControlDescriptor{}, false
 			}
 			root, ok := templateExprMemberBindingRoot(attr.Expr)
