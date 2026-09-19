@@ -147,6 +147,18 @@ func TestSSRStructuralLifecyclePlanRetainsInnerKeyedEachRecipe(t *testing.T) {
 	}
 }
 
+func TestSSRStructuralLifecyclePlanRetainsDirectControlRowRecipe(t *testing.T) {
+	sfc, err := parseSFC(`<template>{#each rows as row (row.id)}<input bind:value={row.title} />{/each}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	each := sfc.TemplateAST.Nodes[0].(*EachBlockNode)
+	plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes).Find(SSRLifecyclePlanEach, each.Span)
+	if plan == nil || plan.KeyedEach == nil || !plan.KeyedEach.DirectControlRows {
+		t.Fatalf("direct-control lifecycle recipe=%#v", plan)
+	}
+}
+
 func TestSSRKeyedEachLifecycleRecipeGatesDirectLeafRows(t *testing.T) {
 	cases := []struct {
 		name   string

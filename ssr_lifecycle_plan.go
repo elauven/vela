@@ -102,6 +102,9 @@ type SSRKeyedEachLifecycleRecipe struct {
 	// evaluated key owns a nested range inside an already keyed row; execution
 	// remains gated until the range controller is lowered on both SSR/CSR paths.
 	DirectKeyRows bool
+	// DirectControlRows reserves a void native-control row whose browser-owned
+	// property needs a distinct adoption contract from text marker leaves.
+	DirectControlRows bool
 }
 
 // SSRStructuralLifecyclePlan is the recursive ownership plan shared by future
@@ -262,6 +265,7 @@ func buildSSRStructuralLifecycleNode(node Node, capability *SSRCapability, path 
 				DirectLeafRows:        ssrKeyedEachDirectLeafRows(current),
 				DirectConditionalRows: ssrKeyedEachDirectConditionalRows(current),
 				DirectKeyRows:         ssrKeyedEachDirectKeyRows(current),
+				DirectControlRows:     ssrKeyedEachDirectControlRows(current),
 			}
 		}
 		rowCapabilities, elseCapabilities := splitEachCapabilityChildren(capability, len(current.Children))
@@ -322,6 +326,40 @@ func buildSSRStructuralLifecycleNode(node Node, capability *SSRCapability, path 
 		plan.Operations = []SSRLifecycleOperation{SSRLifecycleDestroy}
 	}
 	return plan
+}
+
+// ssrKeyedEachDirectControlRows records the first control-only row shape.
+// Lowering remains gated until its element-marker adoption and row-owned
+// binding lifecycle consume this typed recipe together.
+func ssrKeyedEachDirectControlRows(block *EachBlockNode) bool {
+	if block == nil || !block.HasKey() || len(block.ElseChildren) != 0 || len(block.Children) != 1 {
+		return false
+	}
+	element, ok := block.Children[0].(*ElementNode)
+	if !ok || element == nil || element.Tag != "input" || len(element.Children) != 0 {
+		return false
+	}
+	bindings := 0
+	for _, attr := range element.Attrs {
+		if attr == nil {
+			continue
+		}
+		if attr.IsTwoWay {
+			if attr.Name != "value" || attr.Expr == nil {
+				return false
+			}
+			root, ok := templateExprMemberBindingRoot(attr.Expr)
+			if !ok || root != block.ItemName {
+				return false
+			}
+			bindings++
+			continue
+		}
+		if attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsClassDir || attr.IsStyleDir || attr.IsBindThis {
+			return false
+		}
+	}
+	return bindings == 1
 }
 
 // ssrKeyedEachDirectLeafRows describes the first independently reconciled
