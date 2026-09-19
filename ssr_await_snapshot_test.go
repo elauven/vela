@@ -655,6 +655,47 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionDisabledAn
 	}
 }
 
+func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptgroupLabelOptionDisabledAndText(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}><optgroup :label={row.groupLabel}><option value="open" :disabled={row.closed}>Open: {row.label}</option></optgroup><optgroup label="Closed"><option value="done">Done</option></optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := plan.Nodes[0].(*SSRPlanElement)
+	await := main.Children[0].(*SSRPlanAwait)
+	each := await.ThenChildren[0].(*SSRPlanEach)
+	if !ssrAwaitSnapshotKeyedEachDirectControlPlanRow(each.Children, each.ItemName) {
+		t.Fatalf("triple-leaf optgroup snapshot predicate rejected row=%#v", each.Children)
+	}
+	file, err := BuildSSRGoFile(plan, "page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`vela.Get(ssrEachItem0, "groupLabel")`, `vela.Get(ssrEachItem0, "closed")`, `" disabled"`, `Open: `, `vela.Get(ssrEachItem0, "label")`, `selected`} {
+		if !strings.Contains(string(server), want) {
+			t.Fatalf("triple-leaf optgroup SSR renderer misses %q:\n%s", want, server)
+		}
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(client, PrintPretty)
+	for _, want := range []string{`querySelectorAll('optgroup')`, `querySelectorAll('option')`, `optionGroupDynamic`, `optionDynamic`, `optionText`, `.label`, `.disabled`, `.textContent`} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("triple-leaf optgroup hydration client misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionList(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}>{#each row.options as option}<option :value={option.value}>{option.label}</option>{/each}</select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
@@ -1070,9 +1111,9 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectSelectBindi
 	}
 }
 
-func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptionDisabled(t *testing.T) {
+func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptgroupLabelOptionDisabledAndText(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="dynamic-select" bind:value={row.status}><optgroup label="Active"><option value="open" :disabled={row.closed}>Open: {row.label}</option></optgroup><optgroup label="Closed"><option value="done">Done</option></optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="dynamic-select" bind:value={row.status}><optgroup :label={row.groupLabel}><option value="open" :disabled={row.closed}>Open: {row.label}</option></optgroup><optgroup label="Closed"><option value="done">Done</option></optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1098,7 +1139,7 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptionDisabled(t *test
 	rowText := rowOption.Children[0].(*SSRPlanText)
 	textID := rowText.Parts[1].DynamicID
 	rowScope := func(key string) string { return "vela-page--each-" + itoa(each.Span.Start) + "-" + key }
-	rowHTML := func(key, status, label string, closed bool) string {
+	rowHTML := func(key, status, label, groupLabel string, closed bool) string {
 		scope, open, done, disabled := rowScope(key), "", "", ""
 		if status == "open" {
 			open = " selected"
@@ -1108,9 +1149,9 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptionDisabled(t *test
 		if closed {
 			disabled = " disabled"
 		}
-		return `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><select vela-page="" class="dynamic-select"><optgroup label="Active"><option value="open"` + disabled + open + `>Open: <!--v:` + scope + `:` + itoa(textID) + `-->` + label + `<!--/v:` + scope + `:` + itoa(textID) + `--></option></optgroup><optgroup label="Closed"><option value="done"` + done + `>Done</option></optgroup></select><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
+		return `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><select vela-page="" class="dynamic-select"><optgroup label="` + groupLabel + `"><option value="open"` + disabled + open + `>Open: <!--v:` + scope + `:` + itoa(textID) + `-->` + label + `<!--/v:` + scope + `:` + itoa(textID) + `--></option></optgroup><optgroup label="Closed"><option value="done"` + done + `>Done</option></optgroup></select><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
 	}
-	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "done", "Alpha", true) + rowHTML("b", "open", "Beta", false) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","status":"done","label":"Alpha","closed":true},{"id":"b","status":"open","label":"Beta","closed":false}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "done", "Alpha", "Active", true) + rowHTML("b", "open", "Beta", "Working", false) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","status":"done","label":"Alpha","groupLabel":"Active","closed":true},{"id":"b","status":"open","label":"Beta","groupLabel":"Working","closed":false}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
@@ -1125,25 +1166,25 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptionDisabled(t *test
 	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial!==0))throw new Error("dynamic option hydration mutated server DOM");await p.evaluate(()=>{window.a=document.querySelectorAll(".dynamic-select")[0];window.b=document.querySelectorAll(".dynamic-select")[1]});if(!(await p.evaluate(()=>window.a.options[0].disabled&&window.b.options[0].disabled===false)))throw new Error("server option disabled state was not adopted");await p.evaluate(()=>window.hydrated.component.set({rows:[{id:"a",status:"done",closed:false},{id:"b",status:"open",closed:false}]}));await p.waitForFunction(()=>window.a.options[0].disabled===false);if(!(await p.evaluate(()=>document.querySelectorAll(".dynamic-select")[0]===window.a)))throw new Error("retained row lost identity while updating option disabled");await p.evaluate(()=>window.hydrated.component.set({rows:[{id:"b",status:"open",closed:false},{id:"a",status:"done",closed:true},{id:"c",status:"open",closed:true}]}));await p.waitForFunction(()=>document.querySelectorAll(".dynamic-select").length===3);if(!(await p.evaluate(()=>{const rows=[...document.querySelectorAll(".dynamic-select")];return rows[0]===window.b&&rows[1]===window.a&&rows[1].options[0].disabled&&rows[2].options[0].disabled})))throw new Error("keyed option disabled rows lost identity or CSR initial value");await p.evaluate(()=>{window.removed=window.a;window.hydrated.component.set({rows:[{id:"b",status:"open",closed:false},{id:"c",status:"open",closed:true}]})});await p.waitForFunction(()=>document.querySelectorAll(".dynamic-select").length===2);await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
 	browser = strings.Replace(browser,
 		`window.a=document.querySelectorAll(".dynamic-select")[0];window.b=document.querySelectorAll(".dynamic-select")[1]`,
-		`window.a=document.querySelectorAll(".dynamic-select")[0];window.b=document.querySelectorAll(".dynamic-select")[1];window.aOption=window.a.options[0]`, 1)
+		`window.a=document.querySelectorAll(".dynamic-select")[0];window.b=document.querySelectorAll(".dynamic-select")[1];window.aOption=window.a.options[0];window.aGroup=window.a.querySelector("optgroup")`, 1)
 	browser = strings.Replace(browser,
 		`window.a.options[0].disabled&&window.b.options[0].disabled===false`,
-		`window.a.options[0].disabled&&window.a.options[0].textContent==="Open: Alpha"&&window.b.options[0].disabled===false&&window.b.options[0].textContent==="Open: Beta"`, 1)
+		`window.a.options[0].disabled&&window.a.options[0].textContent==="Open: Alpha"&&window.aGroup.label==="Active"&&window.b.options[0].disabled===false&&window.b.options[0].textContent==="Open: Beta"&&window.b.querySelector("optgroup").label==="Working"`, 1)
 	browser = strings.Replace(browser,
 		`{rows:[{id:"a",status:"done",closed:false},{id:"b",status:"open",closed:false}]}`,
-		`{rows:[{id:"a",status:"done",label:"Aleph",closed:false},{id:"b",status:"open",label:"Beta",closed:false}]}`, 1)
+		`{rows:[{id:"a",status:"done",label:"Aleph",groupLabel:"Archived",closed:false},{id:"b",status:"open",label:"Beta",groupLabel:"Working",closed:false}]}`, 1)
 	browser = strings.Replace(browser,
 		`window.a.options[0].disabled===false`,
-		`window.a.options[0].disabled===false&&window.a.options[0].textContent==="Open: Aleph"`, 1)
+		`window.a.options[0].disabled===false&&window.a.options[0].textContent==="Open: Aleph"&&window.aGroup.label==="Archived"`, 1)
 	browser = strings.Replace(browser,
 		`{rows:[{id:"b",status:"open",closed:false},{id:"a",status:"done",closed:true},{id:"c",status:"open",closed:true}]}`,
-		`{rows:[{id:"b",status:"open",label:"Beta 2",closed:false},{id:"a",status:"done",label:"Aleph",closed:true},{id:"c",status:"open",label:"Gamma",closed:true}]}`, 1)
+		`{rows:[{id:"b",status:"open",label:"Beta 2",groupLabel:"Reopened",closed:false},{id:"a",status:"done",label:"Aleph",groupLabel:"Archived",closed:true},{id:"c",status:"open",label:"Gamma",groupLabel:"New",closed:true}]}`, 1)
 	browser = strings.Replace(browser,
 		`rows[0]===window.b&&rows[1]===window.a&&rows[1].options[0].disabled&&rows[2].options[0].disabled`,
-		`rows[0]===window.b&&rows[0].options[0].textContent==="Open: Beta 2"&&rows[1]===window.a&&rows[1].options[0]===window.aOption&&rows[1].options[0].disabled&&rows[1].options[0].textContent==="Open: Aleph"&&rows[2].options[0].disabled&&rows[2].options[0].textContent==="Open: Gamma"`, 1)
+		`rows[0]===window.b&&rows[0].options[0].textContent==="Open: Beta 2"&&rows[0].querySelector("optgroup").label==="Reopened"&&rows[1]===window.a&&rows[1].options[0]===window.aOption&&rows[1].options[0].disabled&&rows[1].options[0].textContent==="Open: Aleph"&&rows[1].querySelector("optgroup")===window.aGroup&&window.aGroup.label==="Archived"&&rows[2].options[0].disabled&&rows[2].options[0].textContent==="Open: Gamma"&&rows[2].querySelector("optgroup").label==="New"`, 1)
 	browser = strings.Replace(browser,
 		`{rows:[{id:"b",status:"open",closed:false},{id:"c",status:"open",closed:true}]}`,
-		`{rows:[{id:"b",status:"open",label:"Beta 2",closed:false},{id:"c",status:"open",label:"Gamma",closed:true}]}`, 1)
+		`{rows:[{id:"b",status:"open",label:"Beta 2",groupLabel:"Reopened",closed:false},{id:"c",status:"open",label:"Gamma",groupLabel:"New",closed:true}]}`, 1)
 	command := exec.Command(node, "-e", browser, dir)
 	command.Dir = "/projects/compiler"
 	output, err := command.CombinedOutput()

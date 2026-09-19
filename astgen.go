@@ -9220,47 +9220,57 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 	}
 	descriptor := hydrationKeyedEachDirectControlDescriptor{Element: element, OptionDynamicIndex: -1, OptionGroupIndex: -1, OptionTextIndex: -1}
 	if element.Tag == "select" && !hydrationAwaitSnapshotKeyedEachStaticSelectOptions(element.Children) {
-		groupDynamic, groupIndex, optionDynamic, optionIndex, combined := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamic(element.Children, itemName)
+		groupDynamic, groupIndex, optionDynamic, optionDynamicIndex, optionText, optionTextIndex, combined := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamicAndText(element.Children, itemName)
 		if combined {
 			descriptor.OptionGroupDynamic = groupDynamic
 			descriptor.OptionGroupIndex = groupIndex
 			descriptor.OptionDynamic = optionDynamic
-			descriptor.OptionDynamicIndex = optionIndex
+			descriptor.OptionDynamicIndex = optionDynamicIndex
+			descriptor.OptionText = optionText
+			descriptor.OptionTextIndex = optionTextIndex
 		} else {
-			groupDynamic, groupIndex, optionText, optionIndex, combined := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionText(element.Children, itemName)
+			groupDynamic, groupIndex, optionDynamic, optionIndex, combined := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamic(element.Children, itemName)
 			if combined {
 				descriptor.OptionGroupDynamic = groupDynamic
 				descriptor.OptionGroupIndex = groupIndex
-				descriptor.OptionText = optionText
-				descriptor.OptionTextIndex = optionIndex
+				descriptor.OptionDynamic = optionDynamic
+				descriptor.OptionDynamicIndex = optionIndex
 			} else {
-				optionDynamic, optionDynamicIndex, optionText, optionTextIndex, combined := hydrationAwaitSnapshotKeyedEachDirectSelectOptionDynamicAndText(element.Children, itemName)
+				groupDynamic, groupIndex, optionText, optionIndex, combined := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionText(element.Children, itemName)
 				if combined {
-					descriptor.OptionDynamic = optionDynamic
-					descriptor.OptionDynamicIndex = optionDynamicIndex
+					descriptor.OptionGroupDynamic = groupDynamic
+					descriptor.OptionGroupIndex = groupIndex
 					descriptor.OptionText = optionText
-					descriptor.OptionTextIndex = optionTextIndex
+					descriptor.OptionTextIndex = optionIndex
 				} else {
-					optionDynamic, optionIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptionDynamic(element.Children, itemName)
-					if ok {
+					optionDynamic, optionDynamicIndex, optionText, optionTextIndex, combined := hydrationAwaitSnapshotKeyedEachDirectSelectOptionDynamicAndText(element.Children, itemName)
+					if combined {
 						descriptor.OptionDynamic = optionDynamic
-						descriptor.OptionDynamicIndex = optionIndex
+						descriptor.OptionDynamicIndex = optionDynamicIndex
+						descriptor.OptionText = optionText
+						descriptor.OptionTextIndex = optionTextIndex
 					} else {
-						optionText, optionIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptionText(element.Children, itemName)
+						optionDynamic, optionIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptionDynamic(element.Children, itemName)
 						if ok {
-							descriptor.OptionText = optionText
-							descriptor.OptionTextIndex = optionIndex
+							descriptor.OptionDynamic = optionDynamic
+							descriptor.OptionDynamicIndex = optionIndex
 						} else {
-							optionList, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName)
+							optionText, optionIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptionText(element.Children, itemName)
 							if ok {
-								descriptor.OptionList = optionList
+								descriptor.OptionText = optionText
+								descriptor.OptionTextIndex = optionIndex
 							} else {
-								groupDynamic, groupIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(element.Children, itemName)
-								if !ok {
-									return hydrationKeyedEachDirectControlDescriptor{}, false
+								optionList, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName)
+								if ok {
+									descriptor.OptionList = optionList
+								} else {
+									groupDynamic, groupIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(element.Children, itemName)
+									if !ok {
+										return hydrationKeyedEachDirectControlDescriptor{}, false
+									}
+									descriptor.OptionGroupDynamic = groupDynamic
+									descriptor.OptionGroupIndex = groupIndex
 								}
-								descriptor.OptionGroupDynamic = groupDynamic
-								descriptor.OptionGroupIndex = groupIndex
 							}
 						}
 					}
@@ -9303,6 +9313,119 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 	}
 	descriptor.Bind = bind
 	return descriptor, bind != nil && (bind.Name != "checked" || checkbox)
+}
+
+// hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamicAndText
+// accepts exactly three row-owned leaves in one otherwise static grouped
+// select tree: an optgroup label, one disabled/value option property, and one
+// option text node. Their independently typed addresses let the existing row
+// controller own all three writers without source rediscovery.
+func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamicAndText(nodes []Node, itemName string) (*Attr, int, *Attr, int, *TextNode, int, bool) {
+	groups, options := 0, 0
+	groupIndex, attributeIndex, textIndex := -1, -1, -1
+	var groupDynamic, optionDynamic *Attr
+	var optionText *TextNode
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			if !isFullyStatic(current) {
+				return nil, -1, nil, -1, nil, -1, false
+			}
+		case *ElementNode:
+			if current == nil || current.Tag != "optgroup" {
+				return nil, -1, nil, -1, nil, -1, false
+			}
+			currentGroupIndex := groups
+			groups++
+			hasLabel := false
+			for _, attr := range current.Attrs {
+				if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					return nil, -1, nil, -1, nil, -1, false
+				}
+				if attr.IsBind {
+					root, ok := templateExprMemberBindingRoot(attr.Expr)
+					if attr.Name != "label" || groupDynamic != nil || !ok || root != itemName {
+						return nil, -1, nil, -1, nil, -1, false
+					}
+					groupDynamic, groupIndex, hasLabel = attr, currentGroupIndex, true
+					continue
+				}
+				if attr.Expr != nil || attr.Name == "selected" {
+					return nil, -1, nil, -1, nil, -1, false
+				}
+				if attr.Name == "label" {
+					hasLabel = true
+				}
+			}
+			if !hasLabel {
+				return nil, -1, nil, -1, nil, -1, false
+			}
+			for _, child := range current.Children {
+				switch option := child.(type) {
+				case *TextNode:
+					if !isFullyStatic(option) {
+						return nil, -1, nil, -1, nil, -1, false
+					}
+				case *ElementNode:
+					if option == nil || option.Tag != "option" || len(option.Children) != 1 {
+						return nil, -1, nil, -1, nil, -1, false
+					}
+					text, ok := option.Children[0].(*TextNode)
+					if !ok || text == nil {
+						return nil, -1, nil, -1, nil, -1, false
+					}
+					hasValue, hasDynamicText := false, false
+					for _, attr := range option.Attrs {
+						if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+							return nil, -1, nil, -1, nil, -1, false
+						}
+						if attr.IsBind {
+							root, ok := templateExprMemberBindingRoot(attr.Expr)
+							if (attr.Name != "disabled" && attr.Name != "value") || optionDynamic != nil || !ok || root != itemName {
+								return nil, -1, nil, -1, nil, -1, false
+							}
+							optionDynamic, attributeIndex = attr, options
+							if attr.Name == "value" {
+								hasValue = true
+							}
+							continue
+						}
+						if attr.Expr != nil || attr.Name == "selected" {
+							return nil, -1, nil, -1, nil, -1, false
+						}
+						if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
+							hasValue = true
+						}
+					}
+					if !hasValue {
+						return nil, -1, nil, -1, nil, -1, false
+					}
+					for _, part := range text.Parts {
+						if part.Static {
+							continue
+						}
+						root, ok := templateExprMemberBindingRoot(part.Expr)
+						if !ok || root != itemName {
+							return nil, -1, nil, -1, nil, -1, false
+						}
+						hasDynamicText = true
+					}
+					if hasDynamicText {
+						if optionText != nil {
+							return nil, -1, nil, -1, nil, -1, false
+						}
+						optionText, textIndex = text, options
+					}
+					options++
+				default:
+					return nil, -1, nil, -1, nil, -1, false
+				}
+			}
+		default:
+			return nil, -1, nil, -1, nil, -1, false
+		}
+	}
+	return groupDynamic, groupIndex, optionDynamic, attributeIndex, optionText, textIndex, groupDynamic != nil && optionDynamic != nil && optionText != nil && groups > 0 && options > 0
 }
 
 // hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamic accepts
