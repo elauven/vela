@@ -335,50 +335,8 @@ func ssrKeyedEachDirectControlRows(block *EachBlockNode) bool {
 	if block == nil || !block.HasKey() || len(block.ElseChildren) != 0 || len(block.Children) != 1 {
 		return false
 	}
-	element, ok := block.Children[0].(*ElementNode)
-	if !ok || element == nil || (element.Tag != "input" && element.Tag != "textarea" && element.Tag != "select") {
-		return false
-	}
-	if element.Tag != "select" && len(element.Children) != 0 {
-		return false
-	}
-	if element.Tag == "select" && !hydrationAwaitSnapshotKeyedEachStaticSelectOptions(element.Children) {
-		return false
-	}
-	bindings := 0
-	checkbox := false
-	for _, attr := range element.Attrs {
-		if attr == nil {
-			continue
-		}
-		if attr.IsTwoWay {
-			if (attr.Name != "value" && attr.Name != "checked") || attr.Expr == nil {
-				return false
-			}
-			if attr.Name == "checked" && element.Tag != "input" {
-				return false
-			}
-			if element.Tag == "select" && attr.Name != "value" {
-				return false
-			}
-			root, ok := templateExprMemberBindingRoot(attr.Expr)
-			if !ok || root != block.ItemName {
-				return false
-			}
-			bindings++
-			continue
-		}
-		if attr.Name == "type" && attr.Value == "checkbox" {
-			checkbox = true
-		}
-		if element.Tag == "select" && attr.Name == "multiple" {
-			return false
-		}
-		if attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsClassDir || attr.IsStyleDir || attr.IsBindThis {
-			return false
-		}
-	}
-	return bindings == 1 && (bindings == 0 || !hasCheckedControlBinding(element) || checkbox)
+	_, ok := hydrationAwaitSnapshotKeyedEachDirectControlRow(block.Children, block.ItemName)
+	return ok
 }
 
 func hasCheckedControlBinding(element *ElementNode) bool {

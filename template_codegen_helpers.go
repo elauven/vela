@@ -951,14 +951,26 @@ func emitStaticHTML(nodes []Node, scopeID string) string {
 // controller. Event attributes are not HTML attributes; serialising them
 // would leave misleading `click=""`-style artefacts on newly created nodes.
 func emitStaticHTMLWithoutEvents(nodes []Node, scopeID string) string {
+	return emitStaticHTMLWithoutEventsExcept(nodes, scopeID, nil)
+}
+
+// emitStaticHTMLWithoutEventsExcept is the static mount counterpart for a
+// bounded typed dynamic leaf. The caller has already arranged the omitted
+// attribute through a DOM-AST writer, so serialising it here would create an
+// incorrect initial HTML boolean attribute before that writer can run.
+func emitStaticHTMLWithoutEventsExcept(nodes []Node, scopeID string, omit *Attr) string {
 	var b strings.Builder
 	for _, node := range nodes {
-		emitStaticHTMLNodeWithoutEvents(&b, node, scopeID)
+		emitStaticHTMLNodeWithoutEventsExcept(&b, node, scopeID, omit)
 	}
 	return b.String()
 }
 
 func emitStaticHTMLNodeWithoutEvents(b *strings.Builder, node Node, scopeID string) {
+	emitStaticHTMLNodeWithoutEventsExcept(b, node, scopeID, nil)
+}
+
+func emitStaticHTMLNodeWithoutEventsExcept(b *strings.Builder, node Node, scopeID string, omit *Attr) {
 	switch n := node.(type) {
 	case *TextNode:
 		for _, p := range n.Parts {
@@ -973,7 +985,7 @@ func emitStaticHTMLNodeWithoutEvents(b *strings.Builder, node Node, scopeID stri
 			b.WriteString(`=""`)
 		}
 		for _, attr := range n.Attrs {
-			if attr.IsEvent {
+			if attr.IsEvent || attr == omit {
 				continue
 			}
 			b.WriteByte(' ')
@@ -988,7 +1000,7 @@ func emitStaticHTMLNodeWithoutEvents(b *strings.Builder, node Node, scopeID stri
 		}
 		b.WriteByte('>')
 		for _, child := range n.Children {
-			emitStaticHTMLNodeWithoutEvents(b, child, scopeID)
+			emitStaticHTMLNodeWithoutEventsExcept(b, child, scopeID, omit)
 		}
 		b.WriteString("</")
 		b.WriteString(n.Tag)

@@ -473,6 +473,20 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			if attr.Expr == nil {
 				return nil, ssrExprUnsupported(attr.Span.Start, "dynamic attribute %q has no cached expression", attr.Name)
 			}
+			if isBoolAttr(attr.Name) {
+				condition, err := TranslateSSRExpression(attr.Expr, e.ctx)
+				if err != nil {
+					return nil, err
+				}
+				if open != "" {
+					body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
+					open = ""
+				}
+				body = append(body, &goast.IfStmt{Cond: condition, Body: &goast.BlockStmt{List: []goast.Stmt{
+					goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(" " + html.EscapeString(attr.Name))}),
+				}}})
+				continue
+			}
 			open += " " + attr.Name + "=\""
 			body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
 			value, err := e.outputValue(false, "", attr.Expr)
@@ -1057,7 +1071,9 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 		return false
 	}
 	if element.Tag == "select" && !ssrAwaitSnapshotKeyedEachStaticSelectOptions(element.Children) {
-		return false
+		if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDisabled(element.Children, itemName); !ok {
+			return false
+		}
 	}
 	bindings := 0
 	checkbox := false
@@ -1087,6 +1103,55 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 		}
 	}
 	return bindings == 1 && (bindings == 0 || !ssrAwaitSnapshotKeyedEachHasCheckedControlBinding(element) || checkbox)
+}
+
+// ssrAwaitSnapshotKeyedEachDirectSelectOptionDisabled mirrors the first
+// dynamic option-tree leaf accepted by hydration: one row-owned boolean
+// disabled attribute on an otherwise static direct option list.
+func ssrAwaitSnapshotKeyedEachDirectSelectOptionDisabled(nodes []SSRPlanNode, itemName string) (SSRPlanAttr, int, bool) {
+	options, dynamicIndex := 0, -1
+	var dynamic SSRPlanAttr
+	found := false
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *SSRPlanText:
+			for _, part := range current.Parts {
+				if !part.Static {
+					return SSRPlanAttr{}, -1, false
+				}
+			}
+		case *SSRPlanElement:
+			if current == nil || current.Tag != "option" || !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) {
+				return SSRPlanAttr{}, -1, false
+			}
+			hasValue := false
+			for _, attr := range current.Attrs {
+				if attr.Role == SSRAttrDynamic {
+					root, ok := templateExprMemberBindingRoot(attr.Expr)
+					if attr.Name != "disabled" || found || !ok || root != itemName {
+						return SSRPlanAttr{}, -1, false
+					}
+					dynamic = attr
+					dynamicIndex = options
+					found = true
+					continue
+				}
+				if attr.Role != SSRAttrStatic || attr.Name == "selected" {
+					return SSRPlanAttr{}, -1, false
+				}
+				if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
+					hasValue = true
+				}
+			}
+			if !hasValue {
+				return SSRPlanAttr{}, -1, false
+			}
+			options++
+		default:
+			return SSRPlanAttr{}, -1, false
+		}
+	}
+	return dynamic, dynamicIndex, found && options > 0
 }
 
 func ssrAwaitSnapshotKeyedEachHasCheckedControlBinding(element *SSRPlanElement) bool {
