@@ -1294,44 +1294,59 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(nodes []SSRPlanNode, ite
 func ssrAwaitSnapshotKeyedEachDirectSelectOptionText(nodes []SSRPlanNode, itemName string) (*SSRPlanText, int, bool) {
 	options, dynamicIndex := 0, -1
 	var dynamic *SSRPlanText
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *SSRPlanText:
-			for _, part := range current.Parts {
-				if !part.Static {
-					return nil, -1, false
+	var visit func([]SSRPlanNode, bool) bool
+	visit = func(currentNodes []SSRPlanNode, allowOptgroup bool) bool {
+		for _, node := range currentNodes {
+			switch current := node.(type) {
+			case *SSRPlanText:
+				for _, part := range current.Parts {
+					if !part.Static {
+						return false
+					}
 				}
-			}
-		case *SSRPlanElement:
-			if current == nil || current.Tag != "option" || !ssrAwaitSnapshotStaticSelectAttrs(current.Attrs, "value", true) || len(current.Children) != 1 {
-				return nil, -1, false
-			}
-			text, ok := current.Children[0].(*SSRPlanText)
-			if !ok || text == nil {
-				return nil, -1, false
-			}
-			hasDynamic := false
-			for _, part := range text.Parts {
-				if part.Static {
+			case *SSRPlanElement:
+				if current == nil {
+					return false
+				}
+				if current.Tag == "optgroup" {
+					if !allowOptgroup || !ssrAwaitSnapshotStaticSelectAttrs(current.Attrs, "label", false) || !visit(current.Children, false) {
+						return false
+					}
 					continue
 				}
-				root, ok := templateExprMemberBindingRoot(part.Expr)
-				if !ok || root != itemName {
-					return nil, -1, false
+				if current.Tag != "option" || !ssrAwaitSnapshotStaticSelectAttrs(current.Attrs, "value", true) || len(current.Children) != 1 {
+					return false
 				}
-				hasDynamic = true
-			}
-			if hasDynamic {
-				if dynamic != nil {
-					return nil, -1, false
+				text, ok := current.Children[0].(*SSRPlanText)
+				if !ok || text == nil {
+					return false
 				}
-				dynamic = text
-				dynamicIndex = options
+				hasDynamic := false
+				for _, part := range text.Parts {
+					if part.Static {
+						continue
+					}
+					root, ok := templateExprMemberBindingRoot(part.Expr)
+					if !ok || root != itemName {
+						return false
+					}
+					hasDynamic = true
+				}
+				if hasDynamic {
+					if dynamic != nil {
+						return false
+					}
+					dynamic, dynamicIndex = text, options
+				}
+				options++
+			default:
+				return false
 			}
-			options++
-		default:
-			return nil, -1, false
 		}
+		return true
+	}
+	if !visit(nodes, true) {
+		return nil, -1, false
 	}
 	return dynamic, dynamicIndex, dynamic != nil && options > 0
 }
