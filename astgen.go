@@ -9205,6 +9205,7 @@ type hydrationKeyedEachDirectControlDescriptor struct {
 type hydrationKeyedEachSelectOptionListDescriptor struct {
 	Kind       hydrationKeyedEachSelectOptionListKind
 	Each       *EachBlockNode
+	Fallback   []Node
 	Option     *ElementNode
 	ValueAttr  *Attr
 	Text       *TextNode
@@ -9785,7 +9786,7 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []Node, rowName
 		return nil, false
 	}
 	each, ok := nodes[0].(*EachBlockNode)
-	if !ok || each == nil || len(each.ElseChildren) != 0 || len(each.Children) != 1 {
+	if !ok || each == nil || len(each.Children) != 1 {
 		return nil, false
 	}
 	root, ok := templateExprMemberBindingRoot(each.IterExpr)
@@ -9823,6 +9824,9 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []Node, rowName
 		return nil, false
 	}
 	if each.HasKey() {
+		if len(each.ElseChildren) != 0 {
+			return nil, false
+		}
 		keyRoot, ok := templateExprMemberBindingRoot(each.KeyAST)
 		if !ok || keyRoot != each.ItemName {
 			return nil, false
@@ -9832,7 +9836,30 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []Node, rowName
 	if each.HasKey() {
 		kind = hydrationKeyedEachSelectOptionListKeyed
 	}
-	return &hydrationKeyedEachSelectOptionListDescriptor{Kind: kind, Each: each, Option: option, ValueAttr: value, Text: text, Key: each.KeyAST, GroupIndex: -1}, true
+	if len(each.ElseChildren) != 0 && !hydrationAwaitSnapshotStaticOptionListFallback(each.ElseChildren) {
+		return nil, false
+	}
+	return &hydrationKeyedEachSelectOptionListDescriptor{Kind: kind, Each: each, Fallback: each.ElseChildren, Option: option, ValueAttr: value, Text: text, Key: each.KeyAST, GroupIndex: -1}, true
+}
+
+func hydrationAwaitSnapshotStaticOptionListFallback(nodes []Node) bool {
+	found := false
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			if !isFullyStatic(current) {
+				return false
+			}
+		case *ElementNode:
+			if current == nil || current.Tag != "option" || !allStatic(current.Children) || !hydrationAwaitSnapshotStaticSelectAttrs(current.Attrs, "value", true) {
+				return false
+			}
+			found = true
+		default:
+			return false
+		}
+	}
+	return found
 }
 
 // hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList is the first
@@ -10976,6 +11003,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 						genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$optionElement"))),
 						genAssignStmt(id("$$optionIndex"), genBinary("+", id("$$optionIndex"), numLit(1))),
 					)),
+					genIf(genUnary("!", genLogical("&&", id("$$items"), genMember(id("$$items"), "length"))), genExprStmt(genCall(id("$$insertHTML"), id("$$fragment"), strLit(emitStaticHTMLWithoutEvents(list.Fallback, g.scopeID))))),
 					genReturn(id("$$fragment")),
 				)}
 			}
@@ -11029,6 +11057,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 							genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$optionElement"))),
 							genAssignStmt(id("$$optionIndex"), genBinary("+", id("$$optionIndex"), numLit(1))),
 						)),
+						genIf(genUnary("!", genLogical("&&", id("$$items"), genMember(id("$$items"), "length"))), genExprStmt(genCall(id("$$insertHTML"), id("$$fragment"), strLit(emitStaticHTMLWithoutEvents(list.Fallback, g.scopeID))))),
 						genReturn(id("$$fragment")),
 					)})
 				}

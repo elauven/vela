@@ -945,6 +945,23 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectMixedOptgroupOpt
 	}
 }
 
+func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectUnkeyedOptionListElse(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}><optgroup label="Results">{#each row.options as option}<option :value={option.value}>{option.label}</option>{:else}<option value="">No results</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(client, PrintPretty)
+	for _, want := range []string{`No results`, `$$insertHTML`, `replaceChildren`} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("unkeyed option-list else hydration client misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectKeyedOptionList(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}>{#each row.options as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
