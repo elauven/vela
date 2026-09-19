@@ -11010,7 +11010,8 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				})
 				rowOptionLists = append(rowOptionLists, rowItems)
 				createOptionLists = append(createOptionLists, createItems)
-				if multiKeyedOptionLists {
+				if list.Kind == hydrationKeyedEachSelectOptionListKeyed {
+					optionListCreates = append(optionListCreates, id("undefined"))
 					optionListKeys = append(optionListKeys, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: optionKey})
 					optionListElementCreates = append(optionListElementCreates, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: genBlock(
 						genConst("$$optionElement", genCall(genMember(id("document"), "createElement"), strLit("option"))),
@@ -11024,6 +11025,9 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 						genIf(genBinary("!==", genMember(id("$$optionElement"), "textContent"), optionText), genAssignStmt(genMember(id("$$optionElement"), "textContent"), optionText)),
 					)})
 				} else {
+					optionListKeys = append(optionListKeys, id("undefined"))
+					optionListElementCreates = append(optionListElementCreates, id("undefined"))
+					optionListElementUpdates = append(optionListElementUpdates, id("undefined"))
 					optionListCreates = append(optionListCreates, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
 						genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
 						genLet("$$optionIndex", numLit(0)),
