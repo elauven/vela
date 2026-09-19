@@ -9222,7 +9222,7 @@ func hydrationAwaitSnapshotKeyedEachDirectRow(nodes []Node, itemName string) (hy
 			if attr.Name == "" {
 				return hydrationKeyedEachDirectRowDescriptor{}, false
 			}
-			if _, ok := templateExprIdent(attr.Expr); !ok {
+			if _, ok := templateExprIdent(attr.Expr); !ok && !templateExprIsHandler(attr.Expr) {
 				return hydrationKeyedEachDirectRowDescriptor{}, false
 			}
 			events++
@@ -9955,12 +9955,14 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				continue
 			}
 			elementVar := prefix + "_event_" + itoa(nodeIndex) + "_" + itoa(attrIndex)
+			handlerVar := elementVar + "_handler"
 			attachBody = append(attachBody,
 				genConst(elementVar, genCall(id(findVar), genMember(id("$$controller"), "row"), numLit(nodeIndex))),
 				genIf(id(elementVar), genBlock(
-					genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(attr.Name), handler)),
+					genConst(handlerVar, handler),
+					genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(attr.Name), id(handlerVar))),
 					genExprStmt(genCall(genMember(genMember(id("$$controller"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-						genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(attr.Name), handler)),
+						genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(attr.Name), id(handlerVar))),
 					)})),
 				)),
 			)

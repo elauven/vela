@@ -1082,7 +1082,7 @@ func ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes []SSRPlanNode, itemName st
 			if attr.Name == "" || attr.Expr == nil {
 				return false
 			}
-			if _, ok := templateExprIdent(attr.Expr); !ok {
+			if _, ok := templateExprIdent(attr.Expr); !ok && !templateExprIsHandler(attr.Expr) {
 				return false
 			}
 			events++
