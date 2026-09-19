@@ -809,6 +809,34 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectKeyedOptgroupOpt
 	}
 }
 
+func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectDynamicOptgroupOptionList(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}><optgroup :label={row.groupLabel}>{#each row.options as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := plan.Nodes[0].(*SSRPlanElement)
+	await := main.Children[0].(*SSRPlanAwait)
+	each := await.ThenChildren[0].(*SSRPlanEach)
+	if !ssrAwaitSnapshotKeyedEachDirectControlPlanRow(each.Children, each.ItemName) {
+		t.Fatalf("dynamic optgroup keyed option-list snapshot predicate rejected row=%#v", each.Children)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(client, PrintPretty)
+	for _, want := range []string{`optionGroupDynamic`, `.label`, `$$reconcileHydrationKeyedElements`, `createElement('optgroup')`, `createElement('option')`} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("dynamic optgroup option-list hydration client misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectKeyedOptionList(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}>{#each row.options as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
@@ -1460,9 +1488,9 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptgroupOptionList(t *
 	}
 }
 
-func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectKeyedOptgroupOptionList(t *testing.T) {
+func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectKeyedDynamicOptgroupOptionList(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="dynamic-list-select" bind:value={row.status}><optgroup label="Available">{#each row.options as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="dynamic-list-select" bind:value={row.status}><optgroup :label={row.groupLabel}>{#each row.options as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1485,9 +1513,9 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectKeyedOptgroupOptionLis
 	rowElement := each.Children[0].(*SSRPlanElement)
 	rowScope := func(key string) string { return "vela-page--each-" + itoa(each.Span.Start) + "-" + key }
 	type option struct{ id, value, label string }
-	rowHTML := func(key, status string, options []option) string {
+	rowHTML := func(key, status, groupLabel string, options []option) string {
 		scope := rowScope(key)
-		body := `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><select vela-page="" class="dynamic-list-select"><optgroup vela-page="" label="Available">`
+		body := `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><select vela-page="" class="dynamic-list-select"><optgroup vela-page="" label="` + groupLabel + `">`
 		for _, option := range options {
 			selected := ""
 			if option.value == status {
@@ -1500,7 +1528,7 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectKeyedOptgroupOptionLis
 	aOptions, bOptions := []option{{"open", "open", "Open"}, {"done", "done", "Done"}}, []option{{"later", "later", "Later"}, {"done", "done", "Done"}}
 	// Keep server markup intentionally free of inner-list marker discovery:
 	// the outer row controller owns the select as a single adopted element.
-	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "open", aOptions) + rowHTML("b", "done", bOptions) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","status":"open","options":[{"id":"open","value":"open","label":"Open"},{"id":"done","value":"done","label":"Done"}]},{"id":"b","status":"done","options":[{"id":"later","value":"later","label":"Later"},{"id":"done","value":"done","label":"Done"}]}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "open", "Available", aOptions) + rowHTML("b", "done", "Later", bOptions) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","status":"open","groupLabel":"Available","options":[{"id":"open","value":"open","label":"Open"},{"id":"done","value":"done","label":"Done"}]},{"id":"b","status":"done","groupLabel":"Later","options":[{"id":"later","value":"later","label":"Later"},{"id":"done","value":"done","label":"Done"}]}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
@@ -1513,19 +1541,22 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectKeyedOptgroupOptionLis
 		`window.a=document.querySelectorAll(".dynamic-list-select")[0];window.b=document.querySelectorAll(".dynamic-list-select")[1];window.aGroup=window.a.querySelector("optgroup");window.bGroup=window.b.querySelector("optgroup");window.aOpen=window.a.options[0];window.aDone=window.a.options[1]`, 1)
 	browser = strings.Replace(browser,
 		`window.a.value==="open"&&window.a.options.length===2&&window.b.value==="done"&&window.b.options[0].textContent==="Later"`,
-		`window.a.value==="open"&&window.aGroup.label==="Available"&&window.a.options.length===2&&window.b.value==="done"&&window.bGroup.label==="Available"&&window.b.options[0].textContent==="Later"`, 1)
+		`window.a.value==="open"&&window.aGroup.label==="Available"&&window.a.options.length===2&&window.b.value==="done"&&window.bGroup.label==="Later"&&window.b.options[0].textContent==="Later"`, 1)
 	browser = strings.Replace(browser,
 		`options:[{value:"queued",label:"Queued"},{value:"done",label:"Done"}]},{id:"b",status:"done",options:[{value:"later",label:"Later"},{value:"done",label:"Done"}]}`,
-		`options:[{id:"open",value:"queued",label:"Queued"},{id:"done",value:"done",label:"Done"}]},{id:"b",status:"done",options:[{id:"later",value:"later",label:"Later"},{id:"done",value:"done",label:"Done"}]}`, 1)
+		`groupLabel:"Queued",options:[{id:"open",value:"queued",label:"Queued"},{id:"done",value:"done",label:"Done"}]},{id:"b",status:"done",groupLabel:"Later",options:[{id:"later",value:"later",label:"Later"},{id:"done",value:"done",label:"Done"}]}`, 1)
 	browser = strings.Replace(browser,
 		`options:[{value:"later",label:"Later"},{value:"done",label:"Done"}]},{id:"a",status:"done",options:[{value:"queued",label:"Queued"},{value:"done",label:"Done"}]},{id:"c",status:"new",options:[{value:"new",label:"New"}]}`,
-		`options:[{id:"later",value:"later",label:"Later"},{id:"done",value:"done",label:"Done"}]},{id:"a",status:"done",options:[{id:"done",value:"done",label:"Done"},{id:"open",value:"queued",label:"Queued"}]},{id:"c",status:"new",options:[{id:"new",value:"new",label:"New"}]}`, 1)
+		`groupLabel:"Later",options:[{id:"later",value:"later",label:"Later"},{id:"done",value:"done",label:"Done"}]},{id:"a",status:"done",groupLabel:"Done",options:[{id:"done",value:"done",label:"Done"},{id:"open",value:"queued",label:"Queued"}]},{id:"c",status:"new",groupLabel:"New",options:[{id:"new",value:"new",label:"New"}]}`, 1)
+	browser = strings.Replace(browser,
+		`window.a.value==="queued"&&window.a.options[0].textContent==="Queued"`,
+		`window.a.value==="queued"&&window.aGroup.label==="Queued"&&window.a.options[0].textContent==="Queued"`, 1)
 	browser = strings.Replace(browser,
 		`document.querySelectorAll(".dynamic-list-select")[0]===window.a&&window.a.options.length===2`,
 		`document.querySelectorAll(".dynamic-list-select")[0]===window.a&&window.a.querySelector("optgroup")===window.aGroup&&window.a.options.length===2&&window.a.options[0]===window.aOpen&&window.a.options[1]===window.aDone`, 1)
 	browser = strings.Replace(browser,
 		`rows[0]===window.b&&rows[0].value==="later"&&rows[1]===window.a&&rows[1].value==="done"&&rows[2].value==="new"`,
-		`rows[0]===window.b&&rows[0].querySelector("optgroup")===window.bGroup&&rows[0].value==="later"&&rows[1]===window.a&&rows[1].querySelector("optgroup")===window.aGroup&&rows[1].value==="done"&&rows[1].options[0]===window.aDone&&rows[1].options[1]===window.aOpen&&rows[2].querySelector("optgroup").label==="Available"&&rows[2].value==="new"`, 1)
+		`rows[0]===window.b&&rows[0].querySelector("optgroup")===window.bGroup&&rows[0].querySelector("optgroup").label==="Later"&&rows[0].value==="later"&&rows[1]===window.a&&rows[1].querySelector("optgroup")===window.aGroup&&rows[1].querySelector("optgroup").label==="Done"&&rows[1].value==="done"&&rows[1].options[0]===window.aDone&&rows[1].options[1]===window.aOpen&&rows[2].querySelector("optgroup").label==="New"&&rows[2].value==="new"`, 1)
 	command := exec.Command(node, "-e", browser, dir)
 	command.Dir = "/projects/compiler"
 	output, err := command.CombinedOutput()

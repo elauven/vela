@@ -1093,7 +1093,7 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 					if _, _, _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamicAndText(element.Children, itemName); !ok {
 						if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(element.Children, itemName); !ok {
 							if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionText(element.Children, itemName); !ok {
-								if !ssrAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(element.Children, itemName) && !ssrAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName) {
+								if !ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(element.Children, itemName) && !ssrAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(element.Children, itemName) && !ssrAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName) {
 									if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(element.Children, itemName); !ok {
 										return false
 									}
@@ -1631,6 +1631,33 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(nodes []SSRPlanNode
 		return false
 	}
 	return ssrAwaitSnapshotKeyedEachDirectSelectOptionList(group.Children, rowName)
+}
+
+// ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList mirrors the
+// row-owned dynamic label around one otherwise bounded nested option list.
+func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(nodes []SSRPlanNode, rowName string) bool {
+	if len(nodes) != 1 {
+		return false
+	}
+	group, ok := nodes[0].(*SSRPlanElement)
+	if !ok || group == nil || group.Tag != "optgroup" {
+		return false
+	}
+	found := false
+	for _, attr := range group.Attrs {
+		if attr.Role == SSRAttrDynamic {
+			root, ok := templateExprMemberBindingRoot(attr.Expr)
+			if attr.Name != "label" || found || !ok || root != rowName {
+				return false
+			}
+			found = true
+			continue
+		}
+		if attr.Role != SSRAttrStatic || attr.Name == "selected" {
+			return false
+		}
+	}
+	return found && ssrAwaitSnapshotKeyedEachDirectSelectOptionList(group.Children, rowName)
 }
 
 // ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic mirrors the bounded

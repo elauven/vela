@@ -9262,12 +9262,17 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 								descriptor.OptionText = optionText
 								descriptor.OptionTextIndex = optionIndex
 							} else {
-								optionList, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(element.Children, itemName)
+								optionList, optionGroupDynamic, groupIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(element.Children, itemName)
+								if !ok {
+									optionList, ok = hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(element.Children, itemName)
+								}
 								if !ok {
 									optionList, ok = hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName)
 								}
 								if ok {
 									descriptor.OptionList = optionList
+									descriptor.OptionGroupDynamic = optionGroupDynamic
+									descriptor.OptionGroupIndex = groupIndex
 								} else {
 									groupDynamic, groupIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(element.Children, itemName)
 									if !ok {
@@ -9824,6 +9829,50 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(nodes []Node,
 	}
 	list.Group, list.GroupIndex = group, 0
 	return list, true
+}
+
+// hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList admits
+// one row-owned optgroup label around the bounded nested option-list recipe.
+// The group itself retains its typed DOM address while its label writer and
+// option-list lifecycle remain owned by the same outer row controller.
+func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(nodes []Node, rowName string) (*hydrationKeyedEachSelectOptionListDescriptor, *Attr, int, bool) {
+	if len(nodes) != 1 {
+		return nil, nil, -1, false
+	}
+	group, ok := nodes[0].(*ElementNode)
+	if !ok || group == nil || group.Tag != "optgroup" {
+		return nil, nil, -1, false
+	}
+	var dynamic *Attr
+	hasLabel := false
+	for _, attr := range group.Attrs {
+		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+			return nil, nil, -1, false
+		}
+		if attr.IsBind {
+			root, ok := templateExprMemberBindingRoot(attr.Expr)
+			if attr.Name != "label" || dynamic != nil || !ok || root != rowName {
+				return nil, nil, -1, false
+			}
+			dynamic, hasLabel = attr, true
+			continue
+		}
+		if attr.Expr != nil || attr.Name == "selected" {
+			return nil, nil, -1, false
+		}
+		if attr.Name == "label" {
+			hasLabel = true
+		}
+	}
+	if dynamic == nil || !hasLabel {
+		return nil, nil, -1, false
+	}
+	list, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(group.Children, rowName)
+	if !ok {
+		return nil, nil, -1, false
+	}
+	list.Group, list.GroupIndex = group, 0
+	return list, dynamic, 0, true
 }
 
 // hydrationAwaitSnapshotKeyedEachDirectSelectOptionDynamic is the bounded
@@ -11186,7 +11235,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 						genExprStmt(genCall(genMember(id(groupVar), "setAttribute"), strLit(g.scopeID), strLit(""))),
 					)
 					for _, attr := range directControl.OptionList.Group.Attrs {
-						if attr != nil {
+						if attr != nil && attr != directControl.OptionGroupDynamic {
 							createBody = append(createBody, genExprStmt(genCall(genMember(id(groupVar), "setAttribute"), strLit(attr.Name), strLit(attr.Value))))
 						}
 					}
