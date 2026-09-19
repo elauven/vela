@@ -9147,16 +9147,17 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKeyedEachNodes(nodes []Node, it
 
 // hydrationAwaitSnapshotKeyedEachDirectRow is the first dynamic leaf recipe
 // for a retained SSR row. It permits one ordinary element, one direct text
-// node, plus at most one ordinary dynamic attribute, class directive, and
-// style directive. This keeps all resources local to the row controller while
-// newly inserted CSR rows can create the same DOM without serialising a
-// template expression through an HTML string.
+// node, plus at most one ordinary dynamic attribute, class directive, style
+// directive, and named handler. This keeps all resources local to the row
+// controller while newly inserted CSR rows can create the same DOM without
+// serialising a template expression through an HTML string.
 type hydrationKeyedEachDirectRowDescriptor struct {
 	Element   *ElementNode
 	Text      *TextNode
 	Attr      *Attr
 	ClassAttr *Attr
 	StyleAttr *Attr
+	EventAttr *Attr
 }
 
 func hydrationAwaitSnapshotKeyedEachDirectTextRow(nodes []Node, itemName string) (*ElementNode, *TextNode, bool) {
@@ -9181,6 +9182,8 @@ func hydrationAwaitSnapshotKeyedEachDirectRow(nodes []Node, itemName string) (hy
 	var classAttr *Attr
 	styleAttrs := 0
 	var styleAttr *Attr
+	events := 0
+	var eventAttr *Attr
 	for _, attr := range element.Attrs {
 		if attr == nil {
 			continue
@@ -9215,11 +9218,22 @@ func hydrationAwaitSnapshotKeyedEachDirectRow(nodes []Node, itemName string) (hy
 			styleAttr = attr
 			continue
 		}
+		if attr.IsEvent && attr.Expr != nil {
+			if attr.Name == "" {
+				return hydrationKeyedEachDirectRowDescriptor{}, false
+			}
+			if _, ok := templateExprIdent(attr.Expr); !ok {
+				return hydrationKeyedEachDirectRowDescriptor{}, false
+			}
+			events++
+			eventAttr = attr
+			continue
+		}
 		if attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
 			return hydrationKeyedEachDirectRowDescriptor{}, false
 		}
 	}
-	if dynamicAttrs > 1 || classAttrs > 1 || styleAttrs > 1 {
+	if dynamicAttrs > 1 || classAttrs > 1 || styleAttrs > 1 || events > 1 {
 		return hydrationKeyedEachDirectRowDescriptor{}, false
 	}
 	text, ok := element.Children[0].(*TextNode)
@@ -9237,7 +9251,7 @@ func hydrationAwaitSnapshotKeyedEachDirectRow(nodes []Node, itemName string) (hy
 		}
 		dynamic = true
 	}
-	return hydrationKeyedEachDirectRowDescriptor{Element: element, Text: text, Attr: dynamicAttr, ClassAttr: classAttr, StyleAttr: styleAttr}, dynamic
+	return hydrationKeyedEachDirectRowDescriptor{Element: element, Text: text, Attr: dynamicAttr, ClassAttr: classAttr, StyleAttr: styleAttr, EventAttr: eventAttr}, dynamic
 }
 
 func firstDynamicTextPart(text *TextNode) *Part {
@@ -9738,7 +9752,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	controllerVar, findVar, findTextVar, attachVar := prefix+"_controller", prefix+"_find_element", prefix+"_find_text", prefix+"_attach"
 	initialIndex := prefix + "_initial_index"
 	directRow, hasDynamicTextRow := hydrationAwaitSnapshotKeyedEachDirectRow(block.Children, block.ItemName)
-	textElement, textNode, dynamicAttr, dynamicClassAttr, dynamicStyleAttr := directRow.Element, directRow.Text, directRow.Attr, directRow.ClassAttr, directRow.StyleAttr
+	textElement, textNode, dynamicAttr, dynamicClassAttr, dynamicStyleAttr, dynamicEventAttr := directRow.Element, directRow.Text, directRow.Attr, directRow.ClassAttr, directRow.StyleAttr, directRow.EventAttr
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.hydrationKeyedRows = true
 
@@ -9966,7 +9980,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		)
 		for _, attr := range textElement.Attrs {
 			if attr != nil {
-				if attr == dynamicClassAttr || attr == dynamicStyleAttr {
+				if attr == dynamicClassAttr || attr == dynamicStyleAttr || attr == dynamicEventAttr {
 					continue
 				}
 				value := JsExpr(strLit(attr.Value))
