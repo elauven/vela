@@ -1037,6 +1037,65 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptionText(t *testing.
 	}
 }
 
+func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptionList(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="dynamic-list-select" bind:value={row.status}>{#each row.options as option}<option :value={option.value}>{option.label}</option>{/each}</select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := plan.Nodes[0].(*SSRPlanElement)
+	await := main.Children[0].(*SSRPlanAwait)
+	each := await.ThenChildren[0].(*SSRPlanEach)
+	rowElement := each.Children[0].(*SSRPlanElement)
+	rowScope := func(key string) string { return "vela-page--each-" + itoa(each.Span.Start) + "-" + key }
+	type option struct{ value, label string }
+	rowHTML := func(key, status string, options []option) string {
+		scope := rowScope(key)
+		body := `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><select vela-page="" class="dynamic-list-select">`
+		for _, option := range options {
+			selected := ""
+			if option.value == status {
+				selected = " selected"
+			}
+			body += `<option value="` + option.value + `"` + selected + `>` + option.label + `</option>`
+		}
+		return body + `</select><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
+	}
+	aOptions, bOptions := []option{{"open", "Open"}, {"done", "Done"}}, []option{{"later", "Later"}, {"done", "Done"}}
+	// Keep server markup intentionally free of inner-list marker discovery:
+	// the outer row controller owns the select as a single adopted element.
+	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "open", aOptions) + rowHTML("b", "done", bOptions) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","status":"open","options":[{"value":"open","label":"Open"},{"value":"done","label":"Done"}]},{"id":"b","status":"done","options":[{"value":"later","label":"Later"},{"value":"done","label":"Done"}]}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial!==0))throw new Error("option list hydration mutated server DOM");await p.evaluate(()=>{window.a=document.querySelectorAll(".dynamic-list-select")[0];window.b=document.querySelectorAll(".dynamic-list-select")[1]});if(!(await p.evaluate(()=>window.a.value==="open"&&window.a.options.length===2&&window.b.value==="done"&&window.b.options[0].textContent==="Later")))throw new Error("server option lists were not adopted");await p.evaluate(()=>window.hydrated.component.set({rows:[{id:"a",status:"queued",options:[{value:"queued",label:"Queued"},{value:"done",label:"Done"}]},{id:"b",status:"done",options:[{value:"later",label:"Later"},{value:"done",label:"Done"}]}]}));await p.waitForFunction(()=>window.a.value==="queued"&&window.a.options[0].textContent==="Queued");if(!(await p.evaluate(()=>document.querySelectorAll(".dynamic-list-select")[0]===window.a&&window.a.options.length===2)))throw new Error("outer keyed row lost identity while replacing option list");await p.evaluate(()=>window.hydrated.component.set({rows:[{id:"b",status:"later",options:[{value:"later",label:"Later"},{value:"done",label:"Done"}]},{id:"a",status:"done",options:[{value:"queued",label:"Queued"},{value:"done",label:"Done"}]},{id:"c",status:"new",options:[{value:"new",label:"New"}]}]}));await p.waitForFunction(()=>document.querySelectorAll(".dynamic-list-select").length===3);if(!(await p.evaluate(()=>{const rows=[...document.querySelectorAll(".dynamic-list-select")];return rows[0]===window.b&&rows[0].value==="later"&&rows[1]===window.a&&rows[1].value==="done"&&rows[2].value==="new"&&rows[2].options[0].textContent==="New"})))throw new Error("option list reorder or CSR insertion failed");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("dynamic option list keyed await snapshot browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("dynamic option list keyed await snapshot browser output=%q", got)
+	}
+}
+
 func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotStaticKeyedEachElse(t *testing.T) {
 	node := requirePlaywright(t)
 	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}{#each rows as row (row)}<p class="settled-row">Row</p>{:else}<p class="settled-empty">Empty</p>{/each}{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)

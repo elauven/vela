@@ -10102,7 +10102,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		genIf(genUnary("!", id("$$select")), genReturn(genNull())),
 		genReturn(genCall(genMember(genCall(genMember(id("$$select"), "querySelectorAll"), strLit("option")), "item"), id("$$optionIndex"))),
 	)}
-	var rowTextValue, createTextValue, rowAttrValue, createAttrValue, rowClassValue, createClassValue, rowStyleValue, createStyleValue, rowControlValue, createControlValue, rowControlAssign, rowOptionDynamic, createOptionDynamic, rowOptionText, createOptionText, rowOptionList JsExpr
+	var rowTextValue, createTextValue, rowAttrValue, createAttrValue, rowClassValue, createClassValue, rowStyleValue, createStyleValue, rowControlValue, createControlValue, rowControlAssign, rowOptionDynamic, createOptionDynamic, rowOptionText, createOptionText, rowOptionList, createOptionList JsExpr
 	optionListCreate := JsExpr(id("undefined"))
 	if hasDynamicTextRow {
 		markerID := g.hydrationTextMarkerID(firstDynamicTextPart(textNode))
@@ -10204,6 +10204,9 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			list := directControl.OptionList
 			g.withTemplateBinding(block.ItemName, "$$rowItem", func() {
 				g.withTemplateBinding(block.IndexName, "$$rowIndex", func() { rowOptionList = g.templateExpr(list.Each.IterExpr) })
+			})
+			g.withTemplateBinding(block.ItemName, "$$item", func() {
+				g.withTemplateBinding(block.IndexName, "$$index", func() { createOptionList = g.templateExpr(list.Each.IterExpr) })
 			})
 			var optionValue, optionText JsExpr
 			g.withTemplateBinding(list.Each.ItemName, "$$option", func() {
@@ -10528,7 +10531,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		}
 		if hasDynamicControlRow && textElement.Tag == "select" {
 			if directControl.OptionList != nil {
-				createBody = append(createBody, genExprStmt(genCall(genMember(id("$$row_element"), "append"), genCall(id(optionListCreateVar), rowOptionList))))
+				createBody = append(createBody, genExprStmt(genCall(genMember(id("$$row_element"), "append"), genCall(id(optionListCreateVar), createOptionList))))
 			} else {
 				createBody = append(createBody, genExprStmt(genCall(id("$$insertHTML"), id("$$row_element"), strLit(emitStaticHTMLWithoutEventsExceptText(textElement.Children, g.scopeID, directControl.OptionDynamic, directControl.OptionText)))))
 			}
