@@ -9230,42 +9230,71 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 	return hydrationKeyedEachDirectControlDescriptor{Element: element, Bind: bind}, bind != nil && (bind.Name != "checked" || checkbox)
 }
 
-// hydrationAwaitSnapshotKeyedEachStaticSelectOptions keeps the first select
-// recipe deliberately shallow: options are server-rendered, static values
-// owned by the select binding, rather than a second dynamic row lifecycle.
+// hydrationAwaitSnapshotKeyedEachStaticSelectOptions accepts a fully static
+// option tree. The tree is still owned by the select binding rather than a
+// second dynamic row lifecycle, but permitting static optgroups makes the
+// server and CSR-created rows use the same browser-native option structure.
+// Dynamic option values, directives, nested structural blocks, and multiple
+// selection deliberately remain outside this recipe.
 func hydrationAwaitSnapshotKeyedEachStaticSelectOptions(nodes []Node) bool {
+	options, ok := hydrationAwaitSnapshotKeyedEachStaticSelectOptionTree(nodes, true)
+	return ok && options > 0
+}
+
+func hydrationAwaitSnapshotKeyedEachStaticSelectOptionTree(nodes []Node, allowOptgroup bool) (int, bool) {
 	options := 0
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
 			if !isFullyStatic(current) {
-				return false
+				return 0, false
 			}
 		case *ElementNode:
-			if current == nil || current.Tag != "option" || !allStatic(current.Children) {
-				return false
+			if current == nil {
+				return 0, false
 			}
-			hasValue := false
-			for _, attr := range current.Attrs {
-				if attr == nil || attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
-					return false
+			if current.Tag == "optgroup" {
+				if !allowOptgroup || !hydrationAwaitSnapshotStaticSelectAttrs(current.Attrs, "label", false) {
+					return 0, false
 				}
-				if attr.Name == "selected" {
-					return false
+				childOptions, ok := hydrationAwaitSnapshotKeyedEachStaticSelectOptionTree(current.Children, false)
+				if !ok || childOptions == 0 {
+					return 0, false
 				}
-				if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
-					hasValue = true
-				}
+				options += childOptions
+				continue
 			}
-			if !hasValue {
-				return false
+			if current.Tag != "option" || !allStatic(current.Children) {
+				return 0, false
+			}
+			if !hydrationAwaitSnapshotStaticSelectAttrs(current.Attrs, "value", true) {
+				return 0, false
 			}
 			options++
 		default:
-			return false
+			return 0, false
 		}
 	}
-	return options > 0
+	return options, true
+}
+
+func hydrationAwaitSnapshotStaticSelectAttrs(attrs []*Attr, required string, requireExplicitValue bool) bool {
+	hasRequired := false
+	for _, attr := range attrs {
+		if attr == nil || attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+			return false
+		}
+		if attr.Name == "selected" {
+			return false
+		}
+		if attr.Name == required {
+			if requireExplicitValue && attr.ValueKind == AttrValueMissing {
+				return false
+			}
+			hasRequired = true
+		}
+	}
+	return hasRequired
 }
 
 func hydrationAwaitSnapshotKeyedEachDirectTextRow(nodes []Node, itemName string) (*ElementNode, *TextNode, bool) {

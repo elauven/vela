@@ -1174,37 +1174,63 @@ func ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes []SSRPlanNode, itemName st
 }
 
 func ssrAwaitSnapshotKeyedEachStaticSelectOptions(nodes []SSRPlanNode) bool {
+	options, ok := ssrAwaitSnapshotKeyedEachStaticSelectOptionTree(nodes, true)
+	return ok && options > 0
+}
+
+// ssrAwaitSnapshotKeyedEachStaticSelectOptionTree mirrors the cached-template
+// validator used by hydration. It accepts static option groups but deliberately
+// does not turn their descendants into a dynamic lifecycle owner.
+func ssrAwaitSnapshotKeyedEachStaticSelectOptionTree(nodes []SSRPlanNode, allowOptgroup bool) (int, bool) {
 	options := 0
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *SSRPlanText:
 			for _, part := range current.Parts {
 				if !part.Static {
-					return false
+					return 0, false
 				}
 			}
 		case *SSRPlanElement:
-			if current == nil || current.Tag != "option" || !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) {
-				return false
+			if current == nil {
+				return 0, false
 			}
-			hasValue := false
-			for _, attr := range current.Attrs {
-				if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-					return false
+			if current.Tag == "optgroup" {
+				if !allowOptgroup || !ssrAwaitSnapshotStaticSelectAttrs(current.Attrs, "label", false) {
+					return 0, false
 				}
-				if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
-					hasValue = true
+				childOptions, ok := ssrAwaitSnapshotKeyedEachStaticSelectOptionTree(current.Children, false)
+				if !ok || childOptions == 0 {
+					return 0, false
 				}
+				options += childOptions
+				continue
 			}
-			if !hasValue {
-				return false
+			if current.Tag != "option" || !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) || !ssrAwaitSnapshotStaticSelectAttrs(current.Attrs, "value", true) {
+				return 0, false
 			}
 			options++
 		default:
-			return false
+			return 0, false
 		}
 	}
-	return options > 0
+	return options, true
+}
+
+func ssrAwaitSnapshotStaticSelectAttrs(attrs []SSRPlanAttr, required string, requireExplicitValue bool) bool {
+	hasRequired := false
+	for _, attr := range attrs {
+		if attr.Role != SSRAttrStatic || attr.Name == "selected" {
+			return false
+		}
+		if attr.Name == required {
+			if requireExplicitValue && attr.ValueKind == AttrValueMissing {
+				return false
+			}
+			hasRequired = true
+		}
+	}
+	return hasRequired
 }
 
 func ssrAwaitSnapshotSlotStaticKey(node *SSRPlanIf) bool {
