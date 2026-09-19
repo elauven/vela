@@ -9203,6 +9203,7 @@ type hydrationKeyedEachDirectControlDescriptor struct {
 // owns the list replacement; this descriptor deliberately does not promise
 // per-option identity yet.
 type hydrationKeyedEachSelectOptionListDescriptor struct {
+	Kind       hydrationKeyedEachSelectOptionListKind
 	Each       *EachBlockNode
 	Option     *ElementNode
 	ValueAttr  *Attr
@@ -9212,6 +9213,16 @@ type hydrationKeyedEachSelectOptionListDescriptor struct {
 	GroupIndex int
 	Groups     []*ElementNode
 }
+
+// hydrationKeyedEachSelectOptionListKind records the ownership strategy of
+// one top-level optgroup list. Future mixed-list lowering must read this
+// parser-owned fact instead of guessing from a global all-keyed condition.
+type hydrationKeyedEachSelectOptionListKind uint8
+
+const (
+	hydrationKeyedEachSelectOptionListReplace hydrationKeyedEachSelectOptionListKind = iota
+	hydrationKeyedEachSelectOptionListKeyed
+)
 
 func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName string) (hydrationKeyedEachDirectControlDescriptor, bool) {
 	if itemName == "" || len(nodes) != 1 {
@@ -9817,7 +9828,11 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []Node, rowName
 			return nil, false
 		}
 	}
-	return &hydrationKeyedEachSelectOptionListDescriptor{Each: each, Option: option, ValueAttr: value, Text: text, Key: each.KeyAST, GroupIndex: -1}, true
+	kind := hydrationKeyedEachSelectOptionListReplace
+	if each.HasKey() {
+		kind = hydrationKeyedEachSelectOptionListKeyed
+	}
+	return &hydrationKeyedEachSelectOptionListDescriptor{Kind: kind, Each: each, Option: option, ValueAttr: value, Text: text, Key: each.KeyAST, GroupIndex: -1}, true
 }
 
 // hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList is the first
