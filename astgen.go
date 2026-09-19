@@ -9189,12 +9189,13 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 		return hydrationKeyedEachDirectControlDescriptor{}, false
 	}
 	var bind *Attr
+	checkbox := false
 	for _, attr := range element.Attrs {
 		if attr == nil {
 			continue
 		}
 		if attr.IsTwoWay {
-			if attr.Name != "value" || attr.Expr == nil || bind != nil {
+			if (attr.Name != "value" && attr.Name != "checked") || attr.Expr == nil || bind != nil {
 				return hydrationKeyedEachDirectControlDescriptor{}, false
 			}
 			root, ok := templateExprMemberBindingRoot(attr.Expr)
@@ -9204,11 +9205,14 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 			bind = attr
 			continue
 		}
+		if attr.Name == "type" && attr.Value == "checkbox" {
+			checkbox = true
+		}
 		if attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsClassDir || attr.IsStyleDir || attr.IsBindThis {
 			return hydrationKeyedEachDirectControlDescriptor{}, false
 		}
 	}
-	return hydrationKeyedEachDirectControlDescriptor{Element: element, Bind: bind}, bind != nil
+	return hydrationKeyedEachDirectControlDescriptor{Element: element, Bind: bind}, bind != nil && (bind.Name != "checked" || checkbox)
 }
 
 func hydrationAwaitSnapshotKeyedEachDirectTextRow(nodes []Node, itemName string) (*ElementNode, *TextNode, bool) {
@@ -9887,6 +9891,9 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		g.withTemplateBinding(block.ItemName, "$$rowItem", func() {
 			g.withTemplateBinding(block.IndexName, "$$rowIndex", func() { rowControlValue = g.templateExpr(directControl.Bind.Expr) })
 		})
+		if directControl.Bind.Name == "checked" {
+			rowControlValue = genBool(rowControlValue)
+		}
 		g.withTemplateBinding(block.ItemName, "$$item", func() {
 			g.withTemplateBinding(block.IndexName, "$$index", func() { createControlValue = g.templateExpr(directControl.Bind.Expr) })
 		})
@@ -10121,7 +10128,15 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			)
 		}
 		if hasDynamicControlRow {
-			createBody = append(createBody, genAssignStmt(genMember(id("$$row_element"), "value"), createControlValue))
+			spec, ok := twoWayBindSpec(textElement.Tag, directControl.Bind.Name)
+			if !ok {
+				panic("vela: missing direct keyed control create specification")
+			}
+			value := createControlValue
+			if directControl.Bind.Name == "checked" {
+				value = genBool(value)
+			}
+			createBody = append(createBody, genAssignStmt(genMember(id("$$row_element"), spec.readProp), value))
 		}
 		createBody = append(createBody, genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$row_element"))))
 	} else {

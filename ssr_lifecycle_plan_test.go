@@ -148,18 +148,27 @@ func TestSSRStructuralLifecyclePlanRetainsInnerKeyedEachRecipe(t *testing.T) {
 }
 
 func TestSSRStructuralLifecyclePlanRetainsDirectControlRowRecipe(t *testing.T) {
-	sfc, err := parseSFC(`<template>{#each rows as row (row.id)}<input bind:value={row.title} />{/each}</template>`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	each := sfc.TemplateAST.Nodes[0].(*EachBlockNode)
-	plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes).Find(SSRLifecyclePlanEach, each.Span)
-	if plan == nil || plan.KeyedEach == nil || !plan.KeyedEach.DirectControlRows {
-		t.Fatalf("direct-control lifecycle recipe=%#v", plan)
-	}
-	block, element, attr, ok := ssrHydrationDirectKeyedEachControl(plan)
-	if !ok || block != each || element.Tag != "input" || attr.Name != "value" {
-		t.Fatalf("direct-control hydration adapter block=%#v element=%#v attr=%#v ok=%t", block, element, attr, ok)
+	for _, tc := range []struct {
+		name, source, bind string
+	}{
+		{name: "value", source: `<template>{#each rows as row (row.id)}<input bind:value={row.title} />{/each}</template>`, bind: "value"},
+		{name: "checked", source: `<template>{#each rows as row (row.id)}<input type="checkbox" bind:checked={row.done} />{/each}</template>`, bind: "checked"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sfc, err := parseSFC(tc.source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			each := sfc.TemplateAST.Nodes[0].(*EachBlockNode)
+			plan := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes).Find(SSRLifecyclePlanEach, each.Span)
+			if plan == nil || plan.KeyedEach == nil || !plan.KeyedEach.DirectControlRows {
+				t.Fatalf("direct-control lifecycle recipe=%#v", plan)
+			}
+			block, element, attr, ok := ssrHydrationDirectKeyedEachControl(plan)
+			if !ok || block != each || element.Tag != "input" || attr.Name != tc.bind {
+				t.Fatalf("direct-control hydration adapter block=%#v element=%#v attr=%#v ok=%t", block, element, attr, ok)
+			}
+		})
 	}
 }
 

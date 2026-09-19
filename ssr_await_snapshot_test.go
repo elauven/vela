@@ -251,6 +251,45 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectInputBindingDeepState(
 	}
 }
 
+func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectCheckboxBinding(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<input type="checkbox" bind:checked={row.done} />{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := plan.Nodes[0].(*SSRPlanElement)
+	await := main.Children[0].(*SSRPlanAwait)
+	each := await.ThenChildren[0].(*SSRPlanEach)
+	if !ssrAwaitSnapshotKeyedEachDirectControlPlanRow(each.Children, each.ItemName) {
+		t.Fatalf("checkbox snapshot predicate rejected row=%#v", each.Children)
+	}
+	file, err := BuildSSRGoFile(plan, "page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(server), `vela.Get(ssrEachItem0, "done")`) {
+		t.Fatalf("direct checkbox SSR renderer misses row value:\n%s", server)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(client, PrintPretty)
+	for _, want := range []string{`controlValue`, `.checked`, `addEventListener('change'`, `removeEventListener('change'`, `$$set_rows(rows.slice())`} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("direct checkbox keyed-row hydration client misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectRowText(t *testing.T) {
 	node := requirePlaywright(t)
 	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}{#each rows as row (row.id)}<p class="settled-row" :title={row.title} class:selected={row.selected} style:color={row.color} @click={() => globalThis.__velaRowClicks = (globalThis.__velaRowClicks || 0) + 1}>{row.title}</p>{/each}{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
@@ -357,6 +396,61 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectInputBindin
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("direct input keyed await snapshot browser output=%q", got)
+	}
+}
+
+func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectCheckboxBinding(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}{#each rows as row (row.id)}<input type="checkbox" class="settled-check" bind:checked={row.done} />{/each}{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := plan.Nodes[0].(*SSRPlanElement)
+	await := main.Children[0].(*SSRPlanAwait)
+	each := await.ThenChildren[0].(*SSRPlanEach)
+	rowElement := each.Children[0].(*SSRPlanElement)
+	rowScope := func(key string) string { return "vela-page--each-" + itoa(each.Span.Start) + "-" + key }
+	rowHTML := func(key string, done bool) string {
+		scope, checked := rowScope(key), ""
+		if done {
+			checked = " checked"
+		}
+		return `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><input vela-page="" type="checkbox" class="settled-check"` + checked + `><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
+	}
+	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", true) + rowHTML("b", false) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","done":true},{"id":"b","done":false}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":             embeddedRuntime,
+		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
+		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
+		"index.html":             []byte(html),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{const data=fs.readFileSync(path.join(root,n));return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(data)}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("checkbox hydration wrote initial property");await p.evaluate(()=>{window.a=document.querySelectorAll(".settled-check")[0];window.b=document.querySelectorAll(".settled-check")[1];window.a.checked=false;window.a.dispatchEvent(new Event("change",{bubbles:true}))});await p.waitForFunction(()=>!document.querySelectorAll(".settled-check")[0].checked);await p.evaluate(()=>window.hydrated.component.set({rows:[{id:"b",done:true},{id:"a",done:false},{id:"c",done:true}]}));await p.waitForFunction(()=>document.querySelectorAll(".settled-check").length===3);if(!(await p.evaluate(()=>{const rows=[...document.querySelectorAll(".settled-check")];return rows[0]===window.b&&rows[0].checked&&rows[1]===window.a&&!rows[1].checked&&rows[2].checked})))throw new Error("keyed checkbox rows lost identity or checked values");await p.evaluate(()=>{window.removed=window.a;window.hydrated.component.set({rows:[{id:"b",done:true},{id:"c",done:true}]})});await p.waitForFunction(()=>document.querySelectorAll(".settled-check").length===2);await p.evaluate(()=>{window.removed.checked=true;window.removed.dispatchEvent(new Event("change",{bubbles:true}))});if(await p.evaluate(()=>window.removed.isConnected))throw new Error("removed checkbox remained connected");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("direct checkbox keyed await snapshot browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("direct checkbox keyed await snapshot browser output=%q", got)
 	}
 }
 

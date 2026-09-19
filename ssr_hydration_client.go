@@ -318,7 +318,7 @@ func ssrHydrationDirectKeyedEachControl(plan *SSRStructuralLifecyclePlan) (*Each
 		return nil, nil, nil, false
 	}
 	for _, attr := range element.Attrs {
-		if attr != nil && attr.IsTwoWay && attr.Name == "value" {
+		if attr != nil && attr.IsTwoWay && (attr.Name == "value" || attr.Name == "checked") {
 			return block, element, attr, true
 		}
 	}

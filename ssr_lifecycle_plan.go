@@ -340,12 +340,13 @@ func ssrKeyedEachDirectControlRows(block *EachBlockNode) bool {
 		return false
 	}
 	bindings := 0
+	checkbox := false
 	for _, attr := range element.Attrs {
 		if attr == nil {
 			continue
 		}
 		if attr.IsTwoWay {
-			if attr.Name != "value" || attr.Expr == nil {
+			if (attr.Name != "value" && attr.Name != "checked") || attr.Expr == nil {
 				return false
 			}
 			root, ok := templateExprMemberBindingRoot(attr.Expr)
@@ -355,11 +356,23 @@ func ssrKeyedEachDirectControlRows(block *EachBlockNode) bool {
 			bindings++
 			continue
 		}
+		if attr.Name == "type" && attr.Value == "checkbox" {
+			checkbox = true
+		}
 		if attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsClassDir || attr.IsStyleDir || attr.IsBindThis {
 			return false
 		}
 	}
-	return bindings == 1
+	return bindings == 1 && (bindings == 0 || !hasCheckedControlBinding(element) || checkbox)
+}
+
+func hasCheckedControlBinding(element *ElementNode) bool {
+	for _, attr := range element.Attrs {
+		if attr != nil && attr.IsTwoWay && attr.Name == "checked" {
+			return true
+		}
+	}
+	return false
 }
 
 // ssrKeyedEachDirectLeafRows describes the first independently reconciled

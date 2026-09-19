@@ -1054,11 +1054,15 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 		return false
 	}
 	bindings := 0
+	checkbox := false
 	for _, attr := range element.Attrs {
 		switch attr.Role {
 		case SSRAttrStatic:
+			if attr.Name == "type" && attr.Value == "checkbox" {
+				checkbox = true
+			}
 		case SSRAttrTwoWay:
-			if attr.Name != "value" || attr.Expr == nil {
+			if (attr.Name != "value" && attr.Name != "checked") || attr.Expr == nil {
 				return false
 			}
 			root, ok := templateExprMemberBindingRoot(attr.Expr)
@@ -1070,7 +1074,16 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 			return false
 		}
 	}
-	return bindings == 1
+	return bindings == 1 && (bindings == 0 || !ssrAwaitSnapshotKeyedEachHasCheckedControlBinding(element) || checkbox)
+}
+
+func ssrAwaitSnapshotKeyedEachHasCheckedControlBinding(element *SSRPlanElement) bool {
+	for _, attr := range element.Attrs {
+		if attr.Role == SSRAttrTwoWay && attr.Name == "checked" {
+			return true
+		}
+	}
+	return false
 }
 
 func ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes []SSRPlanNode, itemName string) bool {
