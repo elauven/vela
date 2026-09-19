@@ -1227,6 +1227,9 @@ func ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEachNodes(nodes []Node, ite
 	if _, ok := hydrationAwaitSnapshotKeyedEachDirectRow(nodes, itemName); ok {
 		return true
 	}
+	if _, ok := hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes, itemName); ok {
+		return true
+	}
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:

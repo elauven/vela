@@ -1009,6 +1009,9 @@ func ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(nodes []SSRPlanNode, itemName 
 	if ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes, itemName) {
 		return true
 	}
+	if ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes, itemName) {
+		return true
+	}
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *SSRPlanText:
@@ -1037,6 +1040,37 @@ func ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(nodes []SSRPlanNode, itemName 
 		}
 	}
 	return true
+}
+
+// ssrAwaitSnapshotKeyedEachDirectControlPlanRow mirrors the typed control
+// recipe consumed by the hydration lowerer. Keep it intentionally narrow so
+// SSR never advertises a row shape the client cannot retain safely.
+func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName string) bool {
+	if itemName == "" || len(nodes) != 1 {
+		return false
+	}
+	element, ok := nodes[0].(*SSRPlanElement)
+	if !ok || element == nil || element.Tag != "input" || len(element.Children) != 0 {
+		return false
+	}
+	bindings := 0
+	for _, attr := range element.Attrs {
+		switch attr.Role {
+		case SSRAttrStatic:
+		case SSRAttrTwoWay:
+			if attr.Name != "value" || attr.Expr == nil {
+				return false
+			}
+			root, ok := templateExprMemberBindingRoot(attr.Expr)
+			if !ok || root != itemName {
+				return false
+			}
+			bindings++
+		default:
+			return false
+		}
+	}
+	return bindings == 1
 }
 
 func ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes []SSRPlanNode, itemName string) bool {
