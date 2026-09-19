@@ -487,6 +487,10 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 				}}})
 				continue
 			}
+			if e.selectValue != nil && node.Tag == "option" && attr.Name == "value" {
+				optionValue = attr
+				hasOptionValue = true
+			}
 			open += " " + attr.Name + "=\""
 			body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
 			value, err := e.outputValue(false, "", attr.Expr)
@@ -503,7 +507,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 		return nil, ssrExprUnsupported(node.Span.Start, "select multiple bind:value has no safe SSR representation yet")
 	}
 	if e.selectValue != nil && node.Tag == "option" && !hasOptionValue {
-		return nil, ssrExprUnsupported(node.Span.Start, "an option under select bind:value requires an explicit static value")
+		return nil, ssrExprUnsupported(node.Span.Start, "an option under select bind:value requires an explicit static value (or a supported dynamic value)")
 	}
 	if e.selectValue != nil && node.Tag == "option" {
 		selected, err := e.selectOptionCondition(e.selectValue, optionValue)
@@ -747,7 +751,19 @@ func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionVa
 	if err != nil {
 		return nil, err
 	}
-	option := goast.Expr(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(optionValue.Value)})
+	var option goast.Expr
+	switch optionValue.Role {
+	case SSRAttrStatic:
+		option = &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(optionValue.Value)}
+	case SSRAttrDynamic:
+		value, err := TranslateSSRExpression(optionValue.Expr, e.ctx)
+		if err != nil {
+			return nil, err
+		}
+		option = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{value}}
+	default:
+		return nil, ssrExprUnsupported(optionValue.Span.Start, "an option under select bind:value has no renderable value")
+	}
 	return &goast.BinaryExpr{
 		X:  &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{selected}},
 		Op: token.EQL,
@@ -1071,7 +1087,7 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 		return false
 	}
 	if element.Tag == "select" && !ssrAwaitSnapshotKeyedEachStaticSelectOptions(element.Children) {
-		if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDisabled(element.Children, itemName); !ok {
+		if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(element.Children, itemName); !ok {
 			return false
 		}
 	}
@@ -1105,10 +1121,10 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 	return bindings == 1 && (bindings == 0 || !ssrAwaitSnapshotKeyedEachHasCheckedControlBinding(element) || checkbox)
 }
 
-// ssrAwaitSnapshotKeyedEachDirectSelectOptionDisabled mirrors the first
-// dynamic option-tree leaf accepted by hydration: one row-owned boolean
-// disabled attribute on an otherwise static direct option list.
-func ssrAwaitSnapshotKeyedEachDirectSelectOptionDisabled(nodes []SSRPlanNode, itemName string) (SSRPlanAttr, int, bool) {
+// ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic mirrors the bounded
+// dynamic option-tree leaf accepted by hydration: one row-owned disabled or
+// value attribute on an otherwise static direct option list.
+func ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(nodes []SSRPlanNode, itemName string) (SSRPlanAttr, int, bool) {
 	options, dynamicIndex := 0, -1
 	var dynamic SSRPlanAttr
 	found := false
@@ -1128,12 +1144,15 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptionDisabled(nodes []SSRPlanNode, it
 			for _, attr := range current.Attrs {
 				if attr.Role == SSRAttrDynamic {
 					root, ok := templateExprMemberBindingRoot(attr.Expr)
-					if attr.Name != "disabled" || found || !ok || root != itemName {
+					if (attr.Name != "disabled" && attr.Name != "value") || found || !ok || root != itemName {
 						return SSRPlanAttr{}, -1, false
 					}
 					dynamic = attr
 					dynamicIndex = options
 					found = true
+					if attr.Name == "value" {
+						hasValue = true
+					}
 					continue
 				}
 				if attr.Role != SSRAttrStatic || attr.Name == "selected" {

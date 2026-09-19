@@ -9176,10 +9176,10 @@ type hydrationKeyedEachDirectRowDescriptor struct {
 // hydration and therefore need a row-owned listener/write lifecycle instead
 // of a text-marker writer.
 type hydrationKeyedEachDirectControlDescriptor struct {
-	Element             *ElementNode
-	Bind                *Attr
-	OptionDisabled      *Attr
-	OptionDisabledIndex int
+	Element            *ElementNode
+	Bind               *Attr
+	OptionDynamic      *Attr
+	OptionDynamicIndex int
 }
 
 func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName string) (hydrationKeyedEachDirectControlDescriptor, bool) {
@@ -9193,14 +9193,14 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 	if element.Tag != "select" && len(element.Children) != 0 {
 		return hydrationKeyedEachDirectControlDescriptor{}, false
 	}
-	descriptor := hydrationKeyedEachDirectControlDescriptor{Element: element, OptionDisabledIndex: -1}
+	descriptor := hydrationKeyedEachDirectControlDescriptor{Element: element, OptionDynamicIndex: -1}
 	if element.Tag == "select" && !hydrationAwaitSnapshotKeyedEachStaticSelectOptions(element.Children) {
-		optionDisabled, optionIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptionDisabled(element.Children, itemName)
+		optionDynamic, optionIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptionDynamic(element.Children, itemName)
 		if !ok {
 			return hydrationKeyedEachDirectControlDescriptor{}, false
 		}
-		descriptor.OptionDisabled = optionDisabled
-		descriptor.OptionDisabledIndex = optionIndex
+		descriptor.OptionDynamic = optionDynamic
+		descriptor.OptionDynamicIndex = optionIndex
 	}
 	var bind *Attr
 	checkbox := false
@@ -9239,13 +9239,12 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 	return descriptor, bind != nil && (bind.Name != "checked" || checkbox)
 }
 
-// hydrationAwaitSnapshotKeyedEachDirectSelectOptionDisabled is the first
+// hydrationAwaitSnapshotKeyedEachDirectSelectOptionDynamic is the bounded
 // option-tree lifecycle leaf. The containing select remains static except for
-// one boolean disabled attribute whose cached expression is rooted at the
-// retained row item. A later option-tree recipe can generalize this to
-// dynamic values, structural option lists, and multiple selection without
+// one disabled/value attribute rooted at the retained row item. A later
+// recipe can generalize this to dynamic lists and multiple selection without
 // changing the outer control controller contract.
-func hydrationAwaitSnapshotKeyedEachDirectSelectOptionDisabled(nodes []Node, itemName string) (*Attr, int, bool) {
+func hydrationAwaitSnapshotKeyedEachDirectSelectOptionDynamic(nodes []Node, itemName string) (*Attr, int, bool) {
 	options, dynamicIndex := 0, -1
 	var dynamic *Attr
 	for _, node := range nodes {
@@ -9265,11 +9264,14 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptionDisabled(nodes []Node, ite
 				}
 				if attr.IsBind {
 					root, ok := templateExprMemberBindingRoot(attr.Expr)
-					if attr.Name != "disabled" || dynamic != nil || !ok || root != itemName {
+					if (attr.Name != "disabled" && attr.Name != "value") || dynamic != nil || !ok || root != itemName {
 						return nil, -1, false
 					}
 					dynamic = attr
 					dynamicIndex = options
+					if attr.Name == "value" {
+						hasValue = true
+					}
 					continue
 				}
 				if attr.Expr != nil || attr.Name == "selected" {
@@ -9982,7 +9984,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		genIf(genUnary("!", id("$$select")), genReturn(genNull())),
 		genReturn(genCall(genMember(genCall(genMember(id("$$select"), "querySelectorAll"), strLit("option")), "item"), id("$$optionIndex"))),
 	)}
-	var rowTextValue, createTextValue, rowAttrValue, createAttrValue, rowClassValue, createClassValue, rowStyleValue, createStyleValue, rowControlValue, createControlValue, rowControlAssign, rowOptionDisabled, createOptionDisabled JsExpr
+	var rowTextValue, createTextValue, rowAttrValue, createAttrValue, rowClassValue, createClassValue, rowStyleValue, createStyleValue, rowControlValue, createControlValue, rowControlAssign, rowOptionDynamic, createOptionDynamic JsExpr
 	if hasDynamicTextRow {
 		markerID := g.hydrationTextMarkerID(firstDynamicTextPart(textNode))
 		// The row resolves this repeated marker relative to its own r range, but
@@ -10056,13 +10058,20 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			assignment = genBlock(genAssignStmt(target, id("$$value")), genInvoke("$$set_"+state, genCall(genMember(id(state), "slice"))))
 		}
 		rowControlAssign = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$value")}, Body: assignment}
-		if directControl.OptionDisabled != nil {
+		if directControl.OptionDynamic != nil {
 			g.withTemplateBinding(block.ItemName, "$$rowItem", func() {
-				g.withTemplateBinding(block.IndexName, "$$rowIndex", func() { rowOptionDisabled = genBool(g.templateExpr(directControl.OptionDisabled.Expr)) })
+				g.withTemplateBinding(block.IndexName, "$$rowIndex", func() { rowOptionDynamic = g.templateExpr(directControl.OptionDynamic.Expr) })
 			})
 			g.withTemplateBinding(block.ItemName, "$$item", func() {
-				g.withTemplateBinding(block.IndexName, "$$index", func() { createOptionDisabled = genBool(g.templateExpr(directControl.OptionDisabled.Expr)) })
+				g.withTemplateBinding(block.IndexName, "$$index", func() { createOptionDynamic = g.templateExpr(directControl.OptionDynamic.Expr) })
 			})
+			if directControl.OptionDynamic.Name == "disabled" {
+				rowOptionDynamic = genBool(rowOptionDynamic)
+				createOptionDynamic = genBool(createOptionDynamic)
+			} else {
+				rowOptionDynamic = genString(rowOptionDynamic)
+				createOptionDynamic = genString(createOptionDynamic)
+			}
 		}
 	}
 
@@ -10090,9 +10099,9 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	if hasDynamicControlRow {
 		controllerControlAssign = rowControlAssign
 	}
-	controllerOptionDisabled := JsExpr(id("undefined"))
-	if directControl.OptionDisabled != nil {
-		controllerOptionDisabled = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowOptionDisabled}
+	controllerOptionDynamic := JsExpr(id("undefined"))
+	if directControl.OptionDynamic != nil {
+		controllerOptionDynamic = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowOptionDynamic}
 	}
 	controller := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(
 		genLet("$$rowItem", id("$$item")),
@@ -10108,7 +10117,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			{Key: id("controlAssign"), Value: controllerControlAssign},
 			{Key: id("controlApplied"), Value: id("undefined")},
 			{Key: id("controlDOMValue"), Value: id("undefined")},
-			{Key: id("optionDisabled"), Value: controllerOptionDisabled},
+			{Key: id("optionDynamic"), Value: controllerOptionDynamic},
 			{Key: id("updates"), Value: genArray()},
 			{Key: id("listeners"), Value: genArray()},
 			{Key: id("children"), Value: genArray()},
@@ -10166,21 +10175,26 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				)})),
 			)),
 		)
-		if directControl.OptionDisabled != nil {
-			optionVar := prefix + "_option_disabled_element"
-			optionUpdateVar := prefix + "_option_disabled_update"
-			optionValueVar := prefix + "_option_disabled_value"
+		if directControl.OptionDynamic != nil {
+			optionVar := prefix + "_option_dynamic_element"
+			optionUpdateVar := prefix + "_option_dynamic_update"
+			optionValueVar := prefix + "_option_dynamic_value"
 			optionUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-				genConst(optionValueVar, genCall(genMember(id("$$controller"), "optionDisabled"))),
-				genIf(genBinary("!==", genMember(id(optionVar), "disabled"), id(optionValueVar)), genAssignStmt(genMember(id(optionVar), "disabled"), id(optionValueVar))),
+				genConst(optionValueVar, genCall(genMember(id("$$controller"), "optionDynamic"))),
+				genIf(genBinary("!==", genMember(id(optionVar), directControl.OptionDynamic.Name), id(optionValueVar)), genAssignStmt(genMember(id(optionVar), directControl.OptionDynamic.Name), id(optionValueVar))),
 			)}
-			attachBody = append(attachBody,
-				genConst(optionVar, genCall(id(findOptionVar), genMember(id("$$controller"), "row"), numLit(directControl.OptionDisabledIndex))),
+			optionAttach := []JsStmt{
+				genConst(optionVar, genCall(id(findOptionVar), genMember(id("$$controller"), "row"), numLit(directControl.OptionDynamicIndex))),
 				genIf(id(optionVar), genBlock(
 					genConst(optionUpdateVar, optionUpdate),
 					genExprStmt(genCall(genMember(genMember(id("$$controller"), "updates"), "push"), id(optionUpdateVar))),
 				)),
-			)
+			}
+			if directControl.OptionDynamic.Name == "value" {
+				attachBody = append(optionAttach, attachBody...)
+			} else {
+				attachBody = append(attachBody, optionAttach...)
+			}
 		}
 	}
 	if hasDynamicTextRow {
@@ -10317,11 +10331,11 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			)
 		}
 		if hasDynamicControlRow && textElement.Tag == "select" {
-			createBody = append(createBody, genExprStmt(genCall(id("$$insertHTML"), id("$$row_element"), strLit(emitStaticHTMLWithoutEventsExcept(textElement.Children, g.scopeID, directControl.OptionDisabled)))))
-			if directControl.OptionDisabled != nil {
+			createBody = append(createBody, genExprStmt(genCall(id("$$insertHTML"), id("$$row_element"), strLit(emitStaticHTMLWithoutEventsExcept(textElement.Children, g.scopeID, directControl.OptionDynamic)))))
+			if directControl.OptionDynamic != nil {
 				createBody = append(createBody,
-					genConst("$$row_option", genCall(genMember(genCall(genMember(id("$$row_element"), "querySelectorAll"), strLit("option")), "item"), numLit(directControl.OptionDisabledIndex))),
-					genIf(id("$$row_option"), genAssignStmt(genMember(id("$$row_option"), "disabled"), createOptionDisabled)),
+					genConst("$$row_option", genCall(genMember(genCall(genMember(id("$$row_element"), "querySelectorAll"), strLit("option")), "item"), numLit(directControl.OptionDynamicIndex))),
+					genIf(id("$$row_option"), genAssignStmt(genMember(id("$$row_option"), directControl.OptionDynamic.Name), createOptionDynamic)),
 				)
 			}
 		}
