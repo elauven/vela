@@ -927,6 +927,24 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectMultipleKeyedOpt
 	}
 }
 
+func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectMixedOptgroupOptionLists(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}><optgroup label="Current">{#each row.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each row.history as option}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(client, PrintPretty)
+	for _, want := range []string{`optionListKeys`, `optionBlocksByGroup`, `option_list_reconciles`, `$$reconcileHydrationKeyedElements`, `replaceChildren`} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("mixed option-list hydration client misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectKeyedOptionList(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}>{#each row.options as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
@@ -1583,9 +1601,9 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptgroupOptionList(t *
 	}
 }
 
-func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectMultipleKeyedOptgroupOptionLists(t *testing.T) {
+func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectMixedOptgroupOptionLists(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="dynamic-list-select" bind:value={row.status}><optgroup label="Available">{#each row.options as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="Archived">{#each row.archived as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="dynamic-list-select" bind:value={row.status}><optgroup label="Available">{#each row.options as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="Archived">{#each row.archived as option}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1650,13 +1668,13 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectMultipleKeyedOptgroupO
 		`options:[{id:"later",value:"later",label:"Later 2"},{id:"done",value:"done",label:"Done"}],archived:[{id:"closed",value:"closed",label:"Closed 2"}]},{id:"a",status:"done",options:[{id:"done",value:"done",label:"Done 2"},{id:"open",value:"queued",label:"Queued"}],archived:[{id:"archived",value:"archived",label:"Archived 2"}]},{id:"c",status:"new",options:[{id:"new",value:"new",label:"New"}],archived:[{id:"archived",value:"archived",label:"Archived"}]}`, 1)
 	browser = strings.Replace(browser,
 		`window.a.value==="queued"&&window.a.options[0].textContent==="Queued"`,
-		`window.a.value==="queued"&&window.aGroup.label==="Available"&&window.a.options[0].textContent==="Queued"&&window.aArchivedGroup.querySelector("option")===window.aArchivedOption&&window.aArchivedOption.textContent==="Archived 2"`, 1)
+		`window.a.value==="queued"&&window.aGroup.label==="Available"&&window.a.options[0].textContent==="Queued"&&window.aArchivedGroup.querySelector("option")!==window.aArchivedOption&&window.aArchivedGroup.querySelector("option").textContent==="Archived 2"`, 1)
 	browser = strings.Replace(browser,
 		`document.querySelectorAll(".dynamic-list-select")[0]===window.a&&window.a.options.length===2`,
-		`document.querySelectorAll(".dynamic-list-select")[0]===window.a&&window.a.querySelector("optgroup")===window.aGroup&&window.a.querySelectorAll("optgroup").item(1)===window.aArchivedGroup&&window.a.options.length===3&&window.a.options[0]===window.aOpen&&window.a.options[1]===window.aDone&&window.aArchivedGroup.querySelector("option")===window.aArchivedOption`, 1)
+		`document.querySelectorAll(".dynamic-list-select")[0]===window.a&&window.a.querySelector("optgroup")===window.aGroup&&window.a.querySelectorAll("optgroup").item(1)===window.aArchivedGroup&&window.a.options.length===3&&window.a.options[0]===window.aOpen&&window.a.options[1]===window.aDone&&window.aArchivedGroup.querySelector("option")!==window.aArchivedOption`, 1)
 	browser = strings.Replace(browser,
 		`rows[0]===window.b&&rows[0].value==="later"&&rows[1]===window.a&&rows[1].value==="done"&&rows[2].value==="new"`,
-		`rows[0]===window.b&&rows[0].querySelector("optgroup")===window.bGroup&&rows[0].querySelectorAll("optgroup").item(1)===window.bArchivedGroup&&rows[0].querySelector("optgroup").label==="Available"&&rows[0].querySelectorAll("optgroup").item(1).label==="Archived"&&rows[0].value==="later"&&rows[0].querySelectorAll("optgroup").item(1).querySelector("option")===window.bArchivedOption&&window.bArchivedOption.textContent==="Closed 2"&&rows[1]===window.a&&rows[1].querySelector("optgroup")===window.aGroup&&rows[1].querySelectorAll("optgroup").item(1)===window.aArchivedGroup&&rows[1].querySelector("optgroup").label==="Available"&&rows[1].querySelectorAll("optgroup").item(1).label==="Archived"&&rows[1].value==="done"&&rows[1].options[0]===window.aDone&&rows[1].options[1]===window.aOpen&&rows[1].querySelectorAll("optgroup").item(1).querySelector("option")===window.aArchivedOption&&rows[2].querySelectorAll("optgroup").length===2&&rows[2].querySelector("optgroup").label==="Available"&&rows[2].querySelectorAll("optgroup").item(1).label==="Archived"&&rows[2].value==="new"&&rows[2].options[1].value==="archived"`, 1)
+		`rows[0]===window.b&&rows[0].querySelector("optgroup")===window.bGroup&&rows[0].querySelectorAll("optgroup").item(1)===window.bArchivedGroup&&rows[0].querySelector("optgroup").label==="Available"&&rows[0].querySelectorAll("optgroup").item(1).label==="Archived"&&rows[0].value==="later"&&rows[0].querySelectorAll("optgroup").item(1).querySelector("option")!==window.bArchivedOption&&rows[0].querySelectorAll("optgroup").item(1).querySelector("option").textContent==="Closed 2"&&rows[1]===window.a&&rows[1].querySelector("optgroup")===window.aGroup&&rows[1].querySelectorAll("optgroup").item(1)===window.aArchivedGroup&&rows[1].querySelector("optgroup").label==="Available"&&rows[1].querySelectorAll("optgroup").item(1).label==="Archived"&&rows[1].value==="done"&&rows[1].options[0]===window.aDone&&rows[1].options[1]===window.aOpen&&rows[1].querySelectorAll("optgroup").item(1).querySelector("option")!==window.aArchivedOption&&rows[2].querySelectorAll("optgroup").length===2&&rows[2].querySelector("optgroup").label==="Available"&&rows[2].querySelectorAll("optgroup").item(1).label==="Archived"&&rows[2].value==="new"&&rows[2].options[1].value==="archived"`, 1)
 	command := exec.Command(node, "-e", browser, dir)
 	command.Dir = "/projects/compiler"
 	output, err := command.CombinedOutput()
