@@ -1050,7 +1050,13 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 		return false
 	}
 	element, ok := nodes[0].(*SSRPlanElement)
-	if !ok || element == nil || (element.Tag != "input" && element.Tag != "textarea") || len(element.Children) != 0 {
+	if !ok || element == nil || (element.Tag != "input" && element.Tag != "textarea" && element.Tag != "select") {
+		return false
+	}
+	if element.Tag != "select" && len(element.Children) != 0 {
+		return false
+	}
+	if element.Tag == "select" && !ssrAwaitSnapshotKeyedEachStaticSelectOptions(element.Children) {
 		return false
 	}
 	bindings := 0
@@ -1066,6 +1072,9 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 				return false
 			}
 			if attr.Name == "checked" && element.Tag != "input" {
+				return false
+			}
+			if element.Tag == "select" && attr.Name != "value" {
 				return false
 			}
 			root, ok := templateExprMemberBindingRoot(attr.Expr)
@@ -1103,6 +1112,9 @@ func ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes []SSRPlanNode, itemName st
 		case SSRAttrStatic:
 		case SSRAttrDynamic:
 			if attr.Name == "" || isBoolAttr(attr.Name) || attr.Expr == nil {
+				return false
+			}
+			if element.Tag == "select" && attr.Name == "multiple" {
 				return false
 			}
 			name, ok := templateExprBindingRoot(attr.Expr)
@@ -1159,6 +1171,40 @@ func ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes []SSRPlanNode, itemName st
 		dynamic = true
 	}
 	return dynamic
+}
+
+func ssrAwaitSnapshotKeyedEachStaticSelectOptions(nodes []SSRPlanNode) bool {
+	options := 0
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *SSRPlanText:
+			for _, part := range current.Parts {
+				if !part.Static {
+					return false
+				}
+			}
+		case *SSRPlanElement:
+			if current == nil || current.Tag != "option" || !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) {
+				return false
+			}
+			hasValue := false
+			for _, attr := range current.Attrs {
+				if attr.Role != SSRAttrStatic || attr.Name == "selected" {
+					return false
+				}
+				if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
+					hasValue = true
+				}
+			}
+			if !hasValue {
+				return false
+			}
+			options++
+		default:
+			return false
+		}
+	}
+	return options > 0
 }
 
 func ssrAwaitSnapshotSlotStaticKey(node *SSRPlanIf) bool {

@@ -9185,7 +9185,13 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 		return hydrationKeyedEachDirectControlDescriptor{}, false
 	}
 	element, ok := nodes[0].(*ElementNode)
-	if !ok || element == nil || (element.Tag != "input" && element.Tag != "textarea") || len(element.Children) != 0 {
+	if !ok || element == nil || (element.Tag != "input" && element.Tag != "textarea" && element.Tag != "select") {
+		return hydrationKeyedEachDirectControlDescriptor{}, false
+	}
+	if element.Tag != "select" && len(element.Children) != 0 {
+		return hydrationKeyedEachDirectControlDescriptor{}, false
+	}
+	if element.Tag == "select" && !hydrationAwaitSnapshotKeyedEachStaticSelectOptions(element.Children) {
 		return hydrationKeyedEachDirectControlDescriptor{}, false
 	}
 	var bind *Attr
@@ -9201,6 +9207,9 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 			if attr.Name == "checked" && element.Tag != "input" {
 				return hydrationKeyedEachDirectControlDescriptor{}, false
 			}
+			if element.Tag == "select" && attr.Name != "value" {
+				return hydrationKeyedEachDirectControlDescriptor{}, false
+			}
 			root, ok := templateExprMemberBindingRoot(attr.Expr)
 			if !ok || root != itemName {
 				return hydrationKeyedEachDirectControlDescriptor{}, false
@@ -9211,11 +9220,52 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 		if attr.Name == "type" && attr.Value == "checkbox" {
 			checkbox = true
 		}
+		if element.Tag == "select" && attr.Name == "multiple" {
+			return hydrationKeyedEachDirectControlDescriptor{}, false
+		}
 		if attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsClassDir || attr.IsStyleDir || attr.IsBindThis {
 			return hydrationKeyedEachDirectControlDescriptor{}, false
 		}
 	}
 	return hydrationKeyedEachDirectControlDescriptor{Element: element, Bind: bind}, bind != nil && (bind.Name != "checked" || checkbox)
+}
+
+// hydrationAwaitSnapshotKeyedEachStaticSelectOptions keeps the first select
+// recipe deliberately shallow: options are server-rendered, static values
+// owned by the select binding, rather than a second dynamic row lifecycle.
+func hydrationAwaitSnapshotKeyedEachStaticSelectOptions(nodes []Node) bool {
+	options := 0
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			if !isFullyStatic(current) {
+				return false
+			}
+		case *ElementNode:
+			if current == nil || current.Tag != "option" || !allStatic(current.Children) {
+				return false
+			}
+			hasValue := false
+			for _, attr := range current.Attrs {
+				if attr == nil || attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					return false
+				}
+				if attr.Name == "selected" {
+					return false
+				}
+				if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
+					hasValue = true
+				}
+			}
+			if !hasValue {
+				return false
+			}
+			options++
+		default:
+			return false
+		}
+	}
+	return options > 0
 }
 
 func hydrationAwaitSnapshotKeyedEachDirectTextRow(nodes []Node, itemName string) (*ElementNode, *TextNode, bool) {
@@ -9896,6 +9946,8 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		})
 		if directControl.Bind.Name == "checked" {
 			rowControlValue = genBool(rowControlValue)
+		} else if directControl.Element.Tag == "select" {
+			rowControlValue = genString(rowControlValue)
 		}
 		g.withTemplateBinding(block.ItemName, "$$item", func() {
 			g.withTemplateBinding(block.IndexName, "$$index", func() { createControlValue = g.templateExpr(directControl.Bind.Expr) })
@@ -9948,6 +10000,8 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			{Key: id("styleValue"), Value: controllerStyleValue},
 			{Key: id("controlValue"), Value: controllerControlValue},
 			{Key: id("controlAssign"), Value: controllerControlAssign},
+			{Key: id("controlApplied"), Value: id("undefined")},
+			{Key: id("controlDOMValue"), Value: id("undefined")},
 			{Key: id("updates"), Value: genArray()},
 			{Key: id("listeners"), Value: genArray()},
 			{Key: id("children"), Value: genArray()},
@@ -9976,10 +10030,19 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		controlValueVar := prefix + "_control_value"
 		controlUpdateVar := prefix + "_control_update"
 		controlHandlerVar := prefix + "_control_handler"
-		controlUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-			genConst(controlValueVar, genCall(genMember(id("$$controller"), "controlValue"))),
-			genIf(genBinary("!==", genMember(id(controlElementVar), spec.readProp), id(controlValueVar)), genAssignStmt(genMember(id(controlElementVar), spec.readProp), id(controlValueVar))),
-		)}
+		controlUpdateBody := []JsStmt{genConst(controlValueVar, genCall(genMember(id("$$controller"), "controlValue")))}
+		if directControl.Element.Tag == "select" {
+			controlDOMValueVar := prefix + "_control_dom_value"
+			controlUpdateBody = append(controlUpdateBody,
+				genConst(controlDOMValueVar, genMember(id(controlElementVar), spec.readProp)),
+				genIf(genLogical("&&", genBinary("!==", id(controlDOMValueVar), id(controlValueVar)), genLogical("||", genBinary("!==", genMember(id("$$controller"), "controlApplied"), id(controlValueVar)), genBinary("!==", genMember(id("$$controller"), "controlDOMValue"), id(controlDOMValueVar)))), genAssignStmt(genMember(id(controlElementVar), spec.readProp), id(controlValueVar))),
+				genAssignStmt(genMember(id("$$controller"), "controlApplied"), id(controlValueVar)),
+				genAssignStmt(genMember(id("$$controller"), "controlDOMValue"), genMember(id(controlElementVar), spec.readProp)),
+			)
+		} else {
+			controlUpdateBody = append(controlUpdateBody, genIf(genBinary("!==", genMember(id(controlElementVar), spec.readProp), id(controlValueVar)), genAssignStmt(genMember(id(controlElementVar), spec.readProp), id(controlValueVar))))
+		}
+		controlUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(controlUpdateBody...)}
 		// Hydration deliberately does not invoke controlUpdate here: the server
 		// DOM property may have changed between paint and hydration. Later row
 		// updates use the same guarded writer, while CSR-created rows invoke it
@@ -10129,6 +10192,9 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				genConst("$$row_text", genCall(genMember(id("document"), "createTextNode"), createTextValue)),
 				genExprStmt(genCall(genMember(id("$$row_element"), "appendChild"), id("$$row_text"))),
 			)
+		}
+		if hasDynamicControlRow && textElement.Tag == "select" {
+			createBody = append(createBody, genExprStmt(genCall(id("$$insertHTML"), id("$$row_element"), strLit(emitStaticHTMLWithoutEvents(textElement.Children, g.scopeID)))))
 		}
 		if hasDynamicControlRow {
 			spec, ok := twoWayBindSpec(textElement.Tag, directControl.Bind.Name)
