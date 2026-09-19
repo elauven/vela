@@ -9946,10 +9946,16 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []Node
 		if listDynamic != nil {
 			return nil, nil, -1, false
 		}
+		hasKey, hasUnkeyed := false, false
 		for _, list := range lists {
 			if list.Key != nil {
-				return nil, nil, -1, false
+				hasKey = true
+			} else {
+				hasUnkeyed = true
 			}
+		}
+		if hasKey && hasUnkeyed {
+			return nil, nil, -1, false
 		}
 	}
 	for _, list := range lists {
@@ -10746,7 +10752,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	emptyNodesVar := prefix + "_empty_nodes"
 	keyOfVar, createVar, updateVar := prefix+"_key", prefix+"_create", prefix+"_update"
 	controllerVar, findVar, findTextVar, findOptionVar, findOptgroupVar := prefix+"_controller", prefix+"_find_element", prefix+"_find_text", prefix+"_find_option", prefix+"_find_optgroup"
-	optionListCreateVar, optionListCreatesVar, optionListKeyVar, optionListUpdateVar, optionListReconcileVar, attachVar := prefix+"_option_list_create", prefix+"_option_list_creates", prefix+"_option_list_key", prefix+"_option_list_update", prefix+"_option_list_reconcile", prefix+"_attach"
+	optionListCreateVar, optionListCreatesVar, optionListElementCreatesVar, optionListElementUpdatesVar, optionListReconcilesVar, optionListKeyVar, optionListUpdateVar, optionListReconcileVar, attachVar := prefix+"_option_list_create", prefix+"_option_list_creates", prefix+"_option_list_element_creates", prefix+"_option_list_element_updates", prefix+"_option_list_reconciles", prefix+"_option_list_key", prefix+"_option_list_update", prefix+"_option_list_reconcile", prefix+"_attach"
 	initialIndex := prefix + "_initial_index"
 	directRow, hasDynamicTextRow := hydrationAwaitSnapshotKeyedEachDirectRow(block.Children, block.ItemName)
 	directControl, hasDynamicControlRow := hydrationAwaitSnapshotKeyedEachDirectControlRow(block.Children, block.ItemName)
@@ -10756,8 +10762,13 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	}
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.hydrationKeyedRows = true
-	if hasDynamicControlRow && directControl.OptionList != nil && directControl.OptionList.Key != nil {
-		g.hydrationKeyedElements = true
+	if hasDynamicControlRow {
+		for _, list := range directControl.OptionLists {
+			if list.Key != nil {
+				g.hydrationKeyedElements = true
+				break
+			}
+		}
 	}
 
 	keyExpr := JsExpr(id("undefined"))
@@ -10791,7 +10802,8 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		genReturn(genCall(genMember(genCall(genMember(id("$$select"), "querySelectorAll"), strLit("optgroup")), "item"), id("$$optgroupIndex"))),
 	)}
 	var rowTextValue, createTextValue, rowAttrValue, createAttrValue, rowClassValue, createClassValue, rowStyleValue, createStyleValue, rowControlValue, createControlValue, rowControlAssign, rowOptionDynamic, createOptionDynamic, rowOptionGroupDynamic, createOptionGroupDynamic, rowOptionText, createOptionText, rowOptionList, createOptionList, optionListKey JsExpr
-	var rowOptionLists, createOptionLists, optionListCreates []JsExpr
+	var rowOptionLists, createOptionLists, optionListCreates, optionListKeys, optionListElementCreates, optionListElementUpdates []JsExpr
+	multiKeyedOptionLists := len(directControl.OptionLists) > 1 && directControl.OptionLists[0].Key != nil
 	optionListCreate := JsExpr(id("undefined"))
 	optionListUpdate := JsExpr(id("undefined"))
 	optionListKeyFn := JsExpr(id("undefined"))
@@ -10948,7 +10960,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		}
 		if len(directControl.OptionLists) > 1 {
 			for _, list := range directControl.OptionLists {
-				var rowItems, createItems, optionValue, optionText JsExpr
+				var rowItems, createItems, optionValue, optionText, optionKey JsExpr
 				g.withTemplateBinding(block.ItemName, "$$rowItem", func() {
 					g.withTemplateBinding(block.IndexName, "$$rowIndex", func() { rowItems = g.templateExpr(list.Each.IterExpr) })
 				})
@@ -10959,23 +10971,41 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 					g.withTemplateBinding(list.Each.IndexName, "$$optionIndex", func() {
 						optionValue = genString(g.templateExpr(list.ValueAttr.Expr))
 						optionText = g.textValueExpr(list.Text.Parts)
+						if list.Key != nil {
+							optionKey = g.templateExpr(list.Key)
+						}
 					})
 				})
 				rowOptionLists = append(rowOptionLists, rowItems)
 				createOptionLists = append(createOptionLists, createItems)
-				optionListCreates = append(optionListCreates, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
-					genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
-					genLet("$$optionIndex", numLit(0)),
-					genForOf("$$option", genLogical("||", id("$$items"), genArray()), genBlock(
+				if multiKeyedOptionLists {
+					optionListKeys = append(optionListKeys, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: optionKey})
+					optionListElementCreates = append(optionListElementCreates, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: genBlock(
 						genConst("$$optionElement", genCall(genMember(id("document"), "createElement"), strLit("option"))),
 						genExprStmt(genCall(genMember(id("$$optionElement"), "setAttribute"), strLit(g.scopeID), strLit(""))),
 						genAssignStmt(genMember(id("$$optionElement"), "value"), optionValue),
 						genExprStmt(genCall(genMember(id("$$optionElement"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
-						genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$optionElement"))),
-						genAssignStmt(id("$$optionIndex"), genBinary("+", id("$$optionIndex"), numLit(1))),
-					)),
-					genReturn(id("$$fragment")),
-				)})
+						genReturn(id("$$optionElement")),
+					)})
+					optionListElementUpdates = append(optionListElementUpdates, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$optionElement"), id("$$option"), id("$$optionIndex")}, Body: genBlock(
+						genIf(genBinary("!==", genMember(id("$$optionElement"), "value"), optionValue), genAssignStmt(genMember(id("$$optionElement"), "value"), optionValue)),
+						genIf(genBinary("!==", genMember(id("$$optionElement"), "textContent"), optionText), genAssignStmt(genMember(id("$$optionElement"), "textContent"), optionText)),
+					)})
+				} else {
+					optionListCreates = append(optionListCreates, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
+						genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
+						genLet("$$optionIndex", numLit(0)),
+						genForOf("$$option", genLogical("||", id("$$items"), genArray()), genBlock(
+							genConst("$$optionElement", genCall(genMember(id("document"), "createElement"), strLit("option"))),
+							genExprStmt(genCall(genMember(id("$$optionElement"), "setAttribute"), strLit(g.scopeID), strLit(""))),
+							genAssignStmt(genMember(id("$$optionElement"), "value"), optionValue),
+							genExprStmt(genCall(genMember(id("$$optionElement"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
+							genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$optionElement"))),
+							genAssignStmt(id("$$optionIndex"), genBinary("+", id("$$optionIndex"), numLit(1))),
+						)),
+						genReturn(id("$$fragment")),
+					)})
+				}
 			}
 		}
 	}
@@ -11028,6 +11058,55 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		}
 		controllerOptionLists = genArray(getters...)
 	}
+	controllerOptionListKeys := JsExpr(id("undefined"))
+	controllerOptionListItemsByGroup := JsExpr(id("undefined"))
+	controllerOptionBlocksByGroup := JsExpr(id("undefined"))
+	controllerOptionListAdoptedByGroup := JsExpr(id("undefined"))
+	if multiKeyedOptionLists {
+		items := make([]JsExpr, 0, len(rowOptionLists))
+		blocks := make([]JsExpr, 0, len(rowOptionLists))
+		adopted := make([]JsExpr, 0, len(rowOptionLists))
+		for _, rowItems := range rowOptionLists {
+			items = append(items, genLogical("||", rowItems, genArray()))
+			blocks = append(blocks, genNew(id("Map")))
+			adopted = append(adopted, boolLit(false))
+		}
+		controllerOptionListKeys = genArray(optionListKeys...)
+		controllerOptionListItemsByGroup = genArray(items...)
+		controllerOptionBlocksByGroup = genArray(blocks...)
+		controllerOptionListAdoptedByGroup = genArray(adopted...)
+	}
+	multiOptionListReconciles := make([]JsExpr, 0, len(directControl.OptionLists))
+	if multiKeyedOptionLists {
+		for listIndex := range directControl.OptionLists {
+			index := numLit(listIndex)
+			nextItems := genLogical("||", genCall(genComputedMember(genMember(id("$$controller"), "optionLists"), index)), genArray())
+			blocks := genComputedMember(genMember(id("$$controller"), "optionBlocksByGroup"), index)
+			items := genComputedMember(genMember(id("$$controller"), "optionListItemsByGroup"), index)
+			adoptedFlag := genComputedMember(genMember(id("$$controller"), "optionListAdoptedByGroup"), index)
+			key := genComputedMember(genMember(id("$$controller"), "optionListKeys"), index)
+			multiOptionListReconciles = append(multiOptionListReconciles, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$controller"), id("$$parent"), id("$$adopt")}, Body: genBlock(
+				genConst("$$nextItems", nextItems),
+				genIf(genLogical("&&", id("$$adopt"), genUnary("!", adoptedFlag)), genBlock(
+					genConst("$$priorItems", items),
+					genConst("$$elements", genCall(genMember(id("Array"), "from"), genCall(genMember(id("$$parent"), "querySelectorAll"), strLit("option")))),
+					genIf(genBinary("!==", genMember(id("$$elements"), "length"), genMember(id("$$priorItems"), "length")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed option list length differs from its server snapshot"))}),
+					genConst("$$adopted", genNew(id("Map"))),
+					genLet("$$priorIndex", numLit(0)),
+					genForOf("$$priorItem", id("$$priorItems"), genBlock(
+						genConst("$$priorKey", genCall(key, id("$$priorItem"), id("$$priorIndex"))),
+						genIf(genCall(genMember(id("$$adopted"), "has"), id("$$priorKey")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela keyed update has duplicate key in adopted option list"))}),
+						genExprStmt(genCall(genMember(id("$$adopted"), "set"), id("$$priorKey"), genComputedMember(id("$$elements"), id("$$priorIndex")))),
+						genAssignStmt(id("$$priorIndex"), genBinary("+", id("$$priorIndex"), numLit(1))),
+					)),
+					genAssignStmt(blocks, id("$$adopted")),
+				)),
+				genAssignStmt(blocks, genCall(id("$$reconcileHydrationKeyedElements"), id("$$parent"), blocks, id("$$nextItems"), key, genComputedMember(id(optionListElementCreatesVar), index), genComputedMember(id(optionListElementUpdatesVar), index))),
+				genAssignStmt(items, id("$$nextItems")),
+				genAssignStmt(adoptedFlag, boolLit(true)),
+			)})
+		}
+	}
 	controllerOptionListKey := JsExpr(id("undefined"))
 	controllerOptionListItems := JsExpr(genArray())
 	if directControl.OptionList != nil && len(directControl.OptionLists) <= 1 && directControl.OptionList.Key != nil {
@@ -11078,6 +11157,10 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			{Key: id("optionText"), Value: controllerOptionText},
 			{Key: id("optionList"), Value: controllerOptionList},
 			{Key: id("optionLists"), Value: controllerOptionLists},
+			{Key: id("optionListKeys"), Value: controllerOptionListKeys},
+			{Key: id("optionListItemsByGroup"), Value: controllerOptionListItemsByGroup},
+			{Key: id("optionBlocksByGroup"), Value: controllerOptionBlocksByGroup},
+			{Key: id("optionListAdoptedByGroup"), Value: controllerOptionListAdoptedByGroup},
 			{Key: id("optionListKey"), Value: controllerOptionListKey},
 			{Key: id("optionListItems"), Value: controllerOptionListItems},
 			{Key: id("optionBlocks"), Value: genNew(id("Map"))},
@@ -11292,11 +11375,18 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		for listIndex, list := range directControl.OptionLists {
 			elementVar := prefix + "_option_list_element_" + itoa(listIndex)
 			updateVar := prefix + "_option_list_update_" + itoa(listIndex)
-			items := genCall(genComputedMember(genMember(id("$$controller"), "optionLists"), numLit(listIndex)))
-			create := genComputedMember(id(optionListCreatesVar), numLit(listIndex))
-			update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-				genExprStmt(genCall(genMember(id(elementVar), "replaceChildren"), genCall(create, items))),
-			)}
+			var update JsExpr
+			if multiKeyedOptionLists {
+				update = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genExprStmt(genCall(genComputedMember(id(optionListReconcilesVar), numLit(listIndex)), id("$$controller"), id(elementVar), boolLit(true))),
+				)}
+			} else {
+				items := genCall(genComputedMember(genMember(id("$$controller"), "optionLists"), numLit(listIndex)))
+				create := genComputedMember(id(optionListCreatesVar), numLit(listIndex))
+				update = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genExprStmt(genCall(genMember(id(elementVar), "replaceChildren"), genCall(create, items))),
+				)}
+			}
 			multiListAttach = append(multiListAttach,
 				genConst(elementVar, genCall(id(findOptgroupVar), genMember(id("$$controller"), "row"), numLit(list.GroupIndex))),
 				genIf(id(elementVar), genBlock(
@@ -11394,10 +11484,10 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 							break
 						}
 					}
-					if listIndex >= 0 {
+					if listIndex >= 0 && !multiKeyedOptionLists {
 						create := genComputedMember(id(optionListCreatesVar), numLit(listIndex))
 						createBody = append(createBody, genExprStmt(genCall(genMember(id(groupVar), "append"), genCall(create, createOptionLists[listIndex]))))
-					} else {
+					} else if listIndex < 0 {
 						createBody = append(createBody, genExprStmt(genCall(id("$$insertHTML"), id(groupVar), strLit(emitStaticHTMLWithoutEvents(group.Children, g.scopeID)))))
 					}
 					createBody = append(createBody, genExprStmt(genCall(genMember(id("$$row_element"), "append"), id(groupVar))))
@@ -11480,7 +11570,12 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	if hasDynamicTextRow {
 		createBody = append(createBody, genAssignStmt(genMember(id("$$controller"), "text"), id("$$row_text")))
 	}
-	if hasDynamicControlRow && textElement.Tag == "select" && directControl.OptionList != nil && directControl.OptionList.Key != nil {
+	if hasDynamicControlRow && textElement.Tag == "select" && multiKeyedOptionLists {
+		for listIndex, list := range directControl.OptionLists {
+			parent := genCall(genMember(genCall(genMember(id("$$row_element"), "querySelectorAll"), strLit("optgroup")), "item"), numLit(list.GroupIndex))
+			createBody = append(createBody, genIf(parent, genExprStmt(genCall(genComputedMember(id(optionListReconcilesVar), numLit(listIndex)), id("$$controller"), parent, boolLit(false)))))
+		}
+	} else if hasDynamicControlRow && textElement.Tag == "select" && directControl.OptionList != nil && directControl.OptionList.Key != nil {
 		optionListParent := JsExpr(id("$$row_element"))
 		if directControl.OptionList.Group != nil {
 			optionListParent = genCall(genMember(genCall(genMember(id("$$row_element"), "querySelectorAll"), strLit("optgroup")), "item"), numLit(directControl.OptionList.GroupIndex))
@@ -11498,7 +11593,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 
 	plan.decls = append(plan.decls,
 		genLet(rangeVar, genNull()), genLet(itemsVar, genArray()), genLet(blocksVar, genNew(id("Map"))), genLet(emptyNodesVar, genNull()),
-		genConst(keyOfVar, keyOf), genConst(findVar, findElement), genConst(findTextVar, findText), genConst(findOptionVar, findOption), genConst(findOptgroupVar, findOptgroup), genConst(optionListCreateVar, optionListCreate), genConst(optionListCreatesVar, genArray(optionListCreates...)), genConst(optionListKeyVar, optionListKeyFn), genConst(optionListUpdateVar, optionListUpdate), genConst(optionListReconcileVar, optionListReconcile), genConst(controllerVar, controller), genConst(attachVar, attach), genConst(createVar, create), genConst(updateVar, update),
+		genConst(keyOfVar, keyOf), genConst(findVar, findElement), genConst(findTextVar, findText), genConst(findOptionVar, findOption), genConst(findOptgroupVar, findOptgroup), genConst(optionListCreateVar, optionListCreate), genConst(optionListCreatesVar, genArray(optionListCreates...)), genConst(optionListElementCreatesVar, genArray(optionListElementCreates...)), genConst(optionListElementUpdatesVar, genArray(optionListElementUpdates...)), genConst(optionListReconcilesVar, genArray(multiOptionListReconciles...)), genConst(optionListKeyVar, optionListKeyFn), genConst(optionListUpdateVar, optionListUpdate), genConst(optionListReconcileVar, optionListReconcile), genConst(controllerVar, controller), genConst(attachVar, attach), genConst(createVar, create), genConst(updateVar, update),
 	)
 	adoptRows := []JsStmt{
 		genAssignStmt(id(blocksVar), genCall(id("$$adoptHydrationKeyedRowRanges"), id(rangeVar), id(itemsVar), id(keyOfVar), numLit(markerID))),

@@ -1717,7 +1717,7 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []SSRPlanNod
 	if foundLists == 0 {
 		return false
 	}
-	return foundLists == 1 || (!foundDynamic && !foundKeyed)
+	return foundLists == 1 || !foundDynamic
 }
 
 // ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic mirrors the bounded

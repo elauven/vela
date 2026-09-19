@@ -868,6 +868,37 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectMultipleUnkeyedO
 	}
 }
 
+func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectMultipleKeyedOptgroupOptionLists(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}><optgroup label="Available">{#each row.available as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="Archived">{#each row.archived as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := plan.Nodes[0].(*SSRPlanElement)
+	await := main.Children[0].(*SSRPlanAwait)
+	each := await.ThenChildren[0].(*SSRPlanEach)
+	if !ssrAwaitSnapshotKeyedEachDirectControlPlanRow(each.Children, each.ItemName) {
+		t.Fatalf("multiple keyed optgroup option-list snapshot predicate rejected row=%#v", each.Children)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(client, PrintPretty)
+	for _, want := range []string{`optionListKeys`, `optionBlocksByGroup`, `optionListAdoptedByGroup`, `option_list_reconciles`, `option_list_element_creates`, `option_list_element_updates`, `$$reconcileHydrationKeyedElements`} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("multiple keyed option-list hydration client misses %q:\n%s", want, code)
+		}
+	}
+	if strings.Contains(code, `replaceChildren`) {
+		t.Fatalf("multiple keyed option lists must reconcile their owners rather than replace children:\n%s", code)
+	}
+}
+
 func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectKeyedOptionList(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}>{#each row.options as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
