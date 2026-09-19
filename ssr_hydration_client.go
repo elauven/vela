@@ -302,6 +302,29 @@ func ssrHydrationDirectKeyedEachComponents(plan *SSRStructuralLifecyclePlan) ([]
 	return ssrCapabilityCurrentKeyedEachComponents(block)
 }
 
+// ssrHydrationDirectKeyedEachControl reads the typed control-only row recipe.
+// The lowerer must consume this plan node rather than rediscovering the input
+// shape from arbitrary template children.
+func ssrHydrationDirectKeyedEachControl(plan *SSRStructuralLifecyclePlan) (*EachBlockNode, *ElementNode, *Attr, bool) {
+	if plan == nil || plan.Kind != SSRLifecyclePlanEach || plan.KeyedEach == nil || !plan.KeyedEach.DirectControlRows {
+		return nil, nil, nil, false
+	}
+	block, ok := plan.TemplateNode.(*EachBlockNode)
+	if !ok || block == nil || len(block.Children) != 1 {
+		return nil, nil, nil, false
+	}
+	element, ok := block.Children[0].(*ElementNode)
+	if !ok || element == nil {
+		return nil, nil, nil, false
+	}
+	for _, attr := range element.Attrs {
+		if attr != nil && attr.IsTwoWay && attr.Name == "value" {
+			return block, element, attr, true
+		}
+	}
+	return nil, nil, nil, false
+}
+
 func ssrHydrationDirectEachComponent(plan *SSRStructuralLifecyclePlan) (*ComponentNode, bool) {
 	if plan == nil || plan.Kind != SSRLifecyclePlanEach {
 		return nil, false

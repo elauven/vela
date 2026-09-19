@@ -157,6 +157,10 @@ func TestSSRStructuralLifecyclePlanRetainsDirectControlRowRecipe(t *testing.T) {
 	if plan == nil || plan.KeyedEach == nil || !plan.KeyedEach.DirectControlRows {
 		t.Fatalf("direct-control lifecycle recipe=%#v", plan)
 	}
+	block, element, attr, ok := ssrHydrationDirectKeyedEachControl(plan)
+	if !ok || block != each || element.Tag != "input" || attr.Name != "value" {
+		t.Fatalf("direct-control hydration adapter block=%#v element=%#v attr=%#v ok=%t", block, element, attr, ok)
+	}
 }
 
 func TestSSRKeyedEachLifecycleRecipeGatesDirectLeafRows(t *testing.T) {
