@@ -1089,7 +1089,9 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 	if element.Tag == "select" && !ssrAwaitSnapshotKeyedEachStaticSelectOptions(element.Children) {
 		if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(element.Children, itemName); !ok {
 			if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionText(element.Children, itemName); !ok {
-				return false
+				if !ssrAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName) {
+					return false
+				}
 			}
 		}
 	}
@@ -1121,6 +1123,48 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 		}
 	}
 	return bindings == 1 && (bindings == 0 || !ssrAwaitSnapshotKeyedEachHasCheckedControlBinding(element) || checkbox)
+}
+
+func ssrAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []SSRPlanNode, rowName string) bool {
+	if len(nodes) != 1 {
+		return false
+	}
+	each, ok := nodes[0].(*SSRPlanEach)
+	if !ok || each == nil || each.Key != nil || len(each.ElseChildren) != 0 || len(each.Children) != 1 {
+		return false
+	}
+	root, ok := templateExprMemberBindingRoot(each.Iterable)
+	if !ok || root != rowName {
+		return false
+	}
+	option, ok := each.Children[0].(*SSRPlanElement)
+	if !ok || option == nil || option.Tag != "option" || len(option.Attrs) != 1 || len(option.Children) != 1 {
+		return false
+	}
+	value := option.Attrs[0]
+	if value.Role != SSRAttrDynamic || value.Name != "value" {
+		return false
+	}
+	valueRoot, ok := templateExprMemberBindingRoot(value.Expr)
+	if !ok || valueRoot != each.ItemName {
+		return false
+	}
+	text, ok := option.Children[0].(*SSRPlanText)
+	if !ok || text == nil {
+		return false
+	}
+	dynamic := false
+	for _, part := range text.Parts {
+		if part.Static {
+			continue
+		}
+		partRoot, ok := templateExprMemberBindingRoot(part.Expr)
+		if !ok || partRoot != each.ItemName {
+			return false
+		}
+		dynamic = true
+	}
+	return dynamic
 }
 
 // ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic mirrors the bounded

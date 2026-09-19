@@ -159,6 +159,7 @@ func TestSSRStructuralLifecyclePlanRetainsDirectControlRowRecipe(t *testing.T) {
 		{name: "select row disabled option", source: `<template>{#each rows as row (row.id)}<select bind:value={row.status}><option value="open" :disabled={row.closed}>Open</option><option value="done">Done</option></select>{/each}</template>`, bind: "value", tag: "select"},
 		{name: "select row option value", source: `<template>{#each rows as row (row.id)}<select bind:value={row.status}><option :value={row.openValue}>Open</option><option value="done">Done</option></select>{/each}</template>`, bind: "value", tag: "select"},
 		{name: "select row option text", source: `<template>{#each rows as row (row.id)}<select bind:value={row.status}><option value="open">Open: {row.label}</option><option value="done">Done</option></select>{/each}</template>`, bind: "value", tag: "select"},
+		{name: "select row option list", source: `<template>{#each rows as row (row.id)}<select bind:value={row.status}>{#each row.options as option}<option :value={option.value}>{option.label}</option>{/each}</select>{/each}</template>`, bind: "value", tag: "select"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sfc, err := parseSFC(tc.source)
