@@ -1612,7 +1612,7 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []SSRPlanNode, rowNam
 }
 
 // ssrAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList mirrors the first
-// nested unkeyed option-list recipe. SSR may render the ordinary nested each,
+// nested option-list recipe. SSR may render the ordinary nested each,
 // while hydration later locates the static group and replaces only its child
 // options on an outer-row update.
 func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(nodes []SSRPlanNode, rowName string) bool {
@@ -1627,7 +1627,7 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(nodes []SSRPlanNode
 		return false
 	}
 	each, ok := group.Children[0].(*SSRPlanEach)
-	if !ok || each == nil || each.Key != nil {
+	if !ok || each == nil {
 		return false
 	}
 	return ssrAwaitSnapshotKeyedEachDirectSelectOptionList(group.Children, rowName)
