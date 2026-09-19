@@ -9147,15 +9147,16 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKeyedEachNodes(nodes []Node, it
 
 // hydrationAwaitSnapshotKeyedEachDirectRow is the first dynamic leaf recipe
 // for a retained SSR row. It permits one ordinary element, one direct text
-// node, plus at most one ordinary dynamic attribute and one class directive.
-// This keeps all resources local to the row controller while newly inserted
-// CSR rows can create the same DOM without serialising a template expression
-// through an HTML string.
+// node, plus at most one ordinary dynamic attribute, class directive, and
+// style directive. This keeps all resources local to the row controller while
+// newly inserted CSR rows can create the same DOM without serialising a
+// template expression through an HTML string.
 type hydrationKeyedEachDirectRowDescriptor struct {
 	Element   *ElementNode
 	Text      *TextNode
 	Attr      *Attr
 	ClassAttr *Attr
+	StyleAttr *Attr
 }
 
 func hydrationAwaitSnapshotKeyedEachDirectTextRow(nodes []Node, itemName string) (*ElementNode, *TextNode, bool) {
@@ -9178,6 +9179,8 @@ func hydrationAwaitSnapshotKeyedEachDirectRow(nodes []Node, itemName string) (hy
 	var dynamicAttr *Attr
 	classAttrs := 0
 	var classAttr *Attr
+	styleAttrs := 0
+	var styleAttr *Attr
 	for _, attr := range element.Attrs {
 		if attr == nil {
 			continue
@@ -9203,11 +9206,20 @@ func hydrationAwaitSnapshotKeyedEachDirectRow(nodes []Node, itemName string) (hy
 			classAttr = attr
 			continue
 		}
+		if attr.IsStyleDir && attr.Expr != nil {
+			name, ok := templateExprBindingRoot(attr.Expr)
+			if !ok || name != itemName {
+				return hydrationKeyedEachDirectRowDescriptor{}, false
+			}
+			styleAttrs++
+			styleAttr = attr
+			continue
+		}
 		if attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
 			return hydrationKeyedEachDirectRowDescriptor{}, false
 		}
 	}
-	if dynamicAttrs > 1 || classAttrs > 1 {
+	if dynamicAttrs > 1 || classAttrs > 1 || styleAttrs > 1 {
 		return hydrationKeyedEachDirectRowDescriptor{}, false
 	}
 	text, ok := element.Children[0].(*TextNode)
@@ -9225,7 +9237,7 @@ func hydrationAwaitSnapshotKeyedEachDirectRow(nodes []Node, itemName string) (hy
 		}
 		dynamic = true
 	}
-	return hydrationKeyedEachDirectRowDescriptor{Element: element, Text: text, Attr: dynamicAttr, ClassAttr: classAttr}, dynamic
+	return hydrationKeyedEachDirectRowDescriptor{Element: element, Text: text, Attr: dynamicAttr, ClassAttr: classAttr, StyleAttr: styleAttr}, dynamic
 }
 
 func firstDynamicTextPart(text *TextNode) *Part {
@@ -9726,7 +9738,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	controllerVar, findVar, findTextVar, attachVar := prefix+"_controller", prefix+"_find_element", prefix+"_find_text", prefix+"_attach"
 	initialIndex := prefix + "_initial_index"
 	directRow, hasDynamicTextRow := hydrationAwaitSnapshotKeyedEachDirectRow(block.Children, block.ItemName)
-	textElement, textNode, dynamicAttr, dynamicClassAttr := directRow.Element, directRow.Text, directRow.Attr, directRow.ClassAttr
+	textElement, textNode, dynamicAttr, dynamicClassAttr, dynamicStyleAttr := directRow.Element, directRow.Text, directRow.Attr, directRow.ClassAttr, directRow.StyleAttr
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.hydrationKeyedRows = true
 
@@ -9750,7 +9762,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		genReturn(genNull()),
 	)}
 	findText := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genReturn(genNull()))}
-	var rowTextValue, createTextValue, rowAttrValue, createAttrValue, rowClassValue, createClassValue JsExpr
+	var rowTextValue, createTextValue, rowAttrValue, createAttrValue, rowClassValue, createClassValue, rowStyleValue, createStyleValue JsExpr
 	if hasDynamicTextRow {
 		markerID := g.hydrationTextMarkerID(firstDynamicTextPart(textNode))
 		// The row resolves this repeated marker relative to its own r range, but
@@ -9793,6 +9805,14 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				g.withTemplateBinding(block.IndexName, "$$index", func() { createClassValue = genBool(g.templateExpr(dynamicClassAttr.Expr)) })
 			})
 		}
+		if dynamicStyleAttr != nil {
+			g.withTemplateBinding(block.ItemName, "$$rowItem", func() {
+				g.withTemplateBinding(block.IndexName, "$$rowIndex", func() { rowStyleValue = genString(g.templateExpr(dynamicStyleAttr.Expr)) })
+			})
+			g.withTemplateBinding(block.ItemName, "$$item", func() {
+				g.withTemplateBinding(block.IndexName, "$$index", func() { createStyleValue = genString(g.templateExpr(dynamicStyleAttr.Expr)) })
+			})
+		}
 	}
 
 	controllerTextValue := JsExpr(id("undefined"))
@@ -9807,6 +9827,10 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	if dynamicClassAttr != nil {
 		controllerClassValue = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowClassValue}
 	}
+	controllerStyleValue := JsExpr(id("undefined"))
+	if dynamicStyleAttr != nil {
+		controllerStyleValue = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowStyleValue}
+	}
 	controller := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(
 		genLet("$$rowItem", id("$$item")),
 		genLet("$$rowIndex", id("$$index")),
@@ -9816,6 +9840,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			{Key: id("textValue"), Value: controllerTextValue},
 			{Key: id("attrValue"), Value: controllerAttrValue},
 			{Key: id("classValue"), Value: controllerClassValue},
+			{Key: id("styleValue"), Value: controllerStyleValue},
 			{Key: id("updates"), Value: genArray()},
 			{Key: id("listeners"), Value: genArray()},
 			{Key: id("children"), Value: genArray()},
@@ -9888,6 +9913,20 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			)),
 		)
 	}
+	if dynamicStyleAttr != nil {
+		styleElementVar := prefix + "_style_element"
+		styleUpdateVar := prefix + "_style_update"
+		styleUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genExprStmt(genCall(genMember(genMember(id(styleElementVar), "style"), "setProperty"), strLit(dynamicStyleAttr.Name), genCall(genMember(id("$$controller"), "styleValue")))),
+		)}
+		attachBody = append(attachBody,
+			genConst(styleElementVar, genCall(id(findVar), genMember(id("$$controller"), "row"), numLit(0))),
+			genIf(id(styleElementVar), genBlock(
+				genConst(styleUpdateVar, styleUpdate),
+				genExprStmt(genCall(genMember(genMember(id("$$controller"), "updates"), "push"), id(styleUpdateVar))),
+			)),
+		)
+	}
 	for nodeIndex, node := range block.Children {
 		element, ok := node.(*ElementNode)
 		if !ok || element == nil {
@@ -9927,7 +9966,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		)
 		for _, attr := range textElement.Attrs {
 			if attr != nil {
-				if attr == dynamicClassAttr {
+				if attr == dynamicClassAttr || attr == dynamicStyleAttr {
 					continue
 				}
 				value := JsExpr(strLit(attr.Value))
@@ -9939,6 +9978,9 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		}
 		if dynamicClassAttr != nil {
 			createBody = append(createBody, genExprStmt(genCall(genMember(genMember(id("$$row_element"), "classList"), "toggle"), strLit(dynamicClassAttr.Name), createClassValue)))
+		}
+		if dynamicStyleAttr != nil {
+			createBody = append(createBody, genExprStmt(genCall(genMember(genMember(id("$$row_element"), "style"), "setProperty"), strLit(dynamicStyleAttr.Name), createStyleValue)))
 		}
 		createBody = append(createBody,
 			genConst("$$row_text", genCall(genMember(id("document"), "createTextNode"), createTextValue)),
