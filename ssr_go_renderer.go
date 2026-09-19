@@ -1093,7 +1093,7 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 					if _, _, _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamicAndText(element.Children, itemName); !ok {
 						if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(element.Children, itemName); !ok {
 							if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionText(element.Children, itemName); !ok {
-								if !ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(element.Children, itemName) && !ssrAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(element.Children, itemName) && !ssrAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName) {
+								if !ssrAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(element.Children, itemName) && !ssrAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName) {
 									if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(element.Children, itemName); !ok {
 										return false
 									}
@@ -1658,6 +1658,61 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(nodes []SSRP
 		}
 	}
 	return found && ssrAwaitSnapshotKeyedEachDirectSelectOptionList(group.Children, rowName)
+}
+
+// ssrAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList mirrors the
+// bounded multiple-optgroup lifecycle accepted by hydration: one direct list
+// owner, optional row-owned label on that owner, and static siblings.
+func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []SSRPlanNode, rowName string) bool {
+	foundList := false
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *SSRPlanText:
+			for _, part := range current.Parts {
+				if !part.Static {
+					return false
+				}
+			}
+		case *SSRPlanElement:
+			if current == nil || current.Tag != "optgroup" {
+				return false
+			}
+			dynamic := false
+			hasLabel := false
+			for _, attr := range current.Attrs {
+				if attr.Role == SSRAttrDynamic {
+					root, ok := templateExprMemberBindingRoot(attr.Expr)
+					if attr.Name != "label" || dynamic || !ok || root != rowName {
+						return false
+					}
+					dynamic, hasLabel = true, true
+					continue
+				}
+				if attr.Role != SSRAttrStatic || attr.Name == "selected" {
+					return false
+				}
+				if attr.Name == "label" {
+					hasLabel = true
+				}
+			}
+			if !hasLabel {
+				return false
+			}
+			if ssrAwaitSnapshotKeyedEachDirectSelectOptionList(current.Children, rowName) {
+				if foundList {
+					return false
+				}
+				foundList = true
+				continue
+			}
+			if dynamic || !ssrAwaitSnapshotKeyedEachStaticSelectOptions(current.Children) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return foundList
 }
 
 // ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic mirrors the bounded

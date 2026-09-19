@@ -9207,6 +9207,7 @@ type hydrationKeyedEachSelectOptionListDescriptor struct {
 	Key        *TemplateExpr
 	Group      *ElementNode
 	GroupIndex int
+	Groups     []*ElementNode
 }
 
 func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName string) (hydrationKeyedEachDirectControlDescriptor, bool) {
@@ -9262,10 +9263,7 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 								descriptor.OptionText = optionText
 								descriptor.OptionTextIndex = optionIndex
 							} else {
-								optionList, optionGroupDynamic, groupIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(element.Children, itemName)
-								if !ok {
-									optionList, ok = hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(element.Children, itemName)
-								}
+								optionList, optionGroupDynamic, groupIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(element.Children, itemName)
 								if !ok {
 									optionList, ok = hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName)
 								}
@@ -9873,6 +9871,74 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(nodes 
 	}
 	list.Group, list.GroupIndex = group, 0
 	return list, dynamic, 0, true
+}
+
+// hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList admits a
+// select made of static top-level optgroups with exactly one bounded nested
+// option list. Its list-owning group may have one row-owned label; sibling
+// groups remain static and are recreated only for a new CSR outer row.
+func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []Node, rowName string) (*hydrationKeyedEachSelectOptionListDescriptor, *Attr, int, bool) {
+	groups := make([]*ElementNode, 0, len(nodes))
+	var list *hydrationKeyedEachSelectOptionListDescriptor
+	var listDynamic *Attr
+	listGroupIndex := -1
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *TextNode:
+			if !isFullyStatic(current) {
+				return nil, nil, -1, false
+			}
+		case *ElementNode:
+			if current == nil || current.Tag != "optgroup" {
+				return nil, nil, -1, false
+			}
+			groupIndex := len(groups)
+			groups = append(groups, current)
+			var dynamic *Attr
+			hasLabel := false
+			for _, attr := range current.Attrs {
+				if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					return nil, nil, -1, false
+				}
+				if attr.IsBind {
+					root, ok := templateExprMemberBindingRoot(attr.Expr)
+					if attr.Name != "label" || dynamic != nil || !ok || root != rowName {
+						return nil, nil, -1, false
+					}
+					dynamic, hasLabel = attr, true
+					continue
+				}
+				if attr.Expr != nil || attr.Name == "selected" {
+					return nil, nil, -1, false
+				}
+				if attr.Name == "label" {
+					hasLabel = true
+				}
+			}
+			if !hasLabel {
+				return nil, nil, -1, false
+			}
+			candidate, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(current.Children, rowName)
+			if ok {
+				if list != nil {
+					return nil, nil, -1, false
+				}
+				candidate.Group, candidate.GroupIndex = current, groupIndex
+				list, listDynamic, listGroupIndex = candidate, dynamic, groupIndex
+				continue
+			}
+			if dynamic != nil || !hydrationAwaitSnapshotKeyedEachStaticSelectOptions(current.Children) {
+				return nil, nil, -1, false
+			}
+		default:
+			return nil, nil, -1, false
+		}
+	}
+	if list == nil {
+		return nil, nil, -1, false
+	}
+	list.Groups = groups
+	return list, listDynamic, listGroupIndex, true
 }
 
 // hydrationAwaitSnapshotKeyedEachDirectSelectOptionDynamic is the bounded
@@ -11229,20 +11295,30 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		if hasDynamicControlRow && textElement.Tag == "select" {
 			if directControl.OptionList != nil {
 				if directControl.OptionList.Group != nil {
-					groupVar := "$$row_option_list_group"
-					createBody = append(createBody,
-						genConst(groupVar, genCall(genMember(id("document"), "createElement"), strLit("optgroup"))),
-						genExprStmt(genCall(genMember(id(groupVar), "setAttribute"), strLit(g.scopeID), strLit(""))),
-					)
-					for _, attr := range directControl.OptionList.Group.Attrs {
-						if attr != nil && attr != directControl.OptionGroupDynamic {
-							createBody = append(createBody, genExprStmt(genCall(genMember(id(groupVar), "setAttribute"), strLit(attr.Name), strLit(attr.Value))))
+					groups := directControl.OptionList.Groups
+					if len(groups) == 0 {
+						groups = []*ElementNode{directControl.OptionList.Group}
+					}
+					for groupIndex, group := range groups {
+						groupVar := "$$row_option_list_group_" + itoa(groupIndex)
+						createBody = append(createBody,
+							genConst(groupVar, genCall(genMember(id("document"), "createElement"), strLit("optgroup"))),
+							genExprStmt(genCall(genMember(id(groupVar), "setAttribute"), strLit(g.scopeID), strLit(""))),
+						)
+						for _, attr := range group.Attrs {
+							if attr != nil && attr != directControl.OptionGroupDynamic {
+								createBody = append(createBody, genExprStmt(genCall(genMember(id(groupVar), "setAttribute"), strLit(attr.Name), strLit(attr.Value))))
+							}
 						}
+						if group == directControl.OptionList.Group {
+							if directControl.OptionList.Key == nil {
+								createBody = append(createBody, genExprStmt(genCall(genMember(id(groupVar), "append"), genCall(id(optionListCreateVar), createOptionList))))
+							}
+						} else {
+							createBody = append(createBody, genExprStmt(genCall(id("$$insertHTML"), id(groupVar), strLit(emitStaticHTMLWithoutEvents(group.Children, g.scopeID)))))
+						}
+						createBody = append(createBody, genExprStmt(genCall(genMember(id("$$row_element"), "append"), id(groupVar))))
 					}
-					if directControl.OptionList.Key == nil {
-						createBody = append(createBody, genExprStmt(genCall(genMember(id(groupVar), "append"), genCall(id(optionListCreateVar), createOptionList))))
-					}
-					createBody = append(createBody, genExprStmt(genCall(genMember(id("$$row_element"), "append"), id(groupVar))))
 				} else if directControl.OptionList.Key == nil {
 					createBody = append(createBody, genExprStmt(genCall(genMember(id("$$row_element"), "append"), genCall(id(optionListCreateVar), createOptionList))))
 				}
