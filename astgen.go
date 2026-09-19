@@ -9184,16 +9184,18 @@ type hydrationKeyedEachDirectRowDescriptor struct {
 // hydration and therefore need a row-owned listener/write lifecycle instead
 // of a text-marker writer.
 type hydrationKeyedEachDirectControlDescriptor struct {
-	Element            *ElementNode
-	Bind               *Attr
-	OptionDynamic      *Attr
-	OptionDynamicIndex int
-	OptionGroupDynamic *Attr
-	OptionGroupIndex   int
-	OptionText         *TextNode
-	OptionTextIndex    int
-	OptionList         *hydrationKeyedEachSelectOptionListDescriptor
-	OptionLists        []*hydrationKeyedEachSelectOptionListDescriptor
+	Element             *ElementNode
+	Bind                *Attr
+	OptionDynamic       *Attr
+	OptionDynamicIndex  int
+	OptionGroupDynamic  *Attr
+	OptionGroupIndex    int
+	OptionGroupDynamics []*Attr
+	OptionGroupIndices  []int
+	OptionText          *TextNode
+	OptionTextIndex     int
+	OptionList          *hydrationKeyedEachSelectOptionListDescriptor
+	OptionLists         []*hydrationKeyedEachSelectOptionListDescriptor
 }
 
 // hydrationKeyedEachSelectOptionListDescriptor preserves the parser-owned
@@ -9264,7 +9266,7 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 								descriptor.OptionText = optionText
 								descriptor.OptionTextIndex = optionIndex
 							} else {
-								optionLists, optionGroupDynamic, groupIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(element.Children, itemName)
+								optionLists, optionGroupDynamics, optionGroupIndices, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(element.Children, itemName)
 								if !ok {
 									optionList, listOK := hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName)
 									if listOK {
@@ -9274,8 +9276,12 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 								if ok {
 									descriptor.OptionList = optionLists[0]
 									descriptor.OptionLists = optionLists
-									descriptor.OptionGroupDynamic = optionGroupDynamic
-									descriptor.OptionGroupIndex = groupIndex
+									descriptor.OptionGroupDynamics = optionGroupDynamics
+									descriptor.OptionGroupIndices = optionGroupIndices
+									if len(optionGroupDynamics) == 1 {
+										descriptor.OptionGroupDynamic = optionGroupDynamics[0]
+										descriptor.OptionGroupIndex = optionGroupIndices[0]
+									}
 								} else {
 									groupDynamic, groupIndex, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(element.Children, itemName)
 									if !ok {
@@ -9883,21 +9889,20 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(nodes 
 // bounded nested option lists. One list-owning group may have one row-owned
 // label; sibling groups remain static and are recreated only for a new CSR
 // outer row.
-func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []Node, rowName string) ([]*hydrationKeyedEachSelectOptionListDescriptor, *Attr, int, bool) {
+func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []Node, rowName string) ([]*hydrationKeyedEachSelectOptionListDescriptor, []*Attr, []int, bool) {
 	groups := make([]*ElementNode, 0, len(nodes))
 	lists := make([]*hydrationKeyedEachSelectOptionListDescriptor, 0, len(nodes))
-	var listDynamic *Attr
-	listGroupIndex := -1
-	dynamicLabels := 0
+	dynamicLabels := []*Attr{}
+	dynamicLabelIndices := []int{}
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
 			if !isFullyStatic(current) {
-				return nil, nil, -1, false
+				return nil, nil, nil, false
 			}
 		case *ElementNode:
 			if current == nil || current.Tag != "optgroup" {
-				return nil, nil, -1, false
+				return nil, nil, nil, false
 			}
 			groupIndex := len(groups)
 			groups = append(groups, current)
@@ -9905,53 +9910,45 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []Node
 			hasLabel := false
 			for _, attr := range current.Attrs {
 				if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
-					return nil, nil, -1, false
+					return nil, nil, nil, false
 				}
 				if attr.IsBind {
 					root, ok := templateExprMemberBindingRoot(attr.Expr)
 					if attr.Name != "label" || dynamic != nil || !ok || root != rowName {
-						return nil, nil, -1, false
+						return nil, nil, nil, false
 					}
 					dynamic, hasLabel = attr, true
 					continue
 				}
 				if attr.Expr != nil || attr.Name == "selected" {
-					return nil, nil, -1, false
+					return nil, nil, nil, false
 				}
 				if attr.Name == "label" {
 					hasLabel = true
 				}
 			}
 			if !hasLabel {
-				return nil, nil, -1, false
+				return nil, nil, nil, false
 			}
 			if dynamic != nil {
-				dynamicLabels++
-				// The current direct-control descriptor owns exactly one
-				// typed group label writer. Do not silently retain only the
-				// last label while the multi-writer representation is pending.
-				if dynamicLabels > 1 {
-					return nil, nil, -1, false
-				}
+				dynamicLabels = append(dynamicLabels, dynamic)
+				dynamicLabelIndices = append(dynamicLabelIndices, groupIndex)
 			}
 			candidate, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(current.Children, rowName)
 			if ok {
 				candidate.Group, candidate.GroupIndex = current, groupIndex
 				lists = append(lists, candidate)
-				if dynamic != nil {
-					listDynamic, listGroupIndex = dynamic, groupIndex
-				}
 				continue
 			}
 			if dynamic != nil || !hydrationAwaitSnapshotKeyedEachStaticSelectOptions(current.Children) {
-				return nil, nil, -1, false
+				return nil, nil, nil, false
 			}
 		default:
-			return nil, nil, -1, false
+			return nil, nil, nil, false
 		}
 	}
 	if len(lists) == 0 {
-		return nil, nil, -1, false
+		return nil, nil, nil, false
 	}
 	if len(lists) > 1 {
 		hasKey, hasUnkeyed := false, false
@@ -9963,13 +9960,13 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []Node
 			}
 		}
 		if hasKey && hasUnkeyed {
-			return nil, nil, -1, false
+			return nil, nil, nil, false
 		}
 	}
 	for _, list := range lists {
 		list.Groups = groups
 	}
-	return lists, listDynamic, listGroupIndex, true
+	return lists, dynamicLabels, dynamicLabelIndices, true
 }
 
 // hydrationAwaitSnapshotKeyedEachDirectSelectOptionDynamic is the bounded
@@ -10810,7 +10807,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		genReturn(genCall(genMember(genCall(genMember(id("$$select"), "querySelectorAll"), strLit("optgroup")), "item"), id("$$optgroupIndex"))),
 	)}
 	var rowTextValue, createTextValue, rowAttrValue, createAttrValue, rowClassValue, createClassValue, rowStyleValue, createStyleValue, rowControlValue, createControlValue, rowControlAssign, rowOptionDynamic, createOptionDynamic, rowOptionGroupDynamic, createOptionGroupDynamic, rowOptionText, createOptionText, rowOptionList, createOptionList, optionListKey JsExpr
-	var rowOptionLists, createOptionLists, optionListCreates, optionListKeys, optionListElementCreates, optionListElementUpdates []JsExpr
+	var rowOptionLists, createOptionLists, optionListCreates, optionListKeys, optionListElementCreates, optionListElementUpdates, rowOptionGroupDynamics, createOptionGroupDynamics []JsExpr
 	multiKeyedOptionLists := len(directControl.OptionLists) > 1 && directControl.OptionLists[0].Key != nil
 	optionListCreate := JsExpr(id("undefined"))
 	optionListUpdate := JsExpr(id("undefined"))
@@ -10904,13 +10901,25 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				createOptionDynamic = genString(createOptionDynamic)
 			}
 		}
-		if directControl.OptionGroupDynamic != nil {
+		if directControl.OptionGroupDynamic != nil && len(directControl.OptionGroupDynamics) <= 1 {
 			g.withTemplateBinding(block.ItemName, "$$rowItem", func() {
 				g.withTemplateBinding(block.IndexName, "$$rowIndex", func() { rowOptionGroupDynamic = genString(g.templateExpr(directControl.OptionGroupDynamic.Expr)) })
 			})
 			g.withTemplateBinding(block.ItemName, "$$item", func() {
 				g.withTemplateBinding(block.IndexName, "$$index", func() { createOptionGroupDynamic = genString(g.templateExpr(directControl.OptionGroupDynamic.Expr)) })
 			})
+		}
+		if len(directControl.OptionGroupDynamics) > 1 {
+			for _, attr := range directControl.OptionGroupDynamics {
+				g.withTemplateBinding(block.ItemName, "$$rowItem", func() {
+					g.withTemplateBinding(block.IndexName, "$$rowIndex", func() { rowOptionGroupDynamics = append(rowOptionGroupDynamics, genString(g.templateExpr(attr.Expr))) })
+				})
+				g.withTemplateBinding(block.ItemName, "$$item", func() {
+					g.withTemplateBinding(block.IndexName, "$$index", func() {
+						createOptionGroupDynamics = append(createOptionGroupDynamics, genString(g.templateExpr(attr.Expr)))
+					})
+				})
+			}
 		}
 		if directControl.OptionText != nil {
 			g.withTemplateBinding(block.ItemName, "$$rowItem", func() {
@@ -11050,6 +11059,14 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	if directControl.OptionGroupDynamic != nil {
 		controllerOptionGroupDynamic = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowOptionGroupDynamic}
 	}
+	controllerOptionGroupDynamics := JsExpr(id("undefined"))
+	if len(rowOptionGroupDynamics) > 1 {
+		getters := make([]JsExpr, 0, len(rowOptionGroupDynamics))
+		for _, value := range rowOptionGroupDynamics {
+			getters = append(getters, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: value})
+		}
+		controllerOptionGroupDynamics = genArray(getters...)
+	}
 	controllerOptionText := JsExpr(id("undefined"))
 	if directControl.OptionText != nil {
 		controllerOptionText = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowOptionText}
@@ -11162,6 +11179,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			{Key: id("controlDOMValue"), Value: id("undefined")},
 			{Key: id("optionDynamic"), Value: controllerOptionDynamic},
 			{Key: id("optionGroupDynamic"), Value: controllerOptionGroupDynamic},
+			{Key: id("optionGroupDynamics"), Value: controllerOptionGroupDynamics},
 			{Key: id("optionText"), Value: controllerOptionText},
 			{Key: id("optionList"), Value: controllerOptionList},
 			{Key: id("optionLists"), Value: controllerOptionLists},
@@ -11251,7 +11269,19 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				attachBody = append(attachBody, optionAttach...)
 			}
 		}
-		if directControl.OptionGroupDynamic != nil {
+		if len(directControl.OptionGroupDynamics) > 1 {
+			for dynamicIndex, groupIndex := range directControl.OptionGroupIndices {
+				groupVar := prefix + "_optgroup_dynamic_element_" + itoa(dynamicIndex)
+				updateVar := prefix + "_optgroup_dynamic_update_" + itoa(dynamicIndex)
+				valueVar := prefix + "_optgroup_dynamic_value_" + itoa(dynamicIndex)
+				update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genConst(valueVar, genCall(genComputedMember(genMember(id("$$controller"), "optionGroupDynamics"), numLit(dynamicIndex)))),
+					genIf(genBinary("!==", genMember(id(groupVar), "label"), id(valueVar)), genAssignStmt(genMember(id(groupVar), "label"), id(valueVar))),
+				)}
+				attachBody = append(attachBody, genConst(groupVar, genCall(id(findOptgroupVar), genMember(id("$$controller"), "row"), numLit(groupIndex))), genIf(id(groupVar), genBlock(genConst(updateVar, update), genExprStmt(genCall(genMember(genMember(id("$$controller"), "updates"), "push"), id(updateVar))))))
+			}
+		}
+		if directControl.OptionGroupDynamic != nil && len(directControl.OptionGroupDynamics) <= 1 {
 			groupVar := prefix + "_optgroup_dynamic_element"
 			groupUpdateVar := prefix + "_optgroup_dynamic_update"
 			groupValueVar := prefix + "_optgroup_dynamic_value"
@@ -11481,7 +11511,11 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 						genExprStmt(genCall(genMember(id(groupVar), "setAttribute"), strLit(g.scopeID), strLit(""))),
 					)
 					for _, attr := range group.Attrs {
-						if attr != nil {
+						dynamicGroupAttr := false
+						for _, dynamic := range directControl.OptionGroupDynamics {
+							dynamicGroupAttr = dynamicGroupAttr || attr == dynamic
+						}
+						if attr != nil && !dynamicGroupAttr {
 							createBody = append(createBody, genExprStmt(genCall(genMember(id(groupVar), "setAttribute"), strLit(attr.Name), strLit(attr.Value))))
 						}
 					}
@@ -11544,7 +11578,13 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 					genIf(id("$$row_option_text"), genAssignStmt(genMember(id("$$row_option_text"), "textContent"), createOptionText)),
 				)
 			}
-			if directControl.OptionGroupDynamic != nil {
+			if len(directControl.OptionGroupDynamics) > 1 {
+				for dynamicIndex, groupIndex := range directControl.OptionGroupIndices {
+					groupVar := "$$row_optgroup_" + itoa(dynamicIndex)
+					createBody = append(createBody, genConst(groupVar, genCall(genMember(genCall(genMember(id("$$row_element"), "querySelectorAll"), strLit("optgroup")), "item"), numLit(groupIndex))), genIf(id(groupVar), genAssignStmt(genMember(id(groupVar), "label"), createOptionGroupDynamics[dynamicIndex])))
+				}
+			}
+			if directControl.OptionGroupDynamic != nil && len(directControl.OptionGroupDynamics) <= 1 {
 				createBody = append(createBody,
 					genConst("$$row_optgroup", genCall(genMember(genCall(genMember(id("$$row_element"), "querySelectorAll"), strLit("optgroup")), "item"), numLit(directControl.OptionGroupIndex))),
 					genIf(id("$$row_optgroup"), genAssignStmt(genMember(id("$$row_optgroup"), "label"), createOptionGroupDynamic)),
