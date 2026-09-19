@@ -1093,7 +1093,7 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 					if _, _, _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamicAndText(element.Children, itemName); !ok {
 						if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(element.Children, itemName); !ok {
 							if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionText(element.Children, itemName); !ok {
-								if !ssrAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName) {
+								if !ssrAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(element.Children, itemName) && !ssrAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName) {
 									if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(element.Children, itemName); !ok {
 										return false
 									}
@@ -1609,6 +1609,28 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []SSRPlanNode, rowNam
 		}
 	}
 	return true
+}
+
+// ssrAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList mirrors the first
+// nested unkeyed option-list recipe. SSR may render the ordinary nested each,
+// while hydration later locates the static group and replaces only its child
+// options on an outer-row update.
+func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(nodes []SSRPlanNode, rowName string) bool {
+	if len(nodes) != 1 {
+		return false
+	}
+	group, ok := nodes[0].(*SSRPlanElement)
+	if !ok || group == nil || group.Tag != "optgroup" || !ssrAwaitSnapshotStaticSelectAttrs(group.Attrs, "label", false) {
+		return false
+	}
+	if len(group.Children) != 1 {
+		return false
+	}
+	each, ok := group.Children[0].(*SSRPlanEach)
+	if !ok || each == nil || each.Key != nil {
+		return false
+	}
+	return ssrAwaitSnapshotKeyedEachDirectSelectOptionList(group.Children, rowName)
 }
 
 // ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic mirrors the bounded

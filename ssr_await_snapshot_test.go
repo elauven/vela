@@ -737,6 +737,47 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionList(t *te
 	}
 }
 
+func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}><optgroup label="Available">{#each row.options as option}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := plan.Nodes[0].(*SSRPlanElement)
+	await := main.Children[0].(*SSRPlanAwait)
+	each := await.ThenChildren[0].(*SSRPlanEach)
+	if !ssrAwaitSnapshotKeyedEachDirectControlPlanRow(each.Children, each.ItemName) {
+		t.Fatalf("nested optgroup option list snapshot predicate rejected row=%#v", each.Children)
+	}
+	file, err := BuildSSRGoFile(plan, "page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`optgroup`, `Available`, `vela.Get(ssrEachItem0, "options")`, `vela.Get(ssrEachItem1, "value")`, `vela.Get(ssrEachItem1, "label")`} {
+		if !strings.Contains(string(server), want) {
+			t.Fatalf("nested optgroup option-list SSR renderer misses %q:\n%s", want, server)
+		}
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(client, PrintPretty)
+	for _, want := range []string{`querySelectorAll('optgroup')`, `createElement('optgroup')`, `createElement('option')`, `replaceChildren`, `optionList`} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("nested optgroup option-list hydration client misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectKeyedOptionList(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}>{#each row.options as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
@@ -1327,6 +1368,64 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptionText(t *testing.
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("dynamic option text keyed await snapshot browser output=%q", got)
+	}
+}
+
+func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptgroupOptionList(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="nested-list-select" bind:value={row.status}><optgroup label="Available">{#each row.options as option}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := plan.Nodes[0].(*SSRPlanElement)
+	await := main.Children[0].(*SSRPlanAwait)
+	each := await.ThenChildren[0].(*SSRPlanEach)
+	rowElement := each.Children[0].(*SSRPlanElement)
+	rowScope := func(key string) string { return "vela-page--each-" + itoa(each.Span.Start) + "-" + key }
+	type option struct{ value, label string }
+	rowHTML := func(key, status string, options []option) string {
+		scope := rowScope(key)
+		body := `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><select vela-page="" class="nested-list-select"><optgroup vela-page="" label="Available">`
+		for _, option := range options {
+			selected := ""
+			if option.value == status {
+				selected = " selected"
+			}
+			body += `<option vela-page="" value="` + option.value + `"` + selected + `>` + option.label + `</option>`
+		}
+		return body + `</optgroup></select><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
+	}
+	aOptions := []option{{"open", "Open"}, {"done", "Done"}}
+	bOptions := []option{{"later", "Later"}, {"done", "Done"}}
+	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "open", aOptions) + rowHTML("b", "done", bOptions) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","status":"open","options":[{"value":"open","label":"Open"},{"value":"done","label":"Done"}]},{"id":"b","status":"done","options":[{"value":"later","label":"Later"},{"value":"done","label":"Done"}]}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial!==0))throw new Error("nested option list hydration mutated server DOM");await p.evaluate(()=>{window.a=document.querySelectorAll(".nested-list-select")[0];window.b=document.querySelectorAll(".nested-list-select")[1];window.aGroup=window.a.querySelector("optgroup");window.bGroup=window.b.querySelector("optgroup")});if(!(await p.evaluate(()=>window.a.value==="open"&&window.aGroup.querySelectorAll("option").length===2&&window.b.value==="done"&&window.bGroup.querySelectorAll("option")[0].textContent==="Later")))throw new Error("nested server option lists were not adopted");await p.evaluate(()=>window.hydrated.component.set({rows:[{id:"a",status:"queued",options:[{value:"queued",label:"Queued"},{value:"done",label:"Done"}]},{id:"b",status:"done",options:[{value:"later",label:"Later"},{value:"done",label:"Done"}]}]}));await p.waitForFunction(()=>window.a.value==="queued"&&window.aGroup.querySelectorAll("option")[0].textContent==="Queued");if(!(await p.evaluate(()=>document.querySelectorAll(".nested-list-select")[0]===window.a&&window.a.querySelector("optgroup")===window.aGroup&&window.a.options.length===2)))throw new Error("nested option list replaced its owner rather than group children");await p.evaluate(()=>window.hydrated.component.set({rows:[{id:"b",status:"later",options:[{value:"later",label:"Later 2"},{value:"done",label:"Done"}]},{id:"a",status:"done",options:[{value:"queued",label:"Queued"},{value:"done",label:"Done 2"}]},{id:"c",status:"new",options:[{value:"new",label:"New"}]}]}));await p.waitForFunction(()=>document.querySelectorAll(".nested-list-select").length===3);if(!(await p.evaluate(()=>{const rows=[...document.querySelectorAll(".nested-list-select")];return rows[0]===window.b&&rows[0].querySelector("optgroup")===window.bGroup&&rows[0].value==="later"&&rows[0].options[0].textContent==="Later 2"&&rows[1]===window.a&&rows[1].querySelector("optgroup")===window.aGroup&&rows[1].value==="done"&&rows[1].options[1].textContent==="Done 2"&&rows[2].querySelector("optgroup").label==="Available"&&rows[2].value==="new"&&rows[2].options[0].textContent==="New"})))throw new Error("nested option list reorder or CSR insertion failed");await p.evaluate(()=>{window.removed=window.a;window.hydrated.component.set({rows:[{id:"b",status:"later",options:[{value:"later",label:"Later 2"},{value:"done",label:"Done"}]},{id:"c",status:"new",options:[{value:"new",label:"New"}]}]})});await p.waitForFunction(()=>document.querySelectorAll(".nested-list-select").length===2);if(await p.evaluate(()=>window.removed.isConnected))throw new Error("removed nested select remained connected");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("nested option-list keyed await snapshot browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("nested option-list keyed await snapshot browser output=%q", got)
 	}
 }
 
