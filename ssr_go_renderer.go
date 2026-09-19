@@ -1665,6 +1665,7 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(nodes []SSRP
 // owner, optional row-owned label on that owner, and static siblings.
 func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []SSRPlanNode, rowName string) bool {
 	foundLists := 0
+	dynamicLabels := 0
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *SSRPlanText:
@@ -1697,6 +1698,12 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []SSRPlanNod
 			}
 			if !hasLabel {
 				return false
+			}
+			if dynamic {
+				dynamicLabels++
+				if dynamicLabels > 1 {
+					return false
+				}
 			}
 			if ssrAwaitSnapshotKeyedEachDirectSelectOptionList(current.Children, rowName) {
 				foundLists++

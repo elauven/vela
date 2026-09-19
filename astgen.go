@@ -9888,6 +9888,7 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []Node
 	lists := make([]*hydrationKeyedEachSelectOptionListDescriptor, 0, len(nodes))
 	var listDynamic *Attr
 	listGroupIndex := -1
+	dynamicLabels := 0
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *TextNode:
@@ -9923,6 +9924,15 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []Node
 			}
 			if !hasLabel {
 				return nil, nil, -1, false
+			}
+			if dynamic != nil {
+				dynamicLabels++
+				// The current direct-control descriptor owns exactly one
+				// typed group label writer. Do not silently retain only the
+				// last label while the multi-writer representation is pending.
+				if dynamicLabels > 1 {
+					return nil, nil, -1, false
+				}
 			}
 			candidate, ok := hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(current.Children, rowName)
 			if ok {
