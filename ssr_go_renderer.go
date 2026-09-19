@@ -1664,7 +1664,9 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(nodes []SSRP
 // bounded multiple-optgroup lifecycle accepted by hydration: one direct list
 // owner, optional row-owned label on that owner, and static siblings.
 func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []SSRPlanNode, rowName string) bool {
-	foundList := false
+	foundLists := 0
+	foundDynamic := false
+	foundKeyed := false
 	for _, node := range nodes {
 		switch current := node.(type) {
 		case *SSRPlanText:
@@ -1699,10 +1701,10 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []SSRPlanNod
 				return false
 			}
 			if ssrAwaitSnapshotKeyedEachDirectSelectOptionList(current.Children, rowName) {
-				if foundList {
-					return false
-				}
-				foundList = true
+				foundLists++
+				foundDynamic = foundDynamic || dynamic
+				each := current.Children[0].(*SSRPlanEach)
+				foundKeyed = foundKeyed || each.Key != nil
 				continue
 			}
 			if dynamic || !ssrAwaitSnapshotKeyedEachStaticSelectOptions(current.Children) {
@@ -1712,7 +1714,10 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []SSRPlanNod
 			return false
 		}
 	}
-	return foundList
+	if foundLists == 0 {
+		return false
+	}
+	return foundLists == 1 || (!foundDynamic && !foundKeyed)
 }
 
 // ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic mirrors the bounded
