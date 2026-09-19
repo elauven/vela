@@ -410,7 +410,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptgroupLabel(t 
 }
 
 func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionDisabled(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}><option value="open" :disabled={row.closed}>Open</option><option value="done">Done</option></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}><optgroup label="Active"><option value="open" :disabled={row.closed}>Open</option></optgroup><optgroup label="Closed"><option value="done">Done</option></optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +433,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionDisabled(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`vela.Get(ssrEachItem0, "closed")`, `" disabled"`, `vela.Get(ssrEachItem0, "status")`} {
+	for _, want := range []string{`vela.Get(ssrEachItem0, "closed")`, `" disabled"`, `vela.Get(ssrEachItem0, "status")`, `optgroup`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("dynamic option SSR renderer misses %q:\n%s", want, server)
 		}
@@ -946,7 +946,7 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectSelectBindi
 
 func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptionDisabled(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="dynamic-select" bind:value={row.status}><option value="open" :disabled={row.closed}>Open</option><option value="done">Done</option></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="dynamic-select" bind:value={row.status}><optgroup label="Active"><option value="open" :disabled={row.closed}>Open</option></optgroup><optgroup label="Closed"><option value="done">Done</option></optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -978,7 +978,7 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptionDisabled(t *test
 		if closed {
 			disabled = " disabled"
 		}
-		return `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><select vela-page="" class="dynamic-select"><option value="open"` + disabled + open + `>Open</option><option value="done"` + done + `>Done</option></select><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
+		return `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><select vela-page="" class="dynamic-select"><optgroup label="Active"><option value="open"` + disabled + open + `>Open</option></optgroup><optgroup label="Closed"><option value="done"` + done + `>Done</option></optgroup></select><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
 	}
 	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "done", true) + rowHTML("b", "open", false) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","status":"done","closed":true},{"id":"b","status":"open","closed":false}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()

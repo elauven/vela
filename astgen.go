@@ -9391,47 +9391,62 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []Node, rowName
 func hydrationAwaitSnapshotKeyedEachDirectSelectOptionDynamic(nodes []Node, itemName string) (*Attr, int, bool) {
 	options, dynamicIndex := 0, -1
 	var dynamic *Attr
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *TextNode:
-			if !isFullyStatic(current) {
-				return nil, -1, false
-			}
-		case *ElementNode:
-			if current == nil || current.Tag != "option" || !allStatic(current.Children) {
-				return nil, -1, false
-			}
-			hasValue := false
-			for _, attr := range current.Attrs {
-				if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
-					return nil, -1, false
+	var visit func([]Node, bool) bool
+	visit = func(currentNodes []Node, allowOptgroup bool) bool {
+		for _, node := range currentNodes {
+			switch current := node.(type) {
+			case *TextNode:
+				if !isFullyStatic(current) {
+					return false
 				}
-				if attr.IsBind {
-					root, ok := templateExprMemberBindingRoot(attr.Expr)
-					if (attr.Name != "disabled" && attr.Name != "value") || dynamic != nil || !ok || root != itemName {
-						return nil, -1, false
-					}
-					dynamic = attr
-					dynamicIndex = options
-					if attr.Name == "value" {
-						hasValue = true
+			case *ElementNode:
+				if current == nil {
+					return false
+				}
+				if current.Tag == "optgroup" {
+					if !allowOptgroup || !hydrationAwaitSnapshotStaticSelectAttrs(current.Attrs, "label", false) || !visit(current.Children, false) {
+						return false
 					}
 					continue
 				}
-				if attr.Expr != nil || attr.Name == "selected" {
-					return nil, -1, false
+				if current.Tag != "option" || !allStatic(current.Children) {
+					return false
 				}
-				if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
-					hasValue = true
+				hasValue := false
+				for _, attr := range current.Attrs {
+					if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+						return false
+					}
+					if attr.IsBind {
+						root, ok := templateExprMemberBindingRoot(attr.Expr)
+						if (attr.Name != "disabled" && attr.Name != "value") || dynamic != nil || !ok || root != itemName {
+							return false
+						}
+						dynamic, dynamicIndex = attr, options
+						if attr.Name == "value" {
+							hasValue = true
+						}
+						continue
+					}
+					if attr.Expr != nil || attr.Name == "selected" {
+						return false
+					}
+					if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
+						hasValue = true
+					}
 				}
+				if !hasValue {
+					return false
+				}
+				options++
+			default:
+				return false
 			}
-			if !hasValue {
-				return nil, -1, false
-			}
-			options++
-		default:
-			return nil, -1, false
 		}
+		return true
+	}
+	if !visit(nodes, true) {
+		return nil, -1, false
 	}
 	return dynamic, dynamicIndex, dynamic != nil && options > 0
 }

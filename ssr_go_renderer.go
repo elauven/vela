@@ -1232,47 +1232,61 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(nodes []SSRPlanNode, ite
 	options, dynamicIndex := 0, -1
 	var dynamic SSRPlanAttr
 	found := false
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *SSRPlanText:
-			for _, part := range current.Parts {
-				if !part.Static {
-					return SSRPlanAttr{}, -1, false
-				}
-			}
-		case *SSRPlanElement:
-			if current == nil || current.Tag != "option" || !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) {
-				return SSRPlanAttr{}, -1, false
-			}
-			hasValue := false
-			for _, attr := range current.Attrs {
-				if attr.Role == SSRAttrDynamic {
-					root, ok := templateExprMemberBindingRoot(attr.Expr)
-					if (attr.Name != "disabled" && attr.Name != "value") || found || !ok || root != itemName {
-						return SSRPlanAttr{}, -1, false
+	var visit func([]SSRPlanNode, bool) bool
+	visit = func(currentNodes []SSRPlanNode, allowOptgroup bool) bool {
+		for _, node := range currentNodes {
+			switch current := node.(type) {
+			case *SSRPlanText:
+				for _, part := range current.Parts {
+					if !part.Static {
+						return false
 					}
-					dynamic = attr
-					dynamicIndex = options
-					found = true
-					if attr.Name == "value" {
-						hasValue = true
+				}
+			case *SSRPlanElement:
+				if current == nil {
+					return false
+				}
+				if current.Tag == "optgroup" {
+					if !allowOptgroup || !ssrAwaitSnapshotStaticSelectAttrs(current.Attrs, "label", false) || !visit(current.Children, false) {
+						return false
 					}
 					continue
 				}
-				if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-					return SSRPlanAttr{}, -1, false
+				if current.Tag != "option" || !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) {
+					return false
 				}
-				if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
-					hasValue = true
+				hasValue := false
+				for _, attr := range current.Attrs {
+					if attr.Role == SSRAttrDynamic {
+						root, ok := templateExprMemberBindingRoot(attr.Expr)
+						if (attr.Name != "disabled" && attr.Name != "value") || found || !ok || root != itemName {
+							return false
+						}
+						dynamic, dynamicIndex, found = attr, options, true
+						if attr.Name == "value" {
+							hasValue = true
+						}
+						continue
+					}
+					if attr.Role != SSRAttrStatic || attr.Name == "selected" {
+						return false
+					}
+					if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
+						hasValue = true
+					}
 				}
+				if !hasValue {
+					return false
+				}
+				options++
+			default:
+				return false
 			}
-			if !hasValue {
-				return SSRPlanAttr{}, -1, false
-			}
-			options++
-		default:
-			return SSRPlanAttr{}, -1, false
 		}
+		return true
+	}
+	if !visit(nodes, true) {
+		return SSRPlanAttr{}, -1, false
 	}
 	return dynamic, dynamicIndex, found && options > 0
 }
