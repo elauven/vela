@@ -9879,9 +9879,10 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(nodes 
 }
 
 // hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList admits a
-// select made of static top-level optgroups with exactly one bounded nested
-// option list. Its list-owning group may have one row-owned label; sibling
-// groups remain static and are recreated only for a new CSR outer row.
+// select made of static top-level optgroups with one or more homogeneous
+// bounded nested option lists. One list-owning group may have one row-owned
+// label; sibling groups remain static and are recreated only for a new CSR
+// outer row.
 func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []Node, rowName string) ([]*hydrationKeyedEachSelectOptionListDescriptor, *Attr, int, bool) {
 	groups := make([]*ElementNode, 0, len(nodes))
 	lists := make([]*hydrationKeyedEachSelectOptionListDescriptor, 0, len(nodes))
@@ -9943,9 +9944,6 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []Node
 		return nil, nil, -1, false
 	}
 	if len(lists) > 1 {
-		if listDynamic != nil {
-			return nil, nil, -1, false
-		}
 		hasKey, hasUnkeyed := false, false
 		for _, list := range lists {
 			if list.Key != nil {

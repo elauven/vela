@@ -899,6 +899,34 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectMultipleKeyedOpt
 	}
 }
 
+func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectMultipleKeyedOptgroupOptionListsWithDynamicLabel(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}><optgroup :label={row.availableLabel}>{#each row.available as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="Archived">{#each row.archived as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := plan.Nodes[0].(*SSRPlanElement)
+	await := main.Children[0].(*SSRPlanAwait)
+	each := await.ThenChildren[0].(*SSRPlanEach)
+	if !ssrAwaitSnapshotKeyedEachDirectControlPlanRow(each.Children, each.ItemName) {
+		t.Fatalf("multiple keyed optgroup option-list snapshot predicate rejected dynamic group label row=%#v", each.Children)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(client, PrintPretty)
+	for _, want := range []string{`optionGroupDynamic`, `optgroup_dynamic_update`, `optionListKeys`, `optionBlocksByGroup`, `option_list_reconciles`, `$$reconcileHydrationKeyedElements`} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("multiple keyed option-list dynamic-label hydration client misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectKeyedOptionList(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select bind:value={row.status}>{#each row.options as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
