@@ -959,9 +959,17 @@ func emitStaticHTMLWithoutEvents(nodes []Node, scopeID string) string {
 // attribute through a DOM-AST writer, so serialising it here would create an
 // incorrect initial HTML boolean attribute before that writer can run.
 func emitStaticHTMLWithoutEventsExcept(nodes []Node, scopeID string, omit *Attr) string {
+	return emitStaticHTMLWithoutEventsExceptText(nodes, scopeID, omit, nil)
+}
+
+// emitStaticHTMLWithoutEventsExceptText additionally omits one text node that
+// is installed through a typed option-tree controller. Keeping the entire
+// node out of the static string prevents cached template expressions from
+// leaking into CSR HTML while the caller supplies its initial textContent.
+func emitStaticHTMLWithoutEventsExceptText(nodes []Node, scopeID string, omit *Attr, omitText *TextNode) string {
 	var b strings.Builder
 	for _, node := range nodes {
-		emitStaticHTMLNodeWithoutEventsExcept(&b, node, scopeID, omit)
+		emitStaticHTMLNodeWithoutEventsExceptText(&b, node, scopeID, omit, omitText)
 	}
 	return b.String()
 }
@@ -971,8 +979,15 @@ func emitStaticHTMLNodeWithoutEvents(b *strings.Builder, node Node, scopeID stri
 }
 
 func emitStaticHTMLNodeWithoutEventsExcept(b *strings.Builder, node Node, scopeID string, omit *Attr) {
+	emitStaticHTMLNodeWithoutEventsExceptText(b, node, scopeID, omit, nil)
+}
+
+func emitStaticHTMLNodeWithoutEventsExceptText(b *strings.Builder, node Node, scopeID string, omit *Attr, omitText *TextNode) {
 	switch n := node.(type) {
 	case *TextNode:
+		if n == omitText {
+			return
+		}
 		for _, p := range n.Parts {
 			b.WriteString(escapeHTMLText(p.Value))
 		}
@@ -1000,7 +1015,7 @@ func emitStaticHTMLNodeWithoutEventsExcept(b *strings.Builder, node Node, scopeI
 		}
 		b.WriteByte('>')
 		for _, child := range n.Children {
-			emitStaticHTMLNodeWithoutEventsExcept(b, child, scopeID, omit)
+			emitStaticHTMLNodeWithoutEventsExceptText(b, child, scopeID, omit, omitText)
 		}
 		b.WriteString("</")
 		b.WriteString(n.Tag)
