@@ -1090,7 +1090,9 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 		if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(element.Children, itemName); !ok {
 			if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionText(element.Children, itemName); !ok {
 				if !ssrAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName) {
-					return false
+					if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(element.Children, itemName); !ok {
+						return false
+					}
 				}
 			}
 		}
@@ -1123,6 +1125,53 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 		}
 	}
 	return bindings == 1 && (bindings == 0 || !ssrAwaitSnapshotKeyedEachHasCheckedControlBinding(element) || checkbox)
+}
+
+func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(nodes []SSRPlanNode, itemName string) (SSRPlanAttr, int, bool) {
+	groups, dynamicIndex := 0, -1
+	var dynamic SSRPlanAttr
+	found := false
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *SSRPlanText:
+			for _, part := range current.Parts {
+				if !part.Static {
+					return SSRPlanAttr{}, -1, false
+				}
+			}
+		case *SSRPlanElement:
+			if current == nil || current.Tag != "optgroup" {
+				return SSRPlanAttr{}, -1, false
+			}
+			if _, ok := ssrAwaitSnapshotKeyedEachStaticSelectOptionTree(current.Children, false); !ok {
+				return SSRPlanAttr{}, -1, false
+			}
+			hasLabel := false
+			for _, attr := range current.Attrs {
+				if attr.Role == SSRAttrDynamic {
+					root, ok := templateExprMemberBindingRoot(attr.Expr)
+					if attr.Name != "label" || found || !ok || root != itemName {
+						return SSRPlanAttr{}, -1, false
+					}
+					dynamic, dynamicIndex, found, hasLabel = attr, groups, true, true
+					continue
+				}
+				if attr.Role != SSRAttrStatic || attr.Name == "selected" {
+					return SSRPlanAttr{}, -1, false
+				}
+				if attr.Name == "label" {
+					hasLabel = true
+				}
+			}
+			if !hasLabel {
+				return SSRPlanAttr{}, -1, false
+			}
+			groups++
+		default:
+			return SSRPlanAttr{}, -1, false
+		}
+	}
+	return dynamic, dynamicIndex, found && groups > 0
 }
 
 func ssrAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []SSRPlanNode, rowName string) bool {
