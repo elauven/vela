@@ -1088,11 +1088,13 @@ func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName
 	}
 	if element.Tag == "select" && !ssrAwaitSnapshotKeyedEachStaticSelectOptions(element.Children) {
 		if _, _, _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamic(element.Children, itemName); !ok {
-			if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(element.Children, itemName); !ok {
-				if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionText(element.Children, itemName); !ok {
-					if !ssrAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName) {
-						if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(element.Children, itemName); !ok {
-							return false
+			if _, _, _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionText(element.Children, itemName); !ok {
+				if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(element.Children, itemName); !ok {
+					if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionText(element.Children, itemName); !ok {
+						if !ssrAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName) {
+							if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(element.Children, itemName); !ok {
+								return false
+							}
 						}
 					}
 				}
@@ -1217,6 +1219,95 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamic(nodes []SSRPl
 		}
 	}
 	return groupDynamic, groupIndex, optionDynamic, optionIndex, foundGroup && foundOption && groups > 0 && options > 0
+}
+
+// ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionText mirrors the
+// composed optgroup-label plus option-text lifecycle accepted by hydration.
+// Keeping the proof parallel to the template predicate prevents SSR from
+// advertising a row shape whose client owner cannot adopt safely.
+func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionText(nodes []SSRPlanNode, itemName string) (SSRPlanAttr, int, *SSRPlanText, int, bool) {
+	groups, options := 0, 0
+	groupIndex, optionIndex := -1, -1
+	var groupDynamic SSRPlanAttr
+	var optionText *SSRPlanText
+	foundGroup := false
+	for _, node := range nodes {
+		switch current := node.(type) {
+		case *SSRPlanText:
+			for _, part := range current.Parts {
+				if !part.Static {
+					return SSRPlanAttr{}, -1, nil, -1, false
+				}
+			}
+		case *SSRPlanElement:
+			if current == nil || current.Tag != "optgroup" {
+				return SSRPlanAttr{}, -1, nil, -1, false
+			}
+			currentGroupIndex := groups
+			groups++
+			hasLabel := false
+			for _, attr := range current.Attrs {
+				if attr.Role == SSRAttrDynamic {
+					root, ok := templateExprMemberBindingRoot(attr.Expr)
+					if attr.Name != "label" || foundGroup || !ok || root != itemName {
+						return SSRPlanAttr{}, -1, nil, -1, false
+					}
+					groupDynamic, groupIndex, foundGroup, hasLabel = attr, currentGroupIndex, true, true
+					continue
+				}
+				if attr.Role != SSRAttrStatic || attr.Name == "selected" {
+					return SSRPlanAttr{}, -1, nil, -1, false
+				}
+				if attr.Name == "label" {
+					hasLabel = true
+				}
+			}
+			if !hasLabel {
+				return SSRPlanAttr{}, -1, nil, -1, false
+			}
+			for _, child := range current.Children {
+				switch option := child.(type) {
+				case *SSRPlanText:
+					for _, part := range option.Parts {
+						if !part.Static {
+							return SSRPlanAttr{}, -1, nil, -1, false
+						}
+					}
+				case *SSRPlanElement:
+					if option == nil || option.Tag != "option" || !ssrAwaitSnapshotStaticSelectAttrs(option.Attrs, "value", true) || len(option.Children) != 1 {
+						return SSRPlanAttr{}, -1, nil, -1, false
+					}
+					text, ok := option.Children[0].(*SSRPlanText)
+					if !ok || text == nil {
+						return SSRPlanAttr{}, -1, nil, -1, false
+					}
+					hasDynamic := false
+					for _, part := range text.Parts {
+						if part.Static {
+							continue
+						}
+						root, ok := templateExprMemberBindingRoot(part.Expr)
+						if !ok || root != itemName {
+							return SSRPlanAttr{}, -1, nil, -1, false
+						}
+						hasDynamic = true
+					}
+					if hasDynamic {
+						if optionText != nil {
+							return SSRPlanAttr{}, -1, nil, -1, false
+						}
+						optionText, optionIndex = text, options
+					}
+					options++
+				default:
+					return SSRPlanAttr{}, -1, nil, -1, false
+				}
+			}
+		default:
+			return SSRPlanAttr{}, -1, nil, -1, false
+		}
+	}
+	return groupDynamic, groupIndex, optionText, optionIndex, foundGroup && optionText != nil && groups > 0 && options > 0
 }
 
 func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(nodes []SSRPlanNode, itemName string) (SSRPlanAttr, int, bool) {
