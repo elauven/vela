@@ -967,9 +967,16 @@ func emitStaticHTMLWithoutEventsExcept(nodes []Node, scopeID string, omit *Attr)
 // node out of the static string prevents cached template expressions from
 // leaking into CSR HTML while the caller supplies its initial textContent.
 func emitStaticHTMLWithoutEventsExceptText(nodes []Node, scopeID string, omit *Attr, omitText *TextNode) string {
+	return emitStaticHTMLWithoutEventsExceptAttrsText(nodes, scopeID, []*Attr{omit}, omitText)
+}
+
+// emitStaticHTMLWithoutEventsExceptAttrsText is the multi-leaf version used by
+// a composed typed lifecycle. Each omitted attribute is installed through its
+// own DOM-AST writer after CSR element creation.
+func emitStaticHTMLWithoutEventsExceptAttrsText(nodes []Node, scopeID string, omitAttrs []*Attr, omitText *TextNode) string {
 	var b strings.Builder
 	for _, node := range nodes {
-		emitStaticHTMLNodeWithoutEventsExceptText(&b, node, scopeID, omit, omitText)
+		emitStaticHTMLNodeWithoutEventsExceptAttrsText(&b, node, scopeID, omitAttrs, omitText)
 	}
 	return b.String()
 }
@@ -983,6 +990,10 @@ func emitStaticHTMLNodeWithoutEventsExcept(b *strings.Builder, node Node, scopeI
 }
 
 func emitStaticHTMLNodeWithoutEventsExceptText(b *strings.Builder, node Node, scopeID string, omit *Attr, omitText *TextNode) {
+	emitStaticHTMLNodeWithoutEventsExceptAttrsText(b, node, scopeID, []*Attr{omit}, omitText)
+}
+
+func emitStaticHTMLNodeWithoutEventsExceptAttrsText(b *strings.Builder, node Node, scopeID string, omitAttrs []*Attr, omitText *TextNode) {
 	switch n := node.(type) {
 	case *TextNode:
 		if n == omitText {
@@ -1000,7 +1011,7 @@ func emitStaticHTMLNodeWithoutEventsExceptText(b *strings.Builder, node Node, sc
 			b.WriteString(`=""`)
 		}
 		for _, attr := range n.Attrs {
-			if attr.IsEvent || attr == omit {
+			if attr.IsEvent || staticHTMLOmitsAttr(attr, omitAttrs) {
 				continue
 			}
 			b.WriteByte(' ')
@@ -1015,12 +1026,21 @@ func emitStaticHTMLNodeWithoutEventsExceptText(b *strings.Builder, node Node, sc
 		}
 		b.WriteByte('>')
 		for _, child := range n.Children {
-			emitStaticHTMLNodeWithoutEventsExceptText(b, child, scopeID, omit, omitText)
+			emitStaticHTMLNodeWithoutEventsExceptAttrsText(b, child, scopeID, omitAttrs, omitText)
 		}
 		b.WriteString("</")
 		b.WriteString(n.Tag)
 		b.WriteByte('>')
 	}
+}
+
+func staticHTMLOmitsAttr(attr *Attr, omitted []*Attr) bool {
+	for _, candidate := range omitted {
+		if attr == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func emitStaticHTMLNode(b *strings.Builder, node Node, scopeID string) {
