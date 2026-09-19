@@ -1565,7 +1565,7 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []SSRPlanNode, rowNam
 		return false
 	}
 	each, ok := nodes[0].(*SSRPlanEach)
-	if !ok || each == nil || len(each.ElseChildren) != 0 || len(each.Children) != 1 {
+	if !ok || each == nil || len(each.Children) != 1 {
 		return false
 	}
 	root, ok := templateExprMemberBindingRoot(each.Iterable)
@@ -1603,8 +1603,17 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []SSRPlanNode, rowNam
 		return false
 	}
 	if each.Key != nil {
+		if len(each.ElseChildren) != 0 {
+			return false
+		}
 		keyRoot, ok := templateExprMemberBindingRoot(each.Key)
 		if !ok || keyRoot != each.ItemName {
+			return false
+		}
+	}
+	if len(each.ElseChildren) != 0 {
+		fallbackOptions, ok := ssrAwaitSnapshotKeyedEachStaticSelectOptionTree(each.ElseChildren, false)
+		if !ok || fallbackOptions == 0 {
 			return false
 		}
 	}

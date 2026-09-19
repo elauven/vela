@@ -950,7 +950,29 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectUnkeyedOptionLis
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := plan.Nodes[0].(*SSRPlanElement)
+	await := main.Children[0].(*SSRPlanAwait)
+	each := await.ThenChildren[0].(*SSRPlanEach)
+	if !ssrAwaitSnapshotKeyedEachDirectControlPlanRow(each.Children, each.ItemName) {
+		t.Fatalf("unkeyed option-list else snapshot predicate rejected row=%#v", each.Children)
+	}
+	file, err := BuildSSRGoFile(plan, "page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(server), `No results`) {
+		t.Fatalf("unkeyed option-list else SSR renderer misses fallback:\n%s", server)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1557,7 +1579,7 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptionText(t *testing.
 
 func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptgroupOptionList(t *testing.T) {
 	node := requirePlaywright(t)
-	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="nested-list-select" bind:value={row.status}><optgroup label="Available">{#each row.options as option}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="Archived">{#each row.archived as option}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
+	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="nested-list-select" bind:value={row.status}><optgroup label="Available">{#each row.options as option}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="Archived">{#each row.archived as option}<option :value={option.value}>{option.label}</option>{:else}<option value="">No archived items</option>{/each}</optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1594,12 +1616,15 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptgroupOptionList(t *
 		for _, option := range archived {
 			body += `<option vela-page="" value="` + option.value + `">` + option.label + `</option>`
 		}
+		if len(archived) == 0 {
+			body += `<option vela-page="" value="">No archived items</option>`
+		}
 		return body + `</optgroup></select><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
 	}
 	aOptions := []option{{"open", "Open"}, {"done", "Done"}}
 	bOptions := []option{{"later", "Later"}, {"done", "Done"}}
-	aArchived, bArchived := []option{{"archived", "Archived"}}, []option{{"closed", "Closed"}}
-	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "open", aOptions, aArchived) + rowHTML("b", "done", bOptions, bArchived) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","status":"open","options":[{"value":"open","label":"Open"},{"value":"done","label":"Done"}],"archived":[{"value":"archived","label":"Archived"}]},{"id":"b","status":"done","options":[{"value":"later","label":"Later"},{"value":"done","label":"Done"}],"archived":[{"value":"closed","label":"Closed"}]}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	aArchived, bArchived := []option{}, []option{{"closed", "Closed"}}
+	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "open", aOptions, aArchived) + rowHTML("b", "done", bOptions, bArchived) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","status":"open","options":[{"value":"open","label":"Open"},{"value":"done","label":"Done"}],"archived":[]},{"id":"b","status":"done","options":[{"value":"later","label":"Later"},{"value":"done","label":"Done"}],"archived":[{"value":"closed","label":"Closed"}]}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
@@ -1607,6 +1632,24 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptgroupOptionList(t *
 		}
 	}
 	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial!==0))throw new Error("nested option list hydration mutated server DOM");await p.evaluate(()=>{window.a=document.querySelectorAll(".nested-list-select")[0];window.b=document.querySelectorAll(".nested-list-select")[1];window.aGroup=window.a.querySelectorAll("optgroup").item(0);window.bGroup=window.b.querySelectorAll("optgroup").item(0);window.aArchived=window.a.querySelectorAll("optgroup").item(1);window.bArchived=window.b.querySelectorAll("optgroup").item(1)});if(!(await p.evaluate(()=>window.a.value==="open"&&window.aGroup.querySelectorAll("option").length===2&&window.aArchived.querySelectorAll("option").length===1&&window.b.value==="done"&&window.bGroup.querySelectorAll("option")[0].textContent==="Later"&&window.bArchived.querySelectorAll("option")[0].textContent==="Closed")))throw new Error("nested server option lists were not adopted");await p.evaluate(()=>window.hydrated.component.set({rows:[{id:"a",status:"queued",options:[{value:"queued",label:"Queued"},{value:"done",label:"Done"}]},{id:"b",status:"done",options:[{value:"later",label:"Later"},{value:"done",label:"Done"}]}]}));await p.waitForFunction(()=>window.a.value==="queued"&&window.aGroup.querySelectorAll("option")[0].textContent==="Queued"&&window.aArchived.querySelectorAll("option").length===0);if(!(await p.evaluate(()=>document.querySelectorAll(".nested-list-select")[0]===window.a&&window.a.querySelectorAll("optgroup").item(0)===window.aGroup&&window.a.querySelectorAll("optgroup").item(1)===window.aArchived&&window.a.options.length===2)))throw new Error("nested option list replaced its owner rather than group children");await p.evaluate(()=>window.hydrated.component.set({rows:[{id:"b",status:"later",options:[{value:"later",label:"Later 2"},{value:"done",label:"Done"}]},{id:"a",status:"done",options:[{value:"queued",label:"Queued"},{value:"done",label:"Done 2"}]},{id:"c",status:"new",options:[{value:"new",label:"New"}]}]}));await p.waitForFunction(()=>document.querySelectorAll(".nested-list-select").length===3);if(!(await p.evaluate(()=>{const rows=[...document.querySelectorAll(".nested-list-select")];return rows[0]===window.b&&rows[0].querySelectorAll("optgroup").item(0)===window.bGroup&&rows[0].querySelectorAll("optgroup").item(1)===window.bArchived&&rows[0].value==="later"&&rows[0].options[0].textContent==="Later 2"&&rows[1]===window.a&&rows[1].querySelectorAll("optgroup").item(0)===window.aGroup&&rows[1].querySelectorAll("optgroup").item(1)===window.aArchived&&rows[1].value==="done"&&rows[1].options[1].textContent==="Done 2"&&rows[2].querySelectorAll("optgroup").length===2&&rows[2].querySelectorAll("optgroup").item(0).label==="Available"&&rows[2].querySelectorAll("optgroup").item(1).label==="Archived"&&rows[2].value==="new"&&rows[2].options[0].textContent==="New"})))throw new Error("nested option list reorder or CSR insertion failed");await p.evaluate(()=>{window.removed=window.a;window.hydrated.component.set({rows:[{id:"b",status:"later",options:[{value:"later",label:"Later 2"},{value:"done",label:"Done"}]},{id:"c",status:"new",options:[{value:"new",label:"New"}]}]})});await p.waitForFunction(()=>document.querySelectorAll(".nested-list-select").length===2);if(await p.evaluate(()=>window.removed.isConnected))throw new Error("removed nested select remained connected");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	browser = strings.Replace(browser,
+		`window.aArchived.querySelectorAll("option").length===1&&window.b.value===`,
+		`window.aArchived.querySelectorAll("option").length===1&&window.aArchived.querySelector("option").textContent==="No archived items"&&window.b.value===`, 1)
+	browser = strings.Replace(browser,
+		`options:[{value:"queued",label:"Queued"},{value:"done",label:"Done"}]},{id:"b",status:"done",options:[{value:"later",label:"Later"},{value:"done",label:"Done"}]}`,
+		`options:[{value:"queued",label:"Queued"},{value:"done",label:"Done"}],archived:[{value:"archived",label:"Archived"}]},{id:"b",status:"done",options:[{value:"later",label:"Later"},{value:"done",label:"Done"}],archived:[{value:"closed",label:"Closed"}]}`, 1)
+	browser = strings.Replace(browser,
+		`window.aArchived.querySelectorAll("option").length===0`,
+		`window.aArchived.querySelector("option").textContent==="Archived"`, 1)
+	browser = strings.Replace(browser,
+		`window.a.options.length===2)))throw new Error("nested option list replaced its owner rather than group children")`,
+		`window.a.options.length===3)))throw new Error("nested option list replaced its owner rather than group children")`, 1)
+	browser = strings.Replace(browser,
+		`rows[1].options[1].textContent==="Done 2"&&rows[2].querySelectorAll("optgroup").length===2`,
+		`rows[1].options[1].textContent==="Done 2"&&rows[1].querySelectorAll("optgroup").item(1).querySelector("option").textContent==="No archived items"&&rows[2].querySelectorAll("optgroup").length===2`, 1)
+	browser = strings.Replace(browser,
+		`rows[2].value==="new"&&rows[2].options[0].textContent==="New"`,
+		`rows[2].value==="new"&&rows[2].options[0].textContent==="New"&&rows[2].querySelectorAll("optgroup").item(1).querySelector("option").textContent==="No archived items"`, 1)
 	command := exec.Command(node, "-e", browser, dir)
 	command.Dir = "/projects/compiler"
 	output, err := command.CombinedOutput()
