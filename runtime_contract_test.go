@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$reconcileHydrationKeyedRows, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -244,6 +244,19 @@ const reconciled = $$reconcileHydrationKeyedRows(keyedRange, new Map([['a', remo
 assert(reconciled.get('b') === retained && retained.updated === 'b', 'keyed reconciliation must retain and update matching row');
 assert(reconciled.get('c').id === 'c' && removed.removed, 'keyed reconciliation must create new and remove orphaned rows');
 assert(order.join(',') === 'b,c', 'keyed reconciliation must place rows in new key order');
+const optionOrder = [];
+const optionParent = { nodeType: 1, append(option) { optionOrder.push(option.id); } };
+const staleOption = { nodeType: 1, id: 'stale', removed: false, remove() { this.removed = true; } };
+const retainedOption = { nodeType: 1, id: 'retained', remove() {} };
+const options = $$reconcileHydrationKeyedElements(optionParent, new Map([['stale', staleOption], ['retained', retainedOption]]), [{ id: 'retained' }, { id: 'new' }], item => item.id,
+  item => ({ nodeType: 1, id: item.id, remove() {} }),
+  (option, item) => { option.updated = item.id; });
+assert(options.get('retained').updated === 'retained' && options.get('new').id === 'new' && staleOption.removed,
+  'keyed element reconciliation must update, create, and remove typed elements');
+let duplicateOptionKey;
+try { $$reconcileHydrationKeyedElements(optionParent, new Map(), [{ id: 'same' }, { id: 'same' }], item => item.id, item => ({ nodeType: 1, id: item.id, remove() {} })); }
+catch (error) { duplicateOptionKey = error; }
+assert(duplicateOptionKey && duplicateOptionKey.message.includes('duplicate key'), 'keyed element reconciliation must reject duplicate keys');
 const payloadRoot = markerRoot([], {
   'vela-state-vela-test': { type: 'application/json', textContent: '{"component":"vela-test","props":{"Title":"ok"},"state":{},"incomplete":false}' },
 });

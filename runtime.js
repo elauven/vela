@@ -780,6 +780,40 @@ export function $$reconcileHydrationKeyedRows(range, blocks, iterable, keyOf, cr
   return next;
 }
 
+// $$reconcileHydrationKeyedElements is the marker-free counterpart of the
+// row reconciler for a typed element collection already owned by one retained
+// parent. It never evaluates template source: callers provide cached-AST
+// key/create/update callbacks. Appending a retained element moves it into the
+// requested order without replacing its identity.
+export function $$reconcileHydrationKeyedElements(parent, blocks, iterable, keyOf, create, update) {
+  if (!parent || parent.nodeType !== 1 || !(blocks instanceof Map) ||
+      typeof keyOf !== 'function' || typeof create !== 'function') {
+    throw new Error('Vela hydration mismatch: invalid keyed element reconciliation inputs');
+  }
+  const next = new Map();
+  let index = 0;
+  for (const item of iterable || []) {
+    const key = keyOf(item, index);
+    if (next.has(key)) throw new Error(`Vela keyed update has duplicate key ${String(key)}`);
+    let element = blocks.get(key);
+    if (element) {
+      if (typeof update === 'function') update(element, item, index);
+    } else {
+      element = create(item, index);
+    }
+    if (!element || element.nodeType !== 1) {
+      throw new Error(`Vela keyed update cannot materialize key ${String(key)}`);
+    }
+    parent.append(element);
+    next.set(key, element);
+    index++;
+  }
+  for (const [key, element] of blocks) {
+    if (!next.has(key)) element.remove();
+  }
+  return next;
+}
+
 // $$writeHydrationText updates exactly one text range after hydration. The
 // initial server text is left untouched; an empty server value gets a text
 // node only when a later reactive update first becomes non-empty.

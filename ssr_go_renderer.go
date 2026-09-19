@@ -1130,7 +1130,7 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []SSRPlanNode, rowNam
 		return false
 	}
 	each, ok := nodes[0].(*SSRPlanEach)
-	if !ok || each == nil || each.Key != nil || len(each.ElseChildren) != 0 || len(each.Children) != 1 {
+	if !ok || each == nil || len(each.ElseChildren) != 0 || len(each.Children) != 1 {
 		return false
 	}
 	root, ok := templateExprMemberBindingRoot(each.Iterable)
@@ -1164,7 +1164,16 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []SSRPlanNode, rowNam
 		}
 		dynamic = true
 	}
-	return dynamic
+	if !dynamic {
+		return false
+	}
+	if each.Key != nil {
+		keyRoot, ok := templateExprMemberBindingRoot(each.Key)
+		if !ok || keyRoot != each.ItemName {
+			return false
+		}
+	}
+	return true
 }
 
 // ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic mirrors the bounded
