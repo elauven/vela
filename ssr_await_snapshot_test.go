@@ -1067,6 +1067,11 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectRowText(t *
 		return `<!--r:` + scope + `:` + itoa(each.DynamicID) + `--><!--e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><p vela-page="" class="` + classes + `" title="` + title + `" style="color:` + color + `"><!--v:` + scope + `:` + itoa(rowText.Parts[0].DynamicID) + `-->` + title + `<!--/v:` + scope + `:` + itoa(rowText.Parts[0].DynamicID) + `--></p><!--/e:` + scope + `:` + itoa(rowElement.HydrationID) + `--><!--/r:` + scope + `:` + itoa(each.DynamicID) + `-->`
 	}
 	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "Alpha", "red", false) + rowHTML("b", "Beta", "blue", false) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","title":"Alpha","selected":false,"color":"red"},{"id":"b","title":"Beta","selected":false,"color":"blue"}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.__velaRowClicks=0;window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	html = strings.Replace(html,
+		`"await":{`+itoa(await.DynamicID)+`:{"state":"then"}}`,
+		`"awaitAt":{"vela-page:`+itoa(await.DynamicID)+`":{"state":"then"}}`,
+		1,
+	)
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
@@ -2652,7 +2657,7 @@ func TestSSRHydrationStaticAwaitSnapshotKeepsSettledRange(t *testing.T) {
 	}
 	source := PrintJS(client, PrintPretty)
 	for _, want := range []string{
-		"const $$hawait0_snapshot = $$props.$$velaAwait && $$props.$$velaAwait[0];",
+		"const $$hawait0_snapshot = $$props.$$velaAwaitAt && $$props.$$velaAwaitAt[$$instanceID + ':0'] || $$props.$$velaAwait && $$props.$$velaAwait[0];",
 		"$$hawait0_snapshot.state === 'then'",
 		"let $$hawait0_initial = true;",
 		"if ($$hawait0_initial)",

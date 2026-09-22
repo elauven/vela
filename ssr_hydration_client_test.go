@@ -195,7 +195,7 @@ func TestSSRHydrationAwaitSnapshotAdoptsSettledChild(t *testing.T) {
 	}
 	source := PrintJS(program, PrintPretty)
 	for _, want := range []string{
-		`const $$hawait0_snapshot = $$props.$$velaAwait && $$props.$$velaAwait[0];`,
+		`const $$hawait0_snapshot = $$props.$$velaAwaitAt && $$props.$$velaAwaitAt[$$instanceID + ':0'] || $$props.$$velaAwait && $$props.$$velaAwait[0];`,
 		`$$hawait0_snapshot.state === 'then'`,
 		`$$hawait0_b1_component_0 = Child($$root, null,`,
 		`$$hawait0_b1_component_0.set({ title: $$hawait0_value });`,

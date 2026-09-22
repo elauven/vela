@@ -7773,6 +7773,24 @@ func (g *ASTGen) hydrationEachInstanceScope(block *EachBlockNode, index JsExpr) 
 	return g.hydrationEachInstanceScopeFrom(id("$$instanceID"), block, "$$item", "$$index")
 }
 
+// hydrationAwaitSnapshotExpr prefers the instance-addressed SSR snapshot.
+// The legacy marker-only map stays as a fallback for callers which predate
+// scoped structural instances (and for root-only renderers).
+func (g *ASTGen) hydrationAwaitSnapshotExpr(markerID int) JsExpr {
+	scoped := genLogical("&&",
+		genMember(id("$$props"), "$$velaAwaitAt"),
+		genComputedMember(
+			genMember(id("$$props"), "$$velaAwaitAt"),
+			genBinary("+", id("$$instanceID"), strLit(":"+itoa(markerID))),
+		),
+	)
+	legacy := genLogical("&&",
+		genMember(id("$$props"), "$$velaAwait"),
+		genComputedMember(genMember(id("$$props"), "$$velaAwait"), numLit(markerID)),
+	)
+	return genLogical("||", scoped, legacy)
+}
+
 // buildHydrationRootKeyedEachComponent keeps the existing keyed DOM-row
 // reconciler authoritative for DOM identity while a parallel map owns child
 // component instances. Retained keys preserve both the row and child; removed
@@ -8301,7 +8319,7 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		genLet(errorVar, id("undefined")),
 		genLet(cellVar, genNull()),
 		genLet(initialVar, boolLit(true)),
-		genConst(snapshotVar, genLogical("&&", genMember(id("$$props"), "$$velaAwait"), genComputedMember(genMember(id("$$props"), "$$velaAwait"), numLit(markerID)))),
+		genConst(snapshotVar, g.hydrationAwaitSnapshotExpr(markerID)),
 	)
 	if allStatic(block.ThenChildren) || plans[1].snapshot.supported {
 		g.body = append(g.body, genIf(
@@ -8604,7 +8622,7 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 		genLet(errorVar, id("undefined")),
 		genLet(cellVar, genNull()),
 		genLet(initialVar, boolLit(true)),
-		genConst(snapshotVar, genLogical("&&", genMember(id("$$props"), "$$velaAwait"), genComputedMember(genMember(id("$$props"), "$$velaAwait"), numLit(markerID)))),
+		genConst(snapshotVar, g.hydrationAwaitSnapshotExpr(markerID)),
 	)
 	for _, handle := range handles {
 		g.body = append(g.body, handle.slotSnapshot.decls...)
