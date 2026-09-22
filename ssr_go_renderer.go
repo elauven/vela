@@ -69,6 +69,7 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goa
 		{Names: []*goast.Ident{goast.NewIdent("Incomplete")}, Type: goast.NewIdent("bool"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"incomplete\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("Omitted")}, Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"omitted,omitempty\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("Await")}, Type: &goast.MapType{Key: goast.NewIdent("int"), Value: goast.NewIdent(plan.ComponentName + "AwaitSnapshot")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"await,omitempty\"`"}},
+		{Names: []*goast.Ident{goast.NewIdent("AwaitAt")}, Type: &goast.MapType{Key: goast.NewIdent("string"), Value: goast.NewIdent(plan.ComponentName + "AwaitSnapshot")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"awaitAt,omitempty\"`"}},
 	}
 	payloadValue := &goast.CompositeLit{
 		Type: &goast.StructType{Fields: &goast.FieldList{List: typeFields}},
@@ -95,6 +96,7 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goa
 	}
 	if awaitOptions != nil {
 		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("Await"), Value: &goast.SelectorExpr{X: awaitOptions, Sel: goast.NewIdent("Await")}})
+		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("AwaitAt"), Value: &goast.SelectorExpr{X: awaitOptions, Sel: goast.NewIdent("AwaitAt")}})
 	}
 	marshal := &goast.CallExpr{Fun: goSelector("json", "Marshal"), Args: []goast.Expr{payloadValue}}
 	encode := &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("ssrPayload"), goast.NewIdent("err")}, Tok: token.DEFINE, Rhs: []goast.Expr{marshal}}
@@ -809,6 +811,11 @@ func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
 	}}}}
 	body := []goast.Stmt{
 		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(snapshot)}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.IndexExpr{X: &goast.SelectorExpr{X: e.awaitOptions, Sel: goast.NewIdent("Await")}, Index: &goast.BasicLit{Kind: token.INT, Value: itoa(node.DynamicID)}}}},
+		&goast.IfStmt{
+			Init: &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(snapshot + "At"), goast.NewIdent("ok")}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.IndexExpr{X: &goast.SelectorExpr{X: e.awaitOptions, Sel: goast.NewIdent("AwaitAt")}, Index: ssrGoStringConcat(e.scopeExpr, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(":" + itoa(node.DynamicID))})}}},
+			Cond: goast.NewIdent("ok"),
+			Body: &goast.BlockStmt{List: []goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(snapshot)}, Tok: token.ASSIGN, Rhs: []goast.Expr{goast.NewIdent(snapshot + "At")}}}},
+		},
 		&goast.SwitchStmt{Tag: state, Body: &goast.BlockStmt{List: []goast.Stmt{
 			&goast.CaseClause{List: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("")}, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("pending")}}, Body: pending},
 			&goast.CaseClause{List: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("then")}}, Body: thenCase},

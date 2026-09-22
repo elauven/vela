@@ -86,6 +86,11 @@ func goRenderOptionsTypeDecl(name, awaitSnapshotName string) *goast.GenDecl {
 		Name: goast.NewIdent(name),
 		Type: &goast.StructType{Fields: &goast.FieldList{List: []*goast.Field{
 			{Names: []*goast.Ident{goast.NewIdent("Await")}, Type: &goast.MapType{Key: goast.NewIdent("int"), Value: goast.NewIdent(awaitSnapshotName)}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"await,omitempty\"`"}},
+			// AwaitAt addresses one await snapshot within a runtime structural
+			// instance. It is required when the same await marker occurs in
+			// several keyed rows; Await remains the backwards-compatible root
+			// snapshot fallback.
+			{Names: []*goast.Ident{goast.NewIdent("AwaitAt")}, Type: &goast.MapType{Key: goast.NewIdent("string"), Value: goast.NewIdent(awaitSnapshotName)}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"awaitAt,omitempty\"`"}},
 		}}},
 	}}}
 }

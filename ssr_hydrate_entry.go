@@ -43,6 +43,7 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 		&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 			{baseNode: genNode(), Key: id("$$velaState"), Value: genMember(id("$$payload"), "state"), Kind: "init"},
 			{baseNode: genNode(), Key: id("$$velaAwait"), Value: genLogical("||", genMember(id("$$payload"), "await"), &JsObjectExpr{baseExpr: baseExpr{genNode()}}), Kind: "init"},
+			{baseNode: genNode(), Key: id("$$velaAwaitAt"), Value: genLogical("||", genMember(id("$$payload"), "awaitAt"), &JsObjectExpr{baseExpr: baseExpr{genNode()}}), Kind: "init"},
 		}},
 		genLogical("||", id("$$overrides"), &JsObjectExpr{baseExpr: baseExpr{genNode()}}),
 	)

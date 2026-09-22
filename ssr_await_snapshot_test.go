@@ -34,6 +34,22 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatal("await marker is missing")
 	}
+	for _, want := range []string{
+		`AwaitAt map[string]PageAwaitSnapshot`,
+		`options.AwaitAt[instanceID+":` + itoa(awaitID) + `"]`,
+		`AwaitAt: options.AwaitAt`,
+	} {
+		if !strings.Contains(string(renderer), want) {
+			t.Fatalf("generated scoped await snapshot contract misses %q:\n%s", want, renderer)
+		}
+	}
+	entry, err := BuildSSRHydrateEntry(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := PrintJS(entry, PrintPretty); !strings.Contains(code, "$$velaAwaitAt") {
+		t.Fatalf("hydrate entry does not forward scoped await snapshots:\n%s", code)
+	}
 
 	root := t.TempDir()
 	components := filepath.Join(root, "components")
@@ -58,7 +74,8 @@ import (
 )
 func main() {
   err := components.RenderPageWithOptionsAt(os.Stdout, components.PageProps{Draft: "server", Enabled: false}, components.PageSlots{}, components.PageRenderOptions{
-    Await: map[int]components.PageAwaitSnapshot{` + itoa(awaitID) + `: {State: "then", Value: "server"}},
+    Await: map[int]components.PageAwaitSnapshot{` + itoa(awaitID) + `: {State: "catch", Error: "legacy"}},
+    AwaitAt: map[string]components.PageAwaitSnapshot{"vela-page-instance:` + itoa(awaitID) + `": {State: "then", Value: "server"}},
   }, "vela-page-instance")
   if err != nil { panic(err) }
 }
@@ -79,7 +96,8 @@ func main() {
 		`<input class="draft" value="server">`,
 		`<input class="enabled" type="checkbox">`,
 		`<button data-vela-event="vela-page-e0">Save</button>`,
-		`"await":{"` + itoa(awaitID) + `":{"state":"then","value":"server"}}`,
+		`"await":{"` + itoa(awaitID) + `":{"state":"catch","error":"legacy"}}`,
+		`"awaitAt":{"vela-page-instance:` + itoa(awaitID) + `":{"state":"then","value":"server"}}`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("SSR settled snapshot misses %q:\n%s", want, got)
