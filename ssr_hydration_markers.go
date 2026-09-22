@@ -82,10 +82,10 @@ func (markers SSRHydrationMarkerIDs) ifID(span SectionSpan) (int, bool) {
 // lifecycle recipe. The lowering path must not recover this identifier from
 // raw template nodes or reconstruct it from source text.
 func (markers SSRHydrationMarkerIDs) keyedEachID(recipe *SSRKeyedEachLifecycleRecipe) (int, bool) {
-	if recipe == nil || recipe.Key == nil {
+	if recipe == nil || recipe.Key == nil || recipe.SettledRange.MarkerOwner != recipe.Span {
 		return 0, false
 	}
-	return markers.eachID(recipe.Span)
+	return markers.eachID(recipe.SettledRange.MarkerOwner)
 }
 
 func (markers SSRHydrationMarkerIDs) eachID(span SectionSpan) (int, bool) {

@@ -142,6 +142,9 @@ func TestSSRStructuralLifecyclePlanRetainsInnerKeyedEachRecipe(t *testing.T) {
 	if !ssrInstancePathNeedsRuntimeScope(recipe.OuterScope) || !ssrInstancePathNeedsRuntimeScope(recipe.RowScope) {
 		t.Fatalf("nested keyed scopes must retain outer runtime identity: outer=%#v row=%#v", recipe.OuterScope, recipe.RowScope)
 	}
+	if recipe.SettledRange.MarkerOwner != inner.Span || len(recipe.SettledRange.OuterRowScope.Segments) != len(recipe.OuterScope.Segments) || len(recipe.SettledRange.RowScope.Segments) != len(recipe.RowScope.Segments) {
+		t.Fatalf("inner keyed settled range address=%#v recipe=%#v", recipe.SettledRange, recipe)
+	}
 	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
 		t.Fatal("inner keyed await each direct-leaf range must be hydration-capable")
 	}
@@ -332,7 +335,8 @@ func TestHydrationEachInstanceScopeFromUsesCachedInnerKey(t *testing.T) {
 	await := outer.Children[0].(*AwaitBlockNode)
 	inner := await.ThenChildren[0].(*EachBlockNode)
 	g := &ASTGen{sfc: sfc}
-	expr := g.hydrationEachInstanceScopeFrom(id("$$outerScope"), inner, "$$field", "$$fieldIndex")
+	recipe := BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes).Find(SSRLifecyclePlanEach, inner.Span).KeyedEach
+	expr := g.hydrationKeyedEachRecipeScopeFrom(id("$$outerScope"), recipe, "$$field", "$$fieldIndex")
 	program := &JsProgram{Body: []JsStmt{genConst("scope", expr)}}
 	output := PrintJS(program, PrintPretty)
 	if !strings.Contains(output, "$$outerScope + '--each-"+itoa(inner.Span.Start)+"-' + String($$field.id)") {

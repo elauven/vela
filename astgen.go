@@ -6079,7 +6079,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						if !ok {
 							panic("vela: missing keyed inner-row hydration marker")
 						}
-						innerScope := g.hydrationEachInstanceScopeFrom(g.hydrationEachInstanceScope(block, id("$$index")), nestedEach, "$$nested_item", innerIndex)
+						innerScope := g.hydrationKeyedEachRecipeScopeFrom(g.hydrationEachInstanceScope(block, id("$$index")), innerPlan.KeyedEach, "$$nested_item", innerIndex)
 						innerStartMarker = genBinary("+", genBinary("+", strLit("r:"), innerScope), strLit(":"+itoa(innerMarkerID)))
 						innerEndMarker = genBinary("+", genBinary("+", strLit("/r:"), innerScope), strLit(":"+itoa(innerMarkerID)))
 						innerOwner = "$$inner"
@@ -7740,22 +7740,22 @@ func (g *ASTGen) hydrationEachNestedKeyInstanceScope(block *EachBlockNode, chain
 	)
 }
 
-// hydrationEachInstanceScopeFrom builds the same scope segment as the Go SSR
-// renderer. baseScope is normally the outer row scope; itemVar/indexVar are
-// lexical generated bindings, while the key remains the parser-owned cached
-// AST. This is intentionally the only path for nested keyed marker scopes.
-func (g *ASTGen) hydrationEachInstanceScopeFrom(baseScope JsExpr, block *EachBlockNode, itemVar, indexVar string) JsExpr {
-	if block == nil || !block.HasKey() {
+// hydrationKeyedEachRecipeScopeFrom builds the same scope segment as the Go
+// SSR renderer directly from a typed lifecycle recipe. The lowerer receives
+// lexical generated bindings, but the marker span and key expression stay
+// parser-owned cached data; no template source is reparsed here.
+func (g *ASTGen) hydrationKeyedEachRecipeScopeFrom(baseScope JsExpr, recipe *SSRKeyedEachLifecycleRecipe, itemVar, indexVar string) JsExpr {
+	if recipe == nil || recipe.Key == nil || recipe.SettledRange.MarkerOwner != recipe.Span {
 		panic("vela: keyed hydration instance scope requires a keyed each block")
 	}
 	value := JsExpr(id("undefined"))
-	g.withTemplateBinding(block.ItemName, itemVar, func() {
-		g.withTemplateBinding(block.IndexName, indexVar, func() {
-			value = g.templateExpr(block.KeyAST)
+	g.withTemplateBinding(recipe.ItemName, itemVar, func() {
+		g.withTemplateBinding(recipe.IndexName, indexVar, func() {
+			value = g.templateExpr(recipe.Key)
 		})
 	})
 	return genBinary("+",
-		genBinary("+", baseScope, strLit("--each-"+itoa(block.Span.Start)+"-")),
+		genBinary("+", baseScope, strLit("--each-"+itoa(recipe.SettledRange.MarkerOwner.Start)+"-")),
 		genString(value),
 	)
 }
@@ -7770,7 +7770,8 @@ func (g *ASTGen) hydrationEachInstanceScope(block *EachBlockNode, index JsExpr) 
 			genString(index),
 		)
 	}
-	return g.hydrationEachInstanceScopeFrom(id("$$instanceID"), block, "$$item", "$$index")
+	plan := g.hydrationLifecycleNode(SSRLifecyclePlanEach, block.Span)
+	return g.hydrationKeyedEachRecipeScopeFrom(id("$$instanceID"), plan.KeyedEach, "$$item", "$$index")
 }
 
 // hydrationAwaitSnapshotExpr prefers the instance-addressed SSR snapshot.

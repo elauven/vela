@@ -71,6 +71,19 @@ func (p SSRInstancePath) append(segment SSRInstanceSegment) SSRInstancePath {
 	return next
 }
 
+// SSRKeyedEachSettledRangeAddress identifies one server-rendered keyed range
+// below an already settled structural owner. MarkerOwner is the parser-owned
+// each span used to resolve the canonical SSR marker; OuterRowScope and
+// RowScope are the immutable structural addresses before and after the inner
+// key is evaluated. Keeping this separately from the generic each recipe
+// prevents a hydration lowerer from re-discovering the address by scanning
+// template children or rebuilding source expressions.
+type SSRKeyedEachSettledRangeAddress struct {
+	MarkerOwner   SectionSpan
+	OuterRowScope SSRInstancePath
+	RowScope      SSRInstancePath
+}
+
 // SSRKeyedEachLifecycleRecipe is the typed identity contract for a keyed
 // #each range. Collection and Key retain the parser-owned cached expression
 // ASTs; lowerers must evaluate those nodes and must never reconstruct either
@@ -89,6 +102,9 @@ type SSRKeyedEachLifecycleRecipe struct {
 	IndexName  string
 	OuterScope SSRInstancePath
 	RowScope   SSRInstancePath
+	// SettledRange is the server marker/address contract consumed when this
+	// keyed each occurs inside an already settled parent branch.
+	SettledRange SSRKeyedEachSettledRangeAddress
 	// DirectLeafRows identifies the deliberately narrow first lowering slice:
 	// direct text plus ordinary sibling elements with direct text leaves and
 	// currently supported attribute/directive/event/native-binding operations.
@@ -255,13 +271,18 @@ func buildSSRStructuralLifecycleNode(node Node, capability *SSRCapability, path 
 		rowPath := plan.InstancePath.append(SSRInstanceSegment{Kind: SSRInstanceEachRow, Index: -1, Key: current.KeyAST})
 		if current.HasKey() {
 			plan.KeyedEach = &SSRKeyedEachLifecycleRecipe{
-				Span:                  current.Span,
-				Collection:            current.IterExpr,
-				Key:                   current.KeyAST,
-				ItemName:              current.ItemName,
-				IndexName:             current.IndexName,
-				OuterScope:            plan.InstancePath,
-				RowScope:              rowPath,
+				Span:       current.Span,
+				Collection: current.IterExpr,
+				Key:        current.KeyAST,
+				ItemName:   current.ItemName,
+				IndexName:  current.IndexName,
+				OuterScope: plan.InstancePath,
+				RowScope:   rowPath,
+				SettledRange: SSRKeyedEachSettledRangeAddress{
+					MarkerOwner:   current.Span,
+					OuterRowScope: plan.InstancePath,
+					RowScope:      rowPath,
+				},
 				DirectLeafRows:        ssrKeyedEachDirectLeafRows(current),
 				DirectConditionalRows: ssrKeyedEachDirectConditionalRows(current),
 				DirectKeyRows:         ssrKeyedEachDirectKeyRows(current),
