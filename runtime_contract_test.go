@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -224,6 +224,18 @@ keyedStart.nextSibling = rowStartA; rowStartA.nextSibling = keyedOne; keyedOne.n
 const rowRanges = $$adoptHydrationKeyedRowRanges({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }, { id: 'b' }], item => item.id, 4);
 assert(rowRanges.get('a').start === rowStartA && rowRanges.get('b').end === rowEndB,
   'keyed row-range adoption must retain paired SSR boundaries by initial key');
+const ownerStart = marker('r:owner'), nestedStart = marker('v:vela-test:8'), nestedEnd = marker('/v:vela-test:8'), ownerEnd = marker('/r:owner');
+ownerStart.nodeType = nestedStart.nodeType = nestedEnd.nodeType = ownerEnd.nodeType = 8;
+ownerStart.nextSibling = nestedStart; nestedStart.nextSibling = keyedOne; keyedOne.nextSibling = nestedEnd; nestedEnd.nextSibling = ownerEnd;
+const nestedRange = $$findHydrationNestedRange({ start: ownerStart, end: ownerEnd }, 'vela-test', 8);
+assert(nestedRange.start === nestedStart && nestedRange.end === nestedEnd,
+  'nested structural range lookup must resolve one repeated v-range inside its owner row');
+mismatch = undefined;
+try { $$findHydrationNestedRange({ start: ownerStart, end: ownerEnd }, 'vela-test', 9); }
+catch (error) { mismatch = error; }
+assert(mismatch && mismatch.message.includes('missing nested marker range v9'),
+  'nested structural range lookup must reject a missing owner-local marker');
+keyedStart.nextSibling = rowStartA; rowStartA.nextSibling = keyedOne; keyedOne.nextSibling = rowEndA; rowEndA.nextSibling = rowStartB; rowStartB.nextSibling = keyedTwo; keyedTwo.nextSibling = rowEndB; rowEndB.nextSibling = keyedEnd;
 mismatch = undefined;
 try { $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }], item => item.id, 'li'); }
 catch (error) { mismatch = error; }

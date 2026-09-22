@@ -606,6 +606,35 @@ export function $$adoptHydrationRange(range) {
   return nodes;
 }
 
+// $$findHydrationNestedRange resolves one repeated structural v-range inside
+// an already adopted keyed row. The component-wide walker intentionally does
+// not index repeated markers below another v-range, so this helper makes the
+// enclosing row the ownership boundary and rejects ambiguous/malformed pairs.
+export function $$findHydrationNestedRange(range, componentId, id) {
+  if (!range?.start || !range?.end) {
+    throw new Error('Vela hydration mismatch: invalid nested structural owner range');
+  }
+  const marker = String(componentId || '') + ':' + String(id);
+  const startMarker = 'v:' + marker;
+  const endMarker = '/v:' + marker;
+  let start = null;
+  for (let node = range.start.nextSibling; node && node !== range.end; node = node.nextSibling) {
+    if (node.nodeType !== 8) continue;
+    const data = String(node.data || '');
+    if (data === startMarker) {
+      if (start) throw new Error('Vela hydration mismatch: duplicate nested structural start marker');
+      start = node;
+      continue;
+    }
+    if (data === endMarker) {
+      if (!start) throw new Error('Vela hydration mismatch: unmatched nested structural end marker');
+      return { start, end: node };
+    }
+  }
+  if (start) throw new Error('Vela hydration mismatch: nested structural start marker has no end marker');
+  throw new Error(`Vela hydration mismatch: missing nested marker range v${id}`);
+}
+
 // $$adoptHydrationKeyedRows maps existing direct row elements to the initial
 // iterable. It is intentionally strict: a stale SSR response with a different
 // row count or duplicate key is rejected before keyed reconciliation can move
