@@ -5653,6 +5653,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	bindingNames := []string{"", await.ValueName, await.ErrorName}
 	bindingValues := []string{"", "$$value", "$$error"}
 	nestedTextRows := [3]hydrationKeyedAwaitNestedTextRecipe{}
+	nestedControlRows := [3]hydrationKeyedAwaitNestedControlRecipe{}
+	outerStateName, outerStateIsIdent := templateExprIdent(block.IterExpr)
+	outerDeepState := outerStateIsIdent && g.isDeepState(outerStateName)
 	if len(branches[0]) == 0 {
 		for state := 1; state <= 2; state++ {
 			if len(children[state]) != 1 {
@@ -5662,20 +5665,22 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			if !ok || nested == nil {
 				continue
 			}
-			element, part, attr, classAttr, styleAttr, eventAttr, ok := hydrationKeyedAwaitNestedTextRow(nested)
-			if !ok {
+			plan := g.hydrationLifecycleNode(SSRLifecyclePlanEach, nested.Span)
+			element, part, attr, classAttr, styleAttr, eventAttr, textOK := hydrationKeyedAwaitNestedTextRow(nested)
+			if textOK && plan.KeyedEach != nil && plan.KeyedEach.DirectLeafRows {
+				nestedTextRows[state] = hydrationKeyedAwaitNestedTextRecipe{Block: nested, Element: element, Part: part, Attr: attr, Class: classAttr, Style: styleAttr, Event: eventAttr}
 				continue
 			}
-			plan := g.hydrationLifecycleNode(SSRLifecyclePlanEach, nested.Span)
-			if plan.KeyedEach != nil && plan.KeyedEach.DirectLeafRows {
-				nestedTextRows[state] = hydrationKeyedAwaitNestedTextRecipe{Block: nested, Element: element, Part: part, Attr: attr, Class: classAttr, Style: styleAttr, Event: eventAttr}
+			element, bind, controlOK := hydrationKeyedAwaitNestedValueControlRow(nested)
+			if outerDeepState && controlOK && plan.KeyedEach != nil && plan.KeyedEach.DirectControlRows {
+				nestedControlRows[state] = hydrationKeyedAwaitNestedControlRecipe{Block: nested, Element: element, Bind: bind}
 			}
 		}
 	}
 	// This first settled-row bridge deliberately accepts only a branch whose
 	// DOM needs no initial writers or child adoption. Dynamic settled content is
 	// adopted by the next inner-range lowering, not silently remounted here.
-	settledStatic := [3]bool{false, len(branches[0]) == 0 && (allStatic(children[1]) || nestedTextRows[1].Block != nil), len(branches[0]) == 0 && (allStatic(children[2]) || nestedTextRows[2].Block != nil)}
+	settledStatic := [3]bool{false, len(branches[0]) == 0 && (allStatic(children[1]) || nestedTextRows[1].Block != nil || nestedControlRows[1].Block != nil), len(branches[0]) == 0 && (allStatic(children[2]) || nestedTextRows[2].Block != nil || nestedControlRows[2].Block != nil)}
 
 	for _, branch := range branches {
 		for _, component := range branch {
@@ -7383,7 +7388,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	initialScope := g.hydrationKeyedEachRecipeScopeFrom(id("$$instanceID"), outerPlan.KeyedEach, "$$item", initialIndex)
 	initialSnapshotVar := name + "_snapshot"
 	initialOuterIndexVar := name + "_outer_index"
-	hasNestedTextRows := nestedTextRows[1].Block != nil || nestedTextRows[2].Block != nil
+	hasNestedTextRows := nestedTextRows[1].Block != nil || nestedTextRows[2].Block != nil || nestedControlRows[1].Block != nil || nestedControlRows[2].Block != nil
 	initialBody := []JsStmt{
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id(initialIndex))),
 		genConst("$$state", genCall(id(stateFactoryVar))),
@@ -7422,6 +7427,13 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				genBlock(append([]JsStmt{
 					genConst("$$await_range", genCall(id("$$findHydrationNestedRange"), genMember(id("$$state"), "row"), strLit(g.scopeID), numLit(awaitMarkerID))),
 				}, g.buildHydrationKeyedAwaitNestedTextRowAdopt(block, recipe.Block, recipe.Element, recipe.Part, recipe.Attr, recipe.Class, recipe.Style, recipe.Event, "$$state", rowItemVar, initialOuterIndexVar, id("$$await_range"))...)...),
+			))
+		} else if recipe := nestedControlRows[state]; recipe.Block != nil {
+			initialAdoptBody = append(initialAdoptBody, genIf(
+				genLogical("&&", id(initialSnapshotVar), genBinary("===", genMember(id(initialSnapshotVar), "state"), strLit(stateName))),
+				genBlock(append([]JsStmt{
+					genConst("$$await_range", genCall(id("$$findHydrationNestedRange"), genMember(id("$$state"), "row"), strLit(g.scopeID), numLit(awaitMarkerID))),
+				}, g.buildHydrationKeyedAwaitNestedValueControlAdopt(block, recipe.Block, recipe.Element, recipe.Bind, "$$state", rowItemVar, initialOuterIndexVar, id("$$await_range"))...)...),
 			))
 		}
 	}

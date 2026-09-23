@@ -762,6 +762,13 @@ func ssrCapabilityCurrentEach(block *EachBlockNode) bool {
 		if _, ok := ssrCapabilityCurrentKeyedEachComponents(block); ok {
 			return len(block.ElseChildren) == 0
 		}
+		// Browser-live direct controls have their own typed lifecycle recipe.
+		// Their outer owner decides whether a particular settled snapshot can be
+		// adopted; capability only records that the inner keyed range itself has
+		// a safe control shape rather than treating it as static DOM.
+		if _, ok := hydrationAwaitSnapshotKeyedEachDirectControlRow(block.Children, block.ItemName); ok {
+			return len(block.ElseChildren) == 0
+		}
 		if ssrKeyedEachDirectConditionalRows(block) {
 			return len(block.ElseChildren) == 0
 		}
@@ -1382,6 +1389,9 @@ func ssrCapabilityKeyedAwaitDirectChildren(nodes []Node) bool {
 				return false
 			}
 		case *EachBlockNode:
+			if _, ok := hydrationAwaitSnapshotKeyedEachDirectControlRow(current.Children, current.ItemName); ok && current.HasKey() && len(current.ElseChildren) == 0 {
+				continue
+			}
 			if !ssrCapabilityKeyedAwaitStaticEach(current) {
 				return false
 			}
@@ -1397,6 +1407,9 @@ func ssrCapabilityKeyedAwaitDirectChildren(nodes []Node) bool {
 // replacement; inner rows have no independent keyed identity yet.
 func ssrCapabilityKeyedAwaitStaticEach(block *EachBlockNode) bool {
 	if block != nil && block.HasKey() {
+		if _, ok := hydrationAwaitSnapshotKeyedEachDirectControlRow(block.Children, block.ItemName); ok {
+			return len(block.ElseChildren) == 0
+		}
 		_, ok := ssrCapabilityKeyedAwaitDynamicEachRows(block)
 		return ok && (ssrKeyedEachDirectLeafRows(block) || ssrKeyedEachDirectConditionalRows(block) || ssrKeyedEachDirectKeyRows(block))
 	}

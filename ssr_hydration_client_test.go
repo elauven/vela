@@ -4819,6 +4819,80 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedTextRows(t *testing.T
 	}
 }
 
+func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedValueInput(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>let rows = $state.deep(window.__rows); let request = window.__request;</script><template><main>{#each rows as row (row.id)}{#await request}<p class="pending">Pending</p>{:then value}{#each row.fields as field (field.id)}<input class="field" bind:value={field.title} />{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := sfc.TemplateAST.Nodes[0].(*ElementNode)
+	outer := main.Children[0].(*EachBlockNode)
+	await := outer.Children[0].(*AwaitBlockNode)
+	inner := await.ThenChildren[0].(*EachBlockNode)
+	markers := ssrHydrationMarkerIDs(plan.Nodes)
+	outerID, ok := markers.eachID(outer.Span)
+	if !ok {
+		t.Fatal("outer keyed each marker is missing")
+	}
+	innerID, ok := markers.eachID(inner.Span)
+	if !ok {
+		t.Fatal("inner keyed each marker is missing")
+	}
+	awaitID, ok := markers.awaitID(await.Span)
+	if !ok {
+		t.Fatal("nested await marker is missing")
+	}
+	mainPlan := plan.Nodes[0].(*SSRPlanElement)
+	outerPlan := mainPlan.Children[0].(*SSRPlanEach)
+	awaitPlan := outerPlan.Children[0].(*SSRPlanAwait)
+	innerPlan := awaitPlan.ThenChildren[0].(*SSRPlanEach)
+	inputPlan := innerPlan.Children[0].(*SSRPlanElement)
+	outerScope := func(key string) string { return "vela-page--each-" + itoa(outer.Span.Start) + "-" + key }
+	innerScope := func(outerKey, fieldKey string) string {
+		return outerScope(outerKey) + "--each-" + itoa(inner.Span.Start) + "-" + fieldKey
+	}
+	inputHTML := func(outerKey, fieldKey, value string) string {
+		scope := innerScope(outerKey, fieldKey)
+		return `<!--r:` + scope + `:` + itoa(innerID) + `--><!--e:` + scope + `:` + itoa(inputPlan.HydrationID) + `--><input vela-page="" class="field" value="` + value + `"><!--/e:` + scope + `:` + itoa(inputPlan.HydrationID) + `--><!--/r:` + scope + `:` + itoa(innerID) + `-->`
+	}
+	rowScope := outerScope("row")
+	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + rowScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `-->` + inputHTML("row", "a", "Server") + `<!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + rowScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",title:"Server"}]}];window.__request=new Promise(()=>{});const input=document.querySelector(".field");input.value="Edited before hydration";window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.input=input</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":             embeddedRuntime,
+		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
+		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
+		"index.html":             []byte(html),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);const initial=await p.evaluate(()=>({writes:window.initial,value:window.input.value,model:window.__rows[0].fields[0].title}));if(initial.writes!==0||initial.value!=="Edited before hydration"||initial.model!=="Edited before hydration")throw new Error("input hydration did not preserve browser value: "+JSON.stringify(initial));await p.evaluate(()=>{window.input.value="Typed";window.input.dispatchEvent(new Event("input",{bubbles:true}))});await p.waitForFunction(()=>window.__rows[0].fields[0].title==="Typed");await p.evaluate(()=>window.hydrated.component.destroy());await p.evaluate(()=>{window.input.value="After destroy";window.input.dispatchEvent(new Event("input",{bubbles:true}))});if(await p.evaluate(()=>window.__rows[0].fields[0].title)!=="Typed")throw new Error("destroyed input listener remained active");if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("nested keyed await input snapshot browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("nested keyed await input snapshot browser output=%q", got)
+	}
+}
+
 func TestBrowserSSRHydrationDeepMutationRefreshesOnlyNestedKeyedRows(t *testing.T) {
 	node := requirePlaywright(t)
 	sfc, err := parseSFC(`<script>let rows = $state.deep(window.__rows || []); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#if field.visible}<button class="field" :data-id={field.id} @click={() => selected = field.title}>{field.title}</button>{:else}<input class="hidden-input" bind:value={field.title} /><button class="hidden" :data-id={field.id} @click={() => selected = "hidden"}>Hidden</button>{/if}{:else}<p class="empty" :data-selected={selected}>No fields {selected}</p><button class="empty-action" @click={() => selected = "empty"}>Set empty</button>{/each}<button class="toggle" @click={() => rows[0].fields[0].visible = !rows[0].fields[0].visible}>Toggle</button><button class="shuffle" @click={() => rows[0].fields = [{id: "b", title: "B*", visible: true}, {id: "a", title: "A", visible: true}, {id: "c", title: "C", visible: true}]}>Shuffle</button><button class="remove" @click={() => rows[0].fields = [{id: "b", title: "B*", visible: true}, {id: "c", title: "C", visible: true}]}>Remove</button><button class="empty-list" @click={() => rows[0].fields = []}>Empty</button><p class="selected">{selected}</p>{/await}{/each}</main></template>`)
