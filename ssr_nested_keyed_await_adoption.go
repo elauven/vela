@@ -4,6 +4,7 @@ type hydrationKeyedAwaitNestedTextRecipe struct {
 	Block   *EachBlockNode
 	Element *ElementNode
 	Part    *Part
+	Attr    *Attr
 }
 
 // hydrationKeyedAwaitNestedTextRow is the first server-settled inner-row
@@ -11,15 +12,19 @@ type hydrationKeyedAwaitNestedTextRecipe struct {
 // with one dynamic text part. The broader DirectLeafRows recipe remains typed
 // in the lifecycle plan, but attributes, listeners, controls, and children
 // need their own owner-local adopt handles before they can join this path.
-func hydrationKeyedAwaitNestedTextRow(block *EachBlockNode) (*ElementNode, *Part, bool) {
+func hydrationKeyedAwaitNestedTextRow(block *EachBlockNode) (*ElementNode, *Part, *Attr, bool) {
 	if block == nil || !block.HasKey() {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
-	element, text, ok := hydrationAwaitSnapshotKeyedEachDirectTextRow(block.Children, block.ItemName)
-	if !ok || element == nil || text == nil || len(text.Parts) != 1 || text.Parts[0] == nil || text.Parts[0].Static {
-		return nil, nil, false
+	descriptor, ok := hydrationAwaitSnapshotKeyedEachDirectRow(block.Children, block.ItemName)
+	if !ok || descriptor.Element == nil || descriptor.Text == nil || len(descriptor.Text.Parts) != 1 || descriptor.Text.Parts[0] == nil || descriptor.Text.Parts[0].Static {
+		return nil, nil, nil, false
 	}
-	return element, text.Parts[0], true
+	// The direct-row descriptor already rejects boolean, two-way, directive,
+	// and event attributes for Attr. The first extension intentionally admits
+	// only this one ordinary dynamic attribute; wider attribute sets need their
+	// own ordered writer recipe.
+	return descriptor.Element, descriptor.Text.Parts[0], descriptor.Attr, true
 }
 
 // buildHydrationKeyedAwaitNestedTextRowAdopt connects an already server-settled
@@ -27,7 +32,7 @@ func hydrationKeyedAwaitNestedTextRow(block *EachBlockNode) (*ElementNode, *Part
 // AST nodes and the typed lifecycle recipe; no printable template source is
 // inspected or regenerated. Initial attachment only acquires ranges and
 // callbacks. CSR DOM is created exclusively by innerCreate for a later key.
-func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, part *Part, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
+func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, part *Part, attr *Attr, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
 	if outer == nil || nested == nil || element == nil || part == nil || part.Expr == nil {
 		panic("vela: missing nested keyed await text-row adoption recipe")
 	}
@@ -78,6 +83,22 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 		})
 		return value
 	}
+	attrValue := func(item, index string) JsExpr {
+		if attr == nil {
+			return strLit("")
+		}
+		value := JsExpr(strLit(""))
+		g.withTemplateBinding(outer.ItemName, outerItem, func() {
+			g.withTemplateBinding(outer.IndexName, outerIndex, func() {
+				g.withTemplateBinding(nested.ItemName, item, func() {
+					g.withTemplateBinding(nested.IndexName, index, func() {
+						value = genString(g.templateExpr(attr.Expr))
+					})
+				})
+			})
+		})
+		return value
+	}
 	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr("$$item", "$$index")}
 
 	findElement := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
@@ -108,7 +129,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 	// constructs the initial text node. Hydrated attachment has no such scope,
 	// so it asks controllerFor to declare them. Keeping this distinction here
 	// avoids duplicate lexical declarations in generated JS.
-	controllerFor := func(row, item, index, textNode JsExpr, hydrated, declareBindings bool) []JsStmt {
+	controllerFor := func(row, item, index, elementNode, textNode JsExpr, hydrated, declareBindings bool) []JsStmt {
 		innerKeyVar, innerVar, textUpdateVar := "$$inner_key", "$$inner", "$$inner_text_update"
 		body := []JsStmt{
 			genConst(innerKeyVar, genCall(id(keyVar), item, index)),
@@ -141,13 +162,30 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 		}
 		body = append(body,
 			genExprStmt(genCall(genMember(genMember(id(innerVar), "updates"), "push"), id(textUpdateVar))),
+		)
+		if attr != nil {
+			attrValueVar, attrUpdateVar := "$$inner_attr_value", "$$inner_attr_update"
+			body = append(body,
+				genConst(attrUpdateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genConst(attrValueVar, attrValue(nestedItemVar, nestedIndexVar)),
+					genIf(genBinary("!==", genCall(genMember(elementNode, "getAttribute"), strLit(attr.Name)), id(attrValueVar)), genExprStmt(genCall(genMember(elementNode, "setAttribute"), strLit(attr.Name), id(attrValueVar)))),
+				)}),
+				genExprStmt(genCall(genMember(genMember(id(innerVar), "updates"), "push"), id(attrUpdateVar))),
+			)
+		}
+		body = append(body,
 			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "set"), id(innerKeyVar), id(innerVar))),
 			genAssignStmt(genMember(row, "controller"), id(innerVar)),
 		)
 		return body
 	}
 
-	attach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(controllerFor(id("$$row"), id("$$item"), id("$$index"), genNull(), true, true)...)}
+	attachBody := []JsStmt{
+		genConst("$$element", genCall(id(findElementVar), id("$$row"))),
+		genIf(genUnary("!", id("$$element")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested keyed row element"))}),
+	}
+	attachBody = append(attachBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$element"), genNull(), true, true)...)
+	attach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(attachBody...)}
 	createBody := []JsStmt{
 		genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
 		genConst("$$start", genCall(genMember(id("document"), "createComment"), strLit("r"))),
@@ -155,14 +193,19 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 		genConst("$$element", genCall(genMember(id("document"), "createElement"), strLit(element.Tag))),
 		g.setAttrStmt("$$element", g.scopeID, ""),
 	}
-	for _, attr := range element.Attrs {
-		if attr != nil {
-			createBody = append(createBody, g.setAttrStmt("$$element", attr.Name, attr.Value))
+	for _, elementAttr := range element.Attrs {
+		if elementAttr != nil && elementAttr.Expr == nil {
+			createBody = append(createBody, g.setAttrStmt("$$element", elementAttr.Name, elementAttr.Value))
 		}
 	}
 	createBody = append(createBody,
 		genLet(nestedItemVar, id("$$item")),
 		genLet(nestedIndexVar, id("$$index")),
+	)
+	if attr != nil {
+		createBody = append(createBody, genExprStmt(genCall(genMember(id("$$element"), "setAttribute"), strLit(attr.Name), attrValue(nestedItemVar, nestedIndexVar))))
+	}
+	createBody = append(createBody,
 		genConst("$$text", genCall(genMember(id("document"), "createTextNode"), textValue(nestedItemVar, nestedIndexVar))),
 		genExprStmt(genCall(genMember(id("$$element"), "appendChild"), id("$$text"))),
 		genExprStmt(genCall(genMember(id("$$fragment"), "appendChild"), id("$$element"))),
@@ -170,7 +213,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$end"))),
 		genConst("$$row", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
 	)
-	createBody = append(createBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$text"), false, false)...)
+	createBody = append(createBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$element"), id("$$text"), false, false)...)
 	createBody = append(createBody, genReturn(id("$$row")))
 	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
 	update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(
