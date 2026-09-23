@@ -5662,13 +5662,13 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			if !ok || nested == nil {
 				continue
 			}
-			element, part, attr, classAttr, styleAttr, ok := hydrationKeyedAwaitNestedTextRow(nested)
+			element, part, attr, classAttr, styleAttr, eventAttr, ok := hydrationKeyedAwaitNestedTextRow(nested)
 			if !ok {
 				continue
 			}
 			plan := g.hydrationLifecycleNode(SSRLifecyclePlanEach, nested.Span)
 			if plan.KeyedEach != nil && plan.KeyedEach.DirectLeafRows {
-				nestedTextRows[state] = hydrationKeyedAwaitNestedTextRecipe{Block: nested, Element: element, Part: part, Attr: attr, Class: classAttr, Style: styleAttr}
+				nestedTextRows[state] = hydrationKeyedAwaitNestedTextRecipe{Block: nested, Element: element, Part: part, Attr: attr, Class: classAttr, Style: styleAttr, Event: eventAttr}
 			}
 		}
 	}
@@ -7421,7 +7421,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				genLogical("&&", id(initialSnapshotVar), genBinary("===", genMember(id(initialSnapshotVar), "state"), strLit(stateName))),
 				genBlock(append([]JsStmt{
 					genConst("$$await_range", genCall(id("$$findHydrationNestedRange"), genMember(id("$$state"), "row"), strLit(g.scopeID), numLit(awaitMarkerID))),
-				}, g.buildHydrationKeyedAwaitNestedTextRowAdopt(block, recipe.Block, recipe.Element, recipe.Part, recipe.Attr, recipe.Class, recipe.Style, "$$state", rowItemVar, initialOuterIndexVar, id("$$await_range"))...)...),
+				}, g.buildHydrationKeyedAwaitNestedTextRowAdopt(block, recipe.Block, recipe.Element, recipe.Part, recipe.Attr, recipe.Class, recipe.Style, recipe.Event, "$$state", rowItemVar, initialOuterIndexVar, id("$$await_range"))...)...),
 			))
 		}
 	}

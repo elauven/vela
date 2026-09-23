@@ -7,6 +7,7 @@ type hydrationKeyedAwaitNestedTextRecipe struct {
 	Attr    *Attr
 	Class   *Attr
 	Style   *Attr
+	Event   *Attr
 }
 
 // hydrationKeyedAwaitNestedTextRow is the first server-settled inner-row
@@ -14,19 +15,19 @@ type hydrationKeyedAwaitNestedTextRecipe struct {
 // with one dynamic text part. The broader DirectLeafRows recipe remains typed
 // in the lifecycle plan, but attributes, listeners, controls, and children
 // need their own owner-local adopt handles before they can join this path.
-func hydrationKeyedAwaitNestedTextRow(block *EachBlockNode) (*ElementNode, *Part, *Attr, *Attr, *Attr, bool) {
+func hydrationKeyedAwaitNestedTextRow(block *EachBlockNode) (*ElementNode, *Part, *Attr, *Attr, *Attr, *Attr, bool) {
 	if block == nil || !block.HasKey() {
-		return nil, nil, nil, nil, nil, false
+		return nil, nil, nil, nil, nil, nil, false
 	}
 	descriptor, ok := hydrationAwaitSnapshotKeyedEachDirectRow(block.Children, block.ItemName)
 	if !ok || descriptor.Element == nil || descriptor.Text == nil || len(descriptor.Text.Parts) != 1 || descriptor.Text.Parts[0] == nil || descriptor.Text.Parts[0].Static {
-		return nil, nil, nil, nil, nil, false
+		return nil, nil, nil, nil, nil, nil, false
 	}
 	// The direct-row descriptor already proves exact cardinality and item-root
 	// ownership for each optional leaf. This recipe accepts one ordinary
 	// attribute, one class directive, and one style directive; events, bindings,
 	// components, and deeper structure have separate ownership recipes.
-	return descriptor.Element, descriptor.Text.Parts[0], descriptor.Attr, descriptor.ClassAttr, descriptor.StyleAttr, true
+	return descriptor.Element, descriptor.Text.Parts[0], descriptor.Attr, descriptor.ClassAttr, descriptor.StyleAttr, descriptor.EventAttr, true
 }
 
 // buildHydrationKeyedAwaitNestedTextRowAdopt connects an already server-settled
@@ -34,7 +35,7 @@ func hydrationKeyedAwaitNestedTextRow(block *EachBlockNode) (*ElementNode, *Part
 // AST nodes and the typed lifecycle recipe; no printable template source is
 // inspected or regenerated. Initial attachment only acquires ranges and
 // callbacks. CSR DOM is created exclusively by innerCreate for a later key.
-func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, part *Part, attr, classAttr, styleAttr *Attr, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
+func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, part *Part, attr, classAttr, styleAttr, eventAttr *Attr, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
 	if outer == nil || nested == nil || element == nil || part == nil || part.Expr == nil {
 		panic("vela: missing nested keyed await text-row adoption recipe")
 	}
@@ -120,6 +121,28 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 				})
 			})
 		})
+		return value
+	}
+	eventHandler := func() JsExpr {
+		if eventAttr == nil {
+			return id("undefined")
+		}
+		value := JsExpr(id("undefined"))
+		g.withTemplateBinding(outer.ItemName, outerItem, func() {
+			g.withTemplateBinding(outer.IndexName, outerIndex, func() {
+				g.withTemplateBinding(nested.ItemName, nestedItemVar, func() {
+					g.withTemplateBinding(nested.IndexName, nestedIndexVar, func() {
+						value = g.eventHandlerExpr(eventAttr)
+					})
+				})
+			})
+		})
+		if value == nil {
+			value = id("undefined")
+		}
+		if !templateExprIsHandler(eventAttr.Expr) {
+			value = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(value))}
+		}
 		return value
 	}
 	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr("$$item", "$$index")}
@@ -212,6 +235,16 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 					genExprStmt(genCall(genMember(genMember(elementNode, "style"), "setProperty"), strLit(styleAttr.Name), directiveValue(styleAttr, nestedItemVar, nestedIndexVar, false))),
 				)}),
 				genExprStmt(genCall(genMember(genMember(id(innerVar), "updates"), "push"), id(styleUpdateVar))),
+			)
+		}
+		if eventAttr != nil {
+			eventHandlerVar := "$$inner_event_handler"
+			body = append(body,
+				genConst(eventHandlerVar, eventHandler()),
+				genExprStmt(genCall(genMember(elementNode, "addEventListener"), strLit(eventAttr.Name), id(eventHandlerVar))),
+				genExprStmt(genCall(genMember(genMember(id(innerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genExprStmt(genCall(genMember(elementNode, "removeEventListener"), strLit(eventAttr.Name), id(eventHandlerVar))),
+				)})),
 			)
 		}
 		body = append(body,
