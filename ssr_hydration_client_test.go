@@ -4624,7 +4624,7 @@ func TestSSRHydrationKeyedEachAwaitOwnsNestedRowControllers(t *testing.T) {
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"innerRows: new Map()", "innerRows.forEach", "innerRows.clear", "controller", "innerRefresh", "reconcileHydrationKeyedRowRanges", "$$eachRowsForMutations", "$$activeMutations_rows", "$$dirtyRows"} {
+	for _, want := range []string{"innerRows: new Map()", "innerRows.forEach", "innerRows.clear", "controller", "innerRefresh", "reconcileHydrationKeyedRowRanges", "$$findHydrationNestedRange", "$$writeHydrationText", "$$createHydrationRowController", "$$eachRowsForMutations", "$$activeMutations_rows", "$$dirtyRows"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("keyed await row ownership misses %q:\n%s", want, code)
 		}
@@ -4733,6 +4733,85 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsScopedStaticSnapshots(t *testing
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("keyed await scoped static snapshot browser output=%q", got)
+	}
+}
+
+func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedTextRows(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>export let rows = [];</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Pending</p>{:then value}{#each row.fields as field (field.id)}<p class="field">{field.title}</p>{/each}{:catch error}<p class="failed">Failed</p>{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := sfc.TemplateAST.Nodes[0].(*ElementNode)
+	outer := main.Children[0].(*EachBlockNode)
+	await := outer.Children[0].(*AwaitBlockNode)
+	inner := await.ThenChildren[0].(*EachBlockNode)
+	markers := ssrHydrationMarkerIDs(plan.Nodes)
+	outerID, ok := markers.eachID(outer.Span)
+	if !ok {
+		t.Fatal("outer keyed each marker is missing")
+	}
+	innerID, ok := markers.eachID(inner.Span)
+	if !ok {
+		t.Fatal("inner keyed each marker is missing")
+	}
+	awaitID, ok := markers.awaitID(await.Span)
+	if !ok {
+		t.Fatal("nested await marker is missing")
+	}
+	mainPlan := plan.Nodes[0].(*SSRPlanElement)
+	outerPlan := mainPlan.Children[0].(*SSRPlanEach)
+	awaitPlan := outerPlan.Children[0].(*SSRPlanAwait)
+	innerPlan := awaitPlan.ThenChildren[0].(*SSRPlanEach)
+	fieldPlan := innerPlan.Children[0].(*SSRPlanElement)
+	fieldTextPlan := fieldPlan.Children[0].(*SSRPlanText)
+	textID := fieldTextPlan.Parts[0].DynamicID
+	outerScope := func(key string) string { return "vela-page--each-" + itoa(outer.Span.Start) + "-" + key }
+	innerScope := func(outerKey, fieldKey string) string {
+		return outerScope(outerKey) + "--each-" + itoa(inner.Span.Start) + "-" + fieldKey
+	}
+	fieldHTML := func(outerKey, fieldKey, title string) string {
+		scope := innerScope(outerKey, fieldKey)
+		return `<!--r:` + scope + `:` + itoa(innerID) + `--><!--e:` + scope + `:` + itoa(fieldPlan.HydrationID) + `--><p vela-page="" class="field"><!--v:` + scope + `:` + itoa(textID) + `-->` + title + `<!--/v:` + scope + `:` + itoa(textID) + `--></p><!--/e:` + scope + `:` + itoa(fieldPlan.HydrationID) + `--><!--/r:` + scope + `:` + itoa(innerID) + `-->`
+	}
+	outerHTML := func(key string) string {
+		scope := outerScope(key)
+		return `<!--r:` + scope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `-->` + fieldHTML(key, "a", "Alpha") + fieldHTML(key, "b", "Beta") + `<!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + scope + `:` + itoa(outerID) + `-->`
+	}
+	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `-->` + outerHTML("row") + `<!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"row","fields":[{"id":"a","title":"Alpha"},{"id":"b","title":"Beta"}]}]},"state":{},"incomplete":false,"awaitAt":{"` + outerScope("row") + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(resolve=>{window.resolveRequest=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{rows:[{id:"row",request:window.request,fields:[{id:"a",title:"Alpha"},{id:"b",title:"Beta"}]}]});window.initial=window.observer.takeRecords().length</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":             embeddedRuntime,
+		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
+		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
+		"index.html":             []byte(html),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("nested settled hydration mutated DOM");await p.evaluate(()=>{window.a=document.querySelectorAll(".field")[0];window.b=document.querySelectorAll(".field")[1];window.resolveRequest("same")});await p.waitForFunction(()=>document.querySelectorAll(".field")[0]===window.a);await p.evaluate(()=>window.hydrated.component.set({rows:[{id:"row",request:window.request,fields:[{id:"b",title:"Beta 2"},{id:"a",title:"Alpha"},{id:"c",title:"Gamma"}]}]}));await p.waitForFunction(()=>Array.from(document.querySelectorAll(".field")).map(n=>n.textContent).join("|")==="Beta 2|Alpha|Gamma");const retained=await p.evaluate(()=>document.querySelectorAll(".field")[0]===window.b&&document.querySelectorAll(".field")[1]===window.a);if(!retained)throw new Error("nested keyed rows lost identity during reorder");await p.evaluate(()=>{window.removed=window.a;window.hydrated.component.set({rows:[{id:"row",request:window.request,fields:[{id:"b",title:"Beta 2"},{id:"c",title:"Gamma"}]}]})});await p.waitForFunction(()=>document.querySelectorAll(".field").length===2);if(await p.evaluate(()=>window.removed.isConnected))throw new Error("removed nested keyed row remained connected");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("nested keyed await snapshot browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("nested keyed await snapshot browser output=%q", got)
 	}
 }
 

@@ -319,6 +319,12 @@ type ASTGen struct {
 	// used by the bounded inner option-list recipe. Keep its import separate
 	// from outer row ranges so unrelated hydration clients remain minimal.
 	hydrationKeyedElements bool
+	// hydrationNestedRanges records owner-local lookup of a repeated structural
+	// range. These markers are intentionally absent from the global walker map.
+	hydrationNestedRanges bool
+	// hydrationNestedText records a row-local dynamic text writer. Its marker is
+	// found below an adopted keyed row rather than through the global walker.
+	hydrationNestedText bool
 
 	// hydrationStateInput enables the compiler-owned $$velaState input for
 	// SSR client modules only. Ordinary CSR output keeps its established
@@ -1895,6 +1901,8 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	usesHydrationStructure := len(g.domAcquirePlan.Structures) > 0
 	usesHydrationKeyedRows := g.hydrationKeyedRows
 	usesHydrationKeyedElements := g.hydrationKeyedElements
+	usesHydrationNestedRanges := g.hydrationNestedRanges
+	usesHydrationNestedText := g.hydrationNestedText
 	if g.analysis != nil && (len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0) {
 		usesIsProxy = true
 		usesDefer = true
@@ -1946,7 +1954,7 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	if usesHydrationText || usesHydrationStructure {
 		specs = append(specs, JsImportSpec{Imported: "$$acquireHydrationRange"})
 	}
-	if usesHydrationText {
+	if usesHydrationText || usesHydrationNestedText {
 		specs = append(specs, JsImportSpec{Imported: "$$writeHydrationText"})
 	}
 	if usesHydrationStructure {
@@ -1963,6 +1971,9 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 			JsImportSpec{Imported: "$$removeHydrationKeyedRowRange"},
 			JsImportSpec{Imported: "$$replaceHydrationKeyedRowContents"},
 		)
+	}
+	if usesHydrationNestedRanges {
+		specs = append(specs, JsImportSpec{Imported: "$$findHydrationNestedRange"})
 	}
 	if usesHydrationKeyedElements {
 		specs = append(specs, JsImportSpec{Imported: "$$reconcileHydrationKeyedElements"})
@@ -5641,10 +5652,30 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	children := [][]Node{await.PendingChildren, await.ThenChildren, await.CatchChildren}
 	bindingNames := []string{"", await.ValueName, await.ErrorName}
 	bindingValues := []string{"", "$$value", "$$error"}
+	nestedTextRows := [3]hydrationKeyedAwaitNestedTextRecipe{}
+	if len(branches[0]) == 0 {
+		for state := 1; state <= 2; state++ {
+			if len(children[state]) != 1 {
+				continue
+			}
+			nested, ok := children[state][0].(*EachBlockNode)
+			if !ok || nested == nil {
+				continue
+			}
+			element, part, ok := hydrationKeyedAwaitNestedTextRow(nested)
+			if !ok {
+				continue
+			}
+			plan := g.hydrationLifecycleNode(SSRLifecyclePlanEach, nested.Span)
+			if plan.KeyedEach != nil && plan.KeyedEach.DirectLeafRows {
+				nestedTextRows[state] = hydrationKeyedAwaitNestedTextRecipe{Block: nested, Element: element, Part: part}
+			}
+		}
+	}
 	// This first settled-row bridge deliberately accepts only a branch whose
 	// DOM needs no initial writers or child adoption. Dynamic settled content is
 	// adopted by the next inner-range lowering, not silently remounted here.
-	settledStatic := [3]bool{false, len(branches[0]) == 0 && allStatic(children[1]), len(branches[0]) == 0 && allStatic(children[2])}
+	settledStatic := [3]bool{false, len(branches[0]) == 0 && (allStatic(children[1]) || nestedTextRows[1].Block != nil), len(branches[0]) == 0 && (allStatic(children[2]) || nestedTextRows[2].Block != nil)}
 
 	for _, branch := range branches {
 		for _, component := range branch {
@@ -7266,7 +7297,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genAssignStmt(genMember(id("$$state"), "row"), id("$$row")),
 		genAssignStmt(genMember(id("$$state"), "item"), id("$$item")),
 		genAssignStmt(genMember(id("$$state"), "index"), id("$$index")),
-		genIf(genMember(id("$$state"), "setItem"), genExprStmt(genCall(genMember(id("$$state"), "setItem"), id("$$item")))),
+		genIf(genMember(id("$$state"), "setItem"), genExprStmt(genCall(genMember(id("$$state"), "setItem"), id("$$item"), id("$$index")))),
 		genAssignStmt(genMember(id("$$state"), "key"), id("$$key")),
 		genInvoke(driveVar, id("$$state"), id("$$row"), id("$$item"), id("$$index"), boolLit(false)),
 		genIf(genLogical("&&", genBinary("!==", genMember(id("$$state"), "active"), numLit(0)), genMember(genMember(id("$$state"), "innerRefresh"), "length")), genBlock(
@@ -7351,11 +7382,24 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	outerPlan := g.hydrationLifecycleNode(SSRLifecyclePlanEach, block.Span)
 	initialScope := g.hydrationKeyedEachRecipeScopeFrom(id("$$instanceID"), outerPlan.KeyedEach, "$$item", initialIndex)
 	initialSnapshotVar := name + "_snapshot"
+	initialOuterIndexVar := name + "_outer_index"
+	hasNestedTextRows := nestedTextRows[1].Block != nil || nestedTextRows[2].Block != nil
 	initialBody := []JsStmt{
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id(initialIndex))),
 		genConst("$$state", genCall(id(stateFactoryVar))),
 		genConst(initialSnapshotVar, g.hydrationAwaitSnapshotExprAt(initialScope, awaitMarkerID)),
 	}
+	if hasNestedTextRows {
+		initialBody = append(initialBody,
+			genLet(rowItemVar, id("$$item")),
+			genLet(initialOuterIndexVar, id(initialIndex)),
+			genAssignStmt(genMember(id("$$state"), "setItem"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
+				genAssignStmt(id(rowItemVar), id("$$next_item")),
+				genAssignStmt(id(initialOuterIndexVar), id("$$next_index")),
+			)}),
+		)
+	}
+	initialAdoptBody := []JsStmt{}
 	for state := 1; state <= 2; state++ {
 		if !settledStatic[state] {
 			continue
@@ -7372,6 +7416,14 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				genAssignStmt(genMember(id("$$state"), field), genMember(id(initialSnapshotVar), field)),
 			),
 		))
+		if recipe := nestedTextRows[state]; recipe.Block != nil {
+			initialAdoptBody = append(initialAdoptBody, genIf(
+				genLogical("&&", id(initialSnapshotVar), genBinary("===", genMember(id(initialSnapshotVar), "state"), strLit(stateName))),
+				genBlock(append([]JsStmt{
+					genConst("$$await_range", genCall(id("$$findHydrationNestedRange"), genMember(id("$$state"), "row"), strLit(g.scopeID), numLit(awaitMarkerID))),
+				}, g.buildHydrationKeyedAwaitNestedTextRowAdopt(block, recipe.Block, recipe.Element, recipe.Part, "$$state", rowItemVar, initialOuterIndexVar, id("$$await_range"))...)...),
+			))
+		}
 	}
 	for _, component := range branches[0] {
 		initialBody = append(initialBody, genExprStmt(genCall(genMember(genMember(id("$$state"), "components"), "push"), genMember(g.hydrationComponentCallAt(component, id("$$root"), nil, initialScope), "component"))))
@@ -7382,6 +7434,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genAssignStmt(genMember(id("$$state"), "index"), id(initialIndex)),
 		genAssignStmt(genMember(id("$$state"), "key"), id("$$key")),
 		genExprStmt(genCall(genMember(id(statesVar), "set"), id("$$key"), id("$$state"))),
+	)
+	initialBody = append(initialBody, initialAdoptBody...)
+	initialBody = append(initialBody,
 		genInvoke(driveVar, id("$$state"), genCall(genMember(id(blocksVar), "get"), id("$$key")), id("$$item"), id(initialIndex), boolLit(true)),
 		genAssignStmt(id(initialIndex), genBinary("+", id(initialIndex), numLit(1))),
 	)
