@@ -4819,7 +4819,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnDynamicFallbackController(t
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"nodes: []", "updates: []", "listeners: []", "blocks.size", "addEventListener", "removeEventListener", "classList.toggle", "style.setProperty", "$$set_draft", "destroy"} {
+	for _, want := range []string{"_state = () =>", "_mount = (", "$$createHydrationRowController", "nodes: []", "updates: []", "listeners: []", "blocks.size", "addEventListener", "removeEventListener", "classList.toggle", "style.setProperty", "$$set_draft", "destroy"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested keyed each fallback controller misses %q:\n%s", want, code)
 		}

@@ -5630,7 +5630,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	rangeVar, itemsVar := name+"_range", name+"_items"
 	keyOfVar, blocksVar := name+"_key", name+"_blocks"
 	statesVar, aliveVar, markersVar := name+"_await_states", name+"_alive", name+"_markers"
-	destroyVar, renderVar, driveVar := name+"_destroy", name+"_render", name+"_drive"
+	destroyVar, mountVar, driveVar := name+"_destroy", name+"_mount", name+"_drive"
+	stateFactoryVar := name + "_state"
 	createVar, updateVar := name+"_create", name+"_row_update"
 	innerRefreshVar := name + "_inner_refresh"
 	rowItemVar := name + "_item"
@@ -5811,6 +5812,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			{Key: id("components"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("innerRows"), Value: genNew(id("Map"))}, {Key: id("innerRefresh"), Value: genArray()}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()}, {Key: id("setItem"), Value: genNull()},
 		}}
 	}
+	// State construction is intentionally independent of the DOM path. CSR
+	// creation and the initial hydration adoption now obtain the same outer-row
+	// controller shape from this factory; the following adoption slice can add
+	// an SSR-settled path without copying lifecycle fields.
+	stateFactory := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: stateExpr()}
 	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(
 		genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRows"), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$inner")}, Body: genBlock(genExprStmt(genCall(genMember(id("$$inner"), "destroy"))))})),
 		genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRows"), "clear"))),
@@ -7217,7 +7223,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genExprStmt(genCall(id("$$replaceHydrationKeyedRowContents"), id("$$row"), id("$$frag"))),
 		genAssignStmt(genMember(id("$$state"), "active"), id("$$next")),
 	)
-	render := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state"), id("$$row"), id("$$item"), id("$$index"), id("$$next")}, Body: genBlock(renderBody...)}
+	mountRow := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state"), id("$$row"), id("$$item"), id("$$index"), id("$$next")}, Body: genBlock(renderBody...)}
 	settle := func(param string, state int) JsExpr {
 		field := "value"
 		if state == 2 {
@@ -7226,7 +7232,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(param)}, Body: genBlock(
 			genIf(genLogical("||", genUnary("!", id(aliveVar)), genLogical("||", genBinary("!==", genCall(genMember(id(statesVar), "get"), id("$$key")), id("$$state")), genBinary("!==", genMember(id("$$state"), "cell"), id("$$p")))), genReturn(nil)),
 			genAssignStmt(genMember(id("$$state"), field), id(param)),
-			genInvoke(renderVar, id("$$state"), genMember(id("$$state"), "row"), genMember(id("$$state"), "item"), genMember(id("$$state"), "index"), numLit(state)),
+			genInvoke(mountVar, id("$$state"), genMember(id("$$state"), "row"), genMember(id("$$state"), "item"), genMember(id("$$state"), "index"), numLit(state)),
 		)}
 	}
 	drive := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state"), id("$$row"), id("$$item"), id("$$index"), id("$$initial")}, Body: genBlock(
@@ -7236,7 +7242,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genAssignStmt(genMember(id("$$state"), "cell"), id("$$p")),
 		genAssignStmt(genMember(id("$$state"), "value"), id("undefined")),
 		genAssignStmt(genMember(id("$$state"), "error"), id("undefined")),
-		genIf(genUnary("!", id("$$initial")), genInvoke(renderVar, id("$$state"), id("$$row"), id("$$item"), id("$$index"), numLit(0))),
+		genIf(genUnary("!", id("$$initial")), genInvoke(mountVar, id("$$state"), id("$$row"), id("$$item"), id("$$index"), numLit(0))),
 		genExprStmt(genCall(genMember(id("$$p"), "then"), settle("$$value", 1), settle("$$error", 2))),
 	)}
 	rowUpdateBody := []JsStmt{
@@ -7255,7 +7261,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			genForOf("$$update", genMember(id("$$state"), "updates"), genInvoke("$$update")),
 			genForOf("$$refresh", genMember(id("$$state"), "innerRefresh"), genInvoke("$$refresh")),
 		)),
-		genIf(genLogical("&&", genLogical("&&", genBinary("!==", genMember(id("$$state"), "active"), numLit(0)), genUnary("!", genMember(genMember(id("$$state"), "innerRefresh"), "length"))), genMember(genMember(id("$$state"), "updates"), "length")), genInvoke(renderVar, id("$$state"), id("$$row"), id("$$item"), id("$$index"), genMember(id("$$state"), "active"))),
+		genIf(genLogical("&&", genLogical("&&", genBinary("!==", genMember(id("$$state"), "active"), numLit(0)), genUnary("!", genMember(genMember(id("$$state"), "innerRefresh"), "length"))), genMember(genMember(id("$$state"), "updates"), "length")), genInvoke(mountVar, id("$$state"), id("$$row"), id("$$item"), id("$$index"), genMember(id("$$state"), "active"))),
 	}
 	for branch, components := range branches {
 		for index, component := range components {
@@ -7271,7 +7277,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id("$$index"))),
 		genConst("$$start", genCall(genMember(id("document"), "createComment"), strLit("r"))),
 		genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$start"))),
-		genConst("$$state", stateExpr()),
+		genConst("$$state", genCall(id(stateFactoryVar))),
 		// mount() evaluates component props through rowItemVar. A newly created
 		// row needs the same mutable binding as a row which was re-rendered.
 		genLet(rowItemVar, id("$$item")),
@@ -7327,13 +7333,13 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genLet(statesVar, genNew(id("Map"))), genLet(aliveVar, boolLit(true)), genLet(markersVar, boolLit(true)),
 		genConst(innerRefreshVar, innerRefresh),
 
-		genConst(destroyVar, destroy), genConst(renderVar, render), genConst(driveVar, drive), genConst(createVar, create), genConst(updateVar, rowUpdate),
+		genConst(stateFactoryVar, stateFactory), genConst(destroyVar, destroy), genConst(mountVar, mountRow), genConst(driveVar, drive), genConst(createVar, create), genConst(updateVar, rowUpdate),
 	)
 	initialIndex := name + "_index"
 	initialScope := g.hydrationEachInstanceScope(block, id(initialIndex))
 	initialBody := []JsStmt{
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id(initialIndex))),
-		genConst("$$state", stateExpr()),
+		genConst("$$state", genCall(id(stateFactoryVar))),
 	}
 	for _, component := range branches[0] {
 		initialBody = append(initialBody, genExprStmt(genCall(genMember(genMember(id("$$state"), "components"), "push"), genMember(g.hydrationComponentCallAt(component, id("$$root"), nil, initialScope), "component"))))
