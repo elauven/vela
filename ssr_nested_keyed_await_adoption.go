@@ -19,12 +19,12 @@ type hydrationKeyedAwaitNestedControlRecipe struct {
 	Bind    *Attr
 }
 
-func hydrationKeyedAwaitNestedValueControlRow(block *EachBlockNode) (*ElementNode, *Attr, bool) {
+func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNode, *Attr, bool) {
 	if block == nil || !block.HasKey() {
 		return nil, nil, false
 	}
 	descriptor, ok := hydrationAwaitSnapshotKeyedEachDirectControlRow(block.Children, block.ItemName)
-	if !ok || descriptor.Element == nil || descriptor.Element.Tag != "input" || descriptor.Bind == nil || descriptor.Bind.Name != "value" {
+	if !ok || descriptor.Element == nil || descriptor.Element.Tag != "input" || descriptor.Bind == nil || (descriptor.Bind.Name != "value" && descriptor.Bind.Name != "checked") {
 		return nil, nil, false
 	}
 	return descriptor.Element, descriptor.Bind, true
@@ -343,11 +343,11 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 	}
 }
 
-// buildHydrationKeyedAwaitNestedValueControlAdopt owns the first browser-live
-// control recipe. It accepts only input bind:value under an outer $state.deep
+// buildHydrationKeyedAwaitNestedInputControlAdopt owns the first browser-live
+// control recipe. It accepts input bind:value or checkbox bind:checked under an outer $state.deep
 // collection. The initial attach reads the live input before registering its
 // guarded writer, so user input made after SSR paint is retained.
-func (g *ASTGen) buildHydrationKeyedAwaitNestedValueControlAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, bind *Attr, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
+func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, bind *Attr, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
 	if outer == nil || nested == nil || element == nil || bind == nil || bind.Expr == nil {
 		panic("vela: missing nested keyed await value-control adoption recipe")
 	}
@@ -361,6 +361,10 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedValueControlAdopt(outer *EachBloc
 	}
 	g.hydrationKeyedRows = true
 	g.hydrationNestedRanges = true
+	spec, ok := twoWayBindSpec(element.Tag, bind.Name)
+	if !ok {
+		panic("vela: missing nested keyed await input binding specification")
+	}
 
 	prefix := "$$hsettled" + itoa(markerID) + "_" + itoa(nested.Span.Start) + "_control"
 	itemsVar, blocksVar, keyVar := prefix+"_items", prefix+"_blocks", prefix+"_key"
@@ -384,7 +388,14 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedValueControlAdopt(outer *EachBloc
 		g.withTemplateBinding(outer.ItemName, outerItem, func() {
 			g.withTemplateBinding(outer.IndexName, outerIndex, func() {
 				g.withTemplateBinding(nested.ItemName, item, func() {
-					g.withTemplateBinding(nested.IndexName, index, func() { value = genString(g.templateExpr(bind.Expr)) })
+					g.withTemplateBinding(nested.IndexName, index, func() {
+						expr := g.templateExpr(bind.Expr)
+						if bind.Name == "checked" {
+							value = genBool(expr)
+						} else {
+							value = genString(expr)
+						}
+					})
 				})
 			})
 		})
@@ -425,13 +436,13 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedValueControlAdopt(outer *EachBloc
 		body = append(body,
 			genConst("$$inner_control_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 				genConst("$$inner_control_value", valueExpr(nestedItemVar, nestedIndexVar)),
-				genIf(genBinary("!==", genMember(control, "value"), id("$$inner_control_value")), genAssignStmt(genMember(control, "value"), id("$$inner_control_value"))),
+				genIf(genBinary("!==", genMember(control, spec.readProp), id("$$inner_control_value")), genAssignStmt(genMember(control, spec.readProp), id("$$inner_control_value"))),
 			)}),
 			genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id("$$inner_control_update"))),
-			genConst("$$inner_control_handler", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(assignValue(nestedItemVar, nestedIndexVar, genMember(genMember(id("$event"), "target"), "value")))}),
-			genExprStmt(genCall(genMember(control, "addEventListener"), strLit("input"), id("$$inner_control_handler"))),
+			genConst("$$inner_control_handler", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(assignValue(nestedItemVar, nestedIndexVar, genMember(genMember(id("$event"), "target"), spec.readProp)))}),
+			genExprStmt(genCall(genMember(control, "addEventListener"), strLit(spec.event), id("$$inner_control_handler"))),
 			genExprStmt(genCall(genMember(genMember(id("$$inner"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-				genExprStmt(genCall(genMember(control, "removeEventListener"), strLit("input"), id("$$inner_control_handler"))),
+				genExprStmt(genCall(genMember(control, "removeEventListener"), strLit(spec.event), id("$$inner_control_handler"))),
 			)})),
 			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "set"), id("$$inner_key"), id("$$inner"))),
 			genAssignStmt(genMember(row, "controller"), id("$$inner")),
@@ -445,7 +456,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedValueControlAdopt(outer *EachBloc
 	attachBody = append(attachBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$control"), true)...)
 	// Read before any update callback is run. The target is a deep-proxy member,
 	// so this preserves an edit made after server paint without a DOM write.
-	attachBody = append(attachBody, assignValue(nestedItemVar, nestedIndexVar, genMember(id("$$control"), "value")))
+	attachBody = append(attachBody, assignValue(nestedItemVar, nestedIndexVar, genMember(id("$$control"), spec.readProp)))
 	attach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(attachBody...)}
 	createBody := []JsStmt{
 		genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
@@ -461,7 +472,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedValueControlAdopt(outer *EachBloc
 		}
 	}
 	createBody = append(createBody,
-		genAssignStmt(genMember(id("$$control"), "value"), valueExpr(nestedItemVar, nestedIndexVar)),
+		genAssignStmt(genMember(id("$$control"), spec.readProp), valueExpr(nestedItemVar, nestedIndexVar)),
 		genExprStmt(genCall(genMember(id("$$fragment"), "appendChild"), id("$$control"))),
 		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
 		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$end"))),
