@@ -5626,6 +5626,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		panic("vela: missing keyed each await lifecycle")
 	}
 	markerID := g.hydrationEachMarkerID(block)
+	awaitMarkerID := g.hydrationAwaitMarkerID(await)
 	name := "$$heach" + itoa(markerID)
 	rangeVar, itemsVar := name+"_range", name+"_items"
 	keyOfVar, blocksVar := name+"_key", name+"_blocks"
@@ -5640,6 +5641,10 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	children := [][]Node{await.PendingChildren, await.ThenChildren, await.CatchChildren}
 	bindingNames := []string{"", await.ValueName, await.ErrorName}
 	bindingValues := []string{"", "$$value", "$$error"}
+	// This first settled-row bridge deliberately accepts only a branch whose
+	// DOM needs no initial writers or child adoption. Dynamic settled content is
+	// adopted by the next inner-range lowering, not silently remounted here.
+	settledStatic := [3]bool{false, len(branches[0]) == 0 && allStatic(children[1]), len(branches[0]) == 0 && allStatic(children[2])}
 
 	for _, branch := range branches {
 		for _, component := range branch {
@@ -5808,7 +5813,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	stateExpr := func() JsExpr {
 		return &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 			{Key: id("cell"), Value: genNull()}, {Key: id("active"), Value: numLit(0)},
-			{Key: id("value"), Value: id("undefined")}, {Key: id("error"), Value: id("undefined")},
+			{Key: id("value"), Value: id("undefined")}, {Key: id("error"), Value: id("undefined")}, {Key: id("snapshot"), Value: numLit(-1)},
 			{Key: id("components"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("innerRows"), Value: genNew(id("Map"))}, {Key: id("innerRefresh"), Value: genArray()}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()}, {Key: id("setItem"), Value: genNull()},
 		}}
 	}
@@ -7231,6 +7236,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		}
 		return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(param)}, Body: genBlock(
 			genIf(genLogical("||", genUnary("!", id(aliveVar)), genLogical("||", genBinary("!==", genCall(genMember(id(statesVar), "get"), id("$$key")), id("$$state")), genBinary("!==", genMember(id("$$state"), "cell"), id("$$p")))), genReturn(nil)),
+			genIf(genBinary("===", genMember(id("$$state"), "snapshot"), numLit(state)), genBlock(
+				genAssignStmt(genMember(id("$$state"), "snapshot"), numLit(-1)),
+				genReturn(nil),
+			)),
+			genAssignStmt(genMember(id("$$state"), "snapshot"), numLit(-1)),
 			genAssignStmt(genMember(id("$$state"), field), id(param)),
 			genInvoke(mountVar, id("$$state"), genMember(id("$$state"), "row"), genMember(id("$$state"), "item"), genMember(id("$$state"), "index"), numLit(state)),
 		)}
@@ -7240,8 +7250,10 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genConst("$$p", genCall(genMember(id("Promise"), "resolve"), promiseFor("$$item", "$$index"))),
 		genIf(genBinary("===", genMember(id("$$state"), "cell"), id("$$p")), genReturn(nil)),
 		genAssignStmt(genMember(id("$$state"), "cell"), id("$$p")),
-		genAssignStmt(genMember(id("$$state"), "value"), id("undefined")),
-		genAssignStmt(genMember(id("$$state"), "error"), id("undefined")),
+		genIf(genLogical("||", genUnary("!", id("$$initial")), genBinary("===", genMember(id("$$state"), "snapshot"), numLit(-1))), genBlock(
+			genAssignStmt(genMember(id("$$state"), "value"), id("undefined")),
+			genAssignStmt(genMember(id("$$state"), "error"), id("undefined")),
+		)),
 		genIf(genUnary("!", id("$$initial")), genInvoke(mountVar, id("$$state"), id("$$row"), id("$$item"), id("$$index"), numLit(0))),
 		genExprStmt(genCall(genMember(id("$$p"), "then"), settle("$$value", 1), settle("$$error", 2))),
 	)}
@@ -7336,10 +7348,30 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genConst(stateFactoryVar, stateFactory), genConst(destroyVar, destroy), genConst(mountVar, mountRow), genConst(driveVar, drive), genConst(createVar, create), genConst(updateVar, rowUpdate),
 	)
 	initialIndex := name + "_index"
-	initialScope := g.hydrationEachInstanceScope(block, id(initialIndex))
+	outerPlan := g.hydrationLifecycleNode(SSRLifecyclePlanEach, block.Span)
+	initialScope := g.hydrationKeyedEachRecipeScopeFrom(id("$$instanceID"), outerPlan.KeyedEach, "$$item", initialIndex)
+	initialSnapshotVar := name + "_snapshot"
 	initialBody := []JsStmt{
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id(initialIndex))),
 		genConst("$$state", genCall(id(stateFactoryVar))),
+		genConst(initialSnapshotVar, g.hydrationAwaitSnapshotExprAt(initialScope, awaitMarkerID)),
+	}
+	for state := 1; state <= 2; state++ {
+		if !settledStatic[state] {
+			continue
+		}
+		stateName, field := "then", "value"
+		if state == 2 {
+			stateName, field = "catch", "error"
+		}
+		initialBody = append(initialBody, genIf(
+			genLogical("&&", id(initialSnapshotVar), genBinary("===", genMember(id(initialSnapshotVar), "state"), strLit(stateName))),
+			genBlock(
+				genAssignStmt(genMember(id("$$state"), "active"), numLit(state)),
+				genAssignStmt(genMember(id("$$state"), "snapshot"), numLit(state)),
+				genAssignStmt(genMember(id("$$state"), field), genMember(id(initialSnapshotVar), field)),
+			),
+		))
 	}
 	for _, component := range branches[0] {
 		initialBody = append(initialBody, genExprStmt(genCall(genMember(genMember(id("$$state"), "components"), "push"), genMember(g.hydrationComponentCallAt(component, id("$$root"), nil, initialScope), "component"))))
@@ -7776,11 +7808,18 @@ func (g *ASTGen) hydrationEachInstanceScope(block *EachBlockNode, index JsExpr) 
 // The legacy marker-only map stays as a fallback for callers which predate
 // scoped structural instances (and for root-only renderers).
 func (g *ASTGen) hydrationAwaitSnapshotExpr(markerID int) JsExpr {
+	return g.hydrationAwaitSnapshotExprAt(id("$$instanceID"), markerID)
+}
+
+// hydrationAwaitSnapshotExprAt resolves a snapshot at an explicit structural
+// owner scope. Root awaits use the component instance directly; repeated
+// awaits inside keyed rows pass their typed row scope instead.
+func (g *ASTGen) hydrationAwaitSnapshotExprAt(scope JsExpr, markerID int) JsExpr {
 	scoped := genLogical("&&",
 		genMember(id("$$props"), "$$velaAwaitAt"),
 		genComputedMember(
 			genMember(id("$$props"), "$$velaAwaitAt"),
-			genBinary("+", id("$$instanceID"), strLit(":"+itoa(markerID))),
+			genBinary("+", scope, strLit(":"+itoa(markerID))),
 		),
 	)
 	legacy := genLogical("&&",

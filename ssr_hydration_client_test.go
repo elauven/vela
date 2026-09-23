@@ -4631,6 +4631,111 @@ func TestSSRHydrationKeyedEachAwaitOwnsNestedRowControllers(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitReadsScopedSnapshotForStaticSettledRows(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let rows = [];</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}<p class="settled">Settled</p>{:catch error}<Child :title={error} />{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{
+		"snapshot: -1",
+		"$$props.$$velaAwaitAt && $$props.$$velaAwaitAt[$$instanceID + '--each-",
+		"_snapshot.state === 'then'",
+		"$$state.snapshot === 1",
+		"$$state.snapshot = -1",
+		"_mount = (",
+	} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("keyed await scoped snapshot lowering misses %q:\n%s", want, code)
+		}
+	}
+}
+
+func TestBrowserSSRHydrationKeyedEachAwaitAdoptsScopedStaticSnapshots(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<script>export let title = "";</script><template><p class="child">{title}</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis := analyzeScriptAST(childSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let rows = [];</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Pending</p>{:then value}<p class="settled">Settled</p>{:catch error}<Child :title={error} />{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysis("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := parentSFC.TemplateAST.Nodes[0].(*ElementNode)
+	each := main.Children[0].(*EachBlockNode)
+	await := each.Children[0].(*AwaitBlockNode)
+	markers := ssrHydrationMarkerIDs(parentPlan.Nodes)
+	eachID, ok := markers.eachID(each.Span)
+	if !ok {
+		t.Fatal("keyed each marker is missing")
+	}
+	awaitID, ok := markers.awaitID(await.Span)
+	if !ok {
+		t.Fatal("keyed await marker is missing")
+	}
+	rowScope := func(key string) string { return "vela-parent--each-" + itoa(each.Span.Start) + "-" + key }
+	rowHTML := func(key string) string {
+		scope := rowScope(key)
+		return `<!--r:` + scope + `:` + itoa(eachID) + `--><!--v:vela-parent:` + itoa(awaitID) + `--><p vela-parent="" class="settled">Settled</p><!--/v:vela-parent:` + itoa(awaitID) + `--><!--/r:` + scope + `:` + itoa(eachID) + `-->`
+	}
+	serverHTML := `<!doctype html><body><!--e:vela-parent:0--><main vela-parent=""><!--v:vela-parent:` + itoa(eachID) + `-->` + rowHTML("a") + rowHTML("b") + `<!--/v:vela-parent:` + itoa(eachID) + `--></main><!--/e:vela-parent:0--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Rows":[{"id":"a"},{"id":"b"}]},"state":{},"incomplete":false,"awaitAt":{"` + rowScope("a") + `:` + itoa(awaitID) + `":{"state":"then","value":"server-a"},"` + rowScope("b") + `:` + itoa(awaitID) + `":{"state":"then","value":"server-b"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.promiseA=new Promise(resolve=>{window.resolveA=resolve});window.promiseB=new Promise(resolve=>{window.resolveB=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{rows:[{id:"a",request:window.promiseA},{id:"b",request:window.promiseB}]});window.initial=window.observer.takeRecords().length</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":               embeddedRuntime,
+		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
+		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
+		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
+		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
+		"Parent.hydrate.js":        []byte(PrintJS(parentEntry, PrintPretty)),
+		"index.html":               []byte(serverHTML),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("scoped settled hydration mutated DOM");await p.evaluate(()=>{window.a=document.querySelectorAll(".settled")[0];window.b=document.querySelectorAll(".settled")[1];window.resolveA("same")});await p.waitForFunction(()=>document.querySelectorAll(".settled")[0]===window.a);await p.evaluate(()=>window.hydrated.component.set({rows:[{id:"b",request:window.promiseB},{id:"a",request:window.promiseA}]}));await p.waitForFunction(()=>document.querySelectorAll(".settled")[0]===window.b&&document.querySelectorAll(".settled")[1]===window.a);await p.evaluate(()=>{window.nextA=new Promise(resolve=>{window.resolveNextA=resolve});window.hydrated.component.set({rows:[{id:"b",request:window.promiseB},{id:"a",request:window.nextA}]})});await p.waitForFunction(()=>document.querySelectorAll(".pending").length===1);await p.evaluate(()=>window.resolveNextA("again"));await p.waitForFunction(()=>document.querySelectorAll(".settled").length===2);const state=await p.evaluate(()=>({aDetached:!window.a.isConnected,bRetained:document.querySelectorAll(".settled")[0]===window.b}));if(!state.aDetached||!state.bRetained)throw new Error(JSON.stringify(state));await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("keyed await scoped static snapshot browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(parentClient, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("keyed await scoped static snapshot browser output=%q", got)
+	}
+}
+
 func TestBrowserSSRHydrationDeepMutationRefreshesOnlyNestedKeyedRows(t *testing.T) {
 	node := requirePlaywright(t)
 	sfc, err := parseSFC(`<script>let rows = $state.deep(window.__rows || []); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#if field.visible}<button class="field" :data-id={field.id} @click={() => selected = field.title}>{field.title}</button>{:else}<input class="hidden-input" bind:value={field.title} /><button class="hidden" :data-id={field.id} @click={() => selected = "hidden"}>Hidden</button>{/if}{:else}<p class="empty" :data-selected={selected}>No fields {selected}</p><button class="empty-action" @click={() => selected = "empty"}>Set empty</button>{/each}<button class="toggle" @click={() => rows[0].fields[0].visible = !rows[0].fields[0].visible}>Toggle</button><button class="shuffle" @click={() => rows[0].fields = [{id: "b", title: "B*", visible: true}, {id: "a", title: "A", visible: true}, {id: "c", title: "C", visible: true}]}>Shuffle</button><button class="remove" @click={() => rows[0].fields = [{id: "b", title: "B*", visible: true}, {id: "c", title: "C", visible: true}]}>Remove</button><button class="empty-list" @click={() => rows[0].fields = []}>Empty</button><p class="selected">{selected}</p>{/await}{/each}</main></template>`)
