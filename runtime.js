@@ -635,6 +635,25 @@ export function $$findHydrationNestedRange(range, componentId, id) {
   throw new Error(`Vela hydration mismatch: missing nested marker range v${id}`);
 }
 
+// $$createHydrationRowController is the shared owner for one retained keyed
+// row. Both CSR-created rows and later SSR-adopted rows use this exact shape,
+// so cleanup ordering is independent of how the DOM range entered the tree.
+export function $$createHydrationRowController(row, update, afterDestroy) {
+  const controller = {
+    row: row || null,
+    updates: [],
+    listeners: [],
+    update: typeof update === 'function' ? update : () => {},
+    destroy() {
+      for (const cleanup of controller.listeners.slice().reverse()) cleanup();
+      controller.listeners = [];
+      controller.updates = [];
+      if (typeof afterDestroy === 'function') afterDestroy();
+    }
+  };
+  return controller;
+}
+
 // $$adoptHydrationKeyedRows maps existing direct row elements to the initial
 // iterable. It is intentionally strict: a stale SSR response with a different
 // row count or duplicate key is rejected before keyed reconciliation can move

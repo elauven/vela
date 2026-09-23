@@ -1954,6 +1954,7 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	}
 	if usesHydrationKeyedRows {
 		specs = append(specs,
+			JsImportSpec{Imported: "$$createHydrationRowController"},
 			JsImportSpec{Imported: "$$adoptHydrationKeyedRows"},
 			JsImportSpec{Imported: "$$adoptHydrationKeyedRowRanges"},
 			JsImportSpec{Imported: "$$clearHydrationKeyedRowMarkers"},
@@ -6086,9 +6087,6 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						innerKey = g.id()
 						withNestedBindings(func() { innerKeyExpr = g.templateExpr(nestedEach.KeyAST) })
 						innerDestroy = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-							genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id("$$inner"), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
-							genAssignStmt(genMember(id("$$inner"), "listeners"), genArray()),
-							genAssignStmt(genMember(id("$$inner"), "updates"), genArray()),
 							genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRows"), "delete"), id(innerKey))),
 						)}
 					}
@@ -6137,17 +6135,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					if nestedEach.HasKey() {
 						rowBody = append(rowBody,
 							genConst(innerKey, innerKeyExpr),
-							genConst("$$inner", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
-								{Key: id("row"), Value: genNull()},
-								{Key: id("updates"), Value: genArray()},
-								{Key: id("listeners"), Value: genArray()},
-								{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
-									genAssignStmt(id("$$nested_item"), id("$$next_item")),
-									genAssignStmt(id(innerIndex), id("$$next_index")),
-									genForOf("$$update", genMember(id("$$inner"), "updates"), genExprStmt(genCall(id("$$update")))),
-								)}},
-								{Key: id("destroy"), Value: innerDestroy},
-							}}),
+							genConst("$$inner", genCall(id("$$createHydrationRowController"), genNull(), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
+								genAssignStmt(id("$$nested_item"), id("$$next_item")),
+								genAssignStmt(id(innerIndex), id("$$next_index")),
+								genForOf("$$update", genMember(id("$$inner"), "updates"), genExprStmt(genCall(id("$$update")))),
+							)}, innerDestroy)),
 							genConst("$$inner_start", genCall(genMember(id("document"), "createComment"), innerStartMarker)),
 							genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$inner_start"))),
 						)

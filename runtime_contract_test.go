@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -235,6 +235,15 @@ try { $$findHydrationNestedRange({ start: ownerStart, end: ownerEnd }, 'vela-tes
 catch (error) { mismatch = error; }
 assert(mismatch && mismatch.message.includes('missing nested marker range v9'),
   'nested structural range lookup must reject a missing owner-local marker');
+const rowCleanupOrder = [];
+const controller = $$createHydrationRowController({ id: 'retained' }, () => {}, () => rowCleanupOrder.push('after'));
+controller.listeners.push(() => rowCleanupOrder.push('first'), () => rowCleanupOrder.push('second'));
+controller.updates.push(() => rowCleanupOrder.push('update'));
+controller.destroy();
+assert(rowCleanupOrder.join(',') === 'second,first,after',
+  'row controller must dispose listeners in reverse registration order before its finalizer');
+assert(controller.row.id === 'retained' && controller.listeners.length === 0 && controller.updates.length === 0,
+  'row controller must preserve its adopted row identity while releasing callbacks');
 keyedStart.nextSibling = rowStartA; rowStartA.nextSibling = keyedOne; keyedOne.nextSibling = rowEndA; rowEndA.nextSibling = rowStartB; rowStartB.nextSibling = keyedTwo; keyedTwo.nextSibling = rowEndB; rowEndB.nextSibling = keyedEnd;
 mismatch = undefined;
 try { $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }], item => item.id, 'li'); }
