@@ -5,6 +5,8 @@ type hydrationKeyedAwaitNestedTextRecipe struct {
 	Element *ElementNode
 	Part    *Part
 	Attr    *Attr
+	Class   *Attr
+	Style   *Attr
 }
 
 // hydrationKeyedAwaitNestedTextRow is the first server-settled inner-row
@@ -12,19 +14,19 @@ type hydrationKeyedAwaitNestedTextRecipe struct {
 // with one dynamic text part. The broader DirectLeafRows recipe remains typed
 // in the lifecycle plan, but attributes, listeners, controls, and children
 // need their own owner-local adopt handles before they can join this path.
-func hydrationKeyedAwaitNestedTextRow(block *EachBlockNode) (*ElementNode, *Part, *Attr, bool) {
+func hydrationKeyedAwaitNestedTextRow(block *EachBlockNode) (*ElementNode, *Part, *Attr, *Attr, *Attr, bool) {
 	if block == nil || !block.HasKey() {
-		return nil, nil, nil, false
+		return nil, nil, nil, nil, nil, false
 	}
 	descriptor, ok := hydrationAwaitSnapshotKeyedEachDirectRow(block.Children, block.ItemName)
 	if !ok || descriptor.Element == nil || descriptor.Text == nil || len(descriptor.Text.Parts) != 1 || descriptor.Text.Parts[0] == nil || descriptor.Text.Parts[0].Static {
-		return nil, nil, nil, false
+		return nil, nil, nil, nil, nil, false
 	}
-	// The direct-row descriptor already rejects boolean, two-way, directive,
-	// and event attributes for Attr. The first extension intentionally admits
-	// only this one ordinary dynamic attribute; wider attribute sets need their
-	// own ordered writer recipe.
-	return descriptor.Element, descriptor.Text.Parts[0], descriptor.Attr, true
+	// The direct-row descriptor already proves exact cardinality and item-root
+	// ownership for each optional leaf. This recipe accepts one ordinary
+	// attribute, one class directive, and one style directive; events, bindings,
+	// components, and deeper structure have separate ownership recipes.
+	return descriptor.Element, descriptor.Text.Parts[0], descriptor.Attr, descriptor.ClassAttr, descriptor.StyleAttr, true
 }
 
 // buildHydrationKeyedAwaitNestedTextRowAdopt connects an already server-settled
@@ -32,7 +34,7 @@ func hydrationKeyedAwaitNestedTextRow(block *EachBlockNode) (*ElementNode, *Part
 // AST nodes and the typed lifecycle recipe; no printable template source is
 // inspected or regenerated. Initial attachment only acquires ranges and
 // callbacks. CSR DOM is created exclusively by innerCreate for a later key.
-func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, part *Part, attr *Attr, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
+func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, part *Part, attr, classAttr, styleAttr *Attr, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
 	if outer == nil || nested == nil || element == nil || part == nil || part.Expr == nil {
 		panic("vela: missing nested keyed await text-row adoption recipe")
 	}
@@ -93,6 +95,27 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 				g.withTemplateBinding(nested.ItemName, item, func() {
 					g.withTemplateBinding(nested.IndexName, index, func() {
 						value = genString(g.templateExpr(attr.Expr))
+					})
+				})
+			})
+		})
+		return value
+	}
+	directiveValue := func(directive *Attr, item, index string, boolean bool) JsExpr {
+		if directive == nil {
+			return boolLit(false)
+		}
+		value := JsExpr(strLit(""))
+		g.withTemplateBinding(outer.ItemName, outerItem, func() {
+			g.withTemplateBinding(outer.IndexName, outerIndex, func() {
+				g.withTemplateBinding(nested.ItemName, item, func() {
+					g.withTemplateBinding(nested.IndexName, index, func() {
+						expr := g.templateExpr(directive.Expr)
+						if boolean {
+							value = genBool(expr)
+						} else {
+							value = genString(expr)
+						}
 					})
 				})
 			})
@@ -173,6 +196,24 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 				genExprStmt(genCall(genMember(genMember(id(innerVar), "updates"), "push"), id(attrUpdateVar))),
 			)
 		}
+		if classAttr != nil {
+			classUpdateVar := "$$inner_class_update"
+			body = append(body,
+				genConst(classUpdateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genExprStmt(genCall(genMember(genMember(elementNode, "classList"), "toggle"), strLit(classAttr.Name), directiveValue(classAttr, nestedItemVar, nestedIndexVar, true))),
+				)}),
+				genExprStmt(genCall(genMember(genMember(id(innerVar), "updates"), "push"), id(classUpdateVar))),
+			)
+		}
+		if styleAttr != nil {
+			styleUpdateVar := "$$inner_style_update"
+			body = append(body,
+				genConst(styleUpdateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genExprStmt(genCall(genMember(genMember(elementNode, "style"), "setProperty"), strLit(styleAttr.Name), directiveValue(styleAttr, nestedItemVar, nestedIndexVar, false))),
+				)}),
+				genExprStmt(genCall(genMember(genMember(id(innerVar), "updates"), "push"), id(styleUpdateVar))),
+			)
+		}
 		body = append(body,
 			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "set"), id(innerKeyVar), id(innerVar))),
 			genAssignStmt(genMember(row, "controller"), id(innerVar)),
@@ -204,6 +245,12 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 	)
 	if attr != nil {
 		createBody = append(createBody, genExprStmt(genCall(genMember(id("$$element"), "setAttribute"), strLit(attr.Name), attrValue(nestedItemVar, nestedIndexVar))))
+	}
+	if classAttr != nil {
+		createBody = append(createBody, genExprStmt(genCall(genMember(genMember(id("$$element"), "classList"), "toggle"), strLit(classAttr.Name), directiveValue(classAttr, nestedItemVar, nestedIndexVar, true))))
+	}
+	if styleAttr != nil {
+		createBody = append(createBody, genExprStmt(genCall(genMember(genMember(id("$$element"), "style"), "setProperty"), strLit(styleAttr.Name), directiveValue(styleAttr, nestedItemVar, nestedIndexVar, false))))
 	}
 	createBody = append(createBody,
 		genConst("$$text", genCall(genMember(id("document"), "createTextNode"), textValue(nestedItemVar, nestedIndexVar))),
