@@ -11,7 +11,7 @@ type hydrationKeyedAwaitNestedTextRecipe struct {
 }
 
 // hydrationKeyedAwaitNestedControlRecipe deliberately stays separate from the
-// text-row recipe: a native input has a browser-owned live property and must
+// text-row recipe: a native control has a browser-owned live property and must
 // read that property before any later reactive writer is allowed to run.
 type hydrationKeyedAwaitNestedControlRecipe struct {
 	Block   *EachBlockNode
@@ -24,7 +24,13 @@ func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNod
 		return nil, nil, false
 	}
 	descriptor, ok := hydrationAwaitSnapshotKeyedEachDirectControlRow(block.Children, block.ItemName)
-	if !ok || descriptor.Element == nil || descriptor.Element.Tag != "input" || descriptor.Bind == nil || (descriptor.Bind.Name != "value" && descriptor.Bind.Name != "checked") {
+	if !ok || descriptor.Element == nil || descriptor.Bind == nil {
+		return nil, nil, false
+	}
+	if descriptor.Element.Tag == "textarea" && descriptor.Bind.Name == "value" {
+		return descriptor.Element, descriptor.Bind, true
+	}
+	if descriptor.Element.Tag != "input" || (descriptor.Bind.Name != "value" && descriptor.Bind.Name != "checked") {
 		return nil, nil, false
 	}
 	return descriptor.Element, descriptor.Bind, true
@@ -344,7 +350,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 }
 
 // buildHydrationKeyedAwaitNestedInputControlAdopt owns the first browser-live
-// control recipe. It accepts input bind:value or checkbox bind:checked under an outer $state.deep
+// control recipe. It accepts input/textarea bind:value or checkbox bind:checked under an outer $state.deep
 // collection. The initial attach reads the live input before registering its
 // guarded writer, so user input made after SSR paint is retained.
 func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, bind *Attr, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
