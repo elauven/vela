@@ -50,7 +50,7 @@ func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNod
 		if descriptor.OptionGroupDynamic != nil && descriptor.OptionGroupIndex >= 0 && descriptor.OptionDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 0 {
 			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, descriptor.OptionGroupDynamic, descriptor.OptionGroupIndex, nil, true
 		}
-		if descriptor.OptionList != nil && (descriptor.OptionList.Group == nil || (descriptor.OptionList.Key == nil && len(descriptor.OptionList.Fallback) == 0)) && (len(descriptor.OptionList.Fallback) == 0 || descriptor.OptionList.Key == nil) && descriptor.OptionDynamic == nil && descriptor.OptionGroupDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 1 {
+		if descriptor.OptionList != nil && (descriptor.OptionList.Group == nil || len(descriptor.OptionList.Fallback) == 0) && (len(descriptor.OptionList.Fallback) == 0 || descriptor.OptionList.Key == nil) && descriptor.OptionDynamic == nil && descriptor.OptionGroupDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 1 {
 			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, descriptor.OptionList, true
 		}
 	}
@@ -632,13 +632,19 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 		}
 		if optionList != nil {
 			listParent := JsExpr(control)
+			optionElements := JsExpr(genCall(genMember(id("Array"), "from"), genMember(control, "options")))
 			if optionList.Group != nil {
-				listParent = genCall(genMember(genCall(genMember(control, "querySelectorAll"), strLit("optgroup")), "item"), numLit(optionList.GroupIndex))
+				listParent = id("$$inner_option_parent")
+				body = append(body,
+					genConst("$$inner_option_parent", genCall(genMember(genCall(genMember(control, "querySelectorAll"), strLit("optgroup")), "item"), numLit(optionList.GroupIndex))),
+					genIf(genUnary("!", listParent), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested option-list optgroup owner"))}),
+				)
+				optionElements = genCall(genMember(id("Array"), "from"), genCall(genMember(listParent, "querySelectorAll"), strLit("option")))
 			}
 			if optionList.Key != nil {
 				body = append(body,
 					genConst("$$inner_option_items", optionListItems(nestedItemVar, nestedIndexVar)),
-					genConst("$$inner_option_elements", genCall(genMember(id("Array"), "from"), genMember(control, "options"))),
+					genConst("$$inner_option_elements", optionElements),
 					genIf(genBinary("!==", genMember(id("$$inner_option_elements"), "length"), genMember(id("$$inner_option_items"), "length")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed nested option list length differs from its server snapshot"))}),
 					genLet("$$inner_option_blocks", genNew(id("Map"))),
 					genLet("$$inner_option_index", numLit(0)),
