@@ -41,7 +41,7 @@ func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNod
 		if descriptor.OptionText != nil && descriptor.OptionTextIndex >= 0 && descriptor.OptionDynamic == nil && descriptor.OptionGroupDynamic == nil && len(descriptor.OptionLists) == 0 {
 			return descriptor.Element, descriptor.Bind, descriptor.OptionText, descriptor.OptionTextIndex, nil, -1, true
 		}
-		if descriptor.OptionDynamic != nil && descriptor.OptionDynamic.Name == "disabled" && descriptor.OptionDynamicIndex >= 0 && descriptor.OptionText == nil && descriptor.OptionGroupDynamic == nil && len(descriptor.OptionLists) == 0 {
+		if descriptor.OptionDynamic != nil && (descriptor.OptionDynamic.Name == "disabled" || descriptor.OptionDynamic.Name == "value") && descriptor.OptionDynamicIndex >= 0 && descriptor.OptionText == nil && descriptor.OptionGroupDynamic == nil && len(descriptor.OptionLists) == 0 {
 			return descriptor.Element, descriptor.Bind, nil, -1, descriptor.OptionDynamic, descriptor.OptionDynamicIndex, true
 		}
 	}
@@ -444,7 +444,14 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 		g.withTemplateBinding(outer.ItemName, outerItem, func() {
 			g.withTemplateBinding(outer.IndexName, outerIndex, func() {
 				g.withTemplateBinding(nested.ItemName, item, func() {
-					g.withTemplateBinding(nested.IndexName, index, func() { value = genBool(g.templateExpr(optionDynamic.Expr)) })
+					g.withTemplateBinding(nested.IndexName, index, func() {
+						expr := g.templateExpr(optionDynamic.Expr)
+						if optionDynamic.Name == "value" {
+							value = genString(expr)
+						} else {
+							value = genBool(expr)
+						}
+					})
 				})
 			})
 		})
@@ -482,7 +489,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 		)}, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "delete"), id("$$inner_key"))),
 		)})))
-		body = append(body,
+		controlAttach := []JsStmt{
 			genConst("$$inner_control_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 				genConst("$$inner_control_value", valueExpr(nestedItemVar, nestedIndexVar)),
 				genIf(genBinary("!==", genMember(control, spec.readProp), id("$$inner_control_value")), genAssignStmt(genMember(control, spec.readProp), id("$$inner_control_value"))),
@@ -495,7 +502,24 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 			)})),
 			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "set"), id("$$inner_key"), id("$$inner"))),
 			genAssignStmt(genMember(row, "controller"), id("$$inner")),
-		)
+		}
+		optionDynamicAttach := []JsStmt{}
+		if optionDynamic != nil {
+			optionDynamicAttach = []JsStmt{
+				genConst("$$inner_option_dynamic", genCall(genMember(genMember(control, "options"), "item"), numLit(optionDynamicIndex))),
+				genIf(id("$$inner_option_dynamic"), genBlock(
+					genConst("$$inner_option_dynamic_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+						genConst("$$inner_option_dynamic_value", optionDynamicValue(nestedItemVar, nestedIndexVar)),
+						genIf(genBinary("!==", genMember(id("$$inner_option_dynamic"), optionDynamic.Name), id("$$inner_option_dynamic_value")), genAssignStmt(genMember(id("$$inner_option_dynamic"), optionDynamic.Name), id("$$inner_option_dynamic_value"))),
+					)}),
+					genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id("$$inner_option_dynamic_update"))),
+				)),
+			}
+			if optionDynamic.Name == "value" {
+				body = append(body, optionDynamicAttach...)
+			}
+		}
+		body = append(body, controlAttach...)
 		if optionText != nil {
 			body = append(body,
 				genConst("$$inner_option", genCall(genMember(genMember(control, "options"), "item"), numLit(optionTextIndex))),
@@ -508,17 +532,8 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 				)),
 			)
 		}
-		if optionDynamic != nil {
-			body = append(body,
-				genConst("$$inner_option_dynamic", genCall(genMember(genMember(control, "options"), "item"), numLit(optionDynamicIndex))),
-				genIf(id("$$inner_option_dynamic"), genBlock(
-					genConst("$$inner_option_dynamic_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-						genConst("$$inner_option_dynamic_value", optionDynamicValue(nestedItemVar, nestedIndexVar)),
-						genIf(genBinary("!==", genMember(id("$$inner_option_dynamic"), optionDynamic.Name), id("$$inner_option_dynamic_value")), genAssignStmt(genMember(id("$$inner_option_dynamic"), optionDynamic.Name), id("$$inner_option_dynamic_value"))),
-					)}),
-					genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id("$$inner_option_dynamic_update"))),
-				)),
-			)
+		if optionDynamic != nil && optionDynamic.Name != "value" {
+			body = append(body, optionDynamicAttach...)
 		}
 		return body
 	}
