@@ -23,37 +23,41 @@ type hydrationKeyedAwaitNestedControlRecipe struct {
 	OptionDynamicIndex int
 	OptionGroupDynamic *Attr
 	OptionGroupIndex   int
+	OptionList         *hydrationKeyedEachSelectOptionListDescriptor
 }
 
-func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNode, *Attr, *TextNode, int, *Attr, int, *Attr, int, bool) {
+func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNode, *Attr, *TextNode, int, *Attr, int, *Attr, int, *hydrationKeyedEachSelectOptionListDescriptor, bool) {
 	if block == nil || !block.HasKey() {
-		return nil, nil, nil, -1, nil, -1, nil, -1, false
+		return nil, nil, nil, -1, nil, -1, nil, -1, nil, false
 	}
 	descriptor, ok := hydrationAwaitSnapshotKeyedEachDirectControlRow(block.Children, block.ItemName)
 	if !ok || descriptor.Element == nil || descriptor.Bind == nil {
-		return nil, nil, nil, -1, nil, -1, nil, -1, false
+		return nil, nil, nil, -1, nil, -1, nil, -1, nil, false
 	}
 	if descriptor.Element.Tag == "textarea" && descriptor.Bind.Name == "value" {
-		return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, true
+		return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, nil, true
 	}
 	if descriptor.Element.Tag == "select" && descriptor.Bind.Name == "value" {
 		if hydrationAwaitSnapshotKeyedEachStaticSelectOptions(descriptor.Element.Children) {
-			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, true
+			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, nil, true
 		}
 		if descriptor.OptionText != nil && descriptor.OptionTextIndex >= 0 && descriptor.OptionDynamic == nil && descriptor.OptionGroupDynamic == nil && len(descriptor.OptionLists) == 0 {
-			return descriptor.Element, descriptor.Bind, descriptor.OptionText, descriptor.OptionTextIndex, nil, -1, nil, -1, true
+			return descriptor.Element, descriptor.Bind, descriptor.OptionText, descriptor.OptionTextIndex, nil, -1, nil, -1, nil, true
 		}
 		if descriptor.OptionDynamic != nil && (descriptor.OptionDynamic.Name == "disabled" || descriptor.OptionDynamic.Name == "value") && descriptor.OptionDynamicIndex >= 0 && descriptor.OptionText == nil && descriptor.OptionGroupDynamic == nil && len(descriptor.OptionLists) == 0 {
-			return descriptor.Element, descriptor.Bind, nil, -1, descriptor.OptionDynamic, descriptor.OptionDynamicIndex, nil, -1, true
+			return descriptor.Element, descriptor.Bind, nil, -1, descriptor.OptionDynamic, descriptor.OptionDynamicIndex, nil, -1, nil, true
 		}
 		if descriptor.OptionGroupDynamic != nil && descriptor.OptionGroupIndex >= 0 && descriptor.OptionDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 0 {
-			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, descriptor.OptionGroupDynamic, descriptor.OptionGroupIndex, true
+			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, descriptor.OptionGroupDynamic, descriptor.OptionGroupIndex, nil, true
+		}
+		if descriptor.OptionList != nil && descriptor.OptionList.Kind == hydrationKeyedEachSelectOptionListReplace && descriptor.OptionList.Group == nil && len(descriptor.OptionList.Fallback) == 0 && descriptor.OptionDynamic == nil && descriptor.OptionGroupDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 1 {
+			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, descriptor.OptionList, true
 		}
 	}
 	if descriptor.Element.Tag != "input" || (descriptor.Bind.Name != "value" && descriptor.Bind.Name != "checked") {
-		return nil, nil, nil, -1, nil, -1, nil, -1, false
+		return nil, nil, nil, -1, nil, -1, nil, -1, nil, false
 	}
-	return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, true
+	return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, nil, true
 }
 
 // hydrationKeyedAwaitNestedTextRow is the first server-settled inner-row
@@ -373,7 +377,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 // control recipe. It accepts input/textarea bind:value or checkbox bind:checked under an outer $state.deep
 // collection. The initial attach reads the live input before registering its
 // guarded writer, so user input made after SSR paint is retained.
-func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, bind *Attr, optionText *TextNode, optionTextIndex int, optionDynamic *Attr, optionDynamicIndex int, optionGroupDynamic *Attr, optionGroupIndex int, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
+func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, bind *Attr, optionText *TextNode, optionTextIndex int, optionDynamic *Attr, optionDynamicIndex int, optionGroupDynamic *Attr, optionGroupIndex int, optionList *hydrationKeyedEachSelectOptionListDescriptor, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
 	if outer == nil || nested == nil || element == nil || bind == nil || bind.Expr == nil {
 		panic("vela: missing nested keyed await value-control adoption recipe")
 	}
@@ -476,6 +480,43 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 		})
 		return value
 	}
+	optionListItems := func(item, index string) JsExpr {
+		value := JsExpr(genArray())
+		if optionList == nil {
+			return value
+		}
+		g.withTemplateBinding(outer.ItemName, outerItem, func() {
+			g.withTemplateBinding(outer.IndexName, outerIndex, func() {
+				g.withTemplateBinding(nested.ItemName, item, func() {
+					g.withTemplateBinding(nested.IndexName, index, func() { value = g.templateExpr(optionList.Each.IterExpr) })
+				})
+			})
+		})
+		return value
+	}
+	optionListFragment := JsExpr(id("undefined"))
+	if optionList != nil {
+		var optionValue, optionText JsExpr
+		g.withTemplateBinding(optionList.Each.ItemName, "$$option", func() {
+			g.withTemplateBinding(optionList.Each.IndexName, "$$option_index", func() {
+				optionValue = genString(g.templateExpr(optionList.ValueAttr.Expr))
+				optionText = g.textValueExpr(optionList.Text.Parts)
+			})
+		})
+		optionListFragment = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
+			genConst("$$option_fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
+			genLet("$$option_index", numLit(0)),
+			genForOf("$$option", genLogical("||", id("$$items"), genArray()), genBlock(
+				genConst("$$option_element", genCall(genMember(id("document"), "createElement"), strLit("option"))),
+				g.setAttrStmt("$$option_element", g.scopeID, ""),
+				genAssignStmt(genMember(id("$$option_element"), "value"), optionValue),
+				genExprStmt(genCall(genMember(id("$$option_element"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
+				genExprStmt(genCall(genMember(id("$$option_fragment"), "append"), id("$$option_element"))),
+				genAssignStmt(id("$$option_index"), genBinary("+", id("$$option_index"), numLit(1))),
+			)),
+			genReturn(id("$$option_fragment")),
+		)}
+	}
 	assignValue := func(item, index string, value JsExpr) JsStmt {
 		var target JsExpr = id("undefined")
 		g.withTemplateBinding(outer.ItemName, outerItem, func() {
@@ -566,6 +607,16 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 				)),
 			)
 		}
+		if optionList != nil {
+			body = append(body,
+				genConst("$$inner_option_list_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genExprStmt(genCall(genMember(control, "replaceChildren"), genCall(optionListFragment, optionListItems(nestedItemVar, nestedIndexVar)))),
+					genConst("$$inner_option_list_selected", valueExpr(nestedItemVar, nestedIndexVar)),
+					genIf(genBinary("!==", genMember(control, spec.readProp), id("$$inner_option_list_selected")), genAssignStmt(genMember(control, spec.readProp), id("$$inner_option_list_selected"))),
+				)}),
+				genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id("$$inner_option_list_update"))),
+			)
+		}
 		return body
 	}
 	attachBody := []JsStmt{
@@ -591,7 +642,11 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 		}
 	}
 	if element.Tag == "select" && len(element.Children) > 0 {
-		createBody = append(createBody, genExprStmt(genCall(id("$$insertHTML"), id("$$control"), strLit(emitStaticHTML(element.Children, g.scopeID)))))
+		if optionList != nil {
+			createBody = append(createBody, genExprStmt(genCall(genMember(id("$$control"), "append"), genCall(optionListFragment, optionListItems(nestedItemVar, nestedIndexVar)))))
+		} else {
+			createBody = append(createBody, genExprStmt(genCall(id("$$insertHTML"), id("$$control"), strLit(emitStaticHTML(element.Children, g.scopeID)))))
+		}
 		if optionText != nil {
 			createBody = append(createBody, genConst("$$initial_option", genCall(genMember(genMember(id("$$control"), "options"), "item"), numLit(optionTextIndex))), genIf(id("$$initial_option"), genAssignStmt(genMember(id("$$initial_option"), "textContent"), optionTextValue(nestedItemVar, nestedIndexVar))))
 		}
