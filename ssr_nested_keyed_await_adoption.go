@@ -30,6 +30,9 @@ func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNod
 	if descriptor.Element.Tag == "textarea" && descriptor.Bind.Name == "value" {
 		return descriptor.Element, descriptor.Bind, true
 	}
+	if descriptor.Element.Tag == "select" && descriptor.Bind.Name == "value" && hydrationAwaitSnapshotKeyedEachStaticSelectOptions(descriptor.Element.Children) {
+		return descriptor.Element, descriptor.Bind, true
+	}
 	if descriptor.Element.Tag != "input" || (descriptor.Bind.Name != "value" && descriptor.Bind.Name != "checked") {
 		return nil, nil, false
 	}
@@ -476,6 +479,9 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 		if attr != nil && attr.Expr == nil {
 			createBody = append(createBody, g.setAttrStmt("$$control", attr.Name, attr.Value))
 		}
+	}
+	if element.Tag == "select" && len(element.Children) > 0 {
+		createBody = append(createBody, genExprStmt(genCall(id("$$insertHTML"), id("$$control"), strLit(emitStaticHTML(element.Children, g.scopeID)))))
 	}
 	createBody = append(createBody,
 		genAssignStmt(genMember(id("$$control"), spec.readProp), valueExpr(nestedItemVar, nestedIndexVar)),

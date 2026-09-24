@@ -4964,6 +4964,24 @@ func TestSSRHydrationKeyedEachAwaitNestedTextareaUsesControlRecipe(t *testing.T)
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitNestedSelectUsesControlRecipe(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let request = Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><option value="one">One</option><option value="two">Two</option></select>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"createElement('select')", "addEventListener('change'", "removeEventListener('change'", "$$insertHTML($$control, '<option"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("nested select control lowering misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationDeepMutationRefreshesOnlyNestedKeyedRows(t *testing.T) {
 	node := requirePlaywright(t)
 	sfc, err := parseSFC(`<script>let rows = $state.deep(window.__rows || []); let selected = $state("");</script><template><main>{#each rows as row (row.id)}{#await row.request}<p class="pending">Loading</p>{:then value}{#each row.fields as field (field.id)}{#if field.visible}<button class="field" :data-id={field.id} @click={() => selected = field.title}>{field.title}</button>{:else}<input class="hidden-input" bind:value={field.title} /><button class="hidden" :data-id={field.id} @click={() => selected = "hidden"}>Hidden</button>{/if}{:else}<p class="empty" :data-selected={selected}>No fields {selected}</p><button class="empty-action" @click={() => selected = "empty"}>Set empty</button>{/each}<button class="toggle" @click={() => rows[0].fields[0].visible = !rows[0].fields[0].visible}>Toggle</button><button class="shuffle" @click={() => rows[0].fields = [{id: "b", title: "B*", visible: true}, {id: "a", title: "A", visible: true}, {id: "c", title: "C", visible: true}]}>Shuffle</button><button class="remove" @click={() => rows[0].fields = [{id: "b", title: "B*", visible: true}, {id: "c", title: "C", visible: true}]}>Remove</button><button class="empty-list" @click={() => rows[0].fields = []}>Empty</button><p class="selected">{selected}</p>{/await}{/each}</main></template>`)
