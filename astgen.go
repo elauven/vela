@@ -9947,9 +9947,6 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []Node, rowName
 		return nil, false
 	}
 	if each.HasKey() {
-		if len(each.ElseChildren) != 0 {
-			return nil, false
-		}
 		keyRoot, ok := templateExprMemberBindingRoot(each.KeyAST)
 		if !ok || keyRoot != each.ItemName {
 			return nil, false

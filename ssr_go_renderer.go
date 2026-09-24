@@ -1610,9 +1610,6 @@ func ssrAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []SSRPlanNode, rowNam
 		return false
 	}
 	if each.Key != nil {
-		if len(each.ElseChildren) != 0 {
-			return false
-		}
 		keyRoot, ok := templateExprMemberBindingRoot(each.Key)
 		if !ok || keyRoot != each.ItemName {
 			return false

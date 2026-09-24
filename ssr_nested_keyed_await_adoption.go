@@ -50,7 +50,7 @@ func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNod
 		if descriptor.OptionGroupDynamic != nil && descriptor.OptionGroupIndex >= 0 && descriptor.OptionDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 0 {
 			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, descriptor.OptionGroupDynamic, descriptor.OptionGroupIndex, nil, true
 		}
-		if descriptor.OptionList != nil && (descriptor.OptionList.Group == nil || len(descriptor.OptionList.Fallback) == 0) && (len(descriptor.OptionList.Fallback) == 0 || descriptor.OptionList.Key == nil) && descriptor.OptionDynamic == nil && descriptor.OptionGroupDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 1 {
+		if descriptor.OptionList != nil && (descriptor.OptionList.Group == nil || len(descriptor.OptionList.Fallback) == 0) && descriptor.OptionDynamic == nil && descriptor.OptionGroupDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 1 {
 			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, descriptor.OptionList, true
 		}
 	}
@@ -633,6 +633,9 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 		if optionList != nil {
 			listParent := JsExpr(control)
 			optionElements := JsExpr(genCall(genMember(id("Array"), "from"), genMember(control, "options")))
+			optionItemsPresent := func(items JsExpr) JsExpr {
+				return genLogical("&&", items, genMember(items, "length"))
+			}
 			if optionList.Group != nil {
 				listParent = id("$$inner_option_parent")
 				body = append(body,
@@ -644,9 +647,11 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 			if optionList.Key != nil {
 				body = append(body,
 					genConst("$$inner_option_items", optionListItems(nestedItemVar, nestedIndexVar)),
+					genLet("$$inner_option_blocks", genNew(id("Map"))),
+				)
+				adoptKeyedOptions := []JsStmt{
 					genConst("$$inner_option_elements", optionElements),
 					genIf(genBinary("!==", genMember(id("$$inner_option_elements"), "length"), genMember(id("$$inner_option_items"), "length")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed nested option list length differs from its server snapshot"))}),
-					genLet("$$inner_option_blocks", genNew(id("Map"))),
 					genLet("$$inner_option_index", numLit(0)),
 					genForOf("$$inner_option_item", id("$$inner_option_items"), genBlock(
 						genConst("$$inner_option_key", genCall(optionListKey, id("$$inner_option_item"), id("$$inner_option_index"))),
@@ -654,13 +659,43 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 						genExprStmt(genCall(genMember(id("$$inner_option_blocks"), "set"), id("$$inner_option_key"), genComputedMember(id("$$inner_option_elements"), id("$$inner_option_index")))),
 						genAssignStmt(id("$$inner_option_index"), genBinary("+", id("$$inner_option_index"), numLit(1))),
 					)),
-				)
+				}
+				if len(optionList.Fallback) > 0 {
+					body = append(body,
+						genLet("$$inner_option_fallback", genUnary("!", optionItemsPresent(id("$$inner_option_items")))),
+						genIf(genUnary("!", id("$$inner_option_fallback")), genBlock(adoptKeyedOptions...)),
+					)
+				} else {
+					body = append(body, adoptKeyedOptions...)
+				}
 			}
 			listUpdateBody := []JsStmt{
 				genConst("$$inner_option_list_selected", valueExpr(nestedItemVar, nestedIndexVar)),
 			}
 			if optionList.Key != nil {
-				listUpdateBody = append([]JsStmt{genAssignStmt(id("$$inner_option_blocks"), genCall(id("$$reconcileHydrationKeyedElements"), listParent, id("$$inner_option_blocks"), optionListItems(nestedItemVar, nestedIndexVar), optionListKey, optionListCreate, optionListUpdate))}, listUpdateBody...)
+				optionListUpdateItems := optionListItems(nestedItemVar, nestedIndexVar)
+				if len(optionList.Fallback) > 0 {
+					listUpdateBody = append([]JsStmt{
+						genConst("$$inner_option_list_items", optionListUpdateItems),
+						genIf(genUnary("!", optionItemsPresent(id("$$inner_option_list_items"))), genBlock(
+							genIf(genUnary("!", id("$$inner_option_fallback")), genBlock(
+								genExprStmt(genCall(genMember(listParent, "replaceChildren"), genCall(optionListFragment, id("$$inner_option_list_items")))),
+								genAssignStmt(id("$$inner_option_blocks"), genNew(id("Map"))),
+								genAssignStmt(id("$$inner_option_fallback"), boolLit(true)),
+							)),
+						)),
+						genIf(optionItemsPresent(id("$$inner_option_list_items")), genBlock(
+							genIf(id("$$inner_option_fallback"), genBlock(
+								genExprStmt(genCall(genMember(listParent, "replaceChildren"))),
+								genAssignStmt(id("$$inner_option_blocks"), genNew(id("Map"))),
+								genAssignStmt(id("$$inner_option_fallback"), boolLit(false)),
+							)),
+							genAssignStmt(id("$$inner_option_blocks"), genCall(id("$$reconcileHydrationKeyedElements"), listParent, id("$$inner_option_blocks"), id("$$inner_option_list_items"), optionListKey, optionListCreate, optionListUpdate)),
+						)),
+					}, listUpdateBody...)
+				} else {
+					listUpdateBody = append([]JsStmt{genAssignStmt(id("$$inner_option_blocks"), genCall(id("$$reconcileHydrationKeyedElements"), listParent, id("$$inner_option_blocks"), optionListUpdateItems, optionListKey, optionListCreate, optionListUpdate))}, listUpdateBody...)
+				}
 			} else {
 				listUpdateBody = append([]JsStmt{genExprStmt(genCall(genMember(listParent, "replaceChildren"), genCall(optionListFragment, optionListItems(nestedItemVar, nestedIndexVar))))}, listUpdateBody...)
 			}

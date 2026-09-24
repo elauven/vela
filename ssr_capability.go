@@ -240,6 +240,24 @@ func ssrProjectedSnapshotLifecycleSpans(nodes []Node) (map[SectionSpan]bool, map
 					}
 				}
 			case *EachBlockNode:
+				if await, _, ok := ssrHydrationKeyedEachAwaitComponentRow(value); ok {
+					for _, branch := range [][]Node{await.ThenChildren, await.CatchChildren} {
+						if len(branch) != 1 {
+							continue
+						}
+						nested, ok := branch[0].(*EachBlockNode)
+						if !ok {
+							continue
+						}
+						if _, _, _, _, _, _, _, _, _, ok := hydrationKeyedAwaitNestedInputControlRow(nested); ok {
+							// This nested range is owned by the keyed-await controller,
+							// not by the context-free direct-each lowerer. Mark it after
+							// generic analysis so a typed fallback controller does not
+							// broaden ordinary keyed-each eligibility.
+							keyedEachSpans[nested.Span] = true
+						}
+					}
+				}
 				visitNodes(value.Children)
 				visitNodes(value.ElseChildren)
 			}
