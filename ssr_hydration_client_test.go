@@ -5089,6 +5089,23 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectUsesUnkeyedOptionListFallbackReci
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitNestedSelectUsesOptgroupOptionListRecipe(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let request = Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup label="Available">{#each field.options as option}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"querySelectorAll('optgroup')", "createElement('optgroup')", "$$initial_option_group", "replaceChildren"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("nested optgroup option-list lowering misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestSSRHydrationKeyedEachAwaitNestedSelectUsesKeyedOptionListRecipe(t *testing.T) {
 	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let request = Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}>{#each field.options as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</select>{/each}{/await}{/each}</main></template>`)
 	if err != nil {
@@ -5207,6 +5224,58 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedUnkeyedOptionListFallback(
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("nested option-list fallback browser output=%q", got)
+	}
+}
+
+func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedOptgroupOptionList(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>let rows=$state.deep(window.__rows);let request=window.__request;window.__velaRows=rows;</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select class="field" bind:value={field.choice}><optgroup label="Available">{#each field.options as option}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := sfc.TemplateAST.Nodes[0].(*ElementNode)
+	outer := main.Children[0].(*EachBlockNode)
+	await := outer.Children[0].(*AwaitBlockNode)
+	inner := await.ThenChildren[0].(*EachBlockNode)
+	markers := ssrHydrationMarkerIDs(plan.Nodes)
+	outerID, outerOK := markers.eachID(outer.Span)
+	innerID, innerOK := markers.eachID(inner.Span)
+	awaitID, awaitOK := markers.awaitID(await.Span)
+	if !outerOK || !innerOK || !awaitOK {
+		t.Fatal("nested optgroup option-list marker missing")
+	}
+	selectPlan := plan.Nodes[0].(*SSRPlanElement).Children[0].(*SSRPlanEach).Children[0].(*SSRPlanAwait).ThenChildren[0].(*SSRPlanEach).Children[0].(*SSRPlanElement)
+	outerScope := "vela-page--each-" + itoa(outer.Span.Start) + "-row"
+	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
+	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Available"><option value="one">One</option><option value="two" selected>Two</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"two",options:[{value:"one",label:"One"},{value:"two",label:"Two"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field");window.group=window.field.querySelector("optgroup")</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if((await p.evaluate(()=>window.initial))!==0)throw new Error("optgroup adoption mutated SSR DOM");await p.evaluate(()=>{const f=window.__velaRows[0].fields[0];f.options=[{value:"three",label:"Three"}];f.choice="three"});await p.waitForFunction(()=>document.querySelector(".field")?.value==="three"&&document.querySelector(".field optgroup option")?.text==="Three");if(!(await p.evaluate(()=>window.field===document.querySelector(".field")&&window.group===document.querySelector(".field optgroup"))))throw new Error("optgroup owner was recreated");await p.evaluate(()=>window.hydrated.component.destroy());process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("nested optgroup option-list browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("nested optgroup option-list browser output=%q", got)
 	}
 }
 

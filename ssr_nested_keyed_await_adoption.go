@@ -50,7 +50,7 @@ func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNod
 		if descriptor.OptionGroupDynamic != nil && descriptor.OptionGroupIndex >= 0 && descriptor.OptionDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 0 {
 			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, descriptor.OptionGroupDynamic, descriptor.OptionGroupIndex, nil, true
 		}
-		if descriptor.OptionList != nil && descriptor.OptionList.Group == nil && (len(descriptor.OptionList.Fallback) == 0 || descriptor.OptionList.Key == nil) && descriptor.OptionDynamic == nil && descriptor.OptionGroupDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 1 {
+		if descriptor.OptionList != nil && (descriptor.OptionList.Group == nil || (descriptor.OptionList.Key == nil && len(descriptor.OptionList.Fallback) == 0)) && (len(descriptor.OptionList.Fallback) == 0 || descriptor.OptionList.Key == nil) && descriptor.OptionDynamic == nil && descriptor.OptionGroupDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 1 {
 			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, descriptor.OptionList, true
 		}
 	}
@@ -631,6 +631,10 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 			)
 		}
 		if optionList != nil {
+			listParent := JsExpr(control)
+			if optionList.Group != nil {
+				listParent = genCall(genMember(genCall(genMember(control, "querySelectorAll"), strLit("optgroup")), "item"), numLit(optionList.GroupIndex))
+			}
 			if optionList.Key != nil {
 				body = append(body,
 					genConst("$$inner_option_items", optionListItems(nestedItemVar, nestedIndexVar)),
@@ -650,9 +654,9 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 				genConst("$$inner_option_list_selected", valueExpr(nestedItemVar, nestedIndexVar)),
 			}
 			if optionList.Key != nil {
-				listUpdateBody = append([]JsStmt{genAssignStmt(id("$$inner_option_blocks"), genCall(id("$$reconcileHydrationKeyedElements"), control, id("$$inner_option_blocks"), optionListItems(nestedItemVar, nestedIndexVar), optionListKey, optionListCreate, optionListUpdate))}, listUpdateBody...)
+				listUpdateBody = append([]JsStmt{genAssignStmt(id("$$inner_option_blocks"), genCall(id("$$reconcileHydrationKeyedElements"), listParent, id("$$inner_option_blocks"), optionListItems(nestedItemVar, nestedIndexVar), optionListKey, optionListCreate, optionListUpdate))}, listUpdateBody...)
 			} else {
-				listUpdateBody = append([]JsStmt{genExprStmt(genCall(genMember(control, "replaceChildren"), genCall(optionListFragment, optionListItems(nestedItemVar, nestedIndexVar))))}, listUpdateBody...)
+				listUpdateBody = append([]JsStmt{genExprStmt(genCall(genMember(listParent, "replaceChildren"), genCall(optionListFragment, optionListItems(nestedItemVar, nestedIndexVar))))}, listUpdateBody...)
 			}
 			body = append(body,
 				genConst("$$inner_option_list_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(append(listUpdateBody, genIf(genBinary("!==", genMember(control, spec.readProp), id("$$inner_option_list_selected")), genAssignStmt(genMember(control, spec.readProp), id("$$inner_option_list_selected"))))...)}),
@@ -685,7 +689,20 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 	}
 	if element.Tag == "select" && len(element.Children) > 0 {
 		if optionList != nil {
-			createBody = append(createBody, genExprStmt(genCall(genMember(id("$$control"), "append"), genCall(optionListFragment, optionListItems(nestedItemVar, nestedIndexVar)))))
+			if optionList.Group != nil {
+				createBody = append(createBody,
+					genConst("$$initial_option_group", genCall(genMember(id("document"), "createElement"), strLit("optgroup"))),
+					g.setAttrStmt("$$initial_option_group", g.scopeID, ""),
+				)
+				for _, attr := range optionList.Group.Attrs {
+					if attr != nil && attr.Expr == nil {
+						createBody = append(createBody, g.setAttrStmt("$$initial_option_group", attr.Name, attr.Value))
+					}
+				}
+				createBody = append(createBody, genExprStmt(genCall(genMember(id("$$initial_option_group"), "append"), genCall(optionListFragment, optionListItems(nestedItemVar, nestedIndexVar)))), genExprStmt(genCall(genMember(id("$$control"), "append"), id("$$initial_option_group"))))
+			} else {
+				createBody = append(createBody, genExprStmt(genCall(genMember(id("$$control"), "append"), genCall(optionListFragment, optionListItems(nestedItemVar, nestedIndexVar)))))
+			}
 		} else {
 			createBody = append(createBody, genExprStmt(genCall(id("$$insertHTML"), id("$$control"), strLit(emitStaticHTML(element.Children, g.scopeID)))))
 		}
