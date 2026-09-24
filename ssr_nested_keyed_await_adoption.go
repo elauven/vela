@@ -50,8 +50,8 @@ func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNod
 		if descriptor.OptionGroupDynamic != nil && descriptor.OptionGroupIndex >= 0 && descriptor.OptionDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 0 {
 			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, descriptor.OptionGroupDynamic, descriptor.OptionGroupIndex, nil, true
 		}
-		if descriptor.OptionList != nil && (descriptor.OptionList.Group == nil || descriptor.OptionList.Key != nil || len(descriptor.OptionList.Fallback) == 0) && descriptor.OptionDynamic == nil && descriptor.OptionGroupDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 1 {
-			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, descriptor.OptionList, true
+		if descriptor.OptionList != nil && (descriptor.OptionList.Group == nil || descriptor.OptionList.Key != nil || len(descriptor.OptionList.Fallback) == 0) && descriptor.OptionDynamic == nil && (descriptor.OptionGroupDynamic == nil || (descriptor.OptionList.Group != nil && descriptor.OptionList.Key != nil && len(descriptor.OptionList.Fallback) == 0)) && descriptor.OptionText == nil && len(descriptor.OptionLists) == 1 {
+			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, descriptor.OptionGroupDynamic, descriptor.OptionGroupIndex, descriptor.OptionList, true
 		}
 	}
 	if descriptor.Element.Tag != "input" || (descriptor.Bind.Name != "value" && descriptor.Bind.Name != "checked") {
@@ -754,7 +754,11 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 			createBody = append(createBody, genConst("$$initial_option_dynamic", genCall(genMember(genMember(id("$$control"), "options"), "item"), numLit(optionDynamicIndex))), genIf(id("$$initial_option_dynamic"), genAssignStmt(genMember(id("$$initial_option_dynamic"), optionDynamic.Name), optionDynamicValue(nestedItemVar, nestedIndexVar))))
 		}
 		if optionGroupDynamic != nil {
-			createBody = append(createBody, genConst("$$initial_option_group", genCall(genMember(genCall(genMember(id("$$control"), "querySelectorAll"), strLit("optgroup")), "item"), numLit(optionGroupIndex))), genIf(id("$$initial_option_group"), genAssignStmt(genMember(id("$$initial_option_group"), "label"), optionGroupValue(nestedItemVar, nestedIndexVar))))
+			initialOptionGroup := "$$initial_option_group"
+			if optionList != nil && optionList.Group != nil {
+				initialOptionGroup = "$$initial_option_group_dynamic"
+			}
+			createBody = append(createBody, genConst(initialOptionGroup, genCall(genMember(genCall(genMember(id("$$control"), "querySelectorAll"), strLit("optgroup")), "item"), numLit(optionGroupIndex))), genIf(id(initialOptionGroup), genAssignStmt(genMember(id(initialOptionGroup), "label"), optionGroupValue(nestedItemVar, nestedIndexVar))))
 		}
 	}
 	createBody = append(createBody,
