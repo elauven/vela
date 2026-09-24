@@ -50,7 +50,7 @@ func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNod
 		if descriptor.OptionGroupDynamic != nil && descriptor.OptionGroupIndex >= 0 && descriptor.OptionDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 0 {
 			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, descriptor.OptionGroupDynamic, descriptor.OptionGroupIndex, nil, true
 		}
-		if descriptor.OptionList != nil && (descriptor.OptionList.Group == nil || len(descriptor.OptionList.Fallback) == 0) && descriptor.OptionDynamic == nil && descriptor.OptionGroupDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 1 {
+		if descriptor.OptionList != nil && (descriptor.OptionList.Group == nil || descriptor.OptionList.Key != nil || len(descriptor.OptionList.Fallback) == 0) && descriptor.OptionDynamic == nil && descriptor.OptionGroupDynamic == nil && descriptor.OptionText == nil && len(descriptor.OptionLists) == 1 {
 			return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, descriptor.OptionList, true
 		}
 	}
