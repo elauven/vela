@@ -5191,6 +5191,23 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectUsesDynamicKeyedOptgroupOptionLis
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitNestedSelectUsesDynamicKeyedOptgroupOptionListFallbackRecipe(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let request = Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup :label={field.groupLabel}>{#each field.options as option (option.id)}<option :value={option.value}>{option.label}</option>{:else}<option value="">None</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"$$inner_option_group_update", "$$inner_option_fallback", "$$reconcileHydrationKeyedElements", "$$initial_option_group_dynamic", "replaceChildren"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("nested dynamic keyed optgroup option-list fallback lowering misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedUnkeyedOptionList(t *testing.T) {
 	node := requirePlaywright(t)
 	sfc, err := parseSFC(`<script>let rows = $state.deep(window.__rows); let request = window.__request; window.__velaRows = rows;</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select class="field" bind:value={field.choice}>{#each field.options as option}<option :value={option.value}>{option.label}</option>{/each}</select>{/each}{/await}{/each}</main></template>`)
@@ -5500,6 +5517,58 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedDynamicKeyedOptgroupOption
 	}
 	if got := strings.TrimSpace(string(output)); got != "OK" {
 		t.Fatalf("nested dynamic keyed optgroup option-list browser output=%q", got)
+	}
+}
+
+func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedDynamicKeyedOptgroupOptionListFallback(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>let rows=$state.deep(window.__rows);let request=window.__request;window.__velaRows=rows;</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select class="field" bind:value={field.choice}><optgroup :label={field.groupLabel}>{#each field.options as option (option.id)}<option :value={option.value}>{option.label}</option>{:else}<option value="">None</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := sfc.TemplateAST.Nodes[0].(*ElementNode)
+	outer := main.Children[0].(*EachBlockNode)
+	await := outer.Children[0].(*AwaitBlockNode)
+	inner := await.ThenChildren[0].(*EachBlockNode)
+	markers := ssrHydrationMarkerIDs(plan.Nodes)
+	outerID, outerOK := markers.eachID(outer.Span)
+	innerID, innerOK := markers.eachID(inner.Span)
+	awaitID, awaitOK := markers.awaitID(await.Span)
+	if !outerOK || !innerOK || !awaitOK {
+		t.Fatal("nested dynamic keyed optgroup option-list fallback marker is missing")
+	}
+	selectPlan := plan.Nodes[0].(*SSRPlanElement).Children[0].(*SSRPlanEach).Children[0].(*SSRPlanAwait).ThenChildren[0].(*SSRPlanEach).Children[0].(*SSRPlanElement)
+	outerScope := "vela-page--each-" + itoa(outer.Span.Start) + "-row"
+	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
+	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Available"><option value="" selected>None</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",groupLabel:"Available",choice:"",options:[]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field");window.group=window.field.querySelector("optgroup")</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if((await p.evaluate(()=>window.initial))!==0)throw new Error("dynamic keyed optgroup fallback adoption mutated SSR DOM");await p.evaluate(()=>{const f=window.__velaRows[0].fields[0];f.groupLabel="Updated";f.options=[{id:"one",value:"one",label:"One"},{id:"two",value:"two",label:"Two"}];f.choice="two"});await p.waitForFunction(()=>{const group=document.querySelector(".field optgroup");return group?.label==="Updated"&&Array.from(group.querySelectorAll("option")).map(x=>x.value+":"+x.text).join("|")==="one:One|two:Two"&&document.querySelector(".field")?.value==="two"});await p.evaluate(()=>{window.two=document.querySelector(".field optgroup").querySelectorAll("option")[1];const f=window.__velaRows[0].fields[0];f.groupLabel="Changed";f.options=[{id:"two",value:"two",label:"Two updated"},{id:"three",value:"three",label:"Three"}];f.choice="two"});await p.waitForFunction(()=>{const group=document.querySelector(".field optgroup");return group?.label==="Changed"&&Array.from(group.querySelectorAll("option")).map(x=>x.value+":"+x.text).join("|")==="two:Two updated|three:Three"});const retained=await p.evaluate(()=>{const group=document.querySelector(".field optgroup");return window.field===document.querySelector(".field")&&window.group===group&&group.querySelectorAll("option")[0]===window.two});if(!retained)throw new Error("dynamic keyed optgroup fallback transition lost owner or retained option identity");await p.evaluate(()=>{const f=window.__velaRows[0].fields[0];f.groupLabel="Empty";f.options=[];f.choice=""});await p.waitForFunction(()=>{const group=document.querySelector(".field optgroup");return group?.label==="Empty"&&group.querySelectorAll("option").length===1&&group.querySelector("option")?.text==="None"&&document.querySelector(".field")?.value===""});if(!(await p.evaluate(()=>window.field===document.querySelector(".field")&&window.group===document.querySelector(".field optgroup"))))throw new Error("dynamic keyed optgroup fallback transition recreated owner");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("nested dynamic keyed optgroup option-list fallback browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("nested dynamic keyed optgroup option-list fallback browser output=%q", got)
 	}
 }
 
