@@ -62,6 +62,9 @@ func hydrationKeyedAwaitNestedMultiSelectOptionLists(block *EachBlockNode) (*Ele
 		if list == nil || list.Kind != hydrationKeyedEachSelectOptionListKeyed || list.Group == nil || list.Key == nil || len(list.Fallback) != 0 {
 			return nil, nil, nil, false
 		}
+		if len(list.Groups) != 2 {
+			return nil, nil, nil, false
+		}
 	}
 	// Parser ownership is source ordered. Recheck it here because the lowering
 	// indexes optgroup DOM nodes by GroupIndex rather than by a broad descendant
@@ -848,4 +851,250 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 		)),
 		genConst(refreshVar, refresh), genExprStmt(genCall(genMember(genMember(id(outerState), "innerRefresh"), "push"), id(refreshVar))),
 	}
+}
+
+// buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt is the paired
+// owner variant of the single option-list control lowering above. It is kept
+// intentionally narrow: the typed recipe has already proved two static-label
+// optgroups, one keyed list per group and no fallback. That lets every list
+// retain only descendants of its own group in its own Map.
+func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, bind *Attr, optionLists []*hydrationKeyedEachSelectOptionListDescriptor, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
+	if outer == nil || nested == nil || element == nil || bind == nil || bind.Expr == nil || len(optionLists) != 2 {
+		panic("vela: missing nested keyed await multi-option control adoption recipe")
+	}
+	plan := g.hydrationLifecycleNode(SSRLifecyclePlanEach, nested.Span)
+	if plan.KeyedEach == nil || !plan.KeyedEach.DirectControlRows {
+		panic("vela: missing typed nested keyed await multi-option control lifecycle recipe")
+	}
+	markerID, ok := g.hydrationMarkers.keyedEachID(plan.KeyedEach)
+	if !ok {
+		panic("vela: missing nested keyed await multi-option control marker")
+	}
+	spec, ok := twoWayBindSpec(element.Tag, bind.Name)
+	if !ok {
+		panic("vela: missing nested keyed await multi-option binding specification")
+	}
+	for _, list := range optionLists {
+		if list == nil || list.Kind != hydrationKeyedEachSelectOptionListKeyed || list.Group == nil || list.Key == nil || len(list.Fallback) != 0 {
+			panic("vela: invalid nested keyed await multi-option control recipe")
+		}
+	}
+	g.hydrationKeyedRows = true
+	g.hydrationNestedRanges = true
+	g.hydrationKeyedElements = true
+
+	prefix := "$$hsettled" + itoa(markerID) + "_" + itoa(nested.Span.Start) + "_multi_control"
+	itemsVar, blocksVar, keyVar := prefix+"_items", prefix+"_blocks", prefix+"_key"
+	findElementVar, attachVar, createVar := prefix+"_find_element", prefix+"_attach", prefix+"_create"
+	updateVar, refreshVar, indexVar := prefix+"_update", prefix+"_refresh", prefix+"_index"
+	nestedItemVar, nestedIndexVar := prefix+"_item", prefix+"_item_index"
+
+	itemsExpr := JsExpr(genArray())
+	g.withTemplateBinding(outer.ItemName, outerItem, func() {
+		g.withTemplateBinding(outer.IndexName, outerIndex, func() { itemsExpr = g.templateExpr(nested.IterExpr) })
+	})
+	keyExpr := func(item, index string) JsExpr {
+		value := JsExpr(id("undefined"))
+		g.withTemplateBinding(nested.ItemName, item, func() {
+			g.withTemplateBinding(nested.IndexName, index, func() { value = genString(g.templateExpr(plan.KeyedEach.Key)) })
+		})
+		return value
+	}
+	valueExpr := func(item, index string) JsExpr {
+		value := JsExpr(strLit(""))
+		g.withTemplateBinding(outer.ItemName, outerItem, func() {
+			g.withTemplateBinding(outer.IndexName, outerIndex, func() {
+				g.withTemplateBinding(nested.ItemName, item, func() {
+					g.withTemplateBinding(nested.IndexName, index, func() { value = genString(g.templateExpr(bind.Expr)) })
+				})
+			})
+		})
+		return value
+	}
+	listItems := func(list *hydrationKeyedEachSelectOptionListDescriptor, item, index string) JsExpr {
+		value := JsExpr(genArray())
+		g.withTemplateBinding(outer.ItemName, outerItem, func() {
+			g.withTemplateBinding(outer.IndexName, outerIndex, func() {
+				g.withTemplateBinding(nested.ItemName, item, func() {
+					g.withTemplateBinding(nested.IndexName, index, func() { value = g.templateExpr(list.Each.IterExpr) })
+				})
+			})
+		})
+		return value
+	}
+	assignValue := func(item, index string, value JsExpr) JsStmt {
+		target := JsExpr(id("undefined"))
+		g.withTemplateBinding(outer.ItemName, outerItem, func() {
+			g.withTemplateBinding(outer.IndexName, outerIndex, func() {
+				g.withTemplateBinding(nested.ItemName, item, func() {
+					g.withTemplateBinding(nested.IndexName, index, func() { target = g.templateExpr(bind.Expr) })
+				})
+			})
+		})
+		return genAssignStmt(target, value)
+	}
+
+	fragmentVars := make([]string, 0, len(optionLists))
+	keyVars := make([]string, 0, len(optionLists))
+	createVars := make([]string, 0, len(optionLists))
+	updateVars := make([]string, 0, len(optionLists))
+	declarations := []JsStmt{}
+	for listIndex, list := range optionLists {
+		fragmentVar := prefix + "_option_fragment_" + itoa(listIndex)
+		keyVarForList := prefix + "_option_key_" + itoa(listIndex)
+		createVarForList := prefix + "_option_create_" + itoa(listIndex)
+		updateVarForList := prefix + "_option_update_" + itoa(listIndex)
+		fragmentVars = append(fragmentVars, fragmentVar)
+		keyVars = append(keyVars, keyVarForList)
+		createVars = append(createVars, createVarForList)
+		updateVars = append(updateVars, updateVarForList)
+		var optionValue, optionText, optionKey JsExpr
+		g.withTemplateBinding(list.Each.ItemName, "$$option", func() {
+			g.withTemplateBinding(list.Each.IndexName, "$$option_index", func() {
+				optionValue = genString(g.templateExpr(list.ValueAttr.Expr))
+				optionText = g.textValueExpr(list.Text.Parts)
+				optionKey = g.templateExpr(list.Key)
+			})
+		})
+		fragment := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
+			genConst("$$option_fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
+			genLet("$$option_index", numLit(0)),
+			genForOf("$$option", genLogical("||", id("$$items"), genArray()), genBlock(
+				genConst("$$option_element", genCall(genMember(id("document"), "createElement"), strLit("option"))),
+				g.setAttrStmt("$$option_element", g.scopeID, ""),
+				genAssignStmt(genMember(id("$$option_element"), "value"), optionValue),
+				genExprStmt(genCall(genMember(id("$$option_element"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
+				genExprStmt(genCall(genMember(id("$$option_fragment"), "append"), id("$$option_element"))),
+				genAssignStmt(id("$$option_index"), genBinary("+", id("$$option_index"), numLit(1))),
+			)),
+			genReturn(id("$$option_fragment")),
+		)}
+		key := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: optionKey}
+		create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: genBlock(
+			genConst("$$option_element", genCall(genMember(id("document"), "createElement"), strLit("option"))),
+			g.setAttrStmt("$$option_element", g.scopeID, ""),
+			genAssignStmt(genMember(id("$$option_element"), "value"), optionValue),
+			genExprStmt(genCall(genMember(id("$$option_element"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
+			genReturn(id("$$option_element")),
+		)}
+		update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option_element"), id("$$option"), id("$$option_index")}, Body: genBlock(
+			genIf(genBinary("!==", genMember(id("$$option_element"), "value"), optionValue), genAssignStmt(genMember(id("$$option_element"), "value"), optionValue)),
+			genIf(genBinary("!==", genMember(id("$$option_element"), "textContent"), optionText), genAssignStmt(genMember(id("$$option_element"), "textContent"), optionText)),
+		)}
+		declarations = append(declarations, genConst(fragmentVar, fragment), genConst(keyVarForList, key), genConst(createVarForList, create), genConst(updateVarForList, update))
+	}
+
+	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr("$$item", "$$index")}
+	findElement := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
+		genLet("$$node", genMember(genMember(id("$$row"), "start"), "nextSibling")),
+		&JsWhileStmt{baseStmt: baseStmt{genNode()}, Test: genLogical("&&", id("$$node"), genBinary("!==", id("$$node"), genMember(id("$$row"), "end"))), Body: genBlock(
+			genIf(genBinary("===", genMember(id("$$node"), "nodeType"), numLit(1)), genReturn(id("$$node"))),
+			genAssignStmt(id("$$node"), genMember(id("$$node"), "nextSibling")),
+		)},
+		genReturn(genNull()),
+	)}
+	controllerFor := func(row, item, index, control JsExpr, declareBindings bool) []JsStmt {
+		body := []JsStmt{genConst("$$inner_key", genCall(id(keyVar), item, index))}
+		if declareBindings {
+			body = append(body, genLet(nestedItemVar, item), genLet(nestedIndexVar, index))
+		}
+		body = append(body, genConst("$$inner", genCall(id("$$createHydrationRowController"), row, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
+			genAssignStmt(id(nestedItemVar), id("$$next_item")),
+			genAssignStmt(id(nestedIndexVar), id("$$next_index")),
+			genForOf("$$update", genMember(id("$$inner"), "updates"), genExprStmt(genCall(id("$$update")))),
+		)}, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "delete"), id("$$inner_key"))),
+		)})))
+		for listIndex, list := range optionLists {
+			ownerVar := "$$inner_option_parent_" + itoa(listIndex)
+			itemsVarForList := "$$inner_option_items_" + itoa(listIndex)
+			blocksVarForList := "$$inner_option_blocks_" + itoa(listIndex)
+			elementsVar := "$$inner_option_elements_" + itoa(listIndex)
+			updateVarForList := "$$inner_option_list_update_" + itoa(listIndex)
+			body = append(body,
+				genConst(ownerVar, genCall(genMember(genCall(genMember(control, "querySelectorAll"), strLit("optgroup")), "item"), numLit(list.GroupIndex))),
+				genIf(genUnary("!", id(ownerVar)), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested multi-option optgroup owner"))}),
+				genConst(itemsVarForList, listItems(list, nestedItemVar, nestedIndexVar)),
+				genLet(blocksVarForList, genNew(id("Map"))),
+				genConst(elementsVar, genCall(genMember(id("Array"), "from"), genCall(genMember(id(ownerVar), "querySelectorAll"), strLit("option")))),
+				genIf(genBinary("!==", genMember(id(elementsVar), "length"), genMember(id(itemsVarForList), "length")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed nested multi-option list length differs from its server snapshot"))}),
+				genLet("$$inner_option_index_"+itoa(listIndex), numLit(0)),
+				genForOf("$$inner_option_item_"+itoa(listIndex), id(itemsVarForList), genBlock(
+					genConst("$$inner_option_key_"+itoa(listIndex), genCall(id(keyVars[listIndex]), id("$$inner_option_item_"+itoa(listIndex)), id("$$inner_option_index_"+itoa(listIndex)))),
+					genIf(genCall(genMember(id(blocksVarForList), "has"), id("$$inner_option_key_"+itoa(listIndex))), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela keyed update has duplicate key in nested multi-option list"))}),
+					genExprStmt(genCall(genMember(id(blocksVarForList), "set"), id("$$inner_option_key_"+itoa(listIndex)), genComputedMember(id(elementsVar), id("$$inner_option_index_"+itoa(listIndex))))),
+					genAssignStmt(id("$$inner_option_index_"+itoa(listIndex)), genBinary("+", id("$$inner_option_index_"+itoa(listIndex)), numLit(1))),
+				)),
+				genConst(updateVarForList, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genAssignStmt(id(blocksVarForList), genCall(id("$$reconcileHydrationKeyedElements"), id(ownerVar), id(blocksVarForList), listItems(list, nestedItemVar, nestedIndexVar), id(keyVars[listIndex]), id(createVars[listIndex]), id(updateVars[listIndex]))),
+				)}),
+				genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id(updateVarForList))),
+			)
+		}
+		body = append(body,
+			genConst("$$inner_control_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				genConst("$$inner_control_value", valueExpr(nestedItemVar, nestedIndexVar)),
+				genIf(genBinary("!==", genMember(control, spec.readProp), id("$$inner_control_value")), genAssignStmt(genMember(control, spec.readProp), id("$$inner_control_value"))),
+			)}),
+			genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id("$$inner_control_update"))),
+			genConst("$$inner_control_handler", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(assignValue(nestedItemVar, nestedIndexVar, genMember(genMember(id("$event"), "target"), spec.readProp)))}),
+			genExprStmt(genCall(genMember(control, "addEventListener"), strLit(spec.event), id("$$inner_control_handler"))),
+			genExprStmt(genCall(genMember(genMember(id("$$inner"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(control, "removeEventListener"), strLit(spec.event), id("$$inner_control_handler"))))})),
+			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "set"), id("$$inner_key"), id("$$inner"))),
+			genAssignStmt(genMember(row, "controller"), id("$$inner")),
+		)
+		return body
+	}
+	attachBody := []JsStmt{genConst("$$control", genCall(id(findElementVar), id("$$row"))), genIf(genUnary("!", id("$$control")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested multi-option input"))})}
+	attachBody = append(attachBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$control"), true)...)
+	attachBody = append(attachBody, assignValue(nestedItemVar, nestedIndexVar, genMember(id("$$control"), spec.readProp)))
+	attach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(attachBody...)}
+	createBody := []JsStmt{
+		genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
+		genConst("$$start", genCall(genMember(id("document"), "createComment"), strLit("r"))),
+		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$start"))),
+		genConst("$$control", genCall(genMember(id("document"), "createElement"), strLit(element.Tag))),
+		g.setAttrStmt("$$control", g.scopeID, ""),
+		genLet(nestedItemVar, id("$$item")), genLet(nestedIndexVar, id("$$index")),
+	}
+	for _, attr := range element.Attrs {
+		if attr != nil && attr.Expr == nil {
+			createBody = append(createBody, g.setAttrStmt("$$control", attr.Name, attr.Value))
+		}
+	}
+	for listIndex, list := range optionLists {
+		groupVar := "$$initial_option_group_" + itoa(listIndex)
+		createBody = append(createBody, genConst(groupVar, genCall(genMember(id("document"), "createElement"), strLit("optgroup"))), g.setAttrStmt(groupVar, g.scopeID, ""))
+		for _, attr := range list.Group.Attrs {
+			if attr != nil && attr.Expr == nil {
+				createBody = append(createBody, g.setAttrStmt(groupVar, attr.Name, attr.Value))
+			}
+		}
+		createBody = append(createBody,
+			genExprStmt(genCall(genMember(id(groupVar), "append"), genCall(id(fragmentVars[listIndex]), listItems(list, nestedItemVar, nestedIndexVar)))),
+			genExprStmt(genCall(genMember(id("$$control"), "append"), id(groupVar))),
+		)
+	}
+	createBody = append(createBody,
+		genAssignStmt(genMember(id("$$control"), spec.readProp), valueExpr(nestedItemVar, nestedIndexVar)),
+		genExprStmt(genCall(genMember(id("$$fragment"), "appendChild"), id("$$control"))),
+		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
+		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$end"))),
+		genConst("$$row", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
+	)
+	createBody = append(createBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$control"), false)...)
+	createBody = append(createBody, genReturn(id("$$row")))
+	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
+	update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(genIf(genLogical("&&", id("$$row"), genMember(id("$$row"), "controller")), genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id("$$item"), id("$$index")))))}
+	refresh := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genConst("$$next_items", itemsExpr), genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), awaitRange, id(blocksVar), id("$$next_items"), id(keyVar), id(createVar), id(updateVar))))}
+	result := []JsStmt{genConst(findElementVar, findElement), genConst(keyVar, keyOf)}
+	result = append(result, declarations...)
+	result = append(result,
+		genConst(itemsVar, itemsExpr), genLet(blocksVar, genCall(id("$$adoptHydrationKeyedRowRanges"), awaitRange, id(itemsVar), id(keyVar), numLit(markerID))),
+		genConst(attachVar, attach), genConst(createVar, create), genConst(updateVar, update),
+		genLet(indexVar, numLit(0)),
+		genForOf("$$item", id(itemsVar), genBlock(genExprStmt(genCall(id(attachVar), genCall(genMember(id(blocksVar), "get"), genCall(id(keyVar), id("$$item"), id(indexVar))), id("$$item"), id(indexVar))), genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))))),
+		genConst(refreshVar, refresh), genExprStmt(genCall(genMember(genMember(id(outerState), "innerRefresh"), "push"), id(refreshVar))),
+	)
+	return result
 }
