@@ -731,16 +731,31 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 	if element.Tag == "select" && len(element.Children) > 0 {
 		if optionList != nil {
 			if optionList.Group != nil {
-				createBody = append(createBody,
-					genConst("$$initial_option_group", genCall(genMember(id("document"), "createElement"), strLit("optgroup"))),
-					g.setAttrStmt("$$initial_option_group", g.scopeID, ""),
-				)
-				for _, attr := range optionList.Group.Attrs {
-					if attr != nil && attr.Expr == nil {
-						createBody = append(createBody, g.setAttrStmt("$$initial_option_group", attr.Name, attr.Value))
-					}
+				groups := optionList.Groups
+				if len(groups) == 0 {
+					groups = []*ElementNode{optionList.Group}
 				}
-				createBody = append(createBody, genExprStmt(genCall(genMember(id("$$initial_option_group"), "append"), genCall(optionListFragment, optionListItems(nestedItemVar, nestedIndexVar)))), genExprStmt(genCall(genMember(id("$$control"), "append"), id("$$initial_option_group"))))
+				for groupIndex, group := range groups {
+					groupVar := "$$initial_option_group"
+					if len(groups) > 1 {
+						groupVar += "_" + itoa(groupIndex)
+					}
+					createBody = append(createBody,
+						genConst(groupVar, genCall(genMember(id("document"), "createElement"), strLit("optgroup"))),
+						g.setAttrStmt(groupVar, g.scopeID, ""),
+					)
+					for _, attr := range group.Attrs {
+						if attr != nil && attr.Expr == nil {
+							createBody = append(createBody, g.setAttrStmt(groupVar, attr.Name, attr.Value))
+						}
+					}
+					if group == optionList.Group {
+						createBody = append(createBody, genExprStmt(genCall(genMember(id(groupVar), "append"), genCall(optionListFragment, optionListItems(nestedItemVar, nestedIndexVar)))))
+					} else {
+						createBody = append(createBody, genExprStmt(genCall(id("$$insertHTML"), id(groupVar), strLit(emitStaticHTMLWithoutEvents(group.Children, g.scopeID)))))
+					}
+					createBody = append(createBody, genExprStmt(genCall(genMember(id("$$control"), "append"), id(groupVar))))
+				}
 			} else {
 				createBody = append(createBody, genExprStmt(genCall(genMember(id("$$control"), "append"), genCall(optionListFragment, optionListItems(nestedItemVar, nestedIndexVar)))))
 			}
