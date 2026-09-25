@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$reconcileHydrationKeyedRowRanges, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -244,6 +244,20 @@ assert(rowCleanupOrder.join(',') === 'second,first,after',
   'row controller must dispose listeners in reverse registration order before its finalizer');
 assert(controller.row.id === 'retained' && controller.listeners.length === 0 && controller.updates.length === 0,
   'row controller must preserve its adopted row identity while releasing callbacks');
+const moveOrder = [];
+const rangeEnd = { before(node) { moveOrder.push(node.id); } };
+const outerAStart = { id: 'a:start' }, outerAEnd = { id: 'a:end' };
+const outerBStart = { id: 'b:start' }, outerBEnd = { id: 'b:end' };
+outerAStart.nextSibling = outerAEnd; outerAEnd.nextSibling = null;
+outerBStart.nextSibling = outerBEnd; outerBEnd.nextSibling = null;
+let destroyedA = 0, destroyedB = 0;
+const outerA = { start: outerAStart, end: outerAEnd, controller: { destroy() { destroyedA++; } } };
+const outerB = { start: outerBStart, end: outerBEnd, controller: { destroy() { destroyedB++; } } };
+const reorderedOuter = $$reconcileHydrationKeyedRowRanges({ end: rangeEnd }, new Map([['a', outerA], ['b', outerB]]), [{ id: 'b' }, { id: 'a' }], item => item.id, () => { throw new Error('reorder must not create an existing outer row'); });
+assert(reorderedOuter.get('a') === outerA && reorderedOuter.get('b') === outerB && destroyedA === 0 && destroyedB === 0,
+  'outer range reorder must retain both row controllers');
+assert(moveOrder.join(',') === 'b:start,b:end,a:start,a:end',
+  'outer range reorder must move complete retained ranges in keyed order');
 keyedStart.nextSibling = rowStartA; rowStartA.nextSibling = keyedOne; keyedOne.nextSibling = rowEndA; rowEndA.nextSibling = rowStartB; rowStartB.nextSibling = keyedTwo; keyedTwo.nextSibling = rowEndB; rowEndB.nextSibling = keyedEnd;
 mismatch = undefined;
 try { $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }], item => item.id, 'li'); }
