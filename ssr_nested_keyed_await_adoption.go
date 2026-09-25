@@ -30,7 +30,9 @@ type hydrationKeyedAwaitNestedControlRecipe struct {
 	// multi-owner lowering accepts exactly two keyed lists and retains one Map
 	// per descriptor. Until that lowering is selected, this field stays empty
 	// and the existing single-owner path remains unchanged.
-	OptionLists []*hydrationKeyedEachSelectOptionListDescriptor
+	OptionLists         []*hydrationKeyedEachSelectOptionListDescriptor
+	OptionGroupDynamics []*Attr
+	OptionGroupIndices  []int
 }
 
 // hydrationKeyedAwaitNestedMultiSelectOptionLists recognizes the deliberately
@@ -41,38 +43,44 @@ type hydrationKeyedAwaitNestedControlRecipe struct {
 //	  <optgroup label="B">{#each field.b as option (option.id)}…{/each}</optgroup>
 //	</select>
 //
-// Both owners are static-label optgroups with a keyed list and no fallback.
-// Dynamic labels, fallback branches, unkeyed replacement and direct options
-// intentionally remain outside this recipe: adopting one owner's option
-// nodes into another owner's Map would silently corrupt DOM identity on a
-// later update. The capability gate must not claim support until the matching
-// per-owner controller lowering is emitted.
-func hydrationKeyedAwaitNestedMultiSelectOptionLists(block *EachBlockNode) (*ElementNode, *Attr, []*hydrationKeyedEachSelectOptionListDescriptor, bool) {
+// Each optgroup may additionally have one row-owned dynamic label. Fallback
+// branches, unkeyed replacement and direct options intentionally remain
+// outside this recipe: adopting one owner's option nodes into another owner's
+// Map would silently corrupt DOM identity on a later update.
+func hydrationKeyedAwaitNestedMultiSelectOptionLists(block *EachBlockNode) (*ElementNode, *Attr, []*hydrationKeyedEachSelectOptionListDescriptor, []*Attr, []int, bool) {
 	if block == nil || !block.HasKey() {
-		return nil, nil, nil, false
+		return nil, nil, nil, nil, nil, false
 	}
 	descriptor, ok := hydrationAwaitSnapshotKeyedEachDirectControlRow(block.Children, block.ItemName)
 	if !ok || descriptor.Element == nil || descriptor.Element.Tag != "select" || descriptor.Bind == nil || descriptor.Bind.Name != "value" {
-		return nil, nil, nil, false
+		return nil, nil, nil, nil, nil, false
 	}
-	if descriptor.OptionDynamic != nil || descriptor.OptionText != nil || descriptor.OptionGroupDynamic != nil || len(descriptor.OptionGroupDynamics) != 0 || len(descriptor.OptionLists) != 2 {
-		return nil, nil, nil, false
+	if descriptor.OptionDynamic != nil || descriptor.OptionText != nil || len(descriptor.OptionLists) != 2 || len(descriptor.OptionGroupDynamics) > len(descriptor.OptionLists) || len(descriptor.OptionGroupDynamics) != len(descriptor.OptionGroupIndices) {
+		return nil, nil, nil, nil, nil, false
 	}
 	for _, list := range descriptor.OptionLists {
 		if list == nil || list.Kind != hydrationKeyedEachSelectOptionListKeyed || list.Group == nil || list.Key == nil || len(list.Fallback) != 0 {
-			return nil, nil, nil, false
+			return nil, nil, nil, nil, nil, false
 		}
 		if len(list.Groups) != 2 {
-			return nil, nil, nil, false
+			return nil, nil, nil, nil, nil, false
 		}
 	}
 	// Parser ownership is source ordered. Recheck it here because the lowering
 	// indexes optgroup DOM nodes by GroupIndex rather than by a broad descendant
 	// selector.
 	if descriptor.OptionLists[0].GroupIndex >= descriptor.OptionLists[1].GroupIndex {
-		return nil, nil, nil, false
+		return nil, nil, nil, nil, nil, false
 	}
-	return descriptor.Element, descriptor.Bind, descriptor.OptionLists, true
+	seenGroups := map[int]bool{}
+	for index, dynamic := range descriptor.OptionGroupDynamics {
+		groupIndex := descriptor.OptionGroupIndices[index]
+		if dynamic == nil || dynamic.Name != "label" || groupIndex < 0 || groupIndex >= len(descriptor.OptionLists) || seenGroups[groupIndex] {
+			return nil, nil, nil, nil, nil, false
+		}
+		seenGroups[groupIndex] = true
+	}
+	return descriptor.Element, descriptor.Bind, descriptor.OptionLists, descriptor.OptionGroupDynamics, descriptor.OptionGroupIndices, true
 }
 
 func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNode, *Attr, *TextNode, int, *Attr, int, *Attr, int, *hydrationKeyedEachSelectOptionListDescriptor, bool) {
@@ -858,7 +866,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 // intentionally narrow: the typed recipe has already proved two static-label
 // optgroups, one keyed list per group and no fallback. That lets every list
 // retain only descendants of its own group in its own Map.
-func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, bind *Attr, optionLists []*hydrationKeyedEachSelectOptionListDescriptor, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
+func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer *EachBlockNode, nested *EachBlockNode, element *ElementNode, bind *Attr, optionLists []*hydrationKeyedEachSelectOptionListDescriptor, optionGroupDynamics []*Attr, optionGroupIndices []int, outerState, outerItem, outerIndex string, awaitRange JsExpr) []JsStmt {
 	if outer == nil || nested == nil || element == nil || bind == nil || bind.Expr == nil || len(optionLists) != 2 {
 		panic("vela: missing nested keyed await multi-option control adoption recipe")
 	}
@@ -878,6 +886,17 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 		if list == nil || list.Kind != hydrationKeyedEachSelectOptionListKeyed || list.Group == nil || list.Key == nil || len(list.Fallback) != 0 {
 			panic("vela: invalid nested keyed await multi-option control recipe")
 		}
+	}
+	if len(optionGroupDynamics) != len(optionGroupIndices) || len(optionGroupDynamics) > len(optionLists) {
+		panic("vela: invalid nested keyed await multi-option label recipe")
+	}
+	groupLabels := map[int]*Attr{}
+	for index, dynamic := range optionGroupDynamics {
+		groupIndex := optionGroupIndices[index]
+		if dynamic == nil || dynamic.Name != "label" || groupIndex < 0 || groupIndex >= len(optionLists) || groupLabels[groupIndex] != nil {
+			panic("vela: invalid nested keyed await multi-option label owner")
+		}
+		groupLabels[groupIndex] = dynamic
 	}
 	g.hydrationKeyedRows = true
 	g.hydrationNestedRanges = true
@@ -917,6 +936,17 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 			g.withTemplateBinding(outer.IndexName, outerIndex, func() {
 				g.withTemplateBinding(nested.ItemName, item, func() {
 					g.withTemplateBinding(nested.IndexName, index, func() { value = g.templateExpr(list.Each.IterExpr) })
+				})
+			})
+		})
+		return value
+	}
+	groupLabelValue := func(attr *Attr, item, index string) JsExpr {
+		value := JsExpr(strLit(""))
+		g.withTemplateBinding(outer.ItemName, outerItem, func() {
+			g.withTemplateBinding(outer.IndexName, outerIndex, func() {
+				g.withTemplateBinding(nested.ItemName, item, func() {
+					g.withTemplateBinding(nested.IndexName, index, func() { value = genString(g.templateExpr(attr.Expr)) })
 				})
 			})
 		})
@@ -1014,6 +1044,18 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 			body = append(body,
 				genConst(ownerVar, genCall(genMember(genCall(genMember(control, "querySelectorAll"), strLit("optgroup")), "item"), numLit(list.GroupIndex))),
 				genIf(genUnary("!", id(ownerVar)), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested multi-option optgroup owner"))}),
+			)
+			if label := groupLabels[list.GroupIndex]; label != nil {
+				labelUpdateVar := "$$inner_option_group_label_update_" + itoa(listIndex)
+				body = append(body,
+					genConst(labelUpdateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+						genConst("$$inner_option_group_label", groupLabelValue(label, nestedItemVar, nestedIndexVar)),
+						genIf(genBinary("!==", genCall(genMember(id(ownerVar), "getAttribute"), strLit("label")), id("$$inner_option_group_label")), genExprStmt(genCall(genMember(id(ownerVar), "setAttribute"), strLit("label"), id("$$inner_option_group_label")))),
+					)}),
+					genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id(labelUpdateVar))),
+				)
+			}
+			body = append(body,
 				genConst(itemsVarForList, listItems(list, nestedItemVar, nestedIndexVar)),
 				genLet(blocksVarForList, genNew(id("Map"))),
 				genConst(elementsVar, genCall(genMember(id("Array"), "from"), genCall(genMember(id(ownerVar), "querySelectorAll"), strLit("option")))),
@@ -1069,6 +1111,9 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 			if attr != nil && attr.Expr == nil {
 				createBody = append(createBody, g.setAttrStmt(groupVar, attr.Name, attr.Value))
 			}
+		}
+		if label := groupLabels[list.GroupIndex]; label != nil {
+			createBody = append(createBody, genAssignStmt(genMember(id(groupVar), "label"), groupLabelValue(label, nestedItemVar, nestedIndexVar)))
 		}
 		createBody = append(createBody,
 			genExprStmt(genCall(genMember(id(groupVar), "append"), genCall(id(fragmentVars[listIndex]), listItems(list, nestedItemVar, nestedIndexVar)))),

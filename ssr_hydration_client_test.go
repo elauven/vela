@@ -5166,12 +5166,15 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectRecognizesTwoOwnerRecipe(t *testi
 	outer := main.Children[0].(*EachBlockNode)
 	await := outer.Children[0].(*AwaitBlockNode)
 	nested := await.ThenChildren[0].(*EachBlockNode)
-	element, bind, lists, ok := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested)
+	element, bind, lists, labels, labelIndices, ok := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested)
 	if !ok || element == nil || bind == nil {
 		t.Fatal("two keyed optgroup owners were not recognized")
 	}
 	if bind.Name != "value" || len(lists) != 2 || lists[0].GroupIndex != 0 || lists[1].GroupIndex != 1 {
 		t.Fatalf("unexpected two-owner recipe: bind=%q lists=%#v", bind.Name, lists)
+	}
+	if len(labels) != 0 || len(labelIndices) != 0 {
+		t.Fatalf("static two-owner recipe unexpectedly has labels=%#v indices=%#v", labels, labelIndices)
 	}
 	for index, list := range lists {
 		if list.Kind != hydrationKeyedEachSelectOptionListKeyed || list.Key == nil || len(list.Fallback) != 0 {
@@ -5193,6 +5196,23 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectLowersTwoOwnerRecipe(t *testing.T
 	for _, want := range []string{"$$inner_option_parent_0", "$$inner_option_parent_1", "$$inner_option_blocks_0", "$$inner_option_blocks_1", "$$reconcileHydrationKeyedElements", "$$initial_option_group_0", "$$initial_option_group_1"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested multi-owner option-list lowering misses %q:\n%s", want, code)
+		}
+	}
+}
+
+func TestSSRHydrationKeyedEachAwaitNestedSelectLowersTwoOwnerDynamicLabels(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let request = Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup :label={field.currentLabel}>{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup :label={field.historyLabel}>{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"$$inner_option_group_label_update_0", "$$inner_option_group_label_update_1", "currentLabel", "historyLabel", "$$initial_option_group_0.label", "$$initial_option_group_1.label"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("nested multi-owner dynamic-label lowering misses %q:\n%s", want, code)
 		}
 	}
 }
@@ -5363,8 +5383,8 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectRejectsUnsafeTwoOwnerRecipe(t *te
 	outer := main.Children[0].(*EachBlockNode)
 	await := outer.Children[0].(*AwaitBlockNode)
 	nested := await.ThenChildren[0].(*EachBlockNode)
-	if _, _, _, ok := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested); ok {
-		t.Fatal("dynamic labels or fallback branches must not enter the first multi-owner recipe")
+	if _, _, _, _, _, ok := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested); ok {
+		t.Fatal("fallback branches must not enter the multi-owner recipe")
 	}
 }
 

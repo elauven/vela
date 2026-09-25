@@ -250,7 +250,7 @@ func ssrProjectedSnapshotLifecycleSpans(nodes []Node) (map[SectionSpan]bool, map
 							continue
 						}
 						_, _, _, _, _, _, _, _, _, singleControlOK := hydrationKeyedAwaitNestedInputControlRow(nested)
-						_, _, _, multiControlOK := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested)
+						_, _, _, _, _, multiControlOK := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested)
 						if singleControlOK || multiControlOK {
 							// This nested range is owned by the keyed-await controller,
 							// not by the context-free direct-each lowerer. Mark it after

@@ -5671,8 +5671,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				nestedTextRows[state] = hydrationKeyedAwaitNestedTextRecipe{Block: nested, Element: element, Part: part, Attr: attr, Class: classAttr, Style: styleAttr, Event: eventAttr}
 				continue
 			}
-			if element, bind, optionLists, multiOK := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested); outerDeepState && multiOK && plan.KeyedEach != nil && plan.KeyedEach.DirectControlRows {
-				nestedControlRows[state] = hydrationKeyedAwaitNestedControlRecipe{Block: nested, Element: element, Bind: bind, OptionLists: optionLists}
+			if element, bind, optionLists, optionGroupDynamics, optionGroupIndices, multiOK := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested); outerDeepState && multiOK && plan.KeyedEach != nil && plan.KeyedEach.DirectControlRows {
+				nestedControlRows[state] = hydrationKeyedAwaitNestedControlRecipe{Block: nested, Element: element, Bind: bind, OptionLists: optionLists, OptionGroupDynamics: optionGroupDynamics, OptionGroupIndices: optionGroupIndices}
 				continue
 			}
 			element, bind, optionText, optionTextIndex, optionDynamic, optionDynamicIndex, optionGroupDynamic, optionGroupIndex, optionList, controlOK := hydrationKeyedAwaitNestedInputControlRow(nested)
@@ -7435,7 +7435,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		} else if recipe := nestedControlRows[state]; recipe.Block != nil {
 			adopt := []JsStmt{genConst("$$await_range", genCall(id("$$findHydrationNestedRange"), genMember(id("$$state"), "row"), strLit(g.scopeID), numLit(awaitMarkerID)))}
 			if len(recipe.OptionLists) > 1 {
-				adopt = append(adopt, g.buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(block, recipe.Block, recipe.Element, recipe.Bind, recipe.OptionLists, "$$state", rowItemVar, initialOuterIndexVar, id("$$await_range"))...)
+				adopt = append(adopt, g.buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(block, recipe.Block, recipe.Element, recipe.Bind, recipe.OptionLists, recipe.OptionGroupDynamics, recipe.OptionGroupIndices, "$$state", rowItemVar, initialOuterIndexVar, id("$$await_range"))...)
 			} else {
 				adopt = append(adopt, g.buildHydrationKeyedAwaitNestedInputControlAdopt(block, recipe.Block, recipe.Element, recipe.Bind, recipe.OptionText, recipe.OptionTextIndex, recipe.OptionDynamic, recipe.OptionDynamicIndex, recipe.OptionGroupDynamic, recipe.OptionGroupIndex, recipe.OptionList, "$$state", rowItemVar, initialOuterIndexVar, id("$$await_range"))...)
 			}
