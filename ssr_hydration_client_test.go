@@ -5157,6 +5157,43 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectUsesKeyedOptgroupOptionListRecipe
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitNestedSelectRecognizesTwoOwnerRecipe(t *testing.T) {
+	nodes, err := parseTemplate(`<main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := nodes[0].(*ElementNode)
+	outer := main.Children[0].(*EachBlockNode)
+	await := outer.Children[0].(*AwaitBlockNode)
+	nested := await.ThenChildren[0].(*EachBlockNode)
+	element, bind, lists, ok := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested)
+	if !ok || element == nil || bind == nil {
+		t.Fatal("two keyed optgroup owners were not recognized")
+	}
+	if bind.Name != "value" || len(lists) != 2 || lists[0].GroupIndex != 0 || lists[1].GroupIndex != 1 {
+		t.Fatalf("unexpected two-owner recipe: bind=%q lists=%#v", bind.Name, lists)
+	}
+	for index, list := range lists {
+		if list.Kind != hydrationKeyedEachSelectOptionListKeyed || list.Key == nil || len(list.Fallback) != 0 {
+			t.Fatalf("owner %d is not a strict keyed no-fallback list: %#v", index, list)
+		}
+	}
+}
+
+func TestSSRHydrationKeyedEachAwaitNestedSelectRejectsUnsafeTwoOwnerRecipe(t *testing.T) {
+	nodes, err := parseTemplate(`<main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup :label={field.currentLabel}>{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{:else}<option value="">None</option>{/each}</optgroup></select>{/each}{/await}{/each}</main>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := nodes[0].(*ElementNode)
+	outer := main.Children[0].(*EachBlockNode)
+	await := outer.Children[0].(*AwaitBlockNode)
+	nested := await.ThenChildren[0].(*EachBlockNode)
+	if _, _, _, ok := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested); ok {
+		t.Fatal("dynamic labels or fallback branches must not enter the first multi-owner recipe")
+	}
+}
+
 func TestSSRHydrationKeyedEachAwaitNestedSelectUsesKeyedOptgroupOptionListFallbackRecipe(t *testing.T) {
 	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let request = Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup label="Available">{#each field.options as option (option.id)}<option :value={option.value}>{option.label}</option>{:else}<option value="">None</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
 	if err != nil {

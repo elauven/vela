@@ -24,6 +24,52 @@ type hydrationKeyedAwaitNestedControlRecipe struct {
 	OptionGroupDynamic *Attr
 	OptionGroupIndex   int
 	OptionList         *hydrationKeyedEachSelectOptionListDescriptor
+	// OptionLists is deliberately separate from OptionList. A select with
+	// several dynamic optgroups cannot share a single keyed-element Map:
+	// identity belongs to an option's immediate optgroup owner. The first
+	// multi-owner lowering accepts exactly two keyed lists and retains one Map
+	// per descriptor. Until that lowering is selected, this field stays empty
+	// and the existing single-owner path remains unchanged.
+	OptionLists []*hydrationKeyedEachSelectOptionListDescriptor
+}
+
+// hydrationKeyedAwaitNestedMultiSelectOptionLists recognizes the deliberately
+// narrow first multi-owner shape:
+//
+//	<select bind:value={field.choice}>
+//	  <optgroup label="A">{#each field.a as option (option.id)}…{/each}</optgroup>
+//	  <optgroup label="B">{#each field.b as option (option.id)}…{/each}</optgroup>
+//	</select>
+//
+// Both owners are static-label optgroups with a keyed list and no fallback.
+// Dynamic labels, fallback branches, unkeyed replacement and direct options
+// intentionally remain outside this recipe: adopting one owner's option
+// nodes into another owner's Map would silently corrupt DOM identity on a
+// later update. The capability gate must not claim support until the matching
+// per-owner controller lowering is emitted.
+func hydrationKeyedAwaitNestedMultiSelectOptionLists(block *EachBlockNode) (*ElementNode, *Attr, []*hydrationKeyedEachSelectOptionListDescriptor, bool) {
+	if block == nil || !block.HasKey() {
+		return nil, nil, nil, false
+	}
+	descriptor, ok := hydrationAwaitSnapshotKeyedEachDirectControlRow(block.Children, block.ItemName)
+	if !ok || descriptor.Element == nil || descriptor.Element.Tag != "select" || descriptor.Bind == nil || descriptor.Bind.Name != "value" {
+		return nil, nil, nil, false
+	}
+	if descriptor.OptionDynamic != nil || descriptor.OptionText != nil || descriptor.OptionGroupDynamic != nil || len(descriptor.OptionGroupDynamics) != 0 || len(descriptor.OptionLists) != 2 {
+		return nil, nil, nil, false
+	}
+	for _, list := range descriptor.OptionLists {
+		if list == nil || list.Kind != hydrationKeyedEachSelectOptionListKeyed || list.Group == nil || list.Key == nil || len(list.Fallback) != 0 {
+			return nil, nil, nil, false
+		}
+	}
+	// Parser ownership is source ordered. Recheck it here because the lowering
+	// indexes optgroup DOM nodes by GroupIndex rather than by a broad descendant
+	// selector.
+	if descriptor.OptionLists[0].GroupIndex >= descriptor.OptionLists[1].GroupIndex {
+		return nil, nil, nil, false
+	}
+	return descriptor.Element, descriptor.Bind, descriptor.OptionLists, true
 }
 
 func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNode, *Attr, *TextNode, int, *Attr, int, *Attr, int, *hydrationKeyedEachSelectOptionListDescriptor, bool) {
