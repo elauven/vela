@@ -5278,6 +5278,82 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedTwoOwnerOptionLists(t *tes
 	}
 }
 
+func TestBrowserSSRHydrationKeyedEachAwaitReordersTwoMultiOwnerOuterRows(t *testing.T) {
+	node := requirePlaywright(t)
+	sfc, err := parseSFC(`<script>let rows=$state.deep(window.__rows);let request=window.__request;window.__velaRows=rows;</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select class="field" bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRHydrateEntryWithClient(plan, "./Page.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := sfc.TemplateAST.Nodes[0].(*ElementNode)
+	outer := main.Children[0].(*EachBlockNode)
+	await := outer.Children[0].(*AwaitBlockNode)
+	inner := await.ThenChildren[0].(*EachBlockNode)
+	markers := ssrHydrationMarkerIDs(plan.Nodes)
+	outerID, outerOK := markers.eachID(outer.Span)
+	innerID, innerOK := markers.eachID(inner.Span)
+	awaitID, awaitOK := markers.awaitID(await.Span)
+	if !outerOK || !innerOK || !awaitOK {
+		t.Fatal("two outer-row multi-owner marker is missing")
+	}
+	selectPlan := plan.Nodes[0].(*SSRPlanElement).Children[0].(*SSRPlanEach).Children[0].(*SSRPlanAwait).ThenChildren[0].(*SSRPlanEach).Children[0].(*SSRPlanElement)
+	outerScope := func(key string) string {
+		return "vela-page--each-" + itoa(outer.Span.Start) + "-" + key
+	}
+	innerScope := func(scope string) string {
+		return scope + "--each-" + itoa(inner.Span.Start) + "-a"
+	}
+	rowHTML := func(outerScope, innerScope, current, history string) string {
+		return "<!--r:" + outerScope + ":" + itoa(outerID) + "-->" +
+			"<!--v:vela-page:" + itoa(awaitID) + "-->" +
+			"<!--v:vela-page:" + itoa(innerID) + "-->" +
+			"<!--r:" + innerScope + ":" + itoa(innerID) + "-->" +
+			"<!--e:" + innerScope + ":" + itoa(selectPlan.HydrationID) + "-->" +
+			`<select vela-page="" class="field"><optgroup label="Current">` + current + `</optgroup><optgroup label="History">` + history + `</optgroup></select>` +
+			"<!--/e:" + innerScope + ":" + itoa(selectPlan.HydrationID) + "-->" +
+			"<!--/r:" + innerScope + ":" + itoa(innerID) + "-->" +
+			"<!--/v:vela-page:" + itoa(innerID) + "-->" +
+			"<!--/v:vela-page:" + itoa(awaitID) + "-->" +
+			"<!--/r:" + outerScope + ":" + itoa(outerID) + "-->"
+	}
+	firstOuterScope := outerScope("row")
+	secondOuterScope := outerScope("second")
+	firstInnerScope := innerScope(firstOuterScope)
+	secondInnerScope := innerScope(secondOuterScope)
+	firstRow := rowHTML(firstOuterScope, firstInnerScope, `<option value="one">One</option><option value="two" selected>Two</option>`, `<option value="old">Old</option>`)
+	secondRow := rowHTML(secondOuterScope, secondInnerScope, `<option value="three">Three</option><option value="four" selected>Four</option>`, `<option value="past">Past</option>`)
+	payload := `{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + firstOuterScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"},"` + secondOuterScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}`
+	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `-->` + firstRow + secondRow + `<!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">` + payload + `</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"two",current:[{id:"one",value:"one",label:"One"},{id:"two",value:"two",label:"Two"}],history:[{id:"old",value:"old",label:"Old"}]}]},{id:"second",fields:[{id:"a",choice:"four",current:[{id:"three",value:"three",label:"Three"},{id:"four",value:"four",label:"Four"}],history:[{id:"past",value:"past",label:"Past"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const browser = `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;try{b=await chromium.launch({headless:true});const p=await b.newPage();p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if((await p.evaluate(()=>window.initial))!==0)throw new Error("two outer-row adoption mutated SSR DOM");await p.evaluate(()=>{const fields=document.querySelectorAll(".field"),first=fields[0],second=fields[1],fg=first.querySelectorAll("optgroup"),sg=second.querySelectorAll("optgroup");window.__velaMultiOuter={first,second,firstCurrent:fg[0],firstHistory:fg[1],firstTwo:fg[0].querySelectorAll("option")[1],secondCurrent:sg[0],secondHistory:sg[1],secondFour:sg[0].querySelectorAll("option")[1]};window.__velaRows.reverse()});await p.waitForFunction(()=>{const fields=document.querySelectorAll(".field"),s=window.__velaMultiOuter;if(fields.length!==2||fields[0]!==s.second||fields[1]!==s.first)return false;const secondGroups=fields[0].querySelectorAll("optgroup"),firstGroups=fields[1].querySelectorAll("optgroup");return secondGroups[0]===s.secondCurrent&&secondGroups[1]===s.secondHistory&&secondGroups[0].querySelectorAll("option")[1]===s.secondFour&&firstGroups[0]===s.firstCurrent&&firstGroups[1]===s.firstHistory&&firstGroups[0].querySelectorAll("option")[1]===s.firstTwo&&fields[0].value==="four"&&fields[1].value==="two"});await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("two outer-row multi-owner reorder browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(client, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("two outer-row multi-owner reorder browser output=%q", got)
+	}
+}
+
 func TestSSRHydrationKeyedEachAwaitNestedSelectRejectsUnsafeTwoOwnerRecipe(t *testing.T) {
 	nodes, err := parseTemplate(`<main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup :label={field.currentLabel}>{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{:else}<option value="">None</option>{/each}</optgroup></select>{/each}{/await}{/each}</main>`)
 	if err != nil {
