@@ -5197,6 +5197,27 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectLowersTwoOwnerRecipe(t *testing.T
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitNestedSelectKeepsOwnerMapsInsideOuterReorder(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let request = Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	outerReconcile := strings.Index(code, "$$reconcileHydrationKeyedRowRanges")
+	ownerZero := strings.Index(code, "$$inner_option_blocks_0")
+	ownerOne := strings.Index(code, "$$inner_option_blocks_1")
+	if outerReconcile < 0 || ownerZero < 0 || ownerOne < 0 || ownerZero == ownerOne {
+		t.Fatalf("outer reorder contract misses isolated owner maps:\n%s", code)
+	}
+	if !strings.Contains(code, "$$state.innerRows.set($$inner_key, $$inner)") || !strings.Contains(code, "$$row.controller = $$inner") {
+		t.Fatalf("outer reorder contract does not retain nested controller ownership:\n%s", code)
+	}
+}
+
 func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedTwoOwnerOptionLists(t *testing.T) {
 	node := requirePlaywright(t)
 	sfc, err := parseSFC(`<script>let rows=$state.deep(window.__rows);let request=window.__request;window.__velaRows=rows;</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select class="field" bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
