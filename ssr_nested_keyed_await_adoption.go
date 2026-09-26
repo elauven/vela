@@ -978,40 +978,61 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 		keyVars = append(keyVars, keyVarForList)
 		createVars = append(createVars, createVarForList)
 		updateVars = append(updateVars, updateVarForList)
-		var optionValue, optionText, optionKey JsExpr
+		var optionValue, optionText, optionKey, optionDisabled JsExpr
 		g.withTemplateBinding(list.Each.ItemName, "$$option", func() {
 			g.withTemplateBinding(list.Each.IndexName, "$$option_index", func() {
 				optionValue = genString(g.templateExpr(list.ValueAttr.Expr))
+				if list.Disabled != nil {
+					optionDisabled = genBool(g.templateExpr(list.Disabled.Expr))
+				}
 				optionText = g.textValueExpr(list.Text.Parts)
 				optionKey = g.templateExpr(list.Key)
 			})
 		})
+		fragmentLoopBody := []JsStmt{
+			genConst("$$option_element", genCall(genMember(id("document"), "createElement"), strLit("option"))),
+			g.setAttrStmt("$$option_element", g.scopeID, ""),
+			genAssignStmt(genMember(id("$$option_element"), "value"), optionValue),
+		}
+		if list.Disabled != nil {
+			fragmentLoopBody = append(fragmentLoopBody, genAssignStmt(genMember(id("$$option_element"), "disabled"), optionDisabled))
+		}
+		fragmentLoopBody = append(fragmentLoopBody,
+			genExprStmt(genCall(genMember(id("$$option_element"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
+			genExprStmt(genCall(genMember(id("$$option_fragment"), "append"), id("$$option_element"))),
+			genAssignStmt(id("$$option_index"), genBinary("+", id("$$option_index"), numLit(1))),
+		)
 		fragment := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
 			genConst("$$option_fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
 			genLet("$$option_index", numLit(0)),
-			genForOf("$$option", genLogical("||", id("$$items"), genArray()), genBlock(
-				genConst("$$option_element", genCall(genMember(id("document"), "createElement"), strLit("option"))),
-				g.setAttrStmt("$$option_element", g.scopeID, ""),
-				genAssignStmt(genMember(id("$$option_element"), "value"), optionValue),
-				genExprStmt(genCall(genMember(id("$$option_element"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
-				genExprStmt(genCall(genMember(id("$$option_fragment"), "append"), id("$$option_element"))),
-				genAssignStmt(id("$$option_index"), genBinary("+", id("$$option_index"), numLit(1))),
-			)),
+			genForOf("$$option", genLogical("||", id("$$items"), genArray()), genBlock(fragmentLoopBody...)),
 			genIf(genUnary("!", genLogical("&&", id("$$items"), genMember(id("$$items"), "length"))), genExprStmt(genCall(id("$$insertHTML"), id("$$option_fragment"), strLit(emitStaticHTMLWithoutEvents(list.Fallback, g.scopeID))))),
 			genReturn(id("$$option_fragment")),
 		)}
 		key := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: optionKey}
-		create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: genBlock(
+		createBody := []JsStmt{
 			genConst("$$option_element", genCall(genMember(id("document"), "createElement"), strLit("option"))),
 			g.setAttrStmt("$$option_element", g.scopeID, ""),
 			genAssignStmt(genMember(id("$$option_element"), "value"), optionValue),
+		}
+		if list.Disabled != nil {
+			createBody = append(createBody, genAssignStmt(genMember(id("$$option_element"), "disabled"), optionDisabled))
+		}
+		createBody = append(createBody,
 			genExprStmt(genCall(genMember(id("$$option_element"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
 			genReturn(id("$$option_element")),
-		)}
-		update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option_element"), id("$$option"), id("$$option_index")}, Body: genBlock(
+		)
+		create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: genBlock(createBody...)}
+		updateBody := []JsStmt{
 			genIf(genBinary("!==", genMember(id("$$option_element"), "value"), optionValue), genAssignStmt(genMember(id("$$option_element"), "value"), optionValue)),
+		}
+		if list.Disabled != nil {
+			updateBody = append(updateBody, genIf(genBinary("!==", genMember(id("$$option_element"), "disabled"), optionDisabled), genAssignStmt(genMember(id("$$option_element"), "disabled"), optionDisabled)))
+		}
+		updateBody = append(updateBody,
 			genIf(genBinary("!==", genMember(id("$$option_element"), "textContent"), optionText), genAssignStmt(genMember(id("$$option_element"), "textContent"), optionText)),
-		)}
+		)
+		update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option_element"), id("$$option"), id("$$option_index")}, Body: genBlock(updateBody...)}
 		declarations = append(declarations, genConst(fragmentVar, fragment), genConst(keyVarForList, key), genConst(createVarForList, create), genConst(updateVarForList, update))
 	}
 

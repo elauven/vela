@@ -9339,6 +9339,7 @@ type hydrationKeyedEachSelectOptionListDescriptor struct {
 	Fallback   []Node
 	Option     *ElementNode
 	ValueAttr  *Attr
+	Disabled   *Attr
 	Text       *TextNode
 	Key        *TemplateExpr
 	Group      *ElementNode
@@ -9925,15 +9926,34 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []Node, rowName
 		return nil, false
 	}
 	option, ok := each.Children[0].(*ElementNode)
-	if !ok || option == nil || option.Tag != "option" || len(option.Attrs) != 1 || len(option.Children) != 1 {
+	if !ok || option == nil || option.Tag != "option" || len(option.Children) != 1 {
 		return nil, false
 	}
-	value := option.Attrs[0]
-	if value == nil || !value.IsBind || value.IsTwoWay || value.Name != "value" {
-		return nil, false
+	var value, disabled *Attr
+	for _, attr := range option.Attrs {
+		if attr == nil || !attr.IsBind || attr.IsTwoWay {
+			return nil, false
+		}
+		root, ok := templateExprMemberBindingRoot(attr.Expr)
+		if !ok || root != each.ItemName {
+			return nil, false
+		}
+		switch attr.Name {
+		case "value":
+			if value != nil {
+				return nil, false
+			}
+			value = attr
+		case "disabled":
+			if disabled != nil {
+				return nil, false
+			}
+			disabled = attr
+		default:
+			return nil, false
+		}
 	}
-	valueRoot, ok := templateExprMemberBindingRoot(value.Expr)
-	if !ok || valueRoot != each.ItemName {
+	if value == nil {
 		return nil, false
 	}
 	text, ok := option.Children[0].(*TextNode)
@@ -9967,7 +9987,7 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []Node, rowName
 	if len(each.ElseChildren) != 0 && !hydrationAwaitSnapshotStaticOptionListFallback(each.ElseChildren) {
 		return nil, false
 	}
-	return &hydrationKeyedEachSelectOptionListDescriptor{Kind: kind, Each: each, Fallback: each.ElseChildren, Option: option, ValueAttr: value, Text: text, Key: each.KeyAST, GroupIndex: -1}, true
+	return &hydrationKeyedEachSelectOptionListDescriptor{Kind: kind, Each: each, Fallback: each.ElseChildren, Option: option, ValueAttr: value, Disabled: disabled, Text: text, Key: each.KeyAST, GroupIndex: -1}, true
 }
 
 func hydrationAwaitSnapshotStaticOptionListFallback(nodes []Node) bool {

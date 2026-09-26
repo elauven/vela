@@ -5217,6 +5217,26 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectLowersTwoOwnerDynamicLabels(t *te
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitNestedSelectLowersTwoOwnerOptionDisabled(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows=$state.deep([]);let request=Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value} :disabled={option.disabled}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value} :disabled={option.disabled}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"$$option_element.disabled", "option.disabled", "$$reconcileHydrationKeyedElements"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("nested multi-owner option disabled lowering misses %q:\n%s", want, code)
+		}
+	}
+	if strings.Count(code, "$$option_element.disabled") < 3 {
+		t.Fatalf("nested multi-owner option disabled lowering must cover fragment, create and update:\n%s", code)
+	}
+}
+
 func TestSSRHydrationKeyedEachAwaitNestedSelectKeepsOwnerMapsInsideOuterReorder(t *testing.T) {
 	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let request = Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
 	if err != nil {
