@@ -978,12 +978,15 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 		keyVars = append(keyVars, keyVarForList)
 		createVars = append(createVars, createVarForList)
 		updateVars = append(updateVars, updateVarForList)
-		var optionValue, optionText, optionKey, optionDisabled JsExpr
+		var optionValue, optionText, optionKey, optionDisabled, optionTitle JsExpr
 		g.withTemplateBinding(list.Each.ItemName, "$$option", func() {
 			g.withTemplateBinding(list.Each.IndexName, "$$option_index", func() {
 				optionValue = genString(g.templateExpr(list.ValueAttr.Expr))
 				if list.Disabled != nil {
 					optionDisabled = genBool(g.templateExpr(list.Disabled.Expr))
+				}
+				if list.Title != nil {
+					optionTitle = genString(g.templateExpr(list.Title.Expr))
 				}
 				optionText = g.textValueExpr(list.Text.Parts)
 				optionKey = g.templateExpr(list.Key)
@@ -996,6 +999,9 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 		}
 		if list.Disabled != nil {
 			fragmentLoopBody = append(fragmentLoopBody, genAssignStmt(genMember(id("$$option_element"), "disabled"), optionDisabled))
+		}
+		if list.Title != nil {
+			fragmentLoopBody = append(fragmentLoopBody, genExprStmt(genCall(genMember(id("$$option_element"), "setAttribute"), strLit("title"), optionTitle)))
 		}
 		fragmentLoopBody = append(fragmentLoopBody,
 			genExprStmt(genCall(genMember(id("$$option_element"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
@@ -1018,6 +1024,9 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 		if list.Disabled != nil {
 			createBody = append(createBody, genAssignStmt(genMember(id("$$option_element"), "disabled"), optionDisabled))
 		}
+		if list.Title != nil {
+			createBody = append(createBody, genExprStmt(genCall(genMember(id("$$option_element"), "setAttribute"), strLit("title"), optionTitle)))
+		}
 		createBody = append(createBody,
 			genExprStmt(genCall(genMember(id("$$option_element"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
 			genReturn(id("$$option_element")),
@@ -1028,6 +1037,9 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 		}
 		if list.Disabled != nil {
 			updateBody = append(updateBody, genIf(genBinary("!==", genMember(id("$$option_element"), "disabled"), optionDisabled), genAssignStmt(genMember(id("$$option_element"), "disabled"), optionDisabled)))
+		}
+		if list.Title != nil {
+			updateBody = append(updateBody, genIf(genBinary("!==", genCall(genMember(id("$$option_element"), "getAttribute"), strLit("title")), optionTitle), genExprStmt(genCall(genMember(id("$$option_element"), "setAttribute"), strLit("title"), optionTitle))))
 		}
 		updateBody = append(updateBody,
 			genIf(genBinary("!==", genMember(id("$$option_element"), "textContent"), optionText), genAssignStmt(genMember(id("$$option_element"), "textContent"), optionText)),

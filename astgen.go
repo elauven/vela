@@ -9340,6 +9340,7 @@ type hydrationKeyedEachSelectOptionListDescriptor struct {
 	Option     *ElementNode
 	ValueAttr  *Attr
 	Disabled   *Attr
+	Title      *Attr
 	Text       *TextNode
 	Key        *TemplateExpr
 	Group      *ElementNode
@@ -9929,7 +9930,7 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []Node, rowName
 	if !ok || option == nil || option.Tag != "option" || len(option.Children) != 1 {
 		return nil, false
 	}
-	var value, disabled *Attr
+	var value, disabled, title *Attr
 	for _, attr := range option.Attrs {
 		if attr == nil || !attr.IsBind || attr.IsTwoWay {
 			return nil, false
@@ -9949,6 +9950,11 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []Node, rowName
 				return nil, false
 			}
 			disabled = attr
+		case "title":
+			if title != nil {
+				return nil, false
+			}
+			title = attr
 		default:
 			return nil, false
 		}
@@ -9987,7 +9993,7 @@ func hydrationAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []Node, rowName
 	if len(each.ElseChildren) != 0 && !hydrationAwaitSnapshotStaticOptionListFallback(each.ElseChildren) {
 		return nil, false
 	}
-	return &hydrationKeyedEachSelectOptionListDescriptor{Kind: kind, Each: each, Fallback: each.ElseChildren, Option: option, ValueAttr: value, Disabled: disabled, Text: text, Key: each.KeyAST, GroupIndex: -1}, true
+	return &hydrationKeyedEachSelectOptionListDescriptor{Kind: kind, Each: each, Fallback: each.ElseChildren, Option: option, ValueAttr: value, Disabled: disabled, Title: title, Text: text, Key: each.KeyAST, GroupIndex: -1}, true
 }
 
 func hydrationAwaitSnapshotStaticOptionListFallback(nodes []Node) bool {

@@ -5237,6 +5237,23 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectLowersTwoOwnerOptionDisabled(t *t
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitNestedSelectLowersTwoOwnerOptionTitle(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows=$state.deep([]);let request=Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value} :title={option.title}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value} :title={option.title}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"getAttribute('title')", "setAttribute('title'", "option.title", "$$reconcileHydrationKeyedElements"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("nested multi-owner option title lowering misses %q:\n%s", want, code)
+		}
+	}
+}
+
 func TestSSRHydrationKeyedEachAwaitNestedSelectKeepsOwnerMapsInsideOuterReorder(t *testing.T) {
 	sfc, err := parseSFC(`<script>let rows = $state.deep([]); let request = Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
 	if err != nil {
