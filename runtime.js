@@ -75,6 +75,40 @@ function _batchRun(fn) {
 }
 
 // ─────────────────────────────────────────────
+// Select multiple bindings
+//
+// A multi-select is intentionally modelled as an array of strings. Its DOM
+// semantics are membership-based: duplicate values in the model do not create
+// duplicate selections, while duplicate option values (if authored) receive
+// the same membership. Reading preserves DOM order, which gives application
+// code a stable snapshot after a user-driven change.
+//
+// $$writeSelectValues is guarded at the per-option property level. That makes
+// it safe for hydration and for owner-local keyed option reconciliation: a
+// retained option is not touched unless its selected state actually changes.
+
+export function $$readSelectValues(select) {
+  const values = [];
+  for (const option of select.options) {
+    if (option.selected) values.push(String(option.value));
+  }
+  return values;
+}
+
+export function $$writeSelectValues(select, values) {
+  const selected = new Set(Array.isArray(values) ? values.map(String) : []);
+  let changed = false;
+  for (const option of select.options) {
+    const next = selected.has(String(option.value));
+    if (option.selected !== next) {
+      option.selected = next;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+// ─────────────────────────────────────────────
 //  Stores
 //
 // Store ownership is centralised here: subscriptions are synchronous,

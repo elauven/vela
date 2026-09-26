@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$reconcileHydrationKeyedRowRanges, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$reconcileHydrationKeyedRowRanges, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, $$readSelectValues, $$writeSelectValues, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -161,6 +161,39 @@ beforeDeepMutation = deepNotifications;
 deep.nested.items.splice(0, 0, 'zero');
 assert(deepNotifications === beforeDeepMutation + 1,
   'one Array#splice must notify once, not once per Proxy trap');
+
+const selectedWrites = [];
+const select = {
+  options: [
+    { value: 'one', selected: true },
+    { value: 2, selected: false },
+    { value: 'one', selected: true },
+  ],
+};
+for (const option of select.options) {
+  let selected = option.selected;
+  Object.defineProperty(option, 'selected', {
+    get() { return selected; },
+    set(value) { selectedWrites.push([option.value, value]); selected = value; },
+    enumerable: true,
+  });
+}
+assert($$readSelectValues(select).join(',') === 'one,one',
+  'multi-select reads selected values in DOM order');
+assert(!$$writeSelectValues(select, ['one', 'one']),
+  'multi-select writer must skip every native write for an equal selected set');
+assert(selectedWrites.length === 0,
+  'multi-select equal-set write must not touch option.selected');
+assert($$writeSelectValues(select, [2]),
+  'multi-select writer reports a changed selected set');
+assert(selectedWrites.map(write => write.join(':')).join(',') === 'one:false,2:true,one:false',
+  'multi-select writer updates only options whose membership changed');
+assert($$readSelectValues(select).join(',') === '2',
+  'multi-select writer normalizes model values to strings');
+assert($$writeSelectValues(select, undefined),
+  'multi-select writer treats a missing model as an empty selected set');
+assert(selectedWrites.map(write => write.join(':')).join(',') === 'one:false,2:true,one:false,2:false',
+  'multi-select missing-model write clears only the selected option');
 
 function marker(data) { return { data }; }
 function markerRoot(markers, payloads = {}) {
