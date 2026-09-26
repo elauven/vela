@@ -59,7 +59,7 @@ func hydrationKeyedAwaitNestedMultiSelectOptionLists(block *EachBlockNode) (*Ele
 		return nil, nil, nil, nil, nil, false
 	}
 	for _, list := range descriptor.OptionLists {
-		if list == nil || list.Kind != hydrationKeyedEachSelectOptionListKeyed || list.Group == nil || list.Key == nil || len(list.Fallback) != 0 {
+		if list == nil || list.Kind != hydrationKeyedEachSelectOptionListKeyed || list.Group == nil || list.Key == nil {
 			return nil, nil, nil, nil, nil, false
 		}
 		if len(list.Groups) != 2 {
@@ -883,7 +883,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 		panic("vela: missing nested keyed await multi-option binding specification")
 	}
 	for _, list := range optionLists {
-		if list == nil || list.Kind != hydrationKeyedEachSelectOptionListKeyed || list.Group == nil || list.Key == nil || len(list.Fallback) != 0 {
+		if list == nil || list.Kind != hydrationKeyedEachSelectOptionListKeyed || list.Group == nil || list.Key == nil {
 			panic("vela: invalid nested keyed await multi-option control recipe")
 		}
 	}
@@ -997,6 +997,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 				genExprStmt(genCall(genMember(id("$$option_fragment"), "append"), id("$$option_element"))),
 				genAssignStmt(id("$$option_index"), genBinary("+", id("$$option_index"), numLit(1))),
 			)),
+			genIf(genUnary("!", genLogical("&&", id("$$items"), genMember(id("$$items"), "length"))), genExprStmt(genCall(id("$$insertHTML"), id("$$option_fragment"), strLit(emitStaticHTMLWithoutEvents(list.Fallback, g.scopeID))))),
 			genReturn(id("$$option_fragment")),
 		)}
 		key := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: optionKey}
@@ -1055,9 +1056,9 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 					genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id(labelUpdateVar))),
 				)
 			}
-			body = append(body,
-				genConst(itemsVarForList, listItems(list, nestedItemVar, nestedIndexVar)),
-				genLet(blocksVarForList, genNew(id("Map"))),
+			fallbackVarForList := "$$inner_option_fallback_" + itoa(listIndex)
+			body = append(body, genConst(itemsVarForList, listItems(list, nestedItemVar, nestedIndexVar)), genLet(blocksVarForList, genNew(id("Map"))))
+			adoptItems := []JsStmt{
 				genConst(elementsVar, genCall(genMember(id("Array"), "from"), genCall(genMember(id(ownerVar), "querySelectorAll"), strLit("option")))),
 				genIf(genBinary("!==", genMember(id(elementsVar), "length"), genMember(id(itemsVarForList), "length")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed nested multi-option list length differs from its server snapshot"))}),
 				genLet("$$inner_option_index_"+itoa(listIndex), numLit(0)),
@@ -1067,11 +1068,23 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 					genExprStmt(genCall(genMember(id(blocksVarForList), "set"), id("$$inner_option_key_"+itoa(listIndex)), genComputedMember(id(elementsVar), id("$$inner_option_index_"+itoa(listIndex))))),
 					genAssignStmt(id("$$inner_option_index_"+itoa(listIndex)), genBinary("+", id("$$inner_option_index_"+itoa(listIndex)), numLit(1))),
 				)),
-				genConst(updateVarForList, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-					genAssignStmt(id(blocksVarForList), genCall(id("$$reconcileHydrationKeyedElements"), id(ownerVar), id(blocksVarForList), listItems(list, nestedItemVar, nestedIndexVar), id(keyVars[listIndex]), id(createVars[listIndex]), id(updateVars[listIndex]))),
-				)}),
-				genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id(updateVarForList))),
-			)
+			}
+			if len(list.Fallback) > 0 {
+				body = append(body, genLet(fallbackVarForList, genUnary("!", genLogical("&&", id(itemsVarForList), genMember(id(itemsVarForList), "length")))), genIf(genUnary("!", id(fallbackVarForList)), genBlock(adoptItems...)))
+			} else {
+				body = append(body, adoptItems...)
+			}
+			updateItemsVar := "$$inner_option_next_items_" + itoa(listIndex)
+			updateBody := []JsStmt{genConst(updateItemsVar, listItems(list, nestedItemVar, nestedIndexVar))}
+			if len(list.Fallback) > 0 {
+				updateBody = append(updateBody,
+					genIf(genUnary("!", genLogical("&&", id(updateItemsVar), genMember(id(updateItemsVar), "length"))), genIf(genUnary("!", id(fallbackVarForList)), genBlock(genExprStmt(genCall(genMember(id(ownerVar), "replaceChildren"), genCall(id(fragmentVars[listIndex]), id(updateItemsVar)))), genAssignStmt(id(blocksVarForList), genNew(id("Map"))), genAssignStmt(id(fallbackVarForList), boolLit(true))))),
+					genIf(genLogical("&&", id(updateItemsVar), genMember(id(updateItemsVar), "length")), genBlock(genIf(id(fallbackVarForList), genBlock(genExprStmt(genCall(genMember(id(ownerVar), "replaceChildren"))), genAssignStmt(id(blocksVarForList), genNew(id("Map"))), genAssignStmt(id(fallbackVarForList), boolLit(false)))), genAssignStmt(id(blocksVarForList), genCall(id("$$reconcileHydrationKeyedElements"), id(ownerVar), id(blocksVarForList), id(updateItemsVar), id(keyVars[listIndex]), id(createVars[listIndex]), id(updateVars[listIndex]))))),
+				)
+			} else {
+				updateBody = append(updateBody, genAssignStmt(id(blocksVarForList), genCall(id("$$reconcileHydrationKeyedElements"), id(ownerVar), id(blocksVarForList), id(updateItemsVar), id(keyVars[listIndex]), id(createVars[listIndex]), id(updateVars[listIndex]))))
+			}
+			body = append(body, genConst(updateVarForList, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updateBody...)}), genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id(updateVarForList))))
 		}
 		body = append(body,
 			genConst("$$inner_control_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(

@@ -5426,7 +5426,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitReordersTwoMultiOwnerOuterRows(t *test
 	}
 }
 
-func TestSSRHydrationKeyedEachAwaitNestedSelectRejectsUnsafeTwoOwnerRecipe(t *testing.T) {
+func TestSSRHydrationKeyedEachAwaitNestedSelectRecognizesTwoOwnerFallbackRecipe(t *testing.T) {
 	nodes, err := parseTemplate(`<main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup :label={field.currentLabel}>{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{:else}<option value="">None</option>{/each}</optgroup></select>{/each}{/await}{/each}</main>`)
 	if err != nil {
 		t.Fatal(err)
@@ -5435,8 +5435,26 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectRejectsUnsafeTwoOwnerRecipe(t *te
 	outer := main.Children[0].(*EachBlockNode)
 	await := outer.Children[0].(*AwaitBlockNode)
 	nested := await.ThenChildren[0].(*EachBlockNode)
-	if _, _, _, _, _, ok := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested); ok {
-		t.Fatal("fallback branches must not enter the multi-owner recipe")
+	_, _, lists, _, _, ok := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested)
+	if !ok || len(lists) != 2 || len(lists[1].Fallback) == 0 {
+		t.Fatalf("two-owner static fallback recipe was not recognized: lists=%#v", lists)
+	}
+}
+
+func TestSSRHydrationKeyedEachAwaitNestedSelectLowersTwoOwnerFallbackRecipe(t *testing.T) {
+	sfc, err := parseSFC(`<script>let rows=$state.deep([]);let request=Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{:else}<option value="">No current</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{:else}<option value="">No history</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"$$inner_option_fallback_0", "$$inner_option_fallback_1", "replaceChildren", "No current", "No history"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("nested multi-owner fallback lowering misses %q:\n%s", want, code)
+		}
 	}
 }
 
