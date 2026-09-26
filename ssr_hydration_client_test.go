@@ -5593,6 +5593,20 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectRecognizesTwoOwnerFallbackRecipe(
 	}
 }
 
+func TestSSRHydrationKeyedEachAwaitNestedSelectRejectsMultipleUntilArrayContractExists(t *testing.T) {
+	nodes, err := parseTemplate(`<main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select multiple bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := nodes[0].(*ElementNode)
+	outer := main.Children[0].(*EachBlockNode)
+	await := outer.Children[0].(*AwaitBlockNode)
+	nested := await.ThenChildren[0].(*EachBlockNode)
+	if _, _, _, _, _, ok := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested); ok {
+		t.Fatal("select multiple must remain outside the scalar multi-owner recipe")
+	}
+}
+
 func TestSSRHydrationKeyedEachAwaitNestedSelectLowersTwoOwnerFallbackRecipe(t *testing.T) {
 	sfc, err := parseSFC(`<script>let rows=$state.deep([]);let request=Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{:else}<option value="">No current</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{:else}<option value="">No history</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
 	if err != nil {
