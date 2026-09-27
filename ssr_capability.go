@@ -1357,8 +1357,20 @@ func ssrCapabilityCurrentAwaitSnapshotSlotIfComponent(component *ComponentNode) 
 		return false
 	}
 	for _, attr := range component.Attrs {
-		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+		if attr == nil || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
 			return false
+		}
+		if attr.IsEvent {
+			if attr.Expr == nil {
+				return false
+			}
+			continue
+		}
+		if attr.IsTwoWay {
+			if _, ok := templateExprIdent(attr.Expr); !ok {
+				return false
+			}
+			continue
 		}
 		if attr.IsBind {
 			if _, ok := templateExprIdent(attr.Expr); !ok {

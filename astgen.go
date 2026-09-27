@@ -10577,8 +10577,21 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfComponent(component *ComponentNode)
 		return false
 	}
 	for _, attr := range component.Attrs {
-		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+		if attr == nil || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
 			return false
+		}
+		if attr.IsEvent {
+			if g.eventHandlerExpr(attr) == nil {
+				return false
+			}
+			continue
+		}
+		if attr.IsTwoWay {
+			target, ok := templateExprIdent(attr.Expr)
+			if !ok || g.analysis == nil || !g.analysis.stateSet()[target] {
+				return false
+			}
+			continue
 		}
 		if attr.IsBind {
 			if _, ok := templateExprIdent(attr.Expr); !ok {
@@ -10745,21 +10758,36 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfAdoptElement(element *ElementNode, 
 	return body
 }
 
-func (g *ASTGen) hydrationAwaitSnapshotSlotIfAdoptComponent(component *ComponentNode, controllerVar, prefix string) []JsStmt {
+func (g *ASTGen) hydrationAwaitSnapshotSlotIfComponentEventAttach(instanceVar, controllerVar string, events []hydrationAwaitComponentEvent) []JsStmt {
+	body := []JsStmt{}
+	for _, event := range events {
+		body = append(body,
+			genExprStmt(genCall(genMember(genMember(id(instanceVar), "el"), "addEventListener"), strLit(event.name), id(event.handler))),
+			genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				genExprStmt(genCall(genMember(genMember(id(instanceVar), "el"), "removeEventListener"), strLit(event.name), id(event.handler))),
+			)})),
+		)
+	}
+	return body
+}
+
+func (g *ASTGen) hydrationAwaitSnapshotSlotIfAdoptComponent(component *ComponentNode, controllerVar, prefix string, events []hydrationAwaitComponentEvent) []JsStmt {
 	instanceVar := prefix + "_component"
 	updateVar := instanceVar + "_update"
 	props := g.componentPropsExpr(component.Attrs)
+	overrides := g.hydrationComponentOverridesExpr(component.Attrs)
 	return []JsStmt{
-		genConst(instanceVar, genMember(g.hydrationComponentCall(component, id("$$root"), nil), "component")),
+		genConst(instanceVar, genMember(g.hydrationComponentCall(component, id("$$root"), overrides), "component")),
 		genIf(id(instanceVar), genBlock(
 			genExprStmt(genCall(genMember(genMember(id(controllerVar), "children"), "push"), id(instanceVar))),
+			genBlock(g.hydrationAwaitSnapshotSlotIfComponentEventAttach(instanceVar, controllerVar, events)...),
 			genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(optionalComponentSetStmt(id(instanceVar), props))}),
 			genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(updateVar))),
 		)),
 	}
 }
 
-func (g *ASTGen) hydrationAwaitSnapshotSlotIfMountComponent(component *ComponentNode, parentVar, controllerVar, prefix string) []JsStmt {
+func (g *ASTGen) hydrationAwaitSnapshotSlotIfMountComponent(component *ComponentNode, parentVar, controllerVar, prefix string, events []hydrationAwaitComponentEvent) []JsStmt {
 	instanceVar := prefix + "_component"
 	updateVar := instanceVar + "_update"
 	props := g.componentPropsExpr(component.Attrs)
@@ -10770,6 +10798,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfMountComponent(component *Component
 	return []JsStmt{
 		genConst(instanceVar, genCall(id(csrFactory), id(parentVar), props, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "children"), "push"), id(instanceVar))),
+		genBlock(g.hydrationAwaitSnapshotSlotIfComponentEventAttach(instanceVar, controllerVar, events)...),
 		genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(optionalComponentSetStmt(id(instanceVar), props))}),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(updateVar))),
 	}
@@ -10847,6 +10876,20 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 	)
 	nextVar := prefix + "_next"
 	fragmentVar := prefix + "_fragment"
+	componentEvents := map[*ComponentNode][]hydrationAwaitComponentEvent{}
+	for branchIndex, branch := range chain.Branches {
+		if branch == nil {
+			continue
+		}
+		for nodeIndex, node := range branch.Children {
+			component, ok := node.(*ComponentNode)
+			if !ok || component == nil {
+				continue
+			}
+			componentPrefix := prefix + "_b" + itoa(branchIndex) + "_node" + itoa(nodeIndex) + "_component"
+			componentEvents[component] = g.buildHydrationAwaitSnapshotSlotComponentEvents(component, componentPrefix)
+		}
+	}
 	mountBody := []JsStmt{genConst(fragmentVar, genCall(genMember(id("document"), "createDocumentFragment")))}
 	for index, branch := range chain.Branches {
 		if branch == nil {
@@ -10857,7 +10900,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 			text, ok := node.(*TextNode)
 			if !ok {
 				if component, isComponent := node.(*ComponentNode); isComponent {
-					branchMount = append(branchMount, g.hydrationAwaitSnapshotSlotIfMountComponent(component, fragmentVar, controllerVar, prefix+"_b"+itoa(index)+"_node"+itoa(nodeIndex))...)
+					branchMount = append(branchMount, g.hydrationAwaitSnapshotSlotIfMountComponent(component, fragmentVar, controllerVar, prefix+"_b"+itoa(index)+"_node"+itoa(nodeIndex), componentEvents[component])...)
 					continue
 				}
 				branchMount = append(branchMount, g.hydrationAwaitSnapshotSlotIfMountElement(node.(*ElementNode), fragmentVar, controllerVar, prefix+"_b"+itoa(index)+"_node"+itoa(nodeIndex))...)
@@ -10908,7 +10951,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 			text, ok := node.(*TextNode)
 			if !ok {
 				if component, isComponent := node.(*ComponentNode); isComponent {
-					branchAdopt = append(branchAdopt, g.hydrationAwaitSnapshotSlotIfAdoptComponent(component, controllerVar, prefix+"_b"+itoa(branchIndex)+"_node"+itoa(nodeIndex))...)
+					branchAdopt = append(branchAdopt, g.hydrationAwaitSnapshotSlotIfAdoptComponent(component, controllerVar, prefix+"_b"+itoa(branchIndex)+"_node"+itoa(nodeIndex), componentEvents[component])...)
 					continue
 				}
 				branchAdopt = append(branchAdopt, g.hydrationAwaitSnapshotSlotIfAdoptElement(node.(*ElementNode), controllerVar, prefix+"_b"+itoa(branchIndex)+"_node"+itoa(nodeIndex))...)
