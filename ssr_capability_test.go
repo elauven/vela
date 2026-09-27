@@ -28,13 +28,13 @@ func TestAnalyzeSSRCapabilityMirrorsCurrentHydrationSubset(t *testing.T) {
 	}
 }
 
-func TestSSRCapabilityKeepsNestedMultiSelectClosedUntilGoSSRSelectionExists(t *testing.T) {
+func TestSSRCapabilityAdmitsNestedMultiSelectAfterGoSSRSelectionExists(t *testing.T) {
 	sfc, err := parseSFC(`<template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select multiple bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
-		t.Fatal("multi-select must remain outside executable SSR capability until Go emits selected membership")
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("multi-select must be executable once Go SSR and hydration array ownership exist")
 	}
 }
 

@@ -1219,6 +1219,16 @@ func twoWaySetterFromEvent(setter string, multipleAware bool, readProp string) J
 	)
 }
 
+func twoWaySetterFromElement(setter, elementVar string, multipleAware bool, readProp string) JsStmt {
+	if !multipleAware {
+		return genInvoke(setter, genMember(id(elementVar), readProp))
+	}
+	return genBlock(
+		genIf(genMember(id(elementVar), "multiple"), genExprStmt(genCall(id(setter), genCall(id("$$readSelectValues"), id(elementVar))))),
+		genIf(genUnary("!", genMember(id(elementVar), "multiple")), genExprStmt(genCall(id(setter), genMember(id(elementVar), readProp)))),
+	)
+}
+
 func (g *ASTGen) classDirStmtAST(varName string, attr *Attr) JsStmt {
 	return genExprStmt(genCall(genMember(genMember(id(varName), "classList"), "toggle"), strLit(attr.Name), genBool(g.templateExpr(attr.Expr))))
 }
@@ -10621,19 +10631,17 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfBindingAttach(elementVar, controlle
 	handlerVar := prefix + "_handler"
 	body := []JsStmt{
 		genConst(writeVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-			g.hydrationAwaitSnapshotBindingWriteStmt(elementVar, attr, writeVar),
+			g.hydrationAwaitSnapshotBindingWriteStmt(elementVar, tag, attr, writeVar),
 		)}),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(writeVar))),
-		genConst(handlerVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genCall(
-			id("$$set_"+target), genMember(genMember(id("$event"), "target"), spec.readProp),
-		)}),
+		genConst(handlerVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$e")}, Body: twoWaySetterFromEvent("$$set_"+target, tag == "select" && attr.Name == "value", spec.readProp)}),
 		genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(spec.event), id(handlerVar))),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(spec.event), id(handlerVar))),
 		)})),
 	}
 	if adopt {
-		body = append(body, genInvoke("$$set_"+target, genMember(id(elementVar), spec.readProp)))
+		body = append(body, twoWaySetterFromElement("$$set_"+target, elementVar, tag == "select" && attr.Name == "value", spec.readProp))
 	} else {
 		body = append(body, genInvoke(writeVar))
 	}
@@ -12273,9 +12281,9 @@ func (g *ASTGen) buildHydrationAwaitSnapshotBinding(plan *hydrationAwaitSnapshot
 	plan.decls = append(plan.decls, genLet(writeVar, genNull()), genLet(cleanupVar, genNull()))
 	plan.adopt = append(plan.adopt,
 		genAssignStmt(id(writeVar), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-			g.hydrationAwaitSnapshotBindingWriteStmt(elementVar, attr, writeVar),
+			g.hydrationAwaitSnapshotBindingWriteStmt(elementVar, tag, attr, writeVar),
 		)}),
-		genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genCall(id("$$set_"+target), genMember(genMember(id("$event"), "target"), spec.readProp))}),
+		genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$e")}, Body: twoWaySetterFromEvent("$$set_"+target, tag == "select" && attr.Name == "value", spec.readProp)}),
 		genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(spec.event), id(handler))),
 		genAssignStmt(id(cleanupVar), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(spec.event), id(handler))),
@@ -12284,7 +12292,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotBinding(plan *hydrationAwaitSnapshot
 		// Preserve input typed after SSR paint. If it differs from the snapshot,
 		// the regular setter drives every other dependent DOM site; the guarded
 		// writer sees that this control already owns the same live value.
-		genInvoke("$$set_"+target, genMember(id(elementVar), spec.readProp)),
+		twoWaySetterFromElement("$$set_"+target, elementVar, tag == "select" && attr.Name == "value", spec.readProp),
 	)
 	plan.listenerCleanup = append([]JsStmt{genIf(id(cleanupVar), genBlock(
 		genExprStmt(genCall(id(cleanupVar))),
@@ -12293,13 +12301,20 @@ func (g *ASTGen) buildHydrationAwaitSnapshotBinding(plan *hydrationAwaitSnapshot
 	g.addUpdate(target, genIf(id(writeVar), genExprStmt(genCall(id(writeVar)))))
 }
 
-func (g *ASTGen) hydrationAwaitSnapshotBindingWriteStmt(elementVar string, attr *Attr, suffix string) JsStmt {
+func (g *ASTGen) hydrationAwaitSnapshotBindingWriteStmt(elementVar, tag string, attr *Attr, suffix string) JsStmt {
 	valueVar := suffix + "_value"
 	value := g.templateExpr(attr.Expr)
 	if attr.Name == "checked" {
 		value = genBool(value)
 	}
 	target := genMember(id(elementVar), attr.Name)
+	if tag == "select" && attr.Name == "value" {
+		return genBlock(
+			genConst(valueVar, value),
+			genIf(genMember(id(elementVar), "multiple"), genExprStmt(genCall(id("$$writeSelectValues"), id(elementVar), id(valueVar)))),
+			genIf(genUnary("!", genMember(id(elementVar), "multiple")), genIf(genBinary("!==", target, id(valueVar)), genAssignStmt(target, id(valueVar)))),
+		)
+	}
 	return genBlock(
 		genConst(valueVar, value),
 		genIf(genBinary("!==", target, id(valueVar)), genAssignStmt(target, id(valueVar))),

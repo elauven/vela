@@ -40,20 +40,6 @@ func buildSSRHydrationClientProgramWithComponents(name string, sfc *SFC, analysi
 	return buildSSRHydrationClientProgram(name, sfc, analysis, scopeID, components, true)
 }
 
-// buildSSRHydrationClientProgramUnchecked is deliberately package-private and
-// exists for lowering contracts that are ahead of the executable SSR surface.
-// It must never be called by project compilation: callers still use
-// BuildSSRHydrationClientProgram, which checks capability before emitting an
-// artifact. Keeping this path lets tests validate a prepared client controller
-// while the paired Go server representation is intentionally unavailable.
-func buildSSRHydrationClientProgramUnchecked(name string, sfc *SFC, analysis *Analysis, scopeID string) (*JsProgram, error) {
-	components, err := ssrHydrationComponentNames(sfc, analysis)
-	if err != nil {
-		return nil, err
-	}
-	return buildSSRHydrationClientProgram(name, sfc, analysis, scopeID, components, false)
-}
-
 func buildSSRHydrationClientProgram(name string, sfc *SFC, analysis *Analysis, scopeID string, components map[string]bool, requireCapability bool) (*JsProgram, error) {
 	if sfc == nil {
 		return nil, fmt.Errorf("SSR hydration client: missing component")

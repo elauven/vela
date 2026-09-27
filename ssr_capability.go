@@ -152,10 +152,6 @@ func AnalyzeSSRCapability(nodes []Node) *SSRCapability {
 		root.Reason = "current hydration root must be an element"
 		return root
 	}
-	if ssrTemplateHasMultiSelectBinding(nodes) {
-		root.Reason = "select multiple bind:value requires Go SSR selected-membership emission"
-		return root
-	}
 	if ssrCapabilityCurrentRootChildren(nodes[0].(*ElementNode).Children) && ssrCapabilityCurrentElementAttrs(nodes[0].(*ElementNode)) {
 		root.Hydration = SSRHydrationExecutable
 		root.Reason = ""
@@ -163,62 +159,6 @@ func AnalyzeSSRCapability(nodes []Node) *SSRCapability {
 	}
 	root.Reason = "one or more descendants require a marker-aware structural lifecycle"
 	return root
-}
-
-// ssrTemplateHasMultiSelectBinding is an explicit server boundary rather than
-// a client lowering restriction. The client can already reconcile an array
-// model, but server HTML must first mark every selected option from that same
-// set. Until Go emission exists, exposing this template as SSR-executable
-// would produce a server/client mismatch.
-func ssrTemplateHasMultiSelectBinding(nodes []Node) bool {
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *ElementNode:
-			multiple := false
-			bindValue := false
-			if current.Tag == "select" {
-				for _, attr := range current.Attrs {
-					if attr == nil {
-						continue
-					}
-					if attr.Name == "multiple" && attr.Expr == nil {
-						multiple = true
-					}
-					if attr.IsTwoWay && attr.Name == "value" {
-						bindValue = true
-					}
-				}
-			}
-			if multiple && bindValue || ssrTemplateHasMultiSelectBinding(current.Children) {
-				return true
-			}
-		case *IfChainNode:
-			for _, branch := range current.Branches {
-				if branch != nil && ssrTemplateHasMultiSelectBinding(branch.Children) {
-					return true
-				}
-			}
-		case *EachBlockNode:
-			if ssrTemplateHasMultiSelectBinding(current.Children) || ssrTemplateHasMultiSelectBinding(current.ElseChildren) {
-				return true
-			}
-		case *AwaitBlockNode:
-			if ssrTemplateHasMultiSelectBinding(current.PendingChildren) || ssrTemplateHasMultiSelectBinding(current.ThenChildren) || ssrTemplateHasMultiSelectBinding(current.CatchChildren) {
-				return true
-			}
-		case *ComponentNode:
-			for _, children := range current.Slots {
-				if ssrTemplateHasMultiSelectBinding(children) {
-					return true
-				}
-			}
-		case *SlotNode:
-			if ssrTemplateHasMultiSelectBinding(current.Fallback) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // The generic capability tree is intentionally context-free: a keyed each
@@ -620,25 +560,9 @@ func ssrCapabilityCurrentElementAttrs(element *ElementNode) bool {
 	if element == nil {
 		return false
 	}
-	multipleSelect := false
-	if element.Tag == "select" {
-		for _, attr := range element.Attrs {
-			if attr != nil && attr.Name == "multiple" && attr.Expr == nil {
-				multipleSelect = true
-				break
-			}
-		}
-	}
 	for _, attr := range element.Attrs {
 		if attr.IsTwoWay {
 			if _, ok := twoWayBindSpec(element.Tag, attr.Name); !ok {
-				return false
-			}
-			// Go SSR currently compares one scalar select value. The client
-			// lowerer can already own an array-shaped multi-select, but it
-			// must not be advertised as executable until the server emits the
-			// same selected membership for every option.
-			if multipleSelect && element.Tag == "select" && attr.Name == "value" {
 				return false
 			}
 		}

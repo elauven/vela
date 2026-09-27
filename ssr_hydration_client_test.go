@@ -5610,7 +5610,7 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectLowersMultipleWithArrayHelpers(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	program, err := buildSSRHydrationClientProgramUnchecked("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	program, err := BuildSSRHydrationClientProgram("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
 	if err != nil {
 		t.Fatal(err)
 	}
