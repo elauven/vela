@@ -209,6 +209,89 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotKeyedEachDirectRowText(t *testi
 	}
 }
 
+func TestGeneratedSSRRendererExecutesNestedKeyedAwaitSnapshot(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let rows=[];</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<p>{field.title}</p>{/each}{:catch error}{#each row.fields as field (field.id)}<p>{field.title}</p>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateGeneratedSSRGo("Page.go", renderer); err != nil {
+		t.Fatalf("ValidateGeneratedSSRGo: %v\n%s", err, renderer)
+	}
+	main := sfc.TemplateAST.Nodes[0].(*ElementNode)
+	outer := main.Children[0].(*EachBlockNode)
+	await := outer.Children[0].(*AwaitBlockNode)
+	awaitID, ok := ssrHydrationMarkerIDs(plan.Nodes).awaitID(await.Span)
+	if !ok {
+		t.Fatal("nested await marker is missing")
+	}
+	rowScope := "vela-page-instance--each-" + itoa(outer.Span.Start) + "-row"
+	root := t.TempDir()
+	components := filepath.Join(root, "components")
+	if err := os.MkdirAll(components, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	compilerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := "module example.com/nestedawaitsnapshot\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(components, "page.go"), renderer, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainSource := `package main
+import (
+  "os"
+  "example.com/nestedawaitsnapshot/components"
+)
+func main() {
+  err := components.RenderPageWithOptionsAt(os.Stdout, components.PageProps{Rows: []any{map[string]any{
+    "id": "row", "request": nil, "fields": []any{map[string]any{"id": "a", "title": "Alpha"}, map[string]any{"id": "b", "title": "Beta"}},
+  }}}, components.PageSlots{}, components.PageRenderOptions{
+    AwaitAt: map[string]components.PageAwaitSnapshot{"` + rowScope + `:` + itoa(awaitID) + `": {State: "then", Value: "server"}},
+  }, "vela-page-instance")
+  if err != nil { panic(err) }
+}
+`
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(mainSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("go", "run", ".")
+	command.Dir = root
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go run: %v\n%s", err, output)
+	}
+	got := string(output)
+	for _, want := range []string{
+		`>Alpha<!--/v:`,
+		`>Beta<!--/v:`,
+		`<!--r:` + rowScope,
+		`"awaitAt":{"` + rowScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("nested settled SSR output misses %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "Pending") {
+		t.Fatalf("nested settled SSR rendered pending branch:\n%s", got)
+	}
+}
+
 func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectInputBinding(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<input class="settled-input" bind:value={row.title} />{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
