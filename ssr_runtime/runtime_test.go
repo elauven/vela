@@ -26,6 +26,18 @@ func TestStringAndEscapeString(t *testing.T) {
 	}
 }
 
+func TestContainsStringUsesSelectMultipleMembership(t *testing.T) {
+	if !ContainsString([]any{"one", 2, true}, "2") {
+		t.Fatal("multi-select membership must use browser-visible string values")
+	}
+	if ContainsString([]string{"one", "two"}, "three") {
+		t.Fatal("multi-select membership must reject absent values")
+	}
+	if ContainsString("two", "two") {
+		t.Fatal("a scalar select model must not masquerade as a multi-select array")
+	}
+}
+
 func TestGet(t *testing.T) {
 	if got := Get(map[string]any{"title": "ready"}, "title"); got != "ready" {
 		t.Fatalf("Get map value = %#v", got)

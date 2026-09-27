@@ -69,6 +69,21 @@ func TestBug11_BindSelectEmitsChangeListener(t *testing.T) {
 	}
 }
 
+func TestBindMultipleSelectUsesArrayRuntimeHelpers(t *testing.T) {
+	src := `<script>
+  let picks = $state(['a']);
+</script>
+<template>
+  <select multiple bind:value={picks}><option value="a">A</option><option value="b">B</option></select>
+</template>`
+	out := compileGenerated(t, src)
+	for _, want := range []string{"$$readSelectValues($e.target)", "$$writeSelectValues", "from './runtime.js'"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("multiple select lowering misses %q:\n%s", want, out)
+		}
+	}
+}
+
 // ─────────────────────────────────────────────
 //  Bug 12 — bind:this
 // ─────────────────────────────────────────────

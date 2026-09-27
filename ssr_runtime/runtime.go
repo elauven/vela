@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"reflect"
 )
 
 // Renderer is the composable server-side rendering contract.
@@ -32,6 +33,31 @@ func WriteString(writer io.Writer, value string) error {
 // String provides stable server text conversion for typed template values.
 func String(value any) string {
 	return fmt.Sprint(value)
+}
+
+// ContainsString reports whether a server-rendered multi-select model contains
+// candidate after the same visible-value conversion used for regular select
+// bindings. JavaScript select multiple has set-like membership semantics: an
+// option is selected when its value occurs in the model, regardless of model
+// order or duplicate entries.
+//
+// Generated prop/state values can be []string, []any, or another slice/array
+// inferred by Go. Reflection keeps the generated renderer type-safe without
+// forcing every application model through JSON or an untyped helper map.
+func ContainsString(values any, candidate string) bool {
+	if values == nil {
+		return false
+	}
+	value := reflect.ValueOf(values)
+	if value.Kind() != reflect.Slice && value.Kind() != reflect.Array {
+		return false
+	}
+	for index := 0; index < value.Len(); index++ {
+		if String(value.Index(index).Interface()) == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 // Get reads one plain JavaScript-style object field from data supplied to an

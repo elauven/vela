@@ -127,6 +127,7 @@ type ssrGoEmitter struct {
 	eachNext                    int
 	imports                     map[string]string
 	selectValue                 *TemplateExpr
+	selectMultiple              bool
 }
 
 func (e *ssrGoEmitter) nodes(nodes []SSRPlanNode) ([]goast.Stmt, error) {
@@ -347,6 +348,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 	var textareaValue SSRPlanAttr
 	hasTextareaValue := false
 	childSelectValue := e.selectValue
+	childSelectMultiple := e.selectMultiple
 	var optionValue SSRPlanAttr
 	hasOptionValue := false
 	hasSelectValueBinding := false
@@ -505,14 +507,11 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			return nil, ssrExprUnsupported(attr.Span.Start, "attribute %q with role %d is not lowered yet", attr.Name, attr.Role)
 		}
 	}
-	if hasSelectValueBinding && selectMultiple {
-		return nil, ssrExprUnsupported(node.Span.Start, "select multiple bind:value has no safe SSR representation yet")
-	}
 	if e.selectValue != nil && node.Tag == "option" && !hasOptionValue {
 		return nil, ssrExprUnsupported(node.Span.Start, "an option under select bind:value requires an explicit static value (or a supported dynamic value)")
 	}
 	if e.selectValue != nil && node.Tag == "option" {
-		selected, err := e.selectOptionCondition(e.selectValue, optionValue)
+		selected, err := e.selectOptionCondition(e.selectValue, optionValue, e.selectMultiple)
 		if err != nil {
 			return nil, err
 		}
@@ -537,9 +536,15 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 		body = append(body, goWriteSSRValue(value))
 	}
 	previousSelectValue := e.selectValue
+	previousSelectMultiple := e.selectMultiple
 	e.selectValue = childSelectValue
+	e.selectMultiple = childSelectMultiple
+	if hasSelectValueBinding {
+		e.selectMultiple = selectMultiple
+	}
 	children, err := e.nodes(node.Children)
 	e.selectValue = previousSelectValue
+	e.selectMultiple = previousSelectMultiple
 	if err != nil {
 		return nil, err
 	}
@@ -748,7 +753,7 @@ func (e *ssrGoEmitter) outputValue(static bool, literal string, expr *TemplateEx
 // prop inference can produce several concrete types, while the DOM's
 // HTMLSelectElement.value is always a string; vela.String keeps that semantic
 // boundary explicit without evaluating source text in the compiler.
-func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionValue SSRPlanAttr) (goast.Expr, error) {
+func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionValue SSRPlanAttr, multiple bool) (goast.Expr, error) {
 	selected, err := TranslateSSRExpression(selectValue, e.ctx)
 	if err != nil {
 		return nil, err
@@ -766,11 +771,10 @@ func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionVa
 	default:
 		return nil, ssrExprUnsupported(optionValue.Span.Start, "an option under select bind:value has no renderable value")
 	}
-	return &goast.BinaryExpr{
-		X:  &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{selected}},
-		Op: token.EQL,
-		Y:  option,
-	}, nil
+	if multiple {
+		return &goast.CallExpr{Fun: goSelector("vela", "ContainsString"), Args: []goast.Expr{selected, option}}, nil
+	}
+	return &goast.BinaryExpr{X: &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{selected}}, Op: token.EQL, Y: option}, nil
 }
 
 func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {

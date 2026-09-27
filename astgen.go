@@ -1180,7 +1180,7 @@ func (g *ASTGen) attrWriteStmt(varName string, attr *Attr) JsStmt {
 // live DOM property only when it differs. Reusing one compiler-owned temporary
 // preserves expression side effects while avoiding a redundant controlled-input
 // write immediately after the browser has already applied user input.
-func (g *ASTGen) bindingWriteStmt(varName string, attr *Attr) JsStmt {
+func (g *ASTGen) bindingWriteStmt(varName string, attr *Attr, multipleAware bool) JsStmt {
 	cache := varName + "_bind_" + attr.Name + "_value"
 	g.declareInScope(genLet(cache, nil))
 	value := g.templateExpr(attr.Expr)
@@ -1188,9 +1188,34 @@ func (g *ASTGen) bindingWriteStmt(varName string, attr *Attr) JsStmt {
 		value = genBool(value)
 	}
 	target := genMember(id(varName), attr.Name)
+	if multipleAware && attr.Name == "value" {
+		multiple := varName + "_bind_multiple"
+		g.declareInScope(genLet(multiple, nil))
+		return genBlock(
+			genAssignStmt(id(cache), value),
+			genAssignStmt(id(multiple), genMember(id(varName), "multiple")),
+			genIf(id(multiple), genExprStmt(genCall(id("$$writeSelectValues"), id(varName), id(cache)))),
+			genIf(genUnary("!", id(multiple)), genIf(genBinary("!==", target, id(cache)), genAssignStmt(target, id(cache)))),
+		)
+	}
 	return genBlock(
 		genAssignStmt(id(cache), value),
 		genIf(genBinary("!==", target, id(cache)), genAssignStmt(target, id(cache))),
+	)
+}
+
+func twoWaySetterFromEvent(setter string, multipleAware bool, readProp string) JsNode {
+	target := genMember(id("$e"), "target")
+	scalar := genCall(id(setter), genMember(target, readProp))
+	if !multipleAware {
+		return scalar
+	}
+	return genBlock(
+		genIf(genMember(target, "multiple"), genBlock(
+			genExprStmt(genCall(id(setter), genCall(id("$$readSelectValues"), target))),
+			genReturn(nil),
+		)),
+		genReturn(scalar),
 	)
 }
 
@@ -1903,6 +1928,8 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	usesHydrationKeyedElements := g.hydrationKeyedElements
 	usesHydrationNestedRanges := g.hydrationNestedRanges
 	usesHydrationNestedText := g.hydrationNestedText
+	usesReadSelectValues := false
+	usesWriteSelectValues := false
 	if g.analysis != nil && (len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0) {
 		usesIsProxy = true
 		usesDefer = true
@@ -1926,6 +1953,10 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 			usesIsProxy = true
 		case "$$defer":
 			usesDefer = true
+		case "$$readSelectValues":
+			usesReadSelectValues = true
+		case "$$writeSelectValues":
+			usesWriteSelectValues = true
 		}
 		return true
 	})
@@ -1947,6 +1978,12 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	}
 	if usesDefer {
 		specs = append(specs, JsImportSpec{Imported: "$$defer"})
+	}
+	if usesReadSelectValues {
+		specs = append(specs, JsImportSpec{Imported: "$$readSelectValues"})
+	}
+	if usesWriteSelectValues {
+		specs = append(specs, JsImportSpec{Imported: "$$writeSelectValues"})
 	}
 	if usesHydrationElement {
 		specs = append(specs, JsImportSpec{Imported: "$$acquireHydrationElement"})
@@ -4831,14 +4868,21 @@ func (g *ASTGen) emitHydrationBinding(variable, tag string, attr *Attr) {
 	g.body = append(g.body, genConst(handler, &JsArrowFunc{
 		baseExpr: baseExpr{genNode()},
 		Params:   []JsExpr{id("$e")},
-		Body:     genCall(id("$$set_"+state), genMember(genMember(id("$e"), "target"), spec.readProp)),
+		Body:     twoWaySetterFromEvent("$$set_"+state, tag == "select" && attr.Name == "value", spec.readProp),
 	}))
 	g.emitListenerPair(&g.events, variable, spec.event, handler, nil, "", true)
 	// Adopt the live control value after listener construction. For unchanged
 	// SSR DOM the setter returns immediately; for pre-hydration user input it
 	// schedules the usual reactive cascade without a blind value write.
-	g.hydrationInitBody = append(g.hydrationInitBody, genInvoke("$$set_"+state, genMember(id(variable), spec.readProp)))
-	write := g.bindingWriteStmt(variable, attr)
+	if tag == "select" && attr.Name == "value" {
+		g.hydrationInitBody = append(g.hydrationInitBody,
+			genIf(genMember(id(variable), "multiple"), genExprStmt(genCall(id("$$set_"+state), genCall(id("$$readSelectValues"), id(variable))))),
+			genIf(genUnary("!", genMember(id(variable), "multiple")), genExprStmt(genCall(id("$$set_"+state), genMember(id(variable), spec.readProp)))),
+		)
+	} else {
+		g.hydrationInitBody = append(g.hydrationInitBody, genInvoke("$$set_"+state, genMember(id(variable), spec.readProp)))
+	}
+	write := g.bindingWriteStmt(variable, attr, tag == "select")
 	for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
 		g.addUpdate(dependency, shareStmt(write))
 	}
@@ -9317,6 +9361,7 @@ type hydrationKeyedEachDirectRowDescriptor struct {
 type hydrationKeyedEachDirectControlDescriptor struct {
 	Element             *ElementNode
 	Bind                *Attr
+	Multiple            bool
 	OptionDynamic       *Attr
 	OptionDynamicIndex  int
 	OptionGroupDynamic  *Attr
@@ -9469,7 +9514,15 @@ func hydrationAwaitSnapshotKeyedEachDirectControlRow(nodes []Node, itemName stri
 			checkbox = true
 		}
 		if element.Tag == "select" && attr.Name == "multiple" {
-			return hydrationKeyedEachDirectControlDescriptor{}, false
+			// `multiple` is a static boolean shape fact, not a dynamic
+			// attribute writer. Keep it on the parser-owned descriptor so
+			// specialised lowerings can choose array semantics without
+			// rediscovering source attributes.
+			if attr.Expr != nil || descriptor.Multiple {
+				return hydrationKeyedEachDirectControlDescriptor{}, false
+			}
+			descriptor.Multiple = true
+			continue
 		}
 		if attr.Expr != nil || attr.IsBind || attr.IsEvent || attr.IsClassDir || attr.IsStyleDir || attr.IsBindThis {
 			return hydrationKeyedEachDirectControlDescriptor{}, false
@@ -13238,7 +13291,7 @@ func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 		handler := &JsArrowFunc{
 			baseExpr: baseExpr{genNode()},
 			Params:   []JsExpr{id("$e")},
-			Body:     genCall(id("$$set_"+sv), genMember(genMember(id("$e"), "target"), spec.readProp)),
+			Body:     twoWaySetterFromEvent("$$set_"+sv, tag == "select" && attr.Name == "value", spec.readProp),
 		}
 		cleanupGuard := ""
 		if g.inSlotScope {
@@ -13255,7 +13308,7 @@ func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 	}
 	write := g.attrWriteStmt(varName, attr)
 	if attr.IsTwoWay && ok {
-		write = g.bindingWriteStmt(varName, attr)
+		write = g.bindingWriteStmt(varName, attr, tag == "select")
 	}
 	g.registerReactiveTemplateStmt(write, attr.Expr)
 }

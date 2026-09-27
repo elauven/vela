@@ -189,8 +189,8 @@ func TestBuildSSRGoFileRejectsSelectBindingOptionWithoutStaticValue(t *testing.T
 	}
 }
 
-func TestBuildSSRGoFileRejectsMultipleSelectValueBinding(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let choice="a";</script><template><select multiple bind:value={choice}><option value="a">A</option></select></template>`)
+func TestBuildSSRGoFileRendersMultipleSelectValueBinding(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let choice=["a", "c"];</script><template><select multiple bind:value={choice}><option value="a">A</option><option value="b">B</option><option :value={choice[1]}>C</option></select></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,9 +198,22 @@ func TestBuildSSRGoFileRejectsMultipleSelectValueBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = BuildSSRGoFile(plan, "components")
-	if err == nil || !strings.Contains(err.Error(), "select multiple bind:value") {
-		t.Fatalf("multiple select binding error=%v", err)
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := string(source)
+	for _, want := range []string{`vela.WriteString(w, "<select multiple>")`, `vela.ContainsString(props.Choice, "a")`, `vela.ContainsString(props.Choice, vela.String(props.Choice[1]))`, `vela.WriteString(w, " selected")`} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("multiple select SSR output misses %q:\n%s", want, output)
+		}
+	}
+	if err := ValidateGeneratedSSRGo("page.go", source); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -469,6 +469,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	pkg.Scope().Insert(slotName)
 	ssrRuntimeAddFunc(pkg, "WriteString", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "value", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "String", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
+	ssrRuntimeAddFunc(pkg, "ContainsString", []*types.Var{types.NewVar(token.NoPos, pkg, "values", anyType), types.NewVar(token.NoPos, pkg, "candidate", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Bool])})
 	ssrRuntimeAddFunc(pkg, "EscapeString", []*types.Var{types.NewVar(token.NoPos, pkg, "value", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
 	pkg.MarkComplete()
 	return pkg, nil

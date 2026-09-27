@@ -91,6 +91,11 @@ func hydrationKeyedAwaitNestedInputControlRow(block *EachBlockNode) (*ElementNod
 	if !ok || descriptor.Element == nil || descriptor.Bind == nil {
 		return nil, nil, nil, -1, nil, -1, nil, -1, nil, false
 	}
+	if descriptor.Multiple {
+		// Multi-select has array semantics and is lowered only by the paired
+		// owner recipe below. Do not let the scalar direct-control path claim it.
+		return nil, nil, nil, -1, nil, -1, nil, -1, nil, false
+	}
 	if descriptor.Element.Tag == "textarea" && descriptor.Bind.Name == "value" {
 		return descriptor.Element, descriptor.Bind, nil, -1, nil, -1, nil, -1, nil, true
 	}
@@ -890,6 +895,13 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 	if len(optionGroupDynamics) != len(optionGroupIndices) || len(optionGroupDynamics) > len(optionLists) {
 		panic("vela: invalid nested keyed await multi-option label recipe")
 	}
+	multiple := false
+	for _, attr := range element.Attrs {
+		if attr != nil && attr.Name == "multiple" && attr.Expr == nil {
+			multiple = true
+			break
+		}
+	}
 	groupLabels := map[int]*Attr{}
 	for index, dynamic := range optionGroupDynamics {
 		groupIndex := optionGroupIndices[index]
@@ -924,7 +936,14 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 		g.withTemplateBinding(outer.ItemName, outerItem, func() {
 			g.withTemplateBinding(outer.IndexName, outerIndex, func() {
 				g.withTemplateBinding(nested.ItemName, item, func() {
-					g.withTemplateBinding(nested.IndexName, index, func() { value = genString(g.templateExpr(bind.Expr)) })
+					g.withTemplateBinding(nested.IndexName, index, func() {
+						expr := g.templateExpr(bind.Expr)
+						if multiple {
+							value = expr
+						} else {
+							value = genString(expr)
+						}
+					})
 				})
 			})
 		})
@@ -1119,13 +1138,20 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 			}
 			body = append(body, genConst(updateVarForList, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updateBody...)}), genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id(updateVarForList))))
 		}
+		controlUpdateBody := []JsStmt{genConst("$$inner_control_value", valueExpr(nestedItemVar, nestedIndexVar))}
+		if multiple {
+			controlUpdateBody = append(controlUpdateBody, genExprStmt(genCall(id("$$writeSelectValues"), control, id("$$inner_control_value"))))
+		} else {
+			controlUpdateBody = append(controlUpdateBody, genIf(genBinary("!==", genMember(control, spec.readProp), id("$$inner_control_value")), genAssignStmt(genMember(control, spec.readProp), id("$$inner_control_value"))))
+		}
+		handlerValue := JsExpr(genMember(genMember(id("$event"), "target"), spec.readProp))
+		if multiple {
+			handlerValue = genCall(id("$$readSelectValues"), genMember(id("$event"), "target"))
+		}
 		body = append(body,
-			genConst("$$inner_control_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-				genConst("$$inner_control_value", valueExpr(nestedItemVar, nestedIndexVar)),
-				genIf(genBinary("!==", genMember(control, spec.readProp), id("$$inner_control_value")), genAssignStmt(genMember(control, spec.readProp), id("$$inner_control_value"))),
-			)}),
+			genConst("$$inner_control_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(controlUpdateBody...)}),
 			genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id("$$inner_control_update"))),
-			genConst("$$inner_control_handler", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(assignValue(nestedItemVar, nestedIndexVar, genMember(genMember(id("$event"), "target"), spec.readProp)))}),
+			genConst("$$inner_control_handler", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(assignValue(nestedItemVar, nestedIndexVar, handlerValue))}),
 			genExprStmt(genCall(genMember(control, "addEventListener"), strLit(spec.event), id("$$inner_control_handler"))),
 			genExprStmt(genCall(genMember(genMember(id("$$inner"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(control, "removeEventListener"), strLit(spec.event), id("$$inner_control_handler"))))})),
 			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "set"), id("$$inner_key"), id("$$inner"))),
@@ -1135,7 +1161,11 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 	}
 	attachBody := []JsStmt{genConst("$$control", genCall(id(findElementVar), id("$$row"))), genIf(genUnary("!", id("$$control")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested multi-option input"))})}
 	attachBody = append(attachBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$control"), true)...)
-	attachBody = append(attachBody, assignValue(nestedItemVar, nestedIndexVar, genMember(id("$$control"), spec.readProp)))
+	adoptValue := JsExpr(genMember(id("$$control"), spec.readProp))
+	if multiple {
+		adoptValue = genCall(id("$$readSelectValues"), id("$$control"))
+	}
+	attachBody = append(attachBody, assignValue(nestedItemVar, nestedIndexVar, adoptValue))
 	attach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(attachBody...)}
 	createBody := []JsStmt{
 		genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
@@ -1166,8 +1196,12 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 			genExprStmt(genCall(genMember(id("$$control"), "append"), id(groupVar))),
 		)
 	}
+	initialControlWrite := JsStmt(genAssignStmt(genMember(id("$$control"), spec.readProp), valueExpr(nestedItemVar, nestedIndexVar)))
+	if multiple {
+		initialControlWrite = genExprStmt(genCall(id("$$writeSelectValues"), id("$$control"), valueExpr(nestedItemVar, nestedIndexVar)))
+	}
 	createBody = append(createBody,
-		genAssignStmt(genMember(id("$$control"), spec.readProp), valueExpr(nestedItemVar, nestedIndexVar)),
+		initialControlWrite,
 		genExprStmt(genCall(genMember(id("$$fragment"), "appendChild"), id("$$control"))),
 		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
 		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$end"))),

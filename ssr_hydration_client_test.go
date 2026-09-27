@@ -5593,7 +5593,7 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectRecognizesTwoOwnerFallbackRecipe(
 	}
 }
 
-func TestSSRHydrationKeyedEachAwaitNestedSelectRejectsMultipleUntilArrayContractExists(t *testing.T) {
+func TestSSRHydrationKeyedEachAwaitNestedSelectLowersMultipleWithArrayHelpers(t *testing.T) {
 	nodes, err := parseTemplate(`<main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select multiple bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main>`)
 	if err != nil {
 		t.Fatal(err)
@@ -5602,8 +5602,23 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectRejectsMultipleUntilArrayContract
 	outer := main.Children[0].(*EachBlockNode)
 	await := outer.Children[0].(*AwaitBlockNode)
 	nested := await.ThenChildren[0].(*EachBlockNode)
-	if _, _, _, _, _, ok := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested); ok {
-		t.Fatal("select multiple must remain outside the scalar multi-owner recipe")
+	element, bind, lists, _, _, ok := hydrationKeyedAwaitNestedMultiSelectOptionLists(nested)
+	if !ok || element == nil || bind == nil || len(lists) != 2 {
+		t.Fatal("select multiple must be recognized by the typed multi-owner recipe")
+	}
+	sfc, err := parseSFC(`<script>let rows=$state.deep([]);let request=Promise.resolve();</script><template><main>{#each rows as row (row.id)}{#await request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<select multiple bind:value={field.choice}><optgroup label="Current">{#each field.current as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup><optgroup label="History">{#each field.history as option (option.id)}<option :value={option.value}>{option.label}</option>{/each}</optgroup></select>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := buildSSRHydrationClientProgramUnchecked("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := PrintJS(program, PrintPretty)
+	for _, want := range []string{"$$readSelectValues", "$$writeSelectValues", "multiple", "$$inner_option_list_update_0", "$$inner_control_update"} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("multiple select lowering misses %q:\n%s", want, code)
+		}
 	}
 }
 
