@@ -100,7 +100,7 @@ func TestSSRHydrationKeyedEachAwaitUsesPerRowState(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := PrintJS(program, PrintPretty)
-	for _, want := range []string{"_await_states", "adoptHydrationKeyedRowRanges", "reconcileHydrationKeyedRowRanges", "replaceHydrationKeyedRowContents", ".cell !==", "_destroy"} {
+	for _, want := range []string{"_await_states", "adoptHydrationKeyedRowRanges", "reconcileHydrationKeyedRowRanges", "replaceHydrationKeyedRowContents", ".cell !==", "_destroy", "_adopt = ("} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("keyed each-await lowering misses %q:\n%s", want, source)
 		}

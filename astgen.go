@@ -5696,7 +5696,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	rangeVar, itemsVar := name+"_range", name+"_items"
 	keyOfVar, blocksVar := name+"_key", name+"_blocks"
 	statesVar, aliveVar, markersVar := name+"_await_states", name+"_alive", name+"_markers"
-	destroyVar, mountVar, driveVar := name+"_destroy", name+"_mount", name+"_drive"
+	destroyVar, mountVar, adoptVar, driveVar := name+"_destroy", name+"_mount", name+"_adopt", name+"_drive"
 	stateFactoryVar := name + "_state"
 	createVar, updateVar := name+"_create", name+"_row_update"
 	innerRefreshVar := name + "_inner_refresh"
@@ -7447,22 +7447,20 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	initialSnapshotVar := name + "_snapshot"
 	initialOuterIndexVar := name + "_outer_index"
 	hasNestedTextRows := nestedTextRows[1].Block != nil || nestedTextRows[2].Block != nil || nestedControlRows[1].Block != nil || nestedControlRows[2].Block != nil
-	initialBody := []JsStmt{
-		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id(initialIndex))),
-		genConst("$$state", genCall(id(stateFactoryVar))),
-		genConst(initialSnapshotVar, g.hydrationAwaitSnapshotExprAt(initialScope, awaitMarkerID)),
-	}
+	// adopt deliberately owns only server DOM acquisition. It must never
+	// materialize a fragment, call mount(), or invoke an update callback: the
+	// existing SSR range stays browser-owned until a later reactive change.
+	adoptBody := []JsStmt{}
 	if hasNestedTextRows {
-		initialBody = append(initialBody,
+		adoptBody = append(adoptBody,
 			genLet(rowItemVar, id("$$item")),
-			genLet(initialOuterIndexVar, id(initialIndex)),
+			genLet(initialOuterIndexVar, id("$$index")),
 			genAssignStmt(genMember(id("$$state"), "setItem"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
 				genAssignStmt(id(rowItemVar), id("$$next_item")),
 				genAssignStmt(id(initialOuterIndexVar), id("$$next_index")),
 			)}),
 		)
 	}
-	initialAdoptBody := []JsStmt{}
 	for state := 1; state <= 2; state++ {
 		if !settledStatic[state] {
 			continue
@@ -7471,33 +7469,35 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		if state == 2 {
 			stateName, field = "catch", "error"
 		}
-		initialBody = append(initialBody, genIf(
-			genLogical("&&", id(initialSnapshotVar), genBinary("===", genMember(id(initialSnapshotVar), "state"), strLit(stateName))),
-			genBlock(
-				genAssignStmt(genMember(id("$$state"), "active"), numLit(state)),
-				genAssignStmt(genMember(id("$$state"), "snapshot"), numLit(state)),
-				genAssignStmt(genMember(id("$$state"), field), genMember(id(initialSnapshotVar), field)),
-			),
-		))
+		branchAdopt := []JsStmt{
+			genAssignStmt(genMember(id("$$state"), "active"), numLit(state)),
+			genAssignStmt(genMember(id("$$state"), "snapshot"), numLit(state)),
+			genAssignStmt(genMember(id("$$state"), field), genMember(id("$$snapshot"), field)),
+		}
 		if recipe := nestedTextRows[state]; recipe.Block != nil {
-			initialAdoptBody = append(initialAdoptBody, genIf(
-				genLogical("&&", id(initialSnapshotVar), genBinary("===", genMember(id(initialSnapshotVar), "state"), strLit(stateName))),
-				genBlock(append([]JsStmt{
-					genConst("$$await_range", genCall(id("$$findHydrationNestedRange"), genMember(id("$$state"), "row"), strLit(g.scopeID), numLit(awaitMarkerID))),
-				}, g.buildHydrationKeyedAwaitNestedTextRowAdopt(block, recipe.Block, recipe.Element, recipe.Part, recipe.Attr, recipe.Class, recipe.Style, recipe.Event, "$$state", rowItemVar, initialOuterIndexVar, id("$$await_range"))...)...),
-			))
+			branchAdopt = append(branchAdopt, append([]JsStmt{
+				genConst("$$await_range", genCall(id("$$findHydrationNestedRange"), id("$$row"), strLit(g.scopeID), numLit(awaitMarkerID))),
+			}, g.buildHydrationKeyedAwaitNestedTextRowAdopt(block, recipe.Block, recipe.Element, recipe.Part, recipe.Attr, recipe.Class, recipe.Style, recipe.Event, "$$state", rowItemVar, initialOuterIndexVar, id("$$await_range"))...)...)
 		} else if recipe := nestedControlRows[state]; recipe.Block != nil {
-			adopt := []JsStmt{genConst("$$await_range", genCall(id("$$findHydrationNestedRange"), genMember(id("$$state"), "row"), strLit(g.scopeID), numLit(awaitMarkerID)))}
+			adopt := []JsStmt{genConst("$$await_range", genCall(id("$$findHydrationNestedRange"), id("$$row"), strLit(g.scopeID), numLit(awaitMarkerID)))}
 			if len(recipe.OptionLists) > 1 {
 				adopt = append(adopt, g.buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(block, recipe.Block, recipe.Element, recipe.Bind, recipe.OptionLists, recipe.OptionGroupDynamics, recipe.OptionGroupIndices, "$$state", rowItemVar, initialOuterIndexVar, id("$$await_range"))...)
 			} else {
 				adopt = append(adopt, g.buildHydrationKeyedAwaitNestedInputControlAdopt(block, recipe.Block, recipe.Element, recipe.Bind, recipe.OptionText, recipe.OptionTextIndex, recipe.OptionDynamic, recipe.OptionDynamicIndex, recipe.OptionGroupDynamic, recipe.OptionGroupIndex, recipe.OptionList, "$$state", rowItemVar, initialOuterIndexVar, id("$$await_range"))...)
 			}
-			initialAdoptBody = append(initialAdoptBody, genIf(
-				genLogical("&&", id(initialSnapshotVar), genBinary("===", genMember(id(initialSnapshotVar), "state"), strLit(stateName))),
-				genBlock(adopt...),
-			))
+			branchAdopt = append(branchAdopt, adopt...)
 		}
+		adoptBody = append(adoptBody, genIf(
+			genLogical("&&", id("$$snapshot"), genBinary("===", genMember(id("$$snapshot"), "state"), strLit(stateName))),
+			genBlock(branchAdopt...),
+		))
+	}
+	adopt := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state"), id("$$row"), id("$$item"), id("$$index"), id("$$snapshot")}, Body: genBlock(adoptBody...)}
+	g.body = append(g.body, genConst(adoptVar, adopt))
+	initialBody := []JsStmt{
+		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id(initialIndex))),
+		genConst("$$state", genCall(id(stateFactoryVar))),
+		genConst(initialSnapshotVar, g.hydrationAwaitSnapshotExprAt(initialScope, awaitMarkerID)),
 	}
 	for _, component := range branches[0] {
 		initialBody = append(initialBody, genExprStmt(genCall(genMember(genMember(id("$$state"), "components"), "push"), genMember(g.hydrationComponentCallAt(component, id("$$root"), nil, initialScope), "component"))))
@@ -7509,8 +7509,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genAssignStmt(genMember(id("$$state"), "key"), id("$$key")),
 		genExprStmt(genCall(genMember(id(statesVar), "set"), id("$$key"), id("$$state"))),
 	)
-	initialBody = append(initialBody, initialAdoptBody...)
 	initialBody = append(initialBody,
+		genInvoke(adoptVar, id("$$state"), genMember(id("$$state"), "row"), id("$$item"), id(initialIndex), id(initialSnapshotVar)),
 		genInvoke(driveVar, id("$$state"), genCall(genMember(id(blocksVar), "get"), id("$$key")), id("$$item"), id(initialIndex), boolLit(true)),
 		genAssignStmt(id(initialIndex), genBinary("+", id(initialIndex), numLit(1))),
 	)
