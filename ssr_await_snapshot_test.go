@@ -2429,7 +2429,7 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotStaticKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := PrintJS(program, PrintPretty)
-	for _, want := range []string{`$$acquireHydrationRange`, `$$adoptHydrationRange`, `$$insertHTML`, `key: identity`, `Stable branch`} {
+	for _, want := range []string{`$$acquireHydrationRange`, `$$adoptHydrationRange`, `$$insertHTML`, `key: identity`, `children: []`, `listeners.slice().reverse()`, `Stable branch`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("projected child own-slot #key lowering misses %q:\n%s", want, source)
 		}
@@ -2460,7 +2460,7 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotStaticEach(t *testing.T) 
 		t.Fatal(err)
 	}
 	source := PrintJS(program, PrintPretty)
-	for _, want := range []string{`$$adoptHydrationRange`, `for (const $$item of`, `$$insertHTML`, `Empty`} {
+	for _, want := range []string{`$$adoptHydrationRange`, `for (const $$item of`, `$$insertHTML`, `children: []`, `listeners.slice().reverse()`, `Empty`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("projected-slot static each lowering misses %q:\n%s", want, source)
 		}

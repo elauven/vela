@@ -10735,6 +10735,47 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfActiveExpr(chain *IfChainNode) JsEx
 	return active
 }
 
+// hydrationStructuralRangeController emits the common lifecycle surface for
+// every branch-owned structural range. Individual lowerers only provide their
+// typed state and lifecycle bodies; listener, child, writer and DOM ownership
+// is kept identical for #if, #key and #each.
+func hydrationStructuralRangeController(rangeVar, controllerVar string, state []*JsProp, adoptBody, mountBody []JsStmt, mountParams []JsExpr, updateBody, destroyTail []JsStmt, destroyOverride JsExpr) *JsObjectExpr {
+	destroyBody := []JsStmt{
+		genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(controllerVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
+		genAssignStmt(genMember(id(controllerVar), "listeners"), genArray()),
+		genForOf("$$child", genCall(genMember(genCall(genMember(genMember(id(controllerVar), "children"), "slice")), "reverse")), genBlock(
+			genIf(id("$$child"), genBlock(
+				genIf(genMember(id("$$child"), "destroy"), genExprStmt(genCall(genMember(id("$$child"), "destroy")))),
+			)),
+		)),
+		genAssignStmt(genMember(id(controllerVar), "children"), genArray()),
+		genAssignStmt(genMember(id(controllerVar), "updates"), genArray()),
+		genForOf("$$node", genMember(id(controllerVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
+		genAssignStmt(genMember(id(controllerVar), "nodes"), genArray()),
+	}
+	destroyBody = append(destroyBody, destroyTail...)
+	props := []*JsProp{
+		{Key: id("start"), Value: genMember(id(rangeVar), "start")},
+		{Key: id("end"), Value: genMember(id(rangeVar), "end")},
+	}
+	props = append(props, state...)
+	destroyValue := JsExpr(&JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(destroyBody...)})
+	if destroyOverride != nil {
+		destroyValue = destroyOverride
+	}
+	props = append(props,
+		&JsProp{Key: id("nodes"), Value: genArray()},
+		&JsProp{Key: id("updates"), Value: genArray()},
+		&JsProp{Key: id("listeners"), Value: genArray()},
+		&JsProp{Key: id("children"), Value: genArray()},
+		&JsProp{Key: id("adopt"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(adoptBody...)}},
+		&JsProp{Key: id("mountCSR"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: mountParams, Body: genBlock(mountBody...)}},
+		&JsProp{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updateBody...)}},
+		&JsProp{Key: id("destroy"), Value: destroyValue},
+	)
+	return &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: props}
+}
+
 func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSnapshotLeafPlan, chain *IfChainNode) {
 	if plan == nil || !g.hydrationAwaitSnapshotSlotTextIf(chain) {
 		return
@@ -10831,17 +10872,10 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 		genAssignStmt(genMember(id(controllerVar), "active"), activeExpr),
 	}
 	adoptStmts = append(adoptStmts, adoptBody...)
-	controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
-		{Key: id("start"), Value: genMember(id(rangeVar), "start")},
-		{Key: id("end"), Value: genMember(id(rangeVar), "end")},
-		{Key: id("active"), Value: numLit(-1)},
-		{Key: id("nodes"), Value: genArray()},
-		{Key: id("updates"), Value: genArray()},
-		{Key: id("listeners"), Value: genArray()},
-		{Key: id("children"), Value: genArray()},
-		{Key: id("adopt"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(adoptStmts...)}},
-		{Key: id("mountCSR"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(nextVar)}, Body: genBlock(mountBody...)}},
-		{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+	controller := hydrationStructuralRangeController(rangeVar, controllerVar,
+		[]*JsProp{{Key: id("active"), Value: numLit(-1)}},
+		adoptStmts, mountBody, []JsExpr{id(nextVar)},
+		[]JsStmt{
 			genConst(nextVar, activeExpr),
 			genIf(genBinary("===", id(nextVar), genMember(id(controllerVar), "active")), genBlock(
 				genForOf("$$update", genMember(id(controllerVar), "updates"), genInvoke("$$update")),
@@ -10850,9 +10884,9 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 			genExprStmt(genCall(genMember(id(controllerVar), "destroy"))),
 			genAssignStmt(genMember(id(controllerVar), "active"), id(nextVar)),
 			genExprStmt(genCall(genMember(id(controllerVar), "mountCSR"), id(nextVar))),
-		)}},
-		{Key: id("destroy"), Value: destroy},
-	}}
+		},
+		nil, destroy,
+	)
 	plan.adopt = append(plan.adopt,
 		genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
 		genAssignStmt(id(controllerVar), controller),
@@ -10904,33 +10938,24 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKey(plan *hydrationAwaitSn
 	nextVar, fragmentVar := prefix+"_next", prefix+"_fragment"
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	plan.decls = append(plan.decls, genLet(rangeVar, genNull()), genLet(controllerVar, genNull()))
-	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-		genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(controllerVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
-		genAssignStmt(genMember(id(controllerVar), "listeners"), genArray()),
-		genAssignStmt(genMember(id(controllerVar), "updates"), genArray()),
-		genForOf("$$node", genMember(id(controllerVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
-		genAssignStmt(genMember(id(controllerVar), "nodes"), genArray()),
-	)}
-	mount := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+	mountBody := []JsStmt{
 		genConst(fragmentVar, genCall(genMember(id("document"), "createDocumentFragment"))),
 		genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML(chain.Branches[0].Children, g.scopeID)))),
 		genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(fragmentVar), "childNodes"))),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "end"), "before"), id(fragmentVar))),
-	)}
-	controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
-		{Key: id("start"), Value: genMember(id(rangeVar), "start")}, {Key: id("end"), Value: genMember(id(rangeVar), "end")},
-		{Key: id("key"), Value: g.templateExpr(chain.KeyAST)}, {Key: id("nodes"), Value: genArray()},
-		{Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()},
-		{Key: id("adopt"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar))))}},
-		{Key: id("mountCSR"), Value: mount},
-		{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+	}
+	controller := hydrationStructuralRangeController(rangeVar, controllerVar,
+		[]*JsProp{{Key: id("key"), Value: g.templateExpr(chain.KeyAST)}},
+		[]JsStmt{genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar)))},
+		mountBody, nil,
+		[]JsStmt{
 			genConst(nextVar, g.templateExpr(chain.KeyAST)),
 			genIf(genBinary("===", id(nextVar), genMember(id(controllerVar), "key")), genReturn(nil)),
 			genExprStmt(genCall(genMember(id(controllerVar), "destroy"))),
 			genAssignStmt(genMember(id(controllerVar), "key"), id(nextVar)),
 			genExprStmt(genCall(genMember(id(controllerVar), "mountCSR"))),
-		)}}, {Key: id("destroy"), Value: destroy},
-	}}
+		}, nil, nil,
+	)
 	plan.adopt = append(plan.adopt, genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))), genAssignStmt(id(controllerVar), controller), genExprStmt(genCall(genMember(id(controllerVar), "adopt"))))
 	plan.refresh = append(plan.refresh, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "update")))))
 	plan.cleanup = append(plan.cleanup, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "destroy")))), genAssignStmt(id(controllerVar), genNull()), genAssignStmt(id(rangeVar), genNull()))
@@ -10952,11 +10977,6 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticEach(plan *hydrationAwaitS
 	itemsVar, fragmentVar, hasRowsVar := prefix+"_items", prefix+"_fragment", prefix+"_has_rows"
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	plan.decls = append(plan.decls, genLet(rangeVar, genNull()), genLet(controllerVar, genNull()))
-	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-		genAssignStmt(genMember(id(controllerVar), "updates"), genArray()),
-		genForOf("$$node", genMember(id(controllerVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
-		genAssignStmt(genMember(id(controllerVar), "nodes"), genArray()),
-	)}
 	mountBody := []JsStmt{
 		genConst(fragmentVar, genCall(genMember(id("document"), "createDocumentFragment"))),
 		genConst(itemsVar, g.templateExpr(block.IterExpr)), genLet(hasRowsVar, boolLit(false)),
@@ -10969,14 +10989,12 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticEach(plan *hydrationAwaitS
 		genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(fragmentVar), "childNodes"))),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "end"), "before"), id(fragmentVar))),
 	)
-	controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
-		{Key: id("start"), Value: genMember(id(rangeVar), "start")}, {Key: id("end"), Value: genMember(id(rangeVar), "end")},
-		{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()},
-		{Key: id("adopt"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar))))}},
-		{Key: id("mountCSR"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(mountBody...)}},
-		{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(controllerVar), "destroy"))), genExprStmt(genCall(genMember(id(controllerVar), "mountCSR"))))}},
-		{Key: id("destroy"), Value: destroy},
-	}}
+	controller := hydrationStructuralRangeController(rangeVar, controllerVar, nil,
+		[]JsStmt{genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar)))},
+		mountBody, nil,
+		[]JsStmt{genExprStmt(genCall(genMember(id(controllerVar), "destroy"))), genExprStmt(genCall(genMember(id(controllerVar), "mountCSR")))},
+		nil, nil,
+	)
 	plan.adopt = append(plan.adopt, genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))), genAssignStmt(id(controllerVar), controller), genExprStmt(genCall(genMember(id(controllerVar), "adopt"))))
 	plan.refresh = append(plan.refresh, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "update")))))
 	plan.cleanup = append(plan.cleanup, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "destroy")))), genAssignStmt(id(controllerVar), genNull()), genAssignStmt(id(rangeVar), genNull()))
