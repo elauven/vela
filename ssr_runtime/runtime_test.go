@@ -38,6 +38,18 @@ func TestContainsStringUsesSelectMultipleMembership(t *testing.T) {
 	}
 }
 
+func TestIterPreservesArrayOrderAndRejectsNonArrays(t *testing.T) {
+	if got := Iter([]string{"one", "two"}); len(got) != 2 || got[0] != "one" || got[1] != "two" {
+		t.Fatalf("Iter slice = %#v", got)
+	}
+	if got := Iter([2]int{3, 4}); len(got) != 2 || got[0] != 3 || got[1] != 4 {
+		t.Fatalf("Iter array = %#v", got)
+	}
+	if got := Iter(map[string]any{"id": "row"}); got != nil {
+		t.Fatalf("Iter object = %#v, want nil", got)
+	}
+}
+
 func TestGet(t *testing.T) {
 	if got := Get(map[string]any{"title": "ready"}, "title"); got != "ready" {
 		t.Fatalf("Get map value = %#v", got)

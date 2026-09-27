@@ -608,6 +608,7 @@ func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
 		}
 		e.eachNext = child.eachNext
 		e.needsEscaping = e.needsEscaping || child.needsEscaping
+		e.absorbImports(child.imports)
 		body = append(body, children...)
 		if node.DynamicID >= 0 {
 			body = append(body, e.markerEnd(node.DynamicID))
@@ -685,6 +686,7 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	}
 	e.eachNext = child.eachNext
 	e.needsEscaping = e.needsEscaping || child.needsEscaping
+	e.absorbImports(child.imports)
 	rangeKey := goast.Expr(goast.NewIdent(indexName))
 	// A keyed row derives its runtime scope from Key, so an omitted template
 	// index must not become an unused generated Go binding. Keep the normal
@@ -700,7 +702,7 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 		X:     iterIdent,
 		Body:  &goast.BlockStmt{List: children},
 	}
-	assign := &goast.AssignStmt{Lhs: []goast.Expr{iterIdent}, Tok: token.DEFINE, Rhs: []goast.Expr{iterable}}
+	assign := &goast.AssignStmt{Lhs: []goast.Expr{iterIdent}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "Iter"), Args: []goast.Expr{iterable}}}}
 	if len(node.ElseChildren) == 0 {
 		return e.markedStatements(node.DynamicID, []goast.Stmt{assign, rangeStmt}), nil
 	}
@@ -714,6 +716,22 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 		Body: &goast.BlockStmt{List: otherwise},
 		Else: &goast.BlockStmt{List: []goast.Stmt{rangeStmt}},
 	}}), nil
+}
+
+// absorbImports returns imports collected by a copied emitter (for example a
+// keyed each row) to its lexical parent. Structural lowering intentionally
+// copies the emitter to give rows their own bindings and runtime scope, but
+// package imports remain module-wide state.
+func (e *ssrGoEmitter) absorbImports(imports map[string]string) {
+	if len(imports) == 0 {
+		return
+	}
+	if e.imports == nil {
+		e.imports = map[string]string{}
+	}
+	for path, name := range imports {
+		e.imports[path] = name
+	}
 }
 
 // runtimeScope adds one evaluated structural segment to the component instance
@@ -1039,7 +1057,11 @@ func ssrAwaitSnapshotSlotStaticKeyedEach(node *SSRPlanEach) bool {
 	if node == nil || node.Key == nil || !ssrAwaitSnapshotSlotStaticPlanNodes(node.ElseChildren) || !ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(node.Children, node.ItemName) {
 		return false
 	}
-	if _, ok := templateExprIdent(node.Iterable); !ok {
+	// A keyed await snapshot can iterate a lexical item's member path (for
+	// example row.fields), not only an exported top-level array. The cached AST
+	// helper rejects calls, optional chains, and computed expressions; the Go
+	// emitter materializes the resulting dynamic value through vela.Iter.
+	if _, ok := templateExprBindingRoot(node.Iterable); !ok {
 		return false
 	}
 	_, ok := templateExprBindingRoot(node.Key)

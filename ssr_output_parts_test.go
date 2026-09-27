@@ -356,7 +356,7 @@ func TestBuildSSRGoFileRendersEachAndEmptyBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), "ssrEach0 := props.Items") || !strings.Contains(string(src), "if len(ssrEach0) == 0") || !strings.Contains(string(src), "for ssrEachIndex0, ssrEachItem0 := range ssrEach0") {
+	if !strings.Contains(string(src), "ssrEach0 := vela.Iter(props.Items)") || !strings.Contains(string(src), "if len(ssrEach0) == 0") || !strings.Contains(string(src), "for ssrEachIndex0, ssrEachItem0 := range ssrEach0") {
 		t.Fatalf("unexpected each renderer:\n%s", src)
 	}
 	if !strings.Contains(string(src), "vela.String(ssrEachItem0)") || !strings.Contains(string(src), "vela.String(ssrEachIndex0)") {
@@ -421,6 +421,41 @@ func TestBuildSSRGoFileRendersKeyAndAwaitPending(t *testing.T) {
 		t.Fatalf("unexpected static key or await output:\n%s", src)
 	}
 	if err := ValidateGeneratedSSRGo("page.go", src); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuildSSRGoFileRendersSettledNestedKeyedAwaitRows(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let rows=[];export let request=null;</script><template><main>{#each rows as row (row.id)}{#await request}<p>pending</p>{:then value}{#each row.fields as field (field.id)}<p>{field.title}</p>{/each}{:catch error}{#each row.fields as field (field.id)}<p>{field.title}</p>{/each}{/await}{/each}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`ssrEach0 := vela.Iter(props.Rows)`,
+		`ssrEach1 := vela.Iter(vela.Get(ssrEachItem0, "fields"))`,
+		`ssrEach2 := vela.Iter(vela.Get(ssrEachItem0, "fields"))`,
+		`vela.Get(ssrEachItem1, "title")`,
+		`case "then":`,
+		`case "catch":`,
+		`"<!--r:"+(instanceID+"--each-`,
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Fatalf("settled nested keyed-await renderer misses %q:\n%s", want, src)
+		}
+	}
+	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {
 		t.Fatal(err)
 	}
 }

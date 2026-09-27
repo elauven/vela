@@ -60,6 +60,27 @@ func ContainsString(values any, candidate string) bool {
 	return false
 }
 
+// Iter exposes the array-like subset of a JavaScript value to generated Go
+// renderers. Props and object members that cross the SSR boundary are often
+// represented as any, so ranging over them directly would not type-check in
+// Go. The adapter preserves array order and makes non-array values render as
+// an empty collection, matching the existing SSR fallback behaviour without
+// panicking on malformed input.
+func Iter(value any) []any {
+	if value == nil {
+		return nil
+	}
+	reflected := reflect.ValueOf(value)
+	if reflected.Kind() != reflect.Slice && reflected.Kind() != reflect.Array {
+		return nil
+	}
+	items := make([]any, reflected.Len())
+	for index := range items {
+		items[index] = reflected.Index(index).Interface()
+	}
+	return items
+}
+
 // Get reads one plain JavaScript-style object field from data supplied to an
 // SSR renderer. Vela's current generated prop surface represents unknown JS
 // object values as map[string]any; absent or non-object fields intentionally
