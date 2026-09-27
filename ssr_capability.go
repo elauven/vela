@@ -1340,7 +1340,28 @@ func ssrCapabilityCurrentAwaitSnapshotSlotTextIf(chain *IfChainNode) bool {
 				if !ssrCapabilityCurrentAwaitSnapshotSlotIfElement(current) {
 					return false
 				}
+			case *ComponentNode:
+				if !ssrCapabilityCurrentAwaitSnapshotSlotIfComponent(current) {
+					return false
+				}
 			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func ssrCapabilityCurrentAwaitSnapshotSlotIfComponent(component *ComponentNode) bool {
+	if component == nil || len(component.Slots) != 0 {
+		return false
+	}
+	for _, attr := range component.Attrs {
+		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+			return false
+		}
+		if attr.IsBind {
+			if _, ok := templateExprIdent(attr.Expr); !ok {
 				return false
 			}
 		}

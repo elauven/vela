@@ -432,6 +432,21 @@ func ssrHydrationComponentNames(sfc *SFC, analysis *Analysis) (map[string]bool, 
 						return err
 					}
 				}
+			case *IfChainNode:
+				// A projected-slot #if has its own range controller. Its direct
+				// child handles need named hydrate entries for SSR adoption and
+				// separate CSR factories only after a branch replacement.
+				if current == nil || current.HasKey() || !ssrCapabilityCurrentAwaitSnapshotSlotTextIf(current) {
+					continue
+				}
+				for _, branch := range current.Branches {
+					if branch == nil {
+						continue
+					}
+					if err := visitProjectedSlots(branch.Children); err != nil {
+						return err
+					}
+				}
 			}
 		}
 		return nil
