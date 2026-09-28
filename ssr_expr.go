@@ -88,6 +88,8 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		return nil, ssrExprUnsupported(pos, "identifier %q is not an exported prop or server binding", node.Name)
 	case *JsLiteral:
 		return translateSSRLiteral(node, pos)
+	case *JsArrayExpr:
+		return translateSSRArrayLiteral(node, ctx, pos)
 	case *JsUnaryExpr:
 		x, err := translateSSRExpr(node.X, ctx, pos)
 		if err != nil {
@@ -153,6 +155,32 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 	default:
 		return nil, ssrExprUnsupported(pos, "JavaScript expression %T is not supported", expr)
 	}
+}
+
+// translateSSRArrayLiteral preserves JavaScript array order and holes using a
+// []any composite literal. Vela.String already renders nil array members as
+// empty fields, so `[1, , 3]` reaches SSR text output as `1,,3`, matching
+// Array.prototype.toString for the admitted non-spread subset.
+func translateSSRArrayLiteral(node *JsArrayExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
+	elements := make([]goast.Expr, 0, len(node.Elems))
+	for _, element := range node.Elems {
+		if element == nil {
+			elements = append(elements, goast.NewIdent("nil"))
+			continue
+		}
+		if _, spread := element.(*JsSpreadExpr); spread {
+			return nil, ssrExprUnsupported(pos, "array spread is not available to static SSR")
+		}
+		value, err := translateSSRExpr(element, ctx, pos)
+		if err != nil {
+			return nil, err
+		}
+		elements = append(elements, value)
+	}
+	return &goast.CompositeLit{
+		Type: &goast.ArrayType{Elt: goast.NewIdent("any")},
+		Elts: elements,
+	}, nil
 }
 
 func translateSSRLiteral(node *JsLiteral, pos int) (goast.Expr, error) {

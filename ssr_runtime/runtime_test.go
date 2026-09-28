@@ -30,6 +30,7 @@ func TestStringAndEscapeString(t *testing.T) {
 	}{
 		{nil, ""},
 		{[]any{1, 2}, "1,2"},
+		{[]any{1, nil, 3}, "1,,3"},
 		{map[string]any{"x": 1}, "[object Object]"},
 	} {
 		if got := String(tc.value); got != tc.want {

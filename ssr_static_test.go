@@ -56,3 +56,28 @@ func TestBuildStaticSSRGoFileWithTextPropsEscapesValue(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildSSRGoFileRendersArrayLiteralWithJSJoinSemantics(t *testing.T) {
+	sfc, err := parseSFC(`<template><p>{[1, , 3]}</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), `vela.EscapeString(vela.String([]any{1, nil, 3}))`) {
+		t.Fatalf("array literal SSR output is not lowered through Vela conversion:\n%s", source)
+	}
+	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -150,6 +150,38 @@ func TestTranslateSSRExpressionDecodesSingleQuotedString(t *testing.T) {
 	}
 }
 
+func TestTranslateSSRExpressionLowersArrayLiteralAndHole(t *testing.T) {
+	sfc, err := parseSFC(`<template>{[1, , 'three']}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	translated, err := TranslateSSRExpression(expr, SSRExprContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FormatSSRGoExpr(translated)
+	if err != nil || got != `[]any{1, nil, "three"}` {
+		t.Fatalf("array literal translation=%q, err=%v", got, err)
+	}
+}
+
+func TestTranslateSSRExpressionRejectsArraySpread(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let items = [];</script><template>{[1, ...items]}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
+	if err == nil || !strings.Contains(err.Error(), "array spread") {
+		t.Fatalf("spread error=%v", err)
+	}
+}
+
 func TestTranslateSSRExpressionLowersObjectPropMember(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let profile = {};</script><template>{profile.name}</template>`)
 	if err != nil {
