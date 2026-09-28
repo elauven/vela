@@ -54,12 +54,15 @@ func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
 	if !strings.Contains(string(server), `data-vela-event=\"`) {
 		t.Fatalf("server output misses event marker:\n%s", server)
 	}
-	bridge, err := os.ReadFile(layout.eventBridgePath(source, srcRoot))
+	hydrationClient, err := os.ReadFile(layout.hydrationClientPath(source, srcRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(bridge), "addEventListener") {
-		t.Fatalf("event bridge is missing native listener:\n%s", bridge)
+	if !strings.Contains(string(hydrationClient), "addEventListener('click'") {
+		t.Fatalf("executable hydration client is missing native listener:\n%s", hydrationClient)
+	}
+	if _, err := os.Stat(layout.eventBridgePath(source, srcRoot)); !os.IsNotExist(err) {
+		t.Fatalf("executable hydration unexpectedly emitted static event bridge: %v", err)
 	}
 	css, err := os.ReadFile(layout.stylePath(source, srcRoot))
 	if err != nil {
