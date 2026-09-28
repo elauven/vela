@@ -5,6 +5,8 @@ import (
 	"html"
 	"io"
 	"reflect"
+	"strings"
+	"unicode/utf16"
 )
 
 // Renderer is the composable server-side rendering contract.
@@ -30,9 +32,49 @@ func WriteString(writer io.Writer, value string) error {
 	return err
 }
 
-// String provides stable server text conversion for typed template values.
+// String implements the template-facing subset of JavaScript text conversion.
+// Interpolation renders null-like values empty; arrays join members with a
+// comma; objects use JavaScript's default object tag rather than Go's map
+// formatting. More specialised JavaScript values remain outside the baseline
+// SSR expression subset.
 func String(value any) string {
+	if value == nil {
+		return ""
+	}
+	reflected := reflect.ValueOf(value)
+	for reflected.Kind() == reflect.Interface || reflected.Kind() == reflect.Pointer {
+		if reflected.IsNil() {
+			return ""
+		}
+		reflected = reflected.Elem()
+	}
+	if reflected.Kind() == reflect.Slice || reflected.Kind() == reflect.Array {
+		parts := make([]string, reflected.Len())
+		for index := 0; index < reflected.Len(); index++ {
+			parts[index] = String(reflected.Index(index).Interface())
+		}
+		return strings.Join(parts, ",")
+	}
+	if reflected.Kind() == reflect.Map || reflected.Kind() == reflect.Struct {
+		return "[object Object]"
+	}
 	return fmt.Sprint(value)
+}
+
+// Length returns JavaScript's .length for the baseline string/array subset.
+// JavaScript counts UTF-16 code units rather than UTF-8 bytes or Go runes.
+func Length(value any) int {
+	if value == nil {
+		return 0
+	}
+	if stringValue, ok := value.(string); ok {
+		return len(utf16.Encode([]rune(stringValue)))
+	}
+	reflected := reflect.ValueOf(value)
+	if reflected.Kind() == reflect.Slice || reflected.Kind() == reflect.Array || reflected.Kind() == reflect.Map {
+		return reflected.Len()
+	}
+	return 0
 }
 
 // ContainsString reports whether a server-rendered multi-select model contains

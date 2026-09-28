@@ -24,6 +24,27 @@ func TestStringAndEscapeString(t *testing.T) {
 	if got := EscapeString(`<tag attr="x">`); got != "&lt;tag attr=&#34;x&#34;&gt;" {
 		t.Fatalf("EscapeString=%q", got)
 	}
+	for _, tc := range []struct {
+		value any
+		want  string
+	}{
+		{nil, ""},
+		{[]any{1, 2}, "1,2"},
+		{map[string]any{"x": 1}, "[object Object]"},
+	} {
+		if got := String(tc.value); got != tc.want {
+			t.Fatalf("String(%#v)=%q want %q", tc.value, got, tc.want)
+		}
+	}
+	if got := Length("Привет"); got != 6 {
+		t.Fatalf("Length Cyrillic=%d want 6", got)
+	}
+	if got := Length("😀"); got != 2 {
+		t.Fatalf("Length astral=%d want 2 UTF-16 units", got)
+	}
+	if got := Length([]int{1, 2}); got != 2 {
+		t.Fatalf("Length array=%d want 2", got)
+	}
 }
 
 func TestContainsStringUsesSelectMultipleMembership(t *testing.T) {

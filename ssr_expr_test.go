@@ -22,7 +22,7 @@ export let items = [];
 	text := sfc.TemplateAST.Nodes[0].(*TextNode)
 	wants := []string{
 		`props.Title + "!"`,
-		"len(props.Items)",
+		"vela.Length(props.Items)",
 		"props.Items[0]",
 		"props.Active && props.Count > 0",
 	}
@@ -38,6 +38,22 @@ export let items = [];
 		if got != want {
 			t.Errorf("part %d = %q, want %q", i, got, want)
 		}
+	}
+}
+
+func TestTranslateSSRExpressionLowersNullToGoNil(t *testing.T) {
+	sfc, err := parseSFC(`<template>{null}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	translated, err := TranslateSSRExpression(expr, SSRExprContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FormatSSRGoExpr(translated)
+	if err != nil || got != "nil" {
+		t.Fatalf("null translation=%q, err=%v", got, err)
 	}
 }
 

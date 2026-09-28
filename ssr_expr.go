@@ -141,8 +141,10 @@ func translateSSRLiteral(node *JsLiteral, pos int) (goast.Expr, error) {
 		return &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(value)}, nil
 	case "number":
 		return &goast.BasicLit{Kind: token.FLOAT, Value: node.Raw}, nil
-	case "boolean", "null":
+	case "boolean":
 		return goast.NewIdent(node.Raw), nil
+	case "null":
+		return goast.NewIdent("nil"), nil
 	default:
 		return nil, ssrExprUnsupported(pos, "literal kind %q is not supported", node.Kind)
 	}
@@ -166,7 +168,7 @@ func translateSSRMember(node *JsMemberExpr, ctx SSRExprContext, pos int) (goast.
 			if err != nil {
 				return nil, err
 			}
-			return &goast.CallExpr{Fun: goast.NewIdent("len"), Args: []goast.Expr{object}}, nil
+			return &goast.CallExpr{Fun: goSelector("vela", "Length"), Args: []goast.Expr{object}}, nil
 		}
 		if property, ok := node.Prop.(*JsIdent); ok {
 			object, err := translateSSRExpr(node.Obj, ctx, pos)
