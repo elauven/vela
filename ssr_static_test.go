@@ -131,3 +131,29 @@ func TestBuildSSRGoFileRendersSafeDerivedValue(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildSSRGoFileUsesJSTruthinessForTernaryIfCondition(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let count = 0;</script><template>{#if count ? 'ready' : ''}<p>ready</p>{:else}<p>empty</p>{/if}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `if vela.Truthy(vela.Ternary(vela.Truthy(props.Count), "ready", "")) {`
+	if !strings.Contains(string(source), want) {
+		t.Fatalf("ternary if condition is not lowered through JS truthiness:\n%s", source)
+	}
+	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
+		t.Fatal(err)
+	}
+}
