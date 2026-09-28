@@ -115,7 +115,7 @@ func TestTranslateSSRExpressionLowersSafeLocalStateInitializer(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionLowersTernaryThroughRuntime(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let count = 0;</script><template>{count ? "many" : "none"}</template>`)
+	sfc, err := parseSFC(`<script>export let count = 0;</script><template>{count ? 'many' : 'none'}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,6 +131,22 @@ func TestTranslateSSRExpressionLowersTernaryThroughRuntime(t *testing.T) {
 	got, err := FormatSSRGoExpr(translated)
 	if err != nil || got != `vela.Ternary(vela.Truthy(props.Count), "many", "none")` {
 		t.Fatalf("ternary translation=%q, err=%v", got, err)
+	}
+}
+
+func TestTranslateSSRExpressionDecodesSingleQuotedString(t *testing.T) {
+	sfc, err := parseSFC(`<template>{'it\'s\nready'}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	translated, err := TranslateSSRExpression(expr, SSRExprContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FormatSSRGoExpr(translated)
+	if err != nil || got != `"it's\nready"` {
+		t.Fatalf("single quoted translation=%q, err=%v", got, err)
 	}
 }
 

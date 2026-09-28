@@ -7,6 +7,7 @@ import (
 	"go/format"
 	"go/token"
 	"strconv"
+	"strings"
 )
 
 const SSRExpressionDiagnosticCode = "VELA-SSR-EXPR"
@@ -160,7 +161,7 @@ func translateSSRLiteral(node *JsLiteral, pos int) (goast.Expr, error) {
 		if node.Decoded {
 			return &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(node.Value)}, nil
 		}
-		value, err := strconv.Unquote(node.Raw)
+		value, err := decodeSSRJSStringLiteral(node.Raw)
 		if err != nil {
 			return nil, ssrExprUnsupported(pos, "string literal cannot be translated safely")
 		}
@@ -174,6 +175,50 @@ func translateSSRLiteral(node *JsLiteral, pos int) (goast.Expr, error) {
 	default:
 		return nil, ssrExprUnsupported(pos, "literal kind %q is not supported", node.Kind)
 	}
+}
+
+// decodeSSRJSStringLiteral decodes the parser-owned token spelling without
+// reparsing template/script source. Go's strconv.Unquote cannot accept a JS
+// single-quoted string, so the small baseline decoder handles the shared JS
+// escapes explicitly and leaves broader escape grammar for the JS capability
+// matrix.
+func decodeSSRJSStringLiteral(raw string) (string, error) {
+	if len(raw) < 2 || (raw[0] != '\'' && raw[0] != '"') || raw[len(raw)-1] != raw[0] {
+		return "", strconv.ErrSyntax
+	}
+	var out strings.Builder
+	for index := 1; index < len(raw)-1; index++ {
+		char := raw[index]
+		if char != '\\' {
+			out.WriteByte(char)
+			continue
+		}
+		index++
+		if index >= len(raw)-1 {
+			return "", strconv.ErrSyntax
+		}
+		switch raw[index] {
+		case '\'', '"', '\\':
+			out.WriteByte(raw[index])
+		case 'n':
+			out.WriteByte('\n')
+		case 'r':
+			out.WriteByte('\r')
+		case 't':
+			out.WriteByte('\t')
+		case 'b':
+			out.WriteByte('\b')
+		case 'f':
+			out.WriteByte('\f')
+		case 'v':
+			out.WriteByte('\v')
+		case '0':
+			out.WriteByte(0)
+		default:
+			return "", strconv.ErrSyntax
+		}
+	}
+	return out.String(), nil
 }
 
 func translateSSRMember(node *JsMemberExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
