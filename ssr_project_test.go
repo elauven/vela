@@ -78,6 +78,13 @@ func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
 	if manifest.Mode != SSRArtifactExecutable || manifest.HydrationClient != "App.hydrate_client.js" || manifest.StaticEventBridge != "" {
 		t.Fatalf("unexpected executable manifest: %#v", manifest)
 	}
+	hydrateSource, err := os.ReadFile(layout.hydratePath(source, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(hydrateSource), "mode: 'executable'") {
+		t.Fatalf("executable hydrate entry does not expose its artifact mode:\n%s", hydrateSource)
+	}
 	css, err := os.ReadFile(layout.stylePath(source, srcRoot))
 	if err != nil {
 		t.Fatal(err)
@@ -114,6 +121,13 @@ func TestSSRProjectWritesStaticOnlyArtifactManifest(t *testing.T) {
 	}
 	if manifest.Mode != SSRArtifactStaticOnly || manifest.HydrationClient != "" {
 		t.Fatalf("unexpected static-only manifest: %#v", manifest)
+	}
+	hydrateSource, err := os.ReadFile(layout.hydratePath(source, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(hydrateSource), "mode: 'static-only'") {
+		t.Fatalf("static-only hydrate entry does not expose its artifact mode:\n%s", hydrateSource)
 	}
 }
 
@@ -250,7 +264,7 @@ window.initialWrites = observer.takeRecords().length;
 	if err := os.WriteFile(filepath.Join(clientRoot, "index.html"), []byte(page), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1];const server=http.createServer((q,r)=>{const name=q.url==="/"?"index.html":q.url.slice(1);try{const body=fs.readFileSync(path.join(root,name));r.writeHead(200,{"content-type":name.endsWith(".js")?"text/javascript":"text/html"}).end(body)}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initialWrites)!==0)throw new Error("hydration mutated server DOM");if(await p.textContent(".increment")!=="0")throw new Error("server state text mismatch");await p.click(".increment");await p.waitForFunction(()=>document.querySelector(".increment")?.textContent==="1");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.$(".increment"))throw new Error("destroy retained component DOM");if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1];const server=http.createServer((q,r)=>{const name=q.url==="/"?"index.html":q.url.slice(1);try{const body=fs.readFileSync(path.join(root,name));r.writeHead(200,{"content-type":name.endsWith(".js")?"text/javascript":"text/html"}).end(body)}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.hydrated.mode)!=="executable")throw new Error("hydrate entry mode mismatch");if(await p.evaluate(()=>window.initialWrites)!==0)throw new Error("hydration mutated server DOM");if(await p.textContent(".increment")!=="0")throw new Error("server state text mismatch");await p.click(".increment");await p.waitForFunction(()=>document.querySelector(".increment")?.textContent==="1");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.$(".increment"))throw new Error("destroy retained component DOM");if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
 	output, err := exec.Command(node, "-e", browser, clientRoot).CombinedOutput()
 	if err != nil {
 		t.Fatalf("public SSR browser fixture: %v\n%s", err, output)

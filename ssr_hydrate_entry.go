@@ -27,6 +27,10 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 		return nil, fmt.Errorf("ssr hydrate entry: missing component identity")
 	}
 	functionName := "hydrate" + plan.ComponentName
+	mode := SSRArtifactStaticOnly
+	if clientModule != "" {
+		mode = SSRArtifactExecutable
+	}
 	props := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
 	for _, prop := range plan.Props {
 		props.Props = append(props.Props, &JsProp{
@@ -88,6 +92,7 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 		)
 	}
 	returnProps := []*JsProp{
+		{baseNode: genNode(), Key: id("mode"), Value: strLit(string(mode)), Kind: "init"},
 		{baseNode: genNode(), Key: id("root"), Value: id("$$root"), Kind: "init"},
 		{baseNode: genNode(), Key: id("props"), Value: id("$$velaProps"), Kind: "init"},
 		{baseNode: genNode(), Key: id("componentProps"), Value: id("$$componentProps"), Kind: "init"},

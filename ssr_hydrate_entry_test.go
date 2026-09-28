@@ -32,7 +32,7 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 		"$$readHydrationPayload($$root, $$scopeID)",
 		"const $$velaProps = { title: $$payload.props.Title };",
 		"const $$componentProps = Object.assign({}, { title: $$payload.props.Title }, { $$velaState: $$payload.state, $$velaAwait: $$payload.await || {}, $$velaAwaitAt: $$payload.awaitAt || {} }, $$overrides || {});",
-		"return { root: $$root, props: $$velaProps, componentProps: $$componentProps, state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges, elements: { e0: $$acquireHydrationElement($$walker, 0, 'main') } };",
+		"return { mode: 'static-only', root: $$root, props: $$velaProps, componentProps: $$componentProps, state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges, elements: { e0: $$acquireHydrationElement($$walker, 0, 'main') } };",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("hydrate entry misses %q:\n%s", want, source)
@@ -79,6 +79,7 @@ func TestSSRHydrateEntryReleasesInstancePayloadOnDestroy(t *testing.T) {
 	}
 	source := PrintJS(entry, PrintPretty)
 	for _, want := range []string{
+		"return { mode: 'executable'",
 		"const $$destroy = $$component.destroy;",
 		"$$component.destroy = () => {",
 		"document.getElementById('vela-state-' + $$scopeID)",
@@ -133,6 +134,7 @@ const document = {
 };
 const root = { ownerDocument: document };
 const adopted = hydratePage(root);
+assert(adopted.mode === 'static-only', 'entry must expose static-only artifact mode');
 assert(adopted.root === root, 'entry must retain the server root');
 assert(adopted.props.title === 'server', 'entry must map Go payload fields back to Vela props');
 assert(adopted.componentProps.title === 'server', 'component props must retain mapped Vela props');
