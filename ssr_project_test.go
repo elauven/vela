@@ -115,6 +115,27 @@ func TestSSRProjectWritesStaticOnlyArtifactManifest(t *testing.T) {
 	}
 }
 
+func TestSSRProjectRejectsIncompleteExecutableHydrationState(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(srcRoot, "App.vela")
+	contents := `<script>let count = $state(1 + 1);</script><template><button @click={() => count++}>{count}</button></template>`
+	if err := os.WriteFile(source, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	layout := NewSSRProjectLayout(filepath.Join(root, "out"))
+	err := compileSSRProjectFile(source, srcRoot, layout)
+	if err == nil || !strings.Contains(err.Error(), SSRStateDiagnosticCode) || !strings.Contains(err.Error(), "count") {
+		t.Fatalf("incomplete executable state error=%v", err)
+	}
+	if _, statErr := os.Stat(layout.serverPath(source, srcRoot)); !os.IsNotExist(statErr) {
+		t.Fatalf("incomplete executable state unexpectedly wrote server artifact: %v", statErr)
+	}
+}
+
 func TestSSRProjectPreservesDeveloperPropsSidecar(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")

@@ -43,6 +43,8 @@ type SSRArtifactManifest struct {
 	StaticEventBridge string          `json:"staticEventBridge,omitempty"`
 }
 
+const SSRStateDiagnosticCode = "VELA-SSR-STATE"
+
 func NewSSRProjectLayout(outRoot string) SSRProjectLayout {
 	return NewSSRProjectLayoutWithModule(outRoot, "vela/generated/server")
 }
@@ -230,6 +232,9 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	}
 	var hydrate *JsProgram
 	executableHydration := CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) && canBuildSSRHydrationDependencies(sfc.TemplateAST.Nodes, links, srcRoot, map[string]bool{src: true})
+	if executableHydration && plan.Hydration.Incomplete {
+		return ssrIncompleteHydrationStateError(src, string(data), analysis, plan.Hydration.Omitted)
+	}
 	var bridge *JsProgram
 	mode := SSRArtifactStaticOnly
 	if executableHydration {
@@ -321,6 +326,28 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		return err
 	}
 	return os.WriteFile(stylePath, []byte(plan.ScopedCSS), 0o644)
+}
+
+func ssrIncompleteHydrationStateError(filename, source string, analysis *Analysis, omitted []string) error {
+	position := 0
+	if analysis != nil {
+		for _, state := range analysis.StateVars {
+			if state == nil {
+				continue
+			}
+			for _, name := range omitted {
+				if state.Name == name {
+					position = state.Pos
+					break
+				}
+			}
+			if position != 0 {
+				break
+			}
+		}
+	}
+	line, column := sourceLineColumn(source, position)
+	return fmt.Errorf("%s:%d:%d: %s: executable SSR hydration requires serializable initial $state values; cannot restore %s", filename, line, column, SSRStateDiagnosticCode, strings.Join(omitted, ", "))
 }
 
 func ssrProjectPropsSource(plan *SSRRenderPlan, path, packageName string) ([]byte, error) {
