@@ -202,8 +202,28 @@ func TestTranslateSSRExpressionLowersStaticTemplateLiteral(t *testing.T) {
 	}
 }
 
-func TestTranslateSSRExpressionRejectsInterpolatedTemplateLiteral(t *testing.T) {
-	sfc, err := parseSFC("<script>export let title = ''; </script><template>{`hello ${title}`}</template>")
+func TestTranslateSSRExpressionLowersTypedInterpolatedTemplateLiteral(t *testing.T) {
+	sfc, err := parseSFC("<script>export let title = ''; </script><template>{`hello ${title}!`}</template>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	translated, err := TranslateSSRExpression(expr, NewSSRExprContext(plan))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FormatSSRGoExpr(translated)
+	if err != nil || got != `vela.TemplateString("hello ", props.Title, "!")` {
+		t.Fatalf("interpolated template translation=%q, err=%v", got, err)
+	}
+}
+
+func TestTranslateSSRExpressionRejectsNullishInterpolatedTemplateLiteral(t *testing.T) {
+	sfc, err := parseSFC("<script>export let value; </script><template>{`hello ${value}`}</template>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,8 +233,8 @@ func TestTranslateSSRExpressionRejectsInterpolatedTemplateLiteral(t *testing.T) 
 	}
 	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
 	_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
-	if err == nil || !strings.Contains(err.Error(), "interpolated template literals") {
-		t.Fatalf("interpolated template error=%v", err)
+	if err == nil || !strings.Contains(err.Error(), "may be nullish") {
+		t.Fatalf("nullish template error=%v", err)
 	}
 }
 

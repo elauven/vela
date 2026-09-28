@@ -98,7 +98,7 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 	case *JsObjectExpr:
 		return translateSSRObjectLiteral(node, ctx, pos)
 	case *JsTemplateLit:
-		return translateSSRStaticTemplateLiteral(node, pos)
+		return translateSSRTemplateLiteral(node, ctx, pos)
 	case *JsUnaryExpr:
 		x, err := translateSSRExpr(node.X, ctx, pos)
 		if err != nil {
@@ -182,20 +182,55 @@ func translateSSRLocalInitializer(name, kind string, initializer JsExpr, ctx SSR
 	return value, nil
 }
 
-// translateSSRStaticTemplateLiteral admits the semantically complete first
-// template-literal slice: a parser-owned quasi with no interpolation holes.
-// Interpolated templates need a distinct JS ToString contract for null versus
-// absent values, so they remain explicitly unavailable until that value model
-// exists server-side.
-func translateSSRStaticTemplateLiteral(node *JsTemplateLit, pos int) (goast.Expr, error) {
-	if len(node.Exprs) != 0 || len(node.Quasis) != 1 {
-		return nil, ssrExprUnsupported(pos, "interpolated template literals are not available to static SSR")
+// translateSSRTemplateLiteral consumes the parser-owned quasi/expression
+// structure. Its first interpolated subset is deliberately restricted to
+// values that cannot be nil at the generated Go boundary; JavaScript null and
+// undefined need distinct ToString semantics and are admitted only after the
+// SSR value model represents both values separately.
+func translateSSRTemplateLiteral(node *JsTemplateLit, ctx SSRExprContext, pos int) (goast.Expr, error) {
+	if len(node.Quasis) != len(node.Exprs)+1 {
+		return nil, ssrExprUnsupported(pos, "template literal has an invalid parser structure")
 	}
-	value, err := decodeSSRTemplateQuasi(node.Quasis[0])
-	if err != nil {
-		return nil, ssrExprUnsupported(pos, "template literal cannot be translated safely")
+	values := make([]goast.Expr, 0, len(node.Quasis)+len(node.Exprs))
+	for index, quasi := range node.Quasis {
+		text, err := decodeSSRTemplateQuasi(quasi)
+		if err != nil {
+			return nil, ssrExprUnsupported(pos, "template literal cannot be translated safely")
+		}
+		values = append(values, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(text)})
+		if index == len(node.Exprs) {
+			continue
+		}
+		if !ssrTemplateInterpolationSafe(node.Exprs[index], ctx) {
+			return nil, ssrExprUnsupported(pos, "template literal interpolation may be nullish; only literals and typed scalar props are available to static SSR")
+		}
+		value, err := translateSSRExpr(node.Exprs[index], ctx, pos)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
 	}
-	return &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(value)}, nil
+	if len(node.Exprs) == 0 {
+		return values[0], nil
+	}
+	return &goast.CallExpr{Fun: goSelector("vela", "TemplateString"), Args: values}, nil
+}
+
+func ssrTemplateInterpolationSafe(expr JsExpr, ctx SSRExprContext) bool {
+	switch node := expr.(type) {
+	case *JsLiteral:
+		return node.Kind == "string" || node.Kind == "number" || node.Kind == "boolean"
+	case *JsIdent:
+		prop, ok := ctx.Props[node.Name]
+		if !ok {
+			return false
+		}
+		switch prop.Type {
+		case SSRTypeString, SSRTypeBool, SSRTypeInt, SSRTypeFloat:
+			return true
+		}
+	}
+	return false
 }
 
 // translateSSRArrayLiteral preserves JavaScript array order and holes using a

@@ -61,6 +61,22 @@ func String(value any) string {
 	return fmt.Sprint(value)
 }
 
+// TemplateString joins values after JavaScript template-literal conversion.
+// The current compiler only emits it for non-nullish values (or literal
+// quasis), but retaining the nil branch makes its behaviour explicit for the
+// future typed null/undefined value model.
+func TemplateString(values ...any) string {
+	var out strings.Builder
+	for _, value := range values {
+		if value == nil {
+			out.WriteString("null")
+			continue
+		}
+		out.WriteString(String(value))
+	}
+	return out.String()
+}
+
 // Length returns JavaScript's .length for the baseline string/array subset.
 // JavaScript counts UTF-16 code units rather than UTF-8 bytes or Go runes.
 func Length(value any) int {

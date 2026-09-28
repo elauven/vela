@@ -46,6 +46,9 @@ func TestStringAndEscapeString(t *testing.T) {
 	if got := Length([]int{1, 2}); got != 2 {
 		t.Fatalf("Length array=%d want 2", got)
 	}
+	if got := TemplateString("Hello ", "Vela", " #", 7, " ", true, " ", nil); got != "Hello Vela #7 true null" {
+		t.Fatalf("TemplateString=%q", got)
+	}
 }
 
 func TestTruthyAndTernary(t *testing.T) {

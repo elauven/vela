@@ -469,6 +469,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	pkg.Scope().Insert(slotName)
 	ssrRuntimeAddFunc(pkg, "WriteString", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "value", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "String", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
+	ssrRuntimeAddVariadicFunc(pkg, "TemplateString", []*types.Var{types.NewVar(token.NoPos, pkg, "values", types.NewSlice(anyType))}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
 	ssrRuntimeAddFunc(pkg, "Length", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Int])})
 	ssrRuntimeAddFunc(pkg, "Truthy", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Bool])})
 	ssrRuntimeAddFunc(pkg, "Ternary", []*types.Var{types.NewVar(token.NoPos, pkg, "condition", types.Typ[types.Bool]), types.NewVar(token.NoPos, pkg, "thenValue", anyType), types.NewVar(token.NoPos, pkg, "elseValue", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", anyType)})
@@ -482,6 +483,11 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 
 func ssrRuntimeAddFunc(pkg *types.Package, name string, params, results []*types.Var) {
 	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, name, ssrRuntimeSignature(pkg, nil, params, results)))
+}
+
+func ssrRuntimeAddVariadicFunc(pkg *types.Package, name string, params, results []*types.Var) {
+	signature := types.NewSignatureType(nil, nil, nil, types.NewTuple(params...), types.NewTuple(results...), true)
+	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, name, signature))
 }
 
 func ssrRuntimeSignature(pkg *types.Package, receiver *types.Var, params, results []*types.Var) *types.Signature {
