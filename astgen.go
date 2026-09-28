@@ -9260,15 +9260,29 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotNodes(slots map[string][]Node, bindin
 	return true
 }
 
-// hydrationAwaitSnapshotSlotStaticKey is the initial key-controller slice:
-// a single static branch keyed by one simple reactive identifier. Dynamic
-// leaves and child handles are deliberately deferred until they can share the
-// controller's ownership arrays.
+// hydrationAwaitSnapshotSlotStaticKey owns one projected #key branch. Static
+// siblings may surround direct slotless local children; child handles use the
+// same typed controller arrays as #if so an unchanged key forwards props and
+// a changed key releases listeners/children before recreating only this range.
 func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKey(chain *IfChainNode) bool {
-	return chain != nil && chain.HasKey() && len(chain.Branches) == 1 && chain.Branches[0] != nil && !chain.Branches[0].HasCondition() && allStatic(chain.Branches[0].Children) && func() bool {
-		_, ok := templateExprIdent(chain.KeyAST)
-		return ok
-	}()
+	if chain == nil || !chain.HasKey() || len(chain.Branches) != 1 || chain.Branches[0] == nil || chain.Branches[0].HasCondition() {
+		return false
+	}
+	if _, ok := templateExprIdent(chain.KeyAST); !ok {
+		return false
+	}
+	for _, node := range chain.Branches[0].Children {
+		if component, ok := node.(*ComponentNode); ok {
+			if !g.hydrationAwaitSnapshotSlotIfComponent(component) {
+				return false
+			}
+			continue
+		}
+		if !allStatic([]Node{node}) {
+			return false
+		}
+	}
+	return true
 }
 
 // hydrationAwaitSnapshotSlotStaticEach is the safe whole-range list slice.
@@ -11054,19 +11068,49 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKey(plan *hydrationAwaitSn
 	nextVar, fragmentVar := prefix+"_next", prefix+"_fragment"
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	plan.decls = append(plan.decls, genLet(rangeVar, genNull()), genLet(controllerVar, genNull()))
-	mountBody := []JsStmt{
-		genConst(fragmentVar, genCall(genMember(id("document"), "createDocumentFragment"))),
-		genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML(chain.Branches[0].Children, g.scopeID)))),
+	componentEvents := map[*ComponentNode][]hydrationAwaitComponentEvent{}
+	for nodeIndex, node := range chain.Branches[0].Children {
+		component, ok := node.(*ComponentNode)
+		if !ok || component == nil {
+			continue
+		}
+		componentEvents[component] = g.buildHydrationAwaitSnapshotSlotComponentEvents(component, prefix+"_node"+itoa(nodeIndex)+"_component")
+	}
+	mountBody := []JsStmt{genConst(fragmentVar, genCall(genMember(id("document"), "createDocumentFragment")))}
+	for nodeIndex, node := range chain.Branches[0].Children {
+		if component, ok := node.(*ComponentNode); ok {
+			mountBody = append(mountBody, g.hydrationAwaitSnapshotSlotIfMountComponent(component, fragmentVar, controllerVar, prefix+"_node"+itoa(nodeIndex), componentEvents[component])...)
+			continue
+		}
+		mountBody = append(mountBody, genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML([]Node{node}, g.scopeID)))))
+	}
+	mountBody = append(mountBody,
 		genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(fragmentVar), "childNodes"))),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "end"), "before"), id(fragmentVar))),
-	}
+	)
+	adoptBody := []JsStmt{genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar)))}
+	// Server rendering extends every direct child scope with the evaluated key.
+	// Keep the hydrate entry on that identical runtime namespace; CSR mounts do
+	// not need one because they create fresh, payload-free instances.
+	g.withHydrationComponentScope(g.hydrationKeyInstanceScope(chain), func() {
+		for nodeIndex, node := range chain.Branches[0].Children {
+			component, ok := node.(*ComponentNode)
+			if !ok || component == nil {
+				continue
+			}
+			adoptBody = append(adoptBody, g.hydrationAwaitSnapshotSlotIfAdoptComponent(component, controllerVar, prefix+"_node"+itoa(nodeIndex), componentEvents[component])...)
+		}
+	})
 	controller := hydrationStructuralRangeController(rangeVar, controllerVar,
 		[]*JsProp{{Key: id("key"), Value: g.templateExpr(chain.KeyAST)}},
-		[]JsStmt{genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar)))},
+		adoptBody,
 		mountBody, nil,
 		[]JsStmt{
 			genConst(nextVar, g.templateExpr(chain.KeyAST)),
-			genIf(genBinary("===", id(nextVar), genMember(id(controllerVar), "key")), genReturn(nil)),
+			genIf(genBinary("===", id(nextVar), genMember(id(controllerVar), "key")), genBlock(
+				genForOf("$$update", genMember(id(controllerVar), "updates"), genInvoke("$$update")),
+				genReturn(nil),
+			)),
 			genExprStmt(genCall(genMember(id(controllerVar), "destroy"))),
 			genAssignStmt(genMember(id(controllerVar), "key"), id(nextVar)),
 			genExprStmt(genCall(genMember(id(controllerVar), "mountCSR"))),
@@ -11077,6 +11121,20 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKey(plan *hydrationAwaitSn
 	plan.cleanup = append(plan.cleanup, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "destroy")))), genAssignStmt(id(controllerVar), genNull()), genAssignStmt(id(rangeVar), genNull()))
 	for _, dependency := range templateExprDeps(chain.KeyAST, g.reactiveNames()) {
 		plan.deps[dependency] = true
+	}
+	for _, node := range chain.Branches[0].Children {
+		component, ok := node.(*ComponentNode)
+		if !ok || component == nil {
+			continue
+		}
+		for _, attr := range component.Attrs {
+			if attr == nil || attr.Expr == nil {
+				continue
+			}
+			for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+				plan.deps[dependency] = true
+			}
+		}
 	}
 }
 

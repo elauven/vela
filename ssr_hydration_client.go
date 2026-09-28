@@ -265,11 +265,10 @@ func ssrHydrationDirectKeyComponentsForCSR(chain *IfChainNode) ([]*ComponentNode
 		return nil, false
 	}
 	branch := chain.Branches[0]
-	// Keep alias selection identical to the nested keyed-await recipe.  That
-	// recipe accepts direct component events and simple two-way bindings in
-	// addition to ordinary props, while the older structural-component helper
-	// intentionally accepts only one-way props.
-	if !ssrKeyedEachDirectKeyBranch(branch.Children) {
+	// Keep alias selection identical to the projected #key lifecycle. It
+	// accepts static siblings plus direct component events and simple two-way
+	// bindings; dynamic DOM leaves remain outside this recipe.
+	if !ssrKeyedEachDirectKeyBranch(branch.Children) && !ssrCapabilityCurrentAwaitSnapshotSlotStaticKey(chain) {
 		return nil, false
 	}
 	components := make([]*ComponentNode, 0, len(branch.Children))
@@ -433,10 +432,22 @@ func ssrHydrationComponentNames(sfc *SFC, analysis *Analysis) (map[string]bool, 
 					}
 				}
 			case *IfChainNode:
-				// A projected-slot #if has its own range controller. Its direct
-				// child handles need named hydrate entries for SSR adoption and
-				// separate CSR factories only after a branch replacement.
-				if current == nil || current.HasKey() || !ssrCapabilityCurrentAwaitSnapshotSlotTextIf(current) {
+				if current == nil {
+					continue
+				}
+				// Projected-slot #if and #key controllers both own direct child
+				// handles. They need named hydrate entries for SSR adoption and
+				// distinct CSR factories only after a branch/key replacement.
+				if current.HasKey() {
+					if !ssrCapabilityCurrentAwaitSnapshotSlotStaticKey(current) {
+						continue
+					}
+					if err := visitProjectedSlots(current.Branches[0].Children); err != nil {
+						return err
+					}
+					continue
+				}
+				if !ssrCapabilityCurrentAwaitSnapshotSlotTextIf(current) {
 					continue
 				}
 				for _, branch := range current.Branches {

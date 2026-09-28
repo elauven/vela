@@ -2592,6 +2592,149 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotStaticKey(t *testing.T) {
 	}
 }
 
+func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotKeyOwnsDirectChild(t *testing.T) {
+	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; import { Leaf } from "./Leaf.vela"; export let request; export let identity = "server"; export let title = "server"; let value = $state("server"); function closed() {}</script><template><main>{#await request}<p>Pending</p>{:then result}<Outer><Inner>{#key identity}<Leaf :title={title} bind:value={value} @on:close={closed} /><span class="keyed-static">Stable</span>{/key}</Inner></Outer>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysis := analyzeScriptAST(sfc.ScriptAST)
+	if !CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) {
+		t.Fatal("projected #key direct child was rejected")
+	}
+	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", sfc, analysis, "vela-parent", map[string]SSRComponentLink{
+		"Outer": {LocalName: "Outer", SourcePath: "Outer.vela", GoName: "Outer", PackageName: "outer", ImportPath: "example.com/project/outer"},
+		"Inner": {LocalName: "Inner", SourcePath: "Inner.vela", GoName: "Inner", PackageName: "inner", ImportPath: "example.com/project/inner"},
+		"Leaf":  {LocalName: "Leaf", SourcePath: "Leaf.vela", GoName: "Leaf", PackageName: "leaf", ImportPath: "example.com/project/leaf"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildSSRGoFile(plan, "parent"); err != nil {
+		t.Fatalf("SSR renderer rejected projected-slot #key child: %v", err)
+	}
+	program, err := BuildSSRHydrationClientProgram("Parent", sfc, analysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(program, PrintPretty)
+	for _, want := range []string{`import { Leaf } from './Leaf.hydrate.js';`, `Leaf($$root`, `$$csr_Leaf`, `$$onChange_value`, `addEventListener('close'`, `for (const $$update of $$hawait`, `children.push`, `key: identity`, `keyed-static`} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("projected child own-slot #key child lowering misses %q:\n%s", want, source)
+		}
+	}
+}
+
+func TestBrowserSSRHydrationProjectedSlotKeyOwnsDirectChild(t *testing.T) {
+	node := requirePlaywright(t)
+	childSFC, err := parseSFC(`<template><section class="key-child"><slot /></section></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafSFC, err := parseSFC(`<script>import { onDestroy } from "vela"; export let title = ""; onDestroy(() => { window.keyLeafDestroys = (window.keyLeafDestroys || 0) + 1; });</script><template><button class="key-leaf">{title}</button></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAnalysis, leafAnalysis := analyzeScriptAST(childSFC.ScriptAST), analyzeScriptAST(leafSFC.ScriptAST)
+	childPlan, err := BuildSSRRenderPlanWithAnalysis("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafPlan, err := BuildSSRRenderPlanWithAnalysis("Leaf", leafSFC, leafAnalysis, "vela-leaf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childClient, err := BuildSSRHydrationClientProgram("Child", childSFC, childAnalysis, "vela-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafClient, err := BuildSSRHydrationClientProgram("Leaf", leafSFC, leafAnalysis, "vela-leaf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childEntry, err := BuildSSRHydrateEntryWithClient(childPlan, "./Child.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafEntry, err := BuildSSRHydrateEntryWithClient(leafPlan, "./Leaf.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCSR, _ := buildProgramWithDOMAcquirePlan("Child", childSFC, childSFC.TemplateAST.Nodes, childAnalysis, "vela-child", false, DOMAcquireCreate)
+	leafCSR, _ := buildProgramWithDOMAcquirePlan("Leaf", leafSFC, leafSFC.TemplateAST.Nodes, leafAnalysis, "vela-leaf", false, DOMAcquireCreate)
+
+	parentSFC, err := parseSFC(`<script>import { Child } from "./Child.vela"; import { Leaf } from "./Leaf.vela"; export let request; export let identity = "server"; export let title = "server";</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<Child>{#key identity}<Leaf :title={title} /><span class="key-static">Stable</span>{/key}</Child>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentAnalysis := analyzeScriptAST(parentSFC.ScriptAST)
+	parentPlan, err := BuildSSRRenderPlanWithAnalysisAndLinks("Parent", parentSFC, parentAnalysis, "vela-parent", map[string]SSRComponentLink{
+		"Child": {LocalName: "Child", SourcePath: "Child.vela", GoName: "Child", PackageName: "child", ImportPath: "example.com/project/child"},
+		"Leaf":  {LocalName: "Leaf", SourcePath: "Leaf.vela", GoName: "Leaf", PackageName: "leaf", ImportPath: "example.com/project/leaf"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentClient, err := BuildSSRHydrationClientProgram("Parent", parentSFC, parentAnalysis, "vela-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentEntry, err := BuildSSRHydrateEntryWithClient(parentPlan, "./Parent.hydrate_client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parentRoot := parentPlan.Nodes[0].(*SSRPlanElement)
+	awaitPlan := parentRoot.Children[0].(*SSRPlanAwait)
+	childComponent := awaitPlan.ThenChildren[0].(*SSRPlanComponent)
+	keyPlan := childComponent.Slots["default"][0].(*SSRPlanIf)
+	staticPlan := keyPlan.Branches[0].Children[1].(*SSRPlanElement)
+	awaitNode := parentSFC.TemplateAST.Nodes[0].(*ElementNode).Children[0].(*AwaitBlockNode)
+	childNode := awaitNode.ThenChildren[0].(*ComponentNode)
+	keyNode := childNode.Slots["default"][0].(*IfChainNode)
+	leafNode := keyNode.Branches[0].Children[0].(*ComponentNode)
+	componentScope := func(base string, current *ComponentNode) string {
+		if suffix := parentPlan.ComponentInstanceSuffixes[current.Span]; suffix != "" {
+			return parentPlan.ScopeID + "--" + suffix
+		}
+		return base
+	}
+	childScope := componentScope(childPlan.ScopeID, childNode)
+	leafScope := parentPlan.ScopeID + "--key-" + itoa(keyNode.Span.Start) + "-server--" + ssrRuntimeComponentSuffix(parentPlan.ComponentInstanceIdentities[leafNode.Span])
+	childRoot := childPlan.Nodes[0].(*SSRPlanElement)
+	leafRoot := leafPlan.Nodes[0].(*SSRPlanElement)
+	leafText := leafRoot.Children[0].(*SSRPlanText).Parts[0]
+	leafHTML := `<!--e:` + leafScope + `:` + itoa(leafRoot.HydrationID) + `--><button vela-leaf="" class="key-leaf"><!--v:` + leafScope + `:` + itoa(leafText.DynamicID) + `-->server<!--/v:` + leafScope + `:` + itoa(leafText.DynamicID) + `--></button><!--/e:` + leafScope + `:` + itoa(leafRoot.HydrationID) + `--><script type="application/json" id="vela-state-` + leafScope + `">{"component":"` + leafScope + `","props":{"Title":"server"},"state":{},"incomplete":false}</script>`
+	html := `<!doctype html><body><!--e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><main vela-parent=""><!--v:vela-parent:` + itoa(awaitPlan.DynamicID) + `--><!--e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><section vela-child="" class="key-child"><!--v:vela-parent:` + itoa(keyPlan.DynamicID) + `-->` + leafHTML + `<!--e:vela-parent:` + itoa(staticPlan.HydrationID) + `--><span vela-parent="" class="key-static">Stable</span><!--/e:vela-parent:` + itoa(staticPlan.HydrationID) + `--><!--/v:vela-parent:` + itoa(keyPlan.DynamicID) + `--></section><!--/e:` + childScope + `:` + itoa(childRoot.HydrationID) + `--><script type="application/json" id="vela-state-` + childScope + `">{"component":"` + childScope + `","props":{},"state":{},"incomplete":false}</script><!--/v:vela-parent:` + itoa(awaitPlan.DynamicID) + `--></main><!--/e:vela-parent:` + itoa(parentRoot.HydrationID) + `--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Identity":"server","Title":"server"},"state":{},"incomplete":false,"await":{"` + itoa(awaitPlan.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.keyLeafDestroys=0;window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydrateParent(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
+	dir := t.TempDir()
+	for name, data := range map[string][]byte{
+		"runtime.js":               embeddedRuntime,
+		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
+		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
+		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
+		"Leaf.js":                  []byte(PrintJS(leafCSR, PrintPretty)),
+		"Leaf.hydrate_client.js":   []byte(PrintJS(leafClient, PrintPretty)),
+		"Leaf.hydrate.js":          []byte(PrintJS(leafEntry, PrintPretty)),
+		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
+		"Parent.hydrate.js":        []byte(PrintJS(parentEntry, PrintPretty)),
+		"index.html":               []byte(html),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],server=http.createServer((q,r)=>{const n=q.url==="/"?"index.html":q.url.slice(1);try{return r.writeHead(200,{"content-type":n.endsWith(".js")?"text/javascript":"text/html"}).end(fs.readFileSync(path.join(root,n)))}catch{return r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b,errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);if(await p.evaluate(()=>window.initial)!==0)throw new Error("adoption wrote DOM");await p.evaluate(()=>{window.first=document.querySelector(".key-leaf");window.hydrated.component.set({title:"updated"})});await p.waitForFunction(()=>document.querySelector(".key-leaf")?.textContent==="updated");if(!await p.evaluate(()=>window.first===document.querySelector(".key-leaf")&&document.querySelector(".key-static")?.previousElementSibling===window.first))throw new Error("same-key update remounted or reordered child");await p.evaluate(()=>window.hydrated.component.set({identity:"next",title:"next"}));await p.waitForFunction(()=>document.querySelector(".key-leaf")?.textContent==="next"&&document.querySelector(".key-leaf")!==window.first);const replaced=await p.evaluate(()=>({destroys:window.keyLeafDestroys,payload:!document.getElementById("vela-state-` + leafScope + `"),staticBefore:document.querySelector(".key-static")?.previousElementSibling===document.querySelector(".key-leaf")}));if(replaced.destroys!==1||!replaced.payload||!replaced.staticBefore)throw new Error(JSON.stringify(replaced));await p.evaluate(()=>window.hydrated.component.destroy());if(await p.evaluate(()=>window.keyLeafDestroys)!==2)throw new Error("destroy missed re-keyed child");if(await p.evaluate(()=>document.querySelector("main")))throw new Error("destroy left root");process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e,errors.join("\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	browser = strings.ReplaceAll(browser, "document.querySelector(\".key-static\")?.previousElementSibling===window.first", "[...document.querySelectorAll(\".key-child > .key-leaf,.key-child > .key-static\")].map(node=>node===window.first?\"leaf\":\"static\").join(\",\")==\"leaf,static\"")
+	command := exec.Command(node, "-e", browser, dir)
+	command.Dir = "/projects/compiler"
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("projected-slot key child browser fixture: %v\n%s\nclient:\n%s", err, output, PrintJS(parentClient, PrintPretty))
+	}
+	if got := strings.TrimSpace(string(output)); got != "OK" {
+		t.Fatalf("projected-slot key child browser output=%q", got)
+	}
+}
+
 func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotStaticEach(t *testing.T) {
 	sfc, err := parseSFC(`<script>import { Outer } from "./Outer.vela"; import { Inner } from "./Inner.vela"; export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then result}<Outer><Inner>{#each rows as row}<p class="row">Row</p>{:else}<p class="empty">Empty</p>{/each}</Inner></Outer>{/await}</main></template>`)
 	if err != nil {
