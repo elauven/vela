@@ -300,7 +300,11 @@ func ssrStateInitializers(analysis *Analysis) map[string]JsExpr {
 		return initializers
 	}
 	for _, state := range analysis.StateVars {
-		if state != nil && state.Name != "" && state.InitialAST != nil {
+		// $state.deep owns proxy/mutation semantics which have no equivalent
+		// server value model yet. Only plain $state initializers may cross this
+		// expression boundary; deep bindings retain the explicit hydration
+		// diagnostic even when their literal happens to be Go-representable.
+		if state != nil && !state.Deep && state.Name != "" && state.InitialAST != nil {
 			initializers[state.Name] = state.InitialAST
 		}
 	}
