@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -64,6 +65,17 @@ func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
 	if _, err := os.Stat(layout.eventBridgePath(source, srcRoot)); !os.IsNotExist(err) {
 		t.Fatalf("executable hydration unexpectedly emitted static event bridge: %v", err)
 	}
+	manifestSource, err := os.ReadFile(layout.manifestPath(source, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest SSRArtifactManifest
+	if err := json.Unmarshal(manifestSource, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Mode != SSRArtifactExecutable || manifest.HydrationClient != "App.hydrate_client.js" || manifest.StaticEventBridge != "" {
+		t.Fatalf("unexpected executable manifest: %#v", manifest)
+	}
 	css, err := os.ReadFile(layout.stylePath(source, srcRoot))
 	if err != nil {
 		t.Fatal(err)
@@ -73,6 +85,33 @@ func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(layout.ClientDir, "runtime.js")); err != nil {
 		t.Fatalf("missing client runtime: %v", err)
+	}
+}
+
+func TestSSRProjectWritesStaticOnlyArtifactManifest(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(srcRoot, "Static.vela")
+	if err := os.WriteFile(source, []byte(`<template><p>one</p><p>two</p></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	layout := NewSSRProjectLayout(filepath.Join(root, "out"))
+	if err := compileSSRProjectFile(source, srcRoot, layout); err != nil {
+		t.Fatal(err)
+	}
+	manifestSource, err := os.ReadFile(layout.manifestPath(source, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest SSRArtifactManifest
+	if err := json.Unmarshal(manifestSource, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Mode != SSRArtifactStaticOnly || manifest.HydrationClient != "" {
+		t.Fatalf("unexpected static-only manifest: %#v", manifest)
 	}
 }
 

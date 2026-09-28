@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -19,6 +20,27 @@ type SSRProjectLayout struct {
 	ClientDir  string
 	ServerDir  string
 	StylesDir  string
+}
+
+// SSRArtifactMode states the public runtime contract of one generated SSR
+// component. A validation-only hydrate entry is deliberately not called
+// executable: consumers must not assume it has a live set/destroy instance.
+type SSRArtifactMode string
+
+const (
+	SSRArtifactExecutable SSRArtifactMode = "executable"
+	SSRArtifactStaticOnly SSRArtifactMode = "static-only"
+)
+
+// SSRArtifactManifest is emitted next to browser artifacts so a CLI consumer
+// can distinguish an executable hydrate client from static markup validation.
+// Paths are relative to the client output directory.
+type SSRArtifactManifest struct {
+	Component         string          `json:"component"`
+	Mode              SSRArtifactMode `json:"mode"`
+	Hydrate           string          `json:"hydrate"`
+	HydrationClient   string          `json:"hydrationClient,omitempty"`
+	StaticEventBridge string          `json:"staticEventBridge,omitempty"`
 }
 
 func NewSSRProjectLayout(outRoot string) SSRProjectLayout {
@@ -77,6 +99,10 @@ func (layout SSRProjectLayout) hydratePath(src, srcRoot string) string {
 
 func (layout SSRProjectLayout) hydrationClientPath(src, srcRoot string) string {
 	return mirrorPath(src, srcRoot, layout.ClientDir, ".hydrate_client.js")
+}
+
+func (layout SSRProjectLayout) manifestPath(src, srcRoot string) string {
+	return mirrorPath(src, srcRoot, layout.ClientDir, ".ssr.json")
 }
 
 // buildSSRProject adds server and styles products around the established CSR
@@ -205,6 +231,7 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	var hydrate *JsProgram
 	executableHydration := CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) && canBuildSSRHydrationDependencies(sfc.TemplateAST.Nodes, links, srcRoot, map[string]bool{src: true})
 	var bridge *JsProgram
+	mode := SSRArtifactStaticOnly
 	if executableHydration {
 		hydrationClient, err := BuildSSRHydrationClientProgram(componentName(src), sfc, analysis, scopeID)
 		if err != nil {
@@ -217,6 +244,7 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		if err := os.WriteFile(hydrationClientPath, []byte(PrintJS(hydrationClient, PrintPretty)), 0o644); err != nil {
 			return err
 		}
+		mode = SSRArtifactExecutable
 		hydrate, err = BuildSSRHydrateEntryWithClient(plan, "./"+filepath.Base(hydrationClientPath))
 	} else {
 		// The standalone bridge is a static-only fallback. Executable hydration
@@ -257,6 +285,23 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		return err
 	}
 	if err := os.WriteFile(hydratePath, hydrateSource, 0o644); err != nil {
+		return err
+	}
+	manifest := SSRArtifactManifest{Component: componentName(src), Mode: mode, Hydrate: filepath.Base(hydratePath)}
+	if executableHydration {
+		manifest.HydrationClient = filepath.Base(layout.hydrationClientPath(src, srcRoot))
+	} else if bridge != nil {
+		manifest.StaticEventBridge = filepath.Base(layout.eventBridgePath(src, srcRoot))
+	}
+	manifestSource, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	manifestPath := layout.manifestPath(src, srcRoot)
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(manifestPath, append(manifestSource, '\n'), 0o644); err != nil {
 		return err
 	}
 	if bridge != nil {
