@@ -97,17 +97,26 @@ if (JSON.stringify(calls) !== "[[\"click\",\"function\"]]") process.exit(1);
 	}
 }
 
-func TestCompileSSRProjectFileRejectsReactiveEvent(t *testing.T) {
+func TestCompileSSRProjectFileUsesExecutableHydrationForReactiveEvent(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "App.vela")
-	content := `<script>let count = $state(0);</script><template><button @click={() => count++}>Save</button></template>`
+	content := `<script>export let count = 0; function increment() { count++; }</script><template><button @click={increment}>{count}</button></template>`
 	if err := os.WriteFile(source, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := compileSSRProjectFile(source, root, NewSSRProjectLayout(filepath.Join(root, "out")))
-	problem, ok := err.(*SSRStaticEventError)
-	if !ok || !strings.Contains(problem.Error(), SSRStaticEventDiagnosticCode) {
-		t.Fatalf("error=%T %v", err, err)
+	layout := NewSSRProjectLayout(filepath.Join(root, "out"))
+	if err := compileSSRProjectFile(source, root, layout); err != nil {
+		t.Fatal(err)
+	}
+	client, err := os.ReadFile(layout.hydrationClientPath(source, root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(client), "addEventListener('click'") {
+		t.Fatalf("executable hydration client misses click listener:\n%s", client)
+	}
+	if _, err := os.Stat(layout.eventBridgePath(source, root)); !os.IsNotExist(err) {
+		t.Fatalf("executable hydration must not emit static event bridge, stat err=%v", err)
 	}
 }
 

@@ -202,12 +202,10 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	if err != nil {
 		return err
 	}
-	bridge, err := BuildSSRStaticEventBridge(plan)
-	if err != nil {
-		return err
-	}
 	var hydrate *JsProgram
-	if CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) && canBuildSSRHydrationDependencies(sfc.TemplateAST.Nodes, links, srcRoot, map[string]bool{src: true}) {
+	executableHydration := CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) && canBuildSSRHydrationDependencies(sfc.TemplateAST.Nodes, links, srcRoot, map[string]bool{src: true})
+	var bridge *JsProgram
+	if executableHydration {
 		hydrationClient, err := BuildSSRHydrationClientProgram(componentName(src), sfc, analysis, scopeID)
 		if err != nil {
 			return err
@@ -221,6 +219,13 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		}
 		hydrate, err = BuildSSRHydrateEntryWithClient(plan, "./"+filepath.Base(hydrationClientPath))
 	} else {
+		// The standalone bridge is a static-only fallback. Executable hydration
+		// owns reactive DOM listeners itself, so validating it here would reject
+		// a component before its full client lifecycle is even selected.
+		bridge, err = BuildSSRStaticEventBridge(plan)
+		if err != nil {
+			return err
+		}
 		hydrate, err = BuildSSRHydrateEntry(plan)
 	}
 	if err != nil {
