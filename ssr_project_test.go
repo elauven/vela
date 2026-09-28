@@ -271,6 +271,71 @@ window.initialWrites = observer.takeRecords().length;
 	}
 }
 
+func TestSSRProjectPublicStaticOnlyArtifactsValidateInBrowser(t *testing.T) {
+	node := requirePlaywright(t)
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(srcRoot, "Static.vela")
+	contents := `<template><p class="first">one</p><p class="second">two</p></template>`
+	if err := os.WriteFile(source, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	projectModule := "example.com/ssrstatic"
+	if errors := buildSSRProject([]string{source}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	compilerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainSource := `package main
+import (
+    "os"
+    components "example.com/ssrstatic/server/components"
+)
+func main() {
+    if err := components.RenderStaticAt(os.Stdout, components.StaticProps{}, components.StaticSlots{}, "vela-static-instance"); err != nil {
+        panic(err)
+    }
+}
+`
+	if err := os.WriteFile(filepath.Join(outRoot, "main.go"), []byte(mainSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	html, err := runSSRGeneratedProgram(outRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientRoot := NewSSRProjectLayout(outRoot).ClientDir
+	entry := `import hydrateStatic from "./Static.hydrate.js";
+window.initialWrites = 0;
+const observer = new MutationObserver(() => { window.initialWrites++; });
+observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
+window.hydrated = hydrateStatic(document.body, {}, "vela-static-instance");
+window.initialWrites = observer.takeRecords().length;
+`
+	if err := os.WriteFile(filepath.Join(clientRoot, "entry.js"), []byte(entry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	page := "<!doctype html><body>" + string(html) + `<script type="module" src="./entry.js"></script></body>`
+	if err := os.WriteFile(filepath.Join(clientRoot, "index.html"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1];const server=http.createServer((q,r)=>{const name=q.url==="/"?"index.html":q.url.slice(1);try{const body=fs.readFileSync(path.join(root,name));r.writeHead(200,{"content-type":name.endsWith(".js")?"text/javascript":"text/html"}).end(body)}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);const result=await p.evaluate(()=>({mode:window.hydrated.mode,writes:window.initialWrites,hasComponent:Object.hasOwn(window.hydrated,"component"),first:document.querySelector(".first")?.textContent,second:document.querySelector(".second")?.textContent}));if(result.mode!=="static-only"||result.writes!==0||result.hasComponent||result.first!=="one"||result.second!=="two")throw new Error("unexpected static-only hydration result: "+JSON.stringify(result));if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	output, err := exec.Command(node, "-e", browser, clientRoot).CombinedOutput()
+	if err != nil {
+		t.Fatalf("public static-only SSR browser fixture: %v\n%s", err, output)
+	}
+}
+
 func runSSRGeneratedProgram(root string) ([]byte, error) {
 	command := exec.Command("go", "run", ".")
 	command.Dir = root
