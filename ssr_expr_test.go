@@ -186,6 +186,38 @@ func TestTranslateSSRExpressionDecodesSingleQuotedString(t *testing.T) {
 	}
 }
 
+func TestTranslateSSRExpressionLowersStaticTemplateLiteral(t *testing.T) {
+	sfc, err := parseSFC("<template>{`ready\\n\\`cost: \\$5`}</template>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	translated, err := TranslateSSRExpression(expr, SSRExprContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FormatSSRGoExpr(translated)
+	if err != nil || got != "\"ready\\n`cost: $5\"" {
+		t.Fatalf("static template translation=%q, err=%v", got, err)
+	}
+}
+
+func TestTranslateSSRExpressionRejectsInterpolatedTemplateLiteral(t *testing.T) {
+	sfc, err := parseSFC("<script>export let title = ''; </script><template>{`hello ${title}`}</template>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
+	if err == nil || !strings.Contains(err.Error(), "interpolated template literals") {
+		t.Fatalf("interpolated template error=%v", err)
+	}
+}
+
 func TestTranslateSSRExpressionLowersArrayLiteralAndHole(t *testing.T) {
 	sfc, err := parseSFC(`<template>{[1, , 'three']}</template>`)
 	if err != nil {

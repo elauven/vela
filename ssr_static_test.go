@@ -157,3 +157,28 @@ func TestBuildSSRGoFileUsesJSTruthinessForTernaryIfCondition(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildSSRGoFileRendersStaticTemplateLiteral(t *testing.T) {
+	sfc, err := parseSFC("<template><p>{`ready\\nnow`}</p></template>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), `vela.EscapeString(vela.String("ready\nnow"))`) {
+		t.Fatalf("static template literal is not lowered through SSR text conversion:\n%s", source)
+	}
+	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -97,6 +97,8 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		return translateSSRArrayLiteral(node, ctx, pos)
 	case *JsObjectExpr:
 		return translateSSRObjectLiteral(node, ctx, pos)
+	case *JsTemplateLit:
+		return translateSSRStaticTemplateLiteral(node, pos)
 	case *JsUnaryExpr:
 		x, err := translateSSRExpr(node.X, ctx, pos)
 		if err != nil {
@@ -178,6 +180,22 @@ func translateSSRLocalInitializer(name, kind string, initializer JsExpr, ctx SSR
 		return nil, ssrExprUnsupported(pos, "local %s binding %q has no server-safe initializer: %v", kind, name, err)
 	}
 	return value, nil
+}
+
+// translateSSRStaticTemplateLiteral admits the semantically complete first
+// template-literal slice: a parser-owned quasi with no interpolation holes.
+// Interpolated templates need a distinct JS ToString contract for null versus
+// absent values, so they remain explicitly unavailable until that value model
+// exists server-side.
+func translateSSRStaticTemplateLiteral(node *JsTemplateLit, pos int) (goast.Expr, error) {
+	if len(node.Exprs) != 0 || len(node.Quasis) != 1 {
+		return nil, ssrExprUnsupported(pos, "interpolated template literals are not available to static SSR")
+	}
+	value, err := decodeSSRTemplateQuasi(node.Quasis[0])
+	if err != nil {
+		return nil, ssrExprUnsupported(pos, "template literal cannot be translated safely")
+	}
+	return &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(value)}, nil
 }
 
 // translateSSRArrayLiteral preserves JavaScript array order and holes using a
@@ -304,19 +322,32 @@ func decodeSSRJSStringLiteral(raw string) (string, error) {
 	if len(raw) < 2 || (raw[0] != '\'' && raw[0] != '"') || raw[len(raw)-1] != raw[0] {
 		return "", strconv.ErrSyntax
 	}
+	return decodeSSRJSStringContent(raw[1:len(raw)-1], false)
+}
+
+func decodeSSRTemplateQuasi(raw string) (string, error) {
+	return decodeSSRJSStringContent(raw, true)
+}
+
+func decodeSSRJSStringContent(raw string, template bool) (string, error) {
 	var out strings.Builder
-	for index := 1; index < len(raw)-1; index++ {
+	for index := 0; index < len(raw); index++ {
 		char := raw[index]
 		if char != '\\' {
 			out.WriteByte(char)
 			continue
 		}
 		index++
-		if index >= len(raw)-1 {
+		if index >= len(raw) {
 			return "", strconv.ErrSyntax
 		}
 		switch raw[index] {
 		case '\'', '"', '\\':
+			out.WriteByte(raw[index])
+		case '`', '$':
+			if !template {
+				return "", strconv.ErrSyntax
+			}
 			out.WriteByte(raw[index])
 		case 'n':
 			out.WriteByte('\n')
