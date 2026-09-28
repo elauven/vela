@@ -4644,7 +4644,7 @@ func TestSSRHydrationKeyedEachAwaitReadsScopedSnapshotForStaticSettledRows(t *te
 	for _, want := range []string{
 		"snapshot: -1",
 		"$$props.$$velaAwaitAt && $$props.$$velaAwaitAt[$$instanceID + '--each-",
-		"_snapshot.state === 'then'",
+		"$$snapshot.state === 'then'",
 		"$$state.snapshot === 1",
 		"$$state.snapshot = -1",
 		"_mount = (",
