@@ -128,7 +128,21 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 	case *JsMemberExpr:
 		return translateSSRMember(node, ctx, pos)
 	case *JsConditionalExpr:
-		return nil, ssrExprUnsupported(pos, "ternary expressions require the SSR runtime and are not enabled yet")
+		test, err := translateSSRExpr(node.Test, ctx, pos)
+		if err != nil {
+			return nil, err
+		}
+		thenValue, err := translateSSRExpr(node.Then, ctx, pos)
+		if err != nil {
+			return nil, err
+		}
+		elseValue, err := translateSSRExpr(node.Else, ctx, pos)
+		if err != nil {
+			return nil, err
+		}
+		return &goast.CallExpr{Fun: goSelector("vela", "Ternary"), Args: []goast.Expr{
+			&goast.CallExpr{Fun: goSelector("vela", "Truthy"), Args: []goast.Expr{test}}, thenValue, elseValue,
+		}}, nil
 	case *JsCallExpr:
 		return nil, ssrExprUnsupported(pos, "JavaScript calls are not available to static SSR")
 	case *JsArrowFunc:

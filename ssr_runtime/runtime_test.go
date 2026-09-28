@@ -47,6 +47,25 @@ func TestStringAndEscapeString(t *testing.T) {
 	}
 }
 
+func TestTruthyAndTernary(t *testing.T) {
+	for _, tc := range []struct {
+		value any
+		want  bool
+	}{
+		{nil, false}, {false, false}, {"", false}, {0, false}, {"ok", true}, {[]any{}, true}, {map[string]any{}, true},
+	} {
+		if got := Truthy(tc.value); got != tc.want {
+			t.Fatalf("Truthy(%#v)=%v want %v", tc.value, got, tc.want)
+		}
+	}
+	if got := Ternary(Truthy(0), "yes", "no"); got != "no" {
+		t.Fatalf("false ternary=%#v", got)
+	}
+	if got := Ternary(Truthy("ready"), "yes", "no"); got != "yes" {
+		t.Fatalf("true ternary=%#v", got)
+	}
+}
+
 func TestContainsStringUsesSelectMultipleMembership(t *testing.T) {
 	if !ContainsString([]any{"one", 2, true}, "2") {
 		t.Fatal("multi-select membership must use browser-visible string values")

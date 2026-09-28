@@ -77,6 +77,43 @@ func Length(value any) int {
 	return 0
 }
 
+// Truthy implements JavaScript truthiness for values admitted by the baseline
+// SSR expression subset. Arrays and objects stay truthy even when empty.
+func Truthy(value any) bool {
+	if value == nil {
+		return false
+	}
+	switch value := value.(type) {
+	case bool:
+		return value
+	case string:
+		return value != ""
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return reflected.Int() != 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return reflected.Uint() != 0
+	case reflect.Float32, reflect.Float64:
+		return reflected.Float() != 0
+	case reflect.Interface, reflect.Pointer:
+		return !reflected.IsNil()
+	default:
+		return true
+	}
+}
+
+// Ternary selects an already translated pure branch after JavaScript truthiness
+// has been evaluated. Branch expressions in the baseline subset are side-effect
+// free, so eager Go argument evaluation cannot change observable behavior.
+func Ternary(condition bool, thenValue, elseValue any) any {
+	if condition {
+		return thenValue
+	}
+	return elseValue
+}
+
 // ContainsString reports whether a server-rendered multi-select model contains
 // candidate after the same visible-value conversion used for regular select
 // bindings. JavaScript select multiple has set-like membership semantics: an
