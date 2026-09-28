@@ -11699,8 +11699,15 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	controller := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(
 		genLet("$$rowItem", id("$$item")),
 		genLet("$$rowIndex", id("$$index")),
-		genConst("$$controller", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
-			{Key: id("row"), Value: genNull()},
+		genConst("$$controller", genCall(id("$$createHydrationRowController"), genNull(), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$nextItem"), id("$$nextIndex")}, Body: genBlock(
+			genAssignStmt(id("$$rowItem"), id("$$nextItem")),
+			genAssignStmt(id("$$rowIndex"), id("$$nextIndex")),
+			genForOf("$$update", genMember(id("$$controller"), "updates"), genInvoke("$$update")),
+		)}, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genForOf("$$child", genCall(genMember(genCall(genMember(genMember(id("$$controller"), "children"), "slice")), "reverse")), genIf(genMember(id("$$child"), "destroy"), genExprStmt(genCall(genMember(id("$$child"), "destroy"))))),
+			genAssignStmt(genMember(id("$$controller"), "children"), genArray()),
+		)})),
+		genExprStmt(genCall(generatedMemberPath("Object.assign"), id("$$controller"), &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
 			{Key: id("text"), Value: genNull()},
 			{Key: id("textValue"), Value: controllerTextValue},
 			{Key: id("attrValue"), Value: controllerAttrValue},
@@ -11724,22 +11731,8 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			{Key: id("optionListItems"), Value: controllerOptionListItems},
 			{Key: id("optionBlocks"), Value: genNew(id("Map"))},
 			{Key: id("optionListAdopted"), Value: boolLit(false)},
-			{Key: id("updates"), Value: genArray()},
-			{Key: id("listeners"), Value: genArray()},
 			{Key: id("children"), Value: genArray()},
-			{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$nextItem"), id("$$nextIndex")}, Body: genBlock(
-				genAssignStmt(id("$$rowItem"), id("$$nextItem")),
-				genAssignStmt(id("$$rowIndex"), id("$$nextIndex")),
-				genForOf("$$update", genMember(id("$$controller"), "updates"), genInvoke("$$update")),
-			)}},
-			{Key: id("destroy"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-				genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id("$$controller"), "listeners"), "slice")), "reverse")), genInvoke("$$cleanup")),
-				genAssignStmt(genMember(id("$$controller"), "listeners"), genArray()),
-				genForOf("$$child", genCall(genMember(genCall(genMember(genMember(id("$$controller"), "children"), "slice")), "reverse")), genIf(genMember(id("$$child"), "destroy"), genExprStmt(genCall(genMember(id("$$child"), "destroy"))))),
-				genAssignStmt(genMember(id("$$controller"), "children"), genArray()),
-				genAssignStmt(genMember(id("$$controller"), "updates"), genArray()),
-			)}},
-		}}),
+		}})),
 		genReturn(id("$$controller")),
 	)}
 	attachBody := []JsStmt{}

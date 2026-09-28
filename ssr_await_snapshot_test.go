@@ -2912,7 +2912,8 @@ func TestSSRHydrationAwaitSnapshotProjectedChildOwnSlotStaticKeyedEach(t *testin
 		`createComment('/r')`,
 		`controller: $$controller`,
 		`children: []`,
-		`listeners.slice().reverse()`,
+		`$$createHydrationRowController`,
+		`Object.assign($$controller`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("projected-slot static keyed each lowering misses %q:\n%s", want, source)

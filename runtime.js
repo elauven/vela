@@ -681,8 +681,8 @@ export function $$createHydrationRowController(row, update, afterDestroy) {
     destroy() {
       for (const cleanup of controller.listeners.slice().reverse()) cleanup();
       controller.listeners = [];
-      controller.updates = [];
       if (typeof afterDestroy === 'function') afterDestroy();
+      controller.updates = [];
     }
   };
   return controller;
