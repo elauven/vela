@@ -1,6 +1,24 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestHydrationKeyedAwaitNestedComponentScopeUsesInnerKeyedRecipe(t *testing.T) {
+	sfc, err := parseSFC(`<template>{#each rows as row (row.id)}{#each row.fields as field (field.id)}<Child :title={field.title} />{/each}{/each}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer := sfc.TemplateAST.Nodes[0].(*EachBlockNode)
+	nested := outer.Children[0].(*EachBlockNode)
+	g := &ASTGen{sfc: sfc, hydrationLifecyclePlan: BuildSSRStructuralLifecyclePlan(sfc.TemplateAST.Nodes)}
+	code := PrintJS(&JsProgram{Body: []JsStmt{genConst("scope", g.hydrationKeyedAwaitNestedComponentScope(outer, nested, id("$$outer_scope"), "$$field", "$$field_index"))}}, PrintPretty)
+	want := "$$outer_scope + '--each-" + itoa(nested.Span.Start) + "-' + String($$field.id)"
+	if !strings.Contains(code, want) {
+		t.Fatalf("inner keyed component scope missing %q:\n%s", want, code)
+	}
+}
 
 func TestHydrationKeyedAwaitNestedDirectComponentRow(t *testing.T) {
 	for _, tc := range []struct {

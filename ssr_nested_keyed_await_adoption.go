@@ -41,6 +41,19 @@ func hydrationKeyedAwaitNestedDirectComponentRow(block *EachBlockNode) (hydratio
 	return hydrationKeyedAwaitNestedComponentRecipe{Block: block, Component: component}, true
 }
 
+// hydrationKeyedAwaitNestedComponentScope derives the instance namespace of a
+// child inside an inner keyed row from the same typed recipes that define the
+// SSR r:/r: markers. Keeping this in one helper prevents the future adopt path
+// from accidentally using the outer row scope (which would collide for every
+// inner key) or rebuilding a scope from printable template text.
+func (g *ASTGen) hydrationKeyedAwaitNestedComponentScope(outer, nested *EachBlockNode, outerScope JsExpr, innerItem, innerIndex string) JsExpr {
+	if outer == nil || nested == nil || !outer.HasKey() || !nested.HasKey() {
+		panic("vela: nested component scope requires keyed outer and inner rows")
+	}
+	nestedPlan := g.hydrationLifecycleNode(SSRLifecyclePlanEach, nested.Span)
+	return g.hydrationKeyedEachRecipeScopeFrom(outerScope, nestedPlan.KeyedEach, innerItem, innerIndex)
+}
+
 // hydrationKeyedAwaitNestedControlRecipe deliberately stays separate from the
 // text-row recipe: a native control has a browser-owned live property and must
 // read that property before any later reactive writer is allowed to run.
