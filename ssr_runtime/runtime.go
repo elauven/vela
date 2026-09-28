@@ -150,6 +150,25 @@ func Ternary(condition bool, thenValue, elseValue any) any {
 	return elseValue
 }
 
+// And returns the same operand JavaScript's && would return. The compiler
+// only lowers pure expressions through this helper, so eagerly receiving both
+// Go arguments does not observe a JavaScript short-circuit side effect.
+func And(left, right any) any {
+	if Truthy(left) {
+		return right
+	}
+	return left
+}
+
+// Or returns the same operand JavaScript's || would return. See And for the
+// accepted pure-expression boundary.
+func Or(left, right any) any {
+	if Truthy(left) {
+		return left
+	}
+	return right
+}
+
 // ContainsString reports whether a server-rendered multi-select model contains
 // candidate after the same visible-value conversion used for regular select
 // bindings. JavaScript select multiple has set-like membership semantics: an

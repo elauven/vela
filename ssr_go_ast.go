@@ -477,6 +477,8 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	ssrRuntimeAddFunc(pkg, "Length", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Int])})
 	ssrRuntimeAddFunc(pkg, "Truthy", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Bool])})
 	ssrRuntimeAddFunc(pkg, "Ternary", []*types.Var{types.NewVar(token.NoPos, pkg, "condition", types.Typ[types.Bool]), types.NewVar(token.NoPos, pkg, "thenValue", anyType), types.NewVar(token.NoPos, pkg, "elseValue", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", anyType)})
+	ssrRuntimeAddFunc(pkg, "And", []*types.Var{types.NewVar(token.NoPos, pkg, "left", anyType), types.NewVar(token.NoPos, pkg, "right", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", anyType)})
+	ssrRuntimeAddFunc(pkg, "Or", []*types.Var{types.NewVar(token.NoPos, pkg, "left", anyType), types.NewVar(token.NoPos, pkg, "right", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", anyType)})
 	ssrRuntimeAddFunc(pkg, "ContainsString", []*types.Var{types.NewVar(token.NoPos, pkg, "values", anyType), types.NewVar(token.NoPos, pkg, "candidate", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Bool])})
 	ssrRuntimeAddFunc(pkg, "Iter", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.NewSlice(anyType))})
 	ssrRuntimeAddFunc(pkg, "Get", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType), types.NewVar(token.NoPos, pkg, "key", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", anyType)})

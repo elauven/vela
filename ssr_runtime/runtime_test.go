@@ -71,6 +71,18 @@ func TestTruthyAndTernary(t *testing.T) {
 	if got := Ternary(Truthy("ready"), "yes", "no"); got != "yes" {
 		t.Fatalf("true ternary=%#v", got)
 	}
+	if got := And("", "next"); got != "" {
+		t.Fatalf("false && result=%#v", got)
+	}
+	if got := And("ready", "next"); got != "next" {
+		t.Fatalf("true && result=%#v", got)
+	}
+	if got := Or("", "fallback"); got != "fallback" {
+		t.Fatalf("false || result=%#v", got)
+	}
+	if got := Or("ready", "fallback"); got != "ready" {
+		t.Fatalf("true || result=%#v", got)
+	}
 }
 
 func TestContainsStringUsesSelectMultipleMembership(t *testing.T) {

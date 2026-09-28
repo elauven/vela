@@ -135,11 +135,16 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		if err != nil {
 			return nil, err
 		}
-		op, ok := ssrLogicalToken(node.Op)
-		if !ok {
+		function := ""
+		switch node.Op {
+		case "&&":
+			function = "And"
+		case "||":
+			function = "Or"
+		default:
 			return nil, ssrExprUnsupported(pos, "logical operator %q is not supported", node.Op)
 		}
-		return &goast.BinaryExpr{X: left, Op: op, Y: right}, nil
+		return &goast.CallExpr{Fun: goSelector("vela", function), Args: []goast.Expr{left, right}}, nil
 	case *JsMemberExpr:
 		return translateSSRMember(node, ctx, pos)
 	case *JsConditionalExpr:
@@ -492,17 +497,6 @@ func ssrBinaryToken(op string) (token.Token, bool) {
 		return token.EQL, true
 	case "!=", "!==":
 		return token.NEQ, true
-	default:
-		return token.ILLEGAL, false
-	}
-}
-
-func ssrLogicalToken(op string) (token.Token, bool) {
-	switch op {
-	case "&&":
-		return token.LAND, true
-	case "||":
-		return token.LOR, true
 	default:
 		return token.ILLEGAL, false
 	}
