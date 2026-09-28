@@ -8535,9 +8535,13 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		// updates on the snapshot's behalf.
 		if len(plan.snapshot.refresh) > 0 {
 			for dependency := range plan.snapshot.deps {
+				refresh := plan.snapshot.refresh
+				if selective := plan.snapshot.refreshByDependency[dependency]; len(selective) > 0 {
+					refresh = selective
+				}
 				g.addUpdate(dependency, shareStmt(genIf(
 					genBinary("===", id(activeVar), numLit(state)),
-					genBlock(plan.snapshot.refresh...),
+					genBlock(refresh...),
 				)))
 			}
 		}
@@ -8846,8 +8850,12 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 			g.addUpdate(dependency, shareStmt(setStmt))
 		}
 		if len(handle.slotSnapshot.refresh) != 0 {
-			refresh := genIf(genBinary("===", id(activeVar), numLit(handle.branch)), genBlock(handle.slotSnapshot.refresh...))
 			for dependency := range handle.slotSnapshot.deps {
+				statements := handle.slotSnapshot.refresh
+				if selective := handle.slotSnapshot.refreshByDependency[dependency]; len(selective) > 0 {
+					statements = selective
+				}
+				refresh := genIf(genBinary("===", id(activeVar), numLit(handle.branch)), genBlock(statements...))
 				g.addUpdate(dependency, shareStmt(refresh))
 			}
 		}
@@ -11226,11 +11234,16 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticEach(plan *hydrationAwaitS
 		nil, nil,
 	)
 	plan.adopt = append(plan.adopt, genAssignStmt(id(rangeVar), genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))), genAssignStmt(id(controllerVar), controller), genExprStmt(genCall(genMember(id(controllerVar), "adopt"))))
-	plan.refresh = append(plan.refresh, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "update")))))
+	rangeRefresh := genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "update"))))
+	plan.refresh = append(plan.refresh, rangeRefresh)
 	plan.cleanup = append(plan.cleanup, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "destroy")))), genAssignStmt(id(controllerVar), genNull()), genAssignStmt(id(rangeVar), genNull()))
+	collectionDeps := map[string]bool{}
 	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
-		plan.deps[dependency] = true
+		collectionDeps[dependency] = true
 	}
+	plan.addSelectiveRefresh(collectionDeps, rangeRefresh)
+	propRefresh := genIf(id(controllerVar), genForOf("$$update", genMember(id(controllerVar), "updates"), genExprStmt(genCall(id("$$update")))))
+	propDeps := map[string]bool{}
 	for _, node := range block.Children {
 		component, ok := node.(*ComponentNode)
 		if !ok || component == nil {
@@ -11241,10 +11254,11 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticEach(plan *hydrationAwaitS
 				continue
 			}
 			for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
-				plan.deps[dependency] = true
+				propDeps[dependency] = true
 			}
 		}
 	}
+	plan.addSelectiveRefresh(propDeps, propRefresh)
 }
 
 // buildHydrationAwaitSnapshotSlotStaticKeyedEach adopts SSR row ranges and
@@ -12347,14 +12361,32 @@ type hydrationAwaitBranchPlan struct {
 // branch. Handles are acquired only for the payload-selected branch and are
 // cleared when that branch is replaced.
 type hydrationAwaitSnapshotLeafPlan struct {
-	decls           []JsStmt
-	adopt           []JsStmt
-	refresh         []JsStmt
-	listenerCleanup []JsStmt
-	cleanup         []JsStmt
-	components      []hydrationAwaitSnapshotSlotComponent
-	deps            map[string]bool
-	supported       bool
+	decls               []JsStmt
+	adopt               []JsStmt
+	refresh             []JsStmt
+	refreshByDependency map[string][]JsStmt
+	listenerCleanup     []JsStmt
+	cleanup             []JsStmt
+	components          []hydrationAwaitSnapshotSlotComponent
+	deps                map[string]bool
+	supported           bool
+}
+
+// addSelectiveRefresh associates an already typed refresh callback with the
+// reactive names that require it. The ordinary refresh slice remains the
+// conservative fallback for same-await-state rendering; scheduler updates can
+// avoid rebuilding an owned structural range for a prop-only change.
+func (plan *hydrationAwaitSnapshotLeafPlan) addSelectiveRefresh(dependencies map[string]bool, statements ...JsStmt) {
+	if plan == nil || len(dependencies) == 0 || len(statements) == 0 {
+		return
+	}
+	if plan.refreshByDependency == nil {
+		plan.refreshByDependency = map[string][]JsStmt{}
+	}
+	for dependency := range dependencies {
+		plan.deps[dependency] = true
+		plan.refreshByDependency[dependency] = append(plan.refreshByDependency[dependency], statements...)
+	}
 }
 
 // hydrationAwaitSnapshotSlotComponent is a parent-owned child component
