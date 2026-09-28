@@ -28,18 +28,21 @@ func (e *SSRExpressionError) Error() string {
 // Props are constructed by NewSSRExprContext; each/await lowering will extend
 // Bindings with lexical row and branch names rather than reparsing expressions.
 type SSRExprContext struct {
-	Props             map[string]SSRPlanProp
-	Bindings          map[string]goast.Expr
-	ReactiveNames     map[string]bool
-	StateInitializers map[string]JsExpr
+	Props               map[string]SSRPlanProp
+	Bindings            map[string]goast.Expr
+	ReactiveNames       map[string]bool
+	StateInitializers   map[string]JsExpr
+	DerivedInitializers map[string]JsExpr
+	resolving           map[string]bool
 }
 
 func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
 	ctx := SSRExprContext{
-		Props:             map[string]SSRPlanProp{},
-		Bindings:          map[string]goast.Expr{},
-		ReactiveNames:     map[string]bool{},
-		StateInitializers: map[string]JsExpr{},
+		Props:               map[string]SSRPlanProp{},
+		Bindings:            map[string]goast.Expr{},
+		ReactiveNames:       map[string]bool{},
+		StateInitializers:   map[string]JsExpr{},
+		DerivedInitializers: map[string]JsExpr{},
 	}
 	if plan == nil {
 		return ctx
@@ -52,6 +55,9 @@ func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
 	}
 	for name, initializer := range plan.StateInitializers {
 		ctx.StateInitializers[name] = initializer
+	}
+	for name, initializer := range plan.DerivedInitializers {
+		ctx.DerivedInitializers[name] = initializer
 	}
 	return ctx
 }
@@ -76,11 +82,10 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 			return &goast.SelectorExpr{X: goast.NewIdent("props"), Sel: goast.NewIdent(prop.GoName)}, nil
 		}
 		if initializer, ok := ctx.StateInitializers[node.Name]; ok {
-			value, err := translateSSRExpr(initializer, ctx, pos)
-			if err != nil {
-				return nil, ssrExprUnsupported(pos, "local reactive binding %q has no server-safe initializer: %v", node.Name, err)
-			}
-			return value, nil
+			return translateSSRLocalInitializer(node.Name, "reactive", initializer, ctx, pos)
+		}
+		if initializer, ok := ctx.DerivedInitializers[node.Name]; ok {
+			return translateSSRLocalInitializer(node.Name, "derived", initializer, ctx, pos)
 		}
 		if ctx.ReactiveNames[node.Name] {
 			return nil, ssrExprUnsupported(pos, "local reactive binding %q has no server value; pass it as an exported prop or wait for hydration", node.Name)
@@ -157,6 +162,22 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 	default:
 		return nil, ssrExprUnsupported(pos, "JavaScript expression %T is not supported", expr)
 	}
+}
+
+func translateSSRLocalInitializer(name, kind string, initializer JsExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
+	if ctx.resolving == nil {
+		ctx.resolving = map[string]bool{}
+	}
+	if ctx.resolving[name] {
+		return nil, ssrExprUnsupported(pos, "local %s binding %q has a circular server initializer", kind, name)
+	}
+	ctx.resolving[name] = true
+	defer delete(ctx.resolving, name)
+	value, err := translateSSRExpr(initializer, ctx, pos)
+	if err != nil {
+		return nil, ssrExprUnsupported(pos, "local %s binding %q has no server-safe initializer: %v", kind, name, err)
+	}
+	return value, nil
 }
 
 // translateSSRArrayLiteral preserves JavaScript array order and holes using a

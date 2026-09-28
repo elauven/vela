@@ -114,6 +114,42 @@ func TestTranslateSSRExpressionLowersSafeLocalStateInitializer(t *testing.T) {
 	}
 }
 
+func TestTranslateSSRExpressionLowersSafeLocalDerivedInitializer(t *testing.T) {
+	sfc, err := parseSFC(`<script>let count = $state(2); let doubled = $derived(count * 2);</script><template>{doubled}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	translated, err := TranslateSSRExpression(expr, NewSSRExprContext(plan))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FormatSSRGoExpr(translated)
+	if err != nil || got != "2 * 2" {
+		t.Fatalf("derived initializer translation=%q, err=%v", got, err)
+	}
+}
+
+func TestTranslateSSRExpressionRejectsCircularLocalDerivedInitializer(t *testing.T) {
+	sfc, err := parseSFC(`<script>let first = $derived(second); let second = $derived(first);</script><template>{first}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
+	if err == nil || !strings.Contains(err.Error(), "circular server initializer") {
+		t.Fatalf("circular derived error=%v", err)
+	}
+}
+
 func TestTranslateSSRExpressionLowersTernaryThroughRuntime(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let count = 0;</script><template>{count ? 'many' : 'none'}</template>`)
 	if err != nil {

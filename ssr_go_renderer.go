@@ -750,7 +750,10 @@ func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
 	for name, binding := range base.Bindings {
 		bindings[name] = binding
 	}
-	return SSRExprContext{Props: base.Props, Bindings: bindings, ReactiveNames: base.ReactiveNames, StateInitializers: base.StateInitializers}
+	return SSRExprContext{
+		Props: base.Props, Bindings: bindings, ReactiveNames: base.ReactiveNames,
+		StateInitializers: base.StateInitializers, DerivedInitializers: base.DerivedInitializers,
+	}
 }
 
 func (e *ssrGoEmitter) outputValue(static bool, literal string, expr *TemplateExpr) (goast.Expr, error) {

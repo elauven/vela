@@ -28,11 +28,15 @@ type SSRRenderPlan struct {
 	// lets the expression translator decide whether an initializer is actually
 	// representable in Go.
 	StateInitializers map[string]JsExpr
-	Nodes             []SSRPlanNode
-	Events            []SSRStaticEvent
-	Dynamics          []SSRDynamicSite
-	Hydration         SSRHydrationState
-	ScopedCSS         string
+	// DerivedInitializers retains immutable, parser-owned $derived expression
+	// ASTs. The SSR expression translator resolves them only through the same
+	// admitted pure subset used for plain $state initializers.
+	DerivedInitializers map[string]JsExpr
+	Nodes               []SSRPlanNode
+	Events              []SSRStaticEvent
+	Dynamics            []SSRDynamicSite
+	Hydration           SSRHydrationState
+	ScopedCSS           string
 	// ComponentInstanceSuffixes assigns a deterministic static structural
 	// suffix to repeated local component bindings. It is keyed by source span,
 	// never by component name, so equal tags retain independent payload IDs.
@@ -281,6 +285,7 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		Props:                       props,
 		ReactiveNames:               analysis.reactiveNames(),
 		StateInitializers:           ssrStateInitializers(analysis),
+		DerivedInitializers:         ssrDerivedInitializers(analysis),
 		ScopedCSS:                   ExtractScopedCSS(sfc, scopeID),
 		ComponentInstanceSuffixes:   SSRStaticRepeatedComponentInstanceSuffixes(sfc.TemplateAST.Nodes),
 		ComponentInstanceIdentities: SSRComponentInstanceIdentityIndex(sfc.TemplateAST.Nodes),
@@ -306,6 +311,19 @@ func ssrStateInitializers(analysis *Analysis) map[string]JsExpr {
 		// diagnostic even when their literal happens to be Go-representable.
 		if state != nil && !state.Deep && state.Name != "" && state.InitialAST != nil {
 			initializers[state.Name] = state.InitialAST
+		}
+	}
+	return initializers
+}
+
+func ssrDerivedInitializers(analysis *Analysis) map[string]JsExpr {
+	initializers := map[string]JsExpr{}
+	if analysis == nil {
+		return initializers
+	}
+	for _, derived := range analysis.DerivedVars {
+		if derived != nil && derived.Name != "" && derived.ExprAST != nil {
+			initializers[derived.Name] = derived.ExprAST
 		}
 	}
 	return initializers
