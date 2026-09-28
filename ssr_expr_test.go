@@ -94,6 +94,26 @@ func TestTranslateSSRExpressionExplainsLocalReactiveValue(t *testing.T) {
 	}
 }
 
+func TestTranslateSSRExpressionLowersSafeLocalStateInitializer(t *testing.T) {
+	sfc, err := parseSFC(`<script>let count = $state(1 + 1);</script><template>{count}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	translated, err := TranslateSSRExpression(expr, NewSSRExprContext(plan))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FormatSSRGoExpr(translated)
+	if err != nil || got != "1 + 1" {
+		t.Fatalf("state initializer translation=%q, err=%v", got, err)
+	}
+}
+
 func TestTranslateSSRExpressionLowersObjectPropMember(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let profile = {};</script><template>{profile.name}</template>`)
 	if err != nil {

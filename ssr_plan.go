@@ -23,11 +23,16 @@ type SSRRenderPlan struct {
 	// ReactiveNames is analysis metadata for diagnostics and bridge safety.
 	// It is not emitted into server code.
 	ReactiveNames []string
-	Nodes         []SSRPlanNode
-	Events        []SSRStaticEvent
-	Dynamics      []SSRDynamicSite
-	Hydration     SSRHydrationState
-	ScopedCSS     string
+	// StateInitializers retains immutable, parser-owned $state initializer ASTs
+	// for the server-safe local-state subset. It is never printable source and
+	// lets the expression translator decide whether an initializer is actually
+	// representable in Go.
+	StateInitializers map[string]JsExpr
+	Nodes             []SSRPlanNode
+	Events            []SSRStaticEvent
+	Dynamics          []SSRDynamicSite
+	Hydration         SSRHydrationState
+	ScopedCSS         string
 	// ComponentInstanceSuffixes assigns a deterministic static structural
 	// suffix to repeated local component bindings. It is keyed by source span,
 	// never by component name, so equal tags retain independent payload IDs.
@@ -275,6 +280,7 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		ScopeID:                     scopeID,
 		Props:                       props,
 		ReactiveNames:               analysis.reactiveNames(),
+		StateInitializers:           ssrStateInitializers(analysis),
 		ScopedCSS:                   ExtractScopedCSS(sfc, scopeID),
 		ComponentInstanceSuffixes:   SSRStaticRepeatedComponentInstanceSuffixes(sfc.TemplateAST.Nodes),
 		ComponentInstanceIdentities: SSRComponentInstanceIdentityIndex(sfc.TemplateAST.Nodes),
@@ -286,6 +292,19 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 	}
 	sort.Strings(b.plan.SlotNames)
 	return b.plan, nil
+}
+
+func ssrStateInitializers(analysis *Analysis) map[string]JsExpr {
+	initializers := map[string]JsExpr{}
+	if analysis == nil {
+		return initializers
+	}
+	for _, state := range analysis.StateVars {
+		if state != nil && state.Name != "" && state.InitialAST != nil {
+			initializers[state.Name] = state.InitialAST
+		}
+	}
+	return initializers
 }
 
 func buildSSRHydrationState(analysis *Analysis) SSRHydrationState {
