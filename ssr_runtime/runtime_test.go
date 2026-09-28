@@ -49,6 +49,9 @@ func TestStringAndEscapeString(t *testing.T) {
 	if got := TemplateString("Hello ", "Vela", " #", 7, " ", true, " ", nil); got != "Hello Vela #7 true null" {
 		t.Fatalf("TemplateString=%q", got)
 	}
+	if got := TemplateString("missing=", Undefined()); got != "missing=undefined" {
+		t.Fatalf("undefined TemplateString=%q", got)
+	}
 }
 
 func TestTruthyAndTernary(t *testing.T) {
@@ -56,7 +59,7 @@ func TestTruthyAndTernary(t *testing.T) {
 		value any
 		want  bool
 	}{
-		{nil, false}, {false, false}, {"", false}, {0, false}, {"ok", true}, {[]any{}, true}, {map[string]any{}, true},
+		{nil, false}, {Undefined(), false}, {false, false}, {"", false}, {0, false}, {"ok", true}, {[]any{}, true}, {map[string]any{}, true},
 	} {
 		if got := Truthy(tc.value); got != tc.want {
 			t.Fatalf("Truthy(%#v)=%v want %v", tc.value, got, tc.want)
@@ -98,10 +101,13 @@ func TestGet(t *testing.T) {
 	if got := Get(map[string]any{"title": "ready"}, "title"); got != "ready" {
 		t.Fatalf("Get map value = %#v", got)
 	}
-	if got := Get(map[string]any{}, "missing"); got != nil {
-		t.Fatalf("Get missing value = %#v", got)
+	if got := Get(map[string]any{}, "missing"); got != Undefined() {
+		t.Fatalf("Get missing value = %#v, want undefined", got)
 	}
-	if got := Get("not-an-object", "title"); got != nil {
-		t.Fatalf("Get scalar value = %#v", got)
+	if got := Get("not-an-object", "title"); got != Undefined() {
+		t.Fatalf("Get scalar value = %#v, want undefined", got)
+	}
+	if got := String(Get(map[string]any{}, "missing")); got != "" {
+		t.Fatalf("String missing value = %q", got)
 	}
 }

@@ -238,6 +238,27 @@ func TestTranslateSSRExpressionRejectsNullishInterpolatedTemplateLiteral(t *test
 	}
 }
 
+func TestTranslateSSRExpressionLowersUndefinedAndMissingObjectTemplateValue(t *testing.T) {
+	sfc, err := parseSFC("<script>export let profile = {}; </script><template>{`u=${undefined}; m=${profile.missing}`}</template>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	translated, err := TranslateSSRExpression(expr, NewSSRExprContext(plan))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FormatSSRGoExpr(translated)
+	want := `vela.TemplateString("u=", vela.Undefined(), "; m=", vela.Get(props.Profile, "missing"), "")`
+	if err != nil || got != want {
+		t.Fatalf("undefined template translation=%q, err=%v", got, err)
+	}
+}
+
 func TestTranslateSSRExpressionLowersArrayLiteralAndHole(t *testing.T) {
 	sfc, err := parseSFC(`<template>{[1, , 'three']}</template>`)
 	if err != nil {
@@ -341,7 +362,7 @@ func TestTranslateSSRExpressionLowersObjectPropMember(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := `props.Profile["name"]`; got != want {
+	if want := `vela.Get(props.Profile, "name")`; got != want {
 		t.Fatalf("member output=%q want %q", got, want)
 	}
 }

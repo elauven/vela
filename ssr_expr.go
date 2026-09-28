@@ -75,6 +75,9 @@ func TranslateSSRExpression(expr *TemplateExpr, ctx SSRExprContext) (goast.Expr,
 func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
 	switch node := expr.(type) {
 	case *JsIdent:
+		if node.Name == "undefined" {
+			return &goast.CallExpr{Fun: goSelector("vela", "Undefined")}, nil
+		}
 		if binding, ok := ctx.Bindings[node.Name]; ok {
 			return binding, nil
 		}
@@ -219,8 +222,11 @@ func translateSSRTemplateLiteral(node *JsTemplateLit, ctx SSRExprContext, pos in
 func ssrTemplateInterpolationSafe(expr JsExpr, ctx SSRExprContext) bool {
 	switch node := expr.(type) {
 	case *JsLiteral:
-		return node.Kind == "string" || node.Kind == "number" || node.Kind == "boolean"
+		return node.Kind == "string" || node.Kind == "number" || node.Kind == "boolean" || node.Kind == "null"
 	case *JsIdent:
+		if node.Name == "undefined" {
+			return true
+		}
 		prop, ok := ctx.Props[node.Name]
 		if !ok {
 			return false
@@ -229,6 +235,16 @@ func ssrTemplateInterpolationSafe(expr JsExpr, ctx SSRExprContext) bool {
 		case SSRTypeString, SSRTypeBool, SSRTypeInt, SSRTypeFloat:
 			return true
 		}
+	case *JsMemberExpr:
+		if node.Computed {
+			return false
+		}
+		object, ok := node.Obj.(*JsIdent)
+		if !ok {
+			return false
+		}
+		prop, ok := ctx.Props[object.Name]
+		return ok && prop.Type == SSRTypeObject
 	}
 	return false
 }
@@ -407,17 +423,6 @@ func decodeSSRJSStringContent(raw string, template bool) (string, error) {
 
 func translateSSRMember(node *JsMemberExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
 	if !node.Computed {
-		if object, ok := node.Obj.(*JsIdent); ok {
-			if property, ok := node.Prop.(*JsIdent); ok {
-				if prop, exists := ctx.Props[object.Name]; exists && prop.Type == SSRTypeObject {
-					return &goast.IndexExpr{
-						X:     &goast.SelectorExpr{X: goast.NewIdent("props"), Sel: goast.NewIdent(prop.GoName)},
-						Index: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(property.Name)},
-					}, nil
-				}
-			}
-		}
-
 		if property, ok := node.Prop.(*JsIdent); ok && property.Name == "length" {
 			object, err := translateSSRExpr(node.Obj, ctx, pos)
 			if err != nil {

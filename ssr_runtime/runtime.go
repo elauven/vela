@@ -21,6 +21,16 @@ func (render RendererFunc) Render(writer io.Writer) error {
 	return render(writer)
 }
 
+// UndefinedValue represents JavaScript's absent-value sentinel inside the
+// server expression subset. It deliberately differs from nil, which models a
+// JavaScript null literal/value. The public Go render API still cannot infer
+// the distinction for an untyped nil prop, so the compiler only emits this
+// sentinel for source-level undefined and missing object properties.
+type UndefinedValue struct{}
+
+// Undefined returns the server representation of JavaScript undefined.
+func Undefined() UndefinedValue { return UndefinedValue{} }
+
 // Slot is a server-rendered component slot. Phase 2 will populate named slot
 // fields with this type while the Phase 1 slot struct remains intentionally
 // empty.
@@ -39,6 +49,9 @@ func WriteString(writer io.Writer, value string) error {
 // SSR expression subset.
 func String(value any) string {
 	if value == nil {
+		return ""
+	}
+	if _, undefined := value.(UndefinedValue); undefined {
 		return ""
 	}
 	reflected := reflect.ValueOf(value)
@@ -72,6 +85,10 @@ func TemplateString(values ...any) string {
 			out.WriteString("null")
 			continue
 		}
+		if _, undefined := value.(UndefinedValue); undefined {
+			out.WriteString("undefined")
+			continue
+		}
 		out.WriteString(String(value))
 	}
 	return out.String()
@@ -97,6 +114,9 @@ func Length(value any) int {
 // SSR expression subset. Arrays and objects stay truthy even when empty.
 func Truthy(value any) bool {
 	if value == nil {
+		return false
+	}
+	if _, undefined := value.(UndefinedValue); undefined {
 		return false
 	}
 	switch value := value.(type) {
@@ -183,15 +203,31 @@ func Iter(value any) []any {
 func Get(value any, key string) any {
 	switch object := value.(type) {
 	case map[string]any:
-		return object[key]
+		result, ok := object[key]
+		if !ok {
+			return Undefined()
+		}
+		return result
 	case map[string]string:
-		return object[key]
+		result, ok := object[key]
+		if !ok {
+			return Undefined()
+		}
+		return result
 	case map[string]bool:
-		return object[key]
+		result, ok := object[key]
+		if !ok {
+			return Undefined()
+		}
+		return result
 	case map[string]float64:
-		return object[key]
+		result, ok := object[key]
+		if !ok {
+			return Undefined()
+		}
+		return result
 	default:
-		return nil
+		return Undefined()
 	}
 }
 

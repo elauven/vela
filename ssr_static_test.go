@@ -207,3 +207,28 @@ func TestBuildSSRGoFileRendersTypedInterpolatedTemplateLiteral(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildSSRGoFileRendersUndefinedTemplateInterpolation(t *testing.T) {
+	sfc, err := parseSFC("<template><p>{`value=${undefined}`}</p></template>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), `vela.TemplateString("value=", vela.Undefined(), "")`) {
+		t.Fatalf("undefined template interpolation is not lowered through its SSR sentinel:\n%s", source)
+	}
+	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
+		t.Fatal(err)
+	}
+}
