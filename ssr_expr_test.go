@@ -182,6 +182,59 @@ func TestTranslateSSRExpressionRejectsArraySpread(t *testing.T) {
 	}
 }
 
+func TestTranslateSSRExpressionLowersPlainObjectLiteral(t *testing.T) {
+	sfc, err := parseSFC(`<template>{ { title: 'ready', selected: true } }</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	translated, err := TranslateSSRExpression(expr, SSRExprContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FormatSSRGoExpr(translated)
+	if err != nil || got != `map[string]any{"title": "ready", "selected": true}` {
+		t.Fatalf("object literal translation=%q, err=%v", got, err)
+	}
+}
+
+func TestTranslateSSRExpressionKeepsLastDuplicateObjectProperty(t *testing.T) {
+	sfc, err := parseSFC(`<template>{ { title: 'old', title: 'new' } }</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	translated, err := TranslateSSRExpression(expr, SSRExprContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FormatSSRGoExpr(translated)
+	if err != nil || got != `map[string]any{"title": "new"}` {
+		t.Fatalf("duplicate object literal translation=%q, err=%v", got, err)
+	}
+}
+
+func TestTranslateSSRExpressionRejectsUnsupportedObjectForms(t *testing.T) {
+	for _, source := range []string{
+		`<template>{ { ...{} } }</template>`,
+		`<script>export let key = '';</script><template>{ { [key]: 1 } }</template>`,
+		`<template>{ { __proto__: null } }</template>`,
+	} {
+		sfc, err := parseSFC(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+		if _, err := TranslateSSRExpression(expr, NewSSRExprContext(plan)); err == nil {
+			t.Fatalf("source %q unexpectedly translated", source)
+		}
+	}
+}
+
 func TestTranslateSSRExpressionLowersObjectPropMember(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let profile = {};</script><template>{profile.name}</template>`)
 	if err != nil {

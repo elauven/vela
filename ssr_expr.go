@@ -90,6 +90,8 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		return translateSSRLiteral(node, pos)
 	case *JsArrayExpr:
 		return translateSSRArrayLiteral(node, ctx, pos)
+	case *JsObjectExpr:
+		return translateSSRObjectLiteral(node, ctx, pos)
 	case *JsUnaryExpr:
 		x, err := translateSSRExpr(node.X, ctx, pos)
 		if err != nil {
@@ -181,6 +183,73 @@ func translateSSRArrayLiteral(node *JsArrayExpr, ctx SSRExprContext, pos int) (g
 		Type: &goast.ArrayType{Elt: goast.NewIdent("any")},
 		Elts: elements,
 	}, nil
+}
+
+// translateSSRObjectLiteral admits ordinary non-computed data properties with
+// identifier or string keys. A map[string]any is the existing SSR boundary
+// representation for JavaScript objects, and it remains readable through
+// vela.Get. Spread, accessors, methods, and computed property names require
+// JavaScript object semantics that must be specified before they are lowered.
+func translateSSRObjectLiteral(node *JsObjectExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
+	elements := make([]goast.Expr, 0, len(node.Props))
+	indices := make(map[string]int, len(node.Props))
+	for _, property := range node.Props {
+		if property == nil || property.Spread {
+			return nil, ssrExprUnsupported(pos, "object spread is not available to static SSR")
+		}
+		if property.Computed {
+			return nil, ssrExprUnsupported(pos, "computed object property names are not available to static SSR")
+		}
+		if property.Method || property.Kind != "init" {
+			return nil, ssrExprUnsupported(pos, "object methods and accessors are not available to static SSR")
+		}
+		key, err := translateSSRObjectKey(property.Key, pos)
+		if err != nil {
+			return nil, err
+		}
+		if key == "__proto__" {
+			return nil, ssrExprUnsupported(pos, "the __proto__ object property is not available to static SSR")
+		}
+		value, err := translateSSRExpr(property.Value, ctx, pos)
+		if err != nil {
+			return nil, err
+		}
+		entry := &goast.KeyValueExpr{
+			Key:   &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(key)},
+			Value: value,
+		}
+		if previous, duplicate := indices[key]; duplicate {
+			elements[previous] = entry
+			continue
+		}
+		indices[key] = len(elements)
+		elements = append(elements, entry)
+	}
+	return &goast.CompositeLit{
+		Type: &goast.MapType{Key: goast.NewIdent("string"), Value: goast.NewIdent("any")},
+		Elts: elements,
+	}, nil
+}
+
+func translateSSRObjectKey(key JsExpr, pos int) (string, error) {
+	switch node := key.(type) {
+	case *JsIdent:
+		return node.Name, nil
+	case *JsLiteral:
+		if node.Kind != "string" {
+			return "", ssrExprUnsupported(pos, "only identifier and string object property names are available to static SSR")
+		}
+		if node.Decoded {
+			return node.Value, nil
+		}
+		value, err := decodeSSRJSStringLiteral(node.Raw)
+		if err != nil {
+			return "", ssrExprUnsupported(pos, "object property name cannot be translated safely")
+		}
+		return value, nil
+	default:
+		return "", ssrExprUnsupported(pos, "only identifier and string object property names are available to static SSR")
+	}
 }
 
 func translateSSRLiteral(node *JsLiteral, pos int) (goast.Expr, error) {

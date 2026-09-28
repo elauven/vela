@@ -81,3 +81,28 @@ func TestBuildSSRGoFileRendersArrayLiteralWithJSJoinSemantics(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildSSRGoFileRendersPlainObjectLiteral(t *testing.T) {
+	sfc, err := parseSFC(`<template><p>{ { title: 'ready' } }</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), `vela.EscapeString(vela.String(map[string]any{"title": "ready"}))`) {
+		t.Fatalf("object literal SSR output is not lowered through Vela conversion:\n%s", source)
+	}
+	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
+		t.Fatal(err)
+	}
+}
