@@ -366,7 +366,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 				return nil, err
 			}
 			body = append(body, &goast.IfStmt{
-				Cond: ssrGoTruthy(condition),
+				Cond: e.condition(attr.Expr, condition),
 				Body: &goast.BlockStmt{List: []goast.Stmt{
 					goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(" " + html.EscapeString(attr.Name))}),
 				}},
@@ -452,7 +452,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 					body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
 					open = ""
 				}
-				body = append(body, &goast.IfStmt{Cond: ssrGoTruthy(condition), Body: &goast.BlockStmt{List: []goast.Stmt{
+				body = append(body, &goast.IfStmt{Cond: e.condition(attr.Expr, condition), Body: &goast.BlockStmt{List: []goast.Stmt{
 					goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(" checked")}),
 				}}})
 				continue
@@ -486,7 +486,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 					body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
 					open = ""
 				}
-				body = append(body, &goast.IfStmt{Cond: ssrGoTruthy(condition), Body: &goast.BlockStmt{List: []goast.Stmt{
+				body = append(body, &goast.IfStmt{Cond: e.condition(attr.Expr, condition), Body: &goast.BlockStmt{List: []goast.Stmt{
 					goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(" " + html.EscapeString(attr.Name))}),
 				}}})
 				continue
@@ -633,7 +633,7 @@ func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
-		current := &goast.IfStmt{Cond: ssrGoTruthy(condition), Body: &goast.BlockStmt{List: body}}
+		current := &goast.IfStmt{Cond: e.condition(branch.Condition, condition), Body: &goast.BlockStmt{List: body}}
 		if first == nil {
 			first = current
 		} else {
@@ -745,12 +745,38 @@ func (e *ssrGoEmitter) runtimeScope(kind string, value goast.Expr) goast.Expr {
 	)
 }
 
-// ssrGoTruthy makes every template-controlled Go branch use JavaScript
-// truthiness rather than requiring the translated expression to have Go's
-// bool type. This is essential for values such as a ternary lowered through
-// vela.Ternary, and keeps #if/class/boolean attributes consistent.
+// ssrGoTruthy makes a template-controlled Go branch use JavaScript
+// truthiness when the lowered expression is not statically a Go bool.
 func ssrGoTruthy(value goast.Expr) goast.Expr {
 	return &goast.CallExpr{Fun: goSelector("vela", "Truthy"), Args: []goast.Expr{value}}
+}
+
+func (e *ssrGoEmitter) condition(expr *TemplateExpr, value goast.Expr) goast.Expr {
+	if expr != nil && ssrExprKnownBool(expr.Root(), e.ctx) {
+		return value
+	}
+	return ssrGoTruthy(value)
+}
+
+// ssrExprKnownBool recognises only expressions whose Go lowering has a
+// concrete bool type. JavaScript logical operators and ternaries produce one
+// operand value, so they remain truthiness calls.
+func ssrExprKnownBool(expr JsExpr, ctx SSRExprContext) bool {
+	switch node := expr.(type) {
+	case *JsIdent:
+		prop, ok := ctx.Props[node.Name]
+		return ok && prop.Type == SSRTypeBool
+	case *JsLiteral:
+		return node.Kind == "boolean"
+	case *JsUnaryExpr:
+		return node.Op == "!"
+	case *JsBinaryExpr:
+		switch node.Op {
+		case "<", "<=", ">", ">=", "==", "===", "!=", "!==":
+			return true
+		}
+	}
+	return false
 }
 
 func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
