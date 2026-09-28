@@ -199,7 +199,7 @@ func main() {
 		t.Fatalf("public SSR go run: %v\n%s", err, output)
 	}
 	result := string(output)
-	for _, want := range []string{`<button data-vela-event="vela-`, `>world<!--/v:vela-app-instance:0-->`, `"count":0`, `"incomplete":false`} {
+	for _, want := range []string{`<button data-vela-event="vela-`, `>world<!--/v:vela-app-instance:0-->`, `"version":1`, `"count":0`, `"incomplete":false`} {
 		if !strings.Contains(result, want) {
 			t.Fatalf("public SSR output misses %q:\n%s", want, result)
 		}

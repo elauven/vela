@@ -60,7 +60,7 @@ func main() {
 	if err != nil {
 		t.Fatalf("go run: %v\n%s", err, output)
 	}
-	if got, want := string(output), "<!--e:vela-page-instance:0--><main>Hello <!--v:vela-page-instance:0-->world<!--/v:vela-page-instance:0--></main><!--/e:vela-page-instance:0--><script type=\"application/json\" id=\"vela-state-vela-page-instance\">{\"component\":\"vela-page-instance\",\"props\":{\"Title\":\"world\"},\"state\":{},\"incomplete\":false}</script>"; got != want {
+	if got, want := string(output), "<!--e:vela-page-instance:0--><main>Hello <!--v:vela-page-instance:0-->world<!--/v:vela-page-instance:0--></main><!--/e:vela-page-instance:0--><script type=\"application/json\" id=\"vela-state-vela-page-instance\">{\"version\":1,\"component\":\"vela-page-instance\",\"props\":{\"Title\":\"world\"},\"state\":{},\"incomplete\":false}</script>"; got != want {
 		t.Fatalf("SSR output=%q want %q", got, want)
 	}
 }

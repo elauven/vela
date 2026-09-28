@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$reconcileHydrationKeyedRowRanges, $$createHydrationWalker, $$defer, $$isProxy, $$proxy, $$readHydrationPayload, $$readSelectValues, $$writeSelectValues, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$reconcileHydrationKeyedRowRanges, $$createHydrationWalker, $$defer, $$hydrationPayloadVersion, $$isProxy, $$proxy, $$readHydrationPayload, $$readSelectValues, $$writeSelectValues, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -330,6 +330,13 @@ const payloadRoot = markerRoot([], {
 });
 const payload = $$readHydrationPayload(payloadRoot, 'vela-test');
 assert(payload.props.Title === 'ok', 'payload reader must return matching inert payload');
+assert($$hydrationPayloadVersion === 1, 'runtime must expose the current payload schema version');
+payloadRoot.ownerDocument.getElementById = () => ({ type: 'application/json', textContent: '{"version":2,"component":"vela-test","state":{},"incomplete":false}' });
+mismatch = undefined;
+try { $$readHydrationPayload(payloadRoot, 'vela-test'); }
+catch (error) { mismatch = error; }
+assert(mismatch && mismatch.message.includes('unsupported state payload version 2'),
+  'payload reader must reject a payload from another schema version');
 payloadRoot.ownerDocument.getElementById = () => ({ type: 'application/json', textContent: '{"component":"vela-test","incomplete":true,"omitted":["now"]}' });
 mismatch = undefined;
 try { $$readHydrationPayload(payloadRoot, 'vela-test'); }

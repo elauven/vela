@@ -10,6 +10,12 @@ import (
 	"strings"
 )
 
+// SSRHydrationPayloadVersion is the schema version emitted into generated SSR
+// state payloads. Browser runtimes reject a different explicit version before
+// attempting DOM adoption, so independently deployed server and client
+// artifacts cannot silently hydrate against incompatible metadata.
+const SSRHydrationPayloadVersion = 1
+
 // BuildSSRGoFile emits the currently supported server render plan through
 // standard Go AST nodes. It supports static elements, escaped text and
 // attributes, and conditional template branches. Other plan node kinds keep
@@ -62,6 +68,7 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goa
 		stateJSON = "{}"
 	}
 	typeFields := []*goast.Field{
+		{Names: []*goast.Ident{goast.NewIdent("Version")}, Type: goast.NewIdent("int"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"version\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("Component")}, Type: goast.NewIdent("string"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"component\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("Props")}, Type: goast.NewIdent(plan.ComponentName + "Props"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"props\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("State")}, Type: goSelector("json", "RawMessage"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"state\"`"}},
@@ -74,6 +81,7 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goa
 	payloadValue := &goast.CompositeLit{
 		Type: &goast.StructType{Fields: &goast.FieldList{List: typeFields}},
 		Elts: []goast.Expr{
+			&goast.KeyValueExpr{Key: goast.NewIdent("Version"), Value: goast.NewIdent(strconv.Itoa(SSRHydrationPayloadVersion))},
 			&goast.KeyValueExpr{Key: goast.NewIdent("Component"), Value: componentID},
 			&goast.KeyValueExpr{Key: goast.NewIdent("Props"), Value: goast.NewIdent("props")},
 			&goast.KeyValueExpr{Key: goast.NewIdent("State"), Value: &goast.CallExpr{Fun: goSelector("json", "RawMessage"), Args: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(stateJSON)}}}},

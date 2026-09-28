@@ -921,6 +921,11 @@ export function $$writeHydrationText(range, value) {
   if (first.data !== next) first.data = next;
 }
 
+// $$hydrationPayloadVersion is the schema understood by this browser runtime.
+// Generated Go renderers include this value in every payload. Missing versions
+// are tolerated only for pre-versioned local fixtures during the migration.
+export const $$hydrationPayloadVersion = 1;
+
 // $$readHydrationPayload reads the inert server payload and verifies that it
 // belongs to this component. Incomplete payloads are explicitly rejected: a
 // future hydrator must not silently recreate state that SSR could not encode.
@@ -943,6 +948,9 @@ export function $$readHydrationPayload(root, componentId) {
   }
   if (!payload || payload.component !== componentId) {
     throw new Error(`Vela hydration mismatch [${label}]: state payload belongs to another component`);
+  }
+  if (payload.version !== undefined && payload.version !== $$hydrationPayloadVersion) {
+    throw new Error(`Vela hydration mismatch [${label}]: unsupported state payload version ${String(payload.version)}`);
   }
   if (payload.incomplete) {
     const omitted = Array.isArray(payload.omitted) && payload.omitted.length
