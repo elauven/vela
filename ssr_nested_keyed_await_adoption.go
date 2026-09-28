@@ -10,6 +10,37 @@ type hydrationKeyedAwaitNestedTextRecipe struct {
 	Event   *Attr
 }
 
+// hydrationKeyedAwaitNestedComponentRecipe is the parser-owned foundation for
+// adopting one child component already rendered inside a settled inner keyed
+// row. It intentionally records no DOM handles: the later lowerer derives the
+// canonical row scope from the shared keyed-each lifecycle recipe and owns the
+// returned hydrate handle through that row controller.
+type hydrationKeyedAwaitNestedComponentRecipe struct {
+	Block     *EachBlockNode
+	Component *ComponentNode
+}
+
+// hydrationKeyedAwaitNestedDirectComponentRow accepts the smallest component
+// shape that can be adopted without adding a second ownership system: exactly
+// one slotless local component with ordinary one-way props. Component events,
+// bindings and slots each allocate extra listeners/callbacks and therefore
+// remain outside this descriptor until their row-owned handles are lowered.
+func hydrationKeyedAwaitNestedDirectComponentRow(block *EachBlockNode) (hydrationKeyedAwaitNestedComponentRecipe, bool) {
+	if block == nil || !block.HasKey() || len(block.Children) != 1 {
+		return hydrationKeyedAwaitNestedComponentRecipe{}, false
+	}
+	component, ok := block.Children[0].(*ComponentNode)
+	if !ok || component == nil || len(component.Slots) != 0 || !ssrCapabilityCurrentStructuralComponentAttrs(component) {
+		return hydrationKeyedAwaitNestedComponentRecipe{}, false
+	}
+	for _, attr := range component.Attrs {
+		if attr == nil || attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
+			return hydrationKeyedAwaitNestedComponentRecipe{}, false
+		}
+	}
+	return hydrationKeyedAwaitNestedComponentRecipe{Block: block, Component: component}, true
+}
+
 // hydrationKeyedAwaitNestedControlRecipe deliberately stays separate from the
 // text-row recipe: a native control has a browser-owned live property and must
 // read that property before any later reactive writer is allowed to run.
