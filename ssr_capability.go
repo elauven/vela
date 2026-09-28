@@ -142,8 +142,8 @@ func AnalyzeSSRCapability(nodes []Node) *SSRCapability {
 			root.Span = element.Span
 		}
 	}
-	keyedEachSpans, componentSpans := ssrProjectedSnapshotLifecycleSpans(nodes)
-	markSSRProjectedSnapshotKeyedEachCapabilities(root, keyedEachSpans, componentSpans)
+	eachSpans, componentSpans := ssrProjectedSnapshotLifecycleSpans(nodes)
+	markSSRProjectedSnapshotEachCapabilities(root, eachSpans, componentSpans)
 	if len(nodes) != 1 {
 		root.Reason = "current hydration requires exactly one element root"
 		return root
@@ -161,16 +161,16 @@ func AnalyzeSSRCapability(nodes []Node) *SSRCapability {
 	return root
 }
 
-// The generic capability tree is intentionally context-free: a keyed each
-// does not normally know that its row range will be owned by a selected await
+// The generic capability tree is intentionally context-free: an each block
+// does not normally know that its range will be owned by a selected await
 // snapshot slot. Mark the narrowly recognised projected-slot rows after that
 // tree is built, so their specialised controller can be executable without
-// broadening the root keyed-each contract.
-func markSSRProjectedSnapshotKeyedEachCapabilities(capability *SSRCapability, keyedEachSpans, componentSpans map[SectionSpan]bool) {
-	if capability == nil || (len(keyedEachSpans) == 0 && len(componentSpans) == 0) {
+// broadening the ordinary each contract.
+func markSSRProjectedSnapshotEachCapabilities(capability *SSRCapability, eachSpans, componentSpans map[SectionSpan]bool) {
+	if capability == nil || (len(eachSpans) == 0 && len(componentSpans) == 0) {
 		return
 	}
-	if capability.NodeKind == "each" && keyedEachSpans[capability.Span] {
+	if capability.NodeKind == "each" && eachSpans[capability.Span] {
 		capability.Hydration = SSRHydrationExecutable
 		capability.Reason = ""
 	}
@@ -179,12 +179,12 @@ func markSSRProjectedSnapshotKeyedEachCapabilities(capability *SSRCapability, ke
 		capability.Reason = ""
 	}
 	for _, child := range capability.Children {
-		markSSRProjectedSnapshotKeyedEachCapabilities(child, keyedEachSpans, componentSpans)
+		markSSRProjectedSnapshotEachCapabilities(child, eachSpans, componentSpans)
 	}
 }
 
 func ssrProjectedSnapshotLifecycleSpans(nodes []Node) (map[SectionSpan]bool, map[SectionSpan]bool) {
-	keyedEachSpans := map[SectionSpan]bool{}
+	eachSpans := map[SectionSpan]bool{}
 	componentSpans := map[SectionSpan]bool{}
 	var visitNodes func([]Node)
 	var visitComponent func(*ComponentNode)
@@ -198,8 +198,8 @@ func ssrProjectedSnapshotLifecycleSpans(nodes []Node) (map[SectionSpan]bool, map
 				supported = false
 			}
 			for _, node := range slot {
-				if each, ok := node.(*EachBlockNode); ok && ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(each) {
-					keyedEachSpans[each.Span] = true
+				if each, ok := node.(*EachBlockNode); ok && (ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(each) || ssrCapabilityCurrentAwaitSnapshotSlotStaticEach(each)) {
+					eachSpans[each.Span] = true
 				}
 				if nested, ok := node.(*ComponentNode); ok {
 					visitComponent(nested)
@@ -216,12 +216,12 @@ func ssrProjectedSnapshotLifecycleSpans(nodes []Node) (map[SectionSpan]bool, map
 			case *AwaitBlockNode:
 				for _, branch := range [][]Node{value.ThenChildren, value.CatchChildren} {
 					for _, child := range branch {
-						if each, ok := child.(*EachBlockNode); ok && ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(each) {
+						if each, ok := child.(*EachBlockNode); ok && (ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach(each) || ssrCapabilityCurrentAwaitSnapshotSlotStaticEach(each)) {
 							// Root selected-await snapshots use the same canonical row
 							// controller as projected slots. Mark this narrow static
 							// recipe after generic capability analysis so it does not
 							// broaden keyed-each eligibility outside an await snapshot.
-							keyedEachSpans[each.Span] = true
+							eachSpans[each.Span] = true
 						}
 						if component, ok := child.(*ComponentNode); ok {
 							visitComponent(component)
@@ -269,7 +269,7 @@ func ssrProjectedSnapshotLifecycleSpans(nodes []Node) (map[SectionSpan]bool, map
 							// not by the context-free direct-each lowerer. Mark it after
 							// generic analysis so a typed fallback controller does not
 							// broaden ordinary keyed-each eligibility.
-							keyedEachSpans[nested.Span] = true
+							eachSpans[nested.Span] = true
 						}
 					}
 				}
@@ -279,7 +279,7 @@ func ssrProjectedSnapshotLifecycleSpans(nodes []Node) (map[SectionSpan]bool, map
 		}
 	}
 	visitNodes(nodes)
-	return keyedEachSpans, componentSpans
+	return eachSpans, componentSpans
 }
 
 func analyzeSSRCapabilityChildren(nodes []Node, path string) []*SSRCapability {
@@ -1242,11 +1242,24 @@ func ssrCapabilityCurrentAwaitSnapshotSlotNodes(nodes []Node, allowComponents, a
 }
 
 func ssrCapabilityCurrentAwaitSnapshotSlotStaticEach(block *EachBlockNode) bool {
-	if block == nil || block.HasKey() || !allStatic(block.Children) || !allStatic(block.ElseChildren) {
+	if block == nil || block.HasKey() || !allStatic(block.ElseChildren) {
 		return false
 	}
-	_, ok := templateExprIdent(block.IterExpr)
-	return ok
+	if _, ok := templateExprIdent(block.IterExpr); !ok {
+		return false
+	}
+	for _, node := range block.Children {
+		if component, ok := node.(*ComponentNode); ok {
+			if !ssrCapabilityCurrentAwaitSnapshotSlotIfComponent(component) {
+				return false
+			}
+			continue
+		}
+		if !allStatic([]Node{node}) {
+			return false
+		}
+	}
+	return true
 }
 
 // ssrCapabilityCurrentAwaitSnapshotSlotStaticKeyedEach mirrors the first
@@ -1386,7 +1399,7 @@ func ssrCapabilityCurrentAwaitSnapshotSlotIfComponent(component *ComponentNode) 
 			continue
 		}
 		if attr.IsBind {
-			if _, ok := templateExprIdent(attr.Expr); !ok {
+			if _, ok := templateExprBindingRoot(attr.Expr); !ok {
 				return false
 			}
 		}

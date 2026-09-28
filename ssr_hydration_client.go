@@ -458,6 +458,13 @@ func ssrHydrationComponentNames(sfc *SFC, analysis *Analysis) (map[string]bool, 
 						return err
 					}
 				}
+			case *EachBlockNode:
+				if current == nil || current.HasKey() || !ssrCapabilityCurrentAwaitSnapshotSlotStaticEach(current) {
+					continue
+				}
+				if err := visitProjectedSlots(current.Children); err != nil {
+					return err
+				}
 			}
 		}
 		return nil

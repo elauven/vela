@@ -9286,14 +9286,28 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotStaticKey(chain *IfChainNode) bool {
 }
 
 // hydrationAwaitSnapshotSlotStaticEach is the safe whole-range list slice.
-// The row body intentionally has no item reads yet: a collection transition
-// replaces this controller's range atomically, without row identity claims.
+// Rows may have direct slotless local children and static siblings, but never
+// claim retained identity: every relevant update releases child handles and
+// rebuilds only this controller range atomically.
 func (g *ASTGen) hydrationAwaitSnapshotSlotStaticEach(block *EachBlockNode) bool {
-	if block == nil || block.HasKey() || !allStatic(block.Children) || !allStatic(block.ElseChildren) {
+	if block == nil || block.HasKey() || !allStatic(block.ElseChildren) {
 		return false
 	}
-	_, ok := templateExprIdent(block.IterExpr)
-	return ok
+	if _, ok := templateExprIdent(block.IterExpr); !ok {
+		return false
+	}
+	for _, node := range block.Children {
+		if component, ok := node.(*ComponentNode); ok {
+			if !g.hydrationAwaitSnapshotSlotIfComponent(component) {
+				return false
+			}
+			continue
+		}
+		if !allStatic([]Node{node}) {
+			return false
+		}
+	}
+	return true
 }
 
 // hydrationAwaitSnapshotSlotStaticKeyedEach is the first retained-row slice
@@ -10608,7 +10622,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfComponent(component *ComponentNode)
 			continue
 		}
 		if attr.IsBind {
-			if _, ok := templateExprIdent(attr.Expr); !ok {
+			if _, ok := templateExprBindingRoot(attr.Expr); !ok {
 				return false
 			}
 		}
@@ -11140,7 +11154,8 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKey(plan *hydrationAwaitSn
 
 // buildHydrationAwaitSnapshotSlotStaticEach owns one unkeyed list range. It
 // deliberately performs whole-range replacement: row retention is reserved
-// for the later keyed-row controller recipe.
+// for the later keyed-row controller recipe. Direct local children are owned
+// by the range and use the same runtime row scope as Go SSR.
 func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticEach(plan *hydrationAwaitSnapshotLeafPlan, block *EachBlockNode) {
 	if plan == nil || !g.hydrationAwaitSnapshotSlotStaticEach(block) {
 		return
@@ -11148,14 +11163,35 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticEach(plan *hydrationAwaitS
 	markerID := g.hydrationEachMarkerID(block)
 	prefix := "$$hawait" + itoa(markerID) + "_slot_each"
 	rangeVar, controllerVar := prefix+"_range", prefix+"_controller"
-	itemsVar, fragmentVar, hasRowsVar := prefix+"_items", prefix+"_fragment", prefix+"_has_rows"
+	itemsVar, fragmentVar, hasRowsVar, indexVar := prefix+"_items", prefix+"_fragment", prefix+"_has_rows", prefix+"_index"
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	plan.decls = append(plan.decls, genLet(rangeVar, genNull()), genLet(controllerVar, genNull()))
+	componentEvents := map[*ComponentNode][]hydrationAwaitComponentEvent{}
+	for nodeIndex, node := range block.Children {
+		component, ok := node.(*ComponentNode)
+		if !ok || component == nil {
+			continue
+		}
+		componentEvents[component] = g.buildHydrationAwaitSnapshotSlotComponentEvents(component, prefix+"_node"+itoa(nodeIndex)+"_component")
+	}
 	mountBody := []JsStmt{
 		genConst(fragmentVar, genCall(genMember(id("document"), "createDocumentFragment"))),
-		genConst(itemsVar, g.templateExpr(block.IterExpr)), genLet(hasRowsVar, boolLit(false)),
-		genForOf("$$item", id(itemsVar), genBlock(genAssignStmt(id(hasRowsVar), boolLit(true)), genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML(block.Children, g.scopeID)))))),
+		genConst(itemsVar, g.templateExpr(block.IterExpr)), genLet(hasRowsVar, boolLit(false)), genLet(indexVar, numLit(0)),
 	}
+	mountRow := []JsStmt{genAssignStmt(id(hasRowsVar), boolLit(true))}
+	g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.IndexName, indexVar, func() {
+			for nodeIndex, node := range block.Children {
+				if component, ok := node.(*ComponentNode); ok {
+					mountRow = append(mountRow, g.hydrationAwaitSnapshotSlotIfMountComponent(component, fragmentVar, controllerVar, prefix+"_node"+itoa(nodeIndex), componentEvents[component])...)
+					continue
+				}
+				mountRow = append(mountRow, genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML([]Node{node}, g.scopeID)))))
+			}
+		})
+	})
+	mountRow = append(mountRow, genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))))
+	mountBody = append(mountBody, genForOf("$$item", id(itemsVar), genBlock(mountRow...)))
 	if len(block.ElseChildren) > 0 {
 		mountBody = append(mountBody, genIf(genUnary("!", id(hasRowsVar)), genExprStmt(genCall(id("$$insertHTML"), id(fragmentVar), strLit(emitStaticHTML(block.ElseChildren, g.scopeID))))))
 	}
@@ -11163,8 +11199,28 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticEach(plan *hydrationAwaitS
 		genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(fragmentVar), "childNodes"))),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "end"), "before"), id(fragmentVar))),
 	)
+	adoptBody := []JsStmt{
+		genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar))),
+		genConst(itemsVar, g.templateExpr(block.IterExpr)), genLet(indexVar, numLit(0)),
+	}
+	adoptRow := []JsStmt{}
+	g.withTemplateBinding(block.ItemName, "$$item", func() {
+		g.withTemplateBinding(block.IndexName, indexVar, func() {
+			g.withHydrationComponentScope(g.hydrationEachInstanceScope(block, id(indexVar)), func() {
+				for nodeIndex, node := range block.Children {
+					component, ok := node.(*ComponentNode)
+					if !ok || component == nil {
+						continue
+					}
+					adoptRow = append(adoptRow, g.hydrationAwaitSnapshotSlotIfAdoptComponent(component, controllerVar, prefix+"_node"+itoa(nodeIndex), componentEvents[component])...)
+				}
+			})
+		})
+	})
+	adoptRow = append(adoptRow, genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))))
+	adoptBody = append(adoptBody, genForOf("$$item", id(itemsVar), genBlock(adoptRow...)))
 	controller := hydrationStructuralRangeController(rangeVar, controllerVar, nil,
-		[]JsStmt{genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(id("$$adoptHydrationRange"), id(rangeVar)))},
+		adoptBody,
 		mountBody, nil,
 		[]JsStmt{genExprStmt(genCall(genMember(id(controllerVar), "destroy"))), genExprStmt(genCall(genMember(id(controllerVar), "mountCSR")))},
 		nil, nil,
@@ -11174,6 +11230,20 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticEach(plan *hydrationAwaitS
 	plan.cleanup = append(plan.cleanup, genIf(id(controllerVar), genExprStmt(genCall(genMember(id(controllerVar), "destroy")))), genAssignStmt(id(controllerVar), genNull()), genAssignStmt(id(rangeVar), genNull()))
 	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		plan.deps[dependency] = true
+	}
+	for _, node := range block.Children {
+		component, ok := node.(*ComponentNode)
+		if !ok || component == nil {
+			continue
+		}
+		for _, attr := range component.Attrs {
+			if attr == nil || attr.Expr == nil {
+				continue
+			}
+			for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
+				plan.deps[dependency] = true
+			}
+		}
 	}
 }
 
