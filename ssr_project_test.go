@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -133,6 +134,60 @@ func TestSSRProjectRejectsIncompleteExecutableHydrationState(t *testing.T) {
 	}
 	if _, statErr := os.Stat(layout.serverPath(source, srcRoot)); !os.IsNotExist(statErr) {
 		t.Fatalf("incomplete executable state unexpectedly wrote server artifact: %v", statErr)
+	}
+}
+
+func TestSSRProjectGeneratedServerRunsFromPublicArtifacts(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(srcRoot, "App.vela")
+	contents := `<script>export let title = 'server'; let count = $state(0); function increment() { count++; }</script><template><button @click={increment}>{title}: {count}</button></template>`
+	if err := os.WriteFile(source, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	projectModule := "example.com/ssrproduct"
+	serverModule := projectModule + "/server"
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: serverModule}
+	if errors := buildSSRProject([]string{source}, srcRoot, outRoot, opts, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	compilerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainSource := `package main
+import (
+    "os"
+    components "example.com/ssrproduct/server/components"
+)
+func main() {
+    if err := components.RenderAppAt(os.Stdout, components.AppProps{Title: "world"}, components.AppSlots{}, "vela-app-instance"); err != nil {
+        panic(err)
+    }
+}
+`
+	if err := os.WriteFile(filepath.Join(outRoot, "main.go"), []byte(mainSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("go", "run", ".")
+	command.Dir = outRoot
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("public SSR go run: %v\n%s", err, output)
+	}
+	result := string(output)
+	for _, want := range []string{`<button data-vela-event="vela-`, `>world<!--/v:vela-app-instance:0-->`, `"count":0`, `"incomplete":false`} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("public SSR output misses %q:\n%s", want, result)
+		}
 	}
 }
 
