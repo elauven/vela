@@ -385,7 +385,12 @@ as supplied). To distinguish an absent prop from an explicit zero value or
 example `PageProps{Set: map[string]bool{"title": true}, Title: ""}`.
 Defaults from `export let title = "fallback"` run only for fields absent from
 an initialized presence map; the resolved value, not the map, is sent to the
-client.
+client. Declared Vela props must be JSON-serializable. A function, channel,
+cycle, or other unsupported Go value makes the renderer return a
+`VELA-SSR-PROPS` error before it writes the payload; server-only sidecar fields
+are excluded by the allow-list and are not subject to this boundary. Payload
+serialization is preflighted before the renderer writes any component markup,
+so this error cannot leave a partial component response behind.
 
 `state` contains only
 `$state` / `$state.deep` initializers that are cached JavaScript literal trees:

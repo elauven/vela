@@ -40,7 +40,7 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	if err != nil {
 		return nil, err
 	}
-	body, err := emitter.nodes(plan.Nodes)
+	templateBody, err := emitter.nodes(plan.Nodes)
 	if err != nil {
 		return nil, err
 	}
@@ -48,8 +48,9 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	if err != nil {
 		return nil, err
 	}
-	body = append(defaults, body...)
-	body = append(body, payload...)
+	body := append(defaults, payload.preflight...)
+	body = append(body, templateBody...)
+	body = append(body, payload.write...)
 	body = append(body, &goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}})
 	render, err := ssrRenderFunc(file, plan.ComponentName)
 	if err != nil {
@@ -79,12 +80,17 @@ func (e *ssrGoEmitter) propDefaults(props []SSRPlanProp) ([]goast.Stmt, error) {
 	return out, nil
 }
 
-func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goast.Expr) ([]goast.Stmt, error) {
+type ssrHydrationPayload struct {
+	preflight []goast.Stmt
+	write     []goast.Stmt
+}
+
+func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goast.Expr) (ssrHydrationPayload, error) {
 	if plan == nil {
-		return nil, fmt.Errorf("ssr renderer: missing render plan for hydration payload")
+		return ssrHydrationPayload{}, fmt.Errorf("ssr renderer: missing render plan for hydration payload")
 	}
 	if strings.TrimSpace(plan.ScopeID) == "" || componentID == nil {
-		return nil, fmt.Errorf("ssr renderer: missing component scope ID for hydration payload")
+		return ssrHydrationPayload{}, fmt.Errorf("ssr renderer: missing component scope ID for hydration payload")
 	}
 	stateJSON := plan.Hydration.JSON
 	if stateJSON == "" {
@@ -144,7 +150,7 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goa
 		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("Await"), Value: &goast.SelectorExpr{X: awaitOptions, Sel: goast.NewIdent("Await")}})
 		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("AwaitAt"), Value: &goast.SelectorExpr{X: awaitOptions, Sel: goast.NewIdent("AwaitAt")}})
 	}
-	marshal := &goast.CallExpr{Fun: goSelector("json", "Marshal"), Args: []goast.Expr{payloadValue}}
+	marshal := &goast.CallExpr{Fun: goSelector("vela", "MarshalHydrationPayload"), Args: []goast.Expr{payloadValue}}
 	encode := &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("ssrPayload"), goast.NewIdent("err")}, Tok: token.DEFINE, Rhs: []goast.Expr{marshal}}
 	encoded := &goast.IfStmt{Cond: &goast.BinaryExpr{X: goast.NewIdent("err"), Op: token.NEQ, Y: goast.NewIdent("nil")}, Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("err")}}}}}
 	open := ssrGoStringConcat(
@@ -152,12 +158,13 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goa
 		&goast.CallExpr{Fun: goSelector("vela", "EscapeString"), Args: []goast.Expr{componentID}},
 		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(`">`)},
 	)
-	return []goast.Stmt{
-		encode,
-		encoded,
-		goWriteSSRValue(open),
-		goWriteSSRValue(&goast.CallExpr{Fun: goast.NewIdent("string"), Args: []goast.Expr{goast.NewIdent("ssrPayload")}}),
-		goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("</script>")}),
+	return ssrHydrationPayload{
+		preflight: []goast.Stmt{encode, encoded},
+		write: []goast.Stmt{
+			goWriteSSRValue(open),
+			goWriteSSRValue(&goast.CallExpr{Fun: goast.NewIdent("string"), Args: []goast.Expr{goast.NewIdent("ssrPayload")}}),
+			goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("</script>")}),
+		},
 	}, nil
 }
 

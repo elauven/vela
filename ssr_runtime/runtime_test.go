@@ -105,6 +105,21 @@ func TestPropProvidedDistinguishesAbsentAndExplicitZeroValue(t *testing.T) {
 	}
 }
 
+func TestMarshalHydrationPayloadClassifiesNonSerializableProps(t *testing.T) {
+	encoded, err := MarshalHydrationPayload(struct {
+		Title string `json:"title"`
+	}{Title: "ready"})
+	if err != nil || string(encoded) != `{"title":"ready"}` {
+		t.Fatalf("serializable payload = %q, %v", encoded, err)
+	}
+	_, err = MarshalHydrationPayload(struct {
+		Handler any `json:"handler"`
+	}{Handler: func() {}})
+	if err == nil || !strings.Contains(err.Error(), "VELA-SSR-PROPS") || !strings.Contains(err.Error(), "unsupported type") {
+		t.Fatalf("non-serializable prop error = %v", err)
+	}
+}
+
 func TestContainsStringUsesSelectMultipleMembership(t *testing.T) {
 	if !ContainsString([]any{"one", 2, true}, "2") {
 		t.Fatal("multi-select membership must use browser-visible string values")

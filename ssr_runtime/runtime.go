@@ -1,6 +1,7 @@
 package ssr_runtime
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"io"
@@ -59,6 +60,19 @@ func PropProvided(props any, name string) bool {
 	}
 	provided := set.MapIndex(reflect.ValueOf(name))
 	return provided.IsValid() && provided.Bool()
+}
+
+// MarshalHydrationPayload serializes the client-owned SSR payload with a
+// stable diagnostic for values that cannot cross the server/browser boundary.
+// The generated renderer already constructs an allow-list of declared Vela
+// props, so a failure here points to a non-serializable declared prop rather
+// than an arbitrary server-only sidecar field.
+func MarshalHydrationPayload(value any) ([]byte, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("VELA-SSR-PROPS: declared Vela props must be JSON-serializable: %w", err)
+	}
+	return encoded, nil
 }
 
 // Slot is a server-rendered component slot. Phase 2 will populate named slot

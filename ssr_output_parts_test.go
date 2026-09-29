@@ -67,6 +67,12 @@ type PageProps struct {
 	if !strings.Contains(string(renderer), "Title any `json:\"Title\"`") {
 		t.Fatalf("SSR payload must declare an allow-list of Vela props:\n%s", renderer)
 	}
+	if !strings.Contains(string(renderer), "vela.MarshalHydrationPayload") {
+		t.Fatalf("SSR payload must use the classified serialization boundary:\n%s", renderer)
+	}
+	if strings.Index(string(renderer), "ssrPayload, err := vela.MarshalHydrationPayload") > strings.Index(string(renderer), "vela.WriteString(w, \"<!--e:") {
+		t.Fatalf("SSR payload serialization must finish before renderer writes HTML:\n%s", renderer)
+	}
 	if err := ValidateGeneratedSSRGoPackage(map[string][]byte{"Page.go": renderer, "Page_props.go": props}); err != nil {
 		t.Fatal(err)
 	}
