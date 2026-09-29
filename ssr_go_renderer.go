@@ -36,6 +36,10 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 		return nil, err
 	}
 	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, scopeExpr: goast.NewIdent("instanceID"), awaitOptions: goast.NewIdent("options"), componentInstanceSuffixes: plan.ComponentInstanceSuffixes, componentInstanceIdentities: plan.ComponentInstanceIdentities}
+	defaults, err := emitter.propDefaults(plan.Props)
+	if err != nil {
+		return nil, err
+	}
 	body, err := emitter.nodes(plan.Nodes)
 	if err != nil {
 		return nil, err
@@ -44,6 +48,7 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	if err != nil {
 		return nil, err
 	}
+	body = append(defaults, body...)
 	body = append(body, payload...)
 	body = append(body, &goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}})
 	render, err := ssrRenderFunc(file, plan.ComponentName)
@@ -54,6 +59,24 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) 
 	appendSSRGoImports(file, map[string]string{"encoding/json": "json"})
 	appendSSRGoImports(file, emitter.imports)
 	return file, nil
+}
+
+func (e *ssrGoEmitter) propDefaults(props []SSRPlanProp) ([]goast.Stmt, error) {
+	var out []goast.Stmt
+	for _, prop := range props {
+		if prop.Default == nil {
+			continue
+		}
+		value, err := translateSSRExpr(prop.Default, e.ctx, 0)
+		if err != nil {
+			return nil, fmt.Errorf("SSR default prop %q: %w", prop.SourceName, err)
+		}
+		out = append(out, &goast.IfStmt{
+			Cond: &goast.UnaryExpr{Op: token.NOT, X: &goast.CallExpr{Fun: goSelector("vela", "PropProvided"), Args: []goast.Expr{goast.NewIdent("props"), &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(prop.SourceName)}}}},
+			Body: &goast.BlockStmt{List: []goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{&goast.SelectorExpr{X: goast.NewIdent("props"), Sel: goast.NewIdent(prop.GoName)}}, Tok: token.ASSIGN, Rhs: []goast.Expr{value}}}},
+		})
+	}
+	return out, nil
 }
 
 func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goast.Expr) ([]goast.Stmt, error) {

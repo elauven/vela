@@ -31,6 +31,29 @@ type UndefinedValue struct{}
 // Undefined returns the server representation of JavaScript undefined.
 func Undefined() UndefinedValue { return UndefinedValue{} }
 
+// PropProvided reports whether a typed generated SSR props value explicitly
+// supplied a Vela prop. Generated contracts expose Set; older user-maintained
+// sidecars without it retain their historical behaviour and are treated as
+// fully provided until the developer opts into the presence contract.
+func PropProvided(props any, name string) bool {
+	value := reflect.ValueOf(props)
+	for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
+		if value.IsNil() {
+			return false
+		}
+		value = value.Elem()
+	}
+	if !value.IsValid() || value.Kind() != reflect.Struct {
+		return true
+	}
+	set := value.FieldByName("Set")
+	if !set.IsValid() || set.Kind() != reflect.Map || set.Type().Key().Kind() != reflect.String || set.Type().Elem().Kind() != reflect.Bool {
+		return true
+	}
+	provided := set.MapIndex(reflect.ValueOf(name))
+	return provided.IsValid() && provided.Bool()
+}
+
 // Slot is a server-rendered component slot. Phase 2 will populate named slot
 // fields with this type while the Phase 1 slot struct remains intentionally
 // empty.

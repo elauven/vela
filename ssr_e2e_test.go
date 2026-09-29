@@ -46,7 +46,7 @@ import (
     "example.com/ssrfixture/components"
 )
 func main() {
-    if err := components.RenderPageAt(os.Stdout, components.PageProps{Title: "world"}, components.PageSlots{}, "vela-page-instance"); err != nil {
+    if err := components.RenderPageAt(os.Stdout, components.PageProps{Title: "world", Set: map[string]bool{"title": true}}, components.PageSlots{}, "vela-page-instance"); err != nil {
         panic(err)
     }
 }

@@ -396,7 +396,12 @@ func utf8FirstRune(value string) (rune, int) {
 }
 
 func goPropsTypeDecl(name string, props []SSRPlanProp) *goast.GenDecl {
-	fields := make([]*goast.Field, 0, len(props))
+	fields := make([]*goast.Field, 0, len(props)+1)
+	fields = append(fields, &goast.Field{
+		Names: []*goast.Ident{goast.NewIdent("Set")},
+		Type:  &goast.MapType{Key: goast.NewIdent("string"), Value: goast.NewIdent("bool")},
+		Tag:   &goast.BasicLit{Kind: token.STRING, Value: "`json:\"-\"`"},
+	})
 	for _, prop := range props {
 		fields = append(fields, &goast.Field{
 			Names: []*goast.Ident{goast.NewIdent(prop.GoName)},
@@ -476,6 +481,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	ssrRuntimeAddVariadicFunc(pkg, "TemplateString", []*types.Var{types.NewVar(token.NoPos, pkg, "values", types.NewSlice(anyType))}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
 	ssrRuntimeAddFunc(pkg, "Length", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Int])})
 	ssrRuntimeAddFunc(pkg, "Truthy", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Bool])})
+	ssrRuntimeAddFunc(pkg, "PropProvided", []*types.Var{types.NewVar(token.NoPos, pkg, "props", anyType), types.NewVar(token.NoPos, pkg, "name", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Bool])})
 	ssrRuntimeAddFunc(pkg, "Ternary", []*types.Var{types.NewVar(token.NoPos, pkg, "condition", types.Typ[types.Bool]), types.NewVar(token.NoPos, pkg, "thenValue", anyType), types.NewVar(token.NoPos, pkg, "elseValue", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", anyType)})
 	ssrRuntimeAddFunc(pkg, "And", []*types.Var{types.NewVar(token.NoPos, pkg, "left", anyType), types.NewVar(token.NoPos, pkg, "right", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", anyType)})
 	ssrRuntimeAddFunc(pkg, "Or", []*types.Var{types.NewVar(token.NoPos, pkg, "left", anyType), types.NewVar(token.NoPos, pkg, "right", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", anyType)})

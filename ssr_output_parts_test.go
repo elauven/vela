@@ -5,6 +5,37 @@ import (
 	"testing"
 )
 
+func TestBuildSSRGoFileAppliesDefaultPropsFromExplicitPresence(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let title = "fallback";</script><template><p>{title}</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"map[string]bool `json:\"-\"`",
+		`if !vela.PropProvided(props, "title") {`,
+		`props.Title = "fallback"`,
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Fatalf("default-prop renderer misses %q:\n%s", want, src)
+		}
+	}
+	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBuildSSRGoFileWithOutputPartsRendersElementTextProp(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let title="";</script><template><main class="app"><p>Hello {title}</p></main></template>`)
 	if err != nil {

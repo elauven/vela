@@ -85,6 +85,23 @@ func TestTruthyAndTernary(t *testing.T) {
 	}
 }
 
+func TestPropProvidedDistinguishesAbsentAndExplicitZeroValue(t *testing.T) {
+	type props struct {
+		Set   map[string]bool
+		Title string
+	}
+
+	if PropProvided(props{}, "title") {
+		t.Fatal("a generated props value without a presence entry must be absent")
+	}
+	if !PropProvided(props{Set: map[string]bool{"title": true}}, "title") {
+		t.Fatal("an explicit empty prop value must remain present")
+	}
+	if !PropProvided(struct{ Title string }{Title: "legacy"}, "title") {
+		t.Fatal("non-generated props values must preserve legacy provided semantics")
+	}
+}
+
 func TestContainsStringUsesSelectMultipleMembership(t *testing.T) {
 	if !ContainsString([]any{"one", 2, true}, "2") {
 		t.Fatal("multi-select membership must use browser-visible string values")
