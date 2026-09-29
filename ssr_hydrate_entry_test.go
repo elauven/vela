@@ -27,12 +27,18 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 		"import { $$acquireHydrationElement, $$createHydrationWalker, $$readHydrationPayload } from './runtime.js';",
 		"export function hydratePage($$root, $$overrides, $$instanceID)",
 		"export function Page($$root, $$overrides, $$instanceID)",
+		"const $$hydratedInstances = new WeakMap();",
 		"const $$scopeID = $$instanceID || 'vela-page';",
+		"const $$existing = $$instances.get($$scopeID);",
+		"if ($$existing) {",
+		"return $$existing;",
 		"$$createHydrationWalker($$root, $$scopeID)",
 		"$$readHydrationPayload($$root, $$scopeID)",
 		"const $$velaProps = { title: $$payload.props.Title };",
 		"const $$componentProps = Object.assign({}, { title: $$payload.props.Title }, { $$velaState: $$payload.state, $$velaAwait: $$payload.await || {}, $$velaAwaitAt: $$payload.awaitAt || {} }, $$overrides || {});",
-		"return { mode: 'static-only', root: $$root, props: $$velaProps, componentProps: $$componentProps, state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges, elements: { e0: $$acquireHydrationElement($$walker, 0, 'main') } };",
+		"const $$hydration = { mode: 'static-only', root: $$root, props: $$velaProps, componentProps: $$componentProps, state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges, elements: { e0: $$acquireHydrationElement($$walker, 0, 'main') } };",
+		"$$instances.set($$scopeID, $$hydration);",
+		"return $$hydration;",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("hydrate entry misses %q:\n%s", want, source)
@@ -79,9 +85,11 @@ func TestSSRHydrateEntryReleasesInstancePayloadOnDestroy(t *testing.T) {
 	}
 	source := PrintJS(entry, PrintPretty)
 	for _, want := range []string{
-		"return { mode: 'executable'",
+		"const $$hydration = { mode: 'executable'",
 		"const $$destroy = $$component.destroy;",
 		"$$component.destroy = () => {",
+		"$$instances.delete($$scopeID);",
+		"$$hydratedInstances.delete($$root);",
 		"document.getElementById('vela-state-' + $$scopeID)",
 		"$$payloadNode.remove();",
 	} {
@@ -134,6 +142,8 @@ const document = {
 };
 const root = { ownerDocument: document };
 const adopted = hydratePage(root);
+const adoptedAgain = hydratePage(root);
+assert(adoptedAgain === adopted, 'entry must reuse an already hydrated root and scope');
 assert(adopted.mode === 'static-only', 'entry must expose static-only artifact mode');
 assert(adopted.root === root, 'entry must retain the server root');
 assert(adopted.props.title === 'server', 'entry must map Go payload fields back to Vela props');

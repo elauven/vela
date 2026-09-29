@@ -62,6 +62,13 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 	}
 	body := []JsStmt{
 		genConst("$$scopeID", genLogical("||", id("$$instanceID"), strLit(plan.ScopeID))),
+		genLet("$$instances", genCall(genMember(id("$$hydratedInstances"), "get"), id("$$root"))),
+		genIf(genUnary("!", id("$$instances")), genBlock(
+			genAssignStmt(id("$$instances"), genNew(id("Map"))),
+			genExprStmt(genCall(genMember(id("$$hydratedInstances"), "set"), id("$$root"), id("$$instances"))),
+		)),
+		genConst("$$existing", genCall(genMember(id("$$instances"), "get"), id("$$scopeID"))),
+		genIf(id("$$existing"), genBlock(genReturn(id("$$existing")))),
 		genConst("$$walker", genCall(id("$$createHydrationWalker"), id("$$root"), id("$$scopeID"))),
 		genConst("$$payload", genCall(id("$$readHydrationPayload"), id("$$root"), id("$$scopeID"))),
 		genConst("$$velaProps", props),
@@ -86,6 +93,8 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 			genConst("$$destroy", genMember(id("$$component"), "destroy")),
 			genAssignStmt(genMember(id("$$component"), "destroy"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 				genInvoke("$$destroy"),
+				genExprStmt(genCall(genMember(id("$$instances"), "delete"), id("$$scopeID"))),
+				genIf(genUnary("!", genMember(id("$$instances"), "size")), genExprStmt(genCall(genMember(id("$$hydratedInstances"), "delete"), id("$$root")))),
 				genConst("$$payloadNode", genCall(genMember(id("document"), "getElementById"), genBinary("+", strLit("vela-state-"), id("$$scopeID")))),
 				genIf(id("$$payloadNode"), genExprStmt(genCall(genMember(id("$$payloadNode"), "remove")))),
 			)}),
@@ -104,14 +113,18 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram,
 	if clientModule != "" {
 		returnProps = append(returnProps, &JsProp{baseNode: genNode(), Key: id("component"), Value: id("$$component"), Kind: "init"})
 	}
-	body = append(body, genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: returnProps}))
+	body = append(body,
+		genConst("$$hydration", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: returnProps}),
+		genExprStmt(genCall(genMember(id("$$instances"), "set"), id("$$scopeID"), id("$$hydration"))),
+		genReturn(id("$$hydration")),
+	)
 	entry := &JsFuncDecl{
 		baseStmt: baseStmt{genNode()},
 		Name:     functionName,
 		Params:   []JsExpr{id("$$root"), id("$$overrides"), id("$$instanceID")},
 		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: body},
 	}
-	imports := []JsStmt{}
+	imports := []JsStmt{genConst("$$hydratedInstances", genNew(id("WeakMap")))}
 	if clientModule != "" {
 		imports = append(imports, &JsImportDecl{baseStmt: baseStmt{genNode()}, DefaultName: "$$client", Source: clientModule})
 	}
