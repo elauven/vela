@@ -603,6 +603,16 @@ export function $$acquireHydrationElement(walker, id, tag) {
   }
   const actual = String(node.tagName || '').toLowerCase();
   const expected = String(tag || '').toLowerCase();
+  // Browsers insert a tbody around bare table rows while parsing server HTML.
+  // The compiler still owns the row marker range, whose opening marker stays
+  // immediately before that implicit tbody. Treat only this standardized DOM
+  // normalization as transparent; every other tag mismatch remains fatal.
+  if (expected === 'tr' && actual === 'tbody') {
+    const row = node.firstElementChild;
+    if (row && String(row.tagName || '').toLowerCase() === 'tr') {
+      return row;
+    }
+  }
   if (actual !== expected) {
     throw new Error(`Vela hydration mismatch [${walker.componentId}]: element range e${id} expected <${expected}> but found <${actual || 'unknown'}>`);
   }

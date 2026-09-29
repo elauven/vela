@@ -229,6 +229,15 @@ elementStart.nextSibling = existingMain;
 const elementWalker = $$createHydrationWalker(markerRoot([elementStart, elementEnd]), 'vela-test');
 assert($$acquireHydrationElement(elementWalker, 2, 'main') === existingMain,
   'element acquisition must return the existing element in its marker range');
+const implicitRow = { nodeType: 1, tagName: 'TR' };
+const implicitBody = { nodeType: 1, tagName: 'TBODY', firstElementChild: implicitRow };
+const rowStart = marker('e:vela-test:3');
+const rowEnd = marker('/e:vela-test:3');
+rowStart.nextSibling = implicitBody;
+implicitBody.nextSibling = rowEnd;
+const rowWalker = $$createHydrationWalker(markerRoot([rowStart, rowEnd]), 'vela-test');
+assert($$acquireHydrationElement(rowWalker, 3, 'tr') === implicitRow,
+  'element acquisition must pass through browser-inserted tbody for a marked row');
 mismatch = undefined;
 try { $$acquireHydrationElement(elementWalker, 2, 'section'); }
 catch (error) { mismatch = error; }
