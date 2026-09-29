@@ -91,8 +91,11 @@ func TestPropProvidedDistinguishesAbsentAndExplicitZeroValue(t *testing.T) {
 		Title string
 	}
 
-	if PropProvided(props{}, "title") {
-		t.Fatal("a generated props value without a presence entry must be absent")
+	if !PropProvided(props{}, "title") {
+		t.Fatal("a nil presence map must preserve legacy struct-literal semantics")
+	}
+	if PropProvided(props{Set: map[string]bool{}}, "title") {
+		t.Fatal("an initialized map without title must mark the prop absent")
 	}
 	if !PropProvided(props{Set: map[string]bool{"title": true}}, "title") {
 		t.Fatal("an explicit empty prop value must remain present")

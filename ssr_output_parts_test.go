@@ -36,6 +36,42 @@ func TestBuildSSRGoFileAppliesDefaultPropsFromExplicitPresence(t *testing.T) {
 	}
 }
 
+func TestBuildSSRGoRendererFilePayloadExcludesSidecarOnlyFields(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let title = "fallback";</script><template><p>{title}</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoRendererFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	props := []byte(`package components
+
+type PageProps struct {
+	Set map[string]bool ` + "`json:\"-\"`" + `
+	Title string
+	RequestContext string
+}
+`)
+	if strings.Contains(string(renderer), "props.RequestContext") || strings.Contains(string(renderer), "RequestContext") {
+		t.Fatalf("SSR payload must not serialize a sidecar-only field:\n%s", renderer)
+	}
+	if !strings.Contains(string(renderer), "Title any `json:\"Title\"`") {
+		t.Fatalf("SSR payload must declare an allow-list of Vela props:\n%s", renderer)
+	}
+	if err := ValidateGeneratedSSRGoPackage(map[string][]byte{"Page.go": renderer, "Page_props.go": props}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBuildSSRGoFileWithOutputPartsRendersElementTextProp(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let title="";</script><template><main class="app"><p>Hello {title}</p></main></template>`)
 	if err != nil {

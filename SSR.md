@@ -374,7 +374,20 @@ component render range:
 </script>
 ```
 
-`props` are marshalled by generated Go at render time. `state` contains only
+`props` are marshalled by generated Go at render time. The payload is an
+allow-list of the component's declared Vela props, not a marshal of the full
+user-preservable `*_props.go` struct: a server application may add a field
+such as `RequestContext` to that struct without exposing it to the document.
+The generated `Props.Set map[string]bool` is also never serialized. A nil
+`Set` keeps the historical Go struct-literal behaviour (all fields are treated
+as supplied). To distinguish an absent prop from an explicit zero value or
+`nil`, initialize `Set` and add only the supplied source prop names, for
+example `PageProps{Set: map[string]bool{"title": true}, Title: ""}`.
+Defaults from `export let title = "fallback"` run only for fields absent from
+an initialized presence map; the resolved value, not the map, is sent to the
+client.
+
+`state` contains only
 `$state` / `$state.deep` initializers that are cached JavaScript literal trees:
 null, booleans, JSON numbers and strings, arrays, and plain objects without
 computed keys, spreads, methods, or shorthand references. The compiler never

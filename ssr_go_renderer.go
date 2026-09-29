@@ -90,10 +90,25 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goa
 	if stateJSON == "" {
 		stateJSON = "{}"
 	}
+	payloadPropsFields := make([]*goast.Field, 0, len(plan.Props))
+	payloadPropsValues := make([]goast.Expr, 0, len(plan.Props))
+	for _, prop := range plan.Props {
+		payloadPropsFields = append(payloadPropsFields, &goast.Field{
+			Names: []*goast.Ident{goast.NewIdent(prop.GoName)},
+			Type:  goast.NewIdent("any"),
+			Tag:   &goast.BasicLit{Kind: token.STRING, Value: "`json:\"" + prop.GoName + "\"`"},
+		})
+		payloadPropsValues = append(payloadPropsValues, &goast.KeyValueExpr{
+			Key:   goast.NewIdent(prop.GoName),
+			Value: &goast.SelectorExpr{X: goast.NewIdent("props"), Sel: goast.NewIdent(prop.GoName)},
+		})
+	}
+	payloadPropsType := &goast.StructType{Fields: &goast.FieldList{List: payloadPropsFields}}
+	payloadProps := &goast.CompositeLit{Type: payloadPropsType, Elts: payloadPropsValues}
 	typeFields := []*goast.Field{
 		{Names: []*goast.Ident{goast.NewIdent("Version")}, Type: goast.NewIdent("int"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"version\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("Component")}, Type: goast.NewIdent("string"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"component\"`"}},
-		{Names: []*goast.Ident{goast.NewIdent("Props")}, Type: goast.NewIdent(plan.ComponentName + "Props"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"props\"`"}},
+		{Names: []*goast.Ident{goast.NewIdent("Props")}, Type: payloadPropsType, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"props\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("State")}, Type: goSelector("json", "RawMessage"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"state\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("Deep")}, Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"deep,omitempty\"`"}},
 		{Names: []*goast.Ident{goast.NewIdent("Incomplete")}, Type: goast.NewIdent("bool"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"incomplete\"`"}},
@@ -106,7 +121,7 @@ func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goa
 		Elts: []goast.Expr{
 			&goast.KeyValueExpr{Key: goast.NewIdent("Version"), Value: goast.NewIdent(strconv.Itoa(SSRHydrationPayloadVersion))},
 			&goast.KeyValueExpr{Key: goast.NewIdent("Component"), Value: componentID},
-			&goast.KeyValueExpr{Key: goast.NewIdent("Props"), Value: goast.NewIdent("props")},
+			&goast.KeyValueExpr{Key: goast.NewIdent("Props"), Value: payloadProps},
 			&goast.KeyValueExpr{Key: goast.NewIdent("State"), Value: &goast.CallExpr{Fun: goSelector("json", "RawMessage"), Args: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(stateJSON)}}}},
 			&goast.KeyValueExpr{Key: goast.NewIdent("Incomplete"), Value: goast.NewIdent(strconv.FormatBool(plan.Hydration.Incomplete))},
 		},

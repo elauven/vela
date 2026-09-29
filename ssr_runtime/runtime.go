@@ -50,6 +50,13 @@ func PropProvided(props any, name string) bool {
 	if !set.IsValid() || set.Kind() != reflect.Map || set.Type().Key().Kind() != reflect.String || set.Type().Elem().Kind() != reflect.Bool {
 		return true
 	}
+	// A nil Set is the compatibility mode for pre-presence-map generated
+	// sidecars and ordinary Go struct literals. Opting into exact presence
+	// tracking is explicit: callers initialise Set (including an empty map)
+	// before rendering.
+	if set.IsNil() {
+		return true
+	}
 	provided := set.MapIndex(reflect.ValueOf(name))
 	return provided.IsValid() && provided.Bool()
 }
