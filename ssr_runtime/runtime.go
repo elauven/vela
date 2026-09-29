@@ -184,33 +184,35 @@ func Truthy(value any) bool {
 	}
 }
 
-// Ternary selects an already translated pure branch after JavaScript truthiness
-// has been evaluated. Branch expressions in the baseline subset are side-effect
-// free, so eager Go argument evaluation cannot change observable behavior.
-func Ternary(condition bool, thenValue, elseValue any) any {
-	if condition {
-		return thenValue
+// TernaryLazy preserves JavaScript conditional evaluation: the condition is
+// evaluated once and only the selected branch closure runs. The closures are
+// emitted by the Go-AST backend rather than evaluating translated expressions
+// as eager function arguments.
+func TernaryLazy(condition, thenValue, elseValue func() any) any {
+	if Truthy(condition()) {
+		return thenValue()
 	}
-	return elseValue
+	return elseValue()
 }
 
-// And returns the same operand JavaScript's && would return. The compiler
-// only lowers pure expressions through this helper, so eagerly receiving both
-// Go arguments does not observe a JavaScript short-circuit side effect.
-func And(left, right any) any {
-	if Truthy(left) {
-		return right
+// AndLazy returns the same operand JavaScript's && would return, evaluating
+// the right operand only when the left result is truthy.
+func AndLazy(left, right func() any) any {
+	leftValue := left()
+	if Truthy(leftValue) {
+		return right()
 	}
-	return left
+	return leftValue
 }
 
-// Or returns the same operand JavaScript's || would return. See And for the
-// accepted pure-expression boundary.
-func Or(left, right any) any {
-	if Truthy(left) {
-		return left
+// OrLazy returns the same operand JavaScript's || would return, evaluating
+// the right operand only when the left result is falsy.
+func OrLazy(left, right func() any) any {
+	leftValue := left()
+	if Truthy(leftValue) {
+		return leftValue
 	}
-	return right
+	return right()
 }
 
 // ContainsString reports whether a server-rendered multi-select model contains

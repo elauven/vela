@@ -149,7 +149,7 @@ func TestBuildSSRGoFileUsesJSTruthinessForTernaryIfCondition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `if vela.Truthy(vela.Ternary(vela.Truthy(props.Count), "ready", "")) {`
+	want := `if vela.Truthy(vela.TernaryLazy(func() any {`
 	if !strings.Contains(string(source), want) {
 		t.Fatalf("ternary if condition is not lowered through JS truthiness:\n%s", source)
 	}
@@ -250,7 +250,7 @@ func TestBuildSSRGoFileLowersLogicalOperandsWithJSResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `vela.EscapeString(vela.String(vela.Or(props.Title, "Untitled")))`) {
+	if !strings.Contains(string(source), `vela.EscapeString(vela.String(vela.OrLazy(func() any {`) {
 		t.Fatalf("logical SSR expression is not lowered through JS operand semantics:\n%s", source)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {

@@ -54,7 +54,7 @@ func TestStringAndEscapeString(t *testing.T) {
 	}
 }
 
-func TestTruthyAndTernary(t *testing.T) {
+func TestTruthyAndLazyOperators(t *testing.T) {
 	for _, tc := range []struct {
 		value any
 		want  bool
@@ -65,23 +65,36 @@ func TestTruthyAndTernary(t *testing.T) {
 			t.Fatalf("Truthy(%#v)=%v want %v", tc.value, got, tc.want)
 		}
 	}
-	if got := Ternary(Truthy(0), "yes", "no"); got != "no" {
+	if got := TernaryLazy(func() any { return 0 }, func() any { return "yes" }, func() any { return "no" }); got != "no" {
 		t.Fatalf("false ternary=%#v", got)
 	}
-	if got := Ternary(Truthy("ready"), "yes", "no"); got != "yes" {
+	if got := TernaryLazy(func() any { return "ready" }, func() any { return "yes" }, func() any { return "no" }); got != "yes" {
 		t.Fatalf("true ternary=%#v", got)
 	}
-	if got := And("", "next"); got != "" {
+	if got := AndLazy(func() any { return "" }, func() any { return "next" }); got != "" {
 		t.Fatalf("false && result=%#v", got)
 	}
-	if got := And("ready", "next"); got != "next" {
+	if got := AndLazy(func() any { return "ready" }, func() any { return "next" }); got != "next" {
 		t.Fatalf("true && result=%#v", got)
 	}
-	if got := Or("", "fallback"); got != "fallback" {
+	if got := OrLazy(func() any { return "" }, func() any { return "fallback" }); got != "fallback" {
 		t.Fatalf("false || result=%#v", got)
 	}
-	if got := Or("ready", "fallback"); got != "ready" {
+	if got := OrLazy(func() any { return "ready" }, func() any { return "fallback" }); got != "ready" {
 		t.Fatalf("true || result=%#v", got)
+	}
+	called := 0
+	conditionCalls := 0
+	if got := TernaryLazy(func() any { conditionCalls++; return false }, func() any { called++; return "unsafe" }, func() any { return "safe" }); got != "safe" || called != 0 || conditionCalls != 1 {
+		t.Fatalf("ternary lazy evaluation result=%#v branchCalls=%d conditionCalls=%d", got, called, conditionCalls)
+	}
+	leftCalls := 0
+	if got := AndLazy(func() any { leftCalls++; return 0 }, func() any { called++; return "unsafe" }); got != 0 || called != 0 || leftCalls != 1 {
+		t.Fatalf("&& lazy evaluation result=%#v rightCalls=%d leftCalls=%d", got, called, leftCalls)
+	}
+	leftCalls = 0
+	if got := OrLazy(func() any { leftCalls++; return true }, func() any { called++; return "unsafe" }); got != true || called != 0 || leftCalls != 1 {
+		t.Fatalf("|| lazy evaluation result=%#v rightCalls=%d leftCalls=%d", got, called, leftCalls)
 	}
 }
 

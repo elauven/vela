@@ -107,6 +107,15 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		if err != nil {
 			return nil, err
 		}
+		// JavaScript's ! accepts every value and first applies JS truthiness.
+		// Go's ! only accepts bool, so lowering it directly would reject valid
+		// expressions such as !items.length.
+		if node.Op == "!" {
+			return &goast.UnaryExpr{Op: token.NOT, X: &goast.CallExpr{
+				Fun:  goSelector("vela", "Truthy"),
+				Args: []goast.Expr{x},
+			}}, nil
+		}
 		op, ok := ssrUnaryToken(node.Op)
 		if !ok {
 			return nil, ssrExprUnsupported(pos, "unary operator %q is not supported", node.Op)
@@ -138,13 +147,16 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		function := ""
 		switch node.Op {
 		case "&&":
-			function = "And"
+			function = "AndLazy"
 		case "||":
-			function = "Or"
+			function = "OrLazy"
 		default:
 			return nil, ssrExprUnsupported(pos, "logical operator %q is not supported", node.Op)
 		}
-		return &goast.CallExpr{Fun: goSelector("vela", function), Args: []goast.Expr{left, right}}, nil
+		return &goast.CallExpr{Fun: goSelector("vela", function), Args: []goast.Expr{
+			ssrLazyExpr(left),
+			ssrLazyExpr(right),
+		}}, nil
 	case *JsMemberExpr:
 		return translateSSRMember(node, ctx, pos)
 	case *JsConditionalExpr:
@@ -160,8 +172,10 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		if err != nil {
 			return nil, err
 		}
-		return &goast.CallExpr{Fun: goSelector("vela", "Ternary"), Args: []goast.Expr{
-			&goast.CallExpr{Fun: goSelector("vela", "Truthy"), Args: []goast.Expr{test}}, thenValue, elseValue,
+		return &goast.CallExpr{Fun: goSelector("vela", "TernaryLazy"), Args: []goast.Expr{
+			ssrLazyExpr(test),
+			ssrLazyExpr(thenValue),
+			ssrLazyExpr(elseValue),
 		}}, nil
 	case *JsCallExpr:
 		return nil, ssrExprUnsupported(pos, "JavaScript calls are not available to static SSR")
@@ -171,6 +185,23 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		return nil, ssrExprUnsupported(pos, "assignments are not available to static SSR")
 	default:
 		return nil, ssrExprUnsupported(pos, "JavaScript expression %T is not supported", expr)
+	}
+}
+
+// ssrLazyExpr represents a source expression as a zero-argument Go closure.
+// It is used only at JavaScript short-circuit boundaries, where Go evaluates
+// function arguments eagerly but the runtime must decide which closure body
+// to execute. Keeping this in AST form avoids recreating source text and
+// guarantees that an unsafe unselected member/index read is never evaluated.
+func ssrLazyExpr(value goast.Expr) goast.Expr {
+	return &goast.FuncLit{
+		Type: &goast.FuncType{
+			Params:  &goast.FieldList{},
+			Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("any")}}},
+		},
+		Body: &goast.BlockStmt{List: []goast.Stmt{
+			&goast.ReturnStmt{Results: []goast.Expr{value}},
+		}},
 	}
 }
 

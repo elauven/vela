@@ -24,7 +24,7 @@ export let items = [];
 		`props.Title + "!"`,
 		"vela.Length(props.Items)",
 		"props.Items[0]",
-		"vela.And(props.Active, props.Count > 0)",
+		"vela.AndLazy(func() any {\n\treturn props.Active\n}, func() any {\n\treturn props.Count > 0\n})",
 	}
 	for i, want := range wants {
 		expr, err := TranslateSSRExpression(text.Parts[i].Expr, NewSSRExprContext(plan))
@@ -165,7 +165,14 @@ func TestTranslateSSRExpressionLowersTernaryThroughRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := FormatSSRGoExpr(translated)
-	if err != nil || got != `vela.Ternary(vela.Truthy(props.Count), "many", "none")` {
+	want := `vela.TernaryLazy(func() any {
+	return props.Count
+}, func() any {
+	return "many"
+}, func() any {
+	return "none"
+})`
+	if err != nil || got != want {
 		t.Fatalf("ternary translation=%q, err=%v", got, err)
 	}
 }
@@ -180,7 +187,18 @@ func TestTranslateSSRExpressionLowersLogicalOperandsThroughRuntime(t *testing.T)
 		t.Fatal(err)
 	}
 	text := sfc.TemplateAST.Nodes[0].(*TextNode)
-	wants := []string{`vela.Or(props.Title, "Untitled")`, `vela.And(props.Active, "active")`}
+	wants := []string{
+		`vela.OrLazy(func() any {
+	return props.Title
+}, func() any {
+	return "Untitled"
+})`,
+		`vela.AndLazy(func() any {
+	return props.Active
+}, func() any {
+	return "active"
+})`,
+	}
 	for index, want := range wants {
 		translated, err := TranslateSSRExpression(text.Parts[index].Expr, NewSSRExprContext(plan))
 		if err != nil {
