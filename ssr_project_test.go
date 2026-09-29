@@ -126,6 +126,24 @@ func TestSSRCLIWritesDeclaredArtifactMode(t *testing.T) {
 	}
 }
 
+func TestSSRArtifactManifestPreservesClientBoundaryMode(t *testing.T) {
+	source, err := json.Marshal(SSRArtifactManifest{
+		Component: "Page",
+		Mode:      SSRArtifactClientBoundary,
+		Hydrate:   "Page.hydrate.js",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest SSRArtifactManifest
+	if err := json.Unmarshal(source, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Mode != SSRArtifactClientBoundary || manifest.Hydrate != "Page.hydrate.js" {
+		t.Fatalf("client-boundary manifest=%#v", manifest)
+	}
+}
+
 func TestSSRProjectWritesStaticOnlyArtifactManifest(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")

@@ -784,6 +784,12 @@ deliverables, but the user-owned-package and non-destructive rules are fixed.
 
 ### Client-deferred boundaries
 
+`client-boundary` is now a reserved public artifact mode. Its hydrate entry
+validates the marker graph and payload but does not expose a live component
+controller, so consumers cannot mistake it for ordinary executable hydration.
+The compiler does not select this mode implicitly: it will be emitted only by
+the forthcoming explicit boundary syntax with a deterministic server fallback.
+
 Leaf expressions can receive a compiler-owned fallback in their existing text
 or attribute marker range. For example, a DOM measurement may render an empty
 text fallback and be filled by the hydrator.

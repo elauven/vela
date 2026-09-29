@@ -8,7 +8,7 @@ import (
 // component. Callers with a supported marker-aware factory use
 // BuildSSRHydrateEntryWithClient instead.
 func BuildSSRHydrateEntry(plan *SSRRenderPlan) (*JsProgram, error) {
-	return buildSSRHydrateEntry(plan, "")
+	return buildSSRHydrateEntry(plan, "", SSRArtifactStaticOnly)
 }
 
 // BuildSSRHydrateEntryWithClient emits an entry that validates the server
@@ -19,18 +19,28 @@ func BuildSSRHydrateEntryWithClient(plan *SSRRenderPlan, clientModule string) (*
 	if clientModule == "" {
 		return nil, fmt.Errorf("ssr hydrate entry: missing hydration client module")
 	}
-	return buildSSRHydrateEntry(plan, clientModule)
+	return buildSSRHydrateEntry(plan, clientModule, SSRArtifactExecutable)
 }
 
-func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string) (*JsProgram, error) {
+// BuildSSRClientBoundaryEntry emits the public marker/payload adoption entry
+// for a future explicit client boundary. It deliberately has no live
+// component controller; only the boundary lowerer may opt into this mode once
+// it has emitted a deterministic server fallback.
+func BuildSSRClientBoundaryEntry(plan *SSRRenderPlan) (*JsProgram, error) {
+	return buildSSRHydrateEntry(plan, "", SSRArtifactClientBoundary)
+}
+
+func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string, mode SSRArtifactMode) (*JsProgram, error) {
 	if plan == nil || plan.ComponentName == "" || plan.ScopeID == "" {
 		return nil, fmt.Errorf("ssr hydrate entry: missing component identity")
 	}
-	functionName := "hydrate" + plan.ComponentName
-	mode := SSRArtifactStaticOnly
-	if clientModule != "" {
-		mode = SSRArtifactExecutable
+	if mode == SSRArtifactExecutable && clientModule == "" {
+		return nil, fmt.Errorf("ssr hydrate entry: executable mode requires a hydration client module")
 	}
+	if mode != SSRArtifactExecutable && clientModule != "" {
+		return nil, fmt.Errorf("ssr hydrate entry: only executable mode accepts a hydration client module")
+	}
+	functionName := "hydrate" + plan.ComponentName
 	props := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
 	for _, prop := range plan.Props {
 		props.Props = append(props.Props, &JsProp{

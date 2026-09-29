@@ -30,6 +30,10 @@ type SSRArtifactMode string
 const (
 	SSRArtifactExecutable SSRArtifactMode = "executable"
 	SSRArtifactStaticOnly SSRArtifactMode = "static-only"
+	// SSRArtifactClientBoundary denotes an explicitly declared client-owned
+	// region. It is not an executable component controller: the structural
+	// boundary lowerer supplies its deterministic server fallback in Task 030.
+	SSRArtifactClientBoundary SSRArtifactMode = "client-boundary"
 )
 
 // SSRArtifactManifest is emitted next to browser artifacts so a CLI consumer

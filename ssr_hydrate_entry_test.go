@@ -46,6 +46,34 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 	}
 }
 
+func TestBuildSSRClientBoundaryEntryDeclaresNonExecutableMode(t *testing.T) {
+	sfc, err := parseSFC(`<template><main>Fallback</main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildSSRClientBoundaryEntry(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := PrintJS(entry, PrintPretty)
+	for _, want := range []string{
+		"mode: 'client-boundary'",
+		"$$createHydrationWalker($$root, $$scopeID)",
+		"$$readHydrationPayload($$root, $$scopeID)",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("client-boundary entry misses %q:\n%s", want, source)
+		}
+	}
+	if strings.Contains(source, "const $$component =") {
+		t.Fatalf("client-boundary entry must not claim an executable component:\n%s", source)
+	}
+}
+
 func TestSSRProjectWritesHydrateEntryAlongsideClientModule(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
