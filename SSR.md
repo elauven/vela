@@ -8,6 +8,11 @@ from the compiler architecture.
 The reader should already be familiar with the current state of the
 compiler (see `VELA.md`).
 
+Current execution order, reviewed regression requirements, and release
+acceptance are specified in [SSR_DELIVERY_SPEC.md](SSR_DELIVERY_SPEC.md) and
+Tasks 027–032 under Task 007. Historical phase descriptions below do not
+override that delivery specification or establish completion by themselves.
+
 ---
 
 ## The vision
