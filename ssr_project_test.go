@@ -97,6 +97,35 @@ func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
 	}
 }
 
+func TestSSRCLIWritesDeclaredArtifactMode(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcRoot, "App.vela"), []byte(`<template><main>server</main></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	command := exec.Command("go", "run", ".", "--project", srcRoot, "--out", outRoot, "--ssr", "--ssr-module", "example.com/ssrcli/server")
+	command.Dir = "."
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("vela --ssr failed: %v\n%s", err, output)
+	}
+	manifestSource, err := os.ReadFile(NewSSRProjectLayoutWithModule(outRoot, "example.com/ssrcli/server").manifestPath(filepath.Join(srcRoot, "App.vela"), srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest SSRArtifactManifest
+	if err := json.Unmarshal(manifestSource, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Mode != SSRArtifactExecutable || manifest.Hydrate != "App.hydrate.js" {
+		t.Fatalf("CLI emitted unexpected SSR manifest: %#v", manifest)
+	}
+}
+
 func TestSSRProjectWritesStaticOnlyArtifactManifest(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
