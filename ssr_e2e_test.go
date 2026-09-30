@@ -140,3 +140,64 @@ func main() {
 		}
 	}
 }
+
+// R3: Go-rendered interpolation must retain the same visible nullish text as
+// CSR, while array joining keeps JavaScript's distinct empty-field behaviour.
+func TestGeneratedSSRRendererPreservesNullishTextAndArrayJoin(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let value = null;</script><template><main><p>{value}</p><p>{undefined}</p><p>{[1, null, undefined, [2, null], 3]}</p></main></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	components := filepath.Join(root, "components")
+	if err := os.MkdirAll(components, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	compilerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := "module example.com/ssrnullish\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(components, "Page.go"), renderer, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainSource := `package main
+import (
+    "os"
+    "example.com/ssrnullish/components"
+)
+func main() {
+    props := components.PageProps{Value: nil, Set: map[string]bool{"value": true}}
+    if err := components.RenderPageAt(os.Stdout, props, components.PageSlots{}, "nullish"); err != nil { panic(err) }
+}
+`
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(mainSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("go", "run", ".")
+	command.Dir = root
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go run: %v\n%s", err, output)
+	}
+	for _, want := range []string{">null<", ">undefined<", ">1,,,2,,3<", `"Value":null`} {
+		if !strings.Contains(string(output), want) {
+			t.Fatalf("nullish SSR output misses %q:\n%s", want, output)
+		}
+	}
+}

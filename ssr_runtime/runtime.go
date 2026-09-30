@@ -86,29 +86,28 @@ func WriteString(writer io.Writer, value string) error {
 	return err
 }
 
-// String implements the template-facing subset of JavaScript text conversion.
-// Interpolation renders null-like values empty; arrays join members with a
-// comma; objects use JavaScript's default object tag rather than Go's map
-// formatting. More specialised JavaScript values remain outside the baseline
-// SSR expression subset.
+// String implements the template-facing JavaScript ToString subset used for
+// standalone interpolation and ordinary dynamic attributes. Null and
+// undefined are observable JavaScript values here; array joining intentionally
+// has its own nullish-member rule below.
 func String(value any) string {
 	if value == nil {
-		return ""
+		return "null"
 	}
 	if _, undefined := value.(UndefinedValue); undefined {
-		return ""
+		return "undefined"
 	}
 	reflected := reflect.ValueOf(value)
 	for reflected.Kind() == reflect.Interface || reflected.Kind() == reflect.Pointer {
 		if reflected.IsNil() {
-			return ""
+			return "null"
 		}
 		reflected = reflected.Elem()
 	}
 	if reflected.Kind() == reflect.Slice || reflected.Kind() == reflect.Array {
 		parts := make([]string, reflected.Len())
 		for index := 0; index < reflected.Len(); index++ {
-			parts[index] = String(reflected.Index(index).Interface())
+			parts[index] = ArrayJoinString(reflected.Index(index).Interface())
 		}
 		return strings.Join(parts, ",")
 	}
@@ -116,6 +115,27 @@ func String(value any) string {
 		return "[object Object]"
 	}
 	return fmt.Sprint(value)
+}
+
+// ArrayJoinString implements the distinct Array.prototype.join conversion
+// rule: nil and undefined members become empty fields, while all other values
+// follow the normal JavaScript text conversion. Nested arrays recursively use
+// this same rule through String.
+func ArrayJoinString(value any) string {
+	if value == nil {
+		return ""
+	}
+	if _, undefined := value.(UndefinedValue); undefined {
+		return ""
+	}
+	reflected := reflect.ValueOf(value)
+	for reflected.IsValid() && (reflected.Kind() == reflect.Interface || reflected.Kind() == reflect.Pointer) {
+		if reflected.IsNil() {
+			return ""
+		}
+		reflected = reflected.Elem()
+	}
+	return String(value)
 }
 
 // TemplateString joins values after JavaScript template-literal conversion.

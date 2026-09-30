@@ -397,6 +397,29 @@ are excluded by the allow-list and are not subject to this boundary. Payload
 serialization is preflighted before the renderer writes any component markup,
 so this error cannot leave a partial component response behind.
 
+### Baseline value-to-text contract
+
+Server rendering must preserve the observable CSR conversion for every
+admitted context; it must not use one generic Go formatting rule for them all.
+The current baseline is deliberately small and is exercised by runtime,
+generated-Go, and Chromium fixtures.
+
+| Context | `null` | `undefined` / missing member | Arrays |
+| --- | --- | --- | --- |
+| Standalone `{value}` text | `null` | `undefined` | JavaScript comma join |
+| Ordinary `:attribute={value}` | `null` string value | `undefined` string value | JavaScript comma join |
+| Boolean attributes / `class:` conditions | JS falsy | JS falsy | JS truthy, including empty arrays |
+| Template literal interpolation | `null` | `undefined` | JavaScript text conversion |
+| Array join member | empty field | empty field | nested arrays recursively join |
+| Form-control property | browser property semantics; it is not derived from the text helper | browser property semantics | binding-specific semantics |
+
+`vela.String` implements the first two rows for the admitted values:
+`nil` maps to `null`, `vela.UndefinedValue` maps to `undefined`, arrays use
+comma joining, and objects use `[object Object]`. `vela.ArrayJoinString` is
+used for array members so nullish entries remain empty rather than becoming
+the literal words. Form bindings remain a separate DOM-property contract and
+must not be changed merely by changing server text conversion.
+
 `state` contains only
 `$state` / `$state.deep` initializers that are cached JavaScript literal trees:
 null, booleans, JSON numbers and strings, arrays, and plain objects without

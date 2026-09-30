@@ -28,13 +28,28 @@ func TestStringAndEscapeString(t *testing.T) {
 		value any
 		want  string
 	}{
-		{nil, ""},
+		{nil, "null"},
+		{Undefined(), "undefined"},
 		{[]any{1, 2}, "1,2"},
 		{[]any{1, nil, 3}, "1,,3"},
+		{[]any{1, Undefined(), 3}, "1,,3"},
+		{[]any{1, []any{2, nil}, 3}, "1,2,,3"},
 		{map[string]any{"x": 1}, "[object Object]"},
 	} {
 		if got := String(tc.value); got != tc.want {
 			t.Fatalf("String(%#v)=%q want %q", tc.value, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		value any
+		want  string
+	}{
+		{nil, ""},
+		{Undefined(), ""},
+		{"ready", "ready"},
+	} {
+		if got := ArrayJoinString(tc.value); got != tc.want {
+			t.Fatalf("ArrayJoinString(%#v)=%q want %q", tc.value, got, tc.want)
 		}
 	}
 	if got := Length("Привет"); got != 6 {
@@ -167,7 +182,7 @@ func TestGet(t *testing.T) {
 	if got := Get("not-an-object", "title"); got != Undefined() {
 		t.Fatalf("Get scalar value = %#v, want undefined", got)
 	}
-	if got := String(Get(map[string]any{}, "missing")); got != "" {
+	if got := String(Get(map[string]any{}, "missing")); got != "undefined" {
 		t.Fatalf("String missing value = %q", got)
 	}
 }
