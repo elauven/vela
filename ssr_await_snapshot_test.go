@@ -2044,8 +2044,8 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotChild(t *testing.T) {
 	}
 	for _, want := range []string{
 		`case "then":`,
-		`child.ChildAt(child.ChildProps{Title: ssrAwaitSnapshot0.Value}, child.ChildSlots{}, instanceID+"--n0--n0--await-then--n0--component-Child")`,
-		`child.ChildAt(child.ChildProps{Title: ssrAwaitSnapshot0.Value}, child.ChildSlots{}, instanceID+"--n0--n0--await-then--n2--component-Child")`,
+		`child.ChildAt(child.ChildProps{Title: ssrAwaitSnapshot0.Value, Set: map[string]bool{"title": true}}, child.ChildSlots{}, instanceID+"--n0--n0--await-then--n0--component-Child")`,
+		`child.ChildAt(child.ChildProps{Title: ssrAwaitSnapshot0.Value, Set: map[string]bool{"title": true}}, child.ChildSlots{}, instanceID+"--n0--n0--await-then--n2--component-Child")`,
 	} {
 		if !strings.Contains(string(source), want) {
 			t.Fatalf("SSR snapshot child renderer misses %q:\n%s", want, source)
@@ -2077,7 +2077,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotBindableChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `child.Child(child.ChildProps{Value: props.Draft}, child.ChildSlots{})`) {
+	if !strings.Contains(string(source), `child.Child(child.ChildProps{Value: props.Draft, Set: map[string]bool{"value": true}}, child.ChildSlots{})`) {
 		t.Fatalf("SSR snapshot bindable child renderer misses bound prop:\n%s", source)
 	}
 }
@@ -2102,7 +2102,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotStaticSlotChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		`child.Child(child.ChildProps{}, child.ChildSlots{`,
+		`child.Child(child.ChildProps{Set: map[string]bool{}}, child.ChildSlots{`,
 		`Default: func(w io.Writer) error {`,
 		`vela.WriteString(w, "<p class=\"slotted\">")`,
 	} {
@@ -2132,7 +2132,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotReactiveSlotLeafChild(t *testin
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		`child.Child(child.ChildProps{}, child.ChildSlots{`,
+		`child.Child(child.ChildProps{Set: map[string]bool{}}, child.ChildSlots{`,
 		`Default: func(w io.Writer) error {`,
 		`vela.WriteString(w, "<p class=\"slotted")`,
 		`vela.WriteString(w, ";\" title=\"")`,
@@ -2175,7 +2175,7 @@ func TestGeneratedSSRRendererAndHydratorSelectAwaitSnapshotProjectedChild(t *tes
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		`inner.Inner(inner.InnerProps{Title: props.Title}, inner.InnerSlots{`,
+		`inner.Inner(inner.InnerProps{Title: props.Title, Set: map[string]bool{"title": true}}, inner.InnerSlots{`,
 		`Default: func(w io.Writer) error {`,
 		`Actions: func(w io.Writer) error {`,
 		`class=\"inner-slot`,
@@ -2184,7 +2184,7 @@ func TestGeneratedSSRRendererAndHydratorSelectAwaitSnapshotProjectedChild(t *tes
 		`vela.String(props.Color)`,
 		`vela.String(props.Draft)`,
 		`if props.Enabled {`,
-		`leaf.Leaf(leaf.LeafProps{Title: props.Title}, leaf.LeafSlots{})`,
+		`leaf.Leaf(leaf.LeafProps{Title: props.Title, Set: map[string]bool{"title": true}}, leaf.LeafSlots{})`,
 	} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("SSR renderer misses projected child static slot %q:\n%s", want, server)

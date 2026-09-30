@@ -672,6 +672,9 @@ func buildSSRPlanProps(analysis *Analysis, script *ScriptAST) ([]SSRPlanProp, er
 			continue
 		}
 		goName := ssrGoExportName(prop.Name)
+		if goName == "Set" {
+			return nil, fmt.Errorf("ssr render plan: prop %q maps to reserved generated presence field %q", prop.Name, goName)
+		}
 		if previous, exists := seenGoNames[goName]; exists {
 			return nil, fmt.Errorf("ssr render plan: props %q and %q both map to Go field %q", previous, prop.Name, goName)
 		}

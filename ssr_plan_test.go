@@ -176,6 +176,17 @@ const ignored = "/** @type {boolean} */ export let fake = null;";
 	}
 }
 
+func TestBuildSSRRenderPlanRejectsPresenceFieldPropCollision(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let set = false;</script><template>{set}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err == nil || !strings.Contains(err.Error(), `prop "set" maps to reserved generated presence field "Set"`) {
+		t.Fatalf("reserved prop collision error=%v", err)
+	}
+}
+
 func TestBuildSSRRenderPlanBuildsSafeHydrationStatePayload(t *testing.T) {
 	sfc, err := parseSFC(`<script>
 let count = $state(1);

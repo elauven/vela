@@ -81,8 +81,8 @@ func TestBuildSSRGoFileUsesInstanceAwareRendererForRepeatedStaticChildren(t *tes
 	}
 	got := string(source)
 	for _, want := range []string{
-		"child.ChildAt(child.ChildProps{}, child.ChildSlots{}, instanceID+\"--n0--n0--if0--n0--component-Child\")",
-		"child.ChildAt(child.ChildProps{}, child.ChildSlots{}, instanceID+\"--n0--n0--if0--n1--component-Child\")",
+		"child.ChildAt(child.ChildProps{Set: map[string]bool{}}, child.ChildSlots{}, instanceID+\"--n0--n0--if0--n0--component-Child\")",
+		"child.ChildAt(child.ChildProps{Set: map[string]bool{}}, child.ChildSlots{}, instanceID+\"--n0--n0--if0--n1--component-Child\")",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("repeated child Go renderer misses %q:\\n%s", want, got)
@@ -112,7 +112,7 @@ func TestBuildSSRGoFileScopesEachAndKeyChildrenByRuntimeIdentity(t *testing.T) {
 	got := string(source)
 	for _, want := range []string{
 		`vela.String(ssrEachIndex0)`,
-		`child.ChildAt(child.ChildProps{}, child.ChildSlots{}, instanceID+"--each-`,
+		`child.ChildAt(child.ChildProps{Set: map[string]bool{}}, child.ChildSlots{}, instanceID+"--each-`,
 		`vela.String(props.Selected)`,
 		`instanceID+"--key-`,
 	} {

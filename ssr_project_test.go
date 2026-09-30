@@ -598,8 +598,125 @@ func TestSSRProjectRendersSamePackageChildComponent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(server), "Child(ChildProps{Title: props.Title}, ChildSlots{}).Render(w)") {
+	if !strings.Contains(string(server), "Child(ChildProps{Title: props.Title, Set: map[string]bool{\"title\": true}}, ChildSlots{}).Render(w)") {
 		t.Fatalf("child call was not generated:\n%s", server)
+	}
+}
+
+func TestSSRProjectInternalChildCallRetainsOmittedPropDefault(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(srcRoot, "Parent.vela")
+	child := filepath.Join(srcRoot, "Child.vela")
+	if err := os.WriteFile(parent, []byte(`<script>import { Child } from './Child.vela';</script><template><Child /></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(child, []byte(`<script>export let title = 'fallback';</script><template><p>{title}</p></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	projectModule := "example.com/ssrchilddefault"
+	if errors := buildSSRProject([]string{parent, child}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	parentSource, err := os.ReadFile(NewSSRProjectLayoutWithModule(outRoot, projectModule+"/server").serverPath(parent, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(parentSource), "Child(ChildProps{Set: map[string]bool{}}, ChildSlots{}).Render(w)") {
+		t.Fatalf("internal omitted prop call misses initialized presence map:\n%s", parentSource)
+	}
+	compilerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainSource := `package main
+import (
+    "os"
+    components "example.com/ssrchilddefault/server/components"
+)
+func main() {
+    if err := components.RenderParentAt(os.Stdout, components.ParentProps{}, components.ParentSlots{}, "parent"); err != nil { panic(err) }
+}
+`
+	if err := os.WriteFile(filepath.Join(outRoot, "main.go"), []byte(mainSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output, err := runSSRGeneratedProgram(outRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(output), ">fallback<!--/v:") {
+		t.Fatalf("omitted child prop did not render its default:\n%s", output)
+	}
+}
+
+func TestSSRProjectInternalChildCallPreservesExplicitZeroValues(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(srcRoot, "Parent.vela")
+	child := filepath.Join(srcRoot, "Child.vela")
+	if err := os.WriteFile(parent, []byte(`<script>import { Child } from './Child.vela';</script><template><Child :title={''} :enabled={false} :count={0} /></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(child, []byte(`<script>export let title = 'fallback'; export let enabled = true; export let count = 7;</script><template><p class="title">{title}</p>{#if enabled}<p class="enabled">yes</p>{:else}<p class="enabled">no</p>{/if}<p class="count">{count}</p></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	projectModule := "example.com/ssrchildzeros"
+	if errors := buildSSRProject([]string{parent, child}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	parentSource, err := os.ReadFile(NewSSRProjectLayoutWithModule(outRoot, projectModule+"/server").serverPath(parent, srcRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`Title: ""`, `Enabled: false`, `Count: 0`, `Set: map[string]bool{"title": true, "enabled": true, "count": true}`} {
+		if !strings.Contains(string(parentSource), want) {
+			t.Fatalf("explicit child prop call misses %q:\n%s", want, parentSource)
+		}
+	}
+	compilerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainSource := `package main
+import (
+    "os"
+    components "example.com/ssrchildzeros/server/components"
+)
+func main() {
+    if err := components.RenderParentAt(os.Stdout, components.ParentProps{}, components.ParentSlots{}, "parent"); err != nil { panic(err) }
+}
+`
+	if err := os.WriteFile(filepath.Join(outRoot, "main.go"), []byte(mainSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output, err := runSSRGeneratedProgram(outRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`class="title"><!--v:`, `class="enabled">no</p>`, `class="count"><!--v:`, `-->0<!--/v:`} {
+		if !strings.Contains(string(output), want) {
+			t.Fatalf("explicit zero prop semantics miss %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(string(output), "fallback") || strings.Contains(string(output), ">yes<") {
+		t.Fatalf("explicit child zero values were replaced by defaults:\n%s", output)
 	}
 }
 
@@ -629,7 +746,7 @@ func TestSSRProjectRendersSamePackageDefaultAndNamedSlots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"ChildSlots{", "Default: func(w io.Writer) error", "Actions: func(w io.Writer) error"} {
+	for _, want := range []string{"ChildProps{Set: map[string]bool{}", "ChildSlots{", "Default: func(w io.Writer) error", "Actions: func(w io.Writer) error"} {
 		if !strings.Contains(string(parentSource), want) {
 			t.Fatalf("parent misses %q:\n%s", want, parentSource)
 		}
@@ -673,7 +790,7 @@ func TestSSRProjectRendersCrossPackageChildComponent(t *testing.T) {
 	text := string(parentSource)
 	for _, want := range []string{
 		`ui "example.com/site/generated/components/ui"`,
-		"ui.Child(ui.ChildProps{Title: props.Title}, ui.ChildSlots{",
+		"ui.Child(ui.ChildProps{Title: props.Title, Set: map[string]bool{\"title\": true}}, ui.ChildSlots{",
 		"Default: func(w io.Writer) error",
 		"Actions: func(w io.Writer) error",
 	} {

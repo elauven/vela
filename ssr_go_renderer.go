@@ -224,7 +224,8 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	fields := make([]*goast.KeyValueExpr, 0, len(node.Attrs))
+	fields := make([]*goast.KeyValueExpr, 0, len(node.Attrs)+1)
+	presence := make([]goast.Expr, 0, len(node.Attrs))
 	for _, attr := range node.Attrs {
 		var value goast.Expr
 		switch attr.Role {
@@ -247,7 +248,22 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 			return nil, ssrExprUnsupported(attr.Span.Start, "component prop %q with role %d requires hydration", attr.Name, attr.Role)
 		}
 		fields = append(fields, &goast.KeyValueExpr{Key: goast.NewIdent(ssrGoExportName(attr.Name)), Value: value})
+		presence = append(presence, &goast.KeyValueExpr{
+			Key:   &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(attr.Name)},
+			Value: goast.NewIdent("true"),
+		})
 	}
+	// Child defaults depend on source-level prop presence, not on a Go zero
+	// value. Always initialize Set for compiler-generated calls: an empty map
+	// means every child prop is absent, while a key retains an explicit empty,
+	// false, zero, or admitted null value.
+	fields = append(fields, &goast.KeyValueExpr{
+		Key: goast.NewIdent("Set"),
+		Value: &goast.CompositeLit{
+			Type: &goast.MapType{Key: goast.NewIdent("string"), Value: goast.NewIdent("bool")},
+			Elts: presence,
+		},
+	})
 	propsType := goast.Expr(goast.NewIdent(node.Link.GoName + "Props"))
 	slotsType := goast.Expr(goast.NewIdent(node.Link.GoName + "Slots"))
 	componentName := node.Link.GoName
