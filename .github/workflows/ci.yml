@@ -35,10 +35,41 @@ jobs:
         with:
           files: coverage.out
 
+  ssr-browser:
+    name: SSR public browser baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install browser test dependencies
+        # package.json and package-lock.json are intentionally local/ignored
+        # in this repository. Keep the CI dependency explicit and pinned
+        # until they become tracked project inputs.
+        run: npm install --no-save playwright@1.62.1
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run required SSR browser baseline
+        run: node tools/run-ssr-browser-baseline.mjs
+
+      - name: Verify SSR browser gate failure accounting
+        run: node tools/run-ssr-browser-baseline-self-test.mjs
+
   build:
     name: Build binaries
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, ssr-browser]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
