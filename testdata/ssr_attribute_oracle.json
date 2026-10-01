@@ -1,0 +1,15 @@
+[
+  {"name":"null", "kind":"ordinary", "attribute":"title", "expression":"null", "expected":"null"},
+  {"name":"undefined", "kind":"ordinary", "attribute":"data-value", "expression":"undefined", "expected":"undefined"},
+  {"name":"missing-member", "kind":"ordinary", "attribute":"data-value", "expression":"({}).missing", "expected":"undefined"},
+  {"name":"false", "kind":"ordinary", "attribute":"aria-pressed", "expression":"false", "expected":"false"},
+  {"name":"zero", "kind":"ordinary", "attribute":"data-count", "expression":"0", "expected":"0"},
+  {"name":"empty-string", "kind":"ordinary", "attribute":"data-empty", "expression":"''", "expected":""},
+  {"name":"unicode", "kind":"ordinary", "attribute":"title", "expression":"'Привет😀'", "expected":"Привет😀"},
+  {"name":"object", "kind":"ordinary", "attribute":"data-object", "expression":"({ title: 'ready' })", "expected":"[object Object]"},
+  {"name":"disabled-true", "kind":"boolean", "attribute":"disabled", "expression":"true", "expected":true},
+  {"name":"disabled-false", "kind":"boolean", "attribute":"disabled", "expression":"false", "expected":false},
+  {"name":"disabled-null", "kind":"boolean", "attribute":"disabled", "expression":"null", "expected":false},
+  {"name":"disabled-undefined", "kind":"boolean", "attribute":"disabled", "expression":"undefined", "expected":false},
+  {"name":"disabled-zero", "kind":"boolean", "attribute":"disabled", "expression":"0", "expected":false}
+]

@@ -468,6 +468,95 @@ window.initialWrites = observer.takeRecords().length;
 	}
 }
 
+func TestSSRProjectPublicAttributeOracleHydratesInBrowser(t *testing.T) {
+	node := requirePlaywright(t)
+	rawCases, err := os.ReadFile(filepath.Join("testdata", "ssr_attribute_oracle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Name       string `json:"name"`
+		Kind       string `json:"kind"`
+		Attribute  string `json:"attribute"`
+		Expression string `json:"expression"`
+	}
+	if err := json.Unmarshal(rawCases, &cases); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var source strings.Builder
+	source.WriteString(`<script>let title = $state('before'); let disabled = $state(false); function update() { title = 'after'; disabled = true; }</script><template><main>`)
+	for _, tc := range cases {
+		source.WriteString(`<button class="case-`)
+		source.WriteString(tc.Name)
+		source.WriteString(`" :`)
+		source.WriteString(tc.Attribute)
+		source.WriteString(`={`)
+		source.WriteString(tc.Expression)
+		source.WriteString(`}>`)
+		source.WriteString(tc.Name)
+		source.WriteString(`</button>`)
+	}
+	source.WriteString(`<button class="dynamic" :title={title} :disabled={disabled} @click={update}>Update</button></main></template>`)
+	component := filepath.Join(srcRoot, "Page.vela")
+	if err := os.WriteFile(component, []byte(source.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	projectModule := "example.com/ssrattributebrowser"
+	if errors := buildSSRProject([]string{component}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	compilerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainSource := `package main
+import (
+    "os"
+    components "example.com/ssrattributebrowser/server/components"
+)
+func main() {
+    if err := components.RenderPageAt(os.Stdout, components.PageProps{}, components.PageSlots{}, "vela-attribute-oracle"); err != nil { panic(err) }
+}
+`
+	if err := os.WriteFile(filepath.Join(outRoot, "main.go"), []byte(mainSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	html, err := runSSRGeneratedProgram(outRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientRoot := NewSSRProjectLayout(outRoot).ClientDir
+	entry := `import hydratePage from "./Page.hydrate.js";
+window.initialWrites = 0;
+const observer = new MutationObserver(() => { window.initialWrites++; });
+observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
+window.hydrated = hydratePage(document.body, {}, "vela-attribute-oracle");
+window.initialWrites = observer.takeRecords().length;
+`
+	if err := os.WriteFile(filepath.Join(clientRoot, "entry.js"), []byte(entry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	page := "<!doctype html><body>" + string(html) + `<script type="module" src="./entry.js"></script></body>`
+	if err := os.WriteFile(filepath.Join(clientRoot, "index.html"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],cases=JSON.parse(process.argv[2]);const server=http.createServer((q,r)=>{const name=q.url==="/"?"index.html":q.url.slice(1);try{const body=fs.readFileSync(path.join(root,name));r.writeHead(200,{"content-type":name.endsWith(".js")?"text/javascript":"text/html; charset=utf-8"}).end(body)}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);const initial=await p.evaluate(cases=>({mode:window.hydrated.mode,writes:window.initialWrites,dynamic:{title:document.querySelector(".dynamic")?.getAttribute("title"),disabled:document.querySelector(".dynamic")?.disabled},cases:cases.map(tc=>{const node=document.querySelector(".case-"+tc.name);return {name:tc.name,value:tc.kind==="ordinary"?node?.getAttribute(tc.attribute):node?.hasAttribute(tc.attribute)}})}),cases);if(initial.mode!=="executable"||initial.writes!==0||initial.dynamic.title!=="before"||initial.dynamic.disabled)throw new Error("bad attribute adoption: "+JSON.stringify(initial));for(const tc of cases){const actual=initial.cases.find(value=>value.name===tc.name)?.value;if(actual!==tc.expected)throw new Error("bad attribute case "+tc.name+": "+JSON.stringify(actual)+" want "+JSON.stringify(tc.expected))}await p.evaluate(cases=>{window.attributeNodes=Object.fromEntries(cases.map(tc=>[tc.name,document.querySelector(".case-"+tc.name)]));window.dynamicNode=document.querySelector(".dynamic")},cases);await p.click(".dynamic");await p.waitForFunction(()=>document.querySelector(".dynamic")?.getAttribute("title")==="after"&&document.querySelector(".dynamic")?.disabled);const retained=await p.evaluate(cases=>document.querySelector(".dynamic")===window.dynamicNode&&cases.every(tc=>document.querySelector(".case-"+tc.name)===window.attributeNodes[tc.name]),cases);if(!retained)throw new Error("attribute update recreated adopted nodes");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.$("main"))throw new Error("destroy retained attribute DOM");if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	output, err := exec.Command(node, "-e", browser, clientRoot, string(rawCases)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("public attribute SSR browser fixture: %v\n%s", err, output)
+	}
+}
+
 func TestSSRProjectPublicChildPropPresenceHydratesUpdatesAndRemountsInBrowser(t *testing.T) {
 	node := requirePlaywright(t)
 	root := t.TempDir()
