@@ -24,6 +24,7 @@ export const requiredTests = [
   "TestSSRProjectPublicTextareaBindingHydratesInBrowser",
   "TestSSRProjectPublicNullFormBindingsMatchBrowserProperties",
   "TestSSRProjectPublicTableAndSelectHydrateInBrowser",
+  "TestSSRProjectRejectsSingleSelectWithKnownNullBinding",
 ];
 
 export async function requireLaunchableChromium({ moduleName = "playwright", executablePath = "" } = {}) {

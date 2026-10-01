@@ -411,6 +411,9 @@ func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {
 }
 
 func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
+	if node.Tag == "select" && ssrSingleSelectHasKnownNullBinding(node, e.ctx) {
+		return nil, ssrExprUnsupported(node.Span.Start, "single-select bind:value has a known null server value, which HTML cannot represent before hydration")
+	}
 	body := make([]goast.Stmt, 0, len(node.Attrs)+len(node.Children)+2)
 	body = append(body, e.elementMarkerStart(node.HydrationID))
 	open := "<" + node.Tag
@@ -891,6 +894,53 @@ func (e *ssrGoEmitter) outputFormValue(expr *TemplateExpr) (goast.Expr, error) {
 // prop inference can produce several concrete types, while the DOM's
 // HTMLSelectElement.value is always a string; vela.String keeps that semantic
 // boundary explicit without evaluating source text in the compiler.
+// ssrSingleSelectHasKnownNullBinding rejects only values the compiler can
+// prove are null. Browser assignment to HTMLSelectElement.value with null
+// produces selectedIndex=-1, whereas parsing server HTML with no selected
+// option selects the first option. There is no faithful static HTML encoding
+// for that initial state, so executable SSR must diagnose rather than claim a
+// zero-write adoption it cannot provide.
+func ssrSingleSelectHasKnownNullBinding(node *SSRPlanElement, ctx SSRExprContext) bool {
+	for _, attr := range node.Attrs {
+		if attr.Role == SSRAttrStatic && attr.Name == "multiple" {
+			return false
+		}
+	}
+	for _, attr := range node.Attrs {
+		if attr.Role == SSRAttrTwoWay && attr.Name == "value" {
+			return ssrExprIsKnownNull(attr.Expr, ctx, map[string]bool{})
+		}
+	}
+	return false
+}
+
+func ssrExprIsKnownNull(expr *TemplateExpr, ctx SSRExprContext, seen map[string]bool) bool {
+	if expr == nil || expr.Root() == nil {
+		return false
+	}
+	return ssrJSExprIsKnownNull(expr.Root(), ctx, seen)
+}
+
+func ssrJSExprIsKnownNull(expr JsExpr, ctx SSRExprContext, seen map[string]bool) bool {
+	switch node := expr.(type) {
+	case *JsLiteral:
+		return node.Kind == "null"
+	case *JsIdent:
+		if seen[node.Name] {
+			return false
+		}
+		seen[node.Name] = true
+		defer delete(seen, node.Name)
+		if initializer, ok := ctx.StateInitializers[node.Name]; ok {
+			return ssrJSExprIsKnownNull(initializer, ctx, seen)
+		}
+		if initializer, ok := ctx.DerivedInitializers[node.Name]; ok {
+			return ssrJSExprIsKnownNull(initializer, ctx, seen)
+		}
+	}
+	return false
+}
+
 func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionValue SSRPlanAttr, multiple bool) (goast.Expr, error) {
 	selected, err := TranslateSSRExpression(selectValue, e.ctx)
 	if err != nil {

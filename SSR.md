@@ -420,6 +420,13 @@ used for array members so nullish entries remain empty rather than becoming
 the literal words. Form bindings remain a separate DOM-property contract and
 must not be changed merely by changing server text conversion.
 
+For a single-select, JavaScript `select.value = null` produces no selected
+option. Plain server HTML cannot preserve that state: after parsing a select
+without a selected option, the browser selects its first option. Therefore a
+single-select whose local `$state`/`$derived` value is statically known to be
+`null` receives `VELA-SSR-EXPR` instead of an executable SSR artifact. This
+does not apply to `undefined`, ordinary string-like values, or multi-select.
+
 `state` contains only
 `$state` / `$state.deep` initializers that are cached JavaScript literal trees:
 null, booleans, JSON numbers and strings, arrays, and plain objects without

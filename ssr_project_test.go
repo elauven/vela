@@ -199,6 +199,31 @@ func TestSSRProjectRejectsIncompleteExecutableHydrationState(t *testing.T) {
 	}
 }
 
+func TestSSRProjectRejectsSingleSelectWithKnownNullBinding(t *testing.T) {
+	for _, contents := range []string{
+		`<script>let choice = $state(null);</script><template><select bind:value={choice}><option value="one">One</option><option value="two">Two</option></select></template>`,
+		`<script>let choice = $derived(null);</script><template><select bind:value={choice}><option value="one">One</option><option value="two">Two</option></select></template>`,
+	} {
+		root := t.TempDir()
+		srcRoot := filepath.Join(root, "src")
+		if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		source := filepath.Join(srcRoot, "App.vela")
+		if err := os.WriteFile(source, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		layout := NewSSRProjectLayout(filepath.Join(root, "out"))
+		err := compileSSRProjectFile(source, srcRoot, layout)
+		if err == nil || !strings.Contains(err.Error(), SSRExpressionDiagnosticCode) || !strings.Contains(err.Error(), "known null server value") {
+			t.Fatalf("single-select null SSR error=%v", err)
+		}
+		if _, statErr := os.Stat(layout.serverPath(source, srcRoot)); !os.IsNotExist(statErr) {
+			t.Fatalf("single-select null SSR unexpectedly wrote server artifact: %v", statErr)
+		}
+	}
+}
+
 func TestSSRProjectGeneratedServerRunsFromPublicArtifacts(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")

@@ -247,6 +247,21 @@ func TestBuildSSRGoFileRendersSelectValueBindingForHydration(t *testing.T) {
 	}
 }
 
+func TestBuildSSRGoFileRejectsSingleSelectWithKnownNullBinding(t *testing.T) {
+	sfc, err := parseSFC(`<script>let choice = $state(null);</script><template><select bind:value={choice}><option value="one">One</option><option value="two">Two</option></select></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = BuildSSRGoFile(plan, "components")
+	if err == nil || !strings.Contains(err.Error(), "known null server value") {
+		t.Fatalf("single-select null SSR error=%v", err)
+	}
+}
+
 func TestBuildSSRGoFileRejectsSelectBindingOptionWithoutStaticValue(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let choice="a";</script><template><select bind:value={choice}><option>A</option></select></template>`)
 	if err != nil {
