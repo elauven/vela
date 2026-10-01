@@ -12,6 +12,7 @@ export const requiredTests = [
   "TestSSRCLIWritesDeclaredArtifactMode",
   "TestGeneratedSSRRendererShortCircuitsUnsafeCollectionReads",
   "TestGeneratedSSRRendererPreservesNullishTextAndArrayJoin",
+  "TestGeneratedSSRRendererMatchesValueTextOracle",
   "TestSSRProjectInternalChildCallRetainsOmittedPropDefault",
   "TestSSRProjectInternalChildCallPreservesExplicitZeroValues",
   "TestSSRProjectPublicArtifactsHydrateAndUpdateInBrowser",
@@ -67,6 +68,14 @@ export function verifyGoTestResults(stdout, status) {
 }
 
 export async function main() {
+  const oracle = spawnSync(process.execPath, ["tools/verify-ssr-value-text-oracle.mjs"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  process.stdout.write(oracle.stdout);
+  process.stderr.write(oracle.stderr);
+  if (oracle.error) throw oracle.error;
+  if (oracle.status !== 0) throw new Error(`SSR value-text JavaScript oracle exited with status ${oracle.status}`);
   await requireLaunchableChromium();
   const runPattern = `^(${requiredTests.join("|")})$`;
   const result = spawnSync("go", ["test", "-json", "-count=1", "-run", runPattern, "."], {

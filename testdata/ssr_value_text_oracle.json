@@ -1,0 +1,12 @@
+[
+  {"name":"null", "expression":"null", "expected":"null"},
+  {"name":"undefined", "expression":"undefined", "expected":"undefined"},
+  {"name":"missing-member", "expression":"({}).missing", "expected":"undefined"},
+  {"name":"false", "expression":"false", "expected":"false"},
+  {"name":"zero", "expression":"0", "expected":"0"},
+  {"name":"empty-string", "expression":"''", "expected":""},
+  {"name":"unicode", "expression":"'Привет😀'", "expected":"Привет😀"},
+  {"name":"array-hole", "expression":"[1, , 3]", "expected":"1,,3"},
+  {"name":"nested-nullish-array", "expression":"[1, null, undefined, [2, null], 3]", "expected":"1,,,2,,3"},
+  {"name":"object", "expression":"({ title: 'ready' })", "expected":"[object Object]"}
+]
