@@ -859,6 +859,7 @@ func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
 	return SSRExprContext{
 		Props: base.Props, Bindings: bindings, ReactiveNames: base.ReactiveNames,
 		StateInitializers: base.StateInitializers, DerivedInitializers: base.DerivedInitializers,
+		PlainInitializers: base.PlainInitializers, Functions: base.Functions,
 	}
 }
 

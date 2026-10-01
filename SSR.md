@@ -316,15 +316,19 @@ The translator handles a defined subset. Initial scope:
 | `arr.map(fn)` / `arr.filter(fn)` | Emit a Go `for` loop |
 | `arr.includes(x)` | `vela.Includes(arr, x)` |
 | Arrow functions (only inside `.map` / `.filter`) | Inline closure |
+| Named local formatter | Inline its one `return` expression when it is synchronous, non-generator, top-level, and has identifier parameters |
 | Template literals | `vela.TemplateString(...)`, including admitted `null`/`undefined` values |
 | Object/array literals | Composite literal or struct construction |
 
 ### What doesn't translate
 
-- **User-defined helpers in `<script>`.** These are JS, can't run in
-  Go. Developer must either avoid using them in interpolations
-  (compute in Go and pass as a prop), or use the escape hatch.
-- **Closures captured from `<script>` scope.** Same issue.
+- **General user-defined helpers in `<script>`.** The only admitted local
+  helper is a synchronous, non-generator top-level declaration with exactly
+  one `return` expression and identifier parameters. Its body and captured
+  top-level `const`/unchanged `let` values are lowered from cached ASTs.
+  Async/generator, optional, external, recursive and multi-statement calls
+  still fail with `VELA-SSR-EXPR`; use a prop or the future explicit host
+  boundary instead.
 - **Regex, prototype access, `new SomeJSClass(...)`.** Out of scope.
 - **`$state`, `$derived`, `$effect` machinery.** Server-side these
   don't exist — `$state` initial values are inlined as props,

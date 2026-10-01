@@ -32,11 +32,20 @@ type SSRRenderPlan struct {
 	// ASTs. The SSR expression translator resolves them only through the same
 	// admitted pure subset used for plain $state initializers.
 	DerivedInitializers map[string]JsExpr
-	Nodes               []SSRPlanNode
-	Events              []SSRStaticEvent
-	Dynamics            []SSRDynamicSite
-	Hydration           SSRHydrationState
-	ScopedCSS           string
+	// PlainInitializers retains top-level const/unchanged-let initializers from
+	// the component-owned script AST. They are admitted only through the same
+	// pure expression translator as reactive initializers.
+	PlainInitializers map[string]JsExpr
+	// Functions retains parser-owned top-level named declarations. The first
+	// SSR function subset accepts only a synchronous, non-generator function
+	// whose body is one return expression; the expression translator enforces
+	// that contract at each call site.
+	Functions map[string]*JsFuncDecl
+	Nodes     []SSRPlanNode
+	Events    []SSRStaticEvent
+	Dynamics  []SSRDynamicSite
+	Hydration SSRHydrationState
+	ScopedCSS string
 	// ComponentInstanceSuffixes assigns a deterministic static structural
 	// suffix to repeated local component bindings. It is keyed by source span,
 	// never by component name, so equal tags retain independent payload IDs.
@@ -286,6 +295,8 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		ReactiveNames:               analysis.reactiveNames(),
 		StateInitializers:           ssrStateInitializers(analysis),
 		DerivedInitializers:         ssrDerivedInitializers(analysis),
+		PlainInitializers:           ssrPlainInitializers(analysis),
+		Functions:                   ssrNamedFunctions(analysis),
 		ScopedCSS:                   ExtractScopedCSS(sfc, scopeID),
 		ComponentInstanceSuffixes:   SSRStaticRepeatedComponentInstanceSuffixes(sfc.TemplateAST.Nodes),
 		ComponentInstanceIdentities: SSRComponentInstanceIdentityIndex(sfc.TemplateAST.Nodes),
@@ -327,6 +338,51 @@ func ssrDerivedInitializers(analysis *Analysis) map[string]JsExpr {
 		}
 	}
 	return initializers
+}
+
+func ssrPlainInitializers(analysis *Analysis) map[string]JsExpr {
+	initializers := map[string]JsExpr{}
+	if analysis == nil || analysis.Script == nil {
+		return initializers
+	}
+	reactive := map[string]bool{}
+	for _, name := range analysis.reactiveNames() {
+		reactive[name] = true
+	}
+	if analysis.Script.Program == nil {
+		return initializers
+	}
+	written := findWrittenVars(analysis.Script.Program)
+	for _, stmt := range analysis.Script.Program.Body {
+		decl, ok := stmt.(*JsVarDecl)
+		if !ok || (decl.Kind != "const" && decl.Kind != "let") {
+			continue
+		}
+		for _, declarator := range decl.Decls {
+			name := identName(declarator.Id)
+			if name == "" || declarator.Init == nil || reactive[name] || written[name] {
+				continue
+			}
+			initializers[name] = declarator.Init
+		}
+	}
+	return initializers
+}
+
+func ssrNamedFunctions(analysis *Analysis) map[string]*JsFuncDecl {
+	functions := map[string]*JsFuncDecl{}
+	if analysis == nil || analysis.Script == nil {
+		return functions
+	}
+	if analysis.Script.Program == nil {
+		return functions
+	}
+	for _, stmt := range analysis.Script.Program.Body {
+		if function, ok := stmt.(*JsFuncDecl); ok && function.Name != "" {
+			functions[function.Name] = function
+		}
+	}
+	return functions
 }
 
 func buildSSRHydrationState(analysis *Analysis) SSRHydrationState {

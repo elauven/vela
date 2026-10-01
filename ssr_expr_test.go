@@ -134,6 +134,103 @@ func TestTranslateSSRExpressionLowersSafeLocalDerivedInitializer(t *testing.T) {
 	}
 }
 
+func TestTranslateSSRExpressionLowersNamedFormatterWithPlainConstAndDerived(t *testing.T) {
+	sfc, err := parseSFC(`<script>
+const prefix = 'Hello, ';
+let suffix = '!';
+function label(value) { return prefix + value + suffix; }
+export let title = '';
+let shown = $derived(label(title));
+</script><template><p>{label(title)}</p><p>{shown}</p></template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := sfc.TemplateAST.Nodes[0].(*ElementNode).Children[0].(*TextNode).Parts[0].Expr
+	second := sfc.TemplateAST.Nodes[1].(*ElementNode).Children[0].(*TextNode).Parts[0].Expr
+	for _, expr := range []*TemplateExpr{first, second} {
+		translated, err := TranslateSSRExpression(expr, NewSSRExprContext(plan))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := FormatSSRGoExpr(translated)
+		if err != nil || got != `"Hello, " + props.Title + "!"` {
+			t.Fatalf("formatter translation=%q, err=%v", got, err)
+		}
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateGeneratedSSRGo("demo.go", source); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTranslateSSRExpressionRejectsNonExpressionNamedFormatter(t *testing.T) {
+	sfc, err := parseSFC(`<script>function label(value) { const suffix = '!'; return value + suffix; }</script><template>{label('ready')}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
+	if err == nil || !strings.Contains(err.Error(), "exactly one return expression") {
+		t.Fatalf("non-expression formatter error=%v", err)
+	}
+}
+
+func TestTranslateSSRExpressionRejectsUnsupportedNamedFormatterCalls(t *testing.T) {
+	cases := []struct {
+		name    string
+		source  string
+		message string
+	}{
+		{
+			name:    "external",
+			source:  `<script>export let title = '';</script><template>{format(title)}</template>`,
+			message: "not a supported local formatter",
+		},
+		{
+			name:    "recursive",
+			source:  `<script>function label(value) { return label(value); }</script><template>{label('ready')}</template>`,
+			message: "recursively referenced",
+		},
+		{
+			name:    "async",
+			source:  `<script>async function label(value) { return value; }</script><template>{label('ready')}</template>`,
+			message: "cannot be async or a generator",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sfc, err := parseSFC(tc.source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+			if err != nil {
+				t.Fatal(err)
+			}
+			expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+			_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
+			if err == nil || !strings.Contains(err.Error(), tc.message) {
+				t.Fatalf("formatter error=%v, want %q", err, tc.message)
+			}
+		})
+	}
+}
+
 func TestTranslateSSRExpressionRejectsCircularLocalDerivedInitializer(t *testing.T) {
 	sfc, err := parseSFC(`<script>let first = $derived(second); let second = $derived(first);</script><template>{first}</template>`)
 	if err != nil {

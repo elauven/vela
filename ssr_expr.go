@@ -33,7 +33,10 @@ type SSRExprContext struct {
 	ReactiveNames       map[string]bool
 	StateInitializers   map[string]JsExpr
 	DerivedInitializers map[string]JsExpr
+	PlainInitializers   map[string]JsExpr
+	Functions           map[string]*JsFuncDecl
 	resolving           map[string]bool
+	resolvingFunctions  map[string]bool
 }
 
 func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
@@ -43,6 +46,8 @@ func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
 		ReactiveNames:       map[string]bool{},
 		StateInitializers:   map[string]JsExpr{},
 		DerivedInitializers: map[string]JsExpr{},
+		PlainInitializers:   map[string]JsExpr{},
+		Functions:           map[string]*JsFuncDecl{},
 	}
 	if plan == nil {
 		return ctx
@@ -58,6 +63,12 @@ func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
 	}
 	for name, initializer := range plan.DerivedInitializers {
 		ctx.DerivedInitializers[name] = initializer
+	}
+	for name, initializer := range plan.PlainInitializers {
+		ctx.PlainInitializers[name] = initializer
+	}
+	for name, function := range plan.Functions {
+		ctx.Functions[name] = function
 	}
 	return ctx
 }
@@ -89,6 +100,9 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		}
 		if initializer, ok := ctx.DerivedInitializers[node.Name]; ok {
 			return translateSSRLocalInitializer(node.Name, "derived", initializer, ctx, pos)
+		}
+		if initializer, ok := ctx.PlainInitializers[node.Name]; ok {
+			return translateSSRLocalInitializer(node.Name, "plain", initializer, ctx, pos)
 		}
 		if ctx.ReactiveNames[node.Name] {
 			return nil, ssrExprUnsupported(pos, "local reactive binding %q has no server value; pass it as an exported prop or wait for hydration", node.Name)
@@ -178,7 +192,7 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 			ssrLazyExpr(elseValue),
 		}}, nil
 	case *JsCallExpr:
-		return nil, ssrExprUnsupported(pos, "JavaScript calls are not available to static SSR")
+		return translateSSRNamedFunctionCall(node, ctx, pos)
 	case *JsArrowFunc:
 		return nil, ssrExprUnsupported(pos, "arrow functions are not available to static SSR")
 	case *JsAssignExpr:
@@ -186,6 +200,66 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 	default:
 		return nil, ssrExprUnsupported(pos, "JavaScript expression %T is not supported", expr)
 	}
+}
+
+// translateSSRNamedFunctionCall deliberately admits a small AST-only function
+// subset: top-level named, synchronous, non-generator declarations with one
+// return expression and identifier parameters. It is an expression inliner,
+// not a JavaScript evaluator: argument and return trees continue through the
+// existing checked translator, while parameter names receive lexical Go-AST
+// bindings. Calls, writes, async control flow, and external functions remain
+// explicit diagnostics until their semantics have an independent contract.
+func translateSSRNamedFunctionCall(call *JsCallExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
+	if call.Optional {
+		return nil, ssrExprUnsupported(pos, "optional JavaScript calls are not available to static SSR")
+	}
+	callee, ok := call.Callee.(*JsIdent)
+	if !ok {
+		return nil, ssrExprUnsupported(pos, "only named local formatter calls are available to static SSR")
+	}
+	function, ok := ctx.Functions[callee.Name]
+	if !ok || function == nil {
+		return nil, ssrExprUnsupported(pos, "JavaScript call %q is not a supported local formatter", callee.Name)
+	}
+	if function.Async || function.Generator {
+		return nil, ssrExprUnsupported(pos, "local formatter %q cannot be async or a generator during SSR", callee.Name)
+	}
+	if len(function.Params) != len(call.Args) {
+		return nil, ssrExprUnsupported(pos, "local formatter %q expects %d argument(s), got %d", callee.Name, len(function.Params), len(call.Args))
+	}
+	if function.Body == nil || len(function.Body.Body) != 1 {
+		return nil, ssrExprUnsupported(pos, "local formatter %q must contain exactly one return expression", callee.Name)
+	}
+	result, ok := function.Body.Body[0].(*JsReturnStmt)
+	if !ok || result.Arg == nil {
+		return nil, ssrExprUnsupported(pos, "local formatter %q must contain exactly one return expression", callee.Name)
+	}
+	if ctx.resolvingFunctions == nil {
+		ctx.resolvingFunctions = map[string]bool{}
+	}
+	if ctx.resolvingFunctions[callee.Name] {
+		return nil, ssrExprUnsupported(pos, "local formatter %q is recursively referenced during SSR", callee.Name)
+	}
+	arguments := make([]goast.Expr, len(call.Args))
+	for index, argument := range call.Args {
+		value, err := translateSSRExpr(argument, ctx, pos)
+		if err != nil {
+			return nil, err
+		}
+		arguments[index] = value
+	}
+	inner := ssrContextWithBindings(ctx)
+	inner.resolvingFunctions = ctx.resolvingFunctions
+	inner.resolvingFunctions[callee.Name] = true
+	defer delete(inner.resolvingFunctions, callee.Name)
+	for index, parameter := range function.Params {
+		name := identName(parameter)
+		if name == "" {
+			return nil, ssrExprUnsupported(pos, "local formatter %q has a non-identifier parameter", callee.Name)
+		}
+		inner.Bindings[name] = arguments[index]
+	}
+	return translateSSRExpr(result.Arg, inner, pos)
 }
 
 // ssrLazyExpr represents a source expression as a zero-argument Go closure.
