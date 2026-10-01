@@ -17,6 +17,7 @@ export const requiredTests = [
   "TestSSRProjectInternalChildCallPreservesExplicitZeroValues",
   "TestSSRProjectPublicArtifactsHydrateAndUpdateInBrowser",
   "TestSSRProjectPublicNullTextHydratesAndUpdatesInBrowser",
+  "TestSSRProjectPublicValueTextOracleHydratesInBrowser",
   "TestSSRProjectPublicChildPropPresenceHydratesUpdatesAndRemountsInBrowser",
   "TestSSRProjectPublicStaticOnlyArtifactsValidateInBrowser",
   "TestSSRProjectPublicTextareaBindingHydratesInBrowser",

@@ -391,6 +391,83 @@ window.initialWrites = observer.takeRecords().length;
 	}
 }
 
+func TestSSRProjectPublicValueTextOracleHydratesInBrowser(t *testing.T) {
+	node := requirePlaywright(t)
+	cases := loadSSRValueTextOracle(t)
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var source strings.Builder
+	source.WriteString(`<script>let status = $state('server'); function update() { status = 'updated'; }</script><template><main>`)
+	for _, tc := range cases {
+		source.WriteString(`<p class="case-`)
+		source.WriteString(tc.Name)
+		source.WriteString(`">{`)
+		source.WriteString(tc.Expression)
+		source.WriteString(`}</p>`)
+	}
+	source.WriteString(`<button class="update" @click={update}>Update</button><p class="status">{status}</p></main></template>`)
+	component := filepath.Join(srcRoot, "Page.vela")
+	if err := os.WriteFile(component, []byte(source.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	projectModule := "example.com/ssrvaluetextbrowser"
+	if errors := buildSSRProject([]string{component}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	compilerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainSource := `package main
+import (
+    "os"
+    components "example.com/ssrvaluetextbrowser/server/components"
+)
+func main() {
+    if err := components.RenderPageAt(os.Stdout, components.PageProps{}, components.PageSlots{}, "vela-value-text"); err != nil { panic(err) }
+}
+`
+	if err := os.WriteFile(filepath.Join(outRoot, "main.go"), []byte(mainSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	html, err := runSSRGeneratedProgram(outRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientRoot := NewSSRProjectLayout(outRoot).ClientDir
+	entry := `import hydratePage from "./Page.hydrate.js";
+window.initialWrites = 0;
+const observer = new MutationObserver(() => { window.initialWrites++; });
+observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
+window.hydrated = hydratePage(document.body, {}, "vela-value-text");
+window.initialWrites = observer.takeRecords().length;
+`
+	if err := os.WriteFile(filepath.Join(clientRoot, "entry.js"), []byte(entry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	page := "<!doctype html><body>" + string(html) + `<script type="module" src="./entry.js"></script></body>`
+	if err := os.WriteFile(filepath.Join(clientRoot, "index.html"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := json.Marshal(cases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1],expected=JSON.parse(process.argv[2]);const server=http.createServer((q,r)=>{const name=q.url==="/"?"index.html":q.url.slice(1);try{const body=fs.readFileSync(path.join(root,name));r.writeHead(200,{"content-type":name.endsWith(".js")?"text/javascript":"text/html; charset=utf-8"}).end(body)}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);const initial=await p.evaluate(expected=>({mode:window.hydrated.mode,writes:window.initialWrites,status:document.querySelector(".status")?.textContent,values:Object.fromEntries(expected.map(({name})=>[name,document.querySelector(".case-"+name)?.textContent]))}),expected);if(initial.mode!=="executable"||initial.writes!==0||initial.status!=="server")throw new Error("bad value-text adoption: "+JSON.stringify(initial));for(const {name,expected:value} of expected)if(initial.values[name]!==value)throw new Error("bad value-text case "+name+": "+JSON.stringify(initial.values[name])+" want "+JSON.stringify(value));await p.evaluate(expected=>{window.oracleNodes=Object.fromEntries(expected.map(({name})=>[name,document.querySelector(".case-"+name)]))},expected);await p.click(".update");await p.waitForFunction(()=>document.querySelector(".status")?.textContent==="updated");const retained=await p.evaluate(expected=>expected.every(({name})=>document.querySelector(".case-"+name)===window.oracleNodes[name]),expected);if(!retained)throw new Error("independent update recreated value-text nodes");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.$("main"))throw new Error("destroy retained value-text DOM");if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	output, err := exec.Command(node, "-e", browser, clientRoot, string(expected)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("public value-text SSR browser fixture: %v\n%s", err, output)
+	}
+}
+
 func TestSSRProjectPublicChildPropPresenceHydratesUpdatesAndRemountsInBrowser(t *testing.T) {
 	node := requirePlaywright(t)
 	root := t.TempDir()
