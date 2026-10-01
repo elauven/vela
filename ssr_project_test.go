@@ -391,6 +391,82 @@ window.initialWrites = observer.takeRecords().length;
 	}
 }
 
+func TestSSRProjectPublicChildPropPresenceHydratesUpdatesAndRemountsInBrowser(t *testing.T) {
+	node := requirePlaywright(t)
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(srcRoot, "Parent.vela")
+	child := filepath.Join(srcRoot, "Child.vela")
+	if err := os.WriteFile(parent, []byte(`<script>
+  import { Child } from './Child.vela';
+  let title = $state('first');
+  let shown = $state(true);
+  function update() { title = 'updated'; }
+  function toggle() { shown = !shown; }
+</script>
+<template><main>{#if shown}<Child />{/if}<Child :title={title} /><button class="update" @click={update}>Update</button><button class="toggle" @click={toggle}>Toggle</button></main></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(child, []byte(`<script>export let title = 'fallback';</script><template><p class="child" :data-title={title}>{title}</p></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	projectModule := "example.com/ssrchildbrowser"
+	if errors := buildSSRProject([]string{parent, child}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	compilerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainSource := `package main
+import (
+    "os"
+    components "example.com/ssrchildbrowser/server/components"
+)
+func main() {
+    if err := components.RenderParentAt(os.Stdout, components.ParentProps{}, components.ParentSlots{}, "vela-child-props"); err != nil { panic(err) }
+}
+`
+	if err := os.WriteFile(filepath.Join(outRoot, "main.go"), []byte(mainSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	html, err := runSSRGeneratedProgram(outRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(html), `data-title="fallback"`) || !strings.Contains(string(html), `data-title="first"`) {
+		t.Fatalf("server child prop values do not preserve omission and explicit value:\n%s", html)
+	}
+	clientRoot := NewSSRProjectLayout(outRoot).ClientDir
+	entry := `import hydrateParent from "./Parent.hydrate.js";
+window.initialWrites = 0;
+const observer = new MutationObserver(() => { window.initialWrites++; });
+observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
+window.hydrated = hydrateParent(document.body, {}, "vela-child-props");
+window.initialWrites = observer.takeRecords().length;
+`
+	if err := os.WriteFile(filepath.Join(clientRoot, "entry.js"), []byte(entry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	page := "<!doctype html><body>" + string(html) + `<script type="module" src="./entry.js"></script></body>`
+	if err := os.WriteFile(filepath.Join(clientRoot, "index.html"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1];const server=http.createServer((q,r)=>{const name=q.url==="/"?"index.html":q.url.slice(1);try{const body=fs.readFileSync(path.join(root,name));r.writeHead(200,{"content-type":name.endsWith(".js")?"text/javascript":"text/html"}).end(body)}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);const initial=await p.evaluate(()=>({mode:window.hydrated.mode,writes:window.initialWrites,values:[...document.querySelectorAll(".child")].map(node=>node.textContent)}));if(initial.mode!=="executable"||initial.writes!==0||initial.values.join("|")!=="fallback|first")throw new Error("bad child prop adoption: "+JSON.stringify(initial));await p.evaluate(()=>{window.fallbackNode=document.querySelector('[data-title="fallback"]');window.explicitNode=document.querySelector('[data-title="first"]')});await p.click(".update");await p.waitForFunction(()=>[...document.querySelectorAll(".child")].map(node=>node.textContent).join("|")==="fallback|updated");if(!(await p.evaluate(()=>document.querySelector('[data-title="fallback"]')===window.fallbackNode)))throw new Error("parent update recreated omitted-prop child");if(!(await p.evaluate(()=>document.querySelector('[data-title="updated"]')===window.explicitNode)))throw new Error("parent update recreated explicit-prop child");await p.click(".toggle");await p.waitForFunction(()=>document.querySelectorAll(".child").length===1);if(await p.evaluate(()=>window.fallbackNode.isConnected))throw new Error("conditional omitted-prop child was not removed");await p.click(".toggle");await p.waitForFunction(()=>[...document.querySelectorAll(".child")].map(node=>node.textContent).join("|")==="fallback|updated");if(await p.evaluate(()=>document.querySelector('[data-title="fallback"]')===window.fallbackNode))throw new Error("conditional child remount reused destroyed DOM");if(!(await p.evaluate(()=>document.querySelector('[data-title="updated"]')===window.explicitNode)))throw new Error("sibling child changed during conditional remount");await p.evaluate(()=>window.hydrated.component.destroy());if(await p.$(".child"))throw new Error("destroy retained child DOM");if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	output, err := exec.Command(node, "-e", browser, clientRoot).CombinedOutput()
+	if err != nil {
+		t.Fatalf("public child prop SSR browser fixture: %v\n%s", err, output)
+	}
+}
+
 func TestSSRProjectPublicStaticOnlyArtifactsValidateInBrowser(t *testing.T) {
 	node := requirePlaywright(t)
 	root := t.TempDir()

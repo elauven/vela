@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 // This is deliberately a small, strict gate rather than a replacement for
 // optional local browser suites. Every id is a public SSR product-path or
 // semantic regression required by the C0 delivery checkpoint.
-const requiredTests = [
+export const requiredTests = [
   "TestSSRCLIWritesDeclaredArtifactMode",
   "TestGeneratedSSRRendererShortCircuitsUnsafeCollectionReads",
   "TestGeneratedSSRRendererPreservesNullishTextAndArrayJoin",
@@ -16,6 +16,7 @@ const requiredTests = [
   "TestSSRProjectInternalChildCallPreservesExplicitZeroValues",
   "TestSSRProjectPublicArtifactsHydrateAndUpdateInBrowser",
   "TestSSRProjectPublicNullTextHydratesAndUpdatesInBrowser",
+  "TestSSRProjectPublicChildPropPresenceHydratesUpdatesAndRemountsInBrowser",
   "TestSSRProjectPublicStaticOnlyArtifactsValidateInBrowser",
   "TestSSRProjectPublicTextareaBindingHydratesInBrowser",
   "TestSSRProjectPublicTableAndSelectHydrateInBrowser",
