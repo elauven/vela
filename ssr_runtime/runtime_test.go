@@ -45,6 +45,20 @@ func TestStringAndEscapeString(t *testing.T) {
 		want  string
 	}{
 		{nil, ""},
+		{Undefined(), "undefined"},
+		{false, "false"},
+		{0, "0"},
+		{"ready", "ready"},
+	} {
+		if got := FormValueString(tc.value); got != tc.want {
+			t.Fatalf("FormValueString(%#v)=%q want %q", tc.value, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		value any
+		want  string
+	}{
+		{nil, ""},
 		{Undefined(), ""},
 		{"ready", "ready"},
 	} {

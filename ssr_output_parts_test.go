@@ -183,7 +183,7 @@ func TestBuildSSRGoFileRendersValueBindingForHydration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `vela.WriteString(w, "<input value=\"")`) || !strings.Contains(string(source), "vela.WriteString(w, vela.EscapeString(vela.String(props.Title)))") {
+	if !strings.Contains(string(source), `vela.WriteString(w, "<input value=\"")`) || !strings.Contains(string(source), "vela.WriteString(w, vela.EscapeString(vela.FormValueString(props.Title)))") {
 		t.Fatalf("bind:value SSR output missing initial value:\n%s", source)
 	}
 	if err := ValidateGeneratedSSRGo("page.go", source); err != nil {
@@ -208,7 +208,7 @@ func TestBuildSSRGoFileRendersTextareaValueBindingAsText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(source), `textarea value=`) || !strings.Contains(string(source), `vela.WriteString(w, "<textarea>")`) || !strings.Contains(string(source), "vela.WriteString(w, vela.EscapeString(vela.String(props.Note)))") {
+	if strings.Contains(string(source), `textarea value=`) || !strings.Contains(string(source), `vela.WriteString(w, "<textarea>")`) || !strings.Contains(string(source), "vela.WriteString(w, vela.EscapeString(vela.FormValueString(props.Note)))") {
 		t.Fatalf("textarea bind:value SSR output is not text content:\n%s", source)
 	}
 	if err := ValidateGeneratedSSRGo("page.go", source); err != nil {

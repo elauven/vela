@@ -2182,7 +2182,7 @@ func TestGeneratedSSRRendererAndHydratorSelectAwaitSnapshotProjectedChild(t *tes
 		`vela.EscapeString(vela.String(props.Title))`,
 		`if props.Active {`,
 		`vela.String(props.Color)`,
-		`vela.String(props.Draft)`,
+		`vela.FormValueString(props.Draft)`,
 		`if props.Enabled {`,
 		`leaf.Leaf(leaf.LeafProps{Title: props.Title, Set: map[string]bool{"title": true}}, leaf.LeafSlots{})`,
 	} {

@@ -474,6 +474,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	pkg.Scope().Insert(slotName)
 	ssrRuntimeAddFunc(pkg, "WriteString", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "value", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "String", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
+	ssrRuntimeAddFunc(pkg, "FormValueString", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
 	undefinedName := types.NewTypeName(token.NoPos, pkg, "UndefinedValue", nil)
 	undefinedType := types.NewNamed(undefinedName, types.NewStruct(nil, nil), nil)
 	pkg.Scope().Insert(undefinedName)

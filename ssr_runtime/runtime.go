@@ -138,6 +138,27 @@ func ArrayJoinString(value any) string {
 	return String(value)
 }
 
+// FormValueString implements the HTML input/textarea value property boundary.
+// It intentionally differs from template text: assigning JavaScript null to
+// those properties produces an empty string, while undefined and ordinary
+// values use their normal DOMString conversion.
+func FormValueString(value any) string {
+	if value == nil {
+		return ""
+	}
+	if _, undefined := value.(UndefinedValue); undefined {
+		return "undefined"
+	}
+	reflected := reflect.ValueOf(value)
+	for reflected.Kind() == reflect.Interface || reflected.Kind() == reflect.Pointer {
+		if reflected.IsNil() {
+			return ""
+		}
+		reflected = reflected.Elem()
+	}
+	return String(value)
+}
+
 // TemplateString joins values after JavaScript template-literal conversion.
 // The current compiler only emits it for non-nullish values (or literal
 // quasis), but retaining the nil branch makes its behaviour explicit for the

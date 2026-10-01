@@ -22,6 +22,7 @@ export const requiredTests = [
   "TestSSRProjectPublicChildPropPresenceHydratesUpdatesAndRemountsInBrowser",
   "TestSSRProjectPublicStaticOnlyArtifactsValidateInBrowser",
   "TestSSRProjectPublicTextareaBindingHydratesInBrowser",
+  "TestSSRProjectPublicNullFormBindingsMatchBrowserProperties",
   "TestSSRProjectPublicTableAndSelectHydrateInBrowser",
 ];
 

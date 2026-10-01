@@ -528,7 +528,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			}
 			open += " value=\""
 			body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
-			value, err := e.outputValue(false, "", attr.Expr)
+			value, err := e.outputFormValue(attr.Expr)
 			if err != nil {
 				return nil, err
 			}
@@ -598,7 +598,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 	open += ">"
 	body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
 	if hasTextareaValue {
-		value, err := e.outputValue(false, "", textareaValue.Expr)
+		value, err := e.outputFormValue(textareaValue.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -870,6 +870,20 @@ func (e *ssrGoEmitter) outputValue(static bool, literal string, expr *TemplateEx
 	e.needsEscaping = true
 	return &goast.CallExpr{Fun: goSelector("vela", "EscapeString"), Args: []goast.Expr{
 		&goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{value}},
+	}}, nil
+}
+
+// outputFormValue is deliberately separate from outputValue: browser
+// input/textarea properties convert null to an empty string, whereas template
+// text and ordinary attributes visibly render it as "null".
+func (e *ssrGoEmitter) outputFormValue(expr *TemplateExpr) (goast.Expr, error) {
+	value, err := TranslateSSRExpression(expr, e.ctx)
+	if err != nil {
+		return nil, err
+	}
+	e.needsEscaping = true
+	return &goast.CallExpr{Fun: goSelector("vela", "EscapeString"), Args: []goast.Expr{
+		&goast.CallExpr{Fun: goSelector("vela", "FormValueString"), Args: []goast.Expr{value}},
 	}}, nil
 }
 
