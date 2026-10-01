@@ -222,10 +222,10 @@ func translateSSRLocalInitializer(name, kind string, initializer JsExpr, ctx SSR
 }
 
 // translateSSRTemplateLiteral consumes the parser-owned quasi/expression
-// structure. Its first interpolated subset is deliberately restricted to
-// values that cannot be nil at the generated Go boundary; JavaScript null and
-// undefined need distinct ToString semantics and are admitted only after the
-// SSR value model represents both values separately.
+// structure. TemplateString owns JavaScript's null/undefined conversion, so
+// every expression that is otherwise available to SSR may be interpolated.
+// This keeps an interpolation on the same cached-AST lowering path as the
+// equivalent standalone template expression.
 func translateSSRTemplateLiteral(node *JsTemplateLit, ctx SSRExprContext, pos int) (goast.Expr, error) {
 	if len(node.Quasis) != len(node.Exprs)+1 {
 		return nil, ssrExprUnsupported(pos, "template literal has an invalid parser structure")
@@ -240,9 +240,6 @@ func translateSSRTemplateLiteral(node *JsTemplateLit, ctx SSRExprContext, pos in
 		if index == len(node.Exprs) {
 			continue
 		}
-		if !ssrTemplateInterpolationSafe(node.Exprs[index], ctx) {
-			return nil, ssrExprUnsupported(pos, "template literal interpolation may be nullish; only literals and typed scalar props are available to static SSR")
-		}
 		value, err := translateSSRExpr(node.Exprs[index], ctx, pos)
 		if err != nil {
 			return nil, err
@@ -253,36 +250,6 @@ func translateSSRTemplateLiteral(node *JsTemplateLit, ctx SSRExprContext, pos in
 		return values[0], nil
 	}
 	return &goast.CallExpr{Fun: goSelector("vela", "TemplateString"), Args: values}, nil
-}
-
-func ssrTemplateInterpolationSafe(expr JsExpr, ctx SSRExprContext) bool {
-	switch node := expr.(type) {
-	case *JsLiteral:
-		return node.Kind == "string" || node.Kind == "number" || node.Kind == "boolean" || node.Kind == "null"
-	case *JsIdent:
-		if node.Name == "undefined" {
-			return true
-		}
-		prop, ok := ctx.Props[node.Name]
-		if !ok {
-			return false
-		}
-		switch prop.Type {
-		case SSRTypeString, SSRTypeBool, SSRTypeInt, SSRTypeFloat:
-			return true
-		}
-	case *JsMemberExpr:
-		if node.Computed {
-			return false
-		}
-		object, ok := node.Obj.(*JsIdent)
-		if !ok {
-			return false
-		}
-		prop, ok := ctx.Props[object.Name]
-		return ok && prop.Type == SSRTypeObject
-	}
-	return false
 }
 
 // translateSSRArrayLiteral preserves JavaScript array order and holes using a

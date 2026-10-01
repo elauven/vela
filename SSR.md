@@ -316,7 +316,7 @@ The translator handles a defined subset. Initial scope:
 | `arr.map(fn)` / `arr.filter(fn)` | Emit a Go `for` loop |
 | `arr.includes(x)` | `vela.Includes(arr, x)` |
 | Arrow functions (only inside `.map` / `.filter`) | Inline closure |
-| Template literals | `fmt.Sprintf` or string concatenation |
+| Template literals | `vela.TemplateString(...)`, including admitted `null`/`undefined` values |
 | Object/array literals | Composite literal or struct construction |
 
 ### What doesn't translate
