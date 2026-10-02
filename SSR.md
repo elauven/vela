@@ -424,6 +424,12 @@ used for array members so nullish entries remain empty rather than becoming
 the literal words. Form bindings remain a separate DOM-property contract and
 must not be changed merely by changing server text conversion.
 
+For the admitted `+` subset, when either parser-known operand is a string the
+renderer applies `vela.String` to both operands before concatenating. Thus
+`'item ' + 2` and `2 + ' items'` retain JavaScript text semantics. Numeric,
+boolean, and other coercive additions without a string operand are not
+implicitly widened by this rule.
+
 For a single-select, JavaScript `select.value = null` produces no selected
 option. Plain server HTML cannot preserve that state: after parsing a select
 without a selected option, the browser selects its first option. Therefore a

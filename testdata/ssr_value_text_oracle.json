@@ -9,6 +9,8 @@
   {"name":"array-hole", "expression":"[1, , 3]", "expected":"1,,3"},
   {"name":"nested-nullish-array", "expression":"[1, null, undefined, [2, null], 3]", "expected":"1,,,2,,3"},
   {"name":"object", "expression":"({ title: 'ready' })", "expected":"[object Object]"},
+  {"name":"string-plus-number", "expression":"'item ' + 2", "expected":"item 2"},
+  {"name":"number-plus-string", "expression":"2 + ' items'", "expected":"2 items"},
   {"name":"template-null", "expression":"`value=${null}`", "expected":"value=null"},
   {"name":"template-undefined", "expression":"`value=${undefined}`", "expected":"value=undefined"},
   {"name":"template-unicode", "expression":"`Привет ${'😀'}`", "expected":"Привет 😀"},

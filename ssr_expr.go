@@ -148,6 +148,16 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		if !ok {
 			return nil, ssrExprUnsupported(pos, "binary operator %q is not supported", node.Op)
 		}
+		// JavaScript + concatenates when either operand is a string. Go would
+		// reject a valid source expression such as "item " + props.Count, so
+		// use the already-admitted JS text conversion on both sides whenever
+		// the parser-owned expression tree proves one side string-like.
+		leftString := ssrExprKnownString(node.L, ctx, map[string]bool{})
+		rightString := ssrExprKnownString(node.R, ctx, map[string]bool{})
+		if node.Op == "+" && leftString != rightString {
+			left = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{left}}
+			right = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{right}}
+		}
 		return &goast.BinaryExpr{X: left, Op: op, Y: right}, nil
 	case *JsLogicalExpr:
 		left, err := translateSSRExpr(node.L, ctx, pos)
@@ -200,6 +210,61 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 	default:
 		return nil, ssrExprUnsupported(pos, "JavaScript expression %T is not supported", expr)
 	}
+}
+
+func ssrExprKnownString(expr JsExpr, ctx SSRExprContext, seen map[string]bool) bool {
+	switch node := expr.(type) {
+	case *JsLiteral:
+		return node.Kind == "string"
+	case *JsTemplateLit:
+		return true
+	case *JsIdent:
+		if seen[node.Name] {
+			return false
+		}
+		if binding, ok := ctx.Bindings[node.Name]; ok {
+			return ssrGoExprKnownString(binding, ctx)
+		}
+		if prop, ok := ctx.Props[node.Name]; ok {
+			return prop.Type == SSRTypeString
+		}
+		seen[node.Name] = true
+		defer delete(seen, node.Name)
+		if initializer, ok := ctx.StateInitializers[node.Name]; ok {
+			return ssrExprKnownString(initializer, ctx, seen)
+		}
+		if initializer, ok := ctx.DerivedInitializers[node.Name]; ok {
+			return ssrExprKnownString(initializer, ctx, seen)
+		}
+		if initializer, ok := ctx.PlainInitializers[node.Name]; ok {
+			return ssrExprKnownString(initializer, ctx, seen)
+		}
+	case *JsBinaryExpr:
+		return node.Op == "+" && (ssrExprKnownString(node.L, ctx, seen) || ssrExprKnownString(node.R, ctx, seen))
+	case *JsConditionalExpr:
+		return ssrExprKnownString(node.Then, ctx, seen) && ssrExprKnownString(node.Else, ctx, seen)
+	}
+	return false
+}
+
+func ssrGoExprKnownString(expr goast.Expr, ctx SSRExprContext) bool {
+	switch node := expr.(type) {
+	case *goast.BasicLit:
+		return node.Kind == token.STRING
+	case *goast.SelectorExpr:
+		base, ok := node.X.(*goast.Ident)
+		if !ok || base.Name != "props" {
+			return false
+		}
+		for _, prop := range ctx.Props {
+			if prop.GoName == node.Sel.Name {
+				return prop.Type == SSRTypeString
+			}
+		}
+	case *goast.BinaryExpr:
+		return node.Op == token.ADD && ssrGoExprKnownString(node.X, ctx) && ssrGoExprKnownString(node.Y, ctx)
+	}
+	return false
 }
 
 // translateSSRNamedFunctionCall deliberately admits a small AST-only function

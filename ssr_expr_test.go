@@ -134,6 +134,39 @@ func TestTranslateSSRExpressionLowersSafeLocalDerivedInitializer(t *testing.T) {
 	}
 }
 
+func TestTranslateSSRExpressionUsesJavaScriptStringConversionForMixedPlus(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let count = 0;</script><template>{'item ' + count}{count + ' items'}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := sfc.TemplateAST.Nodes[0].(*TextNode)
+	for _, expr := range []*TemplateExpr{text.Parts[0].Expr, text.Parts[1].Expr} {
+		translated, err := TranslateSSRExpression(expr, NewSSRExprContext(plan))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := FormatSSRGoExpr(translated)
+		if err != nil || !strings.Contains(got, "vela.String(") {
+			t.Fatalf("mixed plus translation=%q, err=%v", got, err)
+		}
+	}
+	file, err := BuildSSRGoFile(plan, "components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := FormatSSRGoFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateGeneratedSSRGo("demo.go", source); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTranslateSSRExpressionLowersNamedFormatterWithPlainConstAndDerived(t *testing.T) {
 	sfc, err := parseSFC(`<script>
 const prefix = 'Hello, ';
