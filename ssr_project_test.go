@@ -224,6 +224,26 @@ func TestSSRProjectRejectsSingleSelectWithKnownNullBinding(t *testing.T) {
 	}
 }
 
+func TestSSRProjectRejectsLooseEqualityBeforeWritingServerArtifact(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(srcRoot, "App.vela")
+	if err := os.WriteFile(source, []byte(`<template><p>{1 == '1'}</p></template>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	layout := NewSSRProjectLayout(filepath.Join(root, "out"))
+	err := compileSSRProjectFile(source, srcRoot, layout)
+	if err == nil || !strings.Contains(err.Error(), SSRExpressionDiagnosticCode) || !strings.Contains(err.Error(), "loose equality") {
+		t.Fatalf("loose equality SSR error=%v", err)
+	}
+	if _, statErr := os.Stat(layout.serverPath(source, srcRoot)); !os.IsNotExist(statErr) {
+		t.Fatalf("loose equality unexpectedly wrote server artifact: %v", statErr)
+	}
+}
+
 func TestSSRProjectGeneratedServerRunsFromPublicArtifacts(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")

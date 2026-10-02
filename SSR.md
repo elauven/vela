@@ -308,7 +308,7 @@ The translator handles a defined subset. Initial scope:
 | Identifier (`name`) | `props.Name` (case-fold to Go's Export case) |
 | Member access (`user.name`) | `props.User.Name` |
 | Index (`arr[i]`) | `arr[i]` |
-| Arithmetic, comparison, logical, ternary | Direct (with operator quirks) |
+| Arithmetic, comparison, logical, ternary | Checked AST lowering; only the explicitly admitted operator matrix |
 | Literals (number, string, bool, null) | Direct |
 | `arr.length` | `len(arr)` |
 | `String(x)` | `vela.ToString(x)` (runtime helper) |
@@ -433,6 +433,13 @@ the renderer normalizes them to Go `float64`, matching JavaScript's single
 Number domain for combinations such as `1 + 0.5`. An unknown, boolean or
 nullish non-string operand receives `VELA-SSR-EXPR` until its ToPrimitive /
 ToNumber behaviour is admitted by the semantic matrix.
+
+Strict equality uses `vela.StrictEqual` rather than Go interface equality.
+It preserves the shared JavaScript Number domain (`1 === 1.0`), distinguishes
+`null` from `undefined`, compares strings and booleans without coercion, and
+does not panic for map/slice reference values. Strict inequality negates that
+same operation. Loose `==` and `!=` are intentionally rejected with
+`VELA-SSR-EXPR`; their coercion table is not part of the admitted baseline yet.
 
 For a single-select, JavaScript `select.value = null` produces no selected
 option. Plain server HTML cannot preserve that state: after parsing a select

@@ -2,6 +2,7 @@ package ssr_runtime
 
 import (
 	"io"
+	"math"
 	"strings"
 	"testing"
 )
@@ -124,6 +125,36 @@ func TestTruthyAndLazyOperators(t *testing.T) {
 	leftCalls = 0
 	if got := OrLazy(func() any { leftCalls++; return true }, func() any { called++; return "unsafe" }); got != true || called != 0 || leftCalls != 1 {
 		t.Fatalf("|| lazy evaluation result=%#v rightCalls=%d leftCalls=%d", got, called, leftCalls)
+	}
+}
+
+func TestStrictEqualUsesJavaScriptPrimitiveAndReferenceSemantics(t *testing.T) {
+	object := map[string]any{"id": 1}
+	list := []any{1}
+	for _, tc := range []struct {
+		name        string
+		left, right any
+		want        bool
+	}{
+		{"null", nil, nil, true},
+		{"null-undefined", nil, Undefined(), false},
+		{"undefined", Undefined(), Undefined(), true},
+		{"number-domain", 1, 1.0, true},
+		{"nan", math.NaN(), math.NaN(), false},
+		{"positive-negative-zero", 0.0, math.Copysign(0, -1), true},
+		{"cross-type", "1", 1, false},
+		{"boolean", false, false, true},
+		{"boolean-number", false, 0, false},
+		{"same-map", object, object, true},
+		{"different-map", object, map[string]any{"id": 1}, false},
+		{"same-slice", list, list, true},
+		{"different-slice", list, []any{1}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := StrictEqual(tc.left, tc.right); got != tc.want {
+				t.Fatalf("StrictEqual(%#v, %#v)=%v want %v", tc.left, tc.right, got, tc.want)
+			}
+		})
 	}
 }
 

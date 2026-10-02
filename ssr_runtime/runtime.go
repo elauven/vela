@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"math"
 	"reflect"
 	"strings"
 	"unicode/utf16"
@@ -31,6 +32,95 @@ type UndefinedValue struct{}
 
 // Undefined returns the server representation of JavaScript undefined.
 func Undefined() UndefinedValue { return UndefinedValue{} }
+
+// StrictEqual implements JavaScript strict equality for values admitted by
+// the server expression model. Numeric Go kinds share JavaScript's single
+// Number domain, null and undefined remain distinct, and reference values are
+// compared by identity rather than by Go's structural equality. In
+// particular, this helper never applies == to an interface containing a map
+// or slice, which would panic at runtime.
+func StrictEqual(left, right any) bool {
+	_, leftUndefined := left.(UndefinedValue)
+	_, rightUndefined := right.(UndefinedValue)
+	if leftUndefined || rightUndefined {
+		return leftUndefined && rightUndefined
+	}
+
+	leftValue, leftNull := strictEqualityValue(left)
+	rightValue, rightNull := strictEqualityValue(right)
+	if leftNull || rightNull {
+		return leftNull && rightNull
+	}
+
+	leftNumber, leftIsNumber := strictEqualityNumber(leftValue)
+	rightNumber, rightIsNumber := strictEqualityNumber(rightValue)
+	if leftIsNumber || rightIsNumber {
+		if !leftIsNumber || !rightIsNumber || math.IsNaN(leftNumber) || math.IsNaN(rightNumber) {
+			return false
+		}
+		return leftNumber == rightNumber
+	}
+
+	if leftValue.Kind() == reflect.String || rightValue.Kind() == reflect.String {
+		return leftValue.Kind() == reflect.String && rightValue.Kind() == reflect.String && leftValue.String() == rightValue.String()
+	}
+	if leftValue.Kind() == reflect.Bool || rightValue.Kind() == reflect.Bool {
+		return leftValue.Kind() == reflect.Bool && rightValue.Kind() == reflect.Bool && leftValue.Bool() == rightValue.Bool()
+	}
+
+	// Maps, slices, and pointers model JavaScript reference values at the Go
+	// boundary. Type equality prevents unrelated Go representations from
+	// becoming the same JavaScript object merely because an address matches.
+	if leftValue.Type() != rightValue.Type() {
+		return false
+	}
+	switch leftValue.Kind() {
+	case reflect.Map, reflect.Pointer:
+		return leftValue.Pointer() == rightValue.Pointer()
+	case reflect.Slice:
+		return leftValue.Pointer() == rightValue.Pointer() && leftValue.Len() == rightValue.Len() && leftValue.Cap() == rightValue.Cap()
+	default:
+		// Structs, Go arrays, functions, and other host values have no stable
+		// JavaScript reference identity in the serialized SSR contract.
+		return false
+	}
+}
+
+func strictEqualityValue(value any) (reflect.Value, bool) {
+	if value == nil {
+		return reflect.Value{}, true
+	}
+	reflected := reflect.ValueOf(value)
+	for reflected.IsValid() && reflected.Kind() == reflect.Interface {
+		if reflected.IsNil() {
+			return reflect.Value{}, true
+		}
+		reflected = reflected.Elem()
+	}
+	if !reflected.IsValid() {
+		return reflect.Value{}, true
+	}
+	switch reflected.Kind() {
+	case reflect.Map, reflect.Pointer, reflect.Slice:
+		if reflected.IsNil() {
+			return reflect.Value{}, true
+		}
+	}
+	return reflected, false
+}
+
+func strictEqualityNumber(value reflect.Value) (float64, bool) {
+	switch value.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(value.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return float64(value.Uint()), true
+	case reflect.Float32, reflect.Float64:
+		return value.Float(), true
+	default:
+		return 0, false
+	}
+}
 
 // PropProvided reports whether a typed generated SSR props value explicitly
 // supplied a Vela prop. Generated contracts expose Set; older user-maintained

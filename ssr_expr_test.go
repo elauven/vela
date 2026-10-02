@@ -206,6 +206,40 @@ func TestTranslateSSRExpressionNormalizesNumericPlusAndRejectsUnknownCoercion(t 
 	}
 }
 
+func TestTranslateSSRExpressionUsesStrictEqualityRuntimeAndRejectsLooseEquality(t *testing.T) {
+	sfc, err := parseSFC(`<template>{1 === 1.0}{null !== undefined}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := sfc.TemplateAST.Nodes[0].(*TextNode)
+	wants := []string{
+		"vela.StrictEqual(1, 1.0)",
+		"!vela.StrictEqual(nil, vela.Undefined())",
+	}
+	for index, part := range text.Parts {
+		translated, err := TranslateSSRExpression(part.Expr, SSRExprContext{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := FormatSSRGoExpr(translated)
+		if err != nil || got != wants[index] {
+			t.Fatalf("strict equality %d translation=%q err=%v, want %q", index, got, err, wants[index])
+		}
+	}
+
+	for _, operator := range []string{"==", "!="} {
+		sfc, err := parseSFC(`<template>{1 ` + operator + ` 1}</template>`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+		_, err = TranslateSSRExpression(expr, SSRExprContext{})
+		if err == nil || !strings.Contains(err.Error(), "loose equality") {
+			t.Fatalf("operator %s error=%v", operator, err)
+		}
+	}
+}
+
 func TestTranslateSSRExpressionLowersNamedFormatterWithPlainConstAndDerived(t *testing.T) {
 	sfc, err := parseSFC(`<script>
 const prefix = 'Hello, ';

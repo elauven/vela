@@ -144,6 +144,16 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		if err != nil {
 			return nil, err
 		}
+		if node.Op == "==" || node.Op == "!=" {
+			return nil, ssrExprUnsupported(pos, "loose equality operator %q is not available to static SSR until its coercion matrix is defined; use strict equality", node.Op)
+		}
+		if node.Op == "===" || node.Op == "!==" {
+			equal := &goast.CallExpr{Fun: goSelector("vela", "StrictEqual"), Args: []goast.Expr{left, right}}
+			if node.Op == "!==" {
+				return &goast.UnaryExpr{Op: token.NOT, X: equal}, nil
+			}
+			return equal, nil
+		}
 		op, ok := ssrBinaryToken(node.Op)
 		if !ok {
 			return nil, ssrExprUnsupported(pos, "binary operator %q is not supported", node.Op)
@@ -697,10 +707,6 @@ func ssrBinaryToken(op string) (token.Token, bool) {
 		return token.GTR, true
 	case ">=":
 		return token.GEQ, true
-	case "==", "===":
-		return token.EQL, true
-	case "!=", "!==":
-		return token.NEQ, true
 	default:
 		return token.ILLEGAL, false
 	}
