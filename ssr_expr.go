@@ -352,6 +352,70 @@ func ssrExprKnownNumber(expr JsExpr, ctx SSRExprContext, seen map[string]bool) b
 	return false
 }
 
+func ssrExprKnownArray(expr JsExpr, ctx SSRExprContext, seen map[string]bool) bool {
+	switch node := expr.(type) {
+	case *JsArrayExpr:
+		return true
+	case *JsIdent:
+		if seen[node.Name] {
+			return false
+		}
+		if binding, ok := ctx.Bindings[node.Name]; ok {
+			literal, ok := binding.(*goast.CompositeLit)
+			if !ok {
+				return false
+			}
+			_, ok = literal.Type.(*goast.ArrayType)
+			return ok
+		}
+		if prop, ok := ctx.Props[node.Name]; ok {
+			return prop.Type == SSRTypeSlice
+		}
+		seen[node.Name] = true
+		defer delete(seen, node.Name)
+		for _, initializers := range []map[string]JsExpr{ctx.StateInitializers, ctx.DerivedInitializers, ctx.PlainInitializers} {
+			if initializer, ok := initializers[node.Name]; ok {
+				return ssrExprKnownArray(initializer, ctx, seen)
+			}
+		}
+	case *JsConditionalExpr:
+		return ssrExprKnownArray(node.Then, ctx, seen) && ssrExprKnownArray(node.Else, ctx, seen)
+	}
+	return false
+}
+
+func ssrExprKnownObject(expr JsExpr, ctx SSRExprContext, seen map[string]bool) bool {
+	switch node := expr.(type) {
+	case *JsObjectExpr:
+		return true
+	case *JsIdent:
+		if seen[node.Name] {
+			return false
+		}
+		if binding, ok := ctx.Bindings[node.Name]; ok {
+			literal, ok := binding.(*goast.CompositeLit)
+			if !ok {
+				return false
+			}
+			_, ok = literal.Type.(*goast.MapType)
+			return ok
+		}
+		if prop, ok := ctx.Props[node.Name]; ok {
+			return prop.Type == SSRTypeObject
+		}
+		seen[node.Name] = true
+		defer delete(seen, node.Name)
+		for _, initializers := range []map[string]JsExpr{ctx.StateInitializers, ctx.DerivedInitializers, ctx.PlainInitializers} {
+			if initializer, ok := initializers[node.Name]; ok {
+				return ssrExprKnownObject(initializer, ctx, seen)
+			}
+		}
+	case *JsConditionalExpr:
+		return ssrExprKnownObject(node.Then, ctx, seen) && ssrExprKnownObject(node.Else, ctx, seen)
+	}
+	return false
+}
+
 func ssrGoExprKnownNumber(expr goast.Expr, ctx SSRExprContext) bool {
 	switch node := expr.(type) {
 	case *goast.BasicLit:
@@ -692,6 +756,11 @@ func translateSSRMember(node *JsMemberExpr, ctx SSRExprContext, pos int) (goast.
 		}
 	}
 	if node.Computed {
+		arrayIndex := ssrExprKnownArray(node.Obj, ctx, map[string]bool{}) && ssrExprKnownNumber(node.Prop, ctx, map[string]bool{})
+		objectKey := ssrExprKnownObject(node.Obj, ctx, map[string]bool{}) && ssrExprKnownString(node.Prop, ctx, map[string]bool{})
+		if !arrayIndex && !objectKey {
+			return nil, ssrExprUnsupported(pos, "computed member access requires a known array with a numeric index or a known object with a string key during SSR")
+		}
 		object, err := translateSSRExpr(node.Obj, ctx, pos)
 		if err != nil {
 			return nil, err
@@ -700,7 +769,7 @@ func translateSSRMember(node *JsMemberExpr, ctx SSRExprContext, pos int) (goast.
 		if err != nil {
 			return nil, err
 		}
-		return &goast.IndexExpr{X: object, Index: index}, nil
+		return &goast.CallExpr{Fun: goSelector("vela", "Index"), Args: []goast.Expr{object, index}}, nil
 	}
 	return nil, ssrExprUnsupported(pos, "member access is not available until the prop has a declared object type")
 }

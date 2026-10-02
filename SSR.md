@@ -446,6 +446,13 @@ strings. Numbers are normalized to `float64`; strings use
 than Go's UTF-8 byte order. Mixed and unknown operands receive
 `VELA-SSR-EXPR` until ToPrimitive/ToNumber coercion is specified.
 
+Computed member access is admitted for a parser-known array plus numeric index
+and for a parser-known plain object plus string key. Generated Go calls
+`vela.Index`, so an out-of-range array index or absent object key produces the
+same `undefined` sentinel as JavaScript instead of a Go panic. Ambiguous
+receiver/index combinations receive `VELA-SSR-EXPR` until their property-key
+coercion and string-index behaviour are specified.
+
 For a single-select, JavaScript `select.value = null` produces no selected
 option. Plain server HTML cannot preserve that state: after parsing a select
 without a selected option, the browser selects its first option. Therefore a

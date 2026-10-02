@@ -295,7 +295,7 @@ func TestBuildSSRGoFileRendersMultipleSelectValueBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := string(source)
-	for _, want := range []string{`vela.WriteString(w, "<select multiple>")`, `vela.ContainsString(props.Choice, "a")`, `vela.ContainsString(props.Choice, vela.String(props.Choice[1]))`, `vela.WriteString(w, " selected")`} {
+	for _, want := range []string{`vela.WriteString(w, "<select multiple>")`, `vela.ContainsString(props.Choice, "a")`, `vela.ContainsString(props.Choice, vela.String(vela.Index(props.Choice, 1)))`, `vela.WriteString(w, " selected")`} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("multiple select SSR output misses %q:\n%s", want, output)
 		}

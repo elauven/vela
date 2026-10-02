@@ -3,6 +3,7 @@ package ssr_runtime
 import (
 	"io"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -175,6 +176,30 @@ func TestStringLessUsesJavaScriptUTF16Ordering(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := StringLess(tc.left, tc.right); got != tc.want {
 				t.Fatalf("StringLess(%q, %q)=%v want %v", tc.left, tc.right, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIndexPreservesMissingJavaScriptArrayAndObjectValues(t *testing.T) {
+	values := []any{"zero", "one"}
+	object := map[string]any{"title": "ready"}
+	for _, tc := range []struct {
+		name         string
+		value, index any
+		want         any
+	}{
+		{"array", values, 1, "one"},
+		{"array-float-index", values, 0.0, "zero"},
+		{"array-out-of-range", values, 2, Undefined()},
+		{"array-negative", values, -1, Undefined()},
+		{"array-fraction", values, 0.5, Undefined()},
+		{"object", object, "title", "ready"},
+		{"object-missing", object, "missing", Undefined()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Index(tc.value, tc.index); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("Index(%#v, %#v)=%#v want %#v", tc.value, tc.index, got, tc.want)
 			}
 		})
 	}

@@ -142,6 +142,46 @@ func StringLess(left, right string) bool {
 	return len(leftUnits) < len(rightUnits)
 }
 
+// Index implements the admitted JavaScript computed-member subset without
+// exposing Go's out-of-range panics. Arrays accept non-negative integral
+// Number indices; plain objects accept string keys. Missing entries preserve
+// the distinct undefined sentinel used by template conversion.
+func Index(value, index any) any {
+	reflected := reflect.ValueOf(value)
+	for reflected.IsValid() && (reflected.Kind() == reflect.Interface || reflected.Kind() == reflect.Pointer) {
+		if reflected.IsNil() {
+			return Undefined()
+		}
+		reflected = reflected.Elem()
+	}
+	if !reflected.IsValid() {
+		return Undefined()
+	}
+	switch reflected.Kind() {
+	case reflect.Array, reflect.Slice:
+		indexValue, ok := strictEqualityNumber(reflect.ValueOf(index))
+		if !ok || math.IsNaN(indexValue) || math.IsInf(indexValue, 0) || indexValue < 0 || math.Trunc(indexValue) != indexValue || indexValue >= float64(reflected.Len()) {
+			return Undefined()
+		}
+		return reflected.Index(int(indexValue)).Interface()
+	case reflect.Map:
+		key := reflect.ValueOf(index)
+		if !key.IsValid() || key.Kind() != reflect.String || reflected.Type().Key().Kind() != reflect.String {
+			return Undefined()
+		}
+		if key.Type() != reflected.Type().Key() {
+			key = key.Convert(reflected.Type().Key())
+		}
+		entry := reflected.MapIndex(key)
+		if !entry.IsValid() {
+			return Undefined()
+		}
+		return entry.Interface()
+	default:
+		return Undefined()
+	}
+}
+
 // PropProvided reports whether a typed generated SSR props value explicitly
 // supplied a Vela prop. Generated contracts expose Set; older user-maintained
 // sidecars without it retain their historical behaviour and are treated as

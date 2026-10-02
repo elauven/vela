@@ -23,7 +23,7 @@ export let items = [];
 	wants := []string{
 		`props.Title + "!"`,
 		"vela.Length(props.Items)",
-		"props.Items[0]",
+		"vela.Index(props.Items, 0)",
 		"vela.AndLazy(func() any {\n\treturn props.Active\n}, func() any {\n\treturn float64(props.Count) > float64(0)\n})",
 	}
 	for i, want := range wants {
@@ -278,6 +278,49 @@ func TestTranslateSSRExpressionDefinesNumericAndUTF16RelationalSemantics(t *test
 		_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
 		if err == nil || !strings.Contains(err.Error(), "relational operator") {
 			t.Fatalf("unsupported relational error=%v", err)
+		}
+	}
+}
+
+func TestTranslateSSRExpressionUsesSafeComputedMemberBoundary(t *testing.T) {
+	sfc, err := parseSFC(`<template>{[1, 2][0]}{[1][5]}{({ title: 'ready' })['title']}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := sfc.TemplateAST.Nodes[0].(*TextNode)
+	wants := []string{
+		"vela.Index([]any{1, 2}, 0)",
+		"vela.Index([]any{1}, 5)",
+		`vela.Index(map[string]any{"title": "ready"}, "title")`,
+	}
+	for index, part := range text.Parts {
+		translated, err := TranslateSSRExpression(part.Expr, SSRExprContext{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := FormatSSRGoExpr(translated)
+		if err != nil || got != wants[index] {
+			t.Fatalf("computed member %d translation=%q err=%v, want %q", index, got, err, wants[index])
+		}
+	}
+
+	for _, source := range []string{
+		`<template>{[1]['0']}</template>`,
+		`<template>{({ title: 'ready' })[0]}</template>`,
+		`<script>export let value;</script><template>{value[0]}</template>`,
+	} {
+		sfc, err := parseSFC(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+		_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
+		if err == nil || !strings.Contains(err.Error(), "computed member access requires") {
+			t.Fatalf("unsupported computed member error=%v", err)
 		}
 	}
 }
