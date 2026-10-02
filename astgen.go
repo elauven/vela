@@ -1219,12 +1219,15 @@ func twoWaySetterFromEvent(setter string, multipleAware bool, readProp string) J
 	)
 }
 
-func twoWaySetterFromElement(setter, elementVar string, multipleAware bool, readProp string) JsStmt {
+func twoWaySetterFromElement(setter, elementVar string, multipleAware bool, readProp string, currentValue JsExpr) JsStmt {
 	if !multipleAware {
 		return genInvoke(setter, genMember(id(elementVar), readProp))
 	}
 	return genBlock(
-		genIf(genMember(id(elementVar), "multiple"), genExprStmt(genCall(id(setter), genCall(id("$$readSelectValues"), id(elementVar))))),
+		genIf(genMember(id(elementVar), "multiple"), genIf(
+			genUnary("!", genCall(id("$$selectValuesEqual"), id(elementVar), currentValue)),
+			genExprStmt(genCall(id(setter), genCall(id("$$readSelectValues"), id(elementVar)))),
+		)),
 		genIf(genUnary("!", genMember(id(elementVar), "multiple")), genExprStmt(genCall(id(setter), genMember(id(elementVar), readProp)))),
 	)
 }
@@ -1939,6 +1942,7 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	usesHydrationNestedRanges := g.hydrationNestedRanges
 	usesHydrationNestedText := g.hydrationNestedText
 	usesReadSelectValues := false
+	usesSelectValuesEqual := false
 	usesWriteSelectValues := false
 	if g.analysis != nil && (len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0) {
 		usesIsProxy = true
@@ -1965,6 +1969,8 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 			usesDefer = true
 		case "$$readSelectValues":
 			usesReadSelectValues = true
+		case "$$selectValuesEqual":
+			usesSelectValuesEqual = true
 		case "$$writeSelectValues":
 			usesWriteSelectValues = true
 		}
@@ -1991,6 +1997,9 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	}
 	if usesReadSelectValues {
 		specs = append(specs, JsImportSpec{Imported: "$$readSelectValues"})
+	}
+	if usesSelectValuesEqual {
+		specs = append(specs, JsImportSpec{Imported: "$$selectValuesEqual"})
 	}
 	if usesWriteSelectValues {
 		specs = append(specs, JsImportSpec{Imported: "$$writeSelectValues"})
@@ -4886,7 +4895,10 @@ func (g *ASTGen) emitHydrationBinding(variable, tag string, attr *Attr) {
 	// schedules the usual reactive cascade without a blind value write.
 	if tag == "select" && attr.Name == "value" {
 		g.hydrationInitBody = append(g.hydrationInitBody,
-			genIf(genMember(id(variable), "multiple"), genExprStmt(genCall(id("$$set_"+state), genCall(id("$$readSelectValues"), id(variable))))),
+			genIf(genMember(id(variable), "multiple"), genIf(
+				genUnary("!", genCall(id("$$selectValuesEqual"), id(variable), id(state))),
+				genExprStmt(genCall(id("$$set_"+state), genCall(id("$$readSelectValues"), id(variable)))),
+			)),
 			genIf(genUnary("!", genMember(id(variable), "multiple")), genExprStmt(genCall(id("$$set_"+state), genMember(id(variable), spec.readProp)))),
 		)
 	} else {
@@ -10716,7 +10728,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfBindingAttach(elementVar, controlle
 		)})),
 	}
 	if adopt {
-		body = append(body, twoWaySetterFromElement("$$set_"+target, elementVar, tag == "select" && attr.Name == "value", spec.readProp))
+		body = append(body, twoWaySetterFromElement("$$set_"+target, elementVar, tag == "select" && attr.Name == "value", spec.readProp, id(target)))
 	} else {
 		body = append(body, genInvoke(writeVar))
 	}
@@ -12579,7 +12591,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotBinding(plan *hydrationAwaitSnapshot
 		// Preserve input typed after SSR paint. If it differs from the snapshot,
 		// the regular setter drives every other dependent DOM site; the guarded
 		// writer sees that this control already owns the same live value.
-		twoWaySetterFromElement("$$set_"+target, elementVar, tag == "select" && attr.Name == "value", spec.readProp),
+		twoWaySetterFromElement("$$set_"+target, elementVar, tag == "select" && attr.Name == "value", spec.readProp, id(target)),
 	)
 	plan.listenerCleanup = append([]JsStmt{genIf(id(cleanupVar), genBlock(
 		genExprStmt(genCall(id(cleanupVar))),

@@ -936,6 +936,72 @@ window.initialWrites = observer.takeRecords().length;
 	}
 }
 
+func TestSSRProjectPublicMultipleSelectHydratesUpdatesAndBindsInBrowser(t *testing.T) {
+	node := requirePlaywright(t)
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(srcRoot, "Picker.vela")
+	contents := `<script>
+let choices = $state(['a', '2', 'dup']);
+function chooseLast() { choices = ['b']; }
+</script><template><main><select class="field" multiple bind:value={choices}><option value="a">A</option><option :value={2}>Two</option><option value="dup">Duplicate one</option><option value="dup">Duplicate two</option><option value="b">B</option></select><p class="mirror">{choices}</p><button class="program" @click={chooseLast}>Last</button></main></template>`
+	if err := os.WriteFile(source, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	projectModule := "example.com/ssrmultipleselect"
+	if errors := buildSSRProject([]string{source}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	compilerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainSource := `package main
+import (
+    "os"
+    components "example.com/ssrmultipleselect/server/components"
+)
+func main() {
+    if err := components.RenderPickerAt(os.Stdout, components.PickerProps{}, components.PickerSlots{}, "vela-picker-instance"); err != nil { panic(err) }
+}
+`
+	if err := os.WriteFile(filepath.Join(outRoot, "main.go"), []byte(mainSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	html, err := runSSRGeneratedProgram(outRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientRoot := NewSSRProjectLayout(outRoot).ClientDir
+	entry := `import hydratePicker from "./Picker.hydrate.js";
+window.initialWrites = 0;
+const observer = new MutationObserver(() => { window.initialWrites++; });
+observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
+window.hydrated = hydratePicker(document.body, {}, "vela-picker-instance");
+window.initialWrites = observer.takeRecords().length;
+`
+	if err := os.WriteFile(filepath.Join(clientRoot, "entry.js"), []byte(entry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	page := "<!doctype html><body>" + string(html) + `<script type="module" src="./entry.js"></script></body>`
+	if err := os.WriteFile(filepath.Join(clientRoot, "index.html"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1];const server=http.createServer((q,r)=>{const name=q.url==="/"?"index.html":q.url.slice(1);try{const body=fs.readFileSync(path.join(root,name));r.writeHead(200,{"content-type":name.endsWith(".js")?"text/javascript":"text/html; charset=utf-8"}).end(body)}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>window.hydrated);const read=()=>p.evaluate(()=>({mode:window.hydrated.mode,writes:window.initialWrites,values:[...document.querySelector(".field").selectedOptions].map(option=>option.value),mirror:document.querySelector(".mirror")?.textContent}));const initial=await read();if(initial.mode!=="executable"||initial.writes!==0||initial.values.join("|")!=="a|2|dup|dup"||initial.mirror!=="a,2,dup")throw new Error("bad multiple-select adoption: "+JSON.stringify(initial));await p.evaluate(()=>window.field=document.querySelector(".field"));await p.click(".program");await p.waitForFunction(()=>document.querySelector(".mirror")?.textContent==="b");let updated=await read();if(updated.values.join("|")!=="b"||!(await p.evaluate(()=>document.querySelector(".field")===window.field)))throw new Error("bad programmatic multiple-select update: "+JSON.stringify(updated));await p.selectOption(".field",["a","2"]);await p.waitForFunction(()=>document.querySelector(".mirror")?.textContent==="a,2");updated=await read();if(updated.values.join("|")!=="a|2"||!(await p.evaluate(()=>document.querySelector(".field")===window.field)))throw new Error("bad user multiple-select binding: "+JSON.stringify(updated));await p.evaluate(()=>window.hydrated.component.destroy());if(await p.$("main"))throw new Error("destroy retained multiple-select DOM");if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);console.error(errors.join("\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	output, err := exec.Command(node, "-e", browser, clientRoot).CombinedOutput()
+	if err != nil {
+		t.Fatalf("public multiple-select SSR browser fixture: %v\n%s", err, output)
+	}
+}
+
 func TestSSRProjectPublicNamedFormatterHydratesAndUpdatesInBrowser(t *testing.T) {
 	node := requirePlaywright(t)
 	root := t.TempDir()

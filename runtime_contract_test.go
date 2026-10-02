@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$reconcileHydrationKeyedRowRanges, $$createHydrationWalker, $$defer, $$hydrationPayloadVersion, $$isProxy, $$proxy, $$readHydrationPayload, $$readSelectValues, $$writeSelectValues, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$reconcileHydrationKeyedRowRanges, $$createHydrationWalker, $$defer, $$hydrationPayloadVersion, $$isProxy, $$proxy, $$readHydrationPayload, $$readSelectValues, $$selectValuesEqual, $$writeSelectValues, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -180,6 +180,10 @@ for (const option of select.options) {
 }
 assert($$readSelectValues(select).join(',') === 'one,one',
   'multi-select reads selected values in DOM order');
+assert($$selectValuesEqual(select, ['one']),
+  'multi-select adoption equality ignores duplicate option values');
+assert(!$$selectValuesEqual(select, ['one', 'missing']),
+  'multi-select adoption equality detects an unrepresented model value');
 assert(!$$writeSelectValues(select, ['one', 'one']),
   'multi-select writer must skip every native write for an equal selected set');
 assert(selectedWrites.length === 0,

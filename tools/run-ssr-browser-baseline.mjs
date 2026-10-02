@@ -24,6 +24,7 @@ export const requiredTests = [
   "TestSSRProjectPublicTextareaBindingHydratesInBrowser",
   "TestSSRProjectPublicNullFormBindingsMatchBrowserProperties",
   "TestSSRProjectPublicTableAndSelectHydrateInBrowser",
+  "TestSSRProjectPublicMultipleSelectHydratesUpdatesAndBindsInBrowser",
   "TestSSRProjectRejectsSingleSelectWithKnownNullBinding",
   "TestSSRProjectPublicNamedFormatterHydratesAndUpdatesInBrowser",
 ];

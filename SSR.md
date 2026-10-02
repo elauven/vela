@@ -367,9 +367,11 @@ that it cannot reproduce correctly:
   normal setter rather than restoring the stale server payload.
   `bind:this={reactiveRef}` is omitted from server HTML and assigned only
   after the existing element is adopted; the reference is cleared on destroy.
-  `<select multiple>`, component two-way bindings, and other `bind:*` forms
-  still fail with `VELA-SSR-EXPR`; their HTML and browser-state semantics have
-  not yet been made marker-aware.
+  `<select multiple bind:value={arrayState}>` uses string membership for
+  server-selected options, adopts without a DOM write, preserves duplicate
+  option values, writes programmatic state changes per option, and reads user
+  changes back in DOM order. Component two-way bindings and other `bind:*`
+  forms still require their own SSR contracts.
 - Unsupported JavaScript expressions fail at their template position. The
   future placeholder/Go escape-hatch design is not emitted yet: silently
   omitting server content would create an unbounded hydration mismatch.

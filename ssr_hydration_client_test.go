@@ -5669,7 +5669,7 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectLowersMultipleWithArrayHelpers(t 
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"$$readSelectValues", "$$writeSelectValues", "multiple", "$$inner_option_list_update_0", "$$inner_control_update"} {
+	for _, want := range []string{"$$readSelectValues", "$$selectValuesEqual", "$$writeSelectValues", "multiple", "$$inner_option_list_update_0", "$$inner_control_update"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("multiple select lowering misses %q:\n%s", want, code)
 		}

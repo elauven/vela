@@ -1205,11 +1205,14 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 	}
 	attachBody := []JsStmt{genConst("$$control", genCall(id(findElementVar), id("$$row"))), genIf(genUnary("!", id("$$control")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested multi-option input"))})}
 	attachBody = append(attachBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$control"), true)...)
-	adoptValue := JsExpr(genMember(id("$$control"), spec.readProp))
 	if multiple {
-		adoptValue = genCall(id("$$readSelectValues"), id("$$control"))
+		attachBody = append(attachBody, genIf(
+			genUnary("!", genCall(id("$$selectValuesEqual"), id("$$control"), valueExpr(nestedItemVar, nestedIndexVar))),
+			assignValue(nestedItemVar, nestedIndexVar, genCall(id("$$readSelectValues"), id("$$control"))),
+		))
+	} else {
+		attachBody = append(attachBody, assignValue(nestedItemVar, nestedIndexVar, genMember(id("$$control"), spec.readProp)))
 	}
-	attachBody = append(attachBody, assignValue(nestedItemVar, nestedIndexVar, adoptValue))
 	attach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(attachBody...)}
 	createBody := []JsStmt{
 		genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),

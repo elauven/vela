@@ -95,6 +95,22 @@ export function $$readSelectValues(select) {
   return values;
 }
 
+// Hydration compares a multiple select by membership, not by the raw array
+// returned from the DOM. Duplicate option values therefore do not replace an
+// equivalent application model merely because the document contains the same
+// selected value more than once.
+export function $$selectValuesEqual(select, values) {
+  const expected = new Set(Array.isArray(values) ? values.map(String) : []);
+  const actual = new Set();
+  for (const option of select.options) {
+    if (!option.selected) continue;
+    const value = String(option.value);
+    if (!expected.has(value)) return false;
+    actual.add(value);
+  }
+  return actual.size === expected.size;
+}
+
 export function $$writeSelectValues(select, values) {
   const selected = new Set(Array.isArray(values) ? values.map(String) : []);
   let changed = false;
