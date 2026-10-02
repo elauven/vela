@@ -124,7 +124,7 @@ func TestBuildSSRGoFileRendersSafeDerivedValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `vela.EscapeString(vela.String(2*2))`) {
+	if !strings.Contains(string(source), `vela.EscapeString(vela.String(vela.NumberMultiply(2, 2)))`) {
 		t.Fatalf("derived SSR output is not lowered from cached AST:\n%s", source)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {

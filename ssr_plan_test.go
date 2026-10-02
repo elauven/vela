@@ -176,6 +176,34 @@ const ignored = "/** @type {boolean} */ export let fake = null;";
 	}
 }
 
+func TestBuildSSRRenderPlanInfersNumericExpressionPropTypes(t *testing.T) {
+	sfc, err := parseSFC(`<script>
+export let negative = -1;
+export let ratio = 1 / 2;
+export let label = 'item ' + 2;
+</script><template>{negative}{ratio}{label}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]SSRValueType{}
+	for _, prop := range plan.Props {
+		got[prop.SourceName] = prop.Type
+	}
+	for name, want := range map[string]SSRValueType{
+		"negative": SSRTypeFloat,
+		"ratio":    SSRTypeFloat,
+		"label":    SSRTypeString,
+	} {
+		if got[name] != want {
+			t.Errorf("prop %q type=%d want %d", name, got[name], want)
+		}
+	}
+}
+
 func TestBuildSSRRenderPlanRejectsPresenceFieldPropCollision(t *testing.T) {
 	sfc, err := parseSFC(`<script>export let set = false;</script><template>{set}</template>`)
 	if err != nil {

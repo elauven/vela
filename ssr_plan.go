@@ -771,6 +771,27 @@ func inferSSRValueType(expr JsExpr) SSRValueType {
 		return SSRTypeSlice
 	case *JsObjectExpr:
 		return SSRTypeObject
+	case *JsUnaryExpr:
+		if node.Op == "+" || node.Op == "-" {
+			kind := inferSSRValueType(node.X)
+			if kind == SSRTypeInt || kind == SSRTypeFloat {
+				return SSRTypeFloat
+			}
+		}
+	case *JsBinaryExpr:
+		left := inferSSRValueType(node.L)
+		right := inferSSRValueType(node.R)
+		if node.Op == "+" && (left == SSRTypeString || right == SSRTypeString) {
+			return SSRTypeString
+		}
+		if left == SSRTypeInt || left == SSRTypeFloat {
+			if right == SSRTypeInt || right == SSRTypeFloat {
+				switch node.Op {
+				case "+", "-", "*", "/", "%":
+					return SSRTypeFloat
+				}
+			}
+		}
 	}
 	return SSRTypeAny
 }

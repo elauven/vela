@@ -181,6 +181,45 @@ func TestStringLessUsesJavaScriptUTF16Ordering(t *testing.T) {
 	}
 }
 
+func TestNumberOperationsAndStringUseJavaScriptSemantics(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{"positive-infinity", NumberDivide(1, 0), "Infinity"},
+		{"negative-infinity", NumberDivide(-1, 0), "-Infinity"},
+		{"nan", NumberDivide(0, 0), "NaN"},
+		{"negative-zero", NumberNegate(0), "0"},
+		{"decimal", NumberDivide(1, 2), "0.5"},
+		{"large-decimal-boundary", 1e20, "100000000000000000000"},
+		{"large-exponent-boundary", 1e21, "1e+21"},
+		{"small-decimal-boundary", 1e-6, "0.000001"},
+		{"small-exponent-boundary", 1e-7, "1e-7"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := String(tc.value); got != tc.want {
+				t.Fatalf("String(%v)=%q want %q", tc.value, got, tc.want)
+			}
+		})
+	}
+	if got := NumberAdd(1, 0.5); got != 1.5 {
+		t.Fatalf("NumberAdd=%v", got)
+	}
+	if got := NumberSubtract(1, 2); got != -1 {
+		t.Fatalf("NumberSubtract=%v", got)
+	}
+	if got := NumberMultiply(3, 4); got != 12 {
+		t.Fatalf("NumberMultiply=%v", got)
+	}
+	if got := NumberRemainder(-5, 2); got != -1 {
+		t.Fatalf("NumberRemainder=%v", got)
+	}
+	if Truthy(NumberDivide(0, 0)) {
+		t.Fatal("JavaScript NaN must be falsy")
+	}
+}
+
 func TestIndexPreservesMissingJavaScriptArrayAndObjectValues(t *testing.T) {
 	values := []any{"zero", "one"}
 	object := map[string]any{"title": "ready"}

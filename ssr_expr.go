@@ -130,6 +130,16 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 				Args: []goast.Expr{x},
 			}}, nil
 		}
+		if node.Op == "+" || node.Op == "-" {
+			if !ssrExprKnownNumber(node.X, ctx, map[string]bool{}) {
+				return nil, ssrExprUnsupported(pos, "unary operator %q requires a known number during SSR", node.Op)
+			}
+			function := "Number"
+			if node.Op == "-" {
+				function = "NumberNegate"
+			}
+			return &goast.CallExpr{Fun: goSelector("vela", function), Args: []goast.Expr{x}}, nil
+		}
 		op, ok := ssrUnaryToken(node.Op)
 		if !ok {
 			return nil, ssrExprUnsupported(pos, "unary operator %q is not supported", node.Op)
@@ -165,8 +175,8 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 				return ssrStringRelationalExpr(node.Op, left, right), nil
 			}
 			if ssrExprKnownNumber(node.L, ctx, map[string]bool{}) && ssrExprKnownNumber(node.R, ctx, map[string]bool{}) {
-				left = &goast.CallExpr{Fun: goast.NewIdent("float64"), Args: []goast.Expr{left}}
-				right = &goast.CallExpr{Fun: goast.NewIdent("float64"), Args: []goast.Expr{right}}
+				left = &goast.CallExpr{Fun: goSelector("vela", "Number"), Args: []goast.Expr{left}}
+				right = &goast.CallExpr{Fun: goSelector("vela", "Number"), Args: []goast.Expr{right}}
 				return &goast.BinaryExpr{X: left, Op: op, Y: right}, nil
 			}
 			return nil, ssrExprUnsupported(pos, "relational operator %q requires two known numbers or two known strings during SSR", node.Op)
@@ -185,11 +195,17 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 					right = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{right}}
 				}
 			case ssrExprKnownNumber(node.L, ctx, map[string]bool{}) && ssrExprKnownNumber(node.R, ctx, map[string]bool{}):
-				left = &goast.CallExpr{Fun: goast.NewIdent("float64"), Args: []goast.Expr{left}}
-				right = &goast.CallExpr{Fun: goast.NewIdent("float64"), Args: []goast.Expr{right}}
+				return &goast.CallExpr{Fun: goSelector("vela", "NumberAdd"), Args: []goast.Expr{left, right}}, nil
 			default:
 				return nil, ssrExprUnsupported(pos, "operator + requires two known numbers or at least one known string during SSR")
 			}
+		}
+		if node.Op == "-" || node.Op == "*" || node.Op == "/" || node.Op == "%" {
+			if !ssrExprKnownNumber(node.L, ctx, map[string]bool{}) || !ssrExprKnownNumber(node.R, ctx, map[string]bool{}) {
+				return nil, ssrExprUnsupported(pos, "numeric operator %q requires two known numbers during SSR", node.Op)
+			}
+			function := map[string]string{"-": "NumberSubtract", "*": "NumberMultiply", "/": "NumberDivide", "%": "NumberRemainder"}[node.Op]
+			return &goast.CallExpr{Fun: goSelector("vela", function), Args: []goast.Expr{left, right}}, nil
 		}
 		return &goast.BinaryExpr{X: left, Op: op, Y: right}, nil
 	case *JsLogicalExpr:

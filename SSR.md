@@ -432,7 +432,13 @@ implicitly widened by this rule. When both operands are parser-known numbers,
 the renderer normalizes them to Go `float64`, matching JavaScript's single
 Number domain for combinations such as `1 + 0.5`. An unknown, boolean or
 nullish non-string operand receives `VELA-SSR-EXPR` until its ToPrimitive /
-ToNumber behaviour is admitted by the semantic matrix.
+ToNumber behaviour is admitted by the semantic matrix. Numeric `+`, `-`, `*`,
+`/`, `%`, unary `+`, and unary `-` run through `vela.Number*` helpers rather
+than Go constant arithmetic. This preserves JavaScript division by zero,
+`NaN`, `Infinity`, signed zero, and floating-point remainder. Numeric text
+uses JavaScript's decimal/exponent thresholds (`1e20` is expanded while
+`1e21` is exponential), and `NaN` is falsy. Non-numeric operands are rejected
+before Go generation instead of relying on Go coercion.
 
 Strict equality uses `vela.StrictEqual` rather than Go interface equality.
 It preserves the shared JavaScript Number domain (`1 === 1.0`), distinguishes

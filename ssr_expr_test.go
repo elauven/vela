@@ -24,7 +24,7 @@ export let items = [];
 		`props.Title + "!"`,
 		"vela.Length(props.Items)",
 		"vela.Index(props.Items, 0)",
-		"vela.AndLazy(func() any {\n\treturn props.Active\n}, func() any {\n\treturn float64(props.Count) > float64(0)\n})",
+		"vela.AndLazy(func() any {\n\treturn props.Active\n}, func() any {\n\treturn vela.Number(props.Count) > vela.Number(0)\n})",
 	}
 	for i, want := range wants {
 		expr, err := TranslateSSRExpression(text.Parts[i].Expr, NewSSRExprContext(plan))
@@ -109,7 +109,7 @@ func TestTranslateSSRExpressionLowersSafeLocalStateInitializer(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := FormatSSRGoExpr(translated)
-	if err != nil || got != "float64(1) + float64(1)" {
+	if err != nil || got != "vela.NumberAdd(1, 1)" {
 		t.Fatalf("state initializer translation=%q, err=%v", got, err)
 	}
 }
@@ -129,7 +129,7 @@ func TestTranslateSSRExpressionLowersSafeLocalDerivedInitializer(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := FormatSSRGoExpr(translated)
-	if err != nil || got != "2 * 2" {
+	if err != nil || got != "vela.NumberMultiply(2, 2)" {
 		t.Fatalf("derived initializer translation=%q, err=%v", got, err)
 	}
 }
@@ -182,7 +182,7 @@ func TestTranslateSSRExpressionNormalizesNumericPlusAndRejectsUnknownCoercion(t 
 		t.Fatal(err)
 	}
 	got, err := FormatSSRGoExpr(translated)
-	if err != nil || got != "float64(props.Whole) + float64(props.Fraction)" {
+	if err != nil || got != "vela.NumberAdd(props.Whole, props.Fraction)" {
 		t.Fatalf("numeric plus translation=%q, err=%v", got, err)
 	}
 
@@ -247,7 +247,7 @@ func TestTranslateSSRExpressionDefinesNumericAndUTF16RelationalSemantics(t *test
 	}
 	text := sfc.TemplateAST.Nodes[0].(*TextNode)
 	wants := []string{
-		"float64(1) < float64(1.5)",
+		"vela.Number(1) < vela.Number(1.5)",
 		`vela.StringLess("𐀀", "\ue000")`,
 		`!vela.StringLess("same", "same")`,
 	}
@@ -278,6 +278,51 @@ func TestTranslateSSRExpressionDefinesNumericAndUTF16RelationalSemantics(t *test
 		_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
 		if err == nil || !strings.Contains(err.Error(), "relational operator") {
 			t.Fatalf("unsupported relational error=%v", err)
+		}
+	}
+}
+
+func TestTranslateSSRExpressionUsesJavaScriptNumberOperations(t *testing.T) {
+	sfc, err := parseSFC(`<template>{5 - 2}{3 * 4}{1 / 0}{5 % 2}{-0}{+(1 / 2)}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := sfc.TemplateAST.Nodes[0].(*TextNode)
+	wants := []string{
+		"vela.NumberSubtract(5, 2)",
+		"vela.NumberMultiply(3, 4)",
+		"vela.NumberDivide(1, 0)",
+		"vela.NumberRemainder(5, 2)",
+		"vela.NumberNegate(0)",
+		"vela.Number(vela.NumberDivide(1, 2))",
+	}
+	for index, part := range text.Parts {
+		translated, err := TranslateSSRExpression(part.Expr, SSRExprContext{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := FormatSSRGoExpr(translated)
+		if err != nil || got != wants[index] {
+			t.Fatalf("number operation %d translation=%q err=%v, want %q", index, got, err, wants[index])
+		}
+	}
+
+	for _, source := range []string{
+		`<template>{true * 2}</template>`,
+		`<script>export let value;</script><template>{-value}</template>`,
+	} {
+		sfc, err := parseSFC(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+		_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
+		if err == nil || (!strings.Contains(err.Error(), "known number") && !strings.Contains(err.Error(), "known numbers")) {
+			t.Fatalf("unsupported numeric coercion error=%v", err)
 		}
 	}
 }

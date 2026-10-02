@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 )
@@ -182,6 +183,84 @@ func Index(value, index any) any {
 	}
 }
 
+// Number converts the Go representations admitted by the SSR type model into
+// JavaScript's single IEEE-754 Number domain. Callers are statically checked
+// by the compiler; NaN is a defensive result for an unexpected host value.
+func Number(value any) float64 {
+	reflected := reflect.ValueOf(value)
+	for reflected.IsValid() && (reflected.Kind() == reflect.Interface || reflected.Kind() == reflect.Pointer) {
+		if reflected.IsNil() {
+			return 0
+		}
+		reflected = reflected.Elem()
+	}
+	if number, ok := strictEqualityNumber(reflected); ok {
+		return number
+	}
+	return math.NaN()
+}
+
+// Numeric operations use functions rather than Go constant expressions so
+// division by zero, overflow, remainder, and negative zero retain JavaScript
+// runtime behaviour instead of becoming Go compile errors.
+func NumberAdd(left, right any) float64      { return Number(left) + Number(right) }
+func NumberSubtract(left, right any) float64 { return Number(left) - Number(right) }
+func NumberMultiply(left, right any) float64 { return Number(left) * Number(right) }
+func NumberDivide(left, right any) float64   { return Number(left) / Number(right) }
+func NumberRemainder(left, right any) float64 {
+	return math.Mod(Number(left), Number(right))
+}
+func NumberNegate(value any) float64 { return -Number(value) }
+
+func numberString(value reflect.Value) string {
+	number, ok := strictEqualityNumber(value)
+	if !ok {
+		return "NaN"
+	}
+	switch {
+	case math.IsNaN(number):
+		return "NaN"
+	case math.IsInf(number, 1):
+		return "Infinity"
+	case math.IsInf(number, -1):
+		return "-Infinity"
+	case number == 0:
+		return "0"
+	}
+
+	sign := ""
+	if number < 0 {
+		sign = "-"
+		number = -number
+	}
+	scientific := strconv.FormatFloat(number, 'e', -1, 64)
+	eIndex := strings.IndexByte(scientific, 'e')
+	mantissa := scientific[:eIndex]
+	exponent, _ := strconv.Atoi(scientific[eIndex+1:])
+	digits := strings.ReplaceAll(mantissa, ".", "")
+	decimalPosition := exponent + 1
+
+	switch {
+	case decimalPosition > 0 && decimalPosition <= 21:
+		if decimalPosition >= len(digits) {
+			return sign + digits + strings.Repeat("0", decimalPosition-len(digits))
+		}
+		return sign + digits[:decimalPosition] + "." + digits[decimalPosition:]
+	case decimalPosition > -6 && decimalPosition <= 0:
+		return sign + "0." + strings.Repeat("0", -decimalPosition) + digits
+	default:
+		exponential := digits[:1]
+		if len(digits) > 1 {
+			exponential += "." + digits[1:]
+		}
+		exponentText := strconv.Itoa(exponent)
+		if exponent >= 0 {
+			exponentText = "+" + exponentText
+		}
+		return sign + exponential + "e" + exponentText
+	}
+}
+
 // PropProvided reports whether a typed generated SSR props value explicitly
 // supplied a Vela prop. Generated contracts expose Set; older user-maintained
 // sidecars without it retain their historical behaviour and are treated as
@@ -263,6 +342,9 @@ func String(value any) string {
 	}
 	if reflected.Kind() == reflect.Map || reflected.Kind() == reflect.Struct {
 		return "[object Object]"
+	}
+	if _, numeric := strictEqualityNumber(reflected); numeric {
+		return numberString(reflected)
 	}
 	return fmt.Sprint(value)
 }
@@ -367,7 +449,8 @@ func Truthy(value any) bool {
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		return reflected.Uint() != 0
 	case reflect.Float32, reflect.Float64:
-		return reflected.Float() != 0
+		value := reflected.Float()
+		return value != 0 && !math.IsNaN(value)
 	case reflect.Interface, reflect.Pointer:
 		return !reflected.IsNil()
 	default:
