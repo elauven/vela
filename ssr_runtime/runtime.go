@@ -122,6 +122,26 @@ func strictEqualityNumber(value reflect.Value) (float64, bool) {
 	}
 }
 
+// StringLess compares strings using JavaScript's UTF-16 code-unit order.
+// Go compares UTF-8 bytes, which differs when an astral code point is ordered
+// against some BMP values, so generated relational expressions must not use
+// the native Go string operator directly.
+func StringLess(left, right string) bool {
+	leftUnits := utf16.Encode([]rune(left))
+	rightUnits := utf16.Encode([]rune(right))
+	limit := len(leftUnits)
+	if len(rightUnits) < limit {
+		limit = len(rightUnits)
+	}
+	for index := 0; index < limit; index++ {
+		if leftUnits[index] == rightUnits[index] {
+			continue
+		}
+		return leftUnits[index] < rightUnits[index]
+	}
+	return len(leftUnits) < len(rightUnits)
+}
+
 // PropProvided reports whether a typed generated SSR props value explicitly
 // supplied a Vela prop. Generated contracts expose Set; older user-maintained
 // sidecars without it retain their historical behaviour and are treated as

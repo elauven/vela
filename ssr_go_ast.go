@@ -483,6 +483,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	ssrRuntimeAddFunc(pkg, "Length", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Int])})
 	ssrRuntimeAddFunc(pkg, "Truthy", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Bool])})
 	ssrRuntimeAddFunc(pkg, "StrictEqual", []*types.Var{types.NewVar(token.NoPos, pkg, "left", anyType), types.NewVar(token.NoPos, pkg, "right", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Bool])})
+	ssrRuntimeAddFunc(pkg, "StringLess", []*types.Var{types.NewVar(token.NoPos, pkg, "left", stringType), types.NewVar(token.NoPos, pkg, "right", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Bool])})
 	ssrRuntimeAddFunc(pkg, "PropProvided", []*types.Var{types.NewVar(token.NoPos, pkg, "props", anyType), types.NewVar(token.NoPos, pkg, "name", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Bool])})
 	ssrRuntimeAddFunc(pkg, "MarshalHydrationPayload", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.NewSlice(types.Typ[types.Byte])), types.NewVar(token.NoPos, pkg, "", errorType)})
 	lazyAny := types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(types.NewVar(token.NoPos, pkg, "", anyType)), false)

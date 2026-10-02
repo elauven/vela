@@ -440,6 +440,11 @@ It preserves the shared JavaScript Number domain (`1 === 1.0`), distinguishes
 does not panic for map/slice reference values. Strict inequality negates that
 same operation. Loose `==` and `!=` are intentionally rejected with
 `VELA-SSR-EXPR`; their coercion table is not part of the admitted baseline yet.
+Relational operators admit only two parser-known numbers or two parser-known
+strings. Numbers are normalized to `float64`; strings use
+`vela.StringLess`, which compares UTF-16 code units like JavaScript rather
+than Go's UTF-8 byte order. Mixed and unknown operands receive
+`VELA-SSR-EXPR` until ToPrimitive/ToNumber coercion is specified.
 
 For a single-select, JavaScript `select.value = null` produces no selected
 option. Plain server HTML cannot preserve that state: after parsing a select

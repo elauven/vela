@@ -158,6 +158,28 @@ func TestStrictEqualUsesJavaScriptPrimitiveAndReferenceSemantics(t *testing.T) {
 	}
 }
 
+func TestStringLessUsesJavaScriptUTF16Ordering(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		left, right string
+		want        bool
+	}{
+		{"prefix", "a", "aa", true},
+		{"equal", "same", "same", false},
+		{"cyrillic", "А", "Б", true},
+		// U+10000 starts with UTF-16 unit D800, which sorts before the
+		// BMP private-use U+E000 despite the opposite UTF-8 byte order.
+		{"astral-before-bmp", "𐀀", "", true},
+		{"bmp-not-before-astral", "", "𐀀", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := StringLess(tc.left, tc.right); got != tc.want {
+				t.Fatalf("StringLess(%q, %q)=%v want %v", tc.left, tc.right, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPropProvidedDistinguishesAbsentAndExplicitZeroValue(t *testing.T) {
 	type props struct {
 		Set   map[string]bool

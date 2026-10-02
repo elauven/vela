@@ -158,6 +158,19 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		if !ok {
 			return nil, ssrExprUnsupported(pos, "binary operator %q is not supported", node.Op)
 		}
+		if node.Op == "<" || node.Op == "<=" || node.Op == ">" || node.Op == ">=" {
+			leftString := ssrExprKnownString(node.L, ctx, map[string]bool{})
+			rightString := ssrExprKnownString(node.R, ctx, map[string]bool{})
+			if leftString && rightString {
+				return ssrStringRelationalExpr(node.Op, left, right), nil
+			}
+			if ssrExprKnownNumber(node.L, ctx, map[string]bool{}) && ssrExprKnownNumber(node.R, ctx, map[string]bool{}) {
+				left = &goast.CallExpr{Fun: goast.NewIdent("float64"), Args: []goast.Expr{left}}
+				right = &goast.CallExpr{Fun: goast.NewIdent("float64"), Args: []goast.Expr{right}}
+				return &goast.BinaryExpr{X: left, Op: op, Y: right}, nil
+			}
+			return nil, ssrExprUnsupported(pos, "relational operator %q requires two known numbers or two known strings during SSR", node.Op)
+		}
 		// JavaScript + concatenates when either operand is a string. Go would
 		// reject a valid source expression such as "item " + props.Count, so
 		// use the already-admitted JS text conversion on both sides whenever
@@ -229,6 +242,24 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		return nil, ssrExprUnsupported(pos, "assignments are not available to static SSR")
 	default:
 		return nil, ssrExprUnsupported(pos, "JavaScript expression %T is not supported", expr)
+	}
+}
+
+func ssrStringRelationalExpr(operator string, left, right goast.Expr) goast.Expr {
+	less := func(first, second goast.Expr) goast.Expr {
+		return &goast.CallExpr{Fun: goSelector("vela", "StringLess"), Args: []goast.Expr{first, second}}
+	}
+	switch operator {
+	case "<":
+		return less(left, right)
+	case ">":
+		return less(right, left)
+	case "<=":
+		return &goast.UnaryExpr{Op: token.NOT, X: less(right, left)}
+	case ">=":
+		return &goast.UnaryExpr{Op: token.NOT, X: less(left, right)}
+	default:
+		panic("vela: unexpected admitted string relational operator " + operator)
 	}
 }
 
