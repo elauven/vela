@@ -109,7 +109,7 @@ func TestTranslateSSRExpressionLowersSafeLocalStateInitializer(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := FormatSSRGoExpr(translated)
-	if err != nil || got != "1 + 1" {
+	if err != nil || got != "float64(1) + float64(1)" {
 		t.Fatalf("state initializer translation=%q, err=%v", got, err)
 	}
 }
@@ -164,6 +164,45 @@ func TestTranslateSSRExpressionUsesJavaScriptStringConversionForMixedPlus(t *tes
 	}
 	if err := ValidateGeneratedSSRGo("demo.go", source); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTranslateSSRExpressionNormalizesNumericPlusAndRejectsUnknownCoercion(t *testing.T) {
+	sfc, err := parseSFC(`<script>export let whole = 1; export let fraction = 0.5;</script><template>{whole + fraction}</template>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+	translated, err := TranslateSSRExpression(expr, NewSSRExprContext(plan))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FormatSSRGoExpr(translated)
+	if err != nil || got != "float64(props.Whole) + float64(props.Fraction)" {
+		t.Fatalf("numeric plus translation=%q, err=%v", got, err)
+	}
+
+	for _, source := range []string{
+		`<script>export let value;</script><template>{value + 1}</template>`,
+		`<template>{true + 1}</template>`,
+	} {
+		sfc, err := parseSFC(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan, err := BuildSSRRenderPlan("Demo", sfc, "vela-demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
+		_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
+		if err == nil || !strings.Contains(err.Error(), "operator + requires") {
+			t.Fatalf("unknown plus error=%v", err)
+		}
 	}
 }
 

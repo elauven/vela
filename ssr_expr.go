@@ -152,11 +152,21 @@ func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, err
 		// reject a valid source expression such as "item " + props.Count, so
 		// use the already-admitted JS text conversion on both sides whenever
 		// the parser-owned expression tree proves one side string-like.
-		leftString := ssrExprKnownString(node.L, ctx, map[string]bool{})
-		rightString := ssrExprKnownString(node.R, ctx, map[string]bool{})
-		if node.Op == "+" && leftString != rightString {
-			left = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{left}}
-			right = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{right}}
+		if node.Op == "+" {
+			leftString := ssrExprKnownString(node.L, ctx, map[string]bool{})
+			rightString := ssrExprKnownString(node.R, ctx, map[string]bool{})
+			switch {
+			case leftString || rightString:
+				if leftString != rightString {
+					left = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{left}}
+					right = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{right}}
+				}
+			case ssrExprKnownNumber(node.L, ctx, map[string]bool{}) && ssrExprKnownNumber(node.R, ctx, map[string]bool{}):
+				left = &goast.CallExpr{Fun: goast.NewIdent("float64"), Args: []goast.Expr{left}}
+				right = &goast.CallExpr{Fun: goast.NewIdent("float64"), Args: []goast.Expr{right}}
+			default:
+				return nil, ssrExprUnsupported(pos, "operator + requires two known numbers or at least one known string during SSR")
+			}
 		}
 		return &goast.BinaryExpr{X: left, Op: op, Y: right}, nil
 	case *JsLogicalExpr:
@@ -263,6 +273,63 @@ func ssrGoExprKnownString(expr goast.Expr, ctx SSRExprContext) bool {
 		}
 	case *goast.BinaryExpr:
 		return node.Op == token.ADD && ssrGoExprKnownString(node.X, ctx) && ssrGoExprKnownString(node.Y, ctx)
+	}
+	return false
+}
+
+func ssrExprKnownNumber(expr JsExpr, ctx SSRExprContext, seen map[string]bool) bool {
+	switch node := expr.(type) {
+	case *JsLiteral:
+		return node.Kind == "number"
+	case *JsIdent:
+		if seen[node.Name] {
+			return false
+		}
+		if binding, ok := ctx.Bindings[node.Name]; ok {
+			return ssrGoExprKnownNumber(binding, ctx)
+		}
+		if prop, ok := ctx.Props[node.Name]; ok {
+			return prop.Type == SSRTypeInt || prop.Type == SSRTypeFloat
+		}
+		seen[node.Name] = true
+		defer delete(seen, node.Name)
+		for _, initializers := range []map[string]JsExpr{ctx.StateInitializers, ctx.DerivedInitializers, ctx.PlainInitializers} {
+			if initializer, ok := initializers[node.Name]; ok {
+				return ssrExprKnownNumber(initializer, ctx, seen)
+			}
+		}
+	case *JsUnaryExpr:
+		return (node.Op == "+" || node.Op == "-") && ssrExprKnownNumber(node.X, ctx, seen)
+	case *JsBinaryExpr:
+		switch node.Op {
+		case "+", "-", "*", "/", "%":
+			return ssrExprKnownNumber(node.L, ctx, seen) && ssrExprKnownNumber(node.R, ctx, seen)
+		}
+	case *JsConditionalExpr:
+		return ssrExprKnownNumber(node.Then, ctx, seen) && ssrExprKnownNumber(node.Else, ctx, seen)
+	}
+	return false
+}
+
+func ssrGoExprKnownNumber(expr goast.Expr, ctx SSRExprContext) bool {
+	switch node := expr.(type) {
+	case *goast.BasicLit:
+		return node.Kind == token.INT || node.Kind == token.FLOAT
+	case *goast.SelectorExpr:
+		base, ok := node.X.(*goast.Ident)
+		if !ok || base.Name != "props" {
+			return false
+		}
+		for _, prop := range ctx.Props {
+			if prop.GoName == node.Sel.Name {
+				return prop.Type == SSRTypeInt || prop.Type == SSRTypeFloat
+			}
+		}
+	case *goast.CallExpr:
+		name, ok := node.Fun.(*goast.Ident)
+		return ok && name.Name == "float64"
+	case *goast.BinaryExpr:
+		return ssrGoExprKnownNumber(node.X, ctx) && ssrGoExprKnownNumber(node.Y, ctx)
 	}
 	return false
 }

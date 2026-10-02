@@ -428,7 +428,11 @@ For the admitted `+` subset, when either parser-known operand is a string the
 renderer applies `vela.String` to both operands before concatenating. Thus
 `'item ' + 2` and `2 + ' items'` retain JavaScript text semantics. Numeric,
 boolean, and other coercive additions without a string operand are not
-implicitly widened by this rule.
+implicitly widened by this rule. When both operands are parser-known numbers,
+the renderer normalizes them to Go `float64`, matching JavaScript's single
+Number domain for combinations such as `1 + 0.5`. An unknown, boolean or
+nullish non-string operand receives `VELA-SSR-EXPR` until its ToPrimitive /
+ToNumber behaviour is admitted by the semantic matrix.
 
 For a single-select, JavaScript `select.value = null` produces no selected
 option. Plain server HTML cannot preserve that state: after parsing a select

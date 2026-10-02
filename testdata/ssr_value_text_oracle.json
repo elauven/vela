@@ -11,6 +11,7 @@
   {"name":"object", "expression":"({ title: 'ready' })", "expected":"[object Object]"},
   {"name":"string-plus-number", "expression":"'item ' + 2", "expected":"item 2"},
   {"name":"number-plus-string", "expression":"2 + ' items'", "expected":"2 items"},
+  {"name":"mixed-numeric-plus", "expression":"1 + 0.5", "expected":"1.5"},
   {"name":"template-null", "expression":"`value=${null}`", "expected":"value=null"},
   {"name":"template-undefined", "expression":"`value=${undefined}`", "expected":"value=undefined"},
   {"name":"template-unicode", "expression":"`Привет ${'😀'}`", "expected":"Привет 😀"},
