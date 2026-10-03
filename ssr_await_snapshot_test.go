@@ -327,7 +327,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectInputBinding(t *testin
 		t.Fatal(err)
 	}
 	code := PrintJS(client, PrintPretty)
-	for _, want := range []string{`controlValue`, `addEventListener('input'`, `removeEventListener('input'`, `$$rowItem.title`, `$$set_rows(rows.slice())`} {
+	for _, want := range []string{`controlValue`, `$$addHydrationListener($$transaction,`, `removeEventListener('input'`, `$$rowItem.title`, `$$set_rows(rows.slice())`} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("direct input keyed-row hydration client misses %q:\n%s", want, code)
 		}
@@ -384,7 +384,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectCheckboxBinding(t *tes
 		t.Fatal(err)
 	}
 	code := PrintJS(client, PrintPretty)
-	for _, want := range []string{`controlValue`, `.checked`, `addEventListener('change'`, `removeEventListener('change'`, `$$set_rows(rows.slice())`} {
+	for _, want := range []string{`controlValue`, `.checked`, `$$addHydrationListener($$transaction,`, `removeEventListener('change'`, `$$set_rows(rows.slice())`} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("direct checkbox keyed-row hydration client misses %q:\n%s", want, code)
 		}
@@ -423,7 +423,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectTextareaBinding(t *tes
 		t.Fatal(err)
 	}
 	code := PrintJS(client, PrintPretty)
-	for _, want := range []string{`createElement('textarea')`, `.value`, `addEventListener('input'`, `removeEventListener('input'`, `$$set_rows(rows.slice())`} {
+	for _, want := range []string{`createElement('textarea')`, `.value`, `$$addHydrationListener($$transaction,`, `removeEventListener('input'`, `$$set_rows(rows.slice())`} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("direct textarea keyed-row hydration client misses %q:\n%s", want, code)
 		}
@@ -464,7 +464,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectBinding(t *testi
 		t.Fatal(err)
 	}
 	code := PrintJS(client, PrintPretty)
-	for _, want := range []string{`createElement('select')`, `$$insertHTML($$row_element`, `controlApplied`, `controlDOMValue`, `addEventListener('change'`, `removeEventListener('change'`, `$$set_rows(rows.slice())`} {
+	for _, want := range []string{`createElement('select')`, `$$insertHTML($$row_element`, `controlApplied`, `controlDOMValue`, `$$addHydrationListener($$transaction,`, `removeEventListener('change'`, `$$set_rows(rows.slice())`} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("direct select keyed-row hydration client misses %q:\n%s", want, code)
 		}
@@ -585,7 +585,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionDisabled(t
 		t.Fatal(err)
 	}
 	code := PrintJS(client, PrintPretty)
-	for _, want := range []string{`querySelectorAll('option')`, `optionDynamic`, `.disabled`, `$$insertHTML($$row_element`, `addEventListener('change'`} {
+	for _, want := range []string{`querySelectorAll('option')`, `optionDynamic`, `.disabled`, `$$insertHTML($$row_element`, `$$addHydrationListener($$transaction,`} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("dynamic option keyed-row hydration client misses %q:\n%s", want, code)
 		}
@@ -626,7 +626,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionValue(t *t
 		t.Fatal(err)
 	}
 	code := PrintJS(client, PrintPretty)
-	for _, want := range []string{`querySelectorAll('option')`, `optionDynamic`, `.value`, `$$insertHTML($$row_element`, `addEventListener('change'`} {
+	for _, want := range []string{`querySelectorAll('option')`, `optionDynamic`, `.value`, `$$insertHTML($$row_element`, `$$addHydrationListener($$transaction,`} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("dynamic option value keyed-row hydration client misses %q:\n%s", want, code)
 		}
@@ -667,7 +667,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionText(t *te
 		t.Fatal(err)
 	}
 	code := PrintJS(client, PrintPretty)
-	for _, want := range []string{`querySelectorAll('option')`, `optionText`, `.textContent`, `$$insertHTML($$row_element`, `addEventListener('change'`} {
+	for _, want := range []string{`querySelectorAll('option')`, `optionText`, `.textContent`, `$$insertHTML($$row_element`, `$$addHydrationListener($$transaction,`} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("dynamic option text keyed-row hydration client misses %q:\n%s", want, code)
 		}
@@ -831,7 +831,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionList(t *te
 		t.Fatal(err)
 	}
 	code := PrintJS(client, PrintPretty)
-	for _, want := range []string{`createDocumentFragment`, `createElement('option')`, `replaceChildren`, `optionList`, `addEventListener('change'`} {
+	for _, want := range []string{`createDocumentFragment`, `createElement('option')`, `replaceChildren`, `optionList`, `$$addHydrationListener($$transaction,`} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("dynamic option list keyed-row hydration client misses %q:\n%s", want, code)
 		}
@@ -2203,8 +2203,8 @@ func TestGeneratedSSRRendererAndHydratorSelectAwaitSnapshotProjectedChild(t *tes
 		`from './Leaf.js'`,
 		`$$csr_Inner`,
 		`$$csr_Leaf`,
-		`Inner($$root).component`,
-		`Leaf($$root).component`,
+		`Inner($$root, null, undefined, $$transaction).component`,
+		`Leaf($$root, null, undefined, $$transaction).component`,
 		`$$csr_Inner($$n`,
 	} {
 		if !strings.Contains(generated, want) {
@@ -2227,8 +2227,8 @@ func TestSSRHydrationAwaitSnapshotProjectedChildSupportsEventAndBindable(t *test
 	}
 	source := PrintJS(program, PrintPretty)
 	for _, want := range []string{
-		`Inner($$root, { $$onChange_value: ($$v) => $$set_selected($$v) }).component`,
-		`addEventListener('close'`,
+		`Inner($$root, { $$onChange_value: ($$v) => $$set_selected($$v) }, undefined, $$transaction).component`,
+		`$$addHydrationListener($$transaction,`,
 		`removeEventListener('close'`,
 		`$$set_selected`,
 		`$$set_closes`,

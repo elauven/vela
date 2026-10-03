@@ -20,6 +20,7 @@ export const requiredTests = [
   "TestSSRProjectPublicValueTextOracleHydratesInBrowser",
   "TestSSRProjectPublicAttributeOracleHydratesInBrowser",
   "TestSSRProjectPublicChildPropPresenceHydratesUpdatesAndRemountsInBrowser",
+  "TestSSRProjectPublicHydrationFailureRollsBackListenerAndChildCache",
   "TestSSRProjectPublicStaticOnlyArtifactsValidateInBrowser",
   "TestSSRProjectPublicTextareaBindingHydratesInBrowser",
   "TestSSRProjectPublicNullFormBindingsMatchBrowserProperties",

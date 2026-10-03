@@ -199,11 +199,11 @@ func TestSSRHydrationAwaitSnapshotAdoptsSettledChild(t *testing.T) {
 		`$$hawait0_snapshot.state === 'then'`,
 		`$$hawait0_b1_component_0 = Child($$root, null,`,
 		`$$hawait0_b1_component_0.set({ title: $$hawait0_value });`,
-		`$$hawait0_b1_component_0.el.addEventListener('close', $$hawait0_b1_component_0_on_close_h);`,
+		`$$addHydrationListener($$transaction, $$hawait0_b1_component_0.el, 'close', $$hawait0_b1_component_0_on_close_h);`,
 		`$$hawait0_b1_component_0.el.removeEventListener('close', $$hawait0_b1_component_0_on_close_h);`,
 		`$$hawait0_b1_component_1 = Child($$root, null,`,
 		`$$hawait0_b1_component_1.set({ title: $$hawait0_value });`,
-		`$$hawait0_b1_component_1.el.addEventListener('close', $$hawait0_b1_component_1_on_close_h);`,
+		`$$addHydrationListener($$transaction, $$hawait0_b1_component_1.el, 'close', $$hawait0_b1_component_1_on_close_h);`,
 		`$$hawait0_b1_component_1.el.removeEventListener('close', $$hawait0_b1_component_1_on_close_h);`,
 		`let $$hawait0_initial = true;`,
 	} {
@@ -237,7 +237,7 @@ func TestSSRHydrationAwaitSnapshotAdoptsBindableChild(t *testing.T) {
 	}
 	source := PrintJS(program, PrintPretty)
 	for _, want := range []string{
-		`Child($$root, { $$onChange_value: ($$v) => $$set_draft($$v) }).component`,
+		`Child($$root, { $$onChange_value: ($$v) => $$set_draft($$v) }, undefined, $$transaction).component`,
 		`$$hawait0_b1_component_0.set({ value: draft, $$onChange_value: ($$v) => $$set_draft($$v) });`,
 	} {
 		if !strings.Contains(source, want) {
@@ -263,7 +263,7 @@ func TestSSRHydrationAwaitSnapshotAdoptsStaticSlotChild(t *testing.T) {
 	}
 	source := PrintJS(program, PrintPretty)
 	for _, want := range []string{
-		`Child($$root).component`,
+		`Child($$root, null, undefined, $$transaction).component`,
 		`$$csr_Child($$frag, {}, { 'default': () => {`,
 		`$$insertHTML($$sfrag_`,
 	} {
@@ -287,16 +287,16 @@ func TestSSRHydrationAwaitSnapshotAdoptsReactiveSlotLeafChild(t *testing.T) {
 	}
 	source := PrintJS(program, PrintPretty)
 	for _, want := range []string{
-		`Child($$root).component`,
+		`Child($$root, null, undefined, $$transaction).component`,
 		`$$acquireHydrationElement($$walker,`,
 		`getAttribute('title')`,
 		`setAttribute('title'`,
 		`classList.toggle('active'`,
 		`style.setProperty('color'`,
-		`addEventListener('click', increment)`,
+		`, 'click', increment)`,
 		`removeEventListener('click', increment)`,
-		`addEventListener('input'`,
-		`addEventListener('change'`,
+		`, 'input',`,
+		`, 'change',`,
 		`$$set_draft(`,
 		`$$set_enabled(`,
 		`$$acquireHydrationRange($$walker, 1)`,
@@ -346,7 +346,7 @@ func TestSSRHydrationPendingAwaitNestedIfAdoptsChildAndOwnsTeardown(t *testing.T
 		`import { Child as ` + "$" + "$" + `csr_Child } from './Child.js';`,
 		`import { Child } from './Child.hydrate.js';`,
 		`acquireHydrationRange(` + "$" + "$" + `walker, 0)`,
-		`Child(` + "$" + "$" + `root).component`,
+		`Child(` + "$" + "$" + `root, null, undefined, ` + "$" + "$" + `transaction).component`,
 		`.destroy();`,
 	} {
 		if !strings.Contains(source, want) {
@@ -1634,7 +1634,7 @@ func TestSSRHydrationClientAdoptsLocalChildComponent(t *testing.T) {
 	source := PrintJS(program, PrintPretty)
 	for _, want := range []string{
 		`import { Child } from './Child.hydrate.js';`,
-		`Child($$root).component`,
+		`Child($$root, null, undefined, $$transaction).component`,
 		`.set({ title: title })`,
 	} {
 		if !strings.Contains(source, want) {
@@ -1693,7 +1693,7 @@ func TestSSRHydrationIfChildAdoptsThenRemountsWithCSRFactory(t *testing.T) {
 		"import { Child } from \x27./Child.hydrate.js\x27;",
 		"import { Child as $$csr_Child } from \x27./Child.js\x27;",
 		"let $$hif0_component = null;",
-		"$$hif0_component = Child($$root).component;",
+		"$$hif0_component = Child($$root, null, undefined, $$transaction).component;",
 		"$$hif0_component.set({ title: title });",
 		"$$hif0_component = $$csr_Child($$frag, { title: title }, {});",
 		"$$hif0_component.destroy();",
@@ -1755,8 +1755,8 @@ func TestSSRHydrationIfBranchOwnsMultipleDistinctChildHandles(t *testing.T) {
 	for _, want := range []string{
 		"let $$hif0_component_0 = null;",
 		"let $$hif0_component_1 = null;",
-		"$$hif0_component_0 = Alpha($$root).component;",
-		"$$hif0_component_1 = Beta($$root).component;",
+		"$$hif0_component_0 = Alpha($$root, null, undefined, $$transaction).component;",
+		"$$hif0_component_1 = Beta($$root, null, undefined, $$transaction).component;",
 		"$$hif0_component_0 = $$csr_Alpha($$frag, { title: title }, {});",
 		"$$hif0_component_1 = $$csr_Beta($$frag, { title: title }, {});",
 	} {
@@ -1784,8 +1784,8 @@ func TestSSRHydrationIfBranchNamespacesRepeatedChildBinding(t *testing.T) {
 	source := PrintJS(program, PrintPretty)
 	for _, want := range []string{
 		"const $$instanceID = $$hydrate.instanceID || 'vela-parent';",
-		"Child($$root, null, $$instanceID + '--n0--n0--if0--n0--component-Child').component",
-		"Child($$root, null, $$instanceID + '--n0--n0--if0--n1--component-Child').component",
+		"Child($$root, null, $$instanceID + '--n0--n0--if0--n0--component-Child', $$transaction).component",
+		"Child($$root, null, $$instanceID + '--n0--n0--if0--n1--component-Child', $$transaction).component",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("repeated child hydration misses %q:\\n%s", want, source)
@@ -2352,7 +2352,7 @@ func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 	}
 	for _, want := range []string{
 		`Child.hydrate.js`,
-		`Child($$root).component`,
+		`Child($$root, null, undefined, $$transaction).component`,
 	} {
 		if !strings.Contains(string(client), want) {
 			t.Fatalf("parent hydration client misses %q:\n%s", want, client)
@@ -2362,7 +2362,7 @@ func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(childEntry), `export function Child($$root, $$overrides, $$instanceID)`) {
+	if !strings.Contains(string(childEntry), `export function Child($$root, $$overrides, $$instanceID, $$parentTransaction)`) {
 		t.Fatalf("child hydrate entry misses component alias:\n%s", childEntry)
 	}
 }
@@ -3868,7 +3868,7 @@ func TestSSRHydrationClientPassesNestedElementToLocalChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := PrintJS(program, PrintPretty)
-	if !strings.Contains(source, `Child($$n1).component`) {
+	if !strings.Contains(source, `Child($$n1, null, undefined, $$transaction).component`) {
 		t.Fatalf("nested child hydration must receive adopted parent element:\n%s", source)
 	}
 }
@@ -3915,8 +3915,8 @@ func TestSSRHydrationClientAttachesComponentEventsAfterChildAdoption(t *testing.
 		t.Fatal(err)
 	}
 	source := PrintJS(program, PrintPretty)
-	child := strings.Index(source, `Child($$root).component`)
-	listener := strings.Index(source, `.addEventListener(`)
+	child := strings.Index(source, `Child($$root, null, undefined, $$transaction).component`)
+	listener := strings.Index(source, `$$addHydrationListener($$transaction,`)
 	if child < 0 || listener < 0 || listener < child {
 		t.Fatalf("component event listener must follow child adoption:\n%s", source)
 	}
@@ -4037,7 +4037,7 @@ func TestSSRHydrationClientPassesBindableCallbackBeforeChildAdoption(t *testing.
 	}
 	source := PrintJS(program, PrintPretty)
 	for _, want := range []string{
-		`Child($$root, { $$onChange_value: ($$v) => $$set_value($$v) }).component`,
+		`Child($$root, { $$onChange_value: ($$v) => $$set_value($$v) }, undefined, $$transaction).component`,
 		`.set({ value: value, $$onChange_value:`,
 	} {
 		if !strings.Contains(source, want) {
@@ -4192,7 +4192,7 @@ func TestSSRHydrationClientAdoptsStaticLocalComponentSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := PrintJS(program, PrintPretty)
-	if !strings.Contains(source, `Child($$root).component`) || strings.Contains(source, `createComment("comp")`) {
+	if !strings.Contains(source, `Child($$root, null, undefined, $$transaction).component`) || strings.Contains(source, `createComment("comp")`) {
 		t.Fatalf("static slot child must adopt existing DOM without CSR anchor:\n%s", source)
 	}
 }
@@ -4348,7 +4348,7 @@ func TestSSRHydrationClientAdoptsDynamicLocalComponentSlotText(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := PrintJS(program, PrintPretty)
-	if !strings.Contains(source, `Child($$root).component`) || !strings.Contains(source, `$$acquireHydrationRange($$walker, 0)`) || !strings.Contains(source, `$$writeHydrationText`) {
+	if !strings.Contains(source, `Child($$root, null, undefined, $$transaction).component`) || !strings.Contains(source, `$$acquireHydrationRange($$walker, 0)`) || !strings.Contains(source, `$$writeHydrationText`) {
 		t.Fatalf("dynamic parent slot must acquire and update its own text range:\n%s", source)
 	}
 }
@@ -4366,7 +4366,7 @@ func TestSSRHydrationClientAdoptsReactiveLocalComponentSlotElement(t *testing.T)
 		t.Fatal(err)
 	}
 	source := PrintJS(program, PrintPretty)
-	if !strings.Contains(source, `$$acquireHydrationElement($$walker, 1, 'button')`) || !strings.Contains(source, `addEventListener('click'`) || !strings.Contains(source, `$$writeHydrationText`) {
+	if !strings.Contains(source, `$$acquireHydrationElement($$walker, 1, 'button')`) || !strings.Contains(source, `$$addHydrationListener($$transaction,`) || !strings.Contains(source, `$$writeHydrationText`) {
 		t.Fatalf("reactive slot element must be acquired and retain its parent updates/listener:\n%s", source)
 	}
 }
@@ -4959,7 +4959,7 @@ func TestSSRHydrationKeyedEachAwaitNestedTextareaUsesControlRecipe(t *testing.T)
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"createElement('textarea')", "addEventListener('input'", "removeEventListener('input'", ".value"} {
+	for _, want := range []string{"createElement('textarea')", "$$addHydrationListener($$transaction,", "removeEventListener('input'", ".value"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested textarea control lowering misses %q:\n%s", want, code)
 		}
@@ -4977,7 +4977,7 @@ func TestSSRHydrationKeyedEachAwaitNestedSelectUsesControlRecipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"createElement('select')", "addEventListener('change'", "removeEventListener('change'", "$$insertHTML($$control, '<option"} {
+	for _, want := range []string{"createElement('select')", "$$addHydrationListener($$transaction,", "removeEventListener('change'", "$$insertHTML($$control, '<option"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested select control lowering misses %q:\n%s", want, code)
 		}
@@ -6644,7 +6644,7 @@ func TestSSRHydrationKeyedEachAwaitNestedEachBindings(t *testing.T) {
 				t.Fatal(err)
 			}
 			code := PrintJS(program, PrintPretty)
-			for _, want := range []string{"addEventListener", "$$set_" + tc.state, "removeEventListener"} {
+			for _, want := range []string{"$$addHydrationListener", "$$set_" + tc.state, "removeEventListener"} {
 				if !strings.Contains(code, want) {
 					t.Fatalf("nested keyed-await binding lowering misses %q", want)
 				}
@@ -6667,7 +6667,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnStaticIfController(t *testi
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"innerRows", "createComment('if')", "createComment('/if')", "addEventListener", "removeEventListener", "listeners", "destroy"} {
+	for _, want := range []string{"innerRows", "createComment('if')", "createComment('/if')", "$$addHydrationListener", "removeEventListener", "listeners", "destroy"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested keyed conditional controller misses %q:\n%s", want, code)
 		}
@@ -6688,7 +6688,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnKeyController(t *testing.T)
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"createComment('key')", "createComment('/key')", "addEventListener", "removeEventListener", "classList.toggle", "listeners", "destroy"} {
+	for _, want := range []string{"createComment('key')", "createComment('/key')", "$$addHydrationListener", "removeEventListener", "classList.toggle", "listeners", "destroy"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested keyed key controller misses %q:\n%s", want, code)
 		}
@@ -6709,7 +6709,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnConditionalKeyController(t 
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"createComment('key')", "active: -1", "addEventListener", "removeEventListener", "destroy"} {
+	for _, want := range []string{"createComment('key')", "active: -1", "$$addHydrationListener", "removeEventListener", "destroy"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested keyed conditional controller misses %q:\n%s", want, code)
 		}
@@ -6730,7 +6730,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnNestedEachKeyController(t *
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"createComment('key')", "createComment('each')", "createComment('/each')", "new Map()", "reconcileHydrationKeyedRowRanges", "addEventListener", "removeEventListener", "classList.toggle", "style.setProperty", "$$set_draft", "destroy"} {
+	for _, want := range []string{"createComment('key')", "createComment('each')", "createComment('/each')", "new Map()", "reconcileHydrationKeyedRowRanges", "$$addHydrationListener", "removeEventListener", "classList.toggle", "style.setProperty", "$$set_draft", "destroy"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested keyed each controller misses %q:\n%s", want, code)
 		}
@@ -6751,7 +6751,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnDynamicFallbackController(t
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"_state = () =>", "_mount = (", "$$createHydrationRowController", "nodes: []", "updates: []", "listeners: []", "blocks.size", "addEventListener", "removeEventListener", "classList.toggle", "style.setProperty", "$$set_draft", "destroy"} {
+	for _, want := range []string{"_state = () =>", "_mount = (", "$$createHydrationRowController", "nodes: []", "updates: []", "listeners: []", "blocks.size", "$$addHydrationListener", "removeEventListener", "classList.toggle", "style.setProperty", "$$set_draft", "destroy"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested keyed each fallback controller misses %q:\n%s", want, code)
 		}
@@ -6772,7 +6772,7 @@ func TestSSRHydrationKeyedEachAwaitNestedUnkeyedRowsOwnDynamicFallback(t *testin
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{".length === 0", "listeners: []", "addEventListener", "removeEventListener", "classList.toggle", "style.setProperty", "$$set_draft", "createComment('each')", "destroy"} {
+	for _, want := range []string{".length === 0", "listeners: []", "$$addHydrationListener", "removeEventListener", "classList.toggle", "style.setProperty", "$$set_draft", "createComment('each')", "destroy"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested unkeyed each dynamic fallback misses %q:\n%s", want, code)
 		}
@@ -6793,7 +6793,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedRowsOwnDirectKeyComponentControlle
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"$$csr_Child", "components: []", ".components.push", ".set(", "$$onChange_value", "$$set_selected", "addEventListener", "removeEventListener", "instanceof CustomEvent", "$$set_calls", ".destroy"} {
+	for _, want := range []string{"$$csr_Child", "components: []", ".components.push", ".set(", "$$onChange_value", "$$set_selected", "$$addHydrationListener", "removeEventListener", "instanceof CustomEvent", "$$set_calls", ".destroy"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested keyed child controller misses %q:\n%s", want, code)
 		}
@@ -6835,7 +6835,7 @@ func TestSSRHydrationKeyedEachAwaitNestedKeyedChildUpdatesDynamicSlots(t *testin
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"slot-body", "slot-input", "slot-if", "slot-tag", "slot-tag-state", "slot-tag-key", "slot-key", "slot-empty", "slot-each", "slot-row", "$$reconcileHydrationKeyedRowRanges", "$$csr_Grandchild", "components: []", "blocks: new Map", "data-title", "$$set_selected", ".updates.push", "createTextNode", ".data =", "addEventListener", "removeEventListener"} {
+	for _, want := range []string{"slot-body", "slot-input", "slot-if", "slot-tag", "slot-tag-state", "slot-tag-key", "slot-key", "slot-empty", "slot-each", "slot-row", "$$reconcileHydrationKeyedRowRanges", "$$csr_Grandchild", "components: []", "blocks: new Map", "data-title", "$$set_selected", ".updates.push", "createTextNode", ".data =", "$$addHydrationListener", "removeEventListener"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("nested keyed child dynamic slot lowering misses %q:\n%s", want, code)
 		}
@@ -6856,7 +6856,7 @@ func TestSSRHydrationKeyedSlotRowChildOwnsEventsAndBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"$$csr_Grandchild", "$$onChange_value", "$$set_selected", "$$set_calls", "instanceof CustomEvent", "addEventListener", "removeEventListener", "components: []", ".components.push", ".destroy"} {
+	for _, want := range []string{"$$csr_Grandchild", "$$onChange_value", "$$set_selected", "$$set_calls", "instanceof CustomEvent", "$$addHydrationListener", "removeEventListener", "components: []", ".components.push", ".destroy"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("keyed slot row child event/binding lowering misses %q:\n%s", want, code)
 		}
@@ -7522,7 +7522,7 @@ func TestSSRHydrationKeyedEachAwaitNestedEachSiblingElements(t *testing.T) {
 	if got := strings.Count(code, "document.createElement"); got < 4 {
 		t.Fatalf("sibling row lowering created %d elements, want pending/input/button/output:\n%s", got, code)
 	}
-	for _, want := range []string{"$$set_draft", "addEventListener", "removeEventListener"} {
+	for _, want := range []string{"$$set_draft", "$$addHydrationListener", "removeEventListener"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("sibling row lowering misses %q:\n%s", want, code)
 		}
@@ -7595,7 +7595,7 @@ func TestSSRHydrationKeyedEachAwaitNestedEachDeepItemBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	code := PrintJS(program, PrintPretty)
-	for _, want := range []string{"$$nested_item.title = $event.target.value", "addEventListener", "removeEventListener", "$$set_rows_notify"} {
+	for _, want := range []string{"$$nested_item.title = $event.target.value", "$$addHydrationListener", "removeEventListener", "$$set_rows_notify"} {
 		if !strings.Contains(code, want) {
 			t.Fatalf("deep item binding lowering misses %q:\n%s", want, code)
 		}

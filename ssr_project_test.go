@@ -61,7 +61,7 @@ func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(hydrationClient), "addEventListener('click'") {
+	if !strings.Contains(string(hydrationClient), "$$addHydrationListener($$transaction,") {
 		t.Fatalf("executable hydration client is missing native listener:\n%s", hydrationClient)
 	}
 	if _, err := os.Stat(layout.eventBridgePath(source, srcRoot)); !os.IsNotExist(err) {
@@ -675,6 +675,130 @@ window.initialWrites = observer.takeRecords().length;
 	output, err := exec.Command(node, "-e", browser, clientRoot).CombinedOutput()
 	if err != nil {
 		t.Fatalf("public child prop SSR browser fixture: %v\n%s", err, output)
+	}
+}
+
+func TestSSRProjectPublicHydrationFailureRollsBackListenerAndChildCache(t *testing.T) {
+	node := requirePlaywright(t)
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(srcRoot, "Parent.vela")
+	child := filepath.Join(srcRoot, "Child.vela")
+	parentSource := `<script>
+  import { Child } from './Child.vela';
+  let count = $state(0);
+  let shown = $state(true);
+  let draft = $state('server');
+  function record() {
+    globalThis.__deliveries = (globalThis.__deliveries || 0) + 1;
+    count++;
+  }
+</script>
+<template><main><button class="parent" @click={record}>{count}</button><input class="draft" bind:value={draft} /><p class="mirror">{draft}</p><Child :label={'direct'} />{#if shown}<Child :label={'structural'} />{/if}</main></template>`
+	if err := os.WriteFile(parent, []byte(parentSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	childSource := `<script>
+  export let label = '';
+  function recordChild() { globalThis.__childDeliveries = (globalThis.__childDeliveries || 0) + 1; }
+</script>
+<template><button class="child" :data-label={label} @click={recordChild}>{label}</button></template>`
+	if err := os.WriteFile(child, []byte(childSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := filepath.Join(root, "out")
+	projectModule := "example.com/ssrrollback"
+	if errors := buildSSRProject([]string{parent, child}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+	compilerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mainSource := `package main
+import (
+	"fmt"
+    "os"
+    components "example.com/ssrrollback/server/components"
+)
+func main() {
+	fmt.Fprint(os.Stdout, "<section id=\"stable-root\">")
+	if err := components.RenderParentAt(os.Stdout, components.ParentProps{}, components.ParentSlots{}, "vela-stable"); err != nil { panic(err) }
+	fmt.Fprint(os.Stdout, "</section><section id=\"rollback-root\">")
+	if err := components.RenderParentAt(os.Stdout, components.ParentProps{}, components.ParentSlots{}, "vela-rollback"); err != nil { panic(err) }
+	fmt.Fprint(os.Stdout, "</section>")
+}
+`
+	if err := os.WriteFile(filepath.Join(outRoot, "main.go"), []byte(mainSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	html, err := runSSRGeneratedProgram(outRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientRoot := NewSSRProjectLayout(outRoot).ClientDir
+	entry := `import hydrateParent from "./Parent.hydrate.js";
+globalThis.__deliveries = 0;
+globalThis.__childDeliveries = 0;
+const stableRoot = document.getElementById('stable-root');
+const rollbackRoot = document.getElementById('rollback-root');
+globalThis.__stable = hydrateParent(stableRoot, {}, 'vela-stable');
+const stableNodes = [stableRoot.querySelector('.parent'), ...stableRoot.querySelectorAll('.child')];
+const parentButton = rollbackRoot.querySelector('.parent');
+const draft = rollbackRoot.querySelector('.draft');
+const mirror = rollbackRoot.querySelector('.mirror');
+const childNodes = [...rollbackRoot.querySelectorAll('.child')];
+const payloads = [...rollbackRoot.querySelectorAll('script[type="application/json"]')];
+const childPayload = payloads.map(node => ({ node, value: JSON.parse(node.textContent) })).find(entry => entry.value.props?.Label === 'structural');
+const childScope = childPayload.value.component;
+const walker = document.createTreeWalker(rollbackRoot, NodeFilter.SHOW_COMMENT);
+let marker;
+while (walker.nextNode()) {
+  if (walker.currentNode.data === 'e:' + childScope + ':0') { marker = walker.currentNode; break; }
+}
+const markerData = marker.data;
+marker.data = 'e:' + childScope + ':99';
+draft.value = 'edited';
+try { hydrateParent(rollbackRoot, {}, 'vela-rollback'); }
+catch (error) { globalThis.__failure = String(error.message || error); }
+await Promise.resolve();
+parentButton.click();
+childNodes[0].click();
+childNodes[1].click();
+globalThis.__afterFailure = {
+  deliveries: globalThis.__deliveries,
+  childDeliveries: globalThis.__childDeliveries,
+  draft: draft.value,
+  mirror: mirror.textContent,
+  parentConnected: parentButton.isConnected,
+  childrenConnected: childNodes.every(node => node.isConnected),
+  stableConnected: stableNodes.every(node => node.isConnected),
+  parentPayload: !!document.getElementById('vela-state-vela-rollback'),
+  childPayloads: payloads.filter(entry => entry !== document.getElementById('vela-state-vela-rollback')).every(entry => entry.isConnected),
+};
+marker.data = markerData;
+globalThis.__hydrated = hydrateParent(rollbackRoot, {}, 'vela-rollback');
+globalThis.__hydratedAgain = hydrateParent(rollbackRoot, {}, 'vela-rollback');
+globalThis.__identity = rollbackRoot.querySelector('.parent') === parentButton && [...rollbackRoot.querySelectorAll('.child')].every((node, index) => node === childNodes[index]);
+`
+	if err := os.WriteFile(filepath.Join(clientRoot, "entry.js"), []byte(entry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	page := "<!doctype html><body>" + string(html) + `<script type="module" src="./entry.js"></script></body>`
+	if err := os.WriteFile(filepath.Join(clientRoot, "index.html"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	browser := `const fs=require("fs"),path=require("path"),http=require("http"),{chromium}=require("playwright");const root=process.argv[1];const server=http.createServer((q,r)=>{const name=q.url==="/"?"index.html":q.url.slice(1);try{const body=fs.readFileSync(path.join(root,name));r.writeHead(200,{"content-type":name.endsWith(".js")?"text/javascript":"text/html; charset=utf-8"}).end(body)}catch{r.writeHead(404).end()}});server.listen(0,"127.0.0.1",async()=>{let b;const errors=[];try{b=await chromium.launch({headless:true});const p=await b.newPage();p.on("pageerror",e=>errors.push(String(e.stack||e)));p.setDefaultTimeout(5000);await p.goto("http://127.0.0.1:"+server.address().port+"/");await p.waitForFunction(()=>globalThis.__hydrated&&document.querySelector("#rollback-root .mirror")?.textContent==="edited");const failed=await p.evaluate(()=>({message:globalThis.__failure,after:globalThis.__afterFailure,same:globalThis.__hydrated===globalThis.__hydratedAgain,identity:globalThis.__identity}));if(!failed.message?.includes("Vela hydration mismatch"))throw new Error("late mismatch was not observed: "+JSON.stringify(failed));if(failed.after.deliveries!==0||failed.after.childDeliveries!==0||failed.after.draft!=="edited"||failed.after.mirror!=="server"||!failed.after.parentConnected||!failed.after.childrenConnected||!failed.after.stableConnected||!failed.after.parentPayload||!failed.after.childPayloads)throw new Error("failed attempt leaked a resource, ran queued work, or removed server ownership: "+JSON.stringify(failed));if(!failed.same||!failed.identity)throw new Error("corrected retry did not reuse one live instance and original DOM: "+JSON.stringify(failed));await p.click("#stable-root .parent");await p.waitForFunction(()=>document.querySelector("#stable-root .parent")?.textContent==="1");await p.click('#stable-root [data-label="direct"]');await p.click('#stable-root [data-label="structural"]');let deliveries=await p.evaluate(()=>({parent:globalThis.__deliveries,children:globalThis.__childDeliveries}));if(deliveries.parent!==1||deliveries.children!==2)throw new Error("independent hydrated instance was changed by rollback: "+JSON.stringify(deliveries));await p.click("#rollback-root .parent");await p.waitForFunction(()=>document.querySelector("#rollback-root .parent")?.textContent==="1");await p.click('#rollback-root [data-label="direct"]');await p.click('#rollback-root [data-label="structural"]');deliveries=await p.evaluate(()=>({parent:globalThis.__deliveries,children:globalThis.__childDeliveries}));if(deliveries.parent!==2||deliveries.children!==4)throw new Error("corrected retry delivered an event more than once: "+JSON.stringify(deliveries));await p.evaluate(()=>{globalThis.__hydrated.component.destroy();globalThis.__stable.component.destroy()});if(await p.$("main"))throw new Error("destroy retained rollback fixture DOM");if(await p.evaluate(()=>document.querySelectorAll('script[type="application/json"]').length)!==0)throw new Error("destroy retained rollback fixture payloads");if(errors.length)throw new Error(errors.join("\n"));process.stdout.write("OK")}catch(e){console.error(e&&e.stack||e);console.error(errors.join("\n"));process.exitCode=1}finally{await b?.close();server.close(()=>process.exit())}});`
+	output, err := exec.Command(node, "-e", browser, clientRoot).CombinedOutput()
+	if err != nil {
+		t.Fatalf("public hydration rollback browser fixture: %v\n%s", err, output)
 	}
 }
 

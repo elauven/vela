@@ -112,7 +112,7 @@ func TestCompileSSRProjectFileUsesExecutableHydrationForReactiveEvent(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(client), "addEventListener('click'") {
+	if !strings.Contains(string(client), "$$addHydrationListener($$transaction,") {
 		t.Fatalf("executable hydration client misses click listener:\n%s", client)
 	}
 	if _, err := os.Stat(layout.eventBridgePath(source, root)); !os.IsNotExist(err) {

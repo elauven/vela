@@ -952,6 +952,53 @@ export function $$writeHydrationText(range, value) {
 // are tolerated only for pre-versioned local fixtures during the migration.
 export const $$hydrationPayloadVersion = 1;
 
+// Hydration is transactional because a later marker mismatch can happen after
+// earlier listeners or child components have already been adopted. Resources
+// register inverse operations as they are acquired. The root entry commits on
+// success or rolls them back in reverse ownership order on failure; nested
+// component entries share the same transaction.
+export function $$createHydrationTransaction() {
+  let state = 'active';
+  const cleanups = [];
+  return {
+    add(cleanup) {
+      if (state !== 'active' || typeof cleanup !== 'function') return false;
+      cleanups.push(cleanup);
+      return true;
+    },
+    commit() {
+      if (state !== 'active') return false;
+      state = 'committed';
+      cleanups.length = 0;
+      return true;
+    },
+    rollback() {
+      if (state !== 'active') return [];
+      state = 'rolled-back';
+      const errors = [];
+      for (let index = cleanups.length - 1; index >= 0; index--) {
+        try { cleanups[index](); }
+        catch (error) { errors.push(error); }
+      }
+      cleanups.length = 0;
+      return errors;
+    },
+    get state() { return state; },
+  };
+}
+
+export function $$addHydrationListener(transaction, target, event, handler) {
+  target.addEventListener(event, handler);
+  let attached = true;
+  const remove = () => {
+    if (!attached) return;
+    attached = false;
+    target.removeEventListener(event, handler);
+  };
+  if (transaction) transaction.add(remove);
+  return remove;
+}
+
 // $$readHydrationPayload reads the inert server payload and verifies that it
 // belongs to this component. Incomplete payloads are explicitly rejected: a
 // future hydrator must not silently recreate state that SSR could not encode.

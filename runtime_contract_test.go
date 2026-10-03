@@ -32,7 +32,7 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$reconcileHydrationKeyedRowRanges, $$createHydrationWalker, $$defer, $$hydrationPayloadVersion, $$isProxy, $$proxy, $$readHydrationPayload, $$readSelectValues, $$selectValuesEqual, $$writeSelectValues, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$addHydrationListener, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$createHydrationTransaction, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$reconcileHydrationKeyedRowRanges, $$createHydrationWalker, $$defer, $$hydrationPayloadVersion, $$isProxy, $$proxy, $$readHydrationPayload, $$readSelectValues, $$selectValuesEqual, $$writeSelectValues, derived, readable, writable } from './runtime.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -198,6 +198,32 @@ assert($$writeSelectValues(select, undefined),
   'multi-select writer treats a missing model as an empty selected set');
 assert(selectedWrites.map(write => write.join(':')).join(',') === 'one:false,2:true,one:false,2:false',
   'multi-select missing-model write clears only the selected option');
+
+const transactionOrder = [];
+const transaction = $$createHydrationTransaction();
+transaction.add(() => transactionOrder.push('owner'));
+const listenerTarget = {
+  listeners: new Map(),
+  addEventListener(type, handler) { this.listeners.set(type, handler); },
+  removeEventListener(type, handler) {
+    if (this.listeners.get(type) === handler) this.listeners.delete(type);
+    transactionOrder.push('listener');
+  },
+};
+$$addHydrationListener(transaction, listenerTarget, 'click', () => {});
+assert(listenerTarget.listeners.has('click'), 'hydration transaction listener must attach immediately');
+assert(transaction.rollback().length === 0, 'hydration rollback must report no cleanup errors');
+assert(transactionOrder.join(',') === 'listener,owner',
+  'hydration rollback must unwind resources in reverse registration order');
+assert(!listenerTarget.listeners.has('click'), 'hydration rollback must remove an adopted listener');
+assert(transaction.state === 'rolled-back' && transaction.rollback().length === 0,
+  'hydration rollback must be idempotent');
+const committed = $$createHydrationTransaction();
+let committedCleanup = 0;
+committed.add(() => { committedCleanup++; });
+assert(committed.commit() && committed.state === 'committed', 'hydration transaction must commit once');
+assert(committed.rollback().length === 0 && committedCleanup === 0,
+  'committed hydration resources must remain owned by normal destroy');
 
 function marker(data) { return { data }; }
 function markerRoot(markers, payloads = {}) {

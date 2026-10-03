@@ -24,11 +24,14 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 	}
 	source := PrintJS(entry, PrintPretty)
 	for _, want := range []string{
-		"import { $$acquireHydrationElement, $$createHydrationWalker, $$readHydrationPayload } from './runtime.js';",
-		"export function hydratePage($$root, $$overrides, $$instanceID)",
-		"export function Page($$root, $$overrides, $$instanceID)",
+		"import { $$acquireHydrationElement, $$createHydrationTransaction, $$createHydrationWalker, $$readHydrationPayload } from './runtime.js';",
+		"export function hydratePage($$root, $$overrides, $$instanceID, $$parentTransaction)",
+		"export function Page($$root, $$overrides, $$instanceID, $$parentTransaction)",
 		"const $$hydratedInstances = new WeakMap();",
 		"const $$scopeID = $$instanceID || 'vela-page';",
+		"const $$ownsTransaction = !$$parentTransaction;",
+		"const $$transaction = $$parentTransaction || $$createHydrationTransaction();",
+		"try {",
 		"const $$existing = $$instances.get($$scopeID);",
 		"if ($$existing) {",
 		"return $$existing;",
@@ -38,6 +41,9 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 		"const $$componentProps = Object.assign({}, { title: $$payload.props.Title }, { $$velaState: $$payload.state, $$velaAwait: $$payload.await || {}, $$velaAwaitAt: $$payload.awaitAt || {} }, $$overrides || {});",
 		"const $$hydration = { mode: 'static-only', root: $$root, props: $$velaProps, componentProps: $$componentProps, state: $$payload.state, deep: $$payload.deep || [], ranges: $$walker.ranges, elements: { e0: $$acquireHydrationElement($$walker, 0, 'main') } };",
 		"$$instances.set($$scopeID, $$hydration);",
+		"$$transaction.add(() => {",
+		"$$transaction.commit();",
+		"$$transaction.rollback();",
 		"return $$hydration;",
 	} {
 		if !strings.Contains(source, want) {

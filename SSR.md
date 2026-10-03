@@ -509,6 +509,17 @@ the validation-only entry; no file claims reactive hydration before its
 marker-aware lowering exists.
 Dynamic `#await` branches retain their event and binding teardown as a closure created with the branch itself. This keeps branch-local handler references valid when the promise branch is replaced or the hydrated component is destroyed; detached nodes cannot continue to update disposed state.
 
+Executable hydration is transactional until the complete component tree has
+been adopted. The public root entry creates the transaction and nested child
+entries share it. Newly attached listeners, lifecycle cleanups, partially
+filled entry caches, and guards for deferred updates register rollback actions
+in ownership-reverse order. If a later marker or child adoption fails, rollback
+removes only resources created by that attempt and makes its queued updates
+inert; the server DOM and hydration payload remain available for a corrected
+retry, and independently hydrated component instances are unaffected. After a
+successful adoption the transaction commits, and ordinary component and
+structural-owner `destroy()` paths resume responsibility for cleanup.
+
 ### Explicit server await snapshots
 
 The Go renderer does not execute JavaScript promises. A server data loader may,

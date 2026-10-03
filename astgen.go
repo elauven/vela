@@ -1764,6 +1764,7 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 		fnBody.Body = append(fnBody.Body,
 			genConst("$$walker", genMember(id("$$hydrate"), "walker")),
 			genConst("$$instanceID", genLogical("||", genMember(id("$$hydrate"), "instanceID"), strLit(g.scopeID))),
+			genConst("$$transaction", genMember(id("$$hydrate"), "transaction")),
 		)
 	}
 
@@ -1819,6 +1820,14 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// mark it.
 	fnBody.Body = append(fnBody.Body, g.buildReactiveFlushPlan()...)
 	fnBody.Body = append(fnBody.Body, g.buildSetters()...)
+	if g.domAcquireMode == DOMAcquireHydrate {
+		// Make queued setters and deferred flushes inert if a later adoption
+		// step fails. Listener, child-cache and lifecycle cleanup callbacks are
+		// registered after this owner callback and therefore unwind first.
+		fnBody.Body = append(fnBody.Body, genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genAssignStmt(id("$$disposed"), boolLit(true)),
+		)})))
+	}
 
 	// ── Event listeners (block 7) ────────────────────────────
 	// addEventListener calls for @event handlers and the input
@@ -1941,6 +1950,7 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	usesHydrationKeyedElements := g.hydrationKeyedElements
 	usesHydrationNestedRanges := g.hydrationNestedRanges
 	usesHydrationNestedText := g.hydrationNestedText
+	usesAddHydrationListener := false
 	usesReadSelectValues := false
 	usesSelectValuesEqual := false
 	usesWriteSelectValues := false
@@ -1967,6 +1977,8 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 			usesIsProxy = true
 		case "$$defer":
 			usesDefer = true
+		case "$$addHydrationListener":
+			usesAddHydrationListener = true
 		case "$$readSelectValues":
 			usesReadSelectValues = true
 		case "$$selectValuesEqual":
@@ -1994,6 +2006,9 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	}
 	if usesDefer {
 		specs = append(specs, JsImportSpec{Imported: "$$defer"})
+	}
+	if usesAddHydrationListener {
+		specs = append(specs, JsImportSpec{Imported: "$$addHydrationListener"})
 	}
 	if usesReadSelectValues {
 		specs = append(specs, JsImportSpec{Imported: "$$readSelectValues"})
@@ -2537,7 +2552,13 @@ func (g *ASTGen) buildEffectInit() []JsStmt {
 	}
 	var out []JsStmt
 	for i := range g.analysis.Effects {
+		cleanup := "$$cleanup" + itoa(i)
 		out = append(out, genInvoke("$$effect"+itoa(i)))
+		if g.domAcquireMode == DOMAcquireHydrate {
+			out = append(out, genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				genIf(id(cleanup), genBlock(genInvoke(cleanup), genAssignStmt(id(cleanup), genNull()))),
+			)})))
+		}
 	}
 	return out
 }
@@ -2565,10 +2586,16 @@ func (g *ASTGen) buildOnMount() []JsStmt {
 		if body == nil {
 			body = genBlock()
 		}
-		out = append(out, genConst("$$mountCleanup"+itoa(i), genCall(&JsFuncExpr{
+		cleanup := "$$mountCleanup" + itoa(i)
+		out = append(out, genConst(cleanup, genCall(&JsFuncExpr{
 			baseExpr: baseExpr{genNode()},
 			Body:     body,
 		})))
+		if g.domAcquireMode == DOMAcquireHydrate {
+			out = append(out, genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				genIf(genBinary("===", &JsUnaryExpr{baseExpr: baseExpr{genNode()}, Op: "typeof", Prefix: true, X: id(cleanup)}, strLit("function")), genInvoke(cleanup)),
+			)})))
+		}
 	}
 	return out
 }
@@ -3274,7 +3301,7 @@ func (g *ASTGen) buildEachRowAttrs(
 			_, isIdent := templateExprIdent(attr.Expr)
 			handlerExpr := g.eachItemExpr(attr, itemVar, boxVar, true)
 			if isIdent {
-				res.create = append(res.create, genExprStmt(genCall(genMember(id(rowVar), "addEventListener"), strLit(attr.Name), handlerExpr)))
+				res.create = append(res.create, g.listenerAttachStmt(id(rowVar), attr.Name, handlerExpr))
 			} else {
 				hv := rowVar + "_" + attr.Name + "_h"
 				if templateExprIsHandler(attr.Expr) {
@@ -3282,8 +3309,7 @@ func (g *ASTGen) buildEachRowAttrs(
 				} else {
 					res.create = append(res.create, genConst(hv, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))}))
 				}
-				res.create = append(res.create,
-					genExprStmt(genCall(genMember(id(rowVar), "addEventListener"), strLit(attr.Name), id(hv))))
+				res.create = append(res.create, g.listenerAttachStmt(id(rowVar), attr.Name, id(hv)))
 			}
 
 		case attr.IsClassDir:
@@ -5870,7 +5896,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		handler := g.id()
 		return []JsStmt{
 			genConst(handler, handlerExpr),
-			genExprStmt(genCall(genMember(id(ref), "addEventListener"), strLit(attr.Name), id(handler))),
+			g.listenerAttachStmt(id(ref), attr.Name, id(handler)),
 			genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(attr.Name), id(handler))))})),
 		}
 	}
@@ -5911,7 +5937,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		handler := g.id()
 		return []JsStmt{
 			genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genCall(id("$$set_"+state), genMember(genMember(id("$event"), "target"), spec.readProp))}),
-			genExprStmt(genCall(genMember(id(ref), "addEventListener"), strLit(spec.event), id(handler))),
+			g.listenerAttachStmt(id(ref), spec.event, id(handler)),
 			genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(spec.event), id(handler))))})),
 		}
 	}
@@ -6243,7 +6269,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						handler := g.id()
 						return []JsStmt{
 							genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: handlerBody}),
-							genExprStmt(genCall(genMember(id(ref), "addEventListener"), strLit(spec.event), id(handler))),
+							g.listenerAttachStmt(id(ref), spec.event, id(handler)),
 							genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(spec.event), id(handler))))})),
 						}
 					}
@@ -6673,7 +6699,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																}
 																body = append(body,
 																	genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genIf(genBinary("instanceof", id("$event"), id("CustomEvent")), genBlock(invoke)))}),
-																	genExprStmt(genCall(genMember(genMember(id(instance), "el"), "addEventListener"), strLit(strings.TrimPrefix(attr.Name, "on:")), id(handler))),
+																	g.listenerAttachStmt(genMember(id(instance), "el"), strings.TrimPrefix(attr.Name, "on:"), id(handler)),
 																	genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(genMember(id(instance), "el"), "removeEventListener"), strLit(strings.TrimPrefix(attr.Name, "on:")), id(handler))))})),
 																)
 															}
@@ -6717,7 +6743,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 												}
 												keyMount = append(keyMount,
 													genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genIf(genBinary("instanceof", id("$event"), id("CustomEvent")), genBlock(invoke)))}),
-													genExprStmt(genCall(genMember(genMember(id(instance), "el"), "addEventListener"), strLit(strings.TrimPrefix(attr.Name, "on:")), id(handler))),
+													g.listenerAttachStmt(genMember(id(instance), "el"), strings.TrimPrefix(attr.Name, "on:"), id(handler)),
 													genExprStmt(genCall(genMember(genMember(id(keyVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(genMember(id(instance), "el"), "removeEventListener"), strLit(strings.TrimPrefix(attr.Name, "on:")), id(handler))))})),
 												)
 											}
@@ -8835,7 +8861,7 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 			g.hydrationInitBody = append(g.hydrationInitBody,
 				genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), handle.overridesExpr), "component")),
 			)
-			g.hydrationInitBody = append(g.hydrationInitBody, hydrationAwaitComponentEventAttach(handle)...)
+			g.hydrationInitBody = append(g.hydrationInitBody, g.hydrationAwaitComponentEventAttach(handle)...)
 			continue
 		}
 		stateName := "then"
@@ -8844,7 +8870,7 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 		}
 		g.hydrationInitBody = append(g.hydrationInitBody, genIf(
 			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit(stateName))},
-			genBlock(append(append([]JsStmt{genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), handle.overridesExpr), "component"))}, hydrationAwaitComponentEventAttach(handle)...), handle.slotSnapshot.adopt...)...),
+			genBlock(append(append([]JsStmt{genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), handle.overridesExpr), "component"))}, g.hydrationAwaitComponentEventAttach(handle)...), handle.slotSnapshot.adopt...)...),
 		))
 	}
 	for _, handle := range handles {
@@ -9039,7 +9065,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 						id(handle.instanceVar),
 						genMember(g.hydrationComponentCall(current, id("$$root"), handle.overrides), "component"),
 					))
-					plan.adopt = append(plan.adopt, hydrationAwaitSnapshotSlotComponentEventAttach(handle)...)
+					plan.adopt = append(plan.adopt, g.hydrationAwaitSnapshotSlotComponentEventAttach(handle)...)
 					for _, attr := range current.Attrs {
 						for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
 							plan.deps[dependency] = true
@@ -10693,7 +10719,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfEventAttach(elementVar, controllerV
 		return nil
 	}
 	return []JsStmt{
-		genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(attr.Name), id(handler))),
+		g.listenerAttachStmt(id(elementVar), attr.Name, id(handler)),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(attr.Name), id(handler))),
 		)})),
@@ -10722,7 +10748,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfBindingAttach(elementVar, controlle
 		)}),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(writeVar))),
 		genConst(handlerVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$e")}, Body: twoWaySetterFromEvent("$$set_"+target, tag == "select" && attr.Name == "value", spec.readProp)}),
-		genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(spec.event), id(handlerVar))),
+		g.listenerAttachStmt(id(elementVar), spec.event, id(handlerVar)),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(spec.event), id(handlerVar))),
 		)})),
@@ -10810,7 +10836,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfComponentEventAttach(instanceVar, c
 	body := []JsStmt{}
 	for _, event := range events {
 		body = append(body,
-			genExprStmt(genCall(genMember(genMember(id(instanceVar), "el"), "addEventListener"), strLit(event.name), id(event.handler))),
+			g.listenerAttachStmt(genMember(id(instanceVar), "el"), event.name, id(event.handler)),
 			genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 				genExprStmt(genCall(genMember(genMember(id(instanceVar), "el"), "removeEventListener"), strLit(event.name), id(event.handler))),
 			)})),
@@ -11780,7 +11806,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				genConst(controlUpdateVar, controlUpdate),
 				genExprStmt(genCall(genMember(genMember(id("$$controller"), "updates"), "push"), id(controlUpdateVar))),
 				genConst(controlHandlerVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genCall(genMember(id("$$controller"), "controlAssign"), genMember(genMember(id("$event"), "target"), spec.readProp))}),
-				genExprStmt(genCall(genMember(id(controlElementVar), "addEventListener"), strLit(spec.event), id(controlHandlerVar))),
+				g.listenerAttachStmt(id(controlElementVar), spec.event, id(controlHandlerVar)),
 				genExprStmt(genCall(genMember(genMember(id("$$controller"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 					genExprStmt(genCall(genMember(id(controlElementVar), "removeEventListener"), strLit(spec.event), id(controlHandlerVar))),
 				)})),
@@ -11938,7 +11964,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				genConst(elementVar, genCall(id(findVar), genMember(id("$$controller"), "row"), numLit(nodeIndex))),
 				genIf(id(elementVar), genBlock(
 					genConst(handlerVar, handler),
-					genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(attr.Name), id(handlerVar))),
+					g.listenerAttachStmt(id(elementVar), attr.Name, id(handlerVar)),
 					genExprStmt(genCall(genMember(genMember(id("$$controller"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 						genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(attr.Name), id(handlerVar))),
 					)})),
@@ -12247,13 +12273,12 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	}
 }
 
-func hydrationAwaitComponentEventAttach(handle hydrationAwaitComponentHandle) []JsStmt {
+func (g *ASTGen) hydrationAwaitComponentEventAttach(handle hydrationAwaitComponentHandle) []JsStmt {
 	statements := make([]JsStmt, 0, len(handle.events))
 	for _, event := range handle.events {
-		statements = append(statements, genIf(id(handle.instanceVar), genExprStmt(genCall(
-			genMember(genMember(id(handle.instanceVar), "el"), "addEventListener"),
-			strLit(event.name), id(event.handler),
-		))))
+		statements = append(statements, genIf(id(handle.instanceVar), g.listenerAttachStmt(
+			genMember(id(handle.instanceVar), "el"), event.name, id(event.handler),
+		)))
 	}
 	return statements
 }
@@ -12299,13 +12324,12 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotComponentEvents(component *Compo
 	return events
 }
 
-func hydrationAwaitSnapshotSlotComponentEventAttach(handle hydrationAwaitSnapshotSlotComponent) []JsStmt {
+func (g *ASTGen) hydrationAwaitSnapshotSlotComponentEventAttach(handle hydrationAwaitSnapshotSlotComponent) []JsStmt {
 	statements := make([]JsStmt, 0, len(handle.events))
 	for _, event := range handle.events {
-		statements = append(statements, genIf(id(handle.instanceVar), genExprStmt(genCall(
-			genMember(genMember(id(handle.instanceVar), "el"), "addEventListener"),
-			strLit(event.name), id(event.handler),
-		))))
+		statements = append(statements, genIf(id(handle.instanceVar), g.listenerAttachStmt(
+			genMember(id(handle.instanceVar), "el"), event.name, id(event.handler),
+		)))
 	}
 	return statements
 }
@@ -12348,7 +12372,7 @@ func (g *ASTGen) hydrationAwaitComponentBranchMount(children []Node, handles []h
 		body = append(body, genAssignStmt(id(handle.instanceVar), genCall(
 			id(handle.csrFactory), id("$$frag"), handle.propsExpr, handle.slotsExpr,
 		)))
-		body = append(body, hydrationAwaitComponentEventAttach(*handle)...)
+		body = append(body, g.hydrationAwaitComponentEventAttach(*handle)...)
 	}
 	return body
 }
@@ -12583,7 +12607,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotBinding(plan *hydrationAwaitSnapshot
 			g.hydrationAwaitSnapshotBindingWriteStmt(elementVar, tag, attr, writeVar),
 		)}),
 		genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$e")}, Body: twoWaySetterFromEvent("$$set_"+target, tag == "select" && attr.Name == "value", spec.readProp)}),
-		genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(spec.event), id(handler))),
+		g.listenerAttachStmt(id(elementVar), spec.event, id(handler)),
 		genAssignStmt(id(cleanupVar), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(spec.event), id(handler))),
 			genAssignStmt(id(writeVar), genNull()),
@@ -12649,7 +12673,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotEvent(plan *hydrationAwaitSnapshotLe
 	}
 	plan.decls = append(plan.decls, genLet(cleanupVar, genNull()))
 	plan.adopt = append(plan.adopt,
-		genExprStmt(genCall(genMember(id(elementVar), "addEventListener"), strLit(attr.Name), listener)),
+		g.listenerAttachStmt(id(elementVar), attr.Name, listener),
 		genAssignStmt(id(cleanupVar), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(attr.Name), listener)),
 		)}),
@@ -13074,16 +13098,17 @@ func (g *ASTGen) hydrationComponentCallAt(comp *ComponentNode, parent JsExpr, ov
 			suffix = ssrRuntimeComponentSuffix(identity)
 		}
 	}
-	if overrides != nil || suffix != "" {
-		if overrides == nil {
-			args = append(args, genNull())
-		} else {
-			args = append(args, overrides)
-		}
+	if overrides == nil {
+		args = append(args, genNull())
+	} else {
+		args = append(args, overrides)
 	}
 	if suffix != "" {
 		args = append(args, genBinary("+", instanceScope, strLit("--"+suffix)))
+	} else {
+		args = append(args, id("undefined"))
 	}
+	args = append(args, id("$$transaction"))
 	return genCall(id(comp.Name), args...)
 }
 
@@ -13550,8 +13575,7 @@ func (g *ASTGen) emitListenerPair(attach *[]JsStmt, target, event, handler strin
 	if listenerExpr == nil {
 		listenerExpr = id(handler)
 	}
-	*attach = append(*attach,
-		genExprStmt(genCall(genMember(generatedMemberPath(target), "addEventListener"), strLit(event), listenerExpr)))
+	*attach = append(*attach, g.listenerAttachStmt(generatedMemberPath(target), event, listenerExpr))
 	if !addCleanup {
 		return
 	}
@@ -13561,6 +13585,16 @@ func (g *ASTGen) emitListenerPair(attach *[]JsStmt, target, event, handler strin
 		return
 	}
 	g.cleanup = append(g.cleanup, remove)
+}
+
+// listenerAttachStmt makes every listener acquired by an executable hydration
+// client participate in the root transaction. Ordinary CSR keeps the direct
+// DOM call and its established destroy-time cleanup.
+func (g *ASTGen) listenerAttachStmt(target JsExpr, event string, listener JsExpr) JsStmt {
+	if g.domAcquireMode == DOMAcquireHydrate {
+		return genExprStmt(genCall(id("$$addHydrationListener"), id("$$transaction"), target, strLit(event), listener))
+	}
+	return genExprStmt(genCall(genMember(target, "addEventListener"), strLit(event), listener))
 }
 
 func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {

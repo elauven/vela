@@ -397,7 +397,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 			eventHandlerVar := "$$inner_event_handler"
 			body = append(body,
 				genConst(eventHandlerVar, eventHandler()),
-				genExprStmt(genCall(genMember(elementNode, "addEventListener"), strLit(eventAttr.Name), id(eventHandlerVar))),
+				g.listenerAttachStmt(elementNode, eventAttr.Name, id(eventHandlerVar)),
 				genExprStmt(genCall(genMember(genMember(id(innerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 					genExprStmt(genCall(genMember(elementNode, "removeEventListener"), strLit(eventAttr.Name), id(eventHandlerVar))),
 				)})),
@@ -685,7 +685,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 			)}),
 			genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id("$$inner_control_update"))),
 			genConst("$$inner_control_handler", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(assignValue(nestedItemVar, nestedIndexVar, genMember(genMember(id("$event"), "target"), spec.readProp)))}),
-			genExprStmt(genCall(genMember(control, "addEventListener"), strLit(spec.event), id("$$inner_control_handler"))),
+			g.listenerAttachStmt(control, spec.event, id("$$inner_control_handler")),
 			genExprStmt(genCall(genMember(genMember(id("$$inner"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
 				genExprStmt(genCall(genMember(control, "removeEventListener"), strLit(spec.event), id("$$inner_control_handler"))),
 			)})),
@@ -1196,7 +1196,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 			genConst("$$inner_control_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(controlUpdateBody...)}),
 			genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id("$$inner_control_update"))),
 			genConst("$$inner_control_handler", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(assignValue(nestedItemVar, nestedIndexVar, handlerValue))}),
-			genExprStmt(genCall(genMember(control, "addEventListener"), strLit(spec.event), id("$$inner_control_handler"))),
+			g.listenerAttachStmt(control, spec.event, id("$$inner_control_handler")),
 			genExprStmt(genCall(genMember(genMember(id("$$inner"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(control, "removeEventListener"), strLit(spec.event), id("$$inner_control_handler"))))})),
 			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "set"), id("$$inner_key"), id("$$inner"))),
 			genAssignStmt(genMember(row, "controller"), id("$$inner")),
