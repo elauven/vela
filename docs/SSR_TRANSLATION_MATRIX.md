@@ -124,7 +124,7 @@ All rows are `planned (S4)` with oracle group `stmt-*`.
 | --- | --- | --- | --- |
 | `const`, `let`, block scoping | Go locals in nested blocks | §7.1 | Shadowing is renamed deterministically. |
 | `if` / `else` | Go `if` on `vela.Truthy` | §7.1 | |
-| `for (;;)` | Go `for` | §7.1 | Generated code copies `let` loop variables per iteration explicitly; it must not depend on the Go 1.22 loop-variable change, since `go.mod` targets 1.21. |
+| `for (;;)` | Go `for` | §7.1 | Generated code copies `let` loop variables per iteration explicitly, so the result does not depend on the Go version declared by the module that contains the generated code. |
 | `for…of` over arrays | Go `range` | §7.1 | Holes are visited as `undefined`. |
 | `for…of` over strings | iterate code points | §7.1, T-6.3a | Not UTF-16 units. |
 | `while`, `do…while` | Go `for` | §7.1 | |
