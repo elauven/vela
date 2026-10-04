@@ -635,6 +635,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 		})
 		DetectUnreachable(scriptProg, ds)
 		validateScript(scriptProg, analysis, ds)
+		validateStateWrites(scriptProg, scriptScope, tmpl, analysis, ds)
 		validateDerivedCycles(scriptProg, analysis, ds)
 		validateDerivedPurity(scriptProg, analysis, ds)
 		validateScriptFormsWithAnalysis(scriptProg, analysis, ds)

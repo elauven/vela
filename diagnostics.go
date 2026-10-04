@@ -318,48 +318,6 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 	// accurate positions pointing at the $effect call itself rather
 	// than the start of the script.
 
-	// ── Warn: $state variable never updated ───────────────────────────────
-	// Find each state-var's declaration position in the parsed program
-	// so the hint points at the variable rather than the script start.
-	statePos := make(map[string]int)
-	WalkNode(prog, func(n JsNode) bool {
-		decl, ok := n.(*JsVarDecl)
-		if !ok {
-			return true
-		}
-		for _, d := range decl.Decls {
-			id, ok := d.Id.(*JsIdent)
-			if !ok {
-				continue
-			}
-			call, ok := d.Init.(*JsCallExpr)
-			if !ok {
-				continue
-			}
-			callee, ok := call.Callee.(*JsIdent)
-			if !ok || callee.Name != "$state" {
-				continue
-			}
-			statePos[id.Name] = id.Pos
-		}
-		return true
-	})
-
-	if a.CleanScript() != "" || len(a.Effects) > 0 {
-		combined := a.CleanScript()
-		for _, eff := range a.Effects {
-			combined += "\n" + sourceBlock(eff.BodyAST)
-		}
-		for _, sv := range a.StateVars {
-			setterCall := "$$set_" + sv.Name
-			if !strings.Contains(combined, setterCall) {
-				ds.Hint(statePos[sv.Name],
-					"$state variable %q is never updated; if it's read-only, consider $derived or a plain const",
-					sv.Name)
-			}
-		}
-	}
-
 	// ── Warn: reactivity won't trigger on a non-$state binding ────────────
 	// Top-level assignment to a *declared but non-reactive* local won't
 	// re-render — flag it.  Fully undeclared names ("typoed") are handled
@@ -430,6 +388,151 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 			"assignment to %q which is not declared as $state — "+
 				"reactivity will not trigger; declare with $state() or use a store",
 			id.Name)
+		return true
+	})
+}
+
+// validateStateWrites hints at a plain $state binding that nothing writes.
+// Writes come from the scope graph of the original script (assignments and
+// updates anywhere in it, including nested functions and effects) and from
+// the template (inline event handlers and bind: targets). The check is
+// AST-based: printed script text no longer contains setter calls.
+// $state.deep bindings are skipped because in-place mutation also updates
+// them.
+func validateStateWrites(prog *JsProgram, scriptScope *Scope, tmpl []Node, a *Analysis, ds *DiagSet) {
+	statePos := make(map[string]int)
+	WalkNode(prog, func(n JsNode) bool {
+		decl, ok := n.(*JsVarDecl)
+		if !ok {
+			return true
+		}
+		for _, d := range decl.Decls {
+			id, ok := d.Id.(*JsIdent)
+			if !ok {
+				continue
+			}
+			call, ok := d.Init.(*JsCallExpr)
+			if !ok {
+				continue
+			}
+			callee, ok := call.Callee.(*JsIdent)
+			if !ok || callee.Name != "$state" {
+				continue
+			}
+			statePos[id.Name] = id.Pos
+		}
+		return true
+	})
+	if len(statePos) == 0 {
+		return
+	}
+
+	written := templateWrittenNames(tmpl)
+	for _, sv := range a.StateVars {
+		pos, ok := statePos[sv.Name]
+		if !ok || written[sv.Name] {
+			continue
+		}
+		if scriptScope != nil {
+			if binding := scriptScope.Bindings[sv.Name]; binding != nil && len(binding.Writes) > 0 {
+				continue
+			}
+		}
+		ds.Hint(pos,
+			"$state variable %q is never updated; if it's read-only, consider $derived or a plain const",
+			sv.Name)
+	}
+}
+
+// templateWrittenNames returns the identifiers that template code writes:
+// assignment and update targets inside event handlers, and the targets of
+// bind: directives on elements and components.
+func templateWrittenNames(nodes []Node) map[string]bool {
+	written := make(map[string]bool)
+	visitAttrs := func(attrs []*Attr) {
+		for _, attr := range attrs {
+			if attr.Expr == nil || attr.Expr.Root() == nil {
+				continue
+			}
+			root := attr.Expr.Root()
+			if attr.IsTwoWay || attr.IsBindThis {
+				if id, ok := root.(*JsIdent); ok {
+					written[id.Name] = true
+				}
+				continue
+			}
+			if attr.IsEvent {
+				collectWrittenNames(root, written)
+			}
+		}
+	}
+	var walk func([]Node)
+	walk = func(ns []Node) {
+		for _, node := range ns {
+			switch n := node.(type) {
+			case *ElementNode:
+				visitAttrs(n.Attrs)
+				walk(n.Children)
+			case *ComponentNode:
+				visitAttrs(n.Attrs)
+				for _, slotNodes := range n.Slots {
+					walk(slotNodes)
+				}
+			case *IfChainNode:
+				for _, branch := range n.Branches {
+					walk(branch.Children)
+				}
+			case *EachBlockNode:
+				walk(n.Children)
+				walk(n.ElseChildren)
+			case *AwaitBlockNode:
+				walk(n.PendingChildren)
+				walk(n.ThenChildren)
+				walk(n.CatchChildren)
+			case *SlotNode:
+				walk(n.Fallback)
+			}
+		}
+	}
+	walk(nodes)
+	return written
+}
+
+// collectWrittenNames adds the identifiers assigned or updated anywhere in
+// expr, including destructuring targets.
+func collectWrittenNames(expr JsNode, written map[string]bool) {
+	var addTarget func(JsExpr)
+	addTarget = func(target JsExpr) {
+		switch t := target.(type) {
+		case *JsIdent:
+			written[t.Name] = true
+		case *JsAssignExpr:
+			addTarget(t.L)
+		case *JsArrayExpr:
+			for _, el := range t.Elems {
+				addTarget(el)
+			}
+		case *JsObjectExpr:
+			for _, prop := range t.Props {
+				if prop.Value != nil {
+					addTarget(prop.Value)
+				} else {
+					addTarget(prop.Key)
+				}
+			}
+		case *JsSpreadExpr:
+			addTarget(t.X)
+		}
+	}
+	WalkNode(expr, func(n JsNode) bool {
+		switch node := n.(type) {
+		case *JsAssignExpr:
+			addTarget(node.L)
+		case *JsUnaryExpr:
+			if node.Op == "++" || node.Op == "--" {
+				addTarget(node.X)
+			}
+		}
 		return true
 	})
 }
