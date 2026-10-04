@@ -1219,9 +1219,18 @@ func twoWaySetterFromEvent(setter string, multipleAware bool, readProp string) J
 	)
 }
 
-func twoWaySetterFromElement(setter, elementVar string, multipleAware bool, readProp string, currentValue JsExpr) JsStmt {
+func twoWaySetterFromElement(setter, elementVar, bindingName string, multipleAware bool, readProp string, currentValue JsExpr) JsStmt {
 	if !multipleAware {
-		return genInvoke(setter, genMember(id(elementVar), readProp))
+		liveValue := genMember(id(elementVar), readProp)
+		expectedValue := currentValue
+		if bindingName == "checked" {
+			// `checked` is a boolean DOM property even when the bound state uses
+			// another JavaScript value. Matching truthiness means the server DOM
+			// already represents the state; adopting it must not normalize the
+			// state binding to true/false before the user changes the control.
+			expectedValue = genBool(currentValue)
+		}
+		return genIf(genBinary("!==", liveValue, expectedValue), genInvoke(setter, liveValue))
 	}
 	return genBlock(
 		genIf(genMember(id(elementVar), "multiple"), genIf(
@@ -4928,7 +4937,7 @@ func (g *ASTGen) emitHydrationBinding(variable, tag string, attr *Attr) {
 			genIf(genUnary("!", genMember(id(variable), "multiple")), genExprStmt(genCall(id("$$set_"+state), genMember(id(variable), spec.readProp)))),
 		)
 	} else {
-		g.hydrationInitBody = append(g.hydrationInitBody, genInvoke("$$set_"+state, genMember(id(variable), spec.readProp)))
+		g.hydrationInitBody = append(g.hydrationInitBody, twoWaySetterFromElement("$$set_"+state, variable, attr.Name, false, spec.readProp, id(state)))
 	}
 	write := g.bindingWriteStmt(variable, attr, tag == "select")
 	for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
@@ -10754,7 +10763,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfBindingAttach(elementVar, controlle
 		)})),
 	}
 	if adopt {
-		body = append(body, twoWaySetterFromElement("$$set_"+target, elementVar, tag == "select" && attr.Name == "value", spec.readProp, id(target)))
+		body = append(body, twoWaySetterFromElement("$$set_"+target, elementVar, attr.Name, tag == "select" && attr.Name == "value", spec.readProp, id(target)))
 	} else {
 		body = append(body, genInvoke(writeVar))
 	}
@@ -12615,7 +12624,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotBinding(plan *hydrationAwaitSnapshot
 		// Preserve input typed after SSR paint. If it differs from the snapshot,
 		// the regular setter drives every other dependent DOM site; the guarded
 		// writer sees that this control already owns the same live value.
-		twoWaySetterFromElement("$$set_"+target, elementVar, tag == "select" && attr.Name == "value", spec.readProp, id(target)),
+		twoWaySetterFromElement("$$set_"+target, elementVar, attr.Name, tag == "select" && attr.Name == "value", spec.readProp, id(target)),
 	)
 	plan.listenerCleanup = append([]JsStmt{genIf(id(cleanupVar), genBlock(
 		genExprStmt(genCall(id(cleanupVar))),

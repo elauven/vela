@@ -1,0 +1,10 @@
+[
+  {"name":"false", "initial_expression":"false", "initial_checked":false, "initial_text":"false", "updated_expression":"true", "updated_checked":true, "updated_text":"true"},
+  {"name":"true", "initial_expression":"true", "initial_checked":true, "initial_text":"true", "updated_expression":"false", "updated_checked":false, "updated_text":"false"},
+  {"name":"null", "initial_expression":"null", "initial_checked":false, "initial_text":"null", "updated_expression":"'ready'", "updated_checked":true, "updated_text":"ready"},
+  {"name":"zero", "initial_expression":"0", "initial_checked":false, "initial_text":"0", "updated_expression":"1", "updated_checked":true, "updated_text":"1"},
+  {"name":"empty_string", "initial_expression":"''", "initial_checked":false, "initial_text":"", "updated_expression":"[]", "updated_checked":true, "updated_text":""},
+  {"name":"unicode", "initial_expression":"'Привет😀'", "initial_checked":true, "initial_text":"Привет😀", "updated_expression":"''", "updated_checked":false, "updated_text":""},
+  {"name":"empty_array", "initial_expression":"[]", "initial_checked":true, "initial_text":"", "updated_expression":"null", "updated_checked":false, "updated_text":"null"},
+  {"name":"object", "initial_expression":"({ ready: true })", "initial_checked":true, "initial_text":"[object Object]", "updated_expression":"0", "updated_checked":false, "updated_text":"0"}
+]
