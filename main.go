@@ -16,27 +16,15 @@ import (
 //go:embed runtime/runtime.js
 var embeddedRuntime []byte
 
-// stageRuntime writes the compiler canonical runtime next to generated
-// components in one output directory. Generated modules import ./runtime.js,
-// so every directory containing emitted component code needs this file.
+// stageRuntime writes the compiler canonical runtime into outDir. Project
+// builds write it once at the output root, and every generated module imports
+// that file through a relative path (runtimeImportFor), so a page loads one
+// runtime instance.
 func stageRuntime(outDir string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(outDir, "runtime.js"), embeddedRuntime, 0o644)
-}
-
-func stageRuntimeForComponents(files []string, srcRoot, outRoot string) error {
-	dirs := map[string]bool{}
-	for _, src := range files {
-		dirs[filepath.Dir(mirrorPath(src, srcRoot, outRoot, ".js"))] = true
-	}
-	for dir := range dirs {
-		if err := stageRuntime(dir); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // CompileOptions controls code generation behaviour.
@@ -67,6 +55,10 @@ type CompileOptions struct {
 	Strict                  bool     // elevate proven unresolved reads to errors
 	SSRModule               string   // Go module import root for generated SSR server packages
 	HydrationSupport        bool     // internal: emit SSR client state-restoration hooks
+	// RuntimeImport is the module specifier generated code uses for the
+	// runtime. Empty means "./runtime.js"; project builds set a path to the
+	// single runtime at the output root.
+	RuntimeImport string
 }
 
 func main() {
@@ -340,7 +332,7 @@ func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 	// components retain imports such as ./format.js, so mirror these files next
 	// to the compiled modules instead of leaving dangling imports in dist.
 	errors += copyProjectJSModules(srcRoot, outRoot)
-	if err := stageRuntimeForComponents(files, srcRoot, outRoot); err != nil {
+	if err := stageRuntime(outRoot); err != nil {
 		fmt.Fprintf(os.Stderr, "cannot stage runtime: %v\n", err)
 		errors++
 	}
@@ -349,6 +341,7 @@ func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 
 func compileProjectFile(src, srcRoot, outRoot string, opts CompileOptions) bool {
 	dest := mirrorPath(src, srcRoot, outRoot, ".js")
+	opts.RuntimeImport = runtimeImportFor(filepath.Dir(dest), outRoot)
 	if rel, err := filepath.Rel(srcRoot, src); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		opts.TraceComponentID = filepath.ToSlash(rel)
 	}
@@ -684,6 +677,8 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	} else {
 		target = buildProgramCSSWithHydration(name, sfc, tmpl, analysis, scope, opts.CSSExternal, opts.HydrationSupport)
 	}
+
+	retargetRuntimeImports(target, opts.RuntimeImport)
 
 	if opts.GenAST {
 		genPath := strings.TrimSuffix(dest, ".js") + ".genast.json"

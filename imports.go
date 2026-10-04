@@ -253,3 +253,34 @@ func findLastStringLit(script string, start, end int) (int, int, bool) {
 	}
 	return bestStart, bestEnd, true
 }
+
+// defaultRuntimeImport is the runtime specifier the generators emit. Project
+// builds retarget it to the single runtime file at the output root.
+const defaultRuntimeImport = "./runtime.js"
+
+// runtimeImportFor returns the relative module specifier from a generated
+// module in fromDir to the runtime written at outRoot/runtime.js.
+func runtimeImportFor(fromDir, outRoot string) string {
+	rel, err := filepath.Rel(fromDir, filepath.Join(outRoot, "runtime.js"))
+	if err != nil {
+		return defaultRuntimeImport
+	}
+	rel = filepath.ToSlash(rel)
+	if !strings.HasPrefix(rel, "../") {
+		rel = "./" + rel
+	}
+	return rel
+}
+
+// retargetRuntimeImports points every import of the generated runtime at
+// specifier, so all modules of one build share one runtime instance.
+func retargetRuntimeImports(prog *JsProgram, specifier string) {
+	if prog == nil || specifier == "" || specifier == defaultRuntimeImport {
+		return
+	}
+	for _, stmt := range prog.Body {
+		if imp, ok := stmt.(*JsImportDecl); ok && imp.Source == defaultRuntimeImport {
+			imp.Source = specifier
+		}
+	}
+}
