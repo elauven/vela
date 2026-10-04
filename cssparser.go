@@ -762,7 +762,7 @@ func isCssIdentChar(c byte) bool {
 	return isCssIdentStart(c) || isDigitByte(c)
 }
 
-// ── Scope helpers injected by patch_cssparser.py ─────────────────────────
+// ── Scope helpers ─────────────────────────────────────────────────────────
 
 // isGlobalSelector returns true for selectors that must never be scoped.
 func isGlobalSelector(sel string) bool {

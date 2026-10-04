@@ -52,10 +52,8 @@ jobs:
           cache: npm
 
       - name: Install browser test dependencies
-        # package.json and package-lock.json are intentionally local/ignored
-        # in this repository. Keep the CI dependency explicit and pinned
-        # until they become tracked project inputs.
-        run: npm install --no-save playwright@1.62.1
+        # Pinned by the tracked package-lock.json (playwright 1.62.1).
+        run: npm ci
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium

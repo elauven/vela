@@ -1,0 +1,12 @@
+{
+  "scripts": {
+    "test:ssr-browser-baseline": "node tools/run-ssr-browser-baseline.mjs",
+    "test:ssr-browser-baseline:self": "node tools/run-ssr-browser-baseline-self-test.mjs"
+  },
+  "dependencies": {
+    "jsdom": "^30.0.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}
