@@ -103,7 +103,7 @@ func runRuntimeHarnessWithModules(t *testing.T, entry string,
 	// Generated components import the shared helpers from
 	// ./runtime.js, so the runtime must sit alongside them in the
 	// temp dir.  Copy the repo's runtime.js in.
-	rt, err := os.ReadFile("runtime.js")
+	rt, err := os.ReadFile("runtime/runtime.js")
 	if err != nil {
 		t.Fatalf("cannot read runtime.js: %v", err)
 	}

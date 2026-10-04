@@ -40,7 +40,7 @@ ast_json.go         ~ 293 LOC   --ast debug JSON emission
 imports.go          ~ 236 LOC   .vela import path rewrite → .js
 unreachable.go      ~ 225 LOC   unreachable-branch detection
 minifier.go         ~ 196 LOC   single-pass char-level JS minifier
-runtime.js          ~ 270 LOC   stores, batch flush, $$defer, $$tmpl, mount
+runtime/runtime.js  ~ 270 LOC   stores, batch flush, $$defer, $$tmpl, mount
 
 Test files:
   codegen_*_test.go              feature-specific regression tests

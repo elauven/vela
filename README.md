@@ -315,9 +315,9 @@ vela/
 ├── astgen.go      direct JsProgram builder
 ├── jsprinter.go   validated JavaScript AST printer
 ├── template_codegen_helpers.go shared template lowering helpers
-├── runtime.js      Canonical browser runtime: scheduler, stores, and compiler helpers
-└── runtime/
-    └── runtime.js Compatibility re-export for historical imports
+├── runtime/
+│   └── runtime.js Browser runtime: scheduler, stores, hydration, and compiler helpers
+└── docs/          Documentation (see the Documentation section)
 ```
 
 The compiler pipeline:

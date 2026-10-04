@@ -27,7 +27,7 @@ compile: build
 	@./$(BINARY) --out $(DIST) $(EXAMPLES)
 	@echo ""
 	@echo "   Runtime:"
-	@cp runtime.js $(DIST)/runtime.js
+	@cp runtime/runtime.js $(DIST)/runtime.js
 	@echo "   ✓  runtime.js → $(DIST)/runtime.js"
 
 examples: compile
@@ -36,7 +36,7 @@ examples: compile
 
 watch: build
 	@mkdir -p $(DIST)
-	@cp runtime.js $(DIST)/runtime.js
+	@cp runtime/runtime.js $(DIST)/runtime.js
 	@./$(BINARY) --out $(DIST) --watch $(EXAMPLES)
 
 ## ── Test ──────────────────────────────────────────────────────────────────

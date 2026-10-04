@@ -761,8 +761,8 @@ regression.
 ### 12.2 JavaScript runtime delivery
 
 - **R-12.2a Source of truth.** The JavaScript runtime lives in the `runtime/`
-  directory of the repository. It replaces both the root `runtime.js` and the
-  outdated `runtime/runtime.js`; no other copy is edited by hand. The compiler
+  directory of the repository. It replaces the former root `runtime.js` and its
+  `runtime/runtime.js` re-export; no other copy is edited by hand. The compiler
   embeds it from `runtime/`. The runtime is split into modules by area: core
   reactivity and scheduling, DOM, hydration, and development checks.
 - **R-12.2b One instance per page.** All generated modules of one build must

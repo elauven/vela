@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-//go:embed runtime.js
+//go:embed runtime/runtime.js
 var embeddedRuntime []byte
 
 // stageRuntime writes the compiler canonical runtime next to generated
