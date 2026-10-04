@@ -64,7 +64,7 @@ a tracked runtime-cost limitation (`tasks/023-make-each-row-updates-incremental.
 | DOM events | **Stable** | `@click={increment}` | Vela uses `@event`, not Svelte's `onclick` or legacy `on:event`. |
 | DOM bindings | **Stable** | `bind:value={name}`, `bind:checked={done}`, `bind:this={input}` | Includes common input, checkbox, select, textarea, and element-reference cases. |
 | Conditional rendering | **Stable** | `{#if open}...{:else if other}...{:else}...{/if}` | Branches mount and tear down around comment anchors without wrapper elements. |
-| List rendering | **Stable** | `{#each items as item, i}...{:else}...{/each}` | Unkeyed rows update in place where possible. |
+| List rendering | **Stable** | `{#each items as item, i}...{:else}...{/each}` | Unkeyed rows update in place where possible. Known issue: the default (legacy) DOM engine does not render the `{:else}` branch; `--dom-engine=blocks` does. |
 | Keyed lists | **Stable** | `{#each items as item (item.id)}` | Reconciles DOM rows by key. Existing rows are currently revisited on a list invalidation; precise changed-row updates are tracked in task 023. |
 | Key blocks | **Stable** | `{#key userId}<Card />{/key}` | Recreates its subtree when the key changes. |
 | Await blocks | **Stable** | `{#await promise}...{:then value}...{:catch err}{/await}` | Pending, fulfilled, rejected, stale-promise handling, and `{#await promise then value}` / `{#await promise catch err}` shortcuts are supported. |
@@ -86,6 +86,7 @@ a tracked runtime-cost limitation (`tasks/023-make-each-row-updates-incremental.
 | Watch mode | **Experimental** | `--watch` | Recompiles changed `.vela` files; it is not HMR. |
 | Minification and DCE | **Stable** | `--minify` | Includes conservative dead-binding elimination in addition to JS minification. |
 | Build mode | **Stable** | `--mode=development` (default) or `--mode=production` | Production builds stage a runtime with development warnings disabled. Independent of `--minify`. |
+| DOM engine | **Experimental** | `--dom-engine=blocks` (default `legacy`) | Builds CSR components with the block runtime (`runtime-blocks.js`, docs/HYDRATION_ARCHITECTURE.md). Components that use child components or slots still use the legacy engine. `VELA_DOM_ENGINE=blocks` selects it for a whole process, for example a test run. |
 | Input AST dump | **Stable** | `--ast` | Emits `<name>.ast.json` for the parsed SFC/template AST. |
 | Generated JS AST dump | **Stable** | `--emit-gen-ast` | Emits `<name>.genast.json` for AST-codegen inspection. |
 | Compiler trace | **Experimental** | `--trace=build.trace.jsonl`, `--trace=-` | Appends one source-free `CompilationTraceV1` JSON record per component. File output is safe for parallel project builds. With `--trace=-`, stdout is JSONL only and human progress moves to stderr. Schema version 1 is additive-only within Vela 1.x; consumers must ignore unknown fields. Disabled by default, so it adds no timing, allocation, or I/O cost to ordinary compilation. |

@@ -25,6 +25,7 @@ import (
 // ─────────────────────────────────────────────
 
 func TestBug8_FragmentHelperEmitted(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script></script><template><div>hi</div></template>`
 	out := compileGenerated(t, src)
 	// A static root does not need the fragment helper. It must use direct DOM
@@ -35,6 +36,7 @@ func TestBug8_FragmentHelperEmitted(t *testing.T) {
 }
 
 func TestBug8_StaticChildrenRouteThroughHelper(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// Static HTML batched into one call should use the helper, not
 	// the raw insertAdjacentHTML which fails on fragments.
 	src := `<script></script>

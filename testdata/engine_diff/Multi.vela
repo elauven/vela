@@ -1,0 +1,10 @@
+<script>
+  export let n = 1;
+  export let p = null;
+</script>
+<template>
+  <h1>Title {n}</h1>
+  {#if n > 2}<p>big</p>{:else if n > 1}<p>mid</p>{:else}<p>small</p>{/if}
+  text {n}
+  {#await p}<i>wait</i>{:then v}<u>{v}</u>{:catch e}<s>{e}</s>{/await}
+</template>

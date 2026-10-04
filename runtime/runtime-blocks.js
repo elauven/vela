@@ -106,8 +106,12 @@ function createCursor(parent, before, owner) {
       parent.insertBefore(node, before);
       return node;
     },
-    element(tag, namespace) {
-      return cursor.insert(namespace ? document.createElementNS(namespace, tag) : document.createElement(tag));
+    // element creates an element with its static attributes, given as a flat
+    // [name, value, ...] list (the scope attribute comes first).
+    element(tag, attrs) {
+      const element = document.createElement(tag);
+      if (attrs) for (let i = 0; i < attrs.length; i += 2) element.setAttribute(attrs[i], attrs[i + 1]);
+      return cursor.insert(element);
     },
     text(value) {
       return cursor.insert(document.createTextNode(value));
@@ -278,8 +282,11 @@ export function $$key(cursor, value, body, changed) {
 // collection() returns the iterable; key(item, index) returns the row key or
 // is null for an unkeyed list. A row fragment receives the scope
 // { item, index } and is updated in place with scopeChanged = true.
+// dirtyRows(), when given, returns the indexes of rows changed only by
+// in-place mutation of a deep collection (or null): those rows update
+// without a reconciliation, as long as the row count is unchanged.
 
-export function $$each(cursor, collection, key, row, fallback, changed) {
+export function $$each(cursor, collection, key, row, fallback, changed, dirtyRows) {
   const anchor = cursor.comment();
   let rows = [];
   let byKey = key ? new Map() : null;
@@ -362,6 +369,21 @@ export function $$each(cursor, collection, key, row, fallback, changed) {
     p(dirty) {
       if (block.isDone()) return;
       if (!changed || changed(dirty)) {
+        const indexes = dirtyRows ? dirtyRows() : null;
+        const items = indexes ? Array.from(collection() || []) : null;
+        if (indexes && items.length === rows.length) {
+          const updated = new Set(indexes);
+          for (let i = 0; i < rows.length; i++) {
+            if (updated.has(i)) {
+              rows[i].scope.item = items[i];
+              rows[i].scope.index = i;
+              updateMounted(rows[i], dirty, true);
+            } else {
+              updateMounted(rows[i], dirty, false);
+            }
+          }
+          return;
+        }
         reconcile(dirty, false);
         return;
       }

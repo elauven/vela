@@ -320,6 +320,7 @@ func TestScopeCSS(t *testing.T) {
 // ──────────────────────────────────────────────
 
 func TestGenerateCode_StateBinding(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let count = $state(0);`,
 		Template: `<div>{count}</div>`,
@@ -344,6 +345,7 @@ func TestGenerateCode_StateBinding(t *testing.T) {
 }
 
 func TestGenerateCode_EventHandler(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let n = $state(0); function inc() { n++; }`,
 		Template: `<button @click="inc">+</button>`,
@@ -379,6 +381,7 @@ func TestGenerateCode_ScopedStyle(t *testing.T) {
 }
 
 func TestGenerateCode_IfDirective(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let show = $state(true);`,
 		Template: `{#if show}<span>visible</span>{/if}`,
@@ -402,6 +405,7 @@ func TestGenerateCode_IfDirective(t *testing.T) {
 }
 
 func TestGenerateCode_EachDirective(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let items = $state(['a','b']);`,
 		Template: `{#each items as item}<li>{item}</li>{/each}`,
@@ -758,6 +762,7 @@ func TestPrintNode_RoundTrip(t *testing.T) {
 // ──────────────────────────────────────────────
 
 func TestFullPipeline_Counter(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `
 <script>
   let count = $state(0);
@@ -1086,6 +1091,7 @@ func TestAnalyzeScript_PropsNotInCleanScript(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestGenerateCode_IfChain(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script: `let score = $state(0);`,
 		Template: `
@@ -1160,6 +1166,7 @@ func TestGenerateCode_Component(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestFullPipeline_IfChainAndProps(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `
 <script>
   export let score = 0;
@@ -1276,6 +1283,7 @@ func TestMinify_RemovesSemiBeforeBrace(t *testing.T) {
 }
 
 func TestMinify_RoundTrip(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// Full generated component should survive minification without losing structure
 	sfc := &SFC{
 		Script:   `let count = $state(0); function inc() { count++; }`,
@@ -1631,6 +1639,7 @@ func TestGenerateCode_ComponentPassesSlots(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestGenerateCode_EachWithFragGen(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let items = $state([{id:1,name:'a'},{id:2,name:'b'}]);`,
 		Template: `<ul>{#each items as item}<li>{item.name}</li>{/each}</ul>`,
@@ -1653,6 +1662,7 @@ func TestGenerateCode_EachWithFragGen(t *testing.T) {
 }
 
 func TestGenerateCode_KeyedEach(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let todos = $state([]);`,
 		Template: `{#each todos as todo (todo.id)}<li>{todo.text}</li>{/each}`,
@@ -1825,6 +1835,7 @@ func findSetterEnd(src string, start int) int {
 // because walkEach used a hardcoded "$$f0" for the row root AND frag.id()
 // started at 0 for children, producing a duplicate const name.
 func TestGenerateCode_EachNoVarRedeclaration(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script: `let todos = $state([]);`,
 		Template: `
@@ -2537,6 +2548,7 @@ func TestRewriteHandlerAssignments_NoFalsePositive(t *testing.T) {
 }
 
 func TestGenerateCode_IfBranchHasChildren(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script: `let visible = $state(false); let step = $state(1);`,
 		Template: `
@@ -2595,6 +2607,7 @@ func TestGenerateCode_IfBranchHasChildren(t *testing.T) {
 }
 
 func TestGenerateCode_IfBranchInlineHandlerRewritten(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// The full scenario from If.js: visible = $state, checkbox inside #if branch
 	// with inline handler @change="($e) => visible = $e.target.checked"
 	sfc := &SFC{
@@ -2670,6 +2683,7 @@ func TestParseTemplate_IfElseifGroupedInsideElement(t *testing.T) {
 }
 
 func TestGenerateCode_IfElseifInsideElement(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// Codegen for nested standard blocks must build one chain.
 	sfc := &SFC{
 		Script: `let editMode = $state(false);`,
@@ -3345,6 +3359,7 @@ func TestSvelteBlock_IfBranchChildren(t *testing.T) {
 }
 
 func TestSvelteBlock_CodeGen_SimpleIf(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let show = $state(true);`,
 		Template: `<div>{#if show}<p>visible</p>{/if}</div>`,
@@ -3361,6 +3376,7 @@ func TestSvelteBlock_CodeGen_SimpleIf(t *testing.T) {
 }
 
 func TestSvelteBlock_CodeGen_IfElse(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let ok = $state(false);`,
 		Template: `{#if ok}<p>yes</p>{:else}<p>no</p>{/if}`,
@@ -3516,6 +3532,7 @@ func TestSvelteBlock_ParseEachWithIndex(t *testing.T) {
 }
 
 func TestSvelteBlock_CodeGen_Each(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let items = $state([]);`,
 		Template: `<ul>{#each items as item (item.id)}<li>{item.name}</li>{/each}</ul>`,
@@ -3533,6 +3550,7 @@ func TestSvelteBlock_CodeGen_Each(t *testing.T) {
 }
 
 func TestSvelteBlock_CodeGen_NestedEachIterableCallUsesRowItem(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let plans = $state([]); let feats = (plan) => plan.features;`,
 		Template: `{#each plans as plan}{#each feats(plan) as f}<li>{f}</li>{/each}{/each}`,
@@ -4468,6 +4486,7 @@ func TestTwoWayBindSpec(t *testing.T) {
 }
 
 func TestTwoWayBinding_InputValue(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let name = $state('');`,
 		Template: `<input bind:value="name" />`,
@@ -4497,6 +4516,7 @@ func TestTwoWayBinding_InputValue(t *testing.T) {
 }
 
 func TestTwoWayBinding_Checkbox(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let agreed = $state(false);`,
 		Template: `<input type="checkbox" bind:checked="agreed" />`,
@@ -4523,6 +4543,7 @@ func TestTwoWayBinding_Checkbox(t *testing.T) {
 }
 
 func TestTwoWayBinding_Select(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `let role = $state('viewer');`,
 		Template: `<select bind:value="role"><option value="admin">A</option></select>`,
@@ -4541,6 +4562,7 @@ func TestTwoWayBinding_Select(t *testing.T) {
 }
 
 func TestTwoWayBinding_CoexistsWithAtInput(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// bind:value and @input on the same element must BOTH wire without
 	// colliding on the handler const name.  This was the turn-13 bug:
 	// two `const $$nX_input_h = …` lines produced a SyntaxError.

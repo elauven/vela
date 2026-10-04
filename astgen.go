@@ -296,6 +296,10 @@ type ASTGen struct {
 	analysis *Analysis
 	sfc      *SFC
 
+	// blocks is non-nil when the block DOM engine lowers this component
+	// (blocks_codegen.go).
+	blocks *blocksState
+
 	// domAcquireMode is the structural DOM acquisition policy. CSR always
 	// creates nodes; the future hydrator walks matching server markers. Both
 	// modes are driven by domAcquirePlan, assembled in this same template walk.
@@ -1476,6 +1480,9 @@ func buildProgramWithDOMAcquirePlanAndHydration(
 	// without going through BuildSSRHydrationClientProgram. Preserve that
 	// constructor contract by providing the same immutable lifecycle ownership
 	// graph locally; the public SSR path still supplies its shared plan/index.
+	if mode == DOMAcquireCreate && !hydrationStateInput && activeDOMEngine == DOMEngineBlocks && blocksEngineSupports(nodes) {
+		g.blocks = &blocksState{}
+	}
 	if mode == DOMAcquireHydrate {
 		g.hydrationLifecyclePlan = BuildSSRStructuralLifecyclePlan(nodes)
 	}
@@ -1804,6 +1811,15 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// can read it.
 	fnBody.Body = append(fnBody.Body, g.buildPropDecls()...)
 
+	if g.blocks != nil {
+		// Setters may run while the script initialises, before the view
+		// mounts; their dirty marks are collected from the start.
+		fnBody.Body = append(fnBody.Body,
+			genLet("$$dirty", genCall(genMember(id("Object"), "create"), genNull())),
+			genLet("$$view", genNull()),
+		)
+	}
+
 	// ── Source-ordered component setup ─────────────────────
 	// Normal top-level statements and reactive declarations keep the order
 	// in which the author wrote them.
@@ -1816,7 +1832,11 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	fnBody.Body = append(fnBody.Body, g.buildEffectDecls()...)
 
 	// ── DOM construction (blocks 2-3) ────────────────────────
-	g.buildDOM(nodes)
+	if g.blocks != nil {
+		g.buildBlocksView(nodes)
+	} else {
+		g.buildDOM(nodes)
+	}
 	// Hoisted declarations (child-component instance vars) first,
 	// so a slot closure's reopen path can reference them without a
 	// TDZ error — see ASTGen.hoisted.
@@ -1890,6 +1910,10 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	}
 	if g.domAcquireMode == DOMAcquireHydrate {
 		fn.Params = append(fn.Params, id("$$hydrate"))
+	}
+	if g.blocks != nil {
+		// Static subtrees are parsed once per module.
+		prog.Body = append(prog.Body, g.blocks.templates...)
 	}
 	prog.Body = append(prog.Body, &JsExportDecl{
 		BaseStmt:    BaseStmt{BaseNode: genNode()},
@@ -2057,6 +2081,23 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	}
 	if usesHydrationKeyedElements {
 		specs = append(specs, JsImportSpec{Imported: "$$reconcileHydrationKeyedElements"})
+	}
+	if g.blocks != nil {
+		used := map[string]bool{}
+		WalkNode(prog, func(n JsNode) bool {
+			if ident, ok := n.(*JsIdent); ok && blocksRuntimeExports[ident.Name] {
+				used[ident.Name] = true
+			}
+			return true
+		})
+		names := make([]string, 0, len(used))
+		for name := range used {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			specs = append(specs, JsImportSpec{Imported: name})
+		}
 	}
 	if len(specs) > 0 {
 		// Helper imports go after user imports, before the body —
@@ -2743,6 +2784,15 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 	add(g.updates[name])
 	for _, dv := range dependentDerived {
 		add(g.updates[dv.Name])
+	}
+
+	// The block engine's fragments read which names changed from $$dirty:
+	// the name itself and every derived value recomputed above.
+	if g.blocks != nil {
+		out = append(out, genAssignStmt(genMember(id("$$dirty"), name), boolLit(true)))
+		for _, dv := range dependentDerived {
+			out = append(out, genAssignStmt(genMember(id("$$dirty"), dv.Name), boolLit(true)))
+		}
 	}
 
 	// Setters mark component-local flags instead of enqueueing a fresh closure.

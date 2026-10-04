@@ -163,6 +163,9 @@ func TestGeneratedSSRHydrateEntryAdoptsExistingServerData(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "runtime-hydration.js"), embeddedHydrationRuntime, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "runtime-blocks.js"), embeddedBlocksRuntime, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	const runner = `import hydratePage from './Page.hydrate.js';
 function assert(value, message) { if (!value) throw new Error(message); }
 function marker(data) { return { data }; }

@@ -111,6 +111,10 @@ func runRuntimeHarnessWithModules(t *testing.T, entry string,
 		rt, 0o644); err != nil {
 		t.Fatalf("cannot stage runtime.js: %v", err)
 	}
+	// Components compiled by the block engine also import its runtime.
+	if err := os.WriteFile(filepath.Join(dir, "runtime-blocks.js"), embeddedBlocksRuntime, 0o644); err != nil {
+		t.Fatalf("cannot stage runtime-blocks.js: %v", err)
+	}
 
 	// Stage ordinary JavaScript modules imported by the fixture.  Vela
 	// components are compiled below; utility modules remain verbatim.

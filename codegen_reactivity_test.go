@@ -57,6 +57,7 @@ func TestBug6_BracedHrefIsDynamic(t *testing.T) {
 }
 
 func TestBug6_QuotedAttrStaysStatic(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script></script>
 <template>
   <a class="static">x</a>
@@ -189,6 +190,7 @@ func TestBug7_BlockBodyHandler(t *testing.T) {
 }
 
 func TestBug14_ParenthesizedHandlerAssignmentRewritesOnce(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>let filter = $state("all");</script><template><button @click={() => (filter = "done")}>done</button></template>`
 	sfc, err := parseSFC(src)
 	if err != nil {

@@ -142,6 +142,32 @@ test('$$each unkeyed updates in place with scopeChanged and shows fallback', () 
   eq(el.innerHTML, '<li>q</li><!---->', 'fallback removed');
 });
 
+test('$$each updates only rows reported by dirtyRows', () => {
+  const el = host();
+  const items = [{ id: 1, v: 'a' }, { id: 2, v: 'b' }, { id: 3, v: 'c' }];
+  const log = [];
+  let dirty = null;
+  const root = rt.$$mountRoot(el, (c) => {
+    const block = c.block(rt.$$each, () => items, (i) => i.id, (c, s) => {
+      const li = c.element('li');
+      li.textContent = s.item.v;
+      return { p(d, sc) { log.push([s.item.id, sc]); if (sc) li.textContent = s.item.v; } };
+    }, null, null, () => dirty);
+    return { p: (d) => block.p(d) };
+  });
+  const before = [...el.querySelectorAll('li')];
+  items[1].v = 'B';
+  dirty = [1];
+  root.p({});
+  eq(text(el), 'aBc', 'mutated row updated');
+  eq(log.filter(([, sc]) => sc).map(([id]) => id).join(','), '2', 'only the reported row refreshed its scope');
+  assert([...el.querySelectorAll('li')].every((li, i) => li === before[i]), 'no row recreated');
+  dirty = null;
+  items.splice(0, 1);
+  root.p({});
+  eq(text(el), 'Bc', 'structural change falls back to reconciliation');
+});
+
 test('multi-node rows are wrapped in a comment pair and move as a unit', () => {
   const el = host();
   let items = [1, 2];

@@ -1217,6 +1217,7 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectRowText(t *
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
 		"runtime-hydration.js":   embeddedHydrationRuntime,
+		"runtime-blocks.js":      embeddedBlocksRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -1270,6 +1271,7 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectInputBindin
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
 		"runtime-hydration.js":   embeddedHydrationRuntime,
+		"runtime-blocks.js":      embeddedBlocksRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -1323,6 +1325,7 @@ func TestBrowserSSRHydrationDeepKeyedInputMutatesOnlyRetainedRow(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
 		"runtime-hydration.js":   embeddedHydrationRuntime,
+		"runtime-blocks.js":      embeddedBlocksRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -1379,6 +1382,7 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectCheckboxBin
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
 		"runtime-hydration.js":   embeddedHydrationRuntime,
+		"runtime-blocks.js":      embeddedBlocksRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -1432,6 +1436,7 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectTextareaBin
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
 		"runtime-hydration.js":   embeddedHydrationRuntime,
+		"runtime-blocks.js":      embeddedBlocksRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -1494,6 +1499,7 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotKeyedEachDirectSelectBindi
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
 		"runtime-hydration.js":   embeddedHydrationRuntime,
+		"runtime-blocks.js":      embeddedBlocksRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -1573,6 +1579,7 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptgroupLabelOptionDis
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
 		"runtime-hydration.js":   embeddedHydrationRuntime,
+		"runtime-blocks.js":      embeddedBlocksRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -1652,6 +1659,7 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptionValue(t *testing
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
 		"runtime-hydration.js":   embeddedHydrationRuntime,
+		"runtime-blocks.js":      embeddedBlocksRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -1714,6 +1722,7 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptionText(t *testing.
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
 		"runtime-hydration.js":   embeddedHydrationRuntime,
+		"runtime-blocks.js":      embeddedBlocksRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -1799,7 +1808,7 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectOptgroupOptionList(t *
 	aArchived, bArchived := []option{}, []option{{"closed", "Closed"}}
 	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "open", aOptions, aArchived) + rowHTML("b", "done", bOptions, bArchived) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","status":"open","options":[{"value":"open","label":"Open"},{"value":"done","label":"Done"}],"archived":[]},{"id":"b","status":"done","options":[{"value":"later","label":"Later"},{"value":"done","label":"Done"}],"archived":[{"value":"closed","label":"Closed"}]}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "runtime-blocks.js": embeddedBlocksRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -1881,7 +1890,7 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectMixedOptgroupOptionLis
 	// the outer row controller owns the select as a single adopted element.
 	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "open", aOptions, aArchived) + rowHTML("b", "done", bOptions, bArchived) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","status":"open","options":[{"id":"open","value":"open","label":"Open"},{"id":"done","value":"done","label":"Done"}],"archived":[{"id":"archived","value":"archived","label":"Archived"}]},{"id":"b","status":"done","options":[{"id":"later","value":"later","label":"Later"},{"id":"done","value":"done","label":"Done"}],"archived":[{"id":"closed","value":"closed","label":"Closed"}]}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "runtime-blocks.js": embeddedBlocksRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -1965,7 +1974,7 @@ func TestBrowserSSRHydrationUpdatesSettledAwaitKeyedSelectMixedOptgroupOptionLis
 	aArchived, bArchived := []option{{"archived", "archived", "Archived"}}, []option{{"closed", "closed", "Closed"}}
 	html := `<!doctype html><body><!--e:vela-page:` + itoa(main.HydrationID) + `--><main vela-page=""><!--v:vela-page:` + itoa(await.DynamicID) + `--><!--v:vela-page:` + itoa(each.DynamicID) + `-->` + rowHTML("a", "open", "Available", "Archived", aAvailable, aArchived) + rowHTML("b", "done", "Queued", "History", bAvailable, bArchived) + `<!--/v:vela-page:` + itoa(each.DynamicID) + `--><!--/v:vela-page:` + itoa(await.DynamicID) + `--></main><!--/e:vela-page:` + itoa(main.HydrationID) + `--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","status":"open","availableLabel":"Available","archivedLabel":"Archived","available":[{"id":"open","value":"open","label":"Open"},{"id":"done","value":"done","label":"Done"}],"archived":[{"id":"archived","value":"archived","label":"Archived"}]},{"id":"b","status":"done","availableLabel":"Queued","archivedLabel":"History","available":[{"id":"later","value":"later","label":"Later"},{"id":"done","value":"done","label":"Done"}],"archived":[{"id":"closed","value":"closed","label":"Closed"}]}]},"state":{},"incomplete":false,"await":{"` + itoa(await.DynamicID) + `":{"state":"then","value":"server"}}}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{request:window.request});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "runtime-blocks.js": embeddedBlocksRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -2013,6 +2022,7 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotStaticKeyedEachElse(t *tes
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
 		"runtime-hydration.js":   embeddedHydrationRuntime,
+		"runtime-blocks.js":      embeddedBlocksRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -2542,6 +2552,7 @@ func TestBrowserSSRHydrationProjectedSlotIfOwnsDirectChild(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
 		"runtime-hydration.js":     embeddedHydrationRuntime,
+		"runtime-blocks.js":        embeddedBlocksRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
@@ -2720,6 +2731,7 @@ func TestBrowserSSRHydrationProjectedSlotKeyOwnsDirectChild(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
 		"runtime-hydration.js":     embeddedHydrationRuntime,
+		"runtime-blocks.js":        embeddedBlocksRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
@@ -2868,6 +2880,7 @@ func TestBrowserSSRHydrationProjectedSlotEachOwnsDirectChildren(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
 		"runtime-hydration.js":     embeddedHydrationRuntime,
+		"runtime-blocks.js":        embeddedBlocksRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
@@ -2998,6 +3011,7 @@ func TestBrowserSSRHydrationProjectedSlotStaticKeyedEachRows(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
 		"runtime-hydration.js":     embeddedHydrationRuntime,
+		"runtime-blocks.js":        embeddedBlocksRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
@@ -3139,6 +3153,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotProjectedChild(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
 		"runtime-hydration.js":     embeddedHydrationRuntime,
+		"runtime-blocks.js":        embeddedBlocksRuntime,
 		"Outer.js":                 []byte(PrintJS(outerCSR, PrintPretty)),
 		"Outer.hydrate_client.js":  []byte(PrintJS(outerClient, PrintPretty)),
 		"Outer.hydrate.js":         []byte(PrintJS(outerEntry, PrintPretty)),
@@ -3266,6 +3281,7 @@ func TestBrowserSSRHydrationAdoptsStaticAwaitSnapshot(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
 		"runtime-hydration.js":   embeddedHydrationRuntime,
+		"runtime-blocks.js":      embeddedBlocksRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -3319,6 +3335,7 @@ func TestBrowserSSRHydrationAdoptsDynamicAwaitSnapshotLeaves(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
 		"runtime-hydration.js":   embeddedHydrationRuntime,
+		"runtime-blocks.js":      embeddedBlocksRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -3407,6 +3424,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotChild(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
 		"runtime-hydration.js":     embeddedHydrationRuntime,
+		"runtime-blocks.js":        embeddedBlocksRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
@@ -3485,6 +3503,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotBindableChild(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
 		"runtime-hydration.js":     embeddedHydrationRuntime,
+		"runtime-blocks.js":        embeddedBlocksRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
@@ -3570,6 +3589,7 @@ func TestBrowserSSRHydrationAdoptsAwaitSnapshotReactiveSlotLeafChild(t *testing.
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
 		"runtime-hydration.js":     embeddedHydrationRuntime,
+		"runtime-blocks.js":        embeddedBlocksRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),

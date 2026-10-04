@@ -19,6 +19,9 @@ var embeddedRuntime []byte
 //go:embed runtime/runtime-hydration.js
 var embeddedHydrationRuntime []byte
 
+//go:embed runtime/runtime-blocks.js
+var embeddedBlocksRuntime []byte
+
 // stageRuntime writes the compiler canonical runtime into outDir. Project
 // builds write it once at the output root, and every generated module imports
 // that file through a relative path (runtimeImportFor), so a page loads one
@@ -31,6 +34,11 @@ func stageRuntime(outDir string, opts CompileOptions) error {
 	}
 	if err := os.WriteFile(filepath.Join(outDir, "runtime.js"), runtimeSource(opts.Production), 0o644); err != nil {
 		return err
+	}
+	if activeDOMEngine == DOMEngineBlocks {
+		if err := os.WriteFile(filepath.Join(outDir, "runtime-blocks.js"), embeddedBlocksRuntime, 0o644); err != nil {
+			return err
+		}
 	}
 	if !opts.HydrationSupport {
 		return nil
@@ -103,12 +111,20 @@ func main() {
 	ssr := flag.Bool("ssr", false, "emit SSR project outputs into client/, server/, and styles/")
 	ssrModule := flag.String("ssr-module", "vela/generated/server", "Go module import root for generated SSR packages")
 	mode := flag.String("mode", "development", "build mode: 'development' (default) or 'production'")
+	domEngine := flag.String("dom-engine", "legacy", "DOM engine: 'legacy' (default) or 'blocks' (block runtime, task 039)")
 	flag.Parse()
 
 	targetProfile, err := ParseTargetProfile(*target)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "vela: %v\n", err)
 		os.Exit(2)
+	}
+
+	if engine, err := parseDOMEngine(*domEngine); err != nil {
+		fmt.Fprintf(os.Stderr, "vela: %v\n", err)
+		os.Exit(2)
+	} else if *domEngine != "legacy" || os.Getenv("VELA_DOM_ENGINE") == "" {
+		activeDOMEngine = engine
 	}
 
 	switch *mode {

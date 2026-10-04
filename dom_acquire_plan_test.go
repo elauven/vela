@@ -6,6 +6,7 @@ import (
 )
 
 func TestDOMAcquirePlanTracksStructuralElementsInTemplateOrder(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc, err := parseSFC(`<template><main><button @click={save}>Save</button></main></template>`)
 	if err != nil {
 		t.Fatal(err)

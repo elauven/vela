@@ -30,6 +30,8 @@ export const requiredTests = [
   "TestSSRProjectPublicNamedFormatterHydratesAndUpdatesInBrowser",
   // Block runtime of the hydration architecture (task 039).
   "TestRuntimeBlocksUnderJsdom",
+  "TestBlocksEngineMatchesLegacyEngine",
+  "TestBlocksEngineRendersEachElse",
 ];
 
 export async function requireLaunchableChromium({ moduleName = "playwright", executablePath = "" } = {}) {

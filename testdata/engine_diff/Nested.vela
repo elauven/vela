@@ -1,0 +1,19 @@
+<script>
+  export let items = [];
+  let open = $state(true);
+  let label = $state('x');
+</script>
+<template>
+  <section>
+    <h1>{label}</h1>
+    {#if open}
+      <ul>
+        {#each items as item (item.id)}
+          <li @click={() => label = item.name}>{item.name}
+            {#if item.done}<b>done</b>{:else}<i>todo</i>{/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+</template>

@@ -1,0 +1,23 @@
+<script>
+  export let items = [];
+  let filter = $state('all');
+  let shown = $derived(filter === 'all' ? items : items.filter(i => i.done === (filter === 'done')));
+</script>
+<template>
+  <div>
+    <button class="all" @click={() => filter = 'all'}>all</button>
+    <button class="done" @click={() => filter = 'done'}>done</button>
+    <ul>
+      {#each shown as item, i (item.id)}
+        <li class:done={item.done}>{i}: {item.text}
+          {#if item.tags.length}
+            {#each item.tags as tag}<em>{tag}</em>{/each}
+          {:else}<small>no tags</small>{/if}
+        </li>
+      {:else}
+        <li class="empty">nothing</li>
+      {/each}
+    </ul>
+    {#key filter}<span class="k">{filter}</span>{/key}
+  </div>
+</template>

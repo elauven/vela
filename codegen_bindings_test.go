@@ -25,6 +25,7 @@ import (
 // ─────────────────────────────────────────────
 
 func TestBug11_BindValueEmitsListener(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let name = $state('');
 </script>
@@ -41,6 +42,7 @@ func TestBug11_BindValueEmitsListener(t *testing.T) {
 }
 
 func TestBug11_BindCheckedEmitsListener(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let agree = $state(false);
 </script>
@@ -57,6 +59,7 @@ func TestBug11_BindCheckedEmitsListener(t *testing.T) {
 }
 
 func TestBug11_BindSelectEmitsChangeListener(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let pick = $state('a');
 </script>
@@ -89,6 +92,7 @@ func TestBindMultipleSelectUsesArrayRuntimeHelpers(t *testing.T) {
 // ─────────────────────────────────────────────
 
 func TestBug12_BindThisOnStateRefUsesSetter(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let el = $state(null);
 </script>
@@ -106,6 +110,7 @@ func TestBug12_BindThisOnStateRefUsesSetter(t *testing.T) {
 }
 
 func TestBug12_BindThisOnLocalUsesPlainAssignment(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let myRef;
 </script>

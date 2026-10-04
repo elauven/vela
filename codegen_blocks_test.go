@@ -27,6 +27,7 @@ import (
 // ─────────────────────────────────────────────
 
 func TestMultiRoot_WrapsWhenMultipleSiblings(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let n = $state(0);
   function inc() { n++; }
@@ -52,6 +53,7 @@ func TestMultiRoot_WrapsWhenMultipleSiblings(t *testing.T) {
 }
 
 func TestMultiRoot_NoWrapperForSingleElement(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script></script>
 <template>
   <div>solo</div>
@@ -71,6 +73,7 @@ func TestMultiRoot_NoWrapperForSingleElement(t *testing.T) {
 // ─────────────────────────────────────────────
 
 func TestKey_EmitsKeyprevCache(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let id = $state(1);
 </script>
@@ -89,6 +92,7 @@ func TestKey_EmitsKeyprevCache(t *testing.T) {
 }
 
 func TestKey_ForceDestroyOnKeyChange(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let id = $state(1);
 </script>
@@ -140,6 +144,7 @@ func TestKey_RegistersUpdateOnKeyDeps(t *testing.T) {
 // ─────────────────────────────────────────────
 
 func TestAwait_EmitsThreeBranchChain(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let p = $state(Promise.resolve(1));
 </script>
@@ -170,6 +175,7 @@ func TestAwait_EmitsThreeBranchChain(t *testing.T) {
 }
 
 func TestAwait_RewritesValueBinding(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// {:then v} → references to `v` inside the then branch must
 	// resolve to $$awaitVal_X at runtime.
 	src := `<script>
@@ -197,6 +203,7 @@ func TestAwait_RewritesValueBinding(t *testing.T) {
 }
 
 func TestAwait_RewritesErrorBinding(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let p = $state(Promise.reject('oops'));
 </script>
@@ -217,6 +224,7 @@ func TestAwait_RewritesErrorBinding(t *testing.T) {
 }
 
 func TestAwait_DriverWithStalenessGuard(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let p = $state(Promise.resolve(1));
 </script>
@@ -239,6 +247,7 @@ func TestAwait_DriverWithStalenessGuard(t *testing.T) {
 }
 
 func TestAwait_DriverReRunsOnPromiseChange(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// When the user reassigns the promise, the driver must rerun to
 	// see the new value.  This is wired by registering the driver
 	// as an update for the promise expression's deps.
@@ -267,6 +276,7 @@ func TestAwait_DriverReRunsOnPromiseChange(t *testing.T) {
 }
 
 func TestAwait_OptionalCatchOmitsBranch(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// {#await p}{:then v}...{/await} — no catch — should still work.
 	src := `<script>
   let p = $state(Promise.resolve(1));
@@ -331,6 +341,7 @@ func compileGeneratedAST(t *testing.T, src string) string {
 // closure at build time that captures the build-block locals,
 // and invokes it at branch-teardown.
 func TestIfBranchCleanupClosure(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let show = $state(true);
   let count = $state(0);
@@ -367,6 +378,7 @@ func TestIfBranchCleanupClosure(t *testing.T) {
 // check" invariant — a regression would mean unrelated
 // branches start carrying empty closures.
 func TestIfBranchCleanupClosure_NoCleanup_NoOverhead(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// Static branch body, no listeners or bindings → no cap.cleanup.
 	src := `<script>
   let show = $state(true);
@@ -439,6 +451,7 @@ func TestParseTemplate_AwaitBindingDiagnostics(t *testing.T) {
 }
 
 func TestAwait_InlineThenAndCatchCodegen(t *testing.T) {
+	legacyCodeShapeTest(t)
 	tests := []struct {
 		name    string
 		block   string

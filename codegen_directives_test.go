@@ -46,6 +46,7 @@ func TestDir_ClassDirectiveShorthand(t *testing.T) {
 }
 
 func TestDir_ClassDirectivePreservesStaticClass(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// Static `class="btn"` and dynamic `class:active={cond}` should
 	// coexist — "btn" stays put while "active" toggles.
 	src := `<script>
@@ -69,6 +70,7 @@ func TestDir_ClassDirectivePreservesStaticClass(t *testing.T) {
 }
 
 func TestDir_ClassDirectiveRegistersUpdate(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let active = $state(false);
 </script>
@@ -187,6 +189,7 @@ func TestDir_DirectivesMarkElementDynamic(t *testing.T) {
 }
 
 func TestDir_StyleAndClassCombined(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// All four shapes on one element — sanity check that the parser
 	// doesn't trip over the combination and codegen emits all.
 	src := `<script>

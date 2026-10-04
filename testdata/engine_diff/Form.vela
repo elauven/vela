@@ -1,0 +1,20 @@
+<script>
+  export let start = 'hi';
+  let name = $state('');
+  let agree = $state(false);
+  let color = $state('red');
+  let count = $state(0);
+  let doubled = $derived(count * 2);
+  function inc() { count++; }
+</script>
+<template>
+  <form class="f" class:busy={count > 2} style:color={color}>
+    <input class="name" bind:value={name} />
+    <input class="agree" type="checkbox" bind:checked={agree} />
+    <select class="color" bind:value={color}><option value="red">R</option><option value="blue">B</option></select>
+    <p class="out">{start}: {name} / {agree} / {color} / {count} / {doubled}</p>
+    <button class="inc" type="button" @click={inc}>+</button>
+    <button class="reset" type="button" @click={() => { count = 0; name = 'x'; }}>reset</button>
+    <textarea class="ta">{name}</textarea>
+  </form>
+</template>

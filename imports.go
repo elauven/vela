@@ -292,13 +292,15 @@ func runtimeExportNames(source []byte) map[string]bool {
 	return names
 }
 
-// runtimeImportDecls splits runtime helper imports between the core runtime
-// and the hydration runtime, keeping their order.
+// runtimeImportDecls splits runtime helper imports between the core runtime,
+// the hydration runtime and the block runtime, keeping their order.
 func runtimeImportDecls(specs []JsImportSpec) []JsStmt {
-	var core, hydration []JsImportSpec
+	var core, hydration, blocks []JsImportSpec
 	for _, spec := range specs {
 		if hydrationRuntimeExports[spec.Imported] {
 			hydration = append(hydration, spec)
+		} else if blocksRuntimeExports[spec.Imported] {
+			blocks = append(blocks, spec)
 		} else {
 			core = append(core, spec)
 		}
@@ -307,7 +309,7 @@ func runtimeImportDecls(specs []JsImportSpec) []JsStmt {
 	for _, group := range []struct {
 		specs  []JsImportSpec
 		source string
-	}{{core, defaultRuntimeImport}, {hydration, hydrationRuntimeImport}} {
+	}{{core, defaultRuntimeImport}, {hydration, hydrationRuntimeImport}, {blocks, blocksRuntimeImport}} {
 		if len(group.specs) == 0 {
 			continue
 		}
@@ -346,7 +348,9 @@ func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
 	if runtimeSpecifier == "" {
 		runtimeSpecifier = defaultRuntimeImport
 	}
-	hydrationSpecifier := strings.TrimSuffix(runtimeSpecifier, "runtime.js") + "runtime-hydration.js"
+	dir := strings.TrimSuffix(runtimeSpecifier, "runtime.js")
+	hydrationSpecifier := dir + "runtime-hydration.js"
+	blocksSpecifier := dir + "runtime-blocks.js"
 	var core *JsImportDecl
 	usesRuntime := false
 	for _, stmt := range prog.Body {
@@ -364,6 +368,9 @@ func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
 		case hydrationRuntimeImport:
 			usesRuntime = true
 			imp.Source = hydrationSpecifier
+		case blocksRuntimeImport:
+			usesRuntime = true
+			imp.Source = blocksSpecifier
 		}
 	}
 	if !usesRuntime {
