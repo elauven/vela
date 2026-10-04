@@ -1,0 +1,160 @@
+<script>
+  import BlockLibrary from './BlockLibrary.vela';
+  import Canvas from './Canvas.vela';
+  import Inspector from './Inspector.vela';
+  import { DEFAULTS } from '../core/defaults.js';
+  import { makeStarterPage } from '../core/defaults.js';
+  import { savePage } from '../core/storage.js';
+  import { exportHtmlFile, exportJsonFile, parseSchema } from '../core/exporter.js';
+
+  // page — $state.deep из App: все вложенные правки реактивны.
+  export let page = {};
+
+  let selectedId = $state(null);
+  let mode = $state('edit');          // 'edit' | 'preview'
+  let toast = $state('');
+  let fileEl = $state(null);          // скрытый input для импорта
+  let savedAt = $state('');
+
+  let selected = $derived(page.blocks.find(b => b.id === selectedId) || null);
+
+  function uid() { return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function clone(x) { return JSON.parse(JSON.stringify(x)); }
+
+  // Новый блок вставляется после выбранного (или в конец).
+  function addBlock(type) {
+    const block = { id: uid(), type, props: clone(DEFAULTS[type]) };
+    const i = page.blocks.findIndex(b => b.id === selectedId);
+    if (i >= 0) page.blocks.splice(i + 1, 0, block);
+    else page.blocks.push(block);
+    selectedId = block.id;
+    notify('Блок добавлен');
+  }
+  function removeBlock(id) {
+    const i = page.blocks.findIndex(b => b.id === id);
+    if (i >= 0) page.blocks.splice(i, 1);
+    if (selectedId === id) selectedId = null;
+  }
+  function duplicateBlock(id) {
+    const i = page.blocks.findIndex(b => b.id === id);
+    if (i < 0) return;
+    const copy = clone(page.blocks[i]);
+    copy.id = uid();
+    page.blocks.splice(i + 1, 0, copy);
+    selectedId = copy.id;
+  }
+  function moveBlock(id, dir) {
+    const i = page.blocks.findIndex(b => b.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= page.blocks.length) return;
+    const [b] = page.blocks.splice(i, 1);
+    page.blocks.splice(j, 0, b);
+  }
+
+  let toastTimer = null;
+  function notify(msg) {
+    toast = msg;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast = ''; }, 2200);
+  }
+
+  // Автосохранение: любое изменение страницы (читаем её целиком при сериализации)
+  // сбрасывается в localStorage — эффект батчится микрозадачами.
+  $effect(() => {
+    savePage(page);
+    savedAt = new Date().toLocaleTimeString();
+  });
+
+  function onExportHtml() { exportHtmlFile(page); notify('HTML-файл выгружен'); }
+  function onExportJson() { exportJsonFile(page); notify('Схема страницы выгружена'); }
+
+  function onImportChange(e) {
+    const input = e.target;
+    const f = input.files && input.files[0];
+    if (!f) return;
+    f.text().then(text => {
+      const parsed = parseSchema(text);
+      if (!parsed) { notify('Не удалось прочитать схему'); return; }
+      page.blocks = parsed.blocks;
+      if (parsed.title) page.title = parsed.title;
+      selectedId = null;
+      notify('Страница импортирована');
+    });
+    input.value = '';
+  }
+
+  function onReset() {
+    if (!confirm('Заменить текущую страницу стартовым шаблоном?')) return;
+    const fresh = makeStarterPage();
+    page.title = fresh.title;
+    page.blocks = fresh.blocks;
+    selectedId = null;
+    notify('Загружен стартовый шаблон');
+  }
+</script>
+<template>
+  <div class="editor">
+    <header class="bar">
+      <div class="brand">⛵ Vela Builder</div>
+      <input class="title" value={page.title} @input={(e) => page.title = e.target.value} />
+      <div class="modes">
+        <button class:active={mode === 'edit'} @click={() => mode = 'edit'}>Редактор</button>
+        <button class:active={mode === 'preview'} @click={() => mode = 'preview'}>Предпросмотр</button>
+      </div>
+      <div class="actions">
+        <button @click={() => { savePage(page); notify('Сохранено в браузере'); }}>💾 Сохранить</button>
+        <button @click={onExportHtml} title="Скачать готовую HTML-страницу">⬇ HTML</button>
+        <button @click={onExportJson} title="Скачать схему блоков (JSON)">⬇ Схема</button>
+        <button @click={() => { if (fileEl) fileEl.click(); }} title="Загрузить схему блоков">⬆ Импорт</button>
+        <button @click={onReset} title="Сбросить к стартовому шаблону">↺ Шаблон</button>
+        <span class="saved">{savedAt ? 'Автосохранено ' + savedAt : ''}</span>
+      </div>
+    </header>
+
+    <div class="body">
+      {#if mode === 'edit'}
+        <BlockLibrary onAdd={addBlock} />
+      {/if}
+
+      <main class="stage">
+        <Canvas page={page} mode={mode} selectedId={selectedId}
+          onSelect={(id) => selectedId = id}
+          onRemove={removeBlock}
+          onMove={moveBlock}
+          onDuplicate={duplicateBlock} />
+        </main>
+
+        {#if mode === 'edit'}
+          <Inspector block={selected} />
+        {/if}
+      </div>
+
+      {#if toast}<div class="toast">{toast}</div>{/if}
+
+      <input type="file" accept=".json,application/json" style="display:none"
+        bind:this={fileEl} @change={onImportChange} />
+      </div>
+</template>
+<style>
+  .editor { display: flex; flex-direction: column; height: 100vh; background: #0f1115; color: #e6e9f0;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  .bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #161922;
+         border-bottom: 1px solid #262b38; flex-wrap: wrap; }
+  .brand { font-weight: 800; font-size: 15px; }
+  .title { background: #0f1115; border: 1px solid #2a3040; color: #fff; padding: 8px 10px;
+           border-radius: 8px; min-width: 200px; font: inherit; }
+  .modes { display: flex; background: #0f1115; border-radius: 10px; padding: 3px; }
+  .modes button { border: 0; background: transparent; color: #9aa4b8; padding: 7px 14px;
+                  border-radius: 8px; cursor: pointer; font: inherit; }
+  .modes button.active { background: #2563eb; color: #fff; }
+  .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .actions button { background: #232836; color: #e6e9f0; border: 1px solid #313950;
+                    padding: 8px 12px; border-radius: 8px; cursor: pointer; font: inherit; }
+  .actions button:hover { border-color: #2563eb; }
+  .saved { color: #6b7a94; font-size: 12px; }
+  .body { flex: 1; display: flex; min-height: 0; }
+  .stage { flex: 1; overflow: auto; padding: 24px; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+           background: #232836; border: 1px solid #313950; color: #fff; padding: 10px 18px;
+           border-radius: 10px; z-index: 60; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+</style>

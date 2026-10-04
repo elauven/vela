@@ -1,0 +1,43 @@
+<script>
+  export let p = {};
+
+  let mapSrc = $derived(
+    p.map === 'none' ? '' :
+    p.map === 'google'
+      ? 'https://maps.google.com/maps?q=' + encodeURIComponent(p.address || '') + '&output=embed'
+      : 'https://yandex.ru/map-widget/v1/?text=' + encodeURIComponent(p.address || '')
+  );
+</script>
+<template>
+  <section class="contacts" id="contacts">
+    <div class="wrap">
+      {#if p.title}<h2>{p.title}</h2>{/if}
+      <div class="grid">
+        <div class="info">
+          {#if p.address}<p>📍 {p.address}</p>{/if}
+          {#if p.phone}<p>📞 <a href={'tel:' + p.phone}>{p.phone}</a></p>{/if}
+          {#if p.email}<p>✉️ <a href={'mailto:' + p.email}>{p.email}</a></p>{/if}
+          {#if p.messenger}
+            <p>💬 <a href={p.messenger} target="_blank" rel="noopener">Написать в мессенджере</a></p>
+          {/if}
+        </div>
+        {#if mapSrc}
+          <div class="map">
+            <iframe src={mapSrc} loading="lazy" title="Карта"></iframe>
+          </div>
+        {/if}
+      </div>
+    </div>
+  </section>
+</template>
+<style>
+  .contacts { padding: 56px 0; background: #fff; font-family: system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+  h2 { font-size: 32px; text-align: center; margin: 0 0 32px; color: #17203a; }
+  .grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 26px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .info p { margin: 0 0 12px; font-size: 16px; color: #17203a; }
+  .info a { color: #2563eb; text-decoration: none; }
+  .map { border-radius: 14px; overflow: hidden; min-height: 300px; }
+  .map iframe { width: 100%; height: 100%; min-height: 300px; border: 0; }
+</style>

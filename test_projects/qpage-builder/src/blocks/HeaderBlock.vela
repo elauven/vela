@@ -1,0 +1,39 @@
+<script>
+  export let p = {};
+</script>
+<template>
+  <header class="hdr" class:dark={p.dark}>
+    <div class="row">
+      <a class="logo" href="#">{p.logo || 'Логотип'}</a>
+      <nav class="nav">
+        {#each p.menu || [] as m}
+          <a href={m.href || '#'}>{m.label}</a>
+        {/each}
+      </nav>
+      <div class="side">
+        {#if p.phone}<a class="phone" href={'tel:' + p.phone}>{p.phone}</a>{/if}
+        {#each p.socials || [] as s}
+          <a class="soc" href={s.href || '#'} target="_blank" rel="noopener">{s.label}</a>
+        {/each}
+        {#if p.cta}<a class="cta" href="#form">{p.cta}</a>{/if}
+      </div>
+    </div>
+  </header>
+</template>
+<style>
+  .hdr { background: #fff; border-bottom: 1px solid #e7ebf2; font-family: system-ui, sans-serif; }
+  .hdr.dark { background: #14181f; border-color: #14181f; }
+  .hdr.dark .logo, .hdr.dark .nav a, .hdr.dark .phone { color: #fff; }
+  .hdr.dark .soc { color: #cfd6e4; border-color: #39414f; }
+  .row { max-width: 1100px; margin: 0 auto; padding: 14px 20px; display: flex;
+         align-items: center; gap: 24px; flex-wrap: wrap; }
+  .logo { font-weight: 800; font-size: 20px; color: #17203a; text-decoration: none; }
+  .nav { display: flex; gap: 18px; flex-wrap: wrap; }
+  .nav a { color: #3c4a63; text-decoration: none; font-size: 14.5px; }
+  .side { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .phone { color: #17203a; text-decoration: none; font-weight: 600; font-size: 14px; }
+  .soc { color: #6b7a94; text-decoration: none; font-size: 13px; border: 1px solid #d7deea;
+         border-radius: 8px; padding: 4px 9px; }
+  .cta { background: #2563eb; color: #fff; text-decoration: none; font-weight: 600;
+         font-size: 14px; padding: 9px 16px; border-radius: 10px; }
+</style>

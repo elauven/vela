@@ -1,0 +1,39 @@
+<script>
+  export let p = {};
+
+  let openIndex = $state(-1);
+
+  function toggle(i) {
+    openIndex = openIndex === i ? -1 : i;
+  }
+</script>
+<template>
+  <section class="faq">
+    <div class="wrap">
+      {#if p.title}<h2>{p.title}</h2>{/if}
+      {#each p.items || [] as item, i}
+        <div class="item" class:open={openIndex === i}>
+          <button class="q" type="button" @click={() => toggle(i)}>
+            {item.q}
+            <span class="pm">{openIndex === i ? '−' : '+'}</span>
+          </button>
+          {#if openIndex === i}
+            <div class="a">{item.a}</div>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  </section>
+</template>
+<style>
+  .faq { padding: 56px 0; background: #fff; font-family: system-ui, sans-serif; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 0 20px; }
+  h2 { font-size: 32px; text-align: center; margin: 0 0 32px; color: #17203a; }
+  .item { border: 1px solid #e3e8f2; border-radius: 12px; margin-bottom: 10px;
+          overflow: hidden; background: #fff; }
+  .q { width: 100%; display: flex; justify-content: space-between; gap: 12px; background: none;
+       border: 0; padding: 16px 18px; font-size: 16px; font-weight: 600; color: #17203a;
+       cursor: pointer; text-align: left; font: inherit; font-weight: 600; font-size: 16px; }
+  .pm { color: #2563eb; font-size: 20px; }
+  .a { padding: 0 18px 16px; color: #5b6b85; }
+</style>

@@ -1,0 +1,137 @@
+<script>
+  import { Modal } from './Modal.vela';
+
+  const SETTINGS_KEY = 'vela-dashboard-settings';
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  const saved = loadSettings();
+
+  let userName = $state(saved.userName ?? '');
+  let refreshInterval = $state(saved.refreshInterval ?? 30);
+  let notifications = $state(saved.notifications ?? true);
+  let confirmOpen = $state(false);
+  let savedAt = $state(null);
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    confirmOpen = true;
+  }
+
+  function closeConfirm() {
+    confirmOpen = false;
+  }
+
+  function saveSettings() {
+    confirmOpen = false;
+    try {
+      localStorage.setItem(
+        SETTINGS_KEY,
+        JSON.stringify({ userName, refreshInterval, notifications })
+      );
+      savedAt = new Date();
+    } catch {
+      // хранилище недоступно — настройку не сохраняем
+    }
+  }
+</script>
+<template>
+  <section class="page">
+    <header class="page-header">
+      <h2>Настройки</h2>
+    </header>
+
+    <form class="settings-form" @submit={handleSubmit}>
+      <label class="field">
+        <span>Имя пользователя</span>
+        <input bind:value={userName} placeholder="Как к вам обращаться?" />
+      </label>
+
+      <label class="field">
+        <span>Интервал обновления данных (сек.)</span>
+        <input type="number" min="5" max="3600" bind:value={refreshInterval} />
+      </label>
+
+      <label class="checkbox-field">
+        <input type="checkbox" bind:checked={notifications} />
+        <span>Присылать уведомления</span>
+      </label>
+
+      <div class="form-actions">
+        <button type="submit" class="button">Сохранить</button>
+        {#if savedAt !== null}
+          <span class="saved-note">Сохранено в {savedAt.toLocaleTimeString()}</span>
+        {/if}
+      </div>
+    </form>
+
+    {#if confirmOpen}
+      <Modal title="Сохранить настройки?" @on:close={closeConfirm}>
+        <p>В localStorage будут записаны следующие значения:</p>
+        <ul class="summary-list">
+          <li>Имя: {userName || '—'}</li>
+          <li>Интервал обновления: {refreshInterval} сек.</li>
+          <li>Уведомления: {notifications ? 'включены' : 'выключены'}</li>
+        </ul>
+        <svelte:fragment slot="actions">
+          <button class="button secondary" @click={closeConfirm}>Отмена</button>
+          <button class="button" @click={saveSettings}>Сохранить</button>
+        </svelte:fragment>
+      </Modal>
+    {/if}
+  </section>
+</template>
+<style>
+  .settings-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 24rem;
+    padding: 1.25rem;
+    background: #fff;
+    border: 1px solid #e2e6ee;
+    border-radius: 0.75rem;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .field input {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #cbd2e0;
+    border-radius: 0.5rem;
+    font: inherit;
+  }
+
+  .checkbox-field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .form-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .saved-note {
+    color: #16a34a;
+    font-size: 0.8125rem;
+  }
+
+  .summary-list {
+    margin: 0.5rem 0 0;
+    padding-left: 1.25rem;
+  }
+</style>

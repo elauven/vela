@@ -1,0 +1,72 @@
+<script>
+  import HeaderBlock from '../blocks/HeaderBlock.vela';
+  import FooterBlock from '../blocks/FooterBlock.vela';
+  import HeroBlock from '../blocks/HeroBlock.vela';
+  import TextBlock from '../blocks/TextBlock.vela';
+  import GalleryBlock from '../blocks/GalleryBlock.vela';
+  import VideoBlock from '../blocks/VideoBlock.vela';
+  import FeaturesBlock from '../blocks/FeaturesBlock.vela';
+  import PricingBlock from '../blocks/PricingBlock.vela';
+  import TeamBlock from '../blocks/TeamBlock.vela';
+  import TestimonialsBlock from '../blocks/TestimonialsBlock.vela';
+  import FaqBlock from '../blocks/FaqBlock.vela';
+  import FormBlock from '../blocks/FormBlock.vela';
+  import ContactsBlock from '../blocks/ContactsBlock.vela';
+  import CountdownBlock from '../blocks/CountdownBlock.vela';
+  import QuizBlock from '../blocks/QuizBlock.vela';
+  import CalculatorBlock from '../blocks/CalculatorBlock.vela';
+  import BeforeAfterBlock from '../blocks/BeforeAfterBlock.vela';
+  import EventsBlock from '../blocks/EventsBlock.vela';
+  import TimelineBlock from '../blocks/TimelineBlock.vela';
+  import StatsBlock from '../blocks/StatsBlock.vela';
+
+  export let block = {};
+</script>
+<template>
+  {#if block.type === 'header'}
+    <HeaderBlock p={block.props} />
+  {:else if block.type === 'footer'}
+    <FooterBlock p={block.props} />
+  {:else if block.type === 'hero'}
+    <HeroBlock p={block.props} />
+  {:else if block.type === 'text'}
+    <TextBlock p={block.props} />
+  {:else if block.type === 'gallery'}
+    <GalleryBlock p={block.props} />
+  {:else if block.type === 'video'}
+    <VideoBlock p={block.props} />
+  {:else if block.type === 'features'}
+    <FeaturesBlock p={block.props} />
+  {:else if block.type === 'pricing'}
+    <PricingBlock p={block.props} />
+  {:else if block.type === 'team'}
+    <TeamBlock p={block.props} />
+  {:else if block.type === 'testimonials'}
+    <TestimonialsBlock p={block.props} />
+  {:else if block.type === 'faq'}
+    <FaqBlock p={block.props} />
+  {:else if block.type === 'form'}
+    <FormBlock p={block.props} />
+  {:else if block.type === 'contacts'}
+    <ContactsBlock p={block.props} />
+  {:else if block.type === 'countdown'}
+    <CountdownBlock p={block.props} />
+  {:else if block.type === 'quiz'}
+    <QuizBlock p={block.props} />
+  {:else if block.type === 'calculator'}
+    <CalculatorBlock p={block.props} />
+  {:else if block.type === 'beforeafter'}
+    <BeforeAfterBlock p={block.props} />
+  {:else if block.type === 'events'}
+    <EventsBlock p={block.props} />
+  {:else if block.type === 'timeline'}
+    <TimelineBlock p={block.props} />
+  {:else if block.type === 'stats'}
+    <StatsBlock p={block.props} />
+  {:else}
+    <div class="unknown">Неизвестный блок: {block.type}</div>
+  {/if}
+</template>
+<style>
+  .unknown { padding: 24px; text-align: center; color: #b00020; background: #fff3f3; }
+</style>

@@ -1,0 +1,15 @@
+<script>
+  import Editor from './editor/Editor.vela';
+  import { loadPage } from './core/storage.js';
+  import { makeStarterPage } from './core/defaults.js';
+
+  // Загружаем сохранённую страницу из localStorage или стартовый шаблон.
+  // $state.deep — содержимое блоков редактируется «на месте» (вложенные мутации).
+  let page = $state.deep(loadPage() || makeStarterPage());
+</script>
+<template>
+  <Editor page={page} />
+</template>
+<style>
+  :global(body) { background: #0f1115; }
+</style>

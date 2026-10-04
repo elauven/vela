@@ -1,0 +1,33 @@
+<script>
+  export let p = {};
+
+  let overlay = $derived(((p.overlay ?? 40)) / 100);
+  let bgImage = $derived(p.bg
+    ? 'linear-gradient(rgba(13,18,32,' + overlay + '),rgba(13,18,32,' + overlay + ')), url(' + p.bg + ')'
+    : 'none');
+</script>
+<template>
+  <section class="hero"
+    class:left={p.align === 'left'} class:right={p.align === 'right'}
+    style:min-height={(p.height || 70) + 'vh'}
+    style:background-image={bgImage}>
+    <div class="box">
+      <h1>{p.title}</h1>
+      {#if p.subtitle}<p>{p.subtitle}</p>{/if}
+      {#if p.btn}<a class="btn" href={p.btnHref || '#form'}>{p.btn}</a>{/if}
+    </div>
+  </section>
+</template>
+<style>
+  .hero { display: flex; align-items: center; text-align: center; color: #fff;
+          background-color: #101623; background-size: cover; background-position: center;
+          font-family: system-ui, sans-serif; }
+  .hero.left { text-align: left; }
+  .hero.right { text-align: right; }
+  .box { max-width: 1100px; margin: 0 auto; padding: 80px 20px; width: 100%; }
+  h1 { font-size: 48px; margin: 0 0 14px; line-height: 1.15; }
+  p { font-size: 19px; opacity: .92; max-width: 640px; margin: 0 auto 26px; }
+  .hero.left p, .hero.right p { margin-left: 0; margin-right: 0; }
+  .btn { display: inline-block; background: #2563eb; color: #fff; padding: 15px 30px;
+         border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 17px; }
+</style>

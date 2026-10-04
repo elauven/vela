@@ -1,0 +1,46 @@
+<script>
+  export let p = {};
+
+  let feats = (plan) => String(plan.features || '')
+    .split('\n').map(s => s.trim()).filter(Boolean);
+</script>
+<template>
+  <section class="pricing" id="pricing">
+    <div class="wrap">
+      {#if p.title}<h2>{p.title}</h2>{/if}
+      <div class="plans">
+        {#each p.plans || [] as plan}
+          <div class="plan" class:hot={!!plan.hot}>
+            {#if plan.hot}<div class="badge">Популярный</div>{/if}
+            <h3>{plan.name}</h3>
+            <div class="price">{plan.price}</div>
+            <ul>
+              {#each feats(plan) as f}<li>{f}</li>{/each}
+            </ul>
+            <a class="btn" class:ghost={!plan.hot} href="#form">{plan.cta || 'Выбрать'}</a>
+          </div>
+        {/each}
+      </div>
+    </div>
+  </section>
+</template>
+<style>
+  .pricing { padding: 56px 0; background: #f8fafd; font-family: system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+  h2 { font-size: 32px; text-align: center; margin: 0 0 36px; color: #17203a; }
+  .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+           gap: 18px; align-items: start; }
+  .plan { border: 1px solid #e3e8f2; border-radius: 16px; padding: 26px; position: relative;
+          background: #fff; }
+  .plan.hot { border-color: #2563eb; box-shadow: 0 12px 34px rgba(37,99,235,.16); }
+  .badge { position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+           background: #2563eb; color: #fff; font-size: 12px; padding: 4px 12px;
+           border-radius: 999px; }
+  h3 { margin: 0; font-size: 19px; color: #17203a; }
+  .price { font-size: 32px; font-weight: 800; margin: 8px 0 14px; color: #17203a; }
+  ul { margin: 0 0 18px; padding-left: 20px; color: #3c4a63; }
+  li { margin-bottom: 6px; }
+  .btn { display: inline-block; background: #2563eb; color: #fff; padding: 11px 20px;
+         border-radius: 10px; text-decoration: none; font-weight: 600; }
+  .btn.ghost { background: transparent; color: #2563eb; border: 2px solid #2563eb; }
+</style>

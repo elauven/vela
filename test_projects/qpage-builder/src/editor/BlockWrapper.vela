@@ -1,0 +1,50 @@
+<script>
+  import { blockDef } from '../core/registry.js';
+
+  export let block = {};
+  export let edit = true;
+  export let selected = false;
+  export let onSelect = () => {};
+  export let onRemove = () => {};
+  export let onMove = () => {};
+  export let onDuplicate = () => {};
+
+  let def = $derived(blockDef(block.type));
+</script>
+<template>
+  <div class="bw" class:selected class:edit
+    @click={() => { if (edit) onSelect(block.id); }}>
+    <slot></slot>
+
+    {#if edit}
+      <!-- Прозрачная плёнка: клики внутри блока только выделяют его,
+      не мешая редактированию в инспекторе. -->
+      <div class="veil"></div>
+      <div class="tag">{def ? def.icon + ' ' + def.label : block.type}</div>
+      {#if selected}
+        <div class="tools">
+          <button title="Вверх" @click={(e) => { e.stopPropagation(); onMove(block.id, -1); }}>↑</button>
+          <button title="Вниз" @click={(e) => { e.stopPropagation(); onMove(block.id, 1); }}>↓</button>
+          <button title="Дублировать" @click={(e) => { e.stopPropagation(); onDuplicate(block.id); }}>⧉</button>
+          <button class="danger" title="Удалить"
+            @click={(e) => { e.stopPropagation(); if (confirm('Удалить блок?')) onRemove(block.id); }}>✕</button>
+          </div>
+        {/if}
+      {/if}
+    </div>
+</template>
+<style>
+  .bw { position: relative; }
+  .bw.edit .veil { position: absolute; inset: 0; z-index: 5; cursor: pointer; }
+  .bw.edit:hover { outline: 2px dashed rgba(37, 99, 235, .55); outline-offset: -2px; }
+  .bw.selected { outline: 2px solid #2563eb; outline-offset: -2px; }
+  .tag { position: absolute; left: 8px; top: 8px; z-index: 6; background: #2563eb; color: #fff;
+         font-size: 11px; padding: 3px 8px; border-radius: 6px; opacity: 0; pointer-events: none;
+         transition: opacity .12s; }
+  .bw.edit:hover .tag, .bw.selected .tag { opacity: 1; }
+  .tools { position: absolute; right: 8px; top: 8px; z-index: 7; display: flex; gap: 4px; }
+  .tools button { width: 28px; height: 28px; border-radius: 7px; border: 0; background: #161922;
+                  color: #fff; cursor: pointer; font-size: 13px; }
+  .tools button:hover { background: #2563eb; }
+  .tools .danger:hover { background: #e5484d; }
+</style>

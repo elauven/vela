@@ -1,0 +1,177 @@
+<script>
+  import { onDestroy } from 'vela';
+  import { router } from './router.js';
+  import { OverviewPage } from './OverviewPage.vela';
+  import { UsersPage } from './UsersPage.vela';
+  import { UserDetailPage } from './UserDetailPage.vela';
+  import { SettingsPage } from './SettingsPage.vela';
+
+  let route = $state(router.getCurrent());
+
+  let isUsersSection = $derived(
+    route.component === 'users' || route.component === 'user-detail'
+  );
+
+  $effect(() => {
+    const unsubscribe = router.onChange((next) => {
+      route = next;
+      console.log(route.component);
+    });
+    return unsubscribe;
+  });
+
+  onDestroy(() => {
+    router.destroy();
+  });
+
+  function goTo(event, path) {
+      event.preventDefault();
+      router.push(path);
+  }
+</script>
+<template>
+  <div class="layout">
+    <aside class="sidebar">
+      <span class="brand">Vela Dashboard</span>
+      <nav class="nav">
+        <a href="/" class:active={route.component === 'overview'} @click={(e) => goTo(e, '/')}>
+          Обзор
+        </a>
+        <a href="/users" class:active={isUsersSection} @click={(e) => goTo(e, '/users')}>
+          Пользователи
+        </a>
+        <a href="/settings" class:active={route.component === 'settings'} @click={(e) => goTo(e, '/settings')}>
+          Настройки
+        </a>
+      </nav>
+    </aside>
+
+    <main class="content">
+      {#if route.component === 'overview'}
+        <OverviewPage />
+      {:else if route.component === 'users'}
+        <UsersPage />
+      {:else if route.component === 'user-detail'}
+        {#key route.params.id}
+          <UserDetailPage :userId={route.params.id} />
+        {/key}
+      {:else if route.component === 'settings'}
+        <SettingsPage />
+      {:else}
+        <section class="page">
+          <h2>Страница не найдена</h2>
+          <p>Путь {route.path} не существует.</p>
+        </section>
+      {/if}
+    </main>
+  </div>
+</template>
+<style>
+  .layout {
+    display: flex;
+    min-height: 100vh;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #1f2430;
+  }
+
+  .sidebar {
+    width: 14rem;
+    padding: 1.5rem 1rem;
+    background: #111827;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .brand {
+    padding: 0 0.5rem;
+    color: #fff;
+    font-weight: 700;
+  }
+
+  .nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .nav a {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    color: #cbd5e1;
+    text-decoration: none;
+  }
+
+  .nav a:hover {
+    background: #1f2937;
+    color: #fff;
+  }
+
+  .nav a.active {
+    background: #345cff;
+    color: #fff;
+  }
+
+  .content {
+    flex: 1;
+    padding: 2rem;
+    background: #f5f7fb;
+  }
+
+  /* Общие классы интерфейса — намеренно глобальные,
+     чтобы страницы и модалка не дублировали одни и те же стили. */
+  :global(.page-header) {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  :global(.page h2) {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+
+  :global(.button) {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 0.5rem;
+    background: #345cff;
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  :global(.button:disabled) {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  :global(.button.secondary) {
+    background: #e5e9f2;
+    color: #1f2430;
+  }
+
+  :global(.button.danger) {
+    background: #dc2626;
+  }
+
+  :global(.button.small) {
+    padding: 0.25rem 0.625rem;
+    font-size: 0.8125rem;
+  }
+
+  :global(.loading) {
+    color: #5a6375;
+  }
+
+  :global(.error) {
+    color: #dc2626;
+  }
+
+  :global(.hint) {
+    color: #8a93a6;
+    font-size: 0.75rem;
+  }
+</style>

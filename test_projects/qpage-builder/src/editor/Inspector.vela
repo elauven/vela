@@ -1,0 +1,150 @@
+<script>
+  import { blockDef } from '../core/registry.js';
+
+  export let block = null;
+
+  let def = $derived(block ? blockDef(block.type) : null);
+
+  function set(name, value) { block.props[name] = value; }
+
+  function setSub(item, sf, e) {
+    const v = e.target.value;
+    item[sf.name] = sf.kind === 'number' ? (v === '' ? 0 : +v) : v;
+  }
+
+  function ensureArr(f) {
+    if (!Array.isArray(block.props[f.name])) block.props[f.name] = [];
+    return block.props[f.name];
+  }
+  function addObj(f) {
+    const o = {};
+    (f.fields || []).forEach(sf => { o[sf.name] = sf.kind === 'number' ? 1 : ''; });
+    ensureArr(f).push(o);
+  }
+  function addStr(f) { ensureArr(f).push('Новый пункт'); }
+  function del(arr, i) { if (arr) arr.splice(i, 1); }
+  function move(arr, i, d) {
+    if (!arr) return;
+    const j = i + d;
+    if (j < 0 || j >= arr.length) return;
+    const [x] = arr.splice(i, 1);
+    arr.splice(j, 0, x);
+  }
+</script>
+<template>
+  <aside class="ins">
+    {#if block}
+      <div class="head">
+        <span class="ico">{def ? def.icon : '🧩'}</span>
+        <div>
+          <h3>{def ? def.label : block.type}</h3>
+          <p>Настройка содержимого</p>
+        </div>
+      </div>
+
+      <div class="fields">
+        {#each def ? def.fields : [] as f}
+          <div class="field">
+            <label class="fl">{f.label}</label>
+
+            {#if f.kind === 'textarea'}
+              <textarea rows={f.rows || 4} value={block.props[f.name] ?? ''}
+                @input={(e) => set(f.name, e.target.value)}></textarea>
+
+              {:else if f.kind === 'number'}
+                <input type="number" value={block.props[f.name] ?? 0}
+                  @input={(e) => set(f.name, e.target.value === '' ? 0 : +e.target.value)} />
+
+                {:else if f.kind === 'check'}
+                  <label class="chk">
+                    <input type="checkbox" checked={!!block.props[f.name]}
+                      @change={(e) => set(f.name, e.target.checked)} />
+                      <span>включено</span>
+                    </label>
+
+                  {:else if f.kind === 'datetime'}
+                    <input type="datetime-local" value={block.props[f.name] ?? ''}
+                      @input={(e) => set(f.name, e.target.value)} />
+
+                    {:else if f.kind === 'seg'}
+                      <div class="seg">
+                        {#each f.options as o}
+                          <button type="button" class:active={block.props[f.name] === o.v}
+                            @click={() => set(f.name, o.v)}>{o.t}</button>
+                          {/each}
+                        </div>
+
+                      {:else if f.kind === 'list'}
+                        {#each block.props[f.name] || [] as item, i}
+                          <div class="item">
+                            {#each f.fields as sf}
+                              {#if sf.kind === 'textarea'}
+                                <textarea rows="2" placeholder={sf.label} value={item[sf.name] ?? ''}
+                                  @input={(e) => setSub(item, sf, e)}></textarea>
+                                {:else}
+                                  <input type={sf.kind === 'number' ? 'number' : 'text'}
+                                    placeholder={sf.label} value={item[sf.name] ?? ''}
+                                    @input={(e) => setSub(item, sf, e)} />
+                                  {/if}
+                                {/each}
+                                <div class="ibtns">
+                                  <button type="button" title="Выше" @click={() => move(block.props[f.name], i, -1)}>↑</button>
+                                  <button type="button" title="Ниже" @click={() => move(block.props[f.name], i, 1)}>↓</button>
+                                  <button type="button" class="del" title="Удалить" @click={() => del(block.props[f.name], i)}>✕</button>
+                                </div>
+                              </div>
+                            {/each}
+                            <button type="button" class="add" @click={() => addObj(f)}>+ Добавить</button>
+
+                          {:else if f.kind === 'strings'}
+                            {#each block.props[f.name] || [] as s, i}
+                              <div class="item solo">
+                                <input value={s} @input={(e) => block.props[f.name][i] = e.target.value} />
+                                <button type="button" class="del" @click={() => del(block.props[f.name], i)}>✕</button>
+                              </div>
+                            {/each}
+                            <button type="button" class="add" @click={() => addStr(f)}>+ Добавить</button>
+
+                          {:else}
+                            <input type="text" value={block.props[f.name] ?? ''}
+                              @input={(e) => set(f.name, e.target.value)} />
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
+
+                    {:else}
+                      <div class="placeholder">
+                        <div class="big">🧩</div>
+                        <p>Выберите блок на холсте, чтобы настроить его содержимое.</p>
+                      </div>
+                    {/if}
+                  </aside>
+</template>
+<style>
+  .ins { width: 330px; background: #161922; border-left: 1px solid #262b38; overflow: auto; padding: 16px; }
+  .head { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
+  .head .ico { font-size: 26px; }
+  .head h3 { margin: 0; font-size: 15px; }
+  .head p { margin: 2px 0 0; color: #6b7a94; font-size: 12px; }
+  .field { margin-bottom: 14px; }
+  .fl { display: block; font-size: 12px; color: #9aa4b8; margin-bottom: 5px; }
+  .ins input, .ins textarea { width: 100%; background: #0f1115; border: 1px solid #2a3040;
+        color: #fff; padding: 8px 10px; border-radius: 8px; font: inherit; font-size: 13px; }
+  .ins textarea { resize: vertical; }
+  .chk { display: flex; gap: 8px; align-items: center; color: #dbe2ee; font-size: 13px; }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { background: #0f1115; border: 1px solid #2a3040; color: #9aa4b8;
+                padding: 6px 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 12.5px; }
+  .seg button.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+  .item { border: 1px solid #262b38; padding: 8px; border-radius: 8px; margin-bottom: 8px;
+          display: grid; gap: 6px; background: #191d28; }
+  .item.solo { grid-template-columns: 1fr auto; align-items: center; }
+  .ibtns { display: flex; gap: 6px; justify-content: flex-end; }
+  .ibtns button, .add { background: #232836; border: 1px solid #313950; color: #dbe2ee;
+                        border-radius: 6px; padding: 4px 9px; cursor: pointer; font: inherit; font-size: 12px; }
+  .add { width: 100%; padding: 7px; }
+  .del { color: #ff8f8f; }
+  .placeholder { color: #7c879c; text-align: center; margin-top: 50px; padding: 0 10px; }
+  .placeholder .big { font-size: 40px; margin-bottom: 10px; }
+</style>

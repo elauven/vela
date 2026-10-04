@@ -1,0 +1,36 @@
+<script>
+  import { BLOCKS, GROUPS } from '../core/registry.js';
+
+  export let onAdd = () => {};
+
+  let groups = $derived(GROUPS.map(g => ({
+    name: g,
+    items: BLOCKS.filter(b => b.group === g)
+  })));
+</script>
+<template>
+  <aside class="lib">
+    <h3>Блоки</h3>
+    <p class="hint">Клик — добавить после выбранного блока.</p>
+    {#each groups as g}
+      <div class="grp">{g.name}</div>
+      {#each g.items as b}
+        <button class="lib-item" @click={() => onAdd(b.type)}>
+          <span class="ico">{b.icon}</span>
+          <span>{b.label}</span>
+        </button>
+      {/each}
+    {/each}
+  </aside>
+</template>
+<style>
+  .lib { width: 235px; background: #161922; border-right: 1px solid #262b38; overflow: auto; padding: 14px; }
+  h3 { margin: 0 0 4px; font-size: 15px; }
+  .hint { color: #6b7a94; font-size: 12px; margin: 0 0 10px; }
+  .grp { text-transform: uppercase; font-size: 10.5px; letter-spacing: .07em; color: #7c879c; margin: 14px 0 6px; }
+  .lib-item { display: flex; gap: 9px; align-items: center; width: 100%; text-align: left;
+              background: #1d2230; border: 1px solid #2a3040; color: #dbe2ee; padding: 9px 10px;
+              border-radius: 9px; margin-bottom: 6px; cursor: pointer; font: inherit; font-size: 13.5px; }
+  .lib-item:hover { border-color: #2563eb; }
+  .ico { width: 22px; text-align: center; }
+</style>

@@ -1,0 +1,31 @@
+<script>
+  export let p = {};
+
+  let paras = $derived(String(p.body || '')
+    .split(/\n+/).map(s => s.trim()).filter(Boolean));
+</script>
+<template>
+  <section class="txt">
+    <div class="wrap">
+      {#if p.heading}<h2>{p.heading}</h2>{/if}
+      {#if p.quote}<blockquote>«{p.quote}»</blockquote>{/if}
+      {#if (p.columns || 1) > 1}
+        <div class="cols" style:columns={p.columns}>
+          {#each paras as t}<p>{t}</p>{/each}
+        </div>
+      {:else}
+        {#each paras as t}<p>{t}</p>{/each}
+      {/if}
+    </div>
+  </section>
+</template>
+<style>
+  .txt { padding: 56px 0; font-family: system-ui, sans-serif; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 0 20px; }
+  h2 { font-size: 32px; margin: 0 0 20px; text-align: center; color: #17203a; }
+  blockquote { border-left: 4px solid #2563eb; margin: 0 0 18px; padding: 8px 18px;
+               font-size: 19px; font-style: italic; color: #33415e; background: #f3f6fc;
+               border-radius: 0 10px 10px 0; }
+  p { color: #3c4a63; font-size: 16.5px; line-height: 1.6; }
+  .cols { column-gap: 40px; }
+</style>

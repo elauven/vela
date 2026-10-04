@@ -1,0 +1,61 @@
+<script>
+  export let p = {};
+
+  let i = $state(0);
+  let imgs = $derived((p.images || []).filter(im => im.src));
+  let safe = $derived(imgs.length ? i % imgs.length : 0);
+
+  function step(d) {
+    if (!imgs.length) return;
+    i = (safe + d + imgs.length) % imgs.length;
+  }
+</script>
+<template>
+  <section class="gal">
+    <div class="wrap">
+      {#if p.title}<h2>{p.title}</h2>{/if}
+
+      {#if imgs.length === 0}
+        <p class="hint">Добавьте изображения в настройках блока.</p>
+      {:else if p.mode === 'slider'}
+        <div class="slider">
+          <img src={imgs[safe].src} alt={imgs[safe].alt || ''} />
+          <button class="arr prev" @click={() => step(-1)} aria-label="Назад">‹</button>
+          <button class="arr next" @click={() => step(1)} aria-label="Вперёд">›</button>
+          <div class="dots">
+            {#each imgs as im, k}
+              <button class="dot" class:active={k === safe} @click={() => i = k}></button>
+            {/each}
+          </div>
+        </div>
+      {:else}
+        <div class="grid" style:grid-template-columns={'repeat(' + (p.cols || 3) + ', 1fr)'}>
+          {#each imgs as im}
+            <figure><img src={im.src} alt={im.alt || ''} loading="lazy" /></figure>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  </section>
+</template>
+<style>
+  .gal { padding: 56px 0; background: #fff; font-family: system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+  h2 { font-size: 32px; text-align: center; margin: 0 0 32px; color: #17203a; }
+  .hint { text-align: center; color: #8a94a8; }
+  .grid { display: grid; gap: 14px; }
+  .grid figure { margin: 0; border-radius: 12px; overflow: hidden; }
+  .grid img { width: 100%; height: 220px; object-fit: cover; display: block; }
+  .slider { position: relative; border-radius: 14px; overflow: hidden; }
+  .slider img { width: 100%; height: 440px; object-fit: cover; display: block; }
+  .arr { position: absolute; top: 50%; transform: translateY(-50%); width: 42px; height: 42px;
+         border-radius: 50%; border: 0; background: rgba(20,24,31,.55); color: #fff;
+         font-size: 22px; cursor: pointer; }
+  .arr.prev { left: 14px; }
+  .arr.next { right: 14px; }
+  .dots { position: absolute; bottom: 12px; left: 0; right: 0; display: flex; gap: 6px;
+          justify-content: center; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; border: 0; padding: 0;
+         background: rgba(255,255,255,.5); cursor: pointer; }
+  .dot.active { background: #fff; }
+</style>

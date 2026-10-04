@@ -1,0 +1,48 @@
+<script>
+  import { onDestroy } from 'vela';
+
+  export let p = {};
+
+  let now = $state(Date.now());
+
+  // Тик раз в секунду; очистка интервала — через возврат из эффекта.
+  $effect(() => {
+    const id = setInterval(() => { now = Date.now(); }, 1000);
+    return () => clearInterval(id);
+  });
+
+  let end = $derived(new Date(p.deadline || 0).getTime() || 0);
+  let diff = $derived(Math.max(0, end - now));
+  let days = $derived(Math.floor(diff / 86400000));
+  let hours = $derived(Math.floor(diff / 3600000) % 24);
+  let mins = $derived(Math.floor(diff / 60000) % 60);
+  let secs = $derived(Math.floor(diff / 1000) % 60);
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+</script>
+<template>
+  <section class="cd">
+    <div class="wrap">
+      <h2>{p.title}</h2>
+      <div class="timer">
+        <div class="tu"><b>{days}</b><span>дней</span></div>
+        <div class="tu"><b>{pad(hours)}</b><span>часов</span></div>
+        <div class="tu"><b>{pad(mins)}</b><span>минут</span></div>
+        <div class="tu"><b>{pad(secs)}</b><span>секунд</span></div>
+      </div>
+      {#if p.cta}<a class="btn" href="#form">{p.cta}</a>{/if}
+    </div>
+  </section>
+</template>
+<style>
+  .cd { background: #14181f; color: #fff; padding: 56px 0; text-align: center;
+        font-family: system-ui, sans-serif; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 0 20px; }
+  h2 { font-size: 30px; margin: 0 0 28px; color: #fff; }
+  .timer { display: flex; gap: 14px; justify-content: center; margin-bottom: 28px; flex-wrap: wrap; }
+  .tu { background: #1f2634; border-radius: 14px; padding: 16px 20px; min-width: 92px; }
+  .tu b { display: block; font-size: 34px; }
+  .tu span { color: #8a94a8; font-size: 13px; }
+  .btn { display: inline-block; background: #2563eb; color: #fff; padding: 14px 28px;
+         border-radius: 10px; text-decoration: none; font-weight: 600; }
+</style>

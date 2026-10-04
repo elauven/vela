@@ -1,0 +1,39 @@
+<script>
+  import BlockWrapper from './BlockWrapper.vela';
+  import BlockRenderer from './BlockRenderer.vela';
+
+  export let page = {};
+  export let mode = 'edit';
+  export let selectedId = null;
+  export let onSelect = () => {};
+  export let onRemove = () => {};
+  export let onMove = () => {};
+  export let onDuplicate = () => {};
+
+  let edit = $derived(mode === 'edit');
+</script>
+<template>
+  <div class="canvas" class:preview={!edit}>
+    {#each page.blocks as block (block.id)}
+      <BlockWrapper block={block} edit={edit} selected={selectedId === block.id}
+        onSelect={onSelect} onRemove={onRemove} onMove={onMove} onDuplicate={onDuplicate}>
+        <BlockRenderer block={block} />
+      </BlockWrapper>
+    {/each}
+
+    {#if page.blocks.length === 0}
+      <div class="empty">
+        <div class="big">🧱</div>
+        <p><b>Страница пуста.</b></p>
+        <p>Выберите блок в библиотеке слева, чтобы начать.</p>
+      </div>
+    {/if}
+  </div>
+</template>
+<style>
+  .canvas { max-width: 1200px; margin: 0 auto; background: #fff; border-radius: 12px;
+            overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.4); min-height: 100%; }
+  .canvas.preview { max-width: none; border-radius: 0; box-shadow: none; }
+  .empty { padding: 120px 20px; text-align: center; color: #5b6b85; }
+  .empty .big { font-size: 44px; margin-bottom: 12px; }
+</style>

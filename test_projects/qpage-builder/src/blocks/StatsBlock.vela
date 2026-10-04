@@ -1,0 +1,43 @@
+<script>
+  import { onMount } from 'vela';
+
+  export let p = {};
+
+  // Анимированные счётчики: разгон от 0 до значения при монтировании.
+  let shown = $state.deep((p.items || []).map(() => 0));
+
+  onMount(() => {
+    const start = Date.now();
+    const id = setInterval(() => {
+      const t = Math.min(1, (Date.now() - start) / 1200);
+      (p.items || []).forEach((it, i) => { shown[i] = Math.round((it.value || 0) * t); });
+      if (t >= 1) clearInterval(id);
+    }, 30);
+    // onMount может вернуть cleanup — эквивалент onDestroy.
+    return () => clearInterval(id);
+  });
+</script>
+<template>
+  <section class="stats">
+    <div class="wrap">
+      {#if p.title}<h2>{p.title}</h2>{/if}
+      <div class="grid">
+        {#each p.items || [] as it, i}
+          <div class="stat">
+            <b>{(shown[i] || 0)}{it.suffix || ''}</b>
+            <span>{it.label}</span>
+          </div>
+        {/each}
+      </div>
+    </div>
+  </section>
+</template>
+<style>
+  .stats { background: #2563eb; color: #fff; padding: 56px 0; font-family: system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+  h2 { font-size: 32px; text-align: center; margin: 0 0 36px; color: #fff; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 20px; text-align: center; }
+  .stat b { font-size: 44px; display: block; }
+  .stat span { opacity: .85; }
+</style>

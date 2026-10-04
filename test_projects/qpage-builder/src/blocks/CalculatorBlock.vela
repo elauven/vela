@@ -1,0 +1,48 @@
+<script>
+  export let p = {};
+
+  let qty = $state(p.value ?? 50);
+  let checked = $state.deep((p.options || []).map(() => false));
+
+  let mult = $derived((p.options || []).reduce(
+    (acc, o, i) => checked[i] ? acc * (o.k || 1) : acc, 1));
+  let total = $derived(Math.round((p.base || 0) * qty * mult));
+</script>
+<template>
+  <section class="calc">
+    <div class="wrap">
+      <h2>{p.title}</h2>
+      <div class="box">
+        <label class="qty">
+          <span>Количество ({p.unit || 'ед.'})</span>
+          <input type="range" min={p.min || 1} max={p.max || 1000} value={qty}
+            @input={(e) => qty = +e.target.value} />
+            <b>{qty} {p.unit || ''}</b>
+          </label>
+
+          <div class="opts">
+            {#each p.options || [] as o, i}
+              <label class="chk">
+                <input type="checkbox" checked={!!checked[i]}
+                  @change={() => checked[i] = !checked[i]} />
+                  {o.label} <span class="k">×{o.k}</span>
+                </label>
+              {/each}
+            </div>
+
+            <div class="total">Итого: <b>{total.toLocaleString('ru-RU')} ₽</b></div>
+          </div>
+        </div>
+      </section>
+</template>
+<style>
+  .calc { padding: 56px 0; background: #f8fafd; font-family: system-ui, sans-serif; }
+  .wrap { max-width: 700px; margin: 0 auto; padding: 0 20px; }
+  h2 { font-size: 30px; text-align: center; margin: 0 0 24px; color: #17203a; }
+  .box { background: #fff; border: 1px solid #e9edf4; border-radius: 16px; padding: 26px; }
+  .qty { display: grid; gap: 8px; margin-bottom: 16px; font-weight: 600; color: #17203a; }
+  .qty input { width: 100%; }
+  .chk { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; color: #3c4a63; }
+  .k { color: #8a94a8; }
+  .total { margin-top: 16px; font-size: 20px; color: #17203a; }
+</style>

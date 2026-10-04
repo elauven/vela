@@ -1,0 +1,81 @@
+<script>
+  export let p = {};
+
+  let step = $state(0);
+  let done = $state(false);
+  let answers = $state.deep([]);
+
+  let steps = $derived((p.steps || []).map(s => ({
+    q: s.question,
+    opts: String(s.options || '').split('\n').map(x => x.trim()).filter(Boolean)
+  })));
+  let cur = $derived(steps[step] || null);
+
+  function choose(opt) {
+    answers[step] = opt;
+    if (step + 1 < steps.length) step = step + 1;
+    else done = true;
+  }
+  function restart() {
+    step = 0;
+    done = false;
+    answers.splice(0, answers.length);
+  }
+</script>
+<template>
+  <section class="quiz">
+    <div class="wrap">
+      <h2>{p.title}</h2>
+
+      {#if done}
+        <div class="result">
+          <p class="r-title">{p.result || 'Готово!'}</p>
+          <ul>
+            {#each answers as a, i}
+              <li>{steps[i] ? steps[i].q : ''}: <b>{a}</b></li>
+            {/each}
+          </ul>
+          <a class="btn" href="#form">{p.btn || 'Получить расчёт'}</a>
+          <button class="again" type="button" @click={restart}>Пройти заново</button>
+        </div>
+      {:else if cur}
+        <div class="progress">
+          <div class="bar" style:width={Math.round(((step + 1) / steps.length) * 100) + '%'}></div>
+        </div>
+        <h3>{cur.q}</h3>
+        <div class="opts">
+          {#each cur.opts as o}
+            <button class="opt" class:active={answers[step] === o}
+              type="button" @click={() => choose(o)}>{o}</button>
+            {/each}
+          </div>
+          {#if step > 0}
+            <button class="back" type="button" @click={() => step = step - 1}>← Назад</button>
+          {/if}
+        {/if}
+      </div>
+    </section>
+</template>
+<style>
+  .quiz { padding: 56px 0; background: #fff; font-family: system-ui, sans-serif; }
+  .wrap { max-width: 700px; margin: 0 auto; padding: 0 20px; }
+  h2 { font-size: 30px; text-align: center; margin: 0 0 24px; color: #17203a; }
+  .progress { height: 6px; background: #e7ebf2; border-radius: 999px; margin-bottom: 20px;
+              overflow: hidden; }
+  .bar { height: 100%; background: #2563eb; border-radius: 999px; transition: width .2s; }
+  h3 { font-size: 20px; margin: 0 0 14px; color: #17203a; }
+  .opts { display: grid; gap: 10px; }
+  .opt { background: #fff; border: 1.5px solid #d7deea; border-radius: 10px; padding: 12px 14px;
+         font-size: 15px; cursor: pointer; text-align: left; font: inherit; }
+  .opt:hover { border-color: #2563eb; }
+  .opt.active { border-color: #2563eb; background: #eef4ff; }
+  .back { margin-top: 14px; background: none; border: 0; color: #2563eb; cursor: pointer;
+          font: inherit; }
+  .result { background: #f5f7fb; border-radius: 16px; padding: 26px; }
+  .r-title { font-weight: 600; margin: 0 0 12px; }
+  ul { margin: 0 0 18px; padding-left: 20px; color: #3c4a63; }
+  .btn { display: inline-block; background: #2563eb; color: #fff; padding: 12px 22px;
+         border-radius: 10px; text-decoration: none; font-weight: 600; }
+  .again { margin-left: 12px; background: none; border: 0; color: #2563eb; cursor: pointer;
+           font: inherit; }
+</style>

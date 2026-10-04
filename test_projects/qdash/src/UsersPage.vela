@@ -1,0 +1,164 @@
+<script>
+  import { fetchUsers } from './api.js';
+  import { navigate } from './router.js';
+  import { Modal } from './Modal.vela';
+
+  let users = $state([]);
+  let loading = $state(true);
+  let error = $state(null);
+  let userToDelete = $state(null);
+  let loadKey = $state(0);
+
+  $effect(() => {
+    // Читаем loadKey, чтобы эффект перезапускался при нажатии «Обновить».
+    void loadKey;
+    const controller = new AbortController();
+    loading = true;
+    error = null;
+    fetchUsers({ signal: controller.signal })
+      .then((data) => {
+        users = data;
+        loading = false;
+      })
+      .catch((fetchError) => {
+        if (fetchError.name === 'AbortError') return;
+        error = fetchError;
+        loading = false;
+      });
+    return () => {
+      controller.abort();
+    };
+  });
+
+  function reload() {
+    loadKey++;
+  }
+
+  function askDelete(user) {
+    userToDelete = user;
+  }
+
+  function closeDeleteModal() {
+    userToDelete = null;
+  }
+
+  function confirmDelete() {
+    users = users.filter((user) => user.id !== userToDelete.id);
+    userToDelete = null;
+  }
+</script>
+<template>
+  <section class="page">
+    <header class="page-header">
+      <h2>Пользователи</h2>
+      <button class="button secondary" :disabled={loading} @click={reload}>
+        Обновить
+      </button>
+    </header>
+
+    {#if loading}
+      <p class="loading">Загружаем пользователей…</p>
+    {:else if error !== null}
+      <div class="error-box">
+        <p class="error">{error.message}</p>
+        <button class="button" @click={reload}>Повторить</button>
+      </div>
+    {:else}
+      <ul class="user-list">
+        {#each users as user (user.id)}
+          <li class="user-row">
+            <button class="user-link" @click={() => navigate(`/users/${user.id}`)}>
+              <span class="user-name">{user.name}</span>
+              <span class="user-email">{user.email}</span>
+            </button>
+            <button class="button danger small" @click={() => askDelete(user)}>
+              Удалить
+            </button>
+          </li>
+        {:else}
+          <li class="empty">Список пуст.</li>
+        {/each}
+      </ul>
+      <p class="hint">
+        Удаление локальное: демо-API не сохраняет изменения на сервере.
+      </p>
+    {/if}
+
+    {#if userToDelete !== null}
+      <Modal title="Удалить пользователя?" @on:close={closeDeleteModal}>
+        <p>
+          Пользователь «{userToDelete.name}» будет удалён из списка.
+          Это действие нельзя отменить.
+        </p>
+        <svelte:fragment slot="actions">
+          <button class="button secondary" @click={closeDeleteModal}>Отмена</button>
+          <button class="button danger" @click={confirmDelete}>Удалить</button>
+        </svelte:fragment>
+      </Modal>
+    {/if}
+  </section>
+</template>
+<style>
+  .error-box {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 0.5rem;
+  }
+
+  .error-box .error {
+    margin: 0;
+    flex: 1;
+  }
+
+  .user-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .user-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: #fff;
+    border: 1px solid #e2e6ee;
+    border-radius: 0.5rem;
+  }
+
+  .user-link {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    flex: 1;
+    border: none;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .user-name {
+    font-weight: 600;
+  }
+
+  .user-email {
+    color: #5a6375;
+    font-size: 0.8125rem;
+  }
+
+  .empty {
+    padding: 1rem;
+    color: #8a93a6;
+    border: 1px dashed #cbd2e0;
+    border-radius: 0.5rem;
+    text-align: center;
+  }
+</style>

@@ -1,0 +1,38 @@
+<script>
+  export let p = {};
+
+  let pos = $state(p.pos ?? 50);
+</script>
+<template>
+  <section class="ba">
+    <div class="wrap">
+      {#if p.title}<h2>{p.title}</h2>{/if}
+      <div class="frame">
+        <img class="under" src={p.before} alt="До" />
+        <img class="over" src={p.after} alt="После"
+          style:clip-path={'inset(0 0 0 ' + pos + '%)'} />
+          <div class="split" style:left={pos + '%'}></div>
+          <span class="lab l">До</span>
+          <span class="lab r">После</span>
+        </div>
+        <input class="range" type="range" min="0" max="100" value={pos}
+          @input={(e) => pos = +e.target.value} />
+        </div>
+      </section>
+</template>
+<style>
+  .ba { padding: 56px 0; background: #fff; font-family: system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+  h2 { font-size: 32px; text-align: center; margin: 0 0 32px; color: #17203a; }
+  .frame { position: relative; border-radius: 14px; overflow: hidden; max-width: 820px;
+           margin: 0 auto; }
+  .frame img { width: 100%; height: 460px; object-fit: cover; display: block; }
+  .over { position: absolute; inset: 0; }
+  .split { position: absolute; top: 0; bottom: 0; width: 3px; background: #fff;
+           transform: translateX(-50%); }
+  .lab { position: absolute; top: 12px; background: rgba(20,24,31,.6); color: #fff;
+         padding: 4px 10px; border-radius: 8px; font-size: 13px; }
+  .lab.l { left: 12px; }
+  .lab.r { right: 12px; }
+  .range { display: block; width: 100%; max-width: 820px; margin: 14px auto 0; }
+</style>

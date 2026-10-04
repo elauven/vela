@@ -1,0 +1,37 @@
+<script>
+  export let p = {};
+
+  function embedUrl(url) {
+    const u = String(url || '');
+    const yt = u.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]{6,})/);
+    if (yt) return 'https://www.youtube.com/embed/' + yt[1];
+    const vm = u.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+    if (vm) return 'https://player.vimeo.com/video/' + vm[1];
+    return u;
+  }
+
+  let src = $derived(embedUrl(p.url));
+</script>
+<template>
+  <section class="vid">
+    <div class="wrap">
+      {#if p.title}<h2>{p.title}</h2>{/if}
+      {#if p.kind === 'audio'}
+        <audio controls src={p.url || ''}></audio>
+      {:else if src}
+        <div class="frame">
+          <iframe src={src} title={p.title || 'Видео'} frameborder="0" allowfullscreen></iframe>
+        </div>
+      {/if}
+    </div>
+  </section>
+</template>
+<style>
+  .vid { padding: 56px 0; font-family: system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+  h2 { font-size: 32px; text-align: center; margin: 0 0 32px; color: #17203a; }
+  .frame { position: relative; padding-bottom: 56.25%; border-radius: 14px;
+           overflow: hidden; background: #000; }
+  .frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  audio { width: 100%; }
+</style>

@@ -1,0 +1,113 @@
+<script>
+  import { fetchUser, fetchUserTodos } from './api.js';
+  import { navigate } from './router.js';
+
+  export let userId;
+
+  // Компонент пересоздаётся через {#key} при смене :id,
+  // поэтому запросы достаточно запустить один раз при инициализации.
+  let userPromise = $state(fetchUser(userId));
+  let todosPromise = $state(fetchUserTodos(userId));
+</script>
+<template>
+  <section class="page">
+    <button class="button secondary back-button" @click={() => navigate('/users')}>
+      ← К списку пользователей
+    </button>
+
+    {#await userPromise}
+      <p class="loading">Загружаем пользователя…</p>
+    {:then user}
+      <div class="user-card">
+        <h2 class="user-name">{user.name}</h2>
+        <p class="user-line">{user.email} · {user.username}</p>
+        <p class="user-line">{user.company.name}</p>
+        <p class="user-line">{user.address.city}, {user.address.street}</p>
+      </div>
+    {:catch error}
+      <p class="error">{error.message}</p>
+    {/await}
+
+    <h3 class="section-title">Задачи пользователя</h3>
+
+    {#await todosPromise}
+      <p class="loading">Загружаем задачи…</p>
+    {:then todos}
+      <ul class="todo-list">
+        {#each todos as todo (todo.id)}
+          <li class="todo-row" class:done={todo.completed}>
+            <span class="todo-mark">{todo.completed ? '✓' : '○'}</span>
+            <span class="todo-title">{todo.title}</span>
+          </li>
+        {:else}
+          <li class="empty">Задач нет.</li>
+        {/each}
+      </ul>
+    {:catch error}
+      <p class="error">{error.message}</p>
+    {/await}
+  </section>
+</template>
+<style>
+  .back-button {
+    margin-bottom: 1rem;
+  }
+
+  .user-card {
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.25rem;
+    background: #fff;
+    border: 1px solid #e2e6ee;
+    border-radius: 0.75rem;
+  }
+
+  .user-name {
+    margin: 0 0 0.5rem;
+    font-size: 1.25rem;
+  }
+
+  .user-line {
+    margin: 0.125rem 0;
+    color: #5a6375;
+  }
+
+  .section-title {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+  }
+
+  .todo-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .todo-row {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: #fff;
+    border: 1px solid #e2e6ee;
+    border-radius: 0.5rem;
+  }
+
+  .todo-mark {
+    color: #345cff;
+  }
+
+  .todo-row.done .todo-title {
+    text-decoration: line-through;
+    color: #8a93a6;
+  }
+
+  .empty {
+    padding: 0.75rem;
+    color: #8a93a6;
+    border: 1px dashed #cbd2e0;
+    border-radius: 0.5rem;
+    text-align: center;
+  }
+</style>
