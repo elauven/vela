@@ -167,3 +167,28 @@ func TestStaleRuntimeContractFailsAtModuleLoad(t *testing.T) {
 		t.Fatalf("module loaded with a runtime of another contract version: %v\n%s", err, out)
 	}
 }
+
+func TestCollectVelaAcceptsDotRoot(t *testing.T) {
+	dir := t.TempDir()
+	for _, path := range []string{"App.vela", "nested/Child.vela", ".hidden/Skip.vela", "node_modules/pkg/Skip.vela"} {
+		full := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("<template><p>x</p></template>"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(previous) }()
+	files := collectVela(".")
+	if len(files) != 2 {
+		t.Fatalf("collectVela(\".\") = %v, want App.vela and nested/Child.vela", files)
+	}
+}

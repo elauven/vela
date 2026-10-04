@@ -849,7 +849,8 @@ func collectVela(root string) []string {
 		}
 		if d.IsDir() {
 			name := d.Name()
-			if strings.HasPrefix(name, ".") || skipDirs[name] {
+			// The project root itself is never skipped, so `--project .` works.
+			if path != root && (strings.HasPrefix(name, ".") || skipDirs[name]) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -903,7 +904,8 @@ func collectProjectJSModules(root string) []string {
 		}
 		if d.IsDir() {
 			name := d.Name()
-			if strings.HasPrefix(name, ".") || skipDirs[name] {
+			// The project root itself is never skipped, so `--project .` works.
+			if path != root && (strings.HasPrefix(name, ".") || skipDirs[name]) {
 				return filepath.SkipDir
 			}
 			return nil
