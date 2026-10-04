@@ -14,15 +14,27 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Skip("node not available")
 	}
 	dir := t.TempDir()
-	runtime, err := os.ReadFile("runtime/runtime.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "runtime.mjs"), runtime, 0o644); err != nil {
-		t.Fatal(err)
+	// The hydration module imports ./runtime.js, so both modules keep their
+	// staged names and the directory is marked as ES modules.
+	for name, source := range map[string]string{
+		"runtime.js":           "runtime/runtime.js",
+		"runtime-hydration.js": "runtime/runtime-hydration.js",
+		"package.json":         "",
+	} {
+		data := []byte(`{"type":"module"}`)
+		if source != "" {
+			var err error
+			if data, err = os.ReadFile(source); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	const script = `import { $$acquireHydrationElement, $$acquireHydrationRange, $$addHydrationListener, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$createHydrationTransaction, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$reconcileHydrationKeyedRowRanges, $$createHydrationWalker, $$defer, $$hydrationPayloadVersion, $$isProxy, $$proxy, $$readHydrationPayload, $$readSelectValues, $$selectValuesEqual, $$writeSelectValues, derived, readable, writable } from './runtime.mjs';
+	const script = `import { $$defer, $$isProxy, $$proxy, $$readSelectValues, $$selectValuesEqual, $$writeSelectValues, derived, readable, writable } from './runtime.js';
+import { $$acquireHydrationElement, $$acquireHydrationRange, $$addHydrationListener, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$createHydrationTransaction, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$reconcileHydrationKeyedRowRanges, $$createHydrationWalker, $$hydrationPayloadVersion, $$readHydrationPayload } from './runtime-hydration.js';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);

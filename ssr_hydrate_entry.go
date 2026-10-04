@@ -176,7 +176,7 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string, mode SSRArti
 			{Imported: "$$createHydrationTransaction"},
 			{Imported: "$$createHydrationWalker"},
 			{Imported: "$$readHydrationPayload"},
-		}, Source: "./runtime.js"},
+		}, Source: hydrationRuntimeImport},
 		&JsExportDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Declaration: entry},
 		&JsExportDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Declaration: componentAlias},
 		&JsExportDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Default: true, Declaration: genExprStmt(id(functionName))},

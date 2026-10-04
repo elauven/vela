@@ -254,9 +254,71 @@ func findLastStringLit(script string, start, end int) (int, int, bool) {
 	return bestStart, bestEnd, true
 }
 
-// defaultRuntimeImport is the runtime specifier the generators emit. Project
-// builds retarget it to the single runtime file at the output root.
-const defaultRuntimeImport = "./runtime.js"
+// Runtime module specifiers the generators emit. Project builds retarget
+// them to the single copies at the output root (runtimeImportFor).
+const (
+	defaultRuntimeImport   = "./runtime.js"
+	hydrationRuntimeImport = "./runtime-hydration.js"
+)
+
+// runtimeContractExport is the contract marker every generated module that
+// uses the runtime imports (R-12.2d). Change its name whenever generated code
+// starts to depend on a new or changed runtime API, so a stale runtime fails
+// at module load with a missing-export error.
+const runtimeContractExport = "$$runtimeContract1"
+
+// hydrationRuntimeExports lists the helpers that live in the hydration
+// runtime module rather than the core runtime.
+var hydrationRuntimeExports = runtimeExportNames(embeddedHydrationRuntime)
+
+// runtimeExportNames returns the names a runtime module exports with
+// `export function name` or `export const name`.
+func runtimeExportNames(source []byte) map[string]bool {
+	names := map[string]bool{}
+	for _, line := range strings.Split(string(source), "\n") {
+		for _, prefix := range []string{"export function ", "export const "} {
+			if !strings.HasPrefix(line, prefix) {
+				continue
+			}
+			rest := line[len(prefix):]
+			end := strings.IndexFunc(rest, func(r rune) bool {
+				return !(r == '$' || r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9')
+			})
+			if end > 0 {
+				names[rest[:end]] = true
+			}
+		}
+	}
+	return names
+}
+
+// runtimeImportDecls splits runtime helper imports between the core runtime
+// and the hydration runtime, keeping their order.
+func runtimeImportDecls(specs []JsImportSpec) []JsStmt {
+	var core, hydration []JsImportSpec
+	for _, spec := range specs {
+		if hydrationRuntimeExports[spec.Imported] {
+			hydration = append(hydration, spec)
+		} else {
+			core = append(core, spec)
+		}
+	}
+	var decls []JsStmt
+	for _, group := range []struct {
+		specs  []JsImportSpec
+		source string
+	}{{core, defaultRuntimeImport}, {hydration, hydrationRuntimeImport}} {
+		if len(group.specs) == 0 {
+			continue
+		}
+		decls = append(decls, &JsImportDecl{
+			BaseStmt:   BaseStmt{BaseNode: genNode()},
+			Specifiers: group.specs,
+			Source:     group.source,
+		})
+	}
+	return decls
+}
 
 // runtimeImportFor returns the relative module specifier from a generated
 // module in fromDir to the runtime written at outRoot/runtime.js.
@@ -272,15 +334,49 @@ func runtimeImportFor(fromDir, outRoot string) string {
 	return rel
 }
 
-// retargetRuntimeImports points every import of the generated runtime at
-// specifier, so all modules of one build share one runtime instance.
-func retargetRuntimeImports(prog *JsProgram, specifier string) {
-	if prog == nil || specifier == "" || specifier == defaultRuntimeImport {
+// finalizeRuntimeImports prepares the runtime imports of a generated module
+// for output: a module that uses the runtime also imports the contract
+// marker, and both runtime specifiers are retargeted to the copies next to
+// runtimeSpecifier (empty means "./runtime.js"), so all modules of one build
+// share one runtime instance.
+func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
+	if prog == nil {
 		return
 	}
+	if runtimeSpecifier == "" {
+		runtimeSpecifier = defaultRuntimeImport
+	}
+	hydrationSpecifier := strings.TrimSuffix(runtimeSpecifier, "runtime.js") + "runtime-hydration.js"
+	var core *JsImportDecl
+	usesRuntime := false
 	for _, stmt := range prog.Body {
-		if imp, ok := stmt.(*JsImportDecl); ok && imp.Source == defaultRuntimeImport {
-			imp.Source = specifier
+		imp, ok := stmt.(*JsImportDecl)
+		if !ok {
+			continue
+		}
+		switch imp.Source {
+		case defaultRuntimeImport:
+			usesRuntime = true
+			if core == nil {
+				core = imp
+			}
+			imp.Source = runtimeSpecifier
+		case hydrationRuntimeImport:
+			usesRuntime = true
+			imp.Source = hydrationSpecifier
 		}
 	}
+	if !usesRuntime {
+		return
+	}
+	if core == nil {
+		core = &JsImportDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Source: runtimeSpecifier}
+		prog.Body = append([]JsStmt{core}, prog.Body...)
+	}
+	for _, spec := range core.Specifiers {
+		if spec.Imported == runtimeContractExport {
+			return
+		}
+	}
+	core.Specifiers = append(core.Specifiers, JsImportSpec{Imported: runtimeContractExport})
 }

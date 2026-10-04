@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -71,5 +72,98 @@ func TestRuntimeImportFor(t *testing.T) {
 		if got := runtimeImportFor(dir, root); got != want {
 			t.Fatalf("runtimeImportFor(%q) = %q, want %q", dir, got, want)
 		}
+	}
+}
+
+func TestRuntimeModulesSplitHydrationFromCore(t *testing.T) {
+	core := runtimeExportNames(embeddedRuntime)
+	if len(hydrationRuntimeExports) == 0 {
+		t.Fatal("hydration runtime exports nothing")
+	}
+	for name := range hydrationRuntimeExports {
+		if core[name] {
+			t.Fatalf("%s is exported by both runtime modules", name)
+		}
+	}
+	if !core[runtimeContractExport] {
+		t.Fatalf("core runtime does not export the contract marker %s", runtimeContractExport)
+	}
+	if !bytes.Contains(embeddedHydrationRuntime, []byte("import { "+runtimeContractExport+" } from './runtime.js';")) {
+		t.Fatal("hydration runtime does not check the runtime contract")
+	}
+}
+
+func TestBuildProjectStagesHydrationRuntimeOnlyForHydrationBuilds(t *testing.T) {
+	srcRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcRoot, "App.vela"), []byte("<script>let n = "+string(rune(36))+"state(0);</script><template><button @click={() => n++}>{n}</button></template>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := collectVela(srcRoot)
+	for _, hydration := range []bool{false, true} {
+		outRoot := t.TempDir()
+		if errors := buildProject(files, srcRoot, outRoot, CompileOptions{HydrationSupport: hydration}, false); errors != 0 {
+			t.Fatalf("project build failed with %d error(s)", errors)
+		}
+		_, err := os.Stat(filepath.Join(outRoot, "runtime-hydration.js"))
+		if hydration && err != nil {
+			t.Fatalf("hydration build did not stage runtime-hydration.js: %v", err)
+		}
+		if !hydration && !os.IsNotExist(err) {
+			t.Fatalf("CSR build staged runtime-hydration.js (err=%v)", err)
+		}
+		code, err := os.ReadFile(filepath.Join(outRoot, "App.js"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Contains(code, []byte(runtimeContractExport)) || !bytes.Contains(code, []byte("from './runtime.js'")) {
+			t.Fatalf("generated module does not import the runtime contract:\n%s", code)
+		}
+	}
+}
+
+func TestProductionRuntimeDisablesDevelopmentChecks(t *testing.T) {
+	if !bytes.Contains(embeddedRuntime, []byte(runtimeDevelopmentFlag)) {
+		t.Fatal("core runtime no longer contains the development flag the production variant replaces")
+	}
+	production := runtimeSource(true)
+	if bytes.Contains(production, []byte(runtimeDevelopmentFlag)) || !bytes.Contains(production, []byte("const DEV = false;")) {
+		t.Fatal("production runtime keeps the development flag")
+	}
+	if !bytes.Equal(runtimeSource(false), embeddedRuntime) {
+		t.Fatal("development runtime differs from the embedded runtime")
+	}
+}
+
+func TestStaleRuntimeContractFailsAtModuleLoad(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not available")
+	}
+	srcRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcRoot, "App.vela"), []byte("<script>let n = "+string(rune(36))+"state(0);</script><template><p>{n}</p></template>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outRoot := t.TempDir()
+	if errors := buildProject(collectVela(srcRoot), srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
+		t.Fatalf("project build failed with %d error(s)", errors)
+	}
+	if err := os.WriteFile(filepath.Join(outRoot, "package.json"), []byte(`{"type":"module"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	load := func() ([]byte, error) {
+		cmd := exec.Command(node, "--input-type=module", "-e", "await import('./App.js'); console.log('loaded');")
+		cmd.Dir = outRoot
+		return cmd.CombinedOutput()
+	}
+	if out, err := load(); err != nil {
+		t.Fatalf("module with the current runtime failed to load: %v\n%s", err, out)
+	}
+	stale := bytes.Replace(embeddedRuntime, []byte("export const "+runtimeContractExport), []byte("export const $$runtimeContract0"), 1)
+	if err := os.WriteFile(filepath.Join(outRoot, "runtime.js"), stale, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := load()
+	if err == nil || !bytes.Contains(out, []byte(runtimeContractExport)) {
+		t.Fatalf("module loaded with a runtime of another contract version: %v\n%s", err, out)
 	}
 }

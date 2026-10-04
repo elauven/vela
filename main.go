@@ -16,15 +16,39 @@ import (
 //go:embed runtime/runtime.js
 var embeddedRuntime []byte
 
+//go:embed runtime/runtime-hydration.js
+var embeddedHydrationRuntime []byte
+
 // stageRuntime writes the compiler canonical runtime into outDir. Project
 // builds write it once at the output root, and every generated module imports
 // that file through a relative path (runtimeImportFor), so a page loads one
-// runtime instance.
-func stageRuntime(outDir string) error {
+// runtime instance. The hydration runtime is written only for builds that
+// emit hydration code, and production builds get the production variant of
+// the core runtime (R-12.2c).
+func stageRuntime(outDir string, opts CompileOptions) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(outDir, "runtime.js"), embeddedRuntime, 0o644)
+	if err := os.WriteFile(filepath.Join(outDir, "runtime.js"), runtimeSource(opts.Production), 0o644); err != nil {
+		return err
+	}
+	if !opts.HydrationSupport {
+		return nil
+	}
+	return os.WriteFile(filepath.Join(outDir, "runtime-hydration.js"), embeddedHydrationRuntime, 0o644)
+}
+
+// runtimeDevelopmentFlag is the core runtime's development switch. The
+// production variant replaces it with a constant so warnings and other
+// development-only paths are disabled.
+const runtimeDevelopmentFlag = "const DEV = typeof process !== 'undefined'\n  ? process.env.NODE_ENV !== 'production'\n  : !globalThis.__VELA_PROD__;"
+
+// runtimeSource returns the core runtime for the build mode.
+func runtimeSource(production bool) []byte {
+	if !production {
+		return embeddedRuntime
+	}
+	return []byte(strings.Replace(string(embeddedRuntime), runtimeDevelopmentFlag, "const DEV = false;", 1))
 }
 
 // CompileOptions controls code generation behaviour.
@@ -54,6 +78,7 @@ type CompileOptions struct {
 	UnavailableCapabilities []string // direct known globals disabled by the host
 	Strict                  bool     // elevate proven unresolved reads to errors
 	SSRModule               string   // Go module import root for generated SSR server packages
+	Production              bool     // --mode=production: production runtime variant
 	HydrationSupport        bool     // internal: emit SSR client state-restoration hooks
 	// RuntimeImport is the module specifier generated code uses for the
 	// runtime. Empty means "./runtime.js"; project builds set a path to the
@@ -77,11 +102,20 @@ func main() {
 	tracePath := flag.String("trace", "", "append source-free CompilationTraceV1 records as JSONL; use '-' for stdout")
 	ssr := flag.Bool("ssr", false, "emit SSR project outputs into client/, server/, and styles/")
 	ssrModule := flag.String("ssr-module", "vela/generated/server", "Go module import root for generated SSR packages")
+	mode := flag.String("mode", "development", "build mode: 'development' (default) or 'production'")
 	flag.Parse()
 
 	targetProfile, err := ParseTargetProfile(*target)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "vela: %v\n", err)
+		os.Exit(2)
+	}
+
+	switch *mode {
+	case "development", "production":
+		// ok
+	default:
+		fmt.Fprintf(os.Stderr, "vela: invalid --mode value %q (want 'development' or 'production')\n", *mode)
 		os.Exit(2)
 	}
 
@@ -105,6 +139,7 @@ func main() {
 		UnavailableCapabilities: splitCapabilityList(*unavailableCapabilities),
 		Strict:                  *strict,
 		SSRModule:               *ssrModule,
+		Production:              *mode == "production",
 	}
 	if closeTrace, traceErr := configureTrace(&opts, *tracePath); traceErr != nil {
 		fmt.Fprintf(os.Stderr, "vela: %v\n", traceErr)
@@ -332,7 +367,7 @@ func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 	// components retain imports such as ./format.js, so mirror these files next
 	// to the compiled modules instead of leaving dangling imports in dist.
 	errors += copyProjectJSModules(srcRoot, outRoot)
-	if err := stageRuntime(outRoot); err != nil {
+	if err := stageRuntime(outRoot, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "cannot stage runtime: %v\n", err)
 		errors++
 	}
@@ -678,7 +713,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 		target = buildProgramCSSWithHydration(name, sfc, tmpl, analysis, scope, opts.CSSExternal, opts.HydrationSupport)
 	}
 
-	retargetRuntimeImports(target, opts.RuntimeImport)
+	finalizeRuntimeImports(target, opts.RuntimeImport)
 
 	if opts.GenAST {
 		genPath := strings.TrimSuffix(dest, ".js") + ".genast.json"

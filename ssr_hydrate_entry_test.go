@@ -24,7 +24,7 @@ func TestBuildSSRHydrateEntryAdoptsPayloadAndMarkerRanges(t *testing.T) {
 	}
 	source := PrintJS(entry, PrintPretty)
 	for _, want := range []string{
-		"import { $$acquireHydrationElement, $$createHydrationTransaction, $$createHydrationWalker, $$readHydrationPayload } from './runtime.js';",
+		"import { $$acquireHydrationElement, $$createHydrationTransaction, $$createHydrationWalker, $$readHydrationPayload } from './runtime-hydration.js';",
 		"export function hydratePage($$root, $$overrides, $$instanceID, $$parentTransaction)",
 		"export function Page($$root, $$overrides, $$instanceID, $$parentTransaction)",
 		"const $$hydratedInstances = new WeakMap();",
@@ -158,6 +158,9 @@ func TestGeneratedSSRHydrateEntryAdoptsExistingServerData(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "runtime.js"), embeddedRuntime, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "runtime-hydration.js"), embeddedHydrationRuntime, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	const runner = `import hydratePage from './Page.hydrate.js';

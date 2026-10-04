@@ -307,7 +307,7 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		if err := os.MkdirAll(filepath.Dir(hydrationClientPath), 0o755); err != nil {
 			return err
 		}
-		retargetRuntimeImports(hydrationClient, clientRuntime)
+		finalizeRuntimeImports(hydrationClient, clientRuntime)
 		if err := os.WriteFile(hydrationClientPath, []byte(PrintJS(hydrationClient, PrintPretty)), 0o644); err != nil {
 			return err
 		}
@@ -333,7 +333,7 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	if err != nil {
 		return err
 	}
-	retargetRuntimeImports(hydrate, clientRuntime)
+	finalizeRuntimeImports(hydrate, clientRuntime)
 	hydrateSource := []byte(PrintJS(hydrate, PrintPretty))
 	file, err := BuildSSRGoRendererFile(plan, layout.packageName(src, srcRoot))
 	if err != nil {
@@ -384,7 +384,7 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		if err := os.MkdirAll(filepath.Dir(bridgePath), 0o755); err != nil {
 			return err
 		}
-		retargetRuntimeImports(bridge, clientRuntime)
+		finalizeRuntimeImports(bridge, clientRuntime)
 		if err := os.WriteFile(bridgePath, []byte(PrintJS(bridge, PrintPretty)), 0o644); err != nil {
 			return err
 		}

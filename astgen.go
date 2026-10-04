@@ -2059,14 +2059,10 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 		specs = append(specs, JsImportSpec{Imported: "$$reconcileHydrationKeyedElements"})
 	}
 	if len(specs) > 0 {
-		imp := &JsImportDecl{
-			BaseStmt:   BaseStmt{BaseNode: genNode()},
-			Specifiers: specs,
-			Source:     "./runtime.js",
-		}
-		// Helper import goes after user imports, before the body —
-		// prepend to module body just ahead of the export.
-		prog.Body = append([]JsStmt{imp}, prog.Body...)
+		// Helper imports go after user imports, before the body —
+		// prepend to module body just ahead of the export. Hydration
+		// helpers come from their own module, which CSR builds omit.
+		prog.Body = append(runtimeImportDecls(specs), prog.Body...)
 	}
 
 	// The $$dispatch local binding closes over $$root — insert

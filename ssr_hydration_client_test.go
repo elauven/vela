@@ -838,6 +838,7 @@ func TestBrowserSSRHydrationAwaitRetainsPendingThenReplacesRange(t *testing.T) {
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
+		"runtime-hydration.js":   embeddedHydrationRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
@@ -991,6 +992,7 @@ func TestBrowserSSRHydrationSelectBindingAdoptsLiveValue(t *testing.T) {
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
+		"runtime-hydration.js":   embeddedHydrationRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
@@ -1079,6 +1081,7 @@ func TestBrowserSSRHydrationBindingsAdoptLiveControlsThenUpdateState(t *testing.
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
+		"runtime-hydration.js":   embeddedHydrationRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
@@ -1176,6 +1179,7 @@ func TestBrowserSSRHydrationNestedTextAttributeAndEventAdoptThenUpdate(t *testin
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
+		"runtime-hydration.js":   embeddedHydrationRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
@@ -1263,6 +1267,7 @@ func TestBrowserSSRHydrationStaticKeyAdoptsThenReplacesRange(t *testing.T) {
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
+		"runtime-hydration.js":   embeddedHydrationRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
@@ -1350,6 +1355,7 @@ func TestBrowserSSRHydrationNestedStaticBlocksAdoptThenReplaceRanges(t *testing.
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
+		"runtime-hydration.js":   embeddedHydrationRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
@@ -1436,6 +1442,7 @@ func TestBrowserSSRHydrationKeyedEachRetainsFocusedRowAcrossDeepReconcile(t *tes
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
+		"runtime-hydration.js":   embeddedHydrationRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html": []byte(`<!doctype html><body>
@@ -1558,6 +1565,7 @@ func TestGeneratedSSRHydrationClientAdoptsElementAndHandlesEvent(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"package.json":           []byte(`{"type":"module"}`),
 		"runtime.js":             embeddedRuntime,
+		"runtime-hydration.js":   embeddedHydrationRuntime,
 		"Page.hydrate_client.js": []byte(clientSource),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 	} {
@@ -2019,6 +2027,7 @@ func TestBrowserSSRHydrationKeyBlockReplacesChildChain(t *testing.T) {
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
+		"runtime-hydration.js":     embeddedHydrationRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
@@ -2106,6 +2115,7 @@ func TestBrowserSSRHydrationKeyedEachRetainsDirectChildInstances(t *testing.T) {
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
+		"runtime-hydration.js":     embeddedHydrationRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
@@ -2248,6 +2258,7 @@ func TestBrowserSSRHydrationKeyedEachRetainsChildChains(t *testing.T) {
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
+		"runtime-hydration.js":     embeddedHydrationRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
@@ -2437,6 +2448,7 @@ func TestBrowserSSRHydrationAdoptsLocalChildThenUpdatesProps(t *testing.T) {
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
+		"runtime-hydration.js":     embeddedHydrationRuntime,
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
 		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
@@ -2547,6 +2559,7 @@ func TestBrowserSSRHydrationIfChildAdoptsDestroysAndCSRRemounts(t *testing.T) {
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
+		"runtime-hydration.js":     embeddedHydrationRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
@@ -2673,6 +2686,7 @@ func TestBrowserSSRHydrationAwaitChildAdoptsSettlesAndCleansPayload(t *testing.T
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
+		"runtime-hydration.js":     embeddedHydrationRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
@@ -2795,7 +2809,7 @@ func TestBrowserSSRHydrationPendingAwaitNestedIfAdoptsAndCleansChild(t *testing.
 	}
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(awaitID) + "--><!--v:vela-parent:" + itoa(ifID) + "--><!--e:" + childScope + ":0--><p vela-child=\"\" class=\"child\"><!--v:" + childScope + ":0-->server<!--/v:" + childScope + ":0--></p><!--/e:" + childScope + ":0--><script type=\"application/json\" id=\"vela-state-" + childScope + "\">{\"component\":\"" + childScope + "\",\"props\":{\"Title\":\"server\"},\"state\":{},\"incomplete\":false}</script><!--/v:vela-parent:" + itoa(ifID) + "--><!--/v:vela-parent:" + itoa(awaitID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Visible\":true,\"Title\":\"server\"},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__request = new Promise(resolve => { window.__resolveRequest = resolve; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { request: window.__request }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -2872,7 +2886,7 @@ func TestBrowserSSRHydrationPendingAwaitNestedKeyAdoptsAndCleansChild(t *testing
 	childScope := "vela-parent--key-" + itoa(pendingKey.Span.Start) + "-one--" + ssrRuntimeComponentSuffix(identity)
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(awaitID) + "--><!--v:vela-parent:" + itoa(keyID) + "--><!--e:" + childScope + ":0--><p vela-child=\"\" class=\"child\"><!--v:" + childScope + ":0-->server<!--/v:" + childScope + ":0--></p><!--/e:" + childScope + ":0--><script type=\"application/json\" id=\"vela-state-" + childScope + "\">{\"component\":\"" + childScope + "\",\"props\":{\"Title\":\"server\"},\"state\":{},\"incomplete\":false}</script><!--/v:vela-parent:" + itoa(keyID) + "--><!--/v:vela-parent:" + itoa(awaitID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Identity\":\"one\",\"Title\":\"server\"},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__request = new Promise(resolve => { window.__resolveRequest = resolve; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { request: window.__request }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -2934,7 +2948,7 @@ func TestBrowserSSRHydrationAwaitNestedIfOwnsChildTeardown(t *testing.T) {
 	}
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(awaitID) + "--><p vela-parent=\"\" class=\"loading\">Loading</p><!--/v:vela-parent:" + itoa(awaitID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Visible\":true},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from './Parent.hydrate.js'; window.__request = new Promise(resolve => { window.__resolve = resolve; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { request: window.__request }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3017,7 +3031,7 @@ func TestBrowserSSRHydrationEachNestedIfAdoptsAndCleansChildRows(t *testing.T) {
 	}
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(eachID) + "-->" + ifRange(childHTML(0, "one")) + ifRange("<p vela-parent=\"\" class=\"hidden\">Hidden</p>") + "<!--/v:vela-parent:" + itoa(eachID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Rows\":[{\"title\":\"one\",\"visible\":true},{\"title\":\"two\",\"visible\":false}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3101,7 +3115,7 @@ func TestBrowserSSRHydrationKeyedEachNestedIfRetainsSwitchesAndCleansChildRows(t
 	}
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(eachID) + "-->" + rowHTML("a", childHTML("a", "Alpha")) + rowHTML("b", "<p vela-parent=\"\" class=\"hidden\">Hidden</p>") + "<!--/v:vela-parent:" + itoa(eachID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Rows\":[{\"id\":\"a\",\"title\":\"Alpha\",\"visible\":true},{\"id\":\"b\",\"title\":\"Beta\",\"visible\":false}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3183,7 +3197,7 @@ func TestBrowserSSRHydrationKeyedEachNestedKeyRetainsReplacesAndCleansChildRows(
 	}
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(eachID) + "-->" + rowHTML("a", "one", "Alpha") + rowHTML("b", "one", "Beta") + "<!--/v:vela-parent:" + itoa(eachID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Rows\":[{\"id\":\"a\",\"version\":\"one\",\"title\":\"Alpha\"},{\"id\":\"b\",\"version\":\"one\",\"title\":\"Beta\"}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3258,7 +3272,7 @@ func TestBrowserSSRHydrationKeyNestedAwaitAdoptsRekeysAndCleansChild(t *testing.
 	childHTML := "<!--e:" + scope + ":0--><p vela-child=\"\" class=\"child\"><!--v:" + scope + ":0-->pending<!--/v:" + scope + ":0--></p><!--/e:" + scope + ":0--><script type=\"application/json\" id=\"vela-state-" + scope + "\">{\"component\":\"" + scope + "\",\"props\":{\"Title\":\"pending\"},\"state\":{},\"incomplete\":false}</script>"
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(keyID) + "--><!--v:vela-parent:" + itoa(awaitID) + "-->" + childHTML + "<!--/v:vela-parent:" + itoa(awaitID) + "--><!--/v:vela-parent:" + itoa(keyID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Identity\":\"one\"},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__request = new Promise(resolve => { window.__resolveRequest = resolve; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { request: window.__request }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3337,7 +3351,7 @@ func TestBrowserSSRHydrationIfNestedAwaitAdoptsSettlesReentersAndCleansChild(t *
 	childHTML := "<!--e:" + scope + ":0--><p vela-child=\"\" class=\"child\"><!--v:" + scope + ":0-->pending<!--/v:" + scope + ":0--></p><!--/e:" + scope + ":0--><script type=\"application/json\" id=\"vela-state-" + scope + "\">{\"component\":\"" + scope + "\",\"props\":{\"Title\":\"pending\"},\"state\":{},\"incomplete\":false}</script>"
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(ifID) + "--><!--v:vela-parent:" + itoa(awaitID) + "-->" + childHTML + "<!--/v:vela-parent:" + itoa(awaitID) + "--><!--/v:vela-parent:" + itoa(ifID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Shown\":true},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__request = new Promise(resolve => { window.__resolveRequest = resolve; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { request: window.__request }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3417,7 +3431,7 @@ func TestBrowserSSRHydrationIfNestedEachAdoptsAndReentersChildRows(t *testing.T)
 	}
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(ifID) + "--><!--v:vela-parent:" + itoa(eachID) + "-->" + rowHTML(0, "one") + rowHTML(1, "two") + "<!--/v:vela-parent:" + itoa(eachID) + "--><!--/v:vela-parent:" + itoa(ifID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Shown\":true,\"Rows\":[{\"title\":\"one\"},{\"title\":\"two\"}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3496,7 +3510,7 @@ func TestBrowserSSRHydrationIfNestedKeyedEachRetainsAndReentersChildRows(t *test
 	}
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(ifID) + "--><!--v:vela-parent:" + itoa(eachID) + "-->" + rowHTML("a", "Alpha") + rowHTML("b", "Beta") + "<!--/v:vela-parent:" + itoa(eachID) + "--><!--/v:vela-parent:" + itoa(ifID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Shown\":true,\"Rows\":[{\"id\":\"a\",\"title\":\"Alpha\"},{\"id\":\"b\",\"title\":\"Beta\"}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3576,7 +3590,7 @@ func TestBrowserSSRHydrationPendingAwaitUnkeyedEachAdoptsAndCleansChildRows(t *t
 	}
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(awaitID) + "--><!--v:vela-parent:" + itoa(eachID) + "-->" + rowHTML(0, "one") + rowHTML(1, "two") + "<!--/v:vela-parent:" + itoa(eachID) + "--><!--/v:vela-parent:" + itoa(awaitID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Rows\":[{\"title\":\"one\"},{\"title\":\"two\"}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__request = new Promise(resolve => { window.__resolveRequest = resolve; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { request: window.__request }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3637,7 +3651,7 @@ func TestBrowserSSRHydrationAwaitNestedEachOwnsChildTeardown(t *testing.T) {
 	}
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(awaitID) + "--><p vela-parent=\"\" class=\"loading\">Loading</p><!--/v:vela-parent:" + itoa(awaitID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from './Parent.hydrate.js';window.__request=new Promise(resolve=>{window.__resolve=resolve});window.__observer=new MutationObserver(()=>{});window.__observer.observe(document.body,{childList:true,subtree:true});window.__hydrated=hydrateParent(document.body,{request:window.__request});window.__initialMutations=window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3698,7 +3712,7 @@ func TestBrowserSSRHydrationAwaitNestedKeyOwnsChildTeardown(t *testing.T) {
 	}
 	html := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(awaitID) + "--><p vela-parent=\"\" class=\"loading\">Loading</p><!--/v:vela-parent:" + itoa(awaitID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from './Parent.hydrate.js';window.__request=new Promise(resolve=>{window.__resolve=resolve});window.__observer=new MutationObserver(()=>{});window.__observer.observe(document.body,{childList:true,subtree:true});window.__hydrated=hydrateParent(document.body,{request:window.__request});window.__initialMutations=window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3780,7 +3794,7 @@ func TestBrowserSSRHydrationPendingAwaitKeyedEachAdoptsRetainsAndCleansRows(t *t
 	}
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(awaitID) + "--><!--v:vela-parent:" + itoa(eachID) + "-->" + rowHTML("a", "Alpha") + rowHTML("b", "Beta") + "<!--/v:vela-parent:" + itoa(eachID) + "--><!--/v:vela-parent:" + itoa(awaitID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Rows\":[{\"id\":\"a\",\"title\":\"Alpha\"},{\"id\":\"b\",\"title\":\"Beta\"}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__request = new Promise(resolve => { window.__resolveRequest = resolve; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { request: window.__request }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3841,7 +3855,7 @@ func TestBrowserSSRHydrationAwaitNestedKeyedEachOwnsChildTeardown(t *testing.T) 
 	}
 	html := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(awaitID) + "--><p vela-parent=\"\" class=\"loading\">Loading</p><!--/v:vela-parent:" + itoa(awaitID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from './Parent.hydrate.js';window.__request=new Promise(resolve=>{window.__resolve=resolve});window.__observer=new MutationObserver(()=>{});window.__observer.observe(document.body,{childList:true,subtree:true});window.__hydrated=hydrateParent(document.body,{request:window.__request});window.__initialMutations=window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -3964,6 +3978,7 @@ func TestBrowserSSRHydrationForwardsLocalChildComponentEvent(t *testing.T) {
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
+		"runtime-hydration.js":     embeddedHydrationRuntime,
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
 		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
@@ -4085,6 +4100,7 @@ func TestBrowserSSRHydrationBindsLocalChildValueWithoutInitialRewrite(t *testing
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
+		"runtime-hydration.js":     embeddedHydrationRuntime,
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
 		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
@@ -4260,6 +4276,7 @@ func TestBrowserSSRHydrationAdoptsStructuralAndReactiveLocalComponentSlotContent
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
+		"runtime-hydration.js":     embeddedHydrationRuntime,
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
 		"Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)),
@@ -4462,7 +4479,7 @@ func TestBrowserSSRHydrationUnkeyedEachNestedAwaitAdoptsSettlesAndRebuildsOnce(t
 	}
 	serverHTML := "<!doctype html><body><!--e:vela-parent:0--><main vela-parent=\"\"><!--v:vela-parent:" + itoa(eachID) + "-->" + rowHTML(0, "one") + rowHTML(1, "two") + "<!--/v:vela-parent:" + itoa(eachID) + "--></main><!--/e:vela-parent:0--><script type=\"application/json\" id=\"vela-state-vela-parent\">{\"component\":\"vela-parent\",\"props\":{\"Rows\":[{\"title\":\"one\"},{\"title\":\"two\"}]},\"state\":{},\"incomplete\":false}</script><script type=\"module\">import hydrateParent from \"./Parent.hydrate.js\"; window.__request = new Promise(resolve => { window.__resolveOld = resolve; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { request: window.__request }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>"
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -4543,7 +4560,7 @@ func TestBrowserSSRHydrationKeyedEachPerRowAwaitAdoptsSettlesReordersAndSuppress
 	}
 	serverHTML := `<!doctype html><body><!--e:vela-parent:0--><main vela-parent=""><!--v:vela-parent:` + itoa(eachID) + `-->` + rowHTML("a", "Alpha") + rowHTML("b", "Beta") + `<!--/v:vela-parent:` + itoa(eachID) + `--></main><!--/e:vela-parent:0--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Rows":[{"id":"a","title":"Alpha"},{"id":"b","title":"Beta"}]},"state":{},"incomplete":false}</script><script type="module">import hydrateParent from "./Parent.hydrate.js"; window.__aPromise = new Promise(resolve => { window.__resolveA = resolve; }); window.__bPromise = new Promise((resolve, reject) => { window.__resolveOldB = resolve; window.__rejectOldB = reject; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { rows: [{id:"a",title:"Alpha",request:window.__aPromise},{id:"b",title:"Beta",request:window.__bPromise}] }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -4597,7 +4614,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitSettledTextUpdatesPerRow(t *testing.T)
 	}
 	serverHTML := `<!doctype html><body><!--e:vela-parent:0--><main vela-parent=""><!--v:vela-parent:` + itoa(eachID) + `-->` + rowHTML("a") + rowHTML("b") + `<!--/v:vela-parent:` + itoa(eachID) + `--></main><!--/e:vela-parent:0--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{"Rows":[{"id":"a"},{"id":"b"}],"Prefix":"ready: "},"state":{},"incomplete":false}</script><script type="module">import hydrateParent from "./Parent.hydrate.js"; window.__aPromise = new Promise(resolve => { window.__resolveA = resolve; }); window.__bPromise = new Promise((resolve, reject) => { window.__resolveB = resolve; window.__rejectB = reject; }); window.__observer = new MutationObserver(() => {}); window.__observer.observe(document.body, {childList:true,subtree:true,attributes:true,characterData:true}); window.__hydrated = hydrateParent(document.body, { rows: [{id:"a",request:window.__aPromise},{id:"b",request:window.__bPromise}] }); window.__initialMutations = window.__observer.takeRecords().length;</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -4713,6 +4730,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsScopedStaticSnapshots(t *testing
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":               embeddedRuntime,
+		"runtime-hydration.js":     embeddedHydrationRuntime,
 		"Child.js":                 []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":  []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":         []byte(PrintJS(childEntry, PrintPretty)),
@@ -4801,6 +4819,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedTextRows(t *testing.T
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
+		"runtime-hydration.js":   embeddedHydrationRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -4875,6 +4894,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedValueInput(t *testing
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":             embeddedRuntime,
+		"runtime-hydration.js":   embeddedHydrationRuntime,
 		"Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)),
 		"Page.hydrate.js":        []byte(PrintJS(entry, PrintPretty)),
 		"index.html":             []byte(html),
@@ -4931,7 +4951,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedCheckedInput(t *testi
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(inputPlan.HydrationID) + `--><input vela-page="" class="field" type="checkbox"><!--/e:` + innerScope + `:` + itoa(inputPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",done:false}]}];window.__request=new Promise(()=>{});const input=document.querySelector(".field");input.checked=true;window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.input=input</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -5312,7 +5332,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedTwoOwnerOptionLists(t *tes
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Current"><option value="one">One</option><option value="two" selected>Two</option></optgroup><optgroup label="History"><option value="old">Old</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"two",current:[{id:"one",value:"one",label:"One"},{id:"two",value:"two",label:"Two"}],history:[{id:"old",value:"old",label:"Old"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field");window.current=window.field.querySelectorAll("optgroup")[0];window.history=window.field.querySelectorAll("optgroup")[1];window.two=window.current.querySelectorAll("option")[1]</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -5372,7 +5392,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedTwoOwnerMultiSelect(t *tes
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" multiple class="field"><optgroup label="Current"><option value="one" selected>One</option><option value="two">Two</option></optgroup><optgroup label="History"><option value="old" selected>Old</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:["one","old"],current:[{id:"one",value:"one",label:"One"},{id:"two",value:"two",label:"Two"}],history:[{id:"old",value:"old",label:"Old"}]}]}];window.__request=new Promise(()=>{});const before=document.querySelector(".field");before.options[0].selected=false;before.options[1].selected=true;window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -5424,7 +5444,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedTwoOwnerDynamicLabels(t *t
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Current"><option value="one">One</option><option value="two" selected>Two</option></optgroup><optgroup label="History"><option value="old">Old</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"two",currentLabel:"Current",historyLabel:"History",current:[{id:"one",value:"one",label:"One"},{id:"two",value:"two",label:"Two"}],history:[{id:"old",value:"old",label:"Old"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -5476,7 +5496,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedTwoOwnerFallbackLists(t *t
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Current"><option value="">No current</option></optgroup><optgroup label="History"><option value="old" selected>Old</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"old",current:[],history:[{id:"old",value:"old",label:"Old"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -5534,7 +5554,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedTwoOwnerOptionDisabledAndT
 	html = strings.ReplaceAll(html, `label:"Two",disabled:false`, `label:"Two",title:"Two title",disabled:false`)
 	html = strings.ReplaceAll(html, `label:"Old",disabled:true`, `label:"Old",title:"Old title",disabled:true`)
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -5615,7 +5635,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitReordersTwoMultiOwnerOuterRows(t *test
 	payload := `{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + firstOuterScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"},"` + secondOuterScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}`
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `-->` + firstRow + secondRow + `<!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">` + payload + `</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:["two","old"],current:[{id:"one",value:"one",label:"One"},{id:"two",value:"two",label:"Two"}],history:[{id:"old",value:"old",label:"Old"}]}]},{id:"second",fields:[{id:"a",choice:["four","past"],current:[{id:"three",value:"three",label:"Three"},{id:"four",value:"four",label:"Four"}],history:[{id:"past",value:"past",label:"Past"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -5813,7 +5833,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedUnkeyedOptionList(t *testi
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><option value="one">One</option><option value="two" selected>Two</option></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"two",options:[{value:"one",label:"One"},{value:"two",label:"Two"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field")</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -5865,7 +5885,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedUnkeyedOptionListFallback(
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><option value="" selected>None</option></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"",options:[]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field")</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -5917,7 +5937,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedOptionListFallback(t 
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><option value="" selected>None</option></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"",options:[]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field")</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -5969,7 +5989,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedOptgroupOptionListFal
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Available"><option value="" selected>None</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"",options:[]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field");window.group=window.field.querySelector("optgroup")</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -6021,7 +6041,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedOptgroupOptionList(t *test
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Available"><option value="one">One</option><option value="two" selected>Two</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"two",options:[{value:"one",label:"One"},{value:"two",label:"Two"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field");window.group=window.field.querySelector("optgroup")</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -6073,7 +6093,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedDynamicKeyedOptgroupOption
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Available"><option value="one">One</option><option value="two" selected>Two</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",groupLabel:"Available",choice:"two",options:[{id:"one",value:"one",label:"One"},{id:"two",value:"two",label:"Two"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field");window.group=window.field.querySelector("optgroup");window.two=window.group.querySelectorAll("option")[1]</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -6125,7 +6145,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedDynamicKeyedOptgroupOption
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Available"><option value="" selected>None</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",groupLabel:"Available",choice:"",options:[]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field");window.group=window.field.querySelector("optgroup")</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -6177,7 +6197,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedMixedOptgroupOptionTree(t 
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Archived"><option value="archived">Archived</option></optgroup><optgroup label="Available"><option value="one">One</option><option value="two" selected>Two</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",groupLabel:"Available",choice:"two",options:[{id:"one",value:"one",label:"One"},{id:"two",value:"two",label:"Two"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field");window.archived=window.field.querySelectorAll("optgroup")[0];window.available=window.field.querySelectorAll("optgroup")[1];window.two=window.available.querySelectorAll("option")[1]</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -6229,7 +6249,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedDynamicSiblingOptgroup(t *
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Archived"><option value="archived">Archived</option></optgroup><optgroup label="Available"><option value="one">One</option><option value="two" selected>Two</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",archivedLabel:"Archived",choice:"two",options:[{id:"one",value:"one",label:"One"},{id:"two",value:"two",label:"Two"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field");window.archived=window.field.querySelectorAll("optgroup")[0];window.available=window.field.querySelectorAll("optgroup")[1];window.two=window.available.querySelectorAll("option")[1]</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -6281,7 +6301,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedOptgroupOptionList(t 
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Available"><option value="one">One</option><option value="two" selected>Two</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"two",options:[{id:"one",value:"one",label:"One"},{id:"two",value:"two",label:"Two"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field");window.group=window.field.querySelector("optgroup");window.one=window.group.querySelectorAll("option")[0];window.two=window.group.querySelectorAll("option")[1]</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -6333,7 +6353,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedOptionList(t *testing
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><option value="one">One</option><option value="two" selected>Two</option></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"two",options:[{id:"one",value:"one",label:"One"},{id:"two",value:"two",label:"Two"}]}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field");window.one=window.field.options[0];window.two=window.field.options[1]</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -6389,7 +6409,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedSelectOptionText(t *t
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><option value="one"><!--v:` + innerScope + `:` + itoa(textID) + `-->Server<!--/v:` + innerScope + `:` + itoa(textID) + `--></option><option value="two">Two</option></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"one",label:"Server"}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field")</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -6442,7 +6462,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedSelectOptionDisabled(
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><option value="one" disabled>One</option><option value="two">Two</option></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"two",disabled:true}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field")</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -6494,7 +6514,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedSelectOptionValue(t *
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><option value="server" selected>One</option><option value="two">Two</option></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"server",optionValue:"server"}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field")</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -6546,7 +6566,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitAdoptsNestedKeyedOptgroupLabel(t *test
 	innerScope := outerScope + "--each-" + itoa(inner.Span.Start) + "-a"
 	html := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(outerID) + `--><!--r:` + outerScope + `:` + itoa(outerID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><!--v:vela-page:` + itoa(innerID) + `--><!--r:` + innerScope + `:` + itoa(innerID) + `--><!--e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><select vela-page="" class="field"><optgroup label="Server"><option value="one">One</option></optgroup><optgroup label="Other"><option value="two" selected>Two</option></optgroup></select><!--/e:` + innerScope + `:` + itoa(selectPlan.HydrationID) + `--><!--/r:` + innerScope + `:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(innerID) + `--><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + outerScope + `:` + itoa(outerID) + `--><!--/v:vela-page:` + itoa(outerID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":[],"incomplete":false,"awaitAt":{"` + outerScope + `:` + itoa(awaitID) + `":{"state":"then","value":"server"}}}</script><script type="module">window.__rows=[{id:"row",fields:[{id:"a",choice:"two",groupLabel:"Server"}]}];window.__request=new Promise(()=>{});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});import hydratePage from "./Page.hydrate.js";window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length;window.field=document.querySelector(".field")</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -6598,7 +6618,7 @@ func TestBrowserSSRHydrationDeepMutationRefreshesOnlyNestedKeyedRows(t *testing.
 	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><p vela-page="" class="pending">Loading</p><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
 	serverHTML := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-page:` + itoa(eachID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":["rows"],"incomplete":false}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"a",title:"A",visible:true},{id:"b",title:"B",visible:true}]}];window.__observer=new MutationObserver(()=>{});window.__observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body);window.__initialMutations=window.__observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -7080,6 +7100,7 @@ func TestBrowserSSRHydrationKeyedSlotRowProjectedStructuralCombinationCorpus(t *
 			dir := t.TempDir()
 			for name, data := range map[string][]byte{
 				"runtime.js":              embeddedRuntime,
+				"runtime-hydration.js":    embeddedHydrationRuntime,
 				"Child.js":                []byte(PrintJS(childCSR, PrintPretty)),
 				"Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)),
 				"Child.hydrate.js":        []byte(PrintJS(childEntry, PrintPretty)),
@@ -7175,7 +7196,7 @@ func TestBrowserSSRHydrationNestedKeyedAwaitDirectChildLifecycle(t *testing.T) {
 	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-parent:` + itoa(awaitID) + `--><p vela-parent="" class="pending">Loading</p><!--/v:vela-parent:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
 	html := `<!doctype html><body><!--e:vela-parent:0--><main vela-parent=""><!--v:vela-parent:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-parent:` + itoa(eachID) + `--></main><!--/e:vela-parent:0--><script type="application/json" id="vela-state-vela-parent">{"component":"vela-parent","props":{},"state":{},"deep":["rows"],"incomplete":false}</script><script type="module">import hydrateParent from "./Parent.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"f",title:"initial",version:0,tags:["one","two"]}]}];window.hydrated=hydrateParent(document.body)</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(html)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Child.js": []byte(PrintJS(childCSR, PrintPretty)), "Child.hydrate_client.js": []byte(PrintJS(childClient, PrintPretty)), "Child.hydrate.js": []byte(PrintJS(childEntry, PrintPretty)), "Parent.hydrate_client.js": []byte(PrintJS(parentClient, PrintPretty)), "Parent.hydrate.js": []byte(PrintJS(parentEntry, PrintPretty)), "index.html": []byte(html)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -7271,6 +7292,7 @@ func TestBrowserSSRHydrationKeyedSlotRowChildLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	for name, data := range map[string][]byte{
 		"runtime.js":                   embeddedRuntime,
+		"runtime-hydration.js":         embeddedHydrationRuntime,
 		"Child.js":                     []byte(PrintJS(childCSR, PrintPretty)),
 		"Child.hydrate_client.js":      []byte(PrintJS(childClient, PrintPretty)),
 		"Child.hydrate.js":             []byte(PrintJS(childEntry, PrintPretty)),
@@ -7333,7 +7355,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitNestedUnkeyedRowsDynamicFallback(t *te
 	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><p vela-page="" class="pending">Loading</p><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
 	serverHTML := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-page:` + itoa(eachID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":["rows"],"incomplete":false}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"a",version:0,tags:["one"]}]}];window.hydrated=hydratePage(document.body)</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -7385,7 +7407,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitNestedKeyedRowsReplaceInnerKeyRange(t 
 	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><p vela-page="" class="pending">Loading</p><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
 	serverHTML := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-page:` + itoa(eachID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":["rows"],"incomplete":false}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"a",title:"A",version:0}]}];window.hydrated=hydratePage(document.body)</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -7437,7 +7459,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitNestedKeyedRowsSwitchKeyConditional(t 
 	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><p vela-page="" class="pending">Loading</p><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
 	serverHTML := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-page:` + itoa(eachID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"deep":["rows"],"incomplete":false}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"a",title:"A",version:0,visible:true,tags:["one","two"]}]}];window.hydrated=hydratePage(document.body)</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -7489,7 +7511,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitNestedEachValueBinding(t *testing.T) {
 	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><p vela-page="" class="pending">Loading</p><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
 	serverHTML := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-page:` + itoa(eachID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","labels":["one","two"]}],"Draft":""},"state":{},"incomplete":false}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{rows:[{id:"a",labels:["one","two"],request:window.promise}]});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -7564,7 +7586,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitNestedEachSiblingElements(t *testing.T
 	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><p vela-page="" class="pending">Loading</p><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
 	serverHTML := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-page:` + itoa(eachID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{"Rows":[{"id":"a","labels":["one","two"]}],"Draft":""},"state":{},"incomplete":false}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body,{rows:[{id:"a",labels:["one","two"],request:window.promise}]});window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -7637,7 +7659,7 @@ func TestBrowserSSRHydrationKeyedEachAwaitNestedEachDeepItemBinding(t *testing.T
 	rowHTML := `<!--r:` + rowScope + `:` + itoa(eachID) + `--><!--v:vela-page:` + itoa(awaitID) + `--><p vela-page="" class="pending">Loading</p><!--/v:vela-page:` + itoa(awaitID) + `--><!--/r:` + rowScope + `:` + itoa(eachID) + `-->`
 	serverHTML := `<!doctype html><body><!--e:vela-page:0--><main vela-page=""><!--v:vela-page:` + itoa(eachID) + `-->` + rowHTML + `<!--/v:vela-page:` + itoa(eachID) + `--></main><!--/e:vela-page:0--><script type="application/json" id="vela-state-vela-page">{"component":"vela-page","props":{},"state":{},"incomplete":false}</script><script type="module">import hydratePage from "./Page.hydrate.js";window.promise=new Promise(resolve=>{window.resolve=resolve});window.__rows=[{id:"a",request:window.promise,fields:[{id:"one",title:"One"},{id:"two",title:"Two"}]}];window.observer=new MutationObserver(()=>{});window.observer.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});window.hydrated=hydratePage(document.body);window.initial=window.observer.takeRecords().length</script></body>`
 	dir := t.TempDir()
-	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
+	for name, data := range map[string][]byte{"runtime.js": embeddedRuntime, "runtime-hydration.js": embeddedHydrationRuntime, "Page.hydrate_client.js": []byte(PrintJS(client, PrintPretty)), "Page.hydrate.js": []byte(PrintJS(entry, PrintPretty)), "index.html": []byte(serverHTML)} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
