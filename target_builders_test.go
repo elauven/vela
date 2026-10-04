@@ -14,7 +14,7 @@ func TestGeneratedStringLiteralDefersEscapingToPrinter(t *testing.T) {
 
 	prog := &JsProgram{Body: []JsStmt{genConst("value", literal)}}
 	printed := PrintJS(prog, PrintPretty)
-	want := "const value = " + encodeGeneratedString(value) + ";"
+	want := "const value = " + EncodeGeneratedString(value) + ";"
 	if printed != want {
 		t.Fatalf("printed literal = %q, want %q", printed, want)
 	}
@@ -47,7 +47,7 @@ func TestTypedHTMLFillUsesDecodedDataLiteral(t *testing.T) {
 	g := &ASTGen{}
 	html := `<p title="a&b">quote ' and "</p>`
 	printed := PrintJS(&JsProgram{Body: g.fillHTMLStmts("$$target", html)}, PrintPretty)
-	if !strings.Contains(printed, "innerHTML = "+encodeGeneratedString(html)) {
+	if !strings.Contains(printed, "innerHTML = "+EncodeGeneratedString(html)) {
 		t.Fatalf("HTML payload was not emitted through decoded literal builder:\n%s", printed)
 	}
 	if strings.Contains(printed, "&amp;") {
@@ -59,7 +59,7 @@ func TestTypedStyleInjectionUsesDecodedCSSLiteral(t *testing.T) {
 	g := &ASTGen{sfc: &SFC{Style: `.card::before { content: "'"; }`}, scopeID: "vela-test"}
 	printed := PrintJS(&JsProgram{Body: g.buildStyleInjection()}, PrintPretty)
 	css := ScopeCSS(g.sfc.Style, g.scopeID)
-	if !strings.Contains(printed, "textContent = "+encodeGeneratedString(css)) {
+	if !strings.Contains(printed, "textContent = "+EncodeGeneratedString(css)) {
 		t.Fatalf("CSS payload was not emitted through decoded literal builder:\n%s", printed)
 	}
 	if strings.Contains(printed, "jsStmt") {

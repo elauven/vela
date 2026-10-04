@@ -45,7 +45,7 @@ func TestStructuralStringGatewaysStayInASTGen(t *testing.T) {
 // generated fragment must never be serialized and parsed back into AST.
 func TestASTGenOnlyParsesUserScriptAST(t *testing.T) {
 	expected := map[string]int{}
-	actual := namedCallInventory(t, "astgen.go", "ParseJS", "parseJSExpr")
+	actual := namedCallInventory(t, "astgen.go", "ParseJS", "ParseJSExpr")
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("AST generator parse boundary changed:\nwant %#v\n got %#v", expected, actual)
 	}

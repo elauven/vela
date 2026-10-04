@@ -18,7 +18,7 @@ import (
 // then every exported field — recursing into JsNode-typed fields
 // and slices, formatting scalars inline.
 //
-// Position fields (Pos/End/Origin, embedded via baseNode) are
+// Position fields (Pos/End/Origin, embedded via BaseNode) are
 // omitted by default; they are emission bookkeeping, not tree
 // structure, and including them buries the signal.  The withPos
 // argument re-includes them when a position-level question is
@@ -116,7 +116,7 @@ func (e *astEncoder) encodeFields(v reflect.Value, depth int, hadPrev bool) bool
 		f := t.Field(i)
 		fv := v.Field(i)
 
-		// Embedded base structs (baseNode, baseStmt, baseExpr) —
+		// Embedded base structs (BaseNode, BaseStmt, BaseExpr) —
 		// flatten their fields into this node.
 		if f.Anonymous {
 			hadPrev = e.encodeFields(fv, depth, hadPrev)

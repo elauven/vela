@@ -203,7 +203,7 @@ func analyzeScriptAST(script *ScriptAST) *Analysis {
 						initAST = call.Args[0]
 					}
 					a.StateVars = append(a.StateVars, &StateVar{
-						Name: name, InitialAST: initAST, Pos: s.nodeEnd(), Deep: stateDeep,
+						Name: name, InitialAST: initAST, Pos: s.NodeEnd(), Deep: stateDeep,
 					})
 					skipEnd[s.End] = true
 
@@ -212,7 +212,7 @@ func analyzeScriptAST(script *ScriptAST) *Analysis {
 					if len(call.Args) > 0 {
 						exprAST = call.Args[0]
 					}
-					a.DerivedVars = append(a.DerivedVars, &DerivedVar{Name: name, ExprAST: exprAST, Pos: s.nodeEnd()})
+					a.DerivedVars = append(a.DerivedVars, &DerivedVar{Name: name, ExprAST: exprAST, Pos: s.NodeEnd()})
 					skipEnd[s.End] = true
 					skipEnd[s.End] = true
 				}
@@ -334,20 +334,20 @@ func buildScriptPlan(prog *JsProgram, skipEnd map[int]bool, a *Analysis) []Scrip
 		if _, ok := stmt.(*JsImportDecl); ok {
 			continue
 		}
-		if state := stateAt[stmt.nodeEnd()]; state != nil {
-			plan = append(plan, ScriptPlanStep{Kind: "state", Pos: stmt.nodeEnd(), State: state})
+		if state := stateAt[stmt.NodeEnd()]; state != nil {
+			plan = append(plan, ScriptPlanStep{Kind: "state", Pos: stmt.NodeEnd(), State: state})
 			continue
 		}
-		if derived := derivedAt[stmt.nodeEnd()]; derived != nil {
-			plan = append(plan, ScriptPlanStep{Kind: "derived", Pos: stmt.nodeEnd(), Derived: derived})
+		if derived := derivedAt[stmt.NodeEnd()]; derived != nil {
+			plan = append(plan, ScriptPlanStep{Kind: "derived", Pos: stmt.NodeEnd(), Derived: derived})
 			continue
 		}
-		if skipEnd[stmt.nodeEnd()] {
+		if skipEnd[stmt.NodeEnd()] {
 			continue
 		}
 		if stmt != nil {
 			plan = append(plan, ScriptPlanStep{
-				Kind: "user", Pos: stmt.nodeEnd(), SourcePos: stmt.nodePos(), Stmt: stmt,
+				Kind: "user", Pos: stmt.NodeEnd(), SourcePos: stmt.NodePos(), Stmt: stmt,
 			})
 		}
 	}

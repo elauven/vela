@@ -35,7 +35,7 @@ func TestPrintJSWithLocationsUsesExplicitTemplateOrigin(t *testing.T) {
 	expr := id("answer")
 	setTemplateOrigin(expr, 17)
 	var locations []PrintLocation
-	PrintJSWithLocations(&JsProgram{Body: []JsStmt{&JsExprStmt{baseStmt: baseStmt{genNode()}, X: expr}}}, PrintPretty, func(loc PrintLocation) { locations = append(locations, loc) })
+	PrintJSWithLocations(&JsProgram{Body: []JsStmt{&JsExprStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, X: expr}}}, PrintPretty, func(loc PrintLocation) { locations = append(locations, loc) })
 	if len(locations) != 1 || locations[0].SourcePos != 17 {
 		t.Fatalf("locations = %+v, want one template-origin mapping at 17", locations)
 	}
@@ -44,7 +44,7 @@ func TestPrintJSWithLocationsUsesExplicitTemplateOrigin(t *testing.T) {
 func TestPrintJSWithLocationsSkipsGeneratedNodes(t *testing.T) {
 	expr := id("generated")
 	var locations []PrintLocation
-	PrintJSWithLocations(&JsProgram{Body: []JsStmt{&JsExprStmt{baseStmt: baseStmt{genNode()}, X: expr}}}, PrintPretty, func(loc PrintLocation) { locations = append(locations, loc) })
+	PrintJSWithLocations(&JsProgram{Body: []JsStmt{&JsExprStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, X: expr}}}, PrintPretty, func(loc PrintLocation) { locations = append(locations, loc) })
 	if len(locations) != 0 {
 		t.Fatalf("generated expression produced mappings: %+v", locations)
 	}
@@ -61,7 +61,7 @@ func TestScriptPlanPreservesStatementOrigins(t *testing.T) {
 		t.Fatal(err)
 	}
 	prog := buildProgramCSS("Demo", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
-	shiftTree(prog, sfc.ScriptOffset)
+	ShiftTree(prog, sfc.ScriptOffset)
 	wantFunction := strings.Index(raw, "function explode")
 	wantThrow := strings.Index(raw, "throw new Error")
 	foundFunction, foundThrow := false, false
@@ -156,7 +156,7 @@ func TestInlineAwaitPromiseSourceMapOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	prog := buildProgramCSS("InlineAwait", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
-	shiftTree(prog, sfc.ScriptOffset)
+	ShiftTree(prog, sfc.ScriptOffset)
 	promisePos := strings.Index(raw, "request then")
 	inlineKeywordPos := strings.Index(raw, "then value")
 	mappedPromise, mappedKeyword := false, false
@@ -180,7 +180,7 @@ func TestRepeatedTemplateExpressionsKeepDistinctOrigins(t *testing.T) {
 		t.Fatal(err)
 	}
 	prog := buildProgramCSS("Repeated", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
-	shiftTree(prog, sfc.ScriptOffset)
+	ShiftTree(prog, sfc.ScriptOffset)
 	first := strings.Index(raw, "{value}") + 1
 	second := strings.Index(raw[first+len("value}"):], "{value}") + first + len("value}") + 1
 	seen := map[int]bool{}
@@ -207,7 +207,7 @@ func TestComponentEventSourceMapOriginAndEventParameter(t *testing.T) {
 		t.Fatal(err)
 	}
 	prog := buildProgramCSS("Parent", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
-	shiftTree(prog, sfc.ScriptOffset)
+	ShiftTree(prog, sfc.ScriptOffset)
 	output := PrintJS(prog, PrintPretty)
 	if !strings.Contains(output, "($e) =>") || !strings.Contains(output, "$e instanceof CustomEvent") {
 		t.Fatalf("component event wrapper lost its native event parameter:\n%s", output)
@@ -233,7 +233,7 @@ func TestEachRowTextExpressionKeepsSourceMapOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	prog := buildProgramCSS("Rows", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
-	shiftTree(prog, sfc.ScriptOffset)
+	ShiftTree(prog, sfc.ScriptOffset)
 	want := strings.Index(raw, "item.title")
 	found := false
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) {
@@ -255,7 +255,7 @@ func TestEachRowAttributeAndHandlerExpressionsKeepSourceMapOrigins(t *testing.T)
 		t.Fatal(err)
 	}
 	prog := buildProgramCSS("Rows", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
-	shiftTree(prog, sfc.ScriptOffset)
+	ShiftTree(prog, sfc.ScriptOffset)
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) {
 		seen[loc.SourcePos] = true
@@ -284,7 +284,7 @@ func TestSlotFallbackExpressionKeepsSourceMapOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	prog := buildProgramCSS("SlotFallback", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
-	shiftTree(prog, sfc.ScriptOffset)
+	ShiftTree(prog, sfc.ScriptOffset)
 	slotNode := nodes[0].(*SlotNode)
 	part := slotNode.Fallback[0].(*TextNode).Parts[0]
 	want := sfc.TemplateOffset + part.Expr.Pos
@@ -310,7 +310,7 @@ func TestStructuredIfBranchExpressionKeepsSourceMapOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	prog := buildProgramCSS("Conditional", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
-	shiftTree(prog, sfc.ScriptOffset)
+	ShiftTree(prog, sfc.ScriptOffset)
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) {
 		seen[loc.SourcePos] = true
@@ -336,7 +336,7 @@ func TestStructuredIfDynamicDOMKeepsSourceMapOrigins(t *testing.T) {
 		t.Fatal(err)
 	}
 	prog := buildProgramCSS("ConditionalDOM", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
-	shiftTree(prog, sfc.ScriptOffset)
+	ShiftTree(prog, sfc.ScriptOffset)
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) {
 		seen[loc.SourcePos] = true
@@ -366,7 +366,7 @@ func TestStructuredKeyComponentKeepsSourceMapOrigins(t *testing.T) {
 		t.Fatal(err)
 	}
 	prog := buildProgramCSS("KeyedParent", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
-	shiftTree(prog, sfc.ScriptOffset)
+	ShiftTree(prog, sfc.ScriptOffset)
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) { seen[loc.SourcePos] = true })
 	for kind, want := range map[string]int{
@@ -391,7 +391,7 @@ func TestNestedEachAndIfExpressionsKeepSourceMapOrigins(t *testing.T) {
 		t.Fatal(err)
 	}
 	prog := buildProgramCSS("NestedRows", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
-	shiftTree(prog, sfc.ScriptOffset)
+	ShiftTree(prog, sfc.ScriptOffset)
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) { seen[loc.SourcePos] = true })
 	for kind, want := range map[string]int{
@@ -422,7 +422,7 @@ func TestAwaitBranchExpressionsKeepSourceMapOrigins(t *testing.T) {
 		t.Fatal(err)
 	}
 	prog := buildProgramCSS("AwaitOrigins", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
-	shiftTree(prog, sfc.ScriptOffset)
+	ShiftTree(prog, sfc.ScriptOffset)
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) { seen[loc.SourcePos] = true })
 	for kind, want := range map[string]int{
@@ -439,11 +439,11 @@ func TestAwaitBranchExpressionsKeepSourceMapOrigins(t *testing.T) {
 
 func TestPrintJSWithLocationsReportsNestedHoistedHandlerCallOrigin(t *testing.T) {
 	const want = 67
-	call := &JsCallExpr{baseExpr: baseExpr{genNode()}, Callee: id("$$set_count"), Args: []JsExpr{id("$e")}}
+	call := &JsCallExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Callee: id("$$set_count"), Args: []JsExpr{id("$e")}}
 	setTemplateOrigin(call, want)
-	guard := &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: &JsBinaryExpr{baseExpr: baseExpr{genNode()}, Op: "instanceof", L: id("$e"), R: id("CustomEvent")}, Then: &JsExprStmt{baseStmt: baseStmt{genNode()}, X: call}}
-	wrapper := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$e")}, Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: []JsStmt{guard}}}
-	prog := &JsProgram{Body: []JsStmt{&JsVarDecl{baseStmt: baseStmt{genNode()}, Kind: "const", Decls: []*JsVarDeclarator{{Id: id("$$handler"), Init: wrapper}}}}}
+	guard := &JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: &JsBinaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "instanceof", L: id("$e"), R: id("CustomEvent")}, Then: &JsExprStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, X: call}}
+	wrapper := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$e")}, Body: &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: []JsStmt{guard}}}
+	prog := &JsProgram{Body: []JsStmt{&JsVarDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Kind: "const", Decls: []*JsVarDeclarator{{Id: id("$$handler"), Init: wrapper}}}}}
 	seen := false
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) { seen = seen || loc.SourcePos == want })
 	if !seen {

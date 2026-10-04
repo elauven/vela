@@ -36,15 +36,15 @@ func BuildSSRStaticEventBridge(plan *SSRRenderPlan) (*JsProgram, error) {
 		if err != nil {
 			return nil, err
 		}
-		spec := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
-			{baseNode: genNode(), Key: strLit("event"), Value: strLit(event.Event)},
-			{baseNode: genNode(), Key: strLit("handler"), Value: handler},
+		spec := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{
+			{BaseNode: genNode(), Key: strLit("event"), Value: strLit(event.Event)},
+			{BaseNode: genNode(), Key: strLit("handler"), Value: handler},
 		}}
 		props = append(props, &JsProp{
-			baseNode: genNode(), Key: strLit(event.EventKey), Value: genArray(spec),
+			BaseNode: genNode(), Key: strLit(event.EventKey), Value: genArray(spec),
 		})
 	}
-	specs := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: props}
+	specs := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: props}
 	entries := genComputedMember(id("$$specs"), genCall(genMember(id("$$node"), "getAttribute"), strLit("data-vela-event")))
 	attach := genCall(genMember(id("$$node"), "addEventListener"), genMember(id("$$entry"), "event"), genMember(id("$$entry"), "handler"))
 	eachEntry := genForOf("$$entry", id("$$entries"), genBlock(genExprStmt(attach)))
@@ -52,12 +52,12 @@ func BuildSSRStaticEventBridge(plan *SSRRenderPlan) (*JsProgram, error) {
 		genConst("$$entries", entries),
 		genIf(id("$$entries"), genBlock(eachEntry)),
 	))
-	fn := &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: "attachSSRStaticEvents", Params: []JsExpr{id("root")}, Body: genBlock(
+	fn := &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: "attachSSRStaticEvents", Params: []JsExpr{id("root")}, Body: genBlock(
 		genConst("$$specs", specs),
 		eachNode,
 	)}
-	return &JsProgram{baseNode: genNode(), Body: []JsStmt{
-		&JsExportDecl{baseStmt: baseStmt{genNode()}, Declaration: fn},
+	return &JsProgram{BaseNode: genNode(), Body: []JsStmt{
+		&JsExportDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Declaration: fn},
 	}}, nil
 }
 

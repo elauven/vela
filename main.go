@@ -691,7 +691,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	if opts.SourceMap {
 		var locations []PrintLocation
 		if err = trace.stage("print-target", func() error {
-			shiftTree(target, sfc.ScriptOffset)
+			ShiftTree(target, sfc.ScriptOffset)
 			body := PrintJSWithLocations(target, PrintPretty, func(loc PrintLocation) {
 				loc.GeneratedLine += 2
 				locations = append(locations, loc)

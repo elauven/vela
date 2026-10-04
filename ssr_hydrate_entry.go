@@ -41,10 +41,10 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string, mode SSRArti
 		return nil, fmt.Errorf("ssr hydrate entry: only executable mode accepts a hydration client module")
 	}
 	functionName := "hydrate" + plan.ComponentName
-	props := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+	props := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
 	for _, prop := range plan.Props {
 		props.Props = append(props.Props, &JsProp{
-			baseNode: genNode(),
+			BaseNode: genNode(),
 			Key:      id(prop.SourceName),
 			Value:    genMember(genMember(id("$$payload"), "props"), prop.GoName),
 			Kind:     "init",
@@ -52,19 +52,19 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string, mode SSRArti
 	}
 	componentProps := genCall(
 		generatedMemberPath("Object.assign"),
-		&JsObjectExpr{baseExpr: baseExpr{genNode()}},
+		&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}},
 		props,
-		&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
-			{baseNode: genNode(), Key: id("$$velaState"), Value: genMember(id("$$payload"), "state"), Kind: "init"},
-			{baseNode: genNode(), Key: id("$$velaAwait"), Value: genLogical("||", genMember(id("$$payload"), "await"), &JsObjectExpr{baseExpr: baseExpr{genNode()}}), Kind: "init"},
-			{baseNode: genNode(), Key: id("$$velaAwaitAt"), Value: genLogical("||", genMember(id("$$payload"), "awaitAt"), &JsObjectExpr{baseExpr: baseExpr{genNode()}}), Kind: "init"},
+		&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{
+			{BaseNode: genNode(), Key: id("$$velaState"), Value: genMember(id("$$payload"), "state"), Kind: "init"},
+			{BaseNode: genNode(), Key: id("$$velaAwait"), Value: genLogical("||", genMember(id("$$payload"), "await"), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}), Kind: "init"},
+			{BaseNode: genNode(), Key: id("$$velaAwaitAt"), Value: genLogical("||", genMember(id("$$payload"), "awaitAt"), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}), Kind: "init"},
 		}},
-		genLogical("||", id("$$overrides"), &JsObjectExpr{baseExpr: baseExpr{genNode()}}),
+		genLogical("||", id("$$overrides"), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}),
 	)
-	elements := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+	elements := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
 	for _, element := range ssrPlanElements(plan.Nodes) {
 		elements.Props = append(elements.Props, &JsProp{
-			baseNode: genNode(),
+			BaseNode: genNode(),
 			Key:      id("e" + itoa(element.HydrationID)),
 			Value:    genCall(id("$$acquireHydrationElement"), id("$$walker"), numLit(element.HydrationID), strLit(element.Tag)),
 			Kind:     "init",
@@ -82,7 +82,7 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string, mode SSRArti
 			genAssignStmt(id("$$instances"), genNew(id("Map"))),
 			genExprStmt(genCall(genMember(id("$$hydratedInstances"), "set"), id("$$root"), id("$$instances"))),
 		)),
-		genIf(id("$$createdInstances"), genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genIf(id("$$createdInstances"), genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genIf(genUnary("!", genMember(id("$$instances"), "size")), genExprStmt(genCall(genMember(id("$$hydratedInstances"), "delete"), id("$$root")))),
 		)}))),
 		genConst("$$existing", genCall(genMember(id("$$instances"), "get"), id("$$scopeID"))),
@@ -100,11 +100,11 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string, mode SSRArti
 			id("$$client"),
 			id("$$root"),
 			id("$$componentProps"),
-			&JsObjectExpr{baseExpr: baseExpr{genNode()}},
-			&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
-				{baseNode: genNode(), Key: id("walker"), Value: id("$$walker"), Kind: "init"},
-				{baseNode: genNode(), Key: id("instanceID"), Value: id("$$scopeID"), Kind: "init"},
-				{baseNode: genNode(), Key: id("transaction"), Value: id("$$transaction"), Kind: "init"},
+			&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}},
+			&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{
+				{BaseNode: genNode(), Key: id("walker"), Value: id("$$walker"), Kind: "init"},
+				{BaseNode: genNode(), Key: id("instanceID"), Value: id("$$scopeID"), Kind: "init"},
+				{BaseNode: genNode(), Key: id("transaction"), Value: id("$$transaction"), Kind: "init"},
 			}},
 		)))
 		// The payload belongs to this hydrated instance, not to its parent
@@ -113,7 +113,7 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string, mode SSRArti
 		// the live component without a second, feature-specific cleanup path.
 		hydrateBody = append(hydrateBody,
 			genConst("$$destroy", genMember(id("$$component"), "destroy")),
-			genAssignStmt(genMember(id("$$component"), "destroy"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genAssignStmt(genMember(id("$$component"), "destroy"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 				genInvoke("$$destroy"),
 				genExprStmt(genCall(genMember(id("$$instances"), "delete"), id("$$scopeID"))),
 				genIf(genUnary("!", genMember(id("$$instances"), "size")), genExprStmt(genCall(genMember(id("$$hydratedInstances"), "delete"), id("$$root")))),
@@ -123,22 +123,22 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string, mode SSRArti
 		)
 	}
 	returnProps := []*JsProp{
-		{baseNode: genNode(), Key: id("mode"), Value: strLit(string(mode)), Kind: "init"},
-		{baseNode: genNode(), Key: id("root"), Value: id("$$root"), Kind: "init"},
-		{baseNode: genNode(), Key: id("props"), Value: id("$$velaProps"), Kind: "init"},
-		{baseNode: genNode(), Key: id("componentProps"), Value: id("$$componentProps"), Kind: "init"},
-		{baseNode: genNode(), Key: id("state"), Value: genMember(id("$$payload"), "state"), Kind: "init"},
-		{baseNode: genNode(), Key: id("deep"), Value: genLogical("||", genMember(id("$$payload"), "deep"), genArray()), Kind: "init"},
-		{baseNode: genNode(), Key: id("ranges"), Value: genMember(id("$$walker"), "ranges"), Kind: "init"},
-		{baseNode: genNode(), Key: id("elements"), Value: elements, Kind: "init"},
+		{BaseNode: genNode(), Key: id("mode"), Value: strLit(string(mode)), Kind: "init"},
+		{BaseNode: genNode(), Key: id("root"), Value: id("$$root"), Kind: "init"},
+		{BaseNode: genNode(), Key: id("props"), Value: id("$$velaProps"), Kind: "init"},
+		{BaseNode: genNode(), Key: id("componentProps"), Value: id("$$componentProps"), Kind: "init"},
+		{BaseNode: genNode(), Key: id("state"), Value: genMember(id("$$payload"), "state"), Kind: "init"},
+		{BaseNode: genNode(), Key: id("deep"), Value: genLogical("||", genMember(id("$$payload"), "deep"), genArray()), Kind: "init"},
+		{BaseNode: genNode(), Key: id("ranges"), Value: genMember(id("$$walker"), "ranges"), Kind: "init"},
+		{BaseNode: genNode(), Key: id("elements"), Value: elements, Kind: "init"},
 	}
 	if clientModule != "" {
-		returnProps = append(returnProps, &JsProp{baseNode: genNode(), Key: id("component"), Value: id("$$component"), Kind: "init"})
+		returnProps = append(returnProps, &JsProp{BaseNode: genNode(), Key: id("component"), Value: id("$$component"), Kind: "init"})
 	}
 	hydrateBody = append(hydrateBody,
-		genConst("$$hydration", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: returnProps}),
+		genConst("$$hydration", &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: returnProps}),
 		genExprStmt(genCall(genMember(id("$$instances"), "set"), id("$$scopeID"), id("$$hydration"))),
-		genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(id("$$instances"), "delete"), id("$$scopeID"))),
 			genIf(genUnary("!", genMember(id("$$instances"), "size")), genExprStmt(genCall(genMember(id("$$hydratedInstances"), "delete"), id("$$root")))),
 		)})),
@@ -146,42 +146,42 @@ func buildSSRHydrateEntry(plan *SSRRenderPlan, clientModule string, mode SSRArti
 		genReturn(id("$$hydration")),
 	)
 	body = append(body, &JsTryStmt{
-		baseStmt:   baseStmt{genNode()},
+		BaseStmt:   BaseStmt{BaseNode: genNode()},
 		Block:      genBlock(hydrateBody...),
 		CatchParam: id("$$error"),
 		Handler: genBlock(
 			genIf(id("$$ownsTransaction"), genExprStmt(genCall(genMember(id("$$transaction"), "rollback")))),
-			&JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: id("$$error")},
+			&JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: id("$$error")},
 		),
 	})
 	entry := &JsFuncDecl{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Name:     functionName,
 		Params:   []JsExpr{id("$$root"), id("$$overrides"), id("$$instanceID"), id("$$parentTransaction")},
-		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: body},
+		Body:     &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: body},
 	}
 	imports := []JsStmt{genConst("$$hydratedInstances", genNew(id("WeakMap")))}
 	if clientModule != "" {
-		imports = append(imports, &JsImportDecl{baseStmt: baseStmt{genNode()}, DefaultName: "$$client", Source: clientModule})
+		imports = append(imports, &JsImportDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, DefaultName: "$$client", Source: clientModule})
 	}
 	componentAlias := &JsFuncDecl{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Name:     plan.ComponentName,
 		Params:   []JsExpr{id("$$root"), id("$$overrides"), id("$$instanceID"), id("$$parentTransaction")},
-		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: []JsStmt{genReturn(genCall(id(functionName), id("$$root"), id("$$overrides"), id("$$instanceID"), id("$$parentTransaction")))}},
+		Body:     &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: []JsStmt{genReturn(genCall(id(functionName), id("$$root"), id("$$overrides"), id("$$instanceID"), id("$$parentTransaction")))}},
 	}
 	imports = append(imports,
-		&JsImportDecl{baseStmt: baseStmt{genNode()}, Specifiers: []JsImportSpec{
+		&JsImportDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Specifiers: []JsImportSpec{
 			{Imported: "$$acquireHydrationElement"},
 			{Imported: "$$createHydrationTransaction"},
 			{Imported: "$$createHydrationWalker"},
 			{Imported: "$$readHydrationPayload"},
 		}, Source: "./runtime.js"},
-		&JsExportDecl{baseStmt: baseStmt{genNode()}, Declaration: entry},
-		&JsExportDecl{baseStmt: baseStmt{genNode()}, Declaration: componentAlias},
-		&JsExportDecl{baseStmt: baseStmt{genNode()}, Default: true, Declaration: genExprStmt(id(functionName))},
+		&JsExportDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Declaration: entry},
+		&JsExportDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Declaration: componentAlias},
+		&JsExportDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Default: true, Declaration: genExprStmt(id(functionName))},
 	)
-	program := &JsProgram{baseNode: genNode(), Body: imports}
+	program := &JsProgram{BaseNode: genNode(), Body: imports}
 	validateGeneratedProgram(program)
 	return program, nil
 }

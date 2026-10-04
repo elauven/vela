@@ -46,18 +46,18 @@ import (
 // OriginGenerated.
 
 // gen marks a freshly built node as compiler-generated.
-func genNode() baseNode { return baseNode{Origin: OriginGenerated} }
+func genNode() BaseNode { return BaseNode{Origin: OriginGenerated} }
 
 // id builds an identifier.
 func id(name string) *JsIdent {
-	return &JsIdent{baseExpr: baseExpr{genNode()}, Name: name}
+	return &JsIdent{BaseExpr: BaseExpr{BaseNode: genNode()}, Name: name}
 }
 
 // strLit builds a decoded compiler-generated string literal. The printer
 // owns JavaScript escaping, so callers always pass the semantic string value.
 func strLit(value string) *JsLiteral {
 	return &JsLiteral{
-		baseExpr: baseExpr{genNode()},
+		BaseExpr: BaseExpr{BaseNode: genNode()},
 		Kind:     "string",
 		Value:    value,
 		Decoded:  true,
@@ -65,23 +65,23 @@ func strLit(value string) *JsLiteral {
 }
 
 func genMember(obj JsExpr, prop string) *JsMemberExpr {
-	return &JsMemberExpr{baseExpr: baseExpr{genNode()}, Obj: obj, Prop: id(prop)}
+	return &JsMemberExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Obj: obj, Prop: id(prop)}
 }
 
 func genCall(callee JsExpr, args ...JsExpr) *JsCallExpr {
-	return &JsCallExpr{baseExpr: baseExpr{genNode()}, Callee: callee, Args: args}
+	return &JsCallExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Callee: callee, Args: args}
 }
 
 func genExprStmt(expr JsExpr) *JsExprStmt {
-	return &JsExprStmt{baseStmt: baseStmt{genNode()}, X: expr}
+	return &JsExprStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, X: expr}
 }
 
 func genAssignStmt(left, right JsExpr) *JsExprStmt {
-	return genExprStmt(&JsAssignExpr{baseExpr: baseExpr{genNode()}, Op: "=", L: left, R: right})
+	return genExprStmt(&JsAssignExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "=", L: left, R: right})
 }
 
 func genVar(kind, name string, init JsExpr) *JsVarDecl {
-	return &JsVarDecl{baseStmt: baseStmt{genNode()}, Kind: kind, Decls: []*JsVarDeclarator{{Id: id(name), Init: init}}}
+	return &JsVarDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Kind: kind, Decls: []*JsVarDeclarator{{Id: id(name), Init: init}}}
 }
 
 func genConst(name string, init JsExpr) *JsVarDecl { return genVar("const", name, init) }
@@ -93,63 +93,63 @@ func genInvoke(name string, args ...JsExpr) *JsExprStmt {
 }
 
 func genBinary(op string, left, right JsExpr) *JsBinaryExpr {
-	return &JsBinaryExpr{baseExpr: baseExpr{genNode()}, Op: op, L: left, R: right}
+	return &JsBinaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: op, L: left, R: right}
 }
 
 func genIf(test JsExpr, then JsStmt) *JsIfStmt {
-	return &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: test, Then: then}
+	return &JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: test, Then: then}
 }
 
 func genNull() *JsLiteral {
-	return &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "null", Kind: "null"}
+	return &JsLiteral{BaseExpr: BaseExpr{BaseNode: genNode()}, Raw: "null", Kind: "null"}
 }
 
 func numLit(value int) *JsLiteral {
-	return &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: itoa(value), Kind: "number"}
+	return &JsLiteral{BaseExpr: BaseExpr{BaseNode: genNode()}, Raw: itoa(value), Kind: "number"}
 }
 
 func boolLit(value bool) *JsLiteral {
 	if value {
-		return &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "true", Kind: "boolean"}
+		return &JsLiteral{BaseExpr: BaseExpr{BaseNode: genNode()}, Raw: "true", Kind: "boolean"}
 	}
-	return &JsLiteral{baseExpr: baseExpr{genNode()}, Raw: "false", Kind: "boolean"}
+	return &JsLiteral{BaseExpr: BaseExpr{BaseNode: genNode()}, Raw: "false", Kind: "boolean"}
 }
 
 func genComputedMember(obj, prop JsExpr) *JsMemberExpr {
-	return &JsMemberExpr{baseExpr: baseExpr{genNode()}, Obj: obj, Prop: prop, Computed: true}
+	return &JsMemberExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Obj: obj, Prop: prop, Computed: true}
 }
 
 func genLogical(op string, left, right JsExpr) *JsLogicalExpr {
-	return &JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: op, L: left, R: right}
+	return &JsLogicalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: op, L: left, R: right}
 }
 
 func genUnary(op string, expr JsExpr) *JsUnaryExpr {
-	return &JsUnaryExpr{baseExpr: baseExpr{genNode()}, Op: op, Prefix: true, X: expr}
+	return &JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: op, Prefix: true, X: expr}
 }
 
 func genNew(callee JsExpr, args ...JsExpr) *JsNewExpr {
-	return &JsNewExpr{baseExpr: baseExpr{genNode()}, Callee: callee, Args: args}
+	return &JsNewExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Callee: callee, Args: args}
 }
 
 func genArray(elems ...JsExpr) *JsArrayExpr {
-	return &JsArrayExpr{baseExpr: baseExpr{genNode()}, Elems: elems}
+	return &JsArrayExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Elems: elems}
 }
 
 func genBlock(body ...JsStmt) *JsBlock {
-	return &JsBlock{baseStmt: baseStmt{genNode()}, Body: body}
+	return &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: body}
 }
 
 func genReturn(arg JsExpr) *JsReturnStmt {
-	return &JsReturnStmt{baseStmt: baseStmt{genNode()}, Arg: arg}
+	return &JsReturnStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: arg}
 }
 
 func genFor(init JsStmt, test, update JsExpr, body JsStmt) *JsForStmt {
-	return &JsForStmt{baseStmt: baseStmt{genNode()}, Init: init, Test: test, Update: update, Body: body}
+	return &JsForStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Init: init, Test: test, Update: update, Body: body}
 }
 
 func genForOf(name string, iterable JsExpr, body JsStmt) *JsForInStmt {
 	return &JsForInStmt{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Left:     genConst(name, nil),
 		Right:    iterable,
 		Body:     body,
@@ -194,7 +194,7 @@ func markGeneratedNode(n JsNode) {
 }
 
 // setOrigin stamps a node's Origin.  WalkNode hands back the
-// interface; we reach the embedded baseNode through the concrete
+// interface; we reach the embedded BaseNode through the concrete
 // types.  Only the types astgen actually produces need handling;
 // anything else is left as-is (harmless).
 func setOrigin(n JsNode, o NodeOrigin) {
@@ -833,12 +833,12 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 		}
 	}
 	out = append(out, &JsFuncDecl{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Name:     "$$flush",
 		Body:     genBlock(flushBody...),
 	})
 	out = append(out, &JsFuncDecl{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Name:     "$$scheduleFlush",
 		Body: genBlock(
 			genIf(id("$$disposed"), genReturn(nil)),
@@ -1129,9 +1129,9 @@ func (g *ASTGen) templateExpr(expr *TemplateExpr) JsExpr {
 
 func (g *ASTGen) textValueExpr(parts []*Part) JsExpr {
 	if len(parts) == 1 && !parts[0].Static {
-		return &JsCallExpr{baseExpr: baseExpr{genNode()}, Callee: id("String"), Args: []JsExpr{g.templateExpr(parts[0].Expr)}}
+		return &JsCallExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Callee: id("String"), Args: []JsExpr{g.templateExpr(parts[0].Expr)}}
 	}
-	t := &JsTemplateLit{baseExpr: baseExpr{genNode()}, Quasis: []string{""}}
+	t := &JsTemplateLit{BaseExpr: BaseExpr{BaseNode: genNode()}, Quasis: []string{""}}
 	for _, part := range parts {
 		if part.Static {
 			t.Quasis[len(t.Quasis)-1] += escapeTL(part.Value)
@@ -1151,13 +1151,13 @@ func guardedTemplateStmt(stmt JsStmt, guard string) JsStmt {
 	if guard == "" {
 		return stmt
 	}
-	return &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: id(guard), Then: stmt}
+	return &JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: id(guard), Then: stmt}
 }
 
 func genBool(expr JsExpr) JsExpr {
 	return &JsUnaryExpr{
-		baseExpr: baseExpr{genNode()}, Op: "!", Prefix: true,
-		X: &JsUnaryExpr{baseExpr: baseExpr{genNode()}, Op: "!", Prefix: true, X: expr},
+		BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "!", Prefix: true,
+		X: &JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "!", Prefix: true, X: expr},
 	}
 }
 
@@ -1299,7 +1299,7 @@ func setTemplateOrigin(n JsNode, pos int) {
 }
 
 func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
-	obj := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+	obj := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
 	for _, attr := range attrs {
 		if attr.IsEvent {
 			continue
@@ -1320,9 +1320,9 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 			target, isIdent := templateExprIdent(attr.Expr)
 			if isIdent && g.analysis.stateSet()[target] {
 				obj.Props = append(obj.Props, &JsProp{
-					baseNode: genNode(), Key: id("$$onChange_" + attr.Name),
+					BaseNode: genNode(), Key: id("$$onChange_" + attr.Name),
 					Value: &JsArrowFunc{
-						baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$v")},
+						BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$v")},
 						Body: genCall(id("$$set_"+target), id("$$v")),
 					},
 				})
@@ -1754,17 +1754,17 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 		prog.Body = append(prog.Body, imp)
 	}
 
-	fnBody := &JsBlock{baseStmt: baseStmt{genNode()}}
+	fnBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}}
 
 	// ── Preamble: normalize props/slots ──────────────────────
 	fnBody.Body = append(fnBody.Body,
 		genAssignStmt(id("$$props"), genCall(genMember(id("Object"), "assign"),
-			&JsObjectExpr{baseExpr: baseExpr{genNode()}}, id("$$props"))),
+			&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}, id("$$props"))),
 		genAssignStmt(id("$$slots"), &JsLogicalExpr{
-			baseExpr: baseExpr{genNode()}, Op: "||", L: id("$$slots"),
-			R: &JsObjectExpr{baseExpr: baseExpr{genNode()}},
+			BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "||", L: id("$$slots"),
+			R: &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}},
 		}),
-		genExprStmt(&JsUnaryExpr{baseExpr: baseExpr{genNode()}, Op: "void", Prefix: true, X: id("$$slots")}),
+		genExprStmt(&JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "void", Prefix: true, X: id("$$slots")}),
 	)
 	if g.hydrationStateInput {
 		fnBody.Body = append(fnBody.Body, genConst("$$velaState", genLogical("||", genMember(id("$$props"), "$$velaState"), genNull())))
@@ -1833,7 +1833,7 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 		// Make queued setters and deferred flushes inert if a later adoption
 		// step fails. Listener, child-cache and lifecycle cleanup callbacks are
 		// registered after this owner callback and therefore unwind first.
-		fnBody.Body = append(fnBody.Body, genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		fnBody.Body = append(fnBody.Body, genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genAssignStmt(id("$$disposed"), boolLit(true)),
 		)})))
 	}
@@ -1883,7 +1883,7 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 
 	// ── Wrap in the exported function declaration ────────────
 	fn := &JsFuncDecl{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Name:     g.name,
 		Params:   []JsExpr{id("$$target"), id("$$props"), id("$$slots")},
 		Body:     fnBody,
@@ -1892,7 +1892,7 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 		fn.Params = append(fn.Params, id("$$hydrate"))
 	}
 	prog.Body = append(prog.Body, &JsExportDecl{
-		baseStmt:    baseStmt{genNode()},
+		BaseStmt:    BaseStmt{BaseNode: genNode()},
 		Declaration: fn,
 	})
 
@@ -1904,7 +1904,7 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// `export default Name;` makes both the default and the named
 	// import resolve to the same factory.
 	prog.Body = append(prog.Body, &JsExportDecl{
-		baseStmt:    baseStmt{genNode()},
+		BaseStmt:    BaseStmt{BaseNode: genNode()},
 		Default:     true,
 		Declaration: genExprStmt(id(g.name)),
 	})
@@ -2060,7 +2060,7 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	}
 	if len(specs) > 0 {
 		imp := &JsImportDecl{
-			baseStmt:   baseStmt{genNode()},
+			BaseStmt:   BaseStmt{BaseNode: genNode()},
 			Specifiers: specs,
 			Source:     "./runtime.js",
 		}
@@ -2080,7 +2080,7 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	// would fire on the parent — leaking to sibling components.
 	if usesDispatch {
 		bind := genConst("$$dispatch", &JsArrowFunc{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Params:   []JsExpr{id("name"), id("detail")},
 			Body:     genCall(id("$$rt_dispatch"), id("$$root"), id("name"), id("detail")),
 		})
@@ -2127,7 +2127,7 @@ func (g *ASTGen) buildImportDecls() []JsStmt {
 			}
 		}
 		if g.domAcquireMode == DOMAcquireHydrate && strings.HasSuffix(imp.Source, ".vela") && len(g.hydrationCSRComponents) > 0 {
-			csr := &JsImportDecl{baseStmt: baseStmt{genNode()}, Source: RewriteImportPath(imp.Source)}
+			csr := &JsImportDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Source: RewriteImportPath(imp.Source)}
 			if alias, ok := g.hydrationCSRComponents[defaultName]; ok {
 				csr.DefaultName = alias
 			}
@@ -2142,7 +2142,7 @@ func (g *ASTGen) buildImportDecls() []JsStmt {
 		}
 
 		out = append(out, &JsImportDecl{
-			baseStmt:    baseStmt{genNode()},
+			BaseStmt:    BaseStmt{BaseNode: genNode()},
 			DefaultName: defaultName,
 			Namespace:   namespace,
 			Specifiers:  specifiers,
@@ -2313,7 +2313,7 @@ func (g *ASTGen) buildPropDecls() []JsStmt {
 		value := JsExpr(genMember(id("$$props"), p.Name))
 		if p.DefaultAST != nil {
 			value = &JsConditionalExpr{
-				baseExpr: baseExpr{genNode()},
+				BaseExpr: BaseExpr{BaseNode: genNode()},
 				Test:     genBinary("!==", genMember(id("$$props"), p.Name), id("undefined")),
 				Then:     genMember(id("$$props"), p.Name),
 				Else:     p.DefaultAST,
@@ -2430,7 +2430,7 @@ func (g *ASTGen) buildStateDecl(sv *StateVar) []JsStmt {
 	if g.hydrationStateInput {
 		hasState := genCall(generatedMemberPath("Object.prototype.hasOwnProperty.call"), id("$$velaState"), strLit(sv.Name))
 		init = &JsConditionalExpr{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Test:     genLogical("&&", id("$$velaState"), hasState),
 			Then:     genMember(id("$$velaState"), sv.Name),
 			Else:     init,
@@ -2441,7 +2441,7 @@ func (g *ASTGen) buildStateDecl(sv *StateVar) []JsStmt {
 	}
 	mutName := "$$mut_" + sv.Name
 	return []JsStmt{
-		genConst(mutName, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$mutation")}, Body: genCall(id("$$set_"+sv.Name+"_notify"), id("$$mutation"))}),
+		genConst(mutName, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$mutation")}, Body: genCall(id("$$set_"+sv.Name+"_notify"), id("$$mutation"))}),
 		genLet("$$pendingMutations_"+sv.Name, genArray()),
 		genLet("$$activeMutations_"+sv.Name, genArray()),
 		genLet(sv.Name, genCall(id("$$proxy"), init, id(mutName))),
@@ -2477,7 +2477,7 @@ func (g *ASTGen) buildDerivedDecl(dv *DerivedVar) []JsStmt {
 	return []JsStmt{
 		genLet(dv.Name, nil),
 		genConst("$$upd_"+dv.Name, &JsArrowFunc{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Body:     genBlock(genAssignStmt(id(dv.Name), expr)),
 		}),
 	}
@@ -2497,7 +2497,7 @@ func (g *ASTGen) buildDerivedDecls() []JsStmt {
 			expr = id("undefined")
 		}
 		out = append(out, genConst("$$upd_"+dv.Name, &JsArrowFunc{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Body:     genBlock(genAssignStmt(id(dv.Name), expr)),
 		}))
 	}
@@ -2536,14 +2536,14 @@ func (g *ASTGen) buildEffectDecls() []JsStmt {
 			body = genBlock()
 		}
 		runner := &JsArrowFunc{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Body: genBlock(
 				genIf(id(cleanup), genBlock(
 					genInvoke(cleanup),
 					genAssignStmt(id(cleanup), genNull()),
 				)),
 				genAssignStmt(id(cleanup), genCall(&JsFuncExpr{
-					baseExpr: baseExpr{genNode()},
+					BaseExpr: BaseExpr{BaseNode: genNode()},
 					Body:     body,
 				})),
 			),
@@ -2564,7 +2564,7 @@ func (g *ASTGen) buildEffectInit() []JsStmt {
 		cleanup := "$$cleanup" + itoa(i)
 		out = append(out, genInvoke("$$effect"+itoa(i)))
 		if g.domAcquireMode == DOMAcquireHydrate {
-			out = append(out, genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			out = append(out, genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 				genIf(id(cleanup), genBlock(genInvoke(cleanup), genAssignStmt(id(cleanup), genNull()))),
 			)})))
 		}
@@ -2597,12 +2597,12 @@ func (g *ASTGen) buildOnMount() []JsStmt {
 		}
 		cleanup := "$$mountCleanup" + itoa(i)
 		out = append(out, genConst(cleanup, genCall(&JsFuncExpr{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Body:     body,
 		})))
 		if g.domAcquireMode == DOMAcquireHydrate {
-			out = append(out, genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
-				genIf(genBinary("===", &JsUnaryExpr{baseExpr: baseExpr{genNode()}, Op: "typeof", Prefix: true, X: id(cleanup)}, strLit("function")), genInvoke(cleanup)),
+			out = append(out, genExprStmt(genCall(genMember(id("$$transaction"), "add"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
+				genIf(genBinary("===", &JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "typeof", Prefix: true, X: id(cleanup)}, strLit("function")), genInvoke(cleanup)),
 			)})))
 		}
 	}
@@ -2626,7 +2626,7 @@ func (g *ASTGen) buildOnDestroyCleanup() []JsStmt {
 		}
 		cv := "$$mountCleanup" + itoa(i)
 		out = append(out, genIf(
-			genBinary("===", &JsUnaryExpr{baseExpr: baseExpr{genNode()}, Op: "typeof", Prefix: true, X: id(cv)}, strLit("function")),
+			genBinary("===", &JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "typeof", Prefix: true, X: id(cv)}, strLit("function")),
 			genInvoke(cv),
 		))
 	}
@@ -2792,7 +2792,7 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 // plain ($state / prop) reactive variable: a guard, the
 // assignment, then the reactive cascade.
 func (g *ASTGen) buildOneSetter(name string) JsStmt {
-	body := &JsBlock{baseStmt: baseStmt{genNode()}}
+	body := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}}
 	body.Body = append(body.Body, genIf(id("$$disposed"), genReturn(nil)))
 
 	// if (<name> === $$v && !$$isProxy($$v)) return;
@@ -2807,35 +2807,35 @@ func (g *ASTGen) buildOneSetter(name string) JsStmt {
 	// identity-equal proxy through to the cascade; primitives and
 	// plain objects keep the fast skip.
 	body.Body = append(body.Body, &JsIfStmt{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Test: &JsBinaryExpr{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Op:       "&&",
 			L: &JsBinaryExpr{
-				baseExpr: baseExpr{genNode()},
+				BaseExpr: BaseExpr{BaseNode: genNode()},
 				Op:       "===",
 				L:        id(name),
 				R:        id("$$v"),
 			},
 			R: &JsUnaryExpr{
-				baseExpr: baseExpr{genNode()},
+				BaseExpr: BaseExpr{BaseNode: genNode()},
 				Op:       "!",
 				Prefix:   true,
 				X: &JsCallExpr{
-					baseExpr: baseExpr{genNode()},
+					BaseExpr: BaseExpr{BaseNode: genNode()},
 					Callee:   id("$$isProxy"),
 					Args:     []JsExpr{id("$$v")},
 				},
 			},
 		},
-		Then: &JsReturnStmt{baseStmt: baseStmt{genNode()}},
+		Then: &JsReturnStmt{BaseStmt: BaseStmt{BaseNode: genNode()}},
 	})
 
 	// <name> = $$v;
 	body.Body = append(body.Body, &JsExprStmt{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		X: &JsAssignExpr{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Op:       "=",
 			L:        id(name),
 			R:        id("$$v"),
@@ -2845,7 +2845,7 @@ func (g *ASTGen) buildOneSetter(name string) JsStmt {
 	body.Body = append(body.Body, g.buildSetterCascade(name)...)
 
 	return &JsFuncDecl{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Name:     "$$set_" + name,
 		Params:   []JsExpr{id("$$v")},
 		Body:     body,
@@ -2874,12 +2874,12 @@ func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 	mutationCapture.Else = genAssignStmt(id(pendingMutations), genNull())
 
 	// $$set_X_notify — the cascade body.
-	notifyBody := &JsBlock{baseStmt: baseStmt{genNode()}}
+	notifyBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}}
 	notifyBody.Body = append(notifyBody.Body, genIf(id("$$disposed"), genReturn(nil)))
 	notifyBody.Body = append(notifyBody.Body, mutationCapture)
 	notifyBody.Body = append(notifyBody.Body, g.buildSetterCascade(name)...)
 	notify := &JsFuncDecl{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Name:     "$$set_" + name + "_notify",
 		Params:   []JsExpr{id("$$mutation")},
 		Body:     notifyBody,
@@ -2890,37 +2890,37 @@ func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 	// agree; for a deep var the new value is normally raw (proxy
 	// !== raw, so the guard never fired anyway), but a re-passed
 	// proxy must still fall through to a re-wrap + notify.
-	setBody := &JsBlock{baseStmt: baseStmt{genNode()}}
+	setBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}}
 	setBody.Body = append(setBody.Body, genIf(id("$$disposed"), genReturn(nil)))
 	setBody.Body = append(setBody.Body, &JsIfStmt{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Test: &JsBinaryExpr{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Op:       "&&",
 			L: &JsBinaryExpr{
-				baseExpr: baseExpr{genNode()},
+				BaseExpr: BaseExpr{BaseNode: genNode()},
 				Op:       "===",
 				L:        id(name),
 				R:        id("$$v"),
 			},
 			R: &JsUnaryExpr{
-				baseExpr: baseExpr{genNode()},
+				BaseExpr: BaseExpr{BaseNode: genNode()},
 				Op:       "!",
 				Prefix:   true,
 				X: &JsCallExpr{
-					baseExpr: baseExpr{genNode()},
+					BaseExpr: BaseExpr{BaseNode: genNode()},
 					Callee:   id("$$isProxy"),
 					Args:     []JsExpr{id("$$v")},
 				},
 			},
 		},
-		Then: &JsReturnStmt{baseStmt: baseStmt{genNode()}},
+		Then: &JsReturnStmt{BaseStmt: BaseStmt{BaseNode: genNode()}},
 	})
 	setBody.Body = append(setBody.Body,
 		genAssignStmt(id(name), genCall(id("$$proxy"), id("$$v"), id("$$mut_"+name))),
 		genInvoke("$$set_"+name+"_notify"))
 	set := &JsFuncDecl{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Name:     "$$set_" + name,
 		Params:   []JsExpr{id("$$v")},
 		Body:     setBody,
@@ -3316,7 +3316,7 @@ func (g *ASTGen) buildEachRowAttrs(
 				if templateExprIsHandler(attr.Expr) {
 					res.create = append(res.create, genConst(hv, handlerExpr))
 				} else {
-					res.create = append(res.create, genConst(hv, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))}))
+					res.create = append(res.create, genConst(hv, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))}))
 				}
 				res.create = append(res.create, g.listenerAttachStmt(id(rowVar), attr.Name, id(hv)))
 			}
@@ -3569,7 +3569,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	fragFn := "$$frag_" + id
 	eachFn := "$$each_" + id
 	generatedID := func(name string) JsExpr {
-		return &JsIdent{baseExpr: baseExpr{genNode()}, Name: name}
+		return &JsIdent{BaseExpr: BaseExpr{BaseNode: genNode()}, Name: name}
 	}
 
 	// Determine the row element: a single child element is used
@@ -3720,29 +3720,29 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	destroyBody := append([]JsStmt{}, rowCleanup...)
 	destroyBody = append(destroyBody, genExprStmt(genCall(genMember(generatedID(rowVar), "remove"))))
 	fragBody = append(fragBody, &JsReturnStmt{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Arg: &JsObjectExpr{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Props: []*JsProp{
 				{Key: generatedID("el"), Value: generatedID(rowVar)},
 				{Key: generatedID("update"), Value: &JsFuncExpr{
-					baseExpr: baseExpr{genNode()},
+					BaseExpr: BaseExpr{BaseNode: genNode()},
 					Params:   []JsExpr{generatedID(itemVar), generatedID(indexVar)},
-					Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: updateBody},
+					Body:     &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: updateBody},
 				}},
 				{Key: generatedID("destroy"), Value: &JsFuncExpr{
-					baseExpr: baseExpr{genNode()},
-					Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: destroyBody},
+					BaseExpr: BaseExpr{BaseNode: genNode()},
+					Body:     &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: destroyBody},
 				}},
 			},
 		},
 	})
 
 	fragDecl := &JsFuncDecl{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Name:     fragFn,
 		Params:   []JsExpr{generatedID(itemVar), generatedID(indexVar)},
-		Body:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: fragBody},
+		Body:     &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: fragBody},
 	}
 
 	// ── 3. Block storage ─────────────────────────────────────
@@ -3765,10 +3765,10 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 		if keyExpr != "" {
 			g.declare(genLet(keymap, genNull()))
 			g.body = append(g.body, genAssignStmt(generatedID(keymap), &JsNewExpr{
-				baseExpr: baseExpr{genNode()}, Callee: generatedID("Map"),
+				BaseExpr: BaseExpr{BaseNode: genNode()}, Callee: generatedID("Map"),
 			}))
 		}
-		g.declare(genLet(blocks, &JsArrayExpr{baseExpr: baseExpr{genNode()}, Elems: []JsExpr{}}))
+		g.declare(genLet(blocks, &JsArrayExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Elems: []JsExpr{}}))
 		g.declare(reconcilerDecl)
 		// Outer-branch teardown contribution.  When the {#if} (or
 		// other chain) containing this {#each} switches off, the
@@ -3781,7 +3781,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 		// nested {#if} chains.  Same g.nestedTeardowns channel,
 		// so a doubly-nested control-flow propagates naturally.
 		rowDestroy := &JsArrowFunc{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Params:   []JsExpr{generatedID("$$block")},
 			Body:     genCall(genMember(generatedID("$$block"), "destroy")),
 		}
@@ -3801,10 +3801,10 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 		g.body = append(g.body, fragDecl)
 		if keyExpr != "" {
 			g.body = append(g.body, genConst(keymap, &JsNewExpr{
-				baseExpr: baseExpr{genNode()}, Callee: generatedID("Map"),
+				BaseExpr: BaseExpr{BaseNode: genNode()}, Callee: generatedID("Map"),
 			}))
 		}
-		g.body = append(g.body, genLet(blocks, &JsArrayExpr{baseExpr: baseExpr{genNode()}, Elems: []JsExpr{}}))
+		g.body = append(g.body, genLet(blocks, &JsArrayExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Elems: []JsExpr{}}))
 		g.body = append(g.body, reconcilerDecl)
 	}
 	// ── 5. Wiring ────────────────────────────────────────────
@@ -3817,7 +3817,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	if incrementalPlan != nil {
 		mutations := JsExpr(generatedID("$$activeMutations_" + incrementalPlan.stateName))
 		mutations = &JsConditionalExpr{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Test:     generatedID(forceFull),
 			Then:     genNull(),
 			Else:     mutations,
@@ -3852,7 +3852,7 @@ func (g *ASTGen) buildEachBlock(block *EachBlockNode, parentVar string) {
 	g.cleanup = append(g.cleanup, genExprStmt(genCall(
 		genMember(generatedID(blocks), "forEach"),
 		&JsArrowFunc{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Params:   []JsExpr{generatedID("b")},
 			Body:     genCall(genMember(generatedID("b"), "destroy")),
 		},
@@ -3875,7 +3875,7 @@ func (g *ASTGen) eachReconcilerUnkeyed(eachFn, fragFn, anchor, blocks, itemVar, 
 	blockAt := func(index JsExpr) JsExpr { return genComputedMember(id(blocks), index) }
 	arrAt := func(index JsExpr) JsExpr { return genComputedMember(arr, index) }
 	inc := func(name string) JsExpr {
-		return &JsAssignExpr{baseExpr: baseExpr{genNode()}, Op: "=", L: id(name), R: genBinary("+", id(name), numLit(1))}
+		return &JsAssignExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "=", L: id(name), R: genBinary("+", id(name), numLit(1))}
 	}
 	rowDestroy := func(index JsExpr) JsStmt {
 		return genExprStmt(genCall(genMember(blockAt(index), "destroy")))
@@ -3913,14 +3913,14 @@ func (g *ASTGen) eachReconcilerUnkeyed(eachFn, fragFn, anchor, blocks, itemVar, 
 		genConst("$$common", genCall(genMember(id("Math"), "min"), genMember(id(blocks), "length"), genMember(arr, "length"))),
 		commonLoop,
 		&JsIfStmt{
-			baseStmt: baseStmt{genNode()},
+			BaseStmt: BaseStmt{BaseNode: genNode()},
 			Test:     genBinary(">", genMember(id(blocks), "length"), genMember(arr, "length")),
 			Then: genBlock(
 				shrinkLoop,
 				genAssignStmt(genMember(id(blocks), "length"), genMember(arr, "length")),
 			),
 			Else: &JsIfStmt{
-				baseStmt: baseStmt{genNode()},
+				BaseStmt: BaseStmt{BaseNode: genNode()},
 				Test:     genBinary("<", genMember(id(blocks), "length"), genMember(arr, "length")),
 				Then:     genBlock(growLoop),
 			},
@@ -3928,7 +3928,7 @@ func (g *ASTGen) eachReconcilerUnkeyed(eachFn, fragFn, anchor, blocks, itemVar, 
 		genReturn(nil),
 	)
 	return &JsFuncDecl{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Name:     eachFn,
 		Params:   []JsExpr{arr},
 		Body: genBlock(
@@ -3942,11 +3942,11 @@ func (g *ASTGen) eachReconcilerUnkeyed(eachFn, fragFn, anchor, blocks, itemVar, 
 			genIf(genLogical("&&", id("$$sameRef"), id("$$stillLive")), updateExisting),
 			genAssignStmt(genMember(id(eachFn), "_arr"), arr),
 			genExprStmt(genCall(genMember(id(blocks), "forEach"), &JsArrowFunc{
-				baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("b")}, Body: genCall(genMember(id("b"), "destroy")),
+				BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("b")}, Body: genCall(genMember(id("b"), "destroy")),
 			})),
 			genAssignStmt(id(blocks), genArray()),
 			genExprStmt(genCall(genMember(arr, "forEach"), &JsFuncExpr{
-				baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(itemVar), id(indexVar)},
+				BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id(itemVar), id(indexVar)},
 				Body: genBlock(
 					genConst("$$blk", genCall(id(fragFn), id(itemVar), id(indexVar))),
 					genExprStmt(genCall(genMember(id(anchor), "before"), genMember(id("$$blk"), "el"))),
@@ -3967,7 +3967,7 @@ func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap stri
 		genExprStmt(genCall(genMember(id("$$newKeys"), "add"), key)),
 		genLet("$$blk", genCall(genMember(id(keymap), "get"), key)),
 		&JsIfStmt{
-			baseStmt: baseStmt{genNode()},
+			BaseStmt: BaseStmt{BaseNode: genNode()},
 			Test:     blk,
 			Then: genBlock(genIf(
 				genMember(blk, "update"),
@@ -3985,7 +3985,7 @@ func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap stri
 		genExprStmt(genCall(genMember(id("$$newBlocks"), "push"), blk)),
 	)
 	removeDropped := &JsArrowFunc{
-		baseExpr: baseExpr{genNode()},
+		BaseExpr: BaseExpr{BaseNode: genNode()},
 		Params:   []JsExpr{id("$$blk"), id("$$key")},
 		Body: genBlock(genIf(
 			genUnary("!", genCall(genMember(id("$$newKeys"), "has"), id("$$key"))),
@@ -4000,7 +4000,7 @@ func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap stri
 		rows := id("$$dirtyRows")
 		rowIndex := id("$$rowIndex")
 		rowBlock := id("$$rowBlock")
-		rowUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{rowIndex}, Body: genBlock(
+		rowUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{rowIndex}, Body: genBlock(
 			genConst("$$rowBlock", genComputedMember(id(blocks), rowIndex)),
 			genIf(genLogical("&&", rowBlock, genMember(rowBlock, "update")),
 				genExprStmt(genCall(genMember(rowBlock, "update"), genComputedMember(arr, rowIndex), rowIndex))),
@@ -4016,7 +4016,7 @@ func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap stri
 		)
 	}
 	return &JsFuncDecl{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Name:     eachFn,
 		Params:   []JsExpr{arr, id("$$mutations")},
 		Body: genBlock(
@@ -4030,7 +4030,7 @@ func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap stri
 			genConst("$$restoreFocus", genLogical("&&", id("$$focusTarget"), genCall(
 				genMember(genCall(generatedMemberPath("Array.from"), genCall(genMember(id(keymap), "values"))), "some"),
 				&JsArrowFunc{
-					baseExpr: baseExpr{genNode()},
+					BaseExpr: BaseExpr{BaseNode: genNode()},
 					Params:   []JsExpr{id("$$row")},
 					Body: genLogical("||",
 						genBinary("===", genMember(id("$$row"), "el"), id("$$focusTarget")),
@@ -4042,7 +4042,7 @@ func (g *ASTGen) eachReconcilerKeyed(eachFn, fragFn, anchor, blocks, keymap stri
 			genConst("$$newKeys", genNew(id("Set"))),
 			genConst("$$newBlocks", genArray()),
 			genExprStmt(genCall(genMember(genLogical("||", arr, genArray()), "forEach"), &JsFuncExpr{
-				baseExpr: baseExpr{genNode()},
+				BaseExpr: BaseExpr{BaseNode: genNode()},
 				Params:   []JsExpr{id(itemVar), id(indexVar)},
 				Body:     buildRow,
 			})),
@@ -4145,14 +4145,14 @@ func (g *ASTGen) buildAwaitBlock(block *AwaitBlockNode, parentVar string) {
 	// the promise expression's reactive deps change.
 	driver := "$$awaitDrive_" + blockID
 	settle := func(name, target string, state int) JsExpr {
-		return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(name)}, Body: genBlock(
+		return &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id(name)}, Body: genBlock(
 			genIf(genBinary("!==", id(cellVar), id("$$p")), genReturn(nil)),
 			genAssignStmt(id(target), id(name)),
 			genAssignStmt(id(stateVar), numLit(state)),
 			genInvoke(chainFn),
 		)}
 	}
-	driverStmt := &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: driver, Body: genBlock(
+	driverStmt := &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: driver, Body: genBlock(
 		genConst("$$p", genCall(genMember(id("Promise"), "resolve"), g.templateExpr(block.Expr))),
 		genIf(genBinary("===", id(cellVar), id("$$p")), genReturn(nil)),
 		genAssignStmt(id(cellVar), id("$$p")),
@@ -4279,7 +4279,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		}
 	}
 	runningDecl := &JsVarDecl{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Kind:     "let",
 		Decls: []*JsVarDeclarator{
 			{Id: id(fn + "_running"), Init: boolLit(false)},
@@ -4292,7 +4292,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		g.body = append(g.body, runningDecl)
 	}
 	if chain.HasKey() {
-		keyDecl := genLet(fn+"_keyprev", &JsObjectExpr{baseExpr: baseExpr{genNode()}})
+		keyDecl := genLet(fn+"_keyprev", &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})
 		if captured {
 			g.declare(keyDecl)
 		} else {
@@ -4416,21 +4416,21 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		mountBody = append(mountBody, plans[i].build...)
 		if len(plans[i].cleanup) > 0 {
 			mountBody = append(mountBody, &JsExprStmt{
-				baseStmt: baseStmt{genNode()},
+				BaseStmt: BaseStmt{BaseNode: genNode()},
 				X: &JsAssignExpr{
-					baseExpr: baseExpr{genNode()}, Op: "=", L: id(bv + "_cleanup"),
-					R: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: plans[i].cleanup}},
+					BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "=", L: id(bv + "_cleanup"),
+					R: &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: plans[i].cleanup}},
 				},
 			})
 		}
 		mountBody = append(mountBody,
-			genAssignStmt(id(bv), genArray(&JsSpreadExpr{baseExpr: baseExpr{genNode()}, X: genMember(id(frag), "childNodes")})),
+			genAssignStmt(id(bv), genArray(&JsSpreadExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, X: genMember(id(frag), "childNodes")})),
 			genExprStmt(genCall(genMember(id(anchor), "before"), id(frag))),
 		)
 		activeBody := []JsStmt{&JsIfStmt{
-			baseStmt: baseStmt{genNode()},
+			BaseStmt: BaseStmt{BaseNode: genNode()},
 			Test:     genUnary("!", id(bv)),
-			Then:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: mountBody},
+			Then:     &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: mountBody},
 			Else: genIf(
 				genLogical("&&",
 					genLogical("&&", genMember(id(anchor), "parentNode"), genMember(id(bv), "length")),
@@ -4441,9 +4441,9 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 		}}
 		activeBody = append(activeBody, plans[i].init...)
 		tryBody = append(tryBody, &JsIfStmt{
-			baseStmt: baseStmt{genNode()},
+			BaseStmt: BaseStmt{BaseNode: genNode()},
 			Test:     genBinary("===", id("$$active"), numLit(i)),
-			Then:     &JsBlock{baseStmt: baseStmt{genNode()}, Body: activeBody},
+			Then:     &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: activeBody},
 		})
 	}
 	finallyBody := []JsStmt{
@@ -4463,9 +4463,9 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			genReturn(nil),
 		)),
 		genAssignStmt(id(fn+"_running"), boolLit(true)),
-		&JsTryStmt{baseStmt: baseStmt{genNode()}, Block: genBlock(tryBody...), Finalizer: genBlock(finallyBody...)},
+		&JsTryStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Block: genBlock(tryBody...), Finalizer: genBlock(finallyBody...)},
 	}
-	g.declareInScope(&JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: &JsBlock{baseStmt: baseStmt{genNode()}, Body: body}})
+	g.declareInScope(&JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: body}})
 	g.body = append(g.body, genExprStmt(genCall(genMember(id(parentVar), "appendChild"), id(anchor))))
 	g.initBody = append(g.initBody, genInvoke(fn))
 	deps := map[string]bool{}
@@ -4505,7 +4505,7 @@ func (g *ASTGen) buildIfChainStructured(chain *IfChainNode, parentVar string) st
 			genAssignStmt(id(fn+"_pending"), boolLit(false)),
 		)
 		if chain.HasKey() {
-			teardown = append(teardown, genAssignStmt(id(fn+"_keyprev"), &JsObjectExpr{baseExpr: baseExpr{genNode()}}))
+			teardown = append(teardown, genAssignStmt(id(fn+"_keyprev"), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}))
 		}
 		g.nestedTeardowns = append(g.nestedTeardowns, teardown...)
 	}
@@ -4528,9 +4528,9 @@ func (g *ASTGen) buildStaticDOM(nodes []Node) {
 		genAssignStmt(genMember(genMember(id("$$root"), "style"), "display"), strLit("contents")))
 	html := emitStaticHTML(nodes, g.scopeID)
 	g.body = append(g.body, &JsExprStmt{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		X: &JsCallExpr{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Callee:   id("$$insertHTML"),
 			Args:     []JsExpr{id("$$root"), strLit(html)},
 		},
@@ -4553,12 +4553,12 @@ func (g *ASTGen) emitStaticRootElement(el *ElementNode) {
 	if len(el.Children) > 0 {
 		html := emitStaticHTML(el.Children, g.scopeID)
 		g.body = append(g.body, &JsExprStmt{
-			baseStmt: baseStmt{genNode()},
+			BaseStmt: BaseStmt{BaseNode: genNode()},
 			X: &JsAssignExpr{
-				baseExpr: baseExpr{genNode()},
+				BaseExpr: BaseExpr{BaseNode: genNode()},
 				Op:       "=",
 				L: &JsMemberExpr{
-					baseExpr: baseExpr{genNode()},
+					BaseExpr: BaseExpr{BaseNode: genNode()},
 					Obj:      id("$$root"),
 					Prop:     id("innerHTML"),
 				},
@@ -4920,7 +4920,7 @@ func (g *ASTGen) emitHydrationBinding(variable, tag string, attr *Attr) {
 	}
 	handler := variable + "_bind_" + spec.event + "_h"
 	g.body = append(g.body, genConst(handler, &JsArrowFunc{
-		baseExpr: baseExpr{genNode()},
+		BaseExpr: BaseExpr{BaseNode: genNode()},
 		Params:   []JsExpr{id("$e")},
 		Body:     twoWaySetterFromEvent("$$set_"+state, tag == "select" && attr.Name == "value", spec.readProp),
 	}))
@@ -5022,7 +5022,7 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 			activeExpr = numLit(index)
 			continue
 		}
-		activeExpr = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: activeExpr}
+		activeExpr = &JsConditionalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: activeExpr}
 	}
 	g.body = append(g.body, genLet(activeVar, activeExpr))
 
@@ -5046,7 +5046,7 @@ func (g *ASTGen) buildHydrationRootIfChain(chain *IfChainNode) {
 		genAssignStmt(id(activeVar), id("$$active")),
 	)
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	for _, branch := range chain.Branches {
 		if branch == nil || !branch.HasCondition() {
 			continue
@@ -5123,7 +5123,7 @@ func (g *ASTGen) buildHydrationRootIfNestedStructuralChain(chain *IfChainNode, s
 			activeExpr = numLit(index)
 			continue
 		}
-		activeExpr = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: activeExpr}
+		activeExpr = &JsConditionalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: activeExpr}
 	}
 	g.body = append(g.body, genLet(activeVar, activeExpr))
 
@@ -5158,7 +5158,7 @@ func (g *ASTGen) buildHydrationRootIfNestedStructuralChain(chain *IfChainNode, s
 		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
 		genAssignStmt(id(activeVar), id("$$active")),
 	)
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: renderVar, Body: genBlock(renderBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: renderVar, Body: genBlock(renderBody...)})
 	for _, branch := range chain.Branches {
 		if branch == nil || !branch.HasCondition() {
 			continue
@@ -5248,7 +5248,7 @@ func (g *ASTGen) buildHydrationRootKeyComponents(chain *IfChainNode, components 
 		genAssignStmt(id(keyVar), id("$$key")),
 	)
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	for _, dependency := range templateExprDeps(chain.KeyAST, g.reactiveNames()) {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
@@ -5322,7 +5322,7 @@ func (g *ASTGen) buildHydrationRootIfComponentChain(chain *IfChainNode, componen
 			activeExpr = numLit(index)
 			continue
 		}
-		activeExpr = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: activeExpr}
+		activeExpr = &JsConditionalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: activeExpr}
 	}
 	g.body = append(g.body, genLet(activeVar, activeExpr))
 
@@ -5378,7 +5378,7 @@ func (g *ASTGen) buildHydrationRootIfComponentChain(chain *IfChainNode, componen
 		genAssignStmt(id(activeVar), id("$$active")),
 	)
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	for _, branch := range chain.Branches {
 		if branch == nil || !branch.HasCondition() {
 			continue
@@ -5418,7 +5418,7 @@ func (g *ASTGen) hydrationIfComponentBranchMount(branch *IfBranch, handles []hyd
 				if component != handle.component {
 					continue
 				}
-				body = append(body, genAssignStmt(id(handle.instanceVar), genCall(id(handle.csrFactory), id("$$frag"), handle.propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})))
+				body = append(body, genAssignStmt(id(handle.instanceVar), genCall(id(handle.csrFactory), id("$$frag"), handle.propsExpr, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})))
 				matched = true
 				break
 			}
@@ -5479,7 +5479,7 @@ func (g *ASTGen) buildHydrationRootKeyNestedStructuralChain(chain *IfChainNode, 
 		genAssignStmt(id(keyVar), id("$$key")),
 	)
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	for _, dependency := range templateExprDeps(chain.KeyAST, g.reactiveNames()) {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
@@ -5517,7 +5517,7 @@ func (g *ASTGen) buildHydrationRootKeyBlock(chain *IfChainNode) {
 		genAssignStmt(id(keyVar), id("$$key")),
 	)
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	for _, dependency := range templateExprDeps(chain.KeyAST, g.reactiveNames()) {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
@@ -5598,7 +5598,7 @@ func (g *ASTGen) buildHydrationRootEach(block *EachBlockNode) {
 		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
 	)
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
@@ -5662,7 +5662,7 @@ func (g *ASTGen) buildHydrationRootEachNestedAwaitComponentRow(block *EachBlockN
 		genLet(indexVar, numLit(0)),
 	}
 	pendingMount := genForOf("$$item", id(itemsVar), genBlock(
-		genConst("$$component", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", indexVar), &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+		genConst("$$component", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", indexVar), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})),
 		genExprStmt(genCall(genMember(id(instancesVar), "push"), id("$$component"))),
 		genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))),
 	))
@@ -5680,15 +5680,15 @@ func (g *ASTGen) buildHydrationRootEachNestedAwaitComponentRow(block *EachBlockN
 		genAssignStmt(id(nodesVar), genCall(generatedMemberPath("Array.from"), genMember(id("$$frag"), "childNodes"))),
 		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
 	)
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: renderVar, Body: genBlock(renderBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: renderVar, Body: genBlock(renderBody...)})
 	settle := func(state int) JsExpr {
-		return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$value")}, Body: genBlock(
+		return &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$value")}, Body: genBlock(
 			genIf(genLogical("||", genUnary("!", id(aliveVar)), genBinary("!==", id(cellVar), id("$$p"))), genReturn(nil)),
 			genAssignStmt(id(stateVar), numLit(state)),
 			genInvoke(renderVar),
 		)}
 	}
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: driverVar, Body: genBlock(
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: driverVar, Body: genBlock(
 		genConst("$$p", genCall(genMember(id("Promise"), "resolve"), g.templateExpr(await.Expr))),
 		genIf(genBinary("===", id(cellVar), id("$$p")), genReturn(boolLit(false))),
 		genAssignStmt(id(cellVar), id("$$p")),
@@ -5697,10 +5697,10 @@ func (g *ASTGen) buildHydrationRootEachNestedAwaitComponentRow(block *EachBlockN
 		genExprStmt(genCall(genMember(id("$$p"), "then"), settle(1), settle(2))),
 		genReturn(boolLit(true)),
 	)})
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: scheduleVar, Body: genBlock(
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: scheduleVar, Body: genBlock(
 		genIf(genLogical("||", genUnary("!", id(aliveVar)), id(queuedVar)), genReturn(nil)),
 		genAssignStmt(id(queuedVar), boolLit(true)),
-		genExprStmt(genCall(id("queueMicrotask"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genExprStmt(genCall(id("queueMicrotask"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genAssignStmt(id(queuedVar), boolLit(false)),
 			genIf(genUnary("!", id(aliveVar)), genReturn(nil)),
 			genIf(genUnary("!", genCall(id(driverVar))), genInvoke(renderVar)),
@@ -5798,7 +5798,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	g.withTemplateBinding(block.ItemName, "$$item", func() {
 		g.withTemplateBinding(block.IndexName, "$$index", func() { keyExpr = genString(g.templateExpr(block.KeyAST)) })
 	})
-	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
+	keyOf := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
 	promiseFor := func(itemVar, indexVar string) JsExpr {
 		promise := JsExpr(id("undefined"))
 		g.withTemplateBinding(block.ItemName, itemVar, func() {
@@ -5807,7 +5807,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		return promise
 	}
 	propsFor := func(component *ComponentNode, branch int) JsExpr {
-		props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
+		props := JsExpr(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})
 		g.withTemplateBinding(block.ItemName, rowItemVar, func() {
 			g.withTemplateBinding(block.IndexName, "$$index", func() {
 				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
@@ -5821,7 +5821,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	// component props against its own arguments, rather than rowItemVar which
 	// belongs only to the currently mounted branch controller.
 	propsForRowUpdate := func(component *ComponentNode, branch int) JsExpr {
-		props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
+		props := JsExpr(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})
 		g.withTemplateBinding(block.ItemName, "$$item", func() {
 			g.withTemplateBinding(block.IndexName, "$$index", func() {
 				g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() {
@@ -5900,13 +5900,13 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			handlerExpr = id("undefined")
 		}
 		if !templateExprIsHandler(attr.Expr) {
-			handlerExpr = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))}
+			handlerExpr = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))}
 		}
 		handler := g.id()
 		return []JsStmt{
 			genConst(handler, handlerExpr),
 			g.listenerAttachStmt(id(ref), attr.Name, id(handler)),
-			genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(attr.Name), id(handler))))})),
+			genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(attr.Name), id(handler))))})),
 		}
 	}
 
@@ -5945,14 +5945,14 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		}
 		handler := g.id()
 		return []JsStmt{
-			genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genCall(id("$$set_"+state), genMember(genMember(id("$event"), "target"), spec.readProp))}),
+			genConst(handler, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genCall(id("$$set_"+state), genMember(genMember(id("$event"), "target"), spec.readProp))}),
 			g.listenerAttachStmt(id(ref), spec.event, id(handler)),
-			genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(spec.event), id(handler))))})),
+			genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(spec.event), id(handler))))})),
 		}
 	}
 
 	stateExpr := func() JsExpr {
-		return &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+		return &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{
 			{Key: id("cell"), Value: genNull()}, {Key: id("active"), Value: numLit(0)},
 			{Key: id("value"), Value: id("undefined")}, {Key: id("error"), Value: id("undefined")}, {Key: id("snapshot"), Value: numLit(-1)},
 			{Key: id("components"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("innerRows"), Value: genNew(id("Map"))}, {Key: id("innerRefresh"), Value: genArray()}, {Key: id("row"), Value: genNull()}, {Key: id("item"), Value: genNull()}, {Key: id("index"), Value: numLit(0)}, {Key: id("key"), Value: genNull()}, {Key: id("setItem"), Value: genNull()},
@@ -5962,9 +5962,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	// creation and the initial hydration adoption now obtain the same outer-row
 	// controller shape from this factory; the following adoption slice can add
 	// an SSR-settled path without copying lifecycle fields.
-	stateFactory := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: stateExpr()}
-	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(
-		genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRows"), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$inner")}, Body: genBlock(genExprStmt(genCall(genMember(id("$$inner"), "destroy"))))})),
+	stateFactory := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: stateExpr()}
+	destroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(
+		genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRows"), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$inner")}, Body: genBlock(genExprStmt(genCall(genMember(id("$$inner"), "destroy"))))})),
 		genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRows"), "clear"))),
 		genForOf("$$component", genCall(genMember(genCall(genMember(genMember(id("$$state"), "components"), "slice")), "reverse")), genIf(id("$$component"), genExprStmt(genCall(genMember(id("$$component"), "destroy"))))),
 		genAssignStmt(genMember(id("$$state"), "components"), genArray()),
@@ -6028,7 +6028,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				body = append(body,
 					genConst(ref, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
 					genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(ref))),
-					genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(textWriteFor(text, branch, ref))}),
+					genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(textWriteFor(text, branch, ref))}),
 					genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))),
 					genInvoke(update),
 				)
@@ -6040,7 +6040,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 				if len(updates) > 0 {
 					update := g.id() + "_update"
 					body = append(body,
-						genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updates...)}),
+						genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(updates...)}),
 						genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))),
 						genInvoke(update),
 					)
@@ -6066,7 +6066,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							}
 							ref := g.id()
 							update := ref + "_update"
-							body = append(body, genConst(ref, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(parent), "appendChild"), id(ref))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(textWriteFor(text, branch, ref))}), genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(update))), genInvoke(update))
+							body = append(body, genConst(ref, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(parent), "appendChild"), id(ref))), genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(textWriteFor(text, branch, ref))}), genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(update))), genInvoke(update))
 							continue
 						}
 						if element, ok := branchChild.(*ElementNode); ok && ssrCapabilityKeyedAwaitDirectElement(element) {
@@ -6074,7 +6074,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							body = append(body, buildSettledElement(element, parent, branch, owner, &updates)...)
 							if len(updates) > 0 {
 								update := g.id() + "_update"
-								body = append(body, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updates...)}), genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(update))), genInvoke(update))
+								body = append(body, genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(updates...)}), genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(update))), genInvoke(update))
 							}
 						}
 					}
@@ -6095,7 +6095,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() { condition = g.templateExpr(ifBranch.Expr) })
 						})
 					})
-					return []JsStmt{&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: condition, Then: genBlock(mountIfChildren(ifBranch.Children, parent, owner)...), Else: genBlock(mountIfBranch(index+1, parent, owner)...)}}
+					return []JsStmt{&JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: condition, Then: genBlock(mountIfChildren(ifBranch.Children, parent, owner)...), Else: genBlock(mountIfBranch(index+1, parent, owner)...)}}
 				}
 				ifVar, ifRange, ifRender := g.id(), g.id()+"_range", g.id()+"_render"
 				ifFragment, ifNext := g.id()+"_fragment", g.id()+"_next"
@@ -6115,21 +6115,21 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							g.withTemplateBinding(bindingNames[branch], bindingValues[branch], func() { condition = g.templateExpr(current.Expr) })
 						})
 					})
-					active = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: condition, Then: numLit(index), Else: active}
+					active = &JsConditionalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Test: condition, Then: numLit(index), Else: active}
 				}
-				destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				destroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 					genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(ifVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
 					genAssignStmt(genMember(id(ifVar), "listeners"), genArray()), genAssignStmt(genMember(id(ifVar), "updates"), genArray()),
 					genForOf("$$node", genMember(id(ifVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(ifVar), "nodes"), genArray()), genAssignStmt(genMember(id(ifVar), "active"), numLit(-1)),
 				)}
-				controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("destroy"), Value: destroy}}}
+				controller := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("destroy"), Value: destroy}}}
 				renderBody := []JsStmt{genConst(ifNext, active), genIf(genBinary("===", genMember(id(ifVar), "active"), id(ifNext)), genBlock(genForOf("$$update", genMember(id(ifVar), "updates"), genInvoke("$$update")), genReturn(nil))), genExprStmt(genCall(genMember(id(ifVar), "destroy"))), genAssignStmt(genMember(id(ifVar), "active"), id(ifNext)), genConst(ifFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
 				renderBody = append(renderBody, mountIfBranch(0, ifFragment, ifVar)...)
 				renderBody = append(renderBody, genAssignStmt(genMember(id(ifVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(ifFragment), "childNodes"))), genExprStmt(genCall(genMember(genMember(id(ifRange), "end"), "before"), id(ifFragment))))
 				body = append(body,
-					genConst(ifRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("if"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/if"))}}}),
-					genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(ifRange), "start"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(ifRange), "end"))), genConst(ifVar, controller), genConst(ifRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(renderBody...)}),
-					genExprStmt(genCall(genMember(genMember(id("$$state"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ifVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(ifRender))), genInvoke(ifRender),
+					genConst(ifRange, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("if"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/if"))}}}),
+					genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(ifRange), "start"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(ifRange), "end"))), genConst(ifVar, controller), genConst(ifRender, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(renderBody...)}),
+					genExprStmt(genCall(genMember(genMember(id("$$state"), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ifVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(ifRender))), genInvoke(ifRender),
 				)
 				continue
 			}
@@ -6238,7 +6238,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						innerOwner = "$$inner"
 						innerKey = g.id()
 						withNestedBindings(func() { innerKeyExpr = g.templateExpr(nestedEach.KeyAST) })
-						innerDestroy = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+						innerDestroy = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 							genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRows"), "delete"), id(innerKey))),
 						)}
 					}
@@ -6271,15 +6271,15 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						var target JsExpr
 						withNestedBindings(func() { target = g.templateExpr(attr.Expr) })
 						value := genMember(genMember(id("$event"), "target"), spec.readProp)
-						handlerBody := JsNode(&JsAssignExpr{baseExpr: baseExpr{genNode()}, Op: "=", L: target, R: value})
+						handlerBody := JsNode(&JsAssignExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "=", L: target, R: value})
 						if !g.isDeepState(state) {
 							handlerBody = genBlock(genAssignStmt(target, value), genInvoke("$$set_"+state, genCall(genMember(id(state), "slice"))))
 						}
 						handler := g.id()
 						return []JsStmt{
-							genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: handlerBody}),
+							genConst(handler, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: handlerBody}),
 							g.listenerAttachStmt(id(ref), spec.event, id(handler)),
-							genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(spec.event), id(handler))))})),
+							genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ref), "removeEventListener"), strLit(spec.event), id(handler))))})),
 						}
 					}
 
@@ -6287,7 +6287,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					if nestedEach.HasKey() {
 						rowBody = append(rowBody,
 							genConst(innerKey, innerKeyExpr),
-							genConst("$$inner", genCall(id("$$createHydrationRowController"), genNull(), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
+							genConst("$$inner", genCall(id("$$createHydrationRowController"), genNull(), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
 								genAssignStmt(id("$$nested_item"), id("$$next_item")),
 								genAssignStmt(id(innerIndex), id("$$next_index")),
 								genForOf("$$update", genMember(id("$$inner"), "updates"), genExprStmt(genCall(id("$$update")))),
@@ -6306,8 +6306,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 								keyFragment, nextKey, nextActive := g.id()+"_fragment", g.id()+"_next", g.id()+"_active"
 								keyExpr := JsExpr(id("undefined"))
 								withNestedBindings(func() { keyExpr = g.templateExpr(chain.KeyAST) })
-								destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(keyVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))), genAssignStmt(genMember(id(keyVar), "listeners"), genArray()), genForOf("$$component", genCall(genMember(genCall(genMember(genMember(id(keyVar), "components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))), genAssignStmt(genMember(id(keyVar), "components"), genArray()), genAssignStmt(genMember(id(keyVar), "updates"), genArray()), genForOf("$$node", genMember(id(keyVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(keyVar), "nodes"), genArray()), genAssignStmt(genMember(id(keyVar), "key"), genNull()), genAssignStmt(genMember(id(keyVar), "active"), numLit(-1)))}
-								controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("key"), Value: genNull()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("components"), Value: genArray()}, {Key: id("destroy"), Value: destroy}}}
+								destroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(keyVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))), genAssignStmt(genMember(id(keyVar), "listeners"), genArray()), genForOf("$$component", genCall(genMember(genCall(genMember(genMember(id(keyVar), "components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))), genAssignStmt(genMember(id(keyVar), "components"), genArray()), genAssignStmt(genMember(id(keyVar), "updates"), genArray()), genForOf("$$node", genMember(id(keyVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(keyVar), "nodes"), genArray()), genAssignStmt(genMember(id(keyVar), "key"), genNull()), genAssignStmt(genMember(id(keyVar), "active"), numLit(-1)))}
+								controller := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("key"), Value: genNull()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("components"), Value: genArray()}, {Key: id("destroy"), Value: destroy}}}
 								keyMountNodes := func(keyNodes []Node) []JsStmt {
 									keyMount := []JsStmt{}
 									for _, keyChild := range keyNodes {
@@ -6317,7 +6317,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 												keyMount = append(keyMount, genExprStmt(genCall(id("$$insertHTML"), id(keyFragment), strLit(emitStaticHTML([]Node{current}, g.scopeID)))))
 											} else {
 												textRef, update := g.id(), g.id()+"_update"
-												keyMount = append(keyMount, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(keyFragment), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(current, textRef))}), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))), genInvoke(update))
+												keyMount = append(keyMount, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(keyFragment), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(innerTextWrite(current, textRef))}), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))), genInvoke(update))
 											}
 										case *ElementNode:
 											elementRef := g.id()
@@ -6347,11 +6347,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 													continue
 												}
 												textRef, update := g.id(), g.id()+"_update"
-												elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(text, textRef))}), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))), genInvoke(update))
+												elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(innerTextWrite(text, textRef))}), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))), genInvoke(update))
 											}
 											if len(elementUpdates) > 0 {
 												update := g.id() + "_update"
-												elementBody = append(elementBody, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))), genInvoke(update))
+												elementBody = append(elementBody, genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))), genInvoke(update))
 											}
 											elementBody = append(elementBody, genExprStmt(genCall(genMember(id(keyFragment), "appendChild"), id(elementRef))))
 											keyMount = append(keyMount, elementBody...)
@@ -6360,7 +6360,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 											if csrFactory == "" {
 												panic("vela: missing nested keyed await component CSR factory")
 											}
-											props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
+											props := JsExpr(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})
 											withNestedBindings(func() { props = g.componentPropsExpr(current.Attrs) })
 											// Slot DOM belongs to the surrounding #key controller, not
 											// to the component-global setter cascade. Every dynamic
@@ -6383,7 +6383,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															body = append(body,
 																genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
 																genExprStmt(genCall(genMember(id(parent), "appendChild"), id(textRef))),
-																genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(slotCurrent, textRef))}),
+																genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(innerTextWrite(slotCurrent, textRef))}),
 																genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(update))),
 																genInvoke(update),
 															)
@@ -6412,7 +6412,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															if len(elementUpdates) > 0 {
 																update := g.id() + "_update"
 																elementBody = append(elementBody,
-																	genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}),
+																	genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(elementUpdates...)}),
 																	genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(update))),
 																	genInvoke(update),
 																)
@@ -6431,7 +6431,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																for _, dependency := range templateExprDeps(slotCurrent.KeyAST, g.reactiveNames()) {
 																	textUpdateDeps[dependency] = true
 																}
-																keyDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+																keyDestroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 																	genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(keyVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
 																	genAssignStmt(genMember(id(keyVar), "listeners"), genArray()),
 																	genForOf("$$component", genCall(genMember(genCall(genMember(genMember(id(keyVar), "components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
@@ -6441,7 +6441,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																	genAssignStmt(genMember(id(keyVar), "nodes"), genArray()),
 																	genAssignStmt(genMember(id(keyVar), "key"), genNull()),
 																)}
-																keyController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("key"), Value: genNull()}, {Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("components"), Value: genArray()}, {Key: id("destroy"), Value: keyDestroy}}}
+																keyController := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("key"), Value: genNull()}, {Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("components"), Value: genArray()}, {Key: id("destroy"), Value: keyDestroy}}}
 																keyRenderBody := []JsStmt{genConst(nextKey, keyExpr), genIf(genBinary("===", genMember(id(keyVar), "key"), id(nextKey)), genBlock(genForOf("$$update", genMember(id(keyVar), "updates"), genInvoke("$$update")), genReturn(nil))), genExprStmt(genCall(genMember(id(keyVar), "destroy"))), genAssignStmt(genMember(id(keyVar), "key"), id(nextKey)), genConst(keyFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
 																keyRenderBody = append(keyRenderBody, appendSlotNodes(slotCurrent.Branches[0].Children, keyFragment, keyVar)...)
 																keyRenderBody = append(keyRenderBody,
@@ -6449,12 +6449,12 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																	genExprStmt(genCall(genMember(genMember(id(keyRange), "end"), "before"), id(keyFragment))),
 																)
 																body = append(body,
-																	genConst(keyRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("slot-key"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/slot-key"))}}}),
+																	genConst(keyRange, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("slot-key"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/slot-key"))}}}),
 																	genExprStmt(genCall(genMember(id(parent), "append"), genMember(id(keyRange), "start"))),
 																	genExprStmt(genCall(genMember(id(parent), "append"), genMember(id(keyRange), "end"))),
 																	genConst(keyVar, keyController),
-																	genConst(keyRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(keyRenderBody...)}),
-																	genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(keyVar), "destroy"))))})),
+																	genConst(keyRender, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(keyRenderBody...)}),
+																	genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(keyVar), "destroy"))))})),
 																	genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(keyRender))),
 																	genInvoke(keyRender),
 																)
@@ -6477,9 +6477,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																for _, dependency := range templateExprDeps(ifBranch.Expr, g.reactiveNames()) {
 																	textUpdateDeps[dependency] = true
 																}
-																active = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: condition, Then: numLit(index), Else: active}
+																active = &JsConditionalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Test: condition, Then: numLit(index), Else: active}
 															}
-															ifDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+															ifDestroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 																genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(ifVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
 																genAssignStmt(genMember(id(ifVar), "listeners"), genArray()),
 																genForOf("$$component", genCall(genMember(genCall(genMember(genMember(id(ifVar), "components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
@@ -6489,7 +6489,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																genAssignStmt(genMember(id(ifVar), "nodes"), genArray()),
 																genAssignStmt(genMember(id(ifVar), "active"), numLit(-1)),
 															)}
-															ifController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("components"), Value: genArray()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("destroy"), Value: ifDestroy}}}
+															ifController := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("components"), Value: genArray()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("destroy"), Value: ifDestroy}}}
 															renderBody := []JsStmt{genConst(ifNext, active), genIf(genBinary("===", genMember(id(ifVar), "active"), id(ifNext)), genBlock(genForOf("$$update", genMember(id(ifVar), "updates"), genInvoke("$$update")), genReturn(nil))), genExprStmt(genCall(genMember(id(ifVar), "destroy"))), genAssignStmt(genMember(id(ifVar), "active"), id(ifNext)), genConst(ifFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
 															for index, ifBranch := range slotCurrent.Branches {
 																if ifBranch != nil {
@@ -6498,12 +6498,12 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															}
 															renderBody = append(renderBody, genAssignStmt(genMember(id(ifVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(ifFragment), "childNodes"))), genExprStmt(genCall(genMember(genMember(id(ifRange), "end"), "before"), id(ifFragment))))
 															body = append(body,
-																genConst(ifRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("slot-if"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/slot-if"))}}}),
+																genConst(ifRange, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("slot-if"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/slot-if"))}}}),
 																genExprStmt(genCall(genMember(id(parent), "append"), genMember(id(ifRange), "start"))),
 																genExprStmt(genCall(genMember(id(parent), "append"), genMember(id(ifRange), "end"))),
 																genConst(ifVar, ifController),
-																genConst(ifRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(renderBody...)}),
-																genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ifVar), "destroy"))))})),
+																genConst(ifRender, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(renderBody...)}),
+																genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ifVar), "destroy"))))})),
 																genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(ifRender))),
 																genInvoke(ifRender),
 															)
@@ -6536,18 +6536,18 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																		rowBody = append(rowBody, appendSlotNodes(slotCurrent.Children, rowFragment, rowController)...)
 																	})
 																})
-																rowDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+																rowDestroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 																	genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(rowController), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
 																	genAssignStmt(genMember(id(rowController), "listeners"), genArray()),
 																	genForOf("$$component", genCall(genMember(genCall(genMember(genMember(id(rowController), "components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
 																	genAssignStmt(genMember(id(rowController), "components"), genArray()),
 																	genAssignStmt(genMember(id(rowController), "updates"), genArray()),
 																)}
-																controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+																controller := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{
 																	{Key: id("updates"), Value: genArray()},
 																	{Key: id("listeners"), Value: genArray()},
 																	{Key: id("components"), Value: genArray()},
-																	{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
+																	{Key: id("update"), Value: &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
 																		genAssignStmt(id(listItem), id("$$next_item")),
 																		genAssignStmt(id(listIndex), id("$$next_index")),
 																		genForOf("$$update", genMember(id(rowController), "updates"), genInvoke("$$update")),
@@ -6564,25 +6564,25 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																createBody = append(createBody,
 																	genConst("$$slot_row_end", genCall(genMember(id("document"), "createComment"), strLit("/slot-row"))),
 																	genExprStmt(genCall(genMember(id(rowFragment), "append"), id("$$slot_row_end"))),
-																	genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$slot_row_start")}, {Key: id("end"), Value: id("$$slot_row_end")}, {Key: id("controller"), Value: id(rowController)}}}),
+																	genReturn(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$slot_row_start")}, {Key: id("end"), Value: id("$$slot_row_end")}, {Key: id("controller"), Value: id(rowController)}}}),
 																)
 																listDestroyBody := []JsStmt{}
 																if listEmpty != "" {
 																	listDestroyBody = append(listDestroyBody, genExprStmt(genCall(genMember(id(listEmpty), "destroy"))))
 																}
 																listDestroyBody = append(listDestroyBody,
-																	genExprStmt(genCall(genMember(genMember(id(listVar), "blocks"), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
+																	genExprStmt(genCall(genMember(genMember(id(listVar), "blocks"), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
 																		genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "destroy"))),
 																		genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))),
 																	)})),
 																	genExprStmt(genCall(genMember(genMember(id(listVar), "blocks"), "clear"))),
 																)
-																listDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(listDestroyBody...)}
-																listController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("blocks"), Value: genNew(id("Map"))}, {Key: id("destroy"), Value: listDestroy}}}
+																listDestroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(listDestroyBody...)}
+																listController := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("blocks"), Value: genNew(id("Map"))}, {Key: id("destroy"), Value: listDestroy}}}
 																listRenderBody := []JsStmt{genConst(listItems, listExpr), genAssignStmt(genMember(id(listVar), "blocks"), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(listRange), genMember(id(listVar), "blocks"), id(listItems), id(listKeyOf), id(listCreate), id(listUpdate)))}
 																if listEmpty != "" {
 																	emptyFragment := g.id() + "_slot_empty_fragment"
-																	emptyDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+																	emptyDestroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 																		genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(listEmpty), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
 																		genAssignStmt(genMember(id(listEmpty), "listeners"), genArray()),
 																		genForOf("$$component", genCall(genMember(genCall(genMember(genMember(id(listEmpty), "components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
@@ -6591,7 +6591,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																		genForOf("$$node", genMember(id(listEmpty), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
 																		genAssignStmt(genMember(id(listEmpty), "nodes"), genArray()),
 																	)}
-																	emptyController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("components"), Value: genArray()}, {Key: id("destroy"), Value: emptyDestroy}}}
+																	emptyController := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("components"), Value: genArray()}, {Key: id("destroy"), Value: emptyDestroy}}}
 																	emptyBuild := []JsStmt{genConst(emptyFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
 																	emptyBuild = append(emptyBuild, appendSlotNodes(slotCurrent.ElseChildren, emptyFragment, listEmpty)...)
 																	emptyBuild = append(emptyBuild,
@@ -6607,15 +6607,15 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																	body = append(body, genConst(listEmpty, emptyController))
 																}
 																body = append(body,
-																	genConst(listRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("slot-each"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/slot-each"))}}}),
+																	genConst(listRange, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("slot-each"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/slot-each"))}}}),
 																	genExprStmt(genCall(genMember(id(parent), "append"), genMember(id(listRange), "start"))),
 																	genExprStmt(genCall(genMember(id(parent), "append"), genMember(id(listRange), "end"))),
 																	genConst(listVar, listController),
-																	genConst(listKeyOf, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(listItem), id(listIndex)}, Body: listKeyExpr}),
-																	genConst(listCreate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(listItem), id(listIndex)}, Body: genBlock(createBody...)}),
-																	genConst(listUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id(listItem), id(listIndex)}, Body: genBlock(genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id(listItem), id(listIndex))))}),
-																	genConst(listRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(listRenderBody...)}),
-																	genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(listVar), "destroy"))))})),
+																	genConst(listKeyOf, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id(listItem), id(listIndex)}, Body: listKeyExpr}),
+																	genConst(listCreate, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id(listItem), id(listIndex)}, Body: genBlock(createBody...)}),
+																	genConst(listUpdate, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id(listItem), id(listIndex)}, Body: genBlock(genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id(listItem), id(listIndex))))}),
+																	genConst(listRender, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(listRenderBody...)}),
+																	genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(listVar), "destroy"))))})),
 																	genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(listRender))),
 																	genInvoke(listRender),
 																)
@@ -6629,7 +6629,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															for _, dependency := range templateExprDeps(slotCurrent.IterExpr, g.reactiveNames()) {
 																textUpdateDeps[dependency] = true
 															}
-															eachDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+															eachDestroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 																genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(eachVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
 																genAssignStmt(genMember(id(eachVar), "listeners"), genArray()),
 																genForOf("$$component", genCall(genMember(genCall(genMember(genMember(id(eachVar), "components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
@@ -6638,7 +6638,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																genForOf("$$node", genMember(id(eachVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
 																genAssignStmt(genMember(id(eachVar), "nodes"), genArray()),
 															)}
-															eachController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("components"), Value: genArray()}, {Key: id("destroy"), Value: eachDestroy}}}
+															eachController := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("components"), Value: genArray()}, {Key: id("destroy"), Value: eachDestroy}}}
 															rowBody := []JsStmt{}
 															g.withTemplateBinding(slotCurrent.ItemName, eachItem, func() {
 																g.withTemplateBinding(slotCurrent.IndexName, eachIndex, func() {
@@ -6655,12 +6655,12 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															}
 															eachRenderBody = append(eachRenderBody, genAssignStmt(genMember(id(eachVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(eachFragment), "childNodes"))), genExprStmt(genCall(genMember(genMember(id(eachRange), "end"), "before"), id(eachFragment))))
 															body = append(body,
-																genConst(eachRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("slot-each"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/slot-each"))}}}),
+																genConst(eachRange, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("slot-each"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/slot-each"))}}}),
 																genExprStmt(genCall(genMember(id(parent), "append"), genMember(id(eachRange), "start"))),
 																genExprStmt(genCall(genMember(id(parent), "append"), genMember(id(eachRange), "end"))),
 																genConst(eachVar, eachController),
-																genConst(eachRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(eachRenderBody...)}),
-																genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(eachVar), "destroy"))))})),
+																genConst(eachRender, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(eachRenderBody...)}),
+																genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(eachVar), "destroy"))))})),
 																genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(eachRender))),
 																genInvoke(eachRender),
 															)
@@ -6669,16 +6669,16 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															if csrFactory == "" {
 																panic("vela: missing nested keyed slot child CSR factory")
 															}
-															props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
+															props := JsExpr(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})
 															withNestedBindings(func() { props = g.componentPropsExpr(slotCurrent.Attrs) })
-															slots := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+															slots := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
 															for _, slotName := range sortedSlotNames(slotCurrent.Slots) {
 																slotNodes := slotCurrent.Slots[slotName]
 																slotFragment := g.id() + "_slot"
 																slotBody := []JsStmt{genConst(slotFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
 																slotBody = append(slotBody, appendSlotNodes(slotNodes, slotFragment, owner)...)
 																slotBody = append(slotBody, genReturn(id(slotFragment)))
-																slots.Props = append(slots.Props, &JsProp{baseNode: genNode(), Key: strLit(slotName), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(slotBody...)}})
+																slots.Props = append(slots.Props, &JsProp{BaseNode: genNode(), Key: strLit(slotName), Value: &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(slotBody...)}})
 															}
 															for _, attr := range slotCurrent.Attrs {
 																for _, dependency := range templateExprDeps(attr.Expr, g.reactiveNames()) {
@@ -6689,7 +6689,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															body = append(body,
 																genConst(instance, genCall(id(csrFactory), id(parent), props, slots)),
 																genExprStmt(genCall(genMember(genMember(id(owner), "components"), "push"), id(instance))),
-																genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(optionalComponentSetStmt(id(instance), props))}),
+																genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(optionalComponentSetStmt(id(instance), props))}),
 																genExprStmt(genCall(genMember(genMember(id(owner), "updates"), "push"), id(update))),
 															)
 															for _, attr := range slotCurrent.Attrs {
@@ -6707,9 +6707,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																	}
 																}
 																body = append(body,
-																	genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genIf(genBinary("instanceof", id("$event"), id("CustomEvent")), genBlock(invoke)))}),
+																	genConst(handler, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genIf(genBinary("instanceof", id("$event"), id("CustomEvent")), genBlock(invoke)))}),
 																	g.listenerAttachStmt(genMember(id(instance), "el"), strings.TrimPrefix(attr.Name, "on:"), id(handler)),
-																	genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(genMember(id(instance), "el"), "removeEventListener"), strLit(strings.TrimPrefix(attr.Name, "on:")), id(handler))))})),
+																	genExprStmt(genCall(genMember(genMember(id(owner), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(genMember(id(instance), "el"), "removeEventListener"), strLit(strings.TrimPrefix(attr.Name, "on:")), id(handler))))})),
 																)
 															}
 														default:
@@ -6720,20 +6720,20 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 												}
 												factoryBody = append(factoryBody, appendSlotNodes(slotNodes, fragment, keyVar)...)
 												factoryBody = append(factoryBody, genReturn(id(fragment)))
-												return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(factoryBody...)}
+												return &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(factoryBody...)}
 											}
-											slots := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+											slots := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
 											if len(current.Slots) > 0 {
 												names := sortedSlotNames(current.Slots)
 												for _, name := range names {
-													slots.Props = append(slots.Props, &JsProp{baseNode: genNode(), Key: strLit(name), Value: slotFactory(current.Slots[name])})
+													slots.Props = append(slots.Props, &JsProp{BaseNode: genNode(), Key: strLit(name), Value: slotFactory(current.Slots[name])})
 												}
 											}
 											instance, update := g.id(), g.id()+"_update"
 											keyMount = append(keyMount,
 												genConst(instance, genCall(id(csrFactory), id(keyFragment), props, slots)),
 												genExprStmt(genCall(genMember(genMember(id(keyVar), "components"), "push"), id(instance))),
-												genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(optionalComponentSetStmt(id(instance), props))}),
+												genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(optionalComponentSetStmt(id(instance), props))}),
 												genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(update))),
 											)
 											for _, attr := range current.Attrs {
@@ -6751,9 +6751,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 													}
 												}
 												keyMount = append(keyMount,
-													genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genIf(genBinary("instanceof", id("$event"), id("CustomEvent")), genBlock(invoke)))}),
+													genConst(handler, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genIf(genBinary("instanceof", id("$event"), id("CustomEvent")), genBlock(invoke)))}),
 													g.listenerAttachStmt(genMember(id(instance), "el"), strings.TrimPrefix(attr.Name, "on:"), id(handler)),
-													genExprStmt(genCall(genMember(genMember(id(keyVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(genMember(id(instance), "el"), "removeEventListener"), strLit(strings.TrimPrefix(attr.Name, "on:")), id(handler))))})),
+													genExprStmt(genCall(genMember(genMember(id(keyVar), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(genMember(id(instance), "el"), "removeEventListener"), strLit(strings.TrimPrefix(attr.Name, "on:")), id(handler))))})),
 												)
 											}
 										case *EachBlockNode:
@@ -6779,7 +6779,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															switch listNode := listChild.(type) {
 															case *TextNode:
 																textRef, update := g.id(), g.id()+"_update"
-																rowBody = append(rowBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(listNode, textRef))}), genExprStmt(genCall(genMember(genMember(id("$$row_controller"), "updates"), "push"), id(update))), genInvoke(update))
+																rowBody = append(rowBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(innerTextWrite(listNode, textRef))}), genExprStmt(genCall(genMember(genMember(id("$$row_controller"), "updates"), "push"), id(update))), genInvoke(update))
 															case *ElementNode:
 																elementRef := g.id()
 																elementBody := []JsStmt{genConst(elementRef, genCall(genMember(id("document"), "createElement"), strLit(listNode.Tag))), g.setAttrStmt(elementRef, g.scopeID, "")}
@@ -6802,11 +6802,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																for _, elementChild := range listNode.Children {
 																	text := elementChild.(*TextNode)
 																	textRef, update := g.id(), g.id()+"_update"
-																	elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(text, textRef))}), genExprStmt(genCall(genMember(genMember(id("$$row_controller"), "updates"), "push"), id(update))), genInvoke(update))
+																	elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(innerTextWrite(text, textRef))}), genExprStmt(genCall(genMember(genMember(id("$$row_controller"), "updates"), "push"), id(update))), genInvoke(update))
 																}
 																if len(elementUpdates) > 0 {
 																	update := g.id() + "_update"
-																	elementBody = append(elementBody, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id("$$row_controller"), "updates"), "push"), id(update))), genInvoke(update))
+																	elementBody = append(elementBody, genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id("$$row_controller"), "updates"), "push"), id(update))), genInvoke(update))
 																}
 																elementBody = append(elementBody, genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(elementRef))))
 																rowBody = append(rowBody, elementBody...)
@@ -6814,11 +6814,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 														}
 													})
 												})
-												rowDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id("$$row_controller"), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))), genAssignStmt(genMember(id("$$row_controller"), "listeners"), genArray()), genAssignStmt(genMember(id("$$row_controller"), "updates"), genArray()))}
-												rowController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+												rowDestroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id("$$row_controller"), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))), genAssignStmt(genMember(id("$$row_controller"), "listeners"), genArray()), genAssignStmt(genMember(id("$$row_controller"), "updates"), genArray()))}
+												rowController := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{
 													{Key: id("updates"), Value: genArray()},
 													{Key: id("listeners"), Value: genArray()},
-													{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
+													{Key: id("update"), Value: &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
 														genAssignStmt(id(listItem), id("$$next_item")), genAssignStmt(id(listIndex), id("$$next_index")),
 														genForOf("$$update", genMember(id("$$row_controller"), "updates"), genInvoke("$$update")),
 													)}},
@@ -6826,31 +6826,31 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 												}}
 												createBody := []JsStmt{genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))), genConst("$$row_start", genCall(genMember(id("document"), "createComment"), strLit("r"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$row_start"))), genConst("$$row_controller", rowController)}
 												createBody = append(createBody, rowBody...)
-												createBody = append(createBody, genConst("$$row_end", genCall(genMember(id("document"), "createComment"), strLit("/r"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$row_end"))), genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$row_start")}, {Key: id("end"), Value: id("$$row_end")}, {Key: id("controller"), Value: id("$$row_controller")}}}))
+												createBody = append(createBody, genConst("$$row_end", genCall(genMember(id("document"), "createComment"), strLit("/r"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$row_end"))), genReturn(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$row_start")}, {Key: id("end"), Value: id("$$row_end")}, {Key: id("controller"), Value: id("$$row_controller")}}}))
 												listDestroyBody := []JsStmt{}
 												if listEmpty != "" {
 													listDestroyBody = append(listDestroyBody, genExprStmt(genCall(genMember(id(listEmpty), "destroy"))))
 												}
 												listDestroyBody = append(listDestroyBody,
-													genExprStmt(genCall(genMember(genMember(id(listVar), "blocks"), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
+													genExprStmt(genCall(genMember(genMember(id(listVar), "blocks"), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
 														genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "destroy"))),
 														genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))),
 													)})),
 													genExprStmt(genCall(genMember(genMember(id(listVar), "blocks"), "clear"))),
 												)
-												listDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(listDestroyBody...)}
-												listController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("blocks"), Value: genNew(id("Map"))}, {Key: id("destroy"), Value: listDestroy}}}
+												listDestroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(listDestroyBody...)}
+												listController := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("blocks"), Value: genNew(id("Map"))}, {Key: id("destroy"), Value: listDestroy}}}
 												listRenderBody := []JsStmt{genConst(listItems, listExpr), genAssignStmt(genMember(id(listVar), "blocks"), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(listRange), genMember(id(listVar), "blocks"), id(listItems), id(listKeyOf), id(listCreate), id(listUpdate)))}
 												if listEmpty != "" {
 													emptyFragment := g.id()
-													emptyDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+													emptyDestroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 														genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(listEmpty), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
 														genAssignStmt(genMember(id(listEmpty), "listeners"), genArray()),
 														genAssignStmt(genMember(id(listEmpty), "updates"), genArray()),
 														genForOf("$$node", genMember(id(listEmpty), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))),
 														genAssignStmt(genMember(id(listEmpty), "nodes"), genArray()),
 													)}
-													emptyController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("destroy"), Value: emptyDestroy}}}
+													emptyController := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("destroy"), Value: emptyDestroy}}}
 													emptyBuild := []JsStmt{
 														genConst(emptyFragment, genCall(genMember(id("document"), "createDocumentFragment"))),
 													}
@@ -6865,7 +6865,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 															emptyBuild = append(emptyBuild,
 																genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
 																genExprStmt(genCall(genMember(id(emptyFragment), "appendChild"), id(textRef))),
-																genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(emptyNode, textRef))}),
+																genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(innerTextWrite(emptyNode, textRef))}),
 																genExprStmt(genCall(genMember(genMember(id(listEmpty), "updates"), "push"), id(update))),
 																genInvoke(update),
 															)
@@ -6900,14 +6900,14 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 																elementBody = append(elementBody,
 																	genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
 																	genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))),
-																	genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(text, textRef))}),
+																	genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(innerTextWrite(text, textRef))}),
 																	genExprStmt(genCall(genMember(genMember(id(listEmpty), "updates"), "push"), id(update))),
 																	genInvoke(update),
 																)
 															}
 															if len(elementUpdates) > 0 {
 																update := g.id() + "_update"
-																elementBody = append(elementBody, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id(listEmpty), "updates"), "push"), id(update))), genInvoke(update))
+																elementBody = append(elementBody, genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id(listEmpty), "updates"), "push"), id(update))), genInvoke(update))
 															}
 															elementBody = append(elementBody, genExprStmt(genCall(genMember(id(emptyFragment), "appendChild"), id(elementRef))))
 															emptyBuild = append(emptyBuild, elementBody...)
@@ -6926,15 +6926,15 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 													)
 													keyMount = append(keyMount, genConst(listEmpty, emptyController))
 												}
-												keyMount = append(keyMount, genConst(listRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("each"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/each"))}}}), genExprStmt(genCall(genMember(id(keyFragment), "append"), genMember(id(listRange), "start"))), genExprStmt(genCall(genMember(id(keyFragment), "append"), genMember(id(listRange), "end"))), genConst(listVar, listController), genConst(listKeyOf, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(listItem), id(listIndex)}, Body: listKeyExpr}), genConst(listCreate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(listItem), id(listIndex)}, Body: genBlock(createBody...)}), genConst(listUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id(listItem), id(listIndex)}, Body: genBlock(genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id(listItem), id(listIndex))))}), genConst(listRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(listRenderBody...)}), genExprStmt(genCall(genMember(genMember(id(keyVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(listVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(listRender))), genInvoke(listRender))
+												keyMount = append(keyMount, genConst(listRange, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("each"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/each"))}}}), genExprStmt(genCall(genMember(id(keyFragment), "append"), genMember(id(listRange), "start"))), genExprStmt(genCall(genMember(id(keyFragment), "append"), genMember(id(listRange), "end"))), genConst(listVar, listController), genConst(listKeyOf, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id(listItem), id(listIndex)}, Body: listKeyExpr}), genConst(listCreate, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id(listItem), id(listIndex)}, Body: genBlock(createBody...)}), genConst(listUpdate, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id(listItem), id(listIndex)}, Body: genBlock(genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id(listItem), id(listIndex))))}), genConst(listRender, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(listRenderBody...)}), genExprStmt(genCall(genMember(genMember(id(keyVar), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(listVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(listRender))), genInvoke(listRender))
 												continue
 											}
 											listVar, listRange, listRender := g.id(), g.id()+"_range", g.id()+"_render"
 											listFragment, listItems, listItem, listIndex := g.id()+"_fragment", g.id()+"_items", "$$key_item", g.id()+"_index"
 											listExpr := JsExpr(id("[]"))
 											withNestedBindings(func() { listExpr = g.templateExpr(current.IterExpr) })
-											listDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(listVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))), genAssignStmt(genMember(id(listVar), "listeners"), genArray()), genForOf("$$node", genMember(id(listVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(listVar), "nodes"), genArray()))}
-											listController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("destroy"), Value: listDestroy}}}
+											listDestroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(listVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))), genAssignStmt(genMember(id(listVar), "listeners"), genArray()), genForOf("$$node", genMember(id(listVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(listVar), "nodes"), genArray()))}
+											listController := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("destroy"), Value: listDestroy}}}
 											listRows := []JsStmt{}
 											g.withTemplateBinding(current.ItemName, listItem, func() {
 												g.withTemplateBinding(current.IndexName, listIndex, func() {
@@ -7039,9 +7039,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 											}
 											listRenderBody = append(listRenderBody, genAssignStmt(genMember(id(listVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(listFragment), "childNodes"))), genExprStmt(genCall(genMember(genMember(id(listRange), "end"), "before"), id(listFragment))))
 											keyMount = append(keyMount,
-												genConst(listRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("each"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/each"))}}}),
-												genExprStmt(genCall(genMember(id(keyFragment), "append"), genMember(id(listRange), "start"))), genExprStmt(genCall(genMember(id(keyFragment), "append"), genMember(id(listRange), "end"))), genConst(listVar, listController), genConst(listRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(listRenderBody...)}),
-												genExprStmt(genCall(genMember(genMember(id(keyVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(listVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(listRender))), genInvoke(listRender),
+												genConst(listRange, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("each"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/each"))}}}),
+												genExprStmt(genCall(genMember(id(keyFragment), "append"), genMember(id(listRange), "start"))), genExprStmt(genCall(genMember(id(keyFragment), "append"), genMember(id(listRange), "end"))), genConst(listVar, listController), genConst(listRender, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(listRenderBody...)}),
+												genExprStmt(genCall(genMember(genMember(id(keyVar), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(listVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id(keyVar), "updates"), "push"), id(listRender))), genInvoke(listRender),
 											)
 										}
 									}
@@ -7063,7 +7063,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 											}
 											condition := JsExpr(boolLit(false))
 											withNestedBindings(func() { condition = g.templateExpr(keyBranch.Expr) })
-											active = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: condition, Then: numLit(index), Else: active}
+											active = &JsConditionalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Test: condition, Then: numLit(index), Else: active}
 										}
 										keyActive = active
 										for index, keyBranch := range conditional.Branches {
@@ -7078,8 +7078,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 								renderBody := []JsStmt{genConst(nextKey, keyExpr), genConst(nextActive, keyActive), genIf(genBinary("&&", genBinary("===", genMember(id(keyVar), "key"), id(nextKey)), genBinary("===", genMember(id(keyVar), "active"), id(nextActive))), genBlock(genForOf("$$update", genMember(id(keyVar), "updates"), genInvoke("$$update")), genReturn(nil))), genExprStmt(genCall(genMember(id(keyVar), "destroy"))), genAssignStmt(genMember(id(keyVar), "key"), id(nextKey)), genAssignStmt(genMember(id(keyVar), "active"), id(nextActive)), genConst(keyFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
 								renderBody = append(renderBody, keyMount...)
 								renderBody = append(renderBody, genAssignStmt(genMember(id(keyVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(keyFragment), "childNodes"))), genExprStmt(genCall(genMember(genMember(id(keyRange), "end"), "before"), id(keyFragment))))
-								render := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(renderBody...)}
-								rowBody = append(rowBody, genConst(keyRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("key"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/key"))}}}), genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(keyRange), "start"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(keyRange), "end"))), genConst(keyVar, controller), genConst(keyRender, render), genExprStmt(genCall(genMember(genMember(id(innerOwner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(keyVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id(innerOwner), "updates"), "push"), id(keyRender))), genInvoke(keyRender))
+								render := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(renderBody...)}
+								rowBody = append(rowBody, genConst(keyRange, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("key"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/key"))}}}), genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(keyRange), "start"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(keyRange), "end"))), genConst(keyVar, controller), genConst(keyRender, render), genExprStmt(genCall(genMember(genMember(id(innerOwner), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(keyVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id(innerOwner), "updates"), "push"), id(keyRender))), genInvoke(keyRender))
 								continue
 							}
 							if !nestedEach.HasKey() || !ssrCapabilityKeyedAwaitDirectIfChain(chain) {
@@ -7099,14 +7099,14 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 								}
 								condition := JsExpr(boolLit(false))
 								withNestedBindings(func() { condition = g.templateExpr(ifBranch.Expr) })
-								active = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: condition, Then: numLit(index), Else: active}
+								active = &JsConditionalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Test: condition, Then: numLit(index), Else: active}
 							}
-							destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+							destroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 								genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(ifVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
 								genAssignStmt(genMember(id(ifVar), "listeners"), genArray()), genAssignStmt(genMember(id(ifVar), "updates"), genArray()),
 								genForOf("$$node", genMember(id(ifVar), "nodes"), genExprStmt(genCall(genMember(id("$$node"), "remove")))), genAssignStmt(genMember(id(ifVar), "nodes"), genArray()), genAssignStmt(genMember(id(ifVar), "active"), numLit(-1)),
 							)}
-							controller := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("destroy"), Value: destroy}}}
+							controller := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("nodes"), Value: genArray()}, {Key: id("updates"), Value: genArray()}, {Key: id("listeners"), Value: genArray()}, {Key: id("active"), Value: numLit(-1)}, {Key: id("destroy"), Value: destroy}}}
 							renderBody := []JsStmt{genConst(ifNext, active), genIf(genBinary("===", genMember(id(ifVar), "active"), id(ifNext)), genBlock(genForOf("$$update", genMember(id(ifVar), "updates"), genInvoke("$$update")), genReturn(nil))), genExprStmt(genCall(genMember(id(ifVar), "destroy"))), genAssignStmt(genMember(id(ifVar), "active"), id(ifNext)), genConst(ifFragment, genCall(genMember(id("document"), "createDocumentFragment")))}
 							for index, ifBranch := range chain.Branches {
 								if ifBranch == nil {
@@ -7121,7 +7121,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 											continue
 										}
 										textRef, update := g.id(), g.id()+"_update"
-										branchBody = append(branchBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(ifFragment), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(current, textRef))}), genExprStmt(genCall(genMember(genMember(id(ifVar), "updates"), "push"), id(update))), genInvoke(update))
+										branchBody = append(branchBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(ifFragment), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(innerTextWrite(current, textRef))}), genExprStmt(genCall(genMember(genMember(id(ifVar), "updates"), "push"), id(update))), genInvoke(update))
 									case *ElementNode:
 										elementRef := g.id()
 										elementBody := []JsStmt{genConst(elementRef, genCall(genMember(id("document"), "createElement"), strLit(current.Tag))), g.setAttrStmt(elementRef, g.scopeID, "")}
@@ -7150,11 +7150,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 												continue
 											}
 											textRef, update := g.id(), g.id()+"_update"
-											elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerTextWrite(text, textRef))}), genExprStmt(genCall(genMember(genMember(id(ifVar), "updates"), "push"), id(update))), genInvoke(update))
+											elementBody = append(elementBody, genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))), genExprStmt(genCall(genMember(id(elementRef), "appendChild"), id(textRef))), genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(innerTextWrite(text, textRef))}), genExprStmt(genCall(genMember(genMember(id(ifVar), "updates"), "push"), id(update))), genInvoke(update))
 										}
 										if len(elementUpdates) > 0 {
 											update := g.id() + "_update"
-											elementBody = append(elementBody, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id(ifVar), "updates"), "push"), id(update))), genInvoke(update))
+											elementBody = append(elementBody, genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(elementUpdates...)}), genExprStmt(genCall(genMember(genMember(id(ifVar), "updates"), "push"), id(update))), genInvoke(update))
 										}
 										elementBody = append(elementBody, genExprStmt(genCall(genMember(id(ifFragment), "appendChild"), id(elementRef))))
 										branchBody = append(branchBody, elementBody...)
@@ -7164,9 +7164,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							}
 							renderBody = append(renderBody, genAssignStmt(genMember(id(ifVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(ifFragment), "childNodes"))), genExprStmt(genCall(genMember(genMember(id(ifRange), "end"), "before"), id(ifFragment))))
 							rowBody = append(rowBody,
-								genConst(ifRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("if"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/if"))}}}),
-								genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(ifRange), "start"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(ifRange), "end"))), genConst(ifVar, controller), genConst(ifRender, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(renderBody...)}),
-								genExprStmt(genCall(genMember(genMember(id(innerOwner), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ifVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id(innerOwner), "updates"), "push"), id(ifRender))), genInvoke(ifRender),
+								genConst(ifRange, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("if"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/if"))}}}),
+								genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(ifRange), "start"))), genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(ifRange), "end"))), genConst(ifVar, controller), genConst(ifRender, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(renderBody...)}),
+								genExprStmt(genCall(genMember(genMember(id(innerOwner), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(id(ifVar), "destroy"))))})), genExprStmt(genCall(genMember(genMember(id(innerOwner), "updates"), "push"), id(ifRender))), genInvoke(ifRender),
 							)
 							continue
 						}
@@ -7206,7 +7206,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						}
 						if len(updates) > 0 {
 							rowUpdate := g.id() + "_update"
-							elementBody = append(elementBody, genConst(rowUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updates...)}), genExprStmt(genCall(genMember(genMember(id(innerOwner), "updates"), "push"), id(rowUpdate))), genInvoke(rowUpdate))
+							elementBody = append(elementBody, genConst(rowUpdate, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(updates...)}), genExprStmt(genCall(genMember(genMember(id(innerOwner), "updates"), "push"), id(rowUpdate))), genInvoke(rowUpdate))
 						}
 						elementBody = append(elementBody, genExprStmt(genCall(genMember(id("$$frag"), "appendChild"), id(rowRef))))
 						rowBody = append(rowBody, elementBody...)
@@ -7215,7 +7215,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 						rowBody = append(rowBody,
 							genConst("$$inner_end", genCall(genMember(id("document"), "createComment"), innerEndMarker)),
 							genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$inner_end"))),
-							genConst("$$inner_row", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+							genConst("$$inner_row", &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{
 								{Key: id("start"), Value: id("$$inner_start")}, {Key: id("end"), Value: id("$$inner_end")}, {Key: id("controller"), Value: id("$$inner")},
 							}}),
 							genAssignStmt(genMember(id("$$inner"), "row"), id("$$inner_row")),
@@ -7253,7 +7253,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							emptyFragment := g.id()
 							emptyVar := "$$empty"
 							emptyUpdates := []JsStmt{}
-							emptyDestroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+							emptyDestroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 								genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(emptyVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
 								genAssignStmt(genMember(id(emptyVar), "listeners"), genArray()),
 								genAssignStmt(genMember(id(emptyVar), "updates"), genArray()),
@@ -7261,7 +7261,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 								genAssignStmt(genMember(id(emptyVar), "nodes"), genArray()),
 								genAssignStmt(id(innerEmptyNodes), genNull()),
 							)}
-							emptyController := &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+							emptyController := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{
 								{Key: id("nodes"), Value: genArray()},
 								{Key: id("updates"), Value: genArray()},
 								{Key: id("listeners"), Value: genArray()},
@@ -7283,7 +7283,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 									emptyBuild = append(emptyBuild,
 										genConst(textRef, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
 										genExprStmt(genCall(genMember(id(emptyFragment), "appendChild"), id(textRef))),
-										genConst(emptyUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(textWriteFor(current, branch, textRef))}),
+										genConst(emptyUpdate, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(textWriteFor(current, branch, textRef))}),
 										genExprStmt(genCall(genMember(genMember(id(emptyVar), "updates"), "push"), id(emptyUpdate))),
 										genInvoke(emptyUpdate),
 									)
@@ -7294,7 +7294,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							if len(emptyUpdates) > 0 {
 								emptyUpdate := g.id() + "_update"
 								emptyBuild = append(emptyBuild,
-									genConst(emptyUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(emptyUpdates...)}),
+									genConst(emptyUpdate, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(emptyUpdates...)}),
 									genExprStmt(genCall(genMember(genMember(id(emptyVar), "updates"), "push"), id(emptyUpdate))),
 									genInvoke(emptyUpdate),
 								)
@@ -7311,19 +7311,19 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 							)
 						}
 						body = append(body,
-							genConst(innerRange, &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("i"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/i"))}}}),
+							genConst(innerRange, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: genCall(genMember(id("document"), "createComment"), strLit("i"))}, {Key: id("end"), Value: genCall(genMember(id("document"), "createComment"), strLit("/i"))}}}),
 							genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(innerRange), "start"))),
 							genExprStmt(genCall(genMember(id("$$frag"), "append"), genMember(id(innerRange), "end"))),
-							genConst(innerKeyOf, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$nested_item"), id("$$nested_index")}, Body: innerKeyFor}),
+							genConst(innerKeyOf, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$nested_item"), id("$$nested_index")}, Body: innerKeyFor}),
 							genLet(innerBlocks, genNew(id("Map"))),
 							genLet(innerEmptyNodes, genNull()),
-							genExprStmt(genCall(genMember(genMember(id("$$state"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genIf(id(innerEmptyNodes), genExprStmt(genCall(genMember(id(innerEmptyNodes), "destroy")))))})),
-							genConst(innerCreate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$nested_item"), id("$$nested_index")}, Body: genBlock(createBody...)}),
-							genConst(innerUpdate, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$inner_row"), id("$$nested_item"), id("$$nested_index")}, Body: genBlock(
+							genExprStmt(genCall(genMember(genMember(id("$$state"), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genIf(id(innerEmptyNodes), genExprStmt(genCall(genMember(id(innerEmptyNodes), "destroy")))))})),
+							genConst(innerCreate, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$nested_item"), id("$$nested_index")}, Body: genBlock(createBody...)}),
+							genConst(innerUpdate, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$inner_row"), id("$$nested_item"), id("$$nested_index")}, Body: genBlock(
 								genIf(genUnary("!", genMember(id("$$inner_row"), "controller")), genReturn(nil)),
 								genExprStmt(genCall(genMember(genMember(id("$$inner_row"), "controller"), "update"), id("$$nested_item"), id("$$nested_index"))),
 							)}),
-							genConst(innerRefresh, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(refreshBody...)}),
+							genConst(innerRefresh, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(refreshBody...)}),
 							genExprStmt(genCall(genMember(genMember(id("$$state"), "innerRefresh"), "push"), id(innerRefresh))),
 							genInvoke(innerRefresh),
 						)
@@ -7337,7 +7337,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 					body = append(body, genIf(genBinary("===", genMember(id(items), "length"), numLit(0)), genExprStmt(genCall(id("$$insertHTML"), id("$$frag"), strLit(emitStaticHTML(nestedEach.ElseChildren, g.scopeID))))))
 				}
 				update := g.id() + "_each_update"
-				body = append(body, genConst(update, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock()}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))), genInvoke(update))
+				body = append(body, genConst(update, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock()}), genExprStmt(genCall(genMember(genMember(id("$$state"), "updates"), "push"), id(update))), genInvoke(update))
 				continue
 			}
 			component, ok := child.(*ComponentNode)
@@ -7347,7 +7347,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			}
 			instance := "$$component_" + itoa(branch) + "_" + itoa(componentIndex)
 			body = append(body,
-				genConst(instance, genCall(id(g.hydrationCSRComponents[component.Name]), id("$$frag"), propsFor(component, branch), &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+				genConst(instance, genCall(id(g.hydrationCSRComponents[component.Name]), id("$$frag"), propsFor(component, branch), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})),
 				genExprStmt(genCall(genMember(genMember(id("$$state"), "components"), "push"), id(instance))),
 			)
 			componentIndex++
@@ -7357,7 +7357,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	renderBody := []JsStmt{
 		genInvoke(destroyVar, id("$$state")),
 		genLet(rowItemVar, id("$$item")),
-		genAssignStmt(genMember(id("$$state"), "setItem"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item")}, Body: genBlock(genAssignStmt(id(rowItemVar), id("$$next_item")))}),
+		genAssignStmt(genMember(id("$$state"), "setItem"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$next_item")}, Body: genBlock(genAssignStmt(id(rowItemVar), id("$$next_item")))}),
 		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
 		genConst("$$value", genMember(id("$$state"), "value")),
 		genConst("$$error", genMember(id("$$state"), "error")),
@@ -7369,13 +7369,13 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genExprStmt(genCall(id("$$replaceHydrationKeyedRowContents"), id("$$row"), id("$$frag"))),
 		genAssignStmt(genMember(id("$$state"), "active"), id("$$next")),
 	)
-	mountRow := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state"), id("$$row"), id("$$item"), id("$$index"), id("$$next")}, Body: genBlock(renderBody...)}
+	mountRow := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$state"), id("$$row"), id("$$item"), id("$$index"), id("$$next")}, Body: genBlock(renderBody...)}
 	settle := func(param string, state int) JsExpr {
 		field := "value"
 		if state == 2 {
 			field = "error"
 		}
-		return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(param)}, Body: genBlock(
+		return &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id(param)}, Body: genBlock(
 			genIf(genLogical("||", genUnary("!", id(aliveVar)), genLogical("||", genBinary("!==", genCall(genMember(id(statesVar), "get"), id("$$key")), id("$$state")), genBinary("!==", genMember(id("$$state"), "cell"), id("$$p")))), genReturn(nil)),
 			genIf(genBinary("===", genMember(id("$$state"), "snapshot"), numLit(state)), genBlock(
 				genAssignStmt(genMember(id("$$state"), "snapshot"), numLit(-1)),
@@ -7386,7 +7386,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			genInvoke(mountVar, id("$$state"), genMember(id("$$state"), "row"), genMember(id("$$state"), "item"), genMember(id("$$state"), "index"), numLit(state)),
 		)}
 	}
-	drive := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state"), id("$$row"), id("$$item"), id("$$index"), id("$$initial")}, Body: genBlock(
+	drive := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$state"), id("$$row"), id("$$item"), id("$$index"), id("$$initial")}, Body: genBlock(
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id("$$index"))),
 		genConst("$$p", genCall(genMember(id("Promise"), "resolve"), promiseFor("$$item", "$$index"))),
 		genIf(genBinary("===", genMember(id("$$state"), "cell"), id("$$p")), genReturn(nil)),
@@ -7424,7 +7424,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			))
 		}
 	}
-	rowUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(rowUpdateBody...)}
+	rowUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(rowUpdateBody...)}
 	createBody := []JsStmt{
 		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id("$$index"))),
@@ -7434,14 +7434,14 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		// mount() evaluates component props through rowItemVar. A newly created
 		// row needs the same mutable binding as a row which was re-rendered.
 		genLet(rowItemVar, id("$$item")),
-		genAssignStmt(genMember(id("$$state"), "setItem"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item")}, Body: genBlock(genAssignStmt(id(rowItemVar), id("$$next_item")))}),
+		genAssignStmt(genMember(id("$$state"), "setItem"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$next_item")}, Body: genBlock(genAssignStmt(id(rowItemVar), id("$$next_item")))}),
 		genExprStmt(genCall(genMember(id(statesVar), "set"), id("$$key"), id("$$state"))),
 	}
 	createBody = append(createBody, mount(0)...)
 	createBody = append(createBody,
 		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
 		genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$end"))),
-		genConst("$$row", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
+		genConst("$$row", &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
 		genAssignStmt(genMember(id("$$state"), "row"), id("$$row")),
 		genAssignStmt(genMember(id("$$state"), "item"), id("$$item")),
 		genAssignStmt(genMember(id("$$state"), "index"), id("$$index")),
@@ -7449,7 +7449,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genInvoke(driveVar, id("$$state"), id("$$row"), id("$$item"), id("$$index"), boolLit(true)),
 		genReturn(id("$$row")),
 	)
-	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
+	create := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
 
 	refreshRow := func(state JsExpr) []JsStmt {
 		return []JsStmt{
@@ -7457,12 +7457,12 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			genForOf("$$refresh", genMember(state, "innerRefresh"), genInvoke("$$refresh")),
 		}
 	}
-	innerRefreshEach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(refreshRow(id("$$state"))...)}
+	innerRefreshEach := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(refreshRow(id("$$state"))...)}
 	innerRefreshBody := []JsStmt{genExprStmt(genCall(genMember(id(statesVar), "forEach"), innerRefreshEach))}
 	if incrementalPlan != nil {
 		dirtyRows := "$$dirtyRows"
 		rowIndex := "$$rowIndex"
-		refreshDirtyRow := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(rowIndex)}, Body: genBlock(
+		refreshDirtyRow := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id(rowIndex)}, Body: genBlock(
 			genConst("$$item", genComputedMember(id(incrementalPlan.stateName), id(rowIndex))),
 			genIf(genUnary("!", id("$$item")), genReturn(nil)),
 			genConst("$$key", genCall(id(keyOfVar), id("$$item"), id(rowIndex))),
@@ -7476,7 +7476,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			genForOf(rowIndex, id(dirtyRows), genExprStmt(genCall(refreshDirtyRow, id(rowIndex)))),
 		}
 	}
-	innerRefresh := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(innerRefreshBody...)}
+	innerRefresh := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(innerRefreshBody...)}
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.hydrationKeyedRows = true
 	g.body = append(g.body,
@@ -7502,7 +7502,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		adoptBody = append(adoptBody,
 			genLet(rowItemVar, id("$$item")),
 			genLet(initialOuterIndexVar, id("$$index")),
-			genAssignStmt(genMember(id("$$state"), "setItem"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
+			genAssignStmt(genMember(id("$$state"), "setItem"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
 				genAssignStmt(id(rowItemVar), id("$$next_item")),
 				genAssignStmt(id(initialOuterIndexVar), id("$$next_index")),
 			)}),
@@ -7539,7 +7539,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 			genBlock(branchAdopt...),
 		))
 	}
-	adopt := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state"), id("$$row"), id("$$item"), id("$$index"), id("$$snapshot")}, Body: genBlock(adoptBody...)}
+	adopt := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$state"), id("$$row"), id("$$item"), id("$$index"), id("$$snapshot")}, Body: genBlock(adoptBody...)}
 	g.body = append(g.body, genConst(adoptVar, adopt))
 	initialBody := []JsStmt{
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id(initialIndex))),
@@ -7566,7 +7566,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genConst("$$nextItems", g.templateExpr(block.IterExpr)), genConst("$$nextKeys", genNew(id("Set"))), genLet("$$index", numLit(0)),
 		genForOf("$$item", id("$$nextItems"), genBlock(genExprStmt(genCall(genMember(id("$$nextKeys"), "add"), genCall(id(keyOfVar), id("$$item"), id("$$index")))), genAssignStmt(id("$$index"), genBinary("+", id("$$index"), numLit(1))))),
 		genExprStmt(genCall(genMember(id(statesVar), "forEach"), &JsArrowFunc{
-			baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state"), id("$$key")},
+			BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$state"), id("$$key")},
 			Body: genBlock(genIf(genUnary("!", genCall(genMember(id("$$nextKeys"), "has"), id("$$key"))), genBlock(
 				genInvoke(destroyVar, id("$$state")),
 				genExprStmt(genCall(genMember(id(statesVar), "delete"), id("$$key"))),
@@ -7576,7 +7576,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 		genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(rangeVar), id(blocksVar), id("$$nextItems"), id(keyOfVar), id(createVar), id(updateVar))),
 	}
 	fn := updateFn
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	deps := map[string]bool{}
 	for _, expr := range []*TemplateExpr{block.IterExpr, await.Expr, block.KeyAST} {
 		for _, dependency := range templateExprDeps(expr, g.reactiveNames()) {
@@ -7619,9 +7619,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachAwaitComponentRow(block *EachBlockNo
 	}
 	g.cleanup = append(g.cleanup,
 		genAssignStmt(id(aliveVar), boolLit(false)),
-		genExprStmt(genCall(genMember(id(statesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(genInvoke(destroyVar, id("$$state")))})),
+		genExprStmt(genCall(genMember(id(statesVar), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$state")}, Body: genBlock(genInvoke(destroyVar, id("$$state")))})),
 		genExprStmt(genCall(genMember(id(statesVar), "clear"))),
-		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))))})),
+		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))))})),
 	)
 }
 
@@ -7678,7 +7678,7 @@ func (g *ASTGen) buildHydrationRootEachComponents(block *EachBlockNode, componen
 		propsExpr := g.hydrationEachComponentProps(block, component, "$$item", indexVar)
 		componentVar := "$$component_" + itoa(index)
 		mountBody = append(mountBody,
-			genConst(componentVar, genCall(id(g.hydrationCSRComponents[component.Name]), id("$$frag"), propsExpr, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+			genConst(componentVar, genCall(id(g.hydrationCSRComponents[component.Name]), id("$$frag"), propsExpr, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})),
 			genExprStmt(genCall(genMember(id(instancesVar), "push"), id(componentVar))),
 		)
 	}
@@ -7695,7 +7695,7 @@ func (g *ASTGen) buildHydrationRootEachComponents(block *EachBlockNode, componen
 		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
 	)
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
@@ -7748,7 +7748,7 @@ func (g *ASTGen) buildHydrationRootEachNestedIfComponentRow(block *EachBlockNode
 						active = numLit(index)
 						continue
 					}
-					active = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: active}
+					active = &JsConditionalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: active}
 				}
 			})
 		})
@@ -7760,7 +7760,7 @@ func (g *ASTGen) buildHydrationRootEachNestedIfComponentRow(block *EachBlockNode
 
 	initialScope := g.hydrationEachInstanceScope(block, id(indexVar))
 	initialBody := []JsStmt{
-		&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: genBinary("===", activeFor("$$item", indexVar), numLit(componentIndex)), Then: genBlock(genExprStmt(genCall(genMember(id(instancesVar), "push"), genMember(g.hydrationComponentCallAt(component, id("$$root"), nil, initialScope), "component")))), Else: genBlock(genExprStmt(genCall(genMember(id(instancesVar), "push"), genNull())))},
+		&JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: genBinary("===", activeFor("$$item", indexVar), numLit(componentIndex)), Then: genBlock(genExprStmt(genCall(genMember(id(instancesVar), "push"), genMember(g.hydrationComponentCallAt(component, id("$$root"), nil, initialScope), "component")))), Else: genBlock(genExprStmt(genCall(genMember(id(instancesVar), "push"), genNull())))},
 		genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))),
 	}
 	g.hydrationInitBody = append(g.hydrationInitBody, genForOf("$$item", id(itemsVar), genBlock(initialBody...)))
@@ -7774,11 +7774,11 @@ func (g *ASTGen) buildHydrationRootEachNestedIfComponentRow(block *EachBlockNode
 		genLet(indexVar, numLit(0)),
 	}
 	mountComponent := []JsStmt{
-		genConst("$$component", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", indexVar), &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+		genConst("$$component", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", indexVar), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})),
 		genExprStmt(genCall(genMember(id(instancesVar), "push"), id("$$component"))),
 	}
 	mountRow := []JsStmt{
-		&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: genBinary("===", activeFor("$$item", indexVar), numLit(componentIndex)), Then: genBlock(mountComponent...), Else: genBlock(genExprStmt(genCall(genMember(id(instancesVar), "push"), genNull())))},
+		&JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: genBinary("===", activeFor("$$item", indexVar), numLit(componentIndex)), Then: genBlock(mountComponent...), Else: genBlock(genExprStmt(genCall(genMember(id(instancesVar), "push"), genNull())))},
 	}
 	for index, branch := range chain.Branches {
 		if branch == nil || index == componentIndex {
@@ -7803,7 +7803,7 @@ func (g *ASTGen) buildHydrationRootEachNestedIfComponentRow(block *EachBlockNode
 		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
 	)
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	deps := map[string]bool{}
 	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		deps[dependency] = true
@@ -7871,7 +7871,7 @@ func (g *ASTGen) buildHydrationRootEachNestedKeyComponentRow(block *EachBlockNod
 		genLet(indexVar, numLit(0)),
 	}
 	mountBody := []JsStmt{
-		genConst("$$component", genCall(id(csrFactory), id("$$frag"), g.hydrationEachComponentProps(block, component, "$$item", indexVar), &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+		genConst("$$component", genCall(id(csrFactory), id("$$frag"), g.hydrationEachComponentProps(block, component, "$$item", indexVar), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})),
 		genExprStmt(genCall(genMember(id(instancesVar), "push"), id("$$component"))),
 		genAssignStmt(id(indexVar), genBinary("+", id(indexVar), numLit(1))),
 	}
@@ -7887,7 +7887,7 @@ func (g *ASTGen) buildHydrationRootEachNestedKeyComponentRow(block *EachBlockNod
 		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
 	)
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	deps := map[string]bool{}
 	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		deps[dependency] = true
@@ -7911,7 +7911,7 @@ func (g *ASTGen) buildHydrationRootEachNestedKeyComponentRow(block *EachBlockNod
 }
 
 func (g *ASTGen) hydrationEachComponentProps(block *EachBlockNode, component *ComponentNode, itemVar, indexVar string) JsExpr {
-	props := JsExpr(&JsObjectExpr{baseExpr: baseExpr{genNode()}})
+	props := JsExpr(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})
 	g.withTemplateBinding(block.ItemName, itemVar, func() {
 		g.withTemplateBinding(block.IndexName, indexVar, func() {
 			props = g.componentPropsExpr(component.Attrs)
@@ -8038,7 +8038,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachComponents(block *EachBlockNode, com
 			keyExpr = genString(g.templateExpr(block.KeyAST))
 		})
 	})
-	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
+	keyOf := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
 	createBody := []JsStmt{
 		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id("$$index"))),
@@ -8056,7 +8056,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachComponents(block *EachBlockNode, com
 		props := g.hydrationEachComponentProps(block, current, "$$item", "$$index")
 		instance := "$$component_" + itoa(componentIndex)
 		createBody = append(createBody,
-			genConst(instance, genCall(id(g.hydrationCSRComponents[current.Name]), id("$$frag"), props, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+			genConst(instance, genCall(id(g.hydrationCSRComponents[current.Name]), id("$$frag"), props, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})),
 			genExprStmt(genCall(genMember(id("$$components"), "push"), id(instance))),
 		)
 		componentIndex++
@@ -8065,15 +8065,15 @@ func (g *ASTGen) buildHydrationRootKeyedEachComponents(block *EachBlockNode, com
 		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
 		genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$end"))),
 		genExprStmt(genCall(genMember(id(instancesVar), "set"), id("$$key"), id("$$components"))),
-		genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
+		genReturn(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
 	)
-	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
+	create := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
 	rowUpdateBody := []JsStmt{genConst("$$components", genCall(genMember(id(instancesVar), "get"), genCall(id(keyOfVar), id("$$item"), id("$$index"))))}
 	for index, current := range components {
 		props := g.hydrationEachComponentProps(block, current, "$$item", "$$index")
 		rowUpdateBody = append(rowUpdateBody, genIf(genComputedMember(id("$$components"), numLit(index)), genExprStmt(genCall(genMember(genComputedMember(id("$$components"), numLit(index)), "set"), props))))
 	}
-	update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(rowUpdateBody...)}
+	update := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(rowUpdateBody...)}
 
 	g.body = append(g.body,
 		genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
@@ -8108,7 +8108,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachComponents(block *EachBlockNode, com
 			genExprStmt(genCall(genMember(id("$$nextKeys"), "add"), genCall(id(keyOfVar), id("$$item"), id("$$index")))),
 			genAssignStmt(id("$$index"), genBinary("+", id("$$index"), numLit(1))),
 		)),
-		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$components"), id("$$key")}, Body: genBlock(
+		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$components"), id("$$key")}, Body: genBlock(
 			genIf(genUnary("!", genCall(genMember(id("$$nextKeys"), "has"), id("$$key"))), genBlock(
 				genForOf("$$component", genCall(genMember(genCall(genMember(id("$$components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
 				genExprStmt(genCall(genMember(id(instancesVar), "delete"), id("$$key"))),
@@ -8121,14 +8121,14 @@ func (g *ASTGen) buildHydrationRootKeyedEachComponents(block *EachBlockNode, com
 		genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(rangeVar), id(blocksVar), id("$$nextItems"), id(keyOfVar), id(createVar), id(updateVar))),
 	}
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
 	g.cleanup = append(g.cleanup,
-		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$components")}, Body: genBlock(genForOf("$$component", genCall(genMember(genCall(genMember(id("$$components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))))})),
+		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$components")}, Body: genBlock(genForOf("$$component", genCall(genMember(genCall(genMember(id("$$components"), "slice")), "reverse")), genExprStmt(genCall(genMember(id("$$component"), "destroy")))))})),
 		genExprStmt(genCall(genMember(id(instancesVar), "clear"))),
-		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))))})),
+		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))))})),
 	)
 }
 
@@ -8161,7 +8161,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedIfComponentRow(block *EachBloc
 			keyExpr = genString(g.templateExpr(block.KeyAST))
 		})
 	})
-	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
+	keyOf := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
 	activeFor := func(itemVar, currentIndex string) JsExpr {
 		active := JsExpr(numLit(-1))
 		g.withTemplateBinding(block.ItemName, itemVar, func() {
@@ -8175,7 +8175,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedIfComponentRow(block *EachBloc
 						active = numLit(index)
 						continue
 					}
-					active = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: active}
+					active = &JsConditionalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: active}
 				}
 			})
 		})
@@ -8205,18 +8205,18 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedIfComponentRow(block *EachBloc
 		genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$start"))),
 	}
 	createThen := []JsStmt{
-		genConst("$$component", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", "$$index"), &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+		genConst("$$component", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", "$$index"), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})),
 		genExprStmt(genCall(genMember(id(instancesVar), "set"), id("$$key"), id("$$component"))),
 	}
 	createElse := staticMount("$$frag", "$$item", "$$index")
 	createElse = append(createElse, genExprStmt(genCall(genMember(id(instancesVar), "set"), id("$$key"), genNull())))
-	createBody = append(createBody, &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: genBinary("===", activeFor("$$item", "$$index"), numLit(componentIndex)), Then: genBlock(createThen...), Else: genBlock(createElse...)})
+	createBody = append(createBody, &JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: genBinary("===", activeFor("$$item", "$$index"), numLit(componentIndex)), Then: genBlock(createThen...), Else: genBlock(createElse...)})
 	createBody = append(createBody,
 		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
 		genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$end"))),
-		genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
+		genReturn(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
 	)
-	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
+	create := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
 
 	rowUpdateBody := []JsStmt{
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id("$$index"))),
@@ -8227,11 +8227,11 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedIfComponentRow(block *EachBloc
 	}
 	activateElse := []JsStmt{
 		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
-		genConst("$$next", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", "$$index"), &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+		genConst("$$next", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", "$$index"), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})),
 		genExprStmt(genCall(id("$$replaceHydrationKeyedRowContents"), id("$$row"), id("$$frag"))),
 		genExprStmt(genCall(genMember(id(instancesVar), "set"), id("$$key"), id("$$next"))),
 	}
-	activateBody[0] = &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: id("$$component"), Then: genExprStmt(genCall(genMember(id("$$component"), "set"), propsFor("$$item", "$$index"))), Else: genBlock(activateElse...)}
+	activateBody[0] = &JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: id("$$component"), Then: genExprStmt(genCall(genMember(id("$$component"), "set"), propsFor("$$item", "$$index"))), Else: genBlock(activateElse...)}
 	deactivateThen := []JsStmt{
 		genExprStmt(genCall(genMember(id("$$component"), "destroy"))),
 		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
@@ -8241,8 +8241,8 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedIfComponentRow(block *EachBloc
 		genExprStmt(genCall(id("$$replaceHydrationKeyedRowContents"), id("$$row"), id("$$frag"))),
 		genExprStmt(genCall(genMember(id(instancesVar), "set"), id("$$key"), genNull())),
 	)
-	rowUpdateBody = append(rowUpdateBody, &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: genBinary("===", activeFor("$$item", "$$index"), numLit(componentIndex)), Then: genBlock(activateBody...), Else: genBlock(genIf(id("$$component"), genBlock(deactivateThen...)))})
-	rowUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(rowUpdateBody...)}
+	rowUpdateBody = append(rowUpdateBody, &JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: genBinary("===", activeFor("$$item", "$$index"), numLit(componentIndex)), Then: genBlock(activateBody...), Else: genBlock(genIf(id("$$component"), genBlock(deactivateThen...)))})
+	rowUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(rowUpdateBody...)}
 
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.hydrationKeyedRows = true
@@ -8263,7 +8263,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedIfComponentRow(block *EachBloc
 	}
 	initialBody := []JsStmt{
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id(initialIndex))),
-		&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: genBinary("===", activeFor("$$item", initialIndex), numLit(componentIndex)), Then: genBlock(initialThen...), Else: genBlock(genExprStmt(genCall(genMember(id(instancesVar), "set"), id("$$key"), genNull())))},
+		&JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: genBinary("===", activeFor("$$item", initialIndex), numLit(componentIndex)), Then: genBlock(initialThen...), Else: genBlock(genExprStmt(genCall(genMember(id(instancesVar), "set"), id("$$key"), genNull())))},
 		genAssignStmt(id(initialIndex), genBinary("+", id(initialIndex), numLit(1))),
 	}
 	g.hydrationInitBody = append(g.hydrationInitBody, genLet(initialIndex, numLit(0)), genForOf("$$item", id(itemsVar), genBlock(initialBody...)))
@@ -8276,7 +8276,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedIfComponentRow(block *EachBloc
 			genExprStmt(genCall(genMember(id("$$nextKeys"), "add"), genCall(id(keyOfVar), id("$$item"), id("$$index")))),
 			genAssignStmt(id("$$index"), genBinary("+", id("$$index"), numLit(1))),
 		)),
-		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$component"), id("$$key")}, Body: genBlock(
+		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$component"), id("$$key")}, Body: genBlock(
 			genIf(genUnary("!", genCall(genMember(id("$$nextKeys"), "has"), id("$$key"))), genBlock(
 				genIf(id("$$component"), genExprStmt(genCall(genMember(id("$$component"), "destroy")))),
 				genExprStmt(genCall(genMember(id(instancesVar), "delete"), id("$$key"))),
@@ -8289,7 +8289,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedIfComponentRow(block *EachBloc
 		genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(rangeVar), id(blocksVar), id("$$nextItems"), id(keyOfVar), id(createVar), id(updateVar))),
 	}
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	deps := map[string]bool{}
 	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		deps[dependency] = true
@@ -8311,9 +8311,9 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedIfComponentRow(block *EachBloc
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
 	g.cleanup = append(g.cleanup,
-		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$component")}, Body: genBlock(genIf(id("$$component"), genExprStmt(genCall(genMember(id("$$component"), "destroy")))))})),
+		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$component")}, Body: genBlock(genIf(id("$$component"), genExprStmt(genCall(genMember(id("$$component"), "destroy")))))})),
 		genExprStmt(genCall(genMember(id(instancesVar), "clear"))),
-		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))))})),
+		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))))})),
 	)
 }
 
@@ -8344,7 +8344,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedKeyComponentRow(block *EachBlo
 	g.withTemplateBinding(block.ItemName, "$$item", func() {
 		g.withTemplateBinding(block.IndexName, "$$index", func() { keyExpr = genString(g.templateExpr(block.KeyAST)) })
 	})
-	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
+	keyOf := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
 	innerKeyFor := func(itemVar, indexVar string) JsExpr {
 		key := JsExpr(id("undefined"))
 		g.withTemplateBinding(block.ItemName, itemVar, func() {
@@ -8361,14 +8361,14 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedKeyComponentRow(block *EachBlo
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id("$$index"))),
 		genConst("$$start", genCall(genMember(id("document"), "createComment"), strLit("r"))),
 		genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$start"))),
-		genConst("$$component", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", "$$index"), &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+		genConst("$$component", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", "$$index"), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})),
 		genExprStmt(genCall(genMember(id(instancesVar), "set"), id("$$key"), id("$$component"))),
 		genExprStmt(genCall(genMember(id(innerKeysVar), "set"), id("$$key"), innerKeyFor("$$item", "$$index"))),
 		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
 		genExprStmt(genCall(genMember(id("$$frag"), "append"), id("$$end"))),
-		genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
+		genReturn(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
 	}
-	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
+	create := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
 	rowUpdateBody := []JsStmt{
 		genConst("$$key", genCall(id(keyOfVar), id("$$item"), id("$$index"))),
 		genConst("$$previous", genCall(genMember(id(innerKeysVar), "get"), id("$$key"))),
@@ -8378,13 +8378,13 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedKeyComponentRow(block *EachBlo
 	replaceBody := []JsStmt{
 		genExprStmt(genCall(genMember(id("$$component"), "destroy"))),
 		genConst("$$frag", genCall(genMember(id("document"), "createDocumentFragment"))),
-		genConst("$$next", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", "$$index"), &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+		genConst("$$next", genCall(id(csrFactory), id("$$frag"), propsFor("$$item", "$$index"), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})),
 		genExprStmt(genCall(id("$$replaceHydrationKeyedRowContents"), id("$$row"), id("$$frag"))),
 		genExprStmt(genCall(genMember(id(instancesVar), "set"), id("$$key"), id("$$next"))),
 		genExprStmt(genCall(genMember(id(innerKeysVar), "set"), id("$$key"), id("$$nextKey"))),
 	}
-	rowUpdateBody = append(rowUpdateBody, &JsIfStmt{baseStmt: baseStmt{genNode()}, Test: genBinary("===", id("$$previous"), id("$$nextKey")), Then: genExprStmt(genCall(genMember(id("$$component"), "set"), propsFor("$$item", "$$index"))), Else: genBlock(replaceBody...)})
-	rowUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(rowUpdateBody...)}
+	rowUpdateBody = append(rowUpdateBody, &JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: genBinary("===", id("$$previous"), id("$$nextKey")), Then: genExprStmt(genCall(genMember(id("$$component"), "set"), propsFor("$$item", "$$index"))), Else: genBlock(replaceBody...)})
+	rowUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(rowUpdateBody...)}
 
 	g.domAcquirePlan.addStructuralRange(rangeVar, markerID)
 	g.hydrationKeyedRows = true
@@ -8416,7 +8416,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedKeyComponentRow(block *EachBlo
 			genExprStmt(genCall(genMember(id("$$nextKeys"), "add"), genCall(id(keyOfVar), id("$$item"), id("$$index")))),
 			genAssignStmt(id("$$index"), genBinary("+", id("$$index"), numLit(1))),
 		)),
-		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$component"), id("$$key")}, Body: genBlock(
+		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$component"), id("$$key")}, Body: genBlock(
 			genIf(genUnary("!", genCall(genMember(id("$$nextKeys"), "has"), id("$$key"))), genBlock(
 				genExprStmt(genCall(genMember(id("$$component"), "destroy"))),
 				genExprStmt(genCall(genMember(id(instancesVar), "delete"), id("$$key"))),
@@ -8430,7 +8430,7 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedKeyComponentRow(block *EachBlo
 		genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), id(rangeVar), id(blocksVar), id("$$nextItems"), id(keyOfVar), id(createVar), id(updateVar))),
 	}
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	deps := map[string]bool{}
 	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		deps[dependency] = true
@@ -8447,10 +8447,10 @@ func (g *ASTGen) buildHydrationRootKeyedEachNestedKeyComponentRow(block *EachBlo
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
 	g.cleanup = append(g.cleanup,
-		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$component")}, Body: genBlock(genExprStmt(genCall(genMember(id("$$component"), "destroy"))))})),
+		genExprStmt(genCall(genMember(id(instancesVar), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$component")}, Body: genBlock(genExprStmt(genCall(genMember(id("$$component"), "destroy"))))})),
 		genExprStmt(genCall(genMember(id(instancesVar), "clear"))),
 		genExprStmt(genCall(genMember(id(innerKeysVar), "clear"))),
-		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))))})),
+		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genExprStmt(genCall(id("$$removeHydrationKeyedRowRange"), id("$$row"))))})),
 	)
 }
 
@@ -8537,13 +8537,13 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 	)
 	if allStatic(block.ThenChildren) || plans[1].snapshot.supported {
 		g.body = append(g.body, genIf(
-			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("then"))},
+			&JsLogicalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("then"))},
 			genBlock(genAssignStmt(id(activeVar), numLit(1)), genAssignStmt(id(stateVar), numLit(1)), genAssignStmt(id(valueVar), genMember(id(snapshotVar), "value"))),
 		))
 	}
 	if allStatic(block.CatchChildren) || plans[2].snapshot.supported {
 		g.body = append(g.body, genIf(
-			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("catch"))},
+			&JsLogicalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("catch"))},
 			genBlock(genAssignStmt(id(activeVar), numLit(2)), genAssignStmt(id(stateVar), numLit(2)), genAssignStmt(id(errorVar), genMember(id(snapshotVar), "error"))),
 		))
 	}
@@ -8565,7 +8565,7 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 			stateName = "catch"
 		}
 		g.hydrationInitBody = append(g.hydrationInitBody, genIf(
-			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit(stateName))},
+			&JsLogicalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit(stateName))},
 			genBlock(plan.snapshot.adopt...),
 		))
 	}
@@ -8628,21 +8628,21 @@ func (g *ASTGen) buildHydrationRootAwait(block *AwaitBlockNode) {
 		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
 		genAssignStmt(id(activeVar), id(stateVar)),
 	)
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: renderVar, Body: genBlock(renderBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: renderVar, Body: genBlock(renderBody...)})
 
 	settle := func(param, target string, state int) JsExpr {
-		return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(param)}, Body: genBlock(
+		return &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id(param)}, Body: genBlock(
 			genIf(genBinary("!==", id(cellVar), id("$$p")), genReturn(nil)),
 			genAssignStmt(id(target), id(param)),
 			genAssignStmt(id(stateVar), numLit(state)),
 			genInvoke(renderVar),
 		)}
 	}
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: driverVar, Body: genBlock(
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: driverVar, Body: genBlock(
 		genConst("$$p", genCall(genMember(id("Promise"), "resolve"), g.templateExpr(block.Expr))),
 		genIf(genBinary("===", id(cellVar), id("$$p")), genReturn(nil)),
 		genAssignStmt(id(cellVar), id("$$p")),
-		&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: id(initialVar), Then: genBlock(
+		&JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: id(initialVar), Then: genBlock(
 			genAssignStmt(id(initialVar), boolLit(false)),
 		), Else: genBlock(
 			genAssignStmt(id(stateVar), numLit(0)),
@@ -8795,7 +8795,7 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 						handle.slotSnapshot = g.buildHydrationAwaitSnapshotSlotPlan(component.Slots, bindingNames[branch], bindingValues[branch])
 					}
 				} else {
-					handle.slotsExpr = &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+					handle.slotsExpr = &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
 				}
 				for _, attr := range component.Attrs {
 					if !attr.IsEvent {
@@ -8813,7 +8813,7 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 							invoke = RewriteStatementAssignmentsAST(invoke, g.analysis.stateSet())
 						}
 					}
-					g.declareInScope(genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(
+					g.declareInScope(genConst(handler, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(
 						genIf(genBinary("instanceof", id("$event"), id("CustomEvent")), genBlock(invoke)),
 					)}))
 					handle.events = append(handle.events, hydrationAwaitComponentEvent{name: strings.TrimPrefix(attr.Name, "on:"), handler: handler})
@@ -8852,13 +8852,13 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 	}
 	if snapshotBranches[1] {
 		g.body = append(g.body, genIf(
-			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("then"))},
+			&JsLogicalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("then"))},
 			genBlock(genAssignStmt(id(activeVar), numLit(1)), genAssignStmt(id(stateVar), numLit(1)), genAssignStmt(id(valueVar), genMember(id(snapshotVar), "value"))),
 		))
 	}
 	if snapshotBranches[2] {
 		g.body = append(g.body, genIf(
-			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("catch"))},
+			&JsLogicalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit("catch"))},
 			genBlock(genAssignStmt(id(activeVar), numLit(2)), genAssignStmt(id(stateVar), numLit(2)), genAssignStmt(id(errorVar), genMember(id(snapshotVar), "error"))),
 		))
 	}
@@ -8878,13 +8878,13 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 			stateName = "catch"
 		}
 		g.hydrationInitBody = append(g.hydrationInitBody, genIf(
-			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit(stateName))},
+			&JsLogicalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "&&", L: id(snapshotVar), R: genBinary("===", genMember(id(snapshotVar), "state"), strLit(stateName))},
 			genBlock(append(append([]JsStmt{genAssignStmt(id(handle.instanceVar), genMember(g.hydrationComponentCall(handle.component, id("$$root"), handle.overridesExpr), "component"))}, g.hydrationAwaitComponentEventAttach(handle)...), handle.slotSnapshot.adopt...)...),
 		))
 	}
 	for _, handle := range handles {
 		setStmt := genIf(
-			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: genBinary("===", id(activeVar), numLit(handle.branch)), R: id(handle.instanceVar)},
+			&JsLogicalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "&&", L: genBinary("===", id(activeVar), numLit(handle.branch)), R: id(handle.instanceVar)},
 			optionalComponentSetStmt(id(handle.instanceVar), handle.propsExpr),
 		)
 		deps := map[string]bool{}
@@ -8914,7 +8914,7 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 			continue
 		}
 		sameState = append(sameState, genIf(
-			&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: genBinary("===", id(activeVar), numLit(handle.branch)), R: id(handle.instanceVar)},
+			&JsLogicalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "&&", L: genBinary("===", id(activeVar), numLit(handle.branch)), R: id(handle.instanceVar)},
 			optionalComponentSetStmt(id(handle.instanceVar), handle.propsExpr),
 		))
 		if len(handle.slotSnapshot.refresh) != 0 {
@@ -8952,21 +8952,21 @@ func (g *ASTGen) buildHydrationRootAwaitComponentBranches(block *AwaitBlockNode,
 		genExprStmt(genCall(genMember(id(rangeVar), "end.before"), id("$$frag"))),
 		genAssignStmt(id(activeVar), id(stateVar)),
 	)
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: renderVar, Body: genBlock(renderBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: renderVar, Body: genBlock(renderBody...)})
 
 	settle := func(param, target string, state int) JsExpr {
-		return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id(param)}, Body: genBlock(
+		return &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id(param)}, Body: genBlock(
 			genIf(genBinary("!==", id(cellVar), id("$$p")), genReturn(nil)),
 			genAssignStmt(id(target), id(param)),
 			genAssignStmt(id(stateVar), numLit(state)),
 			genInvoke(renderVar),
 		)}
 	}
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: driverVar, Body: genBlock(
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: driverVar, Body: genBlock(
 		genConst("$$p", genCall(genMember(id("Promise"), "resolve"), g.templateExpr(block.Expr))),
 		genIf(genBinary("===", id(cellVar), id("$$p")), genReturn(nil)),
 		genAssignStmt(id(cellVar), id("$$p")),
-		&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: id(initialVar), Then: genBlock(
+		&JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: id(initialVar), Then: genBlock(
 			genAssignStmt(id(initialVar), boolLit(false)),
 		), Else: genBlock(
 			genAssignStmt(id(stateVar), numLit(0)),
@@ -9136,7 +9136,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotPlan(slots map[string][]Node, bi
 							write = g.styleDirStmtAST(elementVar, attr)
 						}
 						plan.adopt = append(plan.adopt, genAssignStmt(id(refreshVar), &JsArrowFunc{
-							baseExpr: baseExpr{genNode()},
+							BaseExpr: BaseExpr{BaseNode: genNode()},
 							Body:     genBlock(write),
 						}))
 						plan.refresh = append(plan.refresh, genIf(id(refreshVar), genExprStmt(genCall(id(refreshVar)))))
@@ -10729,7 +10729,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfEventAttach(elementVar, controllerV
 	}
 	return []JsStmt{
 		g.listenerAttachStmt(id(elementVar), attr.Name, id(handler)),
-		genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(attr.Name), id(handler))),
 		)})),
 	}
@@ -10752,13 +10752,13 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfBindingAttach(elementVar, controlle
 	writeVar := prefix + "_write"
 	handlerVar := prefix + "_handler"
 	body := []JsStmt{
-		genConst(writeVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genConst(writeVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			g.hydrationAwaitSnapshotBindingWriteStmt(elementVar, tag, attr, writeVar),
 		)}),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(writeVar))),
-		genConst(handlerVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$e")}, Body: twoWaySetterFromEvent("$$set_"+target, tag == "select" && attr.Name == "value", spec.readProp)}),
+		genConst(handlerVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$e")}, Body: twoWaySetterFromEvent("$$set_"+target, tag == "select" && attr.Name == "value", spec.readProp)}),
 		g.listenerAttachStmt(id(elementVar), spec.event, id(handlerVar)),
-		genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(spec.event), id(handlerVar))),
 		)})),
 	}
@@ -10805,7 +10805,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfMountElement(element *ElementNode, 
 		}
 		updateVar := prefix + "_attr" + itoa(attrIndex) + "_update"
 		body = append(body,
-			genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(g.hydrationAwaitSnapshotSlotIfElementWrite(elementVar, updateVar, attr))}),
+			genConst(updateVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(g.hydrationAwaitSnapshotSlotIfElementWrite(elementVar, updateVar, attr))}),
 			genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(updateVar))),
 			genInvoke(updateVar),
 		)
@@ -10834,7 +10834,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfAdoptElement(element *ElementNode, 
 		}
 		updateVar := prefix + "_attr" + itoa(attrIndex) + "_update"
 		body = append(body,
-			genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(g.hydrationAwaitSnapshotSlotIfElementWrite(elementVar, updateVar, attr))}),
+			genConst(updateVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(g.hydrationAwaitSnapshotSlotIfElementWrite(elementVar, updateVar, attr))}),
 			genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(updateVar))),
 		)
 	}
@@ -10846,7 +10846,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfComponentEventAttach(instanceVar, c
 	for _, event := range events {
 		body = append(body,
 			g.listenerAttachStmt(genMember(id(instanceVar), "el"), event.name, id(event.handler)),
-			genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genExprStmt(genCall(genMember(genMember(id(controllerVar), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 				genExprStmt(genCall(genMember(genMember(id(instanceVar), "el"), "removeEventListener"), strLit(event.name), id(event.handler))),
 			)})),
 		)
@@ -10864,7 +10864,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfAdoptComponent(component *Component
 		genIf(id(instanceVar), genBlock(
 			genExprStmt(genCall(genMember(genMember(id(controllerVar), "children"), "push"), id(instanceVar))),
 			genBlock(g.hydrationAwaitSnapshotSlotIfComponentEventAttach(instanceVar, controllerVar, events)...),
-			genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(optionalComponentSetStmt(id(instanceVar), props))}),
+			genConst(updateVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(optionalComponentSetStmt(id(instanceVar), props))}),
 			genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(updateVar))),
 		)),
 	}
@@ -10879,10 +10879,10 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfMountComponent(component *Component
 		panic("vela: missing CSR factory for branch-owned slot component")
 	}
 	return []JsStmt{
-		genConst(instanceVar, genCall(id(csrFactory), id(parentVar), props, &JsObjectExpr{baseExpr: baseExpr{genNode()}})),
+		genConst(instanceVar, genCall(id(csrFactory), id(parentVar), props, &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}})),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "children"), "push"), id(instanceVar))),
 		genBlock(g.hydrationAwaitSnapshotSlotIfComponentEventAttach(instanceVar, controllerVar, events)...),
-		genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(optionalComponentSetStmt(id(instanceVar), props))}),
+		genConst(updateVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(optionalComponentSetStmt(id(instanceVar), props))}),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(updateVar))),
 	}
 }
@@ -10898,7 +10898,7 @@ func (g *ASTGen) hydrationAwaitSnapshotSlotIfActiveExpr(chain *IfChainNode) JsEx
 			active = numLit(index)
 			continue
 		}
-		active = &JsConditionalExpr{baseExpr: baseExpr{genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: active}
+		active = &JsConditionalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(index), Else: active}
 	}
 	return active
 }
@@ -10927,7 +10927,7 @@ func hydrationStructuralRangeController(rangeVar, controllerVar string, state []
 		{Key: id("end"), Value: genMember(id(rangeVar), "end")},
 	}
 	props = append(props, state...)
-	destroyValue := JsExpr(&JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(destroyBody...)})
+	destroyValue := JsExpr(&JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(destroyBody...)})
 	if destroyOverride != nil {
 		destroyValue = destroyOverride
 	}
@@ -10936,12 +10936,12 @@ func hydrationStructuralRangeController(rangeVar, controllerVar string, state []
 		&JsProp{Key: id("updates"), Value: genArray()},
 		&JsProp{Key: id("listeners"), Value: genArray()},
 		&JsProp{Key: id("children"), Value: genArray()},
-		&JsProp{Key: id("adopt"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(adoptBody...)}},
-		&JsProp{Key: id("mountCSR"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: mountParams, Body: genBlock(mountBody...)}},
-		&JsProp{Key: id("update"), Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updateBody...)}},
+		&JsProp{Key: id("adopt"), Value: &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(adoptBody...)}},
+		&JsProp{Key: id("mountCSR"), Value: &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: mountParams, Body: genBlock(mountBody...)}},
+		&JsProp{Key: id("update"), Value: &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(updateBody...)}},
 		&JsProp{Key: id("destroy"), Value: destroyValue},
 	)
-	return &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: props}
+	return &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: props}
 }
 
 func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSnapshotLeafPlan, chain *IfChainNode) {
@@ -11002,7 +11002,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 				branchMount = append(branchMount,
 					genConst(refVar, genCall(genMember(id("document"), "createTextNode"), strLit(""))),
 					genExprStmt(genCall(genMember(id(fragmentVar), "appendChild"), id(refVar))),
-					genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genAssignStmt(genMember(id(refVar), "data"), genString(g.templateExpr(part.Expr))))}),
+					genConst(updateVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genAssignStmt(genMember(id(refVar), "data"), genString(g.templateExpr(part.Expr))))}),
 					genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(updateVar))),
 					genInvoke(updateVar),
 				)
@@ -11014,7 +11014,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 		genAssignStmt(genMember(id(controllerVar), "nodes"), genCall(generatedMemberPath("Array.from"), genMember(id(fragmentVar), "childNodes"))),
 		genExprStmt(genCall(genMember(genMember(id(controllerVar), "end"), "before"), id(fragmentVar))),
 	)
-	destroy := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+	destroy := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 		genForOf("$$cleanup", genCall(genMember(genCall(genMember(genMember(id(controllerVar), "listeners"), "slice")), "reverse")), genExprStmt(genCall(id("$$cleanup")))),
 		genAssignStmt(genMember(id(controllerVar), "listeners"), genArray()),
 		genForOf("$$child", genCall(genMember(genCall(genMember(genMember(id(controllerVar), "children"), "slice")), "reverse")), genIf(id("$$child"), genIf(genMember(id("$$child"), "destroy"), genExprStmt(genCall(genMember(id("$$child"), "destroy")))))),
@@ -11050,7 +11050,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticIf(plan *hydrationAwaitSna
 				g.domAcquirePlan.addTextRange(rangeVar, markerID)
 				branchAdopt = append(branchAdopt,
 					genConst(rangeVar, genCall(id("$$acquireHydrationRange"), id("$$walker"), numLit(markerID))),
-					genConst(updateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(id("$$writeHydrationText"), id(rangeVar), genString(g.templateExpr(part.Expr)))))}),
+					genConst(updateVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(id("$$writeHydrationText"), id(rangeVar), genString(g.templateExpr(part.Expr)))))}),
 					genExprStmt(genCall(genMember(genMember(id(controllerVar), "updates"), "push"), id(updateVar))),
 				)
 			}
@@ -11349,11 +11349,11 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			keyExpr = genString(g.templateExpr(block.KeyAST))
 		})
 	})
-	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
-	findElement := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$targetIndex")}, Body: genBlock(
+	keyOf := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr}
+	findElement := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$targetIndex")}, Body: genBlock(
 		genLet("$$node", genMember(genMember(id("$$row"), "start"), "nextSibling")),
 		genLet("$$elementIndex", numLit(0)),
-		&JsWhileStmt{baseStmt: baseStmt{genNode()}, Test: genLogical("&&", id("$$node"), genBinary("!==", id("$$node"), genMember(id("$$row"), "end"))), Body: genBlock(
+		&JsWhileStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: genLogical("&&", id("$$node"), genBinary("!==", id("$$node"), genMember(id("$$row"), "end"))), Body: genBlock(
 			genIf(genBinary("===", genMember(id("$$node"), "nodeType"), numLit(1)), genBlock(
 				genIf(genBinary("===", id("$$elementIndex"), id("$$targetIndex")), genReturn(id("$$node"))),
 				genAssignStmt(id("$$elementIndex"), genBinary("+", id("$$elementIndex"), numLit(1))),
@@ -11362,13 +11362,13 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		)},
 		genReturn(genNull()),
 	)}
-	findText := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genReturn(genNull()))}
-	findOption := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$optionIndex")}, Body: genBlock(
+	findText := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(genReturn(genNull()))}
+	findOption := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$optionIndex")}, Body: genBlock(
 		genConst("$$select", genCall(id(findVar), id("$$row"), numLit(0))),
 		genIf(genUnary("!", id("$$select")), genReturn(genNull())),
 		genReturn(genCall(genMember(genCall(genMember(id("$$select"), "querySelectorAll"), strLit("option")), "item"), id("$$optionIndex"))),
 	)}
-	findOptgroup := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$optgroupIndex")}, Body: genBlock(
+	findOptgroup := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$optgroupIndex")}, Body: genBlock(
 		genConst("$$select", genCall(id(findVar), id("$$row"), numLit(0))),
 		genIf(genUnary("!", id("$$select")), genReturn(genNull())),
 		genReturn(genCall(genMember(genCall(genMember(id("$$select"), "querySelectorAll"), strLit("optgroup")), "item"), id("$$optgroupIndex"))),
@@ -11389,16 +11389,16 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		// the acquire plan still records the typed runtime primitive import.
 		g.domAcquirePlan.addTextRange(prefix+"_text_range", markerID)
 		markerSuffix := ":" + itoa(markerID)
-		findText = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
+		findText = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
 			genConst("$$element", genCall(id(findVar), id("$$row"), numLit(0))),
 			genIf(genUnary("!", id("$$element")), genReturn(genNull())),
 			genConst("$$walker", genCall(genMember(id("document"), "createTreeWalker"), id("$$element"), numLit(128))),
 			genLet("$$start", genNull()),
 			genLet("$$node", genCall(genMember(id("$$walker"), "nextNode"))),
-			&JsWhileStmt{baseStmt: baseStmt{genNode()}, Test: id("$$node"), Body: genBlock(
+			&JsWhileStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: id("$$node"), Body: genBlock(
 				genConst("$$data", genCall(id("String"), genLogical("||", genMember(id("$$node"), "data"), strLit("")))),
 				genIf(genLogical("&&", genCall(genMember(id("$$data"), "startsWith"), strLit("v:")), genCall(genMember(id("$$data"), "endsWith"), strLit(markerSuffix))), genAssignStmt(id("$$start"), id("$$node"))),
-				genIf(genLogical("&&", id("$$start"), genLogical("&&", genCall(genMember(id("$$data"), "startsWith"), strLit("/v:")), genCall(genMember(id("$$data"), "endsWith"), strLit(markerSuffix)))), genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$node")}}})),
+				genIf(genLogical("&&", id("$$start"), genLogical("&&", genCall(genMember(id("$$data"), "startsWith"), strLit("/v:")), genCall(genMember(id("$$data"), "endsWith"), strLit(markerSuffix)))), genReturn(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$node")}}})),
 				genAssignStmt(id("$$node"), genCall(genMember(id("$$walker"), "nextNode"))),
 			)},
 			genReturn(genNull()),
@@ -11451,11 +11451,11 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		g.withTemplateBinding(block.ItemName, "$$rowItem", func() {
 			g.withTemplateBinding(block.IndexName, "$$rowIndex", func() { target = g.templateExpr(directControl.Bind.Expr) })
 		})
-		assignment := JsNode(&JsAssignExpr{baseExpr: baseExpr{genNode()}, Op: "=", L: target, R: id("$$value")})
+		assignment := JsNode(&JsAssignExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "=", L: target, R: id("$$value")})
 		if !g.isDeepState(state) {
 			assignment = genBlock(genAssignStmt(target, id("$$value")), genInvoke("$$set_"+state, genCall(genMember(id(state), "slice"))))
 		}
-		rowControlAssign = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$value")}, Body: assignment}
+		rowControlAssign = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$value")}, Body: assignment}
 		if directControl.OptionDynamic != nil {
 			g.withTemplateBinding(block.ItemName, "$$rowItem", func() {
 				g.withTemplateBinding(block.IndexName, "$$rowIndex", func() { rowOptionDynamic = g.templateExpr(directControl.OptionDynamic.Expr) })
@@ -11518,19 +11518,19 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				})
 			})
 			if list.Key != nil {
-				optionListCreate = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: genBlock(
+				optionListCreate = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: genBlock(
 					genConst("$$optionElement", genCall(genMember(id("document"), "createElement"), strLit("option"))),
 					genExprStmt(genCall(genMember(id("$$optionElement"), "setAttribute"), strLit(g.scopeID), strLit(""))),
 					genAssignStmt(genMember(id("$$optionElement"), "value"), optionValue),
 					genExprStmt(genCall(genMember(id("$$optionElement"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
 					genReturn(id("$$optionElement")),
 				)}
-				optionListUpdate = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$optionElement"), id("$$option"), id("$$optionIndex")}, Body: genBlock(
+				optionListUpdate = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$optionElement"), id("$$option"), id("$$optionIndex")}, Body: genBlock(
 					genIf(genBinary("!==", genMember(id("$$optionElement"), "value"), optionValue), genAssignStmt(genMember(id("$$optionElement"), "value"), optionValue)),
 					genIf(genBinary("!==", genMember(id("$$optionElement"), "textContent"), optionText), genAssignStmt(genMember(id("$$optionElement"), "textContent"), optionText)),
 				)}
 			} else {
-				optionListCreate = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
+				optionListCreate = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
 					genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
 					genLet("$$optionIndex", numLit(0)),
 					genForOf("$$option", genLogical("||", id("$$items"), genArray()), genBlock(
@@ -11568,15 +11568,15 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				createOptionLists = append(createOptionLists, createItems)
 				if list.Kind == hydrationKeyedEachSelectOptionListKeyed {
 					optionListCreates = append(optionListCreates, id("undefined"))
-					optionListKeys = append(optionListKeys, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: optionKey})
-					optionListElementCreates = append(optionListElementCreates, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: genBlock(
+					optionListKeys = append(optionListKeys, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: optionKey})
+					optionListElementCreates = append(optionListElementCreates, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: genBlock(
 						genConst("$$optionElement", genCall(genMember(id("document"), "createElement"), strLit("option"))),
 						genExprStmt(genCall(genMember(id("$$optionElement"), "setAttribute"), strLit(g.scopeID), strLit(""))),
 						genAssignStmt(genMember(id("$$optionElement"), "value"), optionValue),
 						genExprStmt(genCall(genMember(id("$$optionElement"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
 						genReturn(id("$$optionElement")),
 					)})
-					optionListElementUpdates = append(optionListElementUpdates, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$optionElement"), id("$$option"), id("$$optionIndex")}, Body: genBlock(
+					optionListElementUpdates = append(optionListElementUpdates, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$optionElement"), id("$$option"), id("$$optionIndex")}, Body: genBlock(
 						genIf(genBinary("!==", genMember(id("$$optionElement"), "value"), optionValue), genAssignStmt(genMember(id("$$optionElement"), "value"), optionValue)),
 						genIf(genBinary("!==", genMember(id("$$optionElement"), "textContent"), optionText), genAssignStmt(genMember(id("$$optionElement"), "textContent"), optionText)),
 					)})
@@ -11584,7 +11584,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 					optionListKeys = append(optionListKeys, id("undefined"))
 					optionListElementCreates = append(optionListElementCreates, id("undefined"))
 					optionListElementUpdates = append(optionListElementUpdates, id("undefined"))
-					optionListCreates = append(optionListCreates, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
+					optionListCreates = append(optionListCreates, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
 						genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
 						genLet("$$optionIndex", numLit(0)),
 						genForOf("$$option", genLogical("||", id("$$items"), genArray()), genBlock(
@@ -11605,23 +11605,23 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 
 	controllerTextValue := JsExpr(id("undefined"))
 	if hasDynamicTextRow {
-		controllerTextValue = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowTextValue}
+		controllerTextValue = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: rowTextValue}
 	}
 	controllerAttrValue := JsExpr(id("undefined"))
 	if dynamicAttr != nil {
-		controllerAttrValue = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowAttrValue}
+		controllerAttrValue = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: rowAttrValue}
 	}
 	controllerClassValue := JsExpr(id("undefined"))
 	if dynamicClassAttr != nil {
-		controllerClassValue = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowClassValue}
+		controllerClassValue = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: rowClassValue}
 	}
 	controllerStyleValue := JsExpr(id("undefined"))
 	if dynamicStyleAttr != nil {
-		controllerStyleValue = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowStyleValue}
+		controllerStyleValue = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: rowStyleValue}
 	}
 	controllerControlValue := JsExpr(id("undefined"))
 	if hasDynamicControlRow {
-		controllerControlValue = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowControlValue}
+		controllerControlValue = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: rowControlValue}
 	}
 	controllerControlAssign := JsExpr(id("undefined"))
 	if hasDynamicControlRow {
@@ -11629,33 +11629,33 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	}
 	controllerOptionDynamic := JsExpr(id("undefined"))
 	if directControl.OptionDynamic != nil {
-		controllerOptionDynamic = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowOptionDynamic}
+		controllerOptionDynamic = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: rowOptionDynamic}
 	}
 	controllerOptionGroupDynamic := JsExpr(id("undefined"))
 	if directControl.OptionGroupDynamic != nil {
-		controllerOptionGroupDynamic = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowOptionGroupDynamic}
+		controllerOptionGroupDynamic = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: rowOptionGroupDynamic}
 	}
 	controllerOptionGroupDynamics := JsExpr(id("undefined"))
 	if len(rowOptionGroupDynamics) > 1 {
 		getters := make([]JsExpr, 0, len(rowOptionGroupDynamics))
 		for _, value := range rowOptionGroupDynamics {
-			getters = append(getters, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: value})
+			getters = append(getters, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: value})
 		}
 		controllerOptionGroupDynamics = genArray(getters...)
 	}
 	controllerOptionText := JsExpr(id("undefined"))
 	if directControl.OptionText != nil {
-		controllerOptionText = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowOptionText}
+		controllerOptionText = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: rowOptionText}
 	}
 	controllerOptionList := JsExpr(id("undefined"))
 	if directControl.OptionList != nil && len(directControl.OptionLists) <= 1 {
-		controllerOptionList = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowOptionList}
+		controllerOptionList = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: rowOptionList}
 	}
 	controllerOptionLists := JsExpr(id("undefined"))
 	if len(rowOptionLists) > 0 {
 		getters := make([]JsExpr, 0, len(rowOptionLists))
 		for _, rowItems := range rowOptionLists {
-			getters = append(getters, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: rowItems})
+			getters = append(getters, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: rowItems})
 		}
 		controllerOptionLists = genArray(getters...)
 	}
@@ -11690,17 +11690,17 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			items := genComputedMember(genMember(id("$$controller"), "optionListItemsByGroup"), index)
 			adoptedFlag := genComputedMember(genMember(id("$$controller"), "optionListAdoptedByGroup"), index)
 			key := genComputedMember(genMember(id("$$controller"), "optionListKeys"), index)
-			multiOptionListReconciles = append(multiOptionListReconciles, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$controller"), id("$$parent"), id("$$adopt")}, Body: genBlock(
+			multiOptionListReconciles = append(multiOptionListReconciles, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$controller"), id("$$parent"), id("$$adopt")}, Body: genBlock(
 				genConst("$$nextItems", nextItems),
 				genIf(genLogical("&&", id("$$adopt"), genUnary("!", adoptedFlag)), genBlock(
 					genConst("$$priorItems", items),
 					genConst("$$elements", genCall(genMember(id("Array"), "from"), genCall(genMember(id("$$parent"), "querySelectorAll"), strLit("option")))),
-					genIf(genBinary("!==", genMember(id("$$elements"), "length"), genMember(id("$$priorItems"), "length")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed option list length differs from its server snapshot"))}),
+					genIf(genBinary("!==", genMember(id("$$elements"), "length"), genMember(id("$$priorItems"), "length")), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed option list length differs from its server snapshot"))}),
 					genConst("$$adopted", genNew(id("Map"))),
 					genLet("$$priorIndex", numLit(0)),
 					genForOf("$$priorItem", id("$$priorItems"), genBlock(
 						genConst("$$priorKey", genCall(key, id("$$priorItem"), id("$$priorIndex"))),
-						genIf(genCall(genMember(id("$$adopted"), "has"), id("$$priorKey")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela keyed update has duplicate key in adopted option list"))}),
+						genIf(genCall(genMember(id("$$adopted"), "has"), id("$$priorKey")), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela keyed update has duplicate key in adopted option list"))}),
 						genExprStmt(genCall(genMember(id("$$adopted"), "set"), id("$$priorKey"), genComputedMember(id("$$elements"), id("$$priorIndex")))),
 						genAssignStmt(id("$$priorIndex"), genBinary("+", id("$$priorIndex"), numLit(1))),
 					)),
@@ -11715,24 +11715,24 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	controllerOptionListKey := JsExpr(id("undefined"))
 	controllerOptionListItems := JsExpr(genArray())
 	if directControl.OptionList != nil && len(directControl.OptionLists) <= 1 && directControl.OptionList.Key != nil {
-		controllerOptionListKey = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: optionListKey}
-		optionListKeyFn = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: optionListKey}
+		controllerOptionListKey = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: optionListKey}
+		optionListKeyFn = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$option"), id("$$optionIndex")}, Body: optionListKey}
 	}
 	if directControl.OptionList != nil && len(directControl.OptionLists) <= 1 {
 		controllerOptionListItems = genLogical("||", genCall(controllerOptionList), genArray())
 	}
 	if directControl.OptionList != nil && directControl.OptionList.Key != nil {
-		optionListReconcile = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$controller"), id("$$parent"), id("$$adopt")}, Body: genBlock(
+		optionListReconcile = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$controller"), id("$$parent"), id("$$adopt")}, Body: genBlock(
 			genConst("$$nextItems", genLogical("||", genCall(genMember(id("$$controller"), "optionList")), genArray())),
 			genIf(genLogical("&&", id("$$adopt"), genUnary("!", genMember(id("$$controller"), "optionListAdopted"))), genBlock(
 				genConst("$$priorItems", genLogical("||", genMember(id("$$controller"), "optionListItems"), genArray())),
 				genConst("$$elements", genCall(genMember(id("Array"), "from"), genCall(genMember(id("$$parent"), "querySelectorAll"), strLit("option")))),
-				genIf(genBinary("!==", genMember(id("$$elements"), "length"), genMember(id("$$priorItems"), "length")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed option list length differs from its server snapshot"))}),
+				genIf(genBinary("!==", genMember(id("$$elements"), "length"), genMember(id("$$priorItems"), "length")), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed option list length differs from its server snapshot"))}),
 				genConst("$$adopted", genNew(id("Map"))),
 				genLet("$$priorIndex", numLit(0)),
 				genForOf("$$priorItem", id("$$priorItems"), genBlock(
 					genConst("$$priorKey", genCall(genMember(id("$$controller"), "optionListKey"), id("$$priorItem"), id("$$priorIndex"))),
-					genIf(genCall(genMember(id("$$adopted"), "has"), id("$$priorKey")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela keyed update has duplicate key in adopted option list"))}),
+					genIf(genCall(genMember(id("$$adopted"), "has"), id("$$priorKey")), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela keyed update has duplicate key in adopted option list"))}),
 					genExprStmt(genCall(genMember(id("$$adopted"), "set"), id("$$priorKey"), genComputedMember(id("$$elements"), id("$$priorIndex")))),
 					genAssignStmt(id("$$priorIndex"), genBinary("+", id("$$priorIndex"), numLit(1))),
 				)),
@@ -11743,18 +11743,18 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			genAssignStmt(genMember(id("$$controller"), "optionListAdopted"), boolLit(true)),
 		)}
 	}
-	controller := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(
+	controller := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(
 		genLet("$$rowItem", id("$$item")),
 		genLet("$$rowIndex", id("$$index")),
-		genConst("$$controller", genCall(id("$$createHydrationRowController"), genNull(), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$nextItem"), id("$$nextIndex")}, Body: genBlock(
+		genConst("$$controller", genCall(id("$$createHydrationRowController"), genNull(), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$nextItem"), id("$$nextIndex")}, Body: genBlock(
 			genAssignStmt(id("$$rowItem"), id("$$nextItem")),
 			genAssignStmt(id("$$rowIndex"), id("$$nextIndex")),
 			genForOf("$$update", genMember(id("$$controller"), "updates"), genInvoke("$$update")),
-		)}, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		)}, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genForOf("$$child", genCall(genMember(genCall(genMember(genMember(id("$$controller"), "children"), "slice")), "reverse")), genIf(genMember(id("$$child"), "destroy"), genExprStmt(genCall(genMember(id("$$child"), "destroy"))))),
 			genAssignStmt(genMember(id("$$controller"), "children"), genArray()),
 		)})),
-		genExprStmt(genCall(generatedMemberPath("Object.assign"), id("$$controller"), &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+		genExprStmt(genCall(generatedMemberPath("Object.assign"), id("$$controller"), &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{
 			{Key: id("text"), Value: genNull()},
 			{Key: id("textValue"), Value: controllerTextValue},
 			{Key: id("attrValue"), Value: controllerAttrValue},
@@ -11804,7 +11804,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		} else {
 			controlUpdateBody = append(controlUpdateBody, genIf(genBinary("!==", genMember(id(controlElementVar), spec.readProp), id(controlValueVar)), genAssignStmt(genMember(id(controlElementVar), spec.readProp), id(controlValueVar))))
 		}
-		controlUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(controlUpdateBody...)}
+		controlUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(controlUpdateBody...)}
 		// Hydration deliberately does not invoke controlUpdate here: the server
 		// DOM property may have changed between paint and hydration. Later row
 		// updates use the same guarded writer, while CSR-created rows invoke it
@@ -11814,9 +11814,9 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			genIf(id(controlElementVar), genBlock(
 				genConst(controlUpdateVar, controlUpdate),
 				genExprStmt(genCall(genMember(genMember(id("$$controller"), "updates"), "push"), id(controlUpdateVar))),
-				genConst(controlHandlerVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genCall(genMember(id("$$controller"), "controlAssign"), genMember(genMember(id("$event"), "target"), spec.readProp))}),
+				genConst(controlHandlerVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genCall(genMember(id("$$controller"), "controlAssign"), genMember(genMember(id("$event"), "target"), spec.readProp))}),
 				g.listenerAttachStmt(id(controlElementVar), spec.event, id(controlHandlerVar)),
-				genExprStmt(genCall(genMember(genMember(id("$$controller"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				genExprStmt(genCall(genMember(genMember(id("$$controller"), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 					genExprStmt(genCall(genMember(id(controlElementVar), "removeEventListener"), strLit(spec.event), id(controlHandlerVar))),
 				)})),
 			)),
@@ -11825,7 +11825,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			optionVar := prefix + "_option_dynamic_element"
 			optionUpdateVar := prefix + "_option_dynamic_update"
 			optionValueVar := prefix + "_option_dynamic_value"
-			optionUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			optionUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 				genConst(optionValueVar, genCall(genMember(id("$$controller"), "optionDynamic"))),
 				genIf(genBinary("!==", genMember(id(optionVar), directControl.OptionDynamic.Name), id(optionValueVar)), genAssignStmt(genMember(id(optionVar), directControl.OptionDynamic.Name), id(optionValueVar))),
 			)}
@@ -11847,7 +11847,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				groupVar := prefix + "_optgroup_dynamic_element_" + itoa(dynamicIndex)
 				updateVar := prefix + "_optgroup_dynamic_update_" + itoa(dynamicIndex)
 				valueVar := prefix + "_optgroup_dynamic_value_" + itoa(dynamicIndex)
-				update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				update := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 					genConst(valueVar, genCall(genComputedMember(genMember(id("$$controller"), "optionGroupDynamics"), numLit(dynamicIndex)))),
 					genIf(genBinary("!==", genMember(id(groupVar), "label"), id(valueVar)), genAssignStmt(genMember(id(groupVar), "label"), id(valueVar))),
 				)}
@@ -11858,7 +11858,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			groupVar := prefix + "_optgroup_dynamic_element"
 			groupUpdateVar := prefix + "_optgroup_dynamic_update"
 			groupValueVar := prefix + "_optgroup_dynamic_value"
-			groupUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			groupUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 				genConst(groupValueVar, genCall(genMember(id("$$controller"), "optionGroupDynamic"))),
 				genIf(genBinary("!==", genMember(id(groupVar), "label"), id(groupValueVar)), genAssignStmt(genMember(id(groupVar), "label"), id(groupValueVar))),
 			)}
@@ -11874,7 +11874,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			optionVar := prefix + "_option_text_element"
 			optionUpdateVar := prefix + "_option_text_update"
 			optionValueVar := prefix + "_option_text_value"
-			optionUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			optionUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 				genConst(optionValueVar, genCall(genMember(id("$$controller"), "optionText"))),
 				genIf(genBinary("!==", genMember(id(optionVar), "textContent"), id(optionValueVar)), genAssignStmt(genMember(id(optionVar), "textContent"), id(optionValueVar))),
 			)}
@@ -11891,15 +11891,15 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		textRangeVar := prefix + "_text_range"
 		textUpdateVar := prefix + "_text_update"
 		textValue := genCall(genMember(id("$$controller"), "textValue"))
-		hydratedTextUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		hydratedTextUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genExprStmt(genCall(id("$$writeHydrationText"), id(textRangeVar), textValue)),
 		)}
-		csrTextUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		csrTextUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genAssignStmt(genMember(genMember(id("$$controller"), "text"), "data"), textValue),
 		)}
 		attachBody = append(attachBody,
 			genConst(textRangeVar, genCall(id(findTextVar), genMember(id("$$controller"), "row"))),
-			&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: id(textRangeVar), Then: genBlock(
+			&JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: id(textRangeVar), Then: genBlock(
 				genConst(textUpdateVar, hydratedTextUpdate),
 				genExprStmt(genCall(genMember(genMember(id("$$controller"), "updates"), "push"), id(textUpdateVar))),
 			), Else: genIf(genMember(id("$$controller"), "text"), genBlock(
@@ -11912,7 +11912,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		attrElementVar := prefix + "_attr_element"
 		attrValueVar := prefix + "_attr_value"
 		attrUpdateVar := prefix + "_attr_update"
-		attrUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		attrUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genConst(attrValueVar, genCall(genMember(id("$$controller"), "attrValue"))),
 			genIf(genBinary("!==", genCall(genMember(id(attrElementVar), "getAttribute"), strLit(dynamicAttr.Name)), id(attrValueVar)), genBlock(
 				genExprStmt(genCall(genMember(id(attrElementVar), "setAttribute"), strLit(dynamicAttr.Name), id(attrValueVar))),
@@ -11929,7 +11929,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	if dynamicClassAttr != nil {
 		classElementVar := prefix + "_class_element"
 		classUpdateVar := prefix + "_class_update"
-		classUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		classUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(genMember(id(classElementVar), "classList"), "toggle"), strLit(dynamicClassAttr.Name), genCall(genMember(id("$$controller"), "classValue")))),
 		)}
 		attachBody = append(attachBody,
@@ -11943,7 +11943,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	if dynamicStyleAttr != nil {
 		styleElementVar := prefix + "_style_element"
 		styleUpdateVar := prefix + "_style_update"
-		styleUpdate := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		styleUpdate := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(genMember(id(styleElementVar), "style"), "setProperty"), strLit(dynamicStyleAttr.Name), genCall(genMember(id("$$controller"), "styleValue")))),
 		)}
 		attachBody = append(attachBody,
@@ -11974,7 +11974,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 				genIf(id(elementVar), genBlock(
 					genConst(handlerVar, handler),
 					g.listenerAttachStmt(id(elementVar), attr.Name, id(handlerVar)),
-					genExprStmt(genCall(genMember(genMember(id("$$controller"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genExprStmt(genCall(genMember(genMember(id("$$controller"), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 						genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(attr.Name), id(handlerVar))),
 					)})),
 				)),
@@ -11988,13 +11988,13 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 			updateVar := prefix + "_option_list_update_" + itoa(listIndex)
 			var update JsExpr
 			if list.Kind == hydrationKeyedEachSelectOptionListKeyed {
-				update = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				update = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 					genExprStmt(genCall(genComputedMember(id(optionListReconcilesVar), numLit(listIndex)), id("$$controller"), id(elementVar), boolLit(true))),
 				)}
 			} else {
 				items := genCall(genComputedMember(genMember(id("$$controller"), "optionLists"), numLit(listIndex)))
 				create := genComputedMember(id(optionListCreatesVar), numLit(listIndex))
-				update = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				update = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 					genExprStmt(genCall(genMember(id(elementVar), "replaceChildren"), genCall(create, items))),
 				)}
 			}
@@ -12012,11 +12012,11 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 	} else if directControl.OptionList != nil {
 		listElementVar := prefix + "_option_list_element"
 		listUpdateVar := prefix + "_option_list_update"
-		listUpdate := JsExpr(&JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		listUpdate := JsExpr(&JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(id(listElementVar), "replaceChildren"), genCall(id(optionListCreateVar), genCall(genMember(id("$$controller"), "optionList"))))),
 		)})
 		if directControl.OptionList.Key != nil {
-			listUpdate = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			listUpdate = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 				genExprStmt(genCall(id(optionListReconcileVar), id("$$controller"), id(listElementVar), boolLit(true))),
 			)}
 		}
@@ -12035,7 +12035,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		// desired value against the new browser option collection.
 		attachBody = append(listAttach, attachBody...)
 	}
-	attach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$controller")}, Body: genBlock(attachBody...)}
+	attach := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$controller")}, Body: genBlock(attachBody...)}
 
 	createBody := []JsStmt{
 		genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
@@ -12183,7 +12183,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
 		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$end"))),
 		genConst("$$controller", genCall(id(controllerVar), id("$$item"), id("$$index"))),
-		genConst("$$row", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{
+		genConst("$$row", &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{
 			{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}, {Key: id("controller"), Value: id("$$controller")},
 		}}),
 		genAssignStmt(genMember(id("$$controller"), "row"), id("$$row")),
@@ -12210,8 +12210,8 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		genExprStmt(genCall(id(attachVar), id("$$controller"))),
 		genReturn(id("$$row")),
 	)
-	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
-	update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(
+	create := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
+	update := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(
 		genIf(genMember(id("$$row"), "controller"), genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id("$$item"), id("$$index")))),
 	)}
 
@@ -12251,7 +12251,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		// interpret its element markers as legacy rows when the server iterable
 		// is empty; retain the complete range as the empty branch instead.
 		plan.adopt = append(plan.adopt, &JsIfStmt{
-			baseStmt: baseStmt{genNode()},
+			BaseStmt: BaseStmt{BaseNode: genNode()},
 			Test:     genMember(id(itemsVar), "length"),
 			Then:     genBlock(adoptRows...),
 			Else:     genBlock(genAssignStmt(id(emptyNodesVar), genCall(id("$$adoptHydrationRange"), id(rangeVar)))),
@@ -12271,7 +12271,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotStaticKeyedEach(plan *hydrationA
 		)))
 	}
 	plan.cleanup = append(plan.cleanup,
-		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
+		genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
 			genIf(genMember(id("$$row"), "controller"), genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "destroy")))),
 		)})),
 		genExprStmt(genCall(genMember(id(blocksVar), "clear"))),
@@ -12325,7 +12325,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotSlotComponentEvents(component *Compo
 				invoke = RewriteStatementAssignmentsAST(invoke, g.analysis.stateSet())
 			}
 		}
-		g.declareInScope(genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(
+		g.declareInScope(genConst(handler, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(
 			genIf(genBinary("instanceof", id("$event"), id("CustomEvent")), genBlock(invoke)),
 		)}))
 		events = append(events, hydrationAwaitComponentEvent{name: strings.TrimPrefix(attr.Name, "on:"), handler: handler})
@@ -12490,7 +12490,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotLeafBranch(children []Node, bindingN
 						refreshVar := elementVar + "_" + itoa(attrIndex) + "_refresh"
 						plan.decls = append(plan.decls, genLet(refreshVar, genNull()))
 						plan.adopt = append(plan.adopt, genAssignStmt(id(refreshVar), &JsArrowFunc{
-							baseExpr: baseExpr{genNode()},
+							BaseExpr: BaseExpr{BaseNode: genNode()},
 							Body:     genBlock(g.hydrationAwaitSnapshotAttrWriteStmt(elementVar, attr, refreshVar)),
 						}))
 						plan.refresh = append(plan.refresh, genIf(id(refreshVar), genExprStmt(genCall(id(refreshVar)))))
@@ -12612,12 +12612,12 @@ func (g *ASTGen) buildHydrationAwaitSnapshotBinding(plan *hydrationAwaitSnapshot
 	handler := prefix + "_handler"
 	plan.decls = append(plan.decls, genLet(writeVar, genNull()), genLet(cleanupVar, genNull()))
 	plan.adopt = append(plan.adopt,
-		genAssignStmt(id(writeVar), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genAssignStmt(id(writeVar), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			g.hydrationAwaitSnapshotBindingWriteStmt(elementVar, tag, attr, writeVar),
 		)}),
-		genConst(handler, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$e")}, Body: twoWaySetterFromEvent("$$set_"+target, tag == "select" && attr.Name == "value", spec.readProp)}),
+		genConst(handler, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$e")}, Body: twoWaySetterFromEvent("$$set_"+target, tag == "select" && attr.Name == "value", spec.readProp)}),
 		g.listenerAttachStmt(id(elementVar), spec.event, id(handler)),
-		genAssignStmt(id(cleanupVar), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genAssignStmt(id(cleanupVar), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(spec.event), id(handler))),
 			genAssignStmt(id(writeVar), genNull()),
 		)}),
@@ -12673,7 +12673,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotEvent(plan *hydrationAwaitSnapshotLe
 	if !isIdent {
 		decl := genConst(handlerName, handlerExpr)
 		if !templateExprIsHandler(attr.Expr) {
-			decl = genConst(handlerName, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))})
+			decl = genConst(handlerName, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))})
 		}
 		plan.adopt = append(plan.adopt, decl)
 		listener = id(handlerName)
@@ -12683,7 +12683,7 @@ func (g *ASTGen) buildHydrationAwaitSnapshotEvent(plan *hydrationAwaitSnapshotLe
 	plan.decls = append(plan.decls, genLet(cleanupVar, genNull()))
 	plan.adopt = append(plan.adopt,
 		g.listenerAttachStmt(id(elementVar), attr.Name, listener),
-		genAssignStmt(id(cleanupVar), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		genAssignStmt(id(cleanupVar), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(id(elementVar), "removeEventListener"), strLit(attr.Name), listener)),
 		)}),
 	)
@@ -12758,7 +12758,7 @@ func (g *ASTGen) buildHydrationAwaitBranch(children []Node, bindingName, binding
 			// the later render/destroy scope, where those branch locals do
 			// not exist.
 			plan.build = append(plan.build, genAssignStmt(id(plan.cleanupVar), &JsArrowFunc{
-				baseExpr: baseExpr{genNode()},
+				BaseExpr: BaseExpr{BaseNode: genNode()},
 				Body:     genBlock(cap.cleanup...),
 			}))
 			plan.cleanup = append(plan.cleanup, genIf(id(plan.cleanupVar), genBlock(
@@ -12810,7 +12810,7 @@ func (g *ASTGen) buildHydrationRootKeyedEach(block *EachBlockNode) {
 		})
 	})
 	keyOf := &JsArrowFunc{
-		baseExpr: baseExpr{genNode()},
+		BaseExpr: BaseExpr{BaseNode: genNode()},
 		Params:   []JsExpr{id("$$item"), id("$$index")},
 		Body:     keyExpr,
 	}
@@ -12838,12 +12838,12 @@ func (g *ASTGen) buildHydrationRootKeyedEach(block *EachBlockNode) {
 		)),
 	}
 	fn := name + "_update"
-	g.body = append(g.body, &JsFuncDecl{baseStmt: baseStmt{genNode()}, Name: fn, Body: genBlock(updateBody...)})
+	g.body = append(g.body, &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: fn, Body: genBlock(updateBody...)})
 	for _, dependency := range templateExprDeps(block.IterExpr, g.reactiveNames()) {
 		g.addStructuralUpdate(dependency, genInvoke(fn))
 	}
 	g.cleanup = append(g.cleanup, genExprStmt(genCall(genMember(id(blocksVar), "forEach"), &JsArrowFunc{
-		baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")},
+		BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")},
 		Body: genCall(genMember(id("$$row"), "remove")),
 	})))
 }
@@ -12880,7 +12880,7 @@ func (g *ASTGen) hydrationEachRowCreate(block *EachBlockNode) JsExpr {
 		})
 	})
 	body = append(body, genReturn(id("$$row")))
-	return &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(body...)}
+	return &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(body...)}
 }
 
 func (g *ASTGen) hydrationEachRowUpdate(block *EachBlockNode) JsExpr {
@@ -12908,7 +12908,7 @@ func (g *ASTGen) hydrationEachRowUpdate(block *EachBlockNode) JsExpr {
 		})
 	})
 	return &JsArrowFunc{
-		baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")},
+		BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")},
 		Body: genBlock(genAssignStmt(genMember(id("$$row"), "textContent"), value)),
 	}
 }
@@ -12962,9 +12962,9 @@ func (g *ASTGen) buildSlotNode(slot *SlotNode, parentVar string) {
 		genConst("$$sn", genCall(id("$$sf"))),
 		genIf(id("$$sn"), genExprStmt(genCall(genMember(id(anchor), "before"), id("$$sn")))),
 	)
-	init := &JsBlock{baseStmt: baseStmt{genNode()}, Body: []JsStmt{
+	init := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: []JsStmt{
 		genConst("$$sf", genComputedMember(id("$$slots"), strLit(slot.Name))),
-		&JsIfStmt{baseStmt: baseStmt{genNode()}, Test: id("$$sf"), Then: showSlot},
+		&JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: id("$$sf"), Then: showSlot},
 	}}
 	if len(slot.Fallback) > 0 {
 		init.Body[1].(*JsIfStmt).Else = genBlock(g.slotFallbackStmts(slot.Fallback, anchor)...)
@@ -12999,7 +12999,7 @@ func (g *ASTGen) slotFallbackStmts(fallback []Node, anchor string) []JsStmt {
 // the child factory runs. Passing the bound value again would replay a server
 // value into live DOM; the child payload already owns that initial value.
 func (g *ASTGen) hydrationComponentOverridesExpr(attrs []*Attr) JsExpr {
-	overrides := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+	overrides := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
 	for _, attr := range attrs {
 		if attr == nil || !attr.IsTwoWay || g.analysis == nil {
 			continue
@@ -13009,8 +13009,8 @@ func (g *ASTGen) hydrationComponentOverridesExpr(attrs []*Attr) JsExpr {
 			continue
 		}
 		overrides.Props = append(overrides.Props, &JsProp{
-			baseNode: genNode(), Key: id("$$onChange_" + attr.Name),
-			Value: &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$v")}, Body: genCall(id("$$set_"+target), id("$$v"))},
+			BaseNode: genNode(), Key: id("$$onChange_" + attr.Name),
+			Value: &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$v")}, Body: genCall(id("$$set_"+target), id("$$v"))},
 		})
 	}
 	if len(overrides.Props) == 0 {
@@ -13209,7 +13209,7 @@ func (g *ASTGen) buildComponentNode(comp *ComponentNode, parentVar string) {
 		genAssignStmt(id(inst), genCall(id(factoryName), id(wrap), propsExpr, slotsObj))))
 
 	g.initBody = append(g.initBody, genIf(
-		&JsLogicalExpr{baseExpr: baseExpr{genNode()}, Op: "&&", L: id(inst), R: genMember(id(inst), "el")},
+		&JsLogicalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "&&", L: id(inst), R: genMember(id(inst), "el")},
 		genExprStmt(genCall(genMember(genMember(id(inst), "el"), "setAttribute"), strLit(g.scopeID), strLit(""))),
 	))
 
@@ -13311,7 +13311,7 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 				return true
 			})
 		}
-		handlerDecl := genConst(hv, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$e")}, Body: genBlock(
+		handlerDecl := genConst(hv, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$e")}, Body: genBlock(
 			genIf(genBinary("instanceof", id("$e"), id("CustomEvent")), genBlock(invoke)),
 		)})
 		if g.fragCounter >= 0 {
@@ -13344,7 +13344,7 @@ func (g *ASTGen) buildComponentEvents(comp *ComponentNode, inst string) {
 //     when appended, so the children, not the fragment, are cached)
 func (g *ASTGen) buildSlotClosures(comp *ComponentNode) JsExpr {
 	if len(comp.Slots) == 0 {
-		return &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+		return &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
 	}
 	// Deterministic slot order — ranging a Go map is random and
 	// would make output non-reproducible.
@@ -13354,7 +13354,7 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) JsExpr {
 	}
 	sort.Strings(names)
 
-	slots := &JsObjectExpr{baseExpr: baseExpr{genNode()}}
+	slots := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
 	for _, name := range names {
 		slotNodes := comp.Slots[name]
 		fragVar := "$$sfrag_" + g.id()
@@ -13470,14 +13470,14 @@ func (g *ASTGen) buildSlotClosures(comp *ComponentNode) JsExpr {
 		)
 
 		factory := &JsArrowFunc{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Body: genBlock(
 				genIf(id(cacheVar), genBlock(reopen...)),
 				genBlock(firstOpen...),
 			),
 		}
 		slots.Props = append(slots.Props, &JsProp{
-			baseNode: genNode(),
+			BaseNode: genNode(),
 			Key:      strLit(name),
 			Value:    factory,
 		})
@@ -13624,7 +13624,7 @@ func (g *ASTGen) emitEventHandler(varName string, attr *Attr) {
 	hv := varName + "_" + attr.Name + "_h"
 	decl := genConst(hv, handlerExpr)
 	if !templateExprIsHandler(attr.Expr) {
-		decl = genConst(hv, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))})
+		decl = genConst(hv, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(handlerExpr))})
 	}
 	if g.inSlotScope {
 		g.declareInScope(genLet(hv, genNull()))
@@ -13646,7 +13646,7 @@ func (g *ASTGen) emitBinding(varName, tag string, attr *Attr) {
 	if attr.IsTwoWay && ok && isIdent && g.hasReactiveSetter(sv) {
 		hv := varName + "_bind_" + spec.event + "_h"
 		handler := &JsArrowFunc{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Params:   []JsExpr{id("$e")},
 			Body:     twoWaySetterFromEvent("$$set_"+sv, tag == "select" && attr.Name == "value", spec.readProp),
 		}
@@ -13836,7 +13836,7 @@ func (g *ASTGen) buildReturn() JsStmt {
 	hasSettable := g.analysis != nil &&
 		(len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0)
 
-	destroyBody := &JsBlock{baseStmt: baseStmt{genNode()}}
+	destroyBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}}
 	// Mark disposal before user cleanup. This makes repeated destroy() calls and
 	// setters reached from cleanup or later callbacks harmless.
 	destroyBody.Body = append(destroyBody.Body,
@@ -13891,12 +13891,12 @@ func (g *ASTGen) buildReturn() JsStmt {
 		genExprStmt(genCall(genMember(id("$$root"), "remove"))))
 
 	destroyProp := &JsProp{
-		baseNode: genNode(),
+		BaseNode: genNode(),
 		Kind:     "init",
 		Method:   true,
 		Key:      id("destroy"),
 		Value: &JsFuncExpr{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Body:     destroyBody,
 		},
 	}
@@ -13907,7 +13907,7 @@ func (g *ASTGen) buildReturn() JsStmt {
 	// mount: the parent's @event listeners now target inst.el
 	// (instead of a wrapper div the parent itself controls).
 	elProp := &JsProp{
-		baseNode: genNode(),
+		BaseNode: genNode(),
 		Kind:     "init",
 		Key:      id("el"),
 		Value:    id("$$root"),
@@ -13917,7 +13917,7 @@ func (g *ASTGen) buildReturn() JsStmt {
 
 	if hasSettable {
 		// set(props) { if (props.X !== undefined) $$set_X(props.X); … }
-		setBody := &JsBlock{baseStmt: baseStmt{genNode()}}
+		setBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}}
 		emit := func(name string) {
 			prop := genMember(id("props"), name)
 			setBody.Body = append(setBody.Body,
@@ -13931,12 +13931,12 @@ func (g *ASTGen) buildReturn() JsStmt {
 			emit(p.Name)
 		}
 		props = append(props, &JsProp{
-			baseNode: genNode(),
+			BaseNode: genNode(),
 			Kind:     "init",
 			Method:   true,
 			Key:      id("set"),
 			Value: &JsFuncExpr{
-				baseExpr: baseExpr{genNode()},
+				BaseExpr: BaseExpr{BaseNode: genNode()},
 				Params:   []JsExpr{id("props")},
 				Body:     setBody,
 			},
@@ -13944,9 +13944,9 @@ func (g *ASTGen) buildReturn() JsStmt {
 	}
 
 	return &JsReturnStmt{
-		baseStmt: baseStmt{genNode()},
+		BaseStmt: BaseStmt{BaseNode: genNode()},
 		Arg: &JsObjectExpr{
-			baseExpr: baseExpr{genNode()},
+			BaseExpr: BaseExpr{BaseNode: genNode()},
 			Props:    props,
 		},
 	}

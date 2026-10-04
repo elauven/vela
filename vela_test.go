@@ -4164,10 +4164,7 @@ func TestRealTemplates_OutputParses(t *testing.T) {
 		}
 		name := strings.TrimSuffix(e.Name(), ".vela")
 		code := compileVelaString(t, name, string(data))
-		p := &JSParser{lex: NewLexer(code), src: code}
-		p.cur = p.lex.Next()
-		p.peek = p.lex.Next()
-		p.parseProgram()
+		p := parsedJS{Errors: jsParseErrors(code)}
 		if len(p.Errors) > 0 {
 			t.Errorf("%s: generated JS does not parse cleanly (%d errors)\n  first: %s",
 				e.Name(), len(p.Errors), p.Errors[0])
@@ -4431,9 +4428,9 @@ func TestRewriteItemRefAST_MatchesScopedRewriteRules(t *testing.T) {
 		{"`${u}`", "`${$$box}`"},
 	}
 	for _, tc := range cases {
-		root := parseJSExpr(tc.src)
+		root := ParseJSExpr(tc.src)
 		if root == nil {
-			t.Fatalf("parseJSExpr(%q) returned nil", tc.src)
+			t.Fatalf("ParseJSExpr(%q) returned nil", tc.src)
 		}
 		got := PrintExpr(rewriteItemRefAST(root, "u", "$$box"), PrintMinified)
 		if got != tc.want {
@@ -4557,10 +4554,7 @@ func TestTwoWayBinding_CoexistsWithAtInput(t *testing.T) {
 
 	// Both handlers must be declared — verified by the output parsing
 	// cleanly (no duplicate const SyntaxError).
-	p := &JSParser{lex: NewLexer(code), src: code}
-	p.cur = p.lex.Next()
-	p.peek = p.lex.Next()
-	p.parseProgram()
+	p := parsedJS{Errors: jsParseErrors(code)}
 	if len(p.Errors) > 0 {
 		t.Errorf("generated JS failed to parse (%d errors): %s\n----\n%s",
 			len(p.Errors), p.Errors[0], code)
@@ -4773,10 +4767,7 @@ func TestEachRowIfHoist_DeclarationsAtRowScope(t *testing.T) {
 	}
 
 	// Also confirm the output parses cleanly.
-	p := &JSParser{lex: NewLexer(code), src: code}
-	p.cur = p.lex.Next()
-	p.peek = p.lex.Next()
-	p.parseProgram()
+	p := parsedJS{Errors: jsParseErrors(code)}
 	if len(p.Errors) > 0 {
 		t.Errorf("generated JS failed to parse: %s", p.Errors[0])
 	}
@@ -5350,4 +5341,18 @@ func TestTemplateExpressionsKeepSourcePositions(t *testing.T) {
 	if len(parts) != 3 || parts[0].Pos != 11 || parts[2].Pos != 19 {
 		t.Fatalf("interpolation positions = %+v", parts)
 	}
+}
+
+// parsedJS carries the recoverable parser messages of generated code.
+type parsedJS struct{ Errors []string }
+
+// jsParseErrors parses code with the public parser API and returns its
+// recoverable error messages.
+func jsParseErrors(code string) []string {
+	_, diagnostics := ParseJSWithDiagnostics(code)
+	errs := make([]string, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		errs = append(errs, diagnostic.Message)
+	}
+	return errs
 }

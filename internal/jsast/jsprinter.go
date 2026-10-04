@@ -1,4 +1,4 @@
-package main
+package jsast
 
 // jsprinter.go — serializes a JS AST back to source text.
 //
@@ -209,8 +209,8 @@ func sourceOrigin(n JsNode) (int, bool) {
 			return x.SourceOrigin, true
 		}
 	}
-	if n.origin() == OriginUser && n.nodeEnd() > n.nodePos() {
-		return n.nodePos(), true
+	if n.origin() == OriginUser && n.NodeEnd() > n.NodePos() {
+		return n.NodePos(), true
 	}
 	return 0, false
 }
@@ -751,7 +751,7 @@ func (p *jsPrinter) expr(e JsExpr, parentPrec int) {
 
 	case *JsLiteral:
 		if n.Decoded && n.Kind == "string" {
-			p.write(encodeGeneratedString(n.Value))
+			p.write(EncodeGeneratedString(n.Value))
 		} else {
 			p.write(n.Raw)
 		}
@@ -1214,10 +1214,10 @@ func leftmost(e JsExpr) JsExpr {
 	}
 }
 
-// encodeGeneratedString serializes a decoded compiler-generated string as a
+// EncodeGeneratedString serializes a decoded compiler-generated string as a
 // single-quoted JavaScript string literal. The printer owns quote and control
 // character escaping; parser-owned literals retain their original Raw spelling.
-func encodeGeneratedString(value string) string {
+func EncodeGeneratedString(value string) string {
 	quoted := strconv.Quote(value)
 	content := quoted[1 : len(quoted)-1]
 	content = strings.ReplaceAll(content, "'", "\\'")

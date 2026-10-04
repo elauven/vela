@@ -179,7 +179,7 @@ func filterDeadProgram(prog *JsProgram, drops map[int]bool) {
 func filterDeadStmts(stmts []JsStmt, drops map[int]bool) []JsStmt {
 	out := make([]JsStmt, 0, len(stmts))
 	for _, stmt := range stmts {
-		if stmt == nil || drops[stmt.nodePos()] {
+		if stmt == nil || drops[stmt.NodePos()] {
 			continue
 		}
 		switch s := stmt.(type) {
@@ -225,7 +225,7 @@ func filterDeadNestedStmt(stmt JsStmt, drops map[int]bool) JsStmt {
 	if len(filtered) > 0 {
 		return filtered[0]
 	}
-	return &JsEmptyStmt{baseStmt: baseStmt{genNode()}}
+	return &JsEmptyStmt{BaseStmt: BaseStmt{BaseNode: genNode()}}
 }
 
 // ─────────────────────────────────────────────
@@ -282,13 +282,13 @@ func varDeclEliminable(d *JsVarDecl, idx map[int]*Binding, reactive, exported ma
 	if dec.Init != nil && !isPureExpr(dec.Init) {
 		return dceSpan{}, false
 	}
-	return dceSpan{start: d.nodePos(), end: d.nodeEnd()}, true
+	return dceSpan{start: d.NodePos(), end: d.NodeEnd()}, true
 }
 
 func funcDeclEliminable(d *JsFuncDecl, idx map[int]*Binding, reactive, exported map[string]bool, templateText string) (dceSpan, bool) {
 	// Function bindings have Pos == start of the declaration, not the
 	// name's position — see scope.go's hoisting pass.
-	bind := idx[d.nodePos()]
+	bind := idx[d.NodePos()]
 	if bind == nil {
 		return dceSpan{}, false
 	}
@@ -297,7 +297,7 @@ func funcDeclEliminable(d *JsFuncDecl, idx map[int]*Binding, reactive, exported 
 	}
 	// Function bodies have no observable effect at declaration time —
 	// only when called.  Safe to remove unconditionally.
-	return dceSpan{start: d.nodePos(), end: d.nodeEnd()}, true
+	return dceSpan{start: d.NodePos(), end: d.NodeEnd()}, true
 }
 
 func shouldEliminate(b *Binding, reactive, exported map[string]bool, templateText string) bool {

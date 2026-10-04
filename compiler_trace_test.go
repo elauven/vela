@@ -217,8 +217,8 @@ func TestScriptPlanRetainsOwnedUserStatementUntilTargetBuild(t *testing.T) {
 	if user == nil || user.Stmt != sfc.ScriptAST.Program.Body[1] {
 		t.Fatalf("ScriptPlan did not retain the owned function statement: %+v", user)
 	}
-	if user.SourcePos != user.Stmt.nodePos() {
-		t.Fatalf("user source position = %d, want AST position %d", user.SourcePos, user.Stmt.nodePos())
+	if user.SourcePos != user.Stmt.NodePos() {
+		t.Fatalf("user source position = %d, want AST position %d", user.SourcePos, user.Stmt.NodePos())
 	}
 	if strings.Contains(PrintJS(&JsProgram{Body: []JsStmt{user.Stmt}}, PrintPretty), "$$set_count") {
 		t.Fatal("source ScriptAST was lowered before input validation")

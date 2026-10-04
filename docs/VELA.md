@@ -23,11 +23,11 @@ For a feature-by-feature comparison against Svelte 5, see
 codegen.go          ~4925 LOC   walks template AST → emits component JS
 vela_test.go        ~5435 LOC   integration + runtime tests
 parser.go           ~1351 LOC   .vela → SFC{script, style, template AST}
-jsparser.go         ~1235 LOC   ES2020 JS parser (analyzer + diagnostics)
+internal/jsast/jsparser.go  ES2020 JS parser (analyzer + diagnostics)
 scope.go            ~1193 LOC   scope graph, TDZ analysis, hoisting
 es_audit_test.go    ~ 875 LOC   ES2020 conformance audit (87 features)
 cssparser.go        ~ 724 LOC   <style> → scoped CSS with vela-XXXXXX attrs
-lexer.go            ~ 710 LOC   JS lexer (shared by parser + diagnostics)
+internal/jsast/lexer.go     JS lexer (shared by parser + diagnostics)
 analyzer.go         ~ 666 LOC   <script> → Analysis (props, state, derived…)
 rewriter.go         ~ 624 LOC   identifier rewrites for setter wrapping
 fraggen.go          ~ 484 LOC   fragment generator for {#each} rows
@@ -35,7 +35,7 @@ reactivity.go       ~ 485 LOC   reactive dependency tracking
 main.go             ~ 432 LOC   CLI entry, project mode, watch
 diagnostics.go      ~ 402 LOC   structured compile-time messages
 dce.go              ~ 381 LOC   dead-code elimination pass
-jsast.go            ~ 352 LOC   JS AST node types
+internal/jsast/jsast.go     JS AST node types (+ jsprinter.go, walk.go)
 ast_json.go         ~ 293 LOC   --ast debug JSON emission
 imports.go          ~ 236 LOC   .vela import path rewrite → .js
 unreachable.go      ~ 225 LOC   unreachable-branch detection
@@ -48,6 +48,12 @@ Test files:
   scope_test.go                  scope analyzer tests
   dce_test.go                    dead-code elimination tests
 ```
+
+The line counts above are historical. The JavaScript lexer, AST, parser,
+printer and `WalkNode` live in the `internal/jsast` package. The rest of the
+compiler is still `package main`; it uses the JS layer through the
+generated aliases in `jsast_compat.go` (`go generate .`), while new packages import
+`github.com/elauven/vela/internal/jsast` directly (task 037).
 
 **Working tree:** `/home/claude/vela/` during sessions.
 **Test pass count:** 352 tests, 0 failures.

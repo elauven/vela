@@ -1,4 +1,4 @@
-package main
+package jsast
 
 // ──────────────────────────────────────────────
 //  Token kinds
@@ -124,7 +124,7 @@ const (
 	TokMinusMinus // --
 )
 
-var kwMap = map[string]TokKind{
+var KeywordMap = map[string]TokKind{
 	"as": TokAs, "async": TokAsync, "await": TokAwait,
 	"break": TokBreak, "case": TokCase, "catch": TokCatch,
 	"class": TokClass, "const": TokConst, "continue": TokContinue,
@@ -230,7 +230,7 @@ func (l *Lexer) Next() Token {
 		return l.scanNumber(start, line)
 	}
 	// ── Identifiers / keywords ────────────────
-	if isIdentStart(c) {
+	if IsIdentStart(c) {
 		return l.scanIdent(start, line)
 	}
 	// ── Strings ───────────────────────────────
@@ -578,12 +578,12 @@ func (l *Lexer) scanExp() {
 }
 
 func (l *Lexer) scanIdent(start, line int) Token {
-	for isIdentCont(l.ch()) {
+	for IsIdentCont(l.ch()) {
 		l.adv()
 	}
 	val := l.src[start:l.pos]
 	kind := TokIdent
-	if k, ok := kwMap[val]; ok {
+	if k, ok := KeywordMap[val]; ok {
 		kind = k
 	}
 	isVal := kind == TokIdent || kind == TokTrue || kind == TokFalse ||
@@ -660,7 +660,7 @@ func (l *Lexer) scanRegex(start, line int) Token {
 		case '/':
 			if !inClass {
 				// consume flags
-				for isIdentCont(l.ch()) {
+				for IsIdentCont(l.ch()) {
 					l.adv()
 				}
 				l.afterValue = true
@@ -681,10 +681,10 @@ done:
 
 func isDigit(c byte) bool    { return c >= '0' && c <= '9' }
 func isHexDigit(c byte) bool { return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') }
-func isIdentStart(c byte) bool {
+func IsIdentStart(c byte) bool {
 	return c == '_' || c == '$' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
-func isIdentCont(c byte) bool { return isIdentStart(c) || isDigit(c) }
+func IsIdentCont(c byte) bool { return IsIdentStart(c) || isDigit(c) }
 
 // isAssignOp reports whether k is any assignment operator.
 func isAssignOp(k TokKind) bool {

@@ -1778,11 +1778,11 @@ func splitAwaitClause(raw string) (promise, binding string, mode awaitMode, err 
 				depth--
 			}
 		default:
-			if depth != 0 || !isIdentStart(c) || i == 0 || !unicode.IsSpace(rune(raw[i-1])) {
+			if depth != 0 || !IsIdentStart(c) || i == 0 || !unicode.IsSpace(rune(raw[i-1])) {
 				continue
 			}
 			end := i + 1
-			for end < len(raw) && isIdentCont(raw[end]) {
+			for end < len(raw) && IsIdentCont(raw[end]) {
 				end++
 			}
 			word := raw[i:end]
@@ -1815,11 +1815,11 @@ func awaitBranchBinding(term, prefix string) (string, error) {
 }
 
 func isPlainAwaitBinding(name string) bool {
-	if name == "" || !isIdentStart(name[0]) || kwMap[name] != TokIllegal {
+	if name == "" || !IsIdentStart(name[0]) || KeywordMap[name] != TokIllegal {
 		return false
 	}
 	for i := 1; i < len(name); i++ {
-		if !isIdentCont(name[i]) {
+		if !IsIdentCont(name[i]) {
 			return false
 		}
 	}

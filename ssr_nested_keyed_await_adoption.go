@@ -297,31 +297,31 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 			value = id("undefined")
 		}
 		if !templateExprIsHandler(eventAttr.Expr) {
-			value = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(value))}
+			value = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(genExprStmt(value))}
 		}
 		return value
 	}
-	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr("$$item", "$$index")}
+	keyOf := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr("$$item", "$$index")}
 
-	findElement := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
+	findElement := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
 		genLet("$$node", genMember(genMember(id("$$row"), "start"), "nextSibling")),
-		&JsWhileStmt{baseStmt: baseStmt{genNode()}, Test: genLogical("&&", id("$$node"), genBinary("!==", id("$$node"), genMember(id("$$row"), "end"))), Body: genBlock(
+		&JsWhileStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: genLogical("&&", id("$$node"), genBinary("!==", id("$$node"), genMember(id("$$row"), "end"))), Body: genBlock(
 			genIf(genBinary("===", genMember(id("$$node"), "nodeType"), numLit(1)), genReturn(id("$$node"))),
 			genAssignStmt(id("$$node"), genMember(id("$$node"), "nextSibling")),
 		)},
 		genReturn(genNull()),
 	)}
 	markerSuffix := ":" + itoa(textMarkerID)
-	findText := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
+	findText := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
 		genConst("$$element", genCall(id(findElementVar), id("$$row"))),
 		genIf(genUnary("!", id("$$element")), genReturn(genNull())),
 		genConst("$$walker", genCall(genMember(id("document"), "createTreeWalker"), id("$$element"), numLit(128))),
 		genLet("$$start", genNull()),
 		genLet("$$node", genCall(genMember(id("$$walker"), "nextNode"))),
-		&JsWhileStmt{baseStmt: baseStmt{genNode()}, Test: id("$$node"), Body: genBlock(
+		&JsWhileStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: id("$$node"), Body: genBlock(
 			genConst("$$data", genCall(id("String"), genLogical("||", genMember(id("$$node"), "data"), strLit("")))),
 			genIf(genLogical("&&", genCall(genMember(id("$$data"), "startsWith"), strLit("v:")), genCall(genMember(id("$$data"), "endsWith"), strLit(markerSuffix))), genAssignStmt(id("$$start"), id("$$node"))),
-			genIf(genLogical("&&", id("$$start"), genLogical("&&", genCall(genMember(id("$$data"), "startsWith"), strLit("/v:")), genCall(genMember(id("$$data"), "endsWith"), strLit(markerSuffix)))), genReturn(&JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$node")}}})),
+			genIf(genLogical("&&", id("$$start"), genLogical("&&", genCall(genMember(id("$$data"), "startsWith"), strLit("/v:")), genCall(genMember(id("$$data"), "endsWith"), strLit(markerSuffix)))), genReturn(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$node")}}})),
 			genAssignStmt(id("$$node"), genCall(genMember(id("$$walker"), "nextNode"))),
 		)},
 		genReturn(genNull()),
@@ -342,23 +342,23 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 				genLet(nestedIndexVar, index),
 			)
 		}
-		body = append(body, genConst(innerVar, genCall(id("$$createHydrationRowController"), row, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
+		body = append(body, genConst(innerVar, genCall(id("$$createHydrationRowController"), row, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
 			genAssignStmt(id(nestedItemVar), id("$$next_item")),
 			genAssignStmt(id(nestedIndexVar), id("$$next_index")),
 			genForOf("$$update", genMember(id(innerVar), "updates"), genExprStmt(genCall(id("$$update")))),
-		)}, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		)}, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "delete"), id(innerKeyVar))),
 		)})))
 		if hydrated {
 			body = append(body,
 				genConst("$$text_range", genCall(id(findTextVar), row)),
-				genIf(genUnary("!", id("$$text_range")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested keyed row text range"))}),
-				genConst(textUpdateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				genIf(genUnary("!", id("$$text_range")), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested keyed row text range"))}),
+				genConst(textUpdateVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 					genExprStmt(genCall(id("$$writeHydrationText"), id("$$text_range"), textValue(nestedItemVar, nestedIndexVar))),
 				)}),
 			)
 		} else {
-			body = append(body, genConst(textUpdateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			body = append(body, genConst(textUpdateVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 				genAssignStmt(genMember(textNode, "data"), textValue(nestedItemVar, nestedIndexVar)),
 			)}))
 		}
@@ -368,7 +368,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 		if attr != nil {
 			attrValueVar, attrUpdateVar := "$$inner_attr_value", "$$inner_attr_update"
 			body = append(body,
-				genConst(attrUpdateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				genConst(attrUpdateVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 					genConst(attrValueVar, attrValue(nestedItemVar, nestedIndexVar)),
 					genIf(genBinary("!==", genCall(genMember(elementNode, "getAttribute"), strLit(attr.Name)), id(attrValueVar)), genExprStmt(genCall(genMember(elementNode, "setAttribute"), strLit(attr.Name), id(attrValueVar)))),
 				)}),
@@ -378,7 +378,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 		if classAttr != nil {
 			classUpdateVar := "$$inner_class_update"
 			body = append(body,
-				genConst(classUpdateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				genConst(classUpdateVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 					genExprStmt(genCall(genMember(genMember(elementNode, "classList"), "toggle"), strLit(classAttr.Name), directiveValue(classAttr, nestedItemVar, nestedIndexVar, true))),
 				)}),
 				genExprStmt(genCall(genMember(genMember(id(innerVar), "updates"), "push"), id(classUpdateVar))),
@@ -387,7 +387,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 		if styleAttr != nil {
 			styleUpdateVar := "$$inner_style_update"
 			body = append(body,
-				genConst(styleUpdateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				genConst(styleUpdateVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 					genExprStmt(genCall(genMember(genMember(elementNode, "style"), "setProperty"), strLit(styleAttr.Name), directiveValue(styleAttr, nestedItemVar, nestedIndexVar, false))),
 				)}),
 				genExprStmt(genCall(genMember(genMember(id(innerVar), "updates"), "push"), id(styleUpdateVar))),
@@ -398,7 +398,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 			body = append(body,
 				genConst(eventHandlerVar, eventHandler()),
 				g.listenerAttachStmt(elementNode, eventAttr.Name, id(eventHandlerVar)),
-				genExprStmt(genCall(genMember(genMember(id(innerVar), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+				genExprStmt(genCall(genMember(genMember(id(innerVar), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 					genExprStmt(genCall(genMember(elementNode, "removeEventListener"), strLit(eventAttr.Name), id(eventHandlerVar))),
 				)})),
 			)
@@ -412,10 +412,10 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 
 	attachBody := []JsStmt{
 		genConst("$$element", genCall(id(findElementVar), id("$$row"))),
-		genIf(genUnary("!", id("$$element")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested keyed row element"))}),
+		genIf(genUnary("!", id("$$element")), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested keyed row element"))}),
 	}
 	attachBody = append(attachBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$element"), genNull(), true, true)...)
-	attach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(attachBody...)}
+	attach := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(attachBody...)}
 	createBody := []JsStmt{
 		genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
 		genConst("$$start", genCall(genMember(id("document"), "createComment"), strLit("r"))),
@@ -447,15 +447,15 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedTextRowAdopt(outer *EachBlockNode
 		genExprStmt(genCall(genMember(id("$$fragment"), "appendChild"), id("$$element"))),
 		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
 		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$end"))),
-		genConst("$$row", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
+		genConst("$$row", &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
 	)
 	createBody = append(createBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$element"), id("$$text"), false, false)...)
 	createBody = append(createBody, genReturn(id("$$row")))
-	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
-	update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(
+	create := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
+	update := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(
 		genIf(genLogical("&&", id("$$row"), genMember(id("$$row"), "controller")), genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id("$$item"), id("$$index")))),
 	)}
-	refresh := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+	refresh := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 		genConst("$$next_items", itemsExpr),
 		genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), awaitRange, id(blocksVar), id("$$next_items"), id(keyVar), id(createVar), id(updateVar))),
 	)}
@@ -612,7 +612,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 				optionText = g.textValueExpr(optionList.Text.Parts)
 			})
 		})
-		optionListFragment = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
+		optionListFragment = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
 			genConst("$$option_fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
 			genLet("$$option_index", numLit(0)),
 			genForOf("$$option", genLogical("||", id("$$items"), genArray()), genBlock(
@@ -632,15 +632,15 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 			g.withTemplateBinding(optionList.Each.ItemName, "$$option", func() {
 				g.withTemplateBinding(optionList.Each.IndexName, "$$option_index", func() { optionKey = g.templateExpr(optionList.Key) })
 			})
-			optionListKey = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: optionKey}
-			optionListCreate = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: genBlock(
+			optionListKey = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: optionKey}
+			optionListCreate = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: genBlock(
 				genConst("$$option_element", genCall(genMember(id("document"), "createElement"), strLit("option"))),
 				g.setAttrStmt("$$option_element", g.scopeID, ""),
 				genAssignStmt(genMember(id("$$option_element"), "value"), optionValue),
 				genExprStmt(genCall(genMember(id("$$option_element"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
 				genReturn(id("$$option_element")),
 			)}
-			optionListUpdate = &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option_element"), id("$$option"), id("$$option_index")}, Body: genBlock(
+			optionListUpdate = &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$option_element"), id("$$option"), id("$$option_index")}, Body: genBlock(
 				genIf(genBinary("!==", genMember(id("$$option_element"), "value"), optionValue), genAssignStmt(genMember(id("$$option_element"), "value"), optionValue)),
 				genIf(genBinary("!==", genMember(id("$$option_element"), "textContent"), optionText), genAssignStmt(genMember(id("$$option_element"), "textContent"), optionText)),
 			)}
@@ -657,10 +657,10 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 		})
 		return genAssignStmt(target, value)
 	}
-	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr("$$item", "$$index")}
-	findElement := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
+	keyOf := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr("$$item", "$$index")}
+	findElement := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
 		genLet("$$node", genMember(genMember(id("$$row"), "start"), "nextSibling")),
-		&JsWhileStmt{baseStmt: baseStmt{genNode()}, Test: genLogical("&&", id("$$node"), genBinary("!==", id("$$node"), genMember(id("$$row"), "end"))), Body: genBlock(
+		&JsWhileStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: genLogical("&&", id("$$node"), genBinary("!==", id("$$node"), genMember(id("$$row"), "end"))), Body: genBlock(
 			genIf(genBinary("===", genMember(id("$$node"), "nodeType"), numLit(1)), genReturn(id("$$node"))),
 			genAssignStmt(id("$$node"), genMember(id("$$node"), "nextSibling")),
 		)},
@@ -671,22 +671,22 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 		if declareBindings {
 			body = append(body, genLet(nestedItemVar, item), genLet(nestedIndexVar, index))
 		}
-		body = append(body, genConst("$$inner", genCall(id("$$createHydrationRowController"), row, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
+		body = append(body, genConst("$$inner", genCall(id("$$createHydrationRowController"), row, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
 			genAssignStmt(id(nestedItemVar), id("$$next_item")),
 			genAssignStmt(id(nestedIndexVar), id("$$next_index")),
 			genForOf("$$update", genMember(id("$$inner"), "updates"), genExprStmt(genCall(id("$$update")))),
-		)}, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		)}, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "delete"), id("$$inner_key"))),
 		)})))
 		controlAttach := []JsStmt{
-			genConst("$$inner_control_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genConst("$$inner_control_update", &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 				genConst("$$inner_control_value", valueExpr(nestedItemVar, nestedIndexVar)),
 				genIf(genBinary("!==", genMember(control, spec.readProp), id("$$inner_control_value")), genAssignStmt(genMember(control, spec.readProp), id("$$inner_control_value"))),
 			)}),
 			genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id("$$inner_control_update"))),
-			genConst("$$inner_control_handler", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(assignValue(nestedItemVar, nestedIndexVar, genMember(genMember(id("$event"), "target"), spec.readProp)))}),
+			genConst("$$inner_control_handler", &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(assignValue(nestedItemVar, nestedIndexVar, genMember(genMember(id("$event"), "target"), spec.readProp)))}),
 			g.listenerAttachStmt(control, spec.event, id("$$inner_control_handler")),
-			genExprStmt(genCall(genMember(genMember(id("$$inner"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+			genExprStmt(genCall(genMember(genMember(id("$$inner"), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 				genExprStmt(genCall(genMember(control, "removeEventListener"), strLit(spec.event), id("$$inner_control_handler"))),
 			)})),
 			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "set"), id("$$inner_key"), id("$$inner"))),
@@ -697,7 +697,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 			optionDynamicAttach = []JsStmt{
 				genConst("$$inner_option_dynamic", genCall(genMember(genMember(control, "options"), "item"), numLit(optionDynamicIndex))),
 				genIf(id("$$inner_option_dynamic"), genBlock(
-					genConst("$$inner_option_dynamic_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genConst("$$inner_option_dynamic_update", &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 						genConst("$$inner_option_dynamic_value", optionDynamicValue(nestedItemVar, nestedIndexVar)),
 						genIf(genBinary("!==", genMember(id("$$inner_option_dynamic"), optionDynamic.Name), id("$$inner_option_dynamic_value")), genAssignStmt(genMember(id("$$inner_option_dynamic"), optionDynamic.Name), id("$$inner_option_dynamic_value"))),
 					)}),
@@ -713,7 +713,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 			body = append(body,
 				genConst("$$inner_option", genCall(genMember(genMember(control, "options"), "item"), numLit(optionTextIndex))),
 				genIf(id("$$inner_option"), genBlock(
-					genConst("$$inner_option_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genConst("$$inner_option_update", &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 						genConst("$$inner_option_text", optionTextValue(nestedItemVar, nestedIndexVar)),
 						genIf(genBinary("!==", genMember(id("$$inner_option"), "textContent"), id("$$inner_option_text")), genAssignStmt(genMember(id("$$inner_option"), "textContent"), id("$$inner_option_text"))),
 					)}),
@@ -728,7 +728,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 			body = append(body,
 				genConst("$$inner_option_group", genCall(genMember(genCall(genMember(control, "querySelectorAll"), strLit("optgroup")), "item"), numLit(optionGroupIndex))),
 				genIf(id("$$inner_option_group"), genBlock(
-					genConst("$$inner_option_group_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genConst("$$inner_option_group_update", &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 						genConst("$$inner_option_group_value", optionGroupValue(nestedItemVar, nestedIndexVar)),
 						genIf(genBinary("!==", genMember(id("$$inner_option_group"), "label"), id("$$inner_option_group_value")), genAssignStmt(genMember(id("$$inner_option_group"), "label"), id("$$inner_option_group_value"))),
 					)}),
@@ -746,7 +746,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 				listParent = id("$$inner_option_parent")
 				body = append(body,
 					genConst("$$inner_option_parent", genCall(genMember(genCall(genMember(control, "querySelectorAll"), strLit("optgroup")), "item"), numLit(optionList.GroupIndex))),
-					genIf(genUnary("!", listParent), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested option-list optgroup owner"))}),
+					genIf(genUnary("!", listParent), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested option-list optgroup owner"))}),
 				)
 				optionElements = genCall(genMember(id("Array"), "from"), genCall(genMember(listParent, "querySelectorAll"), strLit("option")))
 			}
@@ -757,11 +757,11 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 				)
 				adoptKeyedOptions := []JsStmt{
 					genConst("$$inner_option_elements", optionElements),
-					genIf(genBinary("!==", genMember(id("$$inner_option_elements"), "length"), genMember(id("$$inner_option_items"), "length")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed nested option list length differs from its server snapshot"))}),
+					genIf(genBinary("!==", genMember(id("$$inner_option_elements"), "length"), genMember(id("$$inner_option_items"), "length")), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed nested option list length differs from its server snapshot"))}),
 					genLet("$$inner_option_index", numLit(0)),
 					genForOf("$$inner_option_item", id("$$inner_option_items"), genBlock(
 						genConst("$$inner_option_key", genCall(optionListKey, id("$$inner_option_item"), id("$$inner_option_index"))),
-						genIf(genCall(genMember(id("$$inner_option_blocks"), "has"), id("$$inner_option_key")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela keyed update has duplicate key in nested option list"))}),
+						genIf(genCall(genMember(id("$$inner_option_blocks"), "has"), id("$$inner_option_key")), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela keyed update has duplicate key in nested option list"))}),
 						genExprStmt(genCall(genMember(id("$$inner_option_blocks"), "set"), id("$$inner_option_key"), genComputedMember(id("$$inner_option_elements"), id("$$inner_option_index")))),
 						genAssignStmt(id("$$inner_option_index"), genBinary("+", id("$$inner_option_index"), numLit(1))),
 					)),
@@ -806,7 +806,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 				listUpdateBody = append([]JsStmt{genExprStmt(genCall(genMember(listParent, "replaceChildren"), genCall(optionListFragment, optionListItems(nestedItemVar, nestedIndexVar))))}, listUpdateBody...)
 			}
 			body = append(body,
-				genConst("$$inner_option_list_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(append(listUpdateBody, genIf(genBinary("!==", genMember(control, spec.readProp), id("$$inner_option_list_selected")), genAssignStmt(genMember(control, spec.readProp), id("$$inner_option_list_selected"))))...)}),
+				genConst("$$inner_option_list_update", &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(append(listUpdateBody, genIf(genBinary("!==", genMember(control, spec.readProp), id("$$inner_option_list_selected")), genAssignStmt(genMember(control, spec.readProp), id("$$inner_option_list_selected"))))...)}),
 				genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id("$$inner_option_list_update"))),
 			)
 		}
@@ -814,13 +814,13 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 	}
 	attachBody := []JsStmt{
 		genConst("$$control", genCall(id(findElementVar), id("$$row"))),
-		genIf(genUnary("!", id("$$control")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested keyed input"))}),
+		genIf(genUnary("!", id("$$control")), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested keyed input"))}),
 	}
 	attachBody = append(attachBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$control"), true)...)
 	// Read before any update callback is run. The target is a deep-proxy member,
 	// so this preserves an edit made after server paint without a DOM write.
 	attachBody = append(attachBody, assignValue(nestedItemVar, nestedIndexVar, genMember(id("$$control"), spec.readProp)))
-	attach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(attachBody...)}
+	attach := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(attachBody...)}
 	createBody := []JsStmt{
 		genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
 		genConst("$$start", genCall(genMember(id("document"), "createComment"), strLit("r"))),
@@ -887,13 +887,13 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedInputControlAdopt(outer *EachBloc
 		genExprStmt(genCall(genMember(id("$$fragment"), "appendChild"), id("$$control"))),
 		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
 		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$end"))),
-		genConst("$$row", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
+		genConst("$$row", &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
 	)
 	createBody = append(createBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$control"), false)...)
 	createBody = append(createBody, genReturn(id("$$row")))
-	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
-	update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(genIf(genLogical("&&", id("$$row"), genMember(id("$$row"), "controller")), genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id("$$item"), id("$$index")))))}
-	refresh := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+	create := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
+	update := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(genIf(genLogical("&&", id("$$row"), genMember(id("$$row"), "controller")), genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id("$$item"), id("$$index")))))}
+	refresh := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 		genConst("$$next_items", itemsExpr),
 		genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), awaitRange, id(blocksVar), id("$$next_items"), id(keyVar), id(createVar), id(updateVar))),
 	)}
@@ -1071,14 +1071,14 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 			genExprStmt(genCall(genMember(id("$$option_fragment"), "append"), id("$$option_element"))),
 			genAssignStmt(id("$$option_index"), genBinary("+", id("$$option_index"), numLit(1))),
 		)
-		fragment := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
+		fragment := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$items")}, Body: genBlock(
 			genConst("$$option_fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
 			genLet("$$option_index", numLit(0)),
 			genForOf("$$option", genLogical("||", id("$$items"), genArray()), genBlock(fragmentLoopBody...)),
 			genIf(genUnary("!", genLogical("&&", id("$$items"), genMember(id("$$items"), "length"))), genExprStmt(genCall(id("$$insertHTML"), id("$$option_fragment"), strLit(emitStaticHTMLWithoutEvents(list.Fallback, g.scopeID))))),
 			genReturn(id("$$option_fragment")),
 		)}
-		key := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: optionKey}
+		key := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: optionKey}
 		createBody := []JsStmt{
 			genConst("$$option_element", genCall(genMember(id("document"), "createElement"), strLit("option"))),
 			g.setAttrStmt("$$option_element", g.scopeID, ""),
@@ -1094,7 +1094,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 			genExprStmt(genCall(genMember(id("$$option_element"), "appendChild"), genCall(genMember(id("document"), "createTextNode"), optionText))),
 			genReturn(id("$$option_element")),
 		)
-		create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: genBlock(createBody...)}
+		create := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$option"), id("$$option_index")}, Body: genBlock(createBody...)}
 		updateBody := []JsStmt{
 			genIf(genBinary("!==", genMember(id("$$option_element"), "value"), optionValue), genAssignStmt(genMember(id("$$option_element"), "value"), optionValue)),
 		}
@@ -1107,14 +1107,14 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 		updateBody = append(updateBody,
 			genIf(genBinary("!==", genMember(id("$$option_element"), "textContent"), optionText), genAssignStmt(genMember(id("$$option_element"), "textContent"), optionText)),
 		)
-		update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$option_element"), id("$$option"), id("$$option_index")}, Body: genBlock(updateBody...)}
+		update := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$option_element"), id("$$option"), id("$$option_index")}, Body: genBlock(updateBody...)}
 		declarations = append(declarations, genConst(fragmentVar, fragment), genConst(keyVarForList, key), genConst(createVarForList, create), genConst(updateVarForList, update))
 	}
 
-	keyOf := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr("$$item", "$$index")}
-	findElement := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
+	keyOf := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: keyExpr("$$item", "$$index")}
+	findElement := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row")}, Body: genBlock(
 		genLet("$$node", genMember(genMember(id("$$row"), "start"), "nextSibling")),
-		&JsWhileStmt{baseStmt: baseStmt{genNode()}, Test: genLogical("&&", id("$$node"), genBinary("!==", id("$$node"), genMember(id("$$row"), "end"))), Body: genBlock(
+		&JsWhileStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: genLogical("&&", id("$$node"), genBinary("!==", id("$$node"), genMember(id("$$row"), "end"))), Body: genBlock(
 			genIf(genBinary("===", genMember(id("$$node"), "nodeType"), numLit(1)), genReturn(id("$$node"))),
 			genAssignStmt(id("$$node"), genMember(id("$$node"), "nextSibling")),
 		)},
@@ -1125,11 +1125,11 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 		if declareBindings {
 			body = append(body, genLet(nestedItemVar, item), genLet(nestedIndexVar, index))
 		}
-		body = append(body, genConst("$$inner", genCall(id("$$createHydrationRowController"), row, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
+		body = append(body, genConst("$$inner", genCall(id("$$createHydrationRowController"), row, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$next_item"), id("$$next_index")}, Body: genBlock(
 			genAssignStmt(id(nestedItemVar), id("$$next_item")),
 			genAssignStmt(id(nestedIndexVar), id("$$next_index")),
 			genForOf("$$update", genMember(id("$$inner"), "updates"), genExprStmt(genCall(id("$$update")))),
-		)}, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+		)}, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "delete"), id("$$inner_key"))),
 		)})))
 		for listIndex, list := range optionLists {
@@ -1140,12 +1140,12 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 			updateVarForList := "$$inner_option_list_update_" + itoa(listIndex)
 			body = append(body,
 				genConst(ownerVar, genCall(genMember(genCall(genMember(control, "querySelectorAll"), strLit("optgroup")), "item"), numLit(list.GroupIndex))),
-				genIf(genUnary("!", id(ownerVar)), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested multi-option optgroup owner"))}),
+				genIf(genUnary("!", id(ownerVar)), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested multi-option optgroup owner"))}),
 			)
 			if label := groupLabels[list.GroupIndex]; label != nil {
 				labelUpdateVar := "$$inner_option_group_label_update_" + itoa(listIndex)
 				body = append(body,
-					genConst(labelUpdateVar, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(
+					genConst(labelUpdateVar, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(
 						genConst("$$inner_option_group_label", groupLabelValue(label, nestedItemVar, nestedIndexVar)),
 						genIf(genBinary("!==", genCall(genMember(id(ownerVar), "getAttribute"), strLit("label")), id("$$inner_option_group_label")), genExprStmt(genCall(genMember(id(ownerVar), "setAttribute"), strLit("label"), id("$$inner_option_group_label")))),
 					)}),
@@ -1156,11 +1156,11 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 			body = append(body, genConst(itemsVarForList, listItems(list, nestedItemVar, nestedIndexVar)), genLet(blocksVarForList, genNew(id("Map"))))
 			adoptItems := []JsStmt{
 				genConst(elementsVar, genCall(genMember(id("Array"), "from"), genCall(genMember(id(ownerVar), "querySelectorAll"), strLit("option")))),
-				genIf(genBinary("!==", genMember(id(elementsVar), "length"), genMember(id(itemsVarForList), "length")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed nested multi-option list length differs from its server snapshot"))}),
+				genIf(genBinary("!==", genMember(id(elementsVar), "length"), genMember(id(itemsVarForList), "length")), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: keyed nested multi-option list length differs from its server snapshot"))}),
 				genLet("$$inner_option_index_"+itoa(listIndex), numLit(0)),
 				genForOf("$$inner_option_item_"+itoa(listIndex), id(itemsVarForList), genBlock(
 					genConst("$$inner_option_key_"+itoa(listIndex), genCall(id(keyVars[listIndex]), id("$$inner_option_item_"+itoa(listIndex)), id("$$inner_option_index_"+itoa(listIndex)))),
-					genIf(genCall(genMember(id(blocksVarForList), "has"), id("$$inner_option_key_"+itoa(listIndex))), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela keyed update has duplicate key in nested multi-option list"))}),
+					genIf(genCall(genMember(id(blocksVarForList), "has"), id("$$inner_option_key_"+itoa(listIndex))), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela keyed update has duplicate key in nested multi-option list"))}),
 					genExprStmt(genCall(genMember(id(blocksVarForList), "set"), id("$$inner_option_key_"+itoa(listIndex)), genComputedMember(id(elementsVar), id("$$inner_option_index_"+itoa(listIndex))))),
 					genAssignStmt(id("$$inner_option_index_"+itoa(listIndex)), genBinary("+", id("$$inner_option_index_"+itoa(listIndex)), numLit(1))),
 				)),
@@ -1180,7 +1180,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 			} else {
 				updateBody = append(updateBody, genAssignStmt(id(blocksVarForList), genCall(id("$$reconcileHydrationKeyedElements"), id(ownerVar), id(blocksVarForList), id(updateItemsVar), id(keyVars[listIndex]), id(createVars[listIndex]), id(updateVars[listIndex]))))
 			}
-			body = append(body, genConst(updateVarForList, &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(updateBody...)}), genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id(updateVarForList))))
+			body = append(body, genConst(updateVarForList, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(updateBody...)}), genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id(updateVarForList))))
 		}
 		controlUpdateBody := []JsStmt{genConst("$$inner_control_value", valueExpr(nestedItemVar, nestedIndexVar))}
 		if multiple {
@@ -1193,17 +1193,17 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 			handlerValue = genCall(id("$$readSelectValues"), genMember(id("$event"), "target"))
 		}
 		body = append(body,
-			genConst("$$inner_control_update", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(controlUpdateBody...)}),
+			genConst("$$inner_control_update", &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(controlUpdateBody...)}),
 			genExprStmt(genCall(genMember(genMember(id("$$inner"), "updates"), "push"), id("$$inner_control_update"))),
-			genConst("$$inner_control_handler", &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(assignValue(nestedItemVar, nestedIndexVar, handlerValue))}),
+			genConst("$$inner_control_handler", &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$event")}, Body: genBlock(assignValue(nestedItemVar, nestedIndexVar, handlerValue))}),
 			g.listenerAttachStmt(control, spec.event, id("$$inner_control_handler")),
-			genExprStmt(genCall(genMember(genMember(id("$$inner"), "listeners"), "push"), &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genExprStmt(genCall(genMember(control, "removeEventListener"), strLit(spec.event), id("$$inner_control_handler"))))})),
+			genExprStmt(genCall(genMember(genMember(id("$$inner"), "listeners"), "push"), &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genExprStmt(genCall(genMember(control, "removeEventListener"), strLit(spec.event), id("$$inner_control_handler"))))})),
 			genExprStmt(genCall(genMember(genMember(id(outerState), "innerRows"), "set"), id("$$inner_key"), id("$$inner"))),
 			genAssignStmt(genMember(row, "controller"), id("$$inner")),
 		)
 		return body
 	}
-	attachBody := []JsStmt{genConst("$$control", genCall(id(findElementVar), id("$$row"))), genIf(genUnary("!", id("$$control")), &JsThrowStmt{baseStmt: baseStmt{genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested multi-option input"))})}
+	attachBody := []JsStmt{genConst("$$control", genCall(id(findElementVar), id("$$row"))), genIf(genUnary("!", id("$$control")), &JsThrowStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: genNew(id("Error"), strLit("Vela hydration mismatch: missing nested multi-option input"))})}
 	attachBody = append(attachBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$control"), true)...)
 	if multiple {
 		attachBody = append(attachBody, genIf(
@@ -1213,7 +1213,7 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 	} else {
 		attachBody = append(attachBody, assignValue(nestedItemVar, nestedIndexVar, genMember(id("$$control"), spec.readProp)))
 	}
-	attach := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(attachBody...)}
+	attach := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(attachBody...)}
 	createBody := []JsStmt{
 		genConst("$$fragment", genCall(genMember(id("document"), "createDocumentFragment"))),
 		genConst("$$start", genCall(genMember(id("document"), "createComment"), strLit("r"))),
@@ -1252,13 +1252,13 @@ func (g *ASTGen) buildHydrationKeyedAwaitNestedMultiSelectOptionListsAdopt(outer
 		genExprStmt(genCall(genMember(id("$$fragment"), "appendChild"), id("$$control"))),
 		genConst("$$end", genCall(genMember(id("document"), "createComment"), strLit("/r"))),
 		genExprStmt(genCall(genMember(id("$$fragment"), "append"), id("$$end"))),
-		genConst("$$row", &JsObjectExpr{baseExpr: baseExpr{genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
+		genConst("$$row", &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{{Key: id("start"), Value: id("$$start")}, {Key: id("end"), Value: id("$$end")}}}),
 	)
 	createBody = append(createBody, controllerFor(id("$$row"), id("$$item"), id("$$index"), id("$$control"), false)...)
 	createBody = append(createBody, genReturn(id("$$row")))
-	create := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
-	update := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(genIf(genLogical("&&", id("$$row"), genMember(id("$$row"), "controller")), genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id("$$item"), id("$$index")))))}
-	refresh := &JsArrowFunc{baseExpr: baseExpr{genNode()}, Body: genBlock(genConst("$$next_items", itemsExpr), genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), awaitRange, id(blocksVar), id("$$next_items"), id(keyVar), id(createVar), id(updateVar))))}
+	create := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$item"), id("$$index")}, Body: genBlock(createBody...)}
+	update := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$row"), id("$$item"), id("$$index")}, Body: genBlock(genIf(genLogical("&&", id("$$row"), genMember(id("$$row"), "controller")), genExprStmt(genCall(genMember(genMember(id("$$row"), "controller"), "update"), id("$$item"), id("$$index")))))}
+	refresh := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: genBlock(genConst("$$next_items", itemsExpr), genAssignStmt(id(blocksVar), genCall(id("$$reconcileHydrationKeyedRowRanges"), awaitRange, id(blocksVar), id("$$next_items"), id(keyVar), id(createVar), id(updateVar))))}
 	result := []JsStmt{genConst(findElementVar, findElement), genConst(keyVar, keyOf)}
 	result = append(result, declarations...)
 	result = append(result,

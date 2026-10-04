@@ -181,7 +181,7 @@ func TestValidateEveryFixtureClean(t *testing.T) {
 // would silently poison every later compilation).
 func TestCaptureScopePanicSafety(t *testing.T) {
 	g := &ASTGen{fragCounter: -1}
-	sentinel := []JsStmt{&JsEmptyStmt{baseStmt: baseStmt{genNode()}}}
+	sentinel := []JsStmt{&JsEmptyStmt{BaseStmt: BaseStmt{BaseNode: genNode()}}}
 	g.body = sentinel
 
 	func() {
@@ -191,7 +191,7 @@ func TestCaptureScopePanicSafety(t *testing.T) {
 			}
 		}()
 		g.captureScope(func() {
-			g.body = []JsStmt{&JsEmptyStmt{baseStmt: baseStmt{genNode()}}}
+			g.body = []JsStmt{&JsEmptyStmt{BaseStmt: BaseStmt{BaseNode: genNode()}}}
 			panic("boom")
 		})
 	}()

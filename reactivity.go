@@ -53,7 +53,7 @@ func validateDerivedCycles(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
 			for _, d := range decl.Decls {
 				if call, ok := d.Init.(*JsCallExpr); ok {
 					if callee, ok := call.Callee.(*JsIdent); ok && callee.Name == "$derived" {
-						positions[identName(d.Id)] = d.Id.nodePos()
+						positions[identName(d.Id)] = d.Id.NodePos()
 					}
 				}
 			}
@@ -126,7 +126,7 @@ func scanDerivedExpr(expr JsExpr, stateSet map[string]bool, ds *DiagSet) {
 				// Member write: obj.x = ...  Still impure.  We don't
 				// have a name to call out, so use the position of the
 				// assignment operator (approximated by L's position).
-				ds.Warn(e.L.nodePos(),
+				ds.Warn(e.L.NodePos(),
 					"$derived expression contains an assignment — derived "+
 						"values should be pure functions of their dependencies")
 			}
@@ -150,7 +150,7 @@ func scanDerivedExpr(expr JsExpr, stateSet map[string]bool, ds *DiagSet) {
 			}
 
 		case *JsAwaitExpr:
-			ds.Warn(e.nodePos(),
+			ds.Warn(e.NodePos(),
 				"$derived expression uses await — derived values run "+
 					"synchronously; consider $effect with a state var")
 
@@ -202,7 +202,7 @@ func validateCallForm(call *JsCallExpr, analysis *Analysis, ds *DiagSet) {
 		return
 	}
 	if isProvenNonCallable(call.Callee) {
-		ds.ErrorWith(call.Callee.nodePos(), "VELA-NONCALLABLE", "Call a function value instead of a literal.", "this literal value is not callable")
+		ds.ErrorWith(call.Callee.NodePos(), "VELA-NONCALLABLE", "Call a function value instead of a literal.", "this literal value is not callable")
 		return
 	}
 
@@ -215,7 +215,7 @@ func validateCallForm(call *JsCallExpr, analysis *Analysis, ds *DiagSet) {
 		}
 		switch call.Args[0].(type) {
 		case *JsArrowFunc, *JsFuncExpr:
-			ds.ErrorWith(call.Args[0].nodePos(), "VELA-DERIVED-CALLBACK", "Write $derived(expression), for example: $derived(items.length).", "$derived does not accept a callback; pass the computed expression directly")
+			ds.ErrorWith(call.Args[0].NodePos(), "VELA-DERIVED-CALLBACK", "Write $derived(expression), for example: $derived(items.length).", "$derived does not accept a callback; pass the computed expression directly")
 		}
 	case "$state", "$state.deep":
 		if len(call.Args) != 1 {
@@ -228,11 +228,11 @@ func validateCallForm(call *JsCallExpr, analysis *Analysis, ds *DiagSet) {
 		}
 		arrow, ok := call.Args[0].(*JsArrowFunc)
 		if !ok {
-			ds.ErrorWith(call.Args[0].nodePos(), "VELA-EFFECT-CALLBACK", "Pass an arrow callback, for example $effect(() => { ... }).", "$effect expects an arrow callback")
+			ds.ErrorWith(call.Args[0].NodePos(), "VELA-EFFECT-CALLBACK", "Pass an arrow callback, for example $effect(() => { ... }).", "$effect expects an arrow callback")
 			return
 		}
 		if _, ok := arrow.Body.(*JsBlock); !ok {
-			ds.ErrorWith(arrow.nodePos(), "VELA-EFFECT-CALLBACK", "Use a block callback, for example $effect(() => { ... }).", "$effect callback must use a block body")
+			ds.ErrorWith(arrow.NodePos(), "VELA-EFFECT-CALLBACK", "Use a block callback, for example $effect(() => { ... }).", "$effect callback must use a block body")
 		}
 	case "$props":
 		ds.ErrorWith(call.Pos, "VELA-INTRINSIC-UNSUPPORTED", "Declare component inputs with export let instead.", "$props() is not supported by Vela")
@@ -252,11 +252,11 @@ func validateCallForm(call *JsCallExpr, analysis *Analysis, ds *DiagSet) {
 		}
 		arrow, ok := call.Args[0].(*JsArrowFunc)
 		if !ok {
-			ds.ErrorWith(call.Args[0].nodePos(), "VELA-LIFECYCLE-CALLBACK", "Pass a block-bodied arrow callback.", "%s expects an arrow callback", lifecycle)
+			ds.ErrorWith(call.Args[0].NodePos(), "VELA-LIFECYCLE-CALLBACK", "Pass a block-bodied arrow callback.", "%s expects an arrow callback", lifecycle)
 			return
 		}
 		if _, ok := arrow.Body.(*JsBlock); !ok {
-			ds.ErrorWith(arrow.nodePos(), "VELA-LIFECYCLE-CALLBACK", "Use a block-bodied arrow callback.", "%s callback must use a block body", lifecycle)
+			ds.ErrorWith(arrow.NodePos(), "VELA-LIFECYCLE-CALLBACK", "Use a block-bodied arrow callback.", "%s callback must use a block body", lifecycle)
 		}
 	}
 }
@@ -601,14 +601,15 @@ func parseTemplateExpression(exprText string) (*JsProgram, []string) {
 	if errs := templateExpressionDelimiterErrors(exprText); len(errs) > 0 {
 		return nil, errs
 	}
-	p := &JSParser{lex: NewLexer("(" + exprText + ");"), src: "(" + exprText + ");"}
-	p.cur = p.lex.Next()
-	p.peek = p.lex.Next()
-	prog := p.parseProgram()
-	for _, issue := range checkEmptyNodes(prog) {
-		p.Errors = append(p.Errors, issue.Msg)
+	prog, diagnostics := ParseJSWithDiagnostics("(" + exprText + ");")
+	var errs []string
+	for _, diagnostic := range diagnostics {
+		errs = append(errs, diagnostic.Message)
 	}
-	return prog, p.Errors
+	for _, issue := range checkEmptyNodes(prog) {
+		errs = append(errs, issue.Msg)
+	}
+	return prog, errs
 }
 
 // checkExprRefs parses a small JS expression and resolves every

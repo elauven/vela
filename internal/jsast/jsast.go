@@ -1,4 +1,4 @@
-package main
+package jsast
 
 // ──────────────────────────────────────────────
 //  Node interfaces
@@ -7,8 +7,8 @@ package main
 // JsNode is the root interface for all AST nodes.
 type JsNode interface {
 	jsNode()
-	nodePos() int
-	nodeEnd() int
+	NodePos() int
+	NodeEnd() int
 	origin() NodeOrigin
 }
 
@@ -41,7 +41,7 @@ const (
 	OriginGenerated                   // constructed by the code generator
 )
 
-type baseNode struct {
+type BaseNode struct {
 	Pos, End int
 	Origin   NodeOrigin
 
@@ -52,45 +52,45 @@ type baseNode struct {
 	HasSourceOrigin bool
 }
 
-func (b *baseNode) jsNode()            {}
-func (b *baseNode) nodePos() int       { return b.Pos }
-func (b *baseNode) nodeEnd() int       { return b.End }
-func (b *baseNode) origin() NodeOrigin { return b.Origin }
+func (b *BaseNode) jsNode()            {}
+func (b *BaseNode) NodePos() int       { return b.Pos }
+func (b *BaseNode) NodeEnd() int       { return b.End }
+func (b *BaseNode) origin() NodeOrigin { return b.Origin }
 
 // shiftPos moves a node's source span by delta bytes.  Used to
 // relocate a sub-tree parsed from a detached substring back onto
 // the coordinates of the original source (see structureTemplate).
-func (b *baseNode) shiftPos(delta int) {
+func (b *BaseNode) shiftPos(delta int) {
 	b.Pos += delta
 	b.End += delta
 }
 
 // posShiftable is implemented by every node via the embedded
-// *baseNode — it exposes shiftPos for shiftTree.
+// *BaseNode — it exposes shiftPos for ShiftTree.
 type posShiftable interface {
 	shiftPos(int)
 }
 
-type baseStmt struct{ baseNode }
+type BaseStmt struct{ BaseNode }
 
-func (s *baseStmt) jsNode()      {}
-func (s *baseStmt) jsStmt()      {}
-func (s *baseStmt) nodePos() int { return s.Pos }
-func (s *baseStmt) nodeEnd() int { return s.End }
+func (s *BaseStmt) jsNode()      {}
+func (s *BaseStmt) jsStmt()      {}
+func (s *BaseStmt) NodePos() int { return s.Pos }
+func (s *BaseStmt) NodeEnd() int { return s.End }
 
-type baseExpr struct{ baseNode }
+type BaseExpr struct{ BaseNode }
 
-func (e *baseExpr) jsNode()      {}
-func (e *baseExpr) jsExpr()      {}
-func (e *baseExpr) nodePos() int { return e.Pos }
-func (e *baseExpr) nodeEnd() int { return e.End }
+func (e *BaseExpr) jsNode()      {}
+func (e *BaseExpr) jsExpr()      {}
+func (e *BaseExpr) NodePos() int { return e.Pos }
+func (e *BaseExpr) NodeEnd() int { return e.End }
 
 // ──────────────────────────────────────────────
 //  Program
 // ──────────────────────────────────────────────
 
 type JsProgram struct {
-	baseNode
+	BaseNode
 	Body []JsStmt
 }
 
@@ -103,7 +103,7 @@ type JsProgram struct {
 //	import * as Ns from 'mod'
 //	import Default from 'mod'
 type JsImportDecl struct {
-	baseStmt
+	BaseStmt
 	DefaultName string
 	Namespace   string // * as X  →  X
 	Specifiers  []JsImportSpec
@@ -116,26 +116,26 @@ type JsImportSpec struct {
 }
 
 type JsExportDecl struct {
-	baseStmt
+	BaseStmt
 	Default     bool
 	Declaration JsStmt
 }
 
 // JsVarDecl: let / const / var
 type JsVarDecl struct {
-	baseStmt
+	BaseStmt
 	Kind  string // "let" | "const" | "var"
 	Decls []*JsVarDeclarator
 }
 
 type JsVarDeclarator struct {
-	baseNode
+	BaseNode
 	Id   JsExpr // Identifier or destructuring pattern
 	Init JsExpr // may be nil
 }
 
 type JsFuncDecl struct {
-	baseStmt
+	BaseStmt
 	Name      string
 	Params    []JsExpr
 	Body      *JsBlock
@@ -144,14 +144,14 @@ type JsFuncDecl struct {
 }
 
 type JsClassDecl struct {
-	baseStmt
+	BaseStmt
 	Name       string
 	SuperClass JsExpr
 	Members    []*JsClassMember
 }
 
 type JsClassMember struct {
-	baseNode
+	BaseNode
 	Key      JsExpr
 	Value    JsExpr
 	Kind     string // "method" | "get" | "set" | "field"
@@ -160,24 +160,24 @@ type JsClassMember struct {
 }
 
 type JsBlock struct {
-	baseStmt
+	BaseStmt
 	Body []JsStmt
 }
 
 type JsExprStmt struct {
-	baseStmt
+	BaseStmt
 	X JsExpr
 }
 
 type JsIfStmt struct {
-	baseStmt
+	BaseStmt
 	Test JsExpr
 	Then JsStmt
 	Else JsStmt // may be nil
 }
 
 type JsForStmt struct {
-	baseStmt
+	BaseStmt
 	Init   JsStmt // JsVarDecl or JsExprStmt, may be nil
 	Test   JsExpr // may be nil
 	Update JsExpr // may be nil
@@ -185,7 +185,7 @@ type JsForStmt struct {
 }
 
 type JsForInStmt struct {
-	baseStmt
+	BaseStmt
 	Left  JsStmt
 	Right JsExpr
 	Body  JsStmt
@@ -193,29 +193,29 @@ type JsForInStmt struct {
 }
 
 type JsWhileStmt struct {
-	baseStmt
+	BaseStmt
 	Test JsExpr
 	Body JsStmt
 }
 
 type JsDoWhileStmt struct {
-	baseStmt
+	BaseStmt
 	Body JsStmt
 	Test JsExpr
 }
 
 type JsReturnStmt struct {
-	baseStmt
+	BaseStmt
 	Arg JsExpr // may be nil
 }
 
 type JsThrowStmt struct {
-	baseStmt
+	BaseStmt
 	Arg JsExpr
 }
 
 type JsTryStmt struct {
-	baseStmt
+	BaseStmt
 	Block      *JsBlock
 	CatchParam JsExpr   // may be nil (optional catch binding)
 	Handler    *JsBlock // may be nil
@@ -223,36 +223,36 @@ type JsTryStmt struct {
 }
 
 type JsSwitchStmt struct {
-	baseStmt
+	BaseStmt
 	Disc  JsExpr
 	Cases []*JsSwitchCase
 }
 
 type JsSwitchCase struct {
-	baseNode
+	BaseNode
 	Test JsExpr // nil → default
 	Body []JsStmt
 }
 
 type JsBreakStmt struct {
-	baseStmt
+	BaseStmt
 	Label string
 }
 
 type JsContinueStmt struct {
-	baseStmt
+	BaseStmt
 	Label string
 }
 
 type JsLabeledStmt struct {
-	baseStmt
+	BaseStmt
 	Label string
 	Body  JsStmt
 }
 
-type JsEmptyStmt struct{ baseStmt }
+type JsEmptyStmt struct{ BaseStmt }
 
-type JsDebuggerStmt struct{ baseStmt }
+type JsDebuggerStmt struct{ BaseStmt }
 
 // ──────────────────────────────────────────────
 //  Expressions
@@ -260,13 +260,13 @@ type JsDebuggerStmt struct{ baseStmt }
 
 // JsIdent: any bare identifier reference.
 type JsIdent struct {
-	baseExpr
+	BaseExpr
 	Name string
 }
 
 // JsLiteral: number, string, boolean, null, regex.
 type JsLiteral struct {
-	baseExpr
+	BaseExpr
 	Raw     string
 	Kind    string // "number" | "string" | "boolean" | "null" | "regex"
 	Value   string // decoded generated string value when Decoded is true
@@ -295,23 +295,23 @@ type JsLiteral struct {
 // lets codegen construct template literals node-by-node instead of
 // by string concatenation.
 type JsTemplateLit struct {
-	baseExpr
+	BaseExpr
 	Quasis []string
 	Exprs  []JsExpr
 }
 
 type JsArrayExpr struct {
-	baseExpr
+	BaseExpr
 	Elems []JsExpr // nil entry = hole
 }
 
 type JsObjectExpr struct {
-	baseExpr
+	BaseExpr
 	Props []*JsProp
 }
 
 type JsProp struct {
-	baseNode
+	BaseNode
 	Key       JsExpr
 	Value     JsExpr
 	Computed  bool
@@ -327,7 +327,7 @@ type JsProp struct {
 }
 
 type JsFuncExpr struct {
-	baseExpr
+	BaseExpr
 	Name      string
 	Params    []JsExpr
 	Body      *JsBlock
@@ -338,39 +338,39 @@ type JsFuncExpr struct {
 // JsArrowFunc: (params) => body  or  param => body.
 // Body is either *JsBlock or JsExpr (concise arrow).
 type JsArrowFunc struct {
-	baseExpr
+	BaseExpr
 	Params []JsExpr
 	Body   JsNode // *JsBlock or JsExpr
 	Async  bool
 }
 
 type JsUnaryExpr struct {
-	baseExpr
+	BaseExpr
 	Op     string
 	Prefix bool
 	X      JsExpr
 }
 
 type JsBinaryExpr struct {
-	baseExpr
+	BaseExpr
 	Op   string
 	L, R JsExpr
 }
 
 type JsLogicalExpr struct {
-	baseExpr
+	BaseExpr
 	Op   string
 	L, R JsExpr
 }
 
 type JsAssignExpr struct {
-	baseExpr
+	BaseExpr
 	Op   string
 	L, R JsExpr
 }
 
 type JsMemberExpr struct {
-	baseExpr
+	BaseExpr
 	Obj      JsExpr
 	Prop     JsExpr
 	Computed bool
@@ -378,43 +378,43 @@ type JsMemberExpr struct {
 }
 
 type JsCallExpr struct {
-	baseExpr
+	BaseExpr
 	Callee   JsExpr
 	Args     []JsExpr
 	Optional bool
 }
 
 type JsNewExpr struct {
-	baseExpr
+	BaseExpr
 	Callee JsExpr
 	Args   []JsExpr
 }
 
 type JsConditionalExpr struct {
-	baseExpr
+	BaseExpr
 	Test, Then, Else JsExpr
 }
 
 type JsSeqExpr struct {
-	baseExpr
+	BaseExpr
 	Exprs []JsExpr
 }
 
 type JsSpreadExpr struct {
-	baseExpr
+	BaseExpr
 	X JsExpr
 }
 
 type JsAwaitExpr struct {
-	baseExpr
+	BaseExpr
 	X JsExpr
 }
 
 type JsYieldExpr struct {
-	baseExpr
+	BaseExpr
 	X        JsExpr // may be nil
 	Delegate bool
 }
 
-type JsThisExpr struct{ baseExpr }
-type JsSuperExpr struct{ baseExpr }
+type JsThisExpr struct{ BaseExpr }
+type JsSuperExpr struct{ BaseExpr }
