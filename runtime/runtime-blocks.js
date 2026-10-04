@@ -467,13 +467,15 @@ export function $$await(cursor, operand, pending, then, catcher, changed) {
 }
 
 // ── $$component ──────────────────────────────────────────────────────────
-// Mounts a child through its public factory before an anchor. props()
-// returns the current prop object; events maps component event names to
-// handlers attached to the child's root element.
+// Mounts a child through its public factory before an anchor, whichever DOM
+// engine compiled it. props() returns the current prop object; events maps
+// component event names to handlers attached to the child's root element;
+// scope is the parent's CSS scope attribute, set on the child's root.
 
-export function $$component(cursor, factory, props, slots, events, changed) {
+export function $$component(cursor, factory, props, slots, events, changed, scope) {
   const anchor = cursor.comment();
   const instance = factory(anchor, props(), slots || {});
+  if (scope && instance.el) cursor.init(() => instance.el.setAttribute(scope, ''));
   if (events) {
     for (const name of Object.keys(events)) cursor.listen(instance.el, name, events[name]);
   }
@@ -481,7 +483,8 @@ export function $$component(cursor, factory, props, slots, events, changed) {
     instance,
     p(dirty) {
       if (block.isDone()) return;
-      if (!changed || changed(dirty)) instance.set(props());
+      // A child without settable state exposes no set().
+      if ((!changed || changed(dirty)) && instance.set) instance.set(props());
     },
     move(before) {
       before.parentNode.insertBefore(instance.el, before);
@@ -492,38 +495,92 @@ export function $$component(cursor, factory, props, slots, events, changed) {
 }
 
 // ── Slots ────────────────────────────────────────────────────────────────
-// The parent defines slot content; the child mounts it at its <slot>. The
-// content belongs to the child's $$slot block, while its updates come from
-// the parent through `live`, a set the parent's flush walks (B-3.7).
+// Slots use the component protocol shared with the legacy engine: a slot is
+// a function returning a DocumentFragment with the slot content. The parent
+// owns the content: it is built on the first call, updated by the parent,
+// and the same nodes are returned when the child opens the slot again.
 
-export function $$slotContent(live, fragment) {
-  return (cursor) => {
-    const handle = fragment(cursor);
+// $$slotFactory builds slot content from a parent fragment. The content is
+// owned by the parent's current owner and updated through `live`, a set the
+// parent fragment walks on every update (B-3.7).
+export function $$slotFactory(cursor, live, fragment) {
+  let range = null;
+  let nodes = null;
+  return () => {
+    const container = document.createDocumentFragment();
+    if (range) {
+      // Reopen: move the content back. If a child removed the nodes one by
+      // one, the range chain is broken; fall back to the last snapshot.
+      let current = rangeNodes(range);
+      if (current[current.length - 1] !== range.end) current = nodes;
+      for (const node of current) container.appendChild(node);
+      nodes = current;
+      return container;
+    }
+    const owner = $$owner(cursor.owner);
+    const handle = fragment(createCursor(container, null, owner));
     if (handle && handle.p) {
       live.add(handle);
-      cursor.owner.add(() => live.delete(handle));
+      owner.add(() => live.delete(handle));
     }
-    return undefined;
+    const start = document.createComment('');
+    const end = document.createComment('');
+    container.insertBefore(start, container.firstChild);
+    container.appendChild(end);
+    range = { start, end };
+    nodes = [...container.childNodes];
+    return container;
   };
 }
 
-export function $$slot(cursor, content, fallback) {
+// $$slot opens slot content provided by the parent (from either engine) or
+// mounts the child's own fallback. On release the parent's content is parked
+// in a detached fragment rather than destroyed, so the parent can reopen it.
+export function $$slot(cursor, factory, fallback) {
   const anchor = cursor.comment();
-  const fragment = content || fallback;
-  const isFallback = !content;
-  const current = fragment ? mountFragment(fragment, undefined, anchor) : null;
+  let first = null;
+  let last = null;
+  let current = null;
+  const content = factory ? factory() : null;
+  if (content && content.firstChild) {
+    first = content.firstChild;
+    last = content.lastChild;
+    anchor.parentNode.insertBefore(content, anchor);
+  } else if (fallback) {
+    current = mountFragment(fallback, undefined, anchor);
+  }
+  const park = () => {
+    if (!first) return;
+    const holder = document.createDocumentFragment();
+    for (let node = first; node;) {
+      const next = node.nextSibling;
+      holder.appendChild(node);
+      if (node === last) break;
+      node = next;
+    }
+    first = last = null;
+  };
   const block = {
     p(dirty) {
-      // Parent content is updated by its own component; only the child's
-      // fallback depends on the child's state.
-      if (!block.isDone() && isFallback) updateMounted(current, dirty, false);
+      // Parent content is updated by its parent; only the child's fallback
+      // depends on the child's state.
+      if (!block.isDone()) updateMounted(current, dirty, false);
     },
     move(before) {
+      if (first) {
+        for (let node = first; node;) {
+          const next = node.nextSibling;
+          before.parentNode.insertBefore(node, before);
+          if (node === last) break;
+          node = next;
+        }
+      }
       if (current) moveRange(current.range, before);
       before.parentNode.insertBefore(anchor, before);
     },
   };
   return registerBlock(cursor, block, anchor, (removeDom) => {
+    park();
     if (!current) return;
     if (removeDom) unmount(current);
     else current.owner.release();

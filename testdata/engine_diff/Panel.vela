@@ -1,0 +1,20 @@
+<script>
+  export let title = 'panel';
+  export let value = $bindable('');
+  let collapsed = $state(false);
+  function toggle() { collapsed = !collapsed; }
+  function emit() { $$dispatch('picked', { title }); }
+</script>
+<template>
+  <section class="panel">
+    <header>
+      <h2>{title}</h2>
+      <button class="toggle" @click={toggle}>toggle</button>
+      <button class="emit" @click={emit}>emit</button>
+      <slot name="actions"><em class="noactions">no actions</em></slot>
+    </header>
+    <input class="value" bind:value={value} />
+    {#if !collapsed}<p class="open">open</p>{/if}
+    <div class="body"><slot>default body</slot></div>
+  </section>
+</template>

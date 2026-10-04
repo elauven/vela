@@ -63,8 +63,12 @@ const blocksRuntimeImport = "./runtime-blocks.js"
 var blocksRuntimeExports = runtimeExportNames(embeddedBlocksRuntime)
 
 // blocksEngineSupports reports whether the block engine lowers every node of
-// a template. Child components and slots arrive in H1.4; until then such
-// templates keep the legacy engine.
+// a template; other templates keep the legacy engine (each/await bindings
+// that are destructuring patterns).
+//
+// Child components and slots use the component protocol shared with the
+// legacy engine ($$component, $$slotFactory, $$slot), so components
+// compiled by either engine can be nested in each other.
 func blocksEngineSupports(nodes []Node) bool {
 	for _, node := range nodes {
 		switch n := node.(type) {
@@ -91,6 +95,16 @@ func blocksEngineSupports(nodes []Node) bool {
 				return false
 			}
 			if !blocksEngineSupports(n.PendingChildren) || !blocksEngineSupports(n.ThenChildren) || !blocksEngineSupports(n.CatchChildren) {
+				return false
+			}
+		case *ComponentNode:
+			for _, slotNodes := range n.Slots {
+				if !blocksEngineSupports(slotNodes) {
+					return false
+				}
+			}
+		case *SlotNode:
+			if !blocksEngineSupports(n.Fallback) {
 				return false
 			}
 		default:
@@ -142,6 +156,7 @@ type blocksFragment struct {
 	body    []JsStmt // build statements
 	updates []JsStmt // statements of p()
 	nested  []JsStmt // child fragment function declarations
+	live    bool     // declares $$live: slot content owned by this fragment
 }
 
 func (b *blocksState) next(prefix string) string {
@@ -317,9 +332,12 @@ func (f *blocksFragment) decl(scopeLocals []blocksLocal) JsStmt {
 		params = append(params, id("$$s"))
 	}
 	body := append([]JsStmt{}, f.scope...)
+	if f.live {
+		body = append(body, genConst("$$live", genNew(id("Set"))))
+	}
 	body = append(body, f.nested...)
 	body = append(body, f.body...)
-	if len(f.updates) > 0 || len(f.locals) > 0 {
+	if len(f.updates) > 0 || len(f.locals) > 0 || f.live {
 		var update []JsStmt
 		if len(f.locals) > 0 {
 			refresh := []JsStmt{}
@@ -336,6 +354,11 @@ func (f *blocksFragment) decl(scopeLocals []blocksLocal) JsStmt {
 			update = append(update, genIf(id("$$sc"), genBlock(refresh...)))
 		}
 		update = append(update, f.updates...)
+		if f.live {
+			// Slot content built here lives inside a child component but is
+			// updated with this fragment's dirty state (B-3.7).
+			update = append(update, genForOf("$$h", id("$$live"), genBlock(genExprStmt(genCall(genMember(id("$$h"), "p"), id("$$d"))))))
+		}
 		method := &JsProp{
 			BaseNode: genNode(), Kind: "init", Method: true, Key: id("p"),
 			Value: &JsFuncExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$d"), id("$$sc")}, Body: genBlock(update...)},
@@ -407,6 +430,10 @@ func (g *ASTGen) buildBlocksNode(node Node, isRoot bool) {
 		g.buildBlocksEach(n)
 	case *AwaitBlockNode:
 		g.buildBlocksAwait(n)
+	case *ComponentNode:
+		g.buildBlocksComponent(n)
+	case *SlotNode:
+		g.buildBlocksSlot(n)
 	default:
 		panic(fmt.Sprintf("vela: block engine cannot lower %T", node))
 	}
@@ -645,4 +672,83 @@ func (g *ASTGen) buildBlocksAwait(await *AwaitBlockNode) {
 	then := branch(await.ThenChildren, await.ValueName, "value", await.ThenChildren != nil)
 	catcher := branch(await.CatchChildren, await.ErrorName, "error", await.CatchChildren != nil)
 	g.blocksBlockCall("$$await", blocksArrow(nil, g.templateExpr(await.Expr)), pending, then, catcher, blocksChanged(g.blocksGuard(await.Expr)))
+}
+
+// buildBlocksComponent mounts a child component through its public factory
+// (B-3.9). Slot content is built by fragments of this component, owned and
+// updated here; props, component events and bind: to a $bindable prop keep
+// the legacy engine's protocol, so the child may be compiled by either
+// engine.
+func (g *ASTGen) buildBlocksComponent(comp *ComponentNode) {
+	slots := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
+	names := make([]string, 0, len(comp.Slots))
+	for name := range comp.Slots {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		fragment := g.blocksNestedFragment(comp.Slots[name], nil)
+		g.blocks.frag.live = true
+		slots.Props = append(slots.Props, &JsProp{
+			BaseNode: genNode(),
+			Key:      strLit(name),
+			Value:    genCall(id("$$slotFactory"), id("$$c"), id("$$live"), id(fragment)),
+		})
+	}
+
+	events := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
+	var exprs []*TemplateExpr
+	for _, attr := range comp.Attrs {
+		if attr.IsEvent {
+			events.Props = append(events.Props, &JsProp{
+				BaseNode: genNode(),
+				Key:      strLit(strings.TrimPrefix(attr.Name, "on:")),
+				Value:    g.blocksComponentEventHandler(attr),
+			})
+			continue
+		}
+		if !attr.IsBindThis && attr.Expr != nil {
+			exprs = append(exprs, attr.Expr)
+		}
+	}
+	var eventsArg JsExpr = genNull()
+	if len(events.Props) > 0 {
+		eventsArg = events
+	}
+	props := blocksArrow(nil, g.componentPropsExpr(comp.Attrs))
+	g.blocksBlockCall("$$component", id(comp.Name), props, slots, eventsArg, blocksChanged(g.blocksGuard(exprs...)), strLit(g.scopeID))
+}
+
+// blocksComponentEventHandler forwards only CustomEvents dispatched by the
+// child, so a native event of the same name bubbling from its DOM is not
+// mistaken for a component event (as in buildComponentEvents).
+func (g *ASTGen) blocksComponentEventHandler(attr *Attr) JsExpr {
+	handler := g.eventHandlerExpr(attr)
+	if handler == nil {
+		handler = id("undefined")
+	}
+	var invoke JsStmt = genExprStmt(genCall(handler, id("$e")))
+	if _, isIdent := templateExprIdent(attr.Expr); !isIdent && !templateExprIsHandler(attr.Expr) {
+		invoke = genExprStmt(handler)
+		if g.analysis != nil {
+			invoke = RewriteStatementAssignmentsAST(invoke, g.analysis.stateSet())
+		}
+		pos := g.sfc.TemplateOffset + attr.Expr.Pos
+		WalkNode(invoke, func(node JsNode) bool {
+			setTemplateOrigin(node, pos)
+			return true
+		})
+	}
+	return blocksArrow([]JsExpr{id("$e")}, genBlock(
+		genIf(genBinary("instanceof", id("$e"), id("CustomEvent")), genBlock(invoke)),
+	))
+}
+
+// buildBlocksSlot opens the parent's slot content, or mounts the fallback.
+func (g *ASTGen) buildBlocksSlot(slot *SlotNode) {
+	var fallback JsExpr = genNull()
+	if len(slot.Fallback) > 0 {
+		fallback = id(g.blocksNestedFragment(slot.Fallback, nil))
+	}
+	g.blocksBlockCall("$$slot", genComputedMember(id("$$slots"), strLit(slot.Name)), fallback)
 }

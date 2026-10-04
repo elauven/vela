@@ -1143,6 +1143,7 @@ func TestGenerateCode_Props(t *testing.T) {
 }
 
 func TestGenerateCode_Component(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{
 		Script:   `import { Counter } from './Counter.js';`,
 		Template: `<div><Counter :start="5" /></div>`,
@@ -1882,6 +1883,7 @@ func TestGenerateCode_EachNoVarRedeclaration(t *testing.T) {
 // Regression: <slot> content was inserted in the create phase before the
 // anchor comment was wired into the DOM, causing "parentNode is null".
 func TestGenerateCode_SlotInsertionAfterWire(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc := &SFC{Script: ``, Template: `<div><slot name="footer">Fallback text</slot></div>`}
 	nodes, _ := parseTemplate(sfc.Template)
 	code := generateCodeAST("Card", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
@@ -2735,6 +2737,7 @@ func TestParseTemplate_IfElseGroupedThreeLevelsDeep(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestGenerateCode_PlainComponentInsideIfBranch(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// A plain (non-#each) component inside an #if branch.
 	sfc := &SFC{
 		Script:   `import { Modal } from './Modal.js'; let open = $state(false);`,
@@ -4744,6 +4747,7 @@ import lodash from "lodash";`
 // $$blk.update(u), which referenced $$n60 declared inside the if block —
 // error, and the whole update chain aborted.
 func TestEachRowIfHoist_DeclarationsAtRowScope(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// Trigger the codegen-inline each-row path: the row must contain at
 	// least one Component AND the whole {#each} must sit inside an {#if}
 	// branch so that emitBranchChildren → emitEachWithComponents →

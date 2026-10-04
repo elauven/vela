@@ -51,6 +51,7 @@ func compileComponentParent(t *testing.T) string {
 // net is no longer relied on for component invocation shape — see
 // docs/archive/MIGRATION.md).
 func TestComponentMountUsesAnchorComment_AST(t *testing.T) {
+	legacyCodeShapeTest(t)
 	out := compileComponentParent(t)
 	// New shape: anchor comment, no wrapper div.
 	if !strings.Contains(out, "document.createComment('comp')") {

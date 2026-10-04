@@ -1,0 +1,23 @@
+<script>
+  import Panel from './Panel.vela';
+  export let rows = [];
+  let text = $state('init');
+  let count = $state(0);
+  let picked = $state('none');
+  function onPicked(e) { picked = e.detail.title; count++; }
+</script>
+<template>
+  <div class="host">
+    <p class="state">{text} | {count} | {picked}</p>
+    <button class="inc" @click={() => count++}>inc</button>
+    <Panel :title={'Main ' + count} bind:value={text} @on:picked={onPicked}>
+      <span class="slotted">count is {count}</span>
+      <svelte:fragment slot="actions"><b class="act">{text}</b><i>!</i></svelte:fragment>
+    </Panel>
+    {#each rows as row (row.id)}
+      <Panel :title={row.name}>
+        <span class="row-slot">{row.name}: {count}</span>
+      </Panel>
+    {/each}
+  </div>
+</template>

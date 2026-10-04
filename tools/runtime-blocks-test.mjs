@@ -264,22 +264,52 @@ test('$$component sets props on change, forwards events and destroys', () => {
   eq(calls.join(','), 'mount,set,destroy', 'lifecycle');
 });
 
-test('$$slot mounts parent content or fallback; content updates come from the parent', () => {
+test('$$slotFactory content is owned and updated by the parent and reopens with the same nodes', () => {
   const el = host();
   const live = new Set();
   let label = 'one';
-  const content = rt.$$slotContent(live, leaf('em', () => label));
-  const root = rt.$$mountRoot(el, (c) => {
-    c.block(rt.$$slot, content, leaf('small', 'fallback'));
-    c.block(rt.$$slot, undefined, leaf('small', 'fallback'));
+  let factory;
+  const parent = rt.$$mountRoot(document.createDocumentFragment(), (c) => {
+    factory = rt.$$slotFactory(c, live, leaf('em', () => label));
   });
-  eq(text(el), 'onefallback', 'content and fallback');
+  let show = 0;
+  const child = rt.$$mountRoot(el, (c) => {
+    const block = c.block(rt.$$if, () => show, [(c) => { c.block(rt.$$slot, factory, leaf('small', 'fallback')); }]);
+    return { p: (d) => block.p(d) };
+  });
+  const em = el.querySelector('em');
+  eq(text(el), 'one', 'content opened');
   eq(live.size, 1, 'content registered with the parent');
   label = 'two';
-  for (const handle of live) handle.p();
-  eq(text(el), 'twofallback', 'parent update reached the content');
+  for (const handle of live) handle.p({});
+  eq(text(el), 'two', 'parent update reached the content');
+  show = -1;
+  child.p({});
+  eq(el.querySelectorAll('em').length, 0, 'content parked when the slot closes');
+  eq(live.size, 1, 'parked content still belongs to the parent');
+  show = 0;
+  child.p({});
+  assert(el.querySelector('em') === em, 'reopened slot shows the same node');
+  parent.release();
+  eq(live.size, 0, 'content released with the parent');
+});
+
+test('$$slot accepts a legacy factory and falls back without one', () => {
+  const el = host();
+  const legacyNode = document.createElement('strong');
+  legacyNode.textContent = 'legacy';
+  const legacy = () => { const f = document.createDocumentFragment(); f.appendChild(legacyNode); return f; };
+  let fallbackText = 'fb';
+  const root = rt.$$mountRoot(el, (c) => {
+    const a = c.block(rt.$$slot, legacy, leaf('small', 'unused'));
+    const b = c.block(rt.$$slot, undefined, leaf('small', () => fallbackText));
+    return { p: (d) => { a.p(d); b.p(d); } };
+  });
+  eq(text(el), 'legacyfb', 'legacy content and fallback');
+  fallbackText = 'FB';
+  root.p({});
+  eq(text(el), 'legacyFB', 'fallback is updated by the child');
   root.release();
-  eq(live.size, 0, 'content unregistered on release');
 });
 
 test('$$client mounts the main branch in CSR', () => {

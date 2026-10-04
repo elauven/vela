@@ -1,23 +1,194 @@
 [
- {"module": "Form.js", "export": "Form", "props": {"start": "go"}, "steps": [
-   {"input": "input.name", "value": "Ann"}, {"check": "input.agree", "checked": true},
-   {"click": "button.inc"}, {"click": "button.inc"}, {"click": "button.inc"},
-   {"set": {"start": "next"}}, {"click": "button.reset"}, {"destroy": true}]},
- {"module": "List.js", "export": "List", "props": {"items": [
-     {"id": 1, "text": "a", "done": false, "tags": ["x", "y"]},
-     {"id": 2, "text": "b", "done": true, "tags": []}]}, "steps": [
-   {"click": "button.done"}, {"click": "button.all"},
-   {"set": {"items": [
-     {"id": 2, "text": "b2", "done": true, "tags": ["z"]},
-     {"id": 3, "text": "c", "done": false, "tags": []},
-     {"id": 1, "text": "a", "done": true, "tags": ["x"]}]}},
-   {"click": "button.done"},
-   {"set": {"items": [{"id": 5, "text": "e", "done": true, "tags": ["q", "r", "s"]}]}},
-   {"destroy": true}]},
- {"module": "Multi.js", "export": "Multi", "props": {"n": 1}, "steps": [
-   {"set": {"n": 2}}, {"set": {"n": 3}}, {"set": {"n": 1}}, {"destroy": true}]},
- {"module": "Nested.js", "export": "Nested", "props": {"items": [
-     {"id": 1, "name": "a", "done": true}, {"id": 2, "name": "b", "done": false}]}, "steps": [
-   {"click": "li"}, {"set": {"items": [{"id": 2, "name": "B", "done": true}]}},
-   {"set": {"open": false}}, {"set": {"open": true}}, {"destroy": true}]}
+ {
+  "module": "Form.js",
+  "export": "Form",
+  "props": {
+   "start": "go"
+  },
+  "steps": [
+   {
+    "input": "input.name",
+    "value": "Ann"
+   },
+   {
+    "check": "input.agree",
+    "checked": true
+   },
+   {
+    "click": "button.inc"
+   },
+   {
+    "click": "button.inc"
+   },
+   {
+    "click": "button.inc"
+   },
+   {
+    "set": {
+     "start": "next"
+    }
+   },
+   {
+    "click": "button.reset"
+   },
+   {
+    "destroy": true
+   }
+  ]
+ },
+ {
+  "module": "List.js",
+  "export": "List",
+  "props": {
+   "items": [
+    {
+     "id": 1,
+     "text": "a",
+     "done": false,
+     "tags": [
+      "x",
+      "y"
+     ]
+    },
+    {
+     "id": 2,
+     "text": "b",
+     "done": true,
+     "tags": []
+    }
+   ]
+  },
+  "steps": [
+   {
+    "click": "button.done"
+   },
+   {
+    "click": "button.all"
+   },
+   {
+    "set": {
+     "items": [
+      {
+       "id": 2,
+       "text": "b2",
+       "done": true,
+       "tags": [
+        "z"
+       ]
+      },
+      {
+       "id": 3,
+       "text": "c",
+       "done": false,
+       "tags": []
+      },
+      {
+       "id": 1,
+       "text": "a",
+       "done": true,
+       "tags": [
+        "x"
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "click": "button.done"
+   },
+   {
+    "set": {
+     "items": [
+      {
+       "id": 5,
+       "text": "e",
+       "done": true,
+       "tags": [
+        "q",
+        "r",
+        "s"
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "destroy": true
+   }
+  ]
+ },
+ {
+  "module": "Multi.js",
+  "export": "Multi",
+  "props": {
+   "n": 1
+  },
+  "steps": [
+   {
+    "set": {
+     "n": 2
+    }
+   },
+   {
+    "set": {
+     "n": 3
+    }
+   },
+   {
+    "set": {
+     "n": 1
+    }
+   },
+   {
+    "destroy": true
+   }
+  ]
+ },
+ {
+  "module": "Nested.js",
+  "export": "Nested",
+  "props": {
+   "items": [
+    {
+     "id": 1,
+     "name": "a",
+     "done": true
+    },
+    {
+     "id": 2,
+     "name": "b",
+     "done": false
+    }
+   ]
+  },
+  "steps": [
+   {
+    "click": "li"
+   },
+   {
+    "set": {
+     "items": [
+      {
+       "id": 2,
+       "name": "B",
+       "done": true
+      }
+     ]
+    }
+   },
+   {
+    "set": {
+     "open": false
+    }
+   },
+   {
+    "set": {
+     "open": true
+    }
+   },
+   {
+    "destroy": true
+   }
+  ]
+ }
 ]
