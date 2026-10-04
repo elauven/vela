@@ -28,6 +28,8 @@ export const requiredTests = [
   "TestSSRProjectPublicMultipleSelectHydratesUpdatesAndBindsInBrowser",
   "TestSSRProjectRejectsSingleSelectWithKnownNullBinding",
   "TestSSRProjectPublicNamedFormatterHydratesAndUpdatesInBrowser",
+  // Block runtime of the hydration architecture (task 039).
+  "TestRuntimeBlocksUnderJsdom",
 ];
 
 export async function requireLaunchableChromium({ moduleName = "playwright", executablePath = "" } = {}) {
