@@ -1060,8 +1060,8 @@ the complete component/static-sibling branch only when the key changes.
 
 ### JavaScript and Browser API compatibility matrix
 
-`ECMASCRIPT.md` is the inventory of standard objects. Phase 6 converts that
-inventory into a Vela-specific, test-backed matrix. Categories are not judged
+The per-construct translation matrix is `SSR_TRANSLATION_MATRIX.md`; the
+rules it applies are in `SSR_TRANSLATION_CONTRACT.md`. Categories are not judged
 by syntax alone: a construct is server-native only when its observable Vela
 semantics can be reproduced in Go.
 

@@ -17,7 +17,7 @@ import (
 // Comments are not elements; they are invisible to CSS element
 // selectors AND :nth-child counting.  The component's $$root is
 // inserted before the anchor, becoming a true direct child of
-// the parent.  See MIGRATION.md "Component anchor — no wrapper".
+// the parent.  See docs/archive/MIGRATION.md "Component anchor — no wrapper".
 func compileComponentParent(t *testing.T) string {
 	t.Helper()
 	src := `<script>
@@ -49,7 +49,7 @@ func compileComponentParent(t *testing.T) string {
 //
 // The legacy generator path is unchanged (the differential safety
 // net is no longer relied on for component invocation shape — see
-// MIGRATION.md).
+// docs/archive/MIGRATION.md).
 func TestComponentMountUsesAnchorComment_AST(t *testing.T) {
 	out := compileComponentParent(t)
 	// New shape: anchor comment, no wrapper div.

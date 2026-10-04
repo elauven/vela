@@ -4,8 +4,8 @@ Use this guide when creating or editing Vela applications. It is written for
 both people and AI agents. It defines the preferred authoring style; it does
 not describe compiler internals.
 
-For feature availability and known limits, read `FEATURES.md`. For longer
-explanations and examples, read `GUIDE.md`. If a compiler diagnostic conflicts
+For feature availability and known limits, read `docs/FEATURES.md`. For longer
+explanations and examples, read `docs/GUIDE.md`. If a compiler diagnostic conflicts
 with an old example or historical document, trust the diagnostic and the
 current feature matrix.
 
@@ -205,6 +205,6 @@ Before handing off a Vela component or application:
    `@event={handler}`.
 4. Reorderable lists use stable keys, and component two-way bindings target a
    `$bindable` child prop.
-5. The component uses only features marked supported in `FEATURES.md`.
+5. The component uses only features marked supported in `docs/FEATURES.md`.
 6. Run `go test ./...` after changing compiler sources, runtime fixtures, or
    examples that exercise compiler behaviour.

@@ -357,17 +357,22 @@ parseSFC()          extract <script> <style> <template>
 
 ---
 
-## Roadmap
+## Documentation
 
-- [ ] `#else` / `#elseif` branches
-- [ ] Keyed `#each` with efficient diffing
-- [ ] Component composition (child components in templates)
-- [ ] Props declaration with `export let`
-- [ ] Slots / content projection
-- [ ] Server-side rendering
-- [ ] Source maps
-- [ ] Dev-server with HMR
-- [ ] VS Code extension (syntax + LSP)
+| Document | Contents |
+| --- | --- |
+| [docs/FEATURES.md](docs/FEATURES.md) | Current feature status and known limits |
+| [docs/GUIDE.md](docs/GUIDE.md) | Authoring guide with examples |
+| [AGENTS.md](AGENTS.md) | Authoring rules for people and AI agents |
+| [docs/VELA.md](docs/VELA.md) | Compiler and runtime reference |
+| [docs/SSR.md](docs/SSR.md) | SSR product design |
+| [docs/SSR_TRANSLATION_CONTRACT.md](docs/SSR_TRANSLATION_CONTRACT.md) | JavaScript-to-Go translation and Go host implementations ([ru](docs/SSR_TRANSLATION_CONTRACT.ru.md)) |
+| [docs/SSR_TRANSLATION_MATRIX.md](docs/SSR_TRANSLATION_MATRIX.md) | Per-construct translation status |
+| [docs/HYDRATION_ARCHITECTURE.md](docs/HYDRATION_ARCHITECTURE.md) | Block runtime and universal hydration ([ru](docs/HYDRATION_ARCHITECTURE.ru.md)) |
+| [docs/archive/](docs/archive/) | Historical documents |
+
+Planned work is tracked as [taskmd](https://github.com/driangle/taskmd)
+tasks in [tasks/](tasks/).
 
 ---
 
