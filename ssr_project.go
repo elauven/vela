@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -183,35 +184,90 @@ func ValidateSSRProjectPackages(layout SSRProjectLayout) error {
 // the template graph. A parent executable client may only import a child
 // .hydrate.js entry when that entry will itself expose a live client instance.
 func canBuildSSRHydrationDependencies(nodes []Node, links map[string]SSRComponentLink, srcRoot string, visiting map[string]bool) bool {
-	for name := range ssrHydrationUsedComponentNames(nodes) {
+	return ssrHydrationDependencyBlocker(nodes, links, srcRoot, visiting) == ""
+}
+
+// ssrHydrationDependencyBlocker returns why a local child component prevents
+// executable hydration of its parent, or "" when every child can hydrate.
+// Names are visited in sorted order so the reported reason is deterministic.
+func ssrHydrationDependencyBlocker(nodes []Node, links map[string]SSRComponentLink, srcRoot string, visiting map[string]bool) string {
+	used := ssrHydrationUsedComponentNames(nodes)
+	names := make([]string, 0, len(used))
+	for name := range used {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
 		link, ok := links[name]
-		if !ok || link.SourcePath == "" || visiting[link.SourcePath] {
-			return false
+		if !ok || link.SourcePath == "" {
+			return fmt.Sprintf("child component <%s> is not a linked local .vela component", name)
+		}
+		if visiting[link.SourcePath] {
+			return fmt.Sprintf("child component <%s> is part of a component cycle", name)
 		}
 		data, err := os.ReadFile(link.SourcePath)
 		if err != nil {
-			return false
+			return fmt.Sprintf("child component <%s> cannot be read: %v", name, err)
 		}
 		child, err := parseSFC(string(data))
-		if err != nil || !CanBuildSSRHydrationClient(child.TemplateAST.Nodes) {
-			return false
+		if err != nil {
+			return fmt.Sprintf("child component <%s> cannot be parsed: %v", name, err)
+		}
+		if reason := ssrHydrationTemplateBlocker(link.SourcePath, string(data), child.TemplateAST.Nodes); reason != "" {
+			return fmt.Sprintf("child component <%s> cannot hydrate: %s", name, reason)
 		}
 		analysis := analyzeScriptAST(child.ScriptAST)
 		childLinks, err := ResolveSSRLocalComponentLinks(link.SourcePath, srcRoot, analysis)
 		if err != nil {
-			return false
+			return fmt.Sprintf("child component <%s>: %v", name, err)
 		}
 		if _, err := ssrHydrationComponentNames(child, analysis); err != nil {
-			return false
+			return fmt.Sprintf("child component <%s>: %v", name, err)
 		}
 		visiting[link.SourcePath] = true
-		if !canBuildSSRHydrationDependencies(child.TemplateAST.Nodes, childLinks, srcRoot, visiting) {
-			return false
+		if reason := ssrHydrationDependencyBlocker(child.TemplateAST.Nodes, childLinks, srcRoot, visiting); reason != "" {
+			return fmt.Sprintf("child component <%s>: %s", name, reason)
 		}
 		delete(visiting, link.SourcePath)
 	}
-	return true
+	return ""
 }
+
+// ssrHydrationTemplateBlocker describes the first template node outside the
+// executable hydration subset as "file:line:col: <kind> reason", or returns
+// "" when the template can hydrate.
+func ssrHydrationTemplateBlocker(filename, source string, nodes []Node) string {
+	capability := AnalyzeSSRCapability(nodes)
+	if capability.ExecutableHydration() {
+		return ""
+	}
+	issue, ok := capability.FirstHydrationIssue()
+	if !ok {
+		return "the template needs one element root with supported marker-aware descendants"
+	}
+	line, col := sourceLineColumn(source, issue.Span.Start)
+	return fmt.Sprintf("%s:%d:%d: <%s> %s", filename, line+1, col+1, issue.NodeKind, issue.Reason)
+}
+
+// SSRHydrationBlockedError reports why a component fell back to static-only
+// output before the error of that fallback, so the build names the construct
+// that blocks hydration rather than an event handler the static bridge cannot
+// carry. It unwraps to the fallback error.
+type SSRHydrationBlockedError struct {
+	Reason   string
+	Fallback error
+}
+
+func (e *SSRHydrationBlockedError) Error() string {
+	return SSRHydrationBlockedDiagnosticCode + ": executable hydration is not available: " + e.Reason +
+		"; the static-only fallback then failed: " + e.Fallback.Error()
+}
+
+func (e *SSRHydrationBlockedError) Unwrap() error { return e.Fallback }
+
+// SSRHydrationBlockedDiagnosticCode is reported when a component cannot use
+// executable hydration and its static-only fallback is not possible either.
+const SSRHydrationBlockedDiagnosticCode = "VELA-SSR-HYDRATION"
 
 func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	data, err := os.ReadFile(src)
@@ -261,7 +317,14 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		// a component before its full client lifecycle is even selected.
 		bridge, err = BuildSSRStaticEventBridge(plan)
 		if err != nil {
-			return err
+			reason := ssrHydrationTemplateBlocker(src, string(data), sfc.TemplateAST.Nodes)
+			if reason == "" {
+				reason = ssrHydrationDependencyBlocker(sfc.TemplateAST.Nodes, links, srcRoot, map[string]bool{src: true})
+			}
+			if reason == "" {
+				return err
+			}
+			return &SSRHydrationBlockedError{Reason: reason, Fallback: err}
 		}
 		hydrate, err = BuildSSRHydrateEntry(plan)
 	}
