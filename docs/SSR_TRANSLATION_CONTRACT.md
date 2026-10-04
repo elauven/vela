@@ -767,8 +767,10 @@ regression.
   reactivity and scheduling, DOM, hydration, and development checks.
 - **R-12.2b One instance per page.** All generated modules of one build must
   import the same runtime module URL. A copy per output directory is not
-  allowed: separate copies create separate scheduler queues, hydration
-  registries, and deep-state proxy checks.
+  allowed: each copy is downloaded and evaluated separately, and copies
+  behave as one runtime only while every piece of shared runtime state lives
+  on `globalThis` (today the batch queue and the proxy brand use
+  `Symbol.for`). One module URL makes module identity the guarantee instead.
 - **R-12.2c Build variants.** `--mode=production` omits the
   development-check module (V-11.3); builds without `--ssr` omit the
   hydration module.

@@ -882,3 +882,30 @@ func TestBrowserRuntimeDeepKeyedEachFallsBackForMixedStateBurst(t *testing.T) {
 		{"assertCount": ".row.selected:nth-of-type(2)", "equals": 1},
 	})
 }
+
+// A deep-state object created by a component in the project root and
+// mutated there must update a child compiled into a subdirectory. The
+// project build stages one runtime for both modules (task 034); this guards
+// the cross-directory behaviour, which also held with per-directory copies
+// because shared runtime state lives on globalThis.
+func TestBrowserRuntimeDeepStateCrossesComponentDirectories(t *testing.T) {
+	runBrowserSources(t, map[string]string{
+		"App.vela": `<script>
+  import Panel from "./widgets/Panel.vela";
+  let data = $state.deep({ items: [] });
+  function add() { data.items.push(data.items.length + 1); }
+</script>
+<template><button class="add" @click={add}>add</button><p class="parent">{data.items.length}</p><Panel :data={data} /></template>`,
+		"widgets/Panel.vela": `<script>
+  export let data = { items: [] };
+</script>
+<template><p class="child">{data.items.length}</p></template>`,
+	}, "App.js", []rtStep{
+		{"assertText": "p.parent", "equals": "0"},
+		{"assertText": "p.child", "equals": "0"},
+		{"click": "button.add"},
+		{"click": "button.add"},
+		{"assertText": "p.parent", "equals": "2"},
+		{"assertText": "p.child", "equals": "2"},
+	})
+}
