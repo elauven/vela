@@ -190,5 +190,62 @@
     "destroy": true
    }
   ]
+ },
+ {
+  "module": "Host.js",
+  "export": "Host",
+  "props": {
+   "rows": [
+    {
+     "id": 1,
+     "name": "r1"
+    },
+    {
+     "id": 2,
+     "name": "r2"
+    }
+   ]
+  },
+  "steps": [
+   {
+    "click": "button.inc"
+   },
+   {
+    "input": "input.value",
+    "value": "typed"
+   },
+   {
+    "click": "section.panel button.emit"
+   },
+   {
+    "click": "section.panel button.toggle"
+   },
+   {
+    "click": "button.inc"
+   },
+   {
+    "click": "section.panel button.toggle"
+   },
+   {
+    "set": {
+     "rows": [
+      {
+       "id": 2,
+       "name": "r2"
+      },
+      {
+       "id": 3,
+       "name": "r3"
+      }
+     ]
+    }
+   },
+   {
+    "click": "button.inc"
+   },
+   {
+    "destroy": true
+   }
+  ]
  }
 ]

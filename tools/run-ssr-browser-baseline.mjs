@@ -32,6 +32,8 @@ export const requiredTests = [
   "TestRuntimeBlocksUnderJsdom",
   "TestBlocksEngineMatchesLegacyEngine",
   "TestBlocksEngineRendersEachElse",
+  "TestBlocksEngineUpdatesSlotContentInEachRows",
+  "TestBlocksEngineInteropWithLegacyComponents",
 ];
 
 export async function requireLaunchableChromium({ moduleName = "playwright", executablePath = "" } = {}) {

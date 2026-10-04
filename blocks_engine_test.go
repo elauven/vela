@@ -105,3 +105,75 @@ func TestBlocksEngineRendersEachElse(t *testing.T) {
 		})
 	}
 }
+
+// TestBlocksEngineUpdatesSlotContentInEachRows covers slot content placed in
+// a child component inside an {#each} row: it must follow both component
+// state and the row item. The legacy engine updates neither.
+func TestBlocksEngineUpdatesSlotContentInEachRows(t *testing.T) {
+	components := map[string]string{
+		"Box": `<template><div class="box"><slot /></div></template>`,
+		"App": `<script>
+  import Box from './Box.vela';
+  let count = $state(0);
+  let rows = $state([{ id: 1, name: 'a' }]);
+</script>
+<template><div>
+  <button class="inc" @click={() => count++}>inc</button>
+  <button class="rename" @click={() => rows = [{ id: 1, name: 'b' }]}>rename</button>
+  {#each rows as row (row.id)}<div class="row"><Box><span class="slotted">{row.name}:{count}</span></Box></div>{/each}
+</div></template>`,
+	}
+	withDOMEngine(t, DOMEngineBlocks, func() {
+		result := runRuntimeHarness(t, "App", components, []rtStep{
+			{"assertText": "span.slotted", "equals": "a:0"},
+			{"click": "button.inc"},
+			{"assertText": "span.slotted", "equals": "a:1"},
+			{"click": "button.rename"},
+			{"assertText": "span.slotted", "equals": "b:1"},
+		})
+		if !result.OK {
+			t.Fatalf("slot content in each rows: %v", result.Failures)
+		}
+	})
+}
+
+// TestBlocksEngineInteropWithLegacyComponents mixes engines in one page: a
+// block-engine Host with a legacy Panel child, and a legacy Host with a
+// block-engine Panel. Both must render and update like the all-legacy build,
+// because both engines use the same component and slot protocol.
+func TestBlocksEngineInteropWithLegacyComponents(t *testing.T) {
+	node, jsdom := requireJsdom(t)
+	srcRoot := filepath.Join("testdata", "engine_diff")
+	legacy := buildWithEngine(t, DOMEngineLegacy, srcRoot)
+	blocks := buildWithEngine(t, DOMEngineBlocks, srcRoot)
+	copyFile := func(from, to string) {
+		data, err := os.ReadFile(from)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(to, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	blocksParent := buildWithEngine(t, DOMEngineBlocks, srcRoot)
+	copyFile(filepath.Join(legacy, "Panel.js"), filepath.Join(blocksParent, "Panel.js"))
+	legacyParent := buildWithEngine(t, DOMEngineLegacy, srcRoot)
+	copyFile(filepath.Join(blocks, "Panel.js"), filepath.Join(legacyParent, "Panel.js"))
+	copyFile(filepath.Join(blocks, "runtime-blocks.js"), filepath.Join(legacyParent, "runtime-blocks.js"))
+	for name, mixed := range map[string]string{"block parent, legacy child": blocksParent, "legacy parent, block child": legacyParent} {
+		out, err := exec.Command(node, "tools/engine-diff.mjs", jsdom, legacy, mixed, filepath.Join(srcRoot, "cases.json")).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: engine diff: %v\n%s", name, err, out)
+		}
+		var result struct {
+			OK       bool     `json:"ok"`
+			Failures []string `json:"failures"`
+		}
+		if err := json.Unmarshal(out, &result); err != nil {
+			t.Fatalf("%s: invalid engine diff output: %v\n%s", name, err, out)
+		}
+		if !result.OK {
+			t.Fatalf("%s differs from the legacy build:\n%s", name, strings.Join(result.Failures, "\n"))
+		}
+	}
+}

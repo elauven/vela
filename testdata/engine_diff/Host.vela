@@ -15,9 +15,11 @@
       <svelte:fragment slot="actions"><b class="act">{text}</b><i>!</i></svelte:fragment>
     </Panel>
     {#each rows as row (row.id)}
-      <Panel :title={row.name}>
-        <span class="row-slot">{row.name}: {count}</span>
-      </Panel>
+      <div class="row">
+        <Panel :title={row.name}>
+          <span class="row-slot">{row.name}</span>
+        </Panel>
+      </div>
     {/each}
   </div>
 </template>
