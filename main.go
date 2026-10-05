@@ -44,7 +44,7 @@ func stageRuntime(outDir string, opts CompileOptions) error {
 		}
 		// hydrate() of the block engine; a page imports it only to hydrate
 		// server HTML (C-4.1).
-		if err := os.WriteFile(filepath.Join(outDir, "runtime-hydrate.js"), embeddedHydrateRuntime, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(outDir, "runtime-hydrate.js"), hydrateRuntimeSource(opts.HydrationVerify), 0o644); err != nil {
 			return err
 		}
 	}
@@ -96,6 +96,7 @@ type CompileOptions struct {
 	SSRModule               string   // Go module import root for generated SSR server packages
 	SSRReport               string   // --ssr-report: write the region site records as JSON (task 043)
 	SSRScaffoldHosts        bool     // --ssr-scaffold-hosts: create stubs for missing host implementations (task 030)
+	HydrationVerify         string   // --hydration-verify: repair (default), fail, or off (V-11.3c)
 	Production              bool     // --mode=production: production runtime variant
 	HydrationSupport        bool     // internal: emit SSR client state-restoration hooks
 	// RuntimeImport is the module specifier generated code uses for the
@@ -122,6 +123,7 @@ func main() {
 	ssrModule := flag.String("ssr-module", SSRDefaultModule, "Go module import root for generated SSR packages")
 	ssrReport := flag.String("ssr-report", "", "with --ssr, write the per-site SSR report (outcome, tier, type) to this JSON file")
 	ssrScaffold := flag.Bool("ssr-scaffold-hosts", false, "with --ssr, create Go stubs in the host tree for functions that need a host implementation; existing files are never changed")
+	hydrationVerify := flag.String("hydration-verify", "", "development hydration value verification: repair (default), fail, or off")
 	mode := flag.String("mode", "development", "build mode: 'development' (default) or 'production'")
 	domEngine := flag.String("dom-engine", "legacy", "DOM engine: 'legacy' (default) or 'blocks' (block runtime, task 039)")
 	flag.Parse()
@@ -144,6 +146,17 @@ func main() {
 		// ok
 	default:
 		fmt.Fprintf(os.Stderr, "vela: invalid --mode value %q (want 'development' or 'production')\n", *mode)
+		os.Exit(2)
+	}
+	switch *hydrationVerify {
+	case "", "repair", "fail", "off":
+	default:
+		fmt.Fprintf(os.Stderr, "vela: invalid --hydration-verify value %q (want repair, fail, or off)\n", *hydrationVerify)
+		os.Exit(2)
+	}
+	if *hydrationVerify != "" && *mode == "production" {
+		// Production builds contain no verification code (V-11.3a, V-11.3c).
+		fmt.Fprintln(os.Stderr, "vela: --hydration-verify cannot be combined with --mode=production")
 		os.Exit(2)
 	}
 
@@ -169,6 +182,7 @@ func main() {
 		SSRModule:               *ssrModule,
 		SSRReport:               *ssrReport,
 		SSRScaffoldHosts:        *ssrScaffold,
+		HydrationVerify:         *hydrationVerify,
 		Production:              *mode == "production",
 	}
 	if closeTrace, traceErr := configureTrace(&opts, *tracePath); traceErr != nil {
@@ -943,4 +957,13 @@ func relOrBase(f, root string) string {
 func componentName(path string) string {
 	base := filepath.Base(path)
 	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
+// hydrateRuntimeSource returns runtime-hydrate.js with the default
+// development verification policy (V-11.3c).
+func hydrateRuntimeSource(verify string) []byte {
+	if verify == "" || verify == "repair" {
+		return embeddedHydrateRuntime
+	}
+	return []byte(strings.Replace(string(embeddedHydrateRuntime), "const VERIFY = 'repair';", "const VERIFY = '"+verify+"';", 1))
 }

@@ -13,15 +13,16 @@ import (
 )
 
 type ssrBlocksCase struct {
-	Name      string            `json:"name"`
-	Component string            `json:"component"`
-	Props     json.RawMessage   `json:"props"`
-	Options   json.RawMessage   `json:"options,omitempty"`
-	Entries   []string          `json:"entries"`
-	Awaits    [][]string        `json:"awaits,omitempty"`
-	States    []json.RawMessage `json:"states,omitempty"`
-	Steps     []json.RawMessage `json:"steps,omitempty"`
-	Compare   bool              `json:"compare,omitempty"`
+	Name       string            `json:"name"`
+	Component  string            `json:"component"`
+	Props      json.RawMessage   `json:"props"`
+	Options    json.RawMessage   `json:"options,omitempty"`
+	Entries    []string          `json:"entries"`
+	Awaits     [][]string        `json:"awaits,omitempty"`
+	States     []json.RawMessage `json:"states,omitempty"`
+	Steps      []json.RawMessage `json:"steps,omitempty"`
+	Mismatches []json.RawMessage `json:"mismatches,omitempty"`
+	Compare    bool              `json:"compare,omitempty"`
 }
 
 // TestBlocksSSRMarkupMatchesClientDOM renders the SSR block corpus with the
@@ -120,6 +121,9 @@ func runSSRBlocksCheck(t *testing.T, args ...string) {
 		}
 		if c.Steps != nil {
 			check["steps"] = c.Steps
+		}
+		if c.Mismatches != nil {
+			check["mismatches"] = c.Mismatches
 		}
 		checks = append(checks, check)
 	}

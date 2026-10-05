@@ -386,6 +386,12 @@ export function warn(msg) {
   if (DEV) console.warn('[Vela]', msg);
 }
 
+// $$isDev reports a development build; production builds replace DEV with
+// a constant, so development-only code becomes dead code.
+export function $$isDev() {
+  return DEV;
+}
+
 
 // ── Compiler runtime helpers ────────────────────────────────────
 // These were previously inlined into every generated component.

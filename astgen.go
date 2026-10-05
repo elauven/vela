@@ -13964,6 +13964,12 @@ func (g *ASTGen) buildReturn() JsStmt {
 	}
 
 	props := []*JsProp{elProp, destroyProp}
+	if g.blocks != nil {
+		// abandon releases everything but leaves the root in the document:
+		// hydration rollback keeps the server DOM for a retry (B-3.4, X-7.4).
+		abandonBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: destroyBody.Body[:len(destroyBody.Body)-1]}
+		props = append(props, &JsProp{BaseNode: genNode(), Kind: "init", Method: true, Key: id("abandon"), Value: &JsFuncExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: abandonBody}})
+	}
 
 	if hasSettable {
 		// set(props) { if (props.X !== undefined) $$set_X(props.X); … }

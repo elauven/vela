@@ -204,7 +204,7 @@ async function hydrateCheck(testCase) {
   host.innerHTML = testCase.html;
   const serverElements = [...host.querySelectorAll('*')].filter((el) => el.localName !== 'script');
   const observer = new dom.window.MutationObserver(() => {});
-  observer.observe(host, { subtree: true, childList: true, characterData: true, attributes: true });
+  observer.observe(host, { subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true });
   let instance;
   try {
     instance = hydrate(factory, host);
@@ -221,7 +221,10 @@ async function hydrateCheck(testCase) {
       [...record.addedNodes].every((node) => node.nodeType === 3 && node.data === '');
     const payload = record.type === 'childList' && record.addedNodes.length === 0 &&
       [...record.removedNodes].every((node) => node.localName === 'script');
-    if (!emptyText && !payload) errors.push(`hydration mutated the DOM: ${record.type} on <${record.target.localName || record.target.nodeName}>`);
+    // Development value verification re-runs initial writes; an attribute
+    // write of the same value changes nothing.
+    const unchanged = record.type === 'attributes' && record.oldValue === record.target.getAttribute(record.attributeName);
+    if (!emptyText && !payload && !unchanged) errors.push(`hydration mutated the DOM: ${record.type} on <${record.target.localName || record.target.nodeName}>`);
   }
   observer.disconnect();
   for (const element of serverElements) {
@@ -246,6 +249,85 @@ async function hydrateCheck(testCase) {
   reference.remove();
   return errors;
 }
+
+// ── Mismatch suite (task 041, Q-10.3) ────────────────────────────────────
+// Each injected mismatch is hydrated under every policy (§7.3): repair and
+// production converge to the client DOM (production does not verify
+// values), fail throws and leaves the DOM untouched, and a retry after the
+// failure yields exactly one live instance.
+async function mismatchCheck(testCase, injected) {
+  const errors = [];
+  const module = await import(pathToFileURL(join(clientDir, testCase.module)).href);
+  const factory = module[testCase.export] || module.default;
+  const { hydrate } = await import(pathToFileURL(join(clientDir, 'runtime-hydrate.js')).href);
+  const html = injected.regex ? testCase.html.replace(new RegExp(injected.from), injected.to) : testCase.html.replace(injected.from, injected.to);
+  if (html === testCase.html) return [`${injected.name}: the injection does not apply`];
+  const label = (policy) => `${injected.name} (${policy})`;
+  const silenced = (run) => {
+    const saved = { warn: console.warn, error: console.error };
+    const counts = { warn: 0, error: 0 };
+    console.warn = () => { counts.warn++; };
+    console.error = () => { counts.error++; };
+    try {
+      return [run(), counts];
+    } finally {
+      Object.assign(console, saved);
+    }
+  };
+  for (const policy of ['repair', 'fail', 'production']) {
+    const reference = document.createElement('div');
+    document.body.appendChild(reference);
+    const created = factory(reference, structuredClone(testCase.props));
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    host.innerHTML = html;
+    const parsed = host.innerHTML;
+    const reports = [];
+    let instance = null;
+    let thrown = null;
+    const [, counts] = silenced(() => {
+      try {
+        instance = hydrate(factory, host, { policy, onMismatch: (report) => reports.push(report) });
+      } catch (error) {
+        thrown = error;
+      }
+    });
+    const valueOnly = injected.kind === 'value';
+    if (policy === 'fail') {
+      if (!thrown || thrown.code !== 'VELA-HYDRATION-MISMATCH') errors.push(`${label(policy)}: expected VELA-HYDRATION-MISMATCH, got ${thrown ? thrown.message : 'no error'}`);
+      if (host.innerHTML !== parsed) errors.push(`${label(policy)}: the rollback changed the DOM`);
+      silenced(() => {
+        try {
+          instance = hydrate(factory, host, { policy: 'repair' });
+        } catch (error) {
+          errors.push(`${label(policy)}: retry failed: ${error.message}`);
+        }
+      });
+    } else {
+      if (thrown) errors.push(`${label(policy)}: threw ${thrown.message}`);
+      const verified = !(policy === 'production' && valueOnly);
+      if (verified && !reports.some((report) => report.kind === injected.kind)) errors.push(`${label(policy)}: onMismatch got ${JSON.stringify(reports.map((r) => r.kind))}, want a ${injected.kind} report`);
+      if (!verified && reports.length) errors.push(`${label(policy)}: production verified a value`);
+      if (policy === 'repair' && counts.warn === 0) errors.push(`${label(policy)}: no console warning`);
+      if (policy === 'production' && verified && counts.error !== 1) errors.push(`${label(policy)}: console.error was called ${counts.error} times, want 1`);
+    }
+    if (instance && !(policy === 'production' && valueOnly)) {
+      if (serialize(host) !== serialize(reference)) {
+        errors.push(`${label(policy)}: DOM differs from the client:\n  hydrated: ${serialize(host)}\n  client:   ${serialize(reference)}`);
+      } else if (injected.step) {
+        applyStep(host, instance, injected.step);
+        applyStep(reference, created, injected.step);
+        await settle();
+        if (serialize(host) !== serialize(reference)) errors.push(`${label(policy)}: after ${JSON.stringify(injected.step)}:\n  hydrated: ${serialize(host)}\n  client:   ${serialize(reference)}`);
+      }
+    }
+    if (instance) instance.destroy();
+    created.destroy();
+    host.remove();
+    reference.remove();
+  }
+  return errors;
+}
 const failures = [];
 for (const testCase of cases) {
   try {
@@ -257,6 +339,7 @@ for (const testCase of cases) {
       const client = await clientHTML(testCase);
       if (serverHTML !== client) errors.push(`server and client DOM differ:\n  server: ${serverHTML}\n  client: ${client}`);
       errors.push(...(await hydrateCheck(testCase)));
+      for (const injected of testCase.mismatches || []) errors.push(...(await mismatchCheck(testCase, injected)));
     }
     if (errors.length) failures.push(`${testCase.name}:\n  ${errors.join('\n  ')}`);
   } catch (error) {

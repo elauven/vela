@@ -528,6 +528,12 @@ func (g *ASTGen) blocksBinding(ref, tag string, attr *Attr) []JsStmt {
 	if attr.IsTwoWay && ok && isIdent && g.hasReactiveSetter(sv) {
 		handler := blocksArrow([]JsExpr{id("$e")}, twoWaySetterFromEvent("$$set_"+sv, tag == "select" && attr.Name == "value", spec.readProp))
 		g.blocksEmit(g.blocksListen(ref, spec.event, handler))
+		if tag != "select" && (attr.Name == "value" || attr.Name == "checked") {
+			// Hydration adopts a value the user entered before it (C-4.5).
+			read := blocksArrow(nil, g.templateExpr(attr.Expr))
+			write := blocksArrow([]JsExpr{id("$$v")}, genCall(id("$$set_"+sv), id("$$v")))
+			g.blocksEmit(genExprStmt(genCall(genMember(id("$$c"), "adopt"), id(ref), strLit(attr.Name), read, write)))
+		}
 	}
 	write := g.attrWriteStmt(ref, attr)
 	if attr.IsTwoWay && ok {

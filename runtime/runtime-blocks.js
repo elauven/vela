@@ -141,6 +141,9 @@ function createCursor(parent, before, owner) {
     init(write) {
       write();
     },
+    // adopt takes a live control value on hydration (C-4.5); creating has
+    // nothing to adopt.
+    adopt() {},
     listen(target, event, handler, options) {
       target.addEventListener(event, handler, options);
       owner.add(() => target.removeEventListener(event, handler, options));
@@ -232,7 +235,7 @@ export function $$setHydration(session) {
 // that starts now: its "s" entry without omitted bindings (S-6.8), or null
 // when the component is created rather than hydrated.
 export function $$hydrationState(component) {
-  if (!$$session || !$$session.cursors.length) return null;
+  if (!$$session || !$$session.cursors[$$session.cursors.length - 1]) return null;
   return $$session.state(component);
 }
 
@@ -253,7 +256,7 @@ function withComponentCursor(cursor, mount) {
 // cursor of the enclosing block or root. setRoot receives the wrapper;
 // getRoot returns the component element afterwards.
 export function $$mountComponent(target, fragmentFn, wrapperScope, setRoot, getRoot) {
-  const outer = $$session && $$session.cursors.length ? $$session.cursors[$$session.cursors.length - 1] : null;
+  const outer = $$session ? $$session.cursors[$$session.cursors.length - 1] || null : null;
   if (outer) {
     const owner = $$owner(null);
     let handle;
@@ -632,7 +635,11 @@ export function $$component(cursor, factory, props, slots, events, changed, scop
     anchor = cursor.close();
   } else {
     anchor = cursor.comment();
-    instance = factory(anchor, props(), slots || {});
+    // A block created while a root hydrates (a repaired range) creates its
+    // children too.
+    instance = $$session
+      ? withComponentCursor(null, () => factory(anchor, props(), slots || {}))
+      : factory(anchor, props(), slots || {});
   }
   if (scope && instance.el) cursor.init(() => instance.el.setAttribute(scope, ''));
   if (events) {
@@ -650,7 +657,11 @@ export function $$component(cursor, factory, props, slots, events, changed, scop
       before.parentNode.insertBefore(anchor, before);
     },
   };
-  return registerBlock(cursor, block, anchor, () => instance.destroy());
+  // A release without DOM removal (abandon, B-3.4) keeps the child's DOM.
+  return registerBlock(cursor, block, anchor, (removeDom) => {
+    if (removeDom || !instance.abandon) instance.destroy();
+    else instance.abandon();
+  });
 }
 
 // ── Slots ────────────────────────────────────────────────────────────────
@@ -797,4 +808,10 @@ export function $$client(cursor, main, fallback) {
     if (removeDom) unmount(current);
     else current.owner.release();
   });
+}
+
+// $$createCursor exposes the create cursor to the hydration runtime, which
+// remounts a block whose server range does not match (X-7.3).
+export function $$createCursor(parent, before, owner) {
+  return createCursor(parent, before, owner);
 }

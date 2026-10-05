@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"bytes"
 	"os"
 	"os/exec"
@@ -190,5 +191,25 @@ func TestCollectVelaAcceptsDotRoot(t *testing.T) {
 	files := collectVela(".")
 	if len(files) != 2 {
 		t.Fatalf("collectVela(\".\") = %v, want App.vela and nested/Child.vela", files)
+	}
+}
+
+// TestHydrateRuntimeCarriesTheVerificationPolicy covers --hydration-verify
+// (V-11.3c): the staged runtime-hydrate.js has the chosen default.
+func TestHydrateRuntimeCarriesTheVerificationPolicy(t *testing.T) {
+	for verify, want := range map[string]string{"": "repair", "repair": "repair", "fail": "fail", "off": "off"} {
+		dir := t.TempDir()
+		withDOMEngine(t, DOMEngineBlocks, func() {
+			if err := stageRuntime(dir, CompileOptions{HydrationVerify: verify}); err != nil {
+				t.Fatal(err)
+			}
+		})
+		data, err := os.ReadFile(filepath.Join(dir, "runtime-hydrate.js"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "const VERIFY = '"+want+"';") {
+			t.Errorf("--hydration-verify=%q: staged runtime lacks VERIFY %q", verify, want)
+		}
 	}
 }
