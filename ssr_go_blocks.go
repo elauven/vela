@@ -77,6 +77,7 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 	}
 	render.Body.List = body
 	appendSSRGoImports(file, emitter.imports)
+	appendSSRGoImports(file, emitter.region.hostImports)
 	return file, nil
 }
 
@@ -236,6 +237,7 @@ func buildSSRGoBlocksSkeleton(plan *SSRRenderPlan, packageName string, includePr
 			Type: &goast.FuncType{Params: params(), Results: errResult},
 			Body: &goast.BlockStmt{List: []goast.Stmt{call(withOptions, goast.NewIdent("w"))}},
 		},
+		goRenderContextFuncDecl(component, propsName, slotsName),
 		&goast.FuncDecl{
 			Name: goast.NewIdent("Render" + component + "Static"),
 			Type: &goast.FuncType{Params: params(), Results: errResult},

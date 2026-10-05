@@ -1,6 +1,7 @@
 package ssr_runtime
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -528,6 +529,10 @@ type streamWriter struct {
 	io.Writer
 	stream *Stream
 	static bool
+	// ctx is the render context (WithContext). pending marks a writer that
+	// carries a context but whose root component has not started yet.
+	ctx     context.Context
+	pending bool
 	// hostScope is the scope attribute of the parent component, written on
 	// the root element of the next child component (B-3.8).
 	hostScope string
@@ -536,8 +541,13 @@ type streamWriter struct {
 // StaticWriter makes a render write plain HTML: no block markers, no
 // payload script (A-8.3).
 func StaticWriter(w io.Writer) io.Writer {
-	if sw, ok := w.(*streamWriter); ok && sw.static {
-		return sw
+	if sw, ok := w.(*streamWriter); ok {
+		if sw.static {
+			return sw
+		}
+		if sw.pending {
+			return &streamWriter{Writer: sw.Writer, ctx: sw.ctx, static: true}
+		}
 	}
 	return &streamWriter{Writer: w, static: true}
 }
@@ -550,9 +560,11 @@ func StaticWriter(w io.Writer) io.Writer {
 // range with OpenRange and CloseRange.
 func BeginComponent(w io.Writer, component string, state any, omitted ...string) (io.Writer, bool) {
 	sw, ok := w.(*streamWriter)
-	root := !ok
-	if root {
+	root := !ok || sw.pending
+	if !ok {
 		sw = &streamWriter{Writer: w, stream: &Stream{}}
+	} else if sw.pending {
+		sw = &streamWriter{Writer: sw.Writer, ctx: sw.ctx, stream: &Stream{}}
 	}
 	if sw.static {
 		return sw, root

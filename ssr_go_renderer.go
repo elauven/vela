@@ -80,6 +80,7 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool, 
 	render.Body.List = body
 	appendSSRGoImports(file, map[string]string{"encoding/json": "json"})
 	appendSSRGoImports(file, emitter.imports)
+	appendSSRGoImports(file, emitter.region.hostImports)
 	return file, nil
 }
 
@@ -964,6 +965,7 @@ func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
 		PlainInitializers: base.PlainInitializers, Functions: base.Functions,
 		scriptOffset:     base.scriptOffset,
 		DeepInitializers: base.DeepInitializers, localIndex: base.localIndex,
+		Hosts: base.Hosts, HostSymbols: base.HostSymbols, HostDecls: base.HostDecls,
 	}
 }
 

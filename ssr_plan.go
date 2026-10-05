@@ -56,6 +56,14 @@ type SSRRenderPlan struct {
 	// local child occurrence. Backends use RuntimeScoped to select an evaluated
 	// #each/#key instance scope instead of collapsing row children to a tag name.
 	ComponentInstanceIdentities map[SectionSpan]SSRComponentInstanceIdentity
+	// Hosts binds callee names of this component to //vela:host functions,
+	// and HostSymbols names the bindable JavaScript function behind every
+	// local or imported function name (task 030). HostProject locates the
+	// host tree for diagnostics.
+	Hosts       map[string]*SSRHostBinding
+	HostSymbols map[string]SSRHostSymbol
+	HostDecls   map[string]*JsFuncDecl
+	HostProject *SSRProject
 	// DeepInitializers holds $state.deep initializers: their initial value is
 	// an ordinary server value (T-6.6d); only legacy hydration excludes them
 	// from StateInitializers.

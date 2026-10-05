@@ -45,7 +45,7 @@ func (e *RenderError) Error() string {
 // evaluation stays panic-free; the renderer returns Err before it writes
 // output that depends on a failed site.
 type JS struct {
-	err *RenderError
+	err error
 }
 
 // NewJS starts the evaluation state of a render function.
@@ -53,17 +53,23 @@ func NewJS() *JS { return &JS{} }
 
 // Err returns the first exception, or nil.
 func (js *JS) Err() error {
-	if js == nil || js.err == nil {
+	if js == nil {
 		return nil
 	}
 	return js.err
 }
 
-func (js *JS) throw(kind, message, site string) UndefinedValue {
+// fail records err as the first failure of the render and returns
+// undefined.
+func (js *JS) fail(err error) UndefinedValue {
 	if js != nil && js.err == nil {
-		js.err = &RenderError{Kind: kind, Message: message, Site: site}
+		js.err = err
 	}
 	return Undefined()
+}
+
+func (js *JS) throw(kind, message, site string) UndefinedValue {
+	return js.fail(&RenderError{Kind: kind, Message: message, Site: site})
 }
 
 // ── Object ───────────────────────────────────────────────────────────────
@@ -692,10 +698,10 @@ func NullishLazy(left, right func() any) any {
 	return value
 }
 
-// Optional implements an optional chain link: when base is null or
+// OptionalChain implements an optional chain link: when base is null or
 // undefined the rest of the chain is not evaluated and the result is
 // undefined.
-func Optional(base any, rest func(any) any) any {
+func OptionalChain(base any, rest func(any) any) any {
 	if nullish(base) {
 		return Undefined()
 	}

@@ -159,10 +159,10 @@ func TestLazyHelpersEvaluateOnlyTheSelectedOperand(t *testing.T) {
 		t.Fatal("null ?? r")
 	}
 	rest := func(v any) any { calls++; return v }
-	if !StrictEqual(Optional(Undefined(), rest), Undefined()) || calls != 1 {
+	if !StrictEqual(OptionalChain(Undefined(), rest), Undefined()) || calls != 1 {
 		t.Fatal("undefined?.x must not evaluate the chain")
 	}
-	if Optional("v", rest) != "v" || calls != 2 {
+	if OptionalChain("v", rest) != "v" || calls != 2 {
 		t.Fatal("v?.x")
 	}
 	js := NewJS()

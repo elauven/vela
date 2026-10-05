@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	goast "go/ast"
 	"go/token"
 )
@@ -69,7 +70,16 @@ func (e *ssrGoEmitter) localsPrologue(plan *SSRRenderPlan, extra []string) ssrIn
 			source = e.region.ScriptOffset + init.NodePos()
 			builder.site = e.region.siteLabel(source)
 		}
-		ir, err := builder.build(init, 0)
+		var ir SSRIRExpr
+		var err error
+		if binding, ok := plan.Hosts[name]; ok && e.region != nil && plan.PlainInitializers[name] != nil {
+			ir, err = builder.hostCall(binding, &JsCallExpr{Callee: &JsIdent{Name: name}}, fmt.Sprintf("value %q", name), 0)
+		} else {
+			ir, err = builder.build(init, 0)
+		}
+		if e.region != nil {
+			e.region.absorb(builder)
+		}
 		if err == nil {
 			for read := range builder.reads {
 				if !out.evaluated[read] {

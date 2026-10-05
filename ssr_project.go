@@ -1,6 +1,7 @@
 package main
 
 import (
+	"go/types"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -115,23 +116,44 @@ func (layout SSRProjectLayout) manifestPath(src, srcRoot string) string {
 // buildSSRProject adds server and styles products around the established CSR
 // project build. The caller owns user-facing progress and exit handling.
 func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOptions, parallel bool) int {
+	hosts, err := loadSSRHosts(srcRoot, files)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  x  SSR project: %v\n", err)
+		return 1
+	}
+	if opts.SSRModule == "" || (opts.SSRModule == SSRDefaultModule && hosts.Project.Config.Module != "") {
+		// vela.ssr.json sets the module unless --ssr-module overrides it.
+		opts.SSRModule = hosts.Project.Config.Module
+	}
 	layout := NewSSRProjectLayoutWithModule(outRoot, opts.SSRModule)
 	clientOpts := opts
 	// The block engine's client module is the ordinary CSR module; it gains
 	// its hydrate entry in task 041 (H3).
 	clientOpts.HydrationSupport = activeDOMEngine != DOMEngineBlocks
 	errors := buildProject(files, srcRoot, layout.ClientDir, clientOpts, parallel)
+	for _, problem := range hosts.Problems {
+		fmt.Fprintf(os.Stderr, "  x  %s\n", problem.Error())
+		errors++
+	}
+	var suggestions []*SSRSiteDiagnostic
 	var report *ssrReportCollector
 	if opts.SSRReport != "" {
 		report = newSSRReportCollector()
 	}
 	for _, src := range files {
 		var region *SSRRegion
-		err := compileSSRProjectFileInto(src, srcRoot, layout, &region)
+		err := compileSSRProjectFileInto(src, srcRoot, layout, hosts, &region)
+		if region != nil {
+			for _, record := range region.Records {
+				if record.Diagnostic != nil && record.Diagnostic.Host != nil {
+					suggestions = append(suggestions, record.Diagnostic)
+				}
+			}
+		}
 		report.add(src, srcRoot, region, err)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  x  %s: SSR: %v\n", relOrBase(src, srcRoot), ssrDiagnosticSummary(err))
-			if detail := ssrDiagnosticDetail(src, err); detail != "" {
+			if detail := ssrDiagnosticDetail(hosts.Project.relative(src), err); detail != "" {
 				fmt.Fprintln(os.Stderr, detail)
 			}
 			errors++
@@ -140,9 +162,14 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 		fmt.Fprintf(compilerStatusWriter(opts), "  +  %-40s -> server/styles\n", relOrBase(src, srcRoot))
 	}
 	if errors == 0 {
-		if err := ValidateSSRProjectPackages(layout); err != nil {
+		if err := validateSSRProjectPackages(layout, hosts.Types); err != nil {
 			fmt.Fprintf(os.Stderr, "  x  SSR package validation: %v\n", err)
 			errors++
+		}
+	}
+	if opts.SSRScaffoldHosts {
+		for _, created := range scaffoldSSRHosts(hosts.Project, suggestions) {
+			fmt.Fprintf(compilerStatusWriter(opts), "  +  host stub %s\n", created)
 		}
 	}
 	if report != nil {
@@ -159,6 +186,10 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 // *_props.go sibling, and components from another directory import its Go
 // package, so isolated-file checking cannot catch every conflict.
 func ValidateSSRProjectPackages(layout SSRProjectLayout) error {
+	return validateSSRProjectPackages(layout, nil)
+}
+
+func validateSSRProjectPackages(layout SSRProjectLayout, hostTypes map[string]*types.Package) error {
 	packages := map[string]map[string][]byte{}
 	err := filepath.Walk(layout.ServerDir, func(filename string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
@@ -192,7 +223,7 @@ func ValidateSSRProjectPackages(layout SSRProjectLayout) error {
 		}
 		return err
 	}
-	if err := ValidateGeneratedSSRGoGraph(packages); err != nil {
+	if err := validateGeneratedSSRGoGraph(packages, hostTypes); err != nil {
 		return err
 	}
 	return nil
@@ -290,12 +321,16 @@ func (e *SSRHydrationBlockedError) Unwrap() error { return e.Fallback }
 const SSRHydrationBlockedDiagnosticCode = "VELA-SSR-HYDRATION"
 
 func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
-	return compileSSRProjectFileInto(src, srcRoot, layout, nil)
+	hosts, err := loadSSRHosts(srcRoot, collectVela(srcRoot))
+	if err != nil {
+		return err
+	}
+	return compileSSRProjectFileInto(src, srcRoot, layout, hosts, nil)
 }
 
 // compileSSRProjectFileInto also stores the region site records of the
 // component in regionOut when the render plan exists, whatever the result.
-func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, regionOut **SSRRegion) error {
+func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, hosts *SSRHosts, regionOut **SSRRegion) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
@@ -322,9 +357,10 @@ func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, reg
 	if err != nil {
 		return err
 	}
+	bindSSRHosts(plan, hosts, src, analysis)
 	// The renderer is built first so that the region report covers every
 	// component; its error keeps its place after the hydration checks.
-	file, region, renderErr := buildSSRGoRendererWithRegion(plan, layout.packageName(src, srcRoot), filepath.ToSlash(relOrBase(src, srcRoot)), string(data))
+	file, region, renderErr := buildSSRGoRendererWithRegion(plan, layout.packageName(src, srcRoot), hosts.Project.relative(src), string(data))
 	region.locate(string(data))
 	if regionOut != nil {
 		*regionOut = region

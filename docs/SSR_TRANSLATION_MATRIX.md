@@ -75,7 +75,7 @@ disagree, the contract wins and the row is a bug.
 | `obj[key]` | native | slice index / field / object lookup | `ssrJS.Index` | T-6.5b | member-computed | implemented | Any receiver and key, with JavaScript property-key conversion. |
 | `.length` of string | native | UTF-16 length | `ssrJS.Length` | T-6.3a | strings-length | implemented | `null.length` throws `TypeError`; an object without `length` yields `undefined`. |
 | `.length` of array | native | `len(x)` | `ssrJS.Length` | — | strings-length | implemented | |
-| `a?.b`, `a?.[k]`, `f?.()` | native | nil/undefined check, then access | `vela.Optional` with lazy rest | T-6.1b | ops-optional | partial | `a?.b` and `a?.[k]` implemented; the rest of the chain is not evaluated after a nullish link. `f?.()` is rejected until calls of values exist (S4). |
+| `a?.b`, `a?.[k]`, `f?.()` | native | nil/undefined check, then access | `vela.OptionalChain` with lazy rest | T-6.1b | ops-optional | partial | `a?.b` and `a?.[k]` implemented; the rest of the chain is not evaluated after a nullish link. `f?.()` is rejected until calls of values exist (S4). |
 
 ### 1.3 Operators
 
@@ -115,7 +115,7 @@ disagree, the contract wins and the row is a bug.
 | call to local multi-statement function | native | generated Go function | same | T-7.1a | fn-statements | planned (S4) | |
 | monomorphised variants | native | one Go function per argument type tuple | one dynamic variant above 4 | T-7.2a | fn-variants | planned (S4) | Threshold 4 (decision 1). |
 | recursion | native | Go recursion | same | T-7.1b | fn-recursion | planned (S4) | |
-| call bound by `//vela:host` | host | direct Go call | runtime-converted call | §8 | host-* | planned (S3) | |
+| call bound by `//vela:host` | host | `vela.CallHost` (reflection; §8.4 conversions) | same | §8 | host-e2e | partial | Functions of components and of local `.js` modules, and parameterless hosts for module values (§8.7). Covered by Go end-to-end tests (`TestSSRHost*`); the host fixture tooling of V-11.3e is not done. |
 | `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | native | `vela.NewError(kind, m)` | same | §6.2 | errors-new | planned (S4) | |
 | other `new`, `this`, `class` | rejected | — | — | §6.2 | — | never | v1. |
 | regular expression literal | host | — | — | §3 | — | never | See §3. |

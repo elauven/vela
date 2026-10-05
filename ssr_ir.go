@@ -135,6 +135,14 @@ type (
 		Site    string
 		NoJS    bool
 	}
+	// ssrIRHost calls a //vela:host function through vela.CallHost.
+	ssrIRHost struct {
+		ssrIRBase
+		Binding *SSRHostBinding
+		Alias   string
+		Args    []SSRIRExpr
+		Site    string
+	}
 	// ssrIROptional is an optional chain link: Rest reads Param, the
 	// non-nullish Base.
 	ssrIROptional struct {
@@ -250,6 +258,16 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 		}
 		args = append(args, ssrGoString(n.Site))
 		return &goast.CallExpr{Fun: goSelector("ssrJS", n.Method), Args: args}
+	case *ssrIRHost:
+		args := []goast.Expr{
+			goast.NewIdent("ssrJS"),
+			&goast.CallExpr{Fun: goSelector("vela", "ContextOf"), Args: []goast.Expr{goast.NewIdent("w")}},
+			ssrGoString(n.Site), ssrGoString(n.Binding.Symbol.Name), goSelector(n.Alias, n.Binding.GoName),
+		}
+		for _, arg := range n.Args {
+			args = append(args, lowerSSRIR(arg))
+		}
+		return &goast.CallExpr{Fun: goSelector("vela", "CallHost"), Args: args}
 	case *ssrIROptional:
 		rest := &goast.FuncLit{
 			Type: &goast.FuncType{
@@ -258,7 +276,7 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 			},
 			Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{lowerSSRIR(n.Rest)}}}},
 		}
-		return &goast.CallExpr{Fun: goSelector("vela", "Optional"), Args: []goast.Expr{lowerSSRIR(n.Base), rest}}
+		return &goast.CallExpr{Fun: goSelector("vela", "OptionalChain"), Args: []goast.Expr{lowerSSRIR(n.Base), rest}}
 	case *ssrIRInline:
 		return lowerSSRIR(n.Body)
 	}
@@ -292,6 +310,10 @@ type ssrIRBuilder struct {
 	locals  bool
 	reads   map[string]bool
 	current string
+	// hostImports maps the import paths of called host packages to their
+	// aliases; calls records the outcome of every function call (T-2.3).
+	hostImports map[string]string
+	calls       map[string]ssrCallOutcome
 }
 
 // BuildSSRIR builds the IR of one template expression.
@@ -772,9 +794,10 @@ func (b *ssrIRBuilder) memberLink(object SSRIRExpr, link *JsMemberExpr, nonNulli
 	return &ssrIRJS{ssrIRBase: b.base(pos, ssrIRFacts{}), Method: "Index", Args: []SSRIRExpr{object, index}, Site: b.site, NoJS: !b.js}, nil
 }
 
-// call inlines a top-level named, synchronous function with one return
-// expression and identifier parameters. Arguments are built in the
-// caller's scope; the body sees them as parameters.
+// call resolves a call in the order of T-4.1: a declared host
+// implementation, then native translation of a top-level named function
+// with one return expression (inlined), otherwise the call is unsupported
+// and the diagnostic names the host implementation that would fix it.
 func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 	if call.Optional {
 		return nil, ssrExprUnsupported(pos, "optional JavaScript calls are not available to static SSR")
@@ -783,14 +806,25 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 	if !ok {
 		return nil, ssrExprUnsupported(pos, "only named local formatter calls are available to static SSR")
 	}
+	reason := fmt.Sprintf("call %q", callee.Name)
+	if binding, ok := b.ctx.Hosts[callee.Name]; ok && b.js {
+		return b.hostCall(binding, call, reason, pos)
+	}
 	function, ok := b.ctx.Functions[callee.Name]
 	if !ok || function == nil {
+		if symbol, bindable := b.ctx.HostSymbols[callee.Name]; bindable {
+			problem := ssrExprUnsupported(pos, "it is defined in %s, and functions of JavaScript modules are translated natively only with task 045", symbol.Source)
+			return nil, b.hostMissing(problem, symbol, call, b.ctx.HostDecls[callee.Name], reason)
+		}
 		return nil, ssrExprUnsupported(pos, "JavaScript call %q is not a supported local formatter", callee.Name)
 	}
-	reason := fmt.Sprintf("call %q", callee.Name)
+	symbol, bindable := b.ctx.HostSymbols[callee.Name]
 	fail := func(format string, args ...interface{}) (SSRIRExpr, error) {
 		problem := ssrExprUnsupported(pos, format, args...)
 		b.locate(problem, function)
+		if bindable {
+			return nil, b.hostMissing(problem, symbol, call, function, reason)
+		}
 		return nil, ssrWithReason(problem, nil, reason)
 	}
 	if function.Async || function.Generator {
@@ -836,10 +870,145 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 	b.params = outer
 	if err != nil {
 		b.locate(err, result.Arg)
+		if bindable {
+			return nil, b.hostMissing(err, symbol, call, function, reason)
+		}
 		return nil, ssrWithReason(err, err, reason)
 	}
+	b.called(callee.Name, SSROutcomeNative, "")
 	// What is known about a call result is not tracked (parity).
 	return &ssrIRInline{ssrIRBase: b.base(pos, ssrIRFacts{}), Kind: "call", Name: callee.Name, Body: value}, nil
+}
+
+// hostMissing turns the failure of a bindable function into
+// VELA-SSR-HOST-MISSING: the function needs a host implementation, whose
+// file and signature (inferred from this call) the diagnostic gives.
+func (b *ssrIRBuilder) hostMissing(cause error, symbol SSRHostSymbol, call *JsCallExpr, function *JsFuncDecl, reason string) error {
+	suggestion := &ssrHostSuggestion{Symbol: symbol}
+	for i, argument := range call.Args {
+		name := fmt.Sprintf("arg%d", i+1)
+		if function != nil && i < len(function.Params) {
+			if param := identName(function.Params[i]); param != "" {
+				name = param
+			}
+		}
+		facts := ssrIRFacts{}
+		if value, err := b.build(argument, 0); err == nil {
+			facts = value.irBase().Facts
+		}
+		suggestion.ParamNames = append(suggestion.ParamNames, name)
+		suggestion.ParamTypes = append(suggestion.ParamTypes, ssrGoTypeForFacts(facts))
+	}
+	b.called(symbol.Name, SSROutcomeUnsupported, "")
+	wrapped := ssrWithReason(cause, cause, reason).(*SSRExpressionError)
+	wrapped.Code = SSRHostMissingCode
+	wrapped.Host = suggestion
+	if wrapped.Cause == "" {
+		wrapped.Cause = wrapped.Message
+	}
+	wrapped.Message = fmt.Sprintf("%s has no server-native translation: %s", symbol.Name, wrapped.Cause)
+	wrapped.Cause = wrapped.Message
+	return wrapped
+}
+
+// hostCall lowers a call to a //vela:host function. Arguments the
+// signature cannot take are build errors (VELA-SSR-HOST-SIG, H-8.3e);
+// values of unproven type are converted at run time.
+func (b *ssrIRBuilder) hostCall(binding *SSRHostBinding, call *JsCallExpr, reason string, pos int) (SSRIRExpr, error) {
+	signatureError := func(format string, args ...interface{}) (SSRIRExpr, error) {
+		problem := ssrExprUnsupported(pos, format, args...).(*SSRExpressionError)
+		problem.Code = SSRHostSignatureCode
+		b.called(binding.Symbol.Name, SSROutcomeUnsupported, binding.ImportPath+"."+binding.GoName)
+		return nil, ssrWithReason(problem, nil, reason)
+	}
+	if binding.Problem != "" {
+		return signatureError("host %s.%s (%s:%d) has an unusable signature: %s", binding.Package, binding.GoName, binding.File, binding.Line, binding.Problem)
+	}
+	arguments := make([]SSRIRExpr, 0, len(call.Args))
+	for i, argument := range call.Args {
+		if _, spread := argument.(*JsSpreadExpr); spread {
+			return signatureError("spread arguments to host %s are not supported", binding.Symbol.Name)
+		}
+		value, err := b.build(argument, pos)
+		if err != nil {
+			return nil, err
+		}
+		if param, ok := ssrHostParamAt(binding, i); ok {
+			if mismatch := ssrHostArgumentMismatch(param, value.irBase().Facts); mismatch != "" {
+				return signatureError("argument %d of %s is %s, but %s takes %s %s", i+1, binding.Symbol.Name, mismatch, binding.GoName, param.Name, param.Type)
+			}
+		}
+		arguments = append(arguments, value)
+	}
+	for i := len(call.Args); i < len(binding.Params); i++ {
+		param := binding.Params[i]
+		if binding.Variadic && i == len(binding.Params)-1 {
+			break
+		}
+		if !param.AcceptsUndefined {
+			return signatureError("%s is called with %d argument(s), so %s receives undefined, which Go type %s cannot hold; use vela.Optional[%s], a pointer, or any", binding.Symbol.Name, len(call.Args), param.Name, param.Type, param.Type)
+		}
+	}
+	if b.hostImports == nil {
+		b.hostImports = map[string]string{}
+	}
+	alias := ssrHostAlias(binding)
+	b.hostImports[binding.ImportPath] = alias
+	b.usedJS, b.throws = true, true
+	b.called(binding.Symbol.Name, SSROutcomeHost, binding.ImportPath+"."+binding.GoName)
+	return &ssrIRHost{ssrIRBase: b.base(pos, ssrIRFacts{}), Binding: binding, Alias: alias, Args: arguments, Site: b.site}, nil
+}
+
+func ssrHostParamAt(binding *SSRHostBinding, index int) (SSRHostParam, bool) {
+	if index < len(binding.Params) {
+		return binding.Params[index], true
+	}
+	if binding.Variadic && len(binding.Params) > 0 {
+		return binding.Params[len(binding.Params)-1], true
+	}
+	return SSRHostParam{}, false
+}
+
+// ssrHostArgumentMismatch describes a proven argument type the parameter
+// cannot take, or "".
+func ssrHostArgumentMismatch(param SSRHostParam, facts ssrIRFacts) string {
+	proven := facts.SemanticType()
+	if proven == "unknown" || param.Kind == "any" {
+		return ""
+	}
+	want := param.Kind
+	if want == "time" {
+		want = "string"
+	}
+	if proven == want {
+		return ""
+	}
+	return "a " + proven
+}
+
+// ssrHostAlias is the import alias of a host package in generated code.
+func ssrHostAlias(binding *SSRHostBinding) string {
+	sum := 0
+	for _, r := range binding.ImportPath {
+		sum = (sum*31 + int(r)) % 9973
+	}
+	return fmt.Sprintf("host_%s_%d", binding.Package, sum)
+}
+
+// called records the outcome of a function call for the report.
+func (b *ssrIRBuilder) called(name, outcome, host string) {
+	if b.calls == nil {
+		b.calls = map[string]ssrCallOutcome{}
+	}
+	previous, seen := b.calls[name]
+	if !seen || previous.Outcome != SSROutcomeUnsupported {
+		b.calls[name] = ssrCallOutcome{Outcome: outcome, Host: host}
+	}
+}
+
+type ssrCallOutcome struct {
+	Outcome string
+	Host    string
 }
 
 // ssrGoExprFacts reads what a Go expression the renderer holds proves about
@@ -918,6 +1087,22 @@ func ssrLocalName(name string) string { return "ssrL_" + name }
 // once. A read of a binding declared later is a ReferenceError in
 // JavaScript and is rejected.
 func (b *ssrIRBuilder) localRef(name, kind string, initializer JsExpr, pos int, boolProp bool) (SSRIRExpr, error) {
+	if binding, ok := b.ctx.Hosts[name]; ok && kind == "plain" && b.js {
+		// A module value provided by a parameterless host (§8.7): the
+		// prologue calls it once per render.
+		if len(binding.Params) > 0 || binding.Problem != "" {
+			problem := ssrExprUnsupported(pos, "host %s.%s (%s:%d) for the value %q must take no arguments", binding.Package, binding.GoName, binding.File, binding.Line, name).(*SSRExpressionError)
+			problem.Code = SSRHostSignatureCode
+			return nil, problem
+		}
+		b.inlined[name] = true
+		if b.reads == nil {
+			b.reads = map[string]bool{}
+		}
+		b.reads[name] = true
+		b.called(name, SSROutcomeHost, binding.ImportPath+"."+binding.GoName)
+		return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: goast.NewIdent(ssrLocalName(name))}, nil
+	}
 	if b.current != "" && b.ctx.localIndex[name] > b.ctx.localIndex[b.current] {
 		problem := ssrExprUnsupported(pos, "%q reads %q, which is declared later (a ReferenceError in JavaScript)", b.current, name)
 		return nil, problem

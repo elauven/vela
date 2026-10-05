@@ -87,6 +87,7 @@ type CompileOptions struct {
 	Strict                  bool     // elevate proven unresolved reads to errors
 	SSRModule               string   // Go module import root for generated SSR server packages
 	SSRReport               string   // --ssr-report: write the region site records as JSON (task 043)
+	SSRScaffoldHosts        bool     // --ssr-scaffold-hosts: create stubs for missing host implementations (task 030)
 	Production              bool     // --mode=production: production runtime variant
 	HydrationSupport        bool     // internal: emit SSR client state-restoration hooks
 	// RuntimeImport is the module specifier generated code uses for the
@@ -110,8 +111,9 @@ func main() {
 	strict := flag.Bool("strict", false, "treat proven unresolved JavaScript reads as errors")
 	tracePath := flag.String("trace", "", "append source-free CompilationTraceV1 records as JSONL; use '-' for stdout")
 	ssr := flag.Bool("ssr", false, "emit SSR project outputs into client/, server/, and styles/")
-	ssrModule := flag.String("ssr-module", "vela/generated/server", "Go module import root for generated SSR packages")
+	ssrModule := flag.String("ssr-module", SSRDefaultModule, "Go module import root for generated SSR packages")
 	ssrReport := flag.String("ssr-report", "", "with --ssr, write the per-site SSR report (outcome, tier, type) to this JSON file")
+	ssrScaffold := flag.Bool("ssr-scaffold-hosts", false, "with --ssr, create Go stubs in the host tree for functions that need a host implementation; existing files are never changed")
 	mode := flag.String("mode", "development", "build mode: 'development' (default) or 'production'")
 	domEngine := flag.String("dom-engine", "legacy", "DOM engine: 'legacy' (default) or 'blocks' (block runtime, task 039)")
 	flag.Parse()
@@ -158,6 +160,7 @@ func main() {
 		Strict:                  *strict,
 		SSRModule:               *ssrModule,
 		SSRReport:               *ssrReport,
+		SSRScaffoldHosts:        *ssrScaffold,
 		Production:              *mode == "production",
 	}
 	if closeTrace, traceErr := configureTrace(&opts, *tracePath); traceErr != nil {

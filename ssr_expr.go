@@ -30,6 +30,8 @@ type SSRExpressionError struct {
 	Reasons []string
 	// Cause is the innermost message when Message wraps another error.
 	Cause string
+	// Host suggests the host implementation that would fix the site.
+	Host *ssrHostSuggestion
 	// Source is the .vela offset of the script initializer or function body
 	// the problem was found in, when SourceSet; otherwise the site position
 	// applies.
@@ -73,6 +75,9 @@ func ssrWithReason(err, inner error, reason string) error {
 		result.Code = problem.Code
 		result.Cause = problem.innermost()
 		result.Source, result.SourceSet = problem.Source, problem.SourceSet
+		if result.Host == nil {
+			result.Host = problem.Host
+		}
 		reasons = append(reasons, problem.Reasons...)
 	} else {
 		reasons = append(reasons, outer.Reasons...)
@@ -92,6 +97,9 @@ type SSRExprContext struct {
 	DerivedInitializers map[string]JsExpr
 	PlainInitializers   map[string]JsExpr
 	DeepInitializers    map[string]JsExpr
+	Hosts               map[string]*SSRHostBinding
+	HostDecls           map[string]*JsFuncDecl
+	HostSymbols         map[string]SSRHostSymbol
 	// localIndex is the declaration position of each local binding.
 	localIndex         map[string]int
 	Functions          map[string]*JsFuncDecl
@@ -135,6 +143,9 @@ func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
 	}
 	ctx.scriptOffset = plan.ScriptOffset
 	ctx.DeepInitializers = plan.DeepInitializers
+	ctx.Hosts = plan.Hosts
+	ctx.HostSymbols = plan.HostSymbols
+	ctx.HostDecls = plan.HostDecls
 	ctx.localIndex = map[string]int{}
 	for index, name := range plan.LocalOrder {
 		ctx.localIndex[name] = index

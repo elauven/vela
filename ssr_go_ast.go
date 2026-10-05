@@ -59,6 +59,7 @@ func buildSSRGoSkeleton(plan *SSRRenderPlan, packageName string, includeProps bo
 		goRenderAtFuncDecl(component, propsName, slotsName, renderOptionsName),
 		goRenderWithOptionsFuncDecl(component, propsName, slotsName, renderOptionsName, plan.ScopeID),
 		goRenderFuncDecl(component, propsName, slotsName, plan.ScopeID),
+		goRenderContextFuncDecl(component, propsName, slotsName),
 		goComponentRendererAtFuncDecl(component, propsName, slotsName),
 		goComponentRendererFuncDecl(component, propsName, slotsName, plan.ScopeID),
 	)
@@ -118,7 +119,8 @@ func goImportDecl(path string) *goast.GenDecl {
 }
 
 func goSSRImportDecl() *goast.GenDecl {
-	decl := goImportDecl("io")
+	decl := goImportDecl("context")
+	decl.Specs = append(decl.Specs, goImportDecl("io").Specs...)
 	decl.Specs = append(decl.Specs, &goast.ImportSpec{
 		Name: goast.NewIdent("vela"),
 		Path: &goast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", SSRRuntimeImportPath)},
@@ -301,7 +303,14 @@ func ValidateGeneratedSSRGoPackage(sources map[string][]byte) error {
 // validating directories independently would hide unresolved child-component
 // imports until a consumer tried to build the generated project.
 func ValidateGeneratedSSRGoGraph(packages map[string]map[string][]byte) error {
+	return validateGeneratedSSRGoGraph(packages, nil)
+}
+
+// validateGeneratedSSRGoGraph also resolves imports of host packages to
+// their analysed types (task 030).
+func validateGeneratedSSRGoGraph(packages map[string]map[string][]byte, hosts map[string]*types.Package) error {
 	loader := &ssrGeneratedGraphImporter{
+		hosts:    hosts,
 		fallback: importer.Default(),
 		packages: packages,
 		cache:    map[string]*types.Package{},
@@ -321,6 +330,7 @@ func ValidateGeneratedSSRGoGraph(packages map[string]map[string][]byte) error {
 }
 
 type ssrGeneratedGraphImporter struct {
+	hosts    map[string]*types.Package
 	fallback types.Importer
 	packages map[string]map[string][]byte
 	cache    map[string]*types.Package
@@ -341,6 +351,9 @@ func (loader *ssrGeneratedGraphImporter) Import(importPath string) (*types.Packa
 		return pkg, nil
 	}
 	if pkg, ok := loader.cache[importPath]; ok {
+		return pkg, nil
+	}
+	if pkg, ok := loader.hosts[importPath]; ok {
 		return pkg, nil
 	}
 	sources, generated := loader.packages[importPath]
@@ -539,7 +552,41 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	ssrRuntimeAddFunc(pkg, "TypeOf", []*types.Var{v("value", anyType)}, []*types.Var{v("", stringType)})
 	ssrRuntimeAddFunc(pkg, "ToNumber", []*types.Var{v("value", anyType)}, []*types.Var{v("", floatT)})
 	ssrRuntimeAddFunc(pkg, "NullishLazy", []*types.Var{v("left", lazy), v("right", lazy)}, []*types.Var{v("", anyType)})
-	ssrRuntimeAddFunc(pkg, "Optional", []*types.Var{v("base", anyType), v("rest", rest)}, []*types.Var{v("", anyType)})
+	ssrRuntimeAddFunc(pkg, "OptionalChain", []*types.Var{v("base", anyType), v("rest", rest)}, []*types.Var{v("", anyType)})
+
+	// Host implementations (ssr_runtime/host.go).
+	contextPkg, err := loader.Import("context")
+	if err != nil {
+		return nil, err
+	}
+	contextT := contextPkg.Scope().Lookup("Context").Type()
+	ssrRuntimeAddFunc(pkg, "WithContext", []*types.Var{v("w", writer), v("ctx", contextT)}, []*types.Var{v("", writer)})
+	ssrRuntimeAddFunc(pkg, "ContextOf", []*types.Var{v("w", writer)}, []*types.Var{v("", contextT)})
+	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, "CallHost", types.NewSignatureType(nil, nil, nil, types.NewTuple(
+		v("js", types.NewPointer(jsType)), v("ctx", contextT), v("site", stringType), v("name", stringType), v("fn", anyType), v("args", anySlice),
+	), types.NewTuple(v("", anyType)), true)))
+	pkg.Scope().Insert(types.NewVar(token.NoPos, pkg, "ErrHostNotImplemented", errorType))
+	errorMethod := func(name string) {
+		typeName := types.NewTypeName(token.NoPos, pkg, name, nil)
+		named := types.NewNamed(typeName, types.NewStruct([]*types.Var{
+			types.NewField(token.NoPos, pkg, "Site", stringType, false),
+		}, nil), nil)
+		recv := v("e", types.NewPointer(named))
+		named.AddMethod(types.NewFunc(token.NoPos, pkg, "Error", types.NewSignatureType(recv, nil, nil, nil, types.NewTuple(v("", stringType)), false)))
+		pkg.Scope().Insert(typeName)
+	}
+	errorMethod("HostError")
+	errorMethod("RenderError")
+	optionalName := types.NewTypeName(token.NoPos, pkg, "Optional", nil)
+	optionalT := types.NewTypeParam(types.NewTypeName(token.NoPos, pkg, "T", nil), types.NewInterfaceType(nil, nil))
+	optional := types.NewNamed(optionalName, nil, nil)
+	optional.SetTypeParams([]*types.TypeParam{optionalT})
+	optional.SetUnderlying(types.NewStruct([]*types.Var{
+		types.NewField(token.NoPos, pkg, "Value", optionalT, false),
+		types.NewField(token.NoPos, pkg, "Null", boolT, false),
+		types.NewField(token.NoPos, pkg, "Absent", boolT, false),
+	}, nil))
+	pkg.Scope().Insert(optionalName)
 
 	// Block markup and payload stream (docs/HYDRATION_ARCHITECTURE.md §5, §6).
 	jsonPkg, err := loader.Import("encoding/json")
@@ -603,4 +650,32 @@ func ssrRenderFunc(file *goast.File, component string) (*goast.FuncDecl, error) 
 		}
 	}
 	return nil, fmt.Errorf("ssr go AST: missing %s declaration", name)
+}
+
+// goRenderContextFuncDecl declares RenderXContext (H-8.3c): the render
+// context reaches host functions through the writer.
+//
+//	func RenderXContext(ctx context.Context, w io.Writer, props XProps, slots XSlots) error {
+//		return RenderX(vela.WithContext(w, ctx), props, slots)
+//	}
+func goRenderContextFuncDecl(component, propsName, slotsName string) *goast.FuncDecl {
+	return &goast.FuncDecl{
+		Name: goast.NewIdent("Render" + component + "Context"),
+		Type: &goast.FuncType{
+			Params: &goast.FieldList{List: []*goast.Field{
+				{Names: []*goast.Ident{goast.NewIdent("ctx")}, Type: goSelector("context", "Context")},
+				{Names: []*goast.Ident{goast.NewIdent("w")}, Type: goSelector("io", "Writer")},
+				{Names: []*goast.Ident{goast.NewIdent("props")}, Type: goast.NewIdent(propsName)},
+				{Names: []*goast.Ident{goast.NewIdent("slots")}, Type: goast.NewIdent(slotsName)},
+			}},
+			Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("error")}}},
+		},
+		Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{&goast.CallExpr{
+			Fun: goast.NewIdent("Render" + component),
+			Args: []goast.Expr{
+				&goast.CallExpr{Fun: goSelector("vela", "WithContext"), Args: []goast.Expr{goast.NewIdent("w"), goast.NewIdent("ctx")}},
+				goast.NewIdent("props"), goast.NewIdent("slots"),
+			},
+		}}}}},
+	}
 }

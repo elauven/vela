@@ -22,6 +22,7 @@ import (
 const (
 	SSROutcomeNative      = "server-native"
 	SSROutcomeUnsupported = "unsupported"
+	SSROutcomeHost        = "server-host"
 )
 
 // SSRSiteRecord is the T-2.3 record of one region site.
@@ -39,6 +40,8 @@ type SSRSiteRecord struct {
 	// sites ($state, $derived) are recorded with their own outcome; the
 	// render needs them only where another site reads them (Reads).
 	Required   bool               `json:"required"`
+	// Host is the Go function of a server-host function site.
+	Host       string             `json:"host,omitempty"`
 	Reads      []string           `json:"reads,omitempty"`
 	Diagnostic *SSRSiteDiagnostic `json:"diagnostic,omitempty"`
 }
@@ -49,6 +52,8 @@ type SSRSiteDiagnostic struct {
 	Message string   `json:"message"`
 	Reasons []string `json:"reasons"`
 	Fix     string   `json:"fix"`
+	// Host is the host implementation that would fix the site.
+	Host *SSRHostFix `json:"host,omitempty"`
 	// Error keeps the one-line message of the translator.
 	Error string `json:"-"`
 	// Pos is the .vela offset of the script code the problem is in, or -1
@@ -72,10 +77,15 @@ type SSRRegion struct {
 	File     string
 	usesJS   bool
 	throwing int
+	// project locates the host tree; hostImports collects the host packages
+	// the lowered sites call; calls the outcome of every called function.
+	project     *SSRProject
+	hostImports map[string]string
+	calls       map[string]ssrCallOutcome
 }
 
 func newSSRRegion(plan *SSRRenderPlan) *SSRRegion {
-	return &SSRRegion{Component: plan.ComponentName, TemplateOffset: plan.TemplateOffset, ScriptOffset: plan.ScriptOffset, counters: map[string]int{}}
+	return &SSRRegion{Component: plan.ComponentName, TemplateOffset: plan.TemplateOffset, ScriptOffset: plan.ScriptOffset, counters: map[string]int{}, project: plan.HostProject, hostImports: map[string]string{}, calls: map[string]ssrCallOutcome{}}
 }
 
 // ssrSiteRoot describes a region root for the first reason of a chain.
@@ -124,7 +134,7 @@ func (r *SSRRegion) add(kind, name string, pos int, required bool, ir SSRIRExpr,
 	sort.Strings(record.Reads)
 	if err != nil {
 		record.Outcome = SSROutcomeUnsupported
-		record.Diagnostic = ssrSiteDiagnostic(kind, name, err)
+		record.Diagnostic = ssrSiteDiagnostic(kind, name, err, r.project)
 	} else {
 		record.Outcome = SSROutcomeNative
 		facts := ir.irBase().Facts
@@ -133,7 +143,7 @@ func (r *SSRRegion) add(kind, name string, pos int, required bool, ir SSRIRExpr,
 	r.Records = append(r.Records, record)
 }
 
-func ssrSiteDiagnostic(kind, name string, err error) *SSRSiteDiagnostic {
+func ssrSiteDiagnostic(kind, name string, err error, project *SSRProject) *SSRSiteDiagnostic {
 	diagnostic := &SSRSiteDiagnostic{Code: SSRExpressionDiagnosticCode, Message: err.Error(), Reasons: []string{ssrSiteRoot(kind, name)}, Error: err.Error(), Pos: -1}
 	if problem, ok := err.(*SSRExpressionError); ok {
 		diagnostic.Code = problem.code()
@@ -142,11 +152,18 @@ func ssrSiteDiagnostic(kind, name string, err error) *SSRSiteDiagnostic {
 		if problem.SourceSet {
 			diagnostic.Pos = problem.Source
 		}
+		if problem.Host != nil {
+			file, directive, signature := problem.Host.describe(project)
+			diagnostic.Host = &SSRHostFix{File: file, Directive: directive, Signature: signature}
+		}
 	}
 	if kind == "prop-default" {
 		diagnostic.Error = fmt.Sprintf("SSR default prop %q: %s", name, diagnostic.Error)
 	}
 	diagnostic.Fix = ssrSiteFix(diagnostic.Code, diagnostic.Message)
+	if diagnostic.Host != nil {
+		diagnostic.Fix = "implement it in Go:\n    " + diagnostic.Host.File + "\n      " + diagnostic.Host.Directive + "\n      " + diagnostic.Host.Signature + "\n    or run: vela --ssr --ssr-scaffold-hosts"
+	}
 	return diagnostic
 }
 
@@ -154,14 +171,18 @@ func ssrSiteDiagnostic(kind, name string, err error) *SSRSiteDiagnostic {
 // {#client} boundaries (S6) add their own fixes when they exist.
 func ssrSiteFix(code, message string) string {
 	switch {
+	case code == SSRHostSignatureCode:
+		return "change the host function or the call so that the arguments fit the Go parameters (docs/SSR_TRANSLATION_CONTRACT.md §8.3, §8.4)"
 	case code == SSRImpureDiagnosticCode:
 		return "move the write into an event handler, $effect, or onMount; server rendering must not change state"
 	case strings.Contains(message, "has no server value"):
 		return "give the binding a server-evaluable initializer, or pass the value as an exported prop"
 	case strings.Contains(message, "is not linked to a local .vela import"):
 		return "import the component from its .vela file in this component's <script>"
-	case strings.Contains(message, "not a supported local formatter"), strings.Contains(message, "only named local formatter calls"):
-		return "compute the value in a top-level function with one return expression, pass it as a prop, or compute it in Go and pass it in (host functions: task 030)"
+	case strings.Contains(message, "only named local formatter calls"):
+		return "method calls are translated with task 046; until then, move the expression into a top-level function of the component script and implement that function in Go with //vela:host (contract H-8.2e), or pass the value as a prop"
+	case strings.Contains(message, "not a supported local formatter"):
+		return "a global function has no host binding; wrap the call in a top-level function of the component script and implement that function in Go with //vela:host, or pass the value as a prop"
 	}
 	return "rewrite the expression within the admitted subset (docs/SSR_TRANSLATION_MATRIX.md), or compute it in Go and pass it as a prop"
 }
@@ -362,6 +383,9 @@ func (e *ssrGoEmitter) translateJS(kind, name string, expr JsExpr, pos, source i
 		builder.site = e.region.siteLabel(source)
 	}
 	ir, err := builder.build(expr, pos)
+	if e.region != nil && (err == nil || e.speculative == 0) {
+		e.region.absorb(builder)
+	}
 	if err == nil {
 		if builder.usedJS {
 			e.region.usesJS = true
@@ -432,6 +456,21 @@ func (r *SSRRegion) finish(plan *SSRRenderPlan) error {
 				r.Records[len(r.Records)-1].Reads = append(r.Records[len(r.Records)-1].Reads, "(read by the render)")
 			}
 		}
+	}
+	// One record per called function, at its definition (T-2.1 root 6).
+	names := make([]string, 0, len(r.calls))
+	for name := range r.calls {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		call := r.calls[name]
+		r.counters["function"]++
+		pos := -1
+		if function, ok := plan.Functions[name]; ok && function != nil {
+			pos = r.ScriptOffset + function.NodePos()
+		}
+		r.Records = append(r.Records, SSRSiteRecord{ID: fmt.Sprintf("function#%d", r.counters["function"]), Kind: "function", Name: name, Pos: pos, Outcome: call.Outcome, Host: call.Host})
 	}
 	if failures := r.Failures(); len(failures) > 0 {
 		return &SSRRegionError{Region: r, Failures: failures}
@@ -533,4 +572,27 @@ func ssrJSPrologue(region *SSRRegion) []goast.Stmt {
 		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []goast.Expr{goast.NewIdent("ssrJS")}},
 	}
 	return out
+}
+
+// SSRHostFix is where and how to implement a missing host (§10.1).
+type SSRHostFix struct {
+	File      string `json:"file"`
+	Directive string `json:"directive"`
+	Signature string `json:"signature"`
+}
+
+// absorb collects what a builder used: host imports and call outcomes.
+func (r *SSRRegion) absorb(builder *ssrIRBuilder) {
+	if r == nil {
+		return
+	}
+	for path, alias := range builder.hostImports {
+		r.hostImports[path] = alias
+	}
+	for name, outcome := range builder.calls {
+		if previous, seen := r.calls[name]; seen && previous.Outcome == SSROutcomeUnsupported {
+			continue
+		}
+		r.calls[name] = outcome
+	}
 }
