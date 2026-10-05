@@ -1,0 +1,16 @@
+[
+ {"group":"init-order","name":"state-from-prop-default","props":{},"decls":[["prop","a","1"],["state","b","a + 1"],["derived","c","b * 2"]],"expression":"c","expected":"4","state":"{\"b\":2}"},
+ {"group":"init-order","name":"state-from-prop-given","props":{"a":5},"decls":[["prop","a","1"],["state","b","a + 1"],["derived","c","b * 2"]],"expression":"c","expected":"12","state":"{\"b\":6}"},
+ {"group":"init-order","name":"derived-chain","props":{"name":"x"},"decls":[["prop","name","''"],["derived","up","name + '!'"],["derived","both","up + up"]],"expression":"both","expected":"x!x!","state":"{}"},
+ {"group":"init-order","name":"const-object-member","props":{},"decls":[["const","cfg","{ k: 'v' }"],["state","s","cfg.k"]],"expression":"s","expected":"v","state":"{\"s\":\"v\"}"},
+ {"group":"init-order","name":"state-nullish-prop","props":{},"decls":[["prop","p","null"],["state","v","p ?? 'none'"]],"expression":"v","expected":"none","state":"{\"v\":\"none\"}"},
+ {"group":"init-order","name":"deep-spread-prop","props":{"tags":["a","b"]},"decls":[["prop","tags","[]"],["deep","list","[...tags, 'z']"]],"expression":"list","expected":"a,b,z","state":"{\"list\":[\"a\",\"b\",\"z\"]}"},
+ {"group":"init-order","name":"state-typeof-prop","props":{"v":"__undefined__"},"decls":[["prop","v","undefined"],["state","t","typeof v"]],"expression":"t","expected":"undefined","state":"{\"t\":\"undefined\"}"},
+ {"group":"init-order","name":"bindable-default","props":{},"decls":[["bindable","value","3"],["state","twice","value * 2"]],"expression":"twice","expected":"6","state":"{\"twice\":6,\"value\":3}"},
+ {"group":"init-order","name":"bindable-given","props":{"value":4},"decls":[["bindable","value","3"],["state","twice","value * 2"]],"expression":"twice","expected":"8","state":"{\"twice\":8,\"value\":4}"},
+ {"group":"objects-order","name":"integer-keys-first","props":{},"decls":[["state","o","{ b: 1, a: 2, '10': 3, '2': 4 }"]],"expression":"o.b","expected":"1","state":"{\"o\":{\"2\":4,\"10\":3,\"b\":1,\"a\":2}}"},
+ {"group":"objects-order","name":"spread-keeps-first-position","props":{},"decls":[["state","o","{ z: 1, ...{ a: 2, z: 3 } }"]],"expression":"o.z","expected":"3","state":"{\"o\":{\"z\":3,\"a\":2}}"},
+ {"group":"objects-order","name":"spread-string","props":{},"decls":[["state","o","{ ...'hi' }"]],"expression":"o[1]","expected":"i","state":"{\"o\":{\"0\":\"h\",\"1\":\"i\"}}"},
+ {"group":"objects-order","name":"spread-prop-object","props":{"src":{"y":1,"x":2}},"decls":[["prop","src","{}"],["state","o","{ x: 0, ...src, w: 9 }"]],"expression":"o.x","expected":"2","state":"{\"o\":{\"x\":2,\"y\":1,\"w\":9}}"},
+ {"group":"objects-order","name":"duplicate-key","props":{},"decls":[["state","o","{ a: 1, b: 2, a: 3 }"]],"expression":"o.a","expected":"3","state":"{\"o\":{\"a\":3,\"b\":2}}"}
+]

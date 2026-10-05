@@ -29,7 +29,8 @@ disagree, the contract wins and the row is a bug.
   groups: `value-text` (`testdata/ssr_value_text_oracle.json`), the expression
   groups `ops-*`, `member-*`, `strings-length`, `arrays-spread`,
   `objects-spread`, and `number-text` (`testdata/ssr_expression_oracle.json`,
-  run in both tiers by `TestSSRExpressionOracleBothTiers`), `attribute`
+  run in both tiers by `TestSSRExpressionOracleBothTiers`), `init-order` and
+  `objects-order` (`testdata/ssr_init_oracle.json`, `TestSSRInitOracle`), `attribute`
   (`testdata/ssr_attribute_oracle.json`), `checked-binding`
   (`testdata/ssr_checked_binding_oracle.json`). `go-tests` means behaviour is
   covered only by Go tests, which does not satisfy V-11.1b.
@@ -58,9 +59,9 @@ disagree, the contract wins and the row is a bug.
 | `null` | native | `nil` | same | T-5.3 | value-text | implemented | |
 | `undefined` | native | `vela.Undefined()` | same | T-5.3 | value-text | implemented | |
 | prop identifier | native | `props.<Field>` | same | T-5.2 | value-text | implemented | |
-| `$state` / `$state.deep` / `$bindable` read | native | Go local initialised once | same | T-6.6d | init-order | partial | Evaluated once in declaration order into `ssrL_<name>`; `$state(prop)` renders, and the block engine's payload carries the computed values. Tracked oracle group `init-order` missing (covered by the `Init` case of the SSR block corpus); hydration of the restored values is task 041. |
-| `$derived` read | native | Go local initialised once, in declaration order | same | T-6.6d | init-order | partial | As above. A read of a binding declared later is rejected (ReferenceError in JavaScript). |
-| top-level `const` / unchanged `let` | native | Go local | same | T-2.1 | init-order | partial | As above; recorded as `binding` sites in `--ssr-report`. |
+| `$state` / `$state.deep` / `$bindable` read | native | Go local initialised once | same | T-6.6d | init-order | implemented | Evaluated once in declaration order into `ssrL_<name>`; `$state(prop)` renders, and the block engine's payload carries the computed values (`testdata/ssr_init_oracle.json`). Restoring them on the client is task 041. |
+| `$derived` read | native | Go local initialised once, in declaration order | same | T-6.6d | init-order | implemented | As above. A read of a binding declared later is rejected (ReferenceError in JavaScript). |
+| top-level `const` / unchanged `let` | native | Go local | same | T-2.1 | init-order | implemented | As above; recorded as `binding` sites in `--ssr-report`. |
 | `#each` / `#await` binding | native | lexical Go variable | same | — | value-text | implemented | |
 | symbol imported from local `.js` | native or host | generated module package | same | T-7.3a | modules-* | planned (S4) | |
 | symbol imported from npm | host or client | — | — | T-7.3c | — | never | |
@@ -105,7 +106,7 @@ disagree, the contract wins and the row is a bug.
 | tagged template | rejected | — | — | §6.2 | — | never | v1. |
 | array literal | native | `[]any{…}` with holes | same | §6.2 | value-text (`array-hole`) | implemented | |
 | array spread `[...a]` | native | `vela.JoinArrays` + `ssrJS.SpreadItems` | same | §6.2 | arrays-spread | implemented | Strings spread by code point; spreading `null` throws `TypeError`. |
-| object literal | native | `*vela.Object` | `*vela.Object` | T-5.1c | objects-order | partial | Insertion order with JavaScript key ordering (Go unit test). A closed-shape struct lowering is not done; tracked group `objects-order` missing. |
+| object literal | native | `*vela.Object` | `*vela.Object` | T-5.1c | objects-order | implemented | Insertion order with JavaScript key ordering, observed through the payload (`testdata/ssr_init_oracle.json`). A closed-shape struct lowering is an optimisation not done yet. |
 | object spread `{...o}` | native | `(*vela.Object).Spread` | same | T-5.1c | objects-spread | implemented | |
 | object methods, getters/setters | rejected | — | — | §6.2 | — | never | v1. |
 | destructuring (declarations, parameters, defaults) | native | Go locals | same | §7.1 | stmt-destructure | planned (S4) | |

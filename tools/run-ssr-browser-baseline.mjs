@@ -39,6 +39,7 @@ export const requiredTests = [
   "TestBlocksSSRMarkupParsesInChromium",
   // JavaScript and generated Go agree on every expression row in both tiers (task 044).
   "TestSSRExpressionOracleBothTiers",
+  "TestSSRInitOracle",
 ];
 
 export async function requireLaunchableChromium({ moduleName = "playwright", executablePath = "" } = {}) {
