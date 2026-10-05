@@ -32,6 +32,7 @@ func TestSSRClientProgramReadsHydrationStateWithoutChangingCSRDefault(t *testing
 }
 
 func TestSSRProjectClientModuleEnablesHydrationStateInput(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {

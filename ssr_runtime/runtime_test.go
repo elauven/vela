@@ -317,3 +317,55 @@ func TestGet(t *testing.T) {
 		t.Fatalf("String missing value = %q", got)
 	}
 }
+
+func TestStreamWritesRangesAndOrderedRootPayload(t *testing.T) {
+	var out strings.Builder
+	w, root := BeginComponent(&out, "Page", `{"open":true}`)
+	if !root {
+		t.Fatal("first component is not the root")
+	}
+	OpenRange(w, "")
+	child, childRoot := BeginComponent(w, "Child", "", "now")
+	if childRoot {
+		t.Fatal("nested component is a root")
+	}
+	OpenRange(child, "")
+	if token := AwaitEntry(child, "Child#3", "then", "<done>", ""); token != "t" {
+		t.Fatalf("await token = %q", token)
+	}
+	CloseRange(child)
+	if err := EndComponent(child, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	OpenRange(w, "x")
+	CloseRange(w)
+	AwaitEntry(w, "Page#4", "", "", "")
+	CloseRange(w)
+	props, _ := MarshalHydrationPayload(map[string]any{"title": "</script>"})
+	if err := EndComponent(w, true, props); err != nil {
+		t.Fatal(err)
+	}
+	want := `<!--[--><!--[--><!--]--><!--[x--><!--]--><!--]-->` +
+		`<script type="application/json" data-vela-root>{"v":2,"props":{"title":"LTscriptGT"},"entries":[["s","Page",{"open":true}],["s","Child",{},{"omitted":["now"]}],["a","Child#3",{"state":"t","value":"LTdoneGT"}],["a","Page#4",{"state":"p"}]]}</script>`
+	lt, gt := "\\"+"u003c", "\\"+"u003e"
+	want = strings.NewReplacer("LT", lt+"/", "GT", gt).Replace(want)
+	want = strings.Replace(want, lt+"/done", lt+"done", 1)
+	if out.String() != want {
+		t.Fatalf("output =\n%s\nwant\n%s", out.String(), want)
+	}
+
+	var static strings.Builder
+	sw, root := BeginComponent(StaticWriter(&static), "Page", "{}")
+	OpenRange(sw, "")
+	OpenRange(sw, "0")
+	WriteString(sw, "<p>x</p>")
+	CloseRange(sw)
+	AwaitEntry(sw, "Page#1", "then", "v", "")
+	CloseRange(sw)
+	if err := EndComponent(sw, root, props); err != nil {
+		t.Fatal(err)
+	}
+	if static.String() != "<p>x</p>" {
+		t.Fatalf("static output = %q", static.String())
+	}
+}

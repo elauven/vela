@@ -574,3 +574,161 @@ func Get(value any, key string) any {
 func EscapeString(value string) string {
 	return html.EscapeString(value)
 }
+
+// RootPayloadVersion is the schema version of the payload stream written by
+// block-engine renderers (docs/HYDRATION_ARCHITECTURE.md §6).
+const RootPayloadVersion = 2
+
+// Stream collects the ordered payload entries of one root render (S-6.1).
+// Component instances and server-rendered await blocks append entries in
+// render order; the client consumes them in the same order.
+type Stream struct {
+	entries []any
+}
+
+// streamWriter carries the render state of one root through every nested
+// component and slot: they all receive an io.Writer, so the stream needs no
+// extra renderer parameter. static suppresses markers and entries (A-8.3).
+type streamWriter struct {
+	io.Writer
+	stream *Stream
+	static bool
+	// hostScope is the scope attribute of the parent component, written on
+	// the root element of the next child component (B-3.8).
+	hostScope string
+}
+
+// StaticWriter makes a render write plain HTML: no block markers, no
+// payload script (A-8.3).
+func StaticWriter(w io.Writer) io.Writer {
+	if sw, ok := w.(*streamWriter); ok && sw.static {
+		return sw
+	}
+	return &streamWriter{Writer: w, static: true}
+}
+
+// BeginComponent registers a component instance. When w does not belong to
+// a render yet, the component is the root: a new stream starts and root is
+// true. The component's state entry is recorded (S-6.4); state is the
+// compile-time JSON of its initial state and omitted lists bindings whose
+// initial value could not be serialized. The caller writes the component
+// range with OpenRange and CloseRange.
+func BeginComponent(w io.Writer, component, state string, omitted ...string) (io.Writer, bool) {
+	sw, ok := w.(*streamWriter)
+	root := !ok
+	if root {
+		sw = &streamWriter{Writer: w, stream: &Stream{}}
+	}
+	if sw.static {
+		return sw, root
+	}
+	if state == "" {
+		state = "{}"
+	}
+	entry := []any{"s", component, json.RawMessage(state)}
+	if len(omitted) > 0 {
+		entry = append(entry, map[string][]string{"omitted": omitted})
+	}
+	sw.stream.entries = append(sw.stream.entries, entry)
+	return sw, root
+}
+
+// EndComponent finishes a component after its range. A root writes its
+// payload script right after the range (M-5.6); props is the JSON of the
+// root's declared props after defaults (S-6.2).
+func EndComponent(w io.Writer, root bool, props json.RawMessage) error {
+	sw, ok := w.(*streamWriter)
+	if !ok {
+		return fmt.Errorf("vela: EndComponent without BeginComponent")
+	}
+	if sw.static || !root {
+		return nil
+	}
+	return writeRootPayload(sw.Writer, props, sw.stream)
+}
+
+// OpenRange writes the start marker of a block range with its state token
+// (§5.1); CloseRange writes the end marker. Static renders write neither.
+func OpenRange(w io.Writer, state string) error {
+	if sw, ok := w.(*streamWriter); ok && sw.static {
+		return nil
+	}
+	return WriteString(w, "<!--["+state+"-->")
+}
+
+func CloseRange(w io.Writer) error {
+	if sw, ok := w.(*streamWriter); ok && sw.static {
+		return nil
+	}
+	return WriteString(w, "<!--]-->")
+}
+
+// AwaitEntry records the branch a server-rendered await block selected
+// (S-6.4) and returns its state token. state is "", "pending", "then" or
+// "catch" as in the render options.
+func AwaitEntry(w io.Writer, site, state, value, errText string) string {
+	token := "p"
+	snapshot := map[string]string{}
+	switch state {
+	case "then":
+		token = "t"
+		snapshot["value"] = value
+	case "catch":
+		token = "c"
+		snapshot["error"] = errText
+	}
+	snapshot["state"] = token
+	if sw, ok := w.(*streamWriter); ok && !sw.static {
+		sw.stream.entries = append(sw.stream.entries, []any{"a", site, snapshot})
+	}
+	return token
+}
+
+// writeRootPayload writes the payload script of a root. encoding/json
+// escapes <, > and & (and U+2028/U+2029), so the content cannot close the
+// script element or open a comment (S-6.6).
+func writeRootPayload(w io.Writer, props json.RawMessage, stream *Stream) error {
+	entries := stream.entries
+	if entries == nil {
+		entries = []any{}
+	}
+	if len(props) == 0 {
+		props = json.RawMessage("{}")
+	}
+	encoded, err := json.Marshal(struct {
+		Version int             `json:"v"`
+		Props   json.RawMessage `json:"props"`
+		Entries []any           `json:"entries"`
+	}{RootPayloadVersion, props, entries})
+	if err != nil {
+		return err
+	}
+	if err := WriteString(w, `<script type="application/json" data-vela-root>`); err != nil {
+		return err
+	}
+	if _, err := w.Write(encoded); err != nil {
+		return err
+	}
+	return WriteString(w, `</script>`)
+}
+
+// SetHostScope passes the parent's scope attribute to the root element of
+// the child component rendered next, as the client sets it on the child's
+// root element.
+func SetHostScope(w io.Writer, scope string) {
+	if sw, ok := w.(*streamWriter); ok {
+		sw.hostScope = scope
+	}
+}
+
+// WriteHostScope writes the pending parent scope attribute inside the open
+// tag of a component's root element and clears it.
+func WriteHostScope(w io.Writer) error {
+	sw, ok := w.(*streamWriter)
+	if !ok || sw.hostScope == "" {
+		return nil
+	}
+	scope := sw.hostScope
+	sw.hostScope = ""
+	return WriteString(w, " "+scope)
+}

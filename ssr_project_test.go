@@ -12,6 +12,7 @@ import (
 )
 
 func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -98,6 +99,7 @@ func TestBuildSSRProjectWritesSeparatedProducts(t *testing.T) {
 }
 
 func TestSSRCLIWritesDeclaredArtifactMode(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -145,6 +147,7 @@ func TestSSRArtifactManifestPreservesClientBoundaryMode(t *testing.T) {
 }
 
 func TestSSRProjectWritesStaticOnlyArtifactManifest(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -179,6 +182,7 @@ func TestSSRProjectWritesStaticOnlyArtifactManifest(t *testing.T) {
 }
 
 func TestSSRProjectRejectsIncompleteExecutableHydrationState(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -245,6 +249,7 @@ func TestSSRProjectRejectsLooseEqualityBeforeWritingServerArtifact(t *testing.T)
 }
 
 func TestSSRProjectGeneratedServerRunsFromPublicArtifacts(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -299,6 +304,7 @@ func main() {
 }
 
 func TestSSRProjectPublicArtifactsHydrateAndUpdateInBrowser(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -370,6 +376,7 @@ window.initialWrites = observer.takeRecords().length;
 }
 
 func TestSSRProjectPublicNullTextHydratesAndUpdatesInBrowser(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -437,6 +444,7 @@ window.initialWrites = observer.takeRecords().length;
 }
 
 func TestSSRProjectPublicValueTextOracleHydratesInBrowser(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	cases := loadSSRValueTextOracle(t)
 	root := t.TempDir()
@@ -514,6 +522,7 @@ window.initialWrites = observer.takeRecords().length;
 }
 
 func TestSSRProjectPublicAttributeOracleHydratesInBrowser(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	rawCases, err := os.ReadFile(filepath.Join("testdata", "ssr_attribute_oracle.json"))
 	if err != nil {
@@ -603,6 +612,7 @@ window.initialWrites = observer.takeRecords().length;
 }
 
 func TestSSRProjectPublicChildPropPresenceHydratesUpdatesAndRemountsInBrowser(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -679,6 +689,7 @@ window.initialWrites = observer.takeRecords().length;
 }
 
 func TestSSRProjectPublicHydrationFailureRollsBackListenerAndChildCache(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -803,6 +814,7 @@ globalThis.__identity = rollbackRoot.querySelector('.parent') === parentButton &
 }
 
 func TestSSRProjectPublicStaticOnlyArtifactsValidateInBrowser(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -868,6 +880,7 @@ window.initialWrites = observer.takeRecords().length;
 }
 
 func TestSSRProjectPublicTextareaBindingHydratesInBrowser(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -933,6 +946,7 @@ window.initialWrites = observer.takeRecords().length;
 }
 
 func TestSSRProjectPublicNullFormBindingsMatchBrowserProperties(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -996,6 +1010,7 @@ window.initialWrites = observer.takeRecords().length;
 }
 
 func TestSSRProjectPublicTableAndSelectHydrateInBrowser(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -1061,6 +1076,7 @@ window.initialWrites = observer.takeRecords().length;
 }
 
 func TestSSRProjectPublicMultipleSelectHydratesUpdatesAndBindsInBrowser(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -1127,6 +1143,7 @@ window.initialWrites = observer.takeRecords().length;
 }
 
 func TestSSRProjectPublicNamedFormatterHydratesAndUpdatesInBrowser(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
@@ -1282,6 +1299,7 @@ func TestSSRProjectRendersSamePackageChildComponent(t *testing.T) {
 }
 
 func TestSSRProjectInternalChildCallRetainsOmittedPropDefault(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -1337,6 +1355,7 @@ func main() {
 }
 
 func TestSSRProjectInternalChildCallPreservesExplicitZeroValues(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {

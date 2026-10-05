@@ -9,6 +9,7 @@ import (
 )
 
 func TestGeneratedSSRRendererSelectsAwaitSnapshot(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let draft = "server"; export let enabled = false;</script><template><main>{#await request}<p class="pending">Pending</p>{:then value}<p class="settled" :title={value}>Settled</p><input class="draft" bind:value={draft} /><input class="enabled" type="checkbox" bind:checked={enabled} /><button @click={clicked}>Save</button>{:catch error}<p class="failed">Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -109,6 +110,7 @@ func main() {
 }
 
 func TestGeneratedSSRRendererSelectsAwaitSnapshotStaticKeyedEach(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row)}<p class="settled-row">Row</p>{:else}<p class="settled-empty">Empty</p>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -172,6 +174,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotStaticKeyedEach(t *testing.T) {
 }
 
 func TestGeneratedSSRRendererSelectsAwaitSnapshotKeyedEachDirectRowText(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<p class="settled-row" :title={row.title} class:selected={row.selected} style:color={row.color} @click={() => globalThis.__velaRowClicks = (globalThis.__velaRowClicks || 0) + 1}>{row.title}</p>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -210,6 +213,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotKeyedEachDirectRowText(t *testi
 }
 
 func TestGeneratedSSRRendererExecutesNestedKeyedAwaitSnapshot(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let rows=[];</script><template><main>{#each rows as row (row.id)}{#await row.request}<p>Pending</p>{:then value}{#each row.fields as field (field.id)}<p>{field.title}</p>{/each}{:catch error}{#each row.fields as field (field.id)}<p>{field.title}</p>{/each}{/await}{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -431,6 +435,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectTextareaBinding(t *tes
 }
 
 func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectBinding(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let request; export let rows = [];</script><template><main>{#await request}<p>Pending</p>{:then value}{#each rows as row (row.id)}<select class="settled-select" bind:value={row.status}><optgroup label="Active"><option value="open">Open</option></optgroup><optgroup label="Closed"><option value="done">Done</option></optgroup></select>{/each}{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -2044,6 +2049,7 @@ func TestBrowserSSRHydrationAdoptsSettledAwaitSnapshotStaticKeyedEachElse(t *tes
 }
 
 func TestGeneratedSSRRendererSelectsAwaitSnapshotChild(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request;</script><template><main>{#await request}<p>Pending</p>{:then value}<Child :title={value} /><p>Between</p><Child :title={value} /><p>Done</p>{:catch error}<Child :title={error} /><p>Between failed</p><Child :title={error} /><p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -2103,6 +2109,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotBindableChild(t *testing.T) {
 }
 
 func TestGeneratedSSRRendererSelectsAwaitSnapshotStaticSlotChild(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request;</script><template><main>{#await request}<p>Pending</p>{:then value}<Child><p class="slotted">Body</p></Child><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -2133,6 +2140,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotStaticSlotChild(t *testing.T) {
 }
 
 func TestGeneratedSSRRendererSelectsAwaitSnapshotReactiveSlotLeafChild(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let request; export let title = "server"; export let active = false; export let color = "red"; export let draft = "server"; export let enabled = false; function increment() {}</script><template><main>{#await request}<p>Pending</p>{:then value}<Child><p class="slotted" :title={title} class:active={active} style:color={color}>{title}</p><button @click={increment}>Increment</button><input bind:value={draft} /><input type="checkbox" bind:checked={enabled} /></Child><p>Done</p>{:catch error}<p>Failed</p>{/await}</main></template>`)
 	if err != nil {
 		t.Fatal(err)

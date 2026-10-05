@@ -1,0 +1,17 @@
+<script>
+  import Panel from './Panel.vela';
+  export let tags = [];
+  export let mode = 'a';
+  export let version = 1;
+  let note = $state('n');
+</script>
+<template>
+  <div class="extras">
+    {#if mode === 'a'}<p>A</p>{:else if mode === 'b'}<p>B</p>{/if}
+    <ul>{#each tags as tag, i}<li>{i}:{tag}</li>{:else}<li class="none">none</li>{/each}</ul>
+    {#key version}<span>v{version}</span>{/key}
+    <Panel :title={note} />
+    <Panel>{note} <b>{mode}</b></Panel>
+    a {note} b {mode}
+  </div>
+</template>

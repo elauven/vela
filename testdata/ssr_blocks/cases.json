@@ -1,0 +1,18 @@
+[
+ {"name": "Form", "component": "Form", "props": {"start": "go"}, "entries": ["Form"], "compare": true},
+ {"name": "Multi small", "component": "Multi", "props": {"n": 1}, "entries": ["Multi"], "awaits": [["Multi#4", "p"]], "compare": true},
+ {"name": "Multi mid", "component": "Multi", "props": {"n": 2}, "entries": ["Multi"], "compare": true},
+ {"name": "Multi big", "component": "Multi", "props": {"n": 3}, "entries": ["Multi"], "compare": true},
+ {"name": "Multi then", "component": "Multi", "props": {"n": 1}, "options": {"await": {"4": {"state": "then", "value": "<ok>"}}}, "entries": ["Multi"], "awaits": [["Multi#4", "t"]]},
+ {"name": "Multi catch", "component": "Multi", "props": {"n": 1}, "options": {"await": {"4": {"state": "catch", "error": "bad"}}}, "entries": ["Multi"], "awaits": [["Multi#4", "c"]]},
+ {"name": "Nested", "component": "Nested", "props": {"items": [{"id": 1, "name": "a", "done": true}, {"id": 2, "name": "b", "done": false}]}, "entries": ["Nested"], "compare": true},
+ {"name": "Nested empty", "component": "Nested", "props": {"items": []}, "entries": ["Nested"], "compare": true},
+ {"name": "Panel", "component": "Panel", "props": {"title": "solo", "value": "v"}, "entries": ["Panel"], "compare": true},
+ {"name": "Shell", "component": "Shell", "props": {"rows": [{"id": 1, "name": "r1"}, {"id": 2, "name": "r2"}]}, "entries": ["Shell", "Panel", "Panel", "Panel"], "compare": true},
+ {"name": "Shell no rows", "component": "Shell", "props": {"rows": []}, "entries": ["Shell", "Panel"], "compare": true},
+ {"name": "Extras empty", "component": "Extras", "props": {"tags": [], "mode": "c"}, "entries": ["Extras", "Panel", "Panel"], "compare": true},
+ {"name": "Extras a", "component": "Extras", "props": {"tags": ["x", "y"], "mode": "a", "version": 2}, "entries": ["Extras", "Panel", "Panel"], "compare": true},
+ {"name": "Extras b", "component": "Extras", "props": {"tags": ["<z>"], "mode": "b"}, "entries": ["Extras", "Panel", "Panel"], "compare": true},
+ {"name": "Table", "component": "Table", "props": {"rows": [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}], "note": "\nline"}, "entries": ["Table"], "compare": true},
+ {"name": "Table empty", "component": "Table", "props": {"rows": [], "note": ""}, "entries": ["Table"], "compare": true}
+]

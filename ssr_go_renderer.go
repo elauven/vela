@@ -31,6 +31,9 @@ func BuildSSRGoRendererFile(plan *SSRRenderPlan, packageName string) (*goast.Fil
 }
 
 func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) (*goast.File, error) {
+	if activeDOMEngine == DOMEngineBlocks {
+		return buildSSRGoBlocksFile(plan, packageName, includeProps)
+	}
 	file, err := buildSSRGoSkeleton(plan, packageName, includeProps)
 	if err != nil {
 		return nil, err
@@ -181,6 +184,10 @@ type ssrGoEmitter struct {
 	imports                     map[string]string
 	selectValue                 *TemplateExpr
 	selectMultiple              bool
+	// blocks selects block markup and the payload stream (ssr_go_blocks.go).
+	blocks        bool
+	componentName string
+	rootElement   *SSRPlanElement // single root element; nil with a wrapper root
 }
 
 func (e *ssrGoEmitter) nodes(nodes []SSRPlanNode) ([]goast.Stmt, error) {
@@ -302,6 +309,9 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	if hasIdentity && identity.RuntimeScoped {
 		suffix = ssrRuntimeComponentSuffix(identity)
 	}
+	if e.blocks {
+		suffix = ""
+	}
 	if suffix != "" {
 		componentName += "At"
 		if prefix != "" {
@@ -313,6 +323,11 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	}
 	call := &goast.CallExpr{Fun: component, Args: args}
 	render := &goast.CallExpr{Fun: goSelectorExpr(call, "Render"), Args: []goast.Expr{goast.NewIdent("w")}}
+	if e.blocks {
+		// The client sets the parent scope on the child root element.
+		setScope := &goast.ExprStmt{X: &goast.CallExpr{Fun: goSelector("vela", "SetHostScope"), Args: []goast.Expr{goast.NewIdent("w"), &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(e.scopeID)}}}}
+		return []goast.Stmt{setScope, goWriteSSRErr(render)}, nil
+	}
 	return []goast.Stmt{goWriteSSRErr(render)}, nil
 }
 
@@ -389,13 +404,19 @@ func (e *ssrGoEmitter) slot(node *SSRPlanSlot) ([]goast.Stmt, error) {
 		}
 		filled.Else = &goast.BlockStmt{List: fallback}
 	}
+	if e.blocks {
+		return e.ranged("", []goast.Stmt{filled}), nil
+	}
 	return []goast.Stmt{filled}, nil
 }
 
 func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {
+	if e.blocks && node.ClientDropped {
+		return nil, nil
+	}
 	body := make([]goast.Stmt, 0, len(node.Parts)*3)
 	for _, part := range node.Parts {
-		if !part.Static {
+		if !part.Static && !e.blocks {
 			body = append(body, e.markerStart(part.DynamicID))
 		}
 		value, err := e.outputValue(part.Static, part.Value, part.Expr)
@@ -403,7 +424,7 @@ func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {
 			return nil, err
 		}
 		body = append(body, goWriteSSRValue(value))
-		if !part.Static {
+		if !part.Static && !e.blocks {
 			body = append(body, e.markerEnd(part.DynamicID))
 		}
 	}
@@ -415,8 +436,14 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 		return nil, ssrExprUnsupported(node.Span.Start, "single-select bind:value has a known null server value, which HTML cannot represent before hydration")
 	}
 	body := make([]goast.Stmt, 0, len(node.Attrs)+len(node.Children)+2)
-	body = append(body, e.elementMarkerStart(node.HydrationID))
+	if !e.blocks {
+		body = append(body, e.elementMarkerStart(node.HydrationID))
+	}
 	open := "<" + node.Tag
+	if e.blocks {
+		// The client sets the scope attribute on every template element.
+		open += " " + e.scopeID
+	}
 	var textareaValue SSRPlanAttr
 	hasTextareaValue := false
 	childSelectValue := e.selectValue
@@ -595,10 +622,20 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(" selected")}),
 		}}})
 	}
-	if node.EventKey != "" {
+	if node.EventKey != "" && !e.blocks {
 		open += ` data-vela-event="` + node.EventKey + `"`
 	}
+	if e.blocks && node == e.rootElement {
+		body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
+		body = append(body, goWriteSSRErr(&goast.CallExpr{Fun: goSelector("vela", "WriteHostScope"), Args: []goast.Expr{goast.NewIdent("w")}}))
+		open = ""
+	}
 	open += ">"
+	if e.blocks && (node.Tag == "pre" || node.Tag == "textarea" || node.Tag == "listing") {
+		// The HTML parser drops one newline right after these start tags;
+		// writing one keeps a leading newline of the content (M-5.7).
+		open += "\n"
+	}
 	body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
 	if hasTextareaValue {
 		value, err := e.outputFormValue(textareaValue.Expr)
@@ -624,7 +661,9 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 	if !ssrVoidElement(node.Tag) {
 		body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("</" + node.Tag + ">")}))
 	}
-	body = append(body, e.elementMarkerEnd(node.HydrationID))
+	if !e.blocks {
+		body = append(body, e.elementMarkerEnd(node.HydrationID))
+	}
 	return body, nil
 }
 
@@ -660,6 +699,9 @@ func ssrStylePrefix(style string) string {
 }
 
 func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
+	if e.blocks {
+		return e.blocksIf(node)
+	}
 	var body []goast.Stmt
 	if node.DynamicID >= 0 {
 		body = append(body, e.markerStart(node.DynamicID))
@@ -753,7 +795,10 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	if node.Key != nil && node.DynamicID >= 0 {
+	if e.blocks {
+		// Every row is its own range (M-5.2).
+		children = e.ranged("", children)
+	} else if node.Key != nil && node.DynamicID >= 0 {
 		children = append([]goast.Stmt{child.rowMarkerStart(node.DynamicID)}, append(children, child.rowMarkerEnd(node.DynamicID))...)
 	}
 	e.eachNext = child.eachNext
@@ -764,7 +809,7 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	// index must not become an unused generated Go binding. Keep the normal
 	// index name whenever it is observable by the template or needed by an
 	// unkeyed row's scope.
-	if node.Key != nil && node.IndexName == "" {
+	if (node.Key != nil || e.blocks) && node.IndexName == "" {
 		rangeKey = goast.NewIdent("_")
 	}
 	rangeStmt := &goast.RangeStmt{
@@ -776,6 +821,9 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	}
 	assign := &goast.AssignStmt{Lhs: []goast.Expr{iterIdent}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "Iter"), Args: []goast.Expr{iterable}}}}
 	if len(node.ElseChildren) == 0 {
+		if e.blocks {
+			return e.ranged("", []goast.Stmt{assign, rangeStmt}), nil
+		}
 		return e.markedStatements(node.DynamicID, []goast.Stmt{assign, rangeStmt}), nil
 	}
 	otherwise, err := e.nodes(node.ElseChildren)
@@ -783,6 +831,14 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 		return nil, err
 	}
 	empty := &goast.BinaryExpr{X: &goast.CallExpr{Fun: goast.NewIdent("len"), Args: []goast.Expr{iterIdent}}, Op: token.EQL, Y: &goast.BasicLit{Kind: token.INT, Value: "0"}}
+	if e.blocks {
+		// The state token tells the client that the fallback is rendered.
+		return []goast.Stmt{assign, &goast.IfStmt{
+			Cond: empty,
+			Body: &goast.BlockStmt{List: e.ranged("e", otherwise)},
+			Else: &goast.BlockStmt{List: e.ranged("", []goast.Stmt{rangeStmt})},
+		}}, nil
+	}
 	return e.markedStatements(node.DynamicID, []goast.Stmt{assign, &goast.IfStmt{
 		Cond: empty,
 		Body: &goast.BlockStmt{List: otherwise},
@@ -973,6 +1029,9 @@ func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
 	pending, err := e.nodes(node.PendingChildren)
 	if err != nil {
 		return nil, err
+	}
+	if e.blocks {
+		return e.blocksAwait(node, pending)
 	}
 	if node.DynamicID < 0 || e.awaitOptions == nil {
 		return e.markedStatements(node.DynamicID, pending), nil

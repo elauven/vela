@@ -1,0 +1,14 @@
+<script>
+  export let rows = [];
+  export let note = '';
+</script>
+<template>
+  <div class="table">
+    <table>
+      <tr><th>name</th></tr>
+      {#each rows as row (row.id)}<tr><td>{row.name}</td></tr>{:else}<tr><td>none</td></tr>{/each}
+    </table>
+    <pre>{note}</pre>
+    <textarea>{note}</textarea>
+  </div>
+</template>

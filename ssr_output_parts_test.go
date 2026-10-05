@@ -37,6 +37,7 @@ func TestBuildSSRGoFileAppliesDefaultPropsFromExplicitPresence(t *testing.T) {
 }
 
 func TestBuildSSRGoRendererFilePayloadExcludesSidecarOnlyFields(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let title = "fallback";</script><template><p>{title}</p></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -130,6 +131,7 @@ func TestBuildSSRGoFileWithOutputPartsRendersDynamicAttribute(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersClassAndStyleDirectives(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let active=false; export let color="";</script><template><button class="base" class:selected={active} style="width: 1px" style:color={color}>Save</button></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -167,6 +169,7 @@ func TestBuildSSRGoFileRendersClassAndStyleDirectives(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersValueBindingForHydration(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let title="";</script><template><input bind:value={title} /></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -192,6 +195,7 @@ func TestBuildSSRGoFileRendersValueBindingForHydration(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersTextareaValueBindingAsText(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let note="";</script><template><textarea bind:value={note} /></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -217,6 +221,7 @@ func TestBuildSSRGoFileRendersTextareaValueBindingAsText(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersSelectValueBindingForHydration(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let choice="b";</script><template><select bind:value={choice}><option value="a">A</option><option value="b">B</option></select></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -278,6 +283,7 @@ func TestBuildSSRGoFileRejectsSelectBindingOptionWithoutStaticValue(t *testing.T
 }
 
 func TestBuildSSRGoFileRendersMultipleSelectValueBinding(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let choice=["a", "c"];</script><template><select multiple bind:value={choice}><option value="a">A</option><option value="b">B</option><option :value={choice[1]}>C</option></select></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -306,6 +312,7 @@ func TestBuildSSRGoFileRendersMultipleSelectValueBinding(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersCheckedBindingForHydration(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let done=false;</script><template><input type="checkbox" bind:checked={done} /></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -456,6 +463,7 @@ func TestBuildSSRGoFileRendersEachAndEmptyBranch(t *testing.T) {
 }
 
 func TestBuildSSRGoFileEmitsStableEventMarker(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<template><button @click={() => {}}>Save</button></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -488,6 +496,7 @@ func TestBuildSSRGoFileEmitsStableEventMarker(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersKeyAndAwaitPending(t *testing.T) {
+	legacySSRProtocolTest(t)
 	source := `<script>export let identity=0; export let request=null;</script><template>{#key identity}<p>key body</p>{/key}{#await request}<p>loading</p>{:then value}<p>{value}</p>{:catch error}<p>{error}</p>{/await}</template>`
 	sfc, err := parseSFC(source)
 	if err != nil {
@@ -514,6 +523,7 @@ func TestBuildSSRGoFileRendersKeyAndAwaitPending(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersSettledNestedKeyedAwaitRows(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let rows=[];export let request=null;</script><template><main>{#each rows as row (row.id)}{#await request}<p>pending</p>{:then value}{#each row.fields as field (field.id)}<p>{field.title}</p>{/each}{:catch error}{#each row.fields as field (field.id)}<p>{field.title}</p>{/each}{/await}{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -549,6 +559,7 @@ func TestBuildSSRGoFileRendersSettledNestedKeyedAwaitRows(t *testing.T) {
 }
 
 func TestBuildSSRGoFileEmitsPairedMarkersForDynamicRanges(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let title=""; export let show=false; export let items=[];</script><template><p>{title}</p>{#if show}<b>yes</b>{/if}{#each items as item}<i>{item}</i>{/each}</template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -578,6 +589,7 @@ func TestBuildSSRGoFileEmitsPairedMarkersForDynamicRanges(t *testing.T) {
 }
 
 func TestBuildSSRGoFileEmitsPairedMarkersForKeyedEachRows(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let items=[];</script><template><main>{#each items as item (item)}<p>{item}</p>{/each}</main></template>`)
 	if err != nil {
 		t.Fatal(err)

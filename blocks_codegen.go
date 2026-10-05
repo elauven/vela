@@ -249,6 +249,8 @@ func (g *ASTGen) blocksInitAndUpdate(stmt JsStmt, exprs ...*TemplateExpr) []JsSt
 // the root fragment and $$viewUpdate, registers the view with the flush plan,
 // and mounts the view during the initial render.
 func (g *ASTGen) buildBlocksView(nodes []Node) {
+	// The server renders the same normalised template (M-5.7).
+	normalizeTableRows(nodes)
 	g.blocks.deps = map[string]bool{}
 	rootIsElement := len(nodes) == 1
 	if rootIsElement {
@@ -751,4 +753,53 @@ func (g *ASTGen) buildBlocksSlot(slot *SlotNode) {
 		fallback = id(g.blocksNestedFragment(slot.Fallback, nil))
 	}
 	g.blocksBlockCall("$$slot", genComputedMember(id("$$slots"), strLit(slot.Name)), fallback)
+}
+
+// blocksDroppedWhitespace returns the whitespace-only static text nodes
+// among siblings that the block engine does not create (M-5.10): a run of
+// consecutive static nodes is dropped when it is only whitespace, unless the
+// siblings are a fully static subtree or a subtree without structural
+// blocks and element wiring. A single root element has no text siblings,
+// so the root flag of buildBlocksChildren does not change the result. The
+// SSR render plan records the same decision, so server and client write the
+// same text runs.
+func blocksDroppedWhitespace(nodes []Node) map[*TextNode]bool {
+	if (hasElement(nodes) && allStatic(nodes)) || astHoleSubtreeOK(nodes) {
+		return nil
+	}
+	dropped := map[*TextNode]bool{}
+	var run []Node
+	flush := func() {
+		blank := true
+		for _, node := range run {
+			text, ok := node.(*TextNode)
+			if !ok || strings.TrimSpace(textNodeStaticValue(text)) != "" {
+				blank = false
+				break
+			}
+		}
+		if blank {
+			for _, node := range run {
+				dropped[node.(*TextNode)] = true
+			}
+		}
+		run = nil
+	}
+	for _, node := range nodes {
+		if isStaticNode(node) {
+			run = append(run, node)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return dropped
+}
+
+func textNodeStaticValue(text *TextNode) string {
+	value := ""
+	for _, part := range text.Parts {
+		value += part.Value
+	}
+	return value
 }

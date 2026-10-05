@@ -37,6 +37,7 @@ func loadSSRValueTextOracle(t *testing.T) []ssrValueTextOracleCase {
 // by tools/verify-ssr-value-text-oracle.mjs, then pass through Vela parsing,
 // cached AST lowering, generated Go, and the SSR runtime before HTML is read.
 func TestGeneratedSSRRendererMatchesValueTextOracle(t *testing.T) {
+	legacySSRProtocolTest(t)
 	cases := loadSSRValueTextOracle(t)
 	var template strings.Builder
 	template.WriteString("<template><main>")

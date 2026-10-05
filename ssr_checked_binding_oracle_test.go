@@ -41,6 +41,7 @@ func loadSSRCheckedBindingOracle(t *testing.T) ([]ssrCheckedBindingOracleCase, [
 // through Vela parsing, generated Go HTML, browser parsing, zero-write
 // hydration, a programmatic update, and a real change event back into state.
 func TestSSRProjectPublicCheckedBindingOracleHydratesInBrowser(t *testing.T) {
+	legacySSRProtocolTest(t)
 	node := requirePlaywright(t)
 	cases, rawCases := loadSSRCheckedBindingOracle(t)
 

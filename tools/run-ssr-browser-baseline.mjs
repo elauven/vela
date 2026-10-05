@@ -34,6 +34,9 @@ export const requiredTests = [
   "TestBlocksEngineRendersEachElse",
   "TestBlocksEngineUpdatesSlotContentInEachRows",
   "TestBlocksEngineInteropWithLegacyComponents",
+  // Block markup and payload stream of the Go renderer (task 040).
+  "TestBlocksSSRMarkupMatchesClientDOM",
+  "TestBlocksSSRMarkupParsesInChromium",
 ];
 
 export async function requireLaunchableChromium({ moduleName = "playwright", executablePath = "" } = {}) {

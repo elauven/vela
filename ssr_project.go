@@ -117,7 +117,9 @@ func (layout SSRProjectLayout) manifestPath(src, srcRoot string) string {
 func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOptions, parallel bool) int {
 	layout := NewSSRProjectLayoutWithModule(outRoot, opts.SSRModule)
 	clientOpts := opts
-	clientOpts.HydrationSupport = true
+	// The block engine's client module is the ordinary CSR module; it gains
+	// its hydrate entry in task 041 (H3).
+	clientOpts.HydrationSupport = activeDOMEngine != DOMEngineBlocks
 	errors := buildProject(files, srcRoot, layout.ClientDir, clientOpts, parallel)
 	for _, src := range files {
 		if err := compileSSRProjectFile(src, srcRoot, layout); err != nil {
@@ -286,9 +288,18 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 		return err
 	}
 	links = LinkSSRComponentPackages(links, srcRoot, layout)
+	if activeDOMEngine == DOMEngineBlocks {
+		normalizeTableRows(sfc.TemplateAST.Nodes)
+		if err := checkSSRBlocksNesting(src, string(data), sfc.TemplateAST.Nodes, links); err != nil {
+			return err
+		}
+	}
 	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks(componentName(src), sfc, analysis, scopeID, links)
 	if err != nil {
 		return err
+	}
+	if activeDOMEngine == DOMEngineBlocks {
+		return writeSSRBlocksProjectFile(src, srcRoot, layout, plan)
 	}
 	clientRuntime := runtimeImportFor(filepath.Dir(layout.hydratePath(src, srcRoot)), layout.ClientDir)
 	var hydrate *JsProgram

@@ -99,6 +99,7 @@ if (JSON.stringify(calls) !== "[[\"click\",\"function\"]]") process.exit(1);
 }
 
 func TestCompileSSRProjectFileUsesExecutableHydrationForReactiveEvent(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	source := filepath.Join(root, "App.vela")
 	content := `<script>export let count = 0; function increment() { count++; }</script><template><button @click={increment}>{count}</button></template>`
@@ -137,6 +138,7 @@ func TestBuildSSRStaticEventBridgeRejectsLexicalThis(t *testing.T) {
 }
 
 func TestCompileSSRProjectFileReportsHydrationBlockerBeforeBridgeError(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	list := filepath.Join(root, "List.vela")
 	listSource := `<script>

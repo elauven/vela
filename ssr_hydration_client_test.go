@@ -10,6 +10,7 @@ import (
 )
 
 func TestSSRProjectWritesExecutableHydrationClientForSupportedSubset(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -2350,6 +2351,7 @@ server.listen(0, '127.0.0.1', async () => {
 }
 
 func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -2390,6 +2392,7 @@ func TestSSRProjectHydrationClientImportsLocalChildEntry(t *testing.T) {
 }
 
 func TestSSRProjectBuildsParentHydrationClientForSupportedStructuralChild(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -3902,6 +3905,7 @@ func TestSSRHydrationClientPassesNestedElementToLocalChild(t *testing.T) {
 }
 
 func TestSSRProjectHydratesNestedLocalComponentGraph(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -4180,6 +4184,7 @@ server.listen(0, "127.0.0.1", async () => {
 }
 
 func TestSSRProjectBuildsBindableLocalChildHydration(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -4230,6 +4235,7 @@ func TestSSRHydrationClientAdoptsStaticLocalComponentSlots(t *testing.T) {
 }
 
 func TestSSRProjectBuildsStaticLocalComponentSlotsForHydration(t *testing.T) {
+	legacySSRProtocolTest(t)
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {

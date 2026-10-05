@@ -500,6 +500,33 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	ssrRuntimeAddFunc(pkg, "Iter", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.NewSlice(anyType))})
 	ssrRuntimeAddFunc(pkg, "Get", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType), types.NewVar(token.NoPos, pkg, "key", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", anyType)})
 	ssrRuntimeAddFunc(pkg, "EscapeString", []*types.Var{types.NewVar(token.NoPos, pkg, "value", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
+
+	// Block markup and payload stream (docs/HYDRATION_ARCHITECTURE.md §5, §6).
+	jsonPkg, err := loader.Import("encoding/json")
+	if err != nil {
+		return nil, err
+	}
+	rawMessage := jsonPkg.Scope().Lookup("RawMessage").Type()
+	boolType := types.Typ[types.Bool]
+	ssrRuntimeAddFunc(pkg, "StaticWriter", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", writer)})
+	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, "BeginComponent", types.NewSignatureType(nil, nil, nil, types.NewTuple(
+		types.NewVar(token.NoPos, pkg, "w", writer),
+		types.NewVar(token.NoPos, pkg, "component", stringType),
+		types.NewVar(token.NoPos, pkg, "state", stringType),
+		types.NewVar(token.NoPos, pkg, "omitted", types.NewSlice(stringType)),
+	), types.NewTuple(types.NewVar(token.NoPos, pkg, "", writer), types.NewVar(token.NoPos, pkg, "", boolType)), true)))
+	ssrRuntimeAddFunc(pkg, "EndComponent", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "root", boolType), types.NewVar(token.NoPos, pkg, "props", rawMessage)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
+	ssrRuntimeAddFunc(pkg, "OpenRange", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "state", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
+	ssrRuntimeAddFunc(pkg, "CloseRange", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
+	ssrRuntimeAddFunc(pkg, "SetHostScope", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "scope", stringType)}, nil)
+	ssrRuntimeAddFunc(pkg, "WriteHostScope", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
+	ssrRuntimeAddFunc(pkg, "AwaitEntry", []*types.Var{
+		types.NewVar(token.NoPos, pkg, "w", writer),
+		types.NewVar(token.NoPos, pkg, "site", stringType),
+		types.NewVar(token.NoPos, pkg, "state", stringType),
+		types.NewVar(token.NoPos, pkg, "value", stringType),
+		types.NewVar(token.NoPos, pkg, "errText", stringType),
+	}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
 	pkg.MarkComplete()
 	return pkg, nil
 }

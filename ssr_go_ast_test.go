@@ -60,6 +60,7 @@ func TestBuildSSRGoSkeletonRejectsInvalidInputs(t *testing.T) {
 }
 
 func TestBuildSSRGoFileUsesInstanceAwareRendererForRepeatedStaticChildren(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let visible = true;</script><template><main>{#if visible}<Child /><Child />{:else}<p>Hidden</p>{/if}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +92,7 @@ func TestBuildSSRGoFileUsesInstanceAwareRendererForRepeatedStaticChildren(t *tes
 }
 
 func TestBuildSSRGoFileScopesEachAndKeyChildrenByRuntimeIdentity(t *testing.T) {
+	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>import { Child } from "./Child.vela"; export let rows = []; export let selected = "a";</script><template><main>{#each rows as row}<Child /><Child />{/each}{#key selected}<Child />{/key}</main></template>`)
 	if err != nil {
 		t.Fatal(err)
