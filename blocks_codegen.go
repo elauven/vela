@@ -31,27 +31,36 @@ const (
 	DOMEngineBlocks
 )
 
-// activeDOMEngine is set by --dom-engine. VELA_DOM_ENGINE=blocks selects the
-// block engine for a whole process, which lets the test suite run under
-// either engine (G-11.1).
+// activeDOMEngine is set by --dom-engine. The block engine is the default
+// since gate H3 (G-11.1); VELA_DOM_ENGINE=legacy selects the legacy engine
+// for a whole process, which lets the test suite run under either engine
+// until the legacy engine is removed (task 042).
 var activeDOMEngine = domEngineFromEnv()
 
 func domEngineFromEnv() DOMEngine {
 	engine, err := parseDOMEngine(os.Getenv("VELA_DOM_ENGINE"))
 	if err != nil {
-		return DOMEngineLegacy
+		return DOMEngineBlocks
 	}
 	return engine
 }
 
+// String names the engine as the CLI flag does.
+func (engine DOMEngine) String() string {
+	if engine == DOMEngineLegacy {
+		return "legacy"
+	}
+	return "blocks"
+}
+
 func parseDOMEngine(value string) (DOMEngine, error) {
 	switch value {
-	case "", "legacy":
+	case "legacy":
 		return DOMEngineLegacy, nil
-	case "blocks":
+	case "", "blocks":
 		return DOMEngineBlocks, nil
 	default:
-		return DOMEngineLegacy, fmt.Errorf("invalid --dom-engine value %q (want 'legacy' or 'blocks')", value)
+		return DOMEngineBlocks, fmt.Errorf("invalid --dom-engine value %q (want 'blocks' or 'legacy')", value)
 	}
 }
 

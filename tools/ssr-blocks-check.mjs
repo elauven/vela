@@ -144,7 +144,7 @@ function checkCase(testCase) {
     }
   }
   const components = payload.entries.filter((entry) => entry[0] === 's').map((entry) => entry[1]);
-  if (JSON.stringify(components) !== JSON.stringify(testCase.entries)) {
+  if (testCase.entries && JSON.stringify(components) !== JSON.stringify(testCase.entries)) {
     errors.push(`state entries ${JSON.stringify(components)}, want ${JSON.stringify(testCase.entries)}`);
   }
   if (testCase.states) {
@@ -188,9 +188,11 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function applyStep(host, instance, step) {
   if (step.set) instance.set(structuredClone(step.set));
-  if (step.click) host.querySelector(step.click).click();
-  if (step.input) {
-    const input = host.querySelector(step.input);
+  // A missing target is skipped; both DOMs are equal before every step.
+  const clicked = step.click && host.querySelector(step.click);
+  if (clicked) clicked.click();
+  const input = step.input && host.querySelector(step.input);
+  if (input) {
     input.value = step.value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }

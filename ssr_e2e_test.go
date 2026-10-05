@@ -136,7 +136,6 @@ func main() {
 // be evaluated by generated Go. In particular, props.Items[0] is unsafe for
 // the empty collection but is valid in the selected non-empty branches.
 func TestGeneratedSSRRendererShortCircuitsUnsafeCollectionReads(t *testing.T) {
-	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let items = [];</script><template><main><p>{items.length ? items[0] : 'empty'}</p><p>{items.length && items[0]}</p><p>{!items.length || items[0]}</p><p>{items.length ? (items.length && items[0]) : (!items.length || items[0])}</p></main></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -177,10 +176,10 @@ import (
 )
 func main() {
     empty := components.PageProps{Items: []any{}, Set: map[string]bool{"items": true}}
-    if err := components.RenderPageAt(os.Stdout, empty, components.PageSlots{}, "empty"); err != nil { panic(err) }
+    if err := ` + ssrTestRenderCall("empty", "empty") + `; err != nil { panic(err) }
     fmt.Print("\n---\n")
     full := components.PageProps{Items: []any{"first"}, Set: map[string]bool{"items": true}}
-    if err := components.RenderPageAt(os.Stdout, full, components.PageSlots{}, "full"); err != nil { panic(err) }
+    if err := ` + ssrTestRenderCall("full", "full") + `; err != nil { panic(err) }
 }
 `
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(mainSource), 0o644); err != nil {
@@ -211,7 +210,6 @@ func main() {
 // R3: Go-rendered interpolation must retain the same visible nullish text as
 // CSR, while array joining keeps JavaScript's distinct empty-field behaviour.
 func TestGeneratedSSRRendererPreservesNullishTextAndArrayJoin(t *testing.T) {
-	legacySSRProtocolTest(t)
 	sfc, err := parseSFC(`<script>export let value = null;</script><template><main><p>{value}</p><p>{undefined}</p><p>{[1, null, undefined, [2, null], 3]}</p></main></template>`)
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +249,7 @@ import (
 )
 func main() {
     props := components.PageProps{Value: nil, Set: map[string]bool{"value": true}}
-    if err := components.RenderPageAt(os.Stdout, props, components.PageSlots{}, "nullish"); err != nil { panic(err) }
+    if err := ` + ssrTestRenderCall("props", "nullish") + `; err != nil { panic(err) }
 }
 `
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(mainSource), 0o644); err != nil {
@@ -263,9 +261,22 @@ func main() {
 	if err != nil {
 		t.Fatalf("go run: %v\n%s", err, output)
 	}
-	for _, want := range []string{">null<", ">undefined<", ">1,,,2,,3<", `"Value":null`} {
+	payloadNull := `"Value":null`
+	if activeDOMEngine == DOMEngineBlocks {
+		payloadNull = `"value":null`
+	}
+	for _, want := range []string{">null<", ">undefined<", ">1,,,2,,3<", payloadNull} {
 		if !strings.Contains(string(output), want) {
 			t.Fatalf("nullish SSR output misses %q:\n%s", want, output)
 		}
 	}
+}
+
+// ssrTestRenderCall is the Go call that renders the Page component of a
+// test program with the active DOM engine's API.
+func ssrTestRenderCall(props, instance string) string {
+	if activeDOMEngine == DOMEngineBlocks {
+		return "components.RenderPage(os.Stdout, " + props + ", components.PageSlots{})"
+	}
+	return "components.RenderPageAt(os.Stdout, " + props + ", components.PageSlots{}, \"" + instance + "\")"
 }

@@ -309,7 +309,7 @@ type ssrReportCollector struct {
 }
 
 func newSSRReportCollector() *ssrReportCollector {
-	return &ssrReportCollector{report: SSRReport{Version: 1, Engine: string(activeDOMEngine)}}
+	return &ssrReportCollector{report: SSRReport{Version: 1, Engine: activeDOMEngine.String()}}
 }
 
 func (c *ssrReportCollector) add(src, srcRoot string, region *SSRRegion, err error) {

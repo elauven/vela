@@ -125,7 +125,7 @@ func main() {
 	ssrScaffold := flag.Bool("ssr-scaffold-hosts", false, "with --ssr, create Go stubs in the host tree for functions that need a host implementation; existing files are never changed")
 	hydrationVerify := flag.String("hydration-verify", "", "development hydration value verification: repair (default), fail, or off")
 	mode := flag.String("mode", "development", "build mode: 'development' (default) or 'production'")
-	domEngine := flag.String("dom-engine", "legacy", "DOM engine: 'legacy' (default) or 'blocks' (block runtime, task 039)")
+	domEngine := flag.String("dom-engine", "", "DOM engine: 'blocks' (default) or 'legacy' (removed in task 042); VELA_DOM_ENGINE sets the default")
 	flag.Parse()
 
 	targetProfile, err := ParseTargetProfile(*target)
@@ -137,7 +137,7 @@ func main() {
 	if engine, err := parseDOMEngine(*domEngine); err != nil {
 		fmt.Fprintf(os.Stderr, "vela: %v\n", err)
 		os.Exit(2)
-	} else if *domEngine != "legacy" || os.Getenv("VELA_DOM_ENGINE") == "" {
+	} else if *domEngine != "" {
 		activeDOMEngine = engine
 	}
 

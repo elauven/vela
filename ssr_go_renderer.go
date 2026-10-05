@@ -879,6 +879,12 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	if (node.Key != nil || e.blocks) && node.IndexName == "" {
 		rangeKey = goast.NewIdent("_")
 	}
+	// A row that reads neither its item nor its index still compiles.
+	used := []goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []goast.Expr{itemIdent}}}
+	if ident, ok := rangeKey.(*goast.Ident); ok && ident.Name != "_" {
+		used = append(used, &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []goast.Expr{rangeKey}})
+	}
+	children = append(used, children...)
 	rangeStmt := &goast.RangeStmt{
 		Key:   rangeKey,
 		Value: itemIdent,

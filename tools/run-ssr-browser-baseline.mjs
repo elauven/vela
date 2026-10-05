@@ -9,25 +9,12 @@ import { pathToFileURL } from "node:url";
 // optional local browser suites. Every id is a public SSR product-path or
 // semantic regression required by the C0 delivery checkpoint.
 export const requiredTests = [
-  "TestSSRCLIWritesDeclaredArtifactMode",
   "TestGeneratedSSRRendererShortCircuitsUnsafeCollectionReads",
   "TestGeneratedSSRRendererPreservesNullishTextAndArrayJoin",
   "TestGeneratedSSRRendererMatchesValueTextOracle",
-  "TestSSRProjectInternalChildCallRetainsOmittedPropDefault",
-  "TestSSRProjectInternalChildCallPreservesExplicitZeroValues",
-  "TestSSRProjectPublicArtifactsHydrateAndUpdateInBrowser",
-  "TestSSRProjectPublicNullTextHydratesAndUpdatesInBrowser",
-  "TestSSRProjectPublicValueTextOracleHydratesInBrowser",
-  "TestSSRProjectPublicAttributeOracleHydratesInBrowser",
-  "TestSSRProjectPublicChildPropPresenceHydratesUpdatesAndRemountsInBrowser",
-  "TestSSRProjectPublicHydrationFailureRollsBackListenerAndChildCache",
-  "TestSSRProjectPublicStaticOnlyArtifactsValidateInBrowser",
-  "TestSSRProjectPublicTextareaBindingHydratesInBrowser",
-  "TestSSRProjectPublicNullFormBindingsMatchBrowserProperties",
-  "TestSSRProjectPublicTableAndSelectHydrateInBrowser",
-  "TestSSRProjectPublicMultipleSelectHydratesUpdatesAndBindsInBrowser",
   "TestSSRProjectRejectsSingleSelectWithKnownNullBinding",
-  "TestSSRProjectPublicNamedFormatterHydratesAndUpdatesInBrowser",
+  // The legacy engine's recipe-hydration browser tests run in the CI step
+  // with VELA_DOM_ENGINE=legacy until task 042 removes them (G-11.3).
   // Block runtime of the hydration architecture (task 039).
   "TestRuntimeBlocksUnderJsdom",
   "TestBlocksEngineMatchesLegacyEngine",
@@ -42,6 +29,9 @@ export const requiredTests = [
   "TestSSRInitOracle",
   // Go host implementations end to end (task 030).
   "TestSSRHostImplementationEndToEnd",
+  // Hydration gate H3 (task 041): generative differential test and corpus.
+  "TestBlocksGenerativeDifferential",
+  "TestBlocksCorpusHydrates",
 ];
 
 export async function requireLaunchableChromium({ moduleName = "playwright", executablePath = "" } = {}) {

@@ -48,18 +48,10 @@ func TestBlocksSSRMarkupParsesInChromium(t *testing.T) {
 
 func runSSRBlocksCheck(t *testing.T, args ...string) {
 	t.Helper()
-	node, jsdom := requireJsdom(t)
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go tool not available")
-	}
-	root := t.TempDir()
-	srcRoot := filepath.Join(root, "src")
-	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	// List.vela needs callback translation (task 044). Host.vela passes an
 	// untyped row field to a typed child prop (vela.AssignProp); Shell.vela is
 	// Host with a typed row expression.
+	files := map[string]string{}
 	for _, pattern := range []string{"testdata/engine_diff/*.vela", "testdata/ssr_blocks/*.vela"} {
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
@@ -73,9 +65,38 @@ func runSSRBlocksCheck(t *testing.T, args ...string) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(srcRoot, filepath.Base(match)), data, 0o644); err != nil {
-				t.Fatal(err)
-			}
+			files[filepath.Base(match)] = string(data)
+		}
+	}
+	var cases []ssrBlocksCase
+	data, err := os.ReadFile(filepath.Join("testdata", "ssr_blocks", "cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	runSSRBlocksSuite(t, files, cases, args...)
+}
+
+// runSSRBlocksSuite builds files with the block engine, renders every case
+// with the generated Go renderers, and checks it with
+// tools/ssr-blocks-check.mjs: markup, stream, static variant, client DOM,
+// hydration, update steps, and injected mismatches.
+func runSSRBlocksSuite(t *testing.T, files map[string]string, cases []ssrBlocksCase, args ...string) {
+	t.Helper()
+	node, jsdom := requireJsdom(t)
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go tool not available")
+	}
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, source := range files {
+		if err := os.WriteFile(filepath.Join(srcRoot, name), []byte(source), 0o644); err != nil {
+			t.Fatal(err)
 		}
 	}
 	outRoot := filepath.Join(root, "out")
@@ -90,15 +111,6 @@ func runSSRBlocksCheck(t *testing.T, args ...string) {
 		if _, err := os.Stat(filepath.Join(outRoot, "client", legacy)); err == nil {
 			t.Fatalf("block engine wrote legacy hydration artifact %s", legacy)
 		}
-	}
-
-	var cases []ssrBlocksCase
-	data, err := os.ReadFile(filepath.Join("testdata", "ssr_blocks", "cases.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &cases); err != nil {
-		t.Fatal(err)
 	}
 	rendered := renderSSRBlocksCases(t, outRoot, projectModule, cases)
 

@@ -37,7 +37,6 @@ func loadSSRValueTextOracle(t *testing.T) []ssrValueTextOracleCase {
 // by tools/verify-ssr-value-text-oracle.mjs, then pass through Vela parsing,
 // cached AST lowering, generated Go, and the SSR runtime before HTML is read.
 func TestGeneratedSSRRendererMatchesValueTextOracle(t *testing.T) {
-	legacySSRProtocolTest(t)
 	cases := loadSSRValueTextOracle(t)
 	var template strings.Builder
 	template.WriteString("<template><main>")
@@ -87,7 +86,7 @@ import (
     "example.com/ssrvalueoracle/components"
 )
 func main() {
-    if err := components.RenderPageAt(os.Stdout, components.PageProps{}, components.PageSlots{}, "vela-value-oracle"); err != nil { panic(err) }
+    if err := ` + ssrTestRenderCall("components.PageProps{}", "vela-value-oracle") + `; err != nil { panic(err) }
 }
 `
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(mainSource), 0o644); err != nil {
@@ -101,7 +100,7 @@ func main() {
 	}
 	withoutMarkers := regexp.MustCompile(`<!--[^>]*-->`).ReplaceAllString(string(output), "")
 	for _, tc := range cases {
-		pattern := regexp.MustCompile(`<p class="case-` + regexp.QuoteMeta(tc.Name) + `">(.*?)</p>`)
+		pattern := regexp.MustCompile(`<p[^>]*class="case-` + regexp.QuoteMeta(tc.Name) + `"[^>]*>(.*?)</p>`)
 		match := pattern.FindStringSubmatch(withoutMarkers)
 		if len(match) != 2 {
 			t.Fatalf("oracle case %q has no rendered paragraph:\n%s", tc.Name, withoutMarkers)
