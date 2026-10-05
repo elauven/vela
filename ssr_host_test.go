@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -185,6 +186,31 @@ func FormatCurrency(ctx context.Context, value float64) (string, error) {
 		if !strings.Contains(out, want) {
 			t.Errorf("host render misses %q:\n%s", want, out)
 		}
+	}
+
+	// The client hydrates the host-rendered text and keeps using the
+	// JavaScript function for updates (H-8.5a, task 041).
+	node, jsdom := requireJsdom(t)
+	clientDir := filepath.Join(p.root, "out", "client")
+	p.write("out/client/package.json", `{"type":"module"}`)
+	p.write("page.html", strings.SplitN(out, "\nERR=", 2)[0])
+	result, err := exec.Command(node, "tools/ssr-hydrate-run.mjs", jsdom, clientDir, "App.js", "App", filepath.Join(p.root, "page.html"), `[{"set":{"total":5000}}]`).CombinedOutput()
+	if err != nil {
+		t.Fatalf("hydrate: %v\n%s", err, result)
+	}
+	var run struct {
+		OK        bool     `json:"ok"`
+		Error     string   `json:"error"`
+		Snapshots []string `json:"snapshots"`
+	}
+	if err := json.Unmarshal(result, &run); err != nil || !run.OK || len(run.Snapshots) != 2 {
+		t.Fatalf("hydrate run: %v %s", err, result)
+	}
+	if !strings.Contains(run.Snapshots[0], ">ru:1234 RUB</p>") {
+		t.Errorf("hydration did not keep the server text: %s", run.Snapshots[0])
+	}
+	if !strings.Contains(run.Snapshots[1], "₽") || strings.Contains(run.Snapshots[1], "RUB</p>") {
+		t.Errorf("the update did not use the JavaScript function: %s", run.Snapshots[1])
 	}
 }
 

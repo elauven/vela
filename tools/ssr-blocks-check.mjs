@@ -172,6 +172,80 @@ async function clientHTML(testCase) {
   return html;
 }
 
+
+// ── Hydration (task 041, Q-10.2 items 1–4) ───────────────────────────────
+// For a compare case the server HTML is hydrated with runtime-hydrate.js:
+// the result must equal the client DOM, hydration may only insert empty
+// text nodes (C-4.3) and remove the payload script (S-6.9), the server
+// elements must keep their identity, and every update step must leave the
+// hydrated and the created instance equal.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+function applyStep(host, instance, step) {
+  if (step.set) instance.set(structuredClone(step.set));
+  if (step.click) host.querySelector(step.click).click();
+  if (step.input) {
+    const input = host.querySelector(step.input);
+    input.value = step.value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
+async function hydrateCheck(testCase) {
+  const errors = [];
+  const module = await import(pathToFileURL(join(clientDir, testCase.module)).href);
+  const factory = module[testCase.export] || module.default;
+  const { hydrate } = await import(pathToFileURL(join(clientDir, 'runtime-hydrate.js')).href);
+  const reference = document.createElement('div');
+  document.body.appendChild(reference);
+  const created = factory(reference, structuredClone(testCase.props));
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  host.innerHTML = testCase.html;
+  const serverElements = [...host.querySelectorAll('*')].filter((el) => el.localName !== 'script');
+  const observer = new dom.window.MutationObserver(() => {});
+  observer.observe(host, { subtree: true, childList: true, characterData: true, attributes: true });
+  let instance;
+  try {
+    instance = hydrate(factory, host);
+  } catch (error) {
+    observer.disconnect();
+    errors.push(`hydrate: ${error.message}`);
+    created.destroy();
+    host.remove();
+    reference.remove();
+    return errors;
+  }
+  for (const record of observer.takeRecords()) {
+    const emptyText = record.type === 'childList' && record.removedNodes.length === 0 &&
+      [...record.addedNodes].every((node) => node.nodeType === 3 && node.data === '');
+    const payload = record.type === 'childList' && record.addedNodes.length === 0 &&
+      [...record.removedNodes].every((node) => node.localName === 'script');
+    if (!emptyText && !payload) errors.push(`hydration mutated the DOM: ${record.type} on <${record.target.localName || record.target.nodeName}>`);
+  }
+  observer.disconnect();
+  for (const element of serverElements) {
+    if (!host.contains(element)) errors.push(`hydration replaced the server <${element.localName}>`);
+  }
+  if (serialize(host) !== serialize(reference)) {
+    errors.push(`hydrated DOM differs from the client DOM:\n  hydrated: ${serialize(host)}\n  client:   ${serialize(reference)}`);
+  }
+  for (const [index, step] of (testCase.steps || []).entries()) {
+    applyStep(host, instance, step);
+    applyStep(reference, created, step);
+    await settle();
+    if (serialize(host) !== serialize(reference)) {
+      errors.push(`after step ${index} ${JSON.stringify(step)}:\n  hydrated: ${serialize(host)}\n  client:   ${serialize(reference)}`);
+      break;
+    }
+  }
+  instance.destroy();
+  created.destroy();
+  if (host.querySelector('*')) errors.push(`destroy() left elements: ${serialize(host)}`);
+  host.remove();
+  reference.remove();
+  return errors;
+}
 const failures = [];
 for (const testCase of cases) {
   try {
@@ -182,6 +256,7 @@ for (const testCase of cases) {
       const serverHTML = serialize(server);
       const client = await clientHTML(testCase);
       if (serverHTML !== client) errors.push(`server and client DOM differ:\n  server: ${serverHTML}\n  client: ${client}`);
+      errors.push(...(await hydrateCheck(testCase)));
     }
     if (errors.length) failures.push(`${testCase.name}:\n  ${errors.join('\n  ')}`);
   } catch (error) {

@@ -256,17 +256,10 @@ func (g *ASTGen) buildBlocksView(nodes []Node) {
 	if rootIsElement {
 		_, rootIsElement = nodes[0].(*ElementNode)
 	}
-	if rootIsElement {
-		g.body = append(g.body, genLet("$$root", genNull()))
-	} else {
-		// Multiple roots, a structural root or a text root get the same
-		// display:contents wrapper the legacy engine creates (B-3.8).
-		g.body = append(g.body,
-			genConst("$$root", genCall(genMember(id("document"), "createElement"), strLit("div"))),
-			g.setAttrStmt("$$root", g.scopeID, ""),
-			genAssignStmt(genMember(genMember(id("$$root"), "style"), "display"), strLit("contents")),
-		)
-	}
+	// Multiple roots, a structural root or a text root get the same
+	// display:contents wrapper the legacy engine creates (B-3.8); the runtime
+	// creates or adopts it ($$mountComponent).
+	g.body = append(g.body, genLet("$$root", genNull()))
 	// A single root element is assigned to $$root by the root fragment.
 	g.blocks.assignRoot = rootIsElement
 	root := g.buildBlocksFragment(nodes, nil)
@@ -291,12 +284,13 @@ func (g *ASTGen) buildBlocksView(nodes []Node) {
 		g.addStructuralUpdate(dep, call)
 	}
 
-	target := JsExpr(id("$$root"))
-	if rootIsElement {
-		g.initBody = append(g.initBody, genConst("$$rootFragment", genCall(genMember(id("document"), "createDocumentFragment"))))
-		target = id("$$rootFragment")
+	wrapper := JsExpr(genNull())
+	if !rootIsElement {
+		wrapper = strLit(g.scopeID)
 	}
-	g.initBody = append(g.initBody, genAssignStmt(id("$$view"), genCall(id("$$mountRoot"), target, id(rootFragmentName))))
+	setRoot := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$el")}, Body: genBlock(genAssignStmt(id("$$root"), id("$$el")))}
+	getRoot := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: id("$$root")}
+	g.initBody = append(g.initBody, genAssignStmt(id("$$view"), genCall(id("$$mountComponent"), id("$$target"), id(rootFragmentName), wrapper, setRoot, getRoot)))
 	g.cleanup = append(g.cleanup, genIf(id("$$view"), genExprStmt(genCall(genMember(id("$$view"), "release")))))
 }
 
@@ -576,8 +570,10 @@ func (g *ASTGen) blocksBindThis(ref string, attr *Attr) []JsStmt {
 		set = genAssignStmt(target, id(ref))
 		clear = genAssignStmt(g.templateExpr(attr.Expr), genNull())
 	}
+	// The reference is assigned on creation and on hydration alike (C-4.5),
+	// so it is not an initial DOM write.
 	return []JsStmt{
-		genExprStmt(genCall(genMember(id("$$c"), "init"), blocksArrow(nil, genBlock(set)))),
+		set,
 		genExprStmt(genCall(genMember(genMember(id("$$c"), "owner"), "add"), blocksArrow(nil, genBlock(clear)))),
 	}
 }

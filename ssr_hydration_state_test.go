@@ -9,6 +9,7 @@ import (
 )
 
 func TestSSRClientProgramReadsHydrationStateWithoutChangingCSRDefault(t *testing.T) {
+	legacyCodeShapeTest(t)
 	sfc, err := parseSFC(`<script>let count=$state(1); let settings=$state.deep({ enabled: true });</script><template><p>{count}</p></template>`)
 	if err != nil {
 		t.Fatal(err)

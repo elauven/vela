@@ -20,6 +20,7 @@ type ssrBlocksCase struct {
 	Entries   []string          `json:"entries"`
 	Awaits    [][]string        `json:"awaits,omitempty"`
 	States    []json.RawMessage `json:"states,omitempty"`
+	Steps     []json.RawMessage `json:"steps,omitempty"`
 	Compare   bool              `json:"compare,omitempty"`
 }
 
@@ -116,6 +117,9 @@ func runSSRBlocksCheck(t *testing.T, args ...string) {
 		}
 		if c.States != nil {
 			check["states"] = c.States
+		}
+		if c.Steps != nil {
+			check["steps"] = c.Steps
 		}
 		checks = append(checks, check)
 	}

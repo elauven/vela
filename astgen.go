@@ -1775,6 +1775,10 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	)
 	if g.hydrationStateInput {
 		fnBody.Body = append(fnBody.Body, genConst("$$velaState", genLogical("||", genMember(id("$$props"), "$$velaState"), genNull())))
+	} else if g.blocks != nil {
+		// A hydrating instance restores its state from the payload stream
+		// (S-6.8); a created one gets null.
+		fnBody.Body = append(fnBody.Body, genConst("$$velaState", genCall(id("$$hydrationState"), strLit(g.name))))
 	}
 	if g.domAcquireMode == DOMAcquireHydrate {
 		fnBody.Body = append(fnBody.Body,
@@ -1877,7 +1881,7 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// at the anchor's slot rather than appended at the end of its
 	// container).  Comment-as-target is the wrapper-less mount
 	// path: the caller creates an anchor comment in document
-	if g.domAcquireMode != DOMAcquireHydrate {
+	if g.domAcquireMode != DOMAcquireHydrate && g.blocks == nil {
 		mount := genIf(
 			genBinary("===", genMember(id("$$target"), "nodeType"), numLit(8)),
 			genExprStmt(genCall(genMember(genMember(id("$$target"), "parentNode"), "insertBefore"), id("$$root"), id("$$target"))),
@@ -2464,7 +2468,7 @@ func (g *ASTGen) buildStateDecl(sv *StateVar) []JsStmt {
 	if init == nil {
 		init = id("undefined")
 	}
-	if g.hydrationStateInput {
+	if g.hydrationStateInput || g.blocks != nil {
 		hasState := genCall(generatedMemberPath("Object.prototype.hasOwnProperty.call"), id("$$velaState"), strLit(sv.Name))
 		init = &JsConditionalExpr{
 			BaseExpr: BaseExpr{BaseNode: genNode()},

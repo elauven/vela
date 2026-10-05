@@ -2868,6 +2868,7 @@ func TestAnalyzeScript_AsyncFunctionPreserved(t *testing.T) {
 }
 
 func TestGenerateCode_OnMountAfterMount(t *testing.T) {
+	legacyCodeShapeTest(t)
 	// onMount callbacks must appear AFTER $$target.appendChild($$root)
 	sfc := &SFC{
 		Script:   `onMount(() => { document.getElementById('x').focus(); });`,
@@ -5306,6 +5307,7 @@ func TestValidateDerivedCycles(t *testing.T) {
 }
 
 func TestScriptPlanPreservesStateAndUserInitializerOrder(t *testing.T) {
+	legacyCodeShapeTest(t)
 	script := `
 		let first = $state(1);
 		const snapshot = first;

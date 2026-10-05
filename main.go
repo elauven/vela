@@ -22,6 +22,9 @@ var embeddedHydrationRuntime []byte
 //go:embed runtime/runtime-blocks.js
 var embeddedBlocksRuntime []byte
 
+//go:embed runtime/runtime-hydrate.js
+var embeddedHydrateRuntime []byte
+
 // stageRuntime writes the compiler canonical runtime into outDir. Project
 // builds write it once at the output root, and every generated module imports
 // that file through a relative path (runtimeImportFor), so a page loads one
@@ -37,6 +40,11 @@ func stageRuntime(outDir string, opts CompileOptions) error {
 	}
 	if activeDOMEngine == DOMEngineBlocks {
 		if err := os.WriteFile(filepath.Join(outDir, "runtime-blocks.js"), embeddedBlocksRuntime, 0o644); err != nil {
+			return err
+		}
+		// hydrate() of the block engine; a page imports it only to hydrate
+		// server HTML (C-4.1).
+		if err := os.WriteFile(filepath.Join(outDir, "runtime-hydrate.js"), embeddedHydrateRuntime, 0o644); err != nil {
 			return err
 		}
 	}

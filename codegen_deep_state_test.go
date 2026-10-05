@@ -19,6 +19,7 @@ import (
 )
 
 func TestDeepState_AnalyzerRecognizesStateDeep(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   let items = $state.deep([1, 2, 3]);
   let counter = $state(0);

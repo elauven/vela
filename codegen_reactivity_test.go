@@ -210,6 +210,7 @@ func TestBug14_ParenthesizedHandlerAssignmentRewritesOnce(t *testing.T) {
 }
 
 func TestBug15_UserPreludeRunsBeforeStateInitializer(t *testing.T) {
+	legacyCodeShapeTest(t)
 	src := `<script>
   const stored = { todos: [] };
   let todos = $state(stored.todos);

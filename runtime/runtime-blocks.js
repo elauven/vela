@@ -64,6 +64,8 @@ function rangeOf(fragment) {
 
 function rangeNodes(range) {
   const nodes = [];
+  // An adopted fragment with no nodes has no range (hydration, C-4.3).
+  if (!range) return nodes;
   for (let node = range.start; node; node = node.nextSibling) {
     nodes.push(node);
     if (node === range.end) break;
@@ -210,18 +212,111 @@ export function $$mountRoot(target, fragmentFn, scope) {
   };
 }
 
+
+// ── Hydration session ────────────────────────────────────────────────────
+// While hydrate() (runtime-hydrate.js) adopts a root, the session holds the
+// payload stream and the hydrate cursor at the position where the next
+// component factory adopts its DOM. Every mount after the root commits
+// creates DOM (C-4.4).
+
+let $$session = null;
+
+// $$setHydration installs or clears the session (runtime-hydrate.js).
+export function $$setHydration(session) {
+  const previous = $$session;
+  $$session = session;
+  return previous;
+}
+
+// $$hydrationState returns the restored state of the component instance
+// that starts now: its "s" entry without omitted bindings (S-6.8), or null
+// when the component is created rather than hydrated.
+export function $$hydrationState(component) {
+  if (!$$session || !$$session.cursors.length) return null;
+  return $$session.state(component);
+}
+
+// withComponentCursor makes cursor the position the next component factory
+// hydrates at.
+function withComponentCursor(cursor, mount) {
+  $$session.cursors.push(cursor);
+  try {
+    return mount();
+  } finally {
+    $$session.cursors.pop();
+  }
+}
+
+// $$mountComponent mounts a component's root fragment. Created: into a new
+// display:contents wrapper (when wrapperScope is given) or a detached
+// fragment, then inserted at target. Hydrated: on the server DOM at the
+// cursor of the enclosing block or root. setRoot receives the wrapper;
+// getRoot returns the component element afterwards.
+export function $$mountComponent(target, fragmentFn, wrapperScope, setRoot, getRoot) {
+  const outer = $$session && $$session.cursors.length ? $$session.cursors[$$session.cursors.length - 1] : null;
+  if (outer) {
+    const owner = $$owner(null);
+    let handle;
+    if (wrapperScope != null) {
+      const wrapper = outer.element('div', [wrapperScope, '', 'style', 'display: contents;']);
+      setRoot(wrapper);
+      outer.enter(wrapper);
+      handle = fragmentFn(outer.sub(owner));
+      outer.exit();
+    } else {
+      handle = fragmentFn(outer.sub(owner));
+    }
+    return rootView(owner, handle);
+  }
+  let view;
+  if (wrapperScope != null) {
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute(wrapperScope, '');
+    wrapper.style.display = 'contents';
+    setRoot(wrapper);
+    view = $$mountRoot(wrapper, fragmentFn);
+  } else {
+    view = $$mountRoot(document.createDocumentFragment(), fragmentFn);
+  }
+  const root = getRoot();
+  if (target.nodeType === 8) target.parentNode.insertBefore(root, target);
+  else target.appendChild(root);
+  return view;
+}
+
+function rootView(owner, handle) {
+  return {
+    owner,
+    p(dirty) {
+      if (handle && handle.p) handle.p(dirty, false);
+    },
+    release() {
+      owner.release();
+    },
+  };
+}
 // ── $$if ─────────────────────────────────────────────────────────────────
 // select() returns the active branch index or -1.
 
 export function $$if(cursor, select, branches, changed) {
-  const anchor = cursor.comment();
+  let anchor;
   let index = -1;
   let current = null;
   const show = (next) => {
     index = next;
     current = next >= 0 ? mountFragment(branches[next], undefined, anchor) : null;
   };
-  show(select());
+  if (cursor.hydrating) {
+    // The range state is the branch the server rendered (X-7.1).
+    const token = cursor.open();
+    index = select();
+    cursor.expect(token === (index >= 0 ? String(index) : 'x'), `#if renders branch ${index >= 0 ? index : 'x'}, the server rendered ${token}`);
+    if (index >= 0) current = cursor.mount(branches[index]);
+    anchor = cursor.close();
+  } else {
+    anchor = cursor.comment();
+    show(select());
+  }
   const block = {
     p(dirty) {
       if (block.isDone()) return;
@@ -250,9 +345,17 @@ export function $$if(cursor, select, branches, changed) {
 // ── $$key ────────────────────────────────────────────────────────────────
 
 export function $$key(cursor, value, body, changed) {
-  const anchor = cursor.comment();
+  let anchor;
   let key = value();
-  let current = mountFragment(body, undefined, anchor);
+  let current;
+  if (cursor.hydrating) {
+    cursor.open();
+    current = cursor.mount(body);
+    anchor = cursor.close();
+  } else {
+    anchor = cursor.comment();
+    current = mountFragment(body, undefined, anchor);
+  }
   const block = {
     p(dirty) {
       if (block.isDone()) return;
@@ -287,7 +390,7 @@ export function $$key(cursor, value, body, changed) {
 // without a reconciliation, as long as the row count is unchanged.
 
 export function $$each(cursor, collection, key, row, fallback, changed, dirtyRows) {
-  const anchor = cursor.comment();
+  let anchor;
   let rows = [];
   let byKey = key ? new Map() : null;
   let empty = null;
@@ -364,7 +467,31 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
     }
   };
 
-  reconcile(undefined, true);
+  if (cursor.hydrating) {
+    // Rows are adopted in order; keys come from the restored collection
+    // (S-6.10). A different row count leaves a row marker or the end
+    // marker unconsumed, which the cursor reports (X-7.1).
+    const token = cursor.open();
+    const items = Array.from(collection() || []);
+    if (items.length === 0) {
+      cursor.expect(token === (fallback ? 'e' : ''), `#each is empty, the server rendered ${token === 'e' ? 'the fallback' : 'rows'}`);
+      if (fallback) empty = cursor.mount(fallback);
+    } else {
+      cursor.expect(token === '', `#each has ${items.length} rows, the server rendered the fallback`);
+      for (let i = 0; i < items.length; i++) {
+        const mounted = cursor.mountRow(row, { item: items[i], index: i });
+        if (byKey) {
+          mounted.key = key(items[i], i);
+          byKey.set(mounted.key, mounted);
+        }
+        rows.push(mounted);
+      }
+    }
+    anchor = cursor.close();
+  } else {
+    anchor = cursor.comment();
+    reconcile(undefined, true);
+  }
   const block = {
     p(dirty) {
       if (block.isDone()) return;
@@ -413,7 +540,7 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
 // that is no longer current is ignored.
 
 export function $$await(cursor, operand, pending, then, catcher, changed) {
-  const anchor = cursor.comment();
+  let anchor;
   let promise = null;
   let current = null;
   let state = -1;
@@ -426,11 +553,12 @@ export function $$await(cursor, operand, pending, then, catcher, changed) {
     if (fragment) current = mountFragment(fragment, scope, anchor);
   };
 
-  const drive = () => {
+  // drive evaluates the operand; adopted keeps the adopted pending branch.
+  const drive = (adopted) => {
     const next = Promise.resolve(operand());
     if (next === promise) return false;
     promise = next;
-    show(0, undefined);
+    if (!adopted) show(0, undefined);
     next.then(
       (value) => {
         if (promise !== next || block.isDone()) return;
@@ -456,13 +584,35 @@ export function $$await(cursor, operand, pending, then, catcher, changed) {
     },
     state: () => state,
   };
+  if (cursor.hydrating) {
+    // The "a" entry holds the branch the server rendered (S-6.11).
+    const token = cursor.open();
+    const entry = cursor.entry('a') || {};
+    cursor.expect(entry.state === token, `#await entry is ${entry.state}, the server range is ${token}`);
+    if (token === 't') {
+      state = 1;
+      if (then) current = cursor.mount(then, { value: entry.value });
+    } else if (token === 'c') {
+      state = 2;
+      if (catcher) current = cursor.mount(catcher, { error: entry.error });
+    } else {
+      state = 0;
+      if (pending) current = cursor.mount(pending);
+      cursor.afterCommit(() => {
+        if (!block.isDone()) drive(true);
+      });
+    }
+    anchor = cursor.close();
+  } else {
+    anchor = cursor.comment();
+  }
   registerBlock(cursor, block, anchor, (removeDom) => {
     promise = null;
     if (!current) return;
     if (removeDom) unmount(current);
     else current.owner.release();
   });
-  drive();
+  if (!cursor.hydrating) drive();
   return block;
 }
 
@@ -473,8 +623,17 @@ export function $$await(cursor, operand, pending, then, catcher, changed) {
 // scope is the parent's CSS scope attribute, set on the child's root.
 
 export function $$component(cursor, factory, props, slots, events, changed, scope) {
-  const anchor = cursor.comment();
-  const instance = factory(anchor, props(), slots || {});
+  let anchor;
+  let instance;
+  if (cursor.hydrating) {
+    // The child factory adopts the server DOM inside the component range.
+    cursor.open();
+    instance = withComponentCursor(cursor, () => factory(null, props(), slots || {}));
+    anchor = cursor.close();
+  } else {
+    anchor = cursor.comment();
+    instance = factory(anchor, props(), slots || {});
+  }
   if (scope && instance.el) cursor.init(() => instance.el.setAttribute(scope, ''));
   if (events) {
     for (const name of Object.keys(events)) cursor.listen(instance.el, name, events[name]);
@@ -506,7 +665,7 @@ export function $$component(cursor, factory, props, slots, events, changed, scop
 export function $$slotFactory(cursor, live, fragment) {
   let range = null;
   let nodes = null;
-  return () => {
+  const open = () => {
     const container = document.createDocumentFragment();
     if (range) {
       // Reopen: move the content back. If a child removed the nodes one by
@@ -531,23 +690,53 @@ export function $$slotFactory(cursor, live, fragment) {
     nodes = [...container.childNodes];
     return container;
   };
+  // adopt hydrates the content where the server rendered it, inside the
+  // child's slot range; reopening returns the adopted nodes.
+  open.adopt = (target) => {
+    const owner = $$owner(cursor.owner);
+    const mounted = target.mount(fragment, undefined, owner);
+    if (mounted.handle && mounted.handle.p) {
+      live.add(mounted.handle);
+      owner.add(() => live.delete(mounted.handle));
+    }
+    range = mounted.range || { start: null, end: null };
+    nodes = rangeNodes(mounted.range);
+    return mounted.range;
+  };
+  return open;
 }
 
 // $$slot opens slot content provided by the parent (from either engine) or
 // mounts the child's own fallback. On release the parent's content is parked
 // in a detached fragment rather than destroyed, so the parent can reopen it.
 export function $$slot(cursor, factory, fallback) {
-  const anchor = cursor.comment();
+  let anchor;
   let first = null;
   let last = null;
   let current = null;
-  const content = factory ? factory() : null;
-  if (content && content.firstChild) {
-    first = content.firstChild;
-    last = content.lastChild;
-    anchor.parentNode.insertBefore(content, anchor);
-  } else if (fallback) {
-    current = mountFragment(fallback, undefined, anchor);
+  if (cursor.hydrating) {
+    cursor.open();
+    if (factory) {
+      cursor.expect(typeof factory.adopt === 'function', 'slot content from a component compiled by the legacy engine cannot be hydrated');
+      const adopted = factory.adopt ? factory.adopt(cursor) : null;
+      if (adopted) {
+        first = adopted.start;
+        last = adopted.end;
+      }
+    } else if (fallback) {
+      current = cursor.mount(fallback);
+    }
+    anchor = cursor.close();
+  } else {
+    anchor = cursor.comment();
+    const content = factory ? factory() : null;
+    if (content && content.firstChild) {
+      first = content.firstChild;
+      last = content.lastChild;
+      anchor.parentNode.insertBefore(content, anchor);
+    } else if (fallback) {
+      current = mountFragment(fallback, undefined, anchor);
+    }
   }
   const park = () => {
     if (!first) return;
