@@ -715,3 +715,13 @@ func AssignProp[T any](field *T, value any, prop string) error {
 	*field = converted
 	return nil
 }
+
+// StaticRoot makes a static root component render plain HTML (A-8.1): a
+// writer outside any render becomes a static writer, while a component
+// rendered inside an interactive parent keeps the hydration markup.
+func StaticRoot(w io.Writer) io.Writer {
+	if sw, ok := w.(*streamWriter); ok && !sw.pending {
+		return w
+	}
+	return StaticWriter(w)
+}

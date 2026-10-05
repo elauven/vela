@@ -595,6 +595,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	}
 	rawMessage := jsonPkg.Scope().Lookup("RawMessage").Type()
 	boolType := types.Typ[types.Bool]
+	ssrRuntimeAddFunc(pkg, "StaticRoot", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", writer)})
 	ssrRuntimeAddFunc(pkg, "StaticWriter", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", writer)})
 	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, "BeginComponent", types.NewSignatureType(nil, nil, nil, types.NewTuple(
 		types.NewVar(token.NoPos, pkg, "w", writer),

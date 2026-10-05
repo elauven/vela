@@ -56,7 +56,7 @@ func newSSRHostProject(t *testing.T) *ssrHostProject {
   let label = $derived(formatCurrency(total));
 </script>
 <template>
-  <div class="app"><p class="total">{formatCurrency(total)}</p><p class="label">{label}|{label}</p></div>
+  <div class="app"><p class="total">{formatCurrency(total)}</p><p class="label">{label}|{label}</p><button class="noop" @click={() => {}}>+</button></div>
 </template>
 `)
 	return p

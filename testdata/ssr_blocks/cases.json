@@ -1,7 +1,7 @@
 [
  {"name":"Form","component":"Form","props":{"start":"go"},"entries":["Form"],"compare":true,"steps":[{"click":"button.inc"},{"click":"button.inc"},{"input":"input.name","value":"Ann"},{"click":"button.inc"},{"click":"button.reset"}]},
  {"name":"Multi small","component":"Multi","props":{"n":1},"entries":["Multi"],"awaits":[["Multi#4","p"]],"compare":true,"steps":[{"set":{"n":3}},{"set":{"n":2}}]},
- {"name":"Multi mid","component":"Multi","props":{"n":2},"entries":["Multi"],"compare":true,"mismatches":[{"name":"element-tag","from":"<h1 ","to":"<h2 ","kind":"structure"},{"name":"if-branch","from":"<!--[1-->","to":"<!--[0-->","kind":"structure"},{"name":"await-entry","from":"\"state\":\"p\"","to":"\"state\":\"t\"","kind":"structure"},{"name":"text-value","from":"Title 2","to":"Title 9","kind":"value"}]},
+ {"name":"Multi mid","component":"Multi","props":{"n":2},"entries":["Multi"],"compare":true},
  {"name":"Multi big","component":"Multi","props":{"n":3},"entries":["Multi"],"compare":true},
  {"name":"Multi then","component":"Multi","props":{"n":1},"options":{"await":{"4":{"state":"then","value":"<ok>"}}},"entries":["Multi"],"awaits":[["Multi#4","t"]]},
  {"name":"Multi catch","component":"Multi","props":{"n":1},"options":{"await":{"4":{"state":"catch","error":"bad"}}},"entries":["Multi"],"awaits":[["Multi#4","c"]]},
@@ -17,5 +17,6 @@
  {"name":"Table empty","component":"Table","props":{"rows":[],"note":""},"entries":["Table"],"compare":true},
  {"name":"Host","component":"Host","props":{"rows":[{"id":1,"name":"r1"},{"id":2,"name":"r2"}]},"entries":["Host","Panel","Panel","Panel"],"compare":true,"steps":[{"click":"button.inc"},{"set":{"rows":[{"id":2,"name":"r2"}]}}]},
  {"name":"Init defaults","component":"Init","props":{},"entries":["Init"],"states":[{"label":"Hi!","items":["end"],"count":0,"value":"v"}],"compare":true,"steps":[{"set":{"user":{"name":"Bo"}}},{"input":"input.value","value":"z"}]},
- {"name":"Init props","component":"Init","props":{"title":"T","user":{"name":"Ann"},"tags":["x","y"],"value":"w"},"entries":["Init"],"states":[{"label":"T!","items":["x","y","end"],"count":2,"value":"w"}],"compare":true,"steps":[{"set":{"user":null}}]}
+ {"name":"Init props","component":"Init","props":{"title":"T","user":{"name":"Ann"},"tags":["x","y"],"value":"w"},"entries":["Init"],"states":[{"label":"T!","items":["x","y","end"],"count":2,"value":"w"}],"compare":true,"steps":[{"set":{"user":null}}]},
+ {"name":"Live mid","component":"Live","props":{"n":2},"entries":["Live"],"awaits":[["Live#4","p"]],"compare":true,"steps":[{"click":"button.bump"},{"set":{"n":1}}],"mismatches":[{"name":"element-tag","from":"<h1 ","to":"<h2 ","kind":"structure"},{"name":"if-branch","from":"<!--[1-->","to":"<!--[0-->","kind":"structure"},{"name":"await-entry","from":"\"state\":\"p\"","to":"\"state\":\"t\"","kind":"structure","step":{"click":"button.bump"}},{"name":"text-value","from":"Title 2","to":"Title 9","kind":"value","step":{"click":"button.bump"}}]}
 ]

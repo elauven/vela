@@ -131,6 +131,9 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	// its hydrate entry in task 041 (H3).
 	clientOpts.HydrationSupport = activeDOMEngine != DOMEngineBlocks
 	errors := buildProject(files, srcRoot, layout.ClientDir, clientOpts, parallel)
+	if activeDOMEngine == DOMEngineBlocks {
+		hosts.RootModes = ssrRootModes(files, srcRoot)
+	}
 	for _, problem := range hosts.Problems {
 		fmt.Fprintf(os.Stderr, "  x  %s\n", problem.Error())
 		errors++
@@ -164,6 +167,12 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	if errors == 0 {
 		if err := validateSSRProjectPackages(layout, hosts.Types); err != nil {
 			fmt.Fprintf(os.Stderr, "  x  SSR package validation: %v\n", err)
+			errors++
+		}
+	}
+	if activeDOMEngine == DOMEngineBlocks {
+		if err := writeSSRManifest(files, srcRoot, layout, hosts.RootModes); err != nil {
+			fmt.Fprintf(os.Stderr, "  x  SSR manifest: %v\n", err)
 			errors++
 		}
 	}
@@ -358,6 +367,9 @@ func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, hos
 		return err
 	}
 	bindSSRHosts(plan, hosts, src, analysis)
+	if activeDOMEngine == DOMEngineBlocks && hosts.RootModes != nil {
+		plan.RootStatic = !ssrInteractive(hosts.RootModes, src)
+	}
 	// The renderer is built first so that the region report covers every
 	// component; its error keeps its place after the hydration checks.
 	file, region, renderErr := buildSSRGoRendererWithRegion(plan, layout.packageName(src, srcRoot), hosts.Project.relative(src), string(data))

@@ -64,6 +64,8 @@ type SSRRenderPlan struct {
 	HostSymbols map[string]SSRHostSymbol
 	HostDecls   map[string]*JsFuncDecl
 	HostProject *SSRProject
+	// RootStatic marks a component that renders plain HTML as a root (A-8.1).
+	RootStatic bool
 	// DeepInitializers holds $state.deep initializers: their initial value is
 	// an ordinary server value (T-6.6d); only legacy hydration excludes them
 	// from StateInitializers.

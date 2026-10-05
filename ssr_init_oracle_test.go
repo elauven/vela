@@ -69,7 +69,8 @@ func TestSSRInitOracle(t *testing.T) {
 			}
 		}
 		component := fmt.Sprintf("Init%d", i)
-		source := "<script>\n" + script.String() + "</script>\n<template><p>{" + row.Expression + "}</p></template>\n"
+		// The button makes the root interactive, so that it writes its payload (A-8.1).
+		source := "<script>\n" + script.String() + "</script>\n<template><div><p>{" + row.Expression + "}</p><button @click={() => {}}>x</button></div></template>\n"
 		if err := os.WriteFile(filepath.Join(srcRoot, component+".vela"), []byte(source), 0o644); err != nil {
 			t.Fatal(err)
 		}

@@ -64,6 +64,10 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 	body := append(ssrJSPrologue(emitter.region), defaults...)
 	body = append(body, init.statements...)
 	body = append(body, ssrBlocksBeginComponent(plan, init.evaluated)...)
+	if plan.RootStatic {
+		// A static root writes plain HTML (A-8.1).
+		body = append([]goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("w")}, Tok: token.ASSIGN, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "StaticRoot"), Args: []goast.Expr{goast.NewIdent("w")}}}}}, body...)
+	}
 	body = append(body, emitter.openRange(""))
 	body = append(body, templateBody...)
 	body = append(body, emitter.closeRange())

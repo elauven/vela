@@ -227,6 +227,8 @@ type SSRHosts struct {
 	// Types holds the type-checked host packages by import path, for the
 	// validation of generated packages that import them.
 	Types map[string]*types.Package
+	// RootModes holds the root mode of every component (true: interactive).
+	RootModes map[string]bool
 	// Sources holds the bindable functions of every source file.
 	Sources map[string]map[string]*JsFuncDecl
 }

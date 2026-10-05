@@ -23,6 +23,11 @@ const [jsdomPath, clientDir, renderedPath] = process.argv.slice(2);
 const { JSDOM } = await import(pathToFileURL(jsdomPath).href);
 const cases = JSON.parse(readFileSync(renderedPath, 'utf8'));
 
+// Root modes of the client manifest (A-8.1): a static root renders plain
+// HTML without markers or payload and is not hydrated.
+const manifest = JSON.parse(readFileSync(join(clientDir, 'vela.manifest.json'), 'utf8'));
+const rootMode = (component) => (manifest.components.find((c) => c.component === component) || {}).mode;
+
 const dom = new JSDOM('<!doctype html><body></body>');
 for (const name of ['window', 'document', 'Node', 'HTMLElement', 'CustomEvent', 'Event', 'InputEvent']) {
   globalThis[name] = dom.window[name];
@@ -331,6 +336,15 @@ async function mismatchCheck(testCase, injected) {
 const failures = [];
 for (const testCase of cases) {
   try {
+    if (rootMode(testCase.export) === 'static') {
+      const errors = [];
+      if (/<!--|<script/.test(testCase.html)) errors.push(`a static root wrote markers or a payload: ${testCase.html}`);
+      if (testCase.html !== testCase.static) errors.push('a static root differs from its static rendering');
+      const client = testCase.compare ? await clientHTML(testCase) : null;
+      if (client !== null && serialize(parse(testCase.html)) !== client) errors.push(`static root and client DOM differ:\n  server: ${serialize(parse(testCase.html))}\n  client: ${client}`);
+      if (errors.length) failures.push(`${testCase.name}:\n  ${errors.join('\n  ')}`);
+      continue;
+    }
     const errors = checkCase(testCase);
     if (testCase.compare) {
       const server = parse(testCase.html);
