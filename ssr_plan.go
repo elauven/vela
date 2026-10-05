@@ -56,6 +56,10 @@ type SSRRenderPlan struct {
 	// local child occurrence. Backends use RuntimeScoped to select an evaluated
 	// #each/#key instance scope instead of collapsing row children to a tag name.
 	ComponentInstanceIdentities map[SectionSpan]SSRComponentInstanceIdentity
+	// TemplateOffset and ScriptOffset place template expression and script
+	// node positions in the .vela source for the region report (T-3.2).
+	TemplateOffset int
+	ScriptOffset   int
 }
 
 // SSRHydrationState is the inert, serializable portion of component state.
@@ -301,6 +305,8 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		PlainInitializers:           ssrPlainInitializers(analysis),
 		Functions:                   ssrNamedFunctions(analysis),
 		ScopedCSS:                   ExtractScopedCSS(sfc, scopeID),
+		TemplateOffset:              sfc.TemplateOffset,
+		ScriptOffset:                sfc.ScriptOffset,
 		ComponentInstanceSuffixes:   SSRStaticRepeatedComponentInstanceSuffixes(sfc.TemplateAST.Nodes),
 		ComponentInstanceIdentities: SSRComponentInstanceIdentityIndex(sfc.TemplateAST.Nodes),
 	}}

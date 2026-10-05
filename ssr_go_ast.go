@@ -518,6 +518,13 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	ssrRuntimeAddFunc(pkg, "EndComponent", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "root", boolType), types.NewVar(token.NoPos, pkg, "props", rawMessage)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "OpenRange", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "state", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "CloseRange", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
+	// func AssignProp[T any](field *T, value any, prop string) error
+	assignT := types.NewTypeParam(types.NewTypeName(token.NoPos, pkg, "T", nil), types.NewInterfaceType(nil, nil))
+	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, "AssignProp", types.NewSignatureType(nil, nil, []*types.TypeParam{assignT}, types.NewTuple(
+		types.NewVar(token.NoPos, pkg, "field", types.NewPointer(assignT)),
+		types.NewVar(token.NoPos, pkg, "value", anyType),
+		types.NewVar(token.NoPos, pkg, "prop", stringType),
+	), types.NewTuple(types.NewVar(token.NoPos, pkg, "", errorType)), false)))
 	ssrRuntimeAddFunc(pkg, "SetHostScope", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "scope", stringType)}, nil)
 	ssrRuntimeAddFunc(pkg, "WriteHostScope", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "AwaitEntry", []*types.Var{

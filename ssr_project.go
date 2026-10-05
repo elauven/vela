@@ -121,9 +121,19 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	// its hydrate entry in task 041 (H3).
 	clientOpts.HydrationSupport = activeDOMEngine != DOMEngineBlocks
 	errors := buildProject(files, srcRoot, layout.ClientDir, clientOpts, parallel)
+	var report *ssrReportCollector
+	if opts.SSRReport != "" {
+		report = newSSRReportCollector()
+	}
 	for _, src := range files {
-		if err := compileSSRProjectFile(src, srcRoot, layout); err != nil {
-			fmt.Fprintf(os.Stderr, "  x  %s: SSR: %v\n", relOrBase(src, srcRoot), err)
+		var region *SSRRegion
+		err := compileSSRProjectFileInto(src, srcRoot, layout, &region)
+		report.add(src, srcRoot, region, err)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  x  %s: SSR: %v\n", relOrBase(src, srcRoot), ssrDiagnosticSummary(err))
+			if detail := ssrDiagnosticDetail(src, err); detail != "" {
+				fmt.Fprintln(os.Stderr, detail)
+			}
 			errors++
 			continue
 		}
@@ -132,6 +142,12 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	if errors == 0 {
 		if err := ValidateSSRProjectPackages(layout); err != nil {
 			fmt.Fprintf(os.Stderr, "  x  SSR package validation: %v\n", err)
+			errors++
+		}
+	}
+	if report != nil {
+		if err := report.write(opts.SSRReport); err != nil {
+			fmt.Fprintf(os.Stderr, "  x  SSR report: %v\n", err)
 			errors++
 		}
 	}
@@ -261,8 +277,10 @@ type SSRHydrationBlockedError struct {
 }
 
 func (e *SSRHydrationBlockedError) Error() string {
-	return SSRHydrationBlockedDiagnosticCode + ": executable hydration is not available: " + e.Reason +
-		"; the static-only fallback then failed: " + e.Fallback.Error()
+	// An event handler is outside the server-evaluated region (T-2.2): the
+	// diagnostic names the hydration reason only. The fallback error stays
+	// reachable through Unwrap.
+	return SSRHydrationBlockedDiagnosticCode + ": executable hydration is not available: " + e.Reason
 }
 
 func (e *SSRHydrationBlockedError) Unwrap() error { return e.Fallback }
@@ -272,6 +290,12 @@ func (e *SSRHydrationBlockedError) Unwrap() error { return e.Fallback }
 const SSRHydrationBlockedDiagnosticCode = "VELA-SSR-HYDRATION"
 
 func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
+	return compileSSRProjectFileInto(src, srcRoot, layout, nil)
+}
+
+// compileSSRProjectFileInto also stores the region site records of the
+// component in regionOut when the render plan exists, whatever the result.
+func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, regionOut **SSRRegion) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
@@ -298,8 +322,18 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	if err != nil {
 		return err
 	}
+	// The renderer is built first so that the region report covers every
+	// component; its error keeps its place after the hydration checks.
+	file, region, renderErr := buildSSRGoRendererWithRegion(plan, layout.packageName(src, srcRoot))
+	region.locate(string(data))
+	if regionOut != nil {
+		*regionOut = region
+	}
 	if activeDOMEngine == DOMEngineBlocks {
-		return writeSSRBlocksProjectFile(src, srcRoot, layout, plan)
+		if renderErr != nil {
+			return renderErr
+		}
+		return writeSSRBlocksProjectFile(src, srcRoot, layout, plan, file)
 	}
 	clientRuntime := runtimeImportFor(filepath.Dir(layout.hydratePath(src, srcRoot)), layout.ClientDir)
 	var hydrate *JsProgram
@@ -346,9 +380,8 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	}
 	finalizeRuntimeImports(hydrate, clientRuntime)
 	hydrateSource := []byte(PrintJS(hydrate, PrintPretty))
-	file, err := BuildSSRGoRendererFile(plan, layout.packageName(src, srcRoot))
-	if err != nil {
-		return err
+	if renderErr != nil {
+		return renderErr
 	}
 	source, err := FormatSSRGoFile(file)
 	if err != nil {

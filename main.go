@@ -86,6 +86,7 @@ type CompileOptions struct {
 	UnavailableCapabilities []string // direct known globals disabled by the host
 	Strict                  bool     // elevate proven unresolved reads to errors
 	SSRModule               string   // Go module import root for generated SSR server packages
+	SSRReport               string   // --ssr-report: write the region site records as JSON (task 043)
 	Production              bool     // --mode=production: production runtime variant
 	HydrationSupport        bool     // internal: emit SSR client state-restoration hooks
 	// RuntimeImport is the module specifier generated code uses for the
@@ -110,6 +111,7 @@ func main() {
 	tracePath := flag.String("trace", "", "append source-free CompilationTraceV1 records as JSONL; use '-' for stdout")
 	ssr := flag.Bool("ssr", false, "emit SSR project outputs into client/, server/, and styles/")
 	ssrModule := flag.String("ssr-module", "vela/generated/server", "Go module import root for generated SSR packages")
+	ssrReport := flag.String("ssr-report", "", "with --ssr, write the per-site SSR report (outcome, tier, type) to this JSON file")
 	mode := flag.String("mode", "development", "build mode: 'development' (default) or 'production'")
 	domEngine := flag.String("dom-engine", "legacy", "DOM engine: 'legacy' (default) or 'blocks' (block runtime, task 039)")
 	flag.Parse()
@@ -155,6 +157,7 @@ func main() {
 		UnavailableCapabilities: splitCapabilityList(*unavailableCapabilities),
 		Strict:                  *strict,
 		SSRModule:               *ssrModule,
+		SSRReport:               *ssrReport,
 		Production:              *mode == "production",
 	}
 	if closeTrace, traceErr := configureTrace(&opts, *tracePath); traceErr != nil {

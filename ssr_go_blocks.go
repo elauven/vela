@@ -20,7 +20,7 @@ import (
 // after its range; nested components and slot closures receive the wrapped
 // writer through their ordinary w parameter.
 
-func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps bool) (*goast.File, error) {
+func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps bool, region *SSRRegion) (*goast.File, error) {
 	file, err := buildSSRGoBlocksSkeleton(plan, packageName, includeProps)
 	if err != nil {
 		return nil, err
@@ -29,6 +29,7 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 		ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID,
 		scopeExpr:    &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(plan.ScopeID)},
 		awaitOptions: goast.NewIdent("options"), blocks: true, componentName: plan.ComponentName,
+		region: region, facts: map[JsExpr]ssrIRFacts{},
 	}
 	// A single root element is the component's element; any other root gets
 	// the display:contents wrapper the client creates (B-3.8). Either one
@@ -42,6 +43,9 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 	}
 	templateBody, err := emitter.nodes(plan.Nodes)
 	if err != nil {
+		return nil, emitter.region.abort(err)
+	}
+	if err := emitter.region.finish(plan); err != nil {
 		return nil, err
 	}
 	if emitter.rootElement == nil {
@@ -289,7 +293,7 @@ func (e *ssrGoEmitter) blocksIf(node *SSRPlanIf) ([]goast.Stmt, error) {
 			hasElse = true
 			continue
 		}
-		condition, err := TranslateSSRExpression(branch.Condition, e.ctx)
+		condition, err := e.translate("if", "", branch.Condition, e.ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -363,11 +367,7 @@ func (e *ssrGoEmitter) blocksAwait(node *SSRPlanAwait, pending []goast.Stmt) ([]
 // hydration (.hydrate.js, .hydrate_client.js, .ssr.json, event bridges) do
 // not exist under the block engine (A-8.8); the client module gains its
 // hydrate entry in task 041.
-func writeSSRBlocksProjectFile(src, srcRoot string, layout SSRProjectLayout, plan *SSRRenderPlan) error {
-	file, err := BuildSSRGoRendererFile(plan, layout.packageName(src, srcRoot))
-	if err != nil {
-		return err
-	}
+func writeSSRBlocksProjectFile(src, srcRoot string, layout SSRProjectLayout, plan *SSRRenderPlan, file *goast.File) error {
 	source, err := FormatSSRGoFile(file)
 	if err != nil {
 		return err

@@ -54,16 +54,16 @@ func runSSRBlocksCheck(t *testing.T, args ...string) {
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// List.vela needs callback translation and Host.vela passes an untyped row
-	// field to a typed child prop (task 043); Shell.vela is Host with a typed
-	// row expression.
+	// List.vela needs callback translation (task 044). Host.vela passes an
+	// untyped row field to a typed child prop (vela.AssignProp); Shell.vela is
+	// Host with a typed row expression.
 	for _, pattern := range []string{"testdata/engine_diff/*.vela", "testdata/ssr_blocks/*.vela"} {
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, match := range matches {
-			if name := filepath.Base(match); name == "List.vela" || name == "Host.vela" {
+			if filepath.Base(match) == "List.vela" {
 				continue
 			}
 			data, err := os.ReadFile(match)

@@ -12,16 +12,73 @@ import (
 
 const SSRExpressionDiagnosticCode = "VELA-SSR-EXPR"
 
-// SSRExpressionError carries a component-template-relative position. The CLI
-// integration will translate it through DiagSet; keeping it structured here
-// prevents the backend from degrading errors into unpositioned strings.
+// SSRImpureDiagnosticCode marks a write inside the server-evaluated region
+// (T-6.6a).
+const SSRImpureDiagnosticCode = "VELA-SSR-IMPURE"
+
+// SSRExpressionError carries a component-template-relative position, the
+// diagnostic code, and the reason chain from the region site to the
+// offending construct (§10.1). Error keeps the one-line form; the region
+// report and the CLI add the chain.
 type SSRExpressionError struct {
 	Pos     int
 	Message string
+	// Code is SSRExpressionDiagnosticCode when empty.
+	Code string
+	// Reasons is the chain inside the site, outermost first, for example
+	// [`$derived "paras"`, `call "split"`].
+	Reasons []string
+	// Cause is the innermost message when Message wraps another error.
+	Cause string
+	// Source is the .vela offset of the script initializer or function body
+	// the problem was found in, when SourceSet; otherwise the site position
+	// applies.
+	Source    int
+	SourceSet bool
 }
 
 func (e *SSRExpressionError) Error() string {
-	return SSRExpressionDiagnosticCode + ": " + e.Message
+	return e.code() + ": " + e.Message
+}
+
+func (e *SSRExpressionError) code() string {
+	if e.Code == "" {
+		return SSRExpressionDiagnosticCode
+	}
+	return e.Code
+}
+
+// innermost returns the message of the offending construct itself.
+func (e *SSRExpressionError) innermost() string {
+	if e.Cause != "" {
+		return e.Cause
+	}
+	return e.Message
+}
+
+func ssrImpure(pos int, format string, args ...interface{}) error {
+	return &SSRExpressionError{Pos: pos, Message: fmt.Sprintf(format, args...), Code: SSRImpureDiagnosticCode}
+}
+
+// ssrWithReason prefixes reason to the chain of err. When inner is a
+// wrapped error, err takes over its code, chain, and innermost message.
+func ssrWithReason(err, inner error, reason string) error {
+	outer, ok := err.(*SSRExpressionError)
+	if !ok {
+		return err
+	}
+	result := *outer
+	reasons := []string{reason}
+	if problem, ok := inner.(*SSRExpressionError); ok {
+		result.Code = problem.Code
+		result.Cause = problem.innermost()
+		result.Source, result.SourceSet = problem.Source, problem.SourceSet
+		reasons = append(reasons, problem.Reasons...)
+	} else {
+		reasons = append(reasons, outer.Reasons...)
+	}
+	result.Reasons = reasons
+	return &result
 }
 
 // SSRExprContext maps template identifiers to already-typed Go AST values.
@@ -37,6 +94,9 @@ type SSRExprContext struct {
 	Functions           map[string]*JsFuncDecl
 	resolving           map[string]bool
 	resolvingFunctions  map[string]bool
+	// scriptOffset places script AST node positions in the .vela source;
+	// 0 when unknown.
+	scriptOffset int
 }
 
 func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
@@ -70,248 +130,27 @@ func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
 	for name, function := range plan.Functions {
 		ctx.Functions[name] = function
 	}
+	ctx.scriptOffset = plan.ScriptOffset
 	return ctx
 }
 
-// TranslateSSRExpression lowers one cached TemplateExpr into Go AST. It does
-// not accept source text, so all future renderer paths share the parser and
-// expression ownership of ComponentAST.
+// TranslateSSRExpression lowers one cached TemplateExpr into Go AST through
+// the Server IR. It does not accept source text, so all renderer paths
+// share the parser and expression ownership of ComponentAST.
 func TranslateSSRExpression(expr *TemplateExpr, ctx SSRExprContext) (goast.Expr, error) {
-	if expr == nil || expr.Root() == nil {
-		return nil, &SSRExpressionError{Message: "template expression has no cached AST"}
+	ir, err := BuildSSRIR(expr, ctx)
+	if err != nil {
+		return nil, err
 	}
-	return translateSSRExpr(expr.Root(), ctx, expr.Pos)
+	return lowerSSRIR(ir), nil
 }
 
 func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
-	switch node := expr.(type) {
-	case *JsIdent:
-		if node.Name == "undefined" {
-			return &goast.CallExpr{Fun: goSelector("vela", "Undefined")}, nil
-		}
-		if binding, ok := ctx.Bindings[node.Name]; ok {
-			return binding, nil
-		}
-		if prop, ok := ctx.Props[node.Name]; ok {
-			return &goast.SelectorExpr{X: goast.NewIdent("props"), Sel: goast.NewIdent(prop.GoName)}, nil
-		}
-		if initializer, ok := ctx.StateInitializers[node.Name]; ok {
-			return translateSSRLocalInitializer(node.Name, "reactive", initializer, ctx, pos)
-		}
-		if initializer, ok := ctx.DerivedInitializers[node.Name]; ok {
-			return translateSSRLocalInitializer(node.Name, "derived", initializer, ctx, pos)
-		}
-		if initializer, ok := ctx.PlainInitializers[node.Name]; ok {
-			return translateSSRLocalInitializer(node.Name, "plain", initializer, ctx, pos)
-		}
-		if ctx.ReactiveNames[node.Name] {
-			return nil, ssrExprUnsupported(pos, "local reactive binding %q has no server value; pass it as an exported prop or wait for hydration", node.Name)
-		}
-		return nil, ssrExprUnsupported(pos, "identifier %q is not an exported prop or server binding", node.Name)
-	case *JsLiteral:
-		return translateSSRLiteral(node, pos)
-	case *JsArrayExpr:
-		return translateSSRArrayLiteral(node, ctx, pos)
-	case *JsObjectExpr:
-		return translateSSRObjectLiteral(node, ctx, pos)
-	case *JsTemplateLit:
-		return translateSSRTemplateLiteral(node, ctx, pos)
-	case *JsUnaryExpr:
-		x, err := translateSSRExpr(node.X, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		// JavaScript's ! accepts every value and first applies JS truthiness.
-		// Go's ! only accepts bool, so lowering it directly would reject valid
-		// expressions such as !items.length.
-		if node.Op == "!" {
-			return &goast.UnaryExpr{Op: token.NOT, X: &goast.CallExpr{
-				Fun:  goSelector("vela", "Truthy"),
-				Args: []goast.Expr{x},
-			}}, nil
-		}
-		if node.Op == "+" || node.Op == "-" {
-			if !ssrExprKnownNumber(node.X, ctx, map[string]bool{}) {
-				return nil, ssrExprUnsupported(pos, "unary operator %q requires a known number during SSR", node.Op)
-			}
-			function := "Number"
-			if node.Op == "-" {
-				function = "NumberNegate"
-			}
-			return &goast.CallExpr{Fun: goSelector("vela", function), Args: []goast.Expr{x}}, nil
-		}
-		op, ok := ssrUnaryToken(node.Op)
-		if !ok {
-			return nil, ssrExprUnsupported(pos, "unary operator %q is not supported", node.Op)
-		}
-		return &goast.UnaryExpr{Op: op, X: x}, nil
-	case *JsBinaryExpr:
-		left, err := translateSSRExpr(node.L, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		right, err := translateSSRExpr(node.R, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		if node.Op == "==" || node.Op == "!=" {
-			return nil, ssrExprUnsupported(pos, "loose equality operator %q is not available to static SSR until its coercion matrix is defined; use strict equality", node.Op)
-		}
-		if node.Op == "===" || node.Op == "!==" {
-			equal := &goast.CallExpr{Fun: goSelector("vela", "StrictEqual"), Args: []goast.Expr{left, right}}
-			if node.Op == "!==" {
-				return &goast.UnaryExpr{Op: token.NOT, X: equal}, nil
-			}
-			return equal, nil
-		}
-		op, ok := ssrBinaryToken(node.Op)
-		if !ok {
-			return nil, ssrExprUnsupported(pos, "binary operator %q is not supported", node.Op)
-		}
-		if node.Op == "<" || node.Op == "<=" || node.Op == ">" || node.Op == ">=" {
-			leftString := ssrExprKnownString(node.L, ctx, map[string]bool{})
-			rightString := ssrExprKnownString(node.R, ctx, map[string]bool{})
-			if leftString && rightString {
-				return ssrStringRelationalExpr(node.Op, left, right), nil
-			}
-			if ssrExprKnownNumber(node.L, ctx, map[string]bool{}) && ssrExprKnownNumber(node.R, ctx, map[string]bool{}) {
-				left = &goast.CallExpr{Fun: goSelector("vela", "Number"), Args: []goast.Expr{left}}
-				right = &goast.CallExpr{Fun: goSelector("vela", "Number"), Args: []goast.Expr{right}}
-				return &goast.BinaryExpr{X: left, Op: op, Y: right}, nil
-			}
-			return nil, ssrExprUnsupported(pos, "relational operator %q requires two known numbers or two known strings during SSR", node.Op)
-		}
-		// JavaScript + concatenates when either operand is a string. Go would
-		// reject a valid source expression such as "item " + props.Count, so
-		// use the already-admitted JS text conversion on both sides whenever
-		// the parser-owned expression tree proves one side string-like.
-		if node.Op == "+" {
-			leftString := ssrExprKnownString(node.L, ctx, map[string]bool{})
-			rightString := ssrExprKnownString(node.R, ctx, map[string]bool{})
-			switch {
-			case leftString || rightString:
-				if leftString != rightString {
-					left = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{left}}
-					right = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{right}}
-				}
-			case ssrExprKnownNumber(node.L, ctx, map[string]bool{}) && ssrExprKnownNumber(node.R, ctx, map[string]bool{}):
-				return &goast.CallExpr{Fun: goSelector("vela", "NumberAdd"), Args: []goast.Expr{left, right}}, nil
-			default:
-				return nil, ssrExprUnsupported(pos, "operator + requires two known numbers or at least one known string during SSR")
-			}
-		}
-		if node.Op == "-" || node.Op == "*" || node.Op == "/" || node.Op == "%" {
-			if !ssrExprKnownNumber(node.L, ctx, map[string]bool{}) || !ssrExprKnownNumber(node.R, ctx, map[string]bool{}) {
-				return nil, ssrExprUnsupported(pos, "numeric operator %q requires two known numbers during SSR", node.Op)
-			}
-			function := map[string]string{"-": "NumberSubtract", "*": "NumberMultiply", "/": "NumberDivide", "%": "NumberRemainder"}[node.Op]
-			return &goast.CallExpr{Fun: goSelector("vela", function), Args: []goast.Expr{left, right}}, nil
-		}
-		return &goast.BinaryExpr{X: left, Op: op, Y: right}, nil
-	case *JsLogicalExpr:
-		left, err := translateSSRExpr(node.L, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		right, err := translateSSRExpr(node.R, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		function := ""
-		switch node.Op {
-		case "&&":
-			function = "AndLazy"
-		case "||":
-			function = "OrLazy"
-		default:
-			return nil, ssrExprUnsupported(pos, "logical operator %q is not supported", node.Op)
-		}
-		return &goast.CallExpr{Fun: goSelector("vela", function), Args: []goast.Expr{
-			ssrLazyExpr(left),
-			ssrLazyExpr(right),
-		}}, nil
-	case *JsMemberExpr:
-		return translateSSRMember(node, ctx, pos)
-	case *JsConditionalExpr:
-		test, err := translateSSRExpr(node.Test, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		thenValue, err := translateSSRExpr(node.Then, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		elseValue, err := translateSSRExpr(node.Else, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		return &goast.CallExpr{Fun: goSelector("vela", "TernaryLazy"), Args: []goast.Expr{
-			ssrLazyExpr(test),
-			ssrLazyExpr(thenValue),
-			ssrLazyExpr(elseValue),
-		}}, nil
-	case *JsCallExpr:
-		return translateSSRNamedFunctionCall(node, ctx, pos)
-	case *JsArrowFunc:
-		return nil, ssrExprUnsupported(pos, "arrow functions are not available to static SSR")
-	case *JsAssignExpr:
-		return nil, ssrExprUnsupported(pos, "assignments are not available to static SSR")
-	default:
-		return nil, ssrExprUnsupported(pos, "JavaScript expression %T is not supported", expr)
+	ir, err := buildSSRIR(expr, ctx, pos)
+	if err != nil {
+		return nil, err
 	}
-}
-
-func ssrStringRelationalExpr(operator string, left, right goast.Expr) goast.Expr {
-	less := func(first, second goast.Expr) goast.Expr {
-		return &goast.CallExpr{Fun: goSelector("vela", "StringLess"), Args: []goast.Expr{first, second}}
-	}
-	switch operator {
-	case "<":
-		return less(left, right)
-	case ">":
-		return less(right, left)
-	case "<=":
-		return &goast.UnaryExpr{Op: token.NOT, X: less(right, left)}
-	case ">=":
-		return &goast.UnaryExpr{Op: token.NOT, X: less(left, right)}
-	default:
-		panic("vela: unexpected admitted string relational operator " + operator)
-	}
-}
-
-func ssrExprKnownString(expr JsExpr, ctx SSRExprContext, seen map[string]bool) bool {
-	switch node := expr.(type) {
-	case *JsLiteral:
-		return node.Kind == "string"
-	case *JsTemplateLit:
-		return true
-	case *JsIdent:
-		if seen[node.Name] {
-			return false
-		}
-		if binding, ok := ctx.Bindings[node.Name]; ok {
-			return ssrGoExprKnownString(binding, ctx)
-		}
-		if prop, ok := ctx.Props[node.Name]; ok {
-			return prop.Type == SSRTypeString
-		}
-		seen[node.Name] = true
-		defer delete(seen, node.Name)
-		if initializer, ok := ctx.StateInitializers[node.Name]; ok {
-			return ssrExprKnownString(initializer, ctx, seen)
-		}
-		if initializer, ok := ctx.DerivedInitializers[node.Name]; ok {
-			return ssrExprKnownString(initializer, ctx, seen)
-		}
-		if initializer, ok := ctx.PlainInitializers[node.Name]; ok {
-			return ssrExprKnownString(initializer, ctx, seen)
-		}
-	case *JsBinaryExpr:
-		return node.Op == "+" && (ssrExprKnownString(node.L, ctx, seen) || ssrExprKnownString(node.R, ctx, seen))
-	case *JsConditionalExpr:
-		return ssrExprKnownString(node.Then, ctx, seen) && ssrExprKnownString(node.Else, ctx, seen)
-	}
-	return false
+	return lowerSSRIR(ir), nil
 }
 
 func ssrGoExprKnownString(expr goast.Expr, ctx SSRExprContext) bool {
@@ -330,104 +169,6 @@ func ssrGoExprKnownString(expr goast.Expr, ctx SSRExprContext) bool {
 		}
 	case *goast.BinaryExpr:
 		return node.Op == token.ADD && ssrGoExprKnownString(node.X, ctx) && ssrGoExprKnownString(node.Y, ctx)
-	}
-	return false
-}
-
-func ssrExprKnownNumber(expr JsExpr, ctx SSRExprContext, seen map[string]bool) bool {
-	switch node := expr.(type) {
-	case *JsLiteral:
-		return node.Kind == "number"
-	case *JsIdent:
-		if seen[node.Name] {
-			return false
-		}
-		if binding, ok := ctx.Bindings[node.Name]; ok {
-			return ssrGoExprKnownNumber(binding, ctx)
-		}
-		if prop, ok := ctx.Props[node.Name]; ok {
-			return prop.Type == SSRTypeInt || prop.Type == SSRTypeFloat
-		}
-		seen[node.Name] = true
-		defer delete(seen, node.Name)
-		for _, initializers := range []map[string]JsExpr{ctx.StateInitializers, ctx.DerivedInitializers, ctx.PlainInitializers} {
-			if initializer, ok := initializers[node.Name]; ok {
-				return ssrExprKnownNumber(initializer, ctx, seen)
-			}
-		}
-	case *JsUnaryExpr:
-		return (node.Op == "+" || node.Op == "-") && ssrExprKnownNumber(node.X, ctx, seen)
-	case *JsBinaryExpr:
-		switch node.Op {
-		case "+", "-", "*", "/", "%":
-			return ssrExprKnownNumber(node.L, ctx, seen) && ssrExprKnownNumber(node.R, ctx, seen)
-		}
-	case *JsConditionalExpr:
-		return ssrExprKnownNumber(node.Then, ctx, seen) && ssrExprKnownNumber(node.Else, ctx, seen)
-	}
-	return false
-}
-
-func ssrExprKnownArray(expr JsExpr, ctx SSRExprContext, seen map[string]bool) bool {
-	switch node := expr.(type) {
-	case *JsArrayExpr:
-		return true
-	case *JsIdent:
-		if seen[node.Name] {
-			return false
-		}
-		if binding, ok := ctx.Bindings[node.Name]; ok {
-			literal, ok := binding.(*goast.CompositeLit)
-			if !ok {
-				return false
-			}
-			_, ok = literal.Type.(*goast.ArrayType)
-			return ok
-		}
-		if prop, ok := ctx.Props[node.Name]; ok {
-			return prop.Type == SSRTypeSlice
-		}
-		seen[node.Name] = true
-		defer delete(seen, node.Name)
-		for _, initializers := range []map[string]JsExpr{ctx.StateInitializers, ctx.DerivedInitializers, ctx.PlainInitializers} {
-			if initializer, ok := initializers[node.Name]; ok {
-				return ssrExprKnownArray(initializer, ctx, seen)
-			}
-		}
-	case *JsConditionalExpr:
-		return ssrExprKnownArray(node.Then, ctx, seen) && ssrExprKnownArray(node.Else, ctx, seen)
-	}
-	return false
-}
-
-func ssrExprKnownObject(expr JsExpr, ctx SSRExprContext, seen map[string]bool) bool {
-	switch node := expr.(type) {
-	case *JsObjectExpr:
-		return true
-	case *JsIdent:
-		if seen[node.Name] {
-			return false
-		}
-		if binding, ok := ctx.Bindings[node.Name]; ok {
-			literal, ok := binding.(*goast.CompositeLit)
-			if !ok {
-				return false
-			}
-			_, ok = literal.Type.(*goast.MapType)
-			return ok
-		}
-		if prop, ok := ctx.Props[node.Name]; ok {
-			return prop.Type == SSRTypeObject
-		}
-		seen[node.Name] = true
-		defer delete(seen, node.Name)
-		for _, initializers := range []map[string]JsExpr{ctx.StateInitializers, ctx.DerivedInitializers, ctx.PlainInitializers} {
-			if initializer, ok := initializers[node.Name]; ok {
-				return ssrExprKnownObject(initializer, ctx, seen)
-			}
-		}
-	case *JsConditionalExpr:
-		return ssrExprKnownObject(node.Then, ctx, seen) && ssrExprKnownObject(node.Else, ctx, seen)
 	}
 	return false
 }
@@ -455,66 +196,6 @@ func ssrGoExprKnownNumber(expr goast.Expr, ctx SSRExprContext) bool {
 	return false
 }
 
-// translateSSRNamedFunctionCall deliberately admits a small AST-only function
-// subset: top-level named, synchronous, non-generator declarations with one
-// return expression and identifier parameters. It is an expression inliner,
-// not a JavaScript evaluator: argument and return trees continue through the
-// existing checked translator, while parameter names receive lexical Go-AST
-// bindings. Calls, writes, async control flow, and external functions remain
-// explicit diagnostics until their semantics have an independent contract.
-func translateSSRNamedFunctionCall(call *JsCallExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
-	if call.Optional {
-		return nil, ssrExprUnsupported(pos, "optional JavaScript calls are not available to static SSR")
-	}
-	callee, ok := call.Callee.(*JsIdent)
-	if !ok {
-		return nil, ssrExprUnsupported(pos, "only named local formatter calls are available to static SSR")
-	}
-	function, ok := ctx.Functions[callee.Name]
-	if !ok || function == nil {
-		return nil, ssrExprUnsupported(pos, "JavaScript call %q is not a supported local formatter", callee.Name)
-	}
-	if function.Async || function.Generator {
-		return nil, ssrExprUnsupported(pos, "local formatter %q cannot be async or a generator during SSR", callee.Name)
-	}
-	if len(function.Params) != len(call.Args) {
-		return nil, ssrExprUnsupported(pos, "local formatter %q expects %d argument(s), got %d", callee.Name, len(function.Params), len(call.Args))
-	}
-	if function.Body == nil || len(function.Body.Body) != 1 {
-		return nil, ssrExprUnsupported(pos, "local formatter %q must contain exactly one return expression", callee.Name)
-	}
-	result, ok := function.Body.Body[0].(*JsReturnStmt)
-	if !ok || result.Arg == nil {
-		return nil, ssrExprUnsupported(pos, "local formatter %q must contain exactly one return expression", callee.Name)
-	}
-	if ctx.resolvingFunctions == nil {
-		ctx.resolvingFunctions = map[string]bool{}
-	}
-	if ctx.resolvingFunctions[callee.Name] {
-		return nil, ssrExprUnsupported(pos, "local formatter %q is recursively referenced during SSR", callee.Name)
-	}
-	arguments := make([]goast.Expr, len(call.Args))
-	for index, argument := range call.Args {
-		value, err := translateSSRExpr(argument, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		arguments[index] = value
-	}
-	inner := ssrContextWithBindings(ctx)
-	inner.resolvingFunctions = ctx.resolvingFunctions
-	inner.resolvingFunctions[callee.Name] = true
-	defer delete(inner.resolvingFunctions, callee.Name)
-	for index, parameter := range function.Params {
-		name := identName(parameter)
-		if name == "" {
-			return nil, ssrExprUnsupported(pos, "local formatter %q has a non-identifier parameter", callee.Name)
-		}
-		inner.Bindings[name] = arguments[index]
-	}
-	return translateSSRExpr(result.Arg, inner, pos)
-}
-
 // ssrLazyExpr represents a source expression as a zero-argument Go closure.
 // It is used only at JavaScript short-circuit boundaries, where Go evaluates
 // function arguments eagerly but the runtime must decide which closure body
@@ -530,125 +211,6 @@ func ssrLazyExpr(value goast.Expr) goast.Expr {
 			&goast.ReturnStmt{Results: []goast.Expr{value}},
 		}},
 	}
-}
-
-func translateSSRLocalInitializer(name, kind string, initializer JsExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
-	if ctx.resolving == nil {
-		ctx.resolving = map[string]bool{}
-	}
-	if ctx.resolving[name] {
-		return nil, ssrExprUnsupported(pos, "local %s binding %q has a circular server initializer", kind, name)
-	}
-	ctx.resolving[name] = true
-	defer delete(ctx.resolving, name)
-	value, err := translateSSRExpr(initializer, ctx, pos)
-	if err != nil {
-		return nil, ssrExprUnsupported(pos, "local %s binding %q has no server-safe initializer: %v", kind, name, err)
-	}
-	return value, nil
-}
-
-// translateSSRTemplateLiteral consumes the parser-owned quasi/expression
-// structure. TemplateString owns JavaScript's null/undefined conversion, so
-// every expression that is otherwise available to SSR may be interpolated.
-// This keeps an interpolation on the same cached-AST lowering path as the
-// equivalent standalone template expression.
-func translateSSRTemplateLiteral(node *JsTemplateLit, ctx SSRExprContext, pos int) (goast.Expr, error) {
-	if len(node.Quasis) != len(node.Exprs)+1 {
-		return nil, ssrExprUnsupported(pos, "template literal has an invalid parser structure")
-	}
-	values := make([]goast.Expr, 0, len(node.Quasis)+len(node.Exprs))
-	for index, quasi := range node.Quasis {
-		text, err := decodeSSRTemplateQuasi(quasi)
-		if err != nil {
-			return nil, ssrExprUnsupported(pos, "template literal cannot be translated safely")
-		}
-		values = append(values, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(text)})
-		if index == len(node.Exprs) {
-			continue
-		}
-		value, err := translateSSRExpr(node.Exprs[index], ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		values = append(values, value)
-	}
-	if len(node.Exprs) == 0 {
-		return values[0], nil
-	}
-	return &goast.CallExpr{Fun: goSelector("vela", "TemplateString"), Args: values}, nil
-}
-
-// translateSSRArrayLiteral preserves JavaScript array order and holes using a
-// []any composite literal. Vela.String already renders nil array members as
-// empty fields, so `[1, , 3]` reaches SSR text output as `1,,3`, matching
-// Array.prototype.toString for the admitted non-spread subset.
-func translateSSRArrayLiteral(node *JsArrayExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
-	elements := make([]goast.Expr, 0, len(node.Elems))
-	for _, element := range node.Elems {
-		if element == nil {
-			elements = append(elements, goast.NewIdent("nil"))
-			continue
-		}
-		if _, spread := element.(*JsSpreadExpr); spread {
-			return nil, ssrExprUnsupported(pos, "array spread is not available to static SSR")
-		}
-		value, err := translateSSRExpr(element, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		elements = append(elements, value)
-	}
-	return &goast.CompositeLit{
-		Type: &goast.ArrayType{Elt: goast.NewIdent("any")},
-		Elts: elements,
-	}, nil
-}
-
-// translateSSRObjectLiteral admits ordinary non-computed data properties with
-// identifier or string keys. A map[string]any is the existing SSR boundary
-// representation for JavaScript objects, and it remains readable through
-// vela.Get. Spread, accessors, methods, and computed property names require
-// JavaScript object semantics that must be specified before they are lowered.
-func translateSSRObjectLiteral(node *JsObjectExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
-	elements := make([]goast.Expr, 0, len(node.Props))
-	indices := make(map[string]int, len(node.Props))
-	for _, property := range node.Props {
-		if property == nil || property.Spread {
-			return nil, ssrExprUnsupported(pos, "object spread is not available to static SSR")
-		}
-		if property.Computed {
-			return nil, ssrExprUnsupported(pos, "computed object property names are not available to static SSR")
-		}
-		if property.Method || property.Kind != "init" {
-			return nil, ssrExprUnsupported(pos, "object methods and accessors are not available to static SSR")
-		}
-		key, err := translateSSRObjectKey(property.Key, pos)
-		if err != nil {
-			return nil, err
-		}
-		if key == "__proto__" {
-			return nil, ssrExprUnsupported(pos, "the __proto__ object property is not available to static SSR")
-		}
-		value, err := translateSSRExpr(property.Value, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		entry := &goast.KeyValueExpr{
-			Key:   &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(key)},
-			Value: value,
-		}
-		if previous, duplicate := indices[key]; duplicate {
-			elements[previous] = entry
-			continue
-		}
-		indices[key] = len(elements)
-		elements = append(elements, entry)
-	}
-	return &goast.CompositeLit{
-		Type: &goast.MapType{Key: goast.NewIdent("string"), Value: goast.NewIdent("any")},
-		Elts: elements,
-	}, nil
 }
 
 func translateSSRObjectKey(key JsExpr, pos int) (string, error) {
@@ -669,28 +231,6 @@ func translateSSRObjectKey(key JsExpr, pos int) (string, error) {
 		return value, nil
 	default:
 		return "", ssrExprUnsupported(pos, "only identifier and string object property names are available to static SSR")
-	}
-}
-
-func translateSSRLiteral(node *JsLiteral, pos int) (goast.Expr, error) {
-	switch node.Kind {
-	case "string":
-		if node.Decoded {
-			return &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(node.Value)}, nil
-		}
-		value, err := decodeSSRJSStringLiteral(node.Raw)
-		if err != nil {
-			return nil, ssrExprUnsupported(pos, "string literal cannot be translated safely")
-		}
-		return &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(value)}, nil
-	case "number":
-		return &goast.BasicLit{Kind: token.FLOAT, Value: node.Raw}, nil
-	case "boolean":
-		return goast.NewIdent(node.Raw), nil
-	case "null":
-		return goast.NewIdent("nil"), nil
-	default:
-		return nil, ssrExprUnsupported(pos, "literal kind %q is not supported", node.Kind)
 	}
 }
 
@@ -749,58 +289,6 @@ func decodeSSRJSStringContent(raw string, template bool) (string, error) {
 		}
 	}
 	return out.String(), nil
-}
-
-func translateSSRMember(node *JsMemberExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
-	if !node.Computed {
-		if property, ok := node.Prop.(*JsIdent); ok && property.Name == "length" {
-			object, err := translateSSRExpr(node.Obj, ctx, pos)
-			if err != nil {
-				return nil, err
-			}
-			return &goast.CallExpr{Fun: goSelector("vela", "Length"), Args: []goast.Expr{object}}, nil
-		}
-		if property, ok := node.Prop.(*JsIdent); ok {
-			object, err := translateSSRExpr(node.Obj, ctx, pos)
-			if err != nil {
-				return nil, err
-			}
-			return &goast.CallExpr{Fun: goSelector("vela", "Get"), Args: []goast.Expr{
-				object,
-				&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(property.Name)},
-			}}, nil
-		}
-	}
-	if node.Computed {
-		arrayIndex := ssrExprKnownArray(node.Obj, ctx, map[string]bool{}) && ssrExprKnownNumber(node.Prop, ctx, map[string]bool{})
-		objectKey := ssrExprKnownObject(node.Obj, ctx, map[string]bool{}) && ssrExprKnownString(node.Prop, ctx, map[string]bool{})
-		if !arrayIndex && !objectKey {
-			return nil, ssrExprUnsupported(pos, "computed member access requires a known array with a numeric index or a known object with a string key during SSR")
-		}
-		object, err := translateSSRExpr(node.Obj, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		index, err := translateSSRExpr(node.Prop, ctx, pos)
-		if err != nil {
-			return nil, err
-		}
-		return &goast.CallExpr{Fun: goSelector("vela", "Index"), Args: []goast.Expr{object, index}}, nil
-	}
-	return nil, ssrExprUnsupported(pos, "member access is not available until the prop has a declared object type")
-}
-
-func ssrUnaryToken(op string) (token.Token, bool) {
-	switch op {
-	case "!":
-		return token.NOT, true
-	case "-":
-		return token.SUB, true
-	case "+":
-		return token.ADD, true
-	default:
-		return token.ILLEGAL, false
-	}
 }
 
 func ssrBinaryToken(op string) (token.Token, bool) {

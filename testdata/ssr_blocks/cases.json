@@ -14,5 +14,6 @@
  {"name": "Extras a", "component": "Extras", "props": {"tags": ["x", "y"], "mode": "a", "version": 2}, "entries": ["Extras", "Panel", "Panel"], "compare": true},
  {"name": "Extras b", "component": "Extras", "props": {"tags": ["<z>"], "mode": "b"}, "entries": ["Extras", "Panel", "Panel"], "compare": true},
  {"name": "Table", "component": "Table", "props": {"rows": [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}], "note": "\nline"}, "entries": ["Table"], "compare": true},
- {"name": "Table empty", "component": "Table", "props": {"rows": [], "note": ""}, "entries": ["Table"], "compare": true}
+ {"name": "Table empty", "component": "Table", "props": {"rows": [], "note": ""}, "entries": ["Table"], "compare": true},
+ {"name": "Host", "component": "Host", "props": {"rows": [{"id": 1, "name": "r1"}, {"id": 2, "name": "r2"}]}, "entries": ["Host", "Panel", "Panel", "Panel"], "compare": true}
 ]

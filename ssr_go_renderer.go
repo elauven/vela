@@ -21,30 +21,41 @@ const SSRHydrationPayloadVersion = 1
 // attributes, and conditional template branches. Other plan node kinds keep
 // producing explicit diagnostics until their renderer semantics exist.
 func BuildSSRGoFile(plan *SSRRenderPlan, packageName string) (*goast.File, error) {
-	return buildSSRGoFile(plan, packageName, true)
+	return buildSSRGoFile(plan, packageName, true, newSSRRegion(plan))
 }
 
 // BuildSSRGoRendererFile emits a project renderer that takes its props type
 // from the adjacent, user-preservable *_props.go contract file.
 func BuildSSRGoRendererFile(plan *SSRRenderPlan, packageName string) (*goast.File, error) {
-	return buildSSRGoFile(plan, packageName, false)
+	return buildSSRGoFile(plan, packageName, false, newSSRRegion(plan))
 }
 
-func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool) (*goast.File, error) {
+// buildSSRGoRendererWithRegion is BuildSSRGoRendererFile that also returns
+// the region site records, filled whether or not the renderer succeeds.
+func buildSSRGoRendererWithRegion(plan *SSRRenderPlan, packageName string) (*goast.File, *SSRRegion, error) {
+	region := newSSRRegion(plan)
+	file, err := buildSSRGoFile(plan, packageName, false, region)
+	return file, region, err
+}
+
+func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool, region *SSRRegion) (*goast.File, error) {
 	if activeDOMEngine == DOMEngineBlocks {
-		return buildSSRGoBlocksFile(plan, packageName, includeProps)
+		return buildSSRGoBlocksFile(plan, packageName, includeProps, region)
 	}
 	file, err := buildSSRGoSkeleton(plan, packageName, includeProps)
 	if err != nil {
 		return nil, err
 	}
-	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, scopeExpr: goast.NewIdent("instanceID"), awaitOptions: goast.NewIdent("options"), componentInstanceSuffixes: plan.ComponentInstanceSuffixes, componentInstanceIdentities: plan.ComponentInstanceIdentities}
+	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, scopeExpr: goast.NewIdent("instanceID"), awaitOptions: goast.NewIdent("options"), componentInstanceSuffixes: plan.ComponentInstanceSuffixes, componentInstanceIdentities: plan.ComponentInstanceIdentities, region: region, facts: map[JsExpr]ssrIRFacts{}}
 	defaults, err := emitter.propDefaults(plan.Props)
 	if err != nil {
 		return nil, err
 	}
 	templateBody, err := emitter.nodes(plan.Nodes)
 	if err != nil {
+		return nil, emitter.region.abort(err)
+	}
+	if err := emitter.region.finish(plan); err != nil {
 		return nil, err
 	}
 	payload, err := buildSSRHydrationPayload(plan, emitter.scopeExpr, emitter.awaitOptions)
@@ -71,7 +82,11 @@ func (e *ssrGoEmitter) propDefaults(props []SSRPlanProp) ([]goast.Stmt, error) {
 		if prop.Default == nil {
 			continue
 		}
-		value, err := translateSSRExpr(prop.Default, e.ctx, 0)
+		source := -1
+		if e.region != nil {
+			source = e.region.ScriptOffset + prop.Default.NodePos()
+		}
+		value, err := e.translateJS("prop-default", prop.SourceName, prop.Default, 0, source, e.ctx)
 		if err != nil {
 			return nil, fmt.Errorf("SSR default prop %q: %w", prop.SourceName, err)
 		}
@@ -188,6 +203,13 @@ type ssrGoEmitter struct {
 	blocks        bool
 	componentName string
 	rootElement   *SSRPlanElement // single root element; nil with a wrapper root
+	// region records the sites this renderer lowers (ssr_region.go); nil
+	// for callers without a region. speculative counts enclosing branches
+	// whose failure has a fallback. facts holds the IR facts of each
+	// translated expression for conditions.
+	region      *SSRRegion
+	speculative int
+	facts       map[JsExpr]ssrIRFacts
 }
 
 func (e *ssrGoEmitter) nodes(nodes []SSRPlanNode) ([]goast.Stmt, error) {
@@ -233,6 +255,9 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	}
 	fields := make([]*goast.KeyValueExpr, 0, len(node.Attrs)+1)
 	presence := make([]goast.Expr, 0, len(node.Attrs))
+	// A value of unproven type goes through vela.AssignProp, which converts it
+	// to the child's declared Go field type (T-5.1) or fails the render.
+	var assigns []goast.Stmt
 	for _, attr := range node.Attrs {
 		var value goast.Expr
 		switch attr.Role {
@@ -247,9 +272,17 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 			value = &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(attr.Value)}
 		case SSRAttrDynamic, SSRAttrTwoWay:
 			var err error
-			value, err = TranslateSSRExpression(attr.Expr, e.ctx)
+			value, err = e.translate("component-prop", node.Name+"."+attr.Name, attr.Expr, e.ctx)
 			if err != nil {
 				return nil, err
+			}
+			if facts := e.facts[attr.Expr.Root()]; facts.SemanticType() == "unknown" && !facts.GoString {
+				field := &goast.UnaryExpr{Op: token.AND, X: goSelectorExpr(goast.NewIdent("ssrChildProps"), ssrGoExportName(attr.Name))}
+				assigns = append(assigns, goWriteSSRErr(&goast.CallExpr{Fun: goSelector("vela", "AssignProp"), Args: []goast.Expr{
+					field, value, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(node.Name + "." + attr.Name)},
+				}}))
+				presence = append(presence, &goast.KeyValueExpr{Key: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(attr.Name)}, Value: goast.NewIdent("true")})
+				continue
 			}
 		default:
 			return nil, ssrExprUnsupported(attr.Span.Start, "component prop %q with role %d requires hydration", attr.Name, attr.Role)
@@ -303,7 +336,13 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 		}, Body: &goast.BlockStmt{List: body}}
 		slots.Elts = append(slots.Elts, &goast.KeyValueExpr{Key: goast.NewIdent(ssrGoExportName(name)), Value: closure})
 	}
-	args := []goast.Expr{props, slots}
+	propsArg := goast.Expr(props)
+	var prelude []goast.Stmt
+	if len(assigns) > 0 {
+		prelude = append([]goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("ssrChildProps")}, Tok: token.DEFINE, Rhs: []goast.Expr{props}}}, assigns...)
+		propsArg = goast.NewIdent("ssrChildProps")
+	}
+	args := []goast.Expr{propsArg, slots}
 	suffix := e.componentInstanceSuffixes[node.Span]
 	identity, hasIdentity := e.componentInstanceIdentities[node.Span]
 	if hasIdentity && identity.RuntimeScoped {
@@ -326,9 +365,9 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	if e.blocks {
 		// The client sets the parent scope on the child root element.
 		setScope := &goast.ExprStmt{X: &goast.CallExpr{Fun: goSelector("vela", "SetHostScope"), Args: []goast.Expr{goast.NewIdent("w"), &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(e.scopeID)}}}}
-		return []goast.Stmt{setScope, goWriteSSRErr(render)}, nil
+		return ssrScopedStatements(prelude, setScope, goWriteSSRErr(render)), nil
 	}
-	return []goast.Stmt{goWriteSSRErr(render)}, nil
+	return ssrScopedStatements(prelude, goWriteSSRErr(render)), nil
 }
 
 func (e *ssrGoEmitter) componentPackagePrefix(link *SSRComponentLink) (string, error) {
@@ -419,7 +458,7 @@ func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {
 		if !part.Static && !e.blocks {
 			body = append(body, e.markerStart(part.DynamicID))
 		}
-		value, err := e.outputValue(part.Static, part.Value, part.Expr)
+		value, err := e.outputValue("text", "", part.Static, part.Value, part.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -460,7 +499,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			if attr.Expr == nil {
 				return nil, ssrExprUnsupported(attr.Span.Start, "class directive %q has no cached expression", attr.Name)
 			}
-			condition, err := TranslateSSRExpression(attr.Expr, e.ctx)
+			condition, err := e.translate("class", attr.Name, attr.Expr, e.ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -481,7 +520,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			}
 			open += html.EscapeString(attr.Name) + `:`
 			body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
-			value, err := e.outputValue(false, "", attr.Expr)
+			value, err := e.outputValue("style", attr.Name, false, "", attr.Expr)
 			if err != nil {
 				return nil, err
 			}
@@ -543,7 +582,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 				continue
 			}
 			if attr.Name == "checked" {
-				condition, err := TranslateSSRExpression(attr.Expr, e.ctx)
+				condition, err := e.translate("form-value", "bind:checked", attr.Expr, e.ctx)
 				if err != nil {
 					return nil, err
 				}
@@ -577,7 +616,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 				return nil, ssrExprUnsupported(attr.Span.Start, "dynamic attribute %q has no cached expression", attr.Name)
 			}
 			if isBoolAttr(attr.Name) {
-				condition, err := TranslateSSRExpression(attr.Expr, e.ctx)
+				condition, err := e.translate("attribute", attr.Name, attr.Expr, e.ctx)
 				if err != nil {
 					return nil, err
 				}
@@ -596,7 +635,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			}
 			open += " " + attr.Name + "=\""
 			body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
-			value, err := e.outputValue(false, "", attr.Expr)
+			value, err := e.outputValue("attribute", attr.Name, false, "", attr.Expr)
 			if err != nil {
 				return nil, err
 			}
@@ -710,7 +749,7 @@ func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
 		if len(node.Branches) != 1 || node.Branches[0].Condition != nil {
 			return nil, ssrExprUnsupported(node.Span.Start, "SSR key block has an invalid branch shape")
 		}
-		key, err := TranslateSSRExpression(node.Key, e.ctx)
+		key, err := e.translate("key", "", node.Key, e.ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -743,7 +782,7 @@ func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
 			previous.Else = &goast.BlockStmt{List: body}
 			continue
 		}
-		condition, err := TranslateSSRExpression(branch.Condition, e.ctx)
+		condition, err := e.translate("if", "", branch.Condition, e.ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -766,7 +805,7 @@ func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
 }
 
 func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
-	iterable, err := TranslateSSRExpression(node.Iterable, e.ctx)
+	iterable, err := e.translate("each", "", node.Iterable, e.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -785,7 +824,7 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	}
 	runtimeValue := goast.Expr(goast.NewIdent(indexName))
 	if node.Key != nil {
-		runtimeValue, err = TranslateSSRExpression(node.Key, child.ctx)
+		runtimeValue, err = child.translate("each-key", "", node.Key, child.ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -880,31 +919,11 @@ func ssrGoTruthy(value goast.Expr) goast.Expr {
 }
 
 func (e *ssrGoEmitter) condition(expr *TemplateExpr, value goast.Expr) goast.Expr {
-	if expr != nil && ssrExprKnownBool(expr.Root(), e.ctx) {
+	// The IR of the expression decides whether its Go form is a bool.
+	if expr != nil && e.facts[expr.Root()].Bool {
 		return value
 	}
 	return ssrGoTruthy(value)
-}
-
-// ssrExprKnownBool recognises only expressions whose Go lowering has a
-// concrete bool type. JavaScript logical operators and ternaries produce one
-// operand value, so they remain truthiness calls.
-func ssrExprKnownBool(expr JsExpr, ctx SSRExprContext) bool {
-	switch node := expr.(type) {
-	case *JsIdent:
-		prop, ok := ctx.Props[node.Name]
-		return ok && prop.Type == SSRTypeBool
-	case *JsLiteral:
-		return node.Kind == "boolean"
-	case *JsUnaryExpr:
-		return node.Op == "!"
-	case *JsBinaryExpr:
-		switch node.Op {
-		case "<", "<=", ">", ">=", "==", "===", "!=", "!==":
-			return true
-		}
-	}
-	return false
 }
 
 func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
@@ -916,14 +935,15 @@ func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
 		Props: base.Props, Bindings: bindings, ReactiveNames: base.ReactiveNames,
 		StateInitializers: base.StateInitializers, DerivedInitializers: base.DerivedInitializers,
 		PlainInitializers: base.PlainInitializers, Functions: base.Functions,
+		scriptOffset: base.scriptOffset,
 	}
 }
 
-func (e *ssrGoEmitter) outputValue(static bool, literal string, expr *TemplateExpr) (goast.Expr, error) {
+func (e *ssrGoEmitter) outputValue(kind, name string, static bool, literal string, expr *TemplateExpr) (goast.Expr, error) {
 	if static {
 		return &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(literal)}, nil
 	}
-	value, err := TranslateSSRExpression(expr, e.ctx)
+	value, err := e.translate(kind, name, expr, e.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -937,7 +957,7 @@ func (e *ssrGoEmitter) outputValue(static bool, literal string, expr *TemplateEx
 // input/textarea properties convert null to an empty string, whereas template
 // text and ordinary attributes visibly render it as "null".
 func (e *ssrGoEmitter) outputFormValue(expr *TemplateExpr) (goast.Expr, error) {
-	value, err := TranslateSSRExpression(expr, e.ctx)
+	value, err := e.translate("form-value", "bind:value", expr, e.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -999,7 +1019,7 @@ func ssrJSExprIsKnownNull(expr JsExpr, ctx SSRExprContext, seen map[string]bool)
 }
 
 func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionValue SSRPlanAttr, multiple bool) (goast.Expr, error) {
-	selected, err := TranslateSSRExpression(selectValue, e.ctx)
+	selected, err := e.translate("form-value", "select bind:value", selectValue, e.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1008,7 +1028,7 @@ func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionVa
 	case SSRAttrStatic:
 		option = &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(optionValue.Value)}
 	case SSRAttrDynamic:
-		value, err := TranslateSSRExpression(optionValue.Expr, e.ctx)
+		value, err := e.translate("attribute", "value", optionValue.Expr, e.ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1098,7 +1118,12 @@ func (e *ssrGoEmitter) awaitSnapshotBranch(nodes []SSRPlanNode, binding string, 
 	if binding != "" {
 		e.ctx.Bindings[binding] = value
 	}
-	body, err := e.nodes(nodes)
+	var body []goast.Stmt
+	err := e.speculate(func() error {
+		var err error
+		body, err = e.nodes(nodes)
+		return err
+	})
 	e.ctx = previous
 	if err != nil {
 		return nil, false
@@ -2412,4 +2437,13 @@ func ssrGoStringConcat(parts ...goast.Expr) goast.Expr {
 		result = &goast.BinaryExpr{X: result, Op: token.ADD, Y: part}
 	}
 	return result
+}
+
+// ssrScopedStatements appends statements to a prelude; with a prelude the
+// whole sequence becomes one block, so prelude variables stay local.
+func ssrScopedStatements(prelude []goast.Stmt, statements ...goast.Stmt) []goast.Stmt {
+	if len(prelude) == 0 {
+		return statements
+	}
+	return []goast.Stmt{&goast.BlockStmt{List: append(prelude, statements...)}}
 }

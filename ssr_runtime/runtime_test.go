@@ -369,3 +369,36 @@ func TestStreamWritesRangesAndOrderedRootPayload(t *testing.T) {
 		t.Fatalf("static output = %q", static.String())
 	}
 }
+
+func TestAssignPropConvertsThroughTheJSONView(t *testing.T) {
+	type card struct {
+		Title string  `json:"title"`
+		Count float64 `json:"count"`
+	}
+	var title string
+	if err := AssignProp(&title, any("row"), "Panel.title"); err != nil || title != "row" {
+		t.Fatalf("string: %q %v", title, err)
+	}
+	var count float64
+	if err := AssignProp(&count, any(float64(3)), "Panel.count"); err != nil || count != 3 {
+		t.Fatalf("number: %v %v", count, err)
+	}
+	var item card
+	if err := AssignProp(&item, any(map[string]any{"title": "a", "count": 2.0, "extra": true}), "List.item"); err != nil || item != (card{"a", 2}) {
+		t.Fatalf("struct: %+v %v", item, err)
+	}
+	var rows []card
+	if err := AssignProp(&rows, any([]any{map[string]any{"title": "b"}}), "List.rows"); err != nil || len(rows) != 1 || rows[0].Title != "b" {
+		t.Fatalf("slice: %+v %v", rows, err)
+	}
+	var loose any = "keep"
+	if err := AssignProp(&loose, any(nil), "Panel.value"); err != nil || loose != nil {
+		t.Fatalf("null into any: %v %v", loose, err)
+	}
+	if err := AssignProp(&title, any(float64(1)), "Panel.title"); err == nil || !strings.Contains(err.Error(), "prop Panel.title: Go type string cannot hold 1") {
+		t.Fatalf("number into string error = %v", err)
+	}
+	if err := AssignProp(&title, any(nil), "Panel.title"); err == nil || !strings.Contains(err.Error(), "cannot hold null") {
+		t.Fatalf("null into string error = %v", err)
+	}
+}

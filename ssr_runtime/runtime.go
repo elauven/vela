@@ -732,3 +732,39 @@ func WriteHostScope(w io.Writer) error {
 	sw.hostScope = ""
 	return WriteString(w, " "+scope)
 }
+
+// AssignProp stores a value computed by a parent template in a prop field
+// of a child component. A value of the field's Go type is stored as is; any
+// other value is converted through its JSON view (T-5.1), which is how the
+// browser sees it, so a JSON number reaches a float64 field and an object
+// reaches a struct field. null reaches only a field that can hold it. A
+// value the field cannot hold is a render error naming the prop: the
+// child's Go props contract is authoritative (§5.2).
+func AssignProp[T any](field *T, value any, prop string) error {
+	if typed, ok := value.(T); ok {
+		*field = typed
+		return nil
+	}
+	if _, undefined := value.(UndefinedValue); undefined {
+		value = nil
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("VELA-SSR-PROPS: prop %s: value is not JSON-serializable: %w", prop, err)
+	}
+	var converted T
+	target := reflect.TypeOf(field).Elem()
+	if string(encoded) == "null" {
+		switch target.Kind() {
+		case reflect.Interface, reflect.Pointer, reflect.Slice, reflect.Map:
+			*field = converted
+			return nil
+		}
+		return fmt.Errorf("VELA-SSR-PROPS: prop %s: Go type %s cannot hold null; declare the field as a pointer or any in the child's props contract", prop, target)
+	}
+	if err := json.Unmarshal(encoded, &converted); err != nil {
+		return fmt.Errorf("VELA-SSR-PROPS: prop %s: Go type %s cannot hold %s: %w", prop, target, encoded, err)
+	}
+	*field = converted
+	return nil
+}
