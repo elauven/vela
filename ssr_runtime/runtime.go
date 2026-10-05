@@ -148,56 +148,16 @@ func StringLess(left, right string) bool {
 // Number indices; plain objects accept string keys. Missing entries preserve
 // the distinct undefined sentinel used by template conversion.
 func Index(value, index any) any {
-	reflected := reflect.ValueOf(value)
-	for reflected.IsValid() && (reflected.Kind() == reflect.Interface || reflected.Kind() == reflect.Pointer) {
-		if reflected.IsNil() {
-			return Undefined()
-		}
-		reflected = reflected.Elem()
-	}
-	if !reflected.IsValid() {
+	if nullish(value) {
 		return Undefined()
 	}
-	switch reflected.Kind() {
-	case reflect.Array, reflect.Slice:
-		indexValue, ok := strictEqualityNumber(reflect.ValueOf(index))
-		if !ok || math.IsNaN(indexValue) || math.IsInf(indexValue, 0) || indexValue < 0 || math.Trunc(indexValue) != indexValue || indexValue >= float64(reflected.Len()) {
-			return Undefined()
-		}
-		return reflected.Index(int(indexValue)).Interface()
-	case reflect.Map:
-		key := reflect.ValueOf(index)
-		if !key.IsValid() || key.Kind() != reflect.String || reflected.Type().Key().Kind() != reflect.String {
-			return Undefined()
-		}
-		if key.Type() != reflected.Type().Key() {
-			key = key.Convert(reflected.Type().Key())
-		}
-		entry := reflected.MapIndex(key)
-		if !entry.IsValid() {
-			return Undefined()
-		}
-		return entry.Interface()
-	default:
-		return Undefined()
-	}
+	return property(value, propertyKey(index))
 }
 
-// Number converts the Go representations admitted by the SSR type model into
-// JavaScript's single IEEE-754 Number domain. Callers are statically checked
-// by the compiler; NaN is a defensive result for an unexpected host value.
+// Number converts a value to JavaScript's single IEEE-754 Number domain
+// with ToNumber (value.go).
 func Number(value any) float64 {
-	reflected := reflect.ValueOf(value)
-	for reflected.IsValid() && (reflected.Kind() == reflect.Interface || reflected.Kind() == reflect.Pointer) {
-		if reflected.IsNil() {
-			return 0
-		}
-		reflected = reflected.Elem()
-	}
-	if number, ok := strictEqualityNumber(reflected); ok {
-		return number
-	}
-	return math.NaN()
+	return ToNumber(value)
 }
 
 // Numeric operations use functions rather than Go constant expressions so
@@ -535,39 +495,14 @@ func Iter(value any) []any {
 	return items
 }
 
-// Get reads one plain JavaScript-style object field from data supplied to an
-// SSR renderer. Vela's current generated prop surface represents unknown JS
-// object values as map[string]any; absent or non-object fields intentionally
-// become nil, matching an undefined-like render value instead of panicking.
+// Get reads value.key through the JSON view (T-5.1a) without throwing: a
+// nullish receiver yields undefined. Renderers with an evaluation state use
+// JS.Get, which throws TypeError instead (T-6.5a).
 func Get(value any, key string) any {
-	switch object := value.(type) {
-	case map[string]any:
-		result, ok := object[key]
-		if !ok {
-			return Undefined()
-		}
-		return result
-	case map[string]string:
-		result, ok := object[key]
-		if !ok {
-			return Undefined()
-		}
-		return result
-	case map[string]bool:
-		result, ok := object[key]
-		if !ok {
-			return Undefined()
-		}
-		return result
-	case map[string]float64:
-		result, ok := object[key]
-		if !ok {
-			return Undefined()
-		}
-		return result
-	default:
+	if nullish(value) {
 		return Undefined()
 	}
+	return property(value, key)
 }
 
 // EscapeString escapes text and attribute content for HTML output.
@@ -609,11 +544,11 @@ func StaticWriter(w io.Writer) io.Writer {
 
 // BeginComponent registers a component instance. When w does not belong to
 // a render yet, the component is the root: a new stream starts and root is
-// true. The component's state entry is recorded (S-6.4); state is the
-// compile-time JSON of its initial state and omitted lists bindings whose
-// initial value could not be serialized. The caller writes the component
+// true. The component's state entry is recorded (S-6.4): state holds the
+// computed initial values (T-6.6d) and omitted lists bindings whose value
+// the server could not compute. The caller writes the component
 // range with OpenRange and CloseRange.
-func BeginComponent(w io.Writer, component, state string, omitted ...string) (io.Writer, bool) {
+func BeginComponent(w io.Writer, component string, state any, omitted ...string) (io.Writer, bool) {
 	sw, ok := w.(*streamWriter)
 	root := !ok
 	if root {
@@ -622,10 +557,10 @@ func BeginComponent(w io.Writer, component, state string, omitted ...string) (io
 	if sw.static {
 		return sw, root
 	}
-	if state == "" {
-		state = "{}"
+	if state == nil {
+		state = NewObject()
 	}
-	entry := []any{"s", component, json.RawMessage(state)}
+	entry := []any{"s", component, state}
 	if len(omitted) > 0 {
 		entry = append(entry, map[string][]string{"omitted": omitted})
 	}

@@ -26,7 +26,10 @@ disagree, the contract wins and the row is a bug.
   Helper names for `planned` rows are indicative, not an API commitment.
 - *Oracles*: tracked oracle group. For `implemented` rows it must exist; for
   `planned` rows it names the group to add with the implementation. Existing
-  groups: `value-text` (`testdata/ssr_value_text_oracle.json`), `attribute`
+  groups: `value-text` (`testdata/ssr_value_text_oracle.json`), the expression
+  groups `ops-*`, `member-*`, `strings-length`, `arrays-spread`,
+  `objects-spread`, and `number-text` (`testdata/ssr_expression_oracle.json`,
+  run in both tiers by `TestSSRExpressionOracleBothTiers`), `attribute`
   (`testdata/ssr_attribute_oracle.json`), `checked-binding`
   (`testdata/ssr_checked_binding_oracle.json`). `go-tests` means behaviour is
   covered only by Go tests, which does not satisfy V-11.1b.
@@ -50,14 +53,14 @@ disagree, the contract wins and the row is a bug.
 | Construct | Outcome | Typed | Dynamic | Rule | Oracles | Status | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | string literal | native | Go string literal | same | P-5 | value-text | implemented | |
-| number literal | native | `float64` constant | same | T-5.3a | value-text | partial | Lowered as untyped Go constants, which become `int` when passed as `any` (§4.4). |
+| number literal | native | `float64` constant | same | T-5.3a | number-text | implemented | Spelled as a Go float constant (`0.0`, `255.0` for `0xff`), so it is a `float64` also in `any` contexts. |
 | `true` / `false` | native | `bool` | same | — | value-text | implemented | |
 | `null` | native | `nil` | same | T-5.3 | value-text | implemented | |
 | `undefined` | native | `vela.Undefined()` | same | T-5.3 | value-text | implemented | |
 | prop identifier | native | `props.<Field>` | same | T-5.2 | value-text | implemented | |
-| `$state` / `$state.deep` / `$bindable` read | native | Go local initialised once | same | T-6.6d | init-order | partial | Initializer is re-inlined at every read (§4.6); `$state(prop)` is rejected for hydration (§4.8). S2. |
-| `$derived` read | native | Go local initialised once, in declaration order | same | T-6.6d | init-order | partial | Same as above. S2. |
-| top-level `const` / unchanged `let` | native | Go local | same | T-2.1 | init-order | partial | Same as above. S2. |
+| `$state` / `$state.deep` / `$bindable` read | native | Go local initialised once | same | T-6.6d | init-order | partial | Evaluated once in declaration order into `ssrL_<name>`; `$state(prop)` renders, and the block engine's payload carries the computed values. Tracked oracle group `init-order` missing (covered by the `Init` case of the SSR block corpus); hydration of the restored values is task 041. |
+| `$derived` read | native | Go local initialised once, in declaration order | same | T-6.6d | init-order | partial | As above. A read of a binding declared later is rejected (ReferenceError in JavaScript). |
+| top-level `const` / unchanged `let` | native | Go local | same | T-2.1 | init-order | partial | As above; recorded as `binding` sites in `--ssr-report`. |
 | `#each` / `#await` binding | native | lexical Go variable | same | — | value-text | implemented | |
 | symbol imported from local `.js` | native or host | generated module package | same | T-7.3a | modules-* | planned (S4) | |
 | symbol imported from npm | host or client | — | — | T-7.3c | — | never | |
@@ -67,31 +70,31 @@ disagree, the contract wins and the row is a bug.
 
 | Construct | Outcome | Typed | Dynamic | Rule | Oracles | Status | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `obj.name` | native | struct field by JSON name; `*vela.Object` lookup | `vela.Get` | T-5.1a, T-6.5a/b | value-text (`missing-member`) | partial | `vela.Get` reads only `map[string]…` values; Go structs yield `undefined`; a `null`/`undefined` receiver yields `undefined` instead of `TypeError` (§4.1). |
-| `obj[key]` | native | slice index / field / object lookup | `vela.Index` | T-6.5b | member-computed | partial | Requires a proven array+number or object+string; must fall back to the dynamic tier (T-5.4b). |
-| `.length` of string | native | UTF-16 length | `vela.Length` | T-6.3a | strings-length | partial | Correct for strings; `null.length` returns `0` instead of `TypeError`, object `.length` returns its size instead of `undefined` (§4.2). |
-| `.length` of array | native | `len(x)` | `vela.Length` | — | value-text | partial | See previous row. |
-| `a?.b`, `a?.[k]`, `f?.()` | native | nil/undefined check, then access | `vela.OptGet` with lazy rest | T-6.1b | ops-optional | planned (S2) | The rest of the chain is not evaluated after a nullish link. |
+| `obj.name` | native | struct field by JSON name; `*vela.Object` lookup | `ssrJS.Get` | T-5.1a, T-6.5a/b | member-get | implemented | Go structs and maps are read through their JSON view (`json` tags, `omitempty`, `-`, embedded fields, Marshalers). A `null` / `undefined` receiver throws `TypeError` (`*vela.RenderError`). |
+| `obj[key]` | native | slice index / field / object lookup | `ssrJS.Index` | T-6.5b | member-computed | implemented | Any receiver and key, with JavaScript property-key conversion. |
+| `.length` of string | native | UTF-16 length | `ssrJS.Length` | T-6.3a | strings-length | implemented | `null.length` throws `TypeError`; an object without `length` yields `undefined`. |
+| `.length` of array | native | `len(x)` | `ssrJS.Length` | — | strings-length | implemented | |
+| `a?.b`, `a?.[k]`, `f?.()` | native | nil/undefined check, then access | `vela.Optional` with lazy rest | T-6.1b | ops-optional | partial | `a?.b` and `a?.[k]` implemented; the rest of the chain is not evaluated after a nullish link. `f?.()` is rejected until calls of values exist (S4). |
 
 ### 1.3 Operators
 
 | Construct | Outcome | Typed | Dynamic | Rule | Oracles | Status | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `+` | native | `float64 +` or string concatenation | `vela.Add` | §6.2 | ops-add | partial | Needs a proven string or number operand pair; no dynamic tier (§4.5). |
-| `-`, `*`, `/`, `%` | native | `float64` ops; `%` as `math.Mod` | `vela.Sub` … `vela.Rem` | §6.2 | ops-arith | partial | Only with proven numbers. |
-| `**` | native | `vela.Pow` | `vela.Pow` | §6.2 | ops-pow | planned (S2) | `Math.pow(1, Infinity)` is `NaN` in JS; `math.Pow` returns `1`. |
-| unary `-`, `+` | native | negate / `ToNumber` | `vela.Negate`, `vela.ToNumber` | §6.2 | ops-unary | partial | Only with proven numbers. |
-| `!` | native | `!vela.Truthy(x)` | same | §6.2 | value-text | implemented | |
-| `typeof` | native | constant from semantic type | `vela.TypeOf` | §6.2 | ops-typeof | planned (S2) | Go values follow the JSON view (`time.Time` is `"string"`). |
-| `<`, `<=`, `>`, `>=` | native | `float64` compare; `vela.StringLess` (UTF-16) | `vela.Less` … | §6.2, T-6.3a | ops-relational | partial | Only with two proven numbers or two proven strings. |
-| `===`, `!==` | native | `vela.StrictEqual` | same | §6.2 | go-tests | partial | Semantics done; tracked oracle rows missing. |
-| `x == null`, `x != null` | native | nil-or-undefined check | same | §6.2 | ops-loose-null | planned (S2) | Currently rejected together with all `==`. |
+| `+` | native | `float64 +` or string concatenation | `vela.Add` | §6.2 | ops-add | implemented | |
+| `-`, `*`, `/`, `%` | native | `float64` ops; `%` as `math.Mod` | `vela.NumberSubtract` … (ToNumber) | §6.2 | ops-arith | implemented | |
+| `**` | native | `vela.Pow` | `vela.Pow` | §6.2 | ops-pow | implemented | `1 ** Infinity` and `x ** NaN` are `NaN`, unlike `math.Pow`. |
+| unary `-`, `+` | native | negate / `ToNumber` | `vela.NumberNegate`, `vela.Number` | §6.2 | ops-unary | implemented | |
+| `!` | native | `!vela.Truthy(x)` | same | §6.2 | ops-unary, value-text | implemented | |
+| `typeof` | native | `vela.TypeOf` | `vela.TypeOf` | §6.2 | ops-typeof | implemented | Go values follow the JSON view (`time.Time` is `"string"`). |
+| `<`, `<=`, `>`, `>=` | native | `float64` compare; `vela.StringLess` (UTF-16) | `vela.Less` … | §6.2, T-6.3a | ops-relational | implemented | |
+| `===`, `!==` | native | `vela.StrictEqual` | same | §6.2 | ops-strict-eq | implemented | |
+| `x == null`, `x != null` | native | nil-or-undefined check | `vela.LooseNull` | §6.2 | ops-loose-null | implemented | Also `== undefined`. |
 | other `==`, `!=` | rejected | — | — | §6.2 | neg-loose-eq | never | Diagnostic suggests `===`. Current behaviour already matches. |
-| `&&`, `\|\|` | native | `vela.AndLazy` / `vela.OrLazy` | same | T-6.1b (R1) | go-tests | partial | Short-circuit done (R1); tracked oracle rows missing. |
-| `??` | native | lazy nullish check | `vela.Nullish` | T-6.1b | ops-nullish | planned (S2) | Currently rejected (`logical operator "??" is not supported`). |
-| `c ? a : b` | native | `vela.TernaryLazy` | same | T-6.1b (R1) | go-tests | partial | As `&&`/`\|\|`. |
+| `&&`, `\|\|` | native | `vela.AndLazy` / `vela.OrLazy` | same | T-6.1b (R1) | ops-logical | implemented | |
+| `??` | native | lazy nullish check | `vela.NullishLazy` | T-6.1b | ops-nullish | implemented | |
+| `c ? a : b` | native | `vela.TernaryLazy` | same | T-6.1b (R1) | ops-conditional | implemented | |
 | `=`, `+=`, `++`, … on local bindings | native | Go assignment | same | T-6.6b | stmt-assign | planned (S4) | Only inside translated functions. |
-| assignment to state, props, module bindings | rejected | — | — | T-6.6a | neg-impure | planned (S1) | `VELA-SSR-IMPURE`. |
+| assignment to state, props, module bindings | rejected | — | — | T-6.6a | go-tests | partial | `VELA-SSR-IMPURE` (S1) for assignments and `++` / `--`; covered by a Go test, not an oracle group. |
 | comma, `void`, `delete`, `in`, `instanceof` | rejected | — | — | §6.2 | — | never | v1. |
 
 ### 1.4 Compound values and functions
@@ -100,10 +103,10 @@ disagree, the contract wins and the row is a bug.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | template literal | native | `vela.TemplateString` | same | §6.2 | value-text | implemented | |
 | tagged template | rejected | — | — | §6.2 | — | never | v1. |
-| array literal | native | `[]T{…}` / `[]any{…}` with holes | same | §6.2 | value-text (`array-hole`) | implemented | Without spread. |
-| array spread `[...a]` | native | append loop | `vela.SpreadArray` | §6.2 | arrays-spread | planned (S2) | Strings spread by code point. |
-| object literal | native | struct when shape is closed, else `*vela.Object` | `*vela.Object` | T-5.1c | objects-order | partial | Lowered to `map[string]any`, which loses insertion order (§4.3). |
-| object spread `{...o}` | native | `vela.ObjectAssign` on a fresh object | same | T-5.1c | objects-spread | planned (S2) | |
+| array literal | native | `[]any{…}` with holes | same | §6.2 | value-text (`array-hole`) | implemented | |
+| array spread `[...a]` | native | `vela.JoinArrays` + `ssrJS.SpreadItems` | same | §6.2 | arrays-spread | implemented | Strings spread by code point; spreading `null` throws `TypeError`. |
+| object literal | native | `*vela.Object` | `*vela.Object` | T-5.1c | objects-order | partial | Insertion order with JavaScript key ordering (Go unit test). A closed-shape struct lowering is not done; tracked group `objects-order` missing. |
+| object spread `{...o}` | native | `(*vela.Object).Spread` | same | T-5.1c | objects-spread | implemented | |
 | object methods, getters/setters | rejected | — | — | §6.2 | — | never | v1. |
 | destructuring (declarations, parameters, defaults) | native | Go locals | same | §7.1 | stmt-destructure | planned (S4) | |
 | arrow function as built-in callback or local value | native | Go closure or inlined loop | same | T-7.2b | fn-arrow | planned (S4) | Currently rejected. |
@@ -310,31 +313,25 @@ instead. All are `never` and produce a diagnostic that names the route.
 
 ## 4. Known divergences in the current implementation
 
-Observed in the code on 2026-10-03. Each item is fixed when its row is next
-changed, and the fix brings an oracle row that would have caught it.
+Observed in the code on 2026-10-03; status on 2026-10-05 after task 044.
 
-1. **`vela.Get`** (`ssr_runtime/runtime.go`) reads only `map[string]any`,
-   `map[string]string`, `map[string]bool`, and `map[string]float64`. A Go
-   struct prop yields `undefined` (violates T-5.1a). A `null` / `undefined`
-   receiver yields `undefined` instead of throwing `TypeError` (T-6.5a).
-2. **`vela.Length`** returns `0` for `nil` instead of throwing `TypeError`,
-   and returns the entry count for maps, where JavaScript objects have no
-   `length` (`undefined`).
-3. **Object literals** are lowered to `map[string]any`
-   (`translateSSRObjectLiteral`), which loses insertion order (T-5.1c).
-4. **Number literals** are emitted as untyped Go constants. Passed as `any`,
-   `0` becomes `int`, not `float64` (T-5.3a). Prop types still infer
-   `SSRTypeInt` → `int` (contract §14).
-5. **Operators without proven types** are rejected (`requires two known
-   numbers…`) instead of lowering to the dynamic tier (T-5.4b).
-6. **Local initializers are re-inlined at every read**
-   (`translateSSRLocalInitializer` is called per identifier occurrence). This
-   is not "evaluated once in declaration order" (T-6.6d), and it would call a
-   host function once per read instead of once (T-6.1c).
-7. **`??`** is rejected although it is a v1 operator.
-8. **Hydration payload state** is a compile-time constant JSON string
-   (`State: json.RawMessage("{\"count\":0}")`), so `$state(prop)` cannot be
-   restored (T-6.6d).
+1. **`vela.Get`** read only a few map types. Fixed: the JSON view of Go
+   values, and `TypeError` on a nullish receiver (`member-get`).
+2. **`vela.Length`** returned `0` for `nil`. Fixed: `ssrJS.Length` throws
+   `TypeError`; objects without `length` yield `undefined`
+   (`strings-length`).
+3. **Object literals** lost insertion order. Fixed: `*vela.Object`.
+4. **Number literals** became `int` in `any` contexts and number props were
+   `int`. Fixed: float constants and `float64` props (`number-text`).
+   Preserved `*_props.go` sidecars keep their declared types.
+5. **Operators without proven types** were rejected. Fixed: dynamic tier
+   (`ops-*`).
+6. **Local initializers were re-inlined at every read.** Fixed: evaluated
+   once in declaration order.
+7. **`??`** was rejected. Fixed (`ops-nullish`).
+8. **Hydration payload state** was a compile-time constant. Fixed for the
+   block engine (computed `s` entries). The legacy engine keeps the
+   constant until it is removed (task 042).
 
 ---
 

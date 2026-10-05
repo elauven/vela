@@ -37,6 +37,8 @@ export const requiredTests = [
   // Block markup and payload stream of the Go renderer (task 040).
   "TestBlocksSSRMarkupMatchesClientDOM",
   "TestBlocksSSRMarkupParsesInChromium",
+  // JavaScript and generated Go agree on every expression row in both tiers (task 044).
+  "TestSSRExpressionOracleBothTiers",
 ];
 
 export async function requireLaunchableChromium({ moduleName = "playwright", executablePath = "" } = {}) {

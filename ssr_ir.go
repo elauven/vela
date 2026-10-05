@@ -89,12 +89,15 @@ type (
 	}
 	ssrIRArray struct {
 		ssrIRBase
-		Elems []SSRIRExpr // nil element is a hole
+		Elems  []SSRIRExpr // nil element is a hole
+		Spread []bool      // Spread[i]: Elems[i] is ...element
+		Site   string
 	}
 	ssrIRObject struct {
 		ssrIRBase
-		Keys   []string
+		Keys   []string // "" with Spread
 		Values []SSRIRExpr
+		Spread []bool
 	}
 	ssrIRTemplate struct {
 		ssrIRBase
@@ -119,6 +122,26 @@ type (
 		ssrIRBase
 		Op   token.Token
 		X, Y SSRIRExpr
+	}
+	// ssrIRJS calls an operation of the render's evaluation state that can
+	// throw (ssrJS.Get, Index, Length): Args, then the literal Strings, then
+	// the site. Without an evaluation state it calls the package helper,
+	// which does not throw.
+	ssrIRJS struct {
+		ssrIRBase
+		Method  string
+		Args    []SSRIRExpr
+		Strings []string
+		Site    string
+		NoJS    bool
+	}
+	// ssrIROptional is an optional chain link: Rest reads Param, the
+	// non-nullish Base.
+	ssrIROptional struct {
+		ssrIRBase
+		Base  SSRIRExpr
+		Param string
+		Rest  SSRIRExpr
 	}
 	// ssrIRInline is a local binding initializer or a function body inlined
 	// at its use; Name and Kind describe it for diagnostics and the report.
@@ -148,21 +171,42 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 			return goast.NewIdent(n.Value)
 		}
 	case *ssrIRArray:
-		elements := make([]goast.Expr, len(n.Elems))
+		literal := func(elements []goast.Expr) goast.Expr {
+			return &goast.CompositeLit{Type: &goast.ArrayType{Elt: goast.NewIdent("any")}, Elts: elements}
+		}
+		var parts []goast.Expr
+		var segment []goast.Expr
 		for i, element := range n.Elems {
-			if element == nil {
-				elements[i] = goast.NewIdent("nil")
-			} else {
-				elements[i] = lowerSSRIR(element)
+			switch {
+			case element == nil:
+				segment = append(segment, goast.NewIdent("nil"))
+			case i < len(n.Spread) && n.Spread[i]:
+				if len(segment) > 0 {
+					parts = append(parts, literal(segment))
+					segment = nil
+				}
+				parts = append(parts, &goast.CallExpr{Fun: goSelector("ssrJS", "SpreadItems"), Args: []goast.Expr{lowerSSRIR(element), ssrGoString(n.Site)}})
+			default:
+				segment = append(segment, lowerSSRIR(element))
 			}
 		}
-		return &goast.CompositeLit{Type: &goast.ArrayType{Elt: goast.NewIdent("any")}, Elts: elements}
-	case *ssrIRObject:
-		elements := make([]goast.Expr, len(n.Keys))
-		for i, key := range n.Keys {
-			elements[i] = &goast.KeyValueExpr{Key: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(key)}, Value: lowerSSRIR(n.Values[i])}
+		if parts == nil {
+			return literal(segment)
 		}
-		return &goast.CompositeLit{Type: &goast.MapType{Key: goast.NewIdent("string"), Value: goast.NewIdent("any")}, Elts: elements}
+		if len(segment) > 0 {
+			parts = append(parts, literal(segment))
+		}
+		return &goast.CallExpr{Fun: goSelector("vela", "JoinArrays"), Args: parts}
+	case *ssrIRObject:
+		object := goast.Expr(&goast.CallExpr{Fun: goSelector("vela", "NewObject")})
+		for i, value := range n.Values {
+			if n.Spread[i] {
+				object = &goast.CallExpr{Fun: goSelectorExpr(object, "Spread"), Args: []goast.Expr{lowerSSRIR(value)}}
+				continue
+			}
+			object = &goast.CallExpr{Fun: goSelectorExpr(object, "Set"), Args: []goast.Expr{ssrGoString(n.Keys[i]), lowerSSRIR(value)}}
+		}
+		return object
 	case *ssrIRTemplate:
 		values := make([]goast.Expr, 0, len(n.Quasis)+len(n.Exprs))
 		for i, quasi := range n.Quasis {
@@ -193,6 +237,28 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 		return &goast.CallExpr{Fun: goSelector("vela", n.Name), Args: args}
 	case *ssrIRBinary:
 		return &goast.BinaryExpr{X: lowerSSRIR(n.X), Op: n.Op, Y: lowerSSRIR(n.Y)}
+	case *ssrIRJS:
+		args := make([]goast.Expr, 0, len(n.Args)+len(n.Strings)+1)
+		for _, arg := range n.Args {
+			args = append(args, lowerSSRIR(arg))
+		}
+		for _, text := range n.Strings {
+			args = append(args, ssrGoString(text))
+		}
+		if n.NoJS {
+			return &goast.CallExpr{Fun: goSelector("vela", n.Method), Args: args}
+		}
+		args = append(args, ssrGoString(n.Site))
+		return &goast.CallExpr{Fun: goSelector("ssrJS", n.Method), Args: args}
+	case *ssrIROptional:
+		rest := &goast.FuncLit{
+			Type: &goast.FuncType{
+				Params:  &goast.FieldList{List: []*goast.Field{{Names: []*goast.Ident{goast.NewIdent(n.Param)}, Type: goast.NewIdent("any")}}},
+				Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("any")}}},
+			},
+			Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{lowerSSRIR(n.Rest)}}}},
+		}
+		return &goast.CallExpr{Fun: goSelector("vela", "Optional"), Args: []goast.Expr{lowerSSRIR(n.Base), rest}}
 	case *ssrIRInline:
 		return lowerSSRIR(n.Body)
 	}
@@ -210,6 +276,22 @@ type ssrIRBuilder struct {
 	// inlined collects the local bindings the expression reads, for the
 	// report (T-2.3).
 	inlined map[string]bool
+	// js is set when the renderer has an evaluation state (ssrJS): member
+	// reads then throw TypeError at site. throws records that the site
+	// contains an operation that can throw (T-6.5e).
+	js        bool
+	site      string
+	throws    bool
+	optionals int
+	// usedJS records that the lowering references ssrJS.
+	usedJS bool
+	// locals makes local bindings read their Go local ssrL_<name>, which the
+	// render prologue evaluates once in declaration order (T-6.6d), instead
+	// of inlining the initializer at every read. reads collects the locals
+	// read directly; current is the local whose initializer is being built.
+	locals  bool
+	reads   map[string]bool
+	current string
 }
 
 // BuildSSRIR builds the IR of one template expression.
@@ -240,13 +322,31 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 		return b.literal(node, pos)
 	case *JsArrayExpr:
 		elements := make([]SSRIRExpr, 0, len(node.Elems))
+		var spreads []bool
 		for _, element := range node.Elems {
 			if element == nil {
 				elements = append(elements, nil)
 				continue
 			}
-			if _, spread := element.(*JsSpreadExpr); spread {
-				return nil, ssrExprUnsupported(pos, "array spread is not available to static SSR")
+			if spread, ok := element.(*JsSpreadExpr); ok {
+				if !b.js {
+					return nil, ssrExprUnsupported(pos, "array spread is not available to static SSR")
+				}
+				value, err := b.build(spread.X, pos)
+				if err != nil {
+					return nil, err
+				}
+				b.usedJS = true
+				// Spreading a non-iterable throws TypeError.
+				if f := value.irBase().Facts; !f.Array && !f.String {
+					b.throws = true
+				}
+				for len(spreads) < len(elements) {
+					spreads = append(spreads, false)
+				}
+				elements = append(elements, value)
+				spreads = append(spreads, true)
+				continue
 			}
 			value, err := b.build(element, pos)
 			if err != nil {
@@ -254,7 +354,10 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			}
 			elements = append(elements, value)
 		}
-		return &ssrIRArray{ssrIRBase: b.base(pos, ssrIRFacts{Array: true}), Elems: elements}, nil
+		for spreads != nil && len(spreads) < len(elements) {
+			spreads = append(spreads, false)
+		}
+		return &ssrIRArray{ssrIRBase: b.base(pos, ssrIRFacts{Array: true}), Elems: elements, Spread: spreads, Site: b.site}, nil
 	case *JsObjectExpr:
 		return b.object(node, pos)
 	case *JsTemplateLit:
@@ -290,10 +393,11 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 		if node.Op == "!" {
 			return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Bool: true}), Name: "Truthy", Args: []SSRIRExpr{x}, Not: true}, nil
 		}
+		if node.Op == "typeof" {
+			return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{String: true}), Name: "TypeOf", Args: []SSRIRExpr{x}}, nil
+		}
+		// Number and NumberNegate apply ToNumber, so both tiers share them.
 		if node.Op == "+" || node.Op == "-" {
-			if !x.irBase().Facts.Number {
-				return nil, ssrExprUnsupported(pos, "unary operator %q requires a known number during SSR", node.Op)
-			}
 			name := "Number"
 			if node.Op == "-" {
 				name = "NumberNegate"
@@ -318,6 +422,8 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			name = "AndLazy"
 		case "||":
 			name = "OrLazy"
+		case "??":
+			name = "NullishLazy"
 		default:
 			return nil, ssrExprUnsupported(pos, "logical operator %q is not supported", node.Op)
 		}
@@ -385,6 +491,16 @@ func (b *ssrIRBuilder) ident(node *JsIdent, pos int) (SSRIRExpr, error) {
 		}
 		return &ssrIRProp{ssrIRBase: b.base(pos, facts), GoName: prop.GoName}, nil
 	}
+	if b.locals {
+		for _, local := range []struct {
+			kind         string
+			initializers map[string]JsExpr
+		}{{"reactive", b.ctx.StateInitializers}, {"reactive", b.ctx.DeepInitializers}, {"derived", b.ctx.DerivedInitializers}, {"plain", b.ctx.PlainInitializers}} {
+			if initializer, ok := local.initializers[node.Name]; ok {
+				return b.localRef(node.Name, local.kind, initializer, pos, boolProp)
+			}
+		}
+	}
 	for _, local := range []struct {
 		kind         string
 		initializers map[string]JsExpr
@@ -441,7 +557,11 @@ func (b *ssrIRBuilder) literal(node *JsLiteral, pos int) (SSRIRExpr, error) {
 		}
 		return &ssrIRLiteral{ssrIRBase: b.base(pos, ssrIRFacts{String: true}), Kind: token.STRING, Value: value}, nil
 	case "number":
-		return &ssrIRLiteral{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Kind: token.FLOAT, Value: node.Raw}, nil
+		value, ok := ssrJSNumberLiteral(node.Raw)
+		if !ok {
+			return nil, ssrExprUnsupported(pos, "number literal %s is not supported", node.Raw)
+		}
+		return &ssrIRLiteral{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Kind: token.FLOAT, Value: value}, nil
 	case "boolean":
 		return &ssrIRLiteral{ssrIRBase: b.base(pos, ssrIRFacts{Bool: true}), Kind: token.IDENT, Value: node.Raw}, nil
 	case "null":
@@ -450,14 +570,28 @@ func (b *ssrIRBuilder) literal(node *JsLiteral, pos int) (SSRIRExpr, error) {
 	return nil, ssrExprUnsupported(pos, "literal kind %q is not supported", node.Kind)
 }
 
-// object admits ordinary non-computed data properties with identifier or
-// string keys; a later duplicate key replaces the earlier value in place.
+// object admits data properties with identifier or string keys and spread
+// properties. Every value is evaluated in source order; a later duplicate
+// key replaces the value and keeps the first position, as in JavaScript.
 func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 	out := &ssrIRObject{ssrIRBase: b.base(pos, ssrIRFacts{Object: true})}
-	indices := make(map[string]int, len(node.Props))
 	for _, property := range node.Props {
-		if property == nil || property.Spread {
-			return nil, ssrExprUnsupported(pos, "object spread is not available to static SSR")
+		if property == nil {
+			return nil, ssrExprUnsupported(pos, "object property is missing")
+		}
+		if property.Spread {
+			source := property.Value
+			if source == nil {
+				source = property.Key
+			}
+			value, err := b.build(source, pos)
+			if err != nil {
+				return nil, err
+			}
+			out.Keys = append(out.Keys, "")
+			out.Values = append(out.Values, value)
+			out.Spread = append(out.Spread, true)
+			continue
 		}
 		if property.Computed {
 			return nil, ssrExprUnsupported(pos, "computed object property names are not available to static SSR")
@@ -476,13 +610,9 @@ func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 		if err != nil {
 			return nil, err
 		}
-		if previous, duplicate := indices[key]; duplicate {
-			out.Values[previous] = value
-			continue
-		}
-		indices[key] = len(out.Keys)
 		out.Keys = append(out.Keys, key)
 		out.Values = append(out.Values, value)
+		out.Spread = append(out.Spread, false)
 	}
 	return out, nil
 }
@@ -499,7 +629,17 @@ func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
 	l, r := left.irBase().Facts, right.irBase().Facts
 	switch node.Op {
 	case "==", "!=":
-		return nil, ssrExprUnsupported(pos, "loose equality operator %q is not available to static SSR until its coercion matrix is defined; use strict equality", node.Op)
+		// Only x == null and x != null are admitted (§6.2).
+		var operand SSRIRExpr
+		switch {
+		case ssrNullishLiteral(node.R):
+			operand = left
+		case ssrNullishLiteral(node.L):
+			operand = right
+		default:
+			return nil, ssrExprUnsupported(pos, "loose equality operator %q is admitted only against null or undefined; use strict equality", node.Op)
+		}
+		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Bool: true}), Name: "LooseNull", Args: []SSRIRExpr{operand}, Not: node.Op == "!="}, nil
 	case "===", "!==":
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Bool: true}), Name: "StrictEqual", Args: []SSRIRExpr{left, right}, Not: node.Op == "!=="}, nil
 	case "<", "<=", ">", ">=":
@@ -524,7 +664,9 @@ func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
 				Y: &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: "Number", Args: []SSRIRExpr{right}},
 			}, nil
 		}
-		return nil, ssrExprUnsupported(pos, "relational operator %q requires two known numbers or two known strings during SSR", node.Op)
+		// Dynamic tier: the abstract relational comparison.
+		name := map[string]string{"<": "Less", "<=": "LessEqual", ">": "Greater", ">=": "GreaterEqual"}[node.Op]
+		return &ssrIRHelper{ssrIRBase: b.base(pos, facts), Name: name, Args: []SSRIRExpr{left, right}}, nil
 	case "+":
 		// JavaScript + concatenates when either operand is a string.
 		switch {
@@ -537,46 +679,97 @@ func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
 		case l.Number && r.Number:
 			return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: "NumberAdd", Args: []SSRIRExpr{left, right}}, nil
 		}
-		return nil, ssrExprUnsupported(pos, "operator + requires two known numbers or at least one known string during SSR")
+		// Dynamic tier: ToPrimitive, then concatenation or addition.
+		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: "Add", Args: []SSRIRExpr{left, right}}, nil
 	case "-", "*", "/", "%":
-		if !l.Number || !r.Number {
-			return nil, ssrExprUnsupported(pos, "numeric operator %q requires two known numbers during SSR", node.Op)
-		}
+		// The Number helpers apply ToNumber, so both tiers share them.
 		name := map[string]string{"-": "NumberSubtract", "*": "NumberMultiply", "/": "NumberDivide", "%": "NumberRemainder"}[node.Op]
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: name, Args: []SSRIRExpr{left, right}}, nil
+	case "**":
+		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: "Pow", Args: []SSRIRExpr{left, right}}, nil
 	}
 	return nil, ssrExprUnsupported(pos, "binary operator %q is not supported", node.Op)
 }
 
+// ssrNullishLiteral reports null or undefined written in the source.
+func ssrNullishLiteral(expr JsExpr) bool {
+	switch node := expr.(type) {
+	case *JsLiteral:
+		return node.Kind == "null"
+	case *JsIdent:
+		return node.Name == "undefined"
+	}
+	return false
+}
+
+// member builds a member chain a.b[c]?.d: the root, then each link. An
+// optional link (?.) stops the rest of the chain when its object is null or
+// undefined (T-6.1b).
 func (b *ssrIRBuilder) member(node *JsMemberExpr, pos int) (SSRIRExpr, error) {
-	if !node.Computed {
-		property, ok := node.Prop.(*JsIdent)
+	var links []*JsMemberExpr
+	var root JsExpr = node
+	for {
+		link, ok := root.(*JsMemberExpr)
 		if !ok {
-			return nil, ssrExprUnsupported(pos, "member access is not available until the prop has a declared object type")
+			break
 		}
-		object, err := b.build(node.Obj, pos)
+		links = append([]*JsMemberExpr{link}, links...)
+		root = link.Obj
+	}
+	base, err := b.build(root, pos)
+	if err != nil {
+		return nil, err
+	}
+	return b.memberLinks(base, links, false, pos)
+}
+
+// memberLinks applies links to base. When entered is set, the first link is
+// the optional link whose nullish check has already passed.
+func (b *ssrIRBuilder) memberLinks(base SSRIRExpr, links []*JsMemberExpr, entered bool, pos int) (SSRIRExpr, error) {
+	for i, link := range links {
+		if link.Optional && !(entered && i == 0) {
+			param := "ssrOpt" + strconv.Itoa(b.optionals)
+			b.optionals++
+			inner := &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: goast.NewIdent(param)}
+			rest, err := b.memberLinks(inner, links[i:], true, pos)
+			if err != nil {
+				return nil, err
+			}
+			return &ssrIROptional{ssrIRBase: b.base(pos, ssrIRFacts{}), Base: base, Param: param, Rest: rest}, nil
+		}
+		next, err := b.memberLink(base, link, entered && i == 0, pos)
 		if err != nil {
 			return nil, err
 		}
-		if property.Name == "length" {
-			return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: "Length", Args: []SSRIRExpr{object}}, nil
+		base = next
+	}
+	return base, nil
+}
+
+// memberLink reads one property. A read on a value that is not proven to
+// be an object, array, or string can throw TypeError (T-6.5a).
+func (b *ssrIRBuilder) memberLink(object SSRIRExpr, link *JsMemberExpr, nonNullish bool, pos int) (SSRIRExpr, error) {
+	b.usedJS = b.usedJS || b.js
+	o := object.irBase().Facts
+	if !nonNullish && !o.String && !o.Array && !o.Object {
+		b.throws = b.throws || b.js
+	}
+	if !link.Computed {
+		property, ok := link.Prop.(*JsIdent)
+		if !ok {
+			return nil, ssrExprUnsupported(pos, "member name %T is not supported (private names are not part of the server region)", link.Prop)
 		}
-		key := &ssrIRLiteral{ssrIRBase: b.base(pos, ssrIRFacts{String: true}), Kind: token.STRING, Value: property.Name}
-		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: "Get", Args: []SSRIRExpr{object, key}}, nil
+		if property.Name == "length" {
+			facts := ssrIRFacts{Number: o.String || o.Array}
+			return &ssrIRJS{ssrIRBase: b.base(pos, facts), Method: "Length", Args: []SSRIRExpr{object}, Site: b.site, NoJS: !b.js}, nil
+		}
+		return &ssrIRJS{ssrIRBase: b.base(pos, ssrIRFacts{}), Method: "Get", Args: []SSRIRExpr{object}, Strings: []string{property.Name}, Site: b.site, NoJS: !b.js}, nil
 	}
-	object, err := b.build(node.Obj, pos)
+	index, err := b.build(link.Prop, pos)
 	if err != nil {
 		return nil, err
 	}
-	index, err := b.build(node.Prop, pos)
-	if err != nil {
-		return nil, err
-	}
-	o, i := object.irBase().Facts, index.irBase().Facts
-	if !(o.Array && i.Number) && !(o.Object && i.String) {
-		return nil, ssrExprUnsupported(pos, "computed member access requires a known array with a numeric index or a known object with a string key during SSR")
-	}
-	return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: "Index", Args: []SSRIRExpr{object, index}}, nil
+	return &ssrIRJS{ssrIRBase: b.base(pos, ssrIRFacts{}), Method: "Index", Args: []SSRIRExpr{object, index}, Site: b.site, NoJS: !b.js}, nil
 }
 
 // call inlines a top-level named, synchronous function with one return
@@ -679,4 +872,82 @@ func ssrAwaitSnapshotField(expr goast.Expr) bool {
 	}
 	base, ok := selector.X.(*goast.Ident)
 	return ok && strings.HasPrefix(base.Name, "ssrAwaitSnapshot")
+}
+
+func ssrGoString(text string) goast.Expr {
+	return &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(text)}
+}
+
+// ssrJSNumberLiteral spells a JavaScript numeric literal as a Go floating
+// constant, so that it is a float64 wherever it lands, also in an any
+// context (T-5.3a): 0 becomes 0.0, 0xff becomes 255.0.
+func ssrJSNumberLiteral(raw string) (string, bool) {
+	text := strings.ReplaceAll(raw, "_", "")
+	var value float64
+	switch {
+	case len(text) > 2 && text[0] == '0' && strings.ContainsRune("xXoObB", rune(text[1])):
+		base := map[byte]int{'x': 16, 'X': 16, 'o': 8, 'O': 8, 'b': 2, 'B': 2}[text[1]]
+		n, err := strconv.ParseUint(text[2:], base, 64)
+		if err != nil {
+			return "", false
+		}
+		value = float64(n)
+	case len(text) > 1 && text[0] == '0' && !strings.ContainsAny(text, ".eE"):
+		// Legacy octal (017) is a strict-mode syntax error.
+		return "", false
+	default:
+		n, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			return "", false
+		}
+		value = n
+	}
+	spelled := strconv.FormatFloat(value, 'g', -1, 64)
+	if !strings.ContainsAny(spelled, ".eE") {
+		spelled += ".0"
+	}
+	return spelled, true
+}
+
+// ssrLocalName is the Go local that holds a binding's initial value.
+func ssrLocalName(name string) string { return "ssrL_" + name }
+
+// localRef reads a local binding through its Go local. The initializer is
+// still built here, in the component scope, for its type facts and so that
+// a failure is reported at the site that reads it; the prologue lowers it
+// once. A read of a binding declared later is a ReferenceError in
+// JavaScript and is rejected.
+func (b *ssrIRBuilder) localRef(name, kind string, initializer JsExpr, pos int, boolProp bool) (SSRIRExpr, error) {
+	if b.current != "" && b.ctx.localIndex[name] > b.ctx.localIndex[b.current] {
+		problem := ssrExprUnsupported(pos, "%q reads %q, which is declared later (a ReferenceError in JavaScript)", b.current, name)
+		return nil, problem
+	}
+	if b.resolving[name] {
+		return nil, ssrExprUnsupported(pos, "local %s binding %q has a circular server initializer", kind, name)
+	}
+	b.resolving[name] = true
+	defer delete(b.resolving, name)
+	b.inlined[name] = true
+	if b.reads == nil {
+		b.reads = map[string]bool{}
+	}
+	b.reads[name] = true
+	inner := &ssrIRBuilder{ctx: ssrComponentContext(b.ctx), resolving: b.resolving, functions: map[string]bool{}, inlined: b.inlined, js: b.js, site: b.site, locals: true, current: name}
+	value, err := inner.build(initializer, pos)
+	if err != nil {
+		b.locate(err, initializer)
+		wrapped := ssrExprUnsupported(pos, "local %s binding %q has no server-safe initializer: %v", kind, name, err)
+		return nil, ssrWithReason(wrapped, err, ssrLocalReason(kind, name))
+	}
+	facts := value.irBase().Facts
+	facts.Bool = boolProp
+	facts.GoString = false
+	return &ssrIRGo{ssrIRBase: b.base(pos, facts), Expr: goast.NewIdent(ssrLocalName(name))}, nil
+}
+
+// ssrComponentContext is ctx without template bindings and function
+// parameters: the scope of the component script.
+func ssrComponentContext(ctx SSRExprContext) SSRExprContext {
+	ctx.Bindings = map[string]goast.Expr{}
+	return ctx
 }

@@ -1,0 +1,23 @@
+<script>
+  export let title = 'Hi';
+  export let user = null;
+  export let tags = [];
+  export let value = $bindable('v');
+  let label = $state(title + '!');
+  let items = $state.deep([...tags, 'end']);
+  let count = $state(tags.length);
+  let doubled = $derived(count * 2);
+  let summary = $derived(`${label}:${doubled}`);
+  const extra = { a: 1, ...{ b: 2 } };
+</script>
+<template>
+  <div class="init">
+    <p class="summary">{summary}</p>
+    <p class="name">{user?.name ?? 'anonymous'}</p>
+    <p class="type">{typeof user} {user == null} {typeof count}</p>
+    <p class="items">{items}</p>
+    <p class="pow">{2 ** count}</p>
+    <p class="extra">{extra.a + extra.b}</p>
+    <input class="value" bind:value={value} />
+  </div>
+</template>

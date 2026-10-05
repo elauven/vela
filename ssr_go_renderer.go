@@ -32,8 +32,9 @@ func BuildSSRGoRendererFile(plan *SSRRenderPlan, packageName string) (*goast.Fil
 
 // buildSSRGoRendererWithRegion is BuildSSRGoRendererFile that also returns
 // the region site records, filled whether or not the renderer succeeds.
-func buildSSRGoRendererWithRegion(plan *SSRRenderPlan, packageName string) (*goast.File, *SSRRegion, error) {
+func buildSSRGoRendererWithRegion(plan *SSRRenderPlan, packageName, filename, source string) (*goast.File, *SSRRegion, error) {
 	region := newSSRRegion(plan)
+	region.File, region.source = filename, source
 	file, err := buildSSRGoFile(plan, packageName, false, region)
 	return file, region, err
 }
@@ -51,6 +52,9 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool, 
 	if err != nil {
 		return nil, err
 	}
+	if emitter.throwing() > 0 {
+		defaults = append(defaults, ssrJSCheck())
+	}
 	templateBody, err := emitter.nodes(plan.Nodes)
 	if err != nil {
 		return nil, emitter.region.abort(err)
@@ -58,11 +62,14 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool, 
 	if err := emitter.region.finish(plan); err != nil {
 		return nil, err
 	}
+	init := emitter.localsPrologue(plan, nil)
 	payload, err := buildSSRHydrationPayload(plan, emitter.scopeExpr, emitter.awaitOptions)
 	if err != nil {
 		return nil, err
 	}
-	body := append(defaults, payload.preflight...)
+	body := append(ssrJSPrologue(emitter.region), defaults...)
+	body = append(body, init.statements...)
+	body = append(body, payload.preflight...)
 	body = append(body, templateBody...)
 	body = append(body, payload.write...)
 	body = append(body, &goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}})
@@ -90,9 +97,18 @@ func (e *ssrGoEmitter) propDefaults(props []SSRPlanProp) ([]goast.Stmt, error) {
 		if err != nil {
 			return nil, fmt.Errorf("SSR default prop %q: %w", prop.SourceName, err)
 		}
+		field := &goast.SelectorExpr{X: goast.NewIdent("props"), Sel: goast.NewIdent(prop.GoName)}
+		assign := goast.Stmt(&goast.AssignStmt{Lhs: []goast.Expr{field}, Tok: token.ASSIGN, Rhs: []goast.Expr{value}})
+		if !ssrDefaultFitsField(prop.Type, e.facts[prop.Default]) {
+			// The value has no proven Go type of the field (an object literal is
+			// a *vela.Object; a preserved sidecar may declare its own type).
+			assign = goWriteSSRErr(&goast.CallExpr{Fun: goSelector("vela", "AssignProp"), Args: []goast.Expr{
+				&goast.UnaryExpr{Op: token.AND, X: field}, value, ssrGoString(e.componentNameOrPlan() + "." + prop.SourceName),
+			}})
+		}
 		out = append(out, &goast.IfStmt{
 			Cond: &goast.UnaryExpr{Op: token.NOT, X: &goast.CallExpr{Fun: goSelector("vela", "PropProvided"), Args: []goast.Expr{goast.NewIdent("props"), &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(prop.SourceName)}}}},
-			Body: &goast.BlockStmt{List: []goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{&goast.SelectorExpr{X: goast.NewIdent("props"), Sel: goast.NewIdent(prop.GoName)}}, Tok: token.ASSIGN, Rhs: []goast.Expr{value}}}},
+			Body: &goast.BlockStmt{List: []goast.Stmt{assign}},
 		})
 	}
 	return out, nil
@@ -215,11 +231,17 @@ type ssrGoEmitter struct {
 func (e *ssrGoEmitter) nodes(nodes []SSRPlanNode) ([]goast.Stmt, error) {
 	body := make([]goast.Stmt, 0, len(nodes))
 	for _, node := range nodes {
+		throwing := e.throwing()
 		statements, err := e.node(node)
 		if err != nil {
 			return nil, err
 		}
 		body = append(body, statements...)
+		// A JavaScript exception raised in this node stops the render before
+		// the next node (T-6.5a).
+		if e.throwing() > throwing {
+			body = append(body, ssrJSCheck())
+		}
 	}
 	return body, nil
 }
@@ -258,6 +280,7 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	// A value of unproven type goes through vela.AssignProp, which converts it
 	// to the child's declared Go field type (T-5.1) or fails the render.
 	var assigns []goast.Stmt
+	propsThrowing := e.throwing()
 	for _, attr := range node.Attrs {
 		var value goast.Expr
 		switch attr.Role {
@@ -338,8 +361,12 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	}
 	propsArg := goast.Expr(props)
 	var prelude []goast.Stmt
-	if len(assigns) > 0 {
+	if len(assigns) > 0 || e.throwing() > propsThrowing {
 		prelude = append([]goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("ssrChildProps")}, Tok: token.DEFINE, Rhs: []goast.Expr{props}}}, assigns...)
+		if e.throwing() > propsThrowing {
+			// The child renders only when its props evaluated (T-6.5a).
+			prelude = append(prelude, ssrJSCheck())
+		}
 		propsArg = goast.NewIdent("ssrChildProps")
 	}
 	args := []goast.Expr{propsArg, slots}
@@ -935,7 +962,8 @@ func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
 		Props: base.Props, Bindings: bindings, ReactiveNames: base.ReactiveNames,
 		StateInitializers: base.StateInitializers, DerivedInitializers: base.DerivedInitializers,
 		PlainInitializers: base.PlainInitializers, Functions: base.Functions,
-		scriptOffset: base.scriptOffset,
+		scriptOffset:     base.scriptOffset,
+		DeepInitializers: base.DeepInitializers, localIndex: base.localIndex,
 	}
 }
 
@@ -2446,4 +2474,32 @@ func ssrScopedStatements(prelude []goast.Stmt, statements ...goast.Stmt) []goast
 		return statements
 	}
 	return []goast.Stmt{&goast.BlockStmt{List: append(prelude, statements...)}}
+}
+
+// ssrDefaultFitsField reports whether a prop default lowers to a Go value
+// of the field type the props contract infers for it.
+func ssrDefaultFitsField(kind SSRValueType, facts ssrIRFacts) bool {
+	switch kind {
+	case SSRTypeAny:
+		return true
+	case SSRTypeString:
+		return facts.String
+	case SSRTypeBool:
+		return facts.Bool
+	case SSRTypeInt, SSRTypeFloat:
+		return facts.Number
+	case SSRTypeSlice:
+		return facts.Array
+	}
+	return false
+}
+
+func (e *ssrGoEmitter) componentNameOrPlan() string {
+	if e.componentName != "" {
+		return e.componentName
+	}
+	if e.region != nil {
+		return e.region.Component
+	}
+	return "props"
 }

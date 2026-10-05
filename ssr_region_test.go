@@ -20,7 +20,7 @@ func regionForSource(t *testing.T, source string) (*SSRRegion, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, region, err := buildSSRGoRendererWithRegion(plan, "components")
+	_, region, err := buildSSRGoRendererWithRegion(plan, "components", "Page.vela", source)
 	region.locate(source)
 	return region, err
 }

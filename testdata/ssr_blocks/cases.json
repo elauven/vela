@@ -15,5 +15,7 @@
  {"name": "Extras b", "component": "Extras", "props": {"tags": ["<z>"], "mode": "b"}, "entries": ["Extras", "Panel", "Panel"], "compare": true},
  {"name": "Table", "component": "Table", "props": {"rows": [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}], "note": "\nline"}, "entries": ["Table"], "compare": true},
  {"name": "Table empty", "component": "Table", "props": {"rows": [], "note": ""}, "entries": ["Table"], "compare": true},
- {"name": "Host", "component": "Host", "props": {"rows": [{"id": 1, "name": "r1"}, {"id": 2, "name": "r2"}]}, "entries": ["Host", "Panel", "Panel", "Panel"], "compare": true}
+ {"name": "Host", "component": "Host", "props": {"rows": [{"id": 1, "name": "r1"}, {"id": 2, "name": "r2"}]}, "entries": ["Host", "Panel", "Panel", "Panel"], "compare": true},
+ {"name": "Init defaults", "component": "Init", "props": {}, "entries": ["Init"], "states": [{"label": "Hi!", "items": ["end"], "count": 0, "value": "v"}], "compare": true},
+ {"name": "Init props", "component": "Init", "props": {"title": "T", "user": {"name": "Ann"}, "tags": ["x", "y"], "value": "w"}, "entries": ["Init"], "states": [{"label": "T!", "items": ["x", "y", "end"], "count": 2, "value": "w"}], "compare": true}
 ]

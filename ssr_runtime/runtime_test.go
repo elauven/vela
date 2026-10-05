@@ -320,12 +320,12 @@ func TestGet(t *testing.T) {
 
 func TestStreamWritesRangesAndOrderedRootPayload(t *testing.T) {
 	var out strings.Builder
-	w, root := BeginComponent(&out, "Page", `{"open":true}`)
+	w, root := BeginComponent(&out, "Page", NewObject().Set("open", true))
 	if !root {
 		t.Fatal("first component is not the root")
 	}
 	OpenRange(w, "")
-	child, childRoot := BeginComponent(w, "Child", "", "now")
+	child, childRoot := BeginComponent(w, "Child", nil, "now")
 	if childRoot {
 		t.Fatal("nested component is a root")
 	}
@@ -355,7 +355,7 @@ func TestStreamWritesRangesAndOrderedRootPayload(t *testing.T) {
 	}
 
 	var static strings.Builder
-	sw, root := BeginComponent(StaticWriter(&static), "Page", "{}")
+	sw, root := BeginComponent(StaticWriter(&static), "Page", nil)
 	OpenRange(sw, "")
 	OpenRange(sw, "0")
 	WriteString(sw, "<p>x</p>")

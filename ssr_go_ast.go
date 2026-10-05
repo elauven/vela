@@ -423,9 +423,9 @@ func goSSRTypeExpr(kind SSRValueType) goast.Expr {
 		return goast.NewIdent("string")
 	case SSRTypeBool:
 		return goast.NewIdent("bool")
-	case SSRTypeInt:
-		return goast.NewIdent("int")
-	case SSRTypeFloat:
+	case SSRTypeInt, SSRTypeFloat:
+		// Every JavaScript number is a float64 (T-5.3a).
+
 		return goast.NewIdent("float64")
 	case SSRTypeSlice:
 		return &goast.ArrayType{Elt: goast.NewIdent("any")}
@@ -501,6 +501,46 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	ssrRuntimeAddFunc(pkg, "Get", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType), types.NewVar(token.NoPos, pkg, "key", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", anyType)})
 	ssrRuntimeAddFunc(pkg, "EscapeString", []*types.Var{types.NewVar(token.NoPos, pkg, "value", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
 
+	// Dynamic tier (ssr_runtime/value.go).
+	v := func(name string, t types.Type) *types.Var { return types.NewVar(token.NoPos, pkg, name, t) }
+	boolT := types.Typ[types.Bool]
+	floatT := types.Typ[types.Float64]
+	anySlice := types.NewSlice(anyType)
+	lazy := types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(v("", anyType)), false)
+	rest := types.NewSignatureType(nil, nil, nil, types.NewTuple(v("value", anyType)), types.NewTuple(v("", anyType)), false)
+	jsName := types.NewTypeName(token.NoPos, pkg, "JS", nil)
+	jsType := types.NewNamed(jsName, types.NewStruct(nil, nil), nil)
+	pkg.Scope().Insert(jsName)
+	jsRecv := v("js", types.NewPointer(jsType))
+	jsMethod := func(name string, params []*types.Var, result types.Type) {
+		jsType.AddMethod(types.NewFunc(token.NoPos, pkg, name, types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(params...), types.NewTuple(v("", result)), false)))
+	}
+	jsMethod("Get", []*types.Var{v("value", anyType), v("key", stringType), v("site", stringType)}, anyType)
+	jsMethod("Index", []*types.Var{v("value", anyType), v("key", anyType), v("site", stringType)}, anyType)
+	jsMethod("Length", []*types.Var{v("value", anyType), v("site", stringType)}, anyType)
+	jsMethod("SpreadItems", []*types.Var{v("value", anyType), v("site", stringType)}, anySlice)
+	jsMethod("Err", nil, errorType)
+	ssrRuntimeAddFunc(pkg, "NewJS", nil, []*types.Var{v("", types.NewPointer(jsType))})
+	objectName := types.NewTypeName(token.NoPos, pkg, "Object", nil)
+	objectType := types.NewNamed(objectName, types.NewStruct(nil, nil), nil)
+	pkg.Scope().Insert(objectName)
+	objectPtr := types.NewPointer(objectType)
+	objectRecv := v("o", objectPtr)
+	objectType.AddMethod(types.NewFunc(token.NoPos, pkg, "Set", types.NewSignatureType(objectRecv, nil, nil, types.NewTuple(v("key", stringType), v("value", anyType)), types.NewTuple(v("", objectPtr)), false)))
+	objectType.AddMethod(types.NewFunc(token.NoPos, pkg, "Spread", types.NewSignatureType(objectRecv, nil, nil, types.NewTuple(v("value", anyType)), types.NewTuple(v("", objectPtr)), false)))
+	ssrRuntimeAddFunc(pkg, "NewObject", nil, []*types.Var{v("", objectPtr)})
+	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, "JoinArrays", types.NewSignatureType(nil, nil, nil, types.NewTuple(v("parts", types.NewSlice(anySlice))), types.NewTuple(v("", anySlice)), true)))
+	ssrRuntimeAddFunc(pkg, "Add", []*types.Var{v("left", anyType), v("right", anyType)}, []*types.Var{v("", anyType)})
+	ssrRuntimeAddFunc(pkg, "Pow", []*types.Var{v("left", anyType), v("right", anyType)}, []*types.Var{v("", floatT)})
+	for _, name := range []string{"Less", "LessEqual", "Greater", "GreaterEqual"} {
+		ssrRuntimeAddFunc(pkg, name, []*types.Var{v("left", anyType), v("right", anyType)}, []*types.Var{v("", boolT)})
+	}
+	ssrRuntimeAddFunc(pkg, "LooseNull", []*types.Var{v("value", anyType)}, []*types.Var{v("", boolT)})
+	ssrRuntimeAddFunc(pkg, "TypeOf", []*types.Var{v("value", anyType)}, []*types.Var{v("", stringType)})
+	ssrRuntimeAddFunc(pkg, "ToNumber", []*types.Var{v("value", anyType)}, []*types.Var{v("", floatT)})
+	ssrRuntimeAddFunc(pkg, "NullishLazy", []*types.Var{v("left", lazy), v("right", lazy)}, []*types.Var{v("", anyType)})
+	ssrRuntimeAddFunc(pkg, "Optional", []*types.Var{v("base", anyType), v("rest", rest)}, []*types.Var{v("", anyType)})
+
 	// Block markup and payload stream (docs/HYDRATION_ARCHITECTURE.md §5, §6).
 	jsonPkg, err := loader.Import("encoding/json")
 	if err != nil {
@@ -512,7 +552,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, "BeginComponent", types.NewSignatureType(nil, nil, nil, types.NewTuple(
 		types.NewVar(token.NoPos, pkg, "w", writer),
 		types.NewVar(token.NoPos, pkg, "component", stringType),
-		types.NewVar(token.NoPos, pkg, "state", stringType),
+		types.NewVar(token.NoPos, pkg, "state", anyType),
 		types.NewVar(token.NoPos, pkg, "omitted", types.NewSlice(stringType)),
 	), types.NewTuple(types.NewVar(token.NoPos, pkg, "", writer), types.NewVar(token.NoPos, pkg, "", boolType)), true)))
 	ssrRuntimeAddFunc(pkg, "EndComponent", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "root", boolType), types.NewVar(token.NoPos, pkg, "props", rawMessage)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})

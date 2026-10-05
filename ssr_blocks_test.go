@@ -13,13 +13,14 @@ import (
 )
 
 type ssrBlocksCase struct {
-	Name      string          `json:"name"`
-	Component string          `json:"component"`
-	Props     json.RawMessage `json:"props"`
-	Options   json.RawMessage `json:"options,omitempty"`
-	Entries   []string        `json:"entries"`
-	Awaits    [][]string      `json:"awaits,omitempty"`
-	Compare   bool            `json:"compare,omitempty"`
+	Name      string            `json:"name"`
+	Component string            `json:"component"`
+	Props     json.RawMessage   `json:"props"`
+	Options   json.RawMessage   `json:"options,omitempty"`
+	Entries   []string          `json:"entries"`
+	Awaits    [][]string        `json:"awaits,omitempty"`
+	States    []json.RawMessage `json:"states,omitempty"`
+	Compare   bool              `json:"compare,omitempty"`
 }
 
 // TestBlocksSSRMarkupMatchesClientDOM renders the SSR block corpus with the
@@ -112,6 +113,9 @@ func runSSRBlocksCheck(t *testing.T, args ...string) {
 		}
 		if c.Awaits != nil {
 			check["awaits"] = c.Awaits
+		}
+		if c.States != nil {
+			check["states"] = c.States
 		}
 		checks = append(checks, check)
 	}

@@ -301,7 +301,7 @@ func TestBuildSSRGoFileRendersMultipleSelectValueBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := string(source)
-	for _, want := range []string{`vela.WriteString(w, "<select multiple>")`, `vela.ContainsString(props.Choice, "a")`, `vela.ContainsString(props.Choice, vela.String(vela.Index(props.Choice, 1)))`, `vela.WriteString(w, " selected")`} {
+	for _, want := range []string{`vela.WriteString(w, "<select multiple>")`, `vela.ContainsString(props.Choice, "a")`, `vela.ContainsString(props.Choice, vela.String(ssrJS.Index(props.Choice, 1.0, "Page.vela")))`, `vela.WriteString(w, " selected")`} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("multiple select SSR output misses %q:\n%s", want, output)
 		}
@@ -542,9 +542,9 @@ func TestBuildSSRGoFileRendersSettledNestedKeyedAwaitRows(t *testing.T) {
 	}
 	for _, want := range []string{
 		`ssrEach0 := vela.Iter(props.Rows)`,
-		`ssrEach1 := vela.Iter(vela.Get(ssrEachItem0, "fields"))`,
-		`ssrEach2 := vela.Iter(vela.Get(ssrEachItem0, "fields"))`,
-		`vela.Get(ssrEachItem1, "title")`,
+		`ssrEach1 := vela.Iter(ssrJS.Get(ssrEachItem0, "fields", "Page.vela"))`,
+		`ssrEach2 := vela.Iter(ssrJS.Get(ssrEachItem0, "fields", "Page.vela"))`,
+		`ssrJS.Get(ssrEachItem1, "title", "Page.vela")`,
 		`case "then":`,
 		`case "catch":`,
 		`"<!--r:"+(instanceID+"--each-`,

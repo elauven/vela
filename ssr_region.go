@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	goast "go/ast"
+	"go/token"
 	"os"
 	"path/filepath"
 	"sort"
@@ -65,6 +66,12 @@ type SSRRegion struct {
 	Records        []SSRSiteRecord
 	counters       map[string]int
 	source         string
+	// File names the component in RenderError sites; usesJS and throwing
+	// record that lowered sites reference the evaluation state and how many
+	// of them can throw.
+	File     string
+	usesJS   bool
+	throwing int
 }
 
 func newSSRRegion(plan *SSRRenderPlan) *SSRRegion {
@@ -99,6 +106,8 @@ func ssrSiteRoot(kind, name string) string {
 		return fmt.Sprintf("$state %q", name)
 	case "derived":
 		return fmt.Sprintf("$derived %q", name)
+	case "binding":
+		return fmt.Sprintf("binding %q", name)
 	case "form-value":
 		return fmt.Sprintf("%s value", name)
 	}
@@ -346,8 +355,20 @@ func (e *ssrGoEmitter) translate(kind, name string, expr *TemplateExpr, ctx SSRE
 
 func (e *ssrGoEmitter) translateJS(kind, name string, expr JsExpr, pos, source int, ctx SSRExprContext) (goast.Expr, error) {
 	builder := newSSRIRBuilder(ctx)
+	if e.region != nil {
+		builder.js = true
+		// Prop defaults are evaluated before the local bindings exist.
+		builder.locals = kind != "prop-default"
+		builder.site = e.region.siteLabel(source)
+	}
 	ir, err := builder.build(expr, pos)
 	if err == nil {
+		if builder.usedJS {
+			e.region.usesJS = true
+		}
+		if builder.throws {
+			e.region.throwing++
+		}
 		if e.facts == nil {
 			e.facts = map[JsExpr]ssrIRFacts{}
 		}
@@ -396,7 +417,7 @@ func (r *SSRRegion) finish(plan *SSRRenderPlan) error {
 	for _, declarations := range []struct {
 		kind         string
 		initializers map[string]JsExpr
-	}{{"state", plan.StateInitializers}, {"derived", plan.DerivedInitializers}} {
+	}{{"state", plan.StateInitializers}, {"state", plan.DeepInitializers}, {"derived", plan.DerivedInitializers}, {"binding", plan.PlainInitializers}} {
 		names := make([]string, 0, len(declarations.initializers))
 		for name := range declarations.initializers {
 			names = append(names, name)
@@ -470,4 +491,46 @@ func (r *SSRRegion) position(record SSRSiteRecord) (int, int) {
 func (r *SSRRegion) sitePosition(record SSRSiteRecord) (int, int) {
 	record.Diagnostic = nil
 	return r.position(record)
+}
+
+// siteLabel is the source position written into a RenderError: file, line,
+// and column when the source is known, else the component name.
+func (r *SSRRegion) siteLabel(pos int) string {
+	file := r.File
+	if file == "" {
+		file = r.Component + ".vela"
+	}
+	if r.source == "" || pos < 0 || pos > len(r.source) {
+		return file
+	}
+	line, column := sourceLineColumn(r.source, pos)
+	return fmt.Sprintf("%s:%d:%d", file, line+1, column+1)
+}
+
+// throwing counts the lowered sites that can throw.
+func (e *ssrGoEmitter) throwing() int {
+	if e.region == nil {
+		return 0
+	}
+	return e.region.throwing
+}
+
+// ssrJSCheck returns the first JavaScript exception of the render:
+//
+//	if err := ssrJS.Err(); err != nil { return err }
+func ssrJSCheck() goast.Stmt {
+	return goWriteSSRErr(&goast.CallExpr{Fun: goSelector("ssrJS", "Err")})
+}
+
+// ssrJSPrologue declares the evaluation state of a render function when a
+// lowered site uses it.
+func ssrJSPrologue(region *SSRRegion) []goast.Stmt {
+	if region == nil || !region.usesJS {
+		return nil
+	}
+	out := []goast.Stmt{
+		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("ssrJS")}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "NewJS")}}},
+		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []goast.Expr{goast.NewIdent("ssrJS")}},
+	}
+	return out
 }

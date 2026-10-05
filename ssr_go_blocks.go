@@ -41,6 +41,9 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 	if err != nil {
 		return nil, err
 	}
+	if emitter.throwing() > 0 {
+		defaults = append(defaults, ssrJSCheck())
+	}
 	templateBody, err := emitter.nodes(plan.Nodes)
 	if err != nil {
 		return nil, emitter.region.abort(err)
@@ -57,7 +60,10 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 		wrapped = append(wrapped, templateBody...)
 		templateBody = append(wrapped, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("</div>")}))
 	}
-	body := append(defaults, ssrBlocksBeginComponent(plan)...)
+	init := emitter.localsPrologue(plan, plan.StateNames)
+	body := append(ssrJSPrologue(emitter.region), defaults...)
+	body = append(body, init.statements...)
+	body = append(body, ssrBlocksBeginComponent(plan, init.evaluated)...)
 	body = append(body, emitter.openRange(""))
 	body = append(body, templateBody...)
 	body = append(body, emitter.closeRange())
@@ -86,19 +92,24 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 //			return err
 //		}
 //	}
-func ssrBlocksBeginComponent(plan *SSRRenderPlan) []goast.Stmt {
-	state := plan.Hydration.JSON
-	if state == "" {
-		state = "{}"
+func ssrBlocksBeginComponent(plan *SSRRenderPlan, evaluated map[string]bool) []goast.Stmt {
+	// The "s" entry carries the computed initial values of $state and
+	// $state.deep, and the $bindable props after defaults (S-6.4, T-6.6d).
+	state := goast.Expr(&goast.CallExpr{Fun: goSelector("vela", "NewObject")})
+	var omitted []goast.Expr
+	for _, name := range plan.StateNames {
+		if !evaluated[name] {
+			omitted = append(omitted, ssrGoString(name))
+			continue
+		}
+		state = &goast.CallExpr{Fun: goSelectorExpr(state, "Set"), Args: []goast.Expr{ssrGoString(name), goast.NewIdent(ssrLocalName(name))}}
 	}
-	beginArgs := []goast.Expr{
-		goast.NewIdent("w"),
-		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(plan.ComponentName)},
-		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(state)},
+	for _, prop := range plan.Props {
+		if prop.Bindable {
+			state = &goast.CallExpr{Fun: goSelectorExpr(state, "Set"), Args: []goast.Expr{ssrGoString(prop.SourceName), &goast.SelectorExpr{X: goast.NewIdent("props"), Sel: goast.NewIdent(prop.GoName)}}}
+		}
 	}
-	for _, name := range plan.Hydration.Omitted {
-		beginArgs = append(beginArgs, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(name)})
-	}
+	beginArgs := append([]goast.Expr{goast.NewIdent("w"), ssrGoString(plan.ComponentName), state}, omitted...)
 	fields := make([]*goast.Field, 0, len(plan.Props))
 	values := make([]goast.Expr, 0, len(plan.Props))
 	for _, prop := range plan.Props {

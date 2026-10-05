@@ -195,7 +195,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshotKeyedEachDirectRowText(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`vela.Get(ssrEachItem0, "id")`, `vela.Get(ssrEachItem0, "title")`, `vela.Get(ssrEachItem0, "selected")`, `vela.Get(ssrEachItem0, "color")`, `<!--v:`, `settled-row`} {
+	for _, want := range []string{`ssrJS.Get(ssrEachItem0, "id", "Page.vela")`, `ssrJS.Get(ssrEachItem0, "title", "Page.vela")`, `ssrJS.Get(ssrEachItem0, "selected", "Page.vela")`, `ssrJS.Get(ssrEachItem0, "color", "Page.vela")`, `<!--v:`, `settled-row`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("dynamic keyed row SSR renderer misses %q:\n%s", want, server)
 		}
@@ -323,7 +323,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectInputBinding(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(server), `vela.Get(ssrEachItem0, "title")`) {
+	if !strings.Contains(string(server), `ssrJS.Get(ssrEachItem0, "title", "Page.vela")`) {
 		t.Fatalf("direct input SSR renderer misses row value:\n%s", server)
 	}
 	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
@@ -380,7 +380,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectCheckboxBinding(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(server), `vela.Get(ssrEachItem0, "done")`) {
+	if !strings.Contains(string(server), `ssrJS.Get(ssrEachItem0, "done", "Page.vela")`) {
 		t.Fatalf("direct checkbox SSR renderer misses row value:\n%s", server)
 	}
 	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
@@ -419,7 +419,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectTextareaBinding(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(server), `vela.Get(ssrEachItem0, "title")`) {
+	if !strings.Contains(string(server), `ssrJS.Get(ssrEachItem0, "title", "Page.vela")`) {
 		t.Fatalf("direct textarea SSR renderer misses row value:\n%s", server)
 	}
 	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
@@ -459,7 +459,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectBinding(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`vela.Get(ssrEachItem0, "status")`, `selected`, `optgroup`, `option value`, `open`, `done`} {
+	for _, want := range []string{`ssrJS.Get(ssrEachItem0, "status", "Page.vela")`, `selected`, `optgroup`, `option value`, `open`, `done`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("direct select SSR renderer misses %q:\n%s", want, server)
 		}
@@ -500,7 +500,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptgroupLabel(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(server), `vela.Get(ssrEachItem0, "groupLabel")`) {
+	if !strings.Contains(string(server), `ssrJS.Get(ssrEachItem0, "groupLabel", "Page.vela")`) {
 		t.Fatalf("dynamic optgroup label SSR renderer misses row member:\n%s", server)
 	}
 	client, err := BuildSSRHydrationClientProgram("Page", sfc, analysis, "vela-page")
@@ -539,7 +539,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptgroupLabelAnd
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`vela.Get(ssrEachItem0, "groupLabel")`, `vela.Get(ssrEachItem0, "closed")`, `" disabled"`, `selected`} {
+	for _, want := range []string{`ssrJS.Get(ssrEachItem0, "groupLabel", "Page.vela")`, `ssrJS.Get(ssrEachItem0, "closed", "Page.vela")`, `" disabled"`, `selected`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("composed optgroup/option SSR renderer misses %q:\n%s", want, server)
 		}
@@ -580,7 +580,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionDisabled(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`vela.Get(ssrEachItem0, "closed")`, `" disabled"`, `vela.Get(ssrEachItem0, "status")`, `optgroup`} {
+	for _, want := range []string{`ssrJS.Get(ssrEachItem0, "closed", "Page.vela")`, `" disabled"`, `ssrJS.Get(ssrEachItem0, "status", "Page.vela")`, `optgroup`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("dynamic option SSR renderer misses %q:\n%s", want, server)
 		}
@@ -621,7 +621,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionValue(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`vela.Get(ssrEachItem0, "openValue")`, `vela.String`, `selected`} {
+	for _, want := range []string{`ssrJS.Get(ssrEachItem0, "openValue", "Page.vela")`, `vela.String`, `selected`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("dynamic option value SSR renderer misses %q:\n%s", want, server)
 		}
@@ -662,7 +662,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionText(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`Open: `, `vela.Get(ssrEachItem0, "label")`, `selected`} {
+	for _, want := range []string{`Open: `, `ssrJS.Get(ssrEachItem0, "label", "Page.vela")`, `selected`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("dynamic option text SSR renderer misses %q:\n%s", want, server)
 		}
@@ -703,7 +703,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptgroupLabelAnd
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`vela.Get(ssrEachItem0, "groupLabel")`, `Open: `, `vela.Get(ssrEachItem0, "label")`, `selected`} {
+	for _, want := range []string{`ssrJS.Get(ssrEachItem0, "groupLabel", "Page.vela")`, `Open: `, `ssrJS.Get(ssrEachItem0, "label", "Page.vela")`, `selected`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("composed optgroup/text SSR renderer misses %q:\n%s", want, server)
 		}
@@ -744,7 +744,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionDisabledAn
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`vela.Get(ssrEachItem0, "closed")`, `" disabled"`, `Open: `, `vela.Get(ssrEachItem0, "label")`, `selected`} {
+	for _, want := range []string{`ssrJS.Get(ssrEachItem0, "closed", "Page.vela")`, `" disabled"`, `Open: `, `ssrJS.Get(ssrEachItem0, "label", "Page.vela")`, `selected`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("composed option attribute/text SSR renderer misses %q:\n%s", want, server)
 		}
@@ -785,7 +785,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptgroupLabelOpt
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`vela.Get(ssrEachItem0, "groupLabel")`, `vela.Get(ssrEachItem0, "closed")`, `" disabled"`, `Open: `, `vela.Get(ssrEachItem0, "label")`, `selected`} {
+	for _, want := range []string{`ssrJS.Get(ssrEachItem0, "groupLabel", "Page.vela")`, `ssrJS.Get(ssrEachItem0, "closed", "Page.vela")`, `" disabled"`, `Open: `, `ssrJS.Get(ssrEachItem0, "label", "Page.vela")`, `selected`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("triple-leaf optgroup SSR renderer misses %q:\n%s", want, server)
 		}
@@ -826,7 +826,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptionList(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`vela.Get(ssrEachItem0, "options")`, `vela.Get(ssrEachItem1, "value")`, `vela.Get(ssrEachItem1, "label")`} {
+	for _, want := range []string{`ssrJS.Get(ssrEachItem0, "options", "Page.vela")`, `ssrJS.Get(ssrEachItem1, "value", "Page.vela")`, `ssrJS.Get(ssrEachItem1, "label", "Page.vela")`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("dynamic option list SSR renderer misses %q:\n%s", want, server)
 		}
@@ -867,7 +867,7 @@ func TestGeneratedSSRHydrationAwaitSnapshotKeyedEachDirectSelectOptgroupOptionLi
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`optgroup`, `Available`, `vela.Get(ssrEachItem0, "options")`, `vela.Get(ssrEachItem1, "value")`, `vela.Get(ssrEachItem1, "label")`} {
+	for _, want := range []string{`optgroup`, `Available`, `ssrJS.Get(ssrEachItem0, "options", "Page.vela")`, `ssrJS.Get(ssrEachItem1, "value", "Page.vela")`, `ssrJS.Get(ssrEachItem1, "label", "Page.vela")`} {
 		if !strings.Contains(string(server), want) {
 			t.Fatalf("nested optgroup option-list SSR renderer misses %q:\n%s", want, server)
 		}

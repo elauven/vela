@@ -23,8 +23,8 @@ export let items = [];
 	wants := []string{
 		`props.Title + "!"`,
 		"vela.Length(props.Items)",
-		"vela.Index(props.Items, 0)",
-		"vela.AndLazy(func() any {\n\treturn props.Active\n}, func() any {\n\treturn vela.Number(props.Count) > vela.Number(0)\n})",
+		"vela.Index(props.Items, 0.0)",
+		"vela.AndLazy(func() any {\n\treturn props.Active\n}, func() any {\n\treturn vela.Number(props.Count) > vela.Number(0.0)\n})",
 	}
 	for i, want := range wants {
 		expr, err := TranslateSSRExpression(text.Parts[i].Expr, NewSSRExprContext(plan))
@@ -109,7 +109,7 @@ func TestTranslateSSRExpressionLowersSafeLocalStateInitializer(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := FormatSSRGoExpr(translated)
-	if err != nil || got != "vela.NumberAdd(1, 1)" {
+	if err != nil || got != "vela.NumberAdd(1.0, 1.0)" {
 		t.Fatalf("state initializer translation=%q, err=%v", got, err)
 	}
 }
@@ -129,7 +129,7 @@ func TestTranslateSSRExpressionLowersSafeLocalDerivedInitializer(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := FormatSSRGoExpr(translated)
-	if err != nil || got != "vela.NumberMultiply(2, 2)" {
+	if err != nil || got != "vela.NumberMultiply(2.0, 2.0)" {
 		t.Fatalf("derived initializer translation=%q, err=%v", got, err)
 	}
 }
@@ -186,9 +186,11 @@ func TestTranslateSSRExpressionNormalizesNumericPlusAndRejectsUnknownCoercion(t 
 		t.Fatalf("numeric plus translation=%q, err=%v", got, err)
 	}
 
-	for _, source := range []string{
-		`<script>export let value;</script><template>{value + 1}</template>`,
-		`<template>{true + 1}</template>`,
+	// Without a proven string or number pair, + lowers to the dynamic tier
+	// (T-5.4b).
+	for source, want := range map[string]string{
+		`<script>export let value;</script><template>{value + 1}</template>`: "vela.Add(props.Value, 1.0)",
+		`<template>{true + 1}</template>`:                                    "vela.Add(true, 1.0)",
 	} {
 		sfc, err := parseSFC(source)
 		if err != nil {
@@ -199,9 +201,12 @@ func TestTranslateSSRExpressionNormalizesNumericPlusAndRejectsUnknownCoercion(t 
 			t.Fatal(err)
 		}
 		expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
-		_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
-		if err == nil || !strings.Contains(err.Error(), "operator + requires") {
+		translated, err := TranslateSSRExpression(expr, NewSSRExprContext(plan))
+		if err != nil {
 			t.Fatalf("unknown plus error=%v", err)
+		}
+		if got, _ := FormatSSRGoExpr(translated); got != want {
+			t.Fatalf("unknown plus = %q, want %q", got, want)
 		}
 	}
 }
@@ -213,7 +218,7 @@ func TestTranslateSSRExpressionUsesStrictEqualityRuntimeAndRejectsLooseEquality(
 	}
 	text := sfc.TemplateAST.Nodes[0].(*TextNode)
 	wants := []string{
-		"vela.StrictEqual(1, 1.0)",
+		"vela.StrictEqual(1.0, 1.0)",
 		"!vela.StrictEqual(nil, vela.Undefined())",
 	}
 	for index, part := range text.Parts {
@@ -247,7 +252,7 @@ func TestTranslateSSRExpressionDefinesNumericAndUTF16RelationalSemantics(t *test
 	}
 	text := sfc.TemplateAST.Nodes[0].(*TextNode)
 	wants := []string{
-		"vela.Number(1) < vela.Number(1.5)",
+		"vela.Number(1.0) < vela.Number(1.5)",
 		`vela.StringLess("𐀀", "\ue000")`,
 		`!vela.StringLess("same", "same")`,
 	}
@@ -262,9 +267,10 @@ func TestTranslateSSRExpressionDefinesNumericAndUTF16RelationalSemantics(t *test
 		}
 	}
 
-	for _, source := range []string{
-		`<template>{'1' < 2}</template>`,
-		`<script>export let value;</script><template>{value >= 1}</template>`,
+	// Mixed or unproven operands use the abstract relational comparison.
+	for source, want := range map[string]string{
+		`<template>{'1' < 2}</template>`:                                      `vela.Less("1", 2.0)`,
+		`<script>export let value;</script><template>{value >= 1}</template>`: "vela.GreaterEqual(props.Value, 1.0)",
 	} {
 		sfc, err := parseSFC(source)
 		if err != nil {
@@ -275,9 +281,12 @@ func TestTranslateSSRExpressionDefinesNumericAndUTF16RelationalSemantics(t *test
 			t.Fatal(err)
 		}
 		expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
-		_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
-		if err == nil || !strings.Contains(err.Error(), "relational operator") {
-			t.Fatalf("unsupported relational error=%v", err)
+		translated, err := TranslateSSRExpression(expr, NewSSRExprContext(plan))
+		if err != nil {
+			t.Fatalf("dynamic relational error=%v", err)
+		}
+		if got, _ := FormatSSRGoExpr(translated); got != want {
+			t.Fatalf("dynamic relational = %q, want %q", got, want)
 		}
 	}
 }
@@ -289,12 +298,12 @@ func TestTranslateSSRExpressionUsesJavaScriptNumberOperations(t *testing.T) {
 	}
 	text := sfc.TemplateAST.Nodes[0].(*TextNode)
 	wants := []string{
-		"vela.NumberSubtract(5, 2)",
-		"vela.NumberMultiply(3, 4)",
-		"vela.NumberDivide(1, 0)",
-		"vela.NumberRemainder(5, 2)",
-		"vela.NumberNegate(0)",
-		"vela.Number(vela.NumberDivide(1, 2))",
+		"vela.NumberSubtract(5.0, 2.0)",
+		"vela.NumberMultiply(3.0, 4.0)",
+		"vela.NumberDivide(1.0, 0.0)",
+		"vela.NumberRemainder(5.0, 2.0)",
+		"vela.NumberNegate(0.0)",
+		"vela.Number(vela.NumberDivide(1.0, 2.0))",
 	}
 	for index, part := range text.Parts {
 		translated, err := TranslateSSRExpression(part.Expr, SSRExprContext{})
@@ -307,9 +316,10 @@ func TestTranslateSSRExpressionUsesJavaScriptNumberOperations(t *testing.T) {
 		}
 	}
 
-	for _, source := range []string{
-		`<template>{true * 2}</template>`,
-		`<script>export let value;</script><template>{-value}</template>`,
+	// The Number helpers apply ToNumber to unproven operands.
+	for source, want := range map[string]string{
+		`<template>{true * 2}</template>`:                                 "vela.NumberMultiply(true, 2.0)",
+		`<script>export let value;</script><template>{-value}</template>`: "vela.NumberNegate(props.Value)",
 	} {
 		sfc, err := parseSFC(source)
 		if err != nil {
@@ -320,9 +330,12 @@ func TestTranslateSSRExpressionUsesJavaScriptNumberOperations(t *testing.T) {
 			t.Fatal(err)
 		}
 		expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
-		_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
-		if err == nil || (!strings.Contains(err.Error(), "known number") && !strings.Contains(err.Error(), "known numbers")) {
-			t.Fatalf("unsupported numeric coercion error=%v", err)
+		translated, err := TranslateSSRExpression(expr, NewSSRExprContext(plan))
+		if err != nil {
+			t.Fatalf("dynamic numeric error=%v", err)
+		}
+		if got, _ := FormatSSRGoExpr(translated); got != want {
+			t.Fatalf("dynamic numeric = %q, want %q", got, want)
 		}
 	}
 }
@@ -334,9 +347,9 @@ func TestTranslateSSRExpressionUsesSafeComputedMemberBoundary(t *testing.T) {
 	}
 	text := sfc.TemplateAST.Nodes[0].(*TextNode)
 	wants := []string{
-		"vela.Index([]any{1, 2}, 0)",
-		"vela.Index([]any{1}, 5)",
-		`vela.Index(map[string]any{"title": "ready"}, "title")`,
+		"vela.Index([]any{1.0, 2.0}, 0.0)",
+		"vela.Index([]any{1.0}, 5.0)",
+		`vela.Index(vela.NewObject().Set("title", "ready"), "title")`,
 	}
 	for index, part := range text.Parts {
 		translated, err := TranslateSSRExpression(part.Expr, SSRExprContext{})
@@ -349,10 +362,11 @@ func TestTranslateSSRExpressionUsesSafeComputedMemberBoundary(t *testing.T) {
 		}
 	}
 
-	for _, source := range []string{
-		`<template>{[1]['0']}</template>`,
-		`<template>{({ title: 'ready' })[0]}</template>`,
-		`<script>export let value;</script><template>{value[0]}</template>`,
+	// Any key and receiver use JavaScript property-key conversion.
+	for source, want := range map[string]string{
+		`<template>{[1]['0']}</template>`:                                   `vela.Index([]any{1.0}, "0")`,
+		`<template>{({ title: 'ready' })[0]}</template>`:                    `vela.Index(vela.NewObject().Set("title", "ready"), 0.0)`,
+		`<script>export let value;</script><template>{value[0]}</template>`: "vela.Index(props.Value, 0.0)",
 	} {
 		sfc, err := parseSFC(source)
 		if err != nil {
@@ -363,9 +377,12 @@ func TestTranslateSSRExpressionUsesSafeComputedMemberBoundary(t *testing.T) {
 			t.Fatal(err)
 		}
 		expr := sfc.TemplateAST.Nodes[0].(*TextNode).Parts[0].Expr
-		_, err = TranslateSSRExpression(expr, NewSSRExprContext(plan))
-		if err == nil || !strings.Contains(err.Error(), "computed member access requires") {
-			t.Fatalf("unsupported computed member error=%v", err)
+		translated, err := TranslateSSRExpression(expr, NewSSRExprContext(plan))
+		if err != nil {
+			t.Fatalf("dynamic computed member error=%v", err)
+		}
+		if got, _ := FormatSSRGoExpr(translated); got != want {
+			t.Fatalf("dynamic computed member = %q, want %q", got, want)
 		}
 	}
 }
@@ -648,7 +665,7 @@ func TestTranslateSSRExpressionLowersArrayLiteralAndHole(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := FormatSSRGoExpr(translated)
-	if err != nil || got != `[]any{1, nil, "three"}` {
+	if err != nil || got != `[]any{1.0, nil, "three"}` {
 		t.Fatalf("array literal translation=%q, err=%v", got, err)
 	}
 }
@@ -680,7 +697,7 @@ func TestTranslateSSRExpressionLowersPlainObjectLiteral(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := FormatSSRGoExpr(translated)
-	if err != nil || got != `map[string]any{"title": "ready", "selected": true}` {
+	if err != nil || got != `vela.NewObject().Set("title", "ready").Set("selected", true)` {
 		t.Fatalf("object literal translation=%q, err=%v", got, err)
 	}
 }
@@ -696,14 +713,13 @@ func TestTranslateSSRExpressionKeepsLastDuplicateObjectProperty(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := FormatSSRGoExpr(translated)
-	if err != nil || got != `map[string]any{"title": "new"}` {
+	if err != nil || got != `vela.NewObject().Set("title", "old").Set("title", "new")` {
 		t.Fatalf("duplicate object literal translation=%q, err=%v", got, err)
 	}
 }
 
 func TestTranslateSSRExpressionRejectsUnsupportedObjectForms(t *testing.T) {
 	for _, source := range []string{
-		`<template>{ { ...{} } }</template>`,
 		`<script>export let key = '';</script><template>{ { [key]: 1 } }</template>`,
 		`<template>{ { __proto__: null } }</template>`,
 	} {

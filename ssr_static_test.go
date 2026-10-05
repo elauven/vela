@@ -74,7 +74,7 @@ func TestBuildSSRGoFileRendersArrayLiteralWithJSJoinSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `vela.EscapeString(vela.String([]any{1, nil, 3}))`) {
+	if !strings.Contains(string(source), `vela.EscapeString(vela.String([]any{1.0, nil, 3.0}))`) {
 		t.Fatalf("array literal SSR output is not lowered through Vela conversion:\n%s", source)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
@@ -99,7 +99,7 @@ func TestBuildSSRGoFileRendersPlainObjectLiteral(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `vela.EscapeString(vela.String(map[string]any{"title": "ready"}))`) {
+	if !strings.Contains(string(source), `vela.EscapeString(vela.String(vela.NewObject().Set("title", "ready")))`) {
 		t.Fatalf("object literal SSR output is not lowered through Vela conversion:\n%s", source)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
@@ -124,8 +124,11 @@ func TestBuildSSRGoFileRendersSafeDerivedValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `vela.EscapeString(vela.String(vela.NumberMultiply(2, 2)))`) {
-		t.Fatalf("derived SSR output is not lowered from cached AST:\n%s", source)
+	// The derived value is evaluated once in declaration order (T-6.6d).
+	for _, want := range []string{`ssrL_count := 2.0`, `ssrL_doubled := vela.NumberMultiply(ssrL_count, 2.0)`, `vela.EscapeString(vela.String(ssrL_doubled))`} {
+		if !strings.Contains(string(source), want) {
+			t.Fatalf("derived SSR output misses %q:\n%s", want, source)
+		}
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
 		t.Fatal(err)

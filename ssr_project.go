@@ -324,7 +324,7 @@ func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, reg
 	}
 	// The renderer is built first so that the region report covers every
 	// component; its error keeps its place after the hydration checks.
-	file, region, renderErr := buildSSRGoRendererWithRegion(plan, layout.packageName(src, srcRoot))
+	file, region, renderErr := buildSSRGoRendererWithRegion(plan, layout.packageName(src, srcRoot), filepath.ToSlash(relOrBase(src, srcRoot)), string(data))
 	region.locate(string(data))
 	if regionOut != nil {
 		*regionOut = region

@@ -142,6 +142,12 @@ function checkCase(testCase) {
   if (JSON.stringify(components) !== JSON.stringify(testCase.entries)) {
     errors.push(`state entries ${JSON.stringify(components)}, want ${JSON.stringify(testCase.entries)}`);
   }
+  if (testCase.states) {
+    const states = payload.entries.filter((entry) => entry[0] === "s").map((entry) => entry[2]);
+    testCase.states.forEach((want, i) => {
+      if (JSON.stringify(states[i]) !== JSON.stringify(want)) errors.push(`state entry ${i} = ${JSON.stringify(states[i])}, want ${JSON.stringify(want)}`);
+    });
+  }
   if (testCase.awaits) {
     const awaits = payload.entries.filter((entry) => entry[0] === 'a').map((entry) => [entry[1], entry[2].state]);
     if (JSON.stringify(awaits) !== JSON.stringify(testCase.awaits)) errors.push(`await entries ${JSON.stringify(awaits)}`);

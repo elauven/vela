@@ -91,9 +91,12 @@ type SSRExprContext struct {
 	StateInitializers   map[string]JsExpr
 	DerivedInitializers map[string]JsExpr
 	PlainInitializers   map[string]JsExpr
-	Functions           map[string]*JsFuncDecl
-	resolving           map[string]bool
-	resolvingFunctions  map[string]bool
+	DeepInitializers    map[string]JsExpr
+	// localIndex is the declaration position of each local binding.
+	localIndex         map[string]int
+	Functions          map[string]*JsFuncDecl
+	resolving          map[string]bool
+	resolvingFunctions map[string]bool
 	// scriptOffset places script AST node positions in the .vela source;
 	// 0 when unknown.
 	scriptOffset int
@@ -131,6 +134,11 @@ func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
 		ctx.Functions[name] = function
 	}
 	ctx.scriptOffset = plan.ScriptOffset
+	ctx.DeepInitializers = plan.DeepInitializers
+	ctx.localIndex = map[string]int{}
+	for index, name := range plan.LocalOrder {
+		ctx.localIndex[name] = index
+	}
 	return ctx
 }
 

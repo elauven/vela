@@ -56,6 +56,15 @@ type SSRRenderPlan struct {
 	// local child occurrence. Backends use RuntimeScoped to select an evaluated
 	// #each/#key instance scope instead of collapsing row children to a tag name.
 	ComponentInstanceIdentities map[SectionSpan]SSRComponentInstanceIdentity
+	// DeepInitializers holds $state.deep initializers: their initial value is
+	// an ordinary server value (T-6.6d); only legacy hydration excludes them
+	// from StateInitializers.
+	DeepInitializers map[string]JsExpr
+	// StateNames lists every $state and $state.deep binding, and LocalOrder
+	// every $state, $state.deep, $derived, and plain binding, in script
+	// declaration order (T-6.6d).
+	StateNames []string
+	LocalOrder []string
 	// TemplateOffset and ScriptOffset place template expression and script
 	// node positions in the .vela source for the region report (T-3.2).
 	TemplateOffset int
@@ -305,12 +314,14 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		PlainInitializers:           ssrPlainInitializers(analysis),
 		Functions:                   ssrNamedFunctions(analysis),
 		ScopedCSS:                   ExtractScopedCSS(sfc, scopeID),
+		DeepInitializers:            ssrDeepInitializers(analysis),
 		TemplateOffset:              sfc.TemplateOffset,
 		ScriptOffset:                sfc.ScriptOffset,
 		ComponentInstanceSuffixes:   SSRStaticRepeatedComponentInstanceSuffixes(sfc.TemplateAST.Nodes),
 		ComponentInstanceIdentities: SSRComponentInstanceIdentityIndex(sfc.TemplateAST.Nodes),
 	}}
 	b.plan.Hydration = buildSSRHydrationState(analysis)
+	b.plan.StateNames, b.plan.LocalOrder = ssrDeclarationOrder(b.plan, analysis)
 	b.plan.Nodes = b.nodes(sfc.TemplateAST.Nodes)
 	for name := range b.slotNames {
 		b.plan.SlotNames = append(b.plan.SlotNames, name)
@@ -833,4 +844,53 @@ func inferSSRPropType(script *ScriptAST, name string, fallback JsExpr) SSRValueT
 		}
 	}
 	return inferSSRValueType(fallback)
+}
+
+func ssrDeepInitializers(analysis *Analysis) map[string]JsExpr {
+	initializers := map[string]JsExpr{}
+	if analysis == nil {
+		return initializers
+	}
+	for _, state := range analysis.StateVars {
+		if state != nil && state.Deep && state.Name != "" && state.InitialAST != nil {
+			initializers[state.Name] = state.InitialAST
+		}
+	}
+	return initializers
+}
+
+// ssrDeclarationOrder orders the local bindings by the script position of
+// their initializers, which is their declaration order.
+func ssrDeclarationOrder(plan *SSRRenderPlan, analysis *Analysis) (states, locals []string) {
+	type declaration struct {
+		name string
+		pos  int
+	}
+	var declarations []declaration
+	seen := map[string]bool{}
+	for _, initializers := range []map[string]JsExpr{plan.StateInitializers, plan.DeepInitializers, plan.DerivedInitializers, plan.PlainInitializers} {
+		for name, initializer := range initializers {
+			if !seen[name] {
+				seen[name] = true
+				declarations = append(declarations, declaration{name, initializer.NodePos()})
+			}
+		}
+	}
+	sort.Slice(declarations, func(i, j int) bool {
+		if declarations[i].pos != declarations[j].pos {
+			return declarations[i].pos < declarations[j].pos
+		}
+		return declarations[i].name < declarations[j].name
+	})
+	for _, d := range declarations {
+		locals = append(locals, d.name)
+	}
+	if analysis != nil {
+		for _, state := range analysis.StateVars {
+			if state != nil && state.Name != "" {
+				states = append(states, state.Name)
+			}
+		}
+	}
+	return states, locals
 }
