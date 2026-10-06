@@ -73,7 +73,12 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool, 
 		return nil, err
 	}
 	functions := emitter.ctx.funcs.declarations()
-	body := append(ssrJSPrologue(emitter.region), functions...)
+	body := ssrJSPrologue(emitter.region)
+	if modules := ssrModulePrologue(emitter.region, &goast.CallExpr{Fun: goSelector("vela", "ContextOf"), Args: []goast.Expr{goast.NewIdent("w")}}); len(modules) > 0 {
+		// Module initialisation can throw (ssr_module.go).
+		body = append(append(body, modules...), ssrJSCheck())
+	}
+	body = append(body, functions...)
 	body = append(body, defaults...)
 	body = append(body, init.statements...)
 	body = append(body, payload.preflight...)
@@ -972,14 +977,12 @@ func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
 	for name, binding := range base.Bindings {
 		bindings[name] = binding
 	}
-	return SSRExprContext{
-		Props: base.Props, Bindings: bindings, ReactiveNames: base.ReactiveNames,
-		StateInitializers: base.StateInitializers, DerivedInitializers: base.DerivedInitializers,
-		PlainInitializers: base.PlainInitializers, Functions: base.Functions,
-		scriptOffset:     base.scriptOffset,
-		DeepInitializers: base.DeepInitializers, localIndex: base.localIndex,
-		Hosts: base.Hosts, HostSymbols: base.HostSymbols, HostDecls: base.HostDecls, funcs: base.funcs,
-	}
+	// Everything but the lexical bindings and the resolution state carries
+	// over, so that new context fields cannot be dropped here.
+	ctx := base
+	ctx.Bindings = bindings
+	ctx.resolving, ctx.resolvingFunctions = nil, nil
+	return ctx
 }
 
 func (e *ssrGoEmitter) outputValue(kind, name string, static bool, literal string, expr *TemplateExpr) (goast.Expr, error) {

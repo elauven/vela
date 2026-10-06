@@ -113,6 +113,9 @@ func (js *JS) Catch(ctx context.Context) any {
 // a value and true for `return`, or false for normal completion. catch is
 // nil without a handler, finally nil without a finalizer.
 func Try(js *JS, ctx context.Context, try func() (any, bool), catch func(error any) (any, bool), finally func() (any, bool)) (any, bool) {
+	if js.Failed() {
+		return nil, false
+	}
 	value, returned := try()
 	if js.Failed() && catch != nil {
 		value, returned = catch(js.Catch(ctx))

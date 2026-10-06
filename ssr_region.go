@@ -83,7 +83,10 @@ type SSRRegion struct {
 	// the lowered sites call; calls the outcome of every called function.
 	project     *SSRProject
 	hostImports map[string]string
-	calls       map[string]ssrCallOutcome
+	// modules maps the variables of the modules the region uses to their
+	// import names.
+	modules map[string]string
+	calls   map[string]ssrCallOutcome
 }
 
 func newSSRRegion(plan *SSRRenderPlan) *SSRRegion {
@@ -594,6 +597,12 @@ func (r *SSRRegion) absorb(builder *ssrIRBuilder) {
 	}
 	for path, alias := range builder.hostImports {
 		r.hostImports[path] = alias
+	}
+	for name, alias := range builder.modules {
+		if r.modules == nil {
+			r.modules = map[string]string{}
+		}
+		r.modules[name] = alias
 	}
 	for name, outcome := range builder.calls {
 		if previous, seen := r.calls[name]; seen && previous.Outcome == SSROutcomeUnsupported {

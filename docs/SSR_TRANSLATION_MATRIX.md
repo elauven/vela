@@ -63,7 +63,7 @@ disagree, the contract wins and the row is a bug.
 | `$derived` read | native | Go local initialised once, in declaration order | same | T-6.6d | init-order | implemented | As above. A read of a binding declared later is rejected (ReferenceError in JavaScript). |
 | top-level `const` / unchanged `let` | native | Go local | same | T-2.1 | init-order | implemented | As above; recorded as `binding` sites in `--ssr-report`. |
 | `#each` / `#await` binding | native | lexical Go variable | same | — | value-text | implemented | |
-| symbol imported from local `.js` | native or host | generated module package | same | T-7.3a | modules-* | planned (S4) | |
+| symbol imported from local `.js` | native or host | generated module package `server/modules/<path>`: `New(ssrJS, ctx)` per render, a `Module` field per export | same | T-7.3a, T-7.3b | `TestSSRModulesMatchNode`, `TestSSRModuleDiagnostics` | implemented | Named imports only. Top-level code may only declare functions and `const` bindings; `let`, other statements, and circular imports make the module's symbols unsupported (host fix suggested). Module values are created per render, never shared. |
 | symbol imported from npm | host or client | — | — | T-7.3c | — | never | |
 | browser global (`window`, `document`, …) | client | — | — | §3 | — | never | |
 

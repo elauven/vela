@@ -32,6 +32,9 @@ type SSRExpressionError struct {
 	Cause string
 	// Host suggests the host implementation that would fix the site.
 	Host *ssrHostSuggestion
+	// bare is the cause of a missing host without the "has no server-native
+	// translation" prefix, so that nested host failures are not repeated.
+	bare string
 	// Source is the .vela offset of the script initializer or function body
 	// the problem was found in, when SourceSet; otherwise the site position
 	// applies.
@@ -100,6 +103,7 @@ type SSRExprContext struct {
 	Hosts               map[string]*SSRHostBinding
 	HostDecls           map[string]*JsFuncDecl
 	HostSymbols         map[string]SSRHostSymbol
+	ModuleRefs          map[string]ssrModuleRef
 	// localIndex is the declaration position of each local binding.
 	localIndex map[string]int
 	// funcs compiles multi-statement component functions (task 045).
@@ -148,6 +152,7 @@ func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
 	ctx.Hosts = plan.Hosts
 	ctx.HostSymbols = plan.HostSymbols
 	ctx.HostDecls = plan.HostDecls
+	ctx.ModuleRefs = plan.ModuleRefs
 	ctx.localIndex = map[string]int{}
 	for index, name := range plan.LocalOrder {
 		ctx.localIndex[name] = index

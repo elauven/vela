@@ -315,7 +315,9 @@ type ssrIRBuilder struct {
 	// hostImports maps the import paths of called host packages to their
 	// aliases; calls records the outcome of every function call (T-2.3).
 	hostImports map[string]string
-	calls       map[string]ssrCallOutcome
+	// modules maps the variables of used modules to their import names.
+	modules map[string]string
+	calls   map[string]ssrCallOutcome
 	// funcCompiler is set while building a translated function body.
 	funcCompiler *ssrFuncCompiler
 }
@@ -536,6 +538,9 @@ func (b *ssrIRBuilder) ident(node *JsIdent, pos int) (SSRIRExpr, error) {
 		if initializer, ok := local.initializers[node.Name]; ok {
 			return b.local(node.Name, local.kind, initializer, pos, boolProp)
 		}
+	}
+	if ref, ok := b.ctx.ModuleRefs[node.Name]; ok && b.js {
+		return b.moduleIdent(ref, node.Name, pos)
 	}
 	if b.ctx.ReactiveNames[node.Name] {
 		return nil, ssrExprUnsupported(pos, "local reactive binding %q has no server value; pass it as an exported prop or wait for hydration", node.Name)
@@ -816,11 +821,16 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 	if binding, ok := b.ctx.Hosts[callee.Name]; ok && b.js {
 		return b.hostCall(binding, call, reason, pos)
 	}
+	if ref, ok := b.ctx.ModuleRefs[callee.Name]; ok && b.js {
+		if _, local := b.params[callee.Name]; !local {
+			return b.moduleCall(ref, call, reason, pos)
+		}
+	}
 	if param, ok := b.params[callee.Name]; ok && b.funcCompiler != nil {
 		// A function value held by a local of a translated function.
 		return b.valueCall(param, call, pos)
 	}
-	if component := ssrComponentFunctions(b.ctx.funcsPlan())[callee.Name]; component != nil && !ssrInlinable(component) && b.ctx.funcs != nil && b.js {
+	if component := ssrComponentFunctions(b.ctx.funcsPlan())[callee.Name]; component != nil && (!ssrInlinable(component) || b.ctx.Functions[callee.Name] == nil) && b.ctx.funcs != nil && b.js {
 		value, err := b.compiledCall(callee.Name, call, pos)
 		if err != nil {
 			if symbol, bindable := b.ctx.HostSymbols[callee.Name]; bindable {
@@ -926,6 +936,10 @@ func (b *ssrIRBuilder) hostMissing(cause error, symbol SSRHostSymbol, call *JsCa
 	if wrapped.Cause == "" {
 		wrapped.Cause = wrapped.Message
 	}
+	if nested, ok := cause.(*SSRExpressionError); ok && nested.bare != "" {
+		wrapped.Cause = nested.bare
+	}
+	wrapped.bare = wrapped.Cause
 	wrapped.Message = fmt.Sprintf("%s has no server-native translation: %s", symbol.Name, wrapped.Cause)
 	wrapped.Cause = wrapped.Message
 	return wrapped

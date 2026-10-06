@@ -64,6 +64,9 @@ type SSRRenderPlan struct {
 	HostSymbols map[string]SSRHostSymbol
 	HostDecls   map[string]*JsFuncDecl
 	HostProject *SSRProject
+	// ModuleRefs maps names imported from local .js modules to their
+	// translated exports (ssr_module.go).
+	ModuleRefs map[string]ssrModuleRef
 	// RootStatic marks a component that renders plain HTML as a root (A-8.1).
 	RootStatic bool
 	// DeepInitializers holds $state.deep initializers: their initial value is

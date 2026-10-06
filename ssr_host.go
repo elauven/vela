@@ -231,6 +231,8 @@ type SSRHosts struct {
 	RootModes map[string]bool
 	// Sources holds the bindable functions of every source file.
 	Sources map[string]map[string]*JsFuncDecl
+	// Modules translates the local .js modules components import.
+	Modules *SSRModules
 }
 
 // ssrSourceFunctions lists, for every mirrored directory, the source file
@@ -571,6 +573,10 @@ func bindSSRHosts(plan *SSRRenderPlan, hosts *SSRHosts, src string, analysis *An
 				}
 			}
 		}
+	}
+	if analysis != nil && hosts.Modules != nil {
+		abs, _ := filepath.Abs(src)
+		plan.ModuleRefs = hosts.Modules.refs(abs, analysis.Imports)
 	}
 	for local, symbol := range plan.HostSymbols {
 		if binding, ok := hosts.Bindings[symbol]; ok {

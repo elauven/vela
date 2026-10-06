@@ -31,6 +31,9 @@ type ssrFuncTable struct {
 	// are declared up front as any and read without type facts.
 	captured map[string]bool
 	reads    map[string]bool
+	// context is the context.Context of the render in generated code; nil
+	// means vela.ContextOf(w) in a renderer.
+	context goast.Expr
 }
 
 func newSSRFuncTable(plan *SSRRenderPlan, region *SSRRegion) *ssrFuncTable {
@@ -40,16 +43,27 @@ func newSSRFuncTable(plan *SSRRenderPlan, region *SSRRegion) *ssrFuncTable {
 	for _, name := range plan.LocalOrder {
 		locals[name] = true
 	}
-	for name, function := range ssrComponentFunctions(plan) {
-		if ssrInlinable(function) {
-			continue
-		}
-		_ = name
+	// Locals read by compiled functions, directly or through the inlined
+	// functions they call.
+	functions := ssrComponentFunctions(plan)
+	visited := map[string]bool{}
+	var visit func(function *JsFuncDecl)
+	visit = func(function *JsFuncDecl) {
 		ssrWalkIdents(function.Body, func(ident string) {
 			if locals[ident] {
 				table.captured[ident] = true
 			}
+			if callee := functions[ident]; callee != nil && !visited[ident] {
+				visited[ident] = true
+				visit(callee)
+			}
 		})
+	}
+	for name, function := range functions {
+		if (!ssrInlinable(function) || plan.Functions[name] == nil) && !visited[name] {
+			visited[name] = true
+			visit(function)
+		}
 	}
 	return table
 }
@@ -278,6 +292,9 @@ func (c *ssrFuncCompiler) function(function *JsFuncDecl) (*goast.FuncLit, error)
 	c.scopes = append(c.scopes, map[string]string{})
 	defer func() { c.scopes = c.scopes[:len(c.scopes)-1] }()
 	var body []goast.Stmt
+	// An exception already pending (an earlier operand threw) is not
+	// seen by this call's catch clauses: the call does not run.
+	body = append(body, &goast.IfStmt{Cond: &goast.CallExpr{Fun: goSelector("ssrJS", "Failed")}, Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{ssrUndefined()}}}}})
 	for i, param := range function.Params {
 		stmts, err := c.bind(param, &goast.CallExpr{Fun: goSelector("vela", "Arg"), Args: []goast.Expr{goast.NewIdent("ssrArgs"), &goast.BasicLit{Kind: token.INT, Value: strconv.Itoa(i)}}})
 		if err != nil {
@@ -940,7 +957,7 @@ func (c *ssrFuncCompiler) tryStatement(s *JsTryStmt) ([]goast.Stmt, error) {
 	value := c.declare("$try")
 	returned := c.declare("$returned")
 	call := &goast.CallExpr{Fun: goSelector("vela", "Try"), Args: []goast.Expr{
-		goast.NewIdent("ssrJS"), &goast.CallExpr{Fun: goSelector("vela", "ContextOf"), Args: []goast.Expr{goast.NewIdent("w")}}, try, catch, finally,
+		goast.NewIdent("ssrJS"), c.table.contextExpr(), try, catch, finally,
 	}}
 	return []goast.Stmt{
 		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(value), goast.NewIdent(returned)}, Tok: token.DEFINE, Rhs: []goast.Expr{call}},
@@ -957,10 +974,12 @@ type ssrIRCallFunc struct {
 	ssrIRBase
 	// Func is the Go variable of a compiled function; Value calls a value
 	// through ssrJS.Call.
-	Func  string
-	Value SSRIRExpr
-	Args  []SSRIRExpr
-	Site  string
+	Func string
+	// Callee is a Go function expression, such as a module export.
+	Callee goast.Expr
+	Value  SSRIRExpr
+	Args   []SSRIRExpr
+	Site   string
 }
 
 func lowerSSRCallFunc(n *ssrIRCallFunc) goast.Expr {
@@ -973,6 +992,9 @@ func lowerSSRCallFunc(n *ssrIRCallFunc) goast.Expr {
 	}
 	if n.Value != nil {
 		return &goast.CallExpr{Fun: goSelector("ssrJS", "Call"), Args: args}
+	}
+	if n.Callee != nil {
+		return &goast.CallExpr{Fun: n.Callee, Args: args}
 	}
 	return &goast.CallExpr{Fun: goast.NewIdent(n.Func), Args: args}
 }
@@ -1087,4 +1109,11 @@ func ssrClosesOver(body JsStmt, decl *JsVarDecl) bool {
 		return !found
 	})
 	return found
+}
+
+func (t *ssrFuncTable) contextExpr() goast.Expr {
+	if t.context != nil {
+		return t.context
+	}
+	return &goast.CallExpr{Fun: goSelector("vela", "ContextOf"), Args: []goast.Expr{goast.NewIdent("w")}}
 }

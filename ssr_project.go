@@ -127,6 +127,7 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	}
 	layout := NewSSRProjectLayoutWithModule(outRoot, opts.SSRModule)
 	clientOpts := opts
+	hosts.Modules = newSSRModules(layout, srcRoot, hosts)
 	// The block engine's client module is the ordinary CSR module; it gains
 	// its hydrate entry in task 041 (H3).
 	clientOpts.HydrationSupport = activeDOMEngine != DOMEngineBlocks
@@ -164,6 +165,10 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 		}
 		fmt.Fprintf(compilerStatusWriter(opts), "  +  %-40s -> server/styles\n", relOrBase(src, srcRoot))
 	}
+	if err := hosts.Modules.write(); err != nil {
+		fmt.Fprintf(os.Stderr, "  x  SSR modules: %v\n", err)
+		errors++
+	}
 	if errors == 0 {
 		if err := validateSSRProjectPackages(layout, hosts.Types); err != nil {
 			fmt.Fprintf(os.Stderr, "  x  SSR package validation: %v\n", err)
@@ -200,6 +205,9 @@ func ValidateSSRProjectPackages(layout SSRProjectLayout) error {
 
 func validateSSRProjectPackages(layout SSRProjectLayout, hostTypes map[string]*types.Package) error {
 	packages := map[string]map[string][]byte{}
+	if err := collectSSRGoPackages(filepath.Join(layout.Root, "server", "modules"), path.Join(layout.ModulePath, "modules"), packages); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	err := filepath.Walk(layout.ServerDir, func(filename string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr

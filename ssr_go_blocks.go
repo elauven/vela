@@ -67,7 +67,12 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 	}
 	init := emitter.localsPrologue(plan, plan.StateNames)
 	functions := emitter.ctx.funcs.declarations()
-	body := append(ssrJSPrologue(emitter.region), functions...)
+	body := ssrJSPrologue(emitter.region)
+	if modules := ssrModulePrologue(emitter.region, &goast.CallExpr{Fun: goSelector("vela", "ContextOf"), Args: []goast.Expr{goast.NewIdent("w")}}); len(modules) > 0 {
+		// Module initialisation can throw (ssr_module.go).
+		body = append(append(body, modules...), ssrJSCheck())
+	}
+	body = append(body, functions...)
 	body = append(body, defaults...)
 	body = append(body, init.statements...)
 	body = append(body, ssrBlocksBeginComponent(plan, init.evaluated)...)
