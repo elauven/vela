@@ -12,7 +12,7 @@ for (const row of rows) {
   const names = Object.keys(row.values || {});
   let actual;
   try {
-    actual = { expected: String(Function(...names, `"use strict"; return (${row.expression});`)(...names.map((n) => decode(row.values[n])))) };
+    actual = { expected: String(Function(...names, `"use strict"; ${row.functions || ''}; return (${row.expression});`)(...names.map((n) => decode(row.values[n])))) };
   } catch (error) {
     actual = { throws: error.constructor.name };
   }

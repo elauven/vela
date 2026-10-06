@@ -48,6 +48,11 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool, 
 		return nil, err
 	}
 	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, scopeExpr: goast.NewIdent("instanceID"), awaitOptions: goast.NewIdent("options"), componentInstanceSuffixes: plan.ComponentInstanceSuffixes, componentInstanceIdentities: plan.ComponentInstanceIdentities, region: region, facts: map[JsExpr]ssrIRFacts{}}
+	emitter.ctx.funcs = newSSRFuncTable(plan, emitter.region)
+	emitter.ctx.funcs.base = emitter.ctx
+	if emitter.region != nil {
+		emitter.region.funcs = emitter.ctx.funcs
+	}
 	defaults, err := emitter.propDefaults(plan.Props)
 	if err != nil {
 		return nil, err
@@ -67,7 +72,9 @@ func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool, 
 	if err != nil {
 		return nil, err
 	}
-	body := append(ssrJSPrologue(emitter.region), defaults...)
+	functions := emitter.ctx.funcs.declarations()
+	body := append(ssrJSPrologue(emitter.region), functions...)
+	body = append(body, defaults...)
 	body = append(body, init.statements...)
 	body = append(body, payload.preflight...)
 	body = append(body, templateBody...)
@@ -971,7 +978,7 @@ func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
 		PlainInitializers: base.PlainInitializers, Functions: base.Functions,
 		scriptOffset:     base.scriptOffset,
 		DeepInitializers: base.DeepInitializers, localIndex: base.localIndex,
-		Hosts: base.Hosts, HostSymbols: base.HostSymbols, HostDecls: base.HostDecls,
+		Hosts: base.Hosts, HostSymbols: base.HostSymbols, HostDecls: base.HostDecls, funcs: base.funcs,
 	}
 }
 

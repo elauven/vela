@@ -258,6 +258,8 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 		}
 		args = append(args, ssrGoString(n.Site))
 		return &goast.CallExpr{Fun: goSelector("ssrJS", n.Method), Args: args}
+	case *ssrIRCallFunc:
+		return lowerSSRCallFunc(n)
 	case *ssrIRHost:
 		args := []goast.Expr{
 			goast.NewIdent("ssrJS"),
@@ -314,6 +316,8 @@ type ssrIRBuilder struct {
 	// aliases; calls records the outcome of every function call (T-2.3).
 	hostImports map[string]string
 	calls       map[string]ssrCallOutcome
+	// funcCompiler is set while building a translated function body.
+	funcCompiler *ssrFuncCompiler
 }
 
 // BuildSSRIR builds the IR of one template expression.
@@ -470,6 +474,8 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 		return &ssrIRLazy{ssrIRBase: b.base(pos, facts), Name: "TernaryLazy", Args: []SSRIRExpr{test, thenValue, elseValue}}, nil
 	case *JsCallExpr:
 		return b.call(node, pos)
+	case *JsNewExpr:
+		return b.newError(node, pos)
 	case *JsArrowFunc:
 		return nil, ssrExprUnsupported(pos, "arrow functions are not available to static SSR")
 	case *JsAssignExpr:
@@ -810,6 +816,20 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 	if binding, ok := b.ctx.Hosts[callee.Name]; ok && b.js {
 		return b.hostCall(binding, call, reason, pos)
 	}
+	if param, ok := b.params[callee.Name]; ok && b.funcCompiler != nil {
+		// A function value held by a local of a translated function.
+		return b.valueCall(param, call, pos)
+	}
+	if component := ssrComponentFunctions(b.ctx.funcsPlan())[callee.Name]; component != nil && !ssrInlinable(component) && b.ctx.funcs != nil && b.js {
+		value, err := b.compiledCall(callee.Name, call, pos)
+		if err != nil {
+			if symbol, bindable := b.ctx.HostSymbols[callee.Name]; bindable {
+				return nil, b.hostMissing(err, symbol, call, component, reason)
+			}
+			return nil, ssrWithReason(err, err, reason)
+		}
+		return value, nil
+	}
 	function, ok := b.ctx.Functions[callee.Name]
 	if !ok || function == nil {
 		if symbol, bindable := b.ctx.HostSymbols[callee.Name]; bindable {
@@ -1127,6 +1147,10 @@ func (b *ssrIRBuilder) localRef(name, kind string, initializer JsExpr, pos int, 
 	facts := value.irBase().Facts
 	facts.Bool = boolProp
 	facts.GoString = false
+	if b.ctx.funcs != nil && b.ctx.funcs.captured[name] {
+		// Declared as any before the functions that read it.
+		facts = ssrIRFacts{}
+	}
 	return &ssrIRGo{ssrIRBase: b.base(pos, facts), Expr: goast.NewIdent(ssrLocalName(name))}, nil
 }
 

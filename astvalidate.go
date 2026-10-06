@@ -509,7 +509,7 @@ func checkUnreachable(prog *JsProgram) []ValidationIssue {
 				return true
 			}
 			for i, st := range blk.Body {
-				if isTerminator(st) && i < len(blk.Body)-1 {
+				if isTerminator(st) && i < len(blk.Body)-1 && !onlyHoistedAfter(blk.Body[i+1:]) {
 					issues = append(issues, ValidationIssue{
 						Kind: "unreachable",
 						Msg: "generated unreachable statement after " +
@@ -546,4 +546,17 @@ func terminatorName(s JsStmt) string {
 		return "continue"
 	}
 	return "control-flow exit"
+}
+
+// onlyHoistedAfter reports statements that are all function declarations
+// (hoisted, so reachable) or empty.
+func onlyHoistedAfter(rest []JsStmt) bool {
+	for _, stmt := range rest {
+		switch stmt.(type) {
+		case *JsFuncDecl, *JsEmptyStmt:
+		default:
+			return false
+		}
+	}
+	return true
 }

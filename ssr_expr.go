@@ -101,7 +101,9 @@ type SSRExprContext struct {
 	HostDecls           map[string]*JsFuncDecl
 	HostSymbols         map[string]SSRHostSymbol
 	// localIndex is the declaration position of each local binding.
-	localIndex         map[string]int
+	localIndex map[string]int
+	// funcs compiles multi-statement component functions (task 045).
+	funcs              *ssrFuncTable
 	Functions          map[string]*JsFuncDecl
 	resolving          map[string]bool
 	resolvingFunctions map[string]bool

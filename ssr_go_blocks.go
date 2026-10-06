@@ -37,6 +37,11 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 	if len(plan.Nodes) == 1 {
 		emitter.rootElement, _ = plan.Nodes[0].(*SSRPlanElement)
 	}
+	emitter.ctx.funcs = newSSRFuncTable(plan, emitter.region)
+	emitter.ctx.funcs.base = emitter.ctx
+	if emitter.region != nil {
+		emitter.region.funcs = emitter.ctx.funcs
+	}
 	defaults, err := emitter.propDefaults(plan.Props)
 	if err != nil {
 		return nil, err
@@ -61,7 +66,9 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 		templateBody = append(wrapped, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("</div>")}))
 	}
 	init := emitter.localsPrologue(plan, plan.StateNames)
-	body := append(ssrJSPrologue(emitter.region), defaults...)
+	functions := emitter.ctx.funcs.declarations()
+	body := append(ssrJSPrologue(emitter.region), functions...)
+	body = append(body, defaults...)
 	body = append(body, init.statements...)
 	body = append(body, ssrBlocksBeginComponent(plan, init.evaluated)...)
 	if plan.RootStatic {

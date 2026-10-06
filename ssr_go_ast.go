@@ -588,6 +588,25 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	}, nil))
 	pkg.Scope().Insert(optionalName)
 
+	// Translated functions (ssr_runtime/func.go).
+	funcName := types.NewTypeName(token.NoPos, pkg, "Func", nil)
+	funcSig := types.NewSignatureType(nil, nil, nil, types.NewTuple(v("args", anySlice)), types.NewTuple(v("", anyType)), true)
+	funcType := types.NewNamed(funcName, funcSig, nil)
+	pkg.Scope().Insert(funcName)
+	_ = funcType
+	ssrRuntimeAddFunc(pkg, "Arg", []*types.Var{v("args", anySlice), v("i", types.Typ[types.Int])}, []*types.Var{v("", anyType)})
+	ssrRuntimeAddFunc(pkg, "NewError", []*types.Var{v("kind", stringType), v("message", anyType)}, []*types.Var{v("", objectPtr)})
+	jsMethod("Throw", []*types.Var{v("value", anyType), v("site", stringType)}, undefinedType)
+	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "Failed", types.NewSignatureType(jsRecv, nil, nil, nil, types.NewTuple(v("", boolT)), false)))
+	jsMethod("Catch", []*types.Var{v("ctx", contextT)}, anyType)
+	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "Call", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("fn", anyType), v("args", anySlice)), types.NewTuple(v("", anyType)), true)))
+	jsMethod("SetMember", []*types.Var{v("object", anyType), v("key", anyType), v("value", anyType), v("site", stringType)}, anyType)
+	part := types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(v("", anyType), v("", boolT)), false)
+	catchPart := types.NewSignatureType(nil, nil, nil, types.NewTuple(v("error", anyType)), types.NewTuple(v("", anyType), v("", boolT)), false)
+	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, "Try", types.NewSignatureType(nil, nil, nil, types.NewTuple(
+		v("js", types.NewPointer(jsType)), v("ctx", contextT), v("try", part), v("catch", catchPart), v("finally", part),
+	), types.NewTuple(v("", anyType), v("", boolT)), false)))
+
 	// Block markup and payload stream (docs/HYDRATION_ARCHITECTURE.md §5, §6).
 	jsonPkg, err := loader.Import("encoding/json")
 	if err != nil {

@@ -611,6 +611,9 @@ func jsWhitespace(r rune) bool {
 // TypeOf implements typeof over the value domain; Go values follow their
 // JSON view (time.Time is "string").
 func TypeOf(value any) string {
+	if _, ok := value.(Func); ok {
+		return "function"
+	}
 	switch jsValue(value).(type) {
 	case UndefinedValue:
 		return "undefined"

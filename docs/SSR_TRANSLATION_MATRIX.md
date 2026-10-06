@@ -122,22 +122,31 @@ disagree, the contract wins and the row is a bug.
 
 ### 1.5 Statements
 
-All rows are `planned (S4)` with oracle group `stmt-*`.
+Statements are admitted inside component functions with more than one
+statement, translated as Go closures `ssrF_<name>` of type `vela.Func`
+(ssr_func.go, task 045). Oracle groups: `fn-statements`, `fn-try`,
+`fn-closures`, `fn-recursion`, `stmt-destructure`, `stmt-assign`,
+`errors-new`. Each function has one dynamic-tier variant;
+monomorphisation (T-7.2a) is not done yet. Status: `implemented` unless
+the notes say otherwise.
 
 | Construct | Lowering | Rule | Notes |
 | --- | --- | --- | --- |
 | `const`, `let`, block scoping | Go locals in nested blocks | §7.1 | Shadowing is renamed deterministically. |
 | `if` / `else` | Go `if` on `vela.Truthy` | §7.1 | |
-| `for (;;)` | Go `for` | §7.1 | Generated code copies `let` loop variables per iteration explicitly, so the result does not depend on the Go version declared by the module that contains the generated code. |
+| `for (;;)` | Go `for` | §7.1 | One Go variable per loop: a function created in the body that captures a `let` loop variable is rejected (per-iteration copies are not generated yet). |
 | `for…of` over arrays | Go `range` | §7.1 | Holes are visited as `undefined`. |
 | `for…of` over strings | iterate code points | §7.1, T-6.3a | Not UTF-16 units. |
 | `while`, `do…while` | Go `for` | §7.1 | |
 | `break`, `continue` (no labels) | Go `break` / `continue` | §7.1 | |
 | `return` | Go `return` | §7.1 | |
-| `throw` | return `*vela.RenderError` | T-6.5a | |
-| `try` / `catch` / `finally` | error checks and deferred completion | T-6.5d | `return`/`throw` in `finally` overrides. Go panics are not caught. |
+| `throw` | `ssrJS.Throw` records `*vela.Thrown`; uncaught, it is a `*vela.RenderError` of the error's name | T-6.5a | `new Error`, `TypeError`, `RangeError` create error objects. |
+| `try` / `catch` / `finally` | `vela.Try` with closures completing `(value, returned)` | T-6.5d | `return`/`throw` in `finally` overrides. Host errors are caught as `Error("Internal error")` unless wrapped in `vela.PublicError` (T-7.4h). `break`/`continue` across a `try` is rejected. Go panics are not caught. |
 | `switch` | Go `switch` with `vela.StrictEqual` cases; fall-through preserved | §7.1 | |
-| nested function declaration | Go closure | §7.1 | |
+| nested function declaration | Go closure | §7.1 | Hoisted within its block; arrow and function expressions are `vela.Func` values; recursion is supported. |
+| destructuring `const {a, b = 1} = o`, `const [x, y] = a` | `ssrJS.Get` / `ssrJS.Index` | §7.1 | Rest elements and computed keys are rejected for now. |
+| assignment to locals and to members of local objects; compound operators, `++`, `--` | Go assignment, `ssrJS.SetMember` | T-6.6b | Writes to state, props, or module bindings are impure (T-6.6a). Growing an array by index assignment throws until arrays get identity (task 046). |
+| `var` declarations | rejected | §7.1 | Use `let` or `const`. |
 | labels, `for…in`, generators, `for await`, `with`, `eval`, `arguments`, cross-block `var` hoisting | rejected | §7.1 | `never` in v1. |
 
 ### 1.6 Asynchronous code

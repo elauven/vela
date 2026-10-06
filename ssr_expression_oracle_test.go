@@ -18,6 +18,7 @@ type ssrExpressionOracleRow struct {
 	Group      string                     `json:"group"`
 	Name       string                     `json:"name"`
 	Expression string                     `json:"expression"`
+	Functions  string                     `json:"functions"`
 	Values     map[string]json.RawMessage `json:"values"`
 	Expected   *string                    `json:"expected"`
 	Throws     string                     `json:"throws"`
@@ -65,6 +66,10 @@ func TestSSRExpressionOracleBothTiers(t *testing.T) {
 			fmt.Fprintf(&dynamic, "export let %s;\n", name)
 		}
 		template := "<template><p>{" + row.Expression + "}</p></template>\n"
+		if row.Functions != "" {
+			typed.WriteString(row.Functions + "\n")
+			dynamic.WriteString(row.Functions + "\n")
+		}
 		for tier, script := range map[string]string{"T": typed.String(), "D": dynamic.String()} {
 			component := fmt.Sprintf("Case%s%d", tier, i)
 			source := "<script>\n" + script + "</script>\n" + template

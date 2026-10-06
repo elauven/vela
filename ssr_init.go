@@ -44,6 +44,7 @@ func (e *ssrGoEmitter) localsPrologue(plan *SSRRenderPlan, extra []string) ssrIn
 	}
 	// A payload-only binding needs the bindings its initializer reads.
 	base := ssrComponentContext(NewSSRExprContext(plan))
+	base.funcs = e.ctx.funcs
 	initializer := func(name string) JsExpr {
 		for _, initializers := range []map[string]JsExpr{plan.StateInitializers, plan.DeepInitializers, plan.DerivedInitializers, plan.PlainInitializers} {
 			if init, ok := initializers[name]; ok {
@@ -99,7 +100,11 @@ func (e *ssrGoEmitter) localsPrologue(plan *SSRRenderPlan, extra []string) ssrIn
 		local := goast.NewIdent(ssrLocalName(name))
 		value := lowerSSRIR(ir)
 		declare := goast.Stmt(&goast.AssignStmt{Lhs: []goast.Expr{local}, Tok: token.DEFINE, Rhs: []goast.Expr{value}})
-		if ident, ok := value.(*goast.Ident); ok && ident.Name == "nil" {
+		if t := e.ctx.funcs; t != nil && len(t.compiled) > 0 && t.captured[name] {
+			// Declared as any before the compiled functions (ssr_func.go).
+			declare = &goast.AssignStmt{Lhs: []goast.Expr{local}, Tok: token.ASSIGN, Rhs: []goast.Expr{value}}
+		}
+		if ident, ok := value.(*goast.Ident); ok && ident.Name == "nil" && declare.(*goast.AssignStmt).Tok == token.DEFINE {
 			// null has no Go type of its own.
 			declare = &goast.DeclStmt{Decl: &goast.GenDecl{Tok: token.VAR, Specs: []goast.Spec{&goast.ValueSpec{Names: []*goast.Ident{local}, Type: goast.NewIdent("any"), Values: []goast.Expr{value}}}}}
 		}

@@ -39,7 +39,7 @@ type SSRSiteRecord struct {
 	// Required is set for sites the server render evaluates. Declaration
 	// sites ($state, $derived) are recorded with their own outcome; the
 	// render needs them only where another site reads them (Reads).
-	Required   bool               `json:"required"`
+	Required bool `json:"required"`
 	// Host is the Go function of a server-host function site.
 	Host       string             `json:"host,omitempty"`
 	Reads      []string           `json:"reads,omitempty"`
@@ -65,7 +65,9 @@ type SSRSiteDiagnostic struct {
 
 // SSRRegion collects the site records of one component.
 type SSRRegion struct {
-	Component      string
+	Component string
+	// funcs compiles the component functions declarations call (task 045).
+	funcs          *ssrFuncTable
 	TemplateOffset int
 	ScriptOffset   int
 	Records        []SSRSiteRecord
@@ -437,7 +439,8 @@ func (r *SSRRegion) finish(plan *SSRRenderPlan) error {
 			reads[name] = true
 		}
 	}
-	ctx := NewSSRExprContext(plan)
+	ctx := ssrComponentContext(NewSSRExprContext(plan))
+	ctx.funcs = r.funcs
 	for _, declarations := range []struct {
 		kind         string
 		initializers map[string]JsExpr
@@ -449,7 +452,10 @@ func (r *SSRRegion) finish(plan *SSRRenderPlan) error {
 		sort.Strings(names)
 		for _, name := range names {
 			initializer := declarations.initializers[name]
+			// As the prologue evaluates it (ssr_init.go).
 			builder := newSSRIRBuilder(ctx)
+			builder.locals, builder.current, builder.js = true, name, true
+			builder.site = r.siteLabel(r.ScriptOffset + initializer.NodePos())
 			ir, err := builder.build(initializer, 0)
 			r.add(declarations.kind, name, r.ScriptOffset+initializer.NodePos(), false, ir, builder.inlined, err)
 			if reads[name] {
