@@ -98,6 +98,8 @@ func ssrSiteRoot(kind, name string) string {
 	switch kind {
 	case "text":
 		return "template text"
+	case "await":
+		return "{#await} operand"
 	case "attribute":
 		return fmt.Sprintf("attribute %q", name)
 	case "class":

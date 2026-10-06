@@ -614,16 +614,37 @@ func TestBuildSSRGoFileEmitsPairedMarkersForKeyedEachRows(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRejectsAwaitWithoutPending(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let request=null;</script><template>{#await request then value}<p>{value}</p>{/await}</template>`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = BuildSSRGoFile(plan, "components")
-	if err == nil || !strings.Contains(err.Error(), SSRExpressionDiagnosticCode) {
-		t.Fatalf("err=%v", err)
-	}
+	// The legacy renderer has no server evaluation of the operand.
+	withDOMEngine(t, DOMEngineLegacy, func() {
+		sfc, err := parseSFC(`<script>export let request=null;</script><template>{#await request then value}<p>{value}</p>{/await}</template>`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = BuildSSRGoFile(plan, "components")
+		if err == nil || !strings.Contains(err.Error(), SSRExpressionDiagnosticCode) {
+			t.Fatalf("err=%v", err)
+		}
+	})
+}
+
+// TestBlocksSSRAwaitWithoutPending: the block engine evaluates the operand,
+// so a block without a pending branch renders its settled branch (T-7.4f).
+func TestBlocksSSRAwaitWithoutPending(t *testing.T) {
+	withDOMEngine(t, DOMEngineBlocks, func() {
+		sfc, err := parseSFC(`<script>export let request=null;</script><template>{#await request then value}<p>{value}</p>{/await}</template>`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := buildSSRGoRendererWithRegion(plan, "components", "Page.vela", ""); err != nil {
+			t.Fatal(err)
+		}
+	})
 }

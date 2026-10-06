@@ -1089,7 +1089,7 @@ func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionVa
 }
 
 func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
-	if len(node.PendingChildren) == 0 {
+	if len(node.PendingChildren) == 0 && !e.blocks {
 		return nil, ssrExprUnsupported(node.Span.Start, "SSR await requires an explicit pending branch until hydration")
 	}
 	pending, err := e.nodes(node.PendingChildren)

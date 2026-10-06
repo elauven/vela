@@ -171,6 +171,9 @@ async function clientHTML(testCase) {
   const module = await import(pathToFileURL(join(clientDir, testCase.module)).href);
   const factory = module[testCase.export] || module.default;
   const instance = factory(host, structuredClone(testCase.props));
+  // Promises settle before the comparison: the server renders the settled
+  // branch of an evaluated {#await} (T-7.4c, T-7.4f).
+  await settle();
   const html = serialize(host);
   instance.destroy();
   host.remove();
@@ -206,6 +209,7 @@ async function hydrateCheck(testCase) {
   const reference = document.createElement('div');
   document.body.appendChild(reference);
   const created = factory(reference, structuredClone(testCase.props));
+  await settle();
   const host = document.createElement('div');
   document.body.appendChild(host);
   host.innerHTML = testCase.html;
@@ -285,6 +289,7 @@ async function mismatchCheck(testCase, injected) {
     const reference = document.createElement('div');
     document.body.appendChild(reference);
     const created = factory(reference, structuredClone(testCase.props));
+    await settle();
     const host = document.createElement('div');
     document.body.appendChild(host);
     host.innerHTML = html;
@@ -318,6 +323,8 @@ async function mismatchCheck(testCase, injected) {
       if (policy === 'repair' && counts.warn === 0) errors.push(`${label(policy)}: no console warning`);
       if (policy === 'production' && verified && counts.error !== 1) errors.push(`${label(policy)}: console.error was called ${counts.error} times, want 1`);
     }
+    // A repaired range rebuilds its blocks, whose promises settle later.
+    await settle();
     if (instance && !(policy === 'production' && valueOnly)) {
       if (serialize(host) !== serialize(reference)) {
         errors.push(`${label(policy)}: DOM differs from the client:\n  hydrated: ${serialize(host)}\n  client:   ${serialize(reference)}`);

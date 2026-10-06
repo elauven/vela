@@ -112,5 +112,8 @@
  {"group":"stmt-destructure","name":"fn-destructure-defaults","functions":"function d(o) { const { x, y = 5 } = o; const [p, q = 7] = [x]; return x + y + p + q; }","expression":"d(a)","values":{"a":{"x":1}},"expected":"14"},
  {"group":"stmt-assign","name":"fn-local-object","functions":"function obj(v) { const o = { a: 1 }; o.b = v; o.a += 1; return o.a + o.b; }","expression":"obj(a)","values":{"a":40},"expected":"42"},
  {"group":"stmt-assign","name":"fn-compound-ops","functions":"function c(v) { let x = v; x *= 2; x -= 1; x **= 2; x %= 7; let y; y ??= 3; return x + y; }","expression":"c(a)","values":{"a":4},"expected":"3"},
- {"group":"stmt-assign","name":"fn-array-index-set","functions":"function swap(v) { const xs = [v, 2]; xs[0] = xs[1]; xs[1] = v; return xs[0] + '-' + xs[1]; }","expression":"swap(a)","values":{"a":9},"expected":"2-9"}
+ {"group":"stmt-assign","name":"fn-array-index-set","functions":"function swap(v) { const xs = [v, 2]; xs[0] = xs[1]; xs[1] = v; return xs[0] + '-' + xs[1]; }","expression":"swap(a)","values":{"a":9},"expected":"2-9"},
+ {"group":"fn-closures","name":"fn-arrow-assign-local","functions":"function set(v) { const o = { x: 0 }; const put = (w) => o.x = w; return put(v) + o.x; }","expression":"set(a)","values":{"a":5},"expected":"10"},
+ {"group":"fn-closures","name":"fn-arrow-in-template","functions":"function apply(f, v) { return f(v); }","expression":"apply((x) => x * 3, a) + '|' + apply(function (x) { return x + 1; }, a)","values":{"a":7},"expected":"21|8"},
+ {"group":"async","name":"async-promise-text","functions":"async function f() { return 1; }","expression":"'' + f()","values":{},"expected":"[object Promise]"}
 ]

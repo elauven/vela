@@ -53,7 +53,7 @@ func buildSSRGoSkeleton(plan *SSRRenderPlan, packageName string, includeProps bo
 	}
 	decls = append(decls,
 		goSlotsTypeDecl(slotsName, plan.SlotNames),
-		goAwaitSnapshotTypeDecl(awaitSnapshotName),
+		goAwaitSnapshotTypeDecl(awaitSnapshotName, "string"),
 		goRenderOptionsTypeDecl(renderOptionsName, awaitSnapshotName),
 		goRenderWithOptionsAtFuncDecl(component, propsName, slotsName, renderOptionsName),
 		goRenderAtFuncDecl(component, propsName, slotsName, renderOptionsName),
@@ -71,13 +71,16 @@ func buildSSRGoSkeleton(plan *SSRRenderPlan, packageName string, includeProps bo
 // boundary. The compiler never evaluates JavaScript promises: an application
 // data loader explicitly chooses pending, then, or catch for a canonical
 // marker ID before invoking the renderer.
-func goAwaitSnapshotTypeDecl(name string) *goast.GenDecl {
+// goAwaitSnapshotTypeDecl declares the await snapshot of the render
+// options; valueType is string for the legacy renderer and any (a JSON
+// value, T-7.4f) for the block engine.
+func goAwaitSnapshotTypeDecl(name, valueType string) *goast.GenDecl {
 	return &goast.GenDecl{Tok: token.TYPE, Specs: []goast.Spec{&goast.TypeSpec{
 		Name: goast.NewIdent(name),
 		Type: &goast.StructType{Fields: &goast.FieldList{List: []*goast.Field{
 			{Names: []*goast.Ident{goast.NewIdent("State")}, Type: goast.NewIdent("string"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"state\"`"}},
-			{Names: []*goast.Ident{goast.NewIdent("Value")}, Type: goast.NewIdent("string"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"value,omitempty\"`"}},
-			{Names: []*goast.Ident{goast.NewIdent("Error")}, Type: goast.NewIdent("string"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"error,omitempty\"`"}},
+			{Names: []*goast.Ident{goast.NewIdent("Value")}, Type: goast.NewIdent(valueType), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"value,omitempty\"`"}},
+			{Names: []*goast.Ident{goast.NewIdent("Error")}, Type: goast.NewIdent(valueType), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"error,omitempty\"`"}},
 		}}},
 	}}}
 }
@@ -607,6 +610,25 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 		v("js", types.NewPointer(jsType)), v("ctx", contextT), v("try", part), v("catch", catchPart), v("finally", part),
 	), types.NewTuple(v("", anyType), v("", boolT)), false)))
 
+	// Promises (ssr_runtime/promise.go).
+	promiseName := types.NewTypeName(token.NoPos, pkg, "Promise", nil)
+	promiseType := types.NewNamed(promiseName, types.NewStruct(nil, nil), nil)
+	pkg.Scope().Insert(promiseName)
+	promisePtr := types.NewPointer(promiseType)
+	ssrRuntimeAddFunc(pkg, "Resolve", []*types.Var{v("value", anyType)}, []*types.Var{v("", promisePtr)})
+	ssrRuntimeAddFunc(pkg, "Reject", []*types.Var{v("value", anyType), v("site", stringType)}, []*types.Var{v("", promisePtr)})
+	jsMethod("Async", []*types.Var{v("result", anyType)}, promisePtr)
+	jsMethod("Impure", []*types.Var{v("message", stringType), v("site", stringType)}, undefinedType)
+	jsMethod("Await", []*types.Var{v("ctx", contextT), v("value", anyType)}, anyType)
+	jsMethod("Then", []*types.Var{v("ctx", contextT), v("site", stringType), v("value", anyType), v("onFulfilled", anyType), v("onRejected", anyType)}, anyType)
+	jsMethod("CatchPromise", []*types.Var{v("ctx", contextT), v("site", stringType), v("value", anyType), v("onRejected", anyType)}, anyType)
+	jsMethod("Finally", []*types.Var{v("ctx", contextT), v("site", stringType), v("value", anyType), v("onFinally", anyType)}, anyType)
+	jsMethod("All", []*types.Var{v("site", stringType), v("values", anyType)}, anyType)
+	jsMethod("AllSettled", []*types.Var{v("ctx", contextT), v("site", stringType), v("values", anyType)}, anyType)
+	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, "AwaitSettle", types.NewSignatureType(nil, nil, nil, types.NewTuple(
+		v("w", writer), v("js", types.NewPointer(jsType)), v("site", stringType), v("operand", anyType),
+	), types.NewTuple(v("", stringType), v("", anyType)), false)))
+
 	// Block markup and payload stream (docs/HYDRATION_ARCHITECTURE.md §5, §6).
 	jsonPkg, err := loader.Import("encoding/json")
 	if err != nil {
@@ -638,8 +660,8 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 		types.NewVar(token.NoPos, pkg, "w", writer),
 		types.NewVar(token.NoPos, pkg, "site", stringType),
 		types.NewVar(token.NoPos, pkg, "state", stringType),
-		types.NewVar(token.NoPos, pkg, "value", stringType),
-		types.NewVar(token.NoPos, pkg, "errText", stringType),
+		types.NewVar(token.NoPos, pkg, "value", anyType),
+		types.NewVar(token.NoPos, pkg, "errValue", anyType),
 	}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
 	pkg.MarkComplete()
 	return pkg, nil

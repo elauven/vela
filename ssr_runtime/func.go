@@ -117,7 +117,7 @@ func Try(js *JS, ctx context.Context, try func() (any, bool), catch func(error a
 		return nil, false
 	}
 	value, returned := try()
-	if js.Failed() && catch != nil {
+	if js.Failed() && catch != nil && !cancelled(js.err) {
 		value, returned = catch(js.Catch(ctx))
 	}
 	if finally == nil {
@@ -196,4 +196,11 @@ func (t *Thrown) As(target any) bool {
 	}
 	*out = &RenderError{Kind: kind, Message: message, Site: t.Site}
 	return true
+}
+
+// Impure fails the render when it calls a function that changes state,
+// props, or module bindings (T-6.6a); such a function value is compiled
+// because a render that does not call it is pure.
+func (js *JS) Impure(message, site string) UndefinedValue {
+	return js.fail(&RenderError{Kind: "Error", Message: "VELA-SSR-IMPURE: " + message, Site: site})
 }

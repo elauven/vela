@@ -109,14 +109,15 @@ disagree, the contract wins and the row is a bug.
 | object literal | native | `*vela.Object` | `*vela.Object` | T-5.1c | objects-order | implemented | Insertion order with JavaScript key ordering, observed through the payload (`testdata/ssr_init_oracle.json`). A closed-shape struct lowering is an optimisation not done yet. |
 | object spread `{...o}` | native | `(*vela.Object).Spread` | same | T-5.1c | objects-spread | implemented | |
 | object methods, getters/setters | rejected | — | — | §6.2 | — | never | v1. |
-| destructuring (declarations, parameters, defaults) | native | Go locals | same | §7.1 | stmt-destructure | planned (S4) | |
-| arrow function as built-in callback or local value | native | Go closure or inlined loop | same | T-7.2b | fn-arrow | planned (S4) | Currently rejected. |
+| destructuring (declarations, parameters, defaults) | native | Go locals | same | §7.1 | stmt-destructure | implemented | Rest elements and computed keys are rejected for now. |
+| arrow function as local value, argument, or callback prop | native | `vela.Func` closure | same | §7.1 | fn-closures | implemented | A function value created in a template defers writes to state, props, or module bindings to a run-time `VELA-SSR-IMPURE` error, raised only if the render calls it (an event callback passed as a prop is never called). |
+| arrow function as built-in callback | native | Go closure or inlined loop | same | T-7.2b | fn-arrow | planned (S5) | Needs the array built-ins of task 046. |
 | call to local function with one `return` | native | inlined expression | same | T-7.1a | fn-inline | partial | Existing inliner; becomes an optimisation of the next row. |
-| call to local multi-statement function | native | generated Go function | same | T-7.1a | fn-statements | planned (S4) | |
-| monomorphised variants | native | one Go function per argument type tuple | one dynamic variant above 4 | T-7.2a | fn-variants | planned (S4) | Threshold 4 (decision 1). |
-| recursion | native | Go recursion | same | T-7.1b | fn-recursion | planned (S4) | |
+| call to local multi-statement function | native | `vela.Func` closure `ssrF_<name>` | same | T-7.1a | fn-statements | implemented | Also `let`/`const` arrow bindings and exports of local modules. |
+| monomorphised variants | native | one Go function per argument type tuple | one dynamic variant above 4 | T-7.2a | fn-variants | planned (S5) | Threshold 4 (decision 1). Transferred from task 045 to task 046: every function has its dynamic variant, which the oracle verifies in both tiers; typed variants are an optimisation that lands with the typed built-ins. |
+| recursion | native | Go recursion | same | T-7.1b | fn-recursion | implemented | |
 | call bound by `//vela:host` | host | `vela.CallHost` (reflection; §8.4 conversions) | same | §8 | host-e2e | partial | Functions of components and of local `.js` modules, and parameterless hosts for module values (§8.7). Covered by Go end-to-end tests (`TestSSRHost*`); the host fixture tooling of V-11.3e is not done. |
-| `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | native | `vela.NewError(kind, m)` | same | §6.2 | errors-new | planned (S4) | |
+| `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | native | `vela.NewError(kind, m)` | same | §6.2 | errors-new | implemented | |
 | other `new`, `this`, `class` | rejected | — | — | §6.2 | — | never | v1. |
 | regular expression literal | host | — | — | §3 | — | never | See §3. |
 
@@ -153,13 +154,13 @@ the notes say otherwise.
 
 | Construct | Outcome | Lowering | Rule | Oracles | Status |
 | --- | --- | --- | --- | --- | --- |
-| `async function` / async arrow | native | Go function returning `(T, error)` | T-7.4a | async-* | planned (S4) |
-| `await e` | native | take settled value or throw rejection | T-7.4a | async-await | planned (S4) |
-| async call without `await` | native | settled `vela.Promise` | T-7.4b | async-promise | planned (S4) |
-| `.then`, `.catch`, `.finally` | native | synchronous chaining | T-7.4b | async-chain | planned (S4) |
-| `{#await}` with server-evaluated operand | native or host | render `then`/`catch`, snapshot in payload | T-7.4f | await-server | planned (S4) |
+| `async function` / async arrow | native | `vela.Func` closure whose body runs to completion and settles a `*vela.Promise` (`ssrJS.Async`) | T-7.4a | `TestSSRAsyncMatchesNode` | implemented |
+| `await e` | native | `ssrJS.Await(ctx, e)`: settled value or the rejection thrown; a cancelled `ctx` stops the render uncatchably (T-7.4g) | T-7.4a | `TestSSRAsyncMatchesNode`, `TestAwaitCancelledIsNotCaught` | implemented |
+| async call without `await` | native | settled `vela.Promise` (text `[object Promise]`; in `$state` it is omitted from the payload and recomputed by the client) | T-7.4b | async (oracle), `TestPromiseStateIsOmitted` | implemented |
+| `.then`, `.catch`, `.finally`, `Promise.resolve`, `reject`, `all`, `allSettled` | native | `ssrJS.Then` / `CatchPromise` / `Finally`, `vela.Resolve` / `Reject`, `ssrJS.All` / `AllSettled`, in array order | T-7.4b | `TestSSRAsyncMatchesNode`, `TestPromiseChain`, `TestPromiseAllOrder` | implemented |
+| `{#await}` with server-evaluated operand | native or host | `vela.AwaitSettle`: renders `then`/`catch` with any JSON value, payload snapshot adopted by the client without re-evaluating the operand; `await` sites in `--ssr-report` | T-7.4f | `TestSSRAsyncMatchesNode`, `Loader` hydration cases | implemented |
 | `{#await}` whose operand cannot run on the server | client | wrap the block in `{#client}`; server renders the boundary fallback | T-7.4f, T-9.1b | await-client | planned (S6) |
-| `{#await}` with a caller-supplied `RenderOptions.Await` snapshot | native | render the supplied branch; operand not evaluated | T-7.4f | await-snapshot | partial (string-only `Value`/`Error`) |
+| `{#await}` with a caller-supplied `RenderOptions.Await` snapshot | native | render the supplied branch with any JSON `Value`/`Error`; operand not evaluated | T-7.4f | await-snapshot (`Multi then`, `Multi catch`) | implemented (block engine; the legacy renderer keeps string snapshots) |
 | top-level `await` in component script | rejected | — | T-7.4d | — | never |
 
 ### 1.7 Region boundaries

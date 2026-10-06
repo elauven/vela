@@ -1,0 +1,13 @@
+<script>
+  import { load } from './loader.js';
+  export let id = 2;
+  let shift = $state(0);
+</script>
+
+<template>
+  <section>
+    {#await load(id + shift)}<i>wait</i>{:then item}<b>{item.label} #{item.id}</b>{:catch e}<s>{e.name}: {e.message}</s>{/await}
+    <button class="next" @click={() => shift = shift + 1}>next</button>
+    <button class="neg" @click={() => shift = -10}>neg</button>
+  </section>
+</template>

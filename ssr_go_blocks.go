@@ -234,7 +234,7 @@ func buildSSRGoBlocksSkeleton(plan *SSRRenderPlan, packageName string, includePr
 	withOptions := "Render" + component + "WithOptions"
 	decls = append(decls,
 		goSlotsTypeDecl(slotsName, plan.SlotNames),
-		goAwaitSnapshotTypeDecl(snapshotName),
+		goAwaitSnapshotTypeDecl(snapshotName, "any"),
 		&goast.GenDecl{Tok: token.TYPE, Specs: []goast.Spec{&goast.TypeSpec{
 			Name: goast.NewIdent(optionsName),
 			Type: &goast.StructType{Fields: &goast.FieldList{List: []*goast.Field{
@@ -348,46 +348,7 @@ func (e *ssrGoEmitter) blocksIf(node *SSRPlanIf) ([]goast.Stmt, error) {
 // (S-6.4). Only root render options select a snapshot: nested components
 // render their pending branch.
 func (e *ssrGoEmitter) blocksAwait(node *SSRPlanAwait, pending []goast.Stmt) ([]goast.Stmt, error) {
-	snapshot := "ssrAwaitSnapshot" + itoa(node.DynamicID)
-	stateVar := "ssrAwaitToken" + itoa(node.DynamicID)
-	thenBody, thenStatic := e.awaitSnapshotBranch(node.ThenChildren, node.ValueName, &goast.SelectorExpr{X: goast.NewIdent(snapshot), Sel: goast.NewIdent("Value")})
-	catchBody, catchStatic := e.awaitSnapshotBranch(node.CatchChildren, node.ErrorName, &goast.SelectorExpr{X: goast.NewIdent(snapshot), Sel: goast.NewIdent("Error")})
-	unsupported := func(branch string) []goast.Stmt {
-		if e.imports == nil {
-			e.imports = map[string]string{}
-		}
-		e.imports["fmt"] = "fmt"
-		return []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{&goast.CallExpr{Fun: goSelector("fmt", "Errorf"), Args: []goast.Expr{
-			&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("SSR await snapshot " + itoa(node.DynamicID) + " " + branch + " branch requires static template content")},
-		}}}}}
-	}
-	thenCase := thenBody
-	if !thenStatic {
-		thenCase = unsupported("then")
-	}
-	catchCase := catchBody
-	if !catchStatic {
-		catchCase = unsupported("catch")
-	}
-	field := func(name string) goast.Expr {
-		return &goast.SelectorExpr{X: goast.NewIdent(snapshot), Sel: goast.NewIdent(name)}
-	}
-	return []goast.Stmt{
-		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(snapshot)}, Tok: token.DEFINE, Rhs: []goast.Expr{
-			&goast.IndexExpr{X: &goast.SelectorExpr{X: e.awaitOptions, Sel: goast.NewIdent("Await")}, Index: &goast.BasicLit{Kind: token.INT, Value: itoa(node.DynamicID)}},
-		}},
-		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(stateVar)}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{
-			Fun:  goSelector("vela", "AwaitEntry"),
-			Args: []goast.Expr{goast.NewIdent("w"), &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(e.awaitSite(node.DynamicID))}, field("State"), field("Value"), field("Error")},
-		}}},
-		e.openRangeExpr(goast.NewIdent(stateVar)),
-		&goast.SwitchStmt{Tag: goast.NewIdent(stateVar), Body: &goast.BlockStmt{List: []goast.Stmt{
-			&goast.CaseClause{List: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("t")}}, Body: thenCase},
-			&goast.CaseClause{List: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("c")}}, Body: catchCase},
-			&goast.CaseClause{Body: pending},
-		}}},
-		e.closeRange(),
-	}, nil
+	return e.blocksAwaitBlock(node, pending)
 }
 
 // writeSSRBlocksProjectFile writes the server products of one component
@@ -450,4 +411,120 @@ func checkSSRBlocksNesting(filename, source string, nodes []Node, links map[stri
 		return fmt.Errorf("%s:%d:%d: %w", filename, line+1, column+1, err)
 	}
 	return nil
+}
+
+// blocksAwaitBlock renders an {#await} block. When the server can evaluate
+// the operand (T-7.4f): the operand is settled synchronously, the then or
+// catch branch is rendered with the value or error, and the payload holds
+// the settled snapshot, which the client adopts without re-evaluating the
+// operand. A snapshot in the render options still takes precedence and
+// the operand is then not evaluated. Snapshot values are any JSON value.
+// Otherwise only a snapshot selects a branch and the server renders
+// pending (a client boundary, T-9.1b, is task 047).
+func (e *ssrGoEmitter) blocksAwaitBlock(node *SSRPlanAwait, pending []goast.Stmt) ([]goast.Stmt, error) {
+	var operand goast.Expr
+	if e.region != nil && node.Promise != nil {
+		err := e.speculate(func() error {
+			var err error
+			operand, err = e.translate("await", "", node.Promise, e.ctx)
+			return err
+		})
+		if err != nil {
+			// Recorded for the report; the site is not required.
+			operand = nil
+			e.region.add("await", "", e.region.TemplateOffset+node.Promise.Pos, false, nil, nil, err)
+		}
+	}
+	evaluated := operand != nil
+	if evaluated {
+		// Settling reads and may set the evaluation state.
+		e.region.usesJS = true
+	}
+	id := itoa(node.DynamicID)
+	snapshot, tokenVar, value := "ssrAwaitSnapshot"+id, "ssrAwaitToken"+id, "ssrAwaitValue"+id
+	site := &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(e.awaitSite(node.DynamicID))}
+	branch := func(nodes []SSRPlanNode, binding string) ([]goast.Stmt, error) {
+		previous := e.ctx
+		e.ctx = ssrContextWithBindings(e.ctx)
+		if binding != "" {
+			e.ctx.Bindings[binding] = goast.NewIdent(value)
+		}
+		defer func() { e.ctx = previous }()
+		if evaluated {
+			return e.nodes(nodes)
+		}
+		// Only a caller snapshot selects this branch: content the server
+		// cannot render fails that render, not the build.
+		var body []goast.Stmt
+		if err := e.speculate(func() error {
+			var err error
+			body, err = e.nodes(nodes)
+			return err
+		}); err != nil {
+			if e.imports == nil {
+				e.imports = map[string]string{}
+			}
+			e.imports["fmt"] = "fmt"
+			return []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{&goast.CallExpr{Fun: goSelector("fmt", "Errorf"), Args: []goast.Expr{
+				ssrGoString("SSR await snapshot " + id + " branch cannot be rendered on the server: " + ssrDiagnosticSummary(err)),
+			}}}}}, nil
+		}
+		return body, nil
+	}
+	thenBody, err := branch(node.ThenChildren, node.ValueName)
+	if err != nil {
+		return nil, err
+	}
+	catchBody, err := branch(node.CatchChildren, node.ErrorName)
+	if err != nil {
+		return nil, err
+	}
+	field := func(name string) goast.Expr { return goSelectorExpr(goast.NewIdent(snapshot), name) }
+	assign := func(lhs []string, tok token.Token, rhs goast.Expr) goast.Stmt {
+		left := make([]goast.Expr, len(lhs))
+		for i, name := range lhs {
+			left[i] = goast.NewIdent(name)
+		}
+		return &goast.AssignStmt{Lhs: left, Tok: tok, Rhs: []goast.Expr{rhs}}
+	}
+	declare := func(name string, typ string) goast.Stmt {
+		return &goast.DeclStmt{Decl: &goast.GenDecl{Tok: token.VAR, Specs: []goast.Spec{&goast.ValueSpec{Names: []*goast.Ident{goast.NewIdent(name)}, Type: goast.NewIdent(typ)}}}}
+	}
+	operandVar := "ssrAwaitOperand" + id
+	var otherwise []goast.Stmt
+	if evaluated {
+		otherwise = []goast.Stmt{
+			assign([]string{operandVar}, token.DEFINE, operand),
+			ssrJSCheck(),
+			assign([]string{tokenVar, value}, token.ASSIGN, &goast.CallExpr{Fun: goSelector("vela", "AwaitSettle"), Args: []goast.Expr{goast.NewIdent("w"), goast.NewIdent("ssrJS"), site, goast.NewIdent(operandVar)}}),
+			ssrJSCheck(),
+		}
+	} else {
+		// Without a snapshot the server renders pending.
+		otherwise = []goast.Stmt{assign([]string{tokenVar}, token.ASSIGN, &goast.CallExpr{Fun: goSelector("vela", "AwaitEntry"), Args: []goast.Expr{goast.NewIdent("w"), site, ssrGoString(""), goast.NewIdent("nil"), goast.NewIdent("nil")}})}
+	}
+	return []goast.Stmt{
+		assign([]string{snapshot}, token.DEFINE, &goast.IndexExpr{X: goSelectorExpr(e.awaitOptions, "Await"), Index: &goast.BasicLit{Kind: token.INT, Value: id}}),
+		declare(tokenVar, "string"),
+		declare(value, "any"),
+		&goast.IfStmt{
+			Cond: &goast.BinaryExpr{X: field("State"), Op: token.NEQ, Y: &goast.BasicLit{Kind: token.STRING, Value: `""`}},
+			Body: &goast.BlockStmt{List: []goast.Stmt{
+				assign([]string{tokenVar}, token.ASSIGN, &goast.CallExpr{Fun: goSelector("vela", "AwaitEntry"), Args: []goast.Expr{goast.NewIdent("w"), site, field("State"), field("Value"), field("Error")}}),
+				assign([]string{value}, token.ASSIGN, field("Value")),
+				&goast.IfStmt{Cond: &goast.BinaryExpr{X: goast.NewIdent(tokenVar), Op: token.EQL, Y: &goast.BasicLit{Kind: token.STRING, Value: `"c"`}}, Body: &goast.BlockStmt{List: []goast.Stmt{
+					assign([]string{value}, token.ASSIGN, field("Error")),
+				}}},
+			}},
+			Else: &goast.BlockStmt{List: otherwise},
+		},
+		ssrUse(value),
+		e.openRangeExpr(goast.NewIdent(tokenVar)),
+		&goast.SwitchStmt{Tag: goast.NewIdent(tokenVar), Body: &goast.BlockStmt{List: []goast.Stmt{
+			&goast.CaseClause{List: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: `"t"`}}, Body: thenBody},
+			&goast.CaseClause{List: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: `"c"`}}, Body: catchBody},
+			&goast.CaseClause{Body: pending},
+		}}},
+		e.closeRange(),
+	}, nil
 }

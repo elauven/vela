@@ -284,6 +284,9 @@ func String(value any) string {
 	if value == nil {
 		return "null"
 	}
+	if _, promise := value.(*Promise); promise {
+		return "[object Promise]"
+	}
 	if _, undefined := value.(UndefinedValue); undefined {
 		return "undefined"
 	}
@@ -572,6 +575,7 @@ func BeginComponent(w io.Writer, component string, state any, omitted ...string)
 	if state == nil {
 		state = NewObject()
 	}
+	state, omitted = clientOnlyState(state, omitted)
 	entry := []any{"s", component, state}
 	if len(omitted) > 0 {
 		entry = append(entry, map[string][]string{"omitted": omitted})
@@ -613,16 +617,16 @@ func CloseRange(w io.Writer) error {
 // AwaitEntry records the branch a server-rendered await block selected
 // (S-6.4) and returns its state token. state is "", "pending", "then" or
 // "catch" as in the render options.
-func AwaitEntry(w io.Writer, site, state, value, errText string) string {
+func AwaitEntry(w io.Writer, site, state string, value, errValue any) string {
 	token := "p"
-	snapshot := map[string]string{}
+	snapshot := map[string]any{}
 	switch state {
 	case "then":
 		token = "t"
 		snapshot["value"] = value
 	case "catch":
 		token = "c"
-		snapshot["error"] = errText
+		snapshot["error"] = errValue
 	}
 	snapshot["state"] = token
 	if sw, ok := w.(*streamWriter); ok && !sw.static {

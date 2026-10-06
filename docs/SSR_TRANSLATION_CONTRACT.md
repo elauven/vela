@@ -368,7 +368,12 @@ in one synchronous pass.
   `await` points; the synchronous model finishes each call in source order.
   Under T-6.6a (no external writes) and H-8.5b (deterministic hosts) the
   results are identical. The only difference is the order in which host
-  functions are called, and hosts must not depend on that order.
+  functions are called, and hosts must not depend on that order. A
+  second difference follows from the same model: a `.then`, `.catch`, or
+  `.finally` reaction runs at the call that registers it, not in a later
+  microtask, so code that reads a variable a reaction writes before it
+  awaits the promise sees the write on the server only. Write such code
+  with `await`.
 - **T-7.4d Not admitted.** `Promise.race` and `Promise.any` (their results
   depend on timing; use a host or a client boundary), `setTimeout`,
   `setInterval`, `queueMicrotask`, `requestAnimationFrame`,

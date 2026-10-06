@@ -478,8 +478,10 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 		return b.call(node, pos)
 	case *JsNewExpr:
 		return b.newError(node, pos)
-	case *JsArrowFunc:
-		return nil, ssrExprUnsupported(pos, "arrow functions are not available to static SSR")
+	case *JsArrowFunc, *JsFuncExpr:
+		return b.functionValue(node, pos)
+	case *JsAwaitExpr:
+		return b.await(node, pos)
 	case *JsAssignExpr:
 		return nil, ssrImpure(pos, "assignments are not available to static SSR")
 	default:
@@ -813,6 +815,11 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 	if call.Optional {
 		return nil, ssrExprUnsupported(pos, "optional JavaScript calls are not available to static SSR")
 	}
+	if member, ok := call.Callee.(*JsMemberExpr); ok && b.js {
+		if value, handled, err := b.promiseCall(member, call, pos); handled {
+			return value, err
+		}
+	}
 	callee, ok := call.Callee.(*JsIdent)
 	if !ok {
 		return nil, ssrExprUnsupported(pos, "only named local formatter calls are available to static SSR")
@@ -826,7 +833,7 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 			return b.moduleCall(ref, call, reason, pos)
 		}
 	}
-	if param, ok := b.params[callee.Name]; ok && b.funcCompiler != nil {
+	if param, ok := b.params[callee.Name]; ok && (b.funcCompiler != nil || b.js) {
 		// A function value held by a local of a translated function.
 		return b.valueCall(param, call, pos)
 	}

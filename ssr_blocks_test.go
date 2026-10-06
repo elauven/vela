@@ -52,7 +52,7 @@ func runSSRBlocksCheck(t *testing.T, args ...string) {
 	// untyped row field to a typed child prop (vela.AssignProp); Shell.vela is
 	// Host with a typed row expression.
 	files := map[string]string{}
-	for _, pattern := range []string{"testdata/engine_diff/*.vela", "testdata/ssr_blocks/*.vela"} {
+	for _, pattern := range []string{"testdata/engine_diff/*.vela", "testdata/ssr_blocks/*.vela", "testdata/ssr_blocks/*.js"} {
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
 			t.Fatal(err)

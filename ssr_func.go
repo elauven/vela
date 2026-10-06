@@ -206,6 +206,16 @@ type ssrFuncCompiler struct {
 	table *ssrFuncTable
 	name  string
 	site  string
+	// async marks the body of an async function, where await is admitted;
+	// ctx, when set, is the template context of a function value created
+	// in a template expression.
+	async bool
+	ctx   *SSRExprContext
+	// deferImpure makes a write to state, props, or module bindings a run-time
+	// error instead of a build error: a function value created in a template
+	// (an event callback passed as a prop) is impure only if the render
+	// calls it (T-6.6a).
+	deferImpure bool
 	// scopes maps JavaScript names to Go variables, innermost last.
 	scopes []map[string]string
 	next   *int
@@ -241,7 +251,11 @@ func (c *ssrFuncCompiler) lookup(name string) (string, bool) {
 // builder returns an expression builder that sees the function's locals.
 func (c *ssrFuncCompiler) builder() *ssrIRBuilder {
 	t := c.table
-	b := newSSRIRBuilder(ssrComponentContext(t.base))
+	base := ssrComponentContext(t.base)
+	if c.ctx != nil {
+		base = *c.ctx
+	}
+	b := newSSRIRBuilder(base)
 	b.js, b.locals, b.site = true, true, c.site
 	b.params = map[string]SSRIRExpr{}
 	for _, scope := range c.scopes {
@@ -283,10 +297,8 @@ func (c *ssrFuncCompiler) function(function *JsFuncDecl) (*goast.FuncLit, error)
 	if function.Generator {
 		return nil, c.fail("generator function %q is not admitted (§7.1)", c.name)
 	}
-	if function.Async {
-		return nil, c.fail("async function %q is translated with the synchronous model of task 045 (§7.4)", c.name)
-	}
-	if c.table.region != nil {
+	c.async = function.Async
+	if c.table.region != nil && c.ctx == nil {
 		c.site = c.table.region.siteLabel(c.table.region.ScriptOffset + function.NodePos())
 	}
 	c.scopes = append(c.scopes, map[string]string{})
@@ -312,6 +324,12 @@ func (c *ssrFuncCompiler) function(function *JsFuncDecl) (*goast.FuncLit, error)
 	body = append(body, stmts...)
 	if !ssrEndsWithReturn(body) {
 		body = append(body, &goast.ReturnStmt{Results: []goast.Expr{ssrUndefined()}})
+	}
+	if function.Async {
+		// The body runs to completion now; its result or exception settles
+		// the returned promise (T-7.4a).
+		inner := &goast.FuncLit{Type: &goast.FuncType{Params: &goast.FieldList{}, Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("any")}}}}, Body: &goast.BlockStmt{List: body[1:]}}
+		body = []goast.Stmt{body[0], &goast.ReturnStmt{Results: []goast.Expr{&goast.CallExpr{Fun: goSelector("ssrJS", "Async"), Args: []goast.Expr{&goast.CallExpr{Fun: inner}}}}}}
 	}
 	return &goast.FuncLit{
 		Type: &goast.FuncType{
@@ -428,7 +446,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 		return out, nil
 	case *JsFuncDecl:
 		goName, _ := c.lookup(s.Name)
-		closure, err := (&ssrFuncCompiler{table: c.table, name: s.Name, scopes: c.scopes, next: c.next}).function(s)
+		closure, err := (&ssrFuncCompiler{table: c.table, name: s.Name, scopes: c.scopes, next: c.next, ctx: c.ctx, site: c.site, deferImpure: c.deferImpure}).function(s)
 		if err != nil {
 			return nil, err
 		}
@@ -440,6 +458,21 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 	case *JsReturnStmt:
 		if s.Arg == nil {
 			return []goast.Stmt{c.returnStmt(ssrUndefined())}, nil
+		}
+		if assignment, ok := s.Arg.(*JsAssignExpr); ok {
+			// An arrow such as (v) => x = v: assign, then return the target.
+			stmts, err := c.assign(assignment.L, assignment.Op, assignment.R)
+			if err != nil {
+				return nil, err
+			}
+			if _, local := c.lookup(ssrAssignmentRoot(assignment.L)); !local {
+				return append(stmts, c.returnStmt(ssrUndefined())), nil
+			}
+			result, err := c.statement(&JsReturnStmt{Arg: assignment.L})
+			if err != nil {
+				return nil, err
+			}
+			return append(stmts, result...), nil
 		}
 		value, throws, err := c.valueOf(s.Arg)
 		if err != nil {
@@ -521,7 +554,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 // closure.
 func (c *ssrFuncCompiler) valueOf(expr JsExpr) (goast.Expr, bool, error) {
 	if function := ssrFunctionOf("", expr); function != nil {
-		closure, err := (&ssrFuncCompiler{table: c.table, name: "function", scopes: c.scopes, next: c.next}).function(function)
+		closure, err := (&ssrFuncCompiler{table: c.table, name: "function", scopes: c.scopes, next: c.next, ctx: c.ctx, site: c.site, deferImpure: c.deferImpure}).function(function)
 		if err != nil {
 			return nil, false, err
 		}
@@ -612,7 +645,7 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 	case *JsIdent:
 		goName, ok := c.lookup(t.Name)
 		if !ok {
-			return nil, ssrImpure(0, "%q is not a local of the function; server rendering must not change state, props, or module bindings (T-6.6a)", t.Name)
+			return c.impure(fmt.Sprintf("%q is not a local of the function; server rendering must not change state, props, or module bindings (T-6.6a)", t.Name))
 		}
 		result, throws, err := c.valueOf(right)
 		if err != nil {
@@ -633,7 +666,7 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 			return nil, c.fail("assignment to a member of a computed value is not supported")
 		}
 		if _, local := c.lookup(ident.Name); !local {
-			return nil, ssrImpure(0, "assignment to a member of %q changes a value the function did not create (T-6.6a)", ident.Name)
+			return c.impure(fmt.Sprintf("assignment to a member of %q changes a value the function did not create (T-6.6a)", ident.Name))
 		}
 		object, objectThrows, err := c.expr(t.Obj)
 		if err != nil {
@@ -1116,4 +1149,167 @@ func (t *ssrFuncTable) contextExpr() goast.Expr {
 		return t.context
 	}
 	return &goast.CallExpr{Fun: goSelector("vela", "ContextOf"), Args: []goast.Expr{goast.NewIdent("w")}}
+}
+
+// ── Function values, await, and promises ────────────────────────────────
+
+// functionValue lowers an arrow or function expression to a vela.Func
+// closure, inside a translated function or in a template expression.
+func (b *ssrIRBuilder) functionValue(expr JsExpr, pos int) (SSRIRExpr, error) {
+	var c *ssrFuncCompiler
+	switch {
+	case b.funcCompiler != nil:
+		parent := b.funcCompiler
+		c = &ssrFuncCompiler{table: parent.table, name: "function", scopes: parent.scopes, next: parent.next, ctx: parent.ctx, site: parent.site, deferImpure: parent.deferImpure}
+	case b.ctx.funcs != nil && b.js:
+		ctx := b.ctx
+		ctx.resolving, ctx.resolvingFunctions = nil, nil
+		c = &ssrFuncCompiler{table: b.ctx.funcs, name: "function", next: new(int), ctx: &ctx, site: b.site, deferImpure: true}
+	default:
+		return nil, ssrExprUnsupported(pos, "arrow functions are not available to static SSR")
+	}
+	literal, err := c.function(ssrFunctionOf("", expr))
+	if err != nil {
+		return nil, err
+	}
+	b.usedJS = true
+	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("vela", "Func"), Args: []goast.Expr{literal}}}, nil
+}
+
+// contextExpr is the render context in the code being generated.
+func (b *ssrIRBuilder) contextExpr() goast.Expr {
+	if b.funcCompiler != nil {
+		return b.funcCompiler.table.contextExpr()
+	}
+	if b.ctx.funcs != nil {
+		return b.ctx.funcs.contextExpr()
+	}
+	return &goast.CallExpr{Fun: goSelector("vela", "ContextOf"), Args: []goast.Expr{goast.NewIdent("w")}}
+}
+
+// await lowers await e inside an async function (T-7.4a).
+func (b *ssrIRBuilder) await(node *JsAwaitExpr, pos int) (SSRIRExpr, error) {
+	if b.funcCompiler == nil || !b.funcCompiler.async {
+		return nil, ssrExprUnsupported(pos, "await is admitted only inside async functions; top-level await in a component script is not supported (T-7.4d)")
+	}
+	value, err := b.build(node.X, pos)
+	if err != nil {
+		return nil, err
+	}
+	b.usedJS, b.throws = true, true
+	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "Await"), Args: []goast.Expr{b.contextExpr(), lowerSSRIR(value)}}}, nil
+}
+
+// promiseCall lowers the promise operations of T-7.4b: the methods then,
+// catch, and finally, and Promise.resolve, reject, all, and allSettled.
+// handled is false for any other member call.
+func (b *ssrIRBuilder) promiseCall(member *JsMemberExpr, call *JsCallExpr, pos int) (SSRIRExpr, bool, error) {
+	property, ok := member.Prop.(*JsIdent)
+	if !ok || member.Computed || member.Optional {
+		return nil, false, nil
+	}
+	args := make([]goast.Expr, 0, len(call.Args))
+	arg := func(i int) goast.Expr {
+		if i < len(args) {
+			return args[i]
+		}
+		return ssrUndefined()
+	}
+	build := func() error {
+		for _, argument := range call.Args {
+			if _, spread := argument.(*JsSpreadExpr); spread {
+				return ssrExprUnsupported(pos, "spread arguments are not supported yet")
+			}
+			value, err := b.build(argument, pos)
+			if err != nil {
+				return err
+			}
+			args = append(args, lowerSSRIR(value))
+		}
+		return nil
+	}
+	site := ssrGoString(b.site)
+	result := func(fun goast.Expr, values ...goast.Expr) (SSRIRExpr, bool, error) {
+		b.usedJS, b.throws = true, true
+		return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: fun, Args: values}}, true, nil
+	}
+	if object, ok := member.Obj.(*JsIdent); ok && object.Name == "Promise" && !b.shadowed("Promise") {
+		switch property.Name {
+		case "resolve", "reject", "all", "allSettled":
+		case "race", "any":
+			return nil, true, ssrExprUnsupported(pos, "Promise.%s depends on timing and is not admitted during server rendering; use a host or a client boundary (T-7.4d)", property.Name)
+		default:
+			return nil, true, ssrExprUnsupported(pos, "Promise.%s is not admitted during server rendering (T-7.4b)", property.Name)
+		}
+		if err := build(); err != nil {
+			return nil, true, err
+		}
+		switch property.Name {
+		case "resolve":
+			return result(goSelector("vela", "Resolve"), arg(0))
+		case "reject":
+			return result(goSelector("vela", "Reject"), arg(0), site)
+		case "all":
+			return result(goSelector("ssrJS", "All"), site, arg(0))
+		default:
+			return result(goSelector("ssrJS", "AllSettled"), b.contextExpr(), site, arg(0))
+		}
+	}
+	switch property.Name {
+	case "then", "catch", "finally":
+	default:
+		return nil, false, nil
+	}
+	receiver, err := b.build(member.Obj, pos)
+	if err != nil {
+		return nil, true, err
+	}
+	if err := build(); err != nil {
+		return nil, true, err
+	}
+	switch property.Name {
+	case "then":
+		return result(goSelector("ssrJS", "Then"), b.contextExpr(), site, lowerSSRIR(receiver), arg(0), arg(1))
+	case "catch":
+		return result(goSelector("ssrJS", "CatchPromise"), b.contextExpr(), site, lowerSSRIR(receiver), arg(0))
+	}
+	return result(goSelector("ssrJS", "Finally"), b.contextExpr(), site, lowerSSRIR(receiver), arg(0))
+}
+
+// shadowed reports a name bound by the code being translated.
+func (b *ssrIRBuilder) shadowed(name string) bool {
+	if _, ok := b.params[name]; ok {
+		return true
+	}
+	if _, ok := b.ctx.Bindings[name]; ok {
+		return true
+	}
+	if _, ok := b.ctx.Props[name]; ok {
+		return true
+	}
+	return false
+}
+
+// impure rejects a write the server must not make, or defers it to a
+// run-time error in a function value that a render may never call.
+func (c *ssrFuncCompiler) impure(message string) ([]goast.Stmt, error) {
+	if !c.deferImpure {
+		return nil, ssrImpure(0, "%s", message)
+	}
+	return []goast.Stmt{
+		&goast.ExprStmt{X: &goast.CallExpr{Fun: goSelector("ssrJS", "Impure"), Args: []goast.Expr{ssrGoString(message), ssrGoString(c.site)}}},
+		c.unwind(),
+	}, nil
+}
+
+// ssrAssignmentRoot is the variable an assignment target writes through:
+// x for x, x.a, and x[i].b.
+func ssrAssignmentRoot(target JsExpr) string {
+	for {
+		member, ok := target.(*JsMemberExpr)
+		if !ok {
+			return identName(target)
+		}
+		target = member.Obj
+	}
 }
