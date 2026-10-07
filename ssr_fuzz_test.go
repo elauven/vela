@@ -114,7 +114,7 @@ func (g *ssrFuzzGenerator) num(depth int) string {
 	case 0:
 		return "(" + g.num(d) + " " + g.pick("+", "-", "*", "/", "%") + " " + g.num(d) + ")"
 	case 1:
-		return "Math." + g.pick("round", "floor", "ceil", "trunc", "abs", "sign", "sqrt", "cbrt") + "(" + g.num(d) + ")"
+		return "Math." + g.pick("round", "floor", "ceil", "trunc", "abs", "sign", "sqrt", "cbrt", "sin", "cos", "tan", "atan", "exp", "log", "log2", "log10", "sinh", "tanh", "asinh", "fround") + "(" + g.num(d) + ")"
 	case 2:
 		return "Math." + g.pick("max", "min", "hypot") + "(" + g.num(d) + ", " + g.num(d) + ")"
 	case 3:
@@ -154,7 +154,7 @@ func (g *ssrFuzzGenerator) str(depth int) string {
 	case 0:
 		return "(" + g.str(d) + " + " + g.any(d) + ")"
 	case 1:
-		return g.str(d) + "." + g.pick("toUpperCase", "toLowerCase", "trim", "trimStart", "trimEnd") + "()"
+		return g.str(d) + "." + g.pick("toUpperCase", "toLowerCase", "trim", "trimStart", "trimEnd", "normalize") + "()"
 	case 2:
 		return g.str(d) + ".slice(" + g.smallInt() + ", " + g.smallInt() + ")"
 	case 3:
@@ -174,6 +174,14 @@ func (g *ssrFuzzGenerator) str(depth int) string {
 	case 10:
 		return "JSON.stringify(" + g.any(d) + ")"
 	case 11:
+		switch g.rand.Intn(4) {
+		case 0:
+			return "(" + g.num(d) + ").toPrecision(" + g.pick("1", "2", "5", "12") + ")"
+		case 1:
+			return "(" + g.num(d) + ").toExponential(" + g.pick("", "0", "3") + ")"
+		case 2:
+			return "(" + g.num(d) + ").toString(" + g.pick("2", "8", "16", "36", "7") + ")"
+		}
 		return "(" + g.num(d) + ").toFixed(" + g.pick("0", "1", "2", "3") + ")"
 	case 12:
 		return "encodeURIComponent(" + g.str(d) + ")"

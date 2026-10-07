@@ -61,7 +61,7 @@ func TestGeneratedSSRRendererSelectsAwaitSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module example.com/awaitsnapshot\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module example.com/awaitsnapshot\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestGeneratedSSRRendererExecutesNestedKeyedAwaitSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module example.com/nestedawaitsnapshot\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module example.com/nestedawaitsnapshot\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}

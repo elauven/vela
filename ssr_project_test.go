@@ -271,7 +271,7 @@ func TestSSRProjectGeneratedServerRunsFromPublicArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +325,7 @@ func TestSSRProjectPublicArtifactsHydrateAndUpdateInBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +396,7 @@ func TestSSRProjectPublicNullTextHydratesAndUpdatesInBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +475,7 @@ func TestSSRProjectPublicValueTextOracleHydratesInBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -569,7 +569,7 @@ func TestSSRProjectPublicAttributeOracleHydratesInBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -643,7 +643,7 @@ func TestSSRProjectPublicChildPropPresenceHydratesUpdatesAndRemountsInBrowser(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -729,7 +729,7 @@ func TestSSRProjectPublicHydrationFailureRollsBackListenerAndChildCache(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -835,7 +835,7 @@ func TestSSRProjectPublicStaticOnlyArtifactsValidateInBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -901,7 +901,7 @@ func TestSSRProjectPublicTextareaBindingHydratesInBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -967,7 +967,7 @@ func TestSSRProjectPublicNullFormBindingsMatchBrowserProperties(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1031,7 +1031,7 @@ func TestSSRProjectPublicTableAndSelectHydrateInBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1100,7 +1100,7 @@ function chooseLast() { choices = ['b']; }
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1170,7 +1170,7 @@ let shown = $derived(label(title));
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1329,7 +1329,7 @@ func TestSSRProjectInternalChildCallRetainsOmittedPropDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1387,7 +1387,7 @@ func TestSSRProjectInternalChildCallPreservesExplicitZeroValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}

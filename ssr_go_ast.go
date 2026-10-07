@@ -652,6 +652,13 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	jsMethod("ObjectHasOwn", []*types.Var{v("site", stringType), v("value", anyType), v("key", anyType)}, anyType)
 	jsMethod("ArrayFrom", []*types.Var{v("site", stringType), v("source", anyType), v("mapFn", anyType)}, anyType)
 	jsMethod("JSONStringify", []*types.Var{v("site", stringType), v("value", anyType), v("replacer", anyType), v("indent", anyType)}, anyType)
+	for _, name := range []string{"MathLog", "MathLog2", "MathLog10", "MathLog1p", "MathExp", "MathExpm1", "MathSin", "MathCos", "MathTan", "MathAsin", "MathAcos", "MathAtan", "MathSinh", "MathCosh", "MathTanh", "MathAsinh", "MathAcosh", "MathAtanh", "MathFround", "MathClz32"} {
+		ssrRuntimeAddFunc(pkg, name, []*types.Var{v("value", anyType)}, []*types.Var{v("", floatT)})
+	}
+	for _, name := range []string{"MathAtan2", "MathImul"} {
+		ssrRuntimeAddFunc(pkg, name, []*types.Var{v("a", anyType), v("b", anyType)}, []*types.Var{v("", floatT)})
+	}
+	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "Console", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("ctx", contextT), v("method", stringType), v("args", anySlice)), types.NewTuple(v("", undefinedType)), true)))
 	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "GlobalFunc", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("name", stringType)), types.NewTuple(v("", funcType)), false)))
 
 	// Block markup and payload stream (docs/HYDRATION_ARCHITECTURE.md §5, §6).

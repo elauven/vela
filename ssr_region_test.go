@@ -33,11 +33,11 @@ func TestSSRRegionReportsEveryFailureWithReasonChain(t *testing.T) {
 	source := `<script>
   export let text = '';
   export let items = [];
-  let paras = $derived(text.normalize('NFC'));
+  let paras = $derived(text.localeCompare('NFC'));
 </script>
 <template>
   <section>
-    <p>{items.normalize()}</p>
+    <p>{items.localeCompare()}</p>
     <ul>{#each paras as para}<li>{para}</li>{/each}</ul>
     <ol>{#each paras as para}<li>{para}</li>{/each}</ol>
     <b>{text}</b>
@@ -132,7 +132,7 @@ func TestSSRReportWritesSiteRecords(t *testing.T) {
 	}
 	files := map[string]string{
 		"Good.vela": `<script>export let name = 'x'; let n = $state(2);</script><template><p :title={name}>{name} {n + 1}</p></template>`,
-		"Bad.vela":  `<script>export let items = [];</script><template><p>{items.normalize()}</p></template>`,
+		"Bad.vela":  `<script>export let items = [];</script><template><p>{items.localeCompare()}</p></template>`,
 	}
 	for name, source := range files {
 		if err := os.WriteFile(filepath.Join(srcRoot, name), []byte(source), 0o644); err != nil {

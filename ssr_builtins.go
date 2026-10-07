@@ -7,6 +7,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // The built-in catalogue (docs/SSR_TRANSLATION_CONTRACT.md V-11.1a, task
@@ -34,7 +35,9 @@ var ssrBuiltinMethods = map[string]ssrIRFacts{
 	"findLast": {}, "findLastIndex": {Number: true}, "reduce": {}, "reduceRight": {},
 	"flat": {Array: true}, "flatMap": {Array: true}, "toSorted": {Array: true}, "toReversed": {Array: true},
 	// Numbers (§2.6).
-	"toFixed": {String: true},
+	"toFixed": {String: true}, "toPrecision": {String: true}, "toExponential": {String: true},
+	// Strings, by the decisions of §5.
+	"normalize": {String: true},
 }
 
 // ssrMutatingMethods change the array they are called on (T-6.6b). sort,
@@ -100,6 +103,8 @@ var ssrBuiltinGlobals = map[string]ssrBuiltinGlobal{
 	"Math.max":   {Helper: "MathMax", Args: -1, Facts: ssrIRFacts{Number: true}},
 	"Math.hypot": {Helper: "MathHypot", Args: -1, Facts: ssrIRFacts{Number: true}},
 	"Math.pow":   {Helper: "Pow", Args: 2, Facts: ssrIRFacts{Number: true}},
+	"Math.atan2": {Helper: "MathAtan2", Args: 2, Facts: ssrIRFacts{Number: true}},
+	"Math.imul":  {Helper: "MathImul", Args: 2, Facts: ssrIRFacts{Number: true}},
 	// §2.7
 	"JSON.stringify": {Helper: "JSONStringify", JS: true, Args: 3},
 	"JSON.parse":     {Helper: "JSONParse", JS: true, Args: 1},
@@ -116,13 +121,14 @@ var ssrBuiltinConstants = map[string]float64{
 
 // ssrUndecidedBuiltins name the built-ins whose admission waits on a
 // product decision (matrix §5).
-var ssrUndecidedBuiltins = map[string]string{
-	"Math.log": "transcendental Math functions", "Math.log2": "transcendental Math functions", "Math.log10": "transcendental Math functions",
-	"Math.exp": "transcendental Math functions", "Math.sin": "transcendental Math functions", "Math.cos": "transcendental Math functions",
-	"Math.tan": "transcendental Math functions", "Math.asin": "transcendental Math functions", "Math.acos": "transcendental Math functions",
-	"Math.atan": "transcendental Math functions", "Math.atan2": "transcendental Math functions", "Math.sinh": "transcendental Math functions",
-	"Math.cosh": "transcendental Math functions", "Math.tanh": "transcendental Math functions", "Math.expm1": "transcendental Math functions",
-	"Math.log1p": "transcendental Math functions",
+var ssrUndecidedBuiltins = map[string]string{}
+
+func init() {
+	// One-argument Math functions: the transcendental ones use Go math,
+	// within one unit in the last place of V8 (decision of §5).
+	for _, name := range []string{"log", "log2", "log10", "log1p", "exp", "expm1", "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "fround", "clz32"} {
+		ssrBuiltinGlobals["Math."+name] = ssrBuiltinGlobal{Helper: "Math" + strings.ToUpper(name[:1]) + name[1:], Args: 1, Facts: ssrIRFacts{Number: true}}
+	}
 }
 
 // shadowedGlobal reports whether a global name is bound by the code being
@@ -205,6 +211,9 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 		return nil, false, nil
 	}
 	if name := b.globalName(call.Callee); name != "" {
+		if method, ok := strings.CutPrefix(name, "console."); ok {
+			return b.consoleCall(method, call, pos)
+		}
 		if what, undecided := ssrUndecidedBuiltins[name]; undecided {
 			return nil, true, ssrExprUnsupported(pos, "%s is not available during server rendering: %s await a product decision (docs/SSR_TRANSLATION_MATRIX.md §5); implement the calling function as a host", name, what)
 		}
@@ -292,11 +301,6 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 	}
 	if !admitted {
 		return nil, false, nil
-	}
-	if name == "toString" && len(call.Args) > 0 {
-		if literal, ok := call.Args[0].(*JsLiteral); !ok || literal.Raw != "10" {
-			return nil, true, ssrExprUnsupported(pos, "toString with a radix is not available during server rendering (docs/SSR_TRANSLATION_MATRIX.md §5)")
-		}
 	}
 	receiver, err := b.build(member.Obj, pos)
 	if err != nil {
@@ -594,3 +598,32 @@ func (c *ssrFuncCompiler) mutationTarget(call *JsCallExpr) (string, bool) {
 
 // ssrGlobalFunctionValues are the global functions admitted as values.
 var ssrGlobalFunctionValues = map[string]bool{"String": true, "Number": true, "Boolean": true, "parseInt": true, "parseFloat": true, "isNaN": true, "isFinite": true, "encodeURIComponent": true, "encodeURI": true, "decodeURIComponent": true, "decodeURI": true}
+
+// ssrConsoleMethods are the console methods admitted in server code; the
+// calls go to the observer of vela.WithConsoleObserver (decision of §5).
+var ssrConsoleMethods = map[string]bool{"log": true, "info": true, "warn": true, "error": true, "debug": true}
+
+func (b *ssrIRBuilder) consoleCall(method string, call *JsCallExpr, pos int) (SSRIRExpr, bool, error) {
+	if !ssrConsoleMethods[method] {
+		return nil, true, ssrExprUnsupported(pos, "console.%s is not available during server rendering; use log, info, warn, error, or debug", method)
+	}
+	lowered := []goast.Expr{b.contextExpr(), ssrGoString(method)}
+	spread, err := b.spreadArgs(call, pos)
+	if err != nil {
+		return nil, true, err
+	}
+	ellipsis := token.NoPos
+	if spread != nil {
+		lowered, ellipsis = append(lowered, spread), 1
+	} else {
+		args, err := b.buildArgs(call, pos)
+		if err != nil {
+			return nil, true, err
+		}
+		for _, arg := range args {
+			lowered = append(lowered, lowerSSRIR(arg))
+		}
+	}
+	b.usedJS = true
+	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "Console"), Args: lowered, Ellipsis: ellipsis}}, true, nil
+}

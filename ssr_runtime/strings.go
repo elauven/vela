@@ -289,6 +289,8 @@ func (js *JS) stringMethod(site, s, name string, args []any) (any, bool) {
 		return js.split(s, u, args), true
 	case "replace", "replaceAll":
 		return js.replace(site, s, u, name == "replaceAll", args), true
+	case "normalize":
+		return js.normalize(site, s, args), true
 	}
 	return nil, false
 }
@@ -415,8 +417,23 @@ func substitute(template, matched string, u []uint16, start, end int) string {
 func caseMap(s string, table map[rune]string, lower bool) string {
 	var b strings.Builder
 	b.Grow(len(s))
-	runes := []rune(s)
+	// Code points from UTF-16 units: a lone surrogate (WTF-8) stays one
+	// unit, which no table maps.
+	var runes []rune
+	u := units(s)
+	for i := 0; i < len(u); i++ {
+		if u[i] >= 0xD800 && u[i] <= 0xDBFF && i+1 < len(u) && u[i+1] >= 0xDC00 && u[i+1] <= 0xDFFF {
+			runes = append(runes, utf16.DecodeRune(rune(u[i]), rune(u[i+1])))
+			i++
+			continue
+		}
+		runes = append(runes, rune(u[i]))
+	}
 	for i, r := range runes {
+		if r >= 0xD800 && r <= 0xDFFF {
+			b.WriteString(fromUnits([]uint16{uint16(r)}))
+			continue
+		}
 		if lower && r == 0x3A3 && finalSigma(runes, i) {
 			b.WriteRune(0x3C2)
 			continue

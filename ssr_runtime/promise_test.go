@@ -75,3 +75,16 @@ func TestPromiseStateIsOmitted(t *testing.T) {
 		t.Fatal("promise text")
 	}
 }
+
+func TestConsoleObserver(t *testing.T) {
+	js := NewJS()
+	var calls []string
+	ctx := WithConsoleObserver(context.Background(), func(method string, args []any) {
+		calls = append(calls, method+":"+String(args))
+	})
+	js.Console(ctx, "warn", "a", 1.0)
+	js.Console(context.Background(), "log", "ignored")
+	if len(calls) != 1 || calls[0] != "warn:a,1" {
+		t.Fatalf("calls = %v", calls)
+	}
+}

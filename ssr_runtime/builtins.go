@@ -437,10 +437,21 @@ func MathHypot(values ...any) float64 {
 func (js *JS) numberMethod(site string, x float64, name string, args []any) (any, bool) {
 	switch name {
 	case "toString":
-		if !undefinedArg(args, 0) && num(args[0]) != 10 {
-			return js.throw("RangeError", "Number.prototype.toString with a radix other than 10 is not supported during server rendering", site), true
+		if undefinedArg(args, 0) {
+			return String(x), true
 		}
-		return String(x), true
+		radix := toIntegerOrInfinity(args[0])
+		if radix < 2 || radix > 36 {
+			return js.throw("RangeError", "toString() radix must be between 2 and 36", site), true
+		}
+		if radix == 10 {
+			return String(x), true
+		}
+		return radixString(x, int(radix)), true
+	case "toPrecision":
+		return js.toPrecision(site, x, Arg(args, 0)), true
+	case "toExponential":
+		return js.toExponential(site, x, Arg(args, 0)), true
 	case "valueOf":
 		return x, true
 	case "toFixed":

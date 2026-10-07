@@ -198,6 +198,7 @@ against Node and Go on 2026-10-03.
 | global functions as values (`items.filter(Boolean)`) | `ssrJS.GlobalFunc` | §7.1 |  | `global-values` | implemented |
 | `NaN`, `Infinity` | `vela.ToNumber("NaN")` | §6.2 |  | `math-const` | implemented |
 | `Array.isArray` | `vela.IsArray` | — |  | `isarray` | implemented |
+| `console.log`, `info`, `warn`, `error`, `debug` | `ssrJS.Console` | T-6.6a | Calls go to the observer of `vela.WithConsoleObserver(ctx, f)`; without one they do nothing (decision of §5). | `console` | implemented |
 
 ### 2.2 String methods
 
@@ -218,7 +219,7 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `replace` / `replaceAll` with a callback | `ssrJS.Method` | T-7.2b | Callback receives match, offset, string. | `str-replace` | implemented |
 | `concat`, `toString`, `valueOf` | `ssrJS.Method` | — |  | `str-concat`, `num-tostring` | implemented |
 | spread / `for…of` over a string | code-point iteration | T-6.3a | `[..."😀"].length` is `1` ✓. | `arrays-spread` | implemented |
-| `normalize` | — | — | Needs Unicode normalisation tables; see §5. | — | undecided |
+| `normalize(form)` | `ssrJS.Method` (`golang.org/x/text/unicode/norm`) | T-6.5a | NFC, NFD, NFKC, NFKD; another form throws `RangeError`. Unicode 17 tables, as in Node 24 (decision of §5). | `str-normalize` | implemented |
 | `localeCompare`, `toLocaleUpperCase`, `toLocaleLowerCase` | host | §3 | Locale-dependent. | — | never |
 | `match`, `matchAll`, `search`, `replace`/`split` with a RegExp | host | §3 |  | — | never |
 
@@ -262,7 +263,8 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `Math.min`, `Math.max` | `vela.MathMin`, `vela.MathMax` | — | No arguments: `Infinity` / `-Infinity` ✓; any `NaN` gives `NaN`; `-0 < +0` ✓. | `math-minmax`, `spread-args` | implemented |
 | `Math.pow`, `**` | `vela.Pow` | — | `Math.pow(1, Infinity)` is `NaN` ✓, `math.Pow` gives `1`; `pow(NaN, 0)` is `1`. Results are correctly rounded (integer exponents exactly, others in 256-bit arithmetic); `math.Pow` differs from V8 in about 40% of non-integer cases. V8 uses the platform libm, which is one unit in the last place off in rare cases next to a rounding boundary, such as `pow(1e21, 10)` (`TestFdlibmMatchesNode`, `testdata/math_fixture.json`). | `math-pow` | implemented |
 | `Math.sqrt`, `Math.cbrt`, `Math.hypot` | `vela.Math…` | — | `Math.hypot(NaN, Infinity)` is `Infinity`; `hypot` uses V8's scaled, compensated sum; `cbrt` is the FreeBSD algorithm V8 uses and matches it bit for bit, where `math.Cbrt` differs in about 10% of cases. | `math-pow` | implemented |
-| `Math.log`, `log2`, `log10`, `exp`, trigonometric functions | — | — | Results are implementation-approximated; see §5. | — | undecided |
+| `Math.log`, `log2`, `log10`, `log1p`, `exp`, `expm1`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` | `vela.Math…` (`fdlibm_math.go`) | — | Ports of the fdlibm functions V8 uses, bit for bit with V8 (`TestTranscendentalMatchesNode`, `testdata/math_fixture.json`), including V8's `exp(1) = E` special case. Go's `math` differs: wrong results for logarithms of subnormal numbers and `log2` near 1, up to 11 ulp for large trigonometric arguments (decision of §5). | `math-transcendental` | implemented |
+| `Math.fround`, `Math.clz32`, `Math.imul` | `vela.Math…` | — |  | `math-exact` | implemented |
 | `Math.PI`, `Math.E`, other constants | Go constants | — |  | `math-const` | implemented |
 | `Math.random` | host / client | T-6.6c |  | — | never |
 
@@ -272,7 +274,8 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | --- | --- | --- | --- | --- | --- |
 | `toString()` (radix 10), text conversion | `ssrJS.Method` | T-6.4a | Exponent from 1e21; `-0` prints `0`. | `num-tostring` | implemented |
 | `toFixed(d)` | `ssrJS.Method` | T-6.4b | Exact ties round up: `(2.5).toFixed(0)` is `"3"`, `strconv` gives `"2"`; non-ties agree (`(8.345).toFixed(2)` is `"8.35"` in both ✓); values ≥ 1e21 use `toString` (`"1e+21"` ✓); `(-0.0001).toFixed(2)` is `"-0.00"`; `d > 100` throws `RangeError`. | `num-tofixed` | implemented |
-| `toString(radix)`, `toPrecision`, `toExponential` | — | — | See §5. | — | undecided |
+| `toString(radix)` | `ssrJS.Method` | T-6.4a | Port of V8's `DoubleToRadixCString`: fraction digits up to the precision of the double, rounded to even (`TestTranscendentalMatchesNode` compares 1500 values); radix outside 2–36 throws `RangeError` (decision of §5). | `num-radix` | implemented |
+| `toPrecision(p)`, `toExponential(f)` | `ssrJS.Method` | T-6.4b | Exact decimal rounding of the binary value, ties up: `(2.5).toPrecision(1)` is `"3"`; `toExponential()` uses the shortest digits; out-of-range arguments throw `RangeError` (decision of §5). | `num-precision`, `num-exponential` | implemented |
 | `Number.MAX_SAFE_INTEGER`, `MIN_SAFE_INTEGER`, `EPSILON`, `MAX_VALUE`, `MIN_VALUE`, `NaN`, `POSITIVE_INFINITY`, `NEGATIVE_INFINITY` | Go constants | — |  | `math-const` | implemented |
 | `toLocaleString` | host | §3 |  | — | never |
 
@@ -356,10 +359,10 @@ Each needs a product decision before the slice that implements it.
 
 | Item | Options | Needed by |
 | --- | --- | --- |
-| `console.*` in region code | drop on the server; forward to an observer in `ctx`; reject | S4 |
+| `console.*` in region code | **decided 2026-10-07:** forward to the observer of `vela.WithConsoleObserver(ctx, f)`; nothing without one | S5 (done) |
 | `Map` / `Set` native support | host-only in v1 (current), native after beta | after beta |
-| Transcendental `Math` functions (`log`, `exp`, `sin`, …) | require exact V8 results (needs own implementations); accept Go `math` with a 1-ulp tolerance in oracles; host-only | S5 |
-| `String.prototype.normalize` | add `golang.org/x/text` as a runtime dependency; host-only | S5 |
+| Transcendental `Math` functions (`log`, `exp`, `sin`, …) | **decided 2026-10-07:** exact V8 results, ports of the fdlibm functions V8 uses (Go `math` was measured beyond 1 ulp and wrong for subnormal logarithms) | S5 (done) |
+| `String.prototype.normalize` | **decided 2026-10-07:** `golang.org/x/text` v0.41.0 (Unicode 17); the module requires Go 1.25 | S5 (done) |
 | Computed object keys `{[k]: v}` | admit in S2; keep rejected in v1 | S2 |
-| `Number.prototype.toString(radix)`, `toPrecision`, `toExponential` | include in beta; after beta | S5 |
+| `Number.prototype.toString(radix)`, `toPrecision`, `toExponential` | **decided 2026-10-07:** included in the beta | S5 (done) |
 | `Object.freeze` / `isFrozen` | no-op freeze with `isFrozen` tracking; reject | S5 |

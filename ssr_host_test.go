@@ -44,7 +44,7 @@ func newSSRHostProject(t *testing.T) *ssrHostProject {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.write("go.mod", "module example.com/dash\n\ngo 1.22\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => "+filepath.ToSlash(compilerRoot)+"\n")
+	p.write("go.mod", "module example.com/dash\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => "+filepath.ToSlash(compilerRoot)+"\n")
 	p.write("vela.ssr.json", `{"module": "example.com/dash/out/server", "host": {"module": "example.com/dash/ssrhost"}}`)
 	p.write("src/format.js", `export function formatCurrency(value) {
   return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(value);
