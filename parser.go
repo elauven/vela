@@ -30,6 +30,13 @@ type SFC struct {
 	// rendered only by the client (contract §9.2).
 	ClientOnly bool
 
+	// Source is the whole file. SitePath, when set, names the file in the
+	// hydration site table of development builds (V-11.3b), and SiteHosts
+	// resolves the host symbol of a site.
+	Source    string
+	SitePath  string
+	SiteHosts func(local string) (string, bool)
+
 	AST         *ComponentAST
 	TemplateAST *TemplateAST
 	StyleAST    *CssStylesheet
@@ -113,7 +120,7 @@ func newScriptAST(source string, offset int) *ScriptAST {
 // this, every diagnostic in a `<script>\n  let x = …` block would be
 // off by the newline + indent.
 func parseSFC(src string) (*SFC, error) {
-	sfc := &SFC{}
+	sfc := &SFC{Source: src}
 
 	// extractBlock finds the first occurrence of <tag …>…</tag>
 	// (case-insensitive), returns the trimmed inner text plus the

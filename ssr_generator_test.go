@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -71,7 +72,7 @@ func (g *ssrGenerator) nodes(depth int, inRow bool) string {
 	var out strings.Builder
 	count := 1 + g.r.Intn(3)
 	for i := 0; i < count; i++ {
-		kind := g.r.Intn(8)
+		kind := g.r.Intn(9)
 		if depth >= 3 && kind >= 2 {
 			kind = g.r.Intn(2)
 		}
@@ -103,6 +104,14 @@ func (g *ssrGenerator) nodes(depth int, inRow bool) string {
 			out.WriteString("{/each}</ul>")
 		case 5:
 			out.WriteString("{#key n}" + g.nodes(depth+1, inRow) + "{/key}")
+		case 7:
+			// A client boundary (contract §9.1): the server renders the
+			// fallback, hydration mounts the main branch after the commit.
+			out.WriteString("{#client}" + g.nodes(depth+1, inRow))
+			if g.r.Intn(2) == 0 {
+				out.WriteString("{:else}<i class=\"fallback\">" + g.expr(inRow) + "</i>")
+			}
+			out.WriteString("{/client}")
 		case 6:
 			label := "title"
 			if inRow {
@@ -176,10 +185,33 @@ func ssrGenerateCase(seed int64) (name, source string, testCase ssrBlocksCase) {
 		steps = append(steps, encoded)
 	}
 	testCase = ssrBlocksCase{Name: fmt.Sprintf("seed %d", seed), Component: name, Props: props, Steps: steps, Compare: true}
+	if strings.Contains(source, "{#client}") {
+		// The server writes fallbacks where the client writes main branches.
+		testCase.Boundary = json.RawMessage(`{"fallback":["i.fallback"]}`)
+	}
 	return name, source, testCase
 }
 
 func TestBlocksGenerativeDifferential(t *testing.T) {
+	files, cases := ssrGeneratedSuite()
+	runSSRBlocksSuite(t, files, cases)
+}
+
+// TestBlocksGenerativeDifferentialInChromium runs the generated cases
+// through hydration in Chromium as well (Q-10.2, task 052).
+func TestBlocksGenerativeDifferentialInChromium(t *testing.T) {
+	node, _ := requireJsdom(t)
+	probe := `const fs=require("fs"); const {chromium}=require("playwright"); if (!fs.existsSync(chromium.executablePath())) process.exit(1)`
+	if err := exec.Command(node, "-e", probe).Run(); err != nil {
+		t.Skip("Playwright Chromium is unavailable; run npx playwright install chromium")
+	}
+	files, cases := ssrGeneratedSuite()
+	runSSRBlocksSuite(t, files, cases, "--chromium")
+}
+
+// ssrGeneratedSuite generates the cases of VELA_GEN_SEEDS (default 30)
+// seeds, or the one seed VELA_GEN_SEED.
+func ssrGeneratedSuite() (map[string]string, []ssrBlocksCase) {
 	first, count := int64(1), int64(30)
 	if value, err := strconv.ParseInt(os.Getenv("VELA_GEN_SEEDS"), 10, 64); err == nil && value > 0 {
 		count = value
@@ -194,5 +226,5 @@ func TestBlocksGenerativeDifferential(t *testing.T) {
 		files[name+".vela"] = source
 		cases = append(cases, testCase)
 	}
-	runSSRBlocksSuite(t, files, cases)
+	return files, cases
 }

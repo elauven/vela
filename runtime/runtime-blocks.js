@@ -22,7 +22,28 @@ void $$runtimeContract1;
 // them in reverse registration order (B-3.2, B-3.3). Releasing never touches
 // the DOM: the block that owns a range removes it as a whole.
 
+// stats counts live owners and listeners for the destroy checks of the
+// test harness (Q-10.2 item 5, task 052).
+const stats = { owners: 0, listeners: 0 };
+
+// $$debugStats reports live owners, live listeners, and queued updates.
+export function $$debugStats() {
+  const batch = globalThis[Symbol.for('vela.batch')];
+  return { owners: stats.owners, listeners: stats.listeners, queued: batch ? batch.queue.length : 0 };
+}
+
+// $$listen adds an event listener that the owner removes.
+export function $$listen(owner, target, event, handler, options) {
+  target.addEventListener(event, handler, options);
+  stats.listeners++;
+  owner.add(() => {
+    target.removeEventListener(event, handler, options);
+    stats.listeners--;
+  });
+}
+
 export function $$owner(parent) {
+  stats.owners++;
   const owner = {
     done: false,
     cleanups: [],
@@ -36,6 +57,7 @@ export function $$owner(parent) {
     release() {
       if (owner.done) return;
       owner.done = true;
+      stats.owners--;
       const cleanups = owner.cleanups;
       owner.cleanups = [];
       for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]();
@@ -104,6 +126,8 @@ function createCursor(parent, before, owner) {
   const cursor = {
     owner,
     hydrating: false,
+    // at names the next adopted site for hydration reports (V-11.3b).
+    at() {},
     insert(node) {
       parent.insertBefore(node, before);
       return node;
@@ -145,8 +169,7 @@ function createCursor(parent, before, owner) {
     // nothing to adopt.
     adopt() {},
     listen(target, event, handler, options) {
-      target.addEventListener(event, handler, options);
-      owner.add(() => target.removeEventListener(event, handler, options));
+      $$listen(owner, target, event, handler, options);
     },
     block(kind, ...args) {
       return kind(cursor, ...args);

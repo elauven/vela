@@ -165,6 +165,8 @@ func runSSRBlocksSuite(t *testing.T, files map[string]string, cases []ssrBlocksC
 		OK       bool     `json:"ok"`
 		Total    int      `json:"total"`
 		Failures []string `json:"failures"`
+		// ChromiumHydrated counts the cases hydrated in Chromium (--chromium).
+		ChromiumHydrated int `json:"chromiumHydrated"`
 	}
 	if err := json.Unmarshal(out, &result); err != nil {
 		t.Fatalf("invalid check output: %v\n%s", err, out)
@@ -174,6 +176,14 @@ func runSSRBlocksSuite(t *testing.T, files map[string]string, cases []ssrBlocksC
 	}
 	if !result.OK {
 		t.Fatalf("server markup check failed:\n%s", strings.Join(result.Failures, "\n"))
+	}
+	for _, arg := range args {
+		if arg == "--chromium" && result.ChromiumHydrated == 0 {
+			t.Fatal("no case was hydrated in Chromium")
+		}
+	}
+	if len(args) > 0 {
+		t.Logf("hydrated %d cases in Chromium", result.ChromiumHydrated)
 	}
 }
 

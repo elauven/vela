@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -159,6 +160,11 @@ func TestSSRHostImplementationEndToEnd(t *testing.T) {
 	if errors, stderr := p.build(false); errors != 0 {
 		t.Fatalf("build with the stub: %d errors\n%s", errors, stderr)
 	}
+	// The client module names the site and its host for hydration reports
+	// (V-11.3b).
+	if client, err := os.ReadFile(filepath.Join(p.root, "out", "client", "App.js")); err != nil || !regexp.MustCompile(`\$\$sites = \[.*['"]src/App\.vela:7:\d+['"], ['"]formatCurrency['"]`).Match(client) {
+		t.Errorf("client site table: %v\n%s", err, client)
+	}
 	if out := p.run(); !strings.Contains(out, "ERR=src/App.vela:4:") || !strings.Contains(out, "host formatCurrency: vela: host function is not implemented") {
 		t.Fatalf("stub render:\n%s", out)
 	}
@@ -213,7 +219,9 @@ func FormatCurrency(ctx context.Context, value float64) (string, error) {
 		if err := json.Unmarshal(result, &run); err != nil || !run.OK || len(run.Snapshots) != 2 {
 			t.Fatalf("hydrate run (%s): %v %s", policy, err, result)
 		}
-		reported := strings.Contains(stderr.String(), `VELA-HYDRATION-MISMATCH: text is "ru:1234 RUB", the client computes "1`)
+		// V-11.3b: position, site ID, host symbol, and both values.
+		reported := strings.Contains(stderr.String(), `[vela] hydration mismatch at src/App.vela:7:38 (site 0, host formatCurrency)`) &&
+			strings.Contains(stderr.String(), `server: "ru:1234 RUB"   client: "1`)
 		switch policy {
 		case "repair":
 			if !reported || !strings.Contains(run.Snapshots[0], "₽</p>") {

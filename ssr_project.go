@@ -127,6 +127,7 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	}
 	layout := NewSSRProjectLayoutWithModule(outRoot, opts.SSRModule)
 	clientOpts := opts
+	clientOpts.Hosts = hosts
 	hosts.Modules = newSSRModules(layout, srcRoot, hosts)
 	// The block engine's client module is the ordinary CSR module; it gains
 	// its hydrate entry in task 041 (H3).

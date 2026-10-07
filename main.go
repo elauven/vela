@@ -80,6 +80,10 @@ type CompileOptions struct {
 	// emitted — the consumer links the stylesheet.
 	CSSExternal bool
 	SourceMap   bool      // emit a v3 .js.map alongside generated JS
+	// SitePath names the component in the hydration site table of development
+	// builds (V-11.3b); Hosts resolves host symbols for that table.
+	SitePath string
+	Hosts    *SSRHosts
 	TraceSink   TraceSink // optional source-free compiler trace observer
 	// TraceComponentID is an internal source-free override used for project
 	// traces. File mode derives a safe basename automatically.
@@ -424,6 +428,9 @@ func compileProjectFile(src, srcRoot, outRoot string, opts CompileOptions) bool 
 	if rel, err := filepath.Rel(srcRoot, src); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		opts.TraceComponentID = filepath.ToSlash(rel)
 	}
+	if rel, err := filepath.Rel(filepath.Dir(filepath.Clean(srcRoot)), src); err == nil {
+		opts.SitePath = filepath.ToSlash(rel)
+	}
 	return compilePrint(src, dest, opts)
 }
 
@@ -620,6 +627,16 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	}); err != nil {
 		ds.Error(0, "%v", err)
 		return ds.All(), fmt.Errorf("parse: %w", err)
+	}
+	if !opts.Minify {
+		sfc.SitePath = opts.SitePath
+		if sfc.SitePath == "" {
+			sfc.SitePath = filepath.ToSlash(src)
+		}
+		if opts.Hosts != nil {
+			hosts, file := opts.Hosts, src
+			sfc.SiteHosts = func(local string) (string, bool) { return hosts.boundName(file, sfc, local) }
+		}
 	}
 
 	var tmpl []Node

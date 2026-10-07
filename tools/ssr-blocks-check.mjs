@@ -18,6 +18,7 @@
 import { pathToFileURL } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { serialize, clientHTML, hydrateCheck, mismatchCheck } from './ssr-hydration-checks.mjs';
 
 const [jsdomPath, clientDir, renderedPath] = process.argv.slice(2);
 const { JSDOM } = await import(pathToFileURL(jsdomPath).href);
@@ -29,7 +30,7 @@ const manifest = JSON.parse(readFileSync(join(clientDir, 'vela.manifest.json'), 
 const rootMode = (component) => (manifest.components.find((c) => c.component === component) || {}).mode;
 
 const dom = new JSDOM('<!doctype html><body></body>');
-for (const name of ['window', 'document', 'Node', 'HTMLElement', 'CustomEvent', 'Event', 'InputEvent']) {
+for (const name of ['window', 'document', 'Node', 'HTMLElement', 'CustomEvent', 'Event', 'InputEvent', 'MutationObserver']) {
   globalThis[name] = dom.window[name];
 }
 
@@ -37,48 +38,6 @@ const COMMENT = 8;
 const ELEMENT = 1;
 const stateToken = /^(|\d+|x|e|p|t|c|f)$/;
 const stripComments = (html) => html.replace(/<!--[\s\S]*?-->/g, '');
-
-// serialize writes the DOM with form state taken from properties: the
-// server writes value, checked, and selected attributes where the client
-// sets properties. Adjacent text nodes are merged, as the HTML parser merges
-// them; comments are written only when comments is set. The function is
-// self-contained so that it also runs inside Chromium.
-function serialize(node, comments = false) {
-  const formAttrs = ['value', 'checked', 'selected'];
-  let out = '';
-  let text = null;
-  const flush = () => {
-    // An empty text run is not present in parsed HTML (C-4.3).
-    if (text) out += JSON.stringify(text);
-    text = null;
-  };
-  for (const child of node.childNodes) {
-    if (child.nodeType === 3) {
-      text = (text ?? '') + child.data;
-      continue;
-    }
-    if (child.nodeType === 8 && comments) {
-      flush();
-      out += `<!--${child.data}-->`;
-      continue;
-    }
-    if (child.nodeType !== 1) continue;
-    flush();
-    const tag = child.localName;
-    const attrs = [...child.attributes]
-      .filter((attr) => !formAttrs.includes(attr.name))
-      .map((attr) => `${attr.name}=${JSON.stringify(attr.name === 'style' ? child.style.cssText : attr.value)}`)
-      .sort();
-    if (tag === 'input') attrs.push(`.value=${JSON.stringify(child.value)}`, `.checked=${child.checked}`);
-    if (tag === 'select' || tag === 'textarea') attrs.push(`.value=${JSON.stringify(child.value)}`);
-    if (tag === 'option') attrs.push(`.selected=${child.selected}`);
-    out += `<${tag}${attrs.length ? ' ' + attrs.join(' ') : ''}>`;
-    if (tag !== 'textarea' && tag !== 'script') out += serialize(child, comments);
-    out += `</${tag}>`;
-  }
-  flush();
-  return out;
-}
 
 // parse parses server HTML as the body of a document, as a browser does.
 function parse(html) {
@@ -165,198 +124,7 @@ function checkCase(testCase) {
   return errors;
 }
 
-async function clientHTML(testCase) {
-  const host = document.createElement('div');
-  document.body.appendChild(host);
-  const module = await import(pathToFileURL(join(clientDir, testCase.module)).href);
-  const factory = module[testCase.export] || module.default;
-  const instance = factory(host, structuredClone(testCase.props));
-  // Promises settle before the comparison: the server renders the settled
-  // branch of an evaluated {#await} (T-7.4c, T-7.4f).
-  await settle();
-  const html = serialize(host);
-  instance.destroy();
-  host.remove();
-  return html;
-}
-
-
-// ── Hydration (task 041, Q-10.2 items 1–4) ───────────────────────────────
-// For a compare case the server HTML is hydrated with runtime-hydrate.js:
-// the result must equal the client DOM, hydration may only insert empty
-// text nodes (C-4.3) and remove the payload script (S-6.9), the server
-// elements must keep their identity, and every update step must leave the
-// hydrated and the created instance equal.
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-function applyStep(host, instance, step) {
-  if (step.set) instance.set(structuredClone(step.set));
-  // A missing target is skipped; both DOMs are equal before every step.
-  const clicked = step.click && host.querySelector(step.click);
-  if (clicked) clicked.click();
-  const input = step.input && host.querySelector(step.input);
-  if (input) {
-    input.value = step.value;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-}
-
-async function hydrateCheck(testCase) {
-  const errors = [];
-  const module = await import(pathToFileURL(join(clientDir, testCase.module)).href);
-  const factory = module[testCase.export] || module.default;
-  const { hydrate } = await import(pathToFileURL(join(clientDir, 'runtime-hydrate.js')).href);
-  const reference = document.createElement('div');
-  document.body.appendChild(reference);
-  const created = factory(reference, structuredClone(testCase.props));
-  await settle();
-  const host = document.createElement('div');
-  document.body.appendChild(host);
-  host.innerHTML = testCase.html;
-  const serverElements = [...host.querySelectorAll('*')].filter((el) => el.localName !== 'script');
-  // {#client}: after the commit a fallback is replaced by the main branch
-  // (contract §9.1); only fallback nodes may go, and only new nodes come.
-  const fallbackNodes = new Set();
-  for (const selector of (testCase.boundary && testCase.boundary.server) || []) {
-    for (const element of host.querySelectorAll(selector)) {
-      fallbackNodes.add(element);
-      for (const node of element.querySelectorAll("*")) fallbackNodes.add(node);
-    }
-  }
-  const walker = document.createTreeWalker(host, 0xFFFFFFFF);
-  const serverNodes = new Set();
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) serverNodes.add(node);
-  const observer = new dom.window.MutationObserver(() => {});
-  observer.observe(host, { subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true });
-  let instance;
-  try {
-    instance = hydrate(factory, host);
-  } catch (error) {
-    observer.disconnect();
-    errors.push(`hydrate: ${error.message}`);
-    created.destroy();
-    host.remove();
-    reference.remove();
-    return errors;
-  }
-  for (const record of observer.takeRecords()) {
-    const emptyText = record.type === 'childList' && record.removedNodes.length === 0 &&
-      [...record.addedNodes].every((node) => node.nodeType === 3 && node.data === '');
-    const payload = record.type === 'childList' && record.addedNodes.length === 0 &&
-      [...record.removedNodes].every((node) => node.localName === 'script');
-    // Development value verification re-runs initial writes; an attribute
-    // write of the same value changes nothing.
-    const unchanged = record.type === 'attributes' && record.oldValue === record.target.getAttribute(record.attributeName);
-    const boundary = fallbackNodes.size > 0 && record.type === "childList" &&
-      [...record.removedNodes].every((node) => fallbackNodes.has(node) || node.nodeType !== 1 && !node.parentNode) &&
-      [...record.addedNodes].every((node) => !serverNodes.has(node));
-    if (!emptyText && !payload && !unchanged && !boundary) errors.push(`hydration mutated the DOM: ${record.type} on <${record.target.localName || record.target.nodeName}>`);
-  }
-  observer.disconnect();
-  for (const element of serverElements) {
-    if (!host.contains(element) && !fallbackNodes.has(element)) errors.push(`hydration replaced the server <${element.localName}>`);
-  }
-  if (serialize(host) !== serialize(reference)) {
-    errors.push(`hydrated DOM differs from the client DOM:\n  hydrated: ${serialize(host)}\n  client:   ${serialize(reference)}`);
-  }
-  for (const [index, step] of (testCase.steps || []).entries()) {
-    applyStep(host, instance, step);
-    applyStep(reference, created, step);
-    await settle();
-    if (serialize(host) !== serialize(reference)) {
-      errors.push(`after step ${index} ${JSON.stringify(step)}:\n  hydrated: ${serialize(host)}\n  client:   ${serialize(reference)}`);
-      break;
-    }
-  }
-  instance.destroy();
-  created.destroy();
-  if (host.querySelector('*')) errors.push(`destroy() left elements: ${serialize(host)}`);
-  host.remove();
-  reference.remove();
-  return errors;
-}
-
-// ── Mismatch suite (task 041, Q-10.3) ────────────────────────────────────
-// Each injected mismatch is hydrated under every policy (§7.3): repair and
-// production converge to the client DOM (production does not verify
-// values), fail throws and leaves the DOM untouched, and a retry after the
-// failure yields exactly one live instance.
-async function mismatchCheck(testCase, injected) {
-  const errors = [];
-  const module = await import(pathToFileURL(join(clientDir, testCase.module)).href);
-  const factory = module[testCase.export] || module.default;
-  const { hydrate } = await import(pathToFileURL(join(clientDir, 'runtime-hydrate.js')).href);
-  const html = injected.regex ? testCase.html.replace(new RegExp(injected.from), injected.to) : testCase.html.replace(injected.from, injected.to);
-  if (html === testCase.html) return [`${injected.name}: the injection does not apply`];
-  const label = (policy) => `${injected.name} (${policy})`;
-  const silenced = (run) => {
-    const saved = { warn: console.warn, error: console.error };
-    const counts = { warn: 0, error: 0 };
-    console.warn = () => { counts.warn++; };
-    console.error = () => { counts.error++; };
-    try {
-      return [run(), counts];
-    } finally {
-      Object.assign(console, saved);
-    }
-  };
-  for (const policy of ['repair', 'fail', 'production']) {
-    const reference = document.createElement('div');
-    document.body.appendChild(reference);
-    const created = factory(reference, structuredClone(testCase.props));
-    await settle();
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    host.innerHTML = html;
-    const parsed = host.innerHTML;
-    const reports = [];
-    let instance = null;
-    let thrown = null;
-    const [, counts] = silenced(() => {
-      try {
-        instance = hydrate(factory, host, { policy, onMismatch: (report) => reports.push(report) });
-      } catch (error) {
-        thrown = error;
-      }
-    });
-    const valueOnly = injected.kind === 'value';
-    if (policy === 'fail') {
-      if (!thrown || thrown.code !== 'VELA-HYDRATION-MISMATCH') errors.push(`${label(policy)}: expected VELA-HYDRATION-MISMATCH, got ${thrown ? thrown.message : 'no error'}`);
-      if (host.innerHTML !== parsed) errors.push(`${label(policy)}: the rollback changed the DOM`);
-      silenced(() => {
-        try {
-          instance = hydrate(factory, host, { policy: 'repair' });
-        } catch (error) {
-          errors.push(`${label(policy)}: retry failed: ${error.message}`);
-        }
-      });
-    } else {
-      if (thrown) errors.push(`${label(policy)}: threw ${thrown.message}`);
-      const verified = !(policy === 'production' && valueOnly);
-      if (verified && !reports.some((report) => report.kind === injected.kind)) errors.push(`${label(policy)}: onMismatch got ${JSON.stringify(reports.map((r) => r.kind))}, want a ${injected.kind} report`);
-      if (!verified && reports.length) errors.push(`${label(policy)}: production verified a value`);
-      if (policy === 'repair' && counts.warn === 0) errors.push(`${label(policy)}: no console warning`);
-      if (policy === 'production' && verified && counts.error !== 1) errors.push(`${label(policy)}: console.error was called ${counts.error} times, want 1`);
-    }
-    // A repaired range rebuilds its blocks, whose promises settle later.
-    await settle();
-    if (instance && !(policy === 'production' && valueOnly)) {
-      if (serialize(host) !== serialize(reference)) {
-        errors.push(`${label(policy)}: DOM differs from the client:\n  hydrated: ${serialize(host)}\n  client:   ${serialize(reference)}`);
-      } else if (injected.step) {
-        applyStep(host, instance, injected.step);
-        applyStep(reference, created, injected.step);
-        await settle();
-        if (serialize(host) !== serialize(reference)) errors.push(`${label(policy)}: after ${JSON.stringify(injected.step)}:\n  hydrated: ${serialize(host)}\n  client:   ${serialize(reference)}`);
-      }
-    }
-    if (instance) instance.destroy();
-    created.destroy();
-    host.remove();
-    reference.remove();
-  }
-  return errors;
-}
+const env = { load: (path) => import(pathToFileURL(join(clientDir, path)).href) };
 const failures = [];
 for (const testCase of cases) {
   try {
@@ -364,7 +132,7 @@ for (const testCase of cases) {
       const errors = [];
       if (/<!--|<script/.test(testCase.html)) errors.push(`a static root wrote markers or a payload: ${testCase.html}`);
       if (testCase.html !== testCase.static) errors.push('a static root differs from its static rendering');
-      const client = testCase.compare ? await clientHTML(testCase) : null;
+      const client = testCase.compare ? await clientHTML(env, testCase) : null;
       if (client !== null && serialize(parse(testCase.html)) !== client) errors.push(`static root and client DOM differ:\n  server: ${serialize(parse(testCase.html))}\n  client: ${client}`);
       if (errors.length) failures.push(`${testCase.name}:\n  ${errors.join('\n  ')}`);
       continue;
@@ -374,21 +142,22 @@ for (const testCase of cases) {
       const server = parse(testCase.html);
       server.querySelector('script[data-vela-root]').remove();
       const serverHTML = serialize(server);
-      const client = await clientHTML(testCase);
+      const client = await clientHTML(env, testCase);
       if (testCase.boundary) {
         // {#client}: the server writes the fallback, the client the main
         // branch (contract §9.1); hydration must reach the client DOM.
         for (const selector of testCase.boundary.server || []) if (!server.querySelector(selector)) errors.push(`server HTML lacks the fallback ${selector}`);
         for (const selector of testCase.boundary.client || []) if (server.querySelector(selector)) errors.push(`server HTML contains client-only content ${selector}`);
       } else if (serverHTML !== client) errors.push(`server and client DOM differ:\n  server: ${serverHTML}\n  client: ${client}`);
-      errors.push(...(await hydrateCheck(testCase)));
-      for (const injected of testCase.mismatches || []) errors.push(...(await mismatchCheck(testCase, injected)));
+      errors.push(...(await hydrateCheck(env, testCase)));
+      for (const injected of testCase.mismatches || []) errors.push(...(await mismatchCheck(env, testCase, injected)));
     }
     if (errors.length) failures.push(`${testCase.name}:\n  ${errors.join('\n  ')}`);
   } catch (error) {
     failures.push(`${testCase.name}: ${error.stack || error}`);
   }
 }
+let chromiumHydrated = 0;
 // With --chromium, Chromium parses every server document; its node
 // sequence, markers included, must equal the jsdom parse checked above.
 if (process.argv.includes('--chromium')) {
@@ -404,9 +173,62 @@ if (process.argv.includes('--chromium')) {
         if (parsed !== expected) failures.push(`${testCase.name} (${kind}): Chromium parse differs:\n  chromium: ${parsed}\n  jsdom:    ${expected}`);
       }
     }
+    // Hydration in Chromium (Q-10.2): the same checks as in jsdom, run in a
+    // page that loads the client modules from a local server.
+    const { createServer } = await import('node:http');
+    const types = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' };
+    const server = createServer((request, response) => {
+      const url = new URL(request.url, 'http://localhost');
+      let file = null;
+      if (url.pathname === '/checks.mjs') file = new URL('./ssr-hydration-checks.mjs', import.meta.url);
+      else if (url.pathname.startsWith('/client/')) file = pathToFileURL(join(clientDir, decodeURIComponent(url.pathname.slice('/client/'.length))));
+      if (!file) {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end('<!doctype html><html><head></head><body></body></html>');
+        return;
+      }
+      try {
+        const body = readFileSync(file);
+        const ext = file.pathname.slice(file.pathname.lastIndexOf('.'));
+        response.writeHead(200, { 'content-type': types[ext] || 'application/octet-stream' });
+        response.end(body);
+      } catch {
+        response.writeHead(404);
+        response.end();
+      }
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const page = await browser.newPage();
+      page.on('pageerror', (error) => failures.push(`Chromium page error: ${error.message}`));
+      await page.goto(`http://127.0.0.1:${server.address().port}/`);
+      const hydrated = cases.filter((testCase) => testCase.compare && rootMode(testCase.export) !== 'static');
+      const results = await page.evaluate(async (list) => {
+        const checks = await import('/checks.mjs');
+        const env = { load: (path) => import(`/client/${path}`) };
+        const out = [];
+        for (const testCase of list) {
+          const errors = [];
+          try {
+            errors.push(...(await checks.hydrateCheck(env, testCase)));
+            for (const injected of testCase.mismatches || []) errors.push(...(await checks.mismatchCheck(env, testCase, injected)));
+          } catch (error) {
+            errors.push(String(error && error.stack || error));
+          }
+          out.push([testCase.name, errors]);
+        }
+        return out;
+      }, hydrated);
+      chromiumHydrated = results.length;
+      for (const [name, errors] of results) {
+        if (errors.length) failures.push(`${name} (Chromium hydration):\n  ${errors.join('\n  ')}`);
+      }
+    } finally {
+      server.close();
+    }
   } finally {
     await browser.close();
   }
 }
 
-console.log(JSON.stringify({ ok: failures.length === 0, total: cases.length, failures }, null, 1));
+console.log(JSON.stringify({ ok: failures.length === 0, total: cases.length, chromiumHydrated, failures }, null, 1));

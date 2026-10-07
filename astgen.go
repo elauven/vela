@@ -1918,6 +1918,9 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	if g.blocks != nil {
 		// Static subtrees are parsed once per module.
 		prog.Body = append(prog.Body, g.blocks.templates...)
+		if len(g.blocks.sites) > 0 {
+			prog.Body = append(prog.Body, genConst("$$sites", genArray(g.blocks.sites...)))
+		}
 	}
 	prog.Body = append(prog.Body, &JsExportDecl{
 		BaseStmt:    BaseStmt{BaseNode: genNode()},

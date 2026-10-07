@@ -31,6 +31,7 @@ export const requiredTests = [
   "TestSSRHostImplementationEndToEnd",
   // Hydration gate H3 (task 041): generative differential test and corpus.
   "TestBlocksGenerativeDifferential",
+  "TestBlocksGenerativeDifferentialInChromium",
   "TestBlocksCorpusHydrates",
 ];
 

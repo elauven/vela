@@ -379,7 +379,13 @@ One script per interactive root, immediately after the root range:
   creates exactly one live instance. This satisfies the Task 027 rollback
   contract generically.
 - **X-7.5 Reporting hook.** `hydrate()` accepts an `onMismatch(report)`
-  option that receives every mismatch in every mode.
+  option that receives every mismatch in every mode. A report has `code`,
+  `kind`, `message`, and `policy`; in development builds also `site`,
+  `source` (`file:line:column`), `host` when the site calls a host-bound
+  function, and `server` and `client` for value mismatches (V-11.3b). The
+  compiled fragments name each adopted text, attribute, and block site with
+  `$$c.at($$sites[n])` from a per-module site table that `--minify`
+  builds omit.
 
 ---
 

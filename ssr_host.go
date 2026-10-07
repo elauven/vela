@@ -708,3 +708,30 @@ import (
 	sort.Strings(created)
 	return created
 }
+
+// boundName reports whether local, a name a component calls, is bound to
+// a host implementation, and returns the JavaScript name of the symbol
+// (for the hydration site table of development builds, V-11.3b).
+func (hosts *SSRHosts) boundName(src string, sfc *SFC, local string) (string, bool) {
+	if hosts == nil || sfc == nil {
+		return "", false
+	}
+	project := hosts.Project
+	symbol := SSRHostSymbol{Source: project.relative(src), Name: local}
+	if analysis := analyzeScriptAST(sfc.ScriptAST); analysis != nil {
+		for _, imp := range analysis.Imports {
+			if imp == nil || !strings.HasPrefix(imp.Source, ".") || path.Ext(imp.Source) != ".js" {
+				continue
+			}
+			for _, spec := range imp.Specifiers {
+				if spec.Local == local && spec.Imported != "" && spec.Imported != "default" {
+					symbol = SSRHostSymbol{Source: project.relative(filepath.Join(filepath.Dir(src), filepath.FromSlash(imp.Source))), Name: spec.Imported}
+				}
+			}
+		}
+	}
+	if _, ok := hosts.Bindings[symbol]; ok {
+		return symbol.Name, true
+	}
+	return "", false
+}

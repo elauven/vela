@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -102,7 +103,9 @@ func TestPositiveCorpusProjectsBuildAsProjects(t *testing.T) {
 				if err != nil {
 					t.Fatalf("missing compiled module %s: %v", dest, err)
 				}
-				if strings.Contains(string(code), ".vela") {
+				// Site tables of development builds name .vela files; only an
+				// import of one is wrong.
+				if regexp.MustCompile(`(from|import)\s*\(?\s*['"][^'"]*\.vela['"]`).Match(code) {
 					t.Fatalf("compiled module retained a .vela import: %s", dest)
 				}
 				if nodeAvailable() {

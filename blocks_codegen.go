@@ -148,6 +148,8 @@ type blocksState struct {
 	// locals are the each/await names visible at the current position.
 	// Mutable locals (each item and index) change when a row is reused.
 	locals []blocksLocal
+	// sites is the hydration site table of development builds (V-11.3b).
+	sites []JsExpr
 }
 
 type blocksLocal struct {
@@ -251,6 +253,11 @@ func (g *ASTGen) blocksUpdate(test JsExpr, stmt JsStmt) {
 func (g *ASTGen) blocksInitAndUpdate(stmt JsStmt, exprs ...*TemplateExpr) []JsStmt {
 	init := genExprStmt(genCall(genMember(id("$$c"), "init"), blocksArrow(nil, genBlock(stmt))))
 	g.blocksUpdate(g.blocksGuard(exprs...), stmt)
+	if len(exprs) > 0 {
+		if at := g.blocksSiteStmt(exprs[0]); at != nil {
+			return []JsStmt{at, init}
+		}
+	}
 	return []JsStmt{init}
 }
 
@@ -456,6 +463,12 @@ func (g *ASTGen) buildBlocksText(text *TextNode) {
 		g.blocksEmit(genExprStmt(genCall(genMember(id("$$c"), "text"), strLit(value))))
 		return
 	}
+	for _, part := range text.Parts {
+		if !part.Static {
+			g.blocksSite(part.Expr)
+			break
+		}
+	}
 	g.blocksEmit(genConst(ref, genCall(genMember(id("$$c"), "text"), g.textValueExpr(text.Parts))))
 	var exprs []*TemplateExpr
 	for _, part := range text.Parts {
@@ -642,6 +655,9 @@ func (g *ASTGen) buildBlocksIf(chain *IfChainNode) {
 			select_ = numLit(i)
 		}
 	}
+	if len(exprs) > 0 {
+		g.blocksSite(exprs[len(exprs)-1])
+	}
 	g.blocksBlockCall("$$if", blocksArrow(nil, select_), genArray(fragments...), blocksChanged(g.blocksGuard(exprs...)))
 }
 
@@ -651,6 +667,7 @@ func (g *ASTGen) buildBlocksKey(chain *IfChainNode) {
 		body = chain.Branches[0].Children
 	}
 	name := g.blocksNestedFragment(body, nil)
+	g.blocksSite(chain.KeyAST)
 	g.blocksBlockCall("$$key", blocksArrow(nil, g.templateExpr(chain.KeyAST)), id(name), blocksChanged(g.blocksGuard(chain.KeyAST)))
 }
 
@@ -680,6 +697,7 @@ func (g *ASTGen) buildBlocksEach(each *EachBlockNode) {
 			args = append(args, blocksArrow(nil, genCall(id("$$eachRowsForMutations"), id("$$activeMutations_"+plan.stateName), strLit(plan.keyField))))
 		}
 	}
+	g.blocksSite(each.IterExpr)
 	g.blocksBlockCall("$$each", args...)
 }
 
@@ -697,6 +715,7 @@ func (g *ASTGen) buildBlocksAwait(await *AwaitBlockNode) {
 	pending := branch(await.PendingChildren, "", "", len(await.PendingChildren) > 0)
 	then := branch(await.ThenChildren, await.ValueName, "value", await.ThenChildren != nil)
 	catcher := branch(await.CatchChildren, await.ErrorName, "error", await.CatchChildren != nil)
+	g.blocksSite(await.Expr)
 	g.blocksBlockCall("$$await", blocksArrow(nil, g.templateExpr(await.Expr)), pending, then, catcher, blocksChanged(g.blocksGuard(await.Expr)))
 }
 
@@ -849,4 +868,37 @@ func (g *ASTGen) buildBlocksClient(chain *IfChainNode) {
 		fallback = id(g.blocksNestedFragment(chain.Branches[1].Children, nil))
 	}
 	g.blocksBlockCall("$$client", id(main), fallback)
+}
+
+// blocksSite emits $$c.at(site) before an adopted site in development
+// builds, so that a hydration mismatch names its source position, site
+// ID, and host symbol (V-11.3b).
+func (g *ASTGen) blocksSite(expr *TemplateExpr) {
+	if at := g.blocksSiteStmt(expr); at != nil {
+		g.blocksEmit(at)
+	}
+}
+
+func (g *ASTGen) blocksSiteStmt(expr *TemplateExpr) JsStmt {
+	if g.sfc == nil || g.sfc.SitePath == "" || expr == nil || g.blocks == nil {
+		return nil
+	}
+	line, column := sourceLineColumn(g.sfc.Source, g.sfc.TemplateOffset+expr.Pos)
+	host := JsExpr(genNull())
+	if g.sfc.SiteHosts != nil && expr.Root() != nil {
+		WalkNode(expr.Root(), func(n JsNode) bool {
+			if call, ok := n.(*JsCallExpr); ok {
+				if callee, ok := call.Callee.(*JsIdent); ok {
+					if name, bound := g.sfc.SiteHosts(callee.Name); bound {
+						host = strLit(name)
+						return false
+					}
+				}
+			}
+			return true
+		})
+	}
+	site := len(g.blocks.sites)
+	g.blocks.sites = append(g.blocks.sites, genArray(numLit(site), strLit(fmt.Sprintf("%s:%d:%d", g.sfc.SitePath, line+1, column+1)), host))
+	return genExprStmt(genCall(genMember(id("$$c"), "at"), &JsMemberExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Obj: id("$$sites"), Prop: numLit(site), Computed: true}))
 }

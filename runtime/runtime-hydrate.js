@@ -15,7 +15,7 @@
  */
 
 import { $$isDev } from './runtime.js';
-import { $$owner, $$setHydration, $$createCursor } from './runtime-blocks.js';
+import { $$owner, $$setHydration, $$createCursor, $$listen } from './runtime-blocks.js';
 
 export const MISMATCH = 'VELA-HYDRATION-MISMATCH';
 
@@ -36,6 +36,20 @@ function mismatch(message, kind = 'structure') {
   error.code = MISMATCH;
   error.kind = kind;
   return error;
+}
+
+// formatReport writes a report as V-11.3b shows it:
+//   [vela] hydration mismatch at src/X.vela:14:9 (site 7, host formatCurrency)
+//     server: "a"   client: "b"
+function formatReport(report) {
+  let text = '[vela] hydration mismatch';
+  if (report.source) {
+    text += ` at ${report.source} (site ${report.site}${report.host ? `, host ${report.host}` : ''})`;
+  }
+  if ('server' in report) {
+    return `${text}\n  server: ${JSON.stringify(report.server)}   client: ${JSON.stringify(report.client)}`;
+  }
+  return `${text}: ${report.message.replace(`${MISMATCH}: `, '')}`;
 }
 
 function isMismatch(error) {
@@ -70,7 +84,15 @@ function hydrateCursor(pos, owner, session) {
       return hydrateCursor(pos, childOwner, session);
     },
     expect(ok, message) {
-      if (!ok) throw mismatch(message);
+      if (!ok) {
+        const error = mismatch(message);
+        error.site = session.site;
+        throw error;
+      }
+    },
+    // at names the next adopted site (V-11.3b): [id, source, host].
+    at(site) {
+      session.site = site;
     },
     element(tag) {
       const node = pos.next;
@@ -82,12 +104,13 @@ function hydrateCursor(pos, owner, session) {
     // inserted, which is not a mismatch (C-4.3).
     text(value) {
       const node = pos.next;
+      const site = session.take();
       if (node && node.nodeType === 3) {
         pos.next = node.nextSibling;
         if (session.verify && node.data !== htmlText(value)) {
           session.value(`text is ${JSON.stringify(node.data)}, the client computes ${JSON.stringify(value)}`, () => {
             node.data = value;
-          });
+          }, { site, server: node.data, client: value });
         }
         return node;
       }
@@ -125,6 +148,7 @@ function hydrateCursor(pos, owner, session) {
     // (F-2.2). Development builds run them and report a changed attribute
     // as a value mismatch (X-7.2).
     init(write) {
+      const site = session.take();
       if (!session.observer) return;
       session.observer.takeRecords();
       write();
@@ -132,7 +156,7 @@ function hydrateCursor(pos, owner, session) {
         if (record.type !== 'attributes') continue;
         const now = record.target.getAttribute(record.attributeName);
         if (!sameAttribute(record.attributeName, record.oldValue, now)) {
-          session.value(`<${record.target.localName}> ${record.attributeName} is ${JSON.stringify(record.oldValue)}, the client computes ${JSON.stringify(now)}`, null);
+          session.value(`<${record.target.localName}> ${record.attributeName} is ${JSON.stringify(record.oldValue)}, the client computes ${JSON.stringify(now)}`, null, { site, server: record.oldValue, client: now });
         }
       }
     },
@@ -145,13 +169,20 @@ function hydrateCursor(pos, owner, session) {
       if (live !== state) session.after.push(() => write(live));
     },
     listen(target, event, handler, options) {
-      target.addEventListener(event, handler, options);
-      owner.add(() => target.removeEventListener(event, handler, options));
+      $$listen(owner, target, event, handler, options);
     },
     // block adopts a block; under repair a mismatch inside it remounts the
     // block from its server range with a create cursor.
     block(kind, ...args) {
-      if (session.policy === 'fail') return kind(cursor, ...args);
+      const site = session.take();
+      if (session.policy === 'fail') {
+        try {
+          return kind(cursor, ...args);
+        } catch (error) {
+          if (isMismatch(error) && !error.site) error.site = site;
+          throw error;
+        }
+      }
       const start = pos.next;
       const mark = pos.owners.length;
       try {
@@ -169,6 +200,7 @@ function hydrateCursor(pos, owner, session) {
           }
         }
         if (!end) throw error;
+        if (!error.site) error.site = site;
         session.report(error);
         for (const adopted of pos.owners.splice(mark)) adopted.release();
         // Entries of the abandoned range can no longer be matched to
@@ -245,6 +277,13 @@ function createSession(entries, options, container) {
     lost: false,
     verify: dev && policy !== 'production' && requested !== 'off',
     observer: null,
+    site: null,
+    // take returns the site named by the last at() and clears it.
+    take() {
+      const site = session.site;
+      session.site = null;
+      return site;
+    },
     next(kind) {
       if (session.lost) return null;
       const entry = entries[index++];
@@ -273,18 +312,27 @@ function createSession(entries, options, container) {
     // report passes every mismatch to onMismatch (X-7.5) and logs it.
     report(error) {
       const report = { code: MISMATCH, kind: error.kind || 'structure', message: error.message, policy };
+      // Source position, site ID, host symbol, and both values (V-11.3b).
+      const site = error.site;
+      if (site) Object.assign(report, { site: site[0], source: site[1], host: site[2] || undefined });
+      if ('server' in error) Object.assign(report, { server: error.server, client: error.client });
       if (options.onMismatch) options.onMismatch(report);
       if (policy === 'production') {
         if (!reported) console.error(MISMATCH);
         reported = true;
       } else if (policy === 'repair') {
-        console.warn('[Vela]', error.message);
+        console.warn(formatReport(report));
       }
     },
     // value handles a value mismatch: fail throws, repair writes the client
     // value (or keeps the written one) and warns.
-    value(message, repair) {
+    value(message, repair, details) {
       const error = mismatch(message, 'value');
+      if (details) {
+        error.site = details.site;
+        error.server = details.server;
+        error.client = details.client;
+      }
       if (policy === 'fail') throw error;
       session.report(error);
       if (repair) repair();
@@ -356,5 +404,12 @@ export function hydrate(Component, container, options = {}) {
   }
   script.remove();
   for (const callback of session.after) callback();
+  // The root owner holds what the root cursor adopted; it goes with the
+  // instance (Q-10.2 item 5).
+  const destroy = instance.destroy;
+  instance.destroy = function () {
+    destroy.call(this);
+    owner.release();
+  };
   return instance;
 }
