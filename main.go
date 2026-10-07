@@ -79,12 +79,12 @@ type CompileOptions struct {
 	// to a sibling <n>.css file and no runtime injection is
 	// emitted — the consumer links the stylesheet.
 	CSSExternal bool
-	SourceMap   bool      // emit a v3 .js.map alongside generated JS
+	SourceMap   bool // emit a v3 .js.map alongside generated JS
 	// SitePath names the component in the hydration site table of development
 	// builds (V-11.3b); Hosts resolves host symbols for that table.
-	SitePath string
-	Hosts    *SSRHosts
-	TraceSink   TraceSink // optional source-free compiler trace observer
+	SitePath  string
+	Hosts     *SSRHosts
+	TraceSink TraceSink // optional source-free compiler trace observer
 	// TraceComponentID is an internal source-free override used for project
 	// traces. File mode derives a safe basename automatically.
 	TraceComponentID string
