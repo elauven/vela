@@ -1,0 +1,14 @@
+<script>
+  import Badge from './Badge.vela';
+  export let n = 1;
+  let shown = $state(true);
+</script>
+
+<template>
+  <div>
+    {#client}<p class="main">main {n}</p>{:else}<p class="fallback">fallback</p>{/client}
+    {#if shown}{#client}<b>{n * 2}</b>{/client}{/if}
+    <Badge :label={n} />
+    <button class="toggle" @click={() => shown = !shown}>t</button>
+  </div>
+</template>

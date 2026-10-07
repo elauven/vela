@@ -626,6 +626,15 @@ export function $$await(cursor, operand, pending, then, catcher, changed) {
 // scope is the parent's CSS scope attribute, set on the child's root.
 
 export function $$component(cursor, factory, props, slots, events, changed, scope) {
+  if (factory.$$clientOnly && cursor.hydrating) {
+    // A client-only component (contract §9.2): the server rendered an empty
+    // client range; the component mounts after the root commits (T-9.2b).
+    const main = (inner) => {
+      const block = $$component(inner, factory, props, slots, events, changed, scope);
+      return { p: (dirty) => block.p(dirty) };
+    };
+    return $$client(cursor, main, null);
+  }
   let anchor;
   let instance;
   if (cursor.hydrating) {
@@ -788,26 +797,52 @@ export function $$slot(cursor, factory, fallback) {
 }
 
 // ── $$client ─────────────────────────────────────────────────────────────
-// CSR mounts the main branch directly (T-9.1f); hydration mounts it after
-// the root commits (task 041).
+// {#client} and client-only components (contract §9). A create cursor (CSR,
+// or a block created after hydration) mounts the main branch directly and
+// ignores the fallback (T-9.1f). Hydration adopts the server range, whose
+// state token is "f" and whose content is the fallback, and after the root
+// commits replaces the fallback with the main branch (T-9.1d). Destroying
+// the owner, or rolling its hydration back, cancels a pending mount
+// (T-9.1e).
 
 export function $$client(cursor, main, fallback) {
-  void fallback;
-  const anchor = cursor.comment();
-  const current = mountFragment(main, undefined, anchor);
+  let anchor;
+  let current = null;
+  let mounted = false;
   const block = {
     p(dirty) {
-      if (!block.isDone()) updateMounted(current, dirty, false);
+      if (!block.isDone() && mounted) updateMounted(current, dirty, false);
     },
     move(before) {
-      moveRange(current.range, before);
+      if (current) moveRange(current.range, before);
       before.parentNode.insertBefore(anchor, before);
     },
+    state: () => (mounted ? 1 : 0),
   };
-  return registerBlock(cursor, block, anchor, (removeDom) => {
+  if (cursor.hydrating) {
+    const token = cursor.open();
+    cursor.expect(token === "f", `#client range is ${token}, expected f`);
+    if (fallback) current = cursor.mount(fallback);
+    anchor = cursor.close();
+    cursor.afterCommit(() => {
+      if (block.isDone()) return;
+      unmount(current);
+      current = mountFragment(main, undefined, anchor);
+      mounted = true;
+    });
+  } else {
+    anchor = cursor.comment();
+  }
+  registerBlock(cursor, block, anchor, (removeDom) => {
+    if (!current) return;
     if (removeDom) unmount(current);
     else current.owner.release();
   });
+  if (!cursor.hydrating) {
+    current = mountFragment(main, undefined, anchor);
+    mounted = true;
+  }
+  return block;
 }
 
 // $$createCursor exposes the create cursor to the hydration runtime, which

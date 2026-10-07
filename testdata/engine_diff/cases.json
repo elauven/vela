@@ -247,5 +247,25 @@
     "destroy": true
    }
   ]
+ },
+ {
+  "module": "Gate.js",
+  "export": "Gate",
+  "props": {
+   "n": 2
+  },
+  "steps": [
+   {
+    "click": "button.toggle"
+   },
+   {
+    "set": {
+     "n": 5
+    }
+   },
+   {
+    "click": "button.toggle"
+   }
+  ]
  }
 ]

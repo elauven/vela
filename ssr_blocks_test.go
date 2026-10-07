@@ -23,6 +23,9 @@ type ssrBlocksCase struct {
 	Steps      []json.RawMessage `json:"steps,omitempty"`
 	Mismatches []json.RawMessage `json:"mismatches,omitempty"`
 	Compare    bool              `json:"compare,omitempty"`
+	// Boundary lists selectors of {#client} content: Server ones must be
+	// in the server HTML (fallbacks), Client ones must not (main branches).
+	Boundary json.RawMessage `json:"boundary,omitempty"`
 }
 
 // TestBlocksSSRMarkupMatchesClientDOM renders the SSR block corpus with the
@@ -127,6 +130,9 @@ func runSSRBlocksSuite(t *testing.T, files map[string]string, cases []ssrBlocksC
 		}
 		if c.Awaits != nil {
 			check["awaits"] = c.Awaits
+		}
+		if c.Boundary != nil {
+			check["boundary"] = c.Boundary
 		}
 		if c.States != nil {
 			check["states"] = c.States

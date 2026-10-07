@@ -171,6 +171,12 @@ func ssrSiteDiagnostic(kind, name string, err error, project *SSRProject) *SSRSi
 	if diagnostic.Host != nil {
 		diagnostic.Fix = "implement it in Go:\n    " + diagnostic.Host.File + "\n      " + diagnostic.Host.Directive + "\n      " + diagnostic.Host.Signature + "\n    or run: vela --ssr --ssr-scaffold-hosts"
 	}
+	if ssrStructuralKind(kind) && diagnostic.Code != SSRImpureDiagnosticCode {
+		// A value that controls structure moves into {#client} with the
+		// structure it controls (T-9.3).
+		structural := "this value controls the structure of the page: move the block, with the structure it controls, into {#client}…{:else}fallback{/client} (docs/SSR_TRANSLATION_CONTRACT.md T-9.3)"
+		diagnostic.Fix = structural + "; or " + diagnostic.Fix
+	}
 	return diagnostic
 }
 
@@ -186,8 +192,8 @@ func ssrSiteFix(code, message string) string {
 		return "give the binding a server-evaluable initializer, or pass the value as an exported prop"
 	case strings.Contains(message, "is not linked to a local .vela import"):
 		return "import the component from its .vela file in this component's <script>"
-	case strings.Contains(message, "only named local formatter calls"):
-		return "method calls are translated with task 046; until then, move the expression into a top-level function of the component script and implement that function in Go with //vela:host (contract H-8.2e), or pass the value as a prop"
+	case strings.Contains(message, "only named local formatter calls") || strings.Contains(message, "is not available during server rendering"):
+		return "this built-in is not translated (docs/SSR_TRANSLATION_MATRIX.md §2); move the expression into a top-level function of the component script and implement that function in Go with //vela:host (contract H-8.2e), wrap the markup in {#client}, or pass the value as a prop"
 	case strings.Contains(message, "not a supported local formatter"):
 		return "a global function has no host binding; wrap the call in a top-level function of the component script and implement that function in Go with //vela:host, or pass the value as a prop"
 	}
@@ -612,4 +618,32 @@ func (r *SSRRegion) absorb(builder *ssrIRBuilder) {
 		}
 		r.calls[name] = outcome
 	}
+}
+
+// errSSRClientOnly marks a component declared <script context="client">:
+// it has no Go renderer (contract §9.2).
+var errSSRClientOnly = errors.New("client-only component")
+
+// addClientOnly records a client-only component in the report.
+func (c *ssrReportCollector) addClientOnly(src, srcRoot string) {
+	if c == nil {
+		return
+	}
+	rel, err := filepath.Rel(srcRoot, src)
+	if err != nil {
+		rel = src
+	}
+	c.report.Components = append(c.report.Components, SSRComponentReport{Component: componentName(src), Source: filepath.ToSlash(rel), Status: "client-only", Sites: []SSRSiteRecord{}})
+}
+
+func isSSRClientOnly(err error) bool { return errors.Is(err, errSSRClientOnly) }
+
+// ssrStructuralKind reports the site kinds whose value controls structure
+// (T-4.3): branch conditions, keys, each collections, await operands.
+func ssrStructuralKind(kind string) bool {
+	switch kind {
+	case "if", "key", "each", "await":
+		return true
+	}
+	return false
 }

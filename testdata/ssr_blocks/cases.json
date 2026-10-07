@@ -23,5 +23,6 @@
  {"name":"Loader catch","component":"Loader","props":{"id":-3},"entries":["Loader"],"awaits":[["Loader#0","c"]],"compare":true,"steps":[{"click":"button.next"}]},
  {"name":"Values defaults","component":"Values","props":{},"entries":["Values"],"compare":true},
  {"name":"Values astral","component":"Values","props":{"words":"𝔘𝔫𝔦𝔠𝔬𝔡𝔢 ж ß","list":[],"zero":-5.5,"empty":" "},"entries":["Values"],"compare":true},
- {"name":"Pre","component":"Pre","props":{"note":"x\n  y"},"entries":["Pre"],"compare":true,"steps":[{"click":"button.add"},{"set":{"note":"z","lines":["three"]}}]}
+ {"name":"Pre","component":"Pre","props":{"note":"x\n  y"},"entries":["Pre"],"compare":true,"steps":[{"click":"button.add"},{"set":{"note":"z","lines":["three"]}}]},
+ {"name":"Boundary","component":"Boundary","props":{},"entries":["Boundary"],"compare":true,"boundary":{"server":["p.skeleton","li u","div.inner s"],"client":["p.now","i.bare","span.clock","li em","b.deep"]},"steps":[{"click":"button.inc"},{"set":{"show":false}},{"set":{"items":[3,1]}},{"set":{"show":true}},{"click":"button.inc"}],"mismatches":[{"name":"client-token","from":"<!--[f-->","to":"<!--[0-->","kind":"structure"},{"name":"after-boundaries","from":"<ul ","to":"<ol ","kind":"structure"}]}
 ]

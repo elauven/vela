@@ -275,6 +275,8 @@ func (e *ssrGoEmitter) node(node SSRPlanNode) ([]goast.Stmt, error) {
 		return e.awaitBlock(n)
 	case *SSRPlanEach:
 		return e.eachBlock(n)
+	case *SSRPlanClient:
+		return e.clientBlock(n)
 	default:
 		return nil, ssrExprUnsupported(0, "SSR node %T is not lowered yet", node)
 	}

@@ -147,6 +147,11 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	for _, src := range files {
 		var region *SSRRegion
 		err := compileSSRProjectFileInto(src, srcRoot, layout, hosts, &region)
+		if isSSRClientOnly(err) {
+			report.addClientOnly(src, srcRoot)
+			fmt.Fprintf(compilerStatusWriter(opts), "  +  %-40s -> client only\n", relOrBase(src, srcRoot))
+			continue
+		}
 		if region != nil {
 			for _, record := range region.Records {
 				if record.Diagnostic != nil && record.Diagnostic.Host != nil {
@@ -355,6 +360,10 @@ func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, hos
 	sfc, err := parseSFC(string(data))
 	if err != nil {
 		return fmt.Errorf("parse component: %w", err)
+	}
+	if sfc.ClientOnly {
+		// A client-only component has no Go renderer (T-9.2a).
+		return errSSRClientOnly
 	}
 	hash := md5.Sum([]byte(src))
 	scopeID := fmt.Sprintf("vela-%x", hash[:3])

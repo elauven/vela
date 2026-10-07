@@ -159,7 +159,7 @@ the notes say otherwise.
 | async call without `await` | native | settled `vela.Promise` (text `[object Promise]`; in `$state` it is omitted from the payload and recomputed by the client) | T-7.4b | async (oracle), `TestPromiseStateIsOmitted` | implemented |
 | `.then`, `.catch`, `.finally`, `Promise.resolve`, `reject`, `all`, `allSettled` | native | `ssrJS.Then` / `CatchPromise` / `Finally`, `vela.Resolve` / `Reject`, `ssrJS.All` / `AllSettled`, in array order | T-7.4b | `TestSSRAsyncMatchesNode`, `TestPromiseChain`, `TestPromiseAllOrder` | implemented |
 | `{#await}` with server-evaluated operand | native or host | `vela.AwaitSettle`: renders `then`/`catch` with any JSON value, payload snapshot adopted by the client without re-evaluating the operand; `await` sites in `--ssr-report` | T-7.4f | `TestSSRAsyncMatchesNode`, `Loader` hydration cases | implemented |
-| `{#await}` whose operand cannot run on the server | client | wrap the block in `{#client}`; server renders the boundary fallback | T-7.4f, T-9.1b | await-client | planned (S6) |
+| `{#await}` whose operand cannot run on the server | client | a required site whose diagnostic says to wrap the block in `{#client}`; the server then renders the boundary fallback | T-7.4f, T-9.3 | `Boundary` fixture | implemented |
 | `{#await}` with a caller-supplied `RenderOptions.Await` snapshot | native | render the supplied branch with any JSON `Value`/`Error`; operand not evaluated | T-7.4f | await-snapshot (`Multi then`, `Multi catch`) | implemented (block engine; the legacy renderer keeps string snapshots) |
 | top-level `await` in component script | rejected | — | T-7.4d | — | never |
 
@@ -168,8 +168,8 @@ the notes say otherwise.
 | Construct | Outcome | Rule | Status | Notes |
 | --- | --- | --- | --- | --- |
 | event handlers, `$effect`, `onMount`, `onDestroy`, binding write-back | excluded | T-2.2 | planned (S1) | Currently diagnosed through the static event bridge (`VELA-SSR-EVENT-REACTIVE`). |
-| `{#client}` main branch | excluded | T-9.1c | planned (S6) | Fallback branch is region code. |
-| client-only component (`<script context="client">`) | excluded | T-9.2 | planned (S6) | Its props and slot content are excluded from the parent region. |
+| `{#client}` main branch | excluded | T-9.1c | implemented | The server renders the fallback (or nothing) in a range with the state token `f`; the client adopts it and mounts the main branch after the root commits (`$$client`), per owner instance inside rows; destroying the owner or rolling its hydration back cancels the pending mount. CSR mounts the main branch directly. Fixtures: `Boundary` (block engine), `Gate` (both engines). |
+| client-only component (`<script context="client">`) | excluded | T-9.2 | implemented | No Go renderer (`--ssr-report` status `client-only`); a usage renders an empty `f` range and the module flag `$$clientOnly` makes `$$component` mount it after the commit. CSR treats it as an ordinary component. |
 
 ---
 

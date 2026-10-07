@@ -66,7 +66,8 @@ func ssrRootModes(files []string, srcRoot string) map[string]bool {
 			continue
 		}
 		analysis := analyzeScriptAST(sfc.ScriptAST)
-		own[key] = ssrOwnInteractive(sfc.TemplateAST.Nodes, analysis)
+		// {#client} content and client-only components need the client.
+		own[key] = sfc.ClientOnly || ssrHasClientBlock(sfc.TemplateAST.Nodes) || ssrOwnInteractive(sfc.TemplateAST.Nodes, analysis)
 		links, _ := ResolveSSRLocalComponentLinks(src, srcRoot, analysis)
 		for _, link := range links {
 			children[key] = append(children[key], canonicalPath(link.SourcePath))
@@ -158,4 +159,43 @@ func ssrInteractive(modes map[string]bool, src string) bool {
 		return value
 	}
 	return true
+}
+
+// ssrHasClientBlock reports a {#client} block anywhere in a template.
+func ssrHasClientBlock(nodes []Node) bool {
+	found := false
+	walkTemplateNodes(nodes, func(node Node) {
+		if chain, ok := node.(*IfChainNode); ok && chain.Client {
+			found = true
+		}
+	})
+	return found
+}
+
+// walkTemplateNodes visits every node of a template tree.
+func walkTemplateNodes(nodes []Node, visit func(Node)) {
+	for _, node := range nodes {
+		visit(node)
+		switch n := node.(type) {
+		case *ElementNode:
+			walkTemplateNodes(n.Children, visit)
+		case *IfChainNode:
+			for _, branch := range n.Branches {
+				walkTemplateNodes(branch.Children, visit)
+			}
+		case *EachBlockNode:
+			walkTemplateNodes(n.Children, visit)
+			walkTemplateNodes(n.ElseChildren, visit)
+		case *AwaitBlockNode:
+			walkTemplateNodes(n.PendingChildren, visit)
+			walkTemplateNodes(n.ThenChildren, visit)
+			walkTemplateNodes(n.CatchChildren, visit)
+		case *ComponentNode:
+			for _, slot := range n.Slots {
+				walkTemplateNodes(slot, visit)
+			}
+		case *SlotNode:
+			walkTemplateNodes(n.Fallback, visit)
+		}
+	}
 }

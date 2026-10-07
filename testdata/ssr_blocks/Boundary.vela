@@ -1,0 +1,17 @@
+<script>
+  import Clock from './Clock.vela';
+  export let items = [1, 2];
+  export let show = true;
+  let count = $state(0);
+</script>
+
+<template>
+  <section>
+    {#client}<p class="now">client {count}</p>{:else}<p class="skeleton">loading</p>{/client}
+    {#client}<i class="bare">{typeof window}</i>{/client}
+    <Clock :start={count} />
+    <ul>{#each items as item (item)}<li>{item}{#client}<em>x{item * 2}</em>{:else}<u>-</u>{/client}</li>{/each}</ul>
+    {#if show}<div class="inner">{#client}<b class="deep">{count}</b>{:else}<s>wait</s>{/client}</div>{/if}
+    <button class="inc" @click={() => count = count + 1}>+</button>
+  </section>
+</template>

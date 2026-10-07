@@ -426,7 +426,9 @@ func (g *ASTGen) buildBlocksNode(node Node, isRoot bool) {
 	case *TextNode:
 		g.buildBlocksText(n)
 	case *IfChainNode:
-		if n.KeyAST != nil {
+		if n.Client {
+			g.buildBlocksClient(n)
+		} else if n.KeyAST != nil {
 			g.buildBlocksKey(n)
 		} else {
 			g.buildBlocksIf(n)
@@ -835,4 +837,16 @@ func hasPreformattedText(run []Node) bool {
 		}
 	}
 	return false
+}
+
+// buildBlocksClient lowers {#client}…{:else}…{/client} to the $$client
+// block: the main branch fragment and the fallback fragment, or null for
+// an empty fallback (T-9.1b).
+func (g *ASTGen) buildBlocksClient(chain *IfChainNode) {
+	main := g.blocksNestedFragment(chain.Branches[0].Children, nil)
+	fallback := JsExpr(genNull())
+	if len(chain.Branches) > 1 && len(chain.Branches[1].Children) > 0 {
+		fallback = id(g.blocksNestedFragment(chain.Branches[1].Children, nil))
+	}
+	g.blocksBlockCall("$$client", id(main), fallback)
 }

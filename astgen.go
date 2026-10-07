@@ -1923,6 +1923,11 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 		BaseStmt:    BaseStmt{BaseNode: genNode()},
 		Declaration: fn,
 	})
+	if g.blocks != nil && g.sfc != nil && g.sfc.ClientOnly {
+		// A client-only component (contract §9.2): $$component mounts it
+		// after the root commits instead of adopting server DOM.
+		prog.Body = append(prog.Body, genAssignStmt(genMember(id(g.name), "$$clientOnly"), boolLit(true)))
+	}
 
 	// Also expose the component factory as the module's DEFAULT
 	// export.  Vela components compile to `export function Name`,

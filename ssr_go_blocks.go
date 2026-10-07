@@ -430,9 +430,10 @@ func (e *ssrGoEmitter) blocksAwaitBlock(node *SSRPlanAwait, pending []goast.Stmt
 			return err
 		})
 		if err != nil {
-			// Recorded for the report; the site is not required.
+			// An operand the server cannot evaluate needs a {#client} boundary
+			// around the block (T-7.4f, T-9.3): a required site.
 			operand = nil
-			e.region.add("await", "", e.region.TemplateOffset+node.Promise.Pos, false, nil, nil, err)
+			e.region.add("await", "", e.region.TemplateOffset+node.Promise.Pos, true, nil, nil, err)
 		}
 	}
 	evaluated := operand != nil
@@ -527,4 +528,18 @@ func (e *ssrGoEmitter) blocksAwaitBlock(node *SSRPlanAwait, pending []goast.Stmt
 		}}},
 		e.closeRange(),
 	}, nil
+}
+
+// clientBlock renders a {#client} block or a client-only component: the
+// fallback in a range with the state token "f" (contract §9.1). The main
+// branch has no server code.
+func (e *ssrGoEmitter) clientBlock(node *SSRPlanClient) ([]goast.Stmt, error) {
+	if !e.blocks {
+		return nil, ssrExprUnsupported(node.Span.Start, "{#client} and client-only components need the block engine")
+	}
+	fallback, err := e.nodes(node.Fallback)
+	if err != nil {
+		return nil, err
+	}
+	return e.ranged("f", fallback), nil
 }

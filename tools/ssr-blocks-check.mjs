@@ -214,6 +214,18 @@ async function hydrateCheck(testCase) {
   document.body.appendChild(host);
   host.innerHTML = testCase.html;
   const serverElements = [...host.querySelectorAll('*')].filter((el) => el.localName !== 'script');
+  // {#client}: after the commit a fallback is replaced by the main branch
+  // (contract §9.1); only fallback nodes may go, and only new nodes come.
+  const fallbackNodes = new Set();
+  for (const selector of (testCase.boundary && testCase.boundary.server) || []) {
+    for (const element of host.querySelectorAll(selector)) {
+      fallbackNodes.add(element);
+      for (const node of element.querySelectorAll("*")) fallbackNodes.add(node);
+    }
+  }
+  const walker = document.createTreeWalker(host, 0xFFFFFFFF);
+  const serverNodes = new Set();
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) serverNodes.add(node);
   const observer = new dom.window.MutationObserver(() => {});
   observer.observe(host, { subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true });
   let instance;
@@ -235,11 +247,14 @@ async function hydrateCheck(testCase) {
     // Development value verification re-runs initial writes; an attribute
     // write of the same value changes nothing.
     const unchanged = record.type === 'attributes' && record.oldValue === record.target.getAttribute(record.attributeName);
-    if (!emptyText && !payload && !unchanged) errors.push(`hydration mutated the DOM: ${record.type} on <${record.target.localName || record.target.nodeName}>`);
+    const boundary = fallbackNodes.size > 0 && record.type === "childList" &&
+      [...record.removedNodes].every((node) => fallbackNodes.has(node) || node.nodeType !== 1 && !node.parentNode) &&
+      [...record.addedNodes].every((node) => !serverNodes.has(node));
+    if (!emptyText && !payload && !unchanged && !boundary) errors.push(`hydration mutated the DOM: ${record.type} on <${record.target.localName || record.target.nodeName}>`);
   }
   observer.disconnect();
   for (const element of serverElements) {
-    if (!host.contains(element)) errors.push(`hydration replaced the server <${element.localName}>`);
+    if (!host.contains(element) && !fallbackNodes.has(element)) errors.push(`hydration replaced the server <${element.localName}>`);
   }
   if (serialize(host) !== serialize(reference)) {
     errors.push(`hydrated DOM differs from the client DOM:\n  hydrated: ${serialize(host)}\n  client:   ${serialize(reference)}`);
@@ -360,7 +375,12 @@ for (const testCase of cases) {
       server.querySelector('script[data-vela-root]').remove();
       const serverHTML = serialize(server);
       const client = await clientHTML(testCase);
-      if (serverHTML !== client) errors.push(`server and client DOM differ:\n  server: ${serverHTML}\n  client: ${client}`);
+      if (testCase.boundary) {
+        // {#client}: the server writes the fallback, the client the main
+        // branch (contract §9.1); hydration must reach the client DOM.
+        for (const selector of testCase.boundary.server || []) if (!server.querySelector(selector)) errors.push(`server HTML lacks the fallback ${selector}`);
+        for (const selector of testCase.boundary.client || []) if (server.querySelector(selector)) errors.push(`server HTML contains client-only content ${selector}`);
+      } else if (serverHTML !== client) errors.push(`server and client DOM differ:\n  server: ${serverHTML}\n  client: ${client}`);
       errors.push(...(await hydrateCheck(testCase)));
       for (const injected of testCase.mismatches || []) errors.push(...(await mismatchCheck(testCase, injected)));
     }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -151,7 +152,20 @@ type SSRComponentLink struct {
 	PackageName string
 	ImportPath  string
 	GoName      string
+	// ClientOnly is set when the child declares <script context="client">
+	// (contract §9.2): it has no Go renderer.
+	ClientOnly bool
 }
+
+// SSRPlanClient is a {#client} block or a client-only component (contract
+// §9): the server renders only the fallback, in a range with the state
+// token "f"; the main branch is not region code (T-9.1c, T-9.2c).
+type SSRPlanClient struct {
+	Span     SectionSpan
+	Fallback []SSRPlanNode
+}
+
+func (*SSRPlanClient) ssrPlanNode() {}
 
 type SSRPlanSlot struct {
 	Span     SectionSpan
@@ -570,6 +584,12 @@ func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
 		case *ElementNode:
 			out = append(out, b.element(n))
 		case *ComponentNode:
+			if link, ok := b.links[n.Name]; ok && link.ClientOnly {
+				// Lowered as {#client}<X />{/client} with an empty fallback
+				// (T-9.2b); its props and slots are not region code.
+				out = append(out, &SSRPlanClient{Span: n.Span})
+				continue
+			}
 			out = append(out, b.component(n))
 		case *SlotNode:
 			b.slotNames[n.Name] = true
@@ -579,6 +599,14 @@ func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
 			text.ClientDropped = dropped[n]
 			out = append(out, text)
 		case *IfChainNode:
+			if n.Client {
+				client := &SSRPlanClient{Span: n.Span}
+				if len(n.Branches) > 1 {
+					client.Fallback = b.nodes(n.Branches[1].Children)
+				}
+				out = append(out, client)
+				continue
+			}
 			branches := make([]SSRPlanIfBranch, 0, len(n.Branches))
 			markerID := -1
 			if n.HasKey() {
@@ -693,6 +721,9 @@ func LinkSSRComponentPackages(links map[string]SSRComponentLink, srcRoot string,
 		link.PackageName = layout.packageName(link.SourcePath, srcRoot)
 		link.ImportPath = layout.importPath(link.SourcePath, srcRoot)
 		link.GoName = componentName(link.SourcePath)
+		if data, err := os.ReadFile(link.SourcePath); err == nil {
+			link.ClientOnly = scriptContextClient(string(data))
+		}
 		links[name] = link
 	}
 	return links

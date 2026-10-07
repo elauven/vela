@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -24,6 +25,10 @@ type SFC struct {
 	Script   string
 	Style    string
 	Template string
+
+	// ClientOnly is set by <script context="client">: the component is
+	// rendered only by the client (contract §9.2).
+	ClientOnly bool
 
 	AST         *ComponentAST
 	TemplateAST *TemplateAST
@@ -146,6 +151,7 @@ func parseSFC(src string) (*SFC, error) {
 	}
 
 	sfc.Script, sfc.ScriptOffset = extractBlock("script")
+	sfc.ClientOnly = scriptContextClient(src)
 	sfc.Style, sfc.StyleOffset = extractBlock("style")
 	sfc.Template, sfc.TemplateOffset = extractBlock("template")
 
@@ -377,6 +383,11 @@ type IfChainNode struct {
 	KeyExpr string
 	KeyPos  int
 	KeyAST  *TemplateExpr
+
+	// Client marks a {#client}…{:else}…{/client} block (contract §9.1):
+	// Branches[0] is the main content, rendered only by the client;
+	// Branches[1], when present, is the fallback the server renders.
+	Client bool
 }
 
 type IfBranch struct {
@@ -1377,7 +1388,8 @@ func (p *parser) isSvelteBlockStart() bool {
 		strings.HasPrefix(rest, "#if}") ||
 		strings.HasPrefix(rest, "#each ") || strings.HasPrefix(rest, "#each\t") ||
 		strings.HasPrefix(rest, "#key ") || strings.HasPrefix(rest, "#key\t") ||
-		strings.HasPrefix(rest, "#await ") || strings.HasPrefix(rest, "#await\t")
+		strings.HasPrefix(rest, "#await ") || strings.HasPrefix(rest, "#await\t") ||
+		strings.HasPrefix(rest, "#client}")
 }
 
 // isSvelteBlockTerm reports whether the parser is at {:else}, {:else if}, {:then}, {:catch}, {/if}, {/each}, {/key}, {/await}.
@@ -1392,7 +1404,8 @@ func (p *parser) isSvelteBlockTerm() bool {
 		strings.HasPrefix(rest, "/if") ||
 		strings.HasPrefix(rest, "/each") ||
 		strings.HasPrefix(rest, "/key") ||
-		strings.HasPrefix(rest, "/await")
+		strings.HasPrefix(rest, "/await") ||
+		strings.HasPrefix(rest, "/client")
 }
 
 // readSvelteTag reads from current '{' to the closing '}', returning the inner text.
@@ -1451,6 +1464,13 @@ func (p *parser) parseSvelteBlock() (Node, string, error) {
 
 	case strings.HasPrefix(tag, "#each"):
 		node, err := p.parseSvelteEachBlock(tag[5:], p.blockExprPos(tagStart, tag, strings.TrimSpace(tag[5:])))
+		if node != nil {
+			setTemplateNodeSpan(node, p.base+tagStart, p.base+p.pos)
+		}
+		return node, "", err
+
+	case tag == "#client":
+		node, err := p.parseSvelteClientBlock(tagStart)
 		if node != nil {
 			setTemplateNodeSpan(node, p.base+tagStart, p.base+p.pos)
 		}
@@ -2269,4 +2289,53 @@ func (p *parser) preformattedText(raw string, start int) (*TextNode, error) {
 // parseInterpolationsAt but keeps every static segment as written.
 func parseVerbatimInterpolationsAt(s string, base int) []*Part {
 	return parseInterpolationsMode(s, base, true)
+}
+
+// parseSvelteClientBlock parses {#client}…{:else}…{/client} (contract
+// §9.1): a main branch the client renders and an optional fallback the
+// server renders in its place.
+func (p *parser) parseSvelteClientBlock(branchStart int) (Node, error) {
+	children, term, err := p.parseSvelteBlockBody()
+	if err != nil {
+		return nil, err
+	}
+	chain := &IfChainNode{Client: true, Branches: []*IfBranch{{
+		Span:     SectionSpan{Start: p.base + branchStart, End: p.base + p.lastTagStart},
+		Children: children,
+	}}}
+	switch {
+	case term == ":else" || strings.HasPrefix(term, ":else}"):
+		elseStart := p.lastTagStart
+		fallback, end, err := p.parseSvelteBlockBody()
+		if err != nil {
+			return nil, err
+		}
+		if end != "/client" {
+			return nil, fmt.Errorf("{#client} block must end with {/client}, found {%s}", end)
+		}
+		chain.Branches = append(chain.Branches, &IfBranch{
+			Span:     SectionSpan{Start: p.base + elseStart, End: p.base + p.lastTagStart},
+			Children: fallback,
+		})
+	case term == "/client":
+	default:
+		return nil, fmt.Errorf("{#client} block must end with {/client} after an optional {:else}, found {%s}", term)
+	}
+	return chain, nil
+}
+
+var scriptContextPattern = regexp.MustCompile(`(?i)^<script\b[^>]*\scontext\s*=\s*["']?client["']?[\s/>]`)
+
+// scriptContextClient reports <script context="client"> on the first
+// script tag.
+func scriptContextClient(src string) bool {
+	start := strings.Index(asciiLower(src), "<script")
+	if start < 0 {
+		return false
+	}
+	end := strings.Index(src[start:], ">")
+	if end < 0 {
+		return false
+	}
+	return scriptContextPattern.MatchString(src[start : start+end+1])
 }

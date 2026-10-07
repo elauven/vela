@@ -1,0 +1,7 @@
+<script context="client">
+  export let label = 0;
+</script>
+
+<template>
+  <span class="badge">{label}</span>
+</template>
