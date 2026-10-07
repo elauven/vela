@@ -650,6 +650,8 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 		jsMethod(name, []*types.Var{v("site", stringType), v("value", anyType)}, anyType)
 	}
 	jsMethod("ObjectHasOwn", []*types.Var{v("site", stringType), v("value", anyType), v("key", anyType)}, anyType)
+	ssrRuntimeAddFunc(pkg, "ObjectFreeze", []*types.Var{v("value", anyType)}, []*types.Var{v("", anyType)})
+	jsMethod("ObjectIsFrozen", []*types.Var{v("site", stringType), v("value", anyType)}, boolT)
 	jsMethod("ArrayFrom", []*types.Var{v("site", stringType), v("source", anyType), v("mapFn", anyType)}, anyType)
 	jsMethod("JSONStringify", []*types.Var{v("site", stringType), v("value", anyType), v("replacer", anyType), v("indent", anyType)}, anyType)
 	for _, name := range []string{"MathLog", "MathLog2", "MathLog10", "MathLog1p", "MathExp", "MathExpm1", "MathSin", "MathCos", "MathTan", "MathAsin", "MathAcos", "MathAtan", "MathSinh", "MathCosh", "MathTanh", "MathAsinh", "MathAcosh", "MathAtanh", "MathFround", "MathClz32"} {

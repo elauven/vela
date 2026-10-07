@@ -490,6 +490,9 @@ func (e *EachBlockNode) nodeKind() string { return "eachblock" }
 type TextNode struct {
 	Span  SectionSpan
 	Parts []*Part
+	// Preformatted marks text inside <pre>, <textarea>, or <listing>: its
+	// whitespace is kept verbatim and never dropped.
+	Preformatted bool
 }
 
 // Part is one segment of a text node.
@@ -644,6 +647,11 @@ type parser struct {
 	base         int
 	pos          int
 	lastTagStart int
+	// preformatted counts the open <pre>, <textarea>, and <listing>
+	// elements; afterStart is set right after such a start tag, whose first
+	// newline the HTML parser drops.
+	preformatted int
+	afterStart   int
 }
 
 // templateJSSyntax tracks the lexical forms that make punctuation inert while
@@ -749,7 +757,10 @@ func (p *parser) parseNodes(stopTags []string) ([]Node, error) {
 		// after the closing tag silently eaten by skipWS.
 		sawWS := false
 		startPos := p.pos
-		p.skipWS()
+		if p.preformatted == 0 {
+			// Inside <pre>, <textarea>, and <listing> whitespace is text.
+			p.skipWS()
+		}
 		if p.pos > startPos {
 			sawWS = true
 		}
@@ -862,6 +873,9 @@ func (p *parser) parseText() (*TextNode, error) {
 		p.pos++
 	}
 	raw := buf.String()
+	if p.preformatted > 0 {
+		return p.preformattedText(raw, start)
+	}
 	parts := parseInterpolationsAt(raw, p.pos-len(raw))
 	if len(parts) == 0 {
 		return nil, nil
@@ -894,7 +908,9 @@ func isHTMLSpace(c byte) bool {
 // by scanning for {expr} sequences.
 func parseInterpolations(s string) []*Part { return parseInterpolationsAt(s, 0) }
 
-func parseInterpolationsAt(s string, base int) []*Part {
+func parseInterpolationsAt(s string, base int) []*Part { return parseInterpolationsMode(s, base, false) }
+
+func parseInterpolationsMode(s string, base int, verbatim bool) []*Part {
 	var parts []*Part
 	var buf strings.Builder
 
@@ -904,6 +920,10 @@ func parseInterpolationsAt(s string, base int) []*Part {
 		}
 		text := buf.String()
 		buf.Reset()
+		if verbatim {
+			parts = append(parts, &Part{Static: true, Value: text})
+			return
+		}
 		// Whitespace-only segment: collapse to a single space if it
 		// contained one, otherwise drop entirely.  This is what kept
 		// trailing newlines from polluting the output before, and we
@@ -1028,7 +1048,15 @@ func (p *parser) parseElement() (Node, error) {
 	}
 
 	if !selfClose && !isVoidElement(tag) {
+		pre := isPreformattedTag(tag)
+		if pre {
+			p.preformatted++
+			p.afterStart = p.pos
+		}
 		children, err := p.parseNodes([]string{tag})
+		if pre {
+			p.preformatted--
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -1838,7 +1866,9 @@ func inlineAwaitModeName(mode awaitMode) string {
 func (p *parser) parseSvelteBlockBody() ([]Node, string, error) {
 	var nodes []Node
 	for !p.eof() {
-		p.skipWS()
+		if p.preformatted == 0 {
+			p.skipWS()
+		}
 		if p.eof() {
 			break
 		}
@@ -2196,4 +2226,45 @@ func parseJSDocType(value string) JSDocTypeKind {
 	default:
 		return JSDocTypeUnknown
 	}
+}
+
+func isPreformattedTag(tag string) bool {
+	switch strings.ToLower(tag) {
+	case "pre", "textarea", "listing":
+		return true
+	}
+	return false
+}
+
+// preformattedText keeps the text of a <pre>, <textarea>, or <listing>
+// verbatim, except the one newline right after the start tag, which the
+// HTML parser drops too (M-5.7).
+func (p *parser) preformattedText(raw string, start int) (*TextNode, error) {
+	offset := p.pos - len(raw)
+	if start == p.afterStart {
+		if strings.HasPrefix(raw, "\r\n") {
+			raw, offset = raw[2:], offset+2
+		} else if strings.HasPrefix(raw, "\n") {
+			raw, offset = raw[1:], offset+1
+		}
+	}
+	parts := parseVerbatimInterpolationsAt(raw, offset)
+	if len(parts) == 0 {
+		return nil, nil
+	}
+	span := SectionSpan{Start: p.base + start, End: p.base + p.pos}
+	for _, part := range parts {
+		part.Span = span
+		if !part.Static && part.Expr != nil {
+			part.Expr.Span = SectionSpan{Start: p.base + part.Expr.Pos, End: p.base + part.Expr.Pos + len(part.Expr.Source)}
+			part.Span = part.Expr.Span
+		}
+	}
+	return &TextNode{Span: span, Parts: parts, Preformatted: true}, nil
+}
+
+// parseVerbatimInterpolationsAt splits text into parts like
+// parseInterpolationsAt but keeps every static segment as written.
+func parseVerbatimInterpolationsAt(s string, base int) []*Part {
+	return parseInterpolationsMode(s, base, true)
 }

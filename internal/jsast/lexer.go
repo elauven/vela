@@ -554,7 +554,9 @@ func (l *Lexer) scanNumber(start, line int) Token {
 }
 
 func (l *Lexer) scanDecimalTail() {
-	if l.ch() == '.' && isDigit(l.peek1()) {
+	// A decimal integer takes the following dot: "1." is a literal, so
+	// "1..toString()" is a member call and "1.toString()" is an error.
+	if l.ch() == '.' {
 		l.adv()
 		for isDigit(l.ch()) {
 			l.adv()

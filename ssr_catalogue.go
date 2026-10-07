@@ -80,7 +80,7 @@ var ssrCatalogue = []ssrCatalogueSection{
 		{Builtin: "`Object.fromEntries`", Helper: "`ssrJS.ObjectFromEntries`", Rule: "T-5.1c", Divergence: "Later duplicate keys win but keep the first position.", Status: "implemented", Names: []string{"Object.fromEntries"}, Oracles: []string{"obj-from"}},
 		{Builtin: "`Object.assign`", Helper: "`ssrJS.ObjectAssign`", Rule: "T-6.6b", Divergence: "The target must be an object literal: `Object.assign({}, a, b)`.", Status: "implemented", Names: []string{"Object.assign"}, Oracles: []string{"obj-assign"}},
 		{Builtin: "`Object.hasOwn`", Helper: "`ssrJS.ObjectHasOwn`", Rule: "—", Status: "implemented", Names: []string{"Object.hasOwn"}, Oracles: []string{"obj-hasown"}},
-		{Builtin: "`Object.freeze`, `Object.isFrozen`", Helper: "—", Rule: "—", Divergence: "See §5.", Status: "undecided"},
+		{Builtin: "`Object.freeze`, `Object.isFrozen`", Helper: "`vela.ObjectFreeze`, `ssrJS.ObjectIsFrozen`", Rule: "T-6.6b", Divergence: "A frozen object throws `TypeError` on writes, as in strict-mode JavaScript; freezing is shallow. An array is returned unchanged and `Object.isFrozen` rejects arrays (at build time when the type is proven, else at run time): a Go slice has no identity to mark (decision of §5).", Status: "implemented", Names: []string{"Object.freeze", "Object.isFrozen"}, Oracles: []string{"obj-freeze"}},
 	}},
 	{Title: "2.5 Math", Rows: []ssrCatalogueRow{
 		{Builtin: "`Math.round`", Helper: "`vela.MathRound`", Rule: "T-6.4b", Divergence: "Ties round toward +∞: `Math.round(-2.5)` is `-2` ✓, `math.Round` gives `-3`. `-0` preserved; `Math.round(0.49999999999999994)` is `0`.", Status: "implemented", Names: []string{"Math.round"}, Oracles: []string{"math-round"}},

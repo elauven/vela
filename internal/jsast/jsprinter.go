@@ -956,7 +956,14 @@ func (p *jsPrinter) expr(e JsExpr, parentPrec int) {
 		}
 
 	case *JsMemberExpr:
-		p.expr(n.Obj, precLHS)
+		if literal, ok := n.Obj.(*JsLiteral); ok && !n.Computed && !n.Optional && decimalIntegerLiteral(literal) {
+			// "0.toFixed" would lex as the literal "0." followed by a name.
+			p.ch('(')
+			p.expr(n.Obj, 0)
+			p.ch(')')
+		} else {
+			p.expr(n.Obj, precLHS)
+		}
 		if n.Computed {
 			if n.Optional {
 				p.write("?.")
@@ -1222,4 +1229,18 @@ func EncodeGeneratedString(value string) string {
 	content := quoted[1 : len(quoted)-1]
 	content = strings.ReplaceAll(content, "'", "\\'")
 	return "'" + content + "'"
+}
+
+// decimalIntegerLiteral reports a number literal spelled with decimal
+// digits only, which a following dot would extend.
+func decimalIntegerLiteral(literal *JsLiteral) bool {
+	if literal.Kind != "number" || literal.Raw == "" {
+		return false
+	}
+	for i := 0; i < len(literal.Raw); i++ {
+		if c := literal.Raw[i]; (c < '0' || c > '9') && c != '_' {
+			return false
+		}
+	}
+	return true
 }

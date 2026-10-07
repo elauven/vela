@@ -686,3 +686,25 @@ func TestPrintJSWithLocationsReportsUserOrigins(t *testing.T) {
 		t.Fatalf("first location = %+v, want generated 1:0 at source 0", first)
 	}
 }
+
+// TestNumberLiteralMemberAccess: "0.toFixed(1)" is a syntax error in
+// JavaScript ("0." is the literal), while the parenthesised and dotted
+// spellings are valid and must print as valid JavaScript (task 053).
+func TestNumberLiteralMemberAccess(t *testing.T) {
+	if _, diagnostics := ParseJSWithDiagnostics("x = 0.toFixed(1);"); len(diagnostics) == 0 {
+		t.Error("0.toFixed(1) must be a syntax error")
+	}
+	for _, src := range []string{"x = (0).toFixed(1);", "x = 0..toFixed(1);", "x = 1.5.toFixed(1);", "x = 3 .toFixed(1);", "x = 1e21.toFixed(2);", "x = 0xff.toString(2);", "x = 1.e2;", "x = 1.;"} {
+		program, diagnostics := ParseJSWithDiagnostics(src)
+		if len(diagnostics) > 0 {
+			t.Errorf("%s: %v", src, diagnostics)
+			continue
+		}
+		for _, mode := range []PrintMode{PrintPretty, PrintMinified} {
+			printed := PrintJS(program, mode)
+			if _, again := ParseJSWithDiagnostics(printed); len(again) > 0 {
+				t.Errorf("%s printed as %q, which does not parse: %v", src, printed, again)
+			}
+		}
+	}
+}

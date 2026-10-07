@@ -391,7 +391,7 @@ func (g *ASTGen) buildBlocksChildren(nodes []Node, isRoot bool) {
 		if len(run) == 0 {
 			return
 		}
-		if keepWhitespace || strings.TrimSpace(emitStaticHTML(run, g.scopeID)) != "" {
+		if keepWhitespace || hasPreformattedText(run) || strings.TrimSpace(emitStaticHTML(run, g.scopeID)) != "" {
 			g.blocksStatic(run)
 		}
 		run = nil
@@ -505,6 +505,17 @@ func (g *ASTGen) buildBlocksElement(el *ElementNode, isRoot bool) {
 				writes = append(writes, g.blocksInitAndUpdate(write, expr)...)
 			} else if text, ok := staticRawText(el.Children); ok {
 				g.blocksEmit(genAssignStmt(genMember(id(ref), prop), strLit(text)))
+			} else if text, ok := el.Children[0].(*TextNode); ok && len(el.Children) == 1 {
+				// Static text with interpolations: the property gets the whole
+				// text, as the server writes it.
+				var exprs []*TemplateExpr
+				for _, part := range text.Parts {
+					if !part.Static {
+						exprs = append(exprs, part.Expr)
+					}
+				}
+				write := genAssignStmt(genMember(id(ref), prop), g.textValueExpr(text.Parts))
+				writes = append(writes, g.blocksInitAndUpdate(write, exprs...)...)
 			}
 		} else {
 			g.blocksEmit(genExprStmt(genCall(genMember(id("$$c"), "enter"), id(ref))))
@@ -784,7 +795,7 @@ func blocksDroppedWhitespace(nodes []Node) map[*TextNode]bool {
 		blank := true
 		for _, node := range run {
 			text, ok := node.(*TextNode)
-			if !ok || strings.TrimSpace(textNodeStaticValue(text)) != "" {
+			if !ok || text.Preformatted || strings.TrimSpace(textNodeStaticValue(text)) != "" {
 				blank = false
 				break
 			}
@@ -813,4 +824,15 @@ func textNodeStaticValue(text *TextNode) string {
 		value += part.Value
 	}
 	return value
+}
+
+// hasPreformattedText reports text of a <pre>, <textarea>, or <listing>
+// in a run: its whitespace is content.
+func hasPreformattedText(run []Node) bool {
+	for _, node := range run {
+		if text, ok := node.(*TextNode); ok && text.Preformatted {
+			return true
+		}
+	}
+	return false
 }

@@ -1033,7 +1033,14 @@ func (p *JSParser) parsePrimary() JsExpr {
 		return &JsIdent{BaseExpr: BaseExpr{BaseNode{Pos: pos, End: p.end()}}, Name: name}
 
 	case TokNumber:
-		raw := p.advance().Val
+		number := p.advance()
+		raw := number.Val
+		if p.cur.Pos == number.End && p.cur.Kind != TokEOF && p.cur.Val != "" && IsIdentStart(p.cur.Val[0]) {
+			// An identifier may not follow a numeric literal directly.
+			message := fmt.Sprintf("line %d: invalid or unexpected token %q after the number %s", p.cur.Line, p.cur.Val, raw)
+			p.Errors = append(p.Errors, message)
+			p.Diagnostics = append(p.Diagnostics, JSParseDiagnostic{Pos: p.cur.Pos, Message: message})
+		}
 		return &JsLiteral{BaseExpr: BaseExpr{BaseNode{Pos: pos, End: p.end()}}, Raw: raw, Kind: numberKind(raw)}
 
 	case TokString:

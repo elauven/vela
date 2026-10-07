@@ -148,6 +148,12 @@ func (js *JS) SetMember(object, key, value any, site string) any {
 	name := propertyKey(key)
 	switch target := object.(type) {
 	case *Object:
+		if target.frozen {
+			if _, exists := target.values[name]; exists {
+				return js.throw("TypeError", fmt.Sprintf("Cannot assign to read only property '%s' of object '#<Object>'", name), site)
+			}
+			return js.throw("TypeError", fmt.Sprintf("Cannot add property %s, object is not extensible", name), site)
+		}
 		target.Set(name, value)
 		return value
 	case []any:

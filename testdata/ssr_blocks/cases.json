@@ -22,5 +22,6 @@
  {"name":"Loader then","component":"Loader","props":{"id":2},"entries":["Loader"],"awaits":[["Loader#0","t"]],"compare":true,"steps":[{"click":"button.next"},{"click":"button.neg"}],"mismatches":[{"name":"await-value","from":"item-4","to":"item-9","kind":"value"}]},
  {"name":"Loader catch","component":"Loader","props":{"id":-3},"entries":["Loader"],"awaits":[["Loader#0","c"]],"compare":true,"steps":[{"click":"button.next"}]},
  {"name":"Values defaults","component":"Values","props":{},"entries":["Values"],"compare":true},
- {"name":"Values astral","component":"Values","props":{"words":"𝔘𝔫𝔦𝔠𝔬𝔡𝔢 ж ß","list":[],"zero":-5.5,"empty":" "},"entries":["Values"],"compare":true}
+ {"name":"Values astral","component":"Values","props":{"words":"𝔘𝔫𝔦𝔠𝔬𝔡𝔢 ж ß","list":[],"zero":-5.5,"empty":" "},"entries":["Values"],"compare":true},
+ {"name":"Pre","component":"Pre","props":{"note":"x\n  y"},"entries":["Pre"],"compare":true,"steps":[{"click":"button.add"},{"set":{"note":"z","lines":["three"]}}]}
 ]

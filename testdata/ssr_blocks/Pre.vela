@@ -1,0 +1,21 @@
+<script>
+  export let note = 'b  c';
+  export let lines = ['one', 'two'];
+  let count = $state(0);
+</script>
+
+<template>
+  <section>
+<pre>
+first line
+  {note}   end
+	tab</pre>
+<pre class="list">{#each lines as line}
+  - {line}{/each}
+</pre>
+    <textarea>
+  keep  spaces
+{note}</textarea>
+    <button class="add" @click={() => count = count + 1}>{count}</button>
+  </section>
+</template>

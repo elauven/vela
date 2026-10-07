@@ -300,3 +300,29 @@ func (js *JS) Console(ctx context.Context, method string, args ...any) Undefined
 	}
 	return Undefined()
 }
+
+// ── Object.freeze and Object.isFrozen (decision of §5) ──────────────────
+
+// ObjectFreeze is Object.freeze: an object rejects later writes; an array
+// or a primitive is returned unchanged (a Go slice has no identity to
+// mark, so Object.isFrozen rejects arrays).
+func ObjectFreeze(value any) any {
+	if object, ok := value.(*Object); ok {
+		object.frozen = true
+	}
+	return value
+}
+
+// ObjectIsFrozen is Object.isFrozen.
+func (js *JS) ObjectIsFrozen(site string, value any) bool {
+	switch v := jsValue(value).(type) {
+	case *Object:
+		return v.frozen
+	case []any:
+		js.throw("TypeError", "Object.isFrozen on an array is not supported during server rendering", site)
+		return false
+	case nil, UndefinedValue, bool, float64, string:
+		return true
+	}
+	return false
+}

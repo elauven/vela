@@ -90,6 +90,8 @@ var ssrBuiltinGlobals = map[string]ssrBuiltinGlobal{
 	"Object.fromEntries": {Helper: "ObjectFromEntries", JS: true, Args: 1},
 	"Object.assign":      {Helper: "ObjectAssign", JS: true, Args: -1},
 	"Object.hasOwn":      {Helper: "ObjectHasOwn", JS: true, Args: 2},
+	"Object.freeze":      {Helper: "ObjectFreeze", Args: 1},
+	"Object.isFrozen":    {Helper: "ObjectIsFrozen", JS: true, Args: 1, Facts: ssrIRFacts{Bool: true}},
 	// §2.5
 	"Math.round": {Helper: "MathRound", Args: 1, Facts: ssrIRFacts{Number: true}},
 	"Math.floor": {Helper: "MathFloor", Args: 1, Facts: ssrIRFacts{Number: true}},
@@ -245,6 +247,9 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 		if err != nil {
 			return nil, true, err
 		}
+		if name == "Object.isFrozen" && len(args) == 1 && args[0].irBase().Facts.Array {
+			return nil, true, ssrExprUnsupported(pos, "Object.isFrozen on an array is not available during server rendering: a Go slice cannot record that it is frozen")
+		}
 		lowered := make([]goast.Expr, 0, len(args)+1)
 		for _, arg := range args {
 			lowered = append(lowered, lowerSSRIR(arg))
@@ -389,6 +394,11 @@ func ssrFreshExpr(expr JsExpr) bool {
 		property, ok := member.Prop.(*JsIdent)
 		if !ok {
 			return false
+		}
+		if object, ok := member.Obj.(*JsIdent); ok && object.Name+"."+property.Name == "Object.freeze" && len(e.Args) == 1 {
+			// A frozen literal is still the function's own value: writes to
+			// it compile and throw TypeError, as in JavaScript.
+			return ssrFreshExpr(e.Args[0])
 		}
 		if object, ok := member.Obj.(*JsIdent); ok {
 			switch object.Name + "." + property.Name {

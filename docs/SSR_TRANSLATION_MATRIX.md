@@ -252,7 +252,7 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `Object.fromEntries` | `ssrJS.ObjectFromEntries` | T-5.1c | Later duplicate keys win but keep the first position. | `obj-from` | implemented |
 | `Object.assign` | `ssrJS.ObjectAssign` | T-6.6b | The target must be an object literal: `Object.assign({}, a, b)`. | `obj-assign` | implemented |
 | `Object.hasOwn` | `ssrJS.ObjectHasOwn` | — |  | `obj-hasown` | implemented |
-| `Object.freeze`, `Object.isFrozen` | — | — | See §5. | — | undecided |
+| `Object.freeze`, `Object.isFrozen` | `vela.ObjectFreeze`, `ssrJS.ObjectIsFrozen` | T-6.6b | A frozen object throws `TypeError` on writes, as in strict-mode JavaScript; freezing is shallow. An array is returned unchanged and `Object.isFrozen` rejects arrays (at build time when the type is proven, else at run time): a Go slice has no identity to mark (decision of §5). | `obj-freeze` | implemented |
 
 ### 2.5 Math
 
@@ -365,4 +365,4 @@ Each needs a product decision before the slice that implements it.
 | `String.prototype.normalize` | **decided 2026-10-07:** `golang.org/x/text` v0.41.0 (Unicode 17); the module requires Go 1.25 | S5 (done) |
 | Computed object keys `{[k]: v}` | admit in S2; keep rejected in v1 | S2 |
 | `Number.prototype.toString(radix)`, `toPrecision`, `toExponential` | **decided 2026-10-07:** included in the beta | S5 (done) |
-| `Object.freeze` / `isFrozen` | no-op freeze with `isFrozen` tracking; reject | S5 |
+| `Object.freeze` / `isFrozen` | **decided 2026-10-07:** real freezing of objects (writes throw `TypeError`); arrays returned unchanged, `isFrozen` rejects arrays | S5 (done) |

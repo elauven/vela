@@ -81,6 +81,8 @@ func (js *JS) throw(kind, message, site string) UndefinedValue {
 type Object struct {
 	keys   []string
 	values map[string]any
+	// frozen is set by Object.freeze: JavaScript writes throw TypeError.
+	frozen bool
 }
 
 // NewObject returns an empty object.
