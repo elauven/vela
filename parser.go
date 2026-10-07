@@ -908,7 +908,9 @@ func isHTMLSpace(c byte) bool {
 // by scanning for {expr} sequences.
 func parseInterpolations(s string) []*Part { return parseInterpolationsAt(s, 0) }
 
-func parseInterpolationsAt(s string, base int) []*Part { return parseInterpolationsMode(s, base, false) }
+func parseInterpolationsAt(s string, base int) []*Part {
+	return parseInterpolationsMode(s, base, false)
+}
 
 func parseInterpolationsMode(s string, base int, verbatim bool) []*Part {
 	var parts []*Part
