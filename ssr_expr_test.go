@@ -515,13 +515,14 @@ func TestTranslateSSRExpressionLowersTernaryThroughRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := FormatSSRGoExpr(translated)
-	want := `vela.TernaryLazy(func() any {
+	// Both branches are strings: the lazy result is converted to string.
+	want := `vela.String(vela.TernaryLazy(func() any {
 	return props.Count
 }, func() any {
 	return "many"
 }, func() any {
 	return "none"
-})`
+}))`
 	if err != nil || got != want {
 		t.Fatalf("ternary translation=%q, err=%v", got, err)
 	}
@@ -665,7 +666,7 @@ func TestTranslateSSRExpressionLowersArrayLiteralAndHole(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := FormatSSRGoExpr(translated)
-	if err != nil || got != `[]any{1.0, nil, "three"}` {
+	if err != nil || got != `[]any{1.0, vela.Hole(), "three"}` {
 		t.Fatalf("array literal translation=%q, err=%v", got, err)
 	}
 }

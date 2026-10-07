@@ -43,7 +43,16 @@ func TestSSRExpressionOracleBothTiers(t *testing.T) {
 	if err := json.Unmarshal(data, &rows); err != nil {
 		t.Fatal(err)
 	}
+	for _, failure := range runSSRExpressionRows(t, rows) {
+		t.Error(failure)
+	}
+}
 
+// runSSRExpressionRows renders every row with generated Go in the typed and
+// the dynamic tier and returns the rows whose text differs from the
+// JavaScript result.
+func runSSRExpressionRows(t *testing.T, rows []ssrExpressionOracleRow) []string {
+	t.Helper()
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
@@ -168,7 +177,8 @@ func main() {
 	if err := json.Unmarshal(output, &rendered); err != nil {
 		t.Fatalf("invalid output: %v\n%s", err, output)
 	}
-	paragraph := regexp.MustCompile(`^<p[^>]*>(.*)</p>$`)
+	paragraph := regexp.MustCompile(`(?s)^<p[^>]*>(.*)</p>$`)
+	var failures []string
 	for i, row := range rows {
 		want := "THROW:" + row.Throws
 		if row.Expected != nil {
@@ -181,8 +191,9 @@ func main() {
 			}
 			if got != want {
 				name := map[string]string{"T": "typed", "D": "dynamic"}[tier]
-				t.Errorf("%s (%s tier): %s = %q, want %q", row.Name, name, row.Expression, got, want)
+				failures = append(failures, fmt.Sprintf("%s (%s tier): %s = %q, want %q", row.Name, name, row.Expression, got, want))
 			}
 		}
 	}
+	return failures
 }

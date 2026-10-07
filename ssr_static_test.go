@@ -74,7 +74,7 @@ func TestBuildSSRGoFileRendersArrayLiteralWithJSJoinSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `vela.EscapeString(vela.String([]any{1.0, nil, 3.0}))`) {
+	if !strings.Contains(string(source), `vela.EscapeString(vela.String([]any{1.0, vela.Hole(), 3.0}))`) {
 		t.Fatalf("array literal SSR output is not lowered through Vela conversion:\n%s", source)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
@@ -152,7 +152,7 @@ func TestBuildSSRGoFileUsesJSTruthinessForTernaryIfCondition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `if vela.Truthy(vela.TernaryLazy(func() any {`
+	want := `if vela.Truthy(vela.String(vela.TernaryLazy(func() any {`
 	if !strings.Contains(string(source), want) {
 		t.Fatalf("ternary if condition is not lowered through JS truthiness:\n%s", source)
 	}

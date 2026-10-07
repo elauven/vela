@@ -1,0 +1,31 @@
+<script>
+  export let nothing = null;
+  export let missing = undefined;
+  export let record = { name: 'Ада', nested: { deep: 1 } };
+  export let flag = false;
+  export let zero = 0;
+  export let empty = '';
+  export let words = 'Привет, мир 😀 𝒳';
+  export let list = [1, null, 'два', [3, 4]];
+  export let negative = -0;
+  export let big = 1e21;
+  export let small = 0.000001;
+  let holes = [1, , 3];
+</script>
+
+<template>
+  <ul>
+    <li class="null">{nothing}</li>
+    <li class="undefined">{missing}</li>
+    <li class="missing">{record.absent}</li>
+    <li class="false">{flag}</li>
+    <li class="zero">{zero} {negative}</li>
+    <li class="empty">[{empty}]</li>
+    <li class="words">{words} {words.length} {words.toUpperCase()}</li>
+    <li class="array">{list}</li>
+    <li class="holes">{holes} {holes.length}</li>
+    <li class="object">{record} {record.nested}</li>
+    <li class="numbers">{big} {small} {1 / 3} {0.1 + 0.2}</li>
+    <li class="attr" title={list} data-flag={flag} data-null={nothing}>a</li>
+  </ul>
+</template>

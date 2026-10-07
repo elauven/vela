@@ -629,6 +629,31 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 		v("w", writer), v("js", types.NewPointer(jsType)), v("site", stringType), v("operand", anyType),
 	), types.NewTuple(v("", stringType), v("", anyType)), false)))
 
+	// Built-ins (ssr_runtime/builtins.go, strings.go, arrays.go).
+	for _, name := range []string{"ToBoolean", "IsNaN", "IsFinite", "NumberIsNaN", "NumberIsFinite", "NumberIsInteger", "NumberIsSafeInteger", "IsArray"} {
+		ssrRuntimeAddFunc(pkg, name, []*types.Var{v("value", anyType)}, []*types.Var{v("", boolT)})
+	}
+	for _, name := range []string{"ParseFloat", "MathRound", "MathFloor", "MathCeil", "MathTrunc", "MathAbs", "MathSign", "MathSqrt", "MathCbrt"} {
+		ssrRuntimeAddFunc(pkg, name, []*types.Var{v("value", anyType)}, []*types.Var{v("", floatT)})
+	}
+	for _, name := range []string{"MathMin", "MathMax", "MathHypot"} {
+		ssrRuntimeAddVariadicFunc(pkg, name, []*types.Var{v("values", anySlice)}, []*types.Var{v("", floatT)})
+	}
+	ssrRuntimeAddFunc(pkg, "ToStringValue", []*types.Var{v("value", anyType)}, []*types.Var{v("", stringType)})
+	ssrRuntimeAddFunc(pkg, "ParseInt", []*types.Var{v("text", anyType), v("radix", anyType)}, []*types.Var{v("", floatT)})
+	ssrRuntimeAddVariadicFunc(pkg, "ArrayOf", []*types.Var{v("values", anySlice)}, []*types.Var{v("", anySlice)})
+	ssrRuntimeAddFunc(pkg, "Hole", nil, []*types.Var{v("", undefinedType)})
+	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "Method", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("receiver", anyType), v("name", stringType), v("args", anySlice)), types.NewTuple(v("", anyType)), true)))
+	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "MutateArray", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("array", anyType), v("name", stringType), v("args", anySlice)), types.NewTuple(v("", anySlice), v("", anyType)), true)))
+	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "ObjectAssign", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("target", anyType), v("sources", anySlice)), types.NewTuple(v("", anyType)), true)))
+	for _, name := range []string{"EncodeURIComponent", "EncodeURI", "DecodeURIComponent", "DecodeURI", "ObjectKeys", "ObjectValues", "ObjectEntries", "ObjectFromEntries", "JSONParse"} {
+		jsMethod(name, []*types.Var{v("site", stringType), v("value", anyType)}, anyType)
+	}
+	jsMethod("ObjectHasOwn", []*types.Var{v("site", stringType), v("value", anyType), v("key", anyType)}, anyType)
+	jsMethod("ArrayFrom", []*types.Var{v("site", stringType), v("source", anyType), v("mapFn", anyType)}, anyType)
+	jsMethod("JSONStringify", []*types.Var{v("site", stringType), v("value", anyType), v("replacer", anyType), v("indent", anyType)}, anyType)
+	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "GlobalFunc", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("name", stringType)), types.NewTuple(v("", funcType)), false)))
+
 	// Block markup and payload stream (docs/HYDRATION_ARCHITECTURE.md §5, §6).
 	jsonPkg, err := loader.Import("encoding/json")
 	if err != nil {

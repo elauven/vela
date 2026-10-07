@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // Renderer is the composable server-side rendering contract.
@@ -30,7 +30,11 @@ func (render RendererFunc) Render(writer io.Writer) error {
 // JavaScript null literal/value. The public Go render API still cannot infer
 // the distinction for an untyped nil prop, so the compiler only emits this
 // sentinel for source-level undefined and missing object properties.
-type UndefinedValue struct{}
+type UndefinedValue struct {
+	// hole marks an array hole: an element that was never set. It reads
+	// as undefined; array methods skip it where JavaScript does.
+	hole bool
+}
 
 // Undefined returns the server representation of JavaScript undefined.
 func Undefined() UndefinedValue { return UndefinedValue{} }
@@ -42,6 +46,12 @@ func Undefined() UndefinedValue { return UndefinedValue{} }
 // particular, this helper never applies == to an interface containing a map
 // or slice, which would panic at runtime.
 func StrictEqual(left, right any) bool {
+	if l, ok := left.(string); ok {
+		if r, ok := right.(string); ok && (!utf8.ValidString(l) || !utf8.ValidString(r)) {
+			// Surrogate halves joined by concatenation equal the pair.
+			return fromUnits(units(l)) == fromUnits(units(r))
+		}
+	}
 	_, leftUndefined := left.(UndefinedValue)
 	_, rightUndefined := right.(UndefinedValue)
 	if leftUndefined || rightUndefined {
@@ -129,8 +139,8 @@ func strictEqualityNumber(value reflect.Value) (float64, bool) {
 // against some BMP values, so generated relational expressions must not use
 // the native Go string operator directly.
 func StringLess(left, right string) bool {
-	leftUnits := utf16.Encode([]rune(left))
-	rightUnits := utf16.Encode([]rune(right))
+	leftUnits := units(left)
+	rightUnits := units(right)
 	limit := len(leftUnits)
 	if len(rightUnits) < limit {
 		limit = len(rightUnits)
@@ -382,7 +392,7 @@ func Length(value any) int {
 		return 0
 	}
 	if stringValue, ok := value.(string); ok {
-		return len(utf16.Encode([]rune(stringValue)))
+		return len(units(stringValue))
 	}
 	reflected := reflect.ValueOf(value)
 	if reflected.Kind() == reflect.Slice || reflected.Kind() == reflect.Array || reflected.Kind() == reflect.Map {
@@ -511,7 +521,8 @@ func Get(value any, key string) any {
 
 // EscapeString escapes text and attribute content for HTML output.
 func EscapeString(value string) string {
-	return html.EscapeString(value)
+	// A lone surrogate is written as U+FFFD (T-6.3b).
+	return html.EscapeString(WellFormed(value))
 }
 
 // RootPayloadVersion is the schema version of the payload stream written by

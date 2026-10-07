@@ -187,7 +187,8 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 		for i, element := range n.Elems {
 			switch {
 			case element == nil:
-				segment = append(segment, goast.NewIdent("nil"))
+				// A hole reads as undefined; array methods skip it.
+				segment = append(segment, &goast.CallExpr{Fun: goSelector("vela", "Hole")})
 			case i < len(n.Spread) && n.Spread[i]:
 				if len(segment) > 0 {
 					parts = append(parts, literal(segment))
@@ -242,7 +243,16 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 		for i, arg := range n.Args {
 			args[i] = ssrLazyExpr(lowerSSRIR(arg))
 		}
-		return &goast.CallExpr{Fun: goSelector("vela", n.Name), Args: args}
+		var call goast.Expr = &goast.CallExpr{Fun: goSelector("vela", n.Name), Args: args}
+		// The lazy helpers return any; a typed result the facts promise is
+		// converted, so that Go operators apply.
+		switch {
+		case n.Facts.String:
+			call = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{call}}
+		case n.Facts.Number:
+			call = &goast.CallExpr{Fun: goSelector("vela", "ToNumber"), Args: []goast.Expr{call}}
+		}
+		return call
 	case *ssrIRBinary:
 		return &goast.BinaryExpr{X: lowerSSRIR(n.X), Op: n.Op, Y: lowerSSRIR(n.Y)}
 	case *ssrIRJS:
@@ -503,8 +513,11 @@ func (b *ssrIRBuilder) ident(node *JsIdent, pos int) (SSRIRExpr, error) {
 		// A parameter is the lowered argument; what is known about it is
 		// what its Go form shows (parity with the inliner).
 		value := lowerSSRIR(param)
-		facts := ssrGoExprFacts(value, b.ctx)
-		facts.Bool = boolProp
+		facts := param.irBase().Facts
+		if facts == (ssrIRFacts{}) {
+			facts = ssrGoExprFacts(value, b.ctx)
+		}
+		facts.Bool = facts.Bool || boolProp
 		return &ssrIRGo{ssrIRBase: b.base(pos, facts), Expr: value}, nil
 	}
 	if binding, ok := b.ctx.Bindings[node.Name]; ok {
@@ -543,6 +556,21 @@ func (b *ssrIRBuilder) ident(node *JsIdent, pos int) (SSRIRExpr, error) {
 	}
 	if ref, ok := b.ctx.ModuleRefs[node.Name]; ok && b.js {
 		return b.moduleIdent(ref, node.Name, pos)
+	}
+	if function := b.ctx.Functions[node.Name]; function != nil && b.ctx.funcs != nil && b.js {
+		// A component function used as a value (a callback prop): compiled
+		// here as a closure, like an arrow, with writes deferred to run time.
+		value := &JsFuncExpr{Params: function.Params, Body: function.Body, Async: function.Async, Generator: function.Generator}
+		value.BaseExpr.BaseNode = function.BaseStmt.BaseNode
+		return b.functionValue(value, pos)
+	}
+	if ssrGlobalFunctionValues[node.Name] && b.js && !b.shadowedGlobal(node.Name) {
+		// A global function used as a value: items.filter(Boolean).
+		b.usedJS = true
+		return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "GlobalFunc"), Args: []goast.Expr{ssrGoString(b.site), ssrGoString(node.Name)}}}, nil
+	}
+	if (node.Name == "NaN" || node.Name == "Infinity") && !b.shadowedGlobal(node.Name) {
+		return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Expr: &goast.CallExpr{Fun: goSelector("vela", "ToNumber"), Args: []goast.Expr{ssrGoString(node.Name)}}}, nil
 	}
 	if b.ctx.ReactiveNames[node.Name] {
 		return nil, ssrExprUnsupported(pos, "local reactive binding %q has no server value; pass it as an exported prop or wait for hydration", node.Name)
@@ -741,6 +769,11 @@ func ssrNullishLiteral(expr JsExpr) bool {
 // optional link (?.) stops the rest of the chain when its object is null or
 // undefined (T-6.1b).
 func (b *ssrIRBuilder) member(node *JsMemberExpr, pos int) (SSRIRExpr, error) {
+	if b.js {
+		if value, ok := b.builtinConstant(node, pos); ok {
+			return value, nil
+		}
+	}
 	var links []*JsMemberExpr
 	var root JsExpr = node
 	for {
@@ -820,8 +853,20 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 			return value, err
 		}
 	}
+	if value, handled, err := b.builtinCall(call, pos); handled {
+		return value, err
+	}
 	callee, ok := call.Callee.(*JsIdent)
 	if !ok {
+		if member, isMember := call.Callee.(*JsMemberExpr); isMember && !member.Computed {
+			if property, named := member.Prop.(*JsIdent); named {
+				owner := "value"
+				if object, global := member.Obj.(*JsIdent); global && ssrGlobalNamespaces[object.Name] {
+					owner = object.Name
+				}
+				return nil, ssrExprUnsupported(pos, "method %s.%s is not available during server rendering", owner, property.Name)
+			}
+		}
 		return nil, ssrExprUnsupported(pos, "only named local formatter calls are available to static SSR")
 	}
 	reason := fmt.Sprintf("call %q", callee.Name)
@@ -1181,3 +1226,7 @@ func ssrComponentContext(ctx SSRExprContext) SSRExprContext {
 	ctx.Bindings = map[string]goast.Expr{}
 	return ctx
 }
+
+// ssrGlobalNamespaces are the global objects whose functions the
+// catalogue lists (docs/SSR_TRANSLATION_MATRIX.md §2).
+var ssrGlobalNamespaces = map[string]bool{"Math": true, "Number": true, "Object": true, "JSON": true, "Array": true, "String": true, "Promise": true, "Intl": true, "Date": true, "localStorage": true, "sessionStorage": true, "console": true, "window": true, "document": true}

@@ -185,6 +185,8 @@ func arrayIndexKey(key string) bool {
 // time.Time, or a []byte is read through JSON (T-5.1).
 func jsValue(value any) any {
 	switch v := value.(type) {
+	case Func, *Promise:
+		return v
 	case nil, UndefinedValue, bool, string, float64, []any, *Object, map[string]any:
 		if m, ok := v.(map[string]any); ok {
 			return objectFromMap(m)
@@ -392,13 +394,13 @@ func property(value any, key string) any {
 		}
 		return Undefined()
 	case string:
-		units := utf16.Encode([]rune(v))
+		units := units(v)
 		if key == "length" {
 			return float64(len(units))
 		}
 		if arrayIndexKey(key) {
 			if n, _ := strconv.Atoi(key); n < len(units) {
-				return string(utf16.Decode(units[n : n+1]))
+				return fromUnits(units[n : n+1])
 			}
 		}
 		return Undefined()
@@ -420,7 +422,7 @@ func property(value any, key string) any {
 		}
 		if arrayIndexKey(key) {
 			if n, _ := strconv.Atoi(key); n < reflected.Len() {
-				return reflected.Index(n).Interface()
+				return unhole(reflected.Index(n).Interface())
 			}
 		}
 	case reflect.Map:
@@ -488,13 +490,9 @@ func (js *JS) Length(value any, site string) any {
 func (js *JS) SpreadItems(value any, site string) []any {
 	switch v := jsValue(value).(type) {
 	case []any:
-		return v
+		return unholed(v)
 	case string:
-		items := make([]any, 0, len(v))
-		for _, r := range v {
-			items = append(items, string(r))
-		}
-		return items
+		return codePoints(v)
 	case nil, UndefinedValue:
 		js.throw("TypeError", nullishName(v)+" is not iterable", site)
 		return nil
@@ -651,7 +649,7 @@ func Pow(left, right any) float64 {
 	if math.IsInf(exponent, 0) && math.Abs(base) == 1 {
 		return math.NaN()
 	}
-	return math.Pow(base, exponent)
+	return jsPow(base, exponent)
 }
 
 // compare implements the abstract relational comparison x < y. ok is

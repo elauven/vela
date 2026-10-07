@@ -20,5 +20,7 @@
  {"name":"Init props","component":"Init","props":{"title":"T","user":{"name":"Ann"},"tags":["x","y"],"value":"w"},"entries":["Init"],"states":[{"label":"T!","items":["x","y","end"],"count":2,"value":"w"}],"compare":true,"steps":[{"set":{"user":null}}]},
  {"name":"Live mid","component":"Live","props":{"n":2},"entries":["Live"],"awaits":[["Live#4","t"]],"compare":true,"steps":[{"click":"button.bump"},{"set":{"n":1}}],"mismatches":[{"name":"element-tag","from":"<h1 ","to":"<h2 ","kind":"structure"},{"name":"if-branch","from":"<!--[1-->","to":"<!--[0-->","kind":"structure"},{"name":"await-entry","from":"\"state\":\"t\"","to":"\"state\":\"c\"","kind":"structure","step":{"click":"button.bump"}},{"name":"text-value","from":"Title 2","to":"Title 9","kind":"value","step":{"click":"button.bump"}}]},
  {"name":"Loader then","component":"Loader","props":{"id":2},"entries":["Loader"],"awaits":[["Loader#0","t"]],"compare":true,"steps":[{"click":"button.next"},{"click":"button.neg"}],"mismatches":[{"name":"await-value","from":"item-4","to":"item-9","kind":"value"}]},
- {"name":"Loader catch","component":"Loader","props":{"id":-3},"entries":["Loader"],"awaits":[["Loader#0","c"]],"compare":true,"steps":[{"click":"button.next"}]}
+ {"name":"Loader catch","component":"Loader","props":{"id":-3},"entries":["Loader"],"awaits":[["Loader#0","c"]],"compare":true,"steps":[{"click":"button.next"}]},
+ {"name":"Values defaults","component":"Values","props":{},"entries":["Values"],"compare":true},
+ {"name":"Values astral","component":"Values","props":{"words":"𝔘𝔫𝔦𝔠𝔬𝔡𝔢 ж ß","list":[],"zero":-5.5,"empty":" "},"entries":["Values"],"compare":true}
 ]

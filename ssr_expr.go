@@ -8,6 +8,8 @@ import (
 	"go/token"
 	"strconv"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 const SSRExpressionDiagnosticCode = "VELA-SSR-EXPR"
@@ -244,8 +246,16 @@ func translateSSRObjectKey(key JsExpr, pos int) (string, error) {
 	case *JsIdent:
 		return node.Name, nil
 	case *JsLiteral:
+		if node.Kind == "number" {
+			// A numeric key is its number's text: 0x10 is "16".
+			if spelled, ok := ssrJSNumberLiteral(node.Raw); ok {
+				if value, err := strconv.ParseFloat(spelled, 64); err == nil && value >= 0 && value < 1e21 && (value == 0 || value >= 1e-6) {
+					return strconv.FormatFloat(value, 'f', -1, 64), nil
+				}
+			}
+		}
 		if node.Kind != "string" {
-			return "", ssrExprUnsupported(pos, "only identifier and string object property names are available to static SSR")
+			return "", ssrExprUnsupported(pos, "only identifier, string, and number object property names are available to static SSR")
 		}
 		if node.Decoded {
 			return node.Value, nil
@@ -277,11 +287,16 @@ func decodeSSRTemplateQuasi(raw string) (string, error) {
 }
 
 func decodeSSRJSStringContent(raw string, template bool) (string, error) {
-	var out strings.Builder
+	// The string is built as UTF-16 code units: escapes may spell surrogate
+	// pairs (\ud83d\ude00) or lone surrogates, which keep their WTF-8 form
+	// as in the runtime (T-6.3b).
+	var out ssrUnitBuilder
 	for index := 0; index < len(raw); index++ {
 		char := raw[index]
 		if char != '\\' {
-			out.WriteByte(char)
+			r, size := utf8.DecodeRuneInString(raw[index:])
+			out.WriteRune(r)
+			index += size - 1
 			continue
 		}
 		index++
@@ -290,31 +305,103 @@ func decodeSSRJSStringContent(raw string, template bool) (string, error) {
 		}
 		switch raw[index] {
 		case '\'', '"', '\\':
-			out.WriteByte(raw[index])
+			out.WriteCode(raw[index])
 		case '`', '$':
 			if !template {
 				return "", strconv.ErrSyntax
 			}
-			out.WriteByte(raw[index])
+			out.WriteCode(raw[index])
 		case 'n':
-			out.WriteByte('\n')
+			out.WriteCode('\n')
 		case 'r':
-			out.WriteByte('\r')
+			out.WriteCode('\r')
 		case 't':
-			out.WriteByte('\t')
+			out.WriteCode('\t')
 		case 'b':
-			out.WriteByte('\b')
+			out.WriteCode('\b')
 		case 'f':
-			out.WriteByte('\f')
+			out.WriteCode('\f')
 		case 'v':
-			out.WriteByte('\v')
+			out.WriteCode('\v')
 		case '0':
-			out.WriteByte(0)
+			if index+1 < len(raw) && raw[index+1] >= '0' && raw[index+1] <= '9' {
+				return "", strconv.ErrSyntax
+			}
+			out.WriteCode(0)
+		case 'x':
+			if index+2 >= len(raw) {
+				return "", strconv.ErrSyntax
+			}
+			n, err := strconv.ParseUint(raw[index+1:index+3], 16, 8)
+			if err != nil {
+				return "", strconv.ErrSyntax
+			}
+			out.WriteRune(rune(n))
+			index += 2
+		case 'u':
+			if index+1 < len(raw) && raw[index+1] == '{' {
+				end := strings.IndexByte(raw[index:], '}')
+				if end < 0 {
+					return "", strconv.ErrSyntax
+				}
+				n, err := strconv.ParseUint(raw[index+2:index+end], 16, 32)
+				if err != nil || n > 0x10FFFF {
+					return "", strconv.ErrSyntax
+				}
+				out.WriteRune(rune(n))
+				index += end
+				break
+			}
+			if index+4 >= len(raw) {
+				return "", strconv.ErrSyntax
+			}
+			n, err := strconv.ParseUint(raw[index+1:index+5], 16, 16)
+			if err != nil {
+				return "", strconv.ErrSyntax
+			}
+			out.WriteUnit(uint16(n))
+			index += 4
 		default:
 			return "", strconv.ErrSyntax
 		}
 	}
 	return out.String(), nil
+}
+
+// ssrUnitBuilder accumulates UTF-16 code units and encodes them as the
+// runtime does: pairs as UTF-8, lone surrogates as WTF-8.
+type ssrUnitBuilder struct{ units []uint16 }
+
+func (b *ssrUnitBuilder) WriteUnit(u uint16) { b.units = append(b.units, u) }
+func (b *ssrUnitBuilder) WriteCode(c byte)   { b.units = append(b.units, uint16(c)) }
+func (b *ssrUnitBuilder) WriteRune(r rune) {
+	if r >= 0x10000 {
+		high, low := utf16.EncodeRune(r)
+		b.units = append(b.units, uint16(high), uint16(low))
+		return
+	}
+	b.units = append(b.units, uint16(r))
+}
+
+func (b *ssrUnitBuilder) String() string {
+	var out strings.Builder
+	u := b.units
+	for i := 0; i < len(u); i++ {
+		c := rune(u[i])
+		if c >= 0xD800 && c <= 0xDBFF && i+1 < len(u) && u[i+1] >= 0xDC00 && u[i+1] <= 0xDFFF {
+			out.WriteRune(utf16.DecodeRune(c, rune(u[i+1])))
+			i++
+			continue
+		}
+		if c >= 0xD800 && c <= 0xDFFF {
+			out.WriteByte(byte(0xE0 | c>>12))
+			out.WriteByte(byte(0x80 | (c>>6)&0x3F))
+			out.WriteByte(byte(0x80 | c&0x3F))
+			continue
+		}
+		out.WriteRune(c)
+	}
+	return out.String()
 }
 
 func ssrBinaryToken(op string) (token.Token, bool) {

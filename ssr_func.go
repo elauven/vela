@@ -31,6 +31,10 @@ type ssrFuncTable struct {
 	// are declared up front as any and read without type facts.
 	captured map[string]bool
 	reads    map[string]bool
+	// variants counts the typed variants of each function (T-7.2a) and
+	// results holds the result facts of each compiled variant.
+	variants map[string]int
+	results  map[string]ssrIRFacts
 	// context is the context.Context of the render in generated code; nil
 	// means vela.ContextOf(w) in a renderer.
 	context goast.Expr
@@ -38,7 +42,7 @@ type ssrFuncTable struct {
 
 func newSSRFuncTable(plan *SSRRenderPlan, region *SSRRegion) *ssrFuncTable {
 	table := &ssrFuncTable{plan: plan, region: region, compiled: map[string]*goast.FuncLit{}, failed: map[string]error{},
-		building: map[string]bool{}, captured: map[string]bool{}, reads: map[string]bool{}}
+		building: map[string]bool{}, captured: map[string]bool{}, reads: map[string]bool{}, variants: map[string]int{}, results: map[string]ssrIRFacts{}}
 	locals := map[string]bool{}
 	for _, name := range plan.LocalOrder {
 		locals[name] = true
@@ -133,29 +137,76 @@ func ssrWalkIdents(node JsNode, visit func(string)) {
 
 // compile translates function name, or returns why it cannot be.
 func (t *ssrFuncTable) compile(name string) error {
-	if _, done := t.compiled[name]; done {
-		return nil
+	_, _, err := t.compileVariant(name, nil)
+	return err
+}
+
+// ssrMaxVariants is the threshold of T-7.2a: a function called with more
+// distinct argument type tuples uses its dynamic variant for the rest.
+const ssrMaxVariants = 4
+
+// compileVariant compiles the variant of function name for the argument
+// facts of a call site (T-7.2a) and returns its key (the Go variable is
+// ssrF_<key>) and its result facts. Arguments of unproven type, and calls
+// beyond the threshold, use the dynamic variant, whose key is name.
+func (t *ssrFuncTable) compileVariant(name string, args []ssrIRFacts) (string, ssrIRFacts, error) {
+	key, params := name, []ssrIRFacts(nil)
+	if suffix := ssrVariantSuffix(args); suffix != "" {
+		if _, known := t.compiled[name+"__"+suffix]; known || t.building[name+"__"+suffix] || t.variants[name] < ssrMaxVariants {
+			key, params = name+"__"+suffix, args
+		}
 	}
-	if err, failed := t.failed[name]; failed {
-		return err
+	if _, done := t.compiled[key]; done {
+		return key, t.results[key], nil
 	}
-	if t.building[name] {
-		return nil // recursion: the variable is declared before any body
+	if err, failed := t.failed[key]; failed {
+		return key, ssrIRFacts{}, err
+	}
+	if t.building[key] {
+		return key, ssrIRFacts{}, nil // recursion: the variable is declared before any body
 	}
 	function := ssrComponentFunctions(t.plan)[name]
 	if function == nil {
-		return ssrExprUnsupported(0, "%q is not a function of the component script", name)
+		return key, ssrIRFacts{}, ssrExprUnsupported(0, "%q is not a function of the component script", name)
 	}
-	t.building[name] = true
-	defer delete(t.building, name)
-	literal, err := (&ssrFuncCompiler{table: t, name: name, next: new(int)}).function(function)
+	if key != name {
+		t.variants[name]++
+	}
+	t.building[key] = true
+	defer delete(t.building, key)
+	compiler := &ssrFuncCompiler{table: t, name: name, next: new(int), paramFacts: params}
+	literal, err := compiler.function(function)
 	if err != nil {
-		t.failed[name] = err
-		return err
+		t.failed[key] = err
+		return key, ssrIRFacts{}, err
 	}
-	t.compiled[name] = literal
-	t.order = append(t.order, name)
-	return nil
+	t.compiled[key] = literal
+	t.results[key] = compiler.result()
+	t.order = append(t.order, key)
+	return key, t.results[key], nil
+}
+
+// ssrVariantSuffix names a variant by its typed arguments: __num_str_any;
+// it is empty when no argument has a proven type.
+func ssrVariantSuffix(args []ssrIRFacts) string {
+	parts := make([]string, len(args))
+	typed := false
+	for i, facts := range args {
+		switch {
+		case facts.Number:
+			parts[i], typed = "num", true
+		case facts.String:
+			parts[i], typed = "str", true
+		case facts.Bool:
+			parts[i], typed = "bool", true
+		default:
+			parts[i] = "any"
+		}
+	}
+	if !typed {
+		return ""
+	}
+	return strings.Join(parts, "_")
 }
 
 // declarations returns the statements that declare the compiled functions
@@ -216,6 +267,17 @@ type ssrFuncCompiler struct {
 	// (an event callback passed as a prop) is impure only if the render
 	// calls it (T-6.6a).
 	deferImpure bool
+	// freshness tracks the arrays and objects the function created (T-6.6b);
+	// nested functions share the analysis of the function that contains them.
+	freshness *ssrFreshness
+	// paramFacts types the parameters of a typed variant (T-7.2a); varFacts
+	// holds the facts of typed Go locals; returns collects the facts of the
+	// values the function returns.
+	paramFacts  []ssrIRFacts
+	varFacts    map[string]ssrIRFacts
+	returns     ssrIRFacts
+	returnsSeen bool
+	lastFacts   ssrIRFacts
 	// scopes maps JavaScript names to Go variables, innermost last.
 	scopes []map[string]string
 	next   *int
@@ -260,7 +322,7 @@ func (c *ssrFuncCompiler) builder() *ssrIRBuilder {
 	b.params = map[string]SSRIRExpr{}
 	for _, scope := range c.scopes {
 		for name, goName := range scope {
-			b.params[name] = &ssrIRGo{Expr: goast.NewIdent(goName)}
+			b.params[name] = &ssrIRGo{ssrIRBase: ssrIRBase{Facts: c.varFacts[goName]}, Expr: goast.NewIdent(goName)}
 		}
 	}
 	b.funcCompiler = c
@@ -276,6 +338,7 @@ func (c *ssrFuncCompiler) expr(expr JsExpr) (goast.Expr, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
+	c.lastFacts = ir.irBase().Facts
 	return lowerSSRIR(ir), b.throws, nil
 }
 
@@ -298,6 +361,9 @@ func (c *ssrFuncCompiler) function(function *JsFuncDecl) (*goast.FuncLit, error)
 		return nil, c.fail("generator function %q is not admitted (§7.1)", c.name)
 	}
 	c.async = function.Async
+	if c.freshness == nil && function.Body != nil {
+		c.freshness = ssrAnalyzeFreshness(function.Body)
+	}
 	if c.table.region != nil && c.ctx == nil {
 		c.site = c.table.region.siteLabel(c.table.region.ScriptOffset + function.NodePos())
 	}
@@ -308,7 +374,12 @@ func (c *ssrFuncCompiler) function(function *JsFuncDecl) (*goast.FuncLit, error)
 	// seen by this call's catch clauses: the call does not run.
 	body = append(body, &goast.IfStmt{Cond: &goast.CallExpr{Fun: goSelector("ssrJS", "Failed")}, Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{ssrUndefined()}}}}})
 	for i, param := range function.Params {
-		stmts, err := c.bind(param, &goast.CallExpr{Fun: goSelector("vela", "Arg"), Args: []goast.Expr{goast.NewIdent("ssrArgs"), &goast.BasicLit{Kind: token.INT, Value: strconv.Itoa(i)}}})
+		arg := &goast.CallExpr{Fun: goSelector("vela", "Arg"), Args: []goast.Expr{goast.NewIdent("ssrArgs"), &goast.BasicLit{Kind: token.INT, Value: strconv.Itoa(i)}}}
+		if typed, ok := c.typedParam(function, i, param, arg); ok {
+			body = append(body, typed...)
+			continue
+		}
+		stmts, err := c.bind(param, arg)
 		if err != nil {
 			return nil, err
 		}
@@ -323,7 +394,11 @@ func (c *ssrFuncCompiler) function(function *JsFuncDecl) (*goast.FuncLit, error)
 	}
 	body = append(body, stmts...)
 	if !ssrEndsWithReturn(body) {
+		c.noteReturn(ssrIRFacts{})
 		body = append(body, &goast.ReturnStmt{Results: []goast.Expr{ssrUndefined()}})
+	}
+	if function.Async {
+		c.returns, c.returnsSeen = ssrIRFacts{}, true
 	}
 	if function.Async {
 		// The body runs to completion now; its result or exception settles
@@ -426,6 +501,16 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 		}
 		var out []goast.Stmt
 		for _, declarator := range s.Decls {
+			if call, ok := declarator.Init.(*JsCallExpr); ok && identName(declarator.Id) != "" {
+				if _, mutating := c.mutationTarget(call); mutating {
+					stmts, _, err := c.mutationStatement(call, c.declare(identName(declarator.Id)), true)
+					if err != nil {
+						return nil, err
+					}
+					out = append(out, stmts...)
+					continue
+				}
+			}
 			value := goast.Expr(ssrUndefined())
 			throws := false
 			if declarator.Init != nil {
@@ -446,7 +531,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 		return out, nil
 	case *JsFuncDecl:
 		goName, _ := c.lookup(s.Name)
-		closure, err := (&ssrFuncCompiler{table: c.table, name: s.Name, scopes: c.scopes, next: c.next, ctx: c.ctx, site: c.site, deferImpure: c.deferImpure}).function(s)
+		closure, err := (&ssrFuncCompiler{table: c.table, name: s.Name, scopes: c.scopes, next: c.next, ctx: c.ctx, site: c.site, deferImpure: c.deferImpure, freshness: c.freshness}).function(s)
 		if err != nil {
 			return nil, err
 		}
@@ -457,6 +542,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 		return c.exprStatement(s.X)
 	case *JsReturnStmt:
 		if s.Arg == nil {
+			c.noteReturn(ssrIRFacts{})
 			return []goast.Stmt{c.returnStmt(ssrUndefined())}, nil
 		}
 		if assignment, ok := s.Arg.(*JsAssignExpr); ok {
@@ -465,6 +551,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 			if err != nil {
 				return nil, err
 			}
+			c.noteReturn(ssrIRFacts{})
 			if _, local := c.lookup(ssrAssignmentRoot(assignment.L)); !local {
 				return append(stmts, c.returnStmt(ssrUndefined())), nil
 			}
@@ -478,6 +565,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
+		c.noteReturn(c.lastFacts)
 		if !throws {
 			return []goast.Stmt{c.returnStmt(value)}, nil
 		}
@@ -554,10 +642,11 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 // closure.
 func (c *ssrFuncCompiler) valueOf(expr JsExpr) (goast.Expr, bool, error) {
 	if function := ssrFunctionOf("", expr); function != nil {
-		closure, err := (&ssrFuncCompiler{table: c.table, name: "function", scopes: c.scopes, next: c.next, ctx: c.ctx, site: c.site, deferImpure: c.deferImpure}).function(function)
+		closure, err := (&ssrFuncCompiler{table: c.table, name: "function", scopes: c.scopes, next: c.next, ctx: c.ctx, site: c.site, deferImpure: c.deferImpure, freshness: c.freshness}).function(function)
 		if err != nil {
 			return nil, false, err
 		}
+		c.lastFacts = ssrIRFacts{}
 		return &goast.CallExpr{Fun: goSelector("vela", "Func"), Args: []goast.Expr{closure}}, false, nil
 	}
 	return c.expr(expr)
@@ -597,6 +686,11 @@ func (c *ssrFuncCompiler) guardTest(stmt *goast.IfStmt, throws bool) []goast.Stm
 // of a local, a member assignment, or an expression evaluated for its
 // effect (a call).
 func (c *ssrFuncCompiler) exprStatement(expr JsExpr) ([]goast.Stmt, error) {
+	if call, ok := expr.(*JsCallExpr); ok {
+		if stmts, handled, err := c.mutationStatement(call, "", false); handled {
+			return stmts, err
+		}
+	}
 	switch e := expr.(type) {
 	case *JsAssignExpr:
 		return c.assign(e.L, e.Op, e.R)
@@ -647,6 +741,12 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 		if !ok {
 			return c.impure(fmt.Sprintf("%q is not a local of the function; server rendering must not change state, props, or module bindings (T-6.6a)", t.Name))
 		}
+		if call, isCall := value.(*JsCallExpr); isCall && op == "=" {
+			if _, mutating := c.mutationTarget(call); mutating {
+				stmts, _, err := c.mutationStatement(call, goName, false)
+				return stmts, err
+			}
+		}
 		result, throws, err := c.valueOf(right)
 		if err != nil {
 			return nil, err
@@ -665,7 +765,7 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 		if !ok {
 			return nil, c.fail("assignment to a member of a computed value is not supported")
 		}
-		if _, local := c.lookup(ident.Name); !local {
+		if _, local := c.lookup(ident.Name); !local || c.freshness == nil || !c.freshness.fresh[ident.Name] {
 			return c.impure(fmt.Sprintf("assignment to a member of %q changes a value the function did not create (T-6.6a)", ident.Name))
 		}
 		object, objectThrows, err := c.expr(t.Obj)
@@ -1029,7 +1129,16 @@ func lowerSSRCallFunc(n *ssrIRCallFunc) goast.Expr {
 	if n.Callee != nil {
 		return &goast.CallExpr{Fun: n.Callee, Args: args}
 	}
-	return &goast.CallExpr{Fun: goast.NewIdent(n.Func), Args: args}
+	var call goast.Expr = &goast.CallExpr{Fun: goast.NewIdent(n.Func), Args: args}
+	switch {
+	case n.Facts.String:
+		call = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{call}}
+	case n.Facts.Number:
+		call = &goast.CallExpr{Fun: goSelector("vela", "ToNumber"), Args: []goast.Expr{call}}
+	case n.Facts.Bool:
+		call = &goast.CallExpr{Fun: goSelector("vela", "Truthy"), Args: []goast.Expr{call}}
+	}
+	return call
 }
 
 // compiledCall calls component function name through its compiled
@@ -1038,9 +1147,6 @@ func (b *ssrIRBuilder) compiledCall(name string, call *JsCallExpr, pos int) (SSR
 	table := b.ctx.funcs
 	if table == nil || !b.js {
 		return nil, ssrExprUnsupported(pos, "local formatter %q must contain exactly one return expression", name)
-	}
-	if err := table.compile(name); err != nil {
-		return nil, err
 	}
 	var args []SSRIRExpr
 	for _, argument := range call.Args {
@@ -1052,6 +1158,14 @@ func (b *ssrIRBuilder) compiledCall(name string, call *JsCallExpr, pos int) (SSR
 			return nil, err
 		}
 		args = append(args, value)
+	}
+	facts := make([]ssrIRFacts, len(args))
+	for i, arg := range args {
+		facts[i] = arg.irBase().Facts
+	}
+	key, result, err := table.compileVariant(name, facts)
+	if err != nil {
+		return nil, err
 	}
 	for local := range table.captured {
 		b.inlined[local] = true
@@ -1065,7 +1179,7 @@ func (b *ssrIRBuilder) compiledCall(name string, call *JsCallExpr, pos int) (SSR
 	}
 	b.usedJS, b.throws = true, true
 	b.called(name, SSROutcomeNative, "")
-	return &ssrIRCallFunc{ssrIRBase: b.base(pos, ssrIRFacts{}), Func: ssrFuncName(name), Args: args, Site: b.site}, nil
+	return &ssrIRCallFunc{ssrIRBase: b.base(pos, ssrTypedResult(result)), Func: ssrFuncName(key), Args: args, Site: b.site}, nil
 }
 
 // valueCall calls a function value held by a local of a translated
@@ -1160,7 +1274,7 @@ func (b *ssrIRBuilder) functionValue(expr JsExpr, pos int) (SSRIRExpr, error) {
 	switch {
 	case b.funcCompiler != nil:
 		parent := b.funcCompiler
-		c = &ssrFuncCompiler{table: parent.table, name: "function", scopes: parent.scopes, next: parent.next, ctx: parent.ctx, site: parent.site, deferImpure: parent.deferImpure}
+		c = &ssrFuncCompiler{table: parent.table, name: "function", scopes: parent.scopes, next: parent.next, ctx: parent.ctx, site: parent.site, deferImpure: parent.deferImpure, freshness: parent.freshness}
 	case b.ctx.funcs != nil && b.js:
 		ctx := b.ctx
 		ctx.resolving, ctx.resolvingFunctions = nil, nil
@@ -1312,4 +1426,76 @@ func ssrAssignmentRoot(target JsExpr) string {
 		}
 		target = member.Obj
 	}
+}
+
+// ── Typed variants (T-7.2a) ─────────────────────────────────────────────
+
+// typedParam declares parameter i as a typed Go local when the variant
+// proves its type and the body never assigns it.
+func (c *ssrFuncCompiler) typedParam(function *JsFuncDecl, i int, param JsExpr, arg goast.Expr) ([]goast.Stmt, bool) {
+	name := identName(param)
+	if name == "" || i >= len(c.paramFacts) || ssrAssigns(function.Body, name) {
+		return nil, false
+	}
+	facts := c.paramFacts[i]
+	var goType, convert string
+	switch {
+	case facts.Number:
+		goType, convert, facts = "float64", "ToNumber", ssrIRFacts{Number: true}
+	case facts.String:
+		goType, convert, facts = "string", "String", ssrIRFacts{String: true}
+	case facts.Bool:
+		goType, convert, facts = "bool", "Truthy", ssrIRFacts{Bool: true}
+	default:
+		return nil, false
+	}
+	goName := c.declare(name)
+	if c.varFacts == nil {
+		c.varFacts = map[string]ssrIRFacts{}
+	}
+	c.varFacts[goName] = facts
+	return []goast.Stmt{
+		&goast.DeclStmt{Decl: &goast.GenDecl{Tok: token.VAR, Specs: []goast.Spec{&goast.ValueSpec{
+			Names: []*goast.Ident{goast.NewIdent(goName)}, Type: goast.NewIdent(goType),
+			Values: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", convert), Args: []goast.Expr{arg}}},
+		}}}},
+		ssrUse(goName),
+	}, true
+}
+
+// ssrAssigns reports an assignment or update of name anywhere in body.
+func ssrAssigns(body *JsBlock, name string) bool {
+	found := false
+	WalkNode(body, func(n JsNode) bool {
+		switch node := n.(type) {
+		case *JsAssignExpr:
+			if identName(node.L) == name {
+				found = true
+			}
+		case *JsUnaryExpr:
+			if (node.Op == "++" || node.Op == "--") && identName(node.X) == name {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// noteReturn merges the facts of one returned value.
+func (c *ssrFuncCompiler) noteReturn(facts ssrIRFacts) {
+	if !c.returnsSeen {
+		c.returns, c.returnsSeen = facts, true
+		return
+	}
+	c.returns = ssrIRFacts{String: c.returns.String && facts.String, Number: c.returns.Number && facts.Number, Bool: c.returns.Bool && facts.Bool}
+}
+
+// result is the type every return of the function proves.
+func (c *ssrFuncCompiler) result() ssrIRFacts {
+	return ssrTypedResult(c.returns)
+}
+
+func ssrTypedResult(facts ssrIRFacts) ssrIRFacts {
+	return ssrIRFacts{String: facts.String, Number: facts.Number, Bool: facts.Bool}
 }

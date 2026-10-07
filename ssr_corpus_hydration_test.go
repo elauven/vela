@@ -171,6 +171,12 @@ func main() {
 				t.Logf("%s %s: %s", srcRoot, entry.Source, page)
 				continue
 			}
+			if _, err := os.Stat(filepath.Join(layout.ClientDir, filepath.FromSlash(entry.Module))); err != nil {
+				// The client build of this component failed (a negative corpus
+				// project); there is nothing to hydrate.
+				t.Logf("%s %s: no client module", srcRoot, entry.Source)
+				continue
+			}
 			htmlFile := filepath.Join(root, entry.Component+".html")
 			if err := os.WriteFile(htmlFile, []byte(page), 0o644); err != nil {
 				t.Fatal(err)
