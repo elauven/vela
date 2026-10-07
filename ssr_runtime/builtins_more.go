@@ -300,4 +300,3 @@ func (js *JS) Console(ctx context.Context, method string, args ...any) Undefined
 	}
 	return Undefined()
 }
-
