@@ -80,7 +80,7 @@ var ssrFuzzValues = map[string]string{
 	"n": `2.5`, "m": `-7`, "k": `3`, "big": `1e21`, "frac": `0.1`,
 	"s": `"Straße 😀 Ж"`, "t": `" 12px "`, "e": `""`, "h": `"0x1f"`,
 	"xs": `[3, 1, null, "b", 10, "a"]`, "ns": `[4.5, -2, 0, 9]`, "ss": `["b", "", "a😀", "Б"]`,
-	"o": `{"a": 1, "b": "two", "c": [1, 2], "d": null}`,
+	"o":   `{"a": 1, "b": "two", "c": [1, 2], "d": null}`,
 	"yes": `true`, "no": `false`, "z": `null`,
 }
 
