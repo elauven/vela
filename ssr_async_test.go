@@ -115,12 +115,12 @@ console.log(JSON.stringify(out));
 	}
 	out := filepath.Join(filepath.Dir(src), "out")
 	report := filepath.Join(out, "report.json")
-	withDOMEngine(t, DOMEngineBlocks, func() {
-		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/async/server", SSRReport: report}
-		if errors := buildSSRProject(collectVela(src), src, out, opts, false); errors != 0 {
-			t.Fatalf("SSR project errors=%d", errors)
-		}
-	})
+
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/async/server", SSRReport: report}
+	if errors := buildSSRProject(collectVela(src), src, out, opts, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+
 	data, err := os.ReadFile(report)
 	if err != nil {
 		t.Fatal(err)

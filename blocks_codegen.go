@@ -4,8 +4,8 @@ package main
 // (docs/HYDRATION_ARCHITECTURE.md, task 039).
 //
 // The script side of ASTGen (props, state, setters, $derived, $effect, the
-// flush plan) is shared with the legacy engine. This file replaces only the
-// template lowering: every template body becomes a fragment function that
+// flush plan) lives in astgen.go. This file owns the template lowering:
+// every template body becomes a fragment function that
 // builds DOM through a cursor and returns { p(dirty, scopeChanged) }, and
 // structural constructs call the runtime blocks of runtime/runtime-blocks.js.
 //
@@ -18,51 +18,9 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 )
-
-// DOMEngine selects how CSR components build and update DOM.
-type DOMEngine uint8
-
-const (
-	DOMEngineLegacy DOMEngine = iota
-	DOMEngineBlocks
-)
-
-// activeDOMEngine is set by --dom-engine. The block engine is the default
-// since gate H3 (G-11.1); VELA_DOM_ENGINE=legacy selects the legacy engine
-// for a whole process, which lets the test suite run under either engine
-// until the legacy engine is removed (task 042).
-var activeDOMEngine = domEngineFromEnv()
-
-func domEngineFromEnv() DOMEngine {
-	engine, err := parseDOMEngine(os.Getenv("VELA_DOM_ENGINE"))
-	if err != nil {
-		return DOMEngineBlocks
-	}
-	return engine
-}
-
-// String names the engine as the CLI flag does.
-func (engine DOMEngine) String() string {
-	if engine == DOMEngineLegacy {
-		return "legacy"
-	}
-	return "blocks"
-}
-
-func parseDOMEngine(value string) (DOMEngine, error) {
-	switch value {
-	case "legacy":
-		return DOMEngineLegacy, nil
-	case "", "blocks":
-		return DOMEngineBlocks, nil
-	default:
-		return DOMEngineBlocks, fmt.Errorf("invalid --dom-engine value %q (want 'blocks' or 'legacy')", value)
-	}
-}
 
 // blocksRuntimeImport is the module the generators import block helpers
 // from; project builds retarget it like the other runtime modules.
@@ -70,71 +28,6 @@ const blocksRuntimeImport = "./runtime-blocks.js"
 
 // blocksRuntimeExports lists the helpers exported by runtime-blocks.js.
 var blocksRuntimeExports = runtimeExportNames(embeddedBlocksRuntime)
-
-// blocksEngineSupports reports whether the block engine lowers every node of
-// a template; other templates keep the legacy engine (each/await bindings
-// that are destructuring patterns).
-//
-// Child components and slots use the component protocol shared with the
-// legacy engine ($$component, $$slotFactory, $$slot), so components
-// compiled by either engine can be nested in each other.
-func blocksEngineSupports(nodes []Node) bool {
-	for _, node := range nodes {
-		switch n := node.(type) {
-		case *ElementNode:
-			if !blocksEngineSupports(n.Children) {
-				return false
-			}
-		case *TextNode:
-		case *IfChainNode:
-			for _, branch := range n.Branches {
-				if !blocksEngineSupports(branch.Children) {
-					return false
-				}
-			}
-		case *EachBlockNode:
-			if !isPlainIdentifier(n.ItemName) || (n.IndexName != "" && !isPlainIdentifier(n.IndexName)) {
-				return false
-			}
-			if !blocksEngineSupports(n.Children) || !blocksEngineSupports(n.ElseChildren) {
-				return false
-			}
-		case *AwaitBlockNode:
-			if (n.ValueName != "" && !isPlainIdentifier(n.ValueName)) || (n.ErrorName != "" && !isPlainIdentifier(n.ErrorName)) {
-				return false
-			}
-			if !blocksEngineSupports(n.PendingChildren) || !blocksEngineSupports(n.ThenChildren) || !blocksEngineSupports(n.CatchChildren) {
-				return false
-			}
-		case *ComponentNode:
-			for _, slotNodes := range n.Slots {
-				if !blocksEngineSupports(slotNodes) {
-					return false
-				}
-			}
-		case *SlotNode:
-			if !blocksEngineSupports(n.Fallback) {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func isPlainIdentifier(name string) bool {
-	if name == "" {
-		return false
-	}
-	for i, r := range name {
-		if r == '$' || r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || (i > 0 && r >= '0' && r <= '9') {
-			continue
-		}
-		return false
-	}
-	return true
-}
 
 // blocksState is the per-component state of the block lowering.
 type blocksState struct {
@@ -272,8 +165,8 @@ func (g *ASTGen) buildBlocksView(nodes []Node) {
 	if rootIsElement {
 		_, rootIsElement = nodes[0].(*ElementNode)
 	}
-	// Multiple roots, a structural root or a text root get the same
-	// display:contents wrapper the legacy engine creates (B-3.8); the runtime
+	// Multiple roots, a structural root or a text root get a
+	// display:contents wrapper (B-3.8); the runtime
 	// creates or adopts it ($$mountComponent).
 	g.body = append(g.body, genLet("$$root", genNull()))
 	// A single root element is assigned to $$root by the root fragment.
@@ -380,7 +273,7 @@ func (f *blocksFragment) decl(scopeLocals []blocksLocal) JsStmt {
 	return &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: f.name, Params: params, Body: genBlock(body...)}
 }
 
-// buildBlocksChildren lowers a child list with the legacy whitespace rules:
+// buildBlocksChildren lowers a child list with these whitespace rules:
 // an all-static list with an element is one static subtree; a list of static
 // nodes and text holes keeps its whitespace; otherwise whitespace-only static
 // runs between dynamic nodes are dropped.
@@ -494,8 +387,7 @@ func (g *ASTGen) buildBlocksElement(el *ElementNode, isRoot bool) {
 	}
 
 	// Listeners first; DOM writes after the children exist, so a select's
-	// value is written once its options are present (as in the legacy
-	// engine's initial render).
+	// value is written once its options are present.
 	var writes []JsStmt
 	for _, attr := range el.Attrs {
 		switch {
@@ -680,7 +572,7 @@ func (g *ASTGen) buildBlocksEach(each *EachBlockNode) {
 	row := g.blocksNestedFragment(each.Children, locals)
 	key := JsExpr(genNull())
 	if each.HasKey() {
-		// Legacy keyed rows compare String(key), so 1 and "1" are one row.
+		// Keyed rows compare String(key), so 1 and "1" are one row.
 		g.blocks.locals = append(g.blocks.locals, locals...)
 		key = blocksArrow([]JsExpr{id(each.ItemName), id(index)}, genString(g.templateExpr(each.KeyAST)))
 		g.blocks.locals = g.blocks.locals[:len(g.blocks.locals)-len(locals)]
@@ -691,7 +583,7 @@ func (g *ASTGen) buildBlocksEach(each *EachBlockNode) {
 	}
 	args := []JsExpr{blocksArrow(nil, g.templateExpr(each.IterExpr)), key, id(row), fallback, blocksChanged(g.blocksGuard(each.IterExpr))}
 	// A keyed each over a $state.deep collection refreshes only the rows that
-	// in-place mutations touched, like the legacy engine (task 023).
+	// in-place mutations touched (task 023).
 	if each.HasKey() {
 		if plan := g.eachIncrementalPlanFor(each); plan != nil {
 			args = append(args, blocksArrow(nil, genCall(id("$$eachRowsForMutations"), id("$$activeMutations_"+plan.stateName), strLit(plan.keyField))))
@@ -721,9 +613,8 @@ func (g *ASTGen) buildBlocksAwait(await *AwaitBlockNode) {
 
 // buildBlocksComponent mounts a child component through its public factory
 // (B-3.9). Slot content is built by fragments of this component, owned and
-// updated here; props, component events and bind: to a $bindable prop keep
-// the legacy engine's protocol, so the child may be compiled by either
-// engine.
+// updated here; props, component events and bind: to a $bindable prop use
+// the component protocol of $component.
 func (g *ASTGen) buildBlocksComponent(comp *ComponentNode) {
 	slots := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
 	names := make([]string, 0, len(comp.Slots))
@@ -880,7 +771,7 @@ func (g *ASTGen) blocksSite(expr *TemplateExpr) {
 }
 
 func (g *ASTGen) blocksSiteStmt(expr *TemplateExpr) JsStmt {
-	if g.sfc == nil || g.sfc.SitePath == "" || expr == nil || g.blocks == nil {
+	if g.sfc == nil || g.sfc.SitePath == "" || expr == nil || false {
 		return nil
 	}
 	line, column := sourceLineColumn(g.sfc.Source, g.sfc.TemplateOffset+expr.Pos)

@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -532,63 +531,3 @@ func nodeCheck(js string) error {
 type nodeCheckError struct{ detail string }
 
 func (e *nodeCheckError) Error() string { return e.detail }
-
-func TestASTGenCorpusLegacySpliceBaseline(t *testing.T) {
-	var fallback []string
-	for name, src := range corpus {
-		sfc, err := parseSFC(src)
-		if err != nil {
-			t.Fatalf("%s: parse SFC: %v", name, err)
-		}
-		nodes, err := parseTemplate(sfc.Template)
-		if err != nil {
-			t.Fatalf("%s: parse template: %v", name, err)
-		}
-		_, used := buildProgramWithInfo(name, sfc, nodes, analyzeScript(sfc.Script), "vela-baseline", false)
-		if used {
-			fallback = append(fallback, name)
-		}
-	}
-	sort.Strings(fallback)
-	got := strings.Join(fallback, ",")
-	const want = ""
-	if got != want {
-		t.Fatalf("legacy-splice baseline changed: got [%s], want [%s]", got, want)
-	}
-}
-
-func TestSupportedProjectCorpusUsesDirectAST(t *testing.T) {
-	paths := []string{
-		"test_projects/corpus/deepseek-fixed/src/App.vela",
-		"test_projects/corpus/gpt-fixed/src/App.vela",
-		"test_projects/corpus/qwen-fixed/src/App.vela",
-		"test_projects/corpus/qwen-fixed/src/TodoItem.vela",
-		"test_projects/qwen-dashboard-vela/src/App.vela",
-		"test_projects/qwen-dashboard-vela/src/BarChart.vela",
-		"test_projects/qwen-dashboard-vela/src/OrdersTable.vela",
-		"test_projects/qwen-dashboard-vela/src/StatCard.vela",
-	}
-
-	var fallback []string
-	for _, path := range paths {
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sfc, err := parseSFC(string(raw))
-		if err != nil {
-			t.Fatalf("%s: parse SFC: %v", path, err)
-		}
-		nodes, err := parseTemplate(sfc.Template)
-		if err != nil {
-			t.Fatalf("%s: parse template: %v", path, err)
-		}
-		_, used := buildProgramWithInfo("Fixture", sfc, nodes, analyzeScript(sfc.Script), "vela-baseline", false)
-		if used {
-			fallback = append(fallback, path)
-		}
-	}
-	if len(fallback) != 0 {
-		t.Fatalf("supported project corpus used legacy splice: %s", strings.Join(fallback, ", "))
-	}
-}

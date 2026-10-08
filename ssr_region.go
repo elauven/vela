@@ -295,7 +295,6 @@ func FormatSSRRegionError(filename string, err *SSRRegionError) string {
 // SSRReport is the --ssr-report document (§10.4).
 type SSRReport struct {
 	Version    int                  `json:"version"`
-	Engine     string               `json:"engine"`
 	Components []SSRComponentReport `json:"components"`
 	Summary    SSRReportSummary     `json:"summary"`
 }
@@ -322,7 +321,7 @@ type ssrReportCollector struct {
 }
 
 func newSSRReportCollector() *ssrReportCollector {
-	return &ssrReportCollector{report: SSRReport{Version: 1, Engine: activeDOMEngine.String()}}
+	return &ssrReportCollector{report: SSRReport{Version: 1}}
 }
 
 func (c *ssrReportCollector) add(src, srcRoot string, region *SSRRegion, err error) {

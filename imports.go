@@ -98,23 +98,6 @@ func importRecordsFromProgram(script string, prog *JsProgram, lineOffset int) []
 //  Path rewriting
 // ─────────────────────────────────────────────
 
-// RewriteImportPath rewrites an import path for the compiled JS output.
-//
-// Rules applied in order:
-//  1. Node module (no leading ./ or /) → unchanged
-//  2. .vela extension → replace with .js
-//  3. Already has .js/.mjs/.cjs/.ts extension → unchanged
-//  4. Extensionless relative path → append .js
-//
-// RewriteHydrationImportPath rewrites a local Vela component import to its
-// generated hydration entry. Non-component imports retain the normal rewrite.
-func RewriteHydrationImportPath(importPath string) string {
-	if strings.HasSuffix(importPath, ".vela") {
-		return strings.TrimSuffix(importPath, ".vela") + ".hydrate.js"
-	}
-	return RewriteImportPath(importPath)
-}
-
 func RewriteImportPath(importPath string) string {
 	// Node module — pass through unchanged
 	if !strings.HasPrefix(importPath, ".") && !strings.HasPrefix(importPath, "/") {
@@ -256,20 +239,13 @@ func findLastStringLit(script string, start, end int) (int, int, bool) {
 
 // Runtime module specifiers the generators emit. Project builds retarget
 // them to the single copies at the output root (runtimeImportFor).
-const (
-	defaultRuntimeImport   = "./runtime.js"
-	hydrationRuntimeImport = "./runtime-hydration.js"
-)
+const defaultRuntimeImport = "./runtime.js"
 
 // runtimeContractExport is the contract marker every generated module that
 // uses the runtime imports (R-12.2d). Change its name whenever generated code
 // starts to depend on a new or changed runtime API, so a stale runtime fails
 // at module load with a missing-export error.
 const runtimeContractExport = "$$runtimeContract1"
-
-// hydrationRuntimeExports lists the helpers that live in the hydration
-// runtime module rather than the core runtime.
-var hydrationRuntimeExports = runtimeExportNames(embeddedHydrationRuntime)
 
 // runtimeExportNames returns the names a runtime module exports with
 // `export function name` or `export const name`.
@@ -292,14 +268,12 @@ func runtimeExportNames(source []byte) map[string]bool {
 	return names
 }
 
-// runtimeImportDecls splits runtime helper imports between the core runtime,
-// the hydration runtime and the block runtime, keeping their order.
+// runtimeImportDecls splits runtime helper imports between the core runtime
+// and the block runtime, keeping their order.
 func runtimeImportDecls(specs []JsImportSpec) []JsStmt {
-	var core, hydration, blocks []JsImportSpec
+	var core, blocks []JsImportSpec
 	for _, spec := range specs {
-		if hydrationRuntimeExports[spec.Imported] {
-			hydration = append(hydration, spec)
-		} else if blocksRuntimeExports[spec.Imported] {
+		if blocksRuntimeExports[spec.Imported] {
 			blocks = append(blocks, spec)
 		} else {
 			core = append(core, spec)
@@ -309,7 +283,7 @@ func runtimeImportDecls(specs []JsImportSpec) []JsStmt {
 	for _, group := range []struct {
 		specs  []JsImportSpec
 		source string
-	}{{core, defaultRuntimeImport}, {hydration, hydrationRuntimeImport}, {blocks, blocksRuntimeImport}} {
+	}{{core, defaultRuntimeImport}, {blocks, blocksRuntimeImport}} {
 		if len(group.specs) == 0 {
 			continue
 		}
@@ -349,7 +323,6 @@ func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
 		runtimeSpecifier = defaultRuntimeImport
 	}
 	dir := strings.TrimSuffix(runtimeSpecifier, "runtime.js")
-	hydrationSpecifier := dir + "runtime-hydration.js"
 	blocksSpecifier := dir + "runtime-blocks.js"
 	var core *JsImportDecl
 	usesRuntime := false
@@ -365,9 +338,6 @@ func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
 				core = imp
 			}
 			imp.Source = runtimeSpecifier
-		case hydrationRuntimeImport:
-			usesRuntime = true
-			imp.Source = hydrationSpecifier
 		case blocksRuntimeImport:
 			usesRuntime = true
 			imp.Source = blocksSpecifier

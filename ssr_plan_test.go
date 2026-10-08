@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestBuildSSRRenderPlanUsesCachedExpressionsAndStableEventKeys(t *testing.T) {
+func TestBuildSSRRenderPlanUsesCachedExpressions(t *testing.T) {
 	src := `<script>
 export let title = "";
 export let active = false;
@@ -33,22 +33,11 @@ export let items = [];
 	if !ok {
 		t.Fatalf("first plan node = %T, want *SSRPlanElement", plan.Nodes[0])
 	}
-	if button.EventKey != "vela-demo-e0" {
-		t.Fatalf("button event key = %q", button.EventKey)
-	}
-	if len(plan.Events) != 2 {
-		t.Fatalf("event count = %d, want 2", len(plan.Events))
-	}
-	for i, event := range plan.Events {
-		if event.EventKey != button.EventKey {
-			t.Fatalf("event %d key = %q, want %q", i, event.EventKey, button.EventKey)
-		}
-	}
 	sourceButton, ok := sfc.TemplateAST.Nodes[0].(*ElementNode)
 	if !ok {
 		t.Fatalf("source node = %T, want *ElementNode", sfc.TemplateAST.Nodes[0])
 	}
-	if plan.Events[0].Handler != sourceButton.Attrs[0].Expr || plan.Events[1].Handler != sourceButton.Attrs[1].Expr {
+	if len(button.Attrs) != 2 || button.Attrs[0].Role != SSRAttrEvent || button.Attrs[0].Expr != sourceButton.Attrs[0].Expr || button.Attrs[1].Expr != sourceButton.Attrs[1].Expr {
 		t.Fatal("event handlers were not preserved as cached template expression ASTs")
 	}
 	text := button.Children[0].(*SSRPlanText)
@@ -80,50 +69,6 @@ export let items = [];
 		if got := plan.Dynamics[i]; got.ID != i || got.Kind != want || got.Expr == nil {
 			t.Fatalf("dynamic site %d = %#v, want id=%d kind=%d with expression", i, got, i, want)
 		}
-	}
-}
-
-func TestBuildSSRRenderPlanDoesNotTreatComponentEventsAsDOMEvents(t *testing.T) {
-	sfc, err := parseSFC(`<template><Child @on:close={close} :title={title} /></template>`)
-	if err != nil {
-		t.Fatalf("parseSFC: %v", err)
-	}
-	plan, err := BuildSSRRenderPlan("Parent", sfc, "vela-parent")
-	if err != nil {
-		t.Fatalf("BuildSSRRenderPlan: %v", err)
-	}
-	if len(plan.Events) != 0 {
-		t.Fatalf("component event became a DOM event: %#v", plan.Events)
-	}
-	component, ok := plan.Nodes[0].(*SSRPlanComponent)
-	if !ok {
-		t.Fatalf("plan node = %T, want *SSRPlanComponent", plan.Nodes[0])
-	}
-	if len(component.Attrs) != 2 || component.Attrs[0].Role != SSRAttrEvent || component.Attrs[1].Role != SSRAttrDynamic {
-		t.Fatalf("component attrs = %#v", component.Attrs)
-	}
-}
-
-func TestBuildSSRRenderPlanAssignsDeterministicElementMarkerIDs(t *testing.T) {
-	sfc, err := parseSFC(`<template><main><p>body</p><Child><svelte:fragment slot="z"><aside>z</aside></svelte:fragment><svelte:fragment slot="a"><nav>a</nav></svelte:fragment></Child></main></template>`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
-	if err != nil {
-		t.Fatal(err)
-	}
-	main := plan.Nodes[0].(*SSRPlanElement)
-	paragraph := main.Children[0].(*SSRPlanElement)
-	child := main.Children[1].(*SSRPlanComponent)
-	if main.HydrationID != 0 || paragraph.HydrationID != 1 {
-		t.Fatalf("root marker IDs = main:%d paragraph:%d", main.HydrationID, paragraph.HydrationID)
-	}
-	if got := child.Slots["a"][0].(*SSRPlanElement).HydrationID; got != 2 {
-		t.Fatalf("a slot marker ID=%d want 2", got)
-	}
-	if got := child.Slots["z"][0].(*SSRPlanElement).HydrationID; got != 3 {
-		t.Fatalf("z slot marker ID=%d want 3", got)
 	}
 }
 
@@ -212,29 +157,5 @@ func TestBuildSSRRenderPlanRejectsPresenceFieldPropCollision(t *testing.T) {
 	_, err = BuildSSRRenderPlan("Demo", sfc, "vela-demo")
 	if err == nil || !strings.Contains(err.Error(), `prop "set" maps to reserved generated presence field "Set"`) {
 		t.Fatalf("reserved prop collision error=%v", err)
-	}
-}
-
-func TestBuildSSRRenderPlanBuildsSafeHydrationStatePayload(t *testing.T) {
-	sfc, err := parseSFC(`<script>
-let count = $state(1);
-let config = $state.deep({ label: 'ready', enabled: true });
-let now = $state(Date.now());
-</script><template><p>ready</p></template>`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := plan.Hydration.JSON, `{"config":{"enabled":true,"label":"ready"},"count":1}`; got != want {
-		t.Fatalf("hydration state JSON=%q want %q", got, want)
-	}
-	if !plan.Hydration.Incomplete || len(plan.Hydration.Omitted) != 1 || plan.Hydration.Omitted[0] != "now" {
-		t.Fatalf("hydration state completeness=%#v", plan.Hydration)
-	}
-	if got := plan.Hydration.Deep; len(got) != 1 || got[0] != "config" {
-		t.Fatalf("hydration deep state=%#v want [config]", got)
 	}
 }

@@ -18,24 +18,6 @@ import (
 	"testing"
 )
 
-func TestDeepState_AnalyzerRecognizesStateDeep(t *testing.T) {
-	legacyCodeShapeTest(t)
-	src := `<script>
-  let items = $state.deep([1, 2, 3]);
-  let counter = $state(0);
-</script>
-<template><p>{counter}</p></template>`
-	out := compileGenerated(t, src)
-	// Sanity: both vars declared.
-	if !strings.Contains(out, "let counter = 0") {
-		t.Fatalf("counter not declared correctly:\n%s", out)
-	}
-	// items should be wrapped in $$proxy.
-	if !strings.Contains(out, "$$proxy([1, 2, 3]") {
-		t.Fatalf("items not wrapped in $$proxy:\n%s", out)
-	}
-}
-
 func TestDeepState_ProxyHelperEmittedWhenNeeded(t *testing.T) {
 	src := `<script>
   let items = $state.deep([]);

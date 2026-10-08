@@ -95,12 +95,12 @@ func runSSRExpressionRows(t *testing.T, rows []ssrExpressionOracleRow) []string 
 	}
 	outRoot := filepath.Join(root, "out")
 	projectModule := "example.com/ssroracle"
-	withDOMEngine(t, DOMEngineBlocks, func() {
-		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}
-		if errors := buildSSRProject(collectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
-			t.Fatalf("SSR project errors=%d", errors)
-		}
-	})
+
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}
+	if errors := buildSSRProject(collectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+
 	compilerRoot, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

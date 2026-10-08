@@ -8,130 +8,6 @@ import (
 	"testing"
 )
 
-func TestGeneratedSSRRendererRunsInGoModule(t *testing.T) {
-	legacySSRProtocolTest(t)
-	sfc, err := parseSFC(`<script>export let title="";</script><template><main>Hello {title}</main></template>`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, err := BuildSSRGoFile(plan, "components")
-	if err != nil {
-		t.Fatal(err)
-	}
-	renderer, err := FormatSSRGoFile(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := t.TempDir()
-	components := filepath.Join(root, "components")
-	if err := os.MkdirAll(components, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	compilerRoot, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	module := "module example.com/ssrfixture\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(module), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(components, "Page.go"), renderer, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mainSource := `package main
-import (
-    "os"
-    "example.com/ssrfixture/components"
-)
-func main() {
-    if err := components.RenderPageAt(os.Stdout, components.PageProps{Title: "world", Set: map[string]bool{"title": true}}, components.PageSlots{}, "vela-page-instance"); err != nil {
-        panic(err)
-    }
-}
-`
-	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(mainSource), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	command := exec.Command("go", "run", ".")
-	command.Dir = root
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("go run: %v\n%s", err, output)
-	}
-	if got, want := string(output), "<!--e:vela-page-instance:0--><main>Hello <!--v:vela-page-instance:0-->world<!--/v:vela-page-instance:0--></main><!--/e:vela-page-instance:0--><script type=\"application/json\" id=\"vela-state-vela-page-instance\">{\"version\":1,\"component\":\"vela-page-instance\",\"props\":{\"Title\":\"world\"},\"state\":{},\"incomplete\":false}</script>"; got != want {
-		t.Fatalf("SSR output=%q want %q", got, want)
-	}
-}
-
-func TestGeneratedSSRRendererRunsNamedFormatterFromTemplateAndDerived(t *testing.T) {
-	legacySSRProtocolTest(t)
-	sfc, err := parseSFC(`<script>
-const prefix = 'Hello, ';
-let suffix = '!';
-function label(value) { return prefix + value + suffix; }
-export let title = '';
-let shown = $derived(label(title));
-</script><template><main><p>{label(title)}</p><p>{shown}</p></main></template>`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	plan, err := BuildSSRRenderPlan("Page", sfc, "vela-page")
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, err := BuildSSRGoFile(plan, "components")
-	if err != nil {
-		t.Fatal(err)
-	}
-	renderer, err := FormatSSRGoFile(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := t.TempDir()
-	components := filepath.Join(root, "components")
-	if err := os.MkdirAll(components, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	compilerRoot, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	module := "module example.com/ssrformatter\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(module), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(components, "Page.go"), renderer, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mainSource := `package main
-import (
-    "os"
-    "example.com/ssrformatter/components"
-)
-func main() {
-    if err := components.RenderPageAt(os.Stdout, components.PageProps{Title: "Vela", Set: map[string]bool{"title": true}}, components.PageSlots{}, "vela-page-instance"); err != nil {
-        panic(err)
-    }
-}
-`
-	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(mainSource), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	command := exec.Command("go", "run", ".")
-	command.Dir = root
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("formatter Go renderer: %v\n%s", err, output)
-	}
-	if got := strings.Count(string(output), ">Hello, Vela!<"); got != 2 {
-		t.Fatalf("formatter output count=%d want 2:\n%s", got, output)
-	}
-}
-
 // R1: unselected branches of JavaScript ternary/logical expressions must not
 // be evaluated by generated Go. In particular, props.Items[0] is unsafe for
 // the empty collection but is valid in the selected non-empty branches.
@@ -262,9 +138,9 @@ func main() {
 		t.Fatalf("go run: %v\n%s", err, output)
 	}
 	payloadNull := `"Value":null`
-	if activeDOMEngine == DOMEngineBlocks {
-		payloadNull = `"value":null`
-	}
+
+	payloadNull = `"value":null`
+
 	for _, want := range []string{">null<", ">undefined<", ">1,,,2,,3<", payloadNull} {
 		if !strings.Contains(string(output), want) {
 			t.Fatalf("nullish SSR output misses %q:\n%s", want, output)
@@ -275,8 +151,7 @@ func main() {
 // ssrTestRenderCall is the Go call that renders the Page component of a
 // test program with the active DOM engine's API.
 func ssrTestRenderCall(props, instance string) string {
-	if activeDOMEngine == DOMEngineBlocks {
-		return "components.RenderPage(os.Stdout, " + props + ", components.PageSlots{})"
-	}
-	return "components.RenderPageAt(os.Stdout, " + props + ", components.PageSlots{}, \"" + instance + "\")"
+
+	return "components.RenderPage(os.Stdout, " + props + ", components.PageSlots{})"
+
 }

@@ -123,12 +123,12 @@ console.log(JSON.stringify(out));
 	}
 
 	out := filepath.Join(filepath.Dir(src), "out")
-	withDOMEngine(t, DOMEngineBlocks, func() {
-		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/mods/server"}
-		if errors := buildSSRProject(collectVela(src), src, out, opts, false); errors != 0 {
-			t.Fatalf("SSR project errors=%d", errors)
-		}
-	})
+
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/mods/server"}
+	if errors := buildSSRProject(collectVela(src), src, out, opts, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+
 	for _, file := range []string{"server/modules/lib/util/util.go", "server/modules/fmt/fmt.go"} {
 		if _, err := os.Stat(filepath.Join(out, filepath.FromSlash(file))); err != nil {
 			t.Fatalf("module package %s: %v", file, err)
@@ -239,12 +239,12 @@ func TestSSRModuleDiagnostics(t *testing.T) {
 	})
 	out := filepath.Join(filepath.Dir(src), "out")
 	report := filepath.Join(out, "report.json")
-	withDOMEngine(t, DOMEngineBlocks, func() {
-		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/diag/server", SSRReport: report}
-		if errors := buildSSRProject(collectVela(src), src, out, opts, false); errors == 0 {
-			t.Fatal("expected SSR errors")
-		}
-	})
+
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/diag/server", SSRReport: report}
+	if errors := buildSSRProject(collectVela(src), src, out, opts, false); errors == 0 {
+		t.Fatal("expected SSR errors")
+	}
+
 	data, err := os.ReadFile(report)
 	if err != nil {
 		t.Fatal(err)

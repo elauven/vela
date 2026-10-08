@@ -45,56 +45,6 @@ func TestDir_ClassDirectiveShorthand(t *testing.T) {
 	}
 }
 
-func TestDir_ClassDirectivePreservesStaticClass(t *testing.T) {
-	legacyCodeShapeTest(t)
-	// Static `class="btn"` and dynamic `class:active={cond}` should
-	// coexist — "btn" stays put while "active" toggles.
-	src := `<script>
-  let active = $state(false);
-</script>
-<template>
-  <div class="btn" class:active={active}>x</div>
-</template>`
-	out := compileGenerated(t, src)
-	if !strings.Contains(out, "setAttribute('class', 'btn')") {
-		t.Fatalf("expected static class='btn' to be preserved:\n%s", out)
-	}
-	if !strings.Contains(out, "classList.toggle('active'") {
-		t.Fatalf("expected toggle for class:active:\n%s", out)
-	}
-	// Crucially: no `setAttribute('active', ...)` — that would mean
-	// the directive prefix wasn't recognized.
-	if strings.Contains(out, "setAttribute('active'") {
-		t.Fatalf("class: directive leaked as a static attribute:\n%s", out)
-	}
-}
-
-func TestDir_ClassDirectiveRegistersUpdate(t *testing.T) {
-	legacyCodeShapeTest(t)
-	src := `<script>
-  let active = $state(false);
-</script>
-<template>
-  <div class:active={active}>x</div>
-</template>`
-	out := compileGenerated(t, src)
-	// The setter for `active` should fire the toggle, so changing
-	// state actually updates the DOM.
-	if !strings.Contains(out, "function $$set_active(") {
-		t.Fatalf("missing setter:\n%s", out)
-	}
-	// Find the setter body and ensure it schedules the toggle update.
-	idx := strings.Index(out, "function $$set_active(")
-	end := strings.Index(out[idx:], "\n  }\n")
-	if end < 0 {
-		t.Fatalf("can't find setter end")
-	}
-	setterBody := out[idx : idx+end]
-	if !strings.Contains(out, "classList.toggle('active'") || !strings.Contains(setterBody, "$$dirty_u") || !strings.Contains(setterBody, "$$scheduleFlush()") {
-		t.Fatalf("setter does not mark and schedule class:active refresh:\n%s", setterBody)
-	}
-}
-
 func TestDir_StyleDirectiveSetsProperty(t *testing.T) {
 	src := `<script>
   let color = $state('red');
@@ -185,29 +135,5 @@ func TestDir_DirectivesMarkElementDynamic(t *testing.T) {
 	}
 	if !strings.Contains(out, "classList.toggle('active'") {
 		t.Fatalf("expected real toggle emission:\n%s", out)
-	}
-}
-
-func TestDir_StyleAndClassCombined(t *testing.T) {
-	legacyCodeShapeTest(t)
-	// All four shapes on one element — sanity check that the parser
-	// doesn't trip over the combination and codegen emits all.
-	src := `<script>
-  let active = $state(false);
-  let color = $state('red');
-</script>
-<template>
-  <div class="card" class:active={active} style:color={color}>x</div>
-</template>`
-	out := compileGenerated(t, src)
-	checks := []string{
-		"setAttribute('class', 'card')",
-		"classList.toggle('active', !!active)",
-		"setProperty('color', String(color))",
-	}
-	for _, c := range checks {
-		if !strings.Contains(out, c) {
-			t.Errorf("missing emission %q in:\n%s", c, out)
-		}
 	}
 }

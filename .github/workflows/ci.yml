@@ -64,11 +64,6 @@ jobs:
       - name: Verify SSR browser gate failure accounting
         run: node tools/run-ssr-browser-baseline-self-test.mjs
 
-      - name: Full suite on the legacy DOM engine (until task 042 removes it)
-        run: go test ./...
-        env:
-          VELA_DOM_ENGINE: legacy
-
   build:
     name: Build binaries
     runs-on: ubuntu-latest

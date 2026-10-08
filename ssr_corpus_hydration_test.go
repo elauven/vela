@@ -37,10 +37,10 @@ func TestBlocksCorpusHydrates(t *testing.T) {
 		module := "example.com/corpus"
 		layout := NewSSRProjectLayoutWithModule(outRoot, module+"/server")
 		files := collectVela(srcRoot)
-		withDOMEngine(t, DOMEngineBlocks, func() {
-			opts := CompileOptions{StatusWriter: io.Discard, SSRModule: module + "/server"}
-			_ = captureStderr(t, func() { buildSSRProject(files, srcRoot, outRoot, opts, false) })
-		})
+
+		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: module + "/server"}
+		_ = captureStderr(t, func() { buildSSRProject(files, srcRoot, outRoot, opts, false) })
+
 		manifestData, err := os.ReadFile(filepath.Join(layout.ClientDir, "vela.manifest.json"))
 		if err != nil {
 			t.Fatalf("%s: %v", srcRoot, err)

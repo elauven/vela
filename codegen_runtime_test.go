@@ -24,42 +24,6 @@ import (
 //  Bug 8 — DocumentFragment insertAdjacentHTML
 // ─────────────────────────────────────────────
 
-func TestBug8_FragmentHelperEmitted(t *testing.T) {
-	legacyCodeShapeTest(t)
-	src := `<script></script><template><div>hi</div></template>`
-	out := compileGenerated(t, src)
-	// A static root does not need the fragment helper. It must use direct DOM
-	// construction rather than calling insertAdjacentHTML on an arbitrary node.
-	if !strings.Contains(out, ".innerHTML = 'hi'") || strings.Contains(out, ".insertAdjacentHTML(") {
-		t.Fatalf("static root should use direct safe DOM construction:\n%s", out)
-	}
-}
-
-func TestBug8_StaticChildrenRouteThroughHelper(t *testing.T) {
-	legacyCodeShapeTest(t)
-	// Static HTML batched into one call should use the helper, not
-	// the raw insertAdjacentHTML which fails on fragments.
-	src := `<script></script>
-<template>
-  <div><h1>Title</h1><p>Body</p></div>
-</template>`
-	out := compileGenerated(t, src)
-	// insertAdjacentHTML now lives only in runtime.js — a compiled
-	// component must not call it directly at all.  Static HTML is
-	// emitted either via $$root.innerHTML (root element) or
-	// $$insertHTML (fragment / slot targets) — both are fine; the
-	// raw insertAdjacentHTML on a component-side variable is not.
-	if strings.Contains(out, ".insertAdjacentHTML(") {
-		t.Fatalf("compiled component calls insertAdjacentHTML "+
-			"directly; it should route through $$insertHTML:\n%s", out)
-	}
-	if !strings.Contains(out, "$$insertHTML(") &&
-		!strings.Contains(out, ".innerHTML =") {
-		t.Fatalf("expected static HTML via $$insertHTML or "+
-			"innerHTML:\n%s", out)
-	}
-}
-
 func TestBug8_SlotFactoryUsesHelper(t *testing.T) {
 	// The crashing case: a component slot with static HTML content.
 	src := `<script></script>

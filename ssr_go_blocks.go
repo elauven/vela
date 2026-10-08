@@ -11,9 +11,8 @@ import (
 )
 
 // Block-engine Go renderers (task 040, docs/HYDRATION_ARCHITECTURE.md §5,
-// §6, §8.2). Under --dom-engine=blocks a renderer writes block ranges
-// instead of value and element markers, records its component state in the
-// payload stream of the root, and has no instance-identifier API.
+// §6, §8.2). A renderer writes block ranges, records its component state in
+// the payload stream of the root, and has no instance-identifier API.
 //
 // The stream travels in the io.Writer: the first renderer called with a
 // plain writer is the root, wraps the writer, and writes the payload script
@@ -27,8 +26,7 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 	}
 	emitter := ssrGoEmitter{
 		ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID,
-		scopeExpr:    &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(plan.ScopeID)},
-		awaitOptions: goast.NewIdent("options"), blocks: true, componentName: plan.ComponentName,
+		awaitOptions: goast.NewIdent("options"), componentName: plan.ComponentName,
 		region: region, facts: map[JsExpr]ssrIRFacts{},
 	}
 	// A single root element is the component's element; any other root gets
@@ -351,12 +349,10 @@ func (e *ssrGoEmitter) blocksAwait(node *SSRPlanAwait, pending []goast.Stmt) ([]
 	return e.blocksAwaitBlock(node, pending)
 }
 
-// writeSSRBlocksProjectFile writes the server products of one component
-// under the block engine: the Go renderer, its preserved props contract,
-// and scoped styles. The per-component client artifacts of the legacy
-// hydration (.hydrate.js, .hydrate_client.js, .ssr.json, event bridges) do
-// not exist under the block engine (A-8.8); the client module gains its
-// hydrate entry in task 041.
+// writeSSRBlocksProjectFile writes the server products of one component:
+// the Go renderer, its preserved props contract, and scoped styles. The
+// client module is the ordinary CSR module; there are no per-component
+// hydration artifacts (A-8.8).
 func writeSSRBlocksProjectFile(src, srcRoot string, layout SSRProjectLayout, plan *SSRRenderPlan, file *goast.File) error {
 	source, err := FormatSSRGoFile(file)
 	if err != nil {
@@ -534,9 +530,7 @@ func (e *ssrGoEmitter) blocksAwaitBlock(node *SSRPlanAwait, pending []goast.Stmt
 // fallback in a range with the state token "f" (contract §9.1). The main
 // branch has no server code.
 func (e *ssrGoEmitter) clientBlock(node *SSRPlanClient) ([]goast.Stmt, error) {
-	if !e.blocks {
-		return nil, ssrExprUnsupported(node.Span.Start, "{#client} and client-only components need the block engine")
-	}
+
 	fallback, err := e.nodes(node.Fallback)
 	if err != nil {
 		return nil, err

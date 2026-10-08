@@ -81,10 +81,10 @@ func (p *ssrHostProject) build(scaffold bool) (int, string) {
 	srcRoot := filepath.Join(p.root, "src")
 	var errors int
 	stderr := captureStderr(p.t, func() {
-		withDOMEngine(p.t, DOMEngineBlocks, func() {
-			opts := CompileOptions{StatusWriter: io.Discard, SSRModule: SSRDefaultModule, SSRScaffoldHosts: scaffold}
-			errors = buildSSRProject(collectVela(srcRoot), srcRoot, filepath.Join(p.root, "out"), opts, false)
-		})
+
+		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: SSRDefaultModule, SSRScaffoldHosts: scaffold}
+		errors = buildSSRProject(collectVela(srcRoot), srcRoot, filepath.Join(p.root, "out"), opts, false)
+
 	})
 	return errors, stderr
 }

@@ -326,6 +326,11 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				checkSpan(n.Span, "each block")
 				if strings.TrimSpace(n.ItemName) == "" {
 					add(n.ExprPos, "#each block has an empty item binding")
+				} else if !isPlainAwaitBinding(strings.TrimSpace(n.ItemName)) {
+					// Destructuring row bindings are not supported.
+					add(n.ExprPos, "#each item binding must be one plain JavaScript identifier")
+				} else if n.IndexName != "" && !isPlainAwaitBinding(strings.TrimSpace(n.IndexName)) {
+					add(n.ExprPos, "#each index binding must be one plain JavaScript identifier")
 				}
 				validateExpr(n.IterExpr, n.ExprPos, "#each iterable")
 				if n.HasKey() {
@@ -577,23 +582,6 @@ func templateExprDeps(expr *TemplateExpr, vars []string) []string {
 		return nil
 	}
 	return FindDepsInNode(expr.Program, vars)
-}
-
-func templatePartsDeps(parts []*Part, vars []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, part := range parts {
-		if part == nil || part.Static {
-			continue
-		}
-		for _, dep := range templateExprDeps(part.Expr, vars) {
-			if !seen[dep] {
-				seen[dep] = true
-				out = append(out, dep)
-			}
-		}
-	}
-	return out
 }
 
 type Part struct {

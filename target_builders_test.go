@@ -43,18 +43,6 @@ func TestGeneratedPrimitiveLiteralBuildersUseTypedValues(t *testing.T) {
 	}
 }
 
-func TestTypedHTMLFillUsesDecodedDataLiteral(t *testing.T) {
-	g := &ASTGen{}
-	html := `<p title="a&b">quote ' and "</p>`
-	printed := PrintJS(&JsProgram{Body: g.fillHTMLStmts("$$target", html)}, PrintPretty)
-	if !strings.Contains(printed, "innerHTML = "+EncodeGeneratedString(html)) {
-		t.Fatalf("HTML payload was not emitted through decoded literal builder:\n%s", printed)
-	}
-	if strings.Contains(printed, "&amp;") {
-		t.Fatalf("HTML payload was escaped as an attribute value instead of JS data:\n%s", printed)
-	}
-}
-
 func TestTypedStyleInjectionUsesDecodedCSSLiteral(t *testing.T) {
 	g := &ASTGen{sfc: &SFC{Style: `.card::before { content: "'"; }`}, scopeID: "vela-test"}
 	printed := PrintJS(&JsProgram{Body: g.buildStyleInjection()}, PrintPretty)

@@ -34,12 +34,12 @@ func TestSSRManifestRootModes(t *testing.T) {
 		}
 	}
 	outRoot := filepath.Join(root, "out")
-	withDOMEngine(t, DOMEngineBlocks, func() {
-		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/modes/server"}
-		if errors := buildSSRProject(collectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
-			t.Fatalf("SSR project errors=%d", errors)
-		}
-	})
+
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/modes/server"}
+	if errors := buildSSRProject(collectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+
 	data, err := os.ReadFile(filepath.Join(outRoot, "client", "vela.manifest.json"))
 	if err != nil {
 		t.Fatal(err)

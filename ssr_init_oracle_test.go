@@ -82,12 +82,12 @@ func TestSSRInitOracle(t *testing.T) {
 	}
 	outRoot := filepath.Join(root, "out")
 	projectModule := "example.com/ssrinitoracle"
-	withDOMEngine(t, DOMEngineBlocks, func() {
-		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}
-		if errors := buildSSRProject(collectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
-			t.Fatalf("SSR project errors=%d", errors)
-		}
-	})
+
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}
+	if errors := buildSSRProject(collectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+
 	rendered := runSSROracleProgram(t, outRoot, projectModule, calls.String())
 	paragraph := regexp.MustCompile(`<p[^>]*>(.*?)</p>`)
 	payload := regexp.MustCompile(`<script type="application/json" data-vela-root>(.*)</script>`)

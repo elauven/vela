@@ -28,10 +28,10 @@ func TestSSRMutationRules(t *testing.T) {
 	})
 	out := filepath.Join(filepath.Dir(src), "out")
 	report := filepath.Join(out, "report.json")
-	withDOMEngine(t, DOMEngineBlocks, func() {
-		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/rules/server", SSRReport: report}
-		buildSSRProject(collectVela(src), src, out, opts, false)
-	})
+
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/rules/server", SSRReport: report}
+	buildSSRProject(collectVela(src), src, out, opts, false)
+
 	data, err := os.ReadFile(report)
 	if err != nil {
 		t.Fatal(err)

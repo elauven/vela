@@ -1,14 +1,12 @@
 package main
 
 import (
-	"go/types"
 	"crypto/md5"
-	"encoding/json"
 	"fmt"
+	"go/types"
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"unicode"
 )
@@ -66,10 +64,6 @@ func NewSSRProjectLayoutWithModule(outRoot, modulePath string) SSRProjectLayout 
 	}
 }
 
-func (layout SSRProjectLayout) clientPath(src, srcRoot string) string {
-	return mirrorPath(src, srcRoot, layout.ClientDir, ".js")
-}
-
 func (layout SSRProjectLayout) serverPath(src, srcRoot string) string {
 	return mirrorGoPath(src, srcRoot, layout.ServerDir)
 }
@@ -97,21 +91,6 @@ func (layout SSRProjectLayout) importPath(src, srcRoot string) string {
 func (layout SSRProjectLayout) stylePath(src, srcRoot string) string {
 	return mirrorPath(src, srcRoot, layout.StylesDir, ".css")
 }
-func (layout SSRProjectLayout) eventBridgePath(src, srcRoot string) string {
-	return mirrorPath(src, srcRoot, layout.ClientDir, ".ssr-events.js")
-}
-
-func (layout SSRProjectLayout) hydratePath(src, srcRoot string) string {
-	return mirrorPath(src, srcRoot, layout.ClientDir, ".hydrate.js")
-}
-
-func (layout SSRProjectLayout) hydrationClientPath(src, srcRoot string) string {
-	return mirrorPath(src, srcRoot, layout.ClientDir, ".hydrate_client.js")
-}
-
-func (layout SSRProjectLayout) manifestPath(src, srcRoot string) string {
-	return mirrorPath(src, srcRoot, layout.ClientDir, ".ssr.json")
-}
 
 // buildSSRProject adds server and styles products around the established CSR
 // project build. The caller owns user-facing progress and exit handling.
@@ -129,13 +108,10 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	clientOpts := opts
 	clientOpts.Hosts = hosts
 	hosts.Modules = newSSRModules(layout, srcRoot, hosts)
-	// The block engine's client module is the ordinary CSR module; it gains
-	// its hydrate entry in task 041 (H3).
-	clientOpts.HydrationSupport = activeDOMEngine != DOMEngineBlocks
+	// The client module is the ordinary CSR module; hydrate() adopts server
+	// HTML with it (C-4.1).
 	errors := buildProject(files, srcRoot, layout.ClientDir, clientOpts, parallel)
-	if activeDOMEngine == DOMEngineBlocks {
-		hosts.RootModes = ssrRootModes(files, srcRoot)
-	}
+	hosts.RootModes = ssrRootModes(files, srcRoot)
 	for _, problem := range hosts.Problems {
 		fmt.Fprintf(os.Stderr, "  x  %s\n", problem.Error())
 		errors++
@@ -181,11 +157,9 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 			errors++
 		}
 	}
-	if activeDOMEngine == DOMEngineBlocks {
-		if err := writeSSRManifest(files, srcRoot, layout, hosts.RootModes); err != nil {
-			fmt.Fprintf(os.Stderr, "  x  SSR manifest: %v\n", err)
-			errors++
-		}
+	if err := writeSSRManifest(files, srcRoot, layout, hosts.RootModes); err != nil {
+		fmt.Fprintf(os.Stderr, "  x  SSR manifest: %v\n", err)
+		errors++
 	}
 	if opts.SSRScaffoldHosts {
 		for _, created := range scaffoldSSRHosts(hosts.Project, suggestions) {
@@ -252,75 +226,6 @@ func validateSSRProjectPackages(layout SSRProjectLayout, hostTypes map[string]*t
 	return nil
 }
 
-// canBuildSSRHydrationDependencies verifies every local component that appears in
-// the template graph. A parent executable client may only import a child
-// .hydrate.js entry when that entry will itself expose a live client instance.
-func canBuildSSRHydrationDependencies(nodes []Node, links map[string]SSRComponentLink, srcRoot string, visiting map[string]bool) bool {
-	return ssrHydrationDependencyBlocker(nodes, links, srcRoot, visiting) == ""
-}
-
-// ssrHydrationDependencyBlocker returns why a local child component prevents
-// executable hydration of its parent, or "" when every child can hydrate.
-// Names are visited in sorted order so the reported reason is deterministic.
-func ssrHydrationDependencyBlocker(nodes []Node, links map[string]SSRComponentLink, srcRoot string, visiting map[string]bool) string {
-	used := ssrHydrationUsedComponentNames(nodes)
-	names := make([]string, 0, len(used))
-	for name := range used {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		link, ok := links[name]
-		if !ok || link.SourcePath == "" {
-			return fmt.Sprintf("child component <%s> is not a linked local .vela component", name)
-		}
-		if visiting[link.SourcePath] {
-			return fmt.Sprintf("child component <%s> is part of a component cycle", name)
-		}
-		data, err := os.ReadFile(link.SourcePath)
-		if err != nil {
-			return fmt.Sprintf("child component <%s> cannot be read: %v", name, err)
-		}
-		child, err := parseSFC(string(data))
-		if err != nil {
-			return fmt.Sprintf("child component <%s> cannot be parsed: %v", name, err)
-		}
-		if reason := ssrHydrationTemplateBlocker(link.SourcePath, string(data), child.TemplateAST.Nodes); reason != "" {
-			return fmt.Sprintf("child component <%s> cannot hydrate: %s", name, reason)
-		}
-		analysis := analyzeScriptAST(child.ScriptAST)
-		childLinks, err := ResolveSSRLocalComponentLinks(link.SourcePath, srcRoot, analysis)
-		if err != nil {
-			return fmt.Sprintf("child component <%s>: %v", name, err)
-		}
-		if _, err := ssrHydrationComponentNames(child, analysis); err != nil {
-			return fmt.Sprintf("child component <%s>: %v", name, err)
-		}
-		visiting[link.SourcePath] = true
-		if reason := ssrHydrationDependencyBlocker(child.TemplateAST.Nodes, childLinks, srcRoot, visiting); reason != "" {
-			return fmt.Sprintf("child component <%s>: %s", name, reason)
-		}
-		delete(visiting, link.SourcePath)
-	}
-	return ""
-}
-
-// ssrHydrationTemplateBlocker describes the first template node outside the
-// executable hydration subset as "file:line:col: <kind> reason", or returns
-// "" when the template can hydrate.
-func ssrHydrationTemplateBlocker(filename, source string, nodes []Node) string {
-	capability := AnalyzeSSRCapability(nodes)
-	if capability.ExecutableHydration() {
-		return ""
-	}
-	issue, ok := capability.FirstHydrationIssue()
-	if !ok {
-		return "the template needs one element root with supported marker-aware descendants"
-	}
-	line, col := sourceLineColumn(source, issue.Span.Start)
-	return fmt.Sprintf("%s:%d:%d: <%s> %s", filename, line+1, col+1, issue.NodeKind, issue.Reason)
-}
-
 // SSRHydrationBlockedError reports why a component fell back to static-only
 // output before the error of that fallback, so the build names the construct
 // that blocks hydration rather than an event handler the static bridge cannot
@@ -329,15 +234,6 @@ type SSRHydrationBlockedError struct {
 	Reason   string
 	Fallback error
 }
-
-func (e *SSRHydrationBlockedError) Error() string {
-	// An event handler is outside the server-evaluated region (T-2.2): the
-	// diagnostic names the hydration reason only. The fallback error stays
-	// reachable through Unwrap.
-	return SSRHydrationBlockedDiagnosticCode + ": executable hydration is not available: " + e.Reason
-}
-
-func (e *SSRHydrationBlockedError) Unwrap() error { return e.Fallback }
 
 // SSRHydrationBlockedDiagnosticCode is reported when a component cannot use
 // executable hydration and its static-only fallback is not possible either.
@@ -374,161 +270,29 @@ func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, hos
 		return err
 	}
 	links = LinkSSRComponentPackages(links, srcRoot, layout)
-	if activeDOMEngine == DOMEngineBlocks {
-		normalizeTableRows(sfc.TemplateAST.Nodes)
-		if err := checkSSRBlocksNesting(src, string(data), sfc.TemplateAST.Nodes, links); err != nil {
-			return err
-		}
+	normalizeTableRows(sfc.TemplateAST.Nodes)
+	if err := checkSSRBlocksNesting(src, string(data), sfc.TemplateAST.Nodes, links); err != nil {
+		return err
 	}
 	plan, err := BuildSSRRenderPlanWithAnalysisAndLinks(componentName(src), sfc, analysis, scopeID, links)
 	if err != nil {
 		return err
 	}
 	bindSSRHosts(plan, hosts, src, analysis)
-	if activeDOMEngine == DOMEngineBlocks && hosts.RootModes != nil {
+	if hosts.RootModes != nil {
 		plan.RootStatic = !ssrInteractive(hosts.RootModes, src)
 	}
-	// The renderer is built first so that the region report covers every
-	// component; its error keeps its place after the hydration checks.
+	// The region records are kept whether or not the renderer succeeds, so
+	// the report covers every component.
 	file, region, renderErr := buildSSRGoRendererWithRegion(plan, layout.packageName(src, srcRoot), hosts.Project.relative(src), string(data))
 	region.locate(string(data))
 	if regionOut != nil {
 		*regionOut = region
 	}
-	if activeDOMEngine == DOMEngineBlocks {
-		if renderErr != nil {
-			return renderErr
-		}
-		return writeSSRBlocksProjectFile(src, srcRoot, layout, plan, file)
-	}
-	clientRuntime := runtimeImportFor(filepath.Dir(layout.hydratePath(src, srcRoot)), layout.ClientDir)
-	var hydrate *JsProgram
-	executableHydration := CanBuildSSRHydrationClient(sfc.TemplateAST.Nodes) && canBuildSSRHydrationDependencies(sfc.TemplateAST.Nodes, links, srcRoot, map[string]bool{src: true})
-	if executableHydration && plan.Hydration.Incomplete {
-		return ssrIncompleteHydrationStateError(src, string(data), analysis, plan.Hydration.Omitted)
-	}
-	var bridge *JsProgram
-	mode := SSRArtifactStaticOnly
-	if executableHydration {
-		hydrationClient, err := BuildSSRHydrationClientProgram(componentName(src), sfc, analysis, scopeID)
-		if err != nil {
-			return err
-		}
-		hydrationClientPath := layout.hydrationClientPath(src, srcRoot)
-		if err := os.MkdirAll(filepath.Dir(hydrationClientPath), 0o755); err != nil {
-			return err
-		}
-		finalizeRuntimeImports(hydrationClient, clientRuntime)
-		if err := os.WriteFile(hydrationClientPath, []byte(PrintJS(hydrationClient, PrintPretty)), 0o644); err != nil {
-			return err
-		}
-		mode = SSRArtifactExecutable
-		hydrate, err = BuildSSRHydrateEntryWithClient(plan, "./"+filepath.Base(hydrationClientPath))
-	} else {
-		// The standalone bridge is a static-only fallback. Executable hydration
-		// owns reactive DOM listeners itself, so validating it here would reject
-		// a component before its full client lifecycle is even selected.
-		bridge, err = BuildSSRStaticEventBridge(plan)
-		if err != nil {
-			reason := ssrHydrationTemplateBlocker(src, string(data), sfc.TemplateAST.Nodes)
-			if reason == "" {
-				reason = ssrHydrationDependencyBlocker(sfc.TemplateAST.Nodes, links, srcRoot, map[string]bool{src: true})
-			}
-			if reason == "" {
-				return err
-			}
-			return &SSRHydrationBlockedError{Reason: reason, Fallback: err}
-		}
-		hydrate, err = BuildSSRHydrateEntry(plan)
-	}
-	if err != nil {
-		return err
-	}
-	finalizeRuntimeImports(hydrate, clientRuntime)
-	hydrateSource := []byte(PrintJS(hydrate, PrintPretty))
 	if renderErr != nil {
 		return renderErr
 	}
-	source, err := FormatSSRGoFile(file)
-	if err != nil {
-		return err
-	}
-	serverPath := layout.serverPath(src, srcRoot)
-	if err := os.MkdirAll(filepath.Dir(serverPath), 0o755); err != nil {
-		return err
-	}
-	propsPath := layout.propsPath(src, srcRoot)
-	_, err = ssrProjectPropsSource(plan, propsPath, layout.packageName(src, srcRoot))
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(serverPath, source, 0o644); err != nil {
-		return err
-	}
-	hydratePath := layout.hydratePath(src, srcRoot)
-	if err := os.MkdirAll(filepath.Dir(hydratePath), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(hydratePath, hydrateSource, 0o644); err != nil {
-		return err
-	}
-	manifest := SSRArtifactManifest{Component: componentName(src), Mode: mode, Hydrate: filepath.Base(hydratePath)}
-	if executableHydration {
-		manifest.HydrationClient = filepath.Base(layout.hydrationClientPath(src, srcRoot))
-	} else if bridge != nil {
-		manifest.StaticEventBridge = filepath.Base(layout.eventBridgePath(src, srcRoot))
-	}
-	manifestSource, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return err
-	}
-	manifestPath := layout.manifestPath(src, srcRoot)
-	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(manifestPath, append(manifestSource, '\n'), 0o644); err != nil {
-		return err
-	}
-	if bridge != nil {
-		bridgePath := layout.eventBridgePath(src, srcRoot)
-		if err := os.MkdirAll(filepath.Dir(bridgePath), 0o755); err != nil {
-			return err
-		}
-		finalizeRuntimeImports(bridge, clientRuntime)
-		if err := os.WriteFile(bridgePath, []byte(PrintJS(bridge, PrintPretty)), 0o644); err != nil {
-			return err
-		}
-	}
-	if plan.ScopedCSS == "" {
-		return nil
-	}
-	stylePath := layout.stylePath(src, srcRoot)
-	if err := os.MkdirAll(filepath.Dir(stylePath), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(stylePath, []byte(plan.ScopedCSS), 0o644)
-}
-
-func ssrIncompleteHydrationStateError(filename, source string, analysis *Analysis, omitted []string) error {
-	position := 0
-	if analysis != nil {
-		for _, state := range analysis.StateVars {
-			if state == nil {
-				continue
-			}
-			for _, name := range omitted {
-				if state.Name == name {
-					position = state.Pos
-					break
-				}
-			}
-			if position != 0 {
-				break
-			}
-		}
-	}
-	line, column := sourceLineColumn(source, position)
-	return fmt.Errorf("%s:%d:%d: %s: executable SSR hydration requires serializable initial $state values; cannot restore %s", filename, line, column, SSRStateDiagnosticCode, strings.Join(omitted, ", "))
+	return writeSSRBlocksProjectFile(src, srcRoot, layout, plan, file)
 }
 
 func ssrProjectPropsSource(plan *SSRRenderPlan, path, packageName string) ([]byte, error) {

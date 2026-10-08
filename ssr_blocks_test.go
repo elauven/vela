@@ -104,12 +104,12 @@ func runSSRBlocksSuite(t *testing.T, files map[string]string, cases []ssrBlocksC
 	}
 	outRoot := filepath.Join(root, "out")
 	projectModule := "example.com/ssrblocks"
-	withDOMEngine(t, DOMEngineBlocks, func() {
-		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}
-		if errors := buildSSRProject(collectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
-			t.Fatalf("SSR project errors=%d", errors)
-		}
-	})
+
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}
+	if errors := buildSSRProject(collectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
+		t.Fatalf("SSR project errors=%d", errors)
+	}
+
 	for _, legacy := range []string{"App.hydrate.js", "Host.ssr.json", "Host.hydrate.js"} {
 		if _, err := os.Stat(filepath.Join(outRoot, "client", legacy)); err == nil {
 			t.Fatalf("block engine wrote legacy hydration artifact %s", legacy)

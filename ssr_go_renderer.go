@@ -24,12 +24,6 @@ func BuildSSRGoFile(plan *SSRRenderPlan, packageName string) (*goast.File, error
 	return buildSSRGoFile(plan, packageName, true, newSSRRegion(plan))
 }
 
-// BuildSSRGoRendererFile emits a project renderer that takes its props type
-// from the adjacent, user-preservable *_props.go contract file.
-func BuildSSRGoRendererFile(plan *SSRRenderPlan, packageName string) (*goast.File, error) {
-	return buildSSRGoFile(plan, packageName, false, newSSRRegion(plan))
-}
-
 // buildSSRGoRendererWithRegion is BuildSSRGoRendererFile that also returns
 // the region site records, filled whether or not the renderer succeeds.
 func buildSSRGoRendererWithRegion(plan *SSRRenderPlan, packageName, filename, source string) (*goast.File, *SSRRegion, error) {
@@ -40,60 +34,7 @@ func buildSSRGoRendererWithRegion(plan *SSRRenderPlan, packageName, filename, so
 }
 
 func buildSSRGoFile(plan *SSRRenderPlan, packageName string, includeProps bool, region *SSRRegion) (*goast.File, error) {
-	if activeDOMEngine == DOMEngineBlocks {
-		return buildSSRGoBlocksFile(plan, packageName, includeProps, region)
-	}
-	file, err := buildSSRGoSkeleton(plan, packageName, includeProps)
-	if err != nil {
-		return nil, err
-	}
-	emitter := ssrGoEmitter{ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, scopeExpr: goast.NewIdent("instanceID"), awaitOptions: goast.NewIdent("options"), componentInstanceSuffixes: plan.ComponentInstanceSuffixes, componentInstanceIdentities: plan.ComponentInstanceIdentities, region: region, facts: map[JsExpr]ssrIRFacts{}}
-	emitter.ctx.funcs = newSSRFuncTable(plan, emitter.region)
-	emitter.ctx.funcs.base = emitter.ctx
-	if emitter.region != nil {
-		emitter.region.funcs = emitter.ctx.funcs
-	}
-	defaults, err := emitter.propDefaults(plan.Props)
-	if err != nil {
-		return nil, err
-	}
-	if emitter.throwing() > 0 {
-		defaults = append(defaults, ssrJSCheck())
-	}
-	templateBody, err := emitter.nodes(plan.Nodes)
-	if err != nil {
-		return nil, emitter.region.abort(err)
-	}
-	if err := emitter.region.finish(plan); err != nil {
-		return nil, err
-	}
-	init := emitter.localsPrologue(plan, nil)
-	payload, err := buildSSRHydrationPayload(plan, emitter.scopeExpr, emitter.awaitOptions)
-	if err != nil {
-		return nil, err
-	}
-	functions := emitter.ctx.funcs.declarations()
-	body := ssrJSPrologue(emitter.region)
-	if modules := ssrModulePrologue(emitter.region, &goast.CallExpr{Fun: goSelector("vela", "ContextOf"), Args: []goast.Expr{goast.NewIdent("w")}}); len(modules) > 0 {
-		// Module initialisation can throw (ssr_module.go).
-		body = append(append(body, modules...), ssrJSCheck())
-	}
-	body = append(body, functions...)
-	body = append(body, defaults...)
-	body = append(body, init.statements...)
-	body = append(body, payload.preflight...)
-	body = append(body, templateBody...)
-	body = append(body, payload.write...)
-	body = append(body, &goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}})
-	render, err := ssrRenderFunc(file, plan.ComponentName)
-	if err != nil {
-		return nil, err
-	}
-	render.Body.List = body
-	appendSSRGoImports(file, map[string]string{"encoding/json": "json"})
-	appendSSRGoImports(file, emitter.imports)
-	appendSSRGoImports(file, emitter.region.hostImports)
-	return file, nil
+	return buildSSRGoBlocksFile(plan, packageName, includeProps, region)
 }
 
 func (e *ssrGoEmitter) propDefaults(props []SSRPlanProp) ([]goast.Stmt, error) {
@@ -127,111 +68,18 @@ func (e *ssrGoEmitter) propDefaults(props []SSRPlanProp) ([]goast.Stmt, error) {
 	return out, nil
 }
 
-type ssrHydrationPayload struct {
-	preflight []goast.Stmt
-	write     []goast.Stmt
-}
-
-func buildSSRHydrationPayload(plan *SSRRenderPlan, componentID, awaitOptions goast.Expr) (ssrHydrationPayload, error) {
-	if plan == nil {
-		return ssrHydrationPayload{}, fmt.Errorf("ssr renderer: missing render plan for hydration payload")
-	}
-	if strings.TrimSpace(plan.ScopeID) == "" || componentID == nil {
-		return ssrHydrationPayload{}, fmt.Errorf("ssr renderer: missing component scope ID for hydration payload")
-	}
-	stateJSON := plan.Hydration.JSON
-	if stateJSON == "" {
-		stateJSON = "{}"
-	}
-	payloadPropsFields := make([]*goast.Field, 0, len(plan.Props))
-	payloadPropsValues := make([]goast.Expr, 0, len(plan.Props))
-	for _, prop := range plan.Props {
-		payloadPropsFields = append(payloadPropsFields, &goast.Field{
-			Names: []*goast.Ident{goast.NewIdent(prop.GoName)},
-			Type:  goast.NewIdent("any"),
-			Tag:   &goast.BasicLit{Kind: token.STRING, Value: "`json:\"" + prop.GoName + "\"`"},
-		})
-		payloadPropsValues = append(payloadPropsValues, &goast.KeyValueExpr{
-			Key:   goast.NewIdent(prop.GoName),
-			Value: &goast.SelectorExpr{X: goast.NewIdent("props"), Sel: goast.NewIdent(prop.GoName)},
-		})
-	}
-	payloadPropsType := &goast.StructType{Fields: &goast.FieldList{List: payloadPropsFields}}
-	payloadProps := &goast.CompositeLit{Type: payloadPropsType, Elts: payloadPropsValues}
-	typeFields := []*goast.Field{
-		{Names: []*goast.Ident{goast.NewIdent("Version")}, Type: goast.NewIdent("int"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"version\"`"}},
-		{Names: []*goast.Ident{goast.NewIdent("Component")}, Type: goast.NewIdent("string"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"component\"`"}},
-		{Names: []*goast.Ident{goast.NewIdent("Props")}, Type: payloadPropsType, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"props\"`"}},
-		{Names: []*goast.Ident{goast.NewIdent("State")}, Type: goSelector("json", "RawMessage"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"state\"`"}},
-		{Names: []*goast.Ident{goast.NewIdent("Deep")}, Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"deep,omitempty\"`"}},
-		{Names: []*goast.Ident{goast.NewIdent("Incomplete")}, Type: goast.NewIdent("bool"), Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"incomplete\"`"}},
-		{Names: []*goast.Ident{goast.NewIdent("Omitted")}, Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"omitted,omitempty\"`"}},
-		{Names: []*goast.Ident{goast.NewIdent("Await")}, Type: &goast.MapType{Key: goast.NewIdent("int"), Value: goast.NewIdent(plan.ComponentName + "AwaitSnapshot")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"await,omitempty\"`"}},
-		{Names: []*goast.Ident{goast.NewIdent("AwaitAt")}, Type: &goast.MapType{Key: goast.NewIdent("string"), Value: goast.NewIdent(plan.ComponentName + "AwaitSnapshot")}, Tag: &goast.BasicLit{Kind: token.STRING, Value: "`json:\"awaitAt,omitempty\"`"}},
-	}
-	payloadValue := &goast.CompositeLit{
-		Type: &goast.StructType{Fields: &goast.FieldList{List: typeFields}},
-		Elts: []goast.Expr{
-			&goast.KeyValueExpr{Key: goast.NewIdent("Version"), Value: goast.NewIdent(strconv.Itoa(SSRHydrationPayloadVersion))},
-			&goast.KeyValueExpr{Key: goast.NewIdent("Component"), Value: componentID},
-			&goast.KeyValueExpr{Key: goast.NewIdent("Props"), Value: payloadProps},
-			&goast.KeyValueExpr{Key: goast.NewIdent("State"), Value: &goast.CallExpr{Fun: goSelector("json", "RawMessage"), Args: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(stateJSON)}}}},
-			&goast.KeyValueExpr{Key: goast.NewIdent("Incomplete"), Value: goast.NewIdent(strconv.FormatBool(plan.Hydration.Incomplete))},
-		},
-	}
-	if len(plan.Hydration.Omitted) > 0 {
-		omitted := make([]goast.Expr, 0, len(plan.Hydration.Omitted))
-		for _, name := range plan.Hydration.Omitted {
-			omitted = append(omitted, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(name)})
-		}
-		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("Omitted"), Value: &goast.CompositeLit{Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Elts: omitted}})
-	}
-	if len(plan.Hydration.Deep) > 0 {
-		deep := make([]goast.Expr, 0, len(plan.Hydration.Deep))
-		for _, name := range plan.Hydration.Deep {
-			deep = append(deep, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(name)})
-		}
-		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("Deep"), Value: &goast.CompositeLit{Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Elts: deep}})
-	}
-	if awaitOptions != nil {
-		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("Await"), Value: &goast.SelectorExpr{X: awaitOptions, Sel: goast.NewIdent("Await")}})
-		payloadValue.Elts = append(payloadValue.Elts, &goast.KeyValueExpr{Key: goast.NewIdent("AwaitAt"), Value: &goast.SelectorExpr{X: awaitOptions, Sel: goast.NewIdent("AwaitAt")}})
-	}
-	marshal := &goast.CallExpr{Fun: goSelector("vela", "MarshalHydrationPayload"), Args: []goast.Expr{payloadValue}}
-	encode := &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("ssrPayload"), goast.NewIdent("err")}, Tok: token.DEFINE, Rhs: []goast.Expr{marshal}}
-	encoded := &goast.IfStmt{Cond: &goast.BinaryExpr{X: goast.NewIdent("err"), Op: token.NEQ, Y: goast.NewIdent("nil")}, Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("err")}}}}}
-	open := ssrGoStringConcat(
-		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(`<script type="application/json" id="vela-state-`)},
-		&goast.CallExpr{Fun: goSelector("vela", "EscapeString"), Args: []goast.Expr{componentID}},
-		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(`">`)},
-	)
-	return ssrHydrationPayload{
-		preflight: []goast.Stmt{encode, encoded},
-		write: []goast.Stmt{
-			goWriteSSRValue(open),
-			goWriteSSRValue(&goast.CallExpr{Fun: goast.NewIdent("string"), Args: []goast.Expr{goast.NewIdent("ssrPayload")}}),
-			goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("</script>")}),
-		},
-	}, nil
-}
-
 type ssrGoEmitter struct {
-	ctx                         SSRExprContext
-	packageName                 string
-	scopeID                     string
-	scopeExpr                   goast.Expr
-	componentInstanceSuffixes   map[SectionSpan]string
-	componentInstanceIdentities map[SectionSpan]SSRComponentInstanceIdentity
-	awaitOptions                goast.Expr
-	needsEscaping               bool
-	eachNext                    int
-	imports                     map[string]string
-	selectValue                 *TemplateExpr
-	selectMultiple              bool
-	// blocks selects block markup and the payload stream (ssr_go_blocks.go).
-	blocks        bool
-	componentName string
-	rootElement   *SSRPlanElement // single root element; nil with a wrapper root
+	ctx            SSRExprContext
+	packageName    string
+	scopeID        string
+	awaitOptions   goast.Expr
+	needsEscaping  bool
+	eachNext       int
+	imports        map[string]string
+	selectValue    *TemplateExpr
+	selectMultiple bool
+	componentName  string
+	rootElement    *SSRPlanElement // single root element; nil with a wrapper root
 	// region records the sites this renderer lowers (ssr_region.go); nil
 	// for callers without a region. speculative counts enclosing branches
 	// whose failure has a fallback. facts holds the IR facts of each
@@ -384,32 +232,11 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 		}
 		propsArg = goast.NewIdent("ssrChildProps")
 	}
-	args := []goast.Expr{propsArg, slots}
-	suffix := e.componentInstanceSuffixes[node.Span]
-	identity, hasIdentity := e.componentInstanceIdentities[node.Span]
-	if hasIdentity && identity.RuntimeScoped {
-		suffix = ssrRuntimeComponentSuffix(identity)
-	}
-	if e.blocks {
-		suffix = ""
-	}
-	if suffix != "" {
-		componentName += "At"
-		if prefix != "" {
-			component = goSelector(prefix, componentName)
-		} else {
-			component = goast.NewIdent(componentName)
-		}
-		args = append(args, ssrGoStringConcat(e.scopeExpr, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("--" + suffix)}))
-	}
-	call := &goast.CallExpr{Fun: component, Args: args}
+	call := &goast.CallExpr{Fun: component, Args: []goast.Expr{propsArg, slots}}
 	render := &goast.CallExpr{Fun: goSelectorExpr(call, "Render"), Args: []goast.Expr{goast.NewIdent("w")}}
-	if e.blocks {
-		// The client sets the parent scope on the child root element.
-		setScope := &goast.ExprStmt{X: &goast.CallExpr{Fun: goSelector("vela", "SetHostScope"), Args: []goast.Expr{goast.NewIdent("w"), &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(e.scopeID)}}}}
-		return ssrScopedStatements(prelude, setScope, goWriteSSRErr(render)), nil
-	}
-	return ssrScopedStatements(prelude, goWriteSSRErr(render)), nil
+	// The client sets the parent scope on the child root element.
+	setScope := &goast.ExprStmt{X: &goast.CallExpr{Fun: goSelector("vela", "SetHostScope"), Args: []goast.Expr{goast.NewIdent("w"), &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(e.scopeID)}}}}
+	return ssrScopedStatements(prelude, setScope, goWriteSSRErr(render)), nil
 }
 
 func (e *ssrGoEmitter) componentPackagePrefix(link *SSRComponentLink) (string, error) {
@@ -485,29 +312,24 @@ func (e *ssrGoEmitter) slot(node *SSRPlanSlot) ([]goast.Stmt, error) {
 		}
 		filled.Else = &goast.BlockStmt{List: fallback}
 	}
-	if e.blocks {
-		return e.ranged("", []goast.Stmt{filled}), nil
-	}
-	return []goast.Stmt{filled}, nil
+
+	return e.ranged("", []goast.Stmt{filled}), nil
+
 }
 
 func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {
-	if e.blocks && node.ClientDropped {
+	if node.ClientDropped {
 		return nil, nil
 	}
 	body := make([]goast.Stmt, 0, len(node.Parts)*3)
 	for _, part := range node.Parts {
-		if !part.Static && !e.blocks {
-			body = append(body, e.markerStart(part.DynamicID))
-		}
+
 		value, err := e.outputValue("text", "", part.Static, part.Value, part.Expr)
 		if err != nil {
 			return nil, err
 		}
 		body = append(body, goWriteSSRValue(value))
-		if !part.Static && !e.blocks {
-			body = append(body, e.markerEnd(part.DynamicID))
-		}
+
 	}
 	return body, nil
 }
@@ -517,14 +339,12 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 		return nil, ssrExprUnsupported(node.Span.Start, "single-select bind:value has a known null server value, which HTML cannot represent before hydration")
 	}
 	body := make([]goast.Stmt, 0, len(node.Attrs)+len(node.Children)+2)
-	if !e.blocks {
-		body = append(body, e.elementMarkerStart(node.HydrationID))
-	}
+
 	open := "<" + node.Tag
-	if e.blocks {
-		// The client sets the scope attribute on every template element.
-		open += " " + e.scopeID
-	}
+
+	// The client sets the scope attribute on every template element.
+	open += " " + e.scopeID
+
 	var textareaValue SSRPlanAttr
 	hasTextareaValue := false
 	childSelectValue := e.selectValue
@@ -703,16 +523,14 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(" selected")}),
 		}}})
 	}
-	if node.EventKey != "" && !e.blocks {
-		open += ` data-vela-event="` + node.EventKey + `"`
-	}
-	if e.blocks && node == e.rootElement {
+
+	if node == e.rootElement {
 		body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
 		body = append(body, goWriteSSRErr(&goast.CallExpr{Fun: goSelector("vela", "WriteHostScope"), Args: []goast.Expr{goast.NewIdent("w")}}))
 		open = ""
 	}
 	open += ">"
-	if e.blocks && (node.Tag == "pre" || node.Tag == "textarea" || node.Tag == "listing") {
+	if node.Tag == "pre" || node.Tag == "textarea" || node.Tag == "listing" {
 		// The HTML parser drops one newline right after these start tags;
 		// writing one keeps a leading newline of the content (M-5.7).
 		open += "\n"
@@ -742,9 +560,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 	if !ssrVoidElement(node.Tag) {
 		body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("</" + node.Tag + ">")}))
 	}
-	if !e.blocks {
-		body = append(body, e.elementMarkerEnd(node.HydrationID))
-	}
+
 	return body, nil
 }
 
@@ -780,70 +596,9 @@ func ssrStylePrefix(style string) string {
 }
 
 func (e *ssrGoEmitter) ifBlock(node *SSRPlanIf) ([]goast.Stmt, error) {
-	if e.blocks {
-		return e.blocksIf(node)
-	}
-	var body []goast.Stmt
-	if node.DynamicID >= 0 {
-		body = append(body, e.markerStart(node.DynamicID))
-	}
-	if node.Key != nil {
-		if len(node.Branches) != 1 || node.Branches[0].Condition != nil {
-			return nil, ssrExprUnsupported(node.Span.Start, "SSR key block has an invalid branch shape")
-		}
-		key, err := e.translate("key", "", node.Key, e.ctx)
-		if err != nil {
-			return nil, err
-		}
-		child := *e
-		child.scopeExpr = child.runtimeScope("key-"+itoa(node.Span.Start), key)
-		children, err := child.nodes(node.Branches[0].Children)
-		if err != nil {
-			return nil, err
-		}
-		e.eachNext = child.eachNext
-		e.needsEscaping = e.needsEscaping || child.needsEscaping
-		e.absorbImports(child.imports)
-		body = append(body, children...)
-		if node.DynamicID >= 0 {
-			body = append(body, e.markerEnd(node.DynamicID))
-		}
-		return body, nil
-	}
-	var first *goast.IfStmt
-	var previous *goast.IfStmt
-	for _, branch := range node.Branches {
-		body, err := e.nodes(branch.Children)
-		if err != nil {
-			return nil, err
-		}
-		if branch.Condition == nil {
-			if previous == nil {
-				return nil, ssrExprUnsupported(branch.Span.Start, "SSR if block has an unconditional first branch")
-			}
-			previous.Else = &goast.BlockStmt{List: body}
-			continue
-		}
-		condition, err := e.translate("if", "", branch.Condition, e.ctx)
-		if err != nil {
-			return nil, err
-		}
-		current := &goast.IfStmt{Cond: e.condition(branch.Condition, condition), Body: &goast.BlockStmt{List: body}}
-		if first == nil {
-			first = current
-		} else {
-			previous.Else = current
-		}
-		previous = current
-	}
-	if first == nil {
-		return nil, ssrExprUnsupported(node.Span.Start, "SSR if block has no conditional branch")
-	}
-	body = append(body, first)
-	if node.DynamicID >= 0 {
-		body = append(body, e.markerEnd(node.DynamicID))
-	}
-	return body, nil
+
+	return e.blocksIf(node)
+
 }
 
 func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
@@ -864,24 +619,22 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	if node.IndexName != "" {
 		child.ctx.Bindings[node.IndexName] = goast.NewIdent(indexName)
 	}
-	runtimeValue := goast.Expr(goast.NewIdent(indexName))
 	if node.Key != nil {
-		runtimeValue, err = child.translate("each-key", "", node.Key, child.ctx)
-		if err != nil {
+		// The server does not use the key; the client computes it from the
+		// payload state. The key stays a server site so that it is checked
+		// like the other template expressions.
+		if _, err := child.translate("each-key", "", node.Key, child.ctx); err != nil {
 			return nil, err
 		}
 	}
-	child.scopeExpr = child.runtimeScope("each-"+itoa(node.Span.Start), runtimeValue)
 	children, err := child.nodes(node.Children)
 	if err != nil {
 		return nil, err
 	}
-	if e.blocks {
-		// Every row is its own range (M-5.2).
-		children = e.ranged("", children)
-	} else if node.Key != nil && node.DynamicID >= 0 {
-		children = append([]goast.Stmt{child.rowMarkerStart(node.DynamicID)}, append(children, child.rowMarkerEnd(node.DynamicID))...)
-	}
+
+	// Every row is its own range (M-5.2).
+	children = e.ranged("", children)
+
 	e.eachNext = child.eachNext
 	e.needsEscaping = e.needsEscaping || child.needsEscaping
 	e.absorbImports(child.imports)
@@ -890,7 +643,7 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	// index must not become an unused generated Go binding. Keep the normal
 	// index name whenever it is observable by the template or needed by an
 	// unkeyed row's scope.
-	if (node.Key != nil || e.blocks) && node.IndexName == "" {
+	if node.IndexName == "" {
 		rangeKey = goast.NewIdent("_")
 	}
 	// A row that reads neither its item nor its index still compiles.
@@ -908,29 +661,23 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	}
 	assign := &goast.AssignStmt{Lhs: []goast.Expr{iterIdent}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "Iter"), Args: []goast.Expr{iterable}}}}
 	if len(node.ElseChildren) == 0 {
-		if e.blocks {
-			return e.ranged("", []goast.Stmt{assign, rangeStmt}), nil
-		}
-		return e.markedStatements(node.DynamicID, []goast.Stmt{assign, rangeStmt}), nil
+
+		return e.ranged("", []goast.Stmt{assign, rangeStmt}), nil
+
 	}
 	otherwise, err := e.nodes(node.ElseChildren)
 	if err != nil {
 		return nil, err
 	}
 	empty := &goast.BinaryExpr{X: &goast.CallExpr{Fun: goast.NewIdent("len"), Args: []goast.Expr{iterIdent}}, Op: token.EQL, Y: &goast.BasicLit{Kind: token.INT, Value: "0"}}
-	if e.blocks {
-		// The state token tells the client that the fallback is rendered.
-		return []goast.Stmt{assign, &goast.IfStmt{
-			Cond: empty,
-			Body: &goast.BlockStmt{List: e.ranged("e", otherwise)},
-			Else: &goast.BlockStmt{List: e.ranged("", []goast.Stmt{rangeStmt})},
-		}}, nil
-	}
-	return e.markedStatements(node.DynamicID, []goast.Stmt{assign, &goast.IfStmt{
+
+	// The state token tells the client that the fallback is rendered.
+	return []goast.Stmt{assign, &goast.IfStmt{
 		Cond: empty,
-		Body: &goast.BlockStmt{List: otherwise},
-		Else: &goast.BlockStmt{List: []goast.Stmt{rangeStmt}},
-	}}), nil
+		Body: &goast.BlockStmt{List: e.ranged("e", otherwise)},
+		Else: &goast.BlockStmt{List: e.ranged("", []goast.Stmt{rangeStmt})},
+	}}, nil
+
 }
 
 // absorbImports returns imports collected by a copied emitter (for example a
@@ -947,17 +694,6 @@ func (e *ssrGoEmitter) absorbImports(imports map[string]string) {
 	for path, name := range imports {
 		e.imports[path] = name
 	}
-}
-
-// runtimeScope adds one evaluated structural segment to the component instance
-// namespace. vela.String defines the same visible-value conversion already
-// used for SSR text and select values.
-func (e *ssrGoEmitter) runtimeScope(kind string, value goast.Expr) goast.Expr {
-	return ssrGoStringConcat(
-		e.scopeExpr,
-		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("--" + kind + "-")},
-		&goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{value}},
-	)
 }
 
 // ssrGoTruthy makes a template-controlled Go branch use JavaScript
@@ -1091,1400 +827,16 @@ func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionVa
 }
 
 func (e *ssrGoEmitter) awaitBlock(node *SSRPlanAwait) ([]goast.Stmt, error) {
-	if len(node.PendingChildren) == 0 && !e.blocks {
+	if len(node.PendingChildren) == 0 && false {
 		return nil, ssrExprUnsupported(node.Span.Start, "SSR await requires an explicit pending branch until hydration")
 	}
 	pending, err := e.nodes(node.PendingChildren)
 	if err != nil {
 		return nil, err
 	}
-	if e.blocks {
-		return e.blocksAwait(node, pending)
-	}
-	if node.DynamicID < 0 || e.awaitOptions == nil {
-		return e.markedStatements(node.DynamicID, pending), nil
-	}
 
-	snapshot := "ssrAwaitSnapshot" + itoa(node.DynamicID)
-	thenBody, thenStatic := e.awaitSnapshotBranch(node.ThenChildren, node.ValueName, &goast.SelectorExpr{X: goast.NewIdent(snapshot), Sel: goast.NewIdent("Value")})
-	catchBody, catchStatic := e.awaitSnapshotBranch(node.CatchChildren, node.ErrorName, &goast.SelectorExpr{X: goast.NewIdent(snapshot), Sel: goast.NewIdent("Error")})
-	if e.imports == nil {
-		e.imports = map[string]string{}
-	}
-	e.imports["fmt"] = "fmt"
-	state := &goast.SelectorExpr{X: goast.NewIdent(snapshot), Sel: goast.NewIdent("State")}
-	unsupported := func(branch string) goast.Stmt {
-		return &goast.ReturnStmt{Results: []goast.Expr{&goast.CallExpr{Fun: goSelector("fmt", "Errorf"), Args: []goast.Expr{
-			&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("SSR await snapshot " + itoa(node.DynamicID) + " " + branch + " branch requires static template content")},
-		}}}}
-	}
-	thenCase := []goast.Stmt{unsupported("then")}
-	if thenStatic {
-		thenCase = thenBody
-	}
-	catchCase := []goast.Stmt{unsupported("catch")}
-	if catchStatic {
-		catchCase = catchBody
-	}
-	invalid := &goast.ReturnStmt{Results: []goast.Expr{&goast.CallExpr{Fun: goSelector("fmt", "Errorf"), Args: []goast.Expr{
-		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("SSR await snapshot " + itoa(node.DynamicID) + " has an invalid state")},
-	}}}}
-	body := []goast.Stmt{
-		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(snapshot)}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.IndexExpr{X: &goast.SelectorExpr{X: e.awaitOptions, Sel: goast.NewIdent("Await")}, Index: &goast.BasicLit{Kind: token.INT, Value: itoa(node.DynamicID)}}}},
-		&goast.IfStmt{
-			Init: &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(snapshot + "At"), goast.NewIdent("ok")}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.IndexExpr{X: &goast.SelectorExpr{X: e.awaitOptions, Sel: goast.NewIdent("AwaitAt")}, Index: ssrGoStringConcat(e.scopeExpr, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(":" + itoa(node.DynamicID))})}}},
-			Cond: goast.NewIdent("ok"),
-			Body: &goast.BlockStmt{List: []goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(snapshot)}, Tok: token.ASSIGN, Rhs: []goast.Expr{goast.NewIdent(snapshot + "At")}}}},
-		},
-		&goast.SwitchStmt{Tag: state, Body: &goast.BlockStmt{List: []goast.Stmt{
-			&goast.CaseClause{List: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("")}, &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("pending")}}, Body: pending},
-			&goast.CaseClause{List: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("then")}}, Body: thenCase},
-			&goast.CaseClause{List: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("catch")}}, Body: catchCase},
-			&goast.CaseClause{Body: []goast.Stmt{invalid}},
-		}}},
-	}
-	return e.markedStatements(node.DynamicID, body), nil
-}
+	return e.blocksAwait(node, pending)
 
-// awaitSnapshotBranch admits static content plus direct text and one-way
-// attribute interpolation of the declared then/catch binding. Its value stays
-// a string because a Go data loader must not smuggle an untyped JavaScript
-// object into a server renderer. Ordinary DOM events are emitted as inert
-// server markup and attached by the branch-owned hydrator. Native value and
-// checked bindings use the same branch-owned lifecycle. Components and
-// structural descendants are intentionally deferred until their settled-branch
-// hydration ownership exists.
-func (e *ssrGoEmitter) awaitSnapshotBranch(nodes []SSRPlanNode, binding string, value goast.Expr) ([]goast.Stmt, bool) {
-	if len(nodes) == 0 {
-		return nil, false
-	}
-	if !ssrAwaitSnapshotLeafBranch(nodes, binding) {
-		return nil, false
-	}
-	previous := e.ctx
-	e.ctx = ssrContextWithBindings(e.ctx)
-	if binding != "" {
-		e.ctx.Bindings[binding] = value
-	}
-	var body []goast.Stmt
-	err := e.speculate(func() error {
-		var err error
-		body, err = e.nodes(nodes)
-		return err
-	})
-	e.ctx = previous
-	if err != nil {
-		return nil, false
-	}
-	return body, true
-}
-
-func ssrAwaitSnapshotLeafBranch(nodes []SSRPlanNode, binding string) bool {
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *SSRPlanText:
-			for _, part := range current.Parts {
-				if part.Static {
-					continue
-				}
-				name, ok := templateExprIdent(part.Expr)
-				if !ok || name != binding {
-					return false
-				}
-			}
-		case *SSRPlanElement:
-			for _, attr := range current.Attrs {
-				if attr.Role == SSRAttrStatic {
-					continue
-				}
-				if attr.Role == SSRAttrEvent {
-					continue
-				}
-				if attr.Role == SSRAttrTwoWay {
-					if attr.Name == "value" || attr.Name == "checked" {
-						continue
-					}
-					return false
-				}
-				if attr.Role != SSRAttrDynamic {
-					return false
-				}
-				name, ok := templateExprIdent(attr.Expr)
-				if !ok || name != binding {
-					return false
-				}
-			}
-			if !ssrAwaitSnapshotLeafBranch(current.Children, binding) {
-				return false
-			}
-		case *SSRPlanEach:
-			// The regular each emitter already owns typed Go loop lowering and
-			// canonical keyed-row markers. Admit only the existing static-row
-			// snapshot subset so the selected await branch can be adopted rather
-			// than recreated on the first client render.
-			if current.Key != nil {
-				if !ssrAwaitSnapshotSlotStaticKeyedEach(current) {
-					return false
-				}
-				continue
-			}
-			if !ssrAwaitSnapshotSlotStaticEach(current) {
-				return false
-			}
-		case *SSRPlanComponent:
-			if current.Link == nil || !ssrAwaitSnapshotSlotLeafNodes(current.Slots) {
-				return false
-			}
-			for _, attr := range current.Attrs {
-				if attr.Role == SSRAttrStatic {
-					continue
-				}
-				if attr.Role == SSRAttrEvent {
-					continue
-				}
-				if attr.Role == SSRAttrTwoWay {
-					continue
-				}
-				if attr.Role != SSRAttrDynamic || attr.Expr == nil {
-					return false
-				}
-			}
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func ssrAwaitSnapshotSlotLeafNodes(slots map[string][]SSRPlanNode) bool {
-	return ssrAwaitSnapshotSlotPlanNodes(slots, true, true, true, true)
-}
-
-// ssrAwaitSnapshotSlotDirectDOMPlanNodes is the Go-plan counterpart of the
-// child-slot hydration recipe. Nested local components are represented by
-// separately owned client handles beneath the selected await range.
-func ssrAwaitSnapshotSlotDirectDOMPlanNodes(slots map[string][]SSRPlanNode) bool {
-	return ssrAwaitSnapshotSlotPlanNodes(slots, true, true, true, true)
-}
-
-func ssrAwaitSnapshotSlotPlanNodes(slots map[string][]SSRPlanNode, allowComponents, allowDirectives, allowEvents, allowBindings bool) bool {
-	for _, children := range slots {
-		for _, node := range children {
-			switch current := node.(type) {
-			case *SSRPlanText:
-			case *SSRPlanElement:
-				for _, attr := range current.Attrs {
-					if attr.Role == SSRAttrStatic {
-						continue
-					}
-					if attr.Role == SSRAttrEvent {
-						if !allowEvents {
-							return false
-						}
-						continue
-					}
-					if attr.Role == SSRAttrTwoWay {
-						if !allowBindings {
-							return false
-						}
-						continue
-					}
-					if !allowDirectives && (attr.Role == SSRAttrClassDirective || attr.Role == SSRAttrStyleDirective) {
-						return false
-					}
-					if attr.Role != SSRAttrDynamic && attr.Role != SSRAttrClassDirective && attr.Role != SSRAttrStyleDirective {
-						return false
-					}
-					if attr.Expr == nil {
-						return false
-					}
-					if _, ok := templateExprIdent(attr.Expr); !ok {
-						return false
-					}
-				}
-				if !ssrAwaitSnapshotSlotPlanNodes(map[string][]SSRPlanNode{"": current.Children}, allowComponents, allowDirectives, allowEvents, allowBindings) {
-					return false
-				}
-			case *SSRPlanComponent:
-				// The selected-snapshot slot lifecycle owns a direct local
-				// projected child. Its direct-DOM slots are rendered by the normal
-				// recursive Go call and acquired by the same selected await owner.
-				if !allowComponents || current == nil || current.Link == nil || !ssrAwaitSnapshotSlotDirectDOMPlanNodes(current.Slots) {
-					return false
-				}
-				for _, attr := range current.Attrs {
-					if attr.Role == SSRAttrEvent {
-						continue
-					}
-					if attr.Role != SSRAttrStatic && attr.Role != SSRAttrDynamic && attr.Role != SSRAttrTwoWay {
-						return false
-					}
-				}
-			case *SSRPlanIf:
-				if current.Key != nil {
-					if !ssrAwaitSnapshotSlotStaticKey(current) {
-						return false
-					}
-					continue
-				}
-				if !ssrAwaitSnapshotSlotTextIf(current) {
-					return false
-				}
-			case *SSRPlanEach:
-				if current.Key != nil {
-					if !ssrAwaitSnapshotSlotStaticKeyedEach(current) {
-						return false
-					}
-					continue
-				}
-				if !ssrAwaitSnapshotSlotStaticEach(current) {
-					return false
-				}
-			default:
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func ssrAwaitSnapshotSlotStaticEach(node *SSRPlanEach) bool {
-	if node == nil || node.Key != nil || !ssrAwaitSnapshotSlotStaticPlanNodes(node.Children) || !ssrAwaitSnapshotSlotStaticPlanNodes(node.ElseChildren) {
-		return false
-	}
-	_, ok := templateExprIdent(node.Iterable)
-	return ok
-}
-
-func ssrAwaitSnapshotSlotStaticKeyedEach(node *SSRPlanEach) bool {
-	if node == nil || node.Key == nil || !ssrAwaitSnapshotSlotStaticPlanNodes(node.ElseChildren) || !ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(node.Children, node.ItemName) {
-		return false
-	}
-	// A keyed await snapshot can iterate a lexical item's member path (for
-	// example row.fields), not only an exported top-level array. The cached AST
-	// helper rejects calls, optional chains, and computed expressions; the Go
-	// emitter materializes the resulting dynamic value through vela.Iter.
-	if _, ok := templateExprBindingRoot(node.Iterable); !ok {
-		return false
-	}
-	_, ok := templateExprBindingRoot(node.Key)
-	return ok
-}
-
-func ssrAwaitSnapshotSlotStaticKeyedEachPlanNodes(nodes []SSRPlanNode, itemName string) bool {
-	if ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes, itemName) {
-		return true
-	}
-	if ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes, itemName) {
-		return true
-	}
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *SSRPlanText:
-			for _, part := range current.Parts {
-				if !part.Static {
-					return false
-				}
-			}
-		case *SSRPlanElement:
-			for _, attr := range current.Attrs {
-				if attr.Role == SSRAttrStatic {
-					continue
-				}
-				if attr.Role != SSRAttrEvent {
-					return false
-				}
-				if _, ok := templateExprIdent(attr.Expr); !ok {
-					return false
-				}
-			}
-			if !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-// ssrAwaitSnapshotKeyedEachDirectControlPlanRow mirrors the typed control
-// recipe consumed by the hydration lowerer. Keep it intentionally narrow so
-// SSR never advertises a row shape the client cannot retain safely.
-func ssrAwaitSnapshotKeyedEachDirectControlPlanRow(nodes []SSRPlanNode, itemName string) bool {
-	if itemName == "" || len(nodes) != 1 {
-		return false
-	}
-	element, ok := nodes[0].(*SSRPlanElement)
-	if !ok || element == nil || (element.Tag != "input" && element.Tag != "textarea" && element.Tag != "select") {
-		return false
-	}
-	if element.Tag != "select" && len(element.Children) != 0 {
-		return false
-	}
-	if element.Tag == "select" && !ssrAwaitSnapshotKeyedEachStaticSelectOptions(element.Children) {
-		if _, _, _, _, _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamicAndText(element.Children, itemName); !ok {
-			if _, _, _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamic(element.Children, itemName); !ok {
-				if _, _, _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionText(element.Children, itemName); !ok {
-					if _, _, _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamicAndText(element.Children, itemName); !ok {
-						if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(element.Children, itemName); !ok {
-							if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptionText(element.Children, itemName); !ok {
-								if !ssrAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(element.Children, itemName) && !ssrAwaitSnapshotKeyedEachDirectSelectOptionList(element.Children, itemName) {
-									if _, _, ok := ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(element.Children, itemName); !ok {
-										return false
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	bindings := 0
-	checkbox := false
-	for _, attr := range element.Attrs {
-		switch attr.Role {
-		case SSRAttrStatic:
-			if attr.Name == "type" && attr.Value == "checkbox" {
-				checkbox = true
-			}
-		case SSRAttrTwoWay:
-			if (attr.Name != "value" && attr.Name != "checked") || attr.Expr == nil {
-				return false
-			}
-			if attr.Name == "checked" && element.Tag != "input" {
-				return false
-			}
-			if element.Tag == "select" && attr.Name != "value" {
-				return false
-			}
-			root, ok := templateExprMemberBindingRoot(attr.Expr)
-			if !ok || root != itemName {
-				return false
-			}
-			bindings++
-		default:
-			return false
-		}
-	}
-	return bindings == 1 && (bindings == 0 || !ssrAwaitSnapshotKeyedEachHasCheckedControlBinding(element) || checkbox)
-}
-
-// ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamicAndText
-// mirrors the three-leaf grouped select lifecycle consumed by hydration.
-// Every accepted SSR row can therefore be adopted by the exact controller
-// which later owns its label, option property, and option text writes.
-func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamicAndText(nodes []SSRPlanNode, itemName string) (SSRPlanAttr, int, SSRPlanAttr, int, *SSRPlanText, int, bool) {
-	groups, options := 0, 0
-	groupIndex, attributeIndex, textIndex := -1, -1, -1
-	var groupDynamic, optionDynamic SSRPlanAttr
-	var optionText *SSRPlanText
-	foundGroup, foundOption := false, false
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *SSRPlanText:
-			for _, part := range current.Parts {
-				if !part.Static {
-					return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-				}
-			}
-		case *SSRPlanElement:
-			if current == nil || current.Tag != "optgroup" {
-				return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-			}
-			currentGroupIndex := groups
-			groups++
-			hasLabel := false
-			for _, attr := range current.Attrs {
-				if attr.Role == SSRAttrDynamic {
-					root, ok := templateExprMemberBindingRoot(attr.Expr)
-					if attr.Name != "label" || foundGroup || !ok || root != itemName {
-						return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-					}
-					groupDynamic, groupIndex, foundGroup, hasLabel = attr, currentGroupIndex, true, true
-					continue
-				}
-				if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-					return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-				}
-				if attr.Name == "label" {
-					hasLabel = true
-				}
-			}
-			if !hasLabel {
-				return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-			}
-			for _, child := range current.Children {
-				switch option := child.(type) {
-				case *SSRPlanText:
-					for _, part := range option.Parts {
-						if !part.Static {
-							return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-						}
-					}
-				case *SSRPlanElement:
-					if option == nil || option.Tag != "option" || len(option.Children) != 1 {
-						return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-					}
-					text, ok := option.Children[0].(*SSRPlanText)
-					if !ok || text == nil {
-						return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-					}
-					hasValue, hasDynamicText := false, false
-					for _, attr := range option.Attrs {
-						if attr.Role == SSRAttrDynamic {
-							root, ok := templateExprMemberBindingRoot(attr.Expr)
-							if (attr.Name != "disabled" && attr.Name != "value") || foundOption || !ok || root != itemName {
-								return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-							}
-							optionDynamic, attributeIndex, foundOption = attr, options, true
-							if attr.Name == "value" {
-								hasValue = true
-							}
-							continue
-						}
-						if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-							return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-						}
-						if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
-							hasValue = true
-						}
-					}
-					if !hasValue {
-						return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-					}
-					for _, part := range text.Parts {
-						if part.Static {
-							continue
-						}
-						root, ok := templateExprMemberBindingRoot(part.Expr)
-						if !ok || root != itemName {
-							return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-						}
-						hasDynamicText = true
-					}
-					if hasDynamicText {
-						if optionText != nil {
-							return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-						}
-						optionText, textIndex = text, options
-					}
-					options++
-				default:
-					return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-				}
-			}
-		default:
-			return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, nil, -1, false
-		}
-	}
-	return groupDynamic, groupIndex, optionDynamic, attributeIndex, optionText, textIndex, foundGroup && foundOption && optionText != nil && groups > 0 && options > 0
-}
-
-// ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamic mirrors the
-// composed optgroup-label plus option-attribute lifecycle accepted by the
-// hydration lowerer. Keep this structural proof in lockstep with the template
-// AST predicate so SSR never advertises an unhydratable row shape.
-func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionDynamic(nodes []SSRPlanNode, itemName string) (SSRPlanAttr, int, SSRPlanAttr, int, bool) {
-	groups, options := 0, 0
-	groupIndex, optionIndex := -1, -1
-	var groupDynamic, optionDynamic SSRPlanAttr
-	foundGroup, foundOption := false, false
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *SSRPlanText:
-			for _, part := range current.Parts {
-				if !part.Static {
-					return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, false
-				}
-			}
-		case *SSRPlanElement:
-			if current == nil || current.Tag != "optgroup" {
-				return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, false
-			}
-			currentGroupIndex := groups
-			groups++
-			hasLabel := false
-			for _, attr := range current.Attrs {
-				if attr.Role == SSRAttrDynamic {
-					root, ok := templateExprMemberBindingRoot(attr.Expr)
-					if attr.Name != "label" || foundGroup || !ok || root != itemName {
-						return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, false
-					}
-					groupDynamic, groupIndex, foundGroup, hasLabel = attr, currentGroupIndex, true, true
-					continue
-				}
-				if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-					return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, false
-				}
-				if attr.Name == "label" {
-					hasLabel = true
-				}
-			}
-			if !hasLabel {
-				return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, false
-			}
-			for _, child := range current.Children {
-				switch option := child.(type) {
-				case *SSRPlanText:
-					for _, part := range option.Parts {
-						if !part.Static {
-							return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, false
-						}
-					}
-				case *SSRPlanElement:
-					if option == nil || option.Tag != "option" || !ssrAwaitSnapshotSlotStaticPlanNodes(option.Children) {
-						return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, false
-					}
-					hasValue := false
-					for _, attr := range option.Attrs {
-						if attr.Role == SSRAttrDynamic {
-							root, ok := templateExprMemberBindingRoot(attr.Expr)
-							if (attr.Name != "disabled" && attr.Name != "value") || foundOption || !ok || root != itemName {
-								return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, false
-							}
-							optionDynamic, optionIndex, foundOption = attr, options, true
-							if attr.Name == "value" {
-								hasValue = true
-							}
-							continue
-						}
-						if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-							return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, false
-						}
-						if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
-							hasValue = true
-						}
-					}
-					if !hasValue {
-						return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, false
-					}
-					options++
-				default:
-					return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, false
-				}
-			}
-		default:
-			return SSRPlanAttr{}, -1, SSRPlanAttr{}, -1, false
-		}
-	}
-	return groupDynamic, groupIndex, optionDynamic, optionIndex, foundGroup && foundOption && groups > 0 && options > 0
-}
-
-// ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionText mirrors the
-// composed optgroup-label plus option-text lifecycle accepted by hydration.
-// Keeping the proof parallel to the template predicate prevents SSR from
-// advertising a row shape whose client owner cannot adopt safely.
-func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupAndOptionText(nodes []SSRPlanNode, itemName string) (SSRPlanAttr, int, *SSRPlanText, int, bool) {
-	groups, options := 0, 0
-	groupIndex, optionIndex := -1, -1
-	var groupDynamic SSRPlanAttr
-	var optionText *SSRPlanText
-	foundGroup := false
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *SSRPlanText:
-			for _, part := range current.Parts {
-				if !part.Static {
-					return SSRPlanAttr{}, -1, nil, -1, false
-				}
-			}
-		case *SSRPlanElement:
-			if current == nil || current.Tag != "optgroup" {
-				return SSRPlanAttr{}, -1, nil, -1, false
-			}
-			currentGroupIndex := groups
-			groups++
-			hasLabel := false
-			for _, attr := range current.Attrs {
-				if attr.Role == SSRAttrDynamic {
-					root, ok := templateExprMemberBindingRoot(attr.Expr)
-					if attr.Name != "label" || foundGroup || !ok || root != itemName {
-						return SSRPlanAttr{}, -1, nil, -1, false
-					}
-					groupDynamic, groupIndex, foundGroup, hasLabel = attr, currentGroupIndex, true, true
-					continue
-				}
-				if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-					return SSRPlanAttr{}, -1, nil, -1, false
-				}
-				if attr.Name == "label" {
-					hasLabel = true
-				}
-			}
-			if !hasLabel {
-				return SSRPlanAttr{}, -1, nil, -1, false
-			}
-			for _, child := range current.Children {
-				switch option := child.(type) {
-				case *SSRPlanText:
-					for _, part := range option.Parts {
-						if !part.Static {
-							return SSRPlanAttr{}, -1, nil, -1, false
-						}
-					}
-				case *SSRPlanElement:
-					if option == nil || option.Tag != "option" || !ssrAwaitSnapshotStaticSelectAttrs(option.Attrs, "value", true) || len(option.Children) != 1 {
-						return SSRPlanAttr{}, -1, nil, -1, false
-					}
-					text, ok := option.Children[0].(*SSRPlanText)
-					if !ok || text == nil {
-						return SSRPlanAttr{}, -1, nil, -1, false
-					}
-					hasDynamic := false
-					for _, part := range text.Parts {
-						if part.Static {
-							continue
-						}
-						root, ok := templateExprMemberBindingRoot(part.Expr)
-						if !ok || root != itemName {
-							return SSRPlanAttr{}, -1, nil, -1, false
-						}
-						hasDynamic = true
-					}
-					if hasDynamic {
-						if optionText != nil {
-							return SSRPlanAttr{}, -1, nil, -1, false
-						}
-						optionText, optionIndex = text, options
-					}
-					options++
-				default:
-					return SSRPlanAttr{}, -1, nil, -1, false
-				}
-			}
-		default:
-			return SSRPlanAttr{}, -1, nil, -1, false
-		}
-	}
-	return groupDynamic, groupIndex, optionText, optionIndex, foundGroup && optionText != nil && groups > 0 && options > 0
-}
-
-// ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamicAndText mirrors the
-// bounded two-option-leaf lifecycle accepted by hydration. Static optgroups
-// are traversed solely to retain the same flat option address as the browser.
-func ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamicAndText(nodes []SSRPlanNode, itemName string) (SSRPlanAttr, int, *SSRPlanText, int, bool) {
-	options := 0
-	attributeIndex, textIndex := -1, -1
-	var dynamicAttr SSRPlanAttr
-	var dynamicText *SSRPlanText
-	foundAttr := false
-	var visit func([]SSRPlanNode, bool) bool
-	visit = func(currentNodes []SSRPlanNode, allowOptgroup bool) bool {
-		for _, node := range currentNodes {
-			switch current := node.(type) {
-			case *SSRPlanText:
-				for _, part := range current.Parts {
-					if !part.Static {
-						return false
-					}
-				}
-			case *SSRPlanElement:
-				if current == nil {
-					return false
-				}
-				if current.Tag == "optgroup" {
-					if !allowOptgroup || !ssrAwaitSnapshotStaticSelectAttrs(current.Attrs, "label", false) || !visit(current.Children, false) {
-						return false
-					}
-					continue
-				}
-				if current.Tag != "option" || len(current.Children) != 1 {
-					return false
-				}
-				text, ok := current.Children[0].(*SSRPlanText)
-				if !ok || text == nil {
-					return false
-				}
-				hasValue, hasDynamicText := false, false
-				for _, attr := range current.Attrs {
-					if attr.Role == SSRAttrDynamic {
-						root, ok := templateExprMemberBindingRoot(attr.Expr)
-						if (attr.Name != "disabled" && attr.Name != "value") || foundAttr || !ok || root != itemName {
-							return false
-						}
-						dynamicAttr, attributeIndex, foundAttr = attr, options, true
-						if attr.Name == "value" {
-							hasValue = true
-						}
-						continue
-					}
-					if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-						return false
-					}
-					if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
-						hasValue = true
-					}
-				}
-				if !hasValue {
-					return false
-				}
-				for _, part := range text.Parts {
-					if part.Static {
-						continue
-					}
-					root, ok := templateExprMemberBindingRoot(part.Expr)
-					if !ok || root != itemName {
-						return false
-					}
-					hasDynamicText = true
-				}
-				if hasDynamicText {
-					if dynamicText != nil {
-						return false
-					}
-					dynamicText, textIndex = text, options
-				}
-				options++
-			default:
-				return false
-			}
-		}
-		return true
-	}
-	if !visit(nodes, true) {
-		return SSRPlanAttr{}, -1, nil, -1, false
-	}
-	return dynamicAttr, attributeIndex, dynamicText, textIndex, foundAttr && dynamicText != nil && options > 0
-}
-
-func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamic(nodes []SSRPlanNode, itemName string) (SSRPlanAttr, int, bool) {
-	groups, dynamicIndex := 0, -1
-	var dynamic SSRPlanAttr
-	found := false
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *SSRPlanText:
-			for _, part := range current.Parts {
-				if !part.Static {
-					return SSRPlanAttr{}, -1, false
-				}
-			}
-		case *SSRPlanElement:
-			if current == nil || current.Tag != "optgroup" {
-				return SSRPlanAttr{}, -1, false
-			}
-			if _, ok := ssrAwaitSnapshotKeyedEachStaticSelectOptionTree(current.Children, false); !ok {
-				return SSRPlanAttr{}, -1, false
-			}
-			hasLabel := false
-			for _, attr := range current.Attrs {
-				if attr.Role == SSRAttrDynamic {
-					root, ok := templateExprMemberBindingRoot(attr.Expr)
-					if attr.Name != "label" || found || !ok || root != itemName {
-						return SSRPlanAttr{}, -1, false
-					}
-					dynamic, dynamicIndex, found, hasLabel = attr, groups, true, true
-					continue
-				}
-				if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-					return SSRPlanAttr{}, -1, false
-				}
-				if attr.Name == "label" {
-					hasLabel = true
-				}
-			}
-			if !hasLabel {
-				return SSRPlanAttr{}, -1, false
-			}
-			groups++
-		default:
-			return SSRPlanAttr{}, -1, false
-		}
-	}
-	return dynamic, dynamicIndex, found && groups > 0
-}
-
-func ssrAwaitSnapshotKeyedEachDirectSelectOptionList(nodes []SSRPlanNode, rowName string) bool {
-	if len(nodes) != 1 {
-		return false
-	}
-	each, ok := nodes[0].(*SSRPlanEach)
-	if !ok || each == nil || len(each.Children) != 1 {
-		return false
-	}
-	root, ok := templateExprMemberBindingRoot(each.Iterable)
-	if !ok || root != rowName {
-		return false
-	}
-	option, ok := each.Children[0].(*SSRPlanElement)
-	if !ok || option == nil || option.Tag != "option" || len(option.Attrs) != 1 || len(option.Children) != 1 {
-		return false
-	}
-	value := option.Attrs[0]
-	if value.Role != SSRAttrDynamic || value.Name != "value" {
-		return false
-	}
-	valueRoot, ok := templateExprMemberBindingRoot(value.Expr)
-	if !ok || valueRoot != each.ItemName {
-		return false
-	}
-	text, ok := option.Children[0].(*SSRPlanText)
-	if !ok || text == nil {
-		return false
-	}
-	dynamic := false
-	for _, part := range text.Parts {
-		if part.Static {
-			continue
-		}
-		partRoot, ok := templateExprMemberBindingRoot(part.Expr)
-		if !ok || partRoot != each.ItemName {
-			return false
-		}
-		dynamic = true
-	}
-	if !dynamic {
-		return false
-	}
-	if each.Key != nil {
-		keyRoot, ok := templateExprMemberBindingRoot(each.Key)
-		if !ok || keyRoot != each.ItemName {
-			return false
-		}
-	}
-	if len(each.ElseChildren) != 0 {
-		fallbackOptions, ok := ssrAwaitSnapshotKeyedEachStaticSelectOptionTree(each.ElseChildren, false)
-		if !ok || fallbackOptions == 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// ssrAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList mirrors the first
-// nested option-list recipe. SSR may render the ordinary nested each,
-// while hydration later locates the static group and replaces only its child
-// options on an outer-row update.
-func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupOptionList(nodes []SSRPlanNode, rowName string) bool {
-	if len(nodes) != 1 {
-		return false
-	}
-	group, ok := nodes[0].(*SSRPlanElement)
-	if !ok || group == nil || group.Tag != "optgroup" || !ssrAwaitSnapshotStaticSelectAttrs(group.Attrs, "label", false) {
-		return false
-	}
-	if len(group.Children) != 1 {
-		return false
-	}
-	each, ok := group.Children[0].(*SSRPlanEach)
-	if !ok || each == nil {
-		return false
-	}
-	return ssrAwaitSnapshotKeyedEachDirectSelectOptionList(group.Children, rowName)
-}
-
-// ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList mirrors the
-// row-owned dynamic label around one otherwise bounded nested option list.
-func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupDynamicOptionList(nodes []SSRPlanNode, rowName string) bool {
-	if len(nodes) != 1 {
-		return false
-	}
-	group, ok := nodes[0].(*SSRPlanElement)
-	if !ok || group == nil || group.Tag != "optgroup" {
-		return false
-	}
-	found := false
-	for _, attr := range group.Attrs {
-		if attr.Role == SSRAttrDynamic {
-			root, ok := templateExprMemberBindingRoot(attr.Expr)
-			if attr.Name != "label" || found || !ok || root != rowName {
-				return false
-			}
-			found = true
-			continue
-		}
-		if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-			return false
-		}
-	}
-	return found && ssrAwaitSnapshotKeyedEachDirectSelectOptionList(group.Children, rowName)
-}
-
-// ssrAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList mirrors the
-// bounded multiple-optgroup lifecycle accepted by hydration: one direct list
-// owner, optional row-owned label on that owner, and static siblings.
-func ssrAwaitSnapshotKeyedEachDirectSelectOptgroupsOptionList(nodes []SSRPlanNode, rowName string) bool {
-	foundLists := 0
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *SSRPlanText:
-			for _, part := range current.Parts {
-				if !part.Static {
-					return false
-				}
-			}
-		case *SSRPlanElement:
-			if current == nil || current.Tag != "optgroup" {
-				return false
-			}
-			dynamic := false
-			hasLabel := false
-			for _, attr := range current.Attrs {
-				if attr.Role == SSRAttrDynamic {
-					root, ok := templateExprMemberBindingRoot(attr.Expr)
-					if attr.Name != "label" || dynamic || !ok || root != rowName {
-						return false
-					}
-					dynamic, hasLabel = true, true
-					continue
-				}
-				if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-					return false
-				}
-				if attr.Name == "label" {
-					hasLabel = true
-				}
-			}
-			if !hasLabel {
-				return false
-			}
-			if ssrAwaitSnapshotKeyedEachDirectSelectOptionList(current.Children, rowName) {
-				foundLists++
-				continue
-			}
-			if dynamic || !ssrAwaitSnapshotKeyedEachStaticSelectOptions(current.Children) {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	if foundLists == 0 {
-		return false
-	}
-	return true
-}
-
-// ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic mirrors the bounded
-// dynamic option-tree leaf accepted by hydration: one row-owned disabled or
-// value attribute on an otherwise static direct option list.
-func ssrAwaitSnapshotKeyedEachDirectSelectOptionDynamic(nodes []SSRPlanNode, itemName string) (SSRPlanAttr, int, bool) {
-	options, dynamicIndex := 0, -1
-	var dynamic SSRPlanAttr
-	found := false
-	var visit func([]SSRPlanNode, bool) bool
-	visit = func(currentNodes []SSRPlanNode, allowOptgroup bool) bool {
-		for _, node := range currentNodes {
-			switch current := node.(type) {
-			case *SSRPlanText:
-				for _, part := range current.Parts {
-					if !part.Static {
-						return false
-					}
-				}
-			case *SSRPlanElement:
-				if current == nil {
-					return false
-				}
-				if current.Tag == "optgroup" {
-					if !allowOptgroup || !ssrAwaitSnapshotStaticSelectAttrs(current.Attrs, "label", false) || !visit(current.Children, false) {
-						return false
-					}
-					continue
-				}
-				if current.Tag != "option" || !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) {
-					return false
-				}
-				hasValue := false
-				for _, attr := range current.Attrs {
-					if attr.Role == SSRAttrDynamic {
-						root, ok := templateExprMemberBindingRoot(attr.Expr)
-						if (attr.Name != "disabled" && attr.Name != "value") || found || !ok || root != itemName {
-							return false
-						}
-						dynamic, dynamicIndex, found = attr, options, true
-						if attr.Name == "value" {
-							hasValue = true
-						}
-						continue
-					}
-					if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-						return false
-					}
-					if attr.Name == "value" && attr.ValueKind != AttrValueMissing {
-						hasValue = true
-					}
-				}
-				if !hasValue {
-					return false
-				}
-				options++
-			default:
-				return false
-			}
-		}
-		return true
-	}
-	if !visit(nodes, true) {
-		return SSRPlanAttr{}, -1, false
-	}
-	return dynamic, dynamicIndex, found && options > 0
-}
-
-func ssrAwaitSnapshotKeyedEachDirectSelectOptionText(nodes []SSRPlanNode, itemName string) (*SSRPlanText, int, bool) {
-	options, dynamicIndex := 0, -1
-	var dynamic *SSRPlanText
-	var visit func([]SSRPlanNode, bool) bool
-	visit = func(currentNodes []SSRPlanNode, allowOptgroup bool) bool {
-		for _, node := range currentNodes {
-			switch current := node.(type) {
-			case *SSRPlanText:
-				for _, part := range current.Parts {
-					if !part.Static {
-						return false
-					}
-				}
-			case *SSRPlanElement:
-				if current == nil {
-					return false
-				}
-				if current.Tag == "optgroup" {
-					if !allowOptgroup || !ssrAwaitSnapshotStaticSelectAttrs(current.Attrs, "label", false) || !visit(current.Children, false) {
-						return false
-					}
-					continue
-				}
-				if current.Tag != "option" || !ssrAwaitSnapshotStaticSelectAttrs(current.Attrs, "value", true) || len(current.Children) != 1 {
-					return false
-				}
-				text, ok := current.Children[0].(*SSRPlanText)
-				if !ok || text == nil {
-					return false
-				}
-				hasDynamic := false
-				for _, part := range text.Parts {
-					if part.Static {
-						continue
-					}
-					root, ok := templateExprMemberBindingRoot(part.Expr)
-					if !ok || root != itemName {
-						return false
-					}
-					hasDynamic = true
-				}
-				if hasDynamic {
-					if dynamic != nil {
-						return false
-					}
-					dynamic, dynamicIndex = text, options
-				}
-				options++
-			default:
-				return false
-			}
-		}
-		return true
-	}
-	if !visit(nodes, true) {
-		return nil, -1, false
-	}
-	return dynamic, dynamicIndex, dynamic != nil && options > 0
-}
-
-func ssrAwaitSnapshotKeyedEachHasCheckedControlBinding(element *SSRPlanElement) bool {
-	for _, attr := range element.Attrs {
-		if attr.Role == SSRAttrTwoWay && attr.Name == "checked" {
-			return true
-		}
-	}
-	return false
-}
-
-func ssrAwaitSnapshotKeyedEachDirectTextPlanRow(nodes []SSRPlanNode, itemName string) bool {
-	if itemName == "" || len(nodes) != 1 {
-		return false
-	}
-	element, ok := nodes[0].(*SSRPlanElement)
-	if !ok || element == nil || len(element.Children) != 1 {
-		return false
-	}
-	dynamicAttrs, classAttrs, styleAttrs, events := 0, 0, 0, 0
-	for _, attr := range element.Attrs {
-		switch attr.Role {
-		case SSRAttrStatic:
-		case SSRAttrDynamic:
-			if attr.Name == "" || isBoolAttr(attr.Name) || attr.Expr == nil {
-				return false
-			}
-			if element.Tag == "select" && attr.Name == "multiple" {
-				return false
-			}
-			name, ok := templateExprBindingRoot(attr.Expr)
-			if !ok || name != itemName {
-				return false
-			}
-			dynamicAttrs++
-		case SSRAttrClassDirective:
-			if attr.Name == "" || attr.Expr == nil {
-				return false
-			}
-			name, ok := templateExprBindingRoot(attr.Expr)
-			if !ok || name != itemName {
-				return false
-			}
-			classAttrs++
-		case SSRAttrStyleDirective:
-			if attr.Name == "" || attr.Expr == nil {
-				return false
-			}
-			name, ok := templateExprBindingRoot(attr.Expr)
-			if !ok || name != itemName {
-				return false
-			}
-			styleAttrs++
-		case SSRAttrEvent:
-			if attr.Name == "" || attr.Expr == nil {
-				return false
-			}
-			if _, ok := templateExprIdent(attr.Expr); !ok && !templateExprIsHandler(attr.Expr) {
-				return false
-			}
-			events++
-		default:
-			return false
-		}
-	}
-	if dynamicAttrs > 1 || classAttrs > 1 || styleAttrs > 1 || events > 1 {
-		return false
-	}
-	text, ok := element.Children[0].(*SSRPlanText)
-	if !ok || text == nil {
-		return false
-	}
-	dynamic := false
-	for _, part := range text.Parts {
-		if part.Static {
-			continue
-		}
-		name, ok := templateExprBindingRoot(part.Expr)
-		if !ok || name != itemName {
-			return false
-		}
-		dynamic = true
-	}
-	return dynamic
-}
-
-func ssrAwaitSnapshotKeyedEachStaticSelectOptions(nodes []SSRPlanNode) bool {
-	options, ok := ssrAwaitSnapshotKeyedEachStaticSelectOptionTree(nodes, true)
-	return ok && options > 0
-}
-
-// ssrAwaitSnapshotKeyedEachStaticSelectOptionTree mirrors the cached-template
-// validator used by hydration. It accepts static option groups but deliberately
-// does not turn their descendants into a dynamic lifecycle owner.
-func ssrAwaitSnapshotKeyedEachStaticSelectOptionTree(nodes []SSRPlanNode, allowOptgroup bool) (int, bool) {
-	options := 0
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *SSRPlanText:
-			for _, part := range current.Parts {
-				if !part.Static {
-					return 0, false
-				}
-			}
-		case *SSRPlanElement:
-			if current == nil {
-				return 0, false
-			}
-			if current.Tag == "optgroup" {
-				if !allowOptgroup || !ssrAwaitSnapshotStaticSelectAttrs(current.Attrs, "label", false) {
-					return 0, false
-				}
-				childOptions, ok := ssrAwaitSnapshotKeyedEachStaticSelectOptionTree(current.Children, false)
-				if !ok || childOptions == 0 {
-					return 0, false
-				}
-				options += childOptions
-				continue
-			}
-			if current.Tag != "option" || !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) || !ssrAwaitSnapshotStaticSelectAttrs(current.Attrs, "value", true) {
-				return 0, false
-			}
-			options++
-		default:
-			return 0, false
-		}
-	}
-	return options, true
-}
-
-func ssrAwaitSnapshotStaticSelectAttrs(attrs []SSRPlanAttr, required string, requireExplicitValue bool) bool {
-	hasRequired := false
-	for _, attr := range attrs {
-		if attr.Role != SSRAttrStatic || attr.Name == "selected" {
-			return false
-		}
-		if attr.Name == required {
-			if requireExplicitValue && attr.ValueKind == AttrValueMissing {
-				return false
-			}
-			hasRequired = true
-		}
-	}
-	return hasRequired
-}
-
-func ssrAwaitSnapshotSlotStaticKey(node *SSRPlanIf) bool {
-	if node == nil || node.Key == nil || len(node.Branches) != 1 || node.Branches[0].Condition != nil || !ssrAwaitSnapshotSlotStaticPlanNodes(node.Branches[0].Children) {
-		return false
-	}
-	_, ok := templateExprIdent(node.Key)
-	return ok
-}
-
-func ssrAwaitSnapshotSlotTextIf(node *SSRPlanIf) bool {
-	if node == nil || node.Key != nil || len(node.Branches) == 0 {
-		return false
-	}
-	for _, branch := range node.Branches {
-		if branch.Condition != nil {
-			if _, ok := templateExprIdent(branch.Condition); !ok {
-				return false
-			}
-		}
-		if !ssrAwaitSnapshotSlotTextPlanNodes(branch.Children) {
-			return false
-		}
-	}
-	return true
-}
-
-func ssrAwaitSnapshotSlotTextPlanNodes(nodes []SSRPlanNode) bool {
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *SSRPlanText:
-			for _, part := range current.Parts {
-				if !part.Static {
-					if _, ok := templateExprIdent(part.Expr); !ok {
-						return false
-					}
-				}
-			}
-		case *SSRPlanElement:
-			if !ssrAwaitSnapshotSlotIfElement(current) {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func ssrAwaitSnapshotSlotIfElement(element *SSRPlanElement) bool {
-	if element == nil || !ssrAwaitSnapshotSlotStaticPlanNodes(element.Children) {
-		return false
-	}
-	for _, attr := range element.Attrs {
-		switch attr.Role {
-		case SSRAttrStatic:
-			continue
-		case SSRAttrDynamic, SSRAttrClassDirective, SSRAttrStyleDirective, SSRAttrEvent:
-			if _, ok := templateExprIdent(attr.Expr); !ok {
-				return false
-			}
-		case SSRAttrTwoWay:
-			if attr.Name != "value" && attr.Name != "checked" {
-				return false
-			}
-			if _, ok := templateExprIdent(attr.Expr); !ok {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func ssrAwaitSnapshotSlotStaticPlanNodes(nodes []SSRPlanNode) bool {
-	for _, node := range nodes {
-		switch current := node.(type) {
-		case *SSRPlanText:
-			for _, part := range current.Parts {
-				if !part.Static {
-					return false
-				}
-			}
-		case *SSRPlanElement:
-			for _, attr := range current.Attrs {
-				if attr.Role != SSRAttrStatic {
-					return false
-				}
-			}
-			if !ssrAwaitSnapshotSlotStaticPlanNodes(current.Children) {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func (e *ssrGoEmitter) markedStatements(id int, body []goast.Stmt) []goast.Stmt {
-	if id < 0 {
-		return body
-	}
-	marked := make([]goast.Stmt, 0, len(body)+2)
-	marked = append(marked, e.markerStart(id))
-	marked = append(marked, body...)
-	marked = append(marked, e.markerEnd(id))
-	return marked
-}
-
-func (e *ssrGoEmitter) markerStart(id int) goast.Stmt {
-	return goWriteSSRValue(e.markerValue("<!--v:", ":"+itoa(id)+"-->"))
-}
-
-func (e *ssrGoEmitter) markerEnd(id int) goast.Stmt {
-	return goWriteSSRValue(e.markerValue("<!--/v:", ":"+itoa(id)+"-->"))
-}
-
-func (e *ssrGoEmitter) elementMarkerStart(id int) goast.Stmt {
-	return goWriteSSRValue(e.markerValue("<!--e:", ":"+itoa(id)+"-->"))
-}
-
-func (e *ssrGoEmitter) elementMarkerEnd(id int) goast.Stmt {
-	return goWriteSSRValue(e.markerValue("<!--/e:", ":"+itoa(id)+"-->"))
-}
-
-// Keyed rows need an ownership boundary distinct from element markers: one
-// logical row may contain static siblings, child roots, and payload scripts.
-// The comments stay inside the enclosing each range and are intentionally
-// scope-qualified like every other SSR marker.
-func (e *ssrGoEmitter) rowMarkerStart(id int) goast.Stmt {
-	return goWriteSSRValue(e.markerValue("<!--r:", ":"+itoa(id)+"-->"))
-}
-
-func (e *ssrGoEmitter) rowMarkerEnd(id int) goast.Stmt {
-	return goWriteSSRValue(e.markerValue("<!--/r:", ":"+itoa(id)+"-->"))
-}
-
-func (e *ssrGoEmitter) markerValue(prefix, suffix string) goast.Expr {
-	scope := e.scopeExpr
-	if scope == nil {
-		scope = &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(e.scopeID)}
-	}
-	return ssrGoStringConcat(
-		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(prefix)},
-		scope,
-		&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(suffix)},
-	)
-}
-
-func ssrGoStringConcat(parts ...goast.Expr) goast.Expr {
-	if len(parts) == 0 {
-		return &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("")}
-	}
-	result := parts[0]
-	for _, part := range parts[1:] {
-		result = &goast.BinaryExpr{X: result, Op: token.ADD, Y: part}
-	}
-	return result
 }
 
 // ssrScopedStatements appends statements to a prelude; with a prelude the

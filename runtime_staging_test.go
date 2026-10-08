@@ -1,11 +1,11 @@
 package main
 
 import (
-	"strings"
 	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -72,52 +72,6 @@ func TestRuntimeImportFor(t *testing.T) {
 	} {
 		if got := runtimeImportFor(dir, root); got != want {
 			t.Fatalf("runtimeImportFor(%q) = %q, want %q", dir, got, want)
-		}
-	}
-}
-
-func TestRuntimeModulesSplitHydrationFromCore(t *testing.T) {
-	core := runtimeExportNames(embeddedRuntime)
-	if len(hydrationRuntimeExports) == 0 {
-		t.Fatal("hydration runtime exports nothing")
-	}
-	for name := range hydrationRuntimeExports {
-		if core[name] {
-			t.Fatalf("%s is exported by both runtime modules", name)
-		}
-	}
-	if !core[runtimeContractExport] {
-		t.Fatalf("core runtime does not export the contract marker %s", runtimeContractExport)
-	}
-	if !bytes.Contains(embeddedHydrationRuntime, []byte("import { "+runtimeContractExport+" } from './runtime.js';")) {
-		t.Fatal("hydration runtime does not check the runtime contract")
-	}
-}
-
-func TestBuildProjectStagesHydrationRuntimeOnlyForHydrationBuilds(t *testing.T) {
-	srcRoot := t.TempDir()
-	if err := os.WriteFile(filepath.Join(srcRoot, "App.vela"), []byte("<script>let n = "+string(rune(36))+"state(0);</script><template><button @click={() => n++}>{n}</button></template>"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	files := collectVela(srcRoot)
-	for _, hydration := range []bool{false, true} {
-		outRoot := t.TempDir()
-		if errors := buildProject(files, srcRoot, outRoot, CompileOptions{HydrationSupport: hydration}, false); errors != 0 {
-			t.Fatalf("project build failed with %d error(s)", errors)
-		}
-		_, err := os.Stat(filepath.Join(outRoot, "runtime-hydration.js"))
-		if hydration && err != nil {
-			t.Fatalf("hydration build did not stage runtime-hydration.js: %v", err)
-		}
-		if !hydration && !os.IsNotExist(err) {
-			t.Fatalf("CSR build staged runtime-hydration.js (err=%v)", err)
-		}
-		code, err := os.ReadFile(filepath.Join(outRoot, "App.js"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Contains(code, []byte(runtimeContractExport)) || !bytes.Contains(code, []byte("from './runtime.js'")) {
-			t.Fatalf("generated module does not import the runtime contract:\n%s", code)
 		}
 	}
 }
@@ -199,11 +153,11 @@ func TestCollectVelaAcceptsDotRoot(t *testing.T) {
 func TestHydrateRuntimeCarriesTheVerificationPolicy(t *testing.T) {
 	for verify, want := range map[string]string{"": "repair", "repair": "repair", "fail": "fail", "off": "off"} {
 		dir := t.TempDir()
-		withDOMEngine(t, DOMEngineBlocks, func() {
-			if err := stageRuntime(dir, CompileOptions{HydrationVerify: verify}); err != nil {
-				t.Fatal(err)
-			}
-		})
+
+		if err := stageRuntime(dir, CompileOptions{HydrationVerify: verify}); err != nil {
+			t.Fatal(err)
+		}
+
 		data, err := os.ReadFile(filepath.Join(dir, "runtime-hydrate.js"))
 		if err != nil {
 			t.Fatal(err)

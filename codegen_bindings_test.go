@@ -24,54 +24,6 @@ import (
 //  Bug 11 — bind:value listener
 // ─────────────────────────────────────────────
 
-func TestBug11_BindValueEmitsListener(t *testing.T) {
-	legacyCodeShapeTest(t)
-	src := `<script>
-  let name = $state('');
-</script>
-<template>
-  <input bind:value={name} />
-</template>`
-	out := compileGenerated(t, src)
-	if !strings.Contains(out, "addEventListener('input'") {
-		t.Fatalf("expected input listener for bind:value; got:\n%s", out)
-	}
-	if !strings.Contains(out, "$$set_name($e.target.value)") {
-		t.Fatalf("expected $$set_name($e.target.value) in handler; got:\n%s", out)
-	}
-}
-
-func TestBug11_BindCheckedEmitsListener(t *testing.T) {
-	legacyCodeShapeTest(t)
-	src := `<script>
-  let agree = $state(false);
-</script>
-<template>
-  <input type="checkbox" bind:checked={agree} />
-</template>`
-	out := compileGenerated(t, src)
-	if !strings.Contains(out, "addEventListener('change'") {
-		t.Fatalf("expected change listener for bind:checked; got:\n%s", out)
-	}
-	if !strings.Contains(out, "$$set_agree($e.target.checked)") {
-		t.Fatalf("expected $$set_agree($e.target.checked); got:\n%s", out)
-	}
-}
-
-func TestBug11_BindSelectEmitsChangeListener(t *testing.T) {
-	legacyCodeShapeTest(t)
-	src := `<script>
-  let pick = $state('a');
-</script>
-<template>
-  <select bind:value={pick}><option>a</option></select>
-</template>`
-	out := compileGenerated(t, src)
-	if !strings.Contains(out, "addEventListener('change'") {
-		t.Fatalf("expected change listener on <select> for bind:value; got:\n%s", out)
-	}
-}
-
 func TestBindMultipleSelectUsesArrayRuntimeHelpers(t *testing.T) {
 	src := `<script>
   let picks = $state(['a']);
@@ -90,42 +42,6 @@ func TestBindMultipleSelectUsesArrayRuntimeHelpers(t *testing.T) {
 // ─────────────────────────────────────────────
 //  Bug 12 — bind:this
 // ─────────────────────────────────────────────
-
-func TestBug12_BindThisOnStateRefUsesSetter(t *testing.T) {
-	legacyCodeShapeTest(t)
-	src := `<script>
-  let el = $state(null);
-</script>
-<template>
-  <div bind:this={el}>x</div>
-</template>`
-	out := compileGenerated(t, src)
-	if !strings.Contains(out, "$$set_el($$root)") &&
-		!strings.Contains(out, "$$set_el($$n") {
-		t.Fatalf("expected $$set_el(elem) for bind:this; got:\n%s", out)
-	}
-	if !strings.Contains(out, "$$set_el(null)") {
-		t.Fatalf("expected $$set_el(null) on destroy; got:\n%s", out)
-	}
-}
-
-func TestBug12_BindThisOnLocalUsesPlainAssignment(t *testing.T) {
-	legacyCodeShapeTest(t)
-	src := `<script>
-  let myRef;
-</script>
-<template>
-  <div bind:this={myRef}>x</div>
-</template>`
-	out := compileGenerated(t, src)
-	if !strings.Contains(out, "myRef = $$root") &&
-		!strings.Contains(out, "myRef = $$n") {
-		t.Fatalf("expected plain assignment for non-state bind:this; got:\n%s", out)
-	}
-	if !strings.Contains(out, "myRef = null") {
-		t.Fatalf("expected myRef = null on destroy; got:\n%s", out)
-	}
-}
 
 func TestBug12_BindThisInsideIfBranchWorks(t *testing.T) {
 	src := `<script>

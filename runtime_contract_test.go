@@ -14,12 +14,11 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 		t.Skip("node not available")
 	}
 	dir := t.TempDir()
-	// The hydration module imports ./runtime.js, so both modules keep their
-	// staged names and the directory is marked as ES modules.
+	// The runtime keeps its staged name and the directory is marked as ES
+	// modules.
 	for name, source := range map[string]string{
-		"runtime.js":           "runtime/runtime.js",
-		"runtime-hydration.js": "runtime/runtime-hydration.js",
-		"package.json":         "",
+		"runtime.js":   "runtime/runtime.js",
+		"package.json": "",
 	} {
 		data := []byte(`{"type":"module"}`)
 		if source != "" {
@@ -34,7 +33,6 @@ func TestRuntimeStoreLifecycleContract(t *testing.T) {
 	}
 
 	const script = `import { $$defer, $$isProxy, $$proxy, $$readSelectValues, $$selectValuesEqual, $$writeSelectValues, derived, readable, writable } from './runtime.js';
-import { $$acquireHydrationElement, $$acquireHydrationRange, $$addHydrationListener, $$adoptHydrationKeyedRows, $$adoptHydrationKeyedRowRanges, $$createHydrationRowController, $$createHydrationTransaction, $$findHydrationNestedRange, $$reconcileHydrationKeyedElements, $$reconcileHydrationKeyedRows, $$reconcileHydrationKeyedRowRanges, $$createHydrationWalker, $$hydrationPayloadVersion, $$readHydrationPayload } from './runtime-hydration.js';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -200,190 +198,6 @@ assert($$writeSelectValues(select, undefined),
   'multi-select writer treats a missing model as an empty selected set');
 assert(selectedWrites.map(write => write.join(':')).join(',') === 'one:false,2:true,one:false,2:false',
   'multi-select missing-model write clears only the selected option');
-
-const transactionOrder = [];
-const transaction = $$createHydrationTransaction();
-transaction.add(() => transactionOrder.push('owner'));
-const listenerTarget = {
-  listeners: new Map(),
-  addEventListener(type, handler) { this.listeners.set(type, handler); },
-  removeEventListener(type, handler) {
-    if (this.listeners.get(type) === handler) this.listeners.delete(type);
-    transactionOrder.push('listener');
-  },
-};
-$$addHydrationListener(transaction, listenerTarget, 'click', () => {});
-assert(listenerTarget.listeners.has('click'), 'hydration transaction listener must attach immediately');
-assert(transaction.rollback().length === 0, 'hydration rollback must report no cleanup errors');
-assert(transactionOrder.join(',') === 'listener,owner',
-  'hydration rollback must unwind resources in reverse registration order');
-assert(!listenerTarget.listeners.has('click'), 'hydration rollback must remove an adopted listener');
-assert(transaction.state === 'rolled-back' && transaction.rollback().length === 0,
-  'hydration rollback must be idempotent');
-const committed = $$createHydrationTransaction();
-let committedCleanup = 0;
-committed.add(() => { committedCleanup++; });
-assert(committed.commit() && committed.state === 'committed', 'hydration transaction must commit once');
-assert(committed.rollback().length === 0 && committedCleanup === 0,
-  'committed hydration resources must remain owned by normal destroy');
-
-function marker(data) { return { data }; }
-function markerRoot(markers, payloads = {}) {
-  const doc = {
-    createTreeWalker() {
-      let index = 0;
-      return { nextNode() { return index < markers.length ? markers[index++] : null; } };
-    },
-    getElementById(id) { return payloads[id] || null; },
-  };
-  return { ownerDocument: doc };
-}
-const hydratedRoot = markerRoot([marker('v:vela-test:0'), marker('v:child:0'), marker('/v:child:0'), marker('v:vela-test:1'), marker('/v:vela-test:1'), marker('/v:vela-test:0')]);
-const walker = $$createHydrationWalker(hydratedRoot, 'vela-test');
-const outer = $$acquireHydrationRange(walker, 0);
-const inner = $$acquireHydrationRange(walker, 1);
-assert(outer.start.data === 'v:vela-test:0' && outer.end.data === '/v:vela-test:0', 'walker must retain outer paired range');
-assert(inner.start.data === 'v:vela-test:1' && inner.end.data === '/v:vela-test:1', 'walker must retain nested paired range while ignoring child markers');
-let mismatch;
-try { $$createHydrationWalker(markerRoot([marker('v:vela-test:0'), marker('/v:vela-test:1')]), 'vela-test'); }
-catch (error) { mismatch = error; }
-assert(mismatch && mismatch.message.includes('expected <!--/v:vela-test:0--> before <!--/v:vela-test:1-->'),
-  'walker must diagnose crossed marker pairs');
-mismatch = undefined;
-try { $$acquireHydrationRange(walker, 9); }
-catch (error) { mismatch = error; }
-assert(mismatch && mismatch.message.includes('missing marker range v9'),
-  'walker must diagnose a missing requested range');
-const elementStart = marker('e:vela-test:2');
-const elementEnd = marker('/e:vela-test:2');
-const existingMain = { nodeType: 1, tagName: 'MAIN', nextSibling: elementEnd };
-elementStart.nextSibling = existingMain;
-const elementWalker = $$createHydrationWalker(markerRoot([elementStart, elementEnd]), 'vela-test');
-assert($$acquireHydrationElement(elementWalker, 2, 'main') === existingMain,
-  'element acquisition must return the existing element in its marker range');
-const implicitRow = { nodeType: 1, tagName: 'TR' };
-const implicitBody = { nodeType: 1, tagName: 'TBODY', firstElementChild: implicitRow };
-const rowStart = marker('e:vela-test:3');
-const rowEnd = marker('/e:vela-test:3');
-rowStart.nextSibling = implicitBody;
-implicitBody.nextSibling = rowEnd;
-const rowWalker = $$createHydrationWalker(markerRoot([rowStart, rowEnd]), 'vela-test');
-assert($$acquireHydrationElement(rowWalker, 3, 'tr') === implicitRow,
-  'element acquisition must pass through browser-inserted tbody for a marked row');
-mismatch = undefined;
-try { $$acquireHydrationElement(elementWalker, 2, 'section'); }
-catch (error) { mismatch = error; }
-assert(mismatch && mismatch.message.includes('expected <section> but found <main>'),
-  'element acquisition must diagnose a tag mismatch without replacement');
-const keyedStart = marker('v:vela-test:4');
-const keyedOne = { nodeType: 1, tagName: 'LI' };
-const keyedTwo = { nodeType: 1, tagName: 'LI' };
-const keyedPayload = { nodeType: 1, tagName: 'SCRIPT', id: 'vela-state-row-b' };
-const keyedEnd = marker('/v:vela-test:4');
-keyedStart.nextSibling = keyedOne;
-keyedOne.nextSibling = keyedTwo;
-keyedTwo.nextSibling = keyedPayload;
-keyedPayload.nextSibling = keyedEnd;
-keyedEnd.parentNode = {};
-const keyed = $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }, { id: 'b' }], item => item.id, 'li');
-assert(keyed.get('a') === keyedOne && keyed.get('b') === keyedTwo,
-  'keyed adoption must retain existing row identity by initial key');
-const componentRows = $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }, { id: 'b' }], item => item.id, '');
-assert(componentRows.get('a') === keyedOne && componentRows.get('b') === keyedTwo,
-  'keyed component adoption must accept capability-checked direct roots without a parent-visible tag');
-const rowStartA = marker('r:vela-test--each-4-a:4'), rowEndA = marker('/r:vela-test--each-4-a:4');
-const rowStartB = marker('r:vela-test--each-4-b:4'), rowEndB = marker('/r:vela-test--each-4-b:4');
-rowStartA.nodeType = rowEndA.nodeType = rowStartB.nodeType = rowEndB.nodeType = 8;
-keyedStart.nextSibling = rowStartA; rowStartA.nextSibling = keyedOne; keyedOne.nextSibling = rowEndA; rowEndA.nextSibling = rowStartB; rowStartB.nextSibling = keyedTwo; keyedTwo.nextSibling = rowEndB; rowEndB.nextSibling = keyedEnd;
-const rowRanges = $$adoptHydrationKeyedRowRanges({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }, { id: 'b' }], item => item.id, 4);
-assert(rowRanges.get('a').start === rowStartA && rowRanges.get('b').end === rowEndB,
-  'keyed row-range adoption must retain paired SSR boundaries by initial key');
-const ownerStart = marker('r:owner'), nestedStart = marker('v:vela-test:8'), nestedEnd = marker('/v:vela-test:8'), ownerEnd = marker('/r:owner');
-ownerStart.nodeType = nestedStart.nodeType = nestedEnd.nodeType = ownerEnd.nodeType = 8;
-ownerStart.nextSibling = nestedStart; nestedStart.nextSibling = keyedOne; keyedOne.nextSibling = nestedEnd; nestedEnd.nextSibling = ownerEnd;
-const nestedRange = $$findHydrationNestedRange({ start: ownerStart, end: ownerEnd }, 'vela-test', 8);
-assert(nestedRange.start === nestedStart && nestedRange.end === nestedEnd,
-  'nested structural range lookup must resolve one repeated v-range inside its owner row');
-mismatch = undefined;
-try { $$findHydrationNestedRange({ start: ownerStart, end: ownerEnd }, 'vela-test', 9); }
-catch (error) { mismatch = error; }
-assert(mismatch && mismatch.message.includes('missing nested marker range v9'),
-  'nested structural range lookup must reject a missing owner-local marker');
-const rowCleanupOrder = [];
-const controller = $$createHydrationRowController({ id: 'retained' }, () => {}, () => rowCleanupOrder.push('after'));
-controller.listeners.push(() => rowCleanupOrder.push('first'), () => rowCleanupOrder.push('second'));
-controller.updates.push(() => rowCleanupOrder.push('update'));
-controller.destroy();
-assert(rowCleanupOrder.join(',') === 'second,first,after',
-  'row controller must dispose listeners in reverse registration order before its finalizer');
-assert(controller.row.id === 'retained' && controller.listeners.length === 0 && controller.updates.length === 0,
-  'row controller must preserve its adopted row identity while releasing callbacks');
-const moveOrder = [];
-const rangeEnd = { before(node) { moveOrder.push(node.id); } };
-const outerAStart = { id: 'a:start' }, outerAEnd = { id: 'a:end' };
-const outerBStart = { id: 'b:start' }, outerBEnd = { id: 'b:end' };
-outerAStart.nextSibling = outerAEnd; outerAEnd.nextSibling = null;
-outerBStart.nextSibling = outerBEnd; outerBEnd.nextSibling = null;
-let destroyedA = 0, destroyedB = 0;
-const outerA = { start: outerAStart, end: outerAEnd, controller: { destroy() { destroyedA++; } } };
-const outerB = { start: outerBStart, end: outerBEnd, controller: { destroy() { destroyedB++; } } };
-const reorderedOuter = $$reconcileHydrationKeyedRowRanges({ end: rangeEnd }, new Map([['a', outerA], ['b', outerB]]), [{ id: 'b' }, { id: 'a' }], item => item.id, () => { throw new Error('reorder must not create an existing outer row'); });
-assert(reorderedOuter.get('a') === outerA && reorderedOuter.get('b') === outerB && destroyedA === 0 && destroyedB === 0,
-  'outer range reorder must retain both row controllers');
-assert(moveOrder.join(',') === 'b:start,b:end,a:start,a:end',
-  'outer range reorder must move complete retained ranges in keyed order');
-keyedStart.nextSibling = rowStartA; rowStartA.nextSibling = keyedOne; keyedOne.nextSibling = rowEndA; rowEndA.nextSibling = rowStartB; rowStartB.nextSibling = keyedTwo; keyedTwo.nextSibling = rowEndB; rowEndB.nextSibling = keyedEnd;
-mismatch = undefined;
-try { $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }], item => item.id, 'li'); }
-catch (error) { mismatch = error; }
-assert(mismatch && mismatch.message.includes('row count 2 does not match iterable length 1'),
-  'keyed adoption must diagnose a stale row count');
-mismatch = undefined;
-try { $$adoptHydrationKeyedRows({ start: keyedStart, end: keyedEnd }, [{ id: 'a' }, { id: 'a' }], item => item.id, 'li'); }
-catch (error) { mismatch = error; }
-assert(mismatch && mismatch.message.includes('duplicate keyed row a'),
-  'keyed adoption must diagnose duplicate initial keys');
-const order = [];
-const keyedRange = { end: { before(row) { order.push(row.id); } } };
-const retained = { nodeType: 1, id: 'b', remove() { throw new Error('retained row removed'); } };
-const removed = { nodeType: 1, id: 'a', removed: false, remove() { this.removed = true; } };
-const reconciled = $$reconcileHydrationKeyedRows(keyedRange, new Map([['a', removed], ['b', retained]]), [{ id: 'b' }, { id: 'c' }], item => item.id,
-  item => ({ nodeType: 1, id: item.id, remove() {} }),
-  (row, item) => { row.updated = item.id; });
-assert(reconciled.get('b') === retained && retained.updated === 'b', 'keyed reconciliation must retain and update matching row');
-assert(reconciled.get('c').id === 'c' && removed.removed, 'keyed reconciliation must create new and remove orphaned rows');
-assert(order.join(',') === 'b,c', 'keyed reconciliation must place rows in new key order');
-const optionOrder = [];
-const optionParent = { nodeType: 1, append(option) { optionOrder.push(option.id); } };
-const staleOption = { nodeType: 1, id: 'stale', removed: false, remove() { this.removed = true; } };
-const retainedOption = { nodeType: 1, id: 'retained', remove() {} };
-const options = $$reconcileHydrationKeyedElements(optionParent, new Map([['stale', staleOption], ['retained', retainedOption]]), [{ id: 'retained' }, { id: 'new' }], item => item.id,
-  item => ({ nodeType: 1, id: item.id, remove() {} }),
-  (option, item) => { option.updated = item.id; });
-assert(options.get('retained').updated === 'retained' && options.get('new').id === 'new' && staleOption.removed,
-  'keyed element reconciliation must update, create, and remove typed elements');
-let duplicateOptionKey;
-try { $$reconcileHydrationKeyedElements(optionParent, new Map(), [{ id: 'same' }, { id: 'same' }], item => item.id, item => ({ nodeType: 1, id: item.id, remove() {} })); }
-catch (error) { duplicateOptionKey = error; }
-assert(duplicateOptionKey && duplicateOptionKey.message.includes('duplicate key'), 'keyed element reconciliation must reject duplicate keys');
-const payloadRoot = markerRoot([], {
-  'vela-state-vela-test': { type: 'application/json', textContent: '{"component":"vela-test","props":{"Title":"ok"},"state":{},"incomplete":false}' },
-});
-const payload = $$readHydrationPayload(payloadRoot, 'vela-test');
-assert(payload.props.Title === 'ok', 'payload reader must return matching inert payload');
-assert($$hydrationPayloadVersion === 1, 'runtime must expose the current payload schema version');
-payloadRoot.ownerDocument.getElementById = () => ({ type: 'application/json', textContent: '{"version":2,"component":"vela-test","state":{},"incomplete":false}' });
-mismatch = undefined;
-try { $$readHydrationPayload(payloadRoot, 'vela-test'); }
-catch (error) { mismatch = error; }
-assert(mismatch && mismatch.message.includes('unsupported state payload version 2'),
-  'payload reader must reject a payload from another schema version');
-payloadRoot.ownerDocument.getElementById = () => ({ type: 'application/json', textContent: '{"component":"vela-test","incomplete":true,"omitted":["now"]}' });
-mismatch = undefined;
-try { $$readHydrationPayload(payloadRoot, 'vela-test'); }
-catch (error) { mismatch = error; }
-assert(mismatch && mismatch.message.includes('state payload is incomplete; omitted state: now'),
-  'payload reader must reject incomplete state restoration');
 
 console.log('OK');
 

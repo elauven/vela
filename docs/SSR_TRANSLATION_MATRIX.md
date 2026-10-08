@@ -347,9 +347,8 @@ Observed in the code on 2026-10-03; status on 2026-10-05 after task 044.
 6. **Local initializers were re-inlined at every read.** Fixed: evaluated
    once in declaration order.
 7. **`??`** was rejected. Fixed (`ops-nullish`).
-8. **Hydration payload state** was a compile-time constant. Fixed for the
-   block engine (computed `s` entries). The legacy engine keeps the
-   constant until it is removed (task 042).
+8. **Hydration payload state** was a compile-time constant. Fixed: computed
+   `s` entries of the payload stream.
 
 ---
 

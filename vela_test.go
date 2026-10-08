@@ -319,49 +319,6 @@ func TestScopeCSS(t *testing.T) {
 //  Code generator — smoke tests
 // ──────────────────────────────────────────────
 
-func TestGenerateCode_StateBinding(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let count = $state(0);`,
-		Template: `<div>{count}</div>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	analysis := analyzeScript(sfc.Script)
-	code := generateCodeAST("MyComp", sfc, nodes, analysis, "vela-test")
-
-	checks := []string{
-		"export function MyComp",
-		"let count = 0",
-		"function $$set_count",
-		"createTextNode",
-		"$$target.appendChild",
-		"destroy()",
-	}
-	for _, want := range checks {
-		if !strings.Contains(code, want) {
-			t.Errorf("generated code missing %q", want)
-		}
-	}
-}
-
-func TestGenerateCode_EventHandler(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let n = $state(0); function inc() { n++; }`,
-		Template: `<button @click="inc">+</button>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	analysis := analyzeScript(sfc.Script)
-	code := generateCodeAST("Btn", sfc, nodes, analysis, "vela-test")
-
-	if !strings.Contains(code, "addEventListener('click'") {
-		t.Error("expected addEventListener in generated code")
-	}
-	if !strings.Contains(code, "removeEventListener") {
-		t.Error("expected removeEventListener in destroy()")
-	}
-}
-
 func TestGenerateCode_ScopedStyle(t *testing.T) {
 	sfc := &SFC{
 		Script:   "",
@@ -377,48 +334,6 @@ func TestGenerateCode_ScopedStyle(t *testing.T) {
 	}
 	if !strings.Contains(code, "p[vela-abc]") {
 		t.Error("expected scoped CSS selector")
-	}
-}
-
-func TestGenerateCode_IfDirective(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let show = $state(true);`,
-		Template: `{#if show}<span>visible</span>{/if}`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	analysis := analyzeScript(sfc.Script)
-	code := generateCodeAST("IfComp", sfc, nodes, analysis, "vela-test")
-
-	if !strings.Contains(code, "createComment") {
-		t.Error("expected anchor comment for #if")
-	}
-	// Codegen uses DOM Node.before() rather than parent.insertBefore(node, ref).
-	// Both are correct; the test originally predated the .before() migration.
-	if !strings.Contains(code, ".before(") {
-		t.Error("expected .before() call to mount branch before anchor")
-	}
-	// Also check that a chain function is emitted — the real shape-guard.
-	if !strings.Contains(code, "$$chain_") {
-		t.Error("expected $$chain_ function for #if reactivity")
-	}
-}
-
-func TestGenerateCode_EachDirective(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let items = $state(['a','b']);`,
-		Template: `{#each items as item}<li>{item}</li>{/each}`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	analysis := analyzeScript(sfc.Script)
-	code := generateCodeAST("ListComp", sfc, nodes, analysis, "vela-test")
-
-	if !strings.Contains(code, "forEach") {
-		t.Error("expected forEach in #each output")
-	}
-	if !strings.Contains(code, "createComment") {
-		t.Error("expected anchor comment for #each")
 	}
 }
 
@@ -466,52 +381,6 @@ func TestParseInterpolations(t *testing.T) {
 // ──────────────────────────────────────────────
 //  Dependency analysis — AST-based
 // ──────────────────────────────────────────────
-
-func TestFindDeps(t *testing.T) {
-	// Uses the new AST-based findDeps (which delegates to FindDepsInNode)
-	vars := []string{"count", "name", "active"}
-
-	deps := findDeps("count * 2 + name.length", vars)
-	if !containsStr(deps, "count") {
-		t.Error("should find count")
-	}
-	if !containsStr(deps, "name") {
-		t.Error("should find name")
-	}
-	if containsStr(deps, "active") {
-		t.Error("should not find active (not referenced)")
-	}
-}
-
-func TestFindDeps_WordBoundary(t *testing.T) {
-	// AST-based: "recount" parses as a distinct identifier — never matches "count".
-	vars := []string{"count"}
-	deps := findDeps("recount()", vars)
-	if containsStr(deps, "count") {
-		t.Error("should not match 'count' inside 'recount'")
-	}
-}
-
-func TestFindDeps_TemplateLiteral(t *testing.T) {
-	// Deps inside template literal expressions must be found.
-	vars := []string{"count", "name"}
-	deps := findDeps("`Hello ${name}, you have ${count} items`", vars)
-	if !containsStr(deps, "name") {
-		t.Error("should find name inside template literal")
-	}
-	if !containsStr(deps, "count") {
-		t.Error("should find count inside template literal")
-	}
-}
-
-func TestFindDeps_NestedArrow(t *testing.T) {
-	// Deps referenced inside a callback must be found.
-	vars := []string{"todos"}
-	deps := findDeps("todos.filter(t => !t.done).length", vars)
-	if !containsStr(deps, "todos") {
-		t.Error("should find todos")
-	}
-}
 
 func TestCollectIdents_SkipsPropertyNames(t *testing.T) {
 	// In obj.foo, only "obj" is a free identifier; "foo" is a property name.
@@ -760,62 +629,6 @@ func TestPrintNode_RoundTrip(t *testing.T) {
 // ──────────────────────────────────────────────
 //  Full pipeline integration
 // ──────────────────────────────────────────────
-
-func TestFullPipeline_Counter(t *testing.T) {
-	legacyCodeShapeTest(t)
-	src := `
-<script>
-  let count = $state(0);
-  let doubled = $derived(count * 2);
-  $effect(() => { document.title = String(count); });
-  function inc() { count++; }
-  function dec() { count--; }
-</script>
-<style>
-  div { display: flex; }
-  button { cursor: pointer; }
-</style>
-<template>
-  <div>
-    <button @click="dec">-</button>
-    <span>{count} (×2={doubled})</span>
-    <button @click="inc">+</button>
-  </div>
-</template>
-`
-	sfc, err := parseSFC(src)
-	if err != nil {
-		t.Fatalf("parseSFC: %v", err)
-	}
-	nodes, err := parseTemplate(sfc.Template)
-	if err != nil {
-		t.Fatalf("parseTemplate: %v", err)
-	}
-	analysis := analyzeScript(sfc.Script)
-	code := generateCodeAST("Counter", sfc, nodes, analysis, "vela-counter")
-
-	// The generated code must:
-	must := []string{
-		"export function Counter(",     // named export
-		"let count = 0",                // state init
-		"let doubled",                  // derived decl
-		"$$upd_doubled",                // derived updater
-		"$$effect0",                    // effect wrapper
-		"function $$set_count",         // setter
-		"$$upd_doubled()",              // called inside setter
-		"$$effect0()",                  // called inside setter
-		"addEventListener('click'",     // events wired
-		"removeEventListener",          // cleanup
-		"button[vela-counter]",         // scoped CSS
-		"$$target.appendChild($$root)", // mount
-		"destroy()",                    // destroy handle
-	}
-	for _, want := range must {
-		if !strings.Contains(code, want) {
-			t.Errorf("missing in output: %q", want)
-		}
-	}
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  CSS Parser & Scoper
@@ -1090,32 +903,6 @@ func TestAnalyzeScript_PropsNotInCleanScript(t *testing.T) {
 //  Codegen — if-chain and component
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestGenerateCode_IfChain(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script: `let score = $state(0);`,
-		Template: `
-			{#if score > 90}<p>Excellent</p>
-			{:else if score > 60}<p>Good</p>
-			{:else}<p>Try again</p>{/if}
-		`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	analysis := analyzeScript(sfc.Script)
-	code := generateCodeAST("ScoreComp", sfc, nodes, analysis, "vela-test")
-
-	// Must have a chain function, anchor comment, and branch variables
-	if !strings.Contains(code, "$$chain_") {
-		t.Error("expected if-chain function in output")
-	}
-	if !strings.Contains(code, "createComment('if-chain')") {
-		t.Error("expected anchor comment for if-chain")
-	}
-	if !strings.Contains(code, "$$active") {
-		t.Error("expected $$active branch selector")
-	}
-}
-
 func TestGenerateCode_Props(t *testing.T) {
 	sfc := &SFC{
 		Script:   `export let greeting = 'Hello'; export let name;`,
@@ -1142,84 +929,9 @@ func TestGenerateCode_Props(t *testing.T) {
 	}
 }
 
-func TestGenerateCode_Component(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `import { Counter } from './Counter.js';`,
-		Template: `<div><Counter :start="5" /></div>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	analysis := analyzeScript(sfc.Script)
-	code := generateCodeAST("App", sfc, nodes, analysis, "vela-test")
-
-	// Component mount call
-	if !strings.Contains(code, "Counter(") {
-		t.Error("expected Counter() mount call")
-	}
-	// Child destroy wired to parent destroy
-	if !strings.Contains(code, ".destroy()") {
-		t.Error("expected child .destroy() in cleanup")
-	}
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  Full pipeline — elseif/else + props
 // ─────────────────────────────────────────────────────────────────────────────
-
-func TestFullPipeline_IfChainAndProps(t *testing.T) {
-	legacyCodeShapeTest(t)
-	src := `
-<script>
-  export let score = 0;
-  let grade = $derived(
-    score >= 90 ? 'A' :
-    score >= 80 ? 'B' :
-    score >= 70 ? 'C' : 'F'
-  );
-</script>
-<style>
-  .grade { font-size: 2rem; font-weight: bold; }
-  .pass  { color: green; }
-  .fail  { color: red; }
-</style>
-<template>
-  <div>
-    <span class="grade">{grade}</span>
-    {#if score >= 70}<p class="pass">Pass</p>
-    {:else if score >= 50}<p class="near">Almost</p>
-    {:else}<p class="fail">Fail</p>{/if}
-  </div>
-</template>
-`
-	sfc, err := parseSFC(src)
-	if err != nil {
-		t.Fatalf("parseSFC: %v", err)
-	}
-	nodes, err := parseTemplate(sfc.Template)
-	if err != nil {
-		t.Fatalf("parseTemplate: %v", err)
-	}
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("GradeComp", sfc, nodes, a, "vela-grade")
-
-	must := []string{
-		"export function GradeComp(",
-		"$$props.score",        // prop initialisation
-		"let grade",            // derived
-		"$$upd_grade",          // derived updater
-		"function $$set_score", // prop setter
-		"$$chain_",             // if-chain function
-		"$$active",             // branch selector
-		".grade[vela-grade]",   // CSS scoped
-		".pass[vela-grade]",    // CSS scoped
-		"destroy()",            // cleanup handle
-	}
-	for _, want := range must {
-		if !strings.Contains(code, want) {
-			t.Errorf("missing in output: %q", want)
-		}
-	}
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Minifier
@@ -1280,29 +992,6 @@ func TestMinify_RemovesSemiBeforeBrace(t *testing.T) {
 	// The final semicolon before } should be removed
 	if strings.Contains(got, ";}") {
 		t.Errorf("semi before } not removed: %q", got)
-	}
-}
-
-func TestMinify_RoundTrip(t *testing.T) {
-	legacyCodeShapeTest(t)
-	// Full generated component should survive minification without losing structure
-	sfc := &SFC{
-		Script:   `let count = $state(0); function inc() { count++; }`,
-		Template: `<div><button @click="inc">+</button><span>{count}</span></div>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	analysis := analyzeScript(sfc.Script)
-	code := generateCodeAST("Counter", sfc, nodes, analysis, "vela-test")
-	minified := Minify(code)
-
-	must := []string{"export function Counter", "$$set_count", "addEventListener"}
-	for _, want := range must {
-		if !strings.Contains(minified, want) {
-			t.Errorf("minified code missing %q", want)
-		}
-	}
-	if len(minified) >= len(code) {
-		t.Errorf("minified should be shorter: before=%d after=%d", len(code), len(minified))
 	}
 }
 
@@ -1639,48 +1328,6 @@ func TestGenerateCode_ComponentPassesSlots(t *testing.T) {
 //  FragGen + keyed #each
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestGenerateCode_EachWithFragGen(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let items = $state([{id:1,name:'a'},{id:2,name:'b'}]);`,
-		Template: `<ul>{#each items as item}<li>{item.name}</li>{/each}</ul>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("List", sfc, nodes, a, "vela-test")
-	// FragGen emits a $$frag_ function
-	if !strings.Contains(code, "$$frag_") {
-		t.Errorf("expected $$frag_ function in #each output:\n%s", code)
-	}
-	// And a loop that calls it
-	if !strings.Contains(code, "forEach") {
-		t.Errorf("expected forEach loop in #each output")
-	}
-	// destroy() on each block
-	if !strings.Contains(code, ".destroy()") {
-		t.Errorf("expected block.destroy() in #each cleanup")
-	}
-}
-
-func TestGenerateCode_KeyedEach(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let todos = $state([]);`,
-		Template: `{#each todos as todo (todo.id)}<li>{todo.text}</li>{/each}`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("TodoList", sfc, nodes, a, "vela-test")
-	// Keyed diffing uses a Map
-	if !strings.Contains(code, "new Map()") {
-		t.Errorf("keyed #each should use a Map for key tracking:\n%s", code)
-	}
-	// update() called for existing blocks
-	if !strings.Contains(code, ".update") {
-		t.Errorf("keyed #each should call .update() on existing blocks")
-	}
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  $$dispatch
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1831,68 +1478,6 @@ func findSetterEnd(src string, start int) int {
 // ─────────────────────────────────────────────────────────────────────────────
 //  Regression tests for runtime bugs
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Regression: #each with nested children caused "redeclaration of const $$f0"
-// because walkEach used a hardcoded "$$f0" for the row root AND frag.id()
-// started at 0 for children, producing a duplicate const name.
-func TestGenerateCode_EachNoVarRedeclaration(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script: `let todos = $state([]);`,
-		Template: `
-			<ul>
-			  {#each todos as todo, i (todo.id)}<li>
-			    <input type="checkbox" @change="() => toggle(todo.id)" />
-			    <span>{todo.text}</span>
-			    <button @click="() => remove(todo.id)">✕</button>
-			  </li>{/each}
-			</ul>
-		`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("TodoList", sfc, nodes, a, "vela-test")
-
-	// Scan the $$frag_ function for duplicate const declarations
-	fragStart := strings.Index(code, "function $$frag_")
-	if fragStart < 0 {
-		t.Fatal("no $$frag_ function emitted")
-	}
-	// Find end of frag function (next top-level function or end of file)
-	fragEnd := strings.Index(code[fragStart+20:], "\n  function ")
-	var fragCode string
-	if fragEnd < 0 {
-		fragCode = code[fragStart:]
-	} else {
-		fragCode = code[fragStart : fragStart+20+fragEnd]
-	}
-
-	// Count unique const names inside the frag
-	constNames := map[string]int{}
-	for _, m := range regexp.MustCompile(`\bconst (\$\$f\d+)\b`).FindAllStringSubmatch(fragCode, -1) {
-		constNames[m[1]]++
-	}
-	for name, count := range constNames {
-		if count > 1 {
-			t.Errorf("const %s declared %d times in $$frag_ — redeclaration bug: %s",
-				name, count, fragCode[:min(400, len(fragCode))])
-		}
-	}
-}
-
-// Regression: <slot> content was inserted in the create phase before the
-// anchor comment was wired into the DOM, causing "parentNode is null".
-func TestGenerateCode_SlotInsertionAfterWire(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{Script: ``, Template: `<div><slot name="footer">Fallback text</slot></div>`}
-	nodes, _ := parseTemplate(sfc.Template)
-	code := generateCodeAST("Card", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
-	// AST output owns a stable comment anchor and slot lookup. Runtime tests
-	// cover mounting and reopen ordering.
-	if !strings.Contains(code, "$$slots") || !strings.Contains(code, "createComment") {
-		t.Fatalf("expected anchored slot output:\n%s", code)
-	}
-}
 
 func TestGenerateCode_ArrowHandlerNotDoubleWrapped(t *testing.T) {
 	sfc := &SFC{
@@ -2549,108 +2134,6 @@ func TestRewriteHandlerAssignments_NoFalsePositive(t *testing.T) {
 	}
 }
 
-func TestGenerateCode_IfBranchHasChildren(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script: `let visible = $state(false); let step = $state(1);`,
-		Template: `
-			<div>
-				{#if visible}<div class="step-row">
-					<label>Step:</label>
-					<input type="number" :value="step" @input="($e) => step = Number($e.target.value)" />
-				</div>{/if}
-			</div>
-		`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
-
-	// The if-chain function must mount the label and input inside the branch
-	// element, NOT as siblings at the root level.  The emission shape depends
-	// on whether the content is static (compressed to insertAdjacentHTML) or
-	// dynamic (emitted as createElement).  Both are correct; what matters is
-	// that the content lives inside the chain function's branch body.
-	chainFnStart := strings.Index(code, "function $$chain_")
-	if chainFnStart < 0 {
-		t.Fatal("no $$chain_ function found")
-	}
-	// Find end of chain function by counting braces
-	depth := 0
-	chainFnEnd := chainFnStart
-	for chainFnEnd < len(code) {
-		c := code[chainFnEnd]
-		if c == '{' {
-			depth++
-		}
-		if c == '}' {
-			depth--
-			if depth < 0 {
-				break
-			}
-		}
-		chainFnEnd++
-	}
-	chainFn := code[chainFnStart:chainFnEnd]
-
-	// The label (static) may appear either as createElement('label') in the
-	// per-element path, or as '<label' inside an insertAdjacentHTML call
-	// when batched with adjacent static siblings.
-	hasLabelImperative := strings.Contains(chainFn, "createElement('label')")
-	hasLabelBatched := strings.Contains(chainFn, "<label")
-	if !hasLabelImperative && !hasLabelBatched {
-		t.Errorf("label not mounted inside #if chain function (branch body empty):\n%s", chainFn)
-	}
-	// The input has a binding (:value, @input) so it's dynamic — still
-	// emitted imperatively regardless of batching.
-	if !strings.Contains(chainFn, "createElement('input')") {
-		t.Errorf("input not created inside #if chain function (branch body empty):\n%s", chainFn)
-	}
-}
-
-func TestGenerateCode_IfBranchInlineHandlerRewritten(t *testing.T) {
-	legacyCodeShapeTest(t)
-	// The full scenario from If.js: visible = $state, checkbox inside #if branch
-	// with inline handler @change="($e) => visible = $e.target.checked"
-	sfc := &SFC{
-		Script: `
-			let count = $state(0);
-			let visible = $state(false);
-			let step = $state(1);
-		`,
-		Template: `
-			<div>
-				<button @click="() => count = count + step">+</button>
-				{#if visible}<div class="step-row">
-					<label>Step:</label>
-					<input type="checkbox" @change="($e) => visible = $e.target.checked" />
-				</div>{/if}
-			</div>
-		`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("IfTest", sfc, nodes, a, "vela-test")
-
-	// Handler inside #if branch child must be rewritten
-	chainFnStart := strings.Index(code, "function $$chain_")
-	if chainFnStart < 0 {
-		t.Fatal("no $$chain_ function")
-	}
-	chainFnEnd := chainFnStart + strings.Index(code[chainFnStart:], "\n  function ")
-	if chainFnEnd <= chainFnStart {
-		chainFnEnd = len(code)
-	}
-	chainFn := code[chainFnStart:chainFnEnd]
-
-	if strings.Contains(chainFn, "visible = $e.target.checked") {
-		t.Errorf("raw assignment inside #if branch handler should be rewritten:\n%s", chainFn)
-	}
-	if !strings.Contains(code, "$$set_visible") {
-		t.Errorf("$$set_visible must appear in output:\n%s", code[:min(600, len(code))])
-	}
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  Canonical {#if}/{:else if} blocks in nested children
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2684,32 +2167,6 @@ func TestParseTemplate_IfElseifGroupedInsideElement(t *testing.T) {
 
 }
 
-func TestGenerateCode_IfElseifInsideElement(t *testing.T) {
-	legacyCodeShapeTest(t)
-	// Codegen for nested standard blocks must build one chain.
-	sfc := &SFC{
-		Script: `let editMode = $state(false);`,
-		Template: `
-			<div>
-				{#if !editMode}<div class="view">View</div>
-				{:else if editMode}<div class="edit">Edit</div>{/if}
-			</div>
-		`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("Card", sfc, nodes, a, "vela-test")
-
-	// Must have a chain function handling both branches
-	if !strings.Contains(code, "$$chain_") {
-		t.Error("expected $$chain_ if-chain function in output")
-	}
-	// Both branches must be in the same chain
-	if !strings.Contains(code, "$$active = 1") {
-		t.Error("expected two branches ($$active = 1) in if-chain")
-	}
-}
-
 func TestParseTemplate_IfElseGroupedThreeLevelsDeep(t *testing.T) {
 	// Verify grouping works at any nesting depth
 	html := `<outer><middle>{#if a}<p>A</p>{:else if b}<p>B</p>{:else}<p>C</p>{/if}</middle></outer>`
@@ -2735,29 +2192,6 @@ func TestParseTemplate_IfElseGroupedThreeLevelsDeep(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  Component inside #if branch
 // ─────────────────────────────────────────────────────────────────────────────
-
-func TestGenerateCode_PlainComponentInsideIfBranch(t *testing.T) {
-	legacyCodeShapeTest(t)
-	// A plain (non-#each) component inside an #if branch.
-	sfc := &SFC{
-		Script:   `import { Modal } from './Modal.js'; let open = $state(false);`,
-		Template: `<div>{#if open}<div><Modal :title={'Hello'} /></div>{/if}</div>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
-
-	chainStart := strings.Index(code, "function $$chain_")
-	chainEnd := chainStart + strings.Index(code[chainStart:], "\n  function ")
-	if chainEnd <= chainStart {
-		chainEnd = len(code)
-	}
-	chainFn := code[chainStart:chainEnd]
-
-	if !strings.Contains(chainFn, "Modal(") {
-		t.Errorf("Modal not mounted inside #if chain function:\n%s", chainFn[:min(400, len(chainFn))])
-	}
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Prop deps in derived vars + branch component re-render
@@ -2864,37 +2298,6 @@ func TestAnalyzeScript_AsyncFunctionPreserved(t *testing.T) {
 	}
 	if !strings.Contains(a.CleanScript(), "async function search") {
 		t.Errorf("async keyword lost from search:\n%s", a.CleanScript())
-	}
-}
-
-func TestGenerateCode_OnMountAfterMount(t *testing.T) {
-	legacyCodeShapeTest(t)
-	// onMount callbacks must appear AFTER $$target.appendChild($$root)
-	sfc := &SFC{
-		Script:   `onMount(() => { document.getElementById('x').focus(); });`,
-		Template: `<div id="x">hi</div>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
-
-	mountIdx := strings.Index(code, "$$target.appendChild($$root)")
-	// onMount bodies are inlined into an IIFE stored in $$mountCleanup0
-	// (so the return value can be used as a cleanup thunk in destroy()).
-	// The declaration site is the marker: $$mountCleanup0 = (function() {
-	onMountIdx := strings.Index(code, "$$mountCleanup0 = (function()")
-	if mountIdx < 0 {
-		t.Fatal("no mount call found")
-	}
-	if onMountIdx < 0 {
-		t.Fatal("no onMount section found (expected $$mountCleanup0 IIFE)")
-	}
-	if onMountIdx < mountIdx {
-		t.Errorf("onMount appears BEFORE $$target.appendChild — component not in DOM yet\nonMountIdx=%d mountIdx=%d", onMountIdx, mountIdx)
-	}
-	// Also verify the user's body made it through.
-	if !strings.Contains(code, "document.getElementById('x').focus()") {
-		t.Error("user's onMount body missing from output")
 	}
 }
 
@@ -3362,38 +2765,6 @@ func TestSvelteBlock_IfBranchChildren(t *testing.T) {
 	}
 }
 
-func TestSvelteBlock_CodeGen_SimpleIf(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let show = $state(true);`,
-		Template: `<div>{#if show}<p>visible</p>{/if}</div>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("T", sfc, nodes, a, "vela-test")
-	if !strings.Contains(code, "$$chain_") {
-		t.Errorf("expected $$chain_ function in output:\n%s", code[:min(400, len(code))])
-	}
-	if strings.Contains(code, "__elseif__") || strings.Contains(code, "__else__") {
-		t.Errorf("sentinel attrs leaked into output")
-	}
-}
-
-func TestSvelteBlock_CodeGen_IfElse(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let ok = $state(false);`,
-		Template: `{#if ok}<p>yes</p>{:else}<p>no</p>{/if}`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("T", sfc, nodes, a, "vela-test")
-	// Must have 2 branches (b0, b1)
-	if !strings.Contains(code, "_b1") {
-		t.Errorf("expected two branches (b0, b1):\n%s", code[:min(500, len(code))])
-	}
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  Svelte-style {#each} block syntax
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3532,40 +2903,6 @@ func TestSvelteBlock_ParseEachWithIndex(t *testing.T) {
 	each := nodes[0].(*EachBlockNode)
 	if each.ItemName != "item" || each.IndexName != "i" {
 		t.Fatalf("typed row bindings = (%q, %q), want (item, i)", each.ItemName, each.IndexName)
-	}
-}
-
-func TestSvelteBlock_CodeGen_Each(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let items = $state([]);`,
-		Template: `<ul>{#each items as item (item.id)}<li>{item.name}</li>{/each}</ul>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("T", sfc, nodes, a, "vela-test")
-	// Should use the existing keyed each logic
-	if !strings.Contains(code, "forEach") {
-		t.Errorf("expected forEach in output:\n%s", code[:min(400, len(code))])
-	}
-	if !strings.Contains(code, "item") {
-		t.Errorf("item variable not in output")
-	}
-}
-
-func TestSvelteBlock_CodeGen_NestedEachIterableCallUsesRowItem(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let plans = $state([]); let feats = (plan) => plan.features;`,
-		Template: `{#each plans as plan}{#each feats(plan) as f}<li>{f}</li>{/each}{/each}`,
-	}
-	nodes, err := parseTemplate(sfc.Template)
-	if err != nil {
-		t.Fatal(err)
-	}
-	code := generateCodeAST("Pricing", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
-	if !strings.Contains(code, "feats($$item_") {
-		t.Fatalf("nested each call lost its row argument:\n%s", code)
 	}
 }
 
@@ -4489,118 +3826,6 @@ func TestTwoWayBindSpec(t *testing.T) {
 	}
 }
 
-func TestTwoWayBinding_InputValue(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let name = $state('');`,
-		Template: `<input bind:value="name" />`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("Form", sfc, nodes, a, "vela-test")
-
-	// Property write, not setAttribute('value', ...) — so programmatic
-	// state changes reflect on the live input.  Element var is $$root
-	// when the input is the template root; $$nN otherwise.
-	if !strings.Contains(code, "$$root_bind_value_value = name") ||
-		!strings.Contains(code, "if ($$root.value !== $$root_bind_value_value)") ||
-		!strings.Contains(code, "$$root.value = $$root_bind_value_value") {
-		t.Errorf("expected guarded elem.value property write; got:\n%s", code)
-	}
-	// Listener const + registration + cleanup.
-	if !regexp.MustCompile(`const \$\$(root|n\d+)_bind_input_h = \(\$e\) => \$\$set_name\(\$e\.target\.value\)`).MatchString(code) {
-		t.Error("expected bind-input handler const calling $$set_name(e.target.value)")
-	}
-	if !strings.Contains(code, ".addEventListener('input',") {
-		t.Error("expected addEventListener('input', ...)")
-	}
-	if !strings.Contains(code, ".removeEventListener('input',") {
-		t.Error("expected cleanup removeEventListener('input', ...)")
-	}
-}
-
-func TestTwoWayBinding_Checkbox(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let agreed = $state(false);`,
-		Template: `<input type="checkbox" bind:checked="agreed" />`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("Form", sfc, nodes, a, "vela-test")
-
-	// Property: elem.checked = !!(agreed)
-	// The element var is $$root when the input is the template root; $$nN
-	// otherwise.  Either is valid — match both.
-	if !strings.Contains(code, "$$root_bind_checked_value = !!agreed") ||
-		!strings.Contains(code, "if ($$root.checked !== $$root_bind_checked_value)") ||
-		!strings.Contains(code, "$$root.checked = $$root_bind_checked_value") {
-		t.Errorf("expected guarded elem.checked property write; got:\n%s", code)
-	}
-	// 'change' event, reading e.target.checked (not .value).
-	if !regexp.MustCompile(`\$\$set_agreed\(\$e\.target\.checked\)`).MatchString(code) {
-		t.Error("expected $$set_agreed(e.target.checked)")
-	}
-	if !strings.Contains(code, ".addEventListener('change',") {
-		t.Error("expected addEventListener('change', ...)")
-	}
-}
-
-func TestTwoWayBinding_Select(t *testing.T) {
-	legacyCodeShapeTest(t)
-	sfc := &SFC{
-		Script:   `let role = $state('viewer');`,
-		Template: `<select bind:value="role"><option value="admin">A</option></select>`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("Form", sfc, nodes, a, "vela-test")
-
-	// Select uses 'change' event, not 'input'.
-	if !strings.Contains(code, ".addEventListener('change',") {
-		t.Error("expected select to use 'change' event")
-	}
-	if strings.Contains(code, ".addEventListener('input',") {
-		t.Error("select should NOT wire 'input' event (only 'change')")
-	}
-}
-
-func TestTwoWayBinding_CoexistsWithAtInput(t *testing.T) {
-	legacyCodeShapeTest(t)
-	// bind:value and @input on the same element must BOTH wire without
-	// colliding on the handler const name.  This was the turn-13 bug:
-	// two `const $$nX_input_h = …` lines produced a SyntaxError.
-	sfc := &SFC{
-		Script:   `let name = $state('');`,
-		Template: `<input bind:value="name" @input="($e) => name = $e.target.value.toUpperCase()" />`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("Form", sfc, nodes, a, "vela-test")
-
-	// Both handlers must be declared — verified by the output parsing
-	// cleanly (no duplicate const SyntaxError).
-	p := parsedJS{Errors: jsParseErrors(code)}
-	if len(p.Errors) > 0 {
-		t.Errorf("generated JS failed to parse (%d errors): %s\n----\n%s",
-			len(p.Errors), p.Errors[0], code)
-	}
-	// Two addEventListener('input', ...) calls — one for bind, one for user.
-	n := strings.Count(code, "addEventListener('input',")
-	if n != 2 {
-		t.Errorf("expected 2 'input' listeners (bind + @input), got %d in:\n%s", n, code)
-	}
-	// Handler names must be distinct — bind is namespaced with _bind_.
-	if !strings.Contains(code, "_bind_input_h") {
-		t.Error("expected bind handler to use _bind_ prefix to avoid name collision")
-	}
-	bindAt := strings.Index(code, "addEventListener('input', $$root_bind_input_h)")
-	userAt := strings.Index(code, "addEventListener('input', $$root_input_h)")
-	if bindAt < 0 || userAt < 0 || bindAt >= userAt {
-		t.Errorf("expected source-order bind listener before user @input listener; got:\n%s", code)
-	}
-}
-
 func TestTwoWayBinding_OneWayBindDoesNotWireListener(t *testing.T) {
 	// :value="x" is strictly one-way — no listener should be wired
 	// (that's the contract after the turn-13 redesign).
@@ -4735,71 +3960,6 @@ import lodash from "lodash";`
 	}
 }
 
-// TestEachRowIfHoist_DeclarationsAtRowScope guards against the ReferenceError
-// class of bug where `let $$nN = null` hoists for elements inside an {#if}
-// nested in an {#each} row were landing INSIDE the if-body instead of at row
-// scope.  The update() function runs in row scope; if a hoisted binding is
-// block-scoped to the if, update() gets "ReferenceError: $$nN is not defined"
-// whenever the if branch wasn't taken, or after its torn-down rebuild.
-//
-// The real trigger was <UsersPage {#each filtered as u}>…{#if currentUser.role
-// === 'admin'}…<button>…</button>…{/if}…</UsersPage>.  Toggling a user's
-// status called users.update(), which re-ran the each reconciler's
-// $$blk.update(u), which referenced $$n60 declared inside the if block —
-// error, and the whole update chain aborted.
-func TestEachRowIfHoist_DeclarationsAtRowScope(t *testing.T) {
-	legacyCodeShapeTest(t)
-	// Trigger the codegen-inline each-row path: the row must contain at
-	// least one Component AND the whole {#each} must sit inside an {#if}
-	// branch so that emitBranchChildren → emitEachWithComponents →
-	// emitEachRowBody is the path taken.  A bare {#each} at top level
-	// routes through FragGen (simpler, different code path, wasn't
-	// affected by this bug).  UsersPage.vela hit the bug because its
-	// {#each filtered as u (u.id)} was inside an {:else} branch of an
-	// {#if filtered.length === 0}.
-	sfc := &SFC{
-		Script: `
-			import { Badge } from './Badge.vela';
-			let items = $state([{id:1, status:'active'}]);
-			let currentUser = $state({role: 'admin'});
-			let showEmpty = $state(false);
-		`,
-		Template: `
-			<div>
-			  {#if showEmpty}
-			    <p>empty</p>
-			  {:else}
-			    {#each items as u (u.id)}
-			      <div>
-			        <Badge :kind="u.status">{u.status}</Badge>
-			        {#if currentUser.role === 'admin'}
-			          <button>{u.status}</button>
-			        {/if}
-			      </div>
-			    {/each}
-			  {/if}
-			</div>
-		`,
-	}
-	nodes, _ := parseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
-	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
-
-	// The retired generator used an update(u) IIFE. The AST generator keeps
-	// row-local declarations inside fragment/block builders instead, so the old
-	// temporal-dead-zone shape cannot be emitted. Assert that this nested
-	// each/if/component path was generated before syntax validation below.
-	if !strings.Contains(code, "Badge(") || !strings.Contains(code, "document.createComment('if-chain')") {
-		t.Fatalf("nested each/if/component path was not generated:\n%s", code)
-	}
-
-	// Also confirm the output parses cleanly.
-	p := parsedJS{Errors: jsParseErrors(code)}
-	if len(p.Errors) > 0 {
-		t.Errorf("generated JS failed to parse: %s", p.Errors[0])
-	}
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  Step 3 predicates and template-with-holes builder.
 //
@@ -4819,19 +3979,11 @@ func staticText(s string) *TextNode {
 func dynText(expr string) *TextNode {
 	return &TextNode{Parts: []*Part{{Static: false, Value: expr}}}
 }
-func mixedText(parts ...*Part) *TextNode {
-	return &TextNode{Parts: parts}
-}
+
 func staticElem(tag string, children ...Node) *ElementNode {
 	return &ElementNode{Tag: tag, Children: children}
 }
-func staticElemAttr(tag string, attrName, attrVal string, children ...Node) *ElementNode {
-	return &ElementNode{
-		Tag:      tag,
-		Attrs:    []*Attr{{Name: attrName, Value: attrVal}},
-		Children: children,
-	}
-}
+
 func eventElem(tag, eventName, handler string, children ...Node) *ElementNode {
 	return &ElementNode{
 		Tag:      tag,
@@ -4891,289 +4043,6 @@ func TestIsFullyStatic(t *testing.T) {
 	}
 }
 
-func TestIsLeafDynamicElement(t *testing.T) {
-	cases := []struct {
-		name string
-		elem *ElementNode
-		want bool
-	}{
-		// Pure-static elements are NOT leaf-dynamic — Step 1 handles them.
-		{"static-no-attrs", staticElem("div"), false},
-		{"static-with-class",
-			staticElemAttr("div", "class", "foo"), false},
-
-		// Element with event/bind/two-way — leaf-dynamic if children are static.
-		{"event-no-children", eventElem("button", "click", "onClick"), true},
-		{"event-static-text",
-			eventElem("button", "click", "onClick", staticText("Save")), true},
-		{"bind-no-children", bindElem("input", "value", "name"), true},
-		{"two-way", twoWayElem("input", "value", "name"), true},
-
-		// Element is dynamic but has dynamic descendants — NOT a leaf.
-		{"event-with-dyn-text-child",
-			eventElem("button", "click", "onClick", dynText("label")), false},
-		{"event-with-dyn-elem-child",
-			eventElem("section", "click", "onClick",
-				eventElem("button", "click", "inner")),
-			false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := isLeafDynamicElement(c.elem); got != c.want {
-				t.Errorf("isLeafDynamicElement(%s) = %v, want %v", c.name, got, c.want)
-			}
-		})
-	}
-}
-
-func TestIsHoleCompatible_AllHoleCompatible(t *testing.T) {
-	// allHoleCompatible should accept: static elements, leaf-dynamic elements,
-	// and any TextNode (static or dynamic — text holes are always compatible).
-	// It should reject: IfChainNode, EachBlockNode, ComponentNode, SlotNode.
-
-	yes := []Node{
-		staticElem("div", staticText("hi")),
-		eventElem("button", "click", "onClick", staticText("Save")),
-		bindElem("input", "value", "name"),
-		dynText("title"),
-		staticText("hello"),
-	}
-	no := []Node{
-		&IfChainNode{},
-		&EachBlockNode{},
-		&ComponentNode{Name: "X"},
-		&SlotNode{Name: "default"},
-		eventElem("section", "click", "h", dynText("nested")), // dyn descendant
-	}
-
-	for _, n := range yes {
-		if !isHoleCompatible(n) {
-			t.Errorf("isHoleCompatible(%T) should be true", n)
-		}
-	}
-	for _, n := range no {
-		if isHoleCompatible(n) {
-			t.Errorf("isHoleCompatible(%T) should be false", n)
-		}
-	}
-
-	// allHoleCompatible: pass iff every node is hole-compatible.
-	if !allHoleCompatible(yes) {
-		t.Error("allHoleCompatible(yes) should be true")
-	}
-	if allHoleCompatible(append([]Node{}, &ComponentNode{Name: "X"})) {
-		t.Error("allHoleCompatible([component]) should be false")
-	}
-	mixed := []Node{staticText("hi"), &ComponentNode{Name: "X"}}
-	if allHoleCompatible(mixed) {
-		t.Error("allHoleCompatible([text, component]) should be false (one rejection vetoes)")
-	}
-}
-
-func TestHasDynamicLeaf(t *testing.T) {
-	// hasDynamicLeaf returns true only when at least one node is an actual hole:
-	//   - leaf-dynamic ElementNode, OR
-	//   - TextNode with a non-Static part.
-	// A purely-static list (Step 1 territory) returns false.
-
-	cases := []struct {
-		name  string
-		nodes []Node
-		want  bool
-	}{
-		{"all-static-elem", []Node{staticElem("div", staticText("hi"))}, false},
-		{"all-static-text", []Node{staticText("a"), staticText("b")}, false},
-		{"single-leaf-dyn",
-			[]Node{eventElem("button", "click", "h")}, true},
-		{"single-dyn-text", []Node{dynText("x")}, true},
-		{"static-then-leaf",
-			[]Node{staticElem("hr"), eventElem("button", "click", "h")},
-			true},
-		{"mixed-text-with-dyn-part",
-			[]Node{mixedText(
-				&Part{Static: true, Value: "Hello "},
-				&Part{Static: false, Value: "name"},
-				&Part{Static: true, Value: "!"},
-			)},
-			true},
-		{"mixed-text-all-static",
-			[]Node{mixedText(
-				&Part{Static: true, Value: "Hello "},
-				&Part{Static: true, Value: "world"},
-			)},
-			false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := hasDynamicLeaf(c.nodes); got != c.want {
-				t.Errorf("hasDynamicLeaf(%s) = %v, want %v", c.name, got, c.want)
-			}
-		})
-	}
-}
-
-func TestBuildHoleTemplate_StaticOnly(t *testing.T) {
-	// Pure-static input: HTML string emitted, zero holes.
-	nodes := []Node{
-		staticElem("div",
-			staticElemAttr("span", "class", "logo",
-				staticText("Hello"))),
-	}
-	html, holes := buildHoleTemplate(nodes, "")
-	if len(holes) != 0 {
-		t.Errorf("expected 0 holes for static input, got %d", len(holes))
-	}
-	if !strings.Contains(html, "<div>") || !strings.Contains(html, "<span") || !strings.Contains(html, "Hello") {
-		t.Errorf("template missing expected static content:\n%s", html)
-	}
-	if strings.Contains(html, "<!--$-->") {
-		t.Errorf("static-only template should have no anchors:\n%s", html)
-	}
-}
-
-func TestBuildHoleTemplate_TextHole(t *testing.T) {
-	// Single dynamic text → one anchor + one "text" hole.
-	// Mirrors the real call path: buildHoleTemplate is invoked with the
-	// CHILDREN of an element, not the element itself.  Wrapper-elements
-	// (<p>) are emitted by walkElement around the buildHoleTemplate output.
-	nodes := []Node{dynText("greeting")}
-	html, holes := buildHoleTemplate(nodes, "")
-
-	if !strings.Contains(html, "<!--$-->") {
-		t.Errorf("missing dynamic-text anchor:\n%s", html)
-	}
-	if len(holes) != 1 {
-		t.Fatalf("expected 1 hole, got %d", len(holes))
-	}
-	if holes[0].kind != "text" {
-		t.Errorf("expected text hole, got %q", holes[0].kind)
-	}
-}
-
-func TestBuildHoleTemplate_ElementHole(t *testing.T) {
-	// Leaf-dynamic element (button with @click, static label) → static
-	// element open/close baked into template, anchor AFTER the element so
-	// .previousSibling captures it.
-	nodes := []Node{
-		eventElem("button", "click", "save", staticText("Save")),
-	}
-	html, holes := buildHoleTemplate(nodes, "")
-
-	// The element's tag, static content, and anchor must all be present.
-	// The anchor must come AFTER the closing tag, because emitTemplateWithHoles
-	// captures elements via anchor.previousSibling.
-	if !strings.Contains(html, "<button") {
-		t.Errorf("missing element tag:\n%s", html)
-	}
-	if !strings.Contains(html, "Save") {
-		t.Errorf("missing static label:\n%s", html)
-	}
-	if !strings.Contains(html, "</button><!--$-->") {
-		t.Errorf("anchor must follow element close tag:\n%s", html)
-	}
-	if len(holes) != 1 || holes[0].kind != "elem" {
-		t.Errorf("expected single elem hole, got %+v", holes)
-	}
-}
-
-func TestBuildHoleTemplate_VoidElementHole(t *testing.T) {
-	// Leaf-dynamic void element (e.g. <input :value="x" @input="h">) — must
-	// be self-closed in the template (no </input>), with anchor after.
-	nodes := []Node{
-		bindElem("input", "value", "name"),
-	}
-	html, holes := buildHoleTemplate(nodes, "")
-
-	if !strings.Contains(html, "<input") {
-		t.Errorf("missing input tag:\n%s", html)
-	}
-	if strings.Contains(html, "</input>") {
-		t.Errorf("void element must not have closing tag:\n%s", html)
-	}
-	if !strings.Contains(html, "/><!--$-->") {
-		t.Errorf("void element anchor must follow self-close:\n%s", html)
-	}
-	if len(holes) != 1 {
-		t.Errorf("expected 1 hole, got %d", len(holes))
-	}
-}
-
-func TestBuildHoleTemplate_ScopeAttribute(t *testing.T) {
-	// When scopeID is non-empty, every static element must carry it as an
-	// empty attribute so scoped CSS [vela-XXXX] selectors keep matching.
-	nodes := []Node{
-		staticElem("div",
-			staticElem("span", staticText("hi"))),
-	}
-	html, _ := buildHoleTemplate(nodes, "vela-abc123")
-
-	if !strings.Contains(html, `<div vela-abc123="">`) {
-		t.Errorf("scope attr missing on outer element:\n%s", html)
-	}
-	if !strings.Contains(html, `<span vela-abc123="">`) {
-		t.Errorf("scope attr missing on nested element:\n%s", html)
-	}
-	// Leaf-dynamic elements also need the scope attribute baked in.
-	htmlDyn, _ := buildHoleTemplate(
-		[]Node{eventElem("button", "click", "h", staticText("Go"))},
-		"vela-xyz")
-	if !strings.Contains(htmlDyn, `<button vela-xyz="">`) {
-		t.Errorf("scope attr missing on leaf-dynamic element:\n%s", htmlDyn)
-	}
-}
-
-func TestBuildHoleTemplate_StaticAttrsBakedDynamicAttrsSkipped(t *testing.T) {
-	// In a leaf-dynamic element, STATIC attributes are baked into the
-	// template (so the parser sets them), and DYNAMIC attributes (events,
-	// bindings) are skipped — they're applied at mount via applyDynamicAttrs.
-	elem := &ElementNode{
-		Tag: "input",
-		Attrs: []*Attr{
-			{Name: "type", Value: "text"},                                // static
-			{Name: "placeholder", Value: "name"},                         // static
-			{Name: "value", Value: "name", IsBind: true, IsTwoWay: true}, // dyn
-			{Name: "input", Value: "onInput", IsEvent: true},             // dyn
-		},
-	}
-	html, _ := buildHoleTemplate([]Node{elem}, "")
-	if !strings.Contains(html, `type="text"`) {
-		t.Errorf("static type attr should be baked into template:\n%s", html)
-	}
-	if !strings.Contains(html, `placeholder="name"`) {
-		t.Errorf("static placeholder attr should be baked into template:\n%s", html)
-	}
-	// IsBind and IsEvent attrs must NOT appear — they're applied via
-	// applyDynamicAttrs at mount, which would otherwise set them twice.
-	if strings.Contains(html, `value=`) {
-		t.Errorf("dynamic value attr leaked into template:\n%s", html)
-	}
-	if strings.Contains(html, `input=`) {
-		t.Errorf("dynamic event attr leaked into template:\n%s", html)
-	}
-}
-
-func TestBuildHoleTemplate_HoleOrderIsDocumentOrder(t *testing.T) {
-	// emitTemplateWithHoles relies on the holes slice being in the order a
-	// TreeWalker would encounter them (document order).  Verify by giving
-	// a list with mixed shapes and checking the kinds line up.
-	nodes := []Node{
-		staticElem("h1", staticText("Title")),   // static, no hole
-		dynText("subtitle"),                     // text hole
-		eventElem("button", "click", "onClick"), // elem hole
-		dynText("counter"),                      // text hole
-	}
-	_, holes := buildHoleTemplate(nodes, "")
-	if len(holes) != 3 {
-		t.Fatalf("expected 3 holes, got %d", len(holes))
-	}
-	want := []string{"text", "elem", "text"}
-	for i, h := range holes {
-		if h.kind != want[i] {
-			t.Errorf("hole %d: kind=%q want %q", i, h.kind, want[i])
-		}
-	}
-}
-
 func TestEscapeHTMLText(t *testing.T) {
 	cases := map[string]string{
 		"hello":      "hello",         // unchanged
@@ -5229,28 +4098,6 @@ func TestEscapeJSString(t *testing.T) {
 	}
 }
 
-func TestBuildHoleTemplate_NestedHoleElement(t *testing.T) {
-	// As of E3.1, a static-attribute element whose child subtree
-	// contains a text-interpolation hole is a SUPPORTED shape:
-	// buildHoleTemplate recurses into the children and places the
-	// <!--$--> anchor at the right depth.  (This shape is what a
-	// hole-bearing {#if}/{#key} branch produces.)  It must yield a
-	// template with one hole, not panic.
-	nodes := []Node{
-		staticElem("div", dynText("badly-routed")),
-	}
-	html, holes := buildHoleTemplate(nodes, "")
-	if len(holes) != 1 {
-		t.Fatalf("expected 1 hole, got %d", len(holes))
-	}
-	if !strings.Contains(html, "<!--$-->") {
-		t.Errorf("expected an anchor comment in the template, got: %s", html)
-	}
-	if !strings.Contains(html, "<div") || !strings.Contains(html, "</div>") {
-		t.Errorf("expected the <div> wrapper preserved, got: %s", html)
-	}
-}
-
 func TestVoidTags_ContainsKnownVoidElements(t *testing.T) {
 	// Pin the void-tag list — the HTML spec defines exactly these elements
 	// as void (no closing tag, no children).  buildHoleTemplate consults
@@ -5303,40 +4150,6 @@ func TestValidateDerivedCycles(t *testing.T) {
 	validateDerivedCycles(ParseJS(src), analysis, ds)
 	if len(ds.Errors()) != 1 || !strings.Contains(ds.Errors()[0].Message, "cyclic $derived dependencies") {
 		t.Fatalf("cycle diagnostic = %+v", ds.All())
-	}
-}
-
-func TestScriptPlanPreservesStateAndUserInitializerOrder(t *testing.T) {
-	legacyCodeShapeTest(t)
-	script := `
-		let first = $state(1);
-		const snapshot = first;
-		let second = $state(snapshot);
-	`
-	analysis := analyzeScript(script)
-	if len(analysis.ScriptPlan) != 3 {
-		t.Fatalf("ScriptPlan length = %d, want 3", len(analysis.ScriptPlan))
-	}
-	want := []string{"state", "user", "state"}
-	for i, kind := range want {
-		if got := analysis.ScriptPlan[i].Kind; got != kind {
-			t.Fatalf("ScriptPlan[%d] = %q, want %q", i, got, kind)
-		}
-	}
-	sfc, err := parseSFC("<script>" + script + "</script><template><p>{second}</p></template>")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl, err := parseTemplate(sfc.Template)
-	if err != nil {
-		t.Fatal(err)
-	}
-	code := generateCodeAST("PlanOrder", sfc, tmpl, analysis, "vela-000000")
-	first := strings.Index(code, "let first = 1;")
-	snapshot := strings.Index(code, "const snapshot = first;")
-	second := strings.Index(code, "let second = snapshot;")
-	if first < 0 || snapshot < 0 || second < 0 || !(first < snapshot && snapshot < second) {
-		t.Fatalf("generated setup order is wrong:\n%s", code)
 	}
 }
 

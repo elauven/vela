@@ -496,9 +496,10 @@ hydrate(Page, document.getElementById('app'), { onMismatch: report => … });
 
 ## 11. Migration
 
-- **G-11.1 Flag.** `--dom-engine=legacy|blocks` selects the engine for CSR
+- **G-11.1 Flag.** `--dom-engine=legacy|blocks` selected the engine for CSR
   code generation, Go markup, payload, and hydration together. The default
-  stays `legacy` until gate H3 passes.
+  switched to `blocks` at gate H3; H4 removed the flag with the legacy
+  engine (task 042, 2026-10-08).
 - **G-11.2 Recipe freeze.** From the acceptance of this contract no new
   shape-specific hydration recipe is added to the legacy engine.
 
@@ -508,7 +509,7 @@ hydrate(Page, document.getElementById('app'), { onMismatch: report => … });
 | H1 | Runtime blocks, create cursor, fragment code generation; CSR only | Q-10.1 under `--dom-engine=blocks`; size report |
 | H2 | Go renderer markup (§5) and payload stream (§6) from the render plan; parse-stability checks | Generated HTML parses in Chromium to the expected node sequence for the generator corpus; Q-10.4 |
 | H3 | Hydrate cursor, `hydrate()`, mismatch policies, root modes and API (§8) | Q-10.2, Q-10.3, Q-10.5; strict runner required IDs migrated; default switches to `blocks` |
-| H4 | Remove the legacy engine | Legacy code and tests deleted (G-11.3) |
+| H4 | Remove the legacy engine | Legacy code and tests deleted (G-11.3); done in task 042 |
 
 - **G-11.3 Removal list (H4).** `ssr_capability.go` shape predicates (only
   translation outcomes and parse-stability checks remain); `buildHydration*`

@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode"
 )
@@ -43,20 +40,8 @@ type SSRRenderPlan struct {
 	// that contract at each call site.
 	Functions map[string]*JsFuncDecl
 	Nodes     []SSRPlanNode
-	Events    []SSRStaticEvent
 	Dynamics  []SSRDynamicSite
-	Hydration SSRHydrationState
 	ScopedCSS string
-	// ComponentInstanceSuffixes assigns a deterministic static structural
-	// suffix to repeated local component bindings. It is keyed by source span,
-	// never by component name, so equal tags retain independent payload IDs.
-	// Runtime-scoped #each/#key occurrences are intentionally absent until
-	// their evaluated identity can be lowered on both server and client.
-	ComponentInstanceSuffixes map[SectionSpan]string
-	// ComponentInstanceIdentities retains the typed structural recipe for every
-	// local child occurrence. Backends use RuntimeScoped to select an evaluated
-	// #each/#key instance scope instead of collapsing row children to a tag name.
-	ComponentInstanceIdentities map[SectionSpan]SSRComponentInstanceIdentity
 	// Hosts binds callee names of this component to //vela:host functions,
 	// and HostSymbols names the bindable JavaScript function behind every
 	// local or imported function name (task 030). HostProject locates the
@@ -71,8 +56,8 @@ type SSRRenderPlan struct {
 	// RootStatic marks a component that renders plain HTML as a root (A-8.1).
 	RootStatic bool
 	// DeepInitializers holds $state.deep initializers: their initial value is
-	// an ordinary server value (T-6.6d); only legacy hydration excludes them
-	// from StateInitializers.
+	// an ordinary server value (T-6.6d). They are kept apart from
+	// StateInitializers.
 	DeepInitializers map[string]JsExpr
 	// StateNames lists every $state and $state.deep binding, and LocalOrder
 	// every $state, $state.deep, $derived, and plain binding, in script
@@ -126,12 +111,10 @@ type SSRPlanNode interface {
 }
 
 type SSRPlanElement struct {
-	Span        SectionSpan
-	Tag         string
-	Attrs       []SSRPlanAttr
-	Children    []SSRPlanNode
-	EventKey    string // compiler-owned data-vela-event key, empty without DOM events
-	HydrationID int    // paired element marker ID for non-creating DOM adoption
+	Span     SectionSpan
+	Tag      string
+	Attrs    []SSRPlanAttr
+	Children []SSRPlanNode
 }
 
 type SSRPlanComponent struct {
@@ -255,17 +238,6 @@ type SSRPlanAttr struct {
 	Expr      *TemplateExpr // cached; required by every non-static dynamic role
 }
 
-// SSRStaticEvent describes an event-bearing DOM element. Phase 1 will render
-// EventKey as data-vela-event and the client bridge will attach native events
-// by this deterministic key. Component events remain component-plan metadata;
-// only DOM element events appear here.
-type SSRStaticEvent struct {
-	EventKey string
-	Event    string
-	Handler  *TemplateExpr
-	Span     SectionSpan
-}
-
 type SSRDynamicKind uint8
 
 const (
@@ -291,8 +263,6 @@ type SSRDynamicSite struct {
 type ssrPlanBuilder struct {
 	plan        *SSRRenderPlan
 	links       map[string]SSRComponentLink
-	eventNext   int
-	elementNext int
 	dynamicNext int
 	slotNames   map[string]bool
 }
@@ -332,22 +302,19 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		return nil, err
 	}
 	b := &ssrPlanBuilder{links: links, slotNames: map[string]bool{}, plan: &SSRRenderPlan{
-		ComponentName:               componentName,
-		ScopeID:                     scopeID,
-		Props:                       props,
-		ReactiveNames:               analysis.reactiveNames(),
-		StateInitializers:           ssrStateInitializers(analysis),
-		DerivedInitializers:         ssrDerivedInitializers(analysis),
-		PlainInitializers:           ssrPlainInitializers(analysis),
-		Functions:                   ssrNamedFunctions(analysis),
-		ScopedCSS:                   ExtractScopedCSS(sfc, scopeID),
-		DeepInitializers:            ssrDeepInitializers(analysis),
-		TemplateOffset:              sfc.TemplateOffset,
-		ScriptOffset:                sfc.ScriptOffset,
-		ComponentInstanceSuffixes:   SSRStaticRepeatedComponentInstanceSuffixes(sfc.TemplateAST.Nodes),
-		ComponentInstanceIdentities: SSRComponentInstanceIdentityIndex(sfc.TemplateAST.Nodes),
+		ComponentName:       componentName,
+		ScopeID:             scopeID,
+		Props:               props,
+		ReactiveNames:       analysis.reactiveNames(),
+		StateInitializers:   ssrStateInitializers(analysis),
+		DerivedInitializers: ssrDerivedInitializers(analysis),
+		PlainInitializers:   ssrPlainInitializers(analysis),
+		Functions:           ssrNamedFunctions(analysis),
+		ScopedCSS:           ExtractScopedCSS(sfc, scopeID),
+		DeepInitializers:    ssrDeepInitializers(analysis),
+		TemplateOffset:      sfc.TemplateOffset,
+		ScriptOffset:        sfc.ScriptOffset,
 	}}
-	b.plan.Hydration = buildSSRHydrationState(analysis)
 	b.plan.StateNames, b.plan.LocalOrder = ssrDeclarationOrder(b.plan, analysis)
 	b.plan.Nodes = b.nodes(sfc.TemplateAST.Nodes)
 	for name := range b.slotNames {
@@ -432,141 +399,6 @@ func ssrNamedFunctions(analysis *Analysis) map[string]*JsFuncDecl {
 	return functions
 }
 
-func buildSSRHydrationState(analysis *Analysis) SSRHydrationState {
-	values := map[string]any{}
-	state := SSRHydrationState{}
-	if analysis != nil {
-		for _, variable := range analysis.StateVars {
-			if variable == nil {
-				continue
-			}
-			value, ok := ssrJSONValue(variable.InitialAST)
-			if !ok {
-				state.Incomplete = true
-				state.Omitted = append(state.Omitted, variable.Name)
-				continue
-			}
-			values[variable.Name] = value
-			if variable.Deep {
-				state.Deep = append(state.Deep, variable.Name)
-			}
-		}
-	}
-	encoded, err := json.Marshal(values)
-	if err != nil {
-		// ssrJSONValue produces only JSON-compatible Go values. Preserve a
-		// valid empty payload if that invariant is ever broken rather than
-		// allowing renderer construction to emit malformed JSON.
-		state.Incomplete = true
-		state.JSON = "{}"
-		return state
-	}
-	state.JSON = string(encoded)
-	return state
-}
-
-// ssrJSONValue converts only cached JavaScript literal trees. It intentionally
-// does not evaluate identifiers, calls, members, or expressions: evaluating
-// user JavaScript inside the compiler would make server and client state
-// diverge before hydration starts.
-func ssrJSONValue(expr JsExpr) (any, bool) {
-	switch node := expr.(type) {
-	case *JsLiteral:
-		switch node.Kind {
-		case "string":
-			value, err := decodeSSRJSONString(node)
-			return value, err == nil
-		case "number":
-			decoder := json.NewDecoder(bytes.NewBufferString(node.Raw))
-			decoder.UseNumber()
-			var value any
-			if err := decoder.Decode(&value); err != nil {
-				return nil, false
-			}
-			if _, ok := value.(json.Number); !ok {
-				return nil, false
-			}
-			return value, true
-		case "boolean":
-			value, err := strconv.ParseBool(node.Raw)
-			return value, err == nil
-		case "null":
-			return nil, true
-		}
-	case *JsArrayExpr:
-		values := make([]any, len(node.Elems))
-		for index, element := range node.Elems {
-			if element == nil {
-				continue // JavaScript array holes stringify to JSON null.
-			}
-			value, ok := ssrJSONValue(element)
-			if !ok {
-				return nil, false
-			}
-			values[index] = value
-		}
-		return values, true
-	case *JsObjectExpr:
-		values := map[string]any{}
-		for _, property := range node.Props {
-			if property == nil || property.Computed || property.Spread || property.Method || property.Kind != "init" {
-				return nil, false
-			}
-			key, ok := ssrJSONPropertyName(property.Key)
-			if !ok {
-				return nil, false
-			}
-			value, ok := ssrJSONValue(property.Value)
-			if !ok {
-				return nil, false
-			}
-			values[key] = value
-		}
-		return values, true
-	}
-	return nil, false
-}
-
-func ssrJSONPropertyName(key JsExpr) (string, bool) {
-	switch value := key.(type) {
-	case *JsIdent:
-		return value.Name, true
-	case *JsLiteral:
-		if value.Kind == "string" {
-			decoded, err := decodeSSRJSONString(value)
-			return decoded, err == nil
-		}
-		if value.Kind == "number" {
-			return value.Raw, true
-		}
-	}
-	return "", false
-}
-
-func decodeSSRJSONString(literal *JsLiteral) (string, error) {
-	if literal == nil {
-		return "", fmt.Errorf("missing string literal")
-	}
-	if literal.Decoded {
-		return literal.Value, nil
-	}
-	raw := literal.Raw
-	if len(raw) >= 2 && raw[0] == '\'' && raw[len(raw)-1] == '\'' {
-		// Go's strconv understands the overlapping escape repertoire once a
-		// JavaScript single-quoted string is converted to double quotes. The
-		// only escape that is invalid in a Go double-quoted literal is \' .
-		inner := strings.ReplaceAll(raw[1:len(raw)-1], `\'`, `'`)
-		raw = `"` + inner + `"`
-	}
-	return strconv.Unquote(raw)
-}
-
-func (b *ssrPlanBuilder) nextEventKey() string {
-	key := b.plan.ScopeID + "-e" + itoa(b.eventNext)
-	b.eventNext++
-	return key
-}
-
 func (b *ssrPlanBuilder) dynamic(kind SSRDynamicKind, expr *TemplateExpr, span SectionSpan) int {
 	id := b.dynamicNext
 	b.plan.Dynamics = append(b.plan.Dynamics, SSRDynamicSite{
@@ -648,22 +480,11 @@ func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
 }
 
 func (b *ssrPlanBuilder) element(node *ElementNode) *SSRPlanElement {
-	attrs, events := b.attrs(node.Attrs, true)
-	hydrationID := b.elementNext
-	b.elementNext++
-	el := &SSRPlanElement{Span: node.Span, Tag: node.Tag, Attrs: attrs, Children: b.nodes(node.Children), HydrationID: hydrationID}
-	if len(events) > 0 {
-		el.EventKey = b.nextEventKey()
-		for i := range events {
-			events[i].EventKey = el.EventKey
-			b.plan.Events = append(b.plan.Events, events[i])
-		}
-	}
-	return el
+	return &SSRPlanElement{Span: node.Span, Tag: node.Tag, Attrs: b.attrs(node.Attrs), Children: b.nodes(node.Children)}
 }
 
 func (b *ssrPlanBuilder) component(node *ComponentNode) *SSRPlanComponent {
-	attrs, _ := b.attrs(node.Attrs, false)
+	attrs := b.attrs(node.Attrs)
 	slots := make(map[string][]SSRPlanNode, len(node.Slots))
 	names := make([]string, 0, len(node.Slots))
 	for name := range node.Slots {
@@ -744,9 +565,8 @@ func (b *ssrPlanBuilder) text(node *TextNode) *SSRPlanText {
 	return &SSRPlanText{Span: node.Span, Parts: parts}
 }
 
-func (b *ssrPlanBuilder) attrs(attrs []*Attr, domElement bool) ([]SSRPlanAttr, []SSRStaticEvent) {
+func (b *ssrPlanBuilder) attrs(attrs []*Attr) []SSRPlanAttr {
 	out := make([]SSRPlanAttr, 0, len(attrs))
-	var events []SSRStaticEvent
 	for _, attr := range attrs {
 		if attr == nil {
 			continue
@@ -770,18 +590,8 @@ func (b *ssrPlanBuilder) attrs(attrs []*Attr, domElement bool) ([]SSRPlanAttr, [
 			Span: attr.Span, Name: attr.Name, Value: attr.Value, ValueKind: attr.ValueKind,
 			Role: role, Expr: attr.Expr,
 		})
-		if attr.IsEvent {
-			if domElement {
-				events = append(events, SSRStaticEvent{Event: attr.Name, Handler: attr.Expr, Span: attr.Span})
-			}
-			continue
-		}
-		// Dynamic attributes are represented directly in SSRPlanAttr and do
-		// not emit paired `v` markers. Reserving a marker ID here would shift
-		// every later text/structural range away from the actual HTML marker
-		// stream (for example :title before {title}).
 	}
-	return out, events
+	return out
 }
 
 func buildSSRPlanProps(analysis *Analysis, script *ScriptAST) ([]SSRPlanProp, error) {

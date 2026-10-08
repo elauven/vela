@@ -4,8 +4,7 @@
  * Structural template behaviour lives here once instead of being generated
  * into every component: compiled fragments build DOM through a cursor, and
  * blocks ($$if, $$each, $$key, $$await, $$component, $$slot, $$client) own
- * their DOM ranges and child resources. Staged only for --dom-engine=blocks
- * builds until the block engine becomes the default.
+ * their DOM ranges and child resources.
  *
  * Fragment contract (F-2.x): a fragment is `(cursor, scope) => handle`, where
  * handle is `{ p(dirty, scopeChanged) }` or undefined. The runtime never
@@ -697,8 +696,8 @@ export function $$component(cursor, factory, props, slots, events, changed, scop
 }
 
 // ── Slots ────────────────────────────────────────────────────────────────
-// Slots use the component protocol shared with the legacy engine: a slot is
-// a function returning a DocumentFragment with the slot content. The parent
+// Slots use the component protocol: a slot is a function returning a
+// DocumentFragment with the slot content. The parent
 // owns the content: it is built on the first call, updated by the parent,
 // and the same nodes are returned when the child opens the slot again.
 
@@ -760,7 +759,7 @@ export function $$slot(cursor, factory, fallback) {
   if (cursor.hydrating) {
     cursor.open();
     if (factory) {
-      cursor.expect(typeof factory.adopt === 'function', 'slot content from a component compiled by the legacy engine cannot be hydrated');
+      cursor.expect(typeof factory.adopt === 'function', 'slot content without an adopt() method cannot be hydrated');
       const adopted = factory.adopt ? factory.adopt(cursor) : null;
       if (adopted) {
         first = adopted.start;

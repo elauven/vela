@@ -157,13 +157,7 @@ func TestValidateEveryFixtureClean(t *testing.T) {
 		if err != nil {
 			t.Fatalf("[%s] parseTemplate: %v", name, err)
 		}
-		analysis := analyzeScript(sfc.Script)
-		if !astCanBuildDirectly(tmpl, analysis) {
-			continue // falls back to legacy — not AST-validated
-		}
-		g := &ASTGen{name: name, scopeID: "vela-000000",
-			analysis: analysis, sfc: sfc, fragCounter: -1}
-		prog := g.buildModule(tmpl)
+		prog := buildProgramUnvalidated(name, sfc, tmpl, analyzeScript(sfc.Script), "vela-000000", false)
 		if issues := ValidateProgram(prog); len(issues) > 0 {
 			var b strings.Builder
 			for _, iss := range issues {
@@ -171,50 +165,6 @@ func TestValidateEveryFixtureClean(t *testing.T) {
 			}
 			t.Errorf("[%s] AST failed validation:%s", name, b.String())
 		}
-	}
-}
-
-// TestCaptureScopePanicSafety — captureScope swaps the generator's
-// emission buffers out for the duration of fn().  If fn() panics,
-// the buffers must still be restored (the fuzzer and test suite
-// recover from panics and keep compiling — a corrupted buffer
-// would silently poison every later compilation).
-func TestCaptureScopePanicSafety(t *testing.T) {
-	g := &ASTGen{fragCounter: -1}
-	sentinel := []JsStmt{&JsEmptyStmt{BaseStmt: BaseStmt{BaseNode: genNode()}}}
-	g.body = sentinel
-
-	func() {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Fatal("expected the injected panic to propagate")
-			}
-		}()
-		g.captureScope(func() {
-			g.body = []JsStmt{&JsEmptyStmt{BaseStmt: BaseStmt{BaseNode: genNode()}}}
-			panic("boom")
-		})
-	}()
-
-	// After the recovered panic, g.body must be the original
-	// sentinel — not the inner buffer, not nil.
-	if len(g.body) != 1 || g.body[0] != sentinel[0] {
-		t.Fatalf("captureScope did not restore g.body after a panic; "+
-			"got %d stmt(s)", len(g.body))
-	}
-}
-
-// TestWithFragmentIDsPanicSafety — withFragmentIDs likewise must
-// restore the fragment counter even when fn() panics.
-func TestWithFragmentIDsPanicSafety(t *testing.T) {
-	g := &ASTGen{fragCounter: -1}
-	func() {
-		defer func() { recover() }()
-		g.withFragmentIDs(func() { panic("boom") })
-	}()
-	if g.fragCounter != -1 {
-		t.Fatalf("withFragmentIDs left fragCounter = %d, want -1",
-			g.fragCounter)
 	}
 }
 

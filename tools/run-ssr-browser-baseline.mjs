@@ -13,14 +13,11 @@ export const requiredTests = [
   "TestGeneratedSSRRendererPreservesNullishTextAndArrayJoin",
   "TestGeneratedSSRRendererMatchesValueTextOracle",
   "TestSSRProjectRejectsSingleSelectWithKnownNullBinding",
-  // The legacy engine's recipe-hydration browser tests run in the CI step
-  // with VELA_DOM_ENGINE=legacy until task 042 removes them (G-11.3).
   // Block runtime of the hydration architecture (task 039).
   "TestRuntimeBlocksUnderJsdom",
-  "TestBlocksEngineMatchesLegacyEngine",
+  "TestBlocksEngineMatchesRecordedDOM",
   "TestBlocksEngineRendersEachElse",
   "TestBlocksEngineUpdatesSlotContentInEachRows",
-  "TestBlocksEngineInteropWithLegacyComponents",
   // Block markup and payload stream of the Go renderer (task 040).
   "TestBlocksSSRMarkupMatchesClientDOM",
   "TestBlocksSSRMarkupParsesInChromium",
