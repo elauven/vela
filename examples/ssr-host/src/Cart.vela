@@ -1,0 +1,47 @@
+<script>
+  import { formatPrice } from './format.js';
+
+  export let currency = 'USD';
+
+  let items = $state([
+    { name: 'Coffee Beans', price: 12.5, qty: 2 },
+    { name: 'French Press', price: 34, qty: 1 },
+    { name: 'Paper Filters x100', price: 4.99, qty: 3 },
+  ]);
+
+  let total = $derived(items.reduce((sum, item) => sum + item.price * item.qty, 0));
+
+  // A regular expression cannot be translated to Go either; the server uses
+  // ssrhost/src/cart/slugify_host.go.
+  function slugify(text) {
+    return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
+
+  function add(index) {
+    items = items.map((item, i) => (i === index ? { ...item, qty: item.qty + 1 } : item));
+  }
+</script>
+
+<template>
+  <main class="cart">
+    <h1>Cart</h1>
+    <ul>
+      {#each items as item, index (item.name)}
+        <li :id={slugify(item.name)}>
+          <span class="name">{item.name}</span>
+          <span class="qty">× {item.qty}</span>
+          <span class="price">{formatPrice(item.price * item.qty, currency)}</span>
+          <button @click={() => add(index)}>+1</button>
+        </li>
+      {/each}
+    </ul>
+    <p class="total">Total: <strong>{formatPrice(total, currency)}</strong></p>
+  </main>
+</template>
+
+<style>
+  .cart { font-family: system-ui, sans-serif; max-width: 28rem; margin: 2rem auto; }
+  li { display: flex; gap: 0.75rem; align-items: center; padding: 0.25rem 0; }
+  .name { flex: 1; }
+  .total { font-size: 1.2rem; }
+</style>

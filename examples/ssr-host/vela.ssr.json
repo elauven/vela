@@ -1,0 +1,7 @@
+{
+  "module": "example.com/ssrhostdemo/out/server",
+  "host": {
+    "dir": "ssrhost",
+    "module": "example.com/ssrhostdemo/ssrhost"
+  }
+}
