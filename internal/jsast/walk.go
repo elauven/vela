@@ -96,7 +96,35 @@ func WalkNode(node JsNode, fn func(JsNode) bool) {
 	case *JsLabeledStmt:
 		WalkNode(n.Body, fn)
 	case *JsExportDecl:
-		WalkNode(n.Declaration, fn)
+		if n.Declaration != nil {
+			WalkNode(n.Declaration, fn)
+		}
+	case *JsClassDecl:
+		if n.SuperClass != nil {
+			WalkNode(n.SuperClass, fn)
+		}
+		for _, m := range n.Members {
+			WalkNode(m, fn)
+		}
+	case *JsClassExpr:
+		if n.SuperClass != nil {
+			WalkNode(n.SuperClass, fn)
+		}
+		for _, m := range n.Members {
+			WalkNode(m, fn)
+		}
+	case *JsClassMember:
+		// A non-computed key, private names included, is a name and not a
+		// variable reference, like a member expression's .Prop.
+		if n.Computed && n.Key != nil {
+			WalkNode(n.Key, fn)
+		}
+		if n.Value != nil {
+			WalkNode(n.Value, fn)
+		}
+		if n.Body != nil {
+			WalkNode(n.Body, fn)
+		}
 	// Expressions
 	case *JsArrayExpr:
 		for _, e := range n.Elems {
@@ -165,6 +193,9 @@ func WalkNode(node JsNode, fn func(JsNode) bool) {
 		for _, e := range n.Exprs {
 			WalkNode(e, fn)
 		}
+	case *JsTaggedTemplate:
+		WalkNode(n.Tag, fn)
+		WalkNode(n.Quasi, fn)
 		// Leaves: JsIdent, JsLiteral, JsThisExpr, JsSuperExpr,
 		// JsImportDecl, JsBreakStmt, JsContinueStmt, JsEmptyStmt, JsDebuggerStmt
 	}

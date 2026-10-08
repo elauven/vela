@@ -31,6 +31,10 @@ func Minify(src string) string {
 	prevTok := byte(0) // last non-space, non-comment byte written
 
 	needSpace := func(prev, next byte) bool {
+		// `a + +b` and `a - -b` must not merge into `++` / `--` (task 055).
+		if (prev == '+' || prev == '-') && prev == next {
+			return true
+		}
 		// No space needed adjacent to these chars
 		noSpaceSet := "{}()[];,.:!~<>=+-*/%&|^?`\n"
 		return !strings.ContainsRune(noSpaceSet, rune(prev)) &&

@@ -799,6 +799,11 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	if trace != nil {
 		trace.trace.Metrics.SourceMapBytes = len(mapBytes)
 	}
+	// Never write a module the compiler cannot read back (task 055).
+	if err = checkEmittedJS(code); err != nil {
+		ds.Error(0, "%v", err)
+		return ds.All(), err
+	}
 
 	if err = trace.stage("write-output", func() error {
 		if len(mapBytes) > 0 {
@@ -838,6 +843,42 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 
 	return ds.All(), nil
 }
+
+// checkEmittedJS reparses a generated module. A printer or minifier defect
+// would otherwise reach the browser as a module that fails to load, or as
+// different code; it becomes an internal compiler error instead.
+func checkEmittedJS(code string) error {
+	prog, diags := ParseJSWithDiagnostics(code)
+	if len(diags) == 0 {
+		diags = EarlyErrors(prog, EarlyOptions{TopLevelAwait: true})
+	}
+	if len(diags) > 0 {
+		return fmt.Errorf("%s: generated JavaScript does not parse (%s); this is a compiler bug", EmitCheckDiagnosticCode, diags[0].Message)
+	}
+	// Import and export declarations are only valid at module top level;
+	// the parser does not report that early error.
+	topLevel := map[JsNode]bool{}
+	for _, stmt := range prog.Body {
+		topLevel[stmt] = true
+	}
+	var nested string
+	WalkNode(prog, func(n JsNode) bool {
+		switch n.(type) {
+		case *JsImportDecl, *JsExportDecl:
+			if !topLevel[n] && nested == "" {
+				nested = "an import or export declaration is not at module top level"
+			}
+		}
+		return nested == ""
+	})
+	if nested != "" {
+		return fmt.Errorf("%s: generated JavaScript does not parse (%s); this is a compiler bug", EmitCheckDiagnosticCode, nested)
+	}
+	return nil
+}
+
+// EmitCheckDiagnosticCode reports generated JavaScript that does not parse.
+const EmitCheckDiagnosticCode = "VELA-INTERNAL-EMIT"
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Path helpers

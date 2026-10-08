@@ -258,17 +258,100 @@ func rewriteAssignmentStmt(stmt JsStmt, stateSet map[string]bool) JsStmt {
 		}
 	case *JsFuncDecl:
 		rewriteAssignmentBlock(s.Body, stateSet)
+	case *JsClassDecl:
+		rewriteAssignmentExpr(s.SuperClass, stateSet)
+		rewriteAssignmentMembers(s.Members, stateSet)
 	case *JsExportDecl:
-		s.Declaration = rewriteAssignmentStmt(s.Declaration, stateSet)
+		if s.Declaration != nil {
+			s.Declaration = rewriteAssignmentStmt(s.Declaration, stateSet)
+		}
 	}
 	return stmt
+}
+
+// rewriteAssignmentMembers rewrites state writes in class bodies: methods,
+// accessors, field initializers, computed keys and static blocks (task 055).
+func rewriteAssignmentMembers(members []*JsClassMember, stateSet map[string]bool) {
+	for _, m := range members {
+		if m.Computed {
+			rewriteAssignmentExpr(m.Key, stateSet)
+		}
+		rewriteAssignmentExpr(m.Value, stateSet)
+		rewriteAssignmentBlock(m.Body, stateSet)
+	}
 }
 
 func reactiveSetterStmt(expr JsExpr, stateSet map[string]bool) JsStmt {
 	if setter := reactiveSetterExpr(expr, stateSet); setter != nil {
 		return genExprStmt(setter)
 	}
+	if block := reactivePatternAssignment(expr, stateSet); block != nil {
+		return block
+	}
 	return nil
+}
+
+// reactivePatternAssignment rewrites a destructuring assignment to state,
+// `[a, b] = [b, a]` or `({ a = 5, b } = o)`, into assignments to block-local
+// temporaries followed by one setter per state target (task 055). Without it
+// the state changed without notifying the view.
+func reactivePatternAssignment(expr JsExpr, stateSet map[string]bool) JsStmt {
+	assign, ok := expr.(*JsAssignExpr)
+	if !ok || assign.Op != "=" {
+		return nil
+	}
+	switch assign.L.(type) {
+	case *JsArrayExpr, *JsObjectExpr:
+	default:
+		return nil
+	}
+	var names []string
+	seen := map[string]bool{}
+	replacePatternTargets(assign.L, stateSet, func(name string) JsExpr {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+		return id("$$d_" + name)
+	})
+	if len(names) == 0 {
+		return nil
+	}
+	decl := &JsVarDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Kind: "let"}
+	for _, name := range names {
+		decl.Decls = append(decl.Decls, &JsVarDeclarator{BaseNode: genNode(), Id: id("$$d_" + name)})
+	}
+	body := []JsStmt{decl, genExprStmt(assign)}
+	for _, name := range names {
+		body = append(body, genExprStmt(genCall(id("$$set_"+name), id("$$d_"+name))))
+	}
+	return genBlock(body...)
+}
+
+// replacePatternTargets replaces every state identifier that a destructuring
+// pattern assigns with the expression temp returns for it.
+func replacePatternTargets(pattern JsExpr, stateSet map[string]bool, temp func(string) JsExpr) JsExpr {
+	switch p := pattern.(type) {
+	case *JsIdent:
+		if stateSet[p.Name] {
+			return temp(p.Name)
+		}
+	case *JsAssignExpr:
+		p.L = replacePatternTargets(p.L, stateSet, temp)
+	case *JsSpreadExpr:
+		p.X = replacePatternTargets(p.X, stateSet, temp)
+	case *JsArrayExpr:
+		for i, el := range p.Elems {
+			if el != nil {
+				p.Elems[i] = replacePatternTargets(el, stateSet, temp)
+			}
+		}
+	case *JsObjectExpr:
+		for _, prop := range p.Props {
+			prop.Value = replacePatternTargets(prop.Value, stateSet, temp)
+		}
+	}
+	return pattern
 }
 
 func reactiveSetterExpr(expr JsExpr, stateSet map[string]bool) JsExpr {
@@ -385,6 +468,12 @@ func rewriteAssignmentExpr(expr JsExpr, stateSet map[string]bool) {
 		for _, item := range e.Exprs {
 			rewriteAssignmentExpr(item, stateSet)
 		}
+	case *JsTaggedTemplate:
+		rewriteAssignmentExpr(e.Tag, stateSet)
+		rewriteAssignmentExpr(e.Quasi, stateSet)
+	case *JsClassExpr:
+		rewriteAssignmentExpr(e.SuperClass, stateSet)
+		rewriteAssignmentMembers(e.Members, stateSet)
 	}
 }
 

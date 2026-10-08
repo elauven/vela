@@ -20,8 +20,10 @@ package jsast
 // against the parent.  The AST never carries explicit paren nodes.
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -296,16 +298,7 @@ func (p *jsPrinter) stmt(s JsStmt) {
 		p.block(n.Body)
 
 	case *JsClassDecl:
-		p.write("class")
-		p.reqSp()
-		p.write(n.Name)
-		if n.SuperClass != nil {
-			p.reqSp()
-			p.write("extends")
-			p.reqSp()
-			p.expr(n.SuperClass, precLHS)
-		}
-		p.sp()
+		p.classHead(n.Name, n.SuperClass)
 		p.classBody(n.Members)
 
 	case *JsBlock:
@@ -341,7 +334,7 @@ func (p *jsPrinter) stmt(s JsStmt) {
 				p.reqSp()
 				p.stmt(n.Else)
 			} else {
-				p.thenBranch(n.Else)
+				p.keywordBranch(n.Else)
 			}
 		}
 
@@ -367,6 +360,10 @@ func (p *jsPrinter) stmt(s JsStmt) {
 
 	case *JsForInStmt:
 		p.write("for")
+		if n.Await {
+			p.reqSp()
+			p.write("await")
+		}
 		p.sp()
 		p.ch('(')
 		p.forInit(n.Left)
@@ -391,7 +388,7 @@ func (p *jsPrinter) stmt(s JsStmt) {
 
 	case *JsDoWhileStmt:
 		p.write("do")
-		p.thenBranch(n.Body)
+		p.keywordBranch(n.Body)
 		if p.pretty() {
 			p.sp()
 		}
@@ -501,17 +498,11 @@ func (p *jsPrinter) stmt(s JsStmt) {
 		p.importDecl(n)
 
 	case *JsExportDecl:
-		p.write("export")
-		p.reqSp()
-		if n.Default {
-			p.write("default")
-			p.reqSp()
-		}
-		p.stmt(n.Declaration)
+		p.exportDecl(n)
 
 	default:
-		// Unknown statement — emit nothing rather than panic.
-		// The round-trip test will catch any missing case.
+		// An unknown node must never turn into missing output (task 055).
+		panic(fmt.Sprintf("vela: JavaScript printer has no case for statement %T", s))
 	}
 }
 
@@ -532,6 +523,17 @@ func (p *jsPrinter) thenBranch(s JsStmt) {
 	} else {
 		p.stmt(s)
 	}
+}
+
+// keywordBranch prints the body after `else` or `do`: like thenBranch,
+// but a non-block body must be separated from the keyword when minified.
+func (p *jsPrinter) keywordBranch(s JsStmt) {
+	if _, ok := s.(*JsBlock); !ok && !p.pretty() {
+		p.reqSp()
+		p.stmt(s)
+		return
+	}
+	p.thenBranch(s)
 }
 
 // forInit prints the init clause of a for/for-in header — either a
@@ -590,6 +592,12 @@ func (p *jsPrinter) classBody(members []*JsClassMember) {
 	p.indent++
 	for _, m := range members {
 		p.nl()
+		if m.Kind == "static-block" {
+			p.write("static")
+			p.sp()
+			p.block(m.Body)
+			continue
+		}
 		if m.Static {
 			p.write("static")
 			p.reqSp()
@@ -598,6 +606,16 @@ func (p *jsPrinter) classBody(members []*JsClassMember) {
 		case "get", "set":
 			p.write(m.Kind)
 			p.reqSp()
+		case "method":
+			if fn, ok := m.Value.(*JsFuncExpr); ok {
+				if fn.Async {
+					p.write("async")
+					p.reqSp()
+				}
+				if fn.Generator {
+					p.ch('*')
+				}
+			}
 		}
 		if m.Computed {
 			p.ch('[')
@@ -659,7 +677,7 @@ func (p *jsPrinter) importDecl(n *JsImportDecl) {
 					p.ch(',')
 					p.sp()
 				}
-				p.write(sp.Imported)
+				p.write(moduleExportName(sp.Imported))
 				if sp.Local != "" && sp.Local != sp.Imported {
 					p.write(" as ")
 					p.write(sp.Local)
@@ -675,7 +693,140 @@ func (p *jsPrinter) importDecl(n *JsImportDecl) {
 	p.ch('\'')
 	p.write(n.Source)
 	p.ch('\'')
+	p.importAttributes(n.Attributes)
 	p.ch(';')
+}
+
+// importAttributes prints ` with { type: 'json' }`.
+func (p *jsPrinter) importAttributes(attrs []JsImportAttr) {
+	if len(attrs) == 0 {
+		return
+	}
+	p.reqSp()
+	p.write("with")
+	p.sp()
+	p.ch('{')
+	p.sp()
+	for i, attr := range attrs {
+		if i > 0 {
+			p.ch(',')
+			p.sp()
+		}
+		p.write(moduleExportName(attr.Key))
+		p.ch(':')
+		p.sp()
+		p.write(EncodeGeneratedString(attr.Value))
+	}
+	p.sp()
+	p.ch('}')
+}
+
+// exportDecl prints every export form (JsExportDecl).
+func (p *jsPrinter) exportDecl(n *JsExportDecl) {
+	p.write("export")
+	switch {
+	case n.Declaration != nil:
+		p.reqSp()
+		if n.Default {
+			p.write("default")
+			p.reqSp()
+			if es, ok := n.Declaration.(*JsExprStmt); ok {
+				// `export default` takes an assignment expression; one that
+				// starts with `function`, `class` or `{` would be read as a
+				// declaration or block.
+				if _, seq := es.X.(*JsSeqExpr); seq || exprStmtNeedsParens(es.X) {
+					p.ch('(')
+					p.expr(es.X, 0)
+					p.ch(')')
+				} else {
+					p.expr(es.X, precAssign)
+				}
+				p.ch(';')
+				return
+			}
+		}
+		p.stmt(n.Declaration)
+		return
+	case n.All || n.Namespace != "":
+		p.sp()
+		p.ch('*')
+		if n.Namespace != "" {
+			p.reqSp()
+			p.write("as")
+			p.reqSp()
+			p.write(moduleExportName(n.Namespace))
+		}
+	case len(n.Specifiers) == 0:
+		p.sp()
+		p.write("{}")
+	default:
+		p.sp()
+		p.ch('{')
+		p.sp()
+		for i, spec := range n.Specifiers {
+			if i > 0 {
+				p.ch(',')
+				p.sp()
+			}
+			p.write(moduleExportName(spec.Local))
+			if spec.Exported != "" && spec.Exported != spec.Local {
+				p.write(" as ")
+				p.write(moduleExportName(spec.Exported))
+			}
+		}
+		p.sp()
+		p.ch('}')
+	}
+	if n.HasSource {
+		// `* as ns from` ends the clause with a name.
+		p.reqSp()
+		p.write("from")
+		p.sp()
+		p.ch('\'')
+		p.write(n.Source)
+		p.ch('\'')
+		p.importAttributes(n.Attributes)
+	}
+	p.ch(';')
+}
+
+// classHead prints `class Name extends Super ` before a class body.
+func (p *jsPrinter) classHead(name string, superClass JsExpr) {
+	p.write("class")
+	if name != "" {
+		p.reqSp()
+		p.write(name)
+	}
+	if superClass != nil {
+		p.reqSp()
+		p.write("extends")
+		p.reqSp()
+		// ClassHeritage is a LeftHandSideExpression.
+		p.expr(superClass, precLHS)
+	}
+	p.sp()
+}
+
+// moduleExportName prints an import/export name: an identifier as is, any
+// other string (`export { a as 'b-c' }`) as a string literal.
+func moduleExportName(name string) string {
+	if isIdentifierName(name) {
+		return name
+	}
+	return EncodeGeneratedString(name)
+}
+
+func isIdentifierName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		if r == '$' || r == '_' || unicode.IsLetter(r) || (i > 0 && (unicode.IsDigit(r) || r == '‌' || r == '‍')) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // ─────────────────────────────────────────────
@@ -750,6 +901,11 @@ func (p *jsPrinter) expr(e JsExpr, parentPrec int) {
 		p.write(n.Name)
 
 	case *JsLiteral:
+		if n.Kind == "unknown" {
+			// A placeholder for a token the parser could not use; it always
+			// comes with a diagnostic and must not reach output.
+			panic(fmt.Sprintf("vela: JavaScript printer reached an unparsed token %q", n.Raw))
+		}
 		if n.Decoded && n.Kind == "string" {
 			p.write(EncodeGeneratedString(n.Value))
 		} else {
@@ -831,9 +987,10 @@ func (p *jsPrinter) expr(e JsExpr, parentPrec int) {
 		case *JsBlock:
 			p.block(body)
 		case JsExpr:
-			// A concise-body arrow returning an object literal needs
-			// the object wrapped so `{` isn't read as a block.
-			if _, isObj := body.(*JsObjectExpr); isObj {
+			// A concise body that starts with `{` (an object literal,
+			// also inside `({}).x` or `({ a } = b)`) needs parentheses so
+			// it isn't read as a block.
+			if _, isObj := leftmost(body).(*JsObjectExpr); isObj {
 				p.ch('(')
 				p.expr(body, precAssign)
 				p.ch(')')
@@ -875,19 +1032,35 @@ func (p *jsPrinter) expr(e JsExpr, parentPrec int) {
 		if paren {
 			p.ch('(')
 		}
-		p.expr(n.L, prec)
+		leftPrec, rightPrec := prec, prec+1
+		if n.Op == "**" {
+			// Right-associative; a unary or await base needs parentheses:
+			// `-1 ** 2` is a syntax error.
+			leftPrec, rightPrec = prec+1, prec
+			if exponentBaseNeedsParens(n.L) {
+				leftPrec = precPrimary
+			}
+		}
+		p.expr(n.L, leftPrec)
 		// Word operators (in, instanceof) require surrounding spaces.
 		if isWordOp(n.Op) {
 			p.reqSp()
 			p.write(n.Op)
 			p.reqSp()
 		} else {
-			p.sp()
+			if needsSpaceBeforeBinaryOp(n.Op, n.L) {
+				p.ch(' ')
+			} else {
+				p.sp()
+			}
 			p.write(n.Op)
-			p.sp()
+			if needsSpaceAfterBinaryOp(n.Op, n.R) {
+				p.ch(' ')
+			} else {
+				p.sp()
+			}
 		}
-		// Right side binds one level tighter (left-associative).
-		p.expr(n.R, prec+1)
+		p.expr(n.R, rightPrec)
 		if paren {
 			p.ch(')')
 		}
@@ -898,11 +1071,19 @@ func (p *jsPrinter) expr(e JsExpr, parentPrec int) {
 		if paren {
 			p.ch('(')
 		}
-		p.expr(n.L, prec)
+		// `??` cannot be mixed with `||` or `&&` without parentheses.
+		leftPrec, rightPrec := prec, prec+1
+		if mixesNullish(n.Op, n.L) {
+			leftPrec = precPrimary
+		}
+		if mixesNullish(n.Op, n.R) {
+			rightPrec = precPrimary
+		}
+		p.expr(n.L, leftPrec)
 		p.sp()
 		p.write(n.Op)
 		p.sp()
-		p.expr(n.R, prec+1)
+		p.expr(n.R, rightPrec)
 		if paren {
 			p.ch(')')
 		}
@@ -994,7 +1175,15 @@ func (p *jsPrinter) expr(e JsExpr, parentPrec int) {
 		}
 		p.write("new")
 		p.reqSp()
-		p.expr(n.Callee, precLHS)
+		// A call inside the callee would bind the arguments: `new (f())()`
+		// is not `new f()()`. An optional chain cannot be a callee either.
+		if newCalleeNeedsParens(n.Callee) {
+			p.ch('(')
+			p.expr(n.Callee, 0)
+			p.ch(')')
+		} else {
+			p.expr(n.Callee, precLHS)
+		}
 		p.argList(n.Args)
 		if paren {
 			p.ch(')')
@@ -1033,9 +1222,130 @@ func (p *jsPrinter) expr(e JsExpr, parentPrec int) {
 			p.ch(')')
 		}
 
+	case *JsClassExpr:
+		paren := parentPrec >= precLHS
+		if paren {
+			p.ch('(')
+		}
+		p.classHead(n.Name, n.SuperClass)
+		p.classBody(n.Members)
+		if paren {
+			p.ch(')')
+		}
+
+	case *JsTaggedTemplate:
+		// A tag is a member expression; an optional chain cannot be one.
+		if hasOptionalChain(n.Tag) {
+			p.ch('(')
+			p.expr(n.Tag, 0)
+			p.ch(')')
+		} else {
+			p.expr(n.Tag, precLHS)
+		}
+		p.expr(n.Quasi, precPrimary)
+
 	default:
-		// Unknown expression — emit nothing.  Round-trip test
-		// catches missing cases.
+		// An unknown node must never turn into missing output (task 055).
+		panic(fmt.Sprintf("vela: JavaScript printer has no case for expression %T", e))
+	}
+}
+
+// exponentBaseNeedsParens reports a unary or await operand on the left of
+// `**`, which JavaScript rejects without parentheses.
+func exponentBaseNeedsParens(e JsExpr) bool {
+	switch x := e.(type) {
+	case *JsUnaryExpr:
+		return x.Prefix
+	case *JsAwaitExpr:
+		return true
+	}
+	return false
+}
+
+// mixesNullish reports an operand that would mix `??` with `||`/`&&`.
+func mixesNullish(op string, operand JsExpr) bool {
+	child, ok := operand.(*JsLogicalExpr)
+	if !ok {
+		return false
+	}
+	return (op == "??") != (child.Op == "??")
+}
+
+// newCalleeNeedsParens reports a `new` callee that contains a call or an
+// optional chain on its member path.
+func newCalleeNeedsParens(e JsExpr) bool {
+	for {
+		switch x := e.(type) {
+		case *JsCallExpr:
+			return true
+		case *JsMemberExpr:
+			if x.Optional {
+				return true
+			}
+			e = x.Obj
+		case *JsTaggedTemplate:
+			e = x.Tag
+		default:
+			return false
+		}
+	}
+}
+
+// hasOptionalChain reports an optional link on the member/call path of e.
+func hasOptionalChain(e JsExpr) bool {
+	for {
+		switch x := e.(type) {
+		case *JsMemberExpr:
+			if x.Optional {
+				return true
+			}
+			e = x.Obj
+		case *JsCallExpr:
+			if x.Optional {
+				return true
+			}
+			e = x.Callee
+		default:
+			return false
+		}
+	}
+}
+
+// needsSpaceBeforeBinaryOp keeps `a++ + b` from printing as `a+++b`.
+func needsSpaceBeforeBinaryOp(op string, left JsExpr) bool {
+	if op != "+" && op != "-" {
+		return false
+	}
+	u, ok := rightmost(left).(*JsUnaryExpr)
+	return ok && !u.Prefix && u.Op[0] == op[0]
+}
+
+// needsSpaceAfterBinaryOp keeps `a + +b` and `a - -1` from merging into
+// `++` / `--`.
+func needsSpaceAfterBinaryOp(op string, right JsExpr) bool {
+	if op != "+" && op != "-" {
+		return false
+	}
+	switch u := leftmost(right).(type) {
+	case *JsUnaryExpr:
+		return u.Prefix && u.Op[0] == op[0]
+	case *JsLiteral:
+		return len(u.Raw) > 0 && u.Raw[0] == op[0]
+	}
+	return false
+}
+
+// rightmost returns the expression printed last on the right edge of e.
+func rightmost(e JsExpr) JsExpr {
+	for {
+		switch n := e.(type) {
+		case *JsBinaryExpr:
+			e = n.R
+		case *JsLogicalExpr:
+			e = n.R
+		default:
+			return e
+		}
 	}
 }
 
@@ -1085,7 +1395,7 @@ func (p *jsPrinter) objectExpr(n *JsObjectExpr) {
 				continue
 			}
 		}
-		if pr.Shorthand {
+		if pr.Shorthand && shorthandIntact(pr) {
 			// A shorthand prop normally prints just the key.  But a
 			// destructuring shorthand with a default — `{ a = 1 }` —
 			// stores the default as a JsAssignExpr in Value; that
@@ -1104,6 +1414,22 @@ func (p *jsPrinter) objectExpr(n *JsObjectExpr) {
 	}
 	p.sp()
 	p.ch('}')
+}
+
+// shorthandIntact reports a shorthand property whose value still names its
+// key. A rewrite that renames the value (`{ u }` with u → $box) must print
+// `{ u: $box }`: printing the shorthand would drop the new value.
+func shorthandIntact(pr *JsProp) bool {
+	key, ok := pr.Key.(*JsIdent)
+	if !ok {
+		return false
+	}
+	value := pr.Value
+	if asn, isAssign := value.(*JsAssignExpr); isAssign {
+		value = asn.L
+	}
+	ident, ok := value.(*JsIdent)
+	return ok && ident.Name == key.Name
 }
 
 func (p *jsPrinter) propKey(pr *JsProp) {
@@ -1187,6 +1513,8 @@ func exprStmtNeedsParens(e JsExpr) bool {
 		return true
 	case *JsFuncExpr:
 		return true
+	case *JsClassExpr:
+		return true
 	}
 	return false
 }
@@ -1215,6 +1543,13 @@ func leftmost(e JsExpr) JsExpr {
 				return e
 			}
 			e = n.Exprs[0]
+		case *JsTaggedTemplate:
+			e = n.Tag
+		case *JsUnaryExpr:
+			if n.Prefix {
+				return e
+			}
+			e = n.X
 		default:
 			return e
 		}

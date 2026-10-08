@@ -20,7 +20,7 @@ compiler. It describes the single direct AST code-generation pipeline.
 | Feature | Status | Example / API | Notes |
 | --- | --- | --- | --- |
 | Single-file components | **Stable** | `<script>`, `<style>`, `<template>` | Sections may appear in any order. |
-| JavaScript parsing | **Stable** | ES2020 script and expression subset | The compiler ships its own parser and performs static analysis. TypeScript is not supported. |
+| JavaScript parsing | **Stable** | ES2025 modules: classes with fields, private members and static blocks, tagged templates, `for await`, dynamic `import()`, `import.meta`, import attributes, numeric separators, Unicode identifiers | The compiler ships its own parser and performs static analysis. Every generated module is reparsed before it is written, and early errors (`break` outside a loop, `await` outside an async function, undeclared private names, …) are positioned diagnostics, so unsupported syntax never compiles to broken output. A component script exports props only (`export let`); other exports are `VELA-SCRIPT-EXPORT`. Decorators and `using` are not supported. Coverage: docs/ES_COMPLIANCE.md. TypeScript is not supported. |
 | Shallow reactive state | **Stable** | `let count = $state(0)` | Assignments and updates to the binding schedule direct DOM updates. |
 | Deep reactive state | **Stable** | `let todos = $state.deep([])` | A runtime `Proxy` observes nested object and array mutations. |
 | Derived values | **Stable** | `let doubled = $derived(count * 2)` | Expression form; no `$derived.by(...)` callback form. |

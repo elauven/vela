@@ -180,6 +180,11 @@ func validateScriptFormsWithAnalysis(prog *JsProgram, analysis *Analysis, ds *Di
 	if prog == nil {
 		return
 	}
+	for _, stmt := range prog.Body {
+		if exp, ok := stmt.(*JsExportDecl); ok && !isPropExport(exp) {
+			ds.ErrorWith(exp.Pos, "VELA-SCRIPT-EXPORT", "Declare a prop with `export let name = value`; move other exports to a .js module.", "a component script can only export props (`export let name`)")
+		}
+	}
 	WalkNode(prog, func(n JsNode) bool {
 		switch x := n.(type) {
 		case *JsCallExpr:
@@ -195,6 +200,22 @@ func validateScriptFormsWithAnalysis(prog *JsProgram, analysis *Analysis, ds *Di
 		}
 		return true
 	})
+}
+
+// isPropExport reports `export let name = …`, the only export form of a
+// component script. Other forms would land inside the component factory,
+// where an export is a syntax error (task 055).
+func isPropExport(exp *JsExportDecl) bool {
+	vd, ok := exp.Declaration.(*JsVarDecl)
+	if !ok || exp.Default || vd.Kind != "let" {
+		return false
+	}
+	for _, decl := range vd.Decls {
+		if _, ok := decl.Id.(*JsIdent); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func validateCallForm(call *JsCallExpr, analysis *Analysis, ds *DiagSet) {
@@ -602,6 +623,10 @@ func parseTemplateExpression(exprText string) (*JsProgram, []string) {
 		return nil, errs
 	}
 	prog, diagnostics := ParseJSWithDiagnostics("(" + exprText + ");")
+	if len(diagnostics) == 0 {
+		// Template expressions run inside the component factory.
+		diagnostics = EarlyErrors(prog, EarlyOptions{TopLevelIsFunction: true})
+	}
 	var errs []string
 	for _, diagnostic := range diagnostics {
 		errs = append(errs, diagnostic.Message)

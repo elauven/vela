@@ -11,6 +11,7 @@ type (
 	BaseExpr          = jsast.BaseExpr
 	BaseNode          = jsast.BaseNode
 	BaseStmt          = jsast.BaseStmt
+	EarlyOptions      = jsast.EarlyOptions
 	JSParseDiagnostic = jsast.JSParseDiagnostic
 	JSParser          = jsast.JSParser
 	JsArrayExpr       = jsast.JsArrayExpr
@@ -22,6 +23,7 @@ type (
 	JsBreakStmt       = jsast.JsBreakStmt
 	JsCallExpr        = jsast.JsCallExpr
 	JsClassDecl       = jsast.JsClassDecl
+	JsClassExpr       = jsast.JsClassExpr
 	JsClassMember     = jsast.JsClassMember
 	JsConditionalExpr = jsast.JsConditionalExpr
 	JsContinueStmt    = jsast.JsContinueStmt
@@ -29,6 +31,7 @@ type (
 	JsDoWhileStmt     = jsast.JsDoWhileStmt
 	JsEmptyStmt       = jsast.JsEmptyStmt
 	JsExportDecl      = jsast.JsExportDecl
+	JsExportSpec      = jsast.JsExportSpec
 	JsExpr            = jsast.JsExpr
 	JsExprStmt        = jsast.JsExprStmt
 	JsForInStmt       = jsast.JsForInStmt
@@ -37,6 +40,7 @@ type (
 	JsFuncExpr        = jsast.JsFuncExpr
 	JsIdent           = jsast.JsIdent
 	JsIfStmt          = jsast.JsIfStmt
+	JsImportAttr      = jsast.JsImportAttr
 	JsImportDecl      = jsast.JsImportDecl
 	JsImportSpec      = jsast.JsImportSpec
 	JsLabeledStmt     = jsast.JsLabeledStmt
@@ -55,6 +59,7 @@ type (
 	JsSuperExpr       = jsast.JsSuperExpr
 	JsSwitchCase      = jsast.JsSwitchCase
 	JsSwitchStmt      = jsast.JsSwitchStmt
+	JsTaggedTemplate  = jsast.JsTaggedTemplate
 	JsTemplateLit     = jsast.JsTemplateLit
 	JsThisExpr        = jsast.JsThisExpr
 	JsThrowStmt       = jsast.JsThrowStmt
@@ -99,6 +104,7 @@ const (
 	TokComma          = jsast.TokComma
 	TokConst          = jsast.TokConst
 	TokContinue       = jsast.TokContinue
+	TokDebugger       = jsast.TokDebugger
 	TokDefault        = jsast.TokDefault
 	TokDelete         = jsast.TokDelete
 	TokDo             = jsast.TokDo
@@ -148,6 +154,7 @@ const (
 	TokPlus           = jsast.TokPlus
 	TokPlusAssign     = jsast.TokPlusAssign
 	TokPlusPlus       = jsast.TokPlusPlus
+	TokPrivateName    = jsast.TokPrivateName
 	TokQuestion       = jsast.TokQuestion
 	TokRBrace         = jsast.TokRBrace
 	TokRBracket       = jsast.TokRBracket
@@ -186,6 +193,7 @@ const (
 )
 
 var (
+	EarlyErrors            = jsast.EarlyErrors
 	EncodeGeneratedString  = jsast.EncodeGeneratedString
 	IsIdentCont            = jsast.IsIdentCont
 	IsIdentStart           = jsast.IsIdentStart

@@ -602,16 +602,7 @@ func (b *scopeBuilder) walkStmt(stmt JsStmt) {
 		if s.SuperClass != nil {
 			b.walkExpr(s.SuperClass)
 		}
-		// Each method has its own function scope.  Field initializers
-		// run in an implicit constructor — treat them as fn scopes too.
-		for _, m := range s.Members {
-			if m.Computed && m.Key != nil {
-				b.walkExpr(m.Key)
-			}
-			if m.Value != nil {
-				b.walkExpr(m.Value)
-			}
-		}
+		b.walkClassMembers(s.Members)
 
 	case *JsImportDecl:
 		if s.DefaultName != "" {
@@ -876,7 +867,10 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 	switch e := node.(type) {
 
 	case *JsIdent:
-		b.resolveRef(e, false)
+		// A private name (`#x in o`) is not a variable reference.
+		if !strings.HasPrefix(e.Name, "#") {
+			b.resolveRef(e, false)
+		}
 
 	case *JsLiteral, *JsThisExpr, *JsSuperExpr:
 		// no references
@@ -902,14 +896,31 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 				b.walkExpr(p.Key)
 			}
 			if p.Shorthand {
-				// { a } — Key is the identifier; it's a reference.
-				if id, ok := p.Key.(*JsIdent); ok {
+				// { a } — the value is the reference; the key is a
+				// separate name node.
+				if id, ok := p.Value.(*JsIdent); ok {
 					b.resolveRef(id, false)
+					continue
 				}
-				continue
 			}
 			b.walkExpr(p.Value)
 		}
+
+	case *JsClassExpr:
+		if e.SuperClass != nil {
+			b.walkExpr(e.SuperClass)
+		}
+		// The name of a class expression is visible inside its body only.
+		b.enterScope(ScopeBlock, e)
+		if e.Name != "" {
+			b.declare(e.Name, BindClass, e.Pos, e.End)
+		}
+		b.walkClassMembers(e.Members)
+		b.leaveScope()
+
+	case *JsTaggedTemplate:
+		b.walkExpr(e.Tag)
+		b.walkExpr(e.Quasi)
 
 	case *JsFuncExpr:
 		b.enterScope(ScopeFunction, e)
@@ -981,7 +992,10 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 		b.walkExpr(e.R)
 
 	case *JsMemberExpr:
-		b.walkExpr(e.Obj)
+		// `new.target` and `import.meta` are meta properties.
+		if !isMetaProperty(e) {
+			b.walkExpr(e.Obj)
+		}
 		if e.Computed {
 			b.walkExpr(e.Prop)
 		}
@@ -989,7 +1003,10 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 		// *name*, not a variable reference.  Do not resolveRef it.
 
 	case *JsCallExpr:
-		b.walkExpr(e.Callee)
+		// Dynamic `import(…)` is syntax, not a call of a variable.
+		if callee, ok := e.Callee.(*JsIdent); !ok || callee.Name != "import" {
+			b.walkExpr(e.Callee)
+		}
 		for _, a := range e.Args {
 			b.walkExpr(a)
 		}
@@ -1021,6 +1038,38 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 			b.walkExpr(e.X)
 		}
 	}
+}
+
+// walkClassMembers walks a class body. Each method has its own function
+// scope; field initializers and static blocks run in implicit functions too.
+func (b *scopeBuilder) walkClassMembers(members []*JsClassMember) {
+	for _, m := range members {
+		if m.Computed && m.Key != nil {
+			b.walkExpr(m.Key)
+		}
+		if m.Value != nil {
+			b.walkExpr(m.Value)
+		}
+		if m.Body != nil {
+			b.enterScope(ScopeFunction, m.Body)
+			b.hoist(m.Body.Body)
+			b.preDeclareLexical(m.Body.Body)
+			for _, x := range m.Body.Body {
+				b.walkStmt(x)
+			}
+			b.leaveScope()
+		}
+	}
+}
+
+// isMetaProperty reports `new.target` and `import.meta`.
+func isMetaProperty(e *JsMemberExpr) bool {
+	obj, ok := e.Obj.(*JsIdent)
+	if !ok || e.Computed {
+		return false
+	}
+	prop, ok := e.Prop.(*JsIdent)
+	return ok && (obj.Name == "new" && prop.Name == "target" || obj.Name == "import" && prop.Name == "meta")
 }
 
 // walkAssignPattern handles destructuring assignment LHSes like

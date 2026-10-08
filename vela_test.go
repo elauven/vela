@@ -3781,7 +3781,7 @@ func TestRewriteItemRefAST_MatchesScopedRewriteRules(t *testing.T) {
 		{`u.id`, `$$box.id`},
 		{`obj.u`, `obj.u`},
 		{`({[u]: 1})`, `{[$$box]:1}`},
-		{`({u})`, `{$$box}`},
+		{`({u})`, `{u:$$box}`},
 		{`({...u})`, `{...$$box}`},
 		{`() => { try { return u; } catch (u) { return u; } }`, `()=>{try{return $$box;}catch(u){return u;}}`},
 		{"`${u}`", "`${$$box}`"},

@@ -95,9 +95,36 @@ func cloneJsExpr(expr JsExpr) JsExpr {
 		out := *node
 		out.X = cloneJsExpr(node.X)
 		return &out
+	case *JsTaggedTemplate:
+		out := *node
+		out.Tag = cloneJsExpr(node.Tag)
+		if quasi, ok := cloneJsExpr(node.Quasi).(*JsTemplateLit); ok {
+			out.Quasi = quasi
+		}
+		return &out
+	case *JsClassExpr:
+		out := *node
+		out.SuperClass = cloneJsExpr(node.SuperClass)
+		out.Members = cloneJsClassMembers(node.Members)
+		return &out
 	default:
 		panic("vela: unsupported JS expression clone")
 	}
+}
+
+func cloneJsClassMembers(in []*JsClassMember) []*JsClassMember {
+	if in == nil {
+		return nil
+	}
+	out := make([]*JsClassMember, len(in))
+	for i, m := range in {
+		copied := *m
+		copied.Key = cloneJsExpr(m.Key)
+		copied.Value = cloneJsExpr(m.Value)
+		copied.Body = cloneJsBlock(m.Body)
+		out[i] = &copied
+	}
+	return out
 }
 func cloneJsExprs(in []JsExpr) []JsExpr {
 	out := make([]JsExpr, len(in))
@@ -203,6 +230,34 @@ func cloneJsStmt(stmt JsStmt) JsStmt {
 		return &out
 	case *JsContinueStmt:
 		out := *node
+		return &out
+	case *JsTryStmt:
+		out := *node
+		out.Block, out.Handler, out.Finalizer = cloneJsBlock(node.Block), cloneJsBlock(node.Handler), cloneJsBlock(node.Finalizer)
+		out.CatchParam = cloneJsExpr(node.CatchParam)
+		return &out
+	case *JsSwitchStmt:
+		out := *node
+		out.Disc = cloneJsExpr(node.Disc)
+		out.Cases = make([]*JsSwitchCase, len(node.Cases))
+		for i, c := range node.Cases {
+			copied := *c
+			copied.Test = cloneJsExpr(c.Test)
+			copied.Body = cloneJsStmts(c.Body)
+			out.Cases[i] = &copied
+		}
+		return &out
+	case *JsLabeledStmt:
+		out := *node
+		out.Body = cloneJsStmt(node.Body)
+		return &out
+	case *JsDebuggerStmt:
+		out := *node
+		return &out
+	case *JsClassDecl:
+		out := *node
+		out.SuperClass = cloneJsExpr(node.SuperClass)
+		out.Members = cloneJsClassMembers(node.Members)
 		return &out
 	default:
 		panic("vela: unsupported JS statement clone")

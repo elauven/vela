@@ -113,7 +113,8 @@ func TestStrictElevatesOnlyUnresolvedReads(t *testing.T) {
 }
 
 func TestProfileDiagnosticHumanJSONAndUTF16Position(t *testing.T) {
-	source := "<script>🙂 document.createElement('p');</script><template><p>ok</p></template>"
+	// The comment holds a character outside the BMP: two UTF-16 units.
+	source := "<script>/*🙂*/ document.createElement('p');</script><template><p>ok</p></template>"
 	dir := t.TempDir()
 	src := filepath.Join(dir, "App.vela")
 	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
@@ -121,8 +122,8 @@ func TestProfileDiagnosticHumanJSONAndUTF16Position(t *testing.T) {
 	}
 	diags, err := compileFile(src, filepath.Join(dir, "App.js"), CompileOptions{TargetProfile: TargetWorker})
 	diag := findDiagnostic(diags, "VELA-PROFILE-GLOBAL")
-	if err == nil || diag == nil || diag.Col != 12 {
-		t.Fatalf("diagnostics = %+v, err = %v; want UTF-16 column 12", diags, err)
+	if err == nil || diag == nil || diag.Col != 16 {
+		t.Fatalf("diagnostics = %+v, err = %v; want UTF-16 column 16", diags, err)
 	}
 	if text := diag.String(); !strings.Contains(text, "[VELA-PROFILE-GLOBAL]") || !strings.Contains(text, "help:") {
 		t.Fatalf("human diagnostic = %q", text)
@@ -135,7 +136,7 @@ func TestProfileDiagnosticHumanJSONAndUTF16Position(t *testing.T) {
 	if err := json.Unmarshal(data, &machine); err != nil {
 		t.Fatal(err)
 	}
-	if len(machine) == 0 || machine[0].Code != "VELA-PROFILE-GLOBAL" || machine[0].Column != 12 || machine[0].Severity != "error" {
+	if len(machine) == 0 || machine[0].Code != "VELA-PROFILE-GLOBAL" || machine[0].Column != 16 || machine[0].Severity != "error" {
 		t.Fatalf("machine diagnostics = %s", data)
 	}
 }

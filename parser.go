@@ -98,6 +98,11 @@ type ScriptAST struct {
 
 func newScriptAST(source string, offset int) *ScriptAST {
 	program, diagnostics := ParseJSWithDiagnostics(source)
+	if len(diagnostics) == 0 {
+		// Early errors would make the generated module fail to load. The
+		// script runs inside the component factory, a plain function.
+		diagnostics = EarlyErrors(program, EarlyOptions{TopLevelIsFunction: true})
+	}
 	return &ScriptAST{
 		Source:      source,
 		Span:        SectionSpan{Start: offset, End: offset + len(source)},

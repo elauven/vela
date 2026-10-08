@@ -102,23 +102,57 @@ type JsProgram struct {
 //
 //	import * as Ns from 'mod'
 //	import Default from 'mod'
+//	import Default, * as Ns from 'mod'
+//	import data from './d.json' with { type: 'json' }
+//	import 'side-effect'
 type JsImportDecl struct {
 	BaseStmt
 	DefaultName string
 	Namespace   string // * as X  →  X
 	Specifiers  []JsImportSpec
 	Source      string // unquoted module path
+	Attributes  []JsImportAttr
 }
 
 type JsImportSpec struct {
-	Imported string // original exported name
+	Imported string // original exported name (string names are unquoted)
 	Local    string // local binding
 }
 
+// JsImportAttr is one `key: 'value'` pair of an import attributes clause
+// (`with { type: 'json' }`, or the legacy `assert { … }` spelling).
+type JsImportAttr struct {
+	Key   string
+	Value string // unquoted
+}
+
+// JsExportDecl covers every export form:
+//
+//	export const a = 1               Declaration = the declaration
+//	export default <decl|expr>       Default = true, Declaration = decl, or a
+//	                                 JsExprStmt wrapping the expression
+//	export { a, b as c }             Specifiers, Declaration == nil
+//	export { a } from 'm'            Specifiers, HasSource, Source
+//	export * from 'm'                All, HasSource, Source
+//	export * as ns from 'm'          Namespace, HasSource, Source
+//
+// Declaration is nil for the list / re-export forms.
 type JsExportDecl struct {
 	BaseStmt
 	Default     bool
 	Declaration JsStmt
+
+	Specifiers []JsExportSpec
+	All        bool   // export * from …
+	Namespace  string // export * as Namespace from …
+	HasSource  bool   // `from '…'` present
+	Source     string // unquoted module path
+	Attributes []JsImportAttr
+}
+
+type JsExportSpec struct {
+	Local    string // binding in this module (or the imported name when HasSource)
+	Exported string // name visible to importers (string names are unquoted)
 }
 
 // JsVarDecl: let / const / var
@@ -150,13 +184,30 @@ type JsClassDecl struct {
 	Members    []*JsClassMember
 }
 
+// JsClassExpr: a class in expression position (`const A = class B {}`,
+// `f(class {})`).  Name is empty for anonymous classes.
+type JsClassExpr struct {
+	BaseExpr
+	Name       string
+	SuperClass JsExpr
+	Members    []*JsClassMember
+}
+
+// JsClassMember is one element of a class body.
+//
+//	method / get / set   Value is a *JsFuncExpr (Async / Generator set on it)
+//	field                Value is the initializer, nil when there is none
+//	static-block         `static { … }`: Body is set, Key and Value are nil
+//
+// Private members (`#x`) use a *JsIdent whose Name includes the leading '#'.
 type JsClassMember struct {
 	BaseNode
 	Key      JsExpr
 	Value    JsExpr
-	Kind     string // "method" | "get" | "set" | "field"
+	Kind     string // "method" | "get" | "set" | "field" | "static-block"
 	Static   bool
 	Computed bool
+	Body     *JsBlock // static blocks only
 }
 
 type JsBlock struct {
@@ -190,6 +241,7 @@ type JsForInStmt struct {
 	Right JsExpr
 	Body  JsStmt
 	IsOf  bool
+	Await bool // for await (… of …); implies IsOf
 }
 
 type JsWhileStmt struct {
@@ -259,16 +311,36 @@ type JsDebuggerStmt struct{ BaseStmt }
 // ──────────────────────────────────────────────
 
 // JsIdent: any bare identifier reference.
+//
+// A few syntactic forms reuse JsIdent instead of introducing node types:
+//
+//   - private names: Name keeps the leading '#' ("#count"); they appear as the
+//     key of class members, as the property of a member expression
+//     (`this.#count`) and as the left operand of `#count in obj`.
+//   - meta properties: `new.target` and `import.meta` are JsMemberExpr with
+//     Obj = JsIdent{"new"|"import"} and Prop = JsIdent{"target"|"meta"}.
+//   - dynamic import: `import(x)` is a JsCallExpr whose Callee is
+//     JsIdent{"import"}.
+//
+// Analysis passes must not treat these names as variable references.
 type JsIdent struct {
 	BaseExpr
 	Name string
+}
+
+// JsTaggedTemplate: tag`hello ${name}`.  Quasi is the template literal that
+// is passed to Tag; member/call expressions may be tags (String.raw`x`).
+type JsTaggedTemplate struct {
+	BaseExpr
+	Tag   JsExpr
+	Quasi *JsTemplateLit
 }
 
 // JsLiteral: number, string, boolean, null, regex.
 type JsLiteral struct {
 	BaseExpr
 	Raw     string
-	Kind    string // "number" | "string" | "boolean" | "null" | "regex"
+	Kind    string // "number" | "bigint" | "string" | "boolean" | "null" | "regex" | "unknown" (placeholder for a token the parser could not use; always accompanied by a diagnostic)
 	Value   string // decoded generated string value when Decoded is true
 	Decoded bool   // printer owns escaping for generated string literals
 }
