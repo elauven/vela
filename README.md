@@ -374,6 +374,11 @@ parseSFC()          extract <script> <style> <template>
 Planned work is tracked as [taskmd](https://github.com/driangle/taskmd)
 tasks in [tasks/](tasks/).
 
+## License
+
+[MIT](LICENSE). The Go SSR runtime (`ssr_runtime/`) and the npm package
+`@vela/runtime` are released under the same license.
+
 ---
 
 *This is an attempt to rethink what SSR could be like*

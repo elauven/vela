@@ -47,3 +47,16 @@ func TestRuntimePackageIsGenerated(t *testing.T) {
 		}
 	}
 }
+
+// TestLicenseCopiesMatch keeps the license of the Go runtime module (its own
+// module root) equal to the repository license.
+func TestLicenseCopiesMatch(t *testing.T) {
+	root, err := os.ReadFile("LICENSE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	module, err := os.ReadFile(filepath.Join("ssr_runtime", "LICENSE"))
+	if err != nil || string(module) != string(root) {
+		t.Fatal("ssr_runtime/LICENSE differs from LICENSE; copy it")
+	}
+}

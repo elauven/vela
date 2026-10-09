@@ -14,3 +14,5 @@ Development checks are removed when the bundler replaces
 production builds; Rollup needs `@rollup/plugin-replace`).
 
 Generated from `runtime/` of the compiler repository; do not edit.
+
+License: MIT.

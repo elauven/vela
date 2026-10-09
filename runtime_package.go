@@ -6,9 +6,15 @@ package main
 // --runtime-import=bare; the compiler never resolves or bundles it.
 
 import (
+	_ "embed"
 	"encoding/json"
 	"strings"
 )
+
+// licenseText is the repository license, shipped with the npm package.
+//
+//go:embed LICENSE
+var licenseText []byte
 
 // Version is the compiler version. The runtime npm package and the Go
 // runtime module are released with the same version (docs/RELEASING.md).
@@ -47,6 +53,7 @@ func runtimePackageFiles() (map[string][]byte, error) {
 		Name        string            `json:"name"`
 		Version     string            `json:"version"`
 		Description string            `json:"description"`
+		License     string            `json:"license"`
 		Type        string            `json:"type"`
 		SideEffects []string          `json:"sideEffects"`
 		Exports     map[string]string `json:"exports"`
@@ -55,6 +62,7 @@ func runtimePackageFiles() (map[string][]byte, error) {
 		Name:        RuntimePackageName,
 		Version:     Version,
 		Description: "Runtime of components compiled by the Vela compiler. Generated from runtime/; do not edit.",
+		License:     "MIT",
 		Type:        "module",
 		SideEffects: []string{"./runtime.js"},
 		Exports: map[string]string{
@@ -62,7 +70,7 @@ func runtimePackageFiles() (map[string][]byte, error) {
 			"./blocks":  "./runtime-blocks.js",
 			"./hydrate": "./runtime-hydrate.js",
 		},
-		Files: []string{"runtime.js", "runtime-blocks.js", "runtime-hydrate.js"},
+		Files: []string{"runtime.js", "runtime-blocks.js", "runtime-hydrate.js", "LICENSE"},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -79,10 +87,12 @@ func runtimePackageFiles() (map[string][]byte, error) {
 		"Development checks are removed when the bundler replaces\n" +
 		"`process.env.NODE_ENV` with `\"production\"` (esbuild and Vite do this for\n" +
 		"production builds; Rollup needs `@rollup/plugin-replace`).\n\n" +
-		"Generated from `runtime/` of the compiler repository; do not edit.\n"
+		"Generated from `runtime/` of the compiler repository; do not edit.\n\n" +
+		"License: MIT.\n"
 	return map[string][]byte{
 		"package.json":       append(encoded, '\n'),
 		"README.md":          []byte(readme),
+		"LICENSE":            licenseText,
 		"runtime.js":         []byte(core),
 		"runtime-blocks.js":  embeddedBlocksRuntime,
 		"runtime-hydrate.js": embeddedHydrateRuntime,

@@ -1,4 +1,6 @@
 {
+  "private": true,
+  "license": "MIT",
   "scripts": {
     "test:ssr-browser-baseline": "node tools/run-ssr-browser-baseline.mjs",
     "test:ssr-browser-baseline:self": "node tools/run-ssr-browser-baseline-self-test.mjs"
