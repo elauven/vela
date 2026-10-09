@@ -1,0 +1,19 @@
+{
+  "name": "@vela/runtime",
+  "version": "0.1.0-dev",
+  "description": "Runtime of components compiled by the Vela compiler. Generated from runtime/; do not edit.",
+  "type": "module",
+  "sideEffects": [
+    "./runtime.js"
+  ],
+  "exports": {
+    ".": "./runtime.js",
+    "./blocks": "./runtime-blocks.js",
+    "./hydrate": "./runtime-hydrate.js"
+  },
+  "files": [
+    "runtime.js",
+    "runtime-blocks.js",
+    "runtime-hydrate.js"
+  ]
+}

@@ -90,6 +90,15 @@ type CompileOptions struct {
 	SSRScaffoldHosts        bool     // --ssr-scaffold-hosts: create stubs for missing host implementations (task 030)
 	HydrationVerify         string   // --hydration-verify: repair (default), fail, or off (V-11.3c)
 	Production              bool     // --mode=production: production runtime variant
+	// BareRuntimeImports imports the runtime npm package instead of copies
+	// beside the output (--runtime-import=bare, R-12.2f).
+	BareRuntimeImports bool
+	// PackageImports collects the package imports of a project build for
+	// vela.manifest.json; buildProject creates it when it is nil.
+	PackageImports *packageImports
+	// CheckDeps warns about package imports that do not resolve in
+	// node_modules (--check-deps).
+	CheckDeps bool
 	// RuntimeImport is the module specifier generated code uses for the
 	// runtime. Empty means "./runtime.js"; project builds set a path to the
 	// single runtime at the output root.
@@ -116,7 +125,21 @@ func main() {
 	ssrScaffold := flag.Bool("ssr-scaffold-hosts", false, "with --ssr, create Go stubs in the host tree for functions that need a host implementation; existing files are never changed")
 	hydrationVerify := flag.String("hydration-verify", "", "development hydration value verification: repair (default), fail, or off")
 	mode := flag.String("mode", "development", "build mode: 'development' (default) or 'production'")
+	runtimeImport := flag.String("runtime-import", "relative", "runtime imports of generated modules: 'relative' (default; the runtime is written beside the output) or 'bare' (import "+RuntimePackageName+", installed by the application, for bundlers)")
+	checkDeps := flag.Bool("check-deps", false, "warn when a package import does not resolve in node_modules (the compiler never resolves or bundles packages)")
+	showVersion := flag.Bool("version", false, "print the compiler version")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("vela " + Version)
+		return
+	}
+	switch *runtimeImport {
+	case "relative", "bare":
+	default:
+		fmt.Fprintf(os.Stderr, "vela: invalid --runtime-import value %q (want 'relative' or 'bare')\n", *runtimeImport)
+		os.Exit(2)
+	}
 
 	targetProfile, err := ParseTargetProfile(*target)
 	if err != nil {
@@ -167,6 +190,11 @@ func main() {
 		SSRScaffoldHosts:        *ssrScaffold,
 		HydrationVerify:         *hydrationVerify,
 		Production:              *mode == "production",
+		BareRuntimeImports:      *runtimeImport == "bare",
+		CheckDeps:               *checkDeps,
+	}
+	if opts.BareRuntimeImports {
+		opts.RuntimeImport = RuntimePackageName
 	}
 	if closeTrace, traceErr := configureTrace(&opts, *tracePath); traceErr != nil {
 		fmt.Fprintf(os.Stderr, "vela: %v\n", traceErr)
@@ -364,6 +392,9 @@ func runProject(srcRoot, outRoot string, opts CompileOptions, watch, parallel bo
 // buildProject compiles all files, optionally in parallel.
 // Returns the number of files that failed.
 func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, parallel bool) int {
+	if opts.PackageImports == nil {
+		opts.PackageImports = newPackageImports()
+	}
 	type result struct{ ok bool }
 	results := make([]result, len(files))
 
@@ -393,7 +424,16 @@ func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 	// Local JavaScript modules are part of a Vela project contract: generated
 	// components retain imports such as ./format.js, so mirror these files next
 	// to the compiled modules instead of leaving dangling imports in dist.
-	errors += copyProjectJSModules(srcRoot, outRoot)
+	errors += copyProjectJSModules(srcRoot, outRoot, opts)
+	// An SSR build rewrites the manifest with root modes (writeSSRManifest).
+	if err := writeProjectManifest(files, srcRoot, outRoot, nil, opts.PackageImports); err != nil {
+		fmt.Fprintf(os.Stderr, "cannot write vela.manifest.json: %v\n", err)
+		errors++
+	}
+	if opts.BareRuntimeImports {
+		// The application installs the runtime package (R-12.2f).
+		return errors
+	}
 	if err := stageRuntime(outRoot, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "cannot stage runtime: %v\n", err)
 		errors++
@@ -403,7 +443,7 @@ func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 
 func compileProjectFile(src, srcRoot, outRoot string, opts CompileOptions) bool {
 	dest := mirrorPath(src, srcRoot, outRoot, ".js")
-	opts.RuntimeImport = runtimeImportFor(filepath.Dir(dest), outRoot)
+	opts.RuntimeImport = runtimeSpecifier(opts, filepath.Dir(dest), outRoot)
 	if rel, err := filepath.Rel(srcRoot, src); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		opts.TraceComponentID = filepath.ToSlash(rel)
 	}
@@ -663,6 +703,9 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 			return fmt.Errorf("script syntax validation failed")
 		}
 		analysis = analyzeScriptAST(sfc.ScriptAST)
+		if opts.CheckDeps {
+			checkScriptPackageImports(src, sfc.ScriptAST, ds)
+		}
 		scriptProg = sfc.ScriptAST.Program
 		return nil
 	}); err != nil {
@@ -754,6 +797,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	}
 
 	finalizeRuntimeImports(target, opts.RuntimeImport)
+	opts.PackageImports.add(dest, programPackageImports(target))
 
 	if opts.GenAST {
 		genPath := strings.TrimSuffix(dest, ".js") + ".genast.json"
@@ -928,10 +972,21 @@ func collectVela(root string) []string {
 	return files
 }
 
+// runtimeSpecifier is the core runtime import of a module written to dir:
+// the runtime package with --runtime-import=bare, else the relative path to
+// the runtime staged at outRoot.
+func runtimeSpecifier(opts CompileOptions, dir, outRoot string) string {
+	if opts.BareRuntimeImports {
+		return RuntimePackageName
+	}
+	return runtimeImportFor(dir, outRoot)
+}
+
 // copyProjectJSModules mirrors local JavaScript modules into project output,
-// with `.vela` import specifiers rewritten to `.js`. It deliberately uses the same directory exclusions as collectVela so build
+// with `.vela`, `vela` and `vela/store` specifiers rewritten
+// (rewriteJSModuleSpecifiers). It deliberately uses the same directory exclusions as collectVela so build
 // output and dependencies cannot be copied back into the project.
-func copyProjectJSModules(srcRoot, outRoot string) int {
+func copyProjectJSModules(srcRoot, outRoot string, opts CompileOptions) int {
 	errors := 0
 	for _, src := range collectProjectJSModules(srcRoot) {
 		rel, err := filepath.Rel(srcRoot, src)
@@ -945,8 +1000,11 @@ func copyProjectJSModules(srcRoot, outRoot string) int {
 			err = os.MkdirAll(filepath.Dir(dest), 0755)
 		}
 		if err == nil {
-			// Imports of components point to their compiled modules.
-			err = os.WriteFile(dest, []byte(rewriteVelaSpecifiers(string(data))), 0644)
+			err = os.WriteFile(dest, []byte(rewriteJSModuleSpecifiers(string(data), runtimeSpecifier(opts, filepath.Dir(dest), outRoot))), 0644)
+			opts.PackageImports.add(dest, sourcePackageImports(string(data)))
+			if opts.CheckDeps {
+				checkModulePackageImports(src, string(data))
+			}
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  ✗ %s: copy local module: %v\n", rel, err)

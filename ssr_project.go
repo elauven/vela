@@ -122,6 +122,7 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	hosts.Modules = newSSRModules(layout, srcRoot, hosts)
 	// The client module is the ordinary CSR module; hydrate() adopts server
 	// HTML with it (C-4.1).
+	clientOpts.PackageImports = newPackageImports()
 	errors := buildProject(files, srcRoot, layout.ClientDir, clientOpts, parallel)
 	hosts.RootModes = ssrRootModes(files, srcRoot)
 	for _, problem := range hosts.Problems {
@@ -169,7 +170,7 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 			errors++
 		}
 	}
-	if err := writeSSRManifest(files, srcRoot, layout, hosts.RootModes); err != nil {
+	if err := writeSSRManifest(files, srcRoot, layout, hosts.RootModes, clientOpts.PackageImports); err != nil {
 		fmt.Fprintf(os.Stderr, "  x  SSR manifest: %v\n", err)
 		errors++
 	}

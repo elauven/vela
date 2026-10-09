@@ -30,6 +30,8 @@ export const requiredTests = [
   "TestBlocksGenerativeDifferential",
   "TestBlocksGenerativeDifferentialInChromium",
   "TestBlocksCorpusHydrates",
+  // Bundler-ready output: the esbuild recipe of docs/GUIDE.md (task 048).
+  "TestBundlerRecipeEsbuild",
 ];
 
 export async function requireLaunchableChromium({ moduleName = "playwright", executablePath = "" } = {}) {

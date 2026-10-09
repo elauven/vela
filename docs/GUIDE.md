@@ -595,6 +595,118 @@ Scoping is identical either way.
 | `$$dispatch(name, detail)` | emit a custom event |
 | `onMount` / `onDestroy` | lifecycle (import from `vela`) |
 
+## Building an application
+
+Vela is a compiler: `vela --project src --out build` turns components into
+plain ES modules, and the application's own tools take it from there. The
+compiler never resolves, copies, hashes or bundles packages; every recipe
+below is optional.
+
+What the output contains:
+
+- one `.js` module per component, mirroring `src/`;
+- local `.js` modules copied unchanged, except that imports of `.vela` files
+  point to the compiled `.js` modules and `vela` / `vela/store` point to the
+  runtime;
+- package imports (`import { format } from 'date-fns'`) exactly as written;
+- the runtime, depending on `--runtime-import`:
+  - `relative` (default): `runtime.js`, `runtime-blocks.js` and
+    `runtime-hydrate.js` at the root of the output, imported by relative
+    paths. Works without npm.
+  - `bare`: nothing is copied; generated modules import `@vela/runtime`,
+    `@vela/runtime/blocks` and `@vela/runtime/hydrate`. Install the package
+    with the same version as the compiler (`vela --version`). A bundler then
+    includes one runtime for the whole page, also when components come from
+    several output directories, and a version mismatch fails at bundle time
+    (missing `$$runtimeContract1` export).
+- `vela.manifest.json`: every component with its module, and the package
+  imports of every module (`modules`, `packages`), for building an import map
+  or checking dependencies.
+
+`--check-deps` warns, with the position of the import, about package imports
+that do not resolve in `node_modules` (package missing, subpath not
+exported, `node:` built-ins). It is off by default because a package may
+also come from a CDN through an import map.
+
+Production: with `relative` imports, `vela --mode=production` disables the
+development checks. With `bare` imports, the bundler does it by replacing
+`process.env.NODE_ENV` with `"production"` (esbuild with `--minify` or
+`--define`, Vite in `vite build`, Rollup with `@rollup/plugin-replace`).
+
+### esbuild
+
+```sh
+vela --project src --out build --runtime-import=bare
+esbuild build/main.js --bundle --format=esm --minify --outfile=dist/app.js
+```
+
+This recipe runs in CI (`TestBundlerRecipeEsbuild`): development and
+production bundles in Chromium, one runtime instance for two output
+directories, and a failing build for a runtime of another contract.
+
+### Vite
+
+Point an `index.html` at the compiled entry and build it:
+
+```html
+<div id="app"></div>
+<script type="module" src="/build/main.js"></script>
+```
+
+```sh
+vela --project src --out build --runtime-import=bare
+vite build
+```
+
+Run `vela --watch` next to `vite` during development.
+
+### Rollup
+
+```js
+// rollup.config.mjs
+import { nodeResolve } from '@rollup/plugin-node-resolve';
+import commonjs from '@rollup/plugin-commonjs';
+import replace from '@rollup/plugin-replace';
+
+export default {
+  input: 'build/main.js',
+  output: { file: 'dist/app.js', format: 'es' },
+  plugins: [
+    nodeResolve({ browser: true }),
+    commonjs(), // packages published as CommonJS
+    replace({ preventAssignment: true, 'process.env.NODE_ENV': JSON.stringify('production') }),
+  ],
+};
+```
+
+Rollup warns that `$$runtimeContract1` is imported but never used; the import
+exists only so that a runtime of another version fails the build.
+
+### Without a bundler
+
+Serve the output as it is with the default `relative` runtime imports. For
+package imports, add an import map that points each package of
+`vela.manifest.json` to an ES module build (a CDN such as esm.sh or JSPM, or
+paths under `node_modules` for packages published as ES modules):
+
+```html
+<script type="importmap">
+{ "imports": { "date-fns": "https://esm.sh/date-fns@4" } }
+</script>
+<script type="module" src="/build/main.js"></script>
+```
+
+Packages published only as CommonJS need a bundler or a CDN that converts
+them.
+
+### Server rendering
+
+`vela --ssr` writes the client modules to `out/client` with the same
+options. The Go server renders the page; the client entry calls
+`hydrate(Component, container)` from `runtime-hydrate.js` (relative) or
+`@vela/runtime/hydrate` (bare) and can be bundled like any other entry.
+`examples/ssr-host` serves the unbundled output.
+
 ## Source maps
 
 Source maps are experimental. Use `vela --sourcemap Component.vela` to emit an external v3 JavaScript source map alongside generated output. Script code and stable template expressions map to their original SFC locations, including repeated expressions at different offsets. Source maps cannot be combined with `--minify`; CSS source maps are not emitted.

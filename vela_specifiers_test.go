@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestRewriteVelaSpecifiers(t *testing.T) {
+func TestRewriteJSModuleSpecifiers(t *testing.T) {
 	cases := map[string]string{
 		"import App from './App.vela';":                       "import App from './App.js';",
 		`import { A, B } from "../ui/Card.vela"`:              `import { A, B } from "../ui/Card.js"`,
@@ -23,10 +23,14 @@ func TestRewriteVelaSpecifiers(t *testing.T) {
 		"const t = `import App from './App.vela'`;":           "const t = `import App from './App.vela'`;",
 		"// import App from './App.vela'\nlet x = 1 / 2 / 3;": "// import App from './App.vela'\nlet x = 1 / 2 / 3;",
 		"const o = { from: './A.vela' };":                     "const o = { from: './A.vela' };",
+		"import { writable } from 'vela/store';":              "import { writable } from './runtime.js';",
+		"import { tick } from \"vela\";":                      "import { tick } from \"./runtime.js\";",
+		"import x from 'velatile';":                           "import x from 'velatile';",
+		"import 'pkg/file.vela';":                             "import 'pkg/file.vela';",
 	}
 	for src, want := range cases {
-		if got := rewriteVelaSpecifiers(src); got != want {
-			t.Errorf("rewriteVelaSpecifiers(%q)\n got  %q\n want %q", src, got, want)
+		if got := rewriteJSModuleSpecifiers(src, "./runtime.js"); got != want {
+			t.Errorf("rewriteJSModuleSpecifiers(%q)\n got  %q\n want %q", src, got, want)
 		}
 	}
 }

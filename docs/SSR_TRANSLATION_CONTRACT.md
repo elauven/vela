@@ -794,10 +794,11 @@ regression.
   compiler: its output is plain ES modules for the application's own
   toolchain (a bundler, an import map, a server), and it never resolves,
   copies, hashes or bundles application dependencies. Package imports are
-  emitted as written. The runtime is also an npm package built from
-  `runtime/`, with the compiler's version and the exports `./runtime`,
-  `./runtime/blocks` and `./runtime/hydrate`; its development check is
-  folded by a bundler's `process.env.NODE_ENV` replacement.
+  emitted as written. The runtime is also the npm package `@vela/runtime`,
+  generated from `runtime/` into `packages/runtime` (drift test), with the
+  compiler's version and the exports `.`, `./blocks` and `./hydrate`; its
+  development check is folded by a bundler's `process.env.NODE_ENV`
+  replacement.
   `--runtime-import=relative|bare` selects the form of runtime imports:
   `relative` (default) stages the runtime beside the output as in stage 1;
   `bare` imports the package and stages nothing, so a bundler resolves one

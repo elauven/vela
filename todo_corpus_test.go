@@ -129,8 +129,8 @@ func TestPositiveCorpusProjectsBuildAsProjects(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				// Only .vela import specifiers change (rewriteVelaSpecifiers).
-				if string(got) != rewriteVelaSpecifiers(string(want)) {
+				// Only compiler specifiers change (rewriteJSModuleSpecifiers).
+				if string(got) != rewriteJSModuleSpecifiers(string(want), runtimeImportFor(filepath.Dir(copied), outRoot)) {
 					t.Fatalf("copied module %s differs from source", rel)
 				}
 			}

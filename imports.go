@@ -322,8 +322,10 @@ func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
 	if runtimeSpecifier == "" {
 		runtimeSpecifier = defaultRuntimeImport
 	}
-	dir := strings.TrimSuffix(runtimeSpecifier, "runtime.js")
-	blocksSpecifier := dir + "runtime-blocks.js"
+	blocksSpecifier := strings.TrimSuffix(runtimeSpecifier, "runtime.js") + "runtime-blocks.js"
+	if runtimeSpecifier == RuntimePackageName {
+		blocksSpecifier = runtimePackageSpecifiers["runtime-blocks.js"]
+	}
 	var core *JsImportDecl
 	usesRuntime := false
 	for _, stmt := range prog.Body {
@@ -358,34 +360,75 @@ func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
 	core.Specifiers = append(core.Specifiers, JsImportSpec{Imported: runtimeContractExport})
 }
 
-// rewriteVelaSpecifiers rewrites `.vela` module specifiers of a plain
-// JavaScript module to `.js`: static `import`/`export … from`, side-effect
-// imports, and `import('…')` with a string literal. Only the specifier text
-// changes; every other byte of the module is kept, so a project's .js files
-// (an entry point importing App.vela) reach a bundler or the browser with
-// imports that resolve to the compiled components.
-func rewriteVelaSpecifiers(src string) string {
+// moduleSpecifier is a module specifier string of a plain JavaScript module:
+// the literal of a static import or export-from, a side-effect import, or a
+// literal import().
+type moduleSpecifier struct {
+	Value string // the specifier without quotes
+	Quote string // ' or "
+	Pos   int    // offset of the opening quote
+	End   int    // offset after the closing quote
+	Line  int
+}
+
+// moduleSpecifiers lists the module specifiers of a JavaScript module. Strings
+// elsewhere, template literals and comments are not specifiers; a specifier
+// with escapes is skipped.
+func moduleSpecifiers(src string) []moduleSpecifier {
 	lexer := NewLexer(src)
 	var prev, prev2 string
-	var out strings.Builder
-	last := 0
+	var out []moduleSpecifier
 	for {
 		tok := lexer.Next()
 		if tok.Kind == TokEOF {
 			break
 		}
-		if tok.Kind == TokString && (prev == "from" || prev == "import" || (prev == "(" && prev2 == "import")) {
-			raw := tok.Val
-			for _, quote := range []string{"'", "\""} {
-				if strings.HasSuffix(raw, ".vela"+quote) {
-					out.WriteString(src[last:tok.Pos])
-					out.WriteString(strings.TrimSuffix(raw, ".vela"+quote) + ".js" + quote)
-					last = tok.End
-					break
-				}
+		if tok.Kind == TokString && len(tok.Val) >= 2 && (prev == "from" || prev == "import" || (prev == "(" && prev2 == "import")) {
+			value := tok.Val[1 : len(tok.Val)-1]
+			if !strings.Contains(value, "\\") {
+				out = append(out, moduleSpecifier{Value: value, Quote: tok.Val[:1], Pos: tok.Pos, End: tok.End, Line: tok.Line})
 			}
 		}
 		prev2, prev = prev, tok.Val
+	}
+	return out
+}
+
+// isPackageSpecifier reports a bare specifier of an npm package: not a
+// relative or absolute path, not a URL or node: built-in, and not one of the
+// compiler's own modules (vela, vela/store).
+func isPackageSpecifier(spec string) bool {
+	if spec == "" || strings.HasPrefix(spec, ".") || strings.HasPrefix(spec, "/") || strings.Contains(spec, ":") {
+		return false
+	}
+	return spec != "vela" && spec != "vela/store"
+}
+
+// rewriteJSModuleSpecifiers prepares a copied JavaScript module of a project:
+// `.vela` specifiers point to the compiled `.js` modules, and the compiler
+// modules `vela` and `vela/store` point to the runtime (runtimeSpecifier,
+// the same import generated components use). Every other byte is kept, so a
+// project's .js files (an entry point importing App.vela, a store module)
+// reach a bundler or the browser with imports that resolve.
+func rewriteJSModuleSpecifiers(src, runtimeSpecifier string) string {
+	if runtimeSpecifier == "" {
+		runtimeSpecifier = defaultRuntimeImport
+	}
+	var out strings.Builder
+	last := 0
+	for _, spec := range moduleSpecifiers(src) {
+		replacement := ""
+		switch {
+		case strings.HasSuffix(spec.Value, ".vela") && (strings.HasPrefix(spec.Value, ".") || strings.HasPrefix(spec.Value, "/")):
+			replacement = strings.TrimSuffix(spec.Value, ".vela") + ".js"
+		case spec.Value == "vela" || spec.Value == "vela/store":
+			replacement = runtimeSpecifier
+		default:
+			continue
+		}
+		out.WriteString(src[last:spec.Pos])
+		out.WriteString(spec.Quote + replacement + spec.Quote)
+		last = spec.End
 	}
 	if last == 0 {
 		return src

@@ -1,0 +1,6 @@
+<script>
+  let on = $state(false);
+</script>
+<template>
+  <button class="toggle" @click={() => on = !on}>{on ? 'on' : 'off'}</button>
+</template>
