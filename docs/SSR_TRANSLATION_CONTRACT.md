@@ -786,17 +786,24 @@ regression.
 - **R-12.2e Stage 1 (now).** The compiler writes the runtime once at the root
   of the client output and generated modules import it through computed
   relative paths.
-- **R-12.2f Stage 2 (before beta).** Generated modules import the bare
-  specifier `vela/runtime`; `--runtime-import=relative|bare` selects the form,
-  with `bare` as the default for `--ssr` builds and `relative` for CSR-only
-  builds. Runtime files are emitted with content-hashed names. `ssr_runtime`
-  carries a copy of the built runtime, synchronised from `runtime/` by
-  `go generate`, and a test fails when the copy differs from the source. It
-  provides `AssetsHandler()` to serve the files and `HeadTags()` to write the
-  import map and `modulepreload` tags, so the Go server and the browser always
-  use one runtime version.
-- **R-12.2g Stage 3 (publication).** An npm package with the same version is
-  published from `runtime/` for projects that bundle the client.
+- **R-12.2f Stage 2 (before beta; rewritten 2026-10-09).** Vela is a
+  compiler: its output is plain ES modules for the application's own
+  toolchain (a bundler, an import map, a server), and it never resolves,
+  copies, hashes or bundles application dependencies. Package imports are
+  emitted as written. The runtime is also an npm package built from
+  `runtime/`, with the compiler's version and the exports `./runtime`,
+  `./runtime/blocks` and `./runtime/hydrate`; its development check is
+  folded by a bundler's `process.env.NODE_ENV` replacement.
+  `--runtime-import=relative|bare` selects the form of runtime imports:
+  `relative` (default) stages the runtime beside the output as in stage 1;
+  `bare` imports the package and stages nothing, so a bundler resolves one
+  runtime instance from `node_modules` (R-12.2b) and the contract marker
+  (R-12.2d) fails at bundle time on a version mismatch. The project manifest
+  lists the package imports of every generated module. The former plan of
+  a runtime copy in `ssr_runtime` with `AssetsHandler()` / `HeadTags()` is
+  withdrawn: serving and hashing belong to the application.
+- **R-12.2g Stage 3 (publication).** The npm package is published with each
+  compiler release, together with the Go runtime module (R-12.1c).
 
 ### 12.3 API additions
 
