@@ -150,7 +150,7 @@ func ssrRenderCases(t *testing.T, out, module, name string, cases []string) []st
 	if err != nil {
 		t.Fatal(err)
 	}
-	mod := "module " + module + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(root) + "\n"
+	mod := "module " + module + "\n\ngo 1.25\n\n" + ssrRuntimeRequire(root)
 	main := `package main
 
 import (

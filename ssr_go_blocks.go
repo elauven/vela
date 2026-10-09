@@ -210,7 +210,7 @@ func buildSSRGoBlocksSkeleton(plan *SSRRenderPlan, packageName string, includePr
 	slotsName := component + "Slots"
 	snapshotName := component + "AwaitSnapshot"
 	optionsName := component + "RenderOptions"
-	decls := []goast.Decl{goSSRImportDecl()}
+	decls := []goast.Decl{goSSRImportDecl(), goRuntimeContractDecl()}
 	if includeProps {
 		decls = append(decls, goPropsTypeDecl(propsName, plan.Props))
 	}

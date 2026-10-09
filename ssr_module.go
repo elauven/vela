@@ -315,12 +315,13 @@ func (m *SSRModules) compile(module *ssrModule) {
 
 	importDecl := &goast.GenDecl{Tok: token.IMPORT, Lparen: 1, Specs: []goast.Spec{
 		&goast.ImportSpec{Path: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("context")}},
-		&goast.ImportSpec{Name: goast.NewIdent("vela"), Path: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("github.com/elauven/vela/ssr_runtime")}},
+		&goast.ImportSpec{Name: goast.NewIdent("vela"), Path: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(ssrRuntimeImport())}},
 	}}
 	module.file = &goast.File{
 		Name: goast.NewIdent(module.Package),
 		Decls: []goast.Decl{
 			importDecl,
+			goRuntimeContractDecl(),
 			&goast.GenDecl{Tok: token.TYPE, Specs: []goast.Spec{&goast.TypeSpec{Name: goast.NewIdent("Module"), Type: &goast.StructType{Fields: &goast.FieldList{List: fields}}}}},
 			&goast.FuncDecl{
 				Name: goast.NewIdent("New"),

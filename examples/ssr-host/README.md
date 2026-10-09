@@ -30,11 +30,28 @@ value; a host that disagrees with its JavaScript function is reported in the
 browser console as a hydration mismatch with its source position and host
 name.
 
+## The Go runtime
+
+Generated renderers and hosts import the Go runtime module
+`github.com/elauven/vela/ssr_runtime` (alias `vela`), which lives in `ssr_runtime/` of
+the compiler repository. The project requires only that module, never the
+compiler. Until its first release tag the example's `go.mod` points at the
+repository copy with a `replace`; after publication it requires a version:
+
+```
+require github.com/elauven/vela/ssr_runtime v0.1.0
+```
+
+Every generated file references `vela.ContractV1`; a runtime of another
+contract version fails `go build` with `undefined: vela.ContractV1` instead
+of misbehaving. A fork or renamed runtime module is set with
+`"runtime": {"module": "…"}` in `vela.ssr.json`.
+
 ## Layout
 
 ```
 vela.ssr.json            Go module paths of the generated server and the hosts
-go.mod                   one Go module for the server, the hosts and out/
+go.mod                   one Go module for the server, the hosts and out/; requires the runtime module
 src/                     components and JavaScript modules
 ssrhost/                 host implementations (yours; the compiler never edits them)
 cmd/server/main.go       HTTP server: renders Cart, serves out/client and out/styles

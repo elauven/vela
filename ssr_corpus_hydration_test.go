@@ -81,7 +81,7 @@ func TestBlocksCorpusHydrates(t *testing.T) {
 		if len(rendered) == 0 {
 			continue
 		}
-		gomod := "module " + module + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+		gomod := "module " + module + "\n\ngo 1.25\n\n" + ssrRuntimeRequire(compilerRoot)
 		if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(gomod), 0o644); err != nil {
 			t.Fatal(err)
 		}

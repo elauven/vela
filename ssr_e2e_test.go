@@ -37,7 +37,7 @@ func TestGeneratedSSRRendererShortCircuitsUnsafeCollectionReads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module example.com/ssrfixture\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module example.com/ssrfixture\n\ngo 1.25\n\n" + ssrRuntimeRequire(compilerRoot)
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestGeneratedSSRRendererPreservesNullishTextAndArrayJoin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module example.com/ssrnullish\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module example.com/ssrnullish\n\ngo 1.25\n\n" + ssrRuntimeRequire(compilerRoot)
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}

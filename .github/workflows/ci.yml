@@ -23,11 +23,20 @@ jobs:
           go-version: ${{ matrix.go }}
           cache: true
 
+      # The Go runtime is a nested module (ssr_runtime/go.mod, task 049); the
+      # committed go.work lets both modules build and test together.
       - name: Vet
-        run: go vet ./...
+        run: go vet ./... ./ssr_runtime/...
 
       - name: Test
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: go test -v -race -coverprofile=coverage.out ./... ./ssr_runtime/...
+
+      # go install builds the compiler without the workspace.
+      - name: Build the compiler outside the workspace
+        shell: bash
+        env:
+          GOWORK: "off"
+        run: go build -o "$RUNNER_TEMP/vela-noworkspace" .
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest' && matrix.go == '1.25'

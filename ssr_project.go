@@ -92,6 +92,17 @@ func (layout SSRProjectLayout) stylePath(src, srcRoot string) string {
 	return mirrorPath(src, srcRoot, layout.StylesDir, ".css")
 }
 
+// useSSRRuntimeModule makes generated code and host checks import the Go
+// runtime from module (vela.ssr.json "runtime.module", R-12.1b) and returns
+// the function that restores the default.
+func useSSRRuntimeModule(module string) func() {
+	if module == "" {
+		return func() {}
+	}
+	ssrRuntimePath = module
+	return func() { ssrRuntimePath = SSRRuntimeImportPath }
+}
+
 // buildSSRProject adds server and styles products around the established CSR
 // project build. The caller owns user-facing progress and exit handling.
 func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOptions, parallel bool) int {
@@ -104,6 +115,7 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 		// vela.ssr.json sets the module unless --ssr-module overrides it.
 		opts.SSRModule = hosts.Project.Config.Module
 	}
+	defer useSSRRuntimeModule(hosts.Project.Config.Runtime.Module)()
 	layout := NewSSRProjectLayoutWithModule(outRoot, opts.SSRModule)
 	clientOpts := opts
 	clientOpts.Hosts = hosts
@@ -244,6 +256,7 @@ func compileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 	if err != nil {
 		return err
 	}
+	defer useSSRRuntimeModule(hosts.Project.Config.Runtime.Module)()
 	return compileSSRProjectFileInto(src, srcRoot, layout, hosts, nil)
 }
 

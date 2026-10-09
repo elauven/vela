@@ -460,7 +460,7 @@ func ssrHostTypeKind(t types.Type, parameter bool) (kind string, acceptsUndefine
 	case "any", "interface{}":
 		return "any", true, ""
 	}
-	if named, ok := t.(*types.Named); ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == SSRRuntimeImportPath && named.Obj().Name() == "Optional" {
+	if named, ok := t.(*types.Named); ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == ssrRuntimeImport() && named.Obj().Name() == "Optional" {
 		if args := named.TypeArgs(); args != nil && args.Len() == 1 {
 			kind, _, problem := ssrHostTypeKind(args.At(0), parameter)
 			return kind, true, problem
@@ -521,7 +521,7 @@ func (loader *ssrHostImporter) Import(importPath string) (*types.Package, error)
 		return pkg, nil
 	}
 	var pkg *types.Package
-	if importPath == SSRRuntimeImportPath {
+	if importPath == ssrRuntimeImport() {
 		pkg, _ = ssrRuntimeTypesPackage(loader.fallback)
 	} else if !strings.Contains(strings.SplitN(importPath, "/", 2)[0], ".") {
 		pkg, _ = loader.fallback.Import(importPath)
@@ -684,7 +684,7 @@ func scaffoldSSRHosts(project *SSRProject, diagnostics []*SSRSiteDiagnostic) []s
 import (
 	"context"
 
-	vela "` + SSRRuntimeImportPath + `"
+	vela "` + ssrRuntimeImport() + `"
 )
 
 // ` + goName + ` implements ` + name + ` during server rendering. It must

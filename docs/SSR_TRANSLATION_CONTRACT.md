@@ -755,10 +755,14 @@ regression.
   No other code, test, or document may hard-code it. Renaming the module is
   then a one-line change plus the `go.mod` of the runtime.
 - **R-12.1c Versions.** Releases are tagged `ssr_runtime/v0.x.y`. While in
-  `v0`, incompatible changes are allowed.
-- **R-12.1d Contract check.** The runtime exports a contract marker (for
-  example `ContractV3`), and every generated file references the marker it
-  was generated for (`var _ = vela.ContractV3`). A compiler/runtime mismatch
+  `v0`, incompatible changes are allowed. The compiler module does not
+  require the runtime module: only its tests import it, through the
+  committed `go.work`, so `go install` of the compiler needs no runtime
+  version and no `replace`. Implemented in task 049 (2026-10-09).
+- **R-12.1d Contract check.** The runtime exports a contract marker
+  (currently `ContractV1`, `ssr_runtime/contract.go`; the compiler names it in
+  `SSRRuntimeContract`), and every generated file references the marker it
+  was generated for (`var _ = vela.ContractV1`). A compiler/runtime mismatch
   then fails `go build` with an undefined-identifier error instead of
   misbehaving at runtime. The marker changes whenever generated code starts
   to depend on a new or changed runtime API.

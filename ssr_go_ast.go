@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	goast "go/ast"
+	"go/constant"
 	"go/format"
 	"go/importer"
 	goparser "go/parser"
@@ -13,7 +14,21 @@ import (
 	"unicode"
 )
 
+// SSRRuntimeImportPath is the default module path of the Go runtime
+// (R-12.1b). A project overrides it with "runtime": {"module": …} in
+// vela.ssr.json.
 const SSRRuntimeImportPath = "github.com/elauven/vela/ssr_runtime"
+
+// ssrRuntimePath is the runtime module path of the project being built.
+var ssrRuntimePath = SSRRuntimeImportPath
+
+// ssrRuntimeImport returns the import path generated code and host checks
+// use for the Go runtime.
+func ssrRuntimeImport() string { return ssrRuntimePath }
+
+// SSRRuntimeContract is the contract marker every generated file references
+// (R-12.1d); it must match a constant the runtime exports.
+const SSRRuntimeContract = "ContractV1"
 
 // BuildSSRGoSkeleton creates the declarations of a server renderer file,
 // including its Props type, entirely through the standard Go AST. The
@@ -70,12 +85,22 @@ func goImportDecl(path string) *goast.GenDecl {
 	}
 }
 
+// goRuntimeContractDecl references the runtime contract marker
+// (`var _ = vela.ContractV1`), so a runtime of another version fails go build
+// with an undefined identifier (R-12.1d).
+func goRuntimeContractDecl() *goast.GenDecl {
+	return &goast.GenDecl{Tok: token.VAR, Specs: []goast.Spec{&goast.ValueSpec{
+		Names:  []*goast.Ident{goast.NewIdent("_")},
+		Values: []goast.Expr{goSelector("vela", SSRRuntimeContract)},
+	}}}
+}
+
 func goSSRImportDecl() *goast.GenDecl {
 	decl := goImportDecl("context")
 	decl.Specs = append(decl.Specs, goImportDecl("io").Specs...)
 	decl.Specs = append(decl.Specs, &goast.ImportSpec{
 		Name: goast.NewIdent("vela"),
-		Path: &goast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", SSRRuntimeImportPath)},
+		Path: &goast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", ssrRuntimeImport())},
 	})
 	return decl
 }
@@ -173,7 +198,7 @@ type ssrGeneratedGraphImporter struct {
 }
 
 func (loader *ssrGeneratedGraphImporter) Import(importPath string) (*types.Package, error) {
-	if importPath == SSRRuntimeImportPath {
+	if importPath == ssrRuntimeImport() {
 		if loader.runtime != nil {
 			return loader.runtime, nil
 		}
@@ -284,7 +309,8 @@ func goSSRTypeExpr(kind SSRValueType) goast.Expr {
 }
 
 func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
-	pkg := types.NewPackage(SSRRuntimeImportPath, "ssr_runtime")
+	pkg := types.NewPackage(ssrRuntimeImport(), "ssr_runtime")
+	pkg.Scope().Insert(types.NewConst(token.NoPos, pkg, SSRRuntimeContract, types.Typ[types.UntypedBool], constant.MakeBool(true)))
 	ioPkg, err := loader.Import("io")
 	if err != nil {
 		return nil, err

@@ -105,7 +105,7 @@ func runSSRExpressionRows(t *testing.T, rows []ssrExpressionOracleRow) []string 
 	if err != nil {
 		t.Fatal(err)
 	}
-	module := "module " + projectModule + "\n\ngo 1.25\n\nrequire github.com/elauven/vela v0.0.0\n\nreplace github.com/elauven/vela => " + filepath.ToSlash(compilerRoot) + "\n"
+	module := "module " + projectModule + "\n\ngo 1.25\n\n" + ssrRuntimeRequire(compilerRoot)
 	if err := os.WriteFile(filepath.Join(outRoot, "go.mod"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
