@@ -928,8 +928,8 @@ func collectVela(root string) []string {
 	return files
 }
 
-// copyProjectJSModules mirrors local JavaScript modules into project output.
-// It deliberately uses the same directory exclusions as collectVela so build
+// copyProjectJSModules mirrors local JavaScript modules into project output,
+// with `.vela` import specifiers rewritten to `.js`. It deliberately uses the same directory exclusions as collectVela so build
 // output and dependencies cannot be copied back into the project.
 func copyProjectJSModules(srcRoot, outRoot string) int {
 	errors := 0
@@ -945,7 +945,8 @@ func copyProjectJSModules(srcRoot, outRoot string) int {
 			err = os.MkdirAll(filepath.Dir(dest), 0755)
 		}
 		if err == nil {
-			err = os.WriteFile(dest, data, 0644)
+			// Imports of components point to their compiled modules.
+			err = os.WriteFile(dest, []byte(rewriteVelaSpecifiers(string(data))), 0644)
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  ✗ %s: copy local module: %v\n", rel, err)

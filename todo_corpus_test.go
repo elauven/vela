@@ -79,7 +79,8 @@ func TestTodoCorpusCompilation(t *testing.T) {
 
 // Positive corpus fixtures must work through the same project-mode path used
 // by applications: all Vela components are mirrored as JS and local JS helper
-// modules remain available at their original relative import paths.
+// modules remain available at their original relative import paths, with
+// imports of components pointing to the compiled modules.
 func TestPositiveCorpusProjectsBuildAsProjects(t *testing.T) {
 	projects := []string{
 		"test_projects/corpus/deepseek-fixed/src",
@@ -128,7 +129,8 @@ func TestPositiveCorpusProjectsBuildAsProjects(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if string(got) != string(want) {
+				// Only .vela import specifiers change (rewriteVelaSpecifiers).
+				if string(got) != rewriteVelaSpecifiers(string(want)) {
 					t.Fatalf("copied module %s differs from source", rel)
 				}
 			}

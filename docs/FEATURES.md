@@ -82,7 +82,7 @@ a tracked runtime-cost limitation (`tasks/023-make-each-row-updates-incremental.
 | --- | --- | --- | --- |
 | Scoped CSS | **Stable** | `<style>.card { ... }</style>` | Rules and generated elements share a `vela-XXXXXX` scope attribute. |
 | CSS delivery | **Stable** | `--css=inject` or `--css=external` | Default injects a style element; external mode emits a sibling `.css` file. |
-| Project compilation | **Stable** | `--project src --out dist` | Mirrors the source directory tree; parallel compilation is enabled by default. |
+| Project compilation | **Stable** | `--project src --out dist` | Mirrors the source directory tree; parallel compilation is enabled by default. Local `.js` modules are copied unchanged except that `.vela` import specifiers (static, re-export and literal `import()`) point to the compiled `.js` modules, so an entry point such as `main.js` importing `App.vela` loads in the browser or a bundler. Package imports (`date-fns`) are left as written for the bundler or import map of the application. |
 | Watch mode | **Experimental** | `--watch` | Recompiles changed `.vela` files; it is not HMR. |
 | Minification and DCE | **Stable** | `--minify` | Includes conservative dead-binding elimination in addition to JS minification. |
 | Build mode | **Stable** | `--mode=development` (default) or `--mode=production` | Production builds stage a runtime with development warnings disabled. Independent of `--minify`. |

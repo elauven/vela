@@ -357,3 +357,39 @@ func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
 	}
 	core.Specifiers = append(core.Specifiers, JsImportSpec{Imported: runtimeContractExport})
 }
+
+// rewriteVelaSpecifiers rewrites `.vela` module specifiers of a plain
+// JavaScript module to `.js`: static `import`/`export … from`, side-effect
+// imports, and `import('…')` with a string literal. Only the specifier text
+// changes; every other byte of the module is kept, so a project's .js files
+// (an entry point importing App.vela) reach a bundler or the browser with
+// imports that resolve to the compiled components.
+func rewriteVelaSpecifiers(src string) string {
+	lexer := NewLexer(src)
+	var prev, prev2 string
+	var out strings.Builder
+	last := 0
+	for {
+		tok := lexer.Next()
+		if tok.Kind == TokEOF {
+			break
+		}
+		if tok.Kind == TokString && (prev == "from" || prev == "import" || (prev == "(" && prev2 == "import")) {
+			raw := tok.Val
+			for _, quote := range []string{"'", "\""} {
+				if strings.HasSuffix(raw, ".vela"+quote) {
+					out.WriteString(src[last:tok.Pos])
+					out.WriteString(strings.TrimSuffix(raw, ".vela"+quote) + ".js" + quote)
+					last = tok.End
+					break
+				}
+			}
+		}
+		prev2, prev = prev, tok.Val
+	}
+	if last == 0 {
+		return src
+	}
+	out.WriteString(src[last:])
+	return out.String()
+}
