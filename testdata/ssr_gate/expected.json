@@ -1,0 +1,1501 @@
+{
+  "version": 1,
+  "projects": [
+    {
+      "id": "examples",
+      "role": "positive",
+      "root": "examples",
+      "src": ".",
+      "components": {
+        "Clock.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "binding#1": "unsupported",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "state#4": "server-native",
+            "state#5": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native"
+          }
+        },
+        "Counter.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "derived#1": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native"
+          }
+        },
+        "If.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "derived#1": "server-native",
+            "if#1": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native"
+          }
+        },
+        "NoteCard.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "prop-default#3": "server-native",
+            "prop-default#4": "server-native",
+            "prop-default#5": "server-native",
+            "prop-default#6": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native"
+          }
+        },
+        "NotesApp.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "attribute#4": "server-native",
+            "attribute#5": "server-native",
+            "attribute#6": "server-native",
+            "attribute#7": "server-native",
+            "each#1": "unsupported",
+            "each#2": "unsupported",
+            "each-key#1": "server-native",
+            "each-key#2": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "unsupported",
+            "text#1": "server-native",
+            "text#10": "unsupported",
+            "text#11": "unsupported",
+            "text#12": "server-native",
+            "text#13": "server-native",
+            "text#2": "server-native",
+            "text#3": "unsupported",
+            "text#4": "unsupported",
+            "text#5": "unsupported",
+            "text#6": "unsupported",
+            "text#7": "server-native",
+            "text#8": "server-native",
+            "text#9": "server-native"
+          }
+        },
+        "Slot.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass"
+        },
+        "TagBadge.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "prop-default#3": "server-native",
+            "text#1": "server-native"
+          }
+        },
+        "TodoList.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "state#4": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native"
+          }
+        },
+        "UserCard.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "derived#3": "server-native",
+            "derived#4": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "if#4": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native"
+          }
+        },
+        "dashboard/App.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR",
+          "sites": {
+            "component-prop#1": "server-native",
+            "component-prop#2": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native"
+          }
+        },
+        "dashboard/Dashboard.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR",
+          "sites": {
+            "attribute#1": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native"
+          }
+        },
+        "dashboard/LoginPage.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "attribute#4": "server-native",
+            "attribute#5": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "if#1": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "state#4": "server-native",
+            "state#5": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native"
+          }
+        },
+        "dashboard/NotificationPanel.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "attribute#4": "server-native",
+            "binding#1": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "derived#3": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native"
+          }
+        },
+        "dashboard/Sidebar.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "prop-default#3": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native"
+          }
+        },
+        "dashboard/components/Badge.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "text#1": "server-native"
+          }
+        },
+        "dashboard/components/Card.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "prop-default#3": "server-native",
+            "prop-default#4": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native"
+          }
+        },
+        "dashboard/components/KpiCard.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "attribute#4": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "derived#3": "unsupported",
+            "derived#4": "server-native",
+            "derived#5": "server-native",
+            "derived#6": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "prop-default#3": "server-native",
+            "prop-default#4": "server-native",
+            "prop-default#5": "server-native",
+            "prop-default#6": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "unsupported",
+            "text#4": "server-native",
+            "text#5": "server-native"
+          }
+        },
+        "dashboard/components/Modal.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "prop-default#3": "server-native",
+            "state#1": "server-native",
+            "text#1": "server-native"
+          }
+        },
+        "dashboard/components/Toast.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "binding#1": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "prop-default#3": "server-native",
+            "state#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native"
+          }
+        },
+        "dashboard/pages/OrdersPage.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR"
+        },
+        "dashboard/pages/OverviewPage.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR",
+          "sites": {
+            "attribute#1": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "text#1": "server-native"
+          }
+        },
+        "dashboard/pages/SettingsPage.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR",
+          "sites": {
+            "attribute#1": "server-native",
+            "if#1": "server-native",
+            "text#1": "server-native"
+          }
+        },
+        "dashboard/pages/UsersPage.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR",
+          "sites": {
+            "prop-default#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native"
+          }
+        },
+        "ssr-host/src/Cart.vela": {
+          "status": "error",
+          "error": "VELA-SSR-HOST-MISSING",
+          "sites": {
+            "attribute#1": "unsupported",
+            "derived#1": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "function#1": "unsupported",
+            "function#2": "unsupported",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "unsupported",
+            "text#4": "unsupported"
+          }
+        }
+      }
+    },
+    {
+      "id": "ssr-host",
+      "role": "positive",
+      "root": "examples/ssr-host",
+      "src": "src",
+      "components": {
+        "Cart.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "derived#1": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "function#1": "server-host",
+            "function#2": "server-host",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native"
+          }
+        }
+      }
+    },
+    {
+      "id": "qdash",
+      "role": "positive",
+      "root": "test_projects/qdash",
+      "src": "src",
+      "components": {
+        "App.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR",
+          "sites": {
+            "class#1": "unsupported",
+            "class#2": "unsupported",
+            "class#3": "unsupported",
+            "component-prop#1": "unsupported",
+            "derived#1": "unsupported",
+            "if#1": "unsupported",
+            "if#2": "unsupported",
+            "if#3": "unsupported",
+            "if#4": "unsupported",
+            "state#1": "unsupported",
+            "text#1": "unsupported"
+          }
+        },
+        "Modal.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "prop-default#1": "server-native",
+            "text#1": "server-native"
+          }
+        },
+        "OverviewPage.vela": {
+          "status": "error",
+          "error": "VELA-SSR-HOST-MISSING",
+          "sites": {
+            "await#1": "unsupported",
+            "await#2": "unsupported",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "state#1": "unsupported",
+            "state#2": "unsupported",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native",
+            "text#6": "server-native",
+            "text#7": "server-native"
+          }
+        },
+        "SettingsPage.vela": {
+          "status": "error",
+          "error": "VELA-SSR-HOST-MISSING",
+          "sites": {
+            "binding#1": "server-native",
+            "binding#2": "unsupported",
+            "form-value#1": "unsupported",
+            "form-value#2": "unsupported",
+            "form-value#3": "unsupported",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "state#1": "server-native",
+            "state#2": "unsupported",
+            "state#3": "unsupported",
+            "state#4": "server-native",
+            "state#5": "unsupported",
+            "text#1": "unsupported",
+            "text#2": "unsupported",
+            "text#3": "unsupported",
+            "text#4": "unsupported"
+          }
+        },
+        "UserDetailPage.vela": {
+          "status": "error",
+          "error": "VELA-SSR-HOST-MISSING",
+          "sites": {
+            "await#1": "unsupported",
+            "await#2": "unsupported",
+            "class#1": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "state#1": "unsupported",
+            "state#2": "unsupported",
+            "text#1": "server-native",
+            "text#10": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native",
+            "text#6": "server-native",
+            "text#7": "server-native",
+            "text#8": "server-native",
+            "text#9": "server-native"
+          }
+        },
+        "UsersPage.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "state#4": "server-native",
+            "state#5": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native"
+          }
+        }
+      }
+    },
+    {
+      "id": "qpage-builder",
+      "role": "positive",
+      "root": "test_projects/qpage-builder",
+      "src": "src",
+      "components": {
+        "App.vela": {
+          "status": "error",
+          "error": "VELA-SSR-HOST-MISSING",
+          "sites": {
+            "component-prop#1": "unsupported",
+            "state#1": "unsupported"
+          }
+        },
+        "blocks/BeforeAfterBlock.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "style#1": "server-native",
+            "style#2": "server-native",
+            "text#1": "server-native"
+          }
+        },
+        "blocks/CalculatorBlock.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "attribute#4": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "each#1": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native",
+            "text#6": "server-native",
+            "text#7": "unsupported"
+          }
+        },
+        "blocks/ContactsBlock.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "attribute#4": "server-native",
+            "derived#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "if#4": "server-native",
+            "if#5": "server-native",
+            "if#6": "server-native",
+            "prop-default#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native"
+          }
+        },
+        "blocks/CountdownBlock.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR",
+          "sites": {
+            "derived#1": "unsupported",
+            "derived#2": "unsupported",
+            "derived#3": "unsupported",
+            "derived#4": "unsupported",
+            "derived#5": "unsupported",
+            "derived#6": "unsupported",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "unsupported",
+            "text#1": "server-native",
+            "text#2": "unsupported",
+            "text#3": "unsupported",
+            "text#4": "unsupported",
+            "text#5": "unsupported",
+            "text#6": "server-native"
+          }
+        },
+        "blocks/EventsBlock.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "each#1": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native"
+          }
+        },
+        "blocks/FaqBlock.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "class#1": "server-native",
+            "each#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native"
+          }
+        },
+        "blocks/FeaturesBlock.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "each#1": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native"
+          }
+        },
+        "blocks/FooterBlock.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "attribute#4": "server-native",
+            "each#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "if#4": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native",
+            "text#6": "server-native",
+            "text#7": "server-native"
+          }
+        },
+        "blocks/FormBlock.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "if#4": "server-native",
+            "if#5": "server-native",
+            "if#6": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "state#4": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native"
+          }
+        },
+        "blocks/GalleryBlock.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "attribute#4": "server-native",
+            "class#1": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "each#1": "server-native",
+            "each#2": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "style#1": "server-native",
+            "text#1": "server-native"
+          }
+        },
+        "blocks/HeaderBlock.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "class#1": "server-native",
+            "each#1": "server-native",
+            "each#2": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "prop-default#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native"
+          }
+        },
+        "blocks/HeroBlock.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "class#1": "server-native",
+            "class#2": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "prop-default#1": "server-native",
+            "style#1": "server-native",
+            "style#2": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native"
+          }
+        },
+        "blocks/PricingBlock.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "binding#1": "server-native",
+            "class#1": "server-native",
+            "class#2": "server-native",
+            "each#1": "server-native",
+            "each#2": "server-native",
+            "function#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "prop-default#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native"
+          }
+        },
+        "blocks/QuizBlock.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "class#1": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "each#1": "server-native",
+            "each#2": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "style#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native",
+            "text#6": "server-native",
+            "text#7": "server-native"
+          }
+        },
+        "blocks/StatsBlock.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "each#1": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native"
+          }
+        },
+        "blocks/TeamBlock.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "each#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "prop-default#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native"
+          }
+        },
+        "blocks/TestimonialsBlock.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "each#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "prop-default#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native"
+          }
+        },
+        "blocks/TextBlock.vela": {
+          "status": "error",
+          "error": "VELA-SSR-EXPR",
+          "sites": {
+            "derived#1": "unsupported",
+            "each#1": "unsupported",
+            "each#2": "unsupported",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "prop-default#1": "server-native",
+            "style#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native"
+          }
+        },
+        "blocks/TimelineBlock.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "each#1": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native"
+          }
+        },
+        "blocks/VideoBlock.vela": {
+          "status": "error",
+          "error": "VELA-SSR-HOST-MISSING",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "unsupported",
+            "attribute#3": "server-native",
+            "derived#1": "unsupported",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "unsupported",
+            "prop-default#1": "server-native",
+            "text#1": "server-native"
+          }
+        },
+        "editor/BlockLibrary.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "derived#1": "server-native",
+            "each#1": "server-native",
+            "each#2": "server-native",
+            "prop-default#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native"
+          }
+        },
+        "editor/BlockRenderer.vela": {
+          "status": "error",
+          "error": "VELA-SSR-CHILD",
+          "sites": {
+            "component-prop#1": "server-native",
+            "component-prop#10": "server-native",
+            "component-prop#11": "server-native",
+            "component-prop#12": "server-native",
+            "component-prop#13": "server-native",
+            "component-prop#14": "server-native",
+            "component-prop#15": "server-native",
+            "component-prop#16": "server-native",
+            "component-prop#17": "server-native",
+            "component-prop#18": "server-native",
+            "component-prop#19": "server-native",
+            "component-prop#2": "server-native",
+            "component-prop#20": "server-native",
+            "component-prop#3": "server-native",
+            "component-prop#4": "server-native",
+            "component-prop#5": "server-native",
+            "component-prop#6": "server-native",
+            "component-prop#7": "server-native",
+            "component-prop#8": "server-native",
+            "component-prop#9": "server-native",
+            "if#1": "server-native",
+            "if#10": "server-native",
+            "if#11": "server-native",
+            "if#12": "server-native",
+            "if#13": "server-native",
+            "if#14": "server-native",
+            "if#15": "server-native",
+            "if#16": "server-native",
+            "if#17": "server-native",
+            "if#18": "server-native",
+            "if#19": "server-native",
+            "if#2": "server-native",
+            "if#20": "server-native",
+            "if#3": "server-native",
+            "if#4": "server-native",
+            "if#5": "server-native",
+            "if#6": "server-native",
+            "if#7": "server-native",
+            "if#8": "server-native",
+            "if#9": "server-native",
+            "prop-default#1": "server-native",
+            "text#1": "server-native"
+          }
+        },
+        "editor/BlockWrapper.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "class#1": "server-native",
+            "class#2": "server-native",
+            "derived#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "prop-default#3": "server-native",
+            "prop-default#4": "server-native",
+            "prop-default#5": "server-native",
+            "prop-default#6": "server-native",
+            "prop-default#7": "server-native",
+            "text#1": "server-native"
+          }
+        },
+        "editor/Canvas.vela": {
+          "status": "error",
+          "error": "VELA-SSR-CHILD",
+          "sites": {
+            "class#1": "server-native",
+            "component-prop#1": "server-native",
+            "component-prop#2": "server-native",
+            "component-prop#3": "server-native",
+            "component-prop#4": "server-native",
+            "component-prop#5": "server-native",
+            "component-prop#6": "server-native",
+            "component-prop#7": "server-native",
+            "component-prop#8": "server-native",
+            "derived#1": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "prop-default#3": "server-native",
+            "prop-default#4": "server-native",
+            "prop-default#5": "server-native",
+            "prop-default#6": "server-native",
+            "prop-default#7": "server-native"
+          }
+        },
+        "editor/Editor.vela": {
+          "status": "error",
+          "error": "VELA-SSR-HOST-MISSING",
+          "sites": {
+            "attribute#1": "server-native",
+            "class#1": "server-native",
+            "class#2": "server-native",
+            "component-prop#1": "unsupported",
+            "component-prop#2": "server-native",
+            "component-prop#3": "server-native",
+            "component-prop#4": "server-native",
+            "component-prop#5": "server-native",
+            "component-prop#6": "server-native",
+            "component-prop#7": "server-native",
+            "component-prop#8": "server-native",
+            "component-prop#9": "server-native",
+            "derived#1": "server-native",
+            "function#1": "server-native",
+            "function#2": "unsupported",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "state#4": "server-native",
+            "state#5": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native"
+          }
+        },
+        "editor/Inspector.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#10": "server-native",
+            "attribute#11": "server-native",
+            "attribute#12": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "attribute#4": "server-native",
+            "attribute#5": "server-native",
+            "attribute#6": "server-native",
+            "attribute#7": "server-native",
+            "attribute#8": "server-native",
+            "attribute#9": "server-native",
+            "class#1": "server-native",
+            "derived#1": "server-native",
+            "each#1": "server-native",
+            "each#2": "server-native",
+            "each#3": "server-native",
+            "each#4": "server-native",
+            "each#5": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "if#4": "server-native",
+            "if#5": "server-native",
+            "if#6": "server-native",
+            "if#7": "server-native",
+            "if#8": "server-native",
+            "if#9": "server-native",
+            "prop-default#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native"
+          }
+        }
+      }
+    },
+    {
+      "id": "qwen-dashboard",
+      "role": "positive",
+      "root": "test_projects/qwen-dashboard-vela",
+      "src": "src",
+      "components": {
+        "App.vela": {
+          "status": "error",
+          "error": "VELA-SSR-HOST-MISSING",
+          "sites": {
+            "binding#1": "server-native",
+            "class#1": "server-native",
+            "component-prop#1": "unsupported",
+            "component-prop#10": "server-native",
+            "component-prop#2": "unsupported",
+            "component-prop#3": "unsupported",
+            "component-prop#4": "unsupported",
+            "component-prop#5": "unsupported",
+            "component-prop#6": "unsupported",
+            "component-prop#7": "unsupported",
+            "component-prop#8": "unsupported",
+            "component-prop#9": "unsupported",
+            "derived#1": "unsupported",
+            "derived#10": "unsupported",
+            "derived#11": "unsupported",
+            "derived#12": "unsupported",
+            "derived#13": "unsupported",
+            "derived#14": "unsupported",
+            "derived#15": "unsupported",
+            "derived#16": "unsupported",
+            "derived#17": "unsupported",
+            "derived#18": "unsupported",
+            "derived#2": "unsupported",
+            "derived#3": "unsupported",
+            "derived#4": "unsupported",
+            "derived#5": "unsupported",
+            "derived#6": "server-native",
+            "derived#7": "unsupported",
+            "derived#8": "unsupported",
+            "derived#9": "unsupported",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "function#1": "unsupported",
+            "function#2": "unsupported",
+            "function#3": "unsupported",
+            "state#1": "unsupported",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "text#1": "unsupported",
+            "text#2": "server-native"
+          }
+        },
+        "BarChart.vela": {
+          "status": "error",
+          "error": "VELA-SSR-HOST-MISSING",
+          "sites": {
+            "attribute#1": "unsupported",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "function#1": "unsupported",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "style#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native"
+          }
+        },
+        "OrdersTable.vela": {
+          "status": "error",
+          "error": "VELA-SSR-HOST-MISSING",
+          "sites": {
+            "class#1": "server-native",
+            "class#2": "server-native",
+            "class#3": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "function#1": "unsupported",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "unsupported",
+            "text#4": "server-native"
+          }
+        },
+        "StatCard.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "class#1": "server-native",
+            "derived#1": "server-native",
+            "function#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "prop-default#3": "server-native",
+            "prop-default#4": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native"
+          }
+        }
+      }
+    },
+    {
+      "id": "gpt-todo",
+      "role": "positive",
+      "root": "test_projects/gpt-todo-vela",
+      "src": "src",
+      "components": {
+        "App.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "class#1": "server-native",
+            "class#2": "server-native",
+            "class#3": "server-native",
+            "class#4": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "derived#3": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "form-value#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "state#4": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native"
+          }
+        }
+      }
+    },
+    {
+      "id": "deepseek-fixed",
+      "role": "positive",
+      "root": "test_projects/corpus/deepseek-fixed",
+      "src": "src",
+      "components": {
+        "App.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "class#1": "server-native",
+            "class#2": "server-native",
+            "class#3": "server-native",
+            "class#4": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "derived#3": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "form-value#1": "server-native",
+            "if#1": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native"
+          }
+        }
+      }
+    },
+    {
+      "id": "gpt-fixed",
+      "role": "positive",
+      "root": "test_projects/corpus/gpt-fixed",
+      "src": "src",
+      "components": {
+        "App.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "attribute#2": "server-native",
+            "attribute#3": "server-native",
+            "class#1": "server-native",
+            "class#2": "server-native",
+            "class#3": "server-native",
+            "class#4": "server-native",
+            "derived#1": "server-native",
+            "derived#2": "server-native",
+            "derived#3": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "form-value#1": "server-native",
+            "if#1": "server-native",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "state#4": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native",
+            "text#4": "server-native",
+            "text#5": "server-native"
+          }
+        }
+      }
+    },
+    {
+      "id": "qwen-fixed",
+      "role": "positive",
+      "root": "test_projects/corpus/qwen-fixed",
+      "src": "src",
+      "components": {
+        "App.vela": {
+          "status": "error",
+          "error": "VELA-SSR-HOST-MISSING",
+          "sites": {
+            "attribute#1": "server-native",
+            "binding#1": "server-native",
+            "binding#2": "unsupported",
+            "class#1": "server-native",
+            "class#2": "server-native",
+            "class#3": "server-native",
+            "component-prop#1": "server-native",
+            "derived#1": "unsupported",
+            "derived#2": "unsupported",
+            "derived#3": "unsupported",
+            "each#1": "unsupported",
+            "each-key#1": "server-native",
+            "form-value#1": "server-native",
+            "if#1": "unsupported",
+            "if#2": "server-native",
+            "if#3": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "unsupported",
+            "text#1": "unsupported",
+            "text#2": "unsupported"
+          }
+        },
+        "TodoItem.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "error",
+          "sites": {
+            "attribute#1": "server-native",
+            "class#1": "server-native",
+            "form-value#1": "server-native",
+            "if#1": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "text#1": "server-native"
+          }
+        }
+      }
+    },
+    {
+      "id": "deepseek-todo",
+      "role": "negative",
+      "root": "test_projects/deepseek-todo-vela",
+      "src": "src",
+      "diagnostics": [
+        {
+          "source": "App.vela",
+          "code": "VELA-DERIVED-CALLBACK"
+        },
+        {
+          "source": "App.vela",
+          "code": "VELA-EVENT-MODIFIER"
+        },
+        {
+          "source": "App.vela",
+          "code": "VELA-CLASS-OBJECT"
+        },
+        {
+          "source": "App.vela",
+          "code": "VELA-BIND-MEMBER"
+        }
+      ]
+    },
+    {
+      "id": "qwen-todo",
+      "role": "negative",
+      "root": "test_projects/qwen-todo-vela",
+      "src": "src",
+      "diagnostics": [
+        {
+          "source": "App.vela",
+          "code": "VELA-DYNAMIC-CLASS"
+        },
+        {
+          "source": "TodoItem.vela",
+          "code": "VELA-BUILTIN-IMPORT"
+        },
+        {
+          "source": "TodoItem.vela",
+          "code": "VELA-DYNAMIC-CLASS"
+        }
+      ]
+    }
+  ]
+}

@@ -229,6 +229,21 @@ func (m *SSRModules) compile(module *ssrModule) {
 	region.funcs = table
 
 	functions := ssrComponentFunctions(plan)
+	// Every exported function of a module becomes a closure, also one that a
+	// component would inline, so every const it reads is declared before the
+	// closures and assigned in declaration order (a function above the const
+	// it reads, as JavaScript hoisting allows, failed to build; task 031).
+	locals := map[string]bool{}
+	for _, name := range plan.LocalOrder {
+		locals[name] = true
+	}
+	for _, function := range functions {
+		ssrWalkIdents(function.Body, func(ident string) {
+			if locals[ident] && functions[ident] == nil {
+				table.captured[ident] = true
+			}
+		})
+	}
 	for _, name := range exports {
 		if _, host := plan.Hosts[name]; host {
 			// Importers call the host directly.
@@ -244,6 +259,12 @@ func (m *SSRModules) compile(module *ssrModule) {
 			continue
 		}
 		module.status[name] = nil
+	}
+
+	if len(table.compiled) == 0 {
+		// declarations() declares captured bindings only with functions,
+		// so without one the consts are ordinary declarations.
+		table.captured = map[string]bool{}
 	}
 
 	// Const bindings, in declaration order.
@@ -289,10 +310,6 @@ func (m *SSRModules) compile(module *ssrModule) {
 	body = append(body, ssrModulePrologue(region, goast.NewIdent("ssrCtx"))...)
 	if len(region.modules) > 0 {
 		body = append(body, ssrModuleCheck())
-	}
-	if len(table.compiled) == 0 {
-		// declarations() declares captured bindings only with functions.
-		table.captured = map[string]bool{}
 	}
 	body = append(body, table.declarations()...)
 	body = append(body, consts...)

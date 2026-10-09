@@ -32,6 +32,12 @@ export const requiredTests = [
   "TestBlocksCorpusHydrates",
   // Bundler-ready output: the esbuild recipe of docs/GUIDE.md (task 048).
   "TestBundlerRecipeEsbuild",
+  // SSR beta gate (task 031): the corpus through CLI, Go, HTTP and Chromium,
+  // and the gate's own accounting.
+  "TestSSRGate",
+  "TestSSRGateComparison",
+  "TestSSRGateFixesRenderLikeClient",
+  "TestSSRChildFailurePropagates",
 ];
 
 export async function requireLaunchableChromium({ moduleName = "playwright", executablePath = "" } = {}) {

@@ -27,6 +27,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -194,12 +195,40 @@ func validateScriptFormsWithAnalysis(prog *JsProgram, analysis *Analysis, ds *Di
 				for _, spec := range x.Specifiers {
 					if spec.Imported == "$$dispatch" || spec.Local == "$$dispatch" {
 						ds.ErrorWith(x.Pos, "VELA-BUILTIN-IMPORT", "Remove the import and call $dispatch(name, detail) directly.", "$dispatch is a Vela builtin; call it directly instead of importing it")
+					} else if !velaModuleExports()[spec.Imported] {
+						// The import would point to a runtime export that does not
+						// exist, and the module would fail to load (task 031).
+						ds.ErrorWith(x.Pos, "VELA-UNKNOWN-IMPORT", "Import one of: "+strings.Join(sortedVelaModuleExports(), ", ")+".", "%q is not exported by %q", spec.Imported, x.Source)
 					}
 				}
 			}
 		}
 		return true
 	})
+}
+
+// velaModuleExports are the names a component may import from 'vela' or
+// 'vela/store': the compiler intrinsics and the public exports of the runtime.
+func velaModuleExports() map[string]bool {
+	names := map[string]bool{}
+	for name := range velaCompilerIntrinsics {
+		names[name] = true
+	}
+	for name := range runtimeExportNames(embeddedRuntime) {
+		if !strings.HasPrefix(name, "$") {
+			names[name] = true
+		}
+	}
+	return names
+}
+
+func sortedVelaModuleExports() []string {
+	var names []string
+	for name := range velaModuleExports() {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // isPropExport reports `export let name = …`, the only export form of a
@@ -826,9 +855,29 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 		}
 	}
 	checkAttrs := func(attrs []*Attr) {
+		seen := map[string]bool{}
 		for _, a := range attrs {
 			if a == nil {
 				continue
+			}
+			// An attribute given twice (class="a" :class={b}) was written
+			// twice by the server, where the browser keeps the first, and
+			// replaced by the client: the two renderings differed (task 031).
+			if !a.IsEvent && !a.IsClassDir && !a.IsStyleDir && !a.IsBindThis {
+				if seen[a.Name] {
+					help := "Keep one " + a.Name + " attribute."
+					if a.Name == "class" {
+						help = "Use one class attribute with class:name={condition} directives, or one :class={`static ${value}`}."
+					}
+					report(attrPos(a), "VELA-DUPLICATE-ATTR", help, "attribute %q is given more than once on the same element", a.Name)
+				}
+				seen[a.Name] = true
+			}
+			// Static attribute values are not interpolated.
+			if !a.IsEvent && !a.IsBind && !a.IsTwoWay && !a.IsClassDir && !a.IsStyleDir && a.Expr == nil {
+				if open := strings.Index(a.Value, "{"); open >= 0 && strings.Contains(a.Value[open:], "}") {
+					ds.WarnWith(attrPos(a), "VELA-ATTR-BRACES", "Write :"+a.Name+"={`...${value}...`} for a computed value.", "braces in the static value of %q are not interpolated; the attribute is the literal text %q", a.Name, a.Value)
+				}
 			}
 			if a.IsEvent && strings.Contains(a.Name, ".") {
 				ds.ErrorWith(attrPos(a), "VELA-EVENT-MODIFIER", "Use @event with an explicit event.key check.", "event modifiers are not supported; use @%s with an explicit event.key check", strings.Split(a.Name, ".")[0])

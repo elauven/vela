@@ -1,4 +1,4 @@
-import { writable } from '../../../runtime/runtime.js';
+import { writable } from 'vela/store';
 
 const DEMO_USERS = [
   { id: 1, username: 'admin', password: 'admin', name: 'Alex Johnson', role: 'admin', avatar: '👨‍💻' },

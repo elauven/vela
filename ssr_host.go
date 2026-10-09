@@ -233,6 +233,9 @@ type SSRHosts struct {
 	Sources map[string]map[string]*JsFuncDecl
 	// Modules translates the local .js modules components import.
 	Modules *SSRModules
+	// Children holds, per component source, the sources of the child
+	// components its renderer calls (client-only children excluded).
+	Children map[string][]string
 }
 
 // ssrSourceFunctions lists, for every mirrored directory, the source file

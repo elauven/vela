@@ -1,4 +1,4 @@
-import { writable, derived } from '../../../runtime/runtime.js';
+import { writable, derived } from 'vela/store';
 
 // ── KPIs ────────────────────────────────────────────────────────────────────
 export const kpis = writable([

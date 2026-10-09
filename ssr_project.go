@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -73,19 +74,36 @@ func (layout SSRProjectLayout) propsPath(src, srcRoot string) string {
 }
 
 func (layout SSRProjectLayout) packageName(src, srcRoot string) string {
-	rel, err := filepath.Rel(srcRoot, filepath.Dir(src))
-	if err != nil || rel == "." {
+	rel := componentPackageDir(src, srcRoot)
+	if rel == "." {
 		return "components"
 	}
 	return goFileStem(filepath.Base(rel))
 }
 
 func (layout SSRProjectLayout) importPath(src, srcRoot string) string {
-	rel, err := filepath.Rel(srcRoot, filepath.Dir(src))
-	if err != nil || rel == "." {
+	rel := componentPackageDir(src, srcRoot)
+	if rel == "." {
 		return path.Join(layout.ModulePath, "components")
 	}
 	return path.Join(layout.ModulePath, "components", filepath.ToSlash(rel))
+}
+
+// componentPackageDir is the directory of src relative to srcRoot. Both are
+// made absolute first: a child component linked by an absolute path inside
+// a project given as a relative --project directory used to fail filepath.Rel
+// and fall back to the root package (task 031).
+func componentPackageDir(src, srcRoot string) string {
+	dir, err1 := filepath.Abs(filepath.Dir(src))
+	root, err2 := filepath.Abs(srcRoot)
+	if err1 != nil || err2 != nil {
+		return "."
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return "."
+	}
+	return rel
 }
 
 func (layout SSRProjectLayout) stylePath(src, srcRoot string) string {
@@ -134,9 +152,22 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	if opts.SSRReport != "" {
 		report = newSSRReportCollector()
 	}
+	hosts.Children = map[string][]string{}
+	regions := map[string]*SSRRegion{}
+	results := map[string]error{}
 	for _, src := range files {
 		var region *SSRRegion
-		err := compileSSRProjectFileInto(src, srcRoot, layout, hosts, &region)
+		results[src] = compileSSRProjectFileInto(src, srcRoot, layout, hosts, &region)
+		regions[src] = region
+	}
+	for _, src := range propagateSSRChildFailures(files, srcRoot, hosts.Children, results) {
+		// The renderer was written before its child failed; without it the
+		// rest of the Go package still builds.
+		_ = os.Remove(layout.serverPath(src, srcRoot))
+		_ = os.Remove(layout.stylePath(src, srcRoot))
+	}
+	for _, src := range files {
+		region, err := regions[src], results[src]
 		if isSSRClientOnly(err) {
 			report.addClientOnly(src, srcRoot)
 			fmt.Fprintf(compilerStatusWriter(opts), "  +  %-40s -> client only\n", relOrBase(src, srcRoot))
@@ -186,6 +217,47 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 		}
 	}
 	return errors
+}
+
+// propagateSSRChildFailures marks a component whose renderer calls a child
+// without a Go renderer (its SSR compilation failed) as failed too: its
+// generated package would not build, and the report would call it ok
+// (task 031). Children are matched by absolute path.
+func propagateSSRChildFailures(files []string, srcRoot string, children map[string][]string, results map[string]error) (marked []string) {
+	failed := map[string]string{}
+	for _, list := range children {
+		sort.Strings(list)
+	}
+	for _, src := range files {
+		if err := results[src]; err != nil && !isSSRClientOnly(err) {
+			failed[ssrAbs(src)] = src
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, src := range files {
+			if results[src] != nil {
+				continue
+			}
+			for _, child := range children[src] {
+				if failedSrc, ok := failed[ssrAbs(child)]; ok {
+					results[src] = fmt.Errorf("VELA-SSR-CHILD: child component %s has no server renderer; fix its SSR diagnostics or declare it <script context=\"client\">", filepath.ToSlash(relOrBase(failedSrc, srcRoot)))
+					failed[ssrAbs(src)] = src
+					marked = append(marked, src)
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	return marked
+}
+
+func ssrAbs(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
 }
 
 // ValidateSSRProjectPackages checks every materialized generated-server Go
@@ -284,6 +356,13 @@ func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, hos
 		return err
 	}
 	links = LinkSSRComponentPackages(links, srcRoot, layout)
+	if hosts.Children != nil {
+		for _, link := range links {
+			if !link.ClientOnly {
+				hosts.Children[src] = append(hosts.Children[src], link.SourcePath)
+			}
+		}
+	}
 	normalizeTableRows(sfc.TemplateAST.Nodes)
 	if err := checkSSRBlocksNesting(src, string(data), sfc.TemplateAST.Nodes, links); err != nil {
 		return err

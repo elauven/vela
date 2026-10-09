@@ -354,7 +354,11 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 	hasSelectValueBinding := false
 	selectMultiple := false
 	classStatic, classDirectives, styleStatic, styleDirectives := ssrElementDirectives(node.Attrs)
-	if len(classDirectives) > 0 {
+	// The client toggles classes through classList, which serialises the
+	// token set with single spaces and creates no attribute while the set
+	// stays empty; the server writes the same text (task 031).
+	classStatic = strings.Join(strings.Fields(classStatic), " ")
+	if len(classDirectives) > 0 && classStatic != "" {
 		open += ` class="` + html.EscapeString(classStatic)
 		body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
 		for _, attr := range classDirectives {
@@ -373,6 +377,37 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			})
 		}
 		open = `"`
+	} else if len(classDirectives) > 0 {
+		// Without static classes: collect the enabled names, then write the
+		// attribute only when one is enabled.
+		body = append(body, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(open)}))
+		open = ""
+		classes := goast.NewIdent("ssrClass")
+		block := []goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{classes}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: `""`}}}}
+		for _, attr := range classDirectives {
+			if attr.Expr == nil {
+				return nil, ssrExprUnsupported(attr.Span.Start, "class directive %q has no cached expression", attr.Name)
+			}
+			condition, err := e.translate("class", attr.Name, attr.Expr, e.ctx)
+			if err != nil {
+				return nil, err
+			}
+			block = append(block, &goast.IfStmt{
+				Cond: e.condition(attr.Expr, condition),
+				Body: &goast.BlockStmt{List: []goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{classes}, Tok: token.ADD_ASSIGN,
+					Rhs: []goast.Expr{&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(" " + html.EscapeString(attr.Name))}}}}},
+			})
+		}
+		// if ssrClass != "" { write(` class="` + ssrClass[1:] + `"`) }
+		value := &goast.BinaryExpr{Op: token.ADD, X: &goast.BinaryExpr{Op: token.ADD,
+			X: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(` class="`)},
+			Y: &goast.SliceExpr{X: classes, Low: &goast.BasicLit{Kind: token.INT, Value: "1"}}},
+			Y: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(`"`)}}
+		block = append(block, &goast.IfStmt{
+			Cond: &goast.BinaryExpr{Op: token.NEQ, X: classes, Y: &goast.BasicLit{Kind: token.STRING, Value: `""`}},
+			Body: &goast.BlockStmt{List: []goast.Stmt{goWriteSSRValue(value)}},
+		})
+		body = append(body, &goast.BlockStmt{List: block})
 	}
 	if len(styleDirectives) > 0 {
 		open += ` style="` + html.EscapeString(ssrStylePrefix(styleStatic))

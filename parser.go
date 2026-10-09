@@ -1355,7 +1355,46 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 			}
 		}
 	}
+	mergeStaticClass(elem)
 	return nil
+}
+
+// mergeStaticClass joins class="a b" and :class={expr} on one element into
+// :class={`a b ${(expr)}`}. The server wrote both attributes (the browser
+// keeps the first) and the client replaced the static classes, so the two
+// renderings differed (task 031); one expression keeps CSR, SSR and
+// hydration in agreement. Other duplicates are VELA-DUPLICATE-ATTR.
+func mergeStaticClass(elem *ElementNode) {
+	static, dynamic := -1, -1
+	for i, a := range elem.Attrs {
+		if a == nil || a.Name != "class" || a.IsEvent || a.IsClassDir || a.IsStyleDir || a.IsTwoWay {
+			continue
+		}
+		switch {
+		case !a.IsBind && a.Expr == nil && static < 0 && !strings.Contains(a.Value, "{"):
+			static = i
+		case a.IsBind && a.Expr != nil && len(a.Expr.Errors) == 0 && a.ValueKind != AttrValueQuotedObjectCompat && dynamic < 0:
+			dynamic = i
+		}
+	}
+	if static < 0 || dynamic < 0 {
+		return
+	}
+	text := strings.Join(strings.Fields(elem.Attrs[static].Value), " ")
+	text = strings.NewReplacer("\\", "\\\\", "`", "\\`", "${", "\\${").Replace(text)
+	dyn := elem.Attrs[dynamic]
+	prefix := "`" + text + " ${("
+	source := prefix + dyn.Expr.Source + ")}`"
+	// Positions inside the dynamic expression keep pointing at its text.
+	pos, abs := dyn.Expr.Pos-len(prefix), dyn.Expr.Span.Start-len(prefix)
+	if pos < 0 || abs < 0 {
+		pos, abs = dyn.Expr.Pos, dyn.Expr.Span.Start
+	}
+	merged := *dyn
+	merged.Value = "{" + source + "}"
+	merged.Expr = newTemplateExprAt(source, pos, abs)
+	elem.Attrs[static] = &merged
+	elem.Attrs = append(elem.Attrs[:dynamic], elem.Attrs[dynamic+1:]...)
 }
 
 func legacyElementDirectiveError(name, value string) error {

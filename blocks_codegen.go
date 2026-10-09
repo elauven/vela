@@ -287,11 +287,14 @@ func (g *ASTGen) buildBlocksChildren(nodes []Node, isRoot bool) {
 	}
 	keepWhitespace := !isRoot && astHoleSubtreeOK(nodes)
 	var run []Node
+	kept := func() bool {
+		return keepWhitespace || hasPreformattedText(run) || strings.TrimSpace(emitStaticHTML(run, g.scopeID)) != ""
+	}
 	flush := func() {
 		if len(run) == 0 {
 			return
 		}
-		if keepWhitespace || hasPreformattedText(run) || strings.TrimSpace(emitStaticHTML(run, g.scopeID)) != "" {
+		if kept() {
 			g.blocksStatic(run)
 		}
 		run = nil
@@ -300,6 +303,24 @@ func (g *ASTGen) buildBlocksChildren(nodes []Node, isRoot bool) {
 		if isStaticNode(node) && !(isRoot && isElementNode(node)) {
 			run = append(run, node)
 			continue
+		}
+		// A kept static text right before a text with holes is one text run
+		// with it (C-4.3): the server writes them together and the HTML
+		// parser joins them, so a separate client node failed hydration
+		// (task 031).
+		if text, ok := node.(*TextNode); ok && len(run) > 0 && kept() {
+			if last, ok := run[len(run)-1].(*TextNode); ok && last.Preformatted == text.Preformatted {
+				joined := *text
+				joined.Parts = append(append([]*Part{}, last.Parts...), text.Parts...)
+				joined.Span.Start = last.Span.Start
+				run = run[:len(run)-1]
+				if len(run) > 0 {
+					g.blocksStatic(run)
+				}
+				run = nil
+				g.buildBlocksNode(&joined, isRoot)
+				continue
+			}
 		}
 		flush()
 		g.buildBlocksNode(node, isRoot)
