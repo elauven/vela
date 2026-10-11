@@ -14,8 +14,9 @@ All three are released under the MIT license (`LICENSE`). The Go runtime
 module carries a copy in `ssr_runtime/LICENSE` (`TestLicenseCopiesMatch`), and
 the npm package gets `LICENSE` and `"license": "MIT"` from the generator.
 
-The module path is not final yet (R-12.1b): it appears only in
-`SSRRuntimeImportPath` and in `ssr_runtime/go.mod`.
+The module paths are final (R-12.1b): `github.com/elauven/vela` for the
+compiler and `github.com/elauven/vela/ssr_runtime` for the runtime. In the
+compiler the runtime path appears only in `SSRRuntimeImportPath`.
 
 ## Steps
 

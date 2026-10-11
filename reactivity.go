@@ -194,7 +194,7 @@ func validateScriptFormsWithAnalysis(prog *JsProgram, analysis *Analysis, ds *Di
 			if x.Source == "vela" || x.Source == "vela/store" {
 				for _, spec := range x.Specifiers {
 					if spec.Imported == "$$dispatch" || spec.Local == "$$dispatch" {
-						ds.ErrorWith(x.Pos, "VELA-BUILTIN-IMPORT", "Remove the import and call $dispatch(name, detail) directly.", "$dispatch is a Vela builtin; call it directly instead of importing it")
+						ds.ErrorWith(x.Pos, "VELA-BUILTIN-IMPORT", "Remove the import and call $$dispatch(name, detail) directly.", "$$dispatch is a Vela builtin; call it directly instead of importing it")
 					} else if !velaModuleExports()[spec.Imported] {
 						// The import would point to a runtime export that does not
 						// exist, and the module would fail to load (task 031).

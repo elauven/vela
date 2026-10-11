@@ -71,7 +71,7 @@ var ssrCatalogue = []ssrCatalogueSection{
 		{Builtin: "`sort`, `toSorted`", Helper: "`ssrJS.Method`, `ssrJS.MutateArray`", Rule: "T-6.3a, T-6.6b", Divergence: "Stable. Without comparator: compares `String(x)` by UTF-16 units and places `undefined` last, holes after it: `[10,9,undefined,1].sort()` is `[1,10,9,undefined]` ✓. Comparator result `NaN` counts as `0`. `sort` only on arrays the function created.", Status: "implemented", Names: []string{".sort", ".toSorted"}, Oracles: []string{"arr-sort", "arr-mutate"}},
 		{Builtin: "`reverse`, `toReversed`", Helper: "`ssrJS.Method`, `ssrJS.MutateArray`", Rule: "T-6.6b", Divergence: "`reverse` mutates: only on arrays the function created.", Status: "implemented", Names: []string{".reverse", ".toReversed"}, Oracles: []string{"arr-reverse", "arr-mutate"}},
 		{Builtin: "`push`, `pop`, `shift`, `unshift`, `splice`, `fill`", Helper: "`ssrJS.MutateArray`", Rule: "T-6.6b", Divergence: "As a statement, a `const`/`let` initializer, or the right-hand side of an assignment, on a local array the function created; methods that change the length also need the array not to be copied into another variable, literal, or call argument. Otherwise `VELA-SSR-IMPURE`.", Status: "implemented", Names: []string{".push", ".pop", ".shift", ".unshift", ".splice", ".fill"}, Oracles: []string{"arr-mutate"}},
-		{Builtin: "`entries`, `keys`, `values` in `for…of`", Helper: "index loop", Rule: "§7.1", Divergence: "Only as `for…of` sources in v1.", Status: "planned (S5)"},
+		{Builtin: "`entries`, `keys`, `values` in `for…of`", Helper: "index loop", Rule: "§7.1", Divergence: "Only as `for…of` sources in v1.", Status: "planned (task 056)"},
 		{Builtin: "`Array.from(arrayLike, mapFn)`", Helper: "`ssrJS.ArrayFrom`", Rule: "—", Divergence: "Strings by code point; `{length: n}`; holes become `undefined`.", Status: "implemented", Names: []string{"Array.from"}, Oracles: []string{"arr-from"}},
 		{Builtin: "`Array.of`", Helper: "`vela.ArrayOf`", Rule: "—", Status: "implemented", Names: []string{"Array.of"}, Oracles: []string{"arr-from"}},
 	}},
@@ -112,7 +112,7 @@ var ssrCatalogue = []ssrCatalogueSection{
 	}},
 	{Title: "2.9 Error objects", Rows: []ssrCatalogueRow{
 		{Builtin: "`err.message`, `err.name`, `new Error(m)`, `new TypeError(m)`, `new RangeError(m)`", Helper: "`vela.NewError`", Rule: "T-6.5d, T-7.4h", Divergence: "Host errors expose `\"Internal error\"` unless `vela.PublicError`.", Status: "implemented", Oracles: []string{"errors-new", "fn-try"}},
-		{Builtin: "`String(err)`", Helper: "`vela.String`", Rule: "—", Divergence: "`\"[object Object]\"` on the server; JavaScript gives `\"Error: message\"`.", Status: "planned (S5)"},
+		{Builtin: "`String(err)`", Helper: "`vela.String`", Rule: "—", Divergence: "`\"[object Object]\"` on the server; JavaScript gives `\"Error: message\"`.", Status: "planned (task 056)"},
 		{Builtin: "`err.stack`", Helper: "—", Rule: "—", Status: "never"},
 	}},
 }

@@ -1,17 +1,18 @@
 # SSR JavaScript-to-Go translation and host implementation contract
 
-Status: proposed contract, 2026-10-03. Scope owner: Task 007, implemented
-through 028 (semantics) and 030 (host bindings and client boundaries).
+Status: normative, implemented in the beta (2026-10-09). Scope owner: Task
+007; semantics in 028 and 043–046, host bindings and client boundaries in
+030, delivery in 048 and 049; the beta gate is task 031 ([SSR_GATE.md](SSR_GATE.md)).
 
 A Russian translation is kept in `SSR_TRANSLATION_CONTRACT.ru.md` with the
 same rule identifiers. This English text is normative; update both together.
 
 This document is the normative contract for how Vela server rendering turns
 render-time JavaScript into Go, and how a developer supplies a Go
-implementation for code the compiler does not translate. `SSR.md` remains
-the product design; `SSR_DELIVERY_SPEC.md` remains the delivery and
-acceptance process. Where this document conflicts with an earlier proposal in
-`SSR.md`, this document wins; the superseded items are listed in §14.
+implementation for code the compiler does not translate. `SSR.md` is the
+product overview. Where this document conflicts with the earlier design
+(`archive/SSR_DESIGN.md`), this document wins; the superseded items are
+listed in §14.
 
 Every rule has a stable identifier (`T-…`, `H-…`, `D-…`). Tests, diagnostics,
 and task evidence should cite these identifiers.
@@ -226,7 +227,7 @@ panics.
 | `==` / `!=` | Admitted only with a `null` / `undefined` literal operand (`x == null`). All other uses are `unsupported` with a hint to use `===`. |
 | `!`, `typeof`, unary `-`/`+` | JS semantics; `typeof` of a Go-originated value follows the JSON view. |
 | `?.`, `??` | Admitted in both tiers. |
-| template literals | Existing text-conversion contract (`SSR.md`, value-to-text table). |
+| template literals | Text-conversion contract (`SSR.md`, "Text conversion"). |
 | array/object literal, spread of arrays/objects | Admitted; objects build `*vela.Object` with insertion order. |
 | arrow functions | Admitted as callbacks to admitted built-ins and as local values; closures may read captured bindings. |
 | `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | Admitted; produce error objects with `name` and `message`. |
@@ -748,12 +749,11 @@ regression.
   Package name stays `ssr_runtime`. Generated code and documentation import
   it under the conventional alias `vela`; that is why examples in this
   document write `vela.PublicError`.
-- **R-12.1b Module path is not fixed yet.** The public repository name is
-  undecided. Until it is fixed, the module path appears in exactly one place
-  in the compiler (the `SSRRuntimeImportPath` constant) and can be
-  overridden per project in `vela.ssr.json` (`"runtime": {"module": "…"}`).
-  No other code, test, or document may hard-code it. Renaming the module is
-  then a one-line change plus the `go.mod` of the runtime.
+- **R-12.1b Module path.** The runtime module is
+  `github.com/elauven/vela/ssr_runtime` (fixed 2026-10-11). In the compiler
+  it appears in exactly one place (the `SSRRuntimeImportPath` constant) and
+  can be overridden per project in `vela.ssr.json`
+  (`"runtime": {"module": "…"}`) for a fork.
 - **R-12.1c Versions.** Releases are tagged `ssr_runtime/v0.x.y`. While in
   `v0`, incompatible changes are allowed. The compiler module does not
   require the runtime module: only its tests import it, through the
@@ -854,9 +854,9 @@ contract check (§12.1), and JavaScript runtime stages 1 and 2 (§12.2).
 
 ## 14. Superseded proposals
 
-- The inline Go escape hatch `{expr | go("…")}` in `SSR.md` (Option C) is
+- The inline Go escape hatch `{expr | go("…")}` of the earlier design (Option C) is
   withdrawn. Go code lives only in the host tree.
-- The JSON `hostFunctions` manifest in `SSR.md` is replaced by `//vela:host`
+- The JSON `hostFunctions` manifest of the earlier design is replaced by `//vela:host`
   directives in Go (H-8.2b). Only the project-level paths stay in
   `vela.ssr.json`.
 - The single-`return` restriction on local formatters becomes an
@@ -866,7 +866,7 @@ contract check (§12.1), and JavaScript runtime stages 1 and 2 (§12.2).
   parameters.
 - Object literals lowered to `map[string]any` are replaced by
   `*vela.Object` (T-5.1c).
-- The `SSR.md` capability row "Promise, async/await, timers, fetch —
+- The earlier design's capability row "Promise, async/await, timers, fetch —
   `client-deferred` by default" is replaced by §7.4: async code in the region
   runs synchronously on the server; timers and browser I/O are never native.
 - "`{#await}` server-side renders pending" is replaced by T-7.4f for

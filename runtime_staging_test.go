@@ -167,3 +167,19 @@ func TestHydrateRuntimeCarriesTheVerificationPolicy(t *testing.T) {
 		}
 	}
 }
+
+// TestListedFilesGetTheRuntime runs `vela --out dir File.vela`: the module
+// imports ./runtime.js, so the runtime must be written next to it.
+func TestListedFilesGetTheRuntime(t *testing.T) {
+	out := t.TempDir()
+	cmd := exec.Command("go", "run", ".", "--out", out, filepath.Join("examples", "Counter.vela"))
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	if data, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("vela: %v\n%s", err, data)
+	}
+	for _, name := range []string{"Counter.js", "runtime.js", "runtime-blocks.js", "runtime-hydrate.js"} {
+		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
+			t.Errorf("missing %s", name)
+		}
+	}
+}

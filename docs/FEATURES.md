@@ -1,7 +1,8 @@
 # Vela feature matrix
 
-This document is the source of truth for the implemented client-side
-compiler. It describes the single direct AST code-generation pipeline.
+This document is the source of truth for what the compiler implements: the
+client compiler, server rendering in Go, and hydration. When another document
+disagrees with it, this matrix and the compiler diagnostics win.
 
 ## Status legend
 
@@ -29,30 +30,32 @@ compiler. It describes the single direct AST code-generation pipeline.
 | Props | **Stable** | `export let title = ''` | Components expose `instance.set({ title })`; `$props()` destructuring is unsupported. |
 | Bindable props | **Stable** | `export let value = $bindable('')` | Enables parent-to-child two-way component bindings. |
 | Imports | **Stable** | `import { Card } from './Card.vela'` | Local `.vela` imports are rewritten to `.js`. Names imported from `vela` or `vela/store` must be runtime exports or lifecycle hooks (`VELA-UNKNOWN-IMPORT`). |
-| Store helpers | **Stable** | `writable`, `readable`, `derived` from `vela/store` | Runtime store utilities; application packaging must provide their import path. |
+| Store helpers | **Stable** | `writable`, `readable`, `derived` from `vela/store` | Runtime store utilities. `vela` and `vela/store` imports in components and copied `.js` modules are rewritten to the runtime. |
 
 ## Runtime packaging and reactive scheduling
 
-`runtime.js` at the project root is the canonical runtime implementation. Project compilation stages a byte-identical runtime module beside every emitted component directory, so generated `./runtime.js` imports resolve without a manual copy step.
+The runtime sources are `runtime/runtime.js` (scheduler, stores, deep-state
+proxy, helpers), `runtime/runtime-blocks.js` (block engine) and
+`runtime/runtime-hydrate.js` (`hydrate()`). With the default
+`--runtime-import=relative`, every build (project or listed files) writes
+them once at the output root and generated modules import them by relative
+paths, so a page loads one runtime instance. With `bare`, modules import the
+npm package `@vela/runtime` instead (see Runtime delivery below).
 
-The compiler imports `$$defer` directly from that module for every component with state or props. Reactive DOM work therefore uses the shared microtask scheduler regardless of template helpers or module evaluation order.
-
-The scheduler currently coalesces the time at which synchronous work flushes,
-but not duplicate component update closures within that flush. Likewise, an
-effect that depends on two state values can currently run once for each setter
-in a synchronous update burst. This is a tracked performance limitation
-(`tasks/022-coalesce-component-reactive-flush-work.md`), not a correctness
-guarantee about the number of writes.
+State and prop writes mark component-local dirty flags; one microtask flush
+per synchronous burst runs structural reconciliation first, then each
+affected DOM site and dependent effect once, with final values. A setter
+called from an effect schedules a following flush.
 
 Store subscriptions are synchronous. `readable` starts on its first subscriber and stops after its last; `derived` subscribes lazily and its `destroy()` method is final and idempotent. Subscriber and deferred-callback failures are reported after later and reentrant callbacks have drained, so one bad callback does not leave queued DOM work stranded.
 
 `$state.deep` proxies ordinary objects and arrays recursively. Repeated reads preserve proxy identity, cyclic plain-object graphs are supported, and built-ins that require internal slots (for example `Date`, `Promise`, `Map`, and typed arrays) deliberately remain unwrapped.
 
-Deep-state notifications are currently root-granular: a nested mutation
-invalidates consumers of the whole binding. The Proxy suppresses equal writes
-and missing-key deletes; built-in mutating array methods publish at most one
-notification per logical operation. Per-row invalidation of large lists remains
-a tracked runtime-cost limitation (`tasks/023-make-each-row-updates-incremental.md`).
+The Proxy suppresses equal writes and missing-key deletes; built-in mutating
+array methods publish at most one notification per logical operation. A
+nested write to one row of a keyed `{#each}` over a `$state.deep` array
+updates only that row; appends, removals, reorders and other shapes use the
+full keyed reconciler.
 
 ## Template and component features
 
@@ -65,15 +68,15 @@ a tracked runtime-cost limitation (`tasks/023-make-each-row-updates-incremental.
 | DOM bindings | **Stable** | `bind:value={name}`, `bind:checked={done}`, `bind:this={input}` | Includes common input, checkbox, select, textarea, and element-reference cases. |
 | Conditional rendering | **Stable** | `{#if open}...{:else if other}...{:else}...{/if}` | Branches mount and tear down around comment anchors without wrapper elements. |
 | List rendering | **Stable** | `{#each items as item, i}...{:else}...{/each}` | Unkeyed rows update in place where possible. The item and index bindings are plain identifiers; destructuring patterns are rejected with a positioned diagnostic. |
-| Keyed lists | **Stable** | `{#each items as item (item.id)}` | Reconciles DOM rows by key. Existing rows are currently revisited on a list invalidation; precise changed-row updates are tracked in task 023. |
+| Keyed lists | **Stable** | `{#each items as item (item.id)}` | Reconciles DOM rows by key; unchanged rows are not updated. |
 | Key blocks | **Stable** | `{#key userId}<Card />{/key}` | Recreates its subtree when the key changes. |
 | Await blocks | **Stable** | `{#await promise}...{:then value}...{:catch err}{/await}` | Pending, fulfilled, rejected, stale-promise handling, and `{#await promise then value}` / `{#await promise catch err}` shortcuts are supported. |
 | Components | **Stable** | `<Card title={title} />` | Components are compiled ES-module functions with `set()` and `destroy()`. |
 | Component bindings | **Stable** | `<Counter bind:count={count} />` | The child prop must be declared with `$bindable`. |
-| Component events | **Stable** | `<Modal @on:close={close} />` | Custom events are forwarded through the component wrapper. |
-| Slots | **Stable** | `<slot name="actions" />`, `<Card><button slot="actions" /></Card>` | Uses legacy-style named/default slots. |
+| Component events | **Stable** | `<Modal @on:close={close} />` | The child calls `$$dispatch(name, detail)`; the parent listens with `@on:name` (or `@name`) and reads `event.detail`. |
+| Slots | **Stable** | `<slot name="actions" />`, `<Card><button slot="actions" /></Card>` | Default and named slots with fallback content (the Svelte 4 model; no snippets). |
 | Slot fragments | **Stable** | `<svelte:fragment slot="actions">...</svelte:fragment>` | Allows several nodes without a wrapper element. |
-| Class directives | **Stable** | `class:active={open}`, `class:active` | Preserves static classes. |
+| Class directives | **Stable** | `class:active={open}`, `class:active` | Preserves static classes; without static classes the attribute appears only while a class is on. |
 | Style directives | **Stable** | `style:color={theme}`, `style:--accent={color}` | Supports hyphenated names and CSS custom properties. |
 
 ## CSS, compiler, and diagnostics
@@ -85,9 +88,10 @@ a tracked runtime-cost limitation (`tasks/023-make-each-row-updates-incremental.
 | Project compilation | **Stable** | `--project src --out dist` | Mirrors the source directory tree; parallel compilation is enabled by default. Local `.js` modules are copied unchanged except that `.vela` import specifiers (static, re-export and literal `import()`) point to the compiled `.js` modules and `vela` / `vela/store` point to the runtime, so an entry point such as `main.js` importing `App.vela` loads in the browser or a bundler. Package imports (`date-fns`) are left as written for the bundler or import map of the application. `vela.manifest.json` lists the components and the package imports of every module; `--check-deps` warns about package imports that do not resolve in `node_modules`. |
 | Watch mode | **Experimental** | `--watch` | Recompiles changed `.vela` files; it is not HMR. |
 | Minification and DCE | **Stable** | `--minify` | Includes conservative dead-binding elimination in addition to JS minification. |
-| Build mode | **Stable** | `--mode=development` (default) or `--mode=production` | Production builds stage a runtime with development warnings disabled. Independent of `--minify`. |
+| Build mode | **Stable** | `--mode=development` (default) or `--mode=production` | Production builds stage a runtime with development warnings and hydration value checks disabled. Independent of `--minify`. |
 | DOM engine | **Stable** | block engine (`runtime-blocks.js`) | The block engine (docs/HYDRATION_ARCHITECTURE.md) builds CSR components, the Go SSR markup, and hydration from one render plan. It is the only engine: the legacy engine and the `--dom-engine` flag were removed in task 042. |
 | Runtime delivery | **Stable** | `--runtime-import=relative` (default), `--runtime-import=bare` | `relative` writes the runtime beside the output and imports it by relative paths. `bare` imports the npm package `@vela/runtime` (same version as `vela --version`) for applications that bundle their client: one runtime instance per page, development checks removed by the bundler's `process.env.NODE_ENV` replacement, a version mismatch fails at bundle time. Recipes for esbuild, Vite, Rollup and import maps: docs/GUIDE.md "Building an application"; the esbuild recipe runs in CI. The compiler does not bundle. |
+| Source maps | **Experimental** | `--sourcemap` | Writes an external v3 `.js.map`; template expressions map to their source offsets. No CSS maps; cannot be combined with `--minify`. |
 | Input AST dump | **Stable** | `--ast` | Emits `<name>.ast.json` for the parsed SFC/template AST. |
 | Generated JS AST dump | **Stable** | `--emit-gen-ast` | Emits `<name>.genast.json` for AST-codegen inspection. |
 | Compiler trace | **Experimental** | `--trace=build.trace.jsonl`, `--trace=-` | Appends one source-free `CompilationTraceV1` JSON record per component. File output is safe for parallel project builds. With `--trace=-`, stdout is JSONL only and human progress moves to stderr. Schema version 1 is additive-only within Vela 1.x; consumers must ignore unknown fields. Disabled by default, so it adds no timing, allocation, or I/O cost to ordinary compilation. |
@@ -96,15 +100,23 @@ a tracked runtime-cost limitation (`tasks/023-make-each-row-updates-incremental.
 | Reactivity diagnostics | **Stable** | invalid derived writes, effects without reactive deps | Template references are also checked for undeclared names. |
 | Flow diagnostics | **Stable** | code after `return`, `throw`, `break`, `continue` | Reports unreachable statements. |
 
-## Not implemented
+## Server rendering and hydration
+
+Overview and usage: [SSR.md](SSR.md). Normative rules:
+[SSR_TRANSLATION_CONTRACT.md](SSR_TRANSLATION_CONTRACT.md) and
+[HYDRATION_ARCHITECTURE.md](HYDRATION_ARCHITECTURE.md).
+
+| Feature | Status | Example / API | Notes |
+| --- | --- | --- | --- |
+| SSR and hydration | **Experimental** | `--ssr`; `hydrate(Component, container, options)` from `runtime-hydrate.js` | Go renderers write block markup and one payload stream per root (docs/HYDRATION_ARCHITECTURE.md §5–§6): `<!--[state-->…<!--]-->` ranges, no element markers or instance identifiers, and a `<script type="application/json" data-vela-root>` after the root. API: `RenderX`, `RenderXWithOptions` (root await snapshots), `RenderXStatic` (plain HTML), `X(props, slots)`; the `…At` instance APIs do not exist. Elements carry the component scope attribute, so scoped styles apply to server HTML. Rows written directly in `<table>` get an implicit `<tbody>` in both outputs; constructs the HTML parser rearranges are rejected with `VELA-HTML-NESTING`. The client hydrates with `hydrate()`: the same compiled fragments adopt the server DOM, component state is restored from the payload stream, and mismatches follow the `repair` (development), `fail`, or production policy with rollback (`--hydration-verify=repair|fail|off`). Development builds report the source position, site ID, host symbol, and both values of a mismatch (`[vela] hydration mismatch at src/X.vela:14:9 (site 7, host formatCurrency)`); `--minify` builds omit the site table. Components without events, bindings, effects, or lifecycle hooks in their tree are static roots: plain HTML without JavaScript (`vela.manifest.json` lists modes and client modules). `{#client}…{:else}…{/client}` and `<script context="client">` components render their fallback (or nothing) on the server and mount on the client after hydration commits (contract §9). The generated Go code imports the runtime module `github.com/elauven/vela/ssr_runtime` (nested module in `ssr_runtime/`, tags `ssr_runtime/vX.Y.Z`); an application requires that module, not the compiler, and a runtime of another contract version fails `go build` (`vela.ContractV1`). `"runtime": {"module": …}` in `vela.ssr.json` selects a fork. A component whose child has no server renderer fails with `VELA-SSR-CHILD` instead of producing Go that does not build. The beta gate `TestSSRGate` checks the real corpus through the CLI, generated Go, HTTP and Chromium against recorded outcomes ([SSR_GATE.md](SSR_GATE.md)). |
+| SSR report and diagnostics | **Experimental** | `--ssr --ssr-report=<file.json>` | Writes one record per server-evaluated site (template expressions, child props, prop defaults, `$state`/`$derived` declarations): outcome (`server-native`, `server-host` or `unsupported`), tier, type, and the bindings it reads (docs/SSR_TRANSLATION_CONTRACT.md §10.4). SSR diagnostics list every failed site of a component with position, reason chain, and a fix; event handlers, effects, and lifecycle hooks are never translated and never block SSR. Writes during rendering report `VELA-SSR-IMPURE`. A child prop whose value has no proven type is converted to the child's Go field type through its JSON view, or fails the render naming the prop. |
+| SSR host implementations | **Experimental** | `//vela:host name` in `ssrhost/<mirrored path>/`, `vela.ssr.json`, `--ssr-scaffold-hosts` | A Go function stands in for a JavaScript function the compiler does not translate: a top-level function or value of a component, or an exported function of a local `.js` module (docs/SSR_TRANSLATION_CONTRACT.md §8). Arguments are converted by the rules of §8.4 (`vela.Optional[T]` for absent or null arguments), an optional first `context.Context` receives the context passed to `RenderXContext`, and an error result fails the render as `*vela.HostError`. Diagnostics name the host file and the Go signature; stale, duplicate, and mismatched directives fail the build. Development hydration compares host results with the JavaScript function and reports a disagreement with the host name (`TestSSRHostImplementationEndToEnd`). |
+| SSR of script code | **Experimental** | `--ssr` | Component functions with several statements (`if`, loops, `switch`, `try`/`catch`/`finally`, `throw`, destructuring, closures, recursion), arrow and function values, local `.js` modules (one Go package each under `server/modules/`, values created per render), and `async`/`await` with the synchronous model of docs/SSR_TRANSLATION_CONTRACT.md §7.4: an async call settles at once, `{#await}` renders its settled `then` or `catch` branch on the server, and the client adopts it without re-running the operand. Host errors reach `catch` as `Error("Internal error")` unless wrapped in `vela.PublicError`. Built-ins follow the catalogue of docs/SSR_TRANSLATION_MATRIX.md §2 (string, array, Math, Number, Object, and JSON functions with JavaScript semantics: UTF-16 positions, full case mapping, `toFixed` and `Math.round` rounding, holes); methods that change an array are admitted only on arrays the function created. Functions have typed variants per argument types. `Math` matches V8 bit for bit (ports of its fdlibm functions), `normalize` uses `golang.org/x/text`, and `console.*` goes to `vela.WithConsoleObserver`. The Go runtime requires Go 1.25. Values only the browser can compute go into `{#client}` blocks; a structural site the server cannot evaluate is a build error whose fix says so (T-9.3). |
+
+## Not implemented and unsupported
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| SSR and hydration | **Experimental** | `--ssr`; `hydrate(Component, container, options)` from `runtime-hydrate.js` | Go renderers write block markup and one payload stream per root (docs/HYDRATION_ARCHITECTURE.md §5–§6): `<!--[state-->…<!--]-->` ranges, no element markers or instance identifiers, and a `<script type="application/json" data-vela-root>` after the root. API: `RenderX`, `RenderXWithOptions` (root await snapshots), `RenderXStatic` (plain HTML), `X(props, slots)`; the `…At` instance APIs do not exist. Elements carry the component scope attribute, so scoped styles apply to server HTML (the legacy renderer omits it). Rows written directly in `<table>` get an implicit `<tbody>` in both outputs; constructs the HTML parser rearranges are rejected with `VELA-HTML-NESTING`. The client hydrates with `hydrate()`: the same compiled fragments adopt the server DOM, component state is restored from the payload stream, and mismatches follow the `repair` (development), `fail`, or production policy with rollback (`--hydration-verify=repair|fail|off`). Development builds report the source position, site ID, host symbol, and both values of a mismatch (`[vela] hydration mismatch at src/X.vela:14:9 (site 7, host formatCurrency)`); `--minify` builds omit the site table. Components without events, bindings, effects, or lifecycle hooks in their tree are static roots: plain HTML without JavaScript (`vela.manifest.json` lists modes and client modules). `{#client}…{:else}…{/client}` and `<script context="client">` components render their fallback (or nothing) on the server and mount on the client after hydration commits (contract §9). The generated Go code imports the runtime module `github.com/elauven/vela/ssr_runtime` (nested module in `ssr_runtime/`, tags `ssr_runtime/vX.Y.Z`); an application requires that module, not the compiler, and a runtime of another contract version fails `go build` (`vela.ContractV1`). `"runtime": {"module": …}` in `vela.ssr.json` selects a fork. A component whose child has no server renderer fails with `VELA-SSR-CHILD` instead of producing Go that does not build. The beta gate `TestSSRGate` checks the real corpus through the CLI, generated Go, HTTP and Chromium against recorded outcomes ([SSR_GATE.md](SSR_GATE.md)). |
-| SSR report and diagnostics | **Experimental** | `--ssr --ssr-report=<file.json>` | Writes one record per server-evaluated site (template expressions, child props, prop defaults, `$state`/`$derived` declarations): outcome (`server-native` or `unsupported`), tier, type, and the bindings it reads (docs/SSR_TRANSLATION_CONTRACT.md §10.4). SSR diagnostics list every failed site of a component with position, reason chain, and a fix; event handlers, effects, and lifecycle hooks are never translated and never block SSR. Writes during rendering report `VELA-SSR-IMPURE`. A child prop whose value has no proven type is converted to the child's Go field type through its JSON view, or fails the render naming the prop. |
-| SSR host implementations | **Experimental** | `//vela:host name` in `ssrhost/<mirrored path>/`, `vela.ssr.json`, `--ssr-scaffold-hosts` | A Go function stands in for a JavaScript function the compiler does not translate: a top-level function or value of a component, or an exported function of a local `.js` module (docs/SSR_TRANSLATION_CONTRACT.md §8). Arguments are converted by the rules of §8.4 (`vela.Optional[T]` for absent or null arguments), an optional first `context.Context` receives the context passed to `RenderXContext`, and an error result fails the render as `*vela.HostError`. Diagnostics name the host file and the Go signature; stale, duplicate, and mismatched directives fail the build. Not yet: client hydration of host-rendered values (task 041), host fixture tests (V-11.3e). |
-| SSR of script code | **Experimental** | `--ssr` | Component functions with several statements (`if`, loops, `switch`, `try`/`catch`/`finally`, `throw`, destructuring, closures, recursion), arrow and function values, local `.js` modules (one Go package each under `server/modules/`, values created per render), and `async`/`await` with the synchronous model of docs/SSR_TRANSLATION_CONTRACT.md §7.4: an async call settles at once, `{#await}` renders its settled `then` or `catch` branch on the server, and the client adopts it without re-running the operand. Host errors reach `catch` as `Error("Internal error")` unless wrapped in `vela.PublicError`. Built-ins follow the catalogue of docs/SSR_TRANSLATION_MATRIX.md §2 (string, array, Math, Number, Object, and JSON functions with JavaScript semantics: UTF-16 positions, full case mapping, `toFixed` and `Math.round` rounding, holes); methods that change an array are admitted only on arrays the function created. Functions have typed variants per argument types. `Math` matches V8 bit for bit (ports of its fdlibm functions), `normalize` uses `golang.org/x/text`, and `console.*` goes to `vela.WithConsoleObserver`. The Go runtime requires Go 1.25. Values only the browser can compute go into `{#client}` blocks; a structural site the server cannot evaluate is a build error whose fix says so (T-9.3). |
-| Source maps | **Experimental** | `--sourcemap` writes an external v3 `.js.map` for generated JS. Stable template expressions map directly to their individual source offsets; CSS mappings are not emitted. `--minify` is intentionally rejected. |
 | Dev server / HMR | **Planned** | Watch mode recompiles only. |
 | TypeScript | **Unsupported** | No `lang="ts"` pipeline or type checker. |
 | Snippets / render props | **Unsupported** | Use current default/named slots instead. |

@@ -1,8 +1,9 @@
 # Vela Component Guide
 
-A practical guide to writing `.vela` components. This is the
-component-author's reference — for compiler internals see `VELA.md`,
-for the Svelte 5 feature comparison see `SVELTE_COMPARISON.md`.
+A practical guide to writing `.vela` components and building applications
+with them. Feature status and limits: [FEATURES.md](FEATURES.md); the short
+rule set for people and AI agents: [AGENTS.md](../AGENTS.md); compiler
+internals: [VELA.md](VELA.md); server rendering: [SSR.md](SSR.md).
 
 A `.vela` file compiles to a self-contained ES module. No virtual
 DOM, no runtime template interpretation — the compiler turns your
@@ -11,7 +12,18 @@ build time.
 
 ### Runtime and scheduling
 
-Compiled components import the runtime helpers they need from one `runtime.js` module at the root of the output directory; the block runtime `runtime-blocks.js` and the `hydrate()` module `runtime-hydrate.js` are written next to it. The project compiler writes these modules once and points every generated import at them, so a page loads a single runtime instance. Every generated module also imports the runtime contract marker, so a runtime from another compiler version fails at module load instead of misbehaving. `--mode=production` (default `development`) stages a runtime with development warnings disabled; application code should not copy or initialize it manually. State and prop updates use a component-local microtask scheduler, so synchronous writes settle after the current call stack. Derived values recompute synchronously, while each affected DOM site and dependent effect runs once in the settled flush with final values. Structural reconciliation runs before ordinary guarded updates; when it recreates a branch, its interior writes are not repeated. A setter invoked from an effect schedules a separate, deterministic subsequent flush. The older global scheduler symbol exists solely for compatibility with the deprecated generator and is not part of the application authoring API.
+Compiled components import a small runtime: `runtime.js` (scheduler,
+stores, deep state), `runtime-blocks.js` (DOM blocks) and
+`runtime-hydrate.js` (`hydrate()`, only for server-rendered pages). The
+compiler writes them next to the output, or the application installs the
+`@vela/runtime` package (see "Building an application"). Every generated
+module imports a contract marker, so a runtime from another compiler
+version fails at load time instead of misbehaving.
+
+State and prop writes are batched: synchronous writes settle in one
+microtask flush after the current call stack. Derived values recompute
+immediately; each affected DOM site and dependent effect then runs once with
+final values. A setter called from an effect schedules a following flush.
 
 ---
 
@@ -37,7 +49,7 @@ All three are optional, but a component without a `<template>`
 renders nothing. Order does not matter. There is exactly one of
 each per file.
 
-The compiler emits `<name>.js` — an ES module exporting a factory
+The compiler emits `<name>.js` — an ES module exporting (named and default) a factory
 function named after the file (`Button.vela` → `export function
 Button(...)`).
 
@@ -91,10 +103,8 @@ Built-ins such as `Date`, `Map`, `Set`, `Promise`, and typed arrays remain
 unwrapped; replace them through the state binding if a change must rerender the
 template.
 
-A deep mutation currently invalidates consumers of the whole binding. For a
-large list this means the reconciler rechecks its existing rows even when only
-one nested record changed. Keyed lists retain DOM identity, but this is not yet
-per-row reactive invalidation.
+In a keyed `{#each}` over a `$state.deep` array, a nested write to one row
+(`todos[3].done = true`) updates only that row.
 
 ### `$derived` — computed value
 
@@ -166,7 +176,7 @@ with `export let`:
 </script>
 
 <template>
-  <button disabled={disabled}>{label}</button>
+  <button :disabled={disabled}>{label}</button>
 </template>
 ```
 
@@ -231,15 +241,27 @@ inside `{...}` is part of the expression, not a tag:
 
 ### Attributes
 
-Static attributes are plain HTML. A `{expr}` value makes an
-attribute dynamic — it updates when the expression's dependencies
-change:
+Static attributes are plain HTML. `:name={expr}` makes an attribute
+dynamic — it updates when the expression's dependencies change:
 
 ```
-<a href="/about">About</a>             <!-- static -->
-<img src={imageUrl} alt={caption} />    <!-- dynamic -->
-<button disabled={isBusy}>Save</button>
+<a href="/about">About</a>               <!-- static -->
+<img :src={imageUrl} :alt={caption} />    <!-- dynamic -->
+<button :disabled={isBusy}>Save</button>
 ```
+
+`name={expr}` without the colon is accepted for compatibility; new code uses
+`:name`. Braces inside a quoted static value are not interpolated
+(`title="Hi {name}"` warns with `VELA-ATTR-BRACES`); use a template literal:
+`:title={`Hi ${name}`}`.
+
+A static `class` and a dynamic `:class` on the same element are joined:
+
+```
+<span class="badge" :class={variant}>…</span>   <!-- class="badge success" -->
+```
+
+Any other attribute given twice is an error (`VELA-DUPLICATE-ATTR`).
 
 ---
 
@@ -383,7 +405,7 @@ animation/transition — add a key:
 
 ```
 {#each items as item (item.id)}
-  <ItemRow item={item} />
+  <ItemRow :item={item} />
 {/each}
 ```
 
@@ -394,10 +416,7 @@ hint when it sees an unkeyed `{#each}` over a row that contains a
 child component — that's the shape where the positional default
 most often surprises.
 
-On a collection invalidation, the current keyed reconciler retains these row
-nodes but still calls each existing row's update path. Treat stable keys as a
-DOM-identity and correctness feature; they do not yet guarantee that only the
-changed record's dynamic expressions are evaluated.
+Unchanged keyed rows are not updated when the list changes.
 
 ### `{#key}` — keyed re-creation
 
@@ -407,7 +426,7 @@ re-running mount logic):
 
 ```
 {#key currentUserId}
-  <UserProfile id={currentUserId} />
+  <UserProfile :id={currentUserId} />
 {/key}
 ```
 
@@ -439,17 +458,17 @@ capitalized tag:
 
 ```
 <script>
-  import Button from './Button.vela';
+  import { Button } from './Button.vela';
 </script>
 
 <template>
-  <Button label="Save" @click={onSave} />
+  <Button label="Save" @on:press={onSave} />
 </template>
 ```
 
-Pass props as attributes. Pass dynamic props with `{expr}`. Wire
-a child's events with `@`. For a `$bindable` child prop, bind with
-`bind:`:
+Pass props as attributes; dynamic props with `:name={expr}`. Listen to a
+child's events with `@on:name` (see Custom events). For a `$bindable` child
+prop, bind with `bind:`:
 
 ```
 <Modal bind:open={modalOpen} />
@@ -475,9 +494,31 @@ A component can accept child content via `<slot>`:
 </Card>
 ```
 
+Named slots are fixed extension points; content inside `<slot>` is the
+fallback when the parent supplies nothing. `<svelte:fragment slot="…">`
+passes several nodes without a wrapper element:
+
+```
+<!-- Card.vela -->
+<div class="card">
+  <slot></slot>
+  <footer><slot name="actions"><button>Close</button></slot></footer>
+</div>
+
+<!-- usage -->
+<Card>
+  <p>Body</p>
+  <svelte:fragment slot="actions">
+    <button @click={save}>Save</button>
+    <button @click={cancel}>Cancel</button>
+  </svelte:fragment>
+</Card>
+```
+
 ### Custom events
 
-A component dispatches events to its parent with `$$dispatch`:
+A component sends events to its parent with the built-in `$$dispatch`
+(never imported):
 
 ```
 <!-- Toast.vela -->
@@ -490,11 +531,11 @@ A component dispatches events to its parent with `$$dispatch`:
 
 ```
 <!-- parent -->
-<Toast @close={(e) => console.log(e.detail.reason)} />
+<Toast @on:close={(e) => console.log(e.detail.reason)} />
 ```
 
-The event bubbles as a `CustomEvent`; the payload is in
-`event.detail`.
+The listener receives a `CustomEvent`; the payload is in `event.detail`.
+`@close` without `on:` also works on components.
 
 ---
 
@@ -554,7 +595,7 @@ Scoping is identical either way.
       {count} (doubled: {doubled})
     </p>
     <button @click={() => count++}>+</button>
-    <button @click={reset} disabled={count === 0}>Reset</button>
+    <button @click={reset} :disabled={count === 0}>Reset</button>
 
     {#if count > 10}
       <p class="warn">That's a lot.</p>
@@ -581,7 +622,8 @@ Scoping is identical either way.
 | `$effect(() => …)` | side effect on dependency change |
 | `export let x = d` | prop with default `d` |
 | `export let x = $bindable(d)` | two-way prop |
-| `{expr}` | text / attribute interpolation |
+| `{expr}` | text interpolation |
+| `:attr={expr}` | dynamic attribute |
 | `@event={fn}` | event listener |
 | `bind:value={x}` | two-way form binding |
 | `bind:this={x}` | element reference |
@@ -592,7 +634,8 @@ Scoping is identical either way.
 | `{#key expr}` `{/key}` | keyed re-creation |
 | `{#await p}` `{:then v}` `{:catch e}` `{/await}` | promise states, including `{#await p then v}` and `{#await p catch e}` shortcuts |
 | `<slot>` | child-content placeholder |
-| `$$dispatch(name, detail)` | emit a custom event |
+| `$$dispatch(name, detail)` | emit a custom event (`@on:name` in the parent) |
+| `{#client}` `{:else}` `{/client}` | browser-only content, fallback on the server |
 | `onMount` / `onDestroy` | lifecycle (import from `vela`) |
 
 ## Building an application
@@ -699,13 +742,108 @@ paths under `node_modules` for packages published as ES modules):
 Packages published only as CommonJS need a bundler or a CDN that converts
 them.
 
-### Server rendering
+### Server-rendered pages
 
 `vela --ssr` writes the client modules to `out/client` with the same
 options. The Go server renders the page; the client entry calls
 `hydrate(Component, container)` from `runtime-hydrate.js` (relative) or
 `@vela/runtime/hydrate` (bare) and can be bundled like any other entry.
-`examples/ssr-host` serves the unbundled output.
+`examples/ssr-host` serves the unbundled output. The rest of server
+rendering is in "Server rendering" below.
+
+## Server rendering
+
+`vela --ssr` also generates a Go renderer for every component; your Go
+server renders the page and the browser hydrates it. The overview, render
+API and policies are in [SSR.md](SSR.md); this section is the practical
+path.
+
+### 1. Build and render
+
+```sh
+vela --ssr --project src --out out --ssr-module example.com/site/out/server
+```
+
+```go
+props := components.PageProps{Set: map[string]bool{}}   // omitted props take their defaults
+err := components.RenderPageContext(r.Context(), w, props, components.PageSlots{})
+```
+
+Your `go.mod` requires `github.com/elauven/vela/ssr_runtime`. Serve
+`out/client/` and `out/styles/`, and hydrate in the client entry:
+
+```js
+import { hydrate } from './runtime-hydrate.js';
+import { Page } from './Page.js';
+hydrate(Page, document.getElementById('app'));
+```
+
+[`examples/ssr-host`](../examples/ssr-host) is a complete server.
+
+### 2. Write components the server can render
+
+The server evaluates props, `$state`/`$derived` initializers, template
+expressions and the functions they call. Handlers, `$effect`, `onMount`
+and `onDestroy` run only in the browser, so browser APIs belong there:
+
+```vela
+<script>
+  import { onMount } from 'vela';
+  export let items = [];
+  let total = $derived(items.reduce((sum, i) => sum + i.price, 0));  // server and client
+  let width = $state(0);
+  onMount(() => { width = window.innerWidth; });                     // client only
+</script>
+```
+
+When the build reports a site it cannot translate, choose one of:
+
+- **Rewrite it** with admitted JavaScript (the diagnostic names the
+  construct; [SSR_TRANSLATION_MATRIX.md](SSR_TRANSLATION_MATRIX.md) lists
+  what is translated).
+- **Write a host**: a Go function that stands in for the JavaScript
+  function on the server. The diagnostic prints the file and signature;
+  `vela --ssr --ssr-scaffold-hosts` creates stubs.
+
+  ```go
+  // ssrhost/src/format/format_price_host.go
+  //vela:host formatPrice
+  func FormatPrice(value float64, currency string) string { … }
+  ```
+
+  The host tree is set in `vela.ssr.json` at the project root:
+
+  ```json
+  {
+    "module": "example.com/site/out/server",
+    "host": { "dir": "ssrhost", "module": "example.com/site/ssrhost" }
+  }
+  ```
+
+- **Render it only in the browser** with `{#client}`; the server writes the
+  fallback:
+
+  ```vela
+  {#client}
+    <p>Local time: {new Date().toLocaleTimeString()}</p>
+  {:else}
+    <p>Local time: …</p>
+  {/client}
+  ```
+
+  A component whose script is `<script context="client">` is always
+  rendered that way. In a CSR build both are ordinary content.
+
+### 3. Check and ship
+
+- `--ssr-report=report.json` writes every server-evaluated site with its
+  outcome (`server-native`, `server-host`, `unsupported`).
+- `--hydration-verify=repair|fail|off` sets how development builds treat a
+  value that differs between server and client: `repair` (default) warns
+  with the source position and keeps the client value, `fail` throws, `off`
+  skips the comparison. Use `fail` in tests.
+- `--mode=production` removes development checks from the runtime,
+  including hydration value comparison.
 
 ## Source maps
 
@@ -765,3 +903,9 @@ do not parse rendered CLI text.
 | VELA-CLASS-OBJECT | An object-valued :class binding was used. | Use one class:name={condition} directive per class. |
 | VELA-BIND-MEMBER | A two-way binding targets a member expression such as user.name. | Use a one-way binding and an explicit event handler. |
 | VELA-BUILTIN-IMPORT | A Vela builtin such as &#36;&#36;dispatch was imported. | Remove the import and call the builtin directly. |
+| VELA-UNKNOWN-IMPORT | A name that `vela` / `vela/store` does not export was imported. | Import a runtime export (`writable`, `readable`, `derived`, `tick`, `mount`, …) or `onMount` / `onDestroy`. |
+| VELA-DUPLICATE-ATTR | An attribute is given twice on one element. | Keep one; a static `class` with `:class` is joined automatically. |
+| VELA-ATTR-BRACES (warning) | Braces in a quoted static attribute value. | Use `:name={`…${value}`}`. |
+| VELA-SCRIPT-EXPORT | A component script exports something other than `export let`. | Move the export to a `.js` module. |
+
+Server-rendering diagnostics (`VELA-SSR-*`) are listed in [SSR.md](SSR.md#diagnostics).

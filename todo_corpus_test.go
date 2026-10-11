@@ -50,7 +50,7 @@ func TestTodoCorpusCompilation(t *testing.T) {
 		{
 			src: "test_projects/qwen-todo-vela/src/TodoItem.vela",
 			want: []expectedDiagnostic{
-				{"VELA-BUILTIN-IMPORT", "$dispatch is a Vela builtin"},
+				{"VELA-BUILTIN-IMPORT", "$$dispatch is a Vela builtin"},
 				{"VELA-DYNAMIC-CLASS", "is not a dynamic attribute"},
 			},
 		},

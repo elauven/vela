@@ -240,6 +240,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Generated modules import ./runtime.js; listed files get the runtime in
+	// the output directory as project builds do.
+	if !opts.BareRuntimeImports {
+		if err := stageRuntime(*outDir, opts); err != nil {
+			fmt.Fprintf(os.Stderr, "cannot write the runtime: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	exitCode := 0
 	compile := func() {
 		for _, src := range args {

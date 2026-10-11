@@ -5,7 +5,8 @@ both people and AI agents. It defines the preferred authoring style; it does
 not describe compiler internals.
 
 For feature availability and known limits, read `docs/FEATURES.md`. For longer
-explanations and examples, read `docs/GUIDE.md`. If a compiler diagnostic conflicts
+explanations and examples, read `docs/GUIDE.md`. For server rendering, read
+`docs/SSR.md`. If a compiler diagnostic conflicts
 with an old example or historical document, trust the diagnostic and the
 current feature matrix.
 
@@ -108,6 +109,11 @@ each optional section, in any order:
 - Use `class:name={condition}` for a conditional class and
   `style:property={expression}` for a single dynamic inline CSS property.
   Keep structural styling in the component stylesheet.
+- A static `class="…"` and one `:class={expr}` on the same element are joined
+  into one class value. Do not give any other attribute twice on one element
+  (`VELA-DUPLICATE-ATTR`).
+- Braces inside a quoted static attribute are literal text. For a computed
+  value write `:title={`Hello ${name}`}`, not `title="Hello {name}"`.
 
 ### Control flow and lists
 
@@ -177,8 +183,35 @@ each optional section, in any order:
 - Use default slots for primary content and named slots for fixed component
   extension points. Use `<svelte:fragment slot="name">` for several nodes in
   a named slot without adding a wrapper element.
-- Use component events for child-to-parent notifications. Keep event names and
+- Use component events for child-to-parent notifications: the child calls the
+  built-in `$$dispatch('close', detail)` (never imported), the parent listens
+  with `@on:close={handler}` and reads `event.detail`. Keep event names and
   payloads small and explicit.
+- Import from `vela` only `onMount`, `onDestroy` and runtime exports such as
+  `tick`; import stores from `vela/store`. Other names are
+  `VELA-UNKNOWN-IMPORT`.
+
+## Server rendering
+
+`vela --ssr` also generates a Go renderer for every component; the browser
+hydrates the server HTML. Write components so the first render can be
+computed on the server:
+
+- Props, `$state`/`$derived` initializers, template expressions and the
+  functions and local `.js` modules they call run on the server, translated
+  to Go. Keep them free of browser APIs (`window`, `document`,
+  `localStorage`, `Date.now()`, `Intl`).
+- Put browser work in handlers, `$effect`, or `onMount`; these never run on
+  the server.
+- For content only the browser can compute, use
+  `{#client}…{:else}fallback{/client}`, or declare the whole component
+  `<script context="client">`.
+- When a function must run on the server but cannot be translated, add a Go
+  host (`//vela:host name` in the mirrored `ssrhost/` package). Follow the
+  file and signature the diagnostic prints; do not change the JavaScript to
+  silence it.
+- Treat every `VELA-SSR-*` diagnostic as a build error to fix, not to
+  work around. `--ssr-report` lists the outcome of every site.
 
 ## Unsupported syntax and assumptions
 
@@ -190,8 +223,12 @@ Do not generate or rely on the following in Vela applications:
 - `<svelte:component>`, `<svelte:element>`, `<svelte:self>`,
   `<svelte:head>`, `<svelte:window>`, `<svelte:document>`, or `<svelte:body>`.
 - `bind:group`, `bind:files`, dimension bindings, or `bind:innerHTML`.
-- Server-side rendering, hydration, CSS source maps, or HMR. External JS source maps are supported with `--sourcemap` on the AST generator only; it cannot be combined with `--minify`. `--watch` recompiles
-  files but does not preserve component state in the browser.
+- `{@html}`, `{@const}`, `{@debug}`, or event modifiers such as
+  `@click.prevent` (call `event.preventDefault()` in the handler).
+- Streaming SSR, islands or partial hydration, CSS source maps, or HMR.
+  JavaScript source maps (`--sourcemap`) cannot be combined with `--minify`.
+  `--watch` recompiles files but does not preserve component state in the
+  browser.
 
 ## Completion checklist
 
@@ -206,5 +243,8 @@ Before handing off a Vela component or application:
 4. Reorderable lists use stable keys, and component two-way bindings target a
    `$bindable` child prop.
 5. The component uses only features marked supported in `docs/FEATURES.md`.
-6. Run `go test ./...` after changing compiler sources, runtime fixtures, or
+6. For server-rendered applications, `vela --ssr` builds without `VELA-SSR-*`
+   errors, and browser-only code is in handlers, effects, lifecycle hooks or
+   `{#client}`.
+7. Run `go test ./...` after changing compiler sources, runtime fixtures, or
    examples that exercise compiler behaviour.

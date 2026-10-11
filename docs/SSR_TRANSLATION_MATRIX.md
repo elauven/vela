@@ -75,7 +75,7 @@ disagree, the contract wins and the row is a bug.
 | `obj[key]` | native | slice index / field / object lookup | `ssrJS.Index` | T-6.5b | member-computed | implemented | Any receiver and key, with JavaScript property-key conversion. |
 | `.length` of string | native | UTF-16 length | `ssrJS.Length` | T-6.3a | strings-length | implemented | `null.length` throws `TypeError`; an object without `length` yields `undefined`. |
 | `.length` of array | native | `len(x)` | `ssrJS.Length` | — | strings-length | implemented | |
-| `a?.b`, `a?.[k]`, `f?.()` | native | nil/undefined check, then access | `vela.OptionalChain` with lazy rest | T-6.1b | ops-optional | partial | `a?.b` and `a?.[k]` implemented; the rest of the chain is not evaluated after a nullish link. `f?.()` is rejected until calls of values exist (S4). |
+| `a?.b`, `a?.[k]`, `f?.()` | native | nil/undefined check, then access | `vela.OptionalChain` with lazy rest | T-6.1b | ops-optional | partial | `a?.b` and `a?.[k]` implemented; the rest of the chain is not evaluated after a nullish link. `f?.()` is rejected; planned in task 056. |
 
 ### 1.3 Operators
 
@@ -94,7 +94,7 @@ disagree, the contract wins and the row is a bug.
 | `&&`, `\|\|` | native | `vela.AndLazy` / `vela.OrLazy` | same | T-6.1b (R1) | ops-logical | implemented | |
 | `??` | native | lazy nullish check | `vela.NullishLazy` | T-6.1b | ops-nullish | implemented | |
 | `c ? a : b` | native | `vela.TernaryLazy` | same | T-6.1b (R1) | ops-conditional | implemented | |
-| `=`, `+=`, `++`, … on local bindings | native | Go assignment | same | T-6.6b | stmt-assign | planned (S4) | Only inside translated functions. |
+| `=`, `+=`, `++`, … on local bindings | native | Go assignment | same | T-6.6b | stmt-assign | implemented | Only inside translated functions. |
 | assignment to state, props, module bindings | rejected | — | — | T-6.6a | go-tests | partial | `VELA-SSR-IMPURE` (S1) for assignments and `++` / `--`; covered by a Go test, not an oracle group. |
 | comma, `void`, `delete`, `in`, `instanceof` | rejected | — | — | §6.2 | — | never | v1. |
 
@@ -127,9 +127,9 @@ Statements are admitted inside component functions with more than one
 statement, translated as Go closures `ssrF_<name>` of type `vela.Func`
 (ssr_func.go, task 045). Oracle groups: `fn-statements`, `fn-try`,
 `fn-closures`, `fn-recursion`, `stmt-destructure`, `stmt-assign`,
-`errors-new`. Each function has one dynamic-tier variant;
-monomorphisation (T-7.2a) is not done yet. Status: `implemented` unless
-the notes say otherwise.
+`errors-new`. Functions have typed variants per argument types besides the
+dynamic one (T-7.2a, see "monomorphised variants" above). Status:
+`implemented` unless the notes say otherwise.
 
 | Construct | Lowering | Rule | Notes |
 | --- | --- | --- | --- |
@@ -160,15 +160,15 @@ the notes say otherwise.
 | `.then`, `.catch`, `.finally`, `Promise.resolve`, `reject`, `all`, `allSettled` | native | `ssrJS.Then` / `CatchPromise` / `Finally`, `vela.Resolve` / `Reject`, `ssrJS.All` / `AllSettled`, in array order | T-7.4b | `TestSSRAsyncMatchesNode`, `TestPromiseChain`, `TestPromiseAllOrder` | implemented |
 | `{#await}` with server-evaluated operand | native or host | `vela.AwaitSettle`: renders `then`/`catch` with any JSON value, payload snapshot adopted by the client without re-evaluating the operand; `await` sites in `--ssr-report` | T-7.4f | `TestSSRAsyncMatchesNode`, `Loader` hydration cases | implemented |
 | `{#await}` whose operand cannot run on the server | client | a required site whose diagnostic says to wrap the block in `{#client}`; the server then renders the boundary fallback | T-7.4f, T-9.3 | `Boundary` fixture | implemented |
-| `{#await}` with a caller-supplied `RenderOptions.Await` snapshot | native | render the supplied branch with any JSON `Value`/`Error`; operand not evaluated | T-7.4f | await-snapshot (`Multi then`, `Multi catch`) | implemented (block engine; the legacy renderer keeps string snapshots) |
+| `{#await}` with a caller-supplied `RenderOptions.Await` snapshot | native | render the supplied branch with any JSON `Value`/`Error`; operand not evaluated | T-7.4f | await-snapshot (`Multi then`, `Multi catch`) | implemented |
 | top-level `await` in component script | rejected | — | T-7.4d | — | never |
 
 ### 1.7 Region boundaries
 
 | Construct | Outcome | Rule | Status | Notes |
 | --- | --- | --- | --- | --- |
-| event handlers, `$effect`, `onMount`, `onDestroy`, binding write-back | excluded | T-2.2 | planned (S1) | Currently diagnosed through the static event bridge (`VELA-SSR-EVENT-REACTIVE`). |
-| `{#client}` main branch | excluded | T-9.1c | implemented | The server renders the fallback (or nothing) in a range with the state token `f`; the client adopts it and mounts the main branch after the root commits (`$$client`), per owner instance inside rows; destroying the owner or rolling its hydration back cancels the pending mount. CSR mounts the main branch directly. Fixtures: `Boundary` (block engine), `Gate` (both engines). |
+| event handlers, `$effect`, `onMount`, `onDestroy`, binding write-back | excluded | T-2.2 | implemented | Never translated and never block SSR; hydration attaches them. |
+| `{#client}` main branch | excluded | T-9.1c | implemented | The server renders the fallback (or nothing) in a range with the state token `f`; the client adopts it and mounts the main branch after the root commits (`$$client`), per owner instance inside rows; destroying the owner or rolling its hydration back cancels the pending mount. CSR mounts the main branch directly. Fixtures: `Boundary`, `Gate`. |
 | client-only component (`<script context="client">`) | excluded | T-9.2 | implemented | No Go renderer (`--ssr-report` status `client-only`); a usage renders an empty `f` range and the module flag `$$clientOnly` makes `$$component` mount it after the commit. CSR treats it as an ordinary component. |
 
 ---
@@ -240,7 +240,7 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `sort`, `toSorted` | `ssrJS.Method`, `ssrJS.MutateArray` | T-6.3a, T-6.6b | Stable. Without comparator: compares `String(x)` by UTF-16 units and places `undefined` last, holes after it: `[10,9,undefined,1].sort()` is `[1,10,9,undefined]` ✓. Comparator result `NaN` counts as `0`. `sort` only on arrays the function created. | `arr-sort`, `arr-mutate` | implemented |
 | `reverse`, `toReversed` | `ssrJS.Method`, `ssrJS.MutateArray` | T-6.6b | `reverse` mutates: only on arrays the function created. | `arr-reverse`, `arr-mutate` | implemented |
 | `push`, `pop`, `shift`, `unshift`, `splice`, `fill` | `ssrJS.MutateArray` | T-6.6b | As a statement, a `const`/`let` initializer, or the right-hand side of an assignment, on a local array the function created; methods that change the length also need the array not to be copied into another variable, literal, or call argument. Otherwise `VELA-SSR-IMPURE`. | `arr-mutate` | implemented |
-| `entries`, `keys`, `values` in `for…of` | index loop | §7.1 | Only as `for…of` sources in v1. | — | planned (S5) |
+| `entries`, `keys`, `values` in `for…of` | index loop | §7.1 | Only as `for…of` sources in v1. | — | planned (task 056) |
 | `Array.from(arrayLike, mapFn)` | `ssrJS.ArrayFrom` | — | Strings by code point; `{length: n}`; holes become `undefined`. | `arr-from` | implemented |
 | `Array.of` | `vela.ArrayOf` | — |  | `arr-from` | implemented |
 
@@ -299,7 +299,7 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | Built-in | Go helper | Rule | Divergence / required edge cases | Oracles | Status |
 | --- | --- | --- | --- | --- | --- |
 | `err.message`, `err.name`, `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | `vela.NewError` | T-6.5d, T-7.4h | Host errors expose `"Internal error"` unless `vela.PublicError`. | `errors-new`, `fn-try` | implemented |
-| `String(err)` | `vela.String` | — | `"[object Object]"` on the server; JavaScript gives `"Error: message"`. | — | planned (S5) |
+| `String(err)` | `vela.String` | — | `"[object Object]"` on the server; JavaScript gives `"Error: message"`. | — | planned (task 056) |
 | `err.stack` | — | — |  | — | never |
 ---
 

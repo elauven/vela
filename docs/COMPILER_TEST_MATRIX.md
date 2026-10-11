@@ -1,7 +1,7 @@
 # Compiler pipeline test matrix
 
-Status: operational baseline for Task 011, updated 2026-08-23. This matrix
-links the actual client compiler path to its executable proof. A checkmark
+Status: updated 2026-10-11. This matrix links each stage of the client and
+server compiler paths to its executable proof. A checkmark
 means that focused tests exist; it does not claim an unavailable optional
 runtime has run. Browser and jsdom suites deliberately skip when their external
 dependencies are missing.
@@ -22,12 +22,19 @@ dependencies are missing.
 | Runtime behavior | `runtime_contract_test.go`, `runtime_behaviour_test.go`, `runtime_nesting_matrix_test.go`, `runtime_*` regression tests. | Todo/dashboard fixture actions are shared through declarative steps. | Primary DOM/runtime proof; skips without Node/jsdom. | Playwright project corpus and focus/CSS scenarios. | Browser source-map suite separately validates thrown locations. | Broaden real-app corpus as features are added; no SSR/hydration coverage yet. Tasks 003 follow-on / 007. |
 | Source maps | `sourcemap_test.go`, `jsprinter_roundtrip_test.go`. | Compile-file external maps plus nested tree origins. | N/A. | Five browser source-map mapping scenarios. | Primary proof. | CSS maps and transformed-script parse-once origins remain pending Tasks 014/013. |
 | Trace observability | `compiler_trace_test.go` asserts stage order, failure cutoff, output invariance, aggregate metrics, and source-free JSON. | N/A. | N/A. | N/A. | N/A. | API exists; CLI JSONL sink and watch/parallel delivery are deferred. Task 016 (optional). |
+| Block engine and hydration | `runtime_blocks_test.go`, `blocks_engine_test.go`, `runtime_contract_test.go`. | `TestBlocksEngineMatchesRecordedDOM` over recorded corpus DOM. | `TestRuntimeBlocksUnderJsdom`, `TestBlocksCorpusHydrates`. | `TestBlocksSSRMarkupParsesInChromium`, `TestBlocksGenerativeDifferentialInChromium`. | N/A. | — |
+| SSR translation (server IR, functions, modules, built-ins) | `ssr_ir`, `ssr_func`, `ssr_module`, `ssr_builtins` tests; `ssr_runtime/...` unit tests. | Expression, init, value-text and checked-binding oracles against Node (`ssr_*_oracle_test.go`); `TestSSRExpressionDifferentialFuzz`. | Indirect. | Indirect. | N/A. | Rows still rejected: tasks 056, 057. |
+| SSR project build and Go renderers | `ssr_project_test.go`, `ssr_go_ast_test.go`, `ssr_host_test.go`, `ssr_runtime_module_test.go`, `html_nesting_test.go`. | `TestBlocksSSRMarkupMatchesClientDOM`, `TestBlocksGenerativeDifferential` (CSR = SSR = hydrated DOM). | `ssr-blocks-check.mjs` cases. | `TestSSRHostImplementationEndToEnd`. | N/A. | — |
+| SSR beta gate | `TestSSRGateComparison`, `TestSSRGateSummaryIsCurrent`. | `TestSSRGate`: real corpus through the CLI, generated Go and HTTP. | N/A. | `TestSSRGate` (hydration, CSR equality, clicks, teardown). | N/A. | Components needing props are checked with defaults. |
+| Bundler delivery | `runtime_package_test.go`, `package_imports_test.go`. | N/A. | N/A. | `TestBundlerRecipeEsbuild`. | N/A. | — |
 
 ## Required suite commands
 
 | Goal | Command | Environment condition |
 | --- | --- | --- |
-| Compiler, parser, AST, corpus, jsdom/browser tests registered in Go | `go test ./... -count=1` | Node/jsdom and Playwright tests skip if unavailable. |
+| Compiler, parser, AST, corpus, jsdom/browser tests registered in Go | `go test ./... ./ssr_runtime/... -count=1` | Node/jsdom and Playwright tests skip if unavailable. |
+| Strict browser baseline (required tests, skips fail) | `node tools/run-ssr-browser-baseline.mjs` | Node, jsdom, Playwright Chromium. |
+| SSR beta gate | `go test -run TestSSRGate -count=1 .` | Node, Playwright Chromium, Go. |
 | Focused target-AST / structural gateway proof | `go test -run "Test(Validate|ASTGen|StructuralString)" -count=1` | None. |
 | Source-map proof | `go test -run "Test(BrowserSourceMap|SourceMap)" -count=1` | Browser subset needs Playwright Chromium. |
 | Browser application compatibility | `go test -run "TestBrowserRuntime" -count=1` | Node, Playwright package, Chromium. |
@@ -50,13 +57,8 @@ dependencies are missing.
    must run the corresponding environment rather than accepting the skip as
    proof.
 
-## Remediation order
+## Open work
 
-1. Task 012 eliminates structural executable-JS string construction and
-   print/reparse lowering.
-2. Task 013 introduces parse-once ScriptAST and AST-native transforms.
-3. Task 014 completes template/CSS AST spans, diagnostics, and validation.
-4. Only then may Tasks 007 (SSR/hydration) and 008 (HMR/dev server) add a
-   second backend or persistent incremental state.
-5. Task 015 target profiles and Task 016 CLI trace delivery are useful but
-   non-blocking enhancements after their dependencies.
+Post-beta translation slices are tasks 056 (exact-semantics constructs) and
+057 (Date, Map/Set, `this`, array identity); the dev server and HMR are task
+008; moving compiler layers out of `package main` is task 054.
