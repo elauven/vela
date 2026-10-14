@@ -1,0 +1,11 @@
+# Docker build context of bench/vela-app/Dockerfile (repository root).
+.git
+node_modules
+bench/sveltekit-app/node_modules
+bench/sveltekit-app/build
+bench/sveltekit-app/.svelte-kit
+bench/vela-app/out
+bench/vela-app/bin
+bench/results
+bench/storage
+test_projects

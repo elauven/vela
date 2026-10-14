@@ -1,0 +1,5 @@
+sveltekit-app/node_modules
+sveltekit-app/build
+sveltekit-app/.svelte-kit
+results
+storage

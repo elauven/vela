@@ -29,8 +29,19 @@ node shared/parity-check.mjs http://localhost:8081 http://localhost:8082
 k6 run -e BASE=http://localhost:8081 shared/k6/journey.js
 ```
 
-With Docker: `docker compose up --build` starts PostgreSQL, seeds it, and runs
-both applications with the same CPU and memory limits.
+Full measurement on one Linux host (pins PostgreSQL to CPUs 0–1 — start it with
+`taskset -c 0,1 pg_ctlcluster 18 main start` — the app to 2–5, k6 to 6–7):
+
+```sh
+go build -o bin/seed ./seed && vela-app/build.sh && (cd sveltekit-app && npm ci && npm run build)
+node shared/runner.mjs                       # all scenarios, 1 and 4 CPUs, both apps
+node shared/runner.mjs --apps vela --cpus 1 --scenarios render-200
+```
+
+With Docker (not yet run): `APP_CPUS=1 docker compose up --build -d db seed vela
+sveltekit` starts PostgreSQL, seeds it, and runs both applications with the
+same CPU and memory limits; `docker compose run --rm k6 run -e
+BASE=http://vela:8081 /scripts/render.js` runs a scenario.
 
 ## Environment
 

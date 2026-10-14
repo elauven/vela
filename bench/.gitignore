@@ -8,3 +8,5 @@
 /storage/
 /results/
 /sveltekit-app/static/
+/bin/
+*.test
