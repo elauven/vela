@@ -266,10 +266,14 @@ func setOrigin(n JsNode, o NodeOrigin) {
 // ─────────────────────────────────────────────
 
 type ASTGen struct {
-	name     string
-	scopeID  string
-	analysis *Analysis
-	sfc      *SFC
+	name    string
+	scopeID string
+	// elementScope is the scope attribute written on elements: scopeID when
+	// the component has styles, "" otherwise (the attribute only serves
+	// scoped CSS; task 059).
+	elementScope string
+	analysis     *Analysis
+	sfc          *SFC
 
 	// blocks is non-nil when the block DOM engine lowers this component
 	// (blocks_codegen.go).
@@ -923,13 +927,14 @@ func buildProgramUnvalidated(
 	// shared source tree cannot leak generated $$set_* names into user scopes.
 	analysis.lowerReactiveCallbackBodies()
 	g := &ASTGen{
-		name:        name,
-		scopeID:     scopeID,
-		analysis:    analysis,
-		sfc:         sfc,
-		fragCounter: -1,
-		cssExternal: cssExternal,
-		blocks:      &blocksState{},
+		name:         name,
+		scopeID:      scopeID,
+		elementScope: elementScopeFor(sfc, scopeID),
+		analysis:     analysis,
+		sfc:          sfc,
+		fragCounter:  -1,
+		cssExternal:  cssExternal,
+		blocks:       &blocksState{},
 	}
 	return g.buildModule(nodes)
 }
@@ -1582,6 +1587,15 @@ func (g *ASTGen) buildStyleInjection() []JsStmt {
 // ExtractScopedCSS returns the scope-transformed stylesheet for an
 // SFC, or "" when it has no <style>.  Used by the compiler in
 // external-CSS mode to write a sibling .css file.
+// elementScopeFor is the scope attribute of a component's elements: none
+// when the component has no styles, so nothing selects on it.
+func elementScopeFor(sfc *SFC, scopeID string) string {
+	if strings.TrimSpace(scopedCSSForSFC(sfc, scopeID)) == "" {
+		return ""
+	}
+	return scopeID
+}
+
 func ExtractScopedCSS(sfc *SFC, scopeID string) string {
 	if sfc == nil || strings.TrimSpace(sfc.Style) == "" {
 		return ""

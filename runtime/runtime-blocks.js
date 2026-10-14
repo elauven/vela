@@ -273,7 +273,8 @@ function withComponentCursor(cursor, mount) {
 }
 
 // $$mountComponent mounts a component's root fragment. Created: into a new
-// display:contents wrapper (when wrapperScope is given) or a detached
+// display:contents wrapper (when wrapperScope is not null; "" is a wrapper
+// without a scope attribute, for a component without styles) or a detached
 // fragment, then inserted at target. Hydrated: on the server DOM at the
 // cursor of the enclosing block or root. setRoot receives the wrapper;
 // getRoot returns the component element afterwards.
@@ -283,7 +284,7 @@ export function $$mountComponent(target, fragmentFn, wrapperScope, setRoot, getR
     const owner = $$owner(null);
     let handle;
     if (wrapperScope != null) {
-      const wrapper = outer.element('div', [wrapperScope, '', 'style', 'display: contents;']);
+      const wrapper = outer.element('div', wrapperScope ? [wrapperScope, '', 'style', 'display: contents;'] : ['style', 'display: contents;']);
       setRoot(wrapper);
       outer.enter(wrapper);
       handle = fragmentFn(outer.sub(owner));
@@ -296,7 +297,7 @@ export function $$mountComponent(target, fragmentFn, wrapperScope, setRoot, getR
   let view;
   if (wrapperScope != null) {
     const wrapper = document.createElement('div');
-    wrapper.setAttribute(wrapperScope, '');
+    if (wrapperScope) wrapper.setAttribute(wrapperScope, '');
     wrapper.style.display = 'contents';
     setRoot(wrapper);
     view = $$mountRoot(wrapper, fragmentFn);

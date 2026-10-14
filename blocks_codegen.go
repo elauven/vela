@@ -195,7 +195,7 @@ func (g *ASTGen) buildBlocksView(nodes []Node) {
 
 	wrapper := JsExpr(genNull())
 	if !rootIsElement {
-		wrapper = strLit(g.scopeID)
+		wrapper = strLit(g.elementScope)
 	}
 	setRoot := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$el")}, Body: genBlock(genAssignStmt(id("$$root"), id("$$el")))}
 	getRoot := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: id("$$root")}
@@ -288,7 +288,7 @@ func (g *ASTGen) buildBlocksChildren(nodes []Node, isRoot bool) {
 	keepWhitespace := !isRoot && astHoleSubtreeOK(nodes)
 	var run []Node
 	kept := func() bool {
-		return keepWhitespace || hasPreformattedText(run) || strings.TrimSpace(emitStaticHTML(run, g.scopeID)) != ""
+		return keepWhitespace || hasPreformattedText(run) || strings.TrimSpace(emitStaticHTML(run, g.elementScope)) != ""
 	}
 	flush := func() {
 		if len(run) == 0 {
@@ -336,7 +336,7 @@ func isElementNode(node Node) bool {
 // blocksStatic clones a module-level template holding static nodes.
 func (g *ASTGen) blocksStatic(nodes []Node) {
 	name := "$$tpl_" + g.name + "_" + itoa(len(g.blocks.templates))
-	g.blocks.templates = append(g.blocks.templates, genConst(name, genCall(id("$$template"), strLit(emitStaticHTML(nodes, g.scopeID)))))
+	g.blocks.templates = append(g.blocks.templates, genConst(name, genCall(id("$$template"), strLit(emitStaticHTML(nodes, g.elementScope)))))
 	g.blocksEmit(genExprStmt(genCall(genMember(id("$$c"), "static"), id(name))))
 }
 
@@ -395,7 +395,10 @@ func (g *ASTGen) buildBlocksText(text *TextNode) {
 
 func (g *ASTGen) buildBlocksElement(el *ElementNode, isRoot bool) {
 	ref := g.blocks.next("$$e")
-	attrs := genArray(strLit(g.scopeID), strLit(""))
+	attrs := genArray()
+	if g.elementScope != "" {
+		attrs = genArray(strLit(g.elementScope), strLit(""))
+	}
 	for _, attr := range el.Attrs {
 		if attr.IsEvent || attr.IsTwoWay || attr.IsBind || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
 			continue
@@ -673,7 +676,7 @@ func (g *ASTGen) buildBlocksComponent(comp *ComponentNode) {
 		eventsArg = events
 	}
 	props := blocksArrow(nil, g.componentPropsExpr(comp.Attrs))
-	g.blocksBlockCall("$$component", id(comp.Name), props, slots, eventsArg, blocksChanged(g.blocksGuard(exprs...)), strLit(g.scopeID))
+	g.blocksBlockCall("$$component", id(comp.Name), props, slots, eventsArg, blocksChanged(g.blocksGuard(exprs...)), strLit(g.elementScope))
 }
 
 // blocksComponentEventHandler forwards only CustomEvents dispatched by the

@@ -16,8 +16,11 @@ import (
 type SSRRenderPlan struct {
 	ComponentName string
 	ScopeID       string
-	Props         []SSRPlanProp
-	SlotNames     []string
+	// ElementScope is the scope attribute of elements: ScopeID when the
+	// component has styles, "" otherwise (as the client, task 059).
+	ElementScope string
+	Props        []SSRPlanProp
+	SlotNames    []string
 	// ReactiveNames is analysis metadata for diagnostics and bridge safety.
 	// It is not emitted into server code.
 	ReactiveNames []string
@@ -311,6 +314,7 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		PlainInitializers:   ssrPlainInitializers(analysis),
 		Functions:           ssrNamedFunctions(analysis),
 		ScopedCSS:           ExtractScopedCSS(sfc, scopeID),
+		ElementScope:        elementScopeFor(sfc, scopeID),
 		DeepInitializers:    ssrDeepInitializers(analysis),
 		TemplateOffset:      sfc.TemplateOffset,
 		ScriptOffset:        sfc.ScriptOffset,

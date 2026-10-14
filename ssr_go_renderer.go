@@ -72,6 +72,7 @@ type ssrGoEmitter struct {
 	ctx            SSRExprContext
 	packageName    string
 	scopeID        string
+	elementScope   string
 	awaitOptions   goast.Expr
 	needsEscaping  bool
 	eachNext       int
@@ -235,7 +236,7 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 	call := &goast.CallExpr{Fun: component, Args: []goast.Expr{propsArg, slots}}
 	render := &goast.CallExpr{Fun: goSelectorExpr(call, "Render"), Args: []goast.Expr{goast.NewIdent("w")}}
 	// The client sets the parent scope on the child root element.
-	setScope := &goast.ExprStmt{X: &goast.CallExpr{Fun: goSelector("vela", "SetHostScope"), Args: []goast.Expr{goast.NewIdent("w"), &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(e.scopeID)}}}}
+	setScope := &goast.ExprStmt{X: &goast.CallExpr{Fun: goSelector("vela", "SetHostScope"), Args: []goast.Expr{goast.NewIdent("w"), &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(e.elementScope)}}}}
 	return ssrScopedStatements(prelude, setScope, goWriteSSRErr(render)), nil
 }
 
@@ -342,8 +343,11 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 
 	open := "<" + node.Tag
 
-	// The client sets the scope attribute on every template element.
-	open += " " + e.scopeID
+	// The client sets the scope attribute on every template element of a
+	// component with styles.
+	if e.elementScope != "" {
+		open += " " + e.elementScope
+	}
 
 	var textareaValue SSRPlanAttr
 	hasTextareaValue := false

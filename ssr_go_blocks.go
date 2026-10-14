@@ -25,7 +25,7 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 		return nil, err
 	}
 	emitter := ssrGoEmitter{
-		ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID,
+		ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, elementScope: plan.ElementScope,
 		awaitOptions: goast.NewIdent("options"), componentName: plan.ComponentName,
 		region: region, facts: map[JsExpr]ssrIRFacts{},
 	}
@@ -56,7 +56,7 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 	}
 	if emitter.rootElement == nil {
 		wrapped := []goast.Stmt{
-			goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(`<div ` + plan.ScopeID + ` style="display: contents;"`)}),
+			goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(ssrWrapperOpen(plan.ElementScope))}),
 			goWriteSSRErr(&goast.CallExpr{Fun: goSelector("vela", "WriteHostScope"), Args: []goast.Expr{goast.NewIdent("w")}}),
 			goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(">")}),
 		}
@@ -536,4 +536,14 @@ func (e *ssrGoEmitter) clientBlock(node *SSRPlanClient) ([]goast.Stmt, error) {
 		return nil, err
 	}
 	return e.ranged("f", fallback), nil
+}
+
+// ssrWrapperOpen opens the display:contents wrapper of a multi-root
+// component as the client creates it: with the scope attribute only when the
+// component has styles.
+func ssrWrapperOpen(scope string) string {
+	if scope == "" {
+		return `<div style="display: contents;"`
+	}
+	return `<div ` + scope + ` style="display: contents;"`
 }

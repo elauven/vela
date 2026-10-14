@@ -188,7 +188,7 @@ func FormatCurrency(ctx context.Context, value float64) (string, error) {
 		t.Fatalf("build with the host: %d errors\n%s", errors, stderr)
 	}
 	out := p.run()
-	for _, want := range []string{`<p vela-`, `>ru:1234 RUB</p>`, `>ru:1234 RUB|ru:1234 RUB</p>`, "ERR=<nil>", "CALLS=2"} {
+	for _, want := range []string{`<p class="total">`, `>ru:1234 RUB</p>`, `>ru:1234 RUB|ru:1234 RUB</p>`, "ERR=<nil>", "CALLS=2"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("host render misses %q:\n%s", want, out)
 		}
