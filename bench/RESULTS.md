@@ -110,7 +110,7 @@ sizes, and the mobile times that depend on them, would shrink for both.
 | Drag and drop between columns | 88 ms | 80 ms | 80 ms | 80 ms |
 | Status filter on the list until the rows are updated (fetch included) | 44 ms | 50 ms | 292 ms | 288 ms |
 
-- **Hydration** finishes 2–3.5 times sooner with Vela on desktop: one
+- **Hydration** finishes 1.5–3.5 times sooner with Vela on desktop: one
   25–29 KB module against about 100 KB in 13–14 SvelteKit chunks. On the
   mobile profile the board's time is dominated by downloading its HTML, so
   both are close; on the smaller pages Vela is ready 260–320 ms earlier.
@@ -121,7 +121,7 @@ sizes, and the mobile times that depend on them, would shrink for both.
   were stable.
 - **Interactions** are equal within the timer resolution (8 ms steps): both
   update only the affected DOM.
-- **HTML** is 15–17% larger for Vela on list pages (block markers and the
+- **HTML** is 10–17% larger for Vela on list pages (block markers and the
   payload); first paint is still earlier or equal because the server
   answers sooner.
 
@@ -287,5 +287,7 @@ Also fixed on the way: missing browser globals (`XMLHttpRequest`, `Intl`,
 ## Next
 
 - A run on a dedicated server with `docker compose` (both configurations).
-- Profile the remaining single-CPU tail latency of Vela (garbage collector
-  and scheduling with 64 concurrent requests on one `GOMAXPROCS`).
+- Report latency with coordinated omission corrected (an open-model k6
+  scenario at a fixed arrival rate), so that overload compares what users
+  wait for rather than per-request percentiles; Vela's higher single-CPU
+  p95 under overload comes from fair CPU sharing (see "Saturation curves").
