@@ -37,12 +37,13 @@ if (!base || !out) {
 const runs = Number(opts.runs);
 const mobile = opts.profile === 'mobile';
 
+// js: the page hydrates (the dashboard has no JavaScript in either app).
 const PAGES = [
-  { name: 'board', path: '/projects/1/board' },
-  { name: 'render-200', path: '/render/board?n=200' },
-  { name: 'issues', path: '/issues' },
-  { name: 'issue', path: '/issues/42' },
-  { name: 'dashboard', path: '/dashboard' },
+  { name: 'board', path: '/projects/1/board', js: true },
+  { name: 'render-200', path: '/render/board?n=200', js: true },
+  { name: 'issues', path: '/issues', js: true },
+  { name: 'issue', path: '/issues/42', js: true },
+  { name: 'dashboard', path: '/dashboard', js: false },
 ];
 
 // Collects LCP, long tasks and event timings from the start of the page.
@@ -75,11 +76,11 @@ async function heapMB(page) {
   return usedSize / 1e6;
 }
 
-async function load(page, path) {
+async function load(page, path, js) {
   await page.goto(base + path, { waitUntil: 'load' });
-  // The hydration mark, when the page has JavaScript; at most 20 s.
-  const hasScript = await page.evaluate(() => document.querySelectorAll('script[src], script[type=module]').length > 0);
-  if (hasScript) await page.waitForFunction(() => performance.getEntriesByName('app-hydrated').length > 0, null, { timeout: 20000 });
+  // The hydration mark of a page with JavaScript; at most 20 s. (SvelteKit
+  // starts from an inline script, so the page markup cannot tell.)
+  if (js) await page.waitForFunction(() => performance.getEntriesByName('app-hydrated').length > 0, null, { timeout: 20000 });
   await page.waitForTimeout(300); // late LCP and long-task entries
   const metrics = await page.evaluate(() => {
     const nav = performance.getEntriesByType('navigation')[0];
@@ -144,8 +145,8 @@ try {
       await context.addInitScript(observe);
       const page = await context.newPage();
       await throttle(page);
-      cold.push(await load(page, p.path));
-      if (i === 0) warm = await load(page, p.path);
+      cold.push(await load(page, p.path, p.js));
+      if (i === 0) warm = await load(page, p.path, p.js);
       await context.close();
     }
     const keys = Object.keys(cold[0]);

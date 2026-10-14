@@ -203,11 +203,12 @@ function windowRows(profile, metrics, rss) {
   return rows.sort((a, b) => Number(a.w.slice(1)) - Number(b.w.slice(1)));
 }
 
-// Spike recovery: baseline p95 of the first 30 s; after the load drops
-// (70 s) the seconds until a window is back within 1.5× of it without errors.
+// Spike recovery: the baseline is the last 5 s before the spike (t5, at 20
+// VUs; the first stage ramps up from 0). After the load drops (70 s), the
+// seconds until a window is back within 1.5× of it without errors.
 function spikeSummary(rows) {
-  const base = rows.filter((r) => Number(r.w.slice(1)) >= 1 && Number(r.w.slice(1)) <= 5).map((r) => r.p95).sort((a, b) => a - b);
-  const baseline = base[Math.floor(base.length / 2)] || 0;
+  const at = (i) => rows.find((r) => r.w === `t${i}`);
+  const baseline = at(5)?.p95 || 0;
   const during = rows.filter((r) => Number(r.w.slice(1)) >= 7 && Number(r.w.slice(1)) <= 12);
   const after = rows.filter((r) => Number(r.w.slice(1)) >= 14);
   const back = after.find((r) => r.p95 <= baseline * 1.5 && r.failed === 0);
