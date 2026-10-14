@@ -198,6 +198,12 @@ var defaultGlobals = []string{
 	"Event", "EventTarget", "CustomEvent", "MouseEvent", "KeyboardEvent",
 	"HTMLElement", "Element", "Node", "Text", "DocumentFragment",
 	"alert", "confirm", "prompt",
+	"XMLHttpRequest", "WebSocket", "EventSource", "AbortController", "AbortSignal",
+	"BroadcastChannel", "MessageChannel", "Worker", "structuredClone", "crypto",
+	"performance", "atob", "btoa", "TextEncoder", "TextDecoder", "Intl",
+	"IntersectionObserver", "ResizeObserver", "MutationObserver", "matchMedia",
+	"getComputedStyle", "DOMParser", "Image", "HTMLInputElement", "InputEvent",
+	"DragEvent", "PointerEvent", "FocusEvent", "SubmitEvent",
 
 	// Node (so SSR / build scripts don't trip)
 	"process", "Buffer", "require", "module", "exports",

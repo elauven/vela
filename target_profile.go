@@ -58,6 +58,9 @@ func targetExcludedGlobals(profile TargetProfile) map[string]bool {
 		"window", "document", "history", "screen", "localStorage", "sessionStorage",
 		"indexedDB", "requestAnimationFrame", "cancelAnimationFrame", "alert", "confirm", "prompt",
 		"HTMLElement", "Element", "Node", "Text", "DocumentFragment", "FileReader",
+		"IntersectionObserver", "ResizeObserver", "MutationObserver", "matchMedia",
+		"getComputedStyle", "DOMParser", "Image", "HTMLInputElement", "InputEvent",
+		"DragEvent", "PointerEvent", "FocusEvent", "SubmitEvent",
 	}
 	nodeOnly := []string{"process", "Buffer", "require", "module", "exports", "__dirname", "__filename", "global"}
 	switch profile.normalized() {

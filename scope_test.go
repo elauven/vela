@@ -467,3 +467,10 @@ func TestDispatchBuiltinResolves(t *testing.T) {
 	ds := runScope(t, src)
 	expectNone(t, ds, "not defined")
 }
+
+// Common browser APIs are known globals (found by the benchmark app, task 058).
+func TestScope_CommonBrowserGlobals(t *testing.T) {
+	ds := runScope(t, `const x = new XMLHttpRequest(); const c = new AbortController();
+const f = new Intl.NumberFormat('en'); const o = new ResizeObserver(() => {}); const m = matchMedia('(min-width: 1px)');`)
+	expectNone(t, ds, "is not defined")
+}
