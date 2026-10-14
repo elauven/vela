@@ -1,0 +1,71 @@
+<script>
+  import { Nav } from '../components/Nav.vela';
+
+  export let totals = null;
+  export let byStatus = [];
+  export let byPriority = [];
+  export let projects = [];
+  export let recent = [];
+</script>
+
+<template>
+  <div>
+    <Nav current="dashboard" />
+    <main>
+      <h1>Dashboard</h1>
+      <div class="stats">
+        <div class="stat"><span class="muted">Issues</span><strong>{totals.issues}</strong></div>
+        <div class="stat"><span class="muted">Open</span><strong>{totals.open}</strong></div>
+        <div class="stat"><span class="muted">Done</span><strong>{totals.done}</strong></div>
+        <div class="stat"><span class="muted">Comments</span><strong>{totals.comments}</strong></div>
+      </div>
+      <div class="grid2">
+        <div class="bars">
+          <h2>By status</h2>
+          {#each byStatus as s (s.status)}
+            <div class="bar">
+              <span>{s.title}</span>
+              <div class="track"><div class="fill" style:width={`${s.pct}%`}></div></div>
+              <span class="muted">{s.count}</span>
+            </div>
+          {/each}
+        </div>
+        <div class="bars">
+          <h2>By priority</h2>
+          {#each byPriority as p (p.priority)}
+            <div class="bar">
+              <span>{p.title}</span>
+              <div class="track"><div class="fill" style:width={`${p.pct}%`}></div></div>
+              <span class="muted">{p.count}</span>
+            </div>
+          {/each}
+        </div>
+      </div>
+      <div class="grid2">
+        <table>
+          <thead><tr><th>Project</th><th>Open</th><th>Done</th></tr></thead>
+          <tbody>
+            {#each projects as p (p.id)}
+              <tr>
+                <td><a :href={`/projects/${p.id}/board`}>{p.key}</a> {p.name}</td>
+                <td>{p.open}</td>
+                <td>{p.done}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+        <table>
+          <thead><tr><th>Recently updated</th><th>Updated</th></tr></thead>
+          <tbody>
+            {#each recent as r (r.id)}
+              <tr>
+                <td><a :href={`/issues/${r.id}`}>{r.key}</a> {r.title}</td>
+                <td class="muted">{r.updated}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+</template>

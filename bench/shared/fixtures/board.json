@@ -1,0 +1,11102 @@
+[
+ {
+  "id": 1,
+  "key": "WEB-1",
+  "title": "Redesign session handling",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 2,
+  "key": "WEB-2",
+  "title": "Add user settings",
+  "status": "todo",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 3,
+  "key": "WEB-3",
+  "title": "Migrate user settings",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Grace Stroustrup",
+   "initials": "GS",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Aug 14",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 4,
+  "key": "WEB-4",
+  "title": "Test file previews after the last release",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Hedy Rossum",
+   "initials": "HR",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 1
+ },
+ {
+  "id": 5,
+  "key": "WEB-5",
+  "title": "Optimise keyboard shortcuts after the last release",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 6,
+  "key": "WEB-6",
+  "title": "Refactor dark theme",
+  "status": "todo",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 7,
+  "key": "WEB-7",
+  "title": "Investigate API rate limiter behind the feature flag",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Niklaus Perlman",
+   "initials": "NP",
+   "color": "#22c55e"
+  },
+  "labels": [],
+  "due": "Oct 1",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 8,
+  "key": "WEB-8",
+  "title": "Improve search index",
+  "status": "done",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 9,
+  "key": "WEB-9",
+  "title": "Refactor mobile layout",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Guido Thompson",
+   "initials": "GT",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "Aug 4",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 10,
+  "key": "WEB-10",
+  "title": "Test billing page on slow networks",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Radia Backus",
+   "initials": "RB",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 11,
+  "key": "WEB-11",
+  "title": "Test session handling",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 12,
+  "key": "WEB-12",
+  "title": "Fix login form",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Niklaus Perlman",
+   "initials": "NP",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 1
+ },
+ {
+  "id": 13,
+  "key": "WEB-13",
+  "title": "Validate dashboard charts",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Alan Turing",
+   "initials": "AT",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 14,
+  "key": "WEB-14",
+  "title": "Optimise onboarding flow",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Guido Turing",
+   "initials": "GT",
+   "color": "#64748b"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 4,
+  "attachments": 0
+ },
+ {
+  "id": 15,
+  "key": "WEB-15",
+  "title": "Validate dark theme",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "Sep 16",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 16,
+  "key": "WEB-16",
+  "title": "Validate export to CSV",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Sophie Stroustrup",
+   "initials": "SS",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 17,
+  "key": "WEB-17",
+  "title": "Redesign search index",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Margaret Hamilton",
+   "initials": "MH",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 2
+ },
+ {
+  "id": 18,
+  "key": "WEB-18",
+  "title": "Refactor file previews",
+  "status": "todo",
+  "priority": 1,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 19,
+  "key": "WEB-19",
+  "title": "Test audit log",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Radia Rossum",
+   "initials": "RR",
+   "color": "#64748b"
+  },
+  "labels": [],
+  "due": "Aug 2",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 20,
+  "key": "WEB-20",
+  "title": "Fix webhook retries",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 1
+ },
+ {
+  "id": 21,
+  "key": "WEB-21",
+  "title": "Migrate file previews behind the feature flag",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Margaret Allen",
+   "initials": "MA",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Sep 22",
+  "comments": 4,
+  "attachments": 2
+ },
+ {
+  "id": 22,
+  "key": "WEB-22",
+  "title": "Improve cache layer on slow networks",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Donald Lamarr",
+   "initials": "DL",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 23,
+  "key": "WEB-23",
+  "title": "Migrate audit log",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Katherine Perlman",
+   "initials": "KP",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Sep 10",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 24,
+  "key": "WEB-24",
+  "title": "Migrate access control in production",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Bjarne Hamilton",
+   "initials": "BH",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 25,
+  "key": "WEB-25",
+  "title": "Improve dark theme",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Linus Ritchie",
+   "initials": "LR",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 26,
+  "key": "WEB-26",
+  "title": "Optimise billing page",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Sophie Torvalds",
+   "initials": "ST",
+   "color": "#64748b"
+  },
+  "labels": [],
+  "due": "Aug 20",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 27,
+  "key": "WEB-27",
+  "title": "Optimise access control",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Katherine Allen",
+   "initials": "KA",
+   "color": "#3b82f6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 2
+ },
+ {
+  "id": 28,
+  "key": "WEB-28",
+  "title": "Migrate mobile layout",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Hedy Wilson",
+   "initials": "HW",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "Oct 26",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 29,
+  "key": "WEB-29",
+  "title": "Improve image uploads",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "Aug 8",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 30,
+  "key": "WEB-30",
+  "title": "Improve cache layer with SSO enabled",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Ada Perlman",
+   "initials": "AP",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 0
+ },
+ {
+  "id": 31,
+  "key": "WEB-31",
+  "title": "Migrate file previews",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Bjarne Perlman",
+   "initials": "BP",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 0
+ },
+ {
+  "id": 32,
+  "key": "WEB-32",
+  "title": "Investigate dashboard charts",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Grace Torvalds",
+   "initials": "GT",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "Oct 28",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 33,
+  "key": "WEB-33",
+  "title": "Redesign notification emails in the admin panel",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Grace Wirth",
+   "initials": "GW",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 34,
+  "key": "WEB-34",
+  "title": "Redesign billing page",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Alan Hamilton",
+   "initials": "AH",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Oct 1",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 35,
+  "key": "WEB-35",
+  "title": "Add audit log",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "Sep 25",
+  "comments": 1,
+  "attachments": 1
+ },
+ {
+  "id": 36,
+  "key": "WEB-36",
+  "title": "Validate keyboard shortcuts on slow networks",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Sophie Rossum",
+   "initials": "SR",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Aug 6",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 37,
+  "key": "WEB-37",
+  "title": "Improve user settings",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Sophie Lamarr",
+   "initials": "SL",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 38,
+  "key": "WEB-38",
+  "title": "Fix mobile layout",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Hedy Thompson",
+   "initials": "HT",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 1
+ },
+ {
+  "id": 39,
+  "key": "WEB-39",
+  "title": "Investigate webhook retries",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Bjarne Rossum",
+   "initials": "BR",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 40,
+  "key": "WEB-40",
+  "title": "Optimise webhook retries",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Katherine Torvalds",
+   "initials": "KT",
+   "color": "#22c55e"
+  },
+  "labels": [],
+  "due": "Oct 5",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 41,
+  "key": "WEB-41",
+  "title": "Fix access control for large accounts",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Ken Allen",
+   "initials": "KA",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Aug 6",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 42,
+  "key": "WEB-42",
+  "title": "Refactor search index with SSO enabled",
+  "status": "todo",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 0
+ },
+ {
+  "id": 43,
+  "key": "WEB-43",
+  "title": "Test onboarding flow",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Edsger Johnson",
+   "initials": "EJ",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 44,
+  "key": "WEB-44",
+  "title": "Document mobile layout",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Grace Johnson",
+   "initials": "GJ",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 45,
+  "key": "WEB-45",
+  "title": "Investigate user settings",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Linus Backus",
+   "initials": "LB",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Oct 28",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 46,
+  "key": "WEB-46",
+  "title": "Fix session handling",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "John Hamilton",
+   "initials": "JH",
+   "color": "#f97316"
+  },
+  "labels": [],
+  "due": "Aug 23",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 47,
+  "key": "WEB-47",
+  "title": "Migrate notification emails with SSO enabled",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Barbara Stroustrup",
+   "initials": "BS",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Aug 20",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 48,
+  "key": "WEB-48",
+  "title": "Remove search index",
+  "status": "done",
+  "priority": 0,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 49,
+  "key": "WEB-49",
+  "title": "Validate API rate limiter in production",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Margaret Turing",
+   "initials": "MT",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 50,
+  "key": "WEB-50",
+  "title": "Optimise file previews",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Grace Johnson",
+   "initials": "GJ",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Sep 14",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 51,
+  "key": "WEB-51",
+  "title": "Improve dashboard charts behind the feature flag",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "John Liskov",
+   "initials": "JL",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 52,
+  "key": "WEB-52",
+  "title": "Document error reporting under load",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 53,
+  "key": "WEB-53",
+  "title": "Migrate cache layer behind the feature flag",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Barbara Lovelace",
+   "initials": "BL",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 54,
+  "key": "WEB-54",
+  "title": "Fix dark theme",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "John Stroustrup",
+   "initials": "JS",
+   "color": "#ef4444"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 55,
+  "key": "WEB-55",
+  "title": "Fix keyboard shortcuts",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Niklaus Rossum",
+   "initials": "NR",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 2
+ },
+ {
+  "id": 56,
+  "key": "WEB-56",
+  "title": "Test audit log",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Dennis Perlman",
+   "initials": "DP",
+   "color": "#6366f1"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 57,
+  "key": "WEB-57",
+  "title": "Document dashboard charts",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Barbara Hopper",
+   "initials": "BH",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 58,
+  "key": "WEB-58",
+  "title": "Remove export to CSV",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Frances Knuth",
+   "initials": "FK",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 1
+ },
+ {
+  "id": 59,
+  "key": "WEB-59",
+  "title": "Validate image uploads",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Grace Ritchie",
+   "initials": "GR",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Aug 9",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 60,
+  "key": "WEB-60",
+  "title": "Validate session handling in the admin panel",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 61,
+  "key": "WEB-61",
+  "title": "Test cache layer",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Linus Knuth",
+   "initials": "LK",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 1
+ },
+ {
+  "id": 62,
+  "key": "WEB-62",
+  "title": "Improve error reporting",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Niklaus Stroustrup",
+   "initials": "NS",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 63,
+  "key": "WEB-63",
+  "title": "Optimise API rate limiter with SSO enabled",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Katherine Dijkstra",
+   "initials": "KD",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 64,
+  "key": "WEB-64",
+  "title": "Refactor billing page for new users",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Grace Backus",
+   "initials": "GB",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 65,
+  "key": "WEB-65",
+  "title": "Refactor mobile layout",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Edsger Johnson",
+   "initials": "EJ",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 1
+ },
+ {
+  "id": 66,
+  "key": "WEB-66",
+  "title": "Add billing page",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Bjarne Lovelace",
+   "initials": "BL",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 0
+ },
+ {
+  "id": 67,
+  "key": "WEB-67",
+  "title": "Refactor image uploads on slow networks",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "John Rossum",
+   "initials": "JR",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Aug 8",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 68,
+  "key": "WEB-68",
+  "title": "Remove user settings",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Margaret Stroustrup",
+   "initials": "MS",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "Aug 16",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 69,
+  "key": "WEB-69",
+  "title": "Fix file previews for new users",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Niklaus Johnson",
+   "initials": "NJ",
+   "color": "#eab308"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 70,
+  "key": "WEB-70",
+  "title": "Investigate dashboard charts on slow networks",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Annie Turing",
+   "initials": "AT",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 2
+ },
+ {
+  "id": 71,
+  "key": "WEB-71",
+  "title": "Validate export to CSV for large accounts",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Edsger Stroustrup",
+   "initials": "ES",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 72,
+  "key": "WEB-72",
+  "title": "Fix cache layer",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Barbara Liskov",
+   "initials": "BL",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 73,
+  "key": "WEB-73",
+  "title": "Add access control",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Aug 22",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 74,
+  "key": "WEB-74",
+  "title": "Redesign login form",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Dennis Hopper",
+   "initials": "DH",
+   "color": "#64748b"
+  },
+  "labels": [],
+  "due": "Aug 28",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 75,
+  "key": "WEB-75",
+  "title": "Optimise access control behind the feature flag",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Edsger Backus",
+   "initials": "EB",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 76,
+  "key": "WEB-76",
+  "title": "Optimise login form on slow networks",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Katherine Perlman",
+   "initials": "KP",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 77,
+  "key": "WEB-77",
+  "title": "Migrate error reporting with SSO enabled",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 78,
+  "key": "WEB-78",
+  "title": "Document onboarding flow",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Edsger Wilson",
+   "initials": "EW",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 79,
+  "key": "WEB-79",
+  "title": "Optimise keyboard shortcuts in production",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "John Thompson",
+   "initials": "JT",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "Aug 4",
+  "comments": 6,
+  "attachments": 1
+ },
+ {
+  "id": 80,
+  "key": "WEB-80",
+  "title": "Redesign search index",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Guido Backus",
+   "initials": "GB",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "Oct 15",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 81,
+  "key": "WEB-81",
+  "title": "Validate mobile layout",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Hedy Stroustrup",
+   "initials": "HS",
+   "color": "#a855f7"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 82,
+  "key": "WEB-82",
+  "title": "Fix dark theme",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Linus Wirth",
+   "initials": "LW",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "Sep 14",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 83,
+  "key": "WEB-83",
+  "title": "Remove dark theme",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Frances Wirth",
+   "initials": "FW",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Sep 20",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 84,
+  "key": "WEB-84",
+  "title": "Redesign dashboard charts",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Frances Wilson",
+   "initials": "FW",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 85,
+  "key": "WEB-85",
+  "title": "Refactor search index",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Linus Hamilton",
+   "initials": "LH",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 86,
+  "key": "WEB-86",
+  "title": "Migrate notification emails",
+  "status": "todo",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Sep 29",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 87,
+  "key": "WEB-87",
+  "title": "Migrate image uploads",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Barbara Ritchie",
+   "initials": "BR",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 1
+ },
+ {
+  "id": 88,
+  "key": "WEB-88",
+  "title": "Investigate file previews on slow networks",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Ken Torvalds",
+   "initials": "KT",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Sep 15",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 89,
+  "key": "WEB-89",
+  "title": "Add session handling",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 90,
+  "key": "WEB-90",
+  "title": "Investigate access control",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Niklaus Stroustrup",
+   "initials": "NS",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 91,
+  "key": "WEB-91",
+  "title": "Document API rate limiter after the last release",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Sophie Wilson",
+   "initials": "SW",
+   "color": "#ef4444"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 5,
+  "attachments": 0
+ },
+ {
+  "id": 92,
+  "key": "WEB-92",
+  "title": "Improve image uploads",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Grace Wirth",
+   "initials": "GW",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 93,
+  "key": "WEB-93",
+  "title": "Test file previews",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Sophie Liskov",
+   "initials": "SL",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "Oct 20",
+  "comments": 8,
+  "attachments": 1
+ },
+ {
+  "id": 94,
+  "key": "WEB-94",
+  "title": "Improve session handling",
+  "status": "todo",
+  "priority": 3,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 95,
+  "key": "WEB-95",
+  "title": "Fix login form",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Ada Liskov",
+   "initials": "AL",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Aug 23",
+  "comments": 6,
+  "attachments": 2
+ },
+ {
+  "id": 96,
+  "key": "WEB-96",
+  "title": "Remove search index",
+  "status": "done",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 97,
+  "key": "WEB-97",
+  "title": "Improve dashboard charts on Safari",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Katherine Hamilton",
+   "initials": "KH",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 98,
+  "key": "WEB-98",
+  "title": "Improve error reporting for large accounts",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Linus Backus",
+   "initials": "LB",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 99,
+  "key": "WEB-99",
+  "title": "Add audit log",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Alan Lamarr",
+   "initials": "AL",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 100,
+  "key": "WEB-100",
+  "title": "Add error reporting",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 7,
+  "attachments": 0
+ },
+ {
+  "id": 101,
+  "key": "WEB-101",
+  "title": "Investigate image uploads",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Oct 25",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 102,
+  "key": "WEB-102",
+  "title": "Test user settings",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Edsger Johnson",
+   "initials": "EJ",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "Aug 31",
+  "comments": 4,
+  "attachments": 0
+ },
+ {
+  "id": 103,
+  "key": "WEB-103",
+  "title": "Test image uploads",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Annie Wirth",
+   "initials": "AW",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 104,
+  "key": "WEB-104",
+  "title": "Document notification emails",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Sophie Easley",
+   "initials": "SE",
+   "color": "#eab308"
+  },
+  "labels": [],
+  "due": "Aug 28",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 105,
+  "key": "WEB-105",
+  "title": "Fix keyboard shortcuts",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Ken Dijkstra",
+   "initials": "KD",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 106,
+  "key": "WEB-106",
+  "title": "Migrate session handling",
+  "status": "todo",
+  "priority": 1,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 107,
+  "key": "WEB-107",
+  "title": "Investigate export to CSV for large accounts",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Hedy Rossum",
+   "initials": "HR",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 108,
+  "key": "WEB-108",
+  "title": "Add cache layer",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 2
+ },
+ {
+  "id": 109,
+  "key": "WEB-109",
+  "title": "Investigate search index for new users",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 110,
+  "key": "WEB-110",
+  "title": "Redesign API rate limiter",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Sophie Wilson",
+   "initials": "SW",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 111,
+  "key": "WEB-111",
+  "title": "Improve search index",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Donald Thompson",
+   "initials": "DT",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 112,
+  "key": "WEB-112",
+  "title": "Validate audit log in the admin panel",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Niklaus Wirth",
+   "initials": "NW",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 113,
+  "key": "WEB-113",
+  "title": "Improve webhook retries under load",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Linus Hopper",
+   "initials": "LH",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 1
+ },
+ {
+  "id": 114,
+  "key": "WEB-114",
+  "title": "Fix user settings",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Donald Ritchie",
+   "initials": "DR",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Sep 24",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 115,
+  "key": "WEB-115",
+  "title": "Refactor webhook retries for large accounts",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Margaret Hamilton",
+   "initials": "MH",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 116,
+  "key": "WEB-116",
+  "title": "Document API rate limiter on Safari",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Sophie Ritchie",
+   "initials": "SR",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 117,
+  "key": "WEB-117",
+  "title": "Refactor error reporting with SSO enabled",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Linus Lamarr",
+   "initials": "LL",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 118,
+  "key": "WEB-118",
+  "title": "Fix login form",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Hedy Backus",
+   "initials": "HB",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "Oct 11",
+  "comments": 5,
+  "attachments": 1
+ },
+ {
+  "id": 119,
+  "key": "WEB-119",
+  "title": "Refactor billing page for new users",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 120,
+  "key": "WEB-120",
+  "title": "Optimise session handling",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "Sep 20",
+  "comments": 1,
+  "attachments": 0
+ },
+ {
+  "id": 121,
+  "key": "WEB-121",
+  "title": "Redesign API rate limiter for new users",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Linus Turing",
+   "initials": "LT",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "Aug 2",
+  "comments": 11,
+  "attachments": 1
+ },
+ {
+  "id": 122,
+  "key": "WEB-122",
+  "title": "Fix image uploads",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Dennis Rossum",
+   "initials": "DR",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 123,
+  "key": "WEB-123",
+  "title": "Test mobile layout",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 6,
+  "attachments": 0
+ },
+ {
+  "id": 124,
+  "key": "WEB-124",
+  "title": "Improve notification emails",
+  "status": "done",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 125,
+  "key": "WEB-125",
+  "title": "Fix file previews",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 126,
+  "key": "WEB-126",
+  "title": "Test export to CSV",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Radia Torvalds",
+   "initials": "RT",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "Oct 11",
+  "comments": 4,
+  "attachments": 0
+ },
+ {
+  "id": 127,
+  "key": "WEB-127",
+  "title": "Investigate search index",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Alan Lovelace",
+   "initials": "AL",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "Sep 10",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 128,
+  "key": "WEB-128",
+  "title": "Validate dark theme",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Alan Backus",
+   "initials": "AB",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 2
+ },
+ {
+  "id": 129,
+  "key": "WEB-129",
+  "title": "Redesign notification emails",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Aug 3",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 130,
+  "key": "WEB-130",
+  "title": "Validate API rate limiter on slow networks",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Alan Wilson",
+   "initials": "AW",
+   "color": "#6366f1"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 131,
+  "key": "WEB-131",
+  "title": "Add export to CSV in the admin panel",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 132,
+  "key": "WEB-132",
+  "title": "Improve API rate limiter behind the feature flag",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 133,
+  "key": "WEB-133",
+  "title": "Refactor cache layer",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 134,
+  "key": "WEB-134",
+  "title": "Refactor dark theme",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Niklaus Hamilton",
+   "initials": "NH",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 0
+ },
+ {
+  "id": 135,
+  "key": "WEB-135",
+  "title": "Investigate onboarding flow on slow networks",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Grace Rossum",
+   "initials": "GR",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 136,
+  "key": "WEB-136",
+  "title": "Improve export to CSV",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Sophie Backus",
+   "initials": "SB",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 137,
+  "key": "WEB-137",
+  "title": "Test error reporting",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "Aug 20",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 138,
+  "key": "WEB-138",
+  "title": "Optimise onboarding flow on Safari",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Guido Allen",
+   "initials": "GA",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "Aug 31",
+  "comments": 7,
+  "attachments": 0
+ },
+ {
+  "id": 139,
+  "key": "WEB-139",
+  "title": "Remove search index",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Sophie Lovelace",
+   "initials": "SL",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Aug 30",
+  "comments": 4,
+  "attachments": 2
+ },
+ {
+  "id": 140,
+  "key": "WEB-140",
+  "title": "Add onboarding flow",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Hedy Perlman",
+   "initials": "HP",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "Sep 18",
+  "comments": 1,
+  "attachments": 0
+ },
+ {
+  "id": 141,
+  "key": "WEB-141",
+  "title": "Remove billing page for large accounts",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Ken Hopper",
+   "initials": "KH",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "Sep 17",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 142,
+  "key": "WEB-142",
+  "title": "Optimise error reporting",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Katherine Turing",
+   "initials": "KT",
+   "color": "#ef4444"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 143,
+  "key": "WEB-143",
+  "title": "Migrate search index",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Barbara Liskov",
+   "initials": "BL",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 144,
+  "key": "WEB-144",
+  "title": "Optimise onboarding flow",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Frances Allen",
+   "initials": "FA",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 145,
+  "key": "WEB-145",
+  "title": "Document keyboard shortcuts",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Alan Turing",
+   "initials": "AT",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 2
+ },
+ {
+  "id": 146,
+  "key": "WEB-146",
+  "title": "Migrate login form",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Frances Wilson",
+   "initials": "FW",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Sep 20",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 147,
+  "key": "WEB-147",
+  "title": "Test notification emails with SSO enabled",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Hedy Ritchie",
+   "initials": "HR",
+   "color": "#f97316"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 148,
+  "key": "WEB-148",
+  "title": "Fix notification emails",
+  "status": "done",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "Aug 16",
+  "comments": 1,
+  "attachments": 1
+ },
+ {
+  "id": 149,
+  "key": "WEB-149",
+  "title": "Migrate file previews",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Margaret Allen",
+   "initials": "MA",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 1
+ },
+ {
+  "id": 150,
+  "key": "WEB-150",
+  "title": "Add API rate limiter for new users",
+  "status": "todo",
+  "priority": 2,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 151,
+  "key": "WEB-151",
+  "title": "Refactor access control on slow networks",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Dennis Perlman",
+   "initials": "DP",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 1
+ },
+ {
+  "id": 152,
+  "key": "WEB-152",
+  "title": "Improve dark theme after the last release",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Bjarne Dijkstra",
+   "initials": "BD",
+   "color": "#a855f7"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 153,
+  "key": "WEB-153",
+  "title": "Redesign keyboard shortcuts",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Frances Thompson",
+   "initials": "FT",
+   "color": "#eab308"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 154,
+  "key": "WEB-154",
+  "title": "Test session handling with SSO enabled",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Edsger Hopper",
+   "initials": "EH",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "Sep 6",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 155,
+  "key": "WEB-155",
+  "title": "Improve cache layer on slow networks",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Hedy Easley",
+   "initials": "HE",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Oct 11",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 156,
+  "key": "WEB-156",
+  "title": "Migrate user settings",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Frances Hopper",
+   "initials": "FH",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 157,
+  "key": "WEB-157",
+  "title": "Test dashboard charts",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Sep 23",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 158,
+  "key": "WEB-158",
+  "title": "Add access control in the admin panel",
+  "status": "todo",
+  "priority": 3,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 159,
+  "key": "WEB-159",
+  "title": "Add file previews in the admin panel",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Ken Dijkstra",
+   "initials": "KD",
+   "color": "#22c55e"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 1,
+  "attachments": 1
+ },
+ {
+  "id": 160,
+  "key": "WEB-160",
+  "title": "Add notification emails",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Frances Johnson",
+   "initials": "FJ",
+   "color": "#eab308"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 7,
+  "attachments": 0
+ },
+ {
+  "id": 161,
+  "key": "WEB-161",
+  "title": "Test audit log for new users",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Radia Lamarr",
+   "initials": "RL",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Sep 5",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 162,
+  "key": "WEB-162",
+  "title": "Refactor audit log",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Bjarne Liskov",
+   "initials": "BL",
+   "color": "#ef4444"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 163,
+  "key": "WEB-163",
+  "title": "Migrate billing page in the admin panel",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Ada Torvalds",
+   "initials": "AT",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 164,
+  "key": "WEB-164",
+  "title": "Add file previews",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Hedy Torvalds",
+   "initials": "HT",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 0
+ },
+ {
+  "id": 165,
+  "key": "WEB-165",
+  "title": "Optimise notification emails",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Barbara Lovelace",
+   "initials": "BL",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Sep 2",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 166,
+  "key": "WEB-166",
+  "title": "Remove billing page",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Radia Liskov",
+   "initials": "RL",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "Oct 20",
+  "comments": 5,
+  "attachments": 1
+ },
+ {
+  "id": 167,
+  "key": "WEB-167",
+  "title": "Refactor onboarding flow",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Margaret Stroustrup",
+   "initials": "MS",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 168,
+  "key": "WEB-168",
+  "title": "Document session handling behind the feature flag",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Radia Hamilton",
+   "initials": "RH",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 169,
+  "key": "WEB-169",
+  "title": "Optimise login form",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Frances Allen",
+   "initials": "FA",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 170,
+  "key": "WEB-170",
+  "title": "Migrate search index",
+  "status": "todo",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 171,
+  "key": "WEB-171",
+  "title": "Validate dashboard charts after the last release",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Linus Backus",
+   "initials": "LB",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Sep 13",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 172,
+  "key": "WEB-172",
+  "title": "Remove onboarding flow",
+  "status": "done",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 173,
+  "key": "WEB-173",
+  "title": "Redesign mobile layout behind the feature flag",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Ken Wirth",
+   "initials": "KW",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Aug 29",
+  "comments": 3,
+  "attachments": 1
+ },
+ {
+  "id": 174,
+  "key": "WEB-174",
+  "title": "Validate dark theme under load",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Edsger Stroustrup",
+   "initials": "ES",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 175,
+  "key": "WEB-175",
+  "title": "Optimise webhook retries under load",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Sophie Rossum",
+   "initials": "SR",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 176,
+  "key": "WEB-176",
+  "title": "Investigate login form in the admin panel",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "John Lovelace",
+   "initials": "JL",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 177,
+  "key": "WEB-177",
+  "title": "Optimise session handling behind the feature flag",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Sophie Perlman",
+   "initials": "SP",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 178,
+  "key": "WEB-178",
+  "title": "Add API rate limiter",
+  "status": "todo",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 0
+ },
+ {
+  "id": 179,
+  "key": "WEB-179",
+  "title": "Refactor keyboard shortcuts",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Grace Turing",
+   "initials": "GT",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "Sep 6",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 180,
+  "key": "WEB-180",
+  "title": "Refactor dark theme under load",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Edsger Hamilton",
+   "initials": "EH",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 181,
+  "key": "WEB-181",
+  "title": "Migrate error reporting",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Grace Torvalds",
+   "initials": "GT",
+   "color": "#ec4899"
+  },
+  "labels": [],
+  "due": "Sep 4",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 182,
+  "key": "WEB-182",
+  "title": "Add dashboard charts after the last release",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Barbara Stroustrup",
+   "initials": "BS",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 0
+ },
+ {
+  "id": 183,
+  "key": "WEB-183",
+  "title": "Refactor file previews on Safari",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Ken Backus",
+   "initials": "KB",
+   "color": "#a855f7"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 184,
+  "key": "WEB-184",
+  "title": "Investigate error reporting in the admin panel",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Dennis Lovelace",
+   "initials": "DL",
+   "color": "#22c55e"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 5,
+  "attachments": 0
+ },
+ {
+  "id": 185,
+  "key": "WEB-185",
+  "title": "Fix cache layer",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Frances Hamilton",
+   "initials": "FH",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 186,
+  "key": "WEB-186",
+  "title": "Fix dashboard charts after the last release",
+  "status": "todo",
+  "priority": 3,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 187,
+  "key": "WEB-187",
+  "title": "Refactor user settings",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "John Wilson",
+   "initials": "JW",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "Aug 31",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 188,
+  "key": "WEB-188",
+  "title": "Test webhook retries on Safari",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Grace Allen",
+   "initials": "GA",
+   "color": "#ef4444"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 189,
+  "key": "WEB-189",
+  "title": "Refactor cache layer in the admin panel",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Margaret Rossum",
+   "initials": "MR",
+   "color": "#ef4444"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 190,
+  "key": "WEB-190",
+  "title": "Improve cache layer under load",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Niklaus Turing",
+   "initials": "NT",
+   "color": "#ec4899"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 191,
+  "key": "WEB-191",
+  "title": "Investigate mobile layout",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "John Rossum",
+   "initials": "JR",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 192,
+  "key": "WEB-192",
+  "title": "Redesign billing page behind the feature flag",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Donald Hopper",
+   "initials": "DH",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Oct 13",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 193,
+  "key": "WEB-193",
+  "title": "Refactor notification emails on Safari",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Ada Torvalds",
+   "initials": "AT",
+   "color": "#ec4899"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 194,
+  "key": "WEB-194",
+  "title": "Redesign user settings",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Radia Torvalds",
+   "initials": "RT",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Oct 11",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 195,
+  "key": "WEB-195",
+  "title": "Document billing page",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Barbara Lamarr",
+   "initials": "BL",
+   "color": "#6366f1"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 196,
+  "key": "WEB-196",
+  "title": "Fix API rate limiter on Safari",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Ada Wilson",
+   "initials": "AW",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 197,
+  "key": "WEB-197",
+  "title": "Migrate file previews in the admin panel",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 198,
+  "key": "WEB-198",
+  "title": "Remove billing page",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Donald Backus",
+   "initials": "DB",
+   "color": "#6366f1"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 5,
+  "attachments": 0
+ },
+ {
+  "id": 199,
+  "key": "WEB-199",
+  "title": "Document mobile layout with SSO enabled",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Annie Turing",
+   "initials": "AT",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Oct 14",
+  "comments": 4,
+  "attachments": 2
+ },
+ {
+  "id": 200,
+  "key": "WEB-200",
+  "title": "Add export to CSV under load",
+  "status": "done",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Sep 22",
+  "comments": 5,
+  "attachments": 1
+ },
+ {
+  "id": 201,
+  "key": "WEB-201",
+  "title": "Validate export to CSV",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Edsger Lovelace",
+   "initials": "EL",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Aug 6",
+  "comments": 11,
+  "attachments": 1
+ },
+ {
+  "id": 202,
+  "key": "WEB-202",
+  "title": "Remove error reporting",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Ken Perlman",
+   "initials": "KP",
+   "color": "#f97316"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 203,
+  "key": "WEB-203",
+  "title": "Optimise dashboard charts with SSO enabled",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Katherine Turing",
+   "initials": "KT",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 204,
+  "key": "WEB-204",
+  "title": "Improve cache layer for large accounts",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 1
+ },
+ {
+  "id": 205,
+  "key": "WEB-205",
+  "title": "Improve session handling",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Niklaus Lamarr",
+   "initials": "NL",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 1
+ },
+ {
+  "id": 206,
+  "key": "WEB-206",
+  "title": "Improve keyboard shortcuts for large accounts",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Ken Torvalds",
+   "initials": "KT",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Oct 23",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 207,
+  "key": "WEB-207",
+  "title": "Refactor export to CSV for new users",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Dennis Backus",
+   "initials": "DB",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 208,
+  "key": "WEB-208",
+  "title": "Fix file previews",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Guido Torvalds",
+   "initials": "GT",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 209,
+  "key": "WEB-209",
+  "title": "Optimise API rate limiter",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Frances Backus",
+   "initials": "FB",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 210,
+  "key": "WEB-210",
+  "title": "Investigate session handling",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Ken Wilson",
+   "initials": "KW",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 211,
+  "key": "WEB-211",
+  "title": "Optimise access control",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Bjarne Turing",
+   "initials": "BT",
+   "color": "#ef4444"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 4,
+  "attachments": 2
+ },
+ {
+  "id": 212,
+  "key": "WEB-212",
+  "title": "Redesign billing page",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Frances Backus",
+   "initials": "FB",
+   "color": "#f97316"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 213,
+  "key": "WEB-213",
+  "title": "Migrate image uploads after the last release",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Sophie Wilson",
+   "initials": "SW",
+   "color": "#22c55e"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 4,
+  "attachments": 2
+ },
+ {
+  "id": 214,
+  "key": "WEB-214",
+  "title": "Investigate session handling",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Dennis Lamarr",
+   "initials": "DL",
+   "color": "#f97316"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 215,
+  "key": "WEB-215",
+  "title": "Add dashboard charts",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 216,
+  "key": "WEB-216",
+  "title": "Optimise dashboard charts",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Dennis Liskov",
+   "initials": "DL",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 0
+ },
+ {
+  "id": 217,
+  "key": "WEB-217",
+  "title": "Add file previews",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Alan Wilson",
+   "initials": "AW",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 218,
+  "key": "WEB-218",
+  "title": "Validate billing page",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Margaret Johnson",
+   "initials": "MJ",
+   "color": "#a855f7"
+  },
+  "labels": [],
+  "due": "Sep 15",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 219,
+  "key": "WEB-219",
+  "title": "Remove audit log after the last release",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Katherine Perlman",
+   "initials": "KP",
+   "color": "#a855f7"
+  },
+  "labels": [],
+  "due": "Oct 30",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 220,
+  "key": "WEB-220",
+  "title": "Test notification emails",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Edsger Thompson",
+   "initials": "ET",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 221,
+  "key": "WEB-221",
+  "title": "Fix cache layer in production",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Sophie Wirth",
+   "initials": "SW",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 222,
+  "key": "WEB-222",
+  "title": "Validate webhook retries",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Edsger Hopper",
+   "initials": "EH",
+   "color": "#ec4899"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 4,
+  "attachments": 2
+ },
+ {
+  "id": 223,
+  "key": "WEB-223",
+  "title": "Migrate user settings in the admin panel",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Hedy Perlman",
+   "initials": "HP",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 224,
+  "key": "WEB-224",
+  "title": "Investigate export to CSV",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Annie Backus",
+   "initials": "AB",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 225,
+  "key": "WEB-225",
+  "title": "Redesign billing page",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Edsger Lovelace",
+   "initials": "EL",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 1
+ },
+ {
+  "id": 226,
+  "key": "WEB-226",
+  "title": "Validate user settings",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Bjarne Lovelace",
+   "initials": "BL",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 1
+ },
+ {
+  "id": 227,
+  "key": "WEB-227",
+  "title": "Add dashboard charts in production",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 228,
+  "key": "WEB-228",
+  "title": "Migrate notification emails in production",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Radia Rossum",
+   "initials": "RR",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 229,
+  "key": "WEB-229",
+  "title": "Redesign keyboard shortcuts in production",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Oct 8",
+  "comments": 8,
+  "attachments": 1
+ },
+ {
+  "id": 230,
+  "key": "WEB-230",
+  "title": "Test mobile layout for large accounts",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Barbara Lamarr",
+   "initials": "BL",
+   "color": "#a855f7"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 6,
+  "attachments": 2
+ },
+ {
+  "id": 231,
+  "key": "WEB-231",
+  "title": "Refactor image uploads in production",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Barbara Hopper",
+   "initials": "BH",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "Sep 2",
+  "comments": 11,
+  "attachments": 1
+ },
+ {
+  "id": 232,
+  "key": "WEB-232",
+  "title": "Fix audit log",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Margaret Knuth",
+   "initials": "MK",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 233,
+  "key": "WEB-233",
+  "title": "Test API rate limiter on slow networks",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Katherine Wilson",
+   "initials": "KW",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 234,
+  "key": "WEB-234",
+  "title": "Test file previews on slow networks",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Annie Hamilton",
+   "initials": "AH",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 235,
+  "key": "WEB-235",
+  "title": "Migrate keyboard shortcuts",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Guido Stroustrup",
+   "initials": "GS",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 236,
+  "key": "WEB-236",
+  "title": "Refactor image uploads behind the feature flag",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Annie Lovelace",
+   "initials": "AL",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 237,
+  "key": "WEB-237",
+  "title": "Improve file previews for new users",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Donald Allen",
+   "initials": "DA",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 238,
+  "key": "WEB-238",
+  "title": "Add image uploads",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Barbara Wilson",
+   "initials": "BW",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 239,
+  "key": "WEB-239",
+  "title": "Validate file previews",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Hedy Stroustrup",
+   "initials": "HS",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Oct 19",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 240,
+  "key": "WEB-240",
+  "title": "Fix dark theme",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Niklaus Perlman",
+   "initials": "NP",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 241,
+  "key": "WEB-241",
+  "title": "Investigate export to CSV",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Edsger Knuth",
+   "initials": "EK",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 242,
+  "key": "WEB-242",
+  "title": "Test cache layer",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Barbara Thompson",
+   "initials": "BT",
+   "color": "#3b82f6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 243,
+  "key": "WEB-243",
+  "title": "Document login form",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Guido Hamilton",
+   "initials": "GH",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 0
+ },
+ {
+  "id": 244,
+  "key": "WEB-244",
+  "title": "Optimise notification emails",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Margaret Thompson",
+   "initials": "MT",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 245,
+  "key": "WEB-245",
+  "title": "Improve audit log",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Donald Perlman",
+   "initials": "DP",
+   "color": "#eab308"
+  },
+  "labels": [],
+  "due": "Oct 16",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 246,
+  "key": "WEB-246",
+  "title": "Remove image uploads",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Guido Hamilton",
+   "initials": "GH",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 0
+ },
+ {
+  "id": 247,
+  "key": "WEB-247",
+  "title": "Remove mobile layout with SSO enabled",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Edsger Easley",
+   "initials": "EE",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 248,
+  "key": "WEB-248",
+  "title": "Add image uploads",
+  "status": "done",
+  "priority": 1,
+  "assignee": null,
+  "labels": [],
+  "due": "Aug 9",
+  "comments": 7,
+  "attachments": 0
+ },
+ {
+  "id": 249,
+  "key": "WEB-249",
+  "title": "Add user settings for new users",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Niklaus Thompson",
+   "initials": "NT",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 250,
+  "key": "WEB-250",
+  "title": "Investigate audit log",
+  "status": "todo",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 1
+ },
+ {
+  "id": 251,
+  "key": "WEB-251",
+  "title": "Refactor onboarding flow for large accounts",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Hedy Hopper",
+   "initials": "HH",
+   "color": "#ec4899"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 252,
+  "key": "WEB-252",
+  "title": "Add login form in the admin panel",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Linus Stroustrup",
+   "initials": "LS",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 253,
+  "key": "WEB-253",
+  "title": "Fix session handling in the admin panel",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Alan Rossum",
+   "initials": "AR",
+   "color": "#64748b"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 254,
+  "key": "WEB-254",
+  "title": "Add access control on Safari",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Ken Lovelace",
+   "initials": "KL",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 255,
+  "key": "WEB-255",
+  "title": "Refactor onboarding flow",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "John Turing",
+   "initials": "JT",
+   "color": "#a855f7"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 256,
+  "key": "WEB-256",
+  "title": "Document error reporting with SSO enabled",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "John Johnson",
+   "initials": "JJ",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 257,
+  "key": "WEB-257",
+  "title": "Validate API rate limiter with SSO enabled",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Linus Thompson",
+   "initials": "LT",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 258,
+  "key": "WEB-258",
+  "title": "Optimise search index in the admin panel",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Sophie Hopper",
+   "initials": "SH",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 259,
+  "key": "WEB-259",
+  "title": "Improve onboarding flow",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Annie Torvalds",
+   "initials": "AT",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 260,
+  "key": "WEB-260",
+  "title": "Investigate API rate limiter on Safari",
+  "status": "done",
+  "priority": 0,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 261,
+  "key": "WEB-261",
+  "title": "Fix API rate limiter",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Donald Hamilton",
+   "initials": "DH",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 2
+ },
+ {
+  "id": 262,
+  "key": "WEB-262",
+  "title": "Improve mobile layout in production",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Radia Allen",
+   "initials": "RA",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Sep 5",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 263,
+  "key": "WEB-263",
+  "title": "Fix access control",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 264,
+  "key": "WEB-264",
+  "title": "Investigate onboarding flow on slow networks",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Dennis Torvalds",
+   "initials": "DT",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "Aug 26",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 265,
+  "key": "WEB-265",
+  "title": "Test webhook retries",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Guido Backus",
+   "initials": "GB",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 266,
+  "key": "WEB-266",
+  "title": "Investigate image uploads under load",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Ken Liskov",
+   "initials": "KL",
+   "color": "#3b82f6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 5,
+  "attachments": 0
+ },
+ {
+  "id": 267,
+  "key": "WEB-267",
+  "title": "Validate dashboard charts",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Frances Perlman",
+   "initials": "FP",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 268,
+  "key": "WEB-268",
+  "title": "Optimise user settings",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [],
+  "due": "Oct 25",
+  "comments": 2,
+  "attachments": 2
+ },
+ {
+  "id": 269,
+  "key": "WEB-269",
+  "title": "Refactor dashboard charts",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Oct 15",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 270,
+  "key": "WEB-270",
+  "title": "Validate dashboard charts",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "John Stroustrup",
+   "initials": "JS",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 0
+ },
+ {
+  "id": 271,
+  "key": "WEB-271",
+  "title": "Test login form",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Sophie Stroustrup",
+   "initials": "SS",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Aug 28",
+  "comments": 3,
+  "attachments": 1
+ },
+ {
+  "id": 272,
+  "key": "WEB-272",
+  "title": "Improve billing page",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Ken Hamilton",
+   "initials": "KH",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 1
+ },
+ {
+  "id": 273,
+  "key": "WEB-273",
+  "title": "Refactor onboarding flow",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Katherine Allen",
+   "initials": "KA",
+   "color": "#64748b"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 5,
+  "attachments": 0
+ },
+ {
+  "id": 274,
+  "key": "WEB-274",
+  "title": "Investigate image uploads",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Guido Lamarr",
+   "initials": "GL",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 1
+ },
+ {
+  "id": 275,
+  "key": "WEB-275",
+  "title": "Fix user settings",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Edsger Easley",
+   "initials": "EE",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 276,
+  "key": "WEB-276",
+  "title": "Improve webhook retries",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Alan Liskov",
+   "initials": "AL",
+   "color": "#22c55e"
+  },
+  "labels": [],
+  "due": "Sep 23",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 277,
+  "key": "WEB-277",
+  "title": "Remove login form in the admin panel",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Barbara Johnson",
+   "initials": "BJ",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 2
+ },
+ {
+  "id": 278,
+  "key": "WEB-278",
+  "title": "Refactor dark theme under load",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Ken Allen",
+   "initials": "KA",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 279,
+  "key": "WEB-279",
+  "title": "Fix image uploads",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Ken Allen",
+   "initials": "KA",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 280,
+  "key": "WEB-280",
+  "title": "Refactor session handling",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Margaret Easley",
+   "initials": "ME",
+   "color": "#3b82f6"
+  },
+  "labels": [],
+  "due": "Sep 19",
+  "comments": 11,
+  "attachments": 1
+ },
+ {
+  "id": 281,
+  "key": "WEB-281",
+  "title": "Optimise dashboard charts",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Radia Allen",
+   "initials": "RA",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "Oct 13",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 282,
+  "key": "WEB-282",
+  "title": "Fix error reporting in the admin panel",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Margaret Lamarr",
+   "initials": "ML",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "Sep 22",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 283,
+  "key": "WEB-283",
+  "title": "Validate dark theme under load",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Guido Torvalds",
+   "initials": "GT",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 284,
+  "key": "WEB-284",
+  "title": "Optimise access control after the last release",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Alan Ritchie",
+   "initials": "AR",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 1
+ },
+ {
+  "id": 285,
+  "key": "WEB-285",
+  "title": "Validate dashboard charts",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Edsger Turing",
+   "initials": "ET",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 286,
+  "key": "WEB-286",
+  "title": "Improve notification emails with SSO enabled",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Ada Wilson",
+   "initials": "AW",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Sep 2",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 287,
+  "key": "WEB-287",
+  "title": "Test access control",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Niklaus Knuth",
+   "initials": "NK",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "Oct 27",
+  "comments": 6,
+  "attachments": 0
+ },
+ {
+  "id": 288,
+  "key": "WEB-288",
+  "title": "Investigate file previews",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Sophie Knuth",
+   "initials": "SK",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 11,
+  "attachments": 1
+ },
+ {
+  "id": 289,
+  "key": "WEB-289",
+  "title": "Test session handling",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Katherine Thompson",
+   "initials": "KT",
+   "color": "#64748b"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 3,
+  "attachments": 1
+ },
+ {
+  "id": 290,
+  "key": "WEB-290",
+  "title": "Validate dark theme",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Annie Lamarr",
+   "initials": "AL",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Oct 26",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 291,
+  "key": "WEB-291",
+  "title": "Improve access control",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Ada Lamarr",
+   "initials": "AL",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 0
+ },
+ {
+  "id": 292,
+  "key": "WEB-292",
+  "title": "Migrate access control",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Donald Wilson",
+   "initials": "DW",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 293,
+  "key": "WEB-293",
+  "title": "Migrate user settings after the last release",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Radia Thompson",
+   "initials": "RT",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 0
+ },
+ {
+  "id": 294,
+  "key": "WEB-294",
+  "title": "Validate session handling",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Katherine Dijkstra",
+   "initials": "KD",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 1
+ },
+ {
+  "id": 295,
+  "key": "WEB-295",
+  "title": "Improve API rate limiter",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Niklaus Lovelace",
+   "initials": "NL",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 296,
+  "key": "WEB-296",
+  "title": "Redesign image uploads",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Guido Torvalds",
+   "initials": "GT",
+   "color": "#3b82f6"
+  },
+  "labels": [],
+  "due": "Sep 20",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 297,
+  "key": "WEB-297",
+  "title": "Document cache layer",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Linus Dijkstra",
+   "initials": "LD",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 1
+ },
+ {
+  "id": 298,
+  "key": "WEB-298",
+  "title": "Refactor session handling",
+  "status": "todo",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Oct 23",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 299,
+  "key": "WEB-299",
+  "title": "Validate onboarding flow behind the feature flag",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Grace Easley",
+   "initials": "GE",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 300,
+  "key": "WEB-300",
+  "title": "Investigate image uploads behind the feature flag",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Ada Wilson",
+   "initials": "AW",
+   "color": "#ef4444"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 301,
+  "key": "WEB-301",
+  "title": "Add billing page under load",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Grace Wirth",
+   "initials": "GW",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 0
+ },
+ {
+  "id": 302,
+  "key": "WEB-302",
+  "title": "Improve cache layer",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Hedy Dijkstra",
+   "initials": "HD",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Aug 31",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 303,
+  "key": "WEB-303",
+  "title": "Migrate export to CSV",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Bjarne Torvalds",
+   "initials": "BT",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 304,
+  "key": "WEB-304",
+  "title": "Improve export to CSV under load",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Sophie Lovelace",
+   "initials": "SL",
+   "color": "#6366f1"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 305,
+  "key": "WEB-305",
+  "title": "Migrate login form for large accounts",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Alan Johnson",
+   "initials": "AJ",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 0
+ },
+ {
+  "id": 306,
+  "key": "WEB-306",
+  "title": "Validate export to CSV for new users",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Alan Lamarr",
+   "initials": "AL",
+   "color": "#64748b"
+  },
+  "labels": [],
+  "due": "Oct 28",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 307,
+  "key": "WEB-307",
+  "title": "Add dark theme in production",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "John Lovelace",
+   "initials": "JL",
+   "color": "#ef4444"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 4,
+  "attachments": 0
+ },
+ {
+  "id": 308,
+  "key": "WEB-308",
+  "title": "Improve export to CSV",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Ken Torvalds",
+   "initials": "KT",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 309,
+  "key": "WEB-309",
+  "title": "Remove API rate limiter",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Dennis Thompson",
+   "initials": "DT",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 310,
+  "key": "WEB-310",
+  "title": "Migrate search index",
+  "status": "todo",
+  "priority": 2,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 311,
+  "key": "WEB-311",
+  "title": "Migrate export to CSV after the last release",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Oct 30",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 312,
+  "key": "WEB-312",
+  "title": "Document user settings",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Katherine Allen",
+   "initials": "KA",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 313,
+  "key": "WEB-313",
+  "title": "Fix mobile layout",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Donald Backus",
+   "initials": "DB",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Sep 27",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 314,
+  "key": "WEB-314",
+  "title": "Migrate error reporting in production",
+  "status": "todo",
+  "priority": 2,
+  "assignee": null,
+  "labels": [],
+  "due": "Sep 5",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 315,
+  "key": "WEB-315",
+  "title": "Migrate cache layer for large accounts",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Dennis Easley",
+   "initials": "DE",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 316,
+  "key": "WEB-316",
+  "title": "Test error reporting for new users",
+  "status": "done",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 317,
+  "key": "WEB-317",
+  "title": "Remove API rate limiter",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Guido Easley",
+   "initials": "GE",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "Sep 10",
+  "comments": 7,
+  "attachments": 0
+ },
+ {
+  "id": 318,
+  "key": "WEB-318",
+  "title": "Validate user settings",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Ada Allen",
+   "initials": "AA",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "Aug 22",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 319,
+  "key": "WEB-319",
+  "title": "Improve export to CSV",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 320,
+  "key": "WEB-320",
+  "title": "Investigate mobile layout in production",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Ken Lovelace",
+   "initials": "KL",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 0
+ },
+ {
+  "id": 321,
+  "key": "WEB-321",
+  "title": "Test session handling",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Alan Torvalds",
+   "initials": "AT",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 322,
+  "key": "WEB-322",
+  "title": "Redesign search index",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Katherine Turing",
+   "initials": "KT",
+   "color": "#a855f7"
+  },
+  "labels": [],
+  "due": "Aug 11",
+  "comments": 2,
+  "attachments": 2
+ },
+ {
+  "id": 323,
+  "key": "WEB-323",
+  "title": "Add keyboard shortcuts",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "John Perlman",
+   "initials": "JP",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "Oct 2",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 324,
+  "key": "WEB-324",
+  "title": "Test onboarding flow",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Dennis Easley",
+   "initials": "DE",
+   "color": "#6366f1"
+  },
+  "labels": [],
+  "due": "Oct 12",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 325,
+  "key": "WEB-325",
+  "title": "Remove user settings under load",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Frances Knuth",
+   "initials": "FK",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 326,
+  "key": "WEB-326",
+  "title": "Investigate user settings",
+  "status": "todo",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 327,
+  "key": "WEB-327",
+  "title": "Document mobile layout for large accounts",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Alan Allen",
+   "initials": "AA",
+   "color": "#3b82f6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 1,
+  "attachments": 0
+ },
+ {
+  "id": 328,
+  "key": "WEB-328",
+  "title": "Validate webhook retries",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Linus Easley",
+   "initials": "LE",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 329,
+  "key": "WEB-329",
+  "title": "Refactor onboarding flow",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Radia Hamilton",
+   "initials": "RH",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 2
+ },
+ {
+  "id": 330,
+  "key": "WEB-330",
+  "title": "Fix user settings",
+  "status": "todo",
+  "priority": 0,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 331,
+  "key": "WEB-331",
+  "title": "Migrate cache layer",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Sophie Wilson",
+   "initials": "SW",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 2
+ },
+ {
+  "id": 332,
+  "key": "WEB-332",
+  "title": "Add onboarding flow",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Bjarne Lovelace",
+   "initials": "BL",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "Oct 13",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 333,
+  "key": "WEB-333",
+  "title": "Fix export to CSV",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Grace Johnson",
+   "initials": "GJ",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "Oct 15",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 334,
+  "key": "WEB-334",
+  "title": "Document audit log in the admin panel",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Donald Stroustrup",
+   "initials": "DS",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 335,
+  "key": "WEB-335",
+  "title": "Remove billing page on Safari",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 336,
+  "key": "WEB-336",
+  "title": "Optimise image uploads",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Guido Liskov",
+   "initials": "GL",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "Oct 9",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 337,
+  "key": "WEB-337",
+  "title": "Validate API rate limiter with SSO enabled",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Margaret Torvalds",
+   "initials": "MT",
+   "color": "#ec4899"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 338,
+  "key": "WEB-338",
+  "title": "Improve notification emails",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Hedy Wirth",
+   "initials": "HW",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 339,
+  "key": "WEB-339",
+  "title": "Fix onboarding flow",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Bjarne Ritchie",
+   "initials": "BR",
+   "color": "#3b82f6"
+  },
+  "labels": [],
+  "due": "Aug 14",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 340,
+  "key": "WEB-340",
+  "title": "Test session handling for large accounts",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Alan Dijkstra",
+   "initials": "AD",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 341,
+  "key": "WEB-341",
+  "title": "Add login form after the last release",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 4,
+  "attachments": 0
+ },
+ {
+  "id": 342,
+  "key": "WEB-342",
+  "title": "Migrate login form",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Ken Torvalds",
+   "initials": "KT",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "Oct 30",
+  "comments": 8,
+  "attachments": 1
+ },
+ {
+  "id": 343,
+  "key": "WEB-343",
+  "title": "Optimise user settings",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Barbara Knuth",
+   "initials": "BK",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "Aug 24",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 344,
+  "key": "WEB-344",
+  "title": "Investigate webhook retries in the admin panel",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "John Wilson",
+   "initials": "JW",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 0
+ },
+ {
+  "id": 345,
+  "key": "WEB-345",
+  "title": "Redesign session handling",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Radia Rossum",
+   "initials": "RR",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 346,
+  "key": "WEB-346",
+  "title": "Document API rate limiter",
+  "status": "todo",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 347,
+  "key": "WEB-347",
+  "title": "Migrate image uploads on Safari",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Katherine Stroustrup",
+   "initials": "KS",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 348,
+  "key": "WEB-348",
+  "title": "Investigate access control",
+  "status": "done",
+  "priority": 0,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "Sep 12",
+  "comments": 6,
+  "attachments": 1
+ },
+ {
+  "id": 349,
+  "key": "WEB-349",
+  "title": "Add cache layer",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Katherine Stroustrup",
+   "initials": "KS",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 350,
+  "key": "WEB-350",
+  "title": "Investigate export to CSV",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Sophie Turing",
+   "initials": "ST",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Aug 27",
+  "comments": 1,
+  "attachments": 1
+ },
+ {
+  "id": 351,
+  "key": "WEB-351",
+  "title": "Test file previews",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Hedy Liskov",
+   "initials": "HL",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 352,
+  "key": "WEB-352",
+  "title": "Refactor keyboard shortcuts",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Barbara Torvalds",
+   "initials": "BT",
+   "color": "#eab308"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 353,
+  "key": "WEB-353",
+  "title": "Test audit log in production",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Katherine Thompson",
+   "initials": "KT",
+   "color": "#3b82f6"
+  },
+  "labels": [],
+  "due": "Sep 14",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 354,
+  "key": "WEB-354",
+  "title": "Refactor API rate limiter",
+  "status": "todo",
+  "priority": 0,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 2
+ },
+ {
+  "id": 355,
+  "key": "WEB-355",
+  "title": "Document error reporting",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Ken Easley",
+   "initials": "KE",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 356,
+  "key": "WEB-356",
+  "title": "Add dashboard charts",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Katherine Knuth",
+   "initials": "KK",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 357,
+  "key": "WEB-357",
+  "title": "Investigate mobile layout under load",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Hedy Lamarr",
+   "initials": "HL",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 358,
+  "key": "WEB-358",
+  "title": "Investigate file previews for new users",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Linus Wilson",
+   "initials": "LW",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 359,
+  "key": "WEB-359",
+  "title": "Fix dark theme",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 1
+ },
+ {
+  "id": 360,
+  "key": "WEB-360",
+  "title": "Remove file previews",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Donald Perlman",
+   "initials": "DP",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 0
+ },
+ {
+  "id": 361,
+  "key": "WEB-361",
+  "title": "Optimise export to CSV",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Barbara Backus",
+   "initials": "BB",
+   "color": "#eab308"
+  },
+  "labels": [],
+  "due": "Aug 23",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 362,
+  "key": "WEB-362",
+  "title": "Remove session handling for new users",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Ken Torvalds",
+   "initials": "KT",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 2
+ },
+ {
+  "id": 363,
+  "key": "WEB-363",
+  "title": "Redesign search index",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Bjarne Allen",
+   "initials": "BA",
+   "color": "#6366f1"
+  },
+  "labels": [],
+  "due": "Sep 12",
+  "comments": 6,
+  "attachments": 2
+ },
+ {
+  "id": 364,
+  "key": "WEB-364",
+  "title": "Remove mobile layout for large accounts",
+  "status": "done",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 0
+ },
+ {
+  "id": 365,
+  "key": "WEB-365",
+  "title": "Refactor billing page",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Annie Ritchie",
+   "initials": "AR",
+   "color": "#3b82f6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 366,
+  "key": "WEB-366",
+  "title": "Migrate session handling",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "John Hamilton",
+   "initials": "JH",
+   "color": "#22c55e"
+  },
+  "labels": [],
+  "due": "Oct 23",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 367,
+  "key": "WEB-367",
+  "title": "Optimise keyboard shortcuts",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Niklaus Perlman",
+   "initials": "NP",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Sep 29",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 368,
+  "key": "WEB-368",
+  "title": "Fix export to CSV",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Ada Allen",
+   "initials": "AA",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "Aug 29",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 369,
+  "key": "WEB-369",
+  "title": "Improve session handling on slow networks",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Bjarne Johnson",
+   "initials": "BJ",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "Sep 15",
+  "comments": 2,
+  "attachments": 2
+ },
+ {
+  "id": 370,
+  "key": "WEB-370",
+  "title": "Document dashboard charts with SSO enabled",
+  "status": "todo",
+  "priority": 0,
+  "assignee": null,
+  "labels": [],
+  "due": "Aug 19",
+  "comments": 5,
+  "attachments": 1
+ },
+ {
+  "id": 371,
+  "key": "WEB-371",
+  "title": "Remove dashboard charts under load",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 372,
+  "key": "WEB-372",
+  "title": "Remove error reporting on slow networks",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 373,
+  "key": "WEB-373",
+  "title": "Fix access control under load",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 374,
+  "key": "WEB-374",
+  "title": "Migrate onboarding flow for new users",
+  "status": "todo",
+  "priority": 3,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 375,
+  "key": "WEB-375",
+  "title": "Add billing page for large accounts",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Dennis Hamilton",
+   "initials": "DH",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 376,
+  "key": "WEB-376",
+  "title": "Test notification emails",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Guido Lovelace",
+   "initials": "GL",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 377,
+  "key": "WEB-377",
+  "title": "Test search index",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Niklaus Torvalds",
+   "initials": "NT",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "Sep 22",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 378,
+  "key": "WEB-378",
+  "title": "Remove dark theme under load",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Grace Knuth",
+   "initials": "GK",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Aug 31",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 379,
+  "key": "WEB-379",
+  "title": "Refactor access control",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Niklaus Ritchie",
+   "initials": "NR",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 1
+ },
+ {
+  "id": 380,
+  "key": "WEB-380",
+  "title": "Document onboarding flow",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Donald Perlman",
+   "initials": "DP",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "Oct 29",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 381,
+  "key": "WEB-381",
+  "title": "Test user settings",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Ken Torvalds",
+   "initials": "KT",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 1
+ },
+ {
+  "id": 382,
+  "key": "WEB-382",
+  "title": "Redesign keyboard shortcuts",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Ada Backus",
+   "initials": "AB",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "Oct 16",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 383,
+  "key": "WEB-383",
+  "title": "Remove webhook retries",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Radia Backus",
+   "initials": "RB",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 0
+ },
+ {
+  "id": 384,
+  "key": "WEB-384",
+  "title": "Add export to CSV",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Bjarne Easley",
+   "initials": "BE",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "Sep 13",
+  "comments": 6,
+  "attachments": 0
+ },
+ {
+  "id": 385,
+  "key": "WEB-385",
+  "title": "Optimise notification emails under load",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Guido Hamilton",
+   "initials": "GH",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 386,
+  "key": "WEB-386",
+  "title": "Optimise export to CSV",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Dennis Perlman",
+   "initials": "DP",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 387,
+  "key": "WEB-387",
+  "title": "Investigate webhook retries",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Frances Hamilton",
+   "initials": "FH",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "Aug 18",
+  "comments": 5,
+  "attachments": 1
+ },
+ {
+  "id": 388,
+  "key": "WEB-388",
+  "title": "Optimise webhook retries",
+  "status": "done",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 1
+ },
+ {
+  "id": 389,
+  "key": "WEB-389",
+  "title": "Fix error reporting for large accounts",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": null,
+  "labels": [],
+  "due": "Aug 12",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 390,
+  "key": "WEB-390",
+  "title": "Migrate user settings",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Grace Perlman",
+   "initials": "GP",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 391,
+  "key": "WEB-391",
+  "title": "Validate keyboard shortcuts with SSO enabled",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Dennis Turing",
+   "initials": "DT",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Oct 5",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 392,
+  "key": "WEB-392",
+  "title": "Document mobile layout",
+  "status": "done",
+  "priority": 3,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 2
+ },
+ {
+  "id": 393,
+  "key": "WEB-393",
+  "title": "Investigate mobile layout on slow networks",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Niklaus Stroustrup",
+   "initials": "NS",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "Sep 10",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 394,
+  "key": "WEB-394",
+  "title": "Redesign dark theme",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Donald Rossum",
+   "initials": "DR",
+   "color": "#ef4444"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 395,
+  "key": "WEB-395",
+  "title": "Remove image uploads",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Guido Wirth",
+   "initials": "GW",
+   "color": "#ec4899"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 2,
+  "attachments": 2
+ },
+ {
+  "id": 396,
+  "key": "WEB-396",
+  "title": "Fix mobile layout on slow networks",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Radia Torvalds",
+   "initials": "RT",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 1
+ },
+ {
+  "id": 397,
+  "key": "WEB-397",
+  "title": "Improve audit log",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Barbara Rossum",
+   "initials": "BR",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Oct 17",
+  "comments": 6,
+  "attachments": 2
+ },
+ {
+  "id": 398,
+  "key": "WEB-398",
+  "title": "Refactor notification emails",
+  "status": "todo",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 399,
+  "key": "WEB-399",
+  "title": "Refactor notification emails",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Hedy Wirth",
+   "initials": "HW",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 0
+ },
+ {
+  "id": 400,
+  "key": "WEB-400",
+  "title": "Validate image uploads",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Margaret Wilson",
+   "initials": "MW",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "Sep 6",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 401,
+  "key": "WEB-401",
+  "title": "Migrate search index after the last release",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Niklaus Rossum",
+   "initials": "NR",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 0
+ },
+ {
+  "id": 402,
+  "key": "WEB-402",
+  "title": "Refactor mobile layout",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Donald Turing",
+   "initials": "DT",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 403,
+  "key": "WEB-403",
+  "title": "Validate keyboard shortcuts",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Grace Johnson",
+   "initials": "GJ",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "Oct 6",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 404,
+  "key": "WEB-404",
+  "title": "Remove user settings for large accounts",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Niklaus Knuth",
+   "initials": "NK",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 0
+ },
+ {
+  "id": 405,
+  "key": "WEB-405",
+  "title": "Redesign search index",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Guido Johnson",
+   "initials": "GJ",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 1
+ },
+ {
+  "id": 406,
+  "key": "WEB-406",
+  "title": "Investigate search index in the admin panel",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Edsger Thompson",
+   "initials": "ET",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 407,
+  "key": "WEB-407",
+  "title": "Document dark theme",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Ken Backus",
+   "initials": "KB",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 0
+ },
+ {
+  "id": 408,
+  "key": "WEB-408",
+  "title": "Add file previews in the admin panel",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Barbara Allen",
+   "initials": "BA",
+   "color": "#22c55e"
+  },
+  "labels": [],
+  "due": "Oct 29",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 409,
+  "key": "WEB-409",
+  "title": "Test user settings",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Alan Allen",
+   "initials": "AA",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Sep 2",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 410,
+  "key": "WEB-410",
+  "title": "Validate webhook retries",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Frances Perlman",
+   "initials": "FP",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 1
+ },
+ {
+  "id": 411,
+  "key": "WEB-411",
+  "title": "Test cache layer for new users",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": null,
+  "labels": [],
+  "due": "Oct 28",
+  "comments": 2,
+  "attachments": 2
+ },
+ {
+  "id": 412,
+  "key": "WEB-412",
+  "title": "Fix access control",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Alan Hopper",
+   "initials": "AH",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 413,
+  "key": "WEB-413",
+  "title": "Fix dashboard charts with SSO enabled",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Guido Johnson",
+   "initials": "GJ",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 1
+ },
+ {
+  "id": 414,
+  "key": "WEB-414",
+  "title": "Redesign dark theme in the admin panel",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Margaret Turing",
+   "initials": "MT",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "Sep 12",
+  "comments": 6,
+  "attachments": 0
+ },
+ {
+  "id": 415,
+  "key": "WEB-415",
+  "title": "Investigate billing page",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 416,
+  "key": "WEB-416",
+  "title": "Investigate error reporting",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Donald Ritchie",
+   "initials": "DR",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Oct 4",
+  "comments": 6,
+  "attachments": 2
+ },
+ {
+  "id": 417,
+  "key": "WEB-417",
+  "title": "Fix notification emails under load",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Annie Torvalds",
+   "initials": "AT",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 1
+ },
+ {
+  "id": 418,
+  "key": "WEB-418",
+  "title": "Remove mobile layout",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Annie Lovelace",
+   "initials": "AL",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 419,
+  "key": "WEB-419",
+  "title": "Validate search index behind the feature flag",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Frances Hopper",
+   "initials": "FH",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Sep 6",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 420,
+  "key": "WEB-420",
+  "title": "Migrate dashboard charts for large accounts",
+  "status": "done",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 421,
+  "key": "WEB-421",
+  "title": "Fix file previews",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Dennis Perlman",
+   "initials": "DP",
+   "color": "#ec4899"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 422,
+  "key": "WEB-422",
+  "title": "Improve file previews",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Margaret Wirth",
+   "initials": "MW",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 2
+ },
+ {
+  "id": 423,
+  "key": "WEB-423",
+  "title": "Redesign user settings in production",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Guido Rossum",
+   "initials": "GR",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Sep 28",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 424,
+  "key": "WEB-424",
+  "title": "Fix image uploads",
+  "status": "done",
+  "priority": 3,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 425,
+  "key": "WEB-425",
+  "title": "Improve mobile layout",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Alan Allen",
+   "initials": "AA",
+   "color": "#f97316"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 11,
+  "attachments": 1
+ },
+ {
+  "id": 426,
+  "key": "WEB-426",
+  "title": "Fix mobile layout",
+  "status": "todo",
+  "priority": 1,
+  "assignee": null,
+  "labels": [],
+  "due": "Aug 18",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 427,
+  "key": "WEB-427",
+  "title": "Migrate dashboard charts",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Barbara Torvalds",
+   "initials": "BT",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Oct 11",
+  "comments": 5,
+  "attachments": 0
+ },
+ {
+  "id": 428,
+  "key": "WEB-428",
+  "title": "Document cache layer",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Linus Johnson",
+   "initials": "LJ",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 429,
+  "key": "WEB-429",
+  "title": "Fix user settings",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "John Knuth",
+   "initials": "JK",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 430,
+  "key": "WEB-430",
+  "title": "Add mobile layout",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Alan Wirth",
+   "initials": "AW",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 431,
+  "key": "WEB-431",
+  "title": "Optimise login form",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Edsger Stroustrup",
+   "initials": "ES",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 432,
+  "key": "WEB-432",
+  "title": "Fix keyboard shortcuts",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Edsger Wirth",
+   "initials": "EW",
+   "color": "#f97316"
+  },
+  "labels": [],
+  "due": "Oct 4",
+  "comments": 1,
+  "attachments": 1
+ },
+ {
+  "id": 433,
+  "key": "WEB-433",
+  "title": "Investigate audit log",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 2
+ },
+ {
+  "id": 434,
+  "key": "WEB-434",
+  "title": "Validate dashboard charts",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Donald Backus",
+   "initials": "DB",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 1
+ },
+ {
+  "id": 435,
+  "key": "WEB-435",
+  "title": "Remove export to CSV for new users",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Katherine Rossum",
+   "initials": "KR",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "Oct 14",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 436,
+  "key": "WEB-436",
+  "title": "Test webhook retries on slow networks",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Sophie Perlman",
+   "initials": "SP",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 2
+ },
+ {
+  "id": 437,
+  "key": "WEB-437",
+  "title": "Remove webhook retries",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Radia Knuth",
+   "initials": "RK",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 5,
+  "attachments": 1
+ },
+ {
+  "id": 438,
+  "key": "WEB-438",
+  "title": "Validate cache layer under load",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Guido Hamilton",
+   "initials": "GH",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "Oct 25",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 439,
+  "key": "WEB-439",
+  "title": "Fix file previews",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Barbara Easley",
+   "initials": "BE",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 440,
+  "key": "WEB-440",
+  "title": "Test error reporting behind the feature flag",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 441,
+  "key": "WEB-441",
+  "title": "Redesign export to CSV under load",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Margaret Hamilton",
+   "initials": "MH",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Sep 7",
+  "comments": 8,
+  "attachments": 2
+ },
+ {
+  "id": 442,
+  "key": "WEB-442",
+  "title": "Optimise file previews on Safari",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Grace Turing",
+   "initials": "GT",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Sep 6",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 443,
+  "key": "WEB-443",
+  "title": "Remove file previews",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Ken Knuth",
+   "initials": "KK",
+   "color": "#f97316"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 444,
+  "key": "WEB-444",
+  "title": "Redesign dark theme",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Annie Turing",
+   "initials": "AT",
+   "color": "#a855f7"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 445,
+  "key": "WEB-445",
+  "title": "Improve mobile layout",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 446,
+  "key": "WEB-446",
+  "title": "Document error reporting",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Ada Lovelace",
+   "initials": "AL",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 1
+ },
+ {
+  "id": 447,
+  "key": "WEB-447",
+  "title": "Refactor image uploads in the admin panel",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Ada Johnson",
+   "initials": "AJ",
+   "color": "#22c55e"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 7,
+  "attachments": 0
+ },
+ {
+  "id": 448,
+  "key": "WEB-448",
+  "title": "Optimise session handling after the last release",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Guido Allen",
+   "initials": "GA",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 449,
+  "key": "WEB-449",
+  "title": "Document API rate limiter in the admin panel",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Radia Dijkstra",
+   "initials": "RD",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 1
+ },
+ {
+  "id": 450,
+  "key": "WEB-450",
+  "title": "Redesign search index on slow networks",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Donald Allen",
+   "initials": "DA",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "Sep 11",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 451,
+  "key": "WEB-451",
+  "title": "Test file previews",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Linus Hopper",
+   "initials": "LH",
+   "color": "#a855f7"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Oct 4",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 452,
+  "key": "WEB-452",
+  "title": "Fix onboarding flow",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Ken Johnson",
+   "initials": "KJ",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "Oct 30",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 453,
+  "key": "WEB-453",
+  "title": "Migrate onboarding flow on slow networks",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Ada Ritchie",
+   "initials": "AR",
+   "color": "#14b8a6"
+  },
+  "labels": [],
+  "due": "Sep 6",
+  "comments": 3,
+  "attachments": 1
+ },
+ {
+  "id": 454,
+  "key": "WEB-454",
+  "title": "Remove export to CSV",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Katherine Dijkstra",
+   "initials": "KD",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 1
+ },
+ {
+  "id": 455,
+  "key": "WEB-455",
+  "title": "Optimise access control",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": {
+   "name": "Grace Hopper",
+   "initials": "GH",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 456,
+  "key": "WEB-456",
+  "title": "Investigate login form under load",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Grace Hamilton",
+   "initials": "GH",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "feature",
+    "color": "#f97316"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 1
+ },
+ {
+  "id": 457,
+  "key": "WEB-457",
+  "title": "Migrate login form",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Margaret Stroustrup",
+   "initials": "MS",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 458,
+  "key": "WEB-458",
+  "title": "Investigate session handling",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Hedy Lamarr",
+   "initials": "HL",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 459,
+  "key": "WEB-459",
+  "title": "Investigate cache layer",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Dennis Lovelace",
+   "initials": "DL",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 5,
+  "attachments": 1
+ },
+ {
+  "id": 460,
+  "key": "WEB-460",
+  "title": "Test onboarding flow on Safari",
+  "status": "done",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   }
+  ],
+  "due": "Oct 11",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 461,
+  "key": "WEB-461",
+  "title": "Refactor dark theme",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Hedy Thompson",
+   "initials": "HT",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 462,
+  "key": "WEB-462",
+  "title": "Improve user settings behind the feature flag",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Barbara Backus",
+   "initials": "BB",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 463,
+  "key": "WEB-463",
+  "title": "Improve login form",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 464,
+  "key": "WEB-464",
+  "title": "Remove API rate limiter on Safari",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "Annie Lamarr",
+   "initials": "AL",
+   "color": "#f97316"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 6,
+  "attachments": 2
+ },
+ {
+  "id": 465,
+  "key": "WEB-465",
+  "title": "Test onboarding flow",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Sophie Backus",
+   "initials": "SB",
+   "color": "#3b82f6"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 466,
+  "key": "WEB-466",
+  "title": "Validate search index",
+  "status": "todo",
+  "priority": 1,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 467,
+  "key": "WEB-467",
+  "title": "Refactor dashboard charts",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": {
+   "name": "Alan Lamarr",
+   "initials": "AL",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "Oct 9",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 468,
+  "key": "WEB-468",
+  "title": "Add login form",
+  "status": "done",
+  "priority": 3,
+  "assignee": {
+   "name": "Hedy Ritchie",
+   "initials": "HR",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 469,
+  "key": "WEB-469",
+  "title": "Remove API rate limiter",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Frances Allen",
+   "initials": "FA",
+   "color": "#6366f1"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "Aug 25",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 470,
+  "key": "WEB-470",
+  "title": "Test notification emails for large accounts",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Radia Turing",
+   "initials": "RT",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 6,
+  "attachments": 0
+ },
+ {
+  "id": 471,
+  "key": "WEB-471",
+  "title": "Remove search index",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": {
+   "name": "Barbara Perlman",
+   "initials": "BP",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 0
+ },
+ {
+  "id": 472,
+  "key": "WEB-472",
+  "title": "Validate mobile layout",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Niklaus Knuth",
+   "initials": "NK",
+   "color": "#3b82f6"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 10,
+  "attachments": 2
+ },
+ {
+  "id": 473,
+  "key": "WEB-473",
+  "title": "Redesign login form",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": {
+   "name": "Ada Thompson",
+   "initials": "AT",
+   "color": "#ec4899"
+  },
+  "labels": [],
+  "due": "Sep 7",
+  "comments": 1,
+  "attachments": 0
+ },
+ {
+  "id": 474,
+  "key": "WEB-474",
+  "title": "Test cache layer with SSO enabled",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Sophie Dijkstra",
+   "initials": "SD",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "Sep 13",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 475,
+  "key": "WEB-475",
+  "title": "Remove session handling with SSO enabled",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Katherine Torvalds",
+   "initials": "KT",
+   "color": "#a855f7"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 476,
+  "key": "WEB-476",
+  "title": "Validate billing page",
+  "status": "done",
+  "priority": 1,
+  "assignee": {
+   "name": "John Stroustrup",
+   "initials": "JS",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   },
+   {
+    "name": "design",
+    "color": "#14b8a6"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 1
+ },
+ {
+  "id": 477,
+  "key": "WEB-477",
+  "title": "Add file previews",
+  "status": "backlog",
+  "priority": 1,
+  "assignee": {
+   "name": "Alan Torvalds",
+   "initials": "AT",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Oct 29",
+  "comments": 0,
+  "attachments": 2
+ },
+ {
+  "id": 478,
+  "key": "WEB-478",
+  "title": "Validate billing page under load",
+  "status": "todo",
+  "priority": 2,
+  "assignee": {
+   "name": "Alan Stroustrup",
+   "initials": "AS",
+   "color": "#22c55e"
+  },
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 4,
+  "attachments": 1
+ },
+ {
+  "id": 479,
+  "key": "WEB-479",
+  "title": "Optimise login form",
+  "status": "in_progress",
+  "priority": 0,
+  "assignee": null,
+  "labels": [],
+  "due": "Oct 23",
+  "comments": 8,
+  "attachments": 1
+ },
+ {
+  "id": 480,
+  "key": "WEB-480",
+  "title": "Migrate audit log in production",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 481,
+  "key": "WEB-481",
+  "title": "Document export to CSV",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Edsger Liskov",
+   "initials": "EL",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 482,
+  "key": "WEB-482",
+  "title": "Fix API rate limiter",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Frances Turing",
+   "initials": "FT",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "Sep 16",
+  "comments": 4,
+  "attachments": 2
+ },
+ {
+  "id": 483,
+  "key": "WEB-483",
+  "title": "Migrate cache layer",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Katherine Ritchie",
+   "initials": "KR",
+   "color": "#ec4899"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   }
+  ],
+  "due": "Sep 10",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 484,
+  "key": "WEB-484",
+  "title": "Document billing page",
+  "status": "done",
+  "priority": 0,
+  "assignee": {
+   "name": "Alan Ritchie",
+   "initials": "AR",
+   "color": "#eab308"
+  },
+  "labels": [
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 485,
+  "key": "WEB-485",
+  "title": "Validate login form behind the feature flag",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Edsger Wilson",
+   "initials": "EW",
+   "color": "#14b8a6"
+  },
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "Aug 21",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 486,
+  "key": "WEB-486",
+  "title": "Fix mobile layout",
+  "status": "todo",
+  "priority": 1,
+  "assignee": {
+   "name": "Alan Lamarr",
+   "initials": "AL",
+   "color": "#ef4444"
+  },
+  "labels": [
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 1,
+  "attachments": 2
+ },
+ {
+  "id": 487,
+  "key": "WEB-487",
+  "title": "Optimise audit log",
+  "status": "in_progress",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 488,
+  "key": "WEB-488",
+  "title": "Refactor error reporting",
+  "status": "done",
+  "priority": 2,
+  "assignee": {
+   "name": "Frances Torvalds",
+   "initials": "FT",
+   "color": "#f97316"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 0,
+  "attachments": 1
+ },
+ {
+  "id": 489,
+  "key": "WEB-489",
+  "title": "Improve file previews behind the feature flag",
+  "status": "backlog",
+  "priority": 2,
+  "assignee": {
+   "name": "Ken Wirth",
+   "initials": "KW",
+   "color": "#ec4899"
+  },
+  "labels": [],
+  "due": "",
+  "comments": 8,
+  "attachments": 0
+ },
+ {
+  "id": 490,
+  "key": "WEB-490",
+  "title": "Fix audit log",
+  "status": "todo",
+  "priority": 0,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 9,
+  "attachments": 2
+ },
+ {
+  "id": 491,
+  "key": "WEB-491",
+  "title": "Investigate access control",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Barbara Hamilton",
+   "initials": "BH",
+   "color": "#f97316"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 3,
+  "attachments": 0
+ },
+ {
+  "id": 492,
+  "key": "WEB-492",
+  "title": "Improve dashboard charts under load",
+  "status": "done",
+  "priority": 2,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 1,
+  "attachments": 1
+ },
+ {
+  "id": 493,
+  "key": "WEB-493",
+  "title": "Improve onboarding flow in the admin panel",
+  "status": "backlog",
+  "priority": 3,
+  "assignee": {
+   "name": "Edsger Torvalds",
+   "initials": "ET",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "ux",
+    "color": "#ec4899"
+   },
+   {
+    "name": "frontend",
+    "color": "#eab308"
+   }
+  ],
+  "due": "",
+  "comments": 2,
+  "attachments": 1
+ },
+ {
+  "id": 494,
+  "key": "WEB-494",
+  "title": "Document access control on slow networks",
+  "status": "todo",
+  "priority": 3,
+  "assignee": {
+   "name": "Donald Easley",
+   "initials": "DE",
+   "color": "#3b82f6"
+  },
+  "labels": [],
+  "due": "Aug 5",
+  "comments": 3,
+  "attachments": 2
+ },
+ {
+  "id": 495,
+  "key": "WEB-495",
+  "title": "Redesign keyboard shortcuts after the last release",
+  "status": "in_progress",
+  "priority": 3,
+  "assignee": null,
+  "labels": [],
+  "due": "",
+  "comments": 11,
+  "attachments": 0
+ },
+ {
+  "id": 496,
+  "key": "WEB-496",
+  "title": "Optimise API rate limiter under load",
+  "status": "done",
+  "priority": 3,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "Oct 3",
+  "comments": 7,
+  "attachments": 2
+ },
+ {
+  "id": 497,
+  "key": "WEB-497",
+  "title": "Test session handling",
+  "status": "backlog",
+  "priority": 0,
+  "assignee": null,
+  "labels": [],
+  "due": "Aug 5",
+  "comments": 1,
+  "attachments": 1
+ },
+ {
+  "id": 498,
+  "key": "WEB-498",
+  "title": "Redesign notification emails",
+  "status": "todo",
+  "priority": 0,
+  "assignee": {
+   "name": "Radia Rossum",
+   "initials": "RR",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "performance",
+    "color": "#6366f1"
+   },
+   {
+    "name": "infra",
+    "color": "#64748b"
+   }
+  ],
+  "due": "",
+  "comments": 7,
+  "attachments": 1
+ },
+ {
+  "id": 499,
+  "key": "WEB-499",
+  "title": "Document dashboard charts",
+  "status": "in_progress",
+  "priority": 2,
+  "assignee": {
+   "name": "Bjarne Turing",
+   "initials": "BT",
+   "color": "#64748b"
+  },
+  "labels": [
+   {
+    "name": "bug",
+    "color": "#ef4444"
+   },
+   {
+    "name": "docs",
+    "color": "#3b82f6"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   }
+  ],
+  "due": "",
+  "comments": 11,
+  "attachments": 2
+ },
+ {
+  "id": 500,
+  "key": "WEB-500",
+  "title": "Migrate file previews",
+  "status": "done",
+  "priority": 1,
+  "assignee": null,
+  "labels": [
+   {
+    "name": "feature",
+    "color": "#f97316"
+   },
+   {
+    "name": "backend",
+    "color": "#22c55e"
+   },
+   {
+    "name": "security",
+    "color": "#a855f7"
+   }
+  ],
+  "due": "",
+  "comments": 10,
+  "attachments": 2
+ }
+]

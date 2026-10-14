@@ -1,0 +1,38 @@
+<script>
+  import { Avatar } from './Avatar.vela';
+
+  export let card = null;
+  export let dragging = false;
+
+  function start(event) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(card.id));
+    $$dispatch('pick', card.id);
+  }
+</script>
+
+<template>
+  <article class="card" class:dragging={dragging} draggable="true" @dragstart={start}>
+    <span class="key">{card.key}</span>
+    <a class="title" :href={`/issues/${card.id}`}>{card.title}</a>
+    <div>
+      {#each card.labels as label (label.name)}
+        <span class="label" style:background={label.color}>{label.name}</span>
+      {/each}
+    </div>
+    <footer>
+      <span :class={`priority p${card.priority}`}></span>
+      {#if card.due}
+        <span>{card.due}</span>
+      {/if}
+      <span class="spacer"></span>
+      {#if card.comments}
+        <span>💬 {card.comments}</span>
+      {/if}
+      {#if card.attachments}
+        <span>📎 {card.attachments}</span>
+      {/if}
+      <Avatar :user={card.assignee} />
+    </footer>
+  </article>
+</template>

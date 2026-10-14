@@ -1,0 +1,183 @@
+<script>
+  import { Nav } from '../components/Nav.vela';
+  import { Avatar } from '../components/Avatar.vela';
+  import { Uploader } from '../components/Uploader.vela';
+
+  export let issue = null;
+  export let comments = [];
+  export let attachments = [];
+
+  const STATUSES = [
+    { status: 'backlog', title: 'Backlog' },
+    { status: 'todo', title: 'To do' },
+    { status: 'in_progress', title: 'In progress' },
+    { status: 'done', title: 'Done' },
+  ];
+  const PRIORITIES = ['None', 'Low', 'High', 'Urgent'];
+
+  let title = $state(issue.title);
+  let status = $state(issue.status);
+  let editing = $state(false);
+  let draft = $state('');
+  let thread = $state(comments);
+  let files = $state(attachments);
+  let body = $state('');
+  let saving = $state(false);
+  let error = $state('');
+
+  async function patch(fields) {
+    const res = await fetch(`/api/issues/${issue.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(fields),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  function edit() {
+    draft = title;
+    editing = true;
+  }
+
+  async function save() {
+    if (!editing) return;
+    editing = false;
+    const next = draft.trim();
+    if (!next || next === title) return;
+    const previous = title;
+    title = next;
+    try {
+      await patch({ title: next });
+      error = '';
+    } catch (err) {
+      title = previous;
+      error = err.message;
+    }
+  }
+
+  function keydown(event) {
+    if (event.key === 'Enter') save();
+    if (event.key === 'Escape') editing = false;
+  }
+
+  async function changeStatus(event) {
+    const previous = status;
+    status = event.target.value;
+    try {
+      await patch({ status });
+      error = '';
+    } catch (err) {
+      status = previous;
+      error = err.message;
+    }
+  }
+
+  async function comment(event) {
+    event.preventDefault();
+    const text = body.trim();
+    if (!text) return;
+    saving = true;
+    try {
+      const res = await fetch(`/api/issues/${issue.id}/comments`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ body: text }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      thread = [...thread, await res.json()];
+      body = '';
+      error = '';
+    } catch (err) {
+      error = err.message;
+    }
+    saving = false;
+  }
+</script>
+
+<template>
+  <div>
+    <Nav current="issues" />
+    <main>
+      <div class="issue">
+        <div>
+          <div class="panel">
+            <span class="muted">{issue.project.name} · {issue.key}</span>
+            {#if editing}
+              <input class="title-input" bind:value={draft} @keydown={keydown} @blur={save} />
+            {:else}
+              <h1>{title}<button class="edit" @click={edit}>Edit</button></h1>
+            {/if}
+            <p>{issue.description}</p>
+            {#if error}
+              <p class="error">{error}</p>
+            {/if}
+          </div>
+          <div class="panel">
+            <h2>Comments ({thread.length})</h2>
+            {#each thread as c (c.id)}
+              <div class="comment">
+                <Avatar :user={c.author} />
+                <div>
+                  <div class="meta">{c.author.name} · {c.created}</div>
+                  <div>{c.body}</div>
+                </div>
+              </div>
+            {/each}
+            <form class="comment-form" @submit={comment}>
+              <textarea bind:value={body} placeholder="Write a comment"></textarea>
+              <button class="primary" type="submit" :disabled={saving}>Comment</button>
+            </form>
+          </div>
+        </div>
+        <aside>
+          <div class="side">
+            <dl>
+              <dt>Status</dt>
+              <dd>
+                <select @change={changeStatus}>
+                  {#each STATUSES as s (s.status)}
+                    <option :value={s.status} :selected={s.status === status}>{s.title}</option>
+                  {/each}
+                </select>
+              </dd>
+              <dt>Priority</dt>
+              <dd><span :class={`priority p${issue.priority}`}></span> {PRIORITIES[issue.priority]}</dd>
+              <dt>Assignee</dt>
+              <dd>
+                {#if issue.assignee}
+                  <Avatar :user={issue.assignee} /> {issue.assignee.name}
+                {:else}
+                  <span class="muted">Unassigned</span>
+                {/if}
+              </dd>
+              <dt>Labels</dt>
+              <dd>
+                {#each issue.labels as label (label.name)}
+                  <span class="label" style:background={label.color}>{label.name}</span>
+                {:else}
+                  <span class="muted">None</span>
+                {/each}
+              </dd>
+              <dt>Due</dt>
+              <dd>{issue.due || '—'}</dd>
+              <dt>Created</dt>
+              <dd>{issue.created}</dd>
+              <dt>Updated</dt>
+              <dd>{issue.updated}</dd>
+            </dl>
+          </div>
+          <div class="side">
+            <h2>Attachments ({files.length})</h2>
+            <ul class="attachments">
+              {#each files as f (f.id)}
+                <li><a :href={f.url}>{f.filename}</a> <span class="muted">{f.sizeLabel}</span></li>
+              {/each}
+            </ul>
+            <Uploader :issueId={issue.id} @on:uploaded={(e) => (files = [...files, e.detail])} />
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+</template>

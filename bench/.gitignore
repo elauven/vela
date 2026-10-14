@@ -1,0 +1,10 @@
+# Build outputs and dependencies of the benchmark applications.
+/vela-app/out/
+/vela-app/static/dist/
+/vela-app/bin/
+/sveltekit-app/node_modules/
+/sveltekit-app/build/
+/sveltekit-app/.svelte-kit/
+/storage/
+/results/
+/sveltekit-app/static/

@@ -1,0 +1,24 @@
+{
+  "name": "bench-sveltekit-app",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  },
+  "scripts": {
+    "prebuild": "mkdir -p static/static && cp ../shared/static/app.css static/static/app.css",
+    "build": "vite build",
+    "start": "node build"
+  },
+  "dependencies": {
+    "busboy": "1.6.0",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "6.0.0",
+    "@sveltejs/kit": "3.0.1",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "svelte": "5.57.2",
+    "vite": "8.3.4"
+  }
+}
