@@ -35,7 +35,7 @@ run). req/s with p95 latency in milliseconds.
 | `issue` | Issue page | **2782** (29) | 1220 (74) | **3325** (25) | 2411 (44) |
 | `dashboard` | Aggregates over all issues, static page | 28 | 26 | 28 | 29 |
 | `api` | JSON API, 80% reads / 20% writes | 588 (152) | 571 (448) | 497 (181) | 532 (265) |
-| `files-100k` | 100 KB uploads and downloads | **1410** (84) | 931 (104) | **2894** (42) | 1525 (71) |
+| `files-100k` | 100 KB uploads and downloads (30% uploads in this run; now 10% by default, so new numbers are not comparable) | **1410** (84) | 931 (104) | **2894** (42) | 1525 (71) |
 | `journey` | User path with think time | 333 (723) | 287 (587) | 365 (585) | 280 (1137) |
 
 Resources under the same load:

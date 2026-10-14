@@ -11,7 +11,7 @@
 // Results: results/<time>.json and a Markdown table on stdout.
 
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, openSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -45,18 +45,23 @@ const SCENARIOS = [
   { name: 'journey', script: 'journey.js', env: { THINK: 0.2 } },
 ];
 
+// Uploads of both applications. The seed deletes the attachment rows, so the
+// files of a previous block would stay on disk as orphans (task 058: 18 GB
+// after three runs); they are removed together with the reseed.
+const STORAGE = join(bench, 'storage');
+
 const APPS = {
   vela: (n) => ({
     port: 8081,
     cwd: join(bench, 'vela-app'),
     cmd: [join(bench, 'vela-app/bin/server')],
-    env: { APP_DIR: join(bench, 'vela-app'), PORT: '8081', GOMAXPROCS: String(n) },
+    env: { APP_DIR: join(bench, 'vela-app'), PORT: '8081', GOMAXPROCS: String(n), STORAGE_DIR: STORAGE },
   }),
   sveltekit: (n) => ({
     port: 8082,
     cwd: join(bench, 'sveltekit-app'),
     cmd: n === 1 ? ['node', 'build/index.js'] : ['node', 'cluster.js'],
-    env: { PORT: '8082', BODY_SIZE_LIMIT: '100M', WORKERS: String(n), NODE_ENV: 'production' },
+    env: { PORT: '8082', BODY_SIZE_LIMIT: '100M', WORKERS: String(n), NODE_ENV: 'production', STORAGE_DIR: STORAGE },
   }),
 };
 
@@ -78,7 +83,15 @@ function pinPostgres() {
 }
 
 function reseed() {
+  mkdirSync(STORAGE, { recursive: true });
+  for (const entry of readdirSync(STORAGE)) rmSync(join(STORAGE, entry), { recursive: true, force: true });
   execFileSync(join(bench, 'bin/seed'), ['-fixture', ''], { cwd: bench, stdio: 'ignore' });
+}
+
+function storageMB() {
+  let bytes = 0;
+  for (const entry of readdirSync(STORAGE)) bytes += statSync(join(STORAGE, entry)).size;
+  return bytes / 1e6;
 }
 
 // Process tree of pid: total RSS (KB) and CPU time (clock ticks).
@@ -179,7 +192,7 @@ for (const name of args.apps.split(',')) {
           app: name, cpus: n, scenario: scenario.name, k6Exit: code,
           rps: m.http_reqs.rate, med: m.http_req_duration.med, p95: m.http_req_duration['p(95)'], p99: m.http_req_duration['p(99)'],
           failed: m.http_req_failed.value, cpu: (after.cpu - before.cpu) / ticks / seconds, rssMB: maxRss / 1024,
-          receivedMBs: m.data_received.rate / 1e6,
+          receivedMBs: m.data_received.rate / 1e6, storageMB: storageMB(),
         });
       }
     } finally {
@@ -188,11 +201,14 @@ for (const name of args.apps.split(',')) {
   }
 }
 
+// Leave no uploads behind; the sizes are in the results.
+for (const entry of readdirSync(STORAGE)) rmSync(join(STORAGE, entry), { recursive: true, force: true });
+
 writeFileSync(join(resultsDir, `${stamp}.json`), JSON.stringify({ args, cores: CORES, results }, null, 2));
 const f = (x, d = 1) => x.toFixed(d);
 console.log(`\nVUs ${args.vus}, ${args.duration} per scenario after ${args.warmup} warm-up; results/${stamp}.json\n`);
-console.log('| Scenario | App | CPUs | req/s | med ms | p95 ms | p99 ms | failed | CPU cores | max RSS MB | MB/s |');
-console.log('| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+console.log('| Scenario | App | CPUs | req/s | med ms | p95 ms | p99 ms | failed | CPU cores | max RSS MB | MB/s | storage MB |');
+console.log('| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
 for (const r of results.sort((a, b) => a.scenario.localeCompare(b.scenario) || a.cpus - b.cpus || a.app.localeCompare(b.app))) {
-  console.log(`| ${r.scenario} | ${r.app} | ${r.cpus} | ${f(r.rps, 0)} | ${f(r.med)} | ${f(r.p95)} | ${f(r.p99)} | ${f(r.failed * 100, 2)}% | ${f(r.cpu, 2)} | ${f(r.rssMB, 0)} | ${f(r.receivedMBs)} |`);
+  console.log(`| ${r.scenario} | ${r.app} | ${r.cpus} | ${f(r.rps, 0)} | ${f(r.med)} | ${f(r.p95)} | ${f(r.p99)} | ${f(r.failed * 100, 2)}% | ${f(r.cpu, 2)} | ${f(r.rssMB, 0)} | ${f(r.receivedMBs)} | ${f(r.storageMB, 0)} |`);
 }
