@@ -361,7 +361,7 @@ export function hydrate(Component, container, options = {}) {
   }
   if (!script) throw mismatch('the container has no payload script (data-vela-root)');
   const payload = JSON.parse(script.textContent);
-  if (payload.v !== 2) throw mismatch(`unsupported payload version ${payload.v}`);
+  if (payload.v !== 3) throw mismatch(`unsupported payload version ${payload.v}`);
   const props = payload.props || {};
 
   let first = container.firstChild;

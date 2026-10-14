@@ -67,6 +67,10 @@ type StateVar struct {
 	// Plain $state only tracks reassignment — matching the previous
 	// behavior — so existing code keeps working without proxy overhead.
 	Deep bool
+	// Reproducible marks an initializer the client computes itself, at no
+	// cost and with the server's result: literals and references to props
+	// (task 059). Its value is not written to the hydration payload.
+	Reproducible bool
 }
 
 type DerivedVar struct {
@@ -293,8 +297,96 @@ func analyzeScriptAST(script *ScriptAST) *Analysis {
 
 	// ── Rewrite assignments inside lifecycle and effect bodies ───────────────
 	a.ScriptPlan = buildScriptPlan(prog, skipEnd, a)
+	a.markReproducibleState()
 
 	return a
+}
+
+// markReproducibleState classifies the $state initializers (task 059).
+func (a *Analysis) markReproducibleState() {
+	props := map[string]bool{}
+	for _, p := range a.Props {
+		props[p.Name] = true
+	}
+	for _, sv := range a.StateVars {
+		sv.Reproducible = reproducibleInit(sv.InitialAST, props)
+	}
+}
+
+// SerializedState lists the $state bindings whose initial values travel in
+// the hydration payload: those without a reproducible initializer. A
+// component without any writes no payload entry and reads none (S-6.4).
+func (a *Analysis) SerializedState() []*StateVar {
+	var out []*StateVar
+	for _, sv := range a.StateVars {
+		if !sv.Reproducible {
+			out = append(out, sv)
+		}
+	}
+	return out
+}
+
+// reproducibleInit reports whether the client computes expr itself with the
+// server's result and no work worth avoiding: a literal tree (numbers,
+// strings, booleans, null, undefined, arrays and plain objects of such
+// values) or a reference to a prop and its fields. On the server nothing
+// changes state between its initializer and the render (handlers, effects
+// and lifecycle hooks do not run there), so the client value is the server
+// value; the props reach the client in the payload (root) or from the
+// parent's code (children, S-6.3). Calls, other bindings and everything
+// else keep the payload, so S-6.8 still avoids repeated loading.
+func reproducibleInit(expr JsExpr, props map[string]bool) bool {
+	switch e := expr.(type) {
+	case nil:
+		return true
+	case *JsLiteral:
+		return e.Kind == "number" || e.Kind == "string" || e.Kind == "boolean" || e.Kind == "null"
+	case *JsTemplateLit:
+		return len(e.Exprs) == 0
+	case *JsUnaryExpr:
+		_, literal := e.X.(*JsLiteral)
+		return e.Prefix && (e.Op == "-" || e.Op == "+" || e.Op == "!") && literal && reproducibleInit(e.X, props)
+	case *JsIdent:
+		return e.Name == "undefined" || props[e.Name]
+	case *JsMemberExpr:
+		if e.Computed {
+			if _, literal := e.Prop.(*JsLiteral); !literal {
+				return false
+			}
+		}
+		return propReference(e.Obj, props)
+	case *JsArrayExpr:
+		for _, item := range e.Elems {
+			if _, spread := item.(*JsSpreadExpr); spread || !reproducibleInit(item, props) {
+				return false
+			}
+		}
+		return true
+	case *JsObjectExpr:
+		for _, p := range e.Props {
+			if p.Spread || p.Computed || p.Method || p.Kind != "init" || !reproducibleInit(p.Value, props) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// propReference reports a prop or a field path of one (issue.project.key).
+func propReference(expr JsExpr, props map[string]bool) bool {
+	switch e := expr.(type) {
+	case *JsIdent:
+		return props[e.Name]
+	case *JsMemberExpr:
+		if e.Computed {
+			if _, literal := e.Prop.(*JsLiteral); !literal {
+				return false
+			}
+		}
+		return propReference(e.Obj, props)
+	}
+	return false
 }
 
 // lowerReactiveCallbackBodies runs only after input validation, when the

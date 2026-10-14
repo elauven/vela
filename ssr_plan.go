@@ -67,6 +67,10 @@ type SSRRenderPlan struct {
 	// declaration order (T-6.6d).
 	StateNames []string
 	LocalOrder []string
+	// PayloadState lists the StateNames whose initial values travel in the
+	// payload: the non-reproducible ones (task 059, S-6.4). Empty: the
+	// component writes no entry.
+	PayloadState []string
 	// TemplateOffset and ScriptOffset place template expression and script
 	// node positions in the .vela source for the region report (T-3.2).
 	TemplateOffset int
@@ -320,6 +324,17 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		ScriptOffset:        sfc.ScriptOffset,
 	}}
 	b.plan.StateNames, b.plan.LocalOrder = ssrDeclarationOrder(b.plan, analysis)
+	if analysis != nil {
+		serialized := map[string]bool{}
+		for _, sv := range analysis.SerializedState() {
+			serialized[sv.Name] = true
+		}
+		for _, name := range b.plan.StateNames {
+			if serialized[name] {
+				b.plan.PayloadState = append(b.plan.PayloadState, name)
+			}
+		}
+	}
 	b.plan.Nodes = b.nodes(sfc.TemplateAST.Nodes)
 	for name := range b.slotNames {
 		b.plan.SlotNames = append(b.plan.SlotNames, name)

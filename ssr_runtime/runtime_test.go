@@ -346,7 +346,7 @@ func TestStreamWritesRangesAndOrderedRootPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := `<!--[--><!--[--><!--]--><!--[x--><!--]--><!--]-->` +
-		`<script type="application/json" data-vela-root>{"v":2,"props":{"title":"LTscriptGT"},"entries":[["s","Page",{"open":true}],["s","Child",{},{"omitted":["now"]}],["a","Child#3",{"state":"t","value":"LTdoneGT"}],["a","Page#4",{"state":"p"}]]}</script>`
+		`<script type="application/json" data-vela-root>{"v":3,"props":{"title":"LTscriptGT"},"entries":[["s","Page",{"open":true}],["s","Child",{},{"omitted":["now"]}],["a","Child#3",{"state":"t","value":"LTdoneGT"}],["a","Page#4",{"state":"p"}]]}</script>`
 	lt, gt := "\\"+"u003c", "\\"+"u003e"
 	want = strings.NewReplacer("LT", lt+"/", "GT", gt).Replace(want)
 	want = strings.Replace(want, lt+"/done", lt+"done", 1)
@@ -400,5 +400,19 @@ func TestAssignPropConvertsThroughTheJSONView(t *testing.T) {
 	}
 	if err := AssignProp(&title, any(nil), "Panel.title"); err == nil || !strings.Contains(err.Error(), "cannot hold null") {
 		t.Fatalf("null into string error = %v", err)
+	}
+}
+
+// A component without serialized state writes no "s" entry (task 059).
+func TestBeginComponentWithoutStateWritesNoEntry(t *testing.T) {
+	var out strings.Builder
+	w, root := BeginComponent(&out, "Page", nil)
+	child, _ := BeginComponent(w, "Child", NewObject().Set("now", 1.0))
+	_ = child
+	if err := EndComponent(w, root, []byte(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"v":3,"props":{},"entries":[["s","Child",{"now":1}]]}`; !strings.Contains(out.String(), want) {
+		t.Fatalf("payload %s, want %s", out.String(), want)
 	}
 }

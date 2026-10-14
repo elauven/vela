@@ -285,17 +285,19 @@ One script per interactive root, immediately after the root range:
 
 ```html
 <script type="application/json" data-vela-root>
-{"v":2,
+{"v":3,
  "props":{"title":"Team","users":[{"id":1,"name":"Ann"},{"id":2,"name":"Bob"}]},
  "entries":[
-   ["s","Page",{"open":true}],
-   ["s","Header",{}],
-   ["s","UserCard",{"expanded":false}],
-   ["s","UserCard",{"expanded":false}],
+   ["s","Page",{"stats":{"active":2}}],
    ["a","Page#3",{"state":"t","value":{"total":2}}]
  ]}
 </script>
 ```
+
+Here `Page` has `let stats = $state(summarize(users))`, which the payload
+carries; `let open = $state(true)` in `Page`, and the literal state of
+`Header` and `UserCard`, are computed by the client (S-6.8a), so those
+components write no entry.
 
 - **S-6.1 One stream per root.** No per-component scripts, no instance
   identifiers.
@@ -306,9 +308,13 @@ One script per interactive root, immediately after the root range:
   running the parent's code.
 - **S-6.4 Entries.** In render order:
   - `["s", component, state]` — written when a component instance starts
-    rendering: the initial values of its `$state`, `$state.deep`, and
-    `$bindable` bindings. Every rendered instance has an entry, even an empty
-    one, so that order is verifiable.
+    rendering: the initial values of its `$state` and `$state.deep`
+    bindings that do not have a reproducible initializer (S-6.8a). A
+    component without such bindings writes no entry, and its client code
+    reads none; which components write one is decided at compile time from
+    the same source, so server and client agree (payload version 3, task
+    059). `$bindable` props are not in the entry: the client takes them from
+    the props (S-6.2, S-6.3).
   - `["a", site, snapshot]` — written when a server-evaluated `{#await}`
     renders (T-7.4f). `site` is the compile-time await site identifier.
 - **S-6.5 Nothing for client-only code.** The main branch of `{#client}` and
@@ -328,6 +334,16 @@ One script per interactive root, immediately after the root range:
   are **not evaluated**. This is what prevents duplicate data loading and
   repeated host-equivalent work on the client. `$derived` values and prop
   defaults are computed normally.
+- **S-6.8a Reproducible initializers.** An initializer the client computes
+  itself at no cost and with the server's result is evaluated on the client
+  also while hydrating, and its value is not written: a literal tree
+  (numbers, strings, booleans, `null`, `undefined`, arrays and plain
+  objects of such values) or a reference to a prop and its fields
+  (`columns`, `issue.title`). Between the initializer and the render
+  nothing changes state on the server (handlers, effects and lifecycle
+  hooks do not run there), and the props reach the client (S-6.2, S-6.3),
+  so the client value is the server value. Calls, other bindings and every
+  other expression keep their value in the payload.
 - **S-6.9 Removal.** The payload script is removed after the root commits.
 
 ### 6.3 Keyed lists

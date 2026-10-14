@@ -9,7 +9,7 @@
 //    is one root range followed by one payload script; every range opens and
 //    closes among the same siblings; state tokens belong to the grammar; no
 //    other comments, element markers or instance identifiers appear;
-//  - the payload stream has version 2, the root props, and "s" entries for
+//  - the payload stream has version 3, the root props, and "s" entries for
 //    the expected components in render order;
 //  - the static rendering equals the comment-free interactive rendering;
 //  - when compare is set, the comment-free server DOM equals the DOM the
@@ -96,7 +96,7 @@ function checkCase(testCase) {
     errors.push(`payload is not JSON: ${error.message}`);
     return errors;
   }
-  if (payload.v !== 2) errors.push(`payload version ${payload.v}`);
+  if (payload.v !== 3) errors.push(`payload version ${payload.v}`);
   for (const [name, value] of Object.entries(testCase.props)) {
     if (JSON.stringify(payload.props?.[name]) !== JSON.stringify(value)) {
       errors.push(`payload prop ${name} = ${JSON.stringify(payload.props?.[name])}`);

@@ -1049,9 +1049,12 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 		genExprStmt(&JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "void", Prefix: true, X: id("$$slots")}),
 	)
 
-	// A hydrating instance restores its state from the payload stream
-	// (S-6.8); a created one gets null.
-	fnBody.Body = append(fnBody.Body, genConst("$$velaState", genCall(id("$$hydrationState"), strLit(g.name))))
+	// A hydrating instance restores its serialized state from the payload
+	// stream (S-6.8); a created one gets null. A component whose state is
+	// all reproducible has no entry and reads none (S-6.4, task 059).
+	if g.analysis != nil && len(g.analysis.SerializedState()) > 0 {
+		fnBody.Body = append(fnBody.Body, genConst("$$velaState", genCall(id("$$hydrationState"), strLit(g.name))))
+	}
 
 	// ── Runtime helpers ──────────────────────────────────────
 	// $$dispatch, $$insertHTML and $$proxy used to be inlined in
@@ -1648,8 +1651,9 @@ func (g *ASTGen) buildStateDecl(sv *StateVar) []JsStmt {
 	if init == nil {
 		init = id("undefined")
 	}
-	{
-
+	if !sv.Reproducible {
+		// A reproducible initializer is computed on the client also while
+		// hydrating; the others come from the payload when present.
 		hasState := genCall(generatedMemberPath("Object.prototype.hasOwnProperty.call"), id("$$velaState"), strLit(sv.Name))
 		init = &JsConditionalExpr{
 			BaseExpr: BaseExpr{BaseNode: genNode()},

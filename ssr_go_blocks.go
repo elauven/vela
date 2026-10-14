@@ -108,21 +108,22 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 //		}
 //	}
 func ssrBlocksBeginComponent(plan *SSRRenderPlan, evaluated map[string]bool) []goast.Stmt {
-	// The "s" entry carries the computed initial values of $state and
-	// $state.deep, and the $bindable props after defaults (S-6.4, T-6.6d).
-	state := goast.Expr(&goast.CallExpr{Fun: goSelector("vela", "NewObject")})
+	// The "s" entry carries the computed initial values of the $state and
+	// $state.deep bindings without a reproducible initializer (S-6.4,
+	// T-6.6d). A component without any writes no entry (nil state); the
+	// client reads none. $bindable props are not written: the client takes
+	// them from the props (task 059).
+	state := goast.Expr(goast.NewIdent("nil"))
+	if len(plan.PayloadState) > 0 {
+		state = &goast.CallExpr{Fun: goSelector("vela", "NewObject")}
+	}
 	var omitted []goast.Expr
-	for _, name := range plan.StateNames {
+	for _, name := range plan.PayloadState {
 		if !evaluated[name] {
 			omitted = append(omitted, ssrGoString(name))
 			continue
 		}
 		state = &goast.CallExpr{Fun: goSelectorExpr(state, "Set"), Args: []goast.Expr{ssrGoString(name), goast.NewIdent(ssrLocalName(name))}}
-	}
-	for _, prop := range plan.Props {
-		if prop.Bindable {
-			state = &goast.CallExpr{Fun: goSelectorExpr(state, "Set"), Args: []goast.Expr{ssrGoString(prop.SourceName), &goast.SelectorExpr{X: goast.NewIdent("props"), Sel: goast.NewIdent(prop.GoName)}}}
-		}
 	}
 	beginArgs := append([]goast.Expr{goast.NewIdent("w"), ssrGoString(plan.ComponentName), state}, omitted...)
 	fields := make([]*goast.Field, 0, len(plan.Props))

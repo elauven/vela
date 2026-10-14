@@ -47,6 +47,9 @@ func TestSSRInitOracle(t *testing.T) {
 		t.Fatal(err)
 	}
 	var calls strings.Builder
+	// The payload carries only the state without a reproducible initializer
+	// (task 059); the expected entry keeps those keys of the oracle's state.
+	serialized := make([]map[string]bool, len(rows))
 	for i, row := range rows {
 		var script strings.Builder
 		for _, decl := range row.Decls {
@@ -67,6 +70,10 @@ func TestSSRInitOracle(t *testing.T) {
 			default:
 				t.Fatalf("%s: unknown declaration kind %q", row.Name, kind)
 			}
+		}
+		serialized[i] = map[string]bool{}
+		for _, sv := range analyzeScript(script.String()).SerializedState() {
+			serialized[i][sv.Name] = true
 		}
 		component := fmt.Sprintf("Init%d", i)
 		// The button makes the root interactive, so that it writes its payload (A-8.1).
@@ -105,12 +112,17 @@ func TestSSRInitOracle(t *testing.T) {
 		var stream struct {
 			Entries [][]json.RawMessage `json:"entries"`
 		}
-		if err := json.Unmarshal([]byte(script[1]), &stream); err != nil || len(stream.Entries) == 0 || len(stream.Entries[0]) < 3 {
+		if err := json.Unmarshal([]byte(script[1]), &stream); err != nil {
 			t.Errorf("%s: payload %q: %v", row.Name, script[1], err)
 			continue
 		}
-		if state := string(stream.Entries[0][2]); state != row.State {
-			t.Errorf("%s: state entry = %s, want %s", row.Name, state, row.State)
+		want := filterJSONObject(t, row.State, serialized[i])
+		state := "{}"
+		if len(stream.Entries) > 0 && len(stream.Entries[0]) >= 3 {
+			state = string(stream.Entries[0][2])
+		}
+		if state != want {
+			t.Errorf("%s: state entry = %s, want %s", row.Name, state, want)
 		}
 	}
 }
@@ -195,4 +207,30 @@ func main() {
 		t.Fatalf("invalid output: %v\n%s", err, output)
 	}
 	return rendered
+}
+
+// filterJSONObject keeps the keys of a JSON object text in keep, in their
+// order, with their values as written.
+func filterJSONObject(t *testing.T, text string, keep map[string]bool) string {
+	t.Helper()
+	dec := json.NewDecoder(strings.NewReader(text))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		t.Fatalf("not a JSON object: %s", text)
+	}
+	var parts []string
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			t.Fatal(err)
+		}
+		if keep[key.(string)] {
+			quoted, _ := json.Marshal(key)
+			parts = append(parts, string(quoted)+":"+string(value))
+		}
+	}
+	return "{" + strings.Join(parts, ",") + "}"
 }

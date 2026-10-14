@@ -116,7 +116,7 @@ export const ITEMS = ['a', 'b'];
 </template>
 `,
 	}
-	cases := []ssrBlocksCase{{Name: "gate fixes", Component: "Fixes", Props: json.RawMessage(`{"variant":"v","label":"L"}`), Entries: []string{"Fixes"}, Compare: true}}
+	cases := []ssrBlocksCase{{Name: "gate fixes", Component: "Fixes", Props: json.RawMessage(`{"variant":"v","label":"L"}`), Entries: []string{}, Compare: true}}
 	runSSRBlocksSuite(t, files, cases)
 }
 

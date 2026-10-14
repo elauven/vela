@@ -527,7 +527,7 @@ func EscapeString(value string) string {
 
 // RootPayloadVersion is the schema version of the payload stream written by
 // block-engine renderers (docs/HYDRATION_ARCHITECTURE.md §6).
-const RootPayloadVersion = 2
+const RootPayloadVersion = 3
 
 // Stream collects the ordered payload entries of one root render (S-6.1).
 // Component instances and server-rendered await blocks append entries in
@@ -590,6 +590,10 @@ func BeginComponent(w io.Writer, component string, state any, omitted ...string)
 		return sw, root
 	}
 	if state == nil {
+		if len(omitted) == 0 {
+			// No serialized state: no entry (S-6.4, task 059).
+			return sw, root
+		}
 		state = NewObject()
 	}
 	state, omitted = clientOnlyState(state, omitted)
