@@ -232,6 +232,12 @@ equivalent to an `onDestroy`.
 <p>{count} item{count === 1 ? '' : 's'}</p>
 ```
 
+Whitespace renders as in HTML: a line break or spaces between two
+elements (or an element and text) become one space, and whitespace at the
+start and end of an element's content is dropped. So
+`<b>Name</b> <i>role</i>` shows "Name role", while indentation inside a
+`<ul>` adds nothing. `<pre>` and `<textarea>` keep their whitespace.
+
 Expressions may contain anything — comparisons included. A `<`
 inside `{...}` is part of the expression, not a tag:
 

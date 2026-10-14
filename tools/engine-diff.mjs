@@ -13,8 +13,10 @@
 // Each case mounts the compiled component into its own host, applies the steps
 // and records the comment-free HTML after every step. expected.json holds one
 // snapshot list per case; it was recorded from the legacy DOM engine before
-// task 042 removed it, so the block engine keeps its observable DOM. The check
-// prints {"ok":bool,"total":n,"failures":[...]}.
+// task 042 removed it, so the block engine keeps its observable DOM. Task 059
+// re-recorded it once for the HTML whitespace rules: the only change was one
+// space between sibling nodes, and the scope attributes of components without
+// styles. The check prints {"ok":bool,"total":n,"failures":[...]}.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';

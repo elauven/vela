@@ -79,23 +79,28 @@ async function check({ id, mode }) {
         }
         return '<' + node.localName + (attrs.length ? ' ' + attrs.join(' ') : '') + '>' + children(node) + '</' + node.localName + '>';
       };
-      // Adjacent text nodes are joined and empty ones dropped: parsed HTML
-      // and client-built DOM split text differently without a visible
-      // difference.
+      // Adjacent text nodes are joined (comments, such as block anchors, do
+      // not separate them), empty ones dropped, and whitespace runs compared
+      // as the browser renders them: parsed HTML and client-built DOM split
+      // text differently without a visible difference.
       const children = (parent) => {
         const out = [];
         let text = null;
+        const flushText = () => {
+          if (text) out.push(JSON.stringify(text.replace(/[ \t\n\f\r]+/g, ' ')));
+          text = null;
+        };
         for (const child of parent.childNodes) {
           if (child.nodeType === 3) {
             text = (text ?? '') + child.data;
             continue;
           }
-          if (text) out.push(JSON.stringify(text));
-          text = null;
+          if (child.nodeType === 8) continue;
+          flushText();
           const d = describe(child);
           if (d) out.push(d);
         }
-        if (text) out.push(JSON.stringify(text));
+        flushText();
         return out.join('');
       };
       const tree = (id) => children(document.getElementById(id));

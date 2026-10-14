@@ -271,9 +271,14 @@ cursor expects. The compiler guarantees this at compile time.
 - **M-5.9 Text-only elements.** Inside `<textarea>`, `<title>`, `<script>`,
   and `<style>` only one text run is allowed and no blocks; markers cannot
   exist there. `<textarea>` content is handled as a form value (C-4.5).
-- **M-5.10 Whitespace.** Whitespace handling is decided once, in the render
-  plan. Go output and fragments use the decided text runs and never trim or
-  collapse whitespace independently.
+- **M-5.10 Whitespace.** Whitespace is decided once, by the template parser,
+  with the rules HTML renders (task 059): source whitespace between two
+  sibling nodes of any kind is one space; whitespace at the start and the
+  end of an element's content, a block branch, and slot content is removed;
+  runs inside text collapse to one space; a no-break space is content;
+  `<pre>`, `<textarea>` and `<listing>` keep their whitespace verbatim. Go
+  output and fragments use these text runs and never trim, drop or collapse
+  whitespace on their own.
 
 ---
 

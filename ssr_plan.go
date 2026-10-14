@@ -166,9 +166,6 @@ type SSRPlanSlot struct {
 type SSRPlanText struct {
 	Span  SectionSpan
 	Parts []SSRPlanTextPart
-	// ClientDropped marks whitespace the block engine does not create
-	// (blocksDroppedWhitespace); the block-markup renderer skips it.
-	ClientDropped bool
 }
 
 type SSRPlanTextPart struct {
@@ -429,7 +426,6 @@ func (b *ssrPlanBuilder) dynamic(kind SSRDynamicKind, expr *TemplateExpr, span S
 
 func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
 	out := make([]SSRPlanNode, 0, len(nodes))
-	dropped := blocksDroppedWhitespace(nodes)
 	for _, node := range nodes {
 		switch n := node.(type) {
 		case *ElementNode:
@@ -446,9 +442,7 @@ func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
 			b.slotNames[n.Name] = true
 			out = append(out, &SSRPlanSlot{Span: n.Span, Name: n.Name, Fallback: b.nodes(n.Fallback)})
 		case *TextNode:
-			text := b.text(n)
-			text.ClientDropped = dropped[n]
-			out = append(out, text)
+			out = append(out, b.text(n))
 		case *IfChainNode:
 			if n.Client {
 				client := &SSRPlanClient{Span: n.Span}

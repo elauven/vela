@@ -319,9 +319,6 @@ func (e *ssrGoEmitter) slot(node *SSRPlanSlot) ([]goast.Stmt, error) {
 }
 
 func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {
-	if node.ClientDropped {
-		return nil, nil
-	}
 	body := make([]goast.Stmt, 0, len(node.Parts)*3)
 	for _, part := range node.Parts {
 

@@ -103,8 +103,9 @@ func TestNormalizeTableRowsInsertsTbody(t *testing.T) {
 		}
 	}
 	got := strings.Join(shape, " ")
-	// The template parser already drops whitespace between these elements.
-	want := "caption(text) tbody(tr,each) tfoot(tr)"
+	// Whitespace between the elements stays where the HTML parser keeps it:
+	// in the table before the implied tbody, and inside the tbody (task 059).
+	want := "caption(text) text tbody(tr,text,each,text) tfoot(tr)"
 	if got != want {
 		t.Fatalf("normalised table = %s, want %s", got, want)
 	}

@@ -757,23 +757,47 @@ func (p *parser) has(s string) bool {
 	return strings.HasPrefix(p.src[p.pos:], s)
 }
 
+// parseNodes parses a child list with the whitespace rules of HTML as
+// Svelte applies them (task 059): source whitespace between two sibling
+// nodes of any kind is one space, whitespace at the start and the end of
+// the list is removed, and runs inside text collapse to one space. Inside
+// <pre>, <textarea> and <listing> whitespace is kept verbatim.
 func (p *parser) parseNodes(stopTags []string) ([]Node, error) {
+	nodes, err := p.parseNodeList(stopTags)
+	if err != nil {
+		return nil, err
+	}
+	return trimEdgeWhitespace(nodes), nil
+}
+
+func (p *parser) parseNodeList(stopTags []string) ([]Node, error) {
 	var nodes []Node
+	// space is the source whitespace before the next node; it survives an
+	// HTML comment, which renders nothing.
+	space := false
+	spaceStart := p.pos
+	// separate appends the pending space before a node that is not text;
+	// text takes it as its first part.
+	separate := func() {
+		if space && len(nodes) > 0 {
+			nodes = append(nodes, &TextNode{
+				Span:  SectionSpan{Start: p.base + spaceStart, End: p.base + spaceStart + 1},
+				Parts: []*Part{{Static: true, Value: " "}},
+			})
+		}
+		space = false
+	}
 	for !p.eof() {
-		// Track whether the upcoming run is preceded by source
-		// whitespace.  If so, and the next thing is text (not a tag),
-		// we need to preserve a single leading space — otherwise
-		// inline markup like `<p>before <code>x</code> after</p>` ends
-		// up rendered as `before<code>x</code>after`, with the space
-		// after the closing tag silently eaten by skipWS.
-		sawWS := false
 		startPos := p.pos
 		if p.preformatted == 0 {
 			// Inside <pre>, <textarea>, and <listing> whitespace is text.
 			p.skipWS()
 		}
 		if p.pos > startPos {
-			sawWS = true
+			if !space {
+				spaceStart = startPos
+			}
+			space = true
 		}
 		if p.eof() {
 			break
@@ -802,6 +826,7 @@ func (p *parser) parseNodes(stopTags []string) ([]Node, error) {
 				return nodes, nil
 			}
 			if node != nil {
+				separate()
 				nodes = append(nodes, node)
 			}
 			continue
@@ -823,32 +848,37 @@ func (p *parser) parseNodes(stopTags []string) ([]Node, error) {
 				}
 				continue
 			}
+			elementStart := p.pos
 			node, err := p.parseElement()
 			if err != nil {
 				return nil, err
 			}
 			if node != nil {
+				// The space belongs before the element, not after it.
+				pending := space
+				space = false
+				if pending && len(nodes) > 0 {
+					nodes = append(nodes, &TextNode{
+						Span:  SectionSpan{Start: p.base + spaceStart, End: p.base + elementStart},
+						Parts: []*Part{{Static: true, Value: " "}},
+					})
+				}
 				nodes = append(nodes, node)
 			}
 		} else {
-			// If we consumed leading whitespace before reaching this
-			// text run, prepend a space-only text node so the inline
-			// boundary is preserved.  Only fire when there's already
-			// at least one preceding node (i.e. this isn't the very
-			// first child) — leading whitespace at the start of an
-			// element's content is still cosmetic indentation that
-			// should be dropped.
-			if sawWS && len(nodes) > 0 {
-				nodes = append(nodes, &TextNode{
-					Span:  SectionSpan{Start: p.base + startPos, End: p.base + p.pos},
-					Parts: []*Part{{Static: true, Value: " "}},
-				})
-			}
 			node, err := p.parseText()
 			if err != nil {
 				return nil, err
 			}
 			if node != nil {
+				if space && len(nodes) > 0 && !node.Preformatted {
+					// The space before the text joins it: one text run (C-4.3).
+					node.Parts = append([]*Part{{Static: true, Value: " ", Span: SectionSpan{Start: p.base + spaceStart, End: p.base + spaceStart + 1}}}, node.Parts...)
+					node.Span.Start = p.base + spaceStart
+				} else if space && len(nodes) > 0 {
+					separate()
+				}
+				space = false
 				nodes = append(nodes, node)
 			}
 		}
@@ -941,19 +971,18 @@ func parseInterpolationsMode(s string, base int, verbatim bool) []*Part {
 		// contained one, otherwise drop entirely.  This is what kept
 		// trailing newlines from polluting the output before, and we
 		// keep it.
-		trimmed := strings.TrimSpace(text)
+		// HTML whitespace only: a no-break space is content (task 059).
+		trimmed := strings.TrimFunc(text, func(r rune) bool { return r < 0x80 && isHTMLSpace(byte(r)) })
 		if trimmed == "" {
 			if strings.ContainsAny(text, " \t\n\r") {
 				parts = append(parts, &Part{Static: true, Value: " "})
 			}
 			return
 		}
-		// Mixed text: keep boundary whitespace as a single space so
-		// inline markup like `word <code>x</code> word` stays
-		// visually correct.  Without this, the parser used to trim
-		// both sides, producing `word<code>x</code>word` in output.
-		// Internal runs of whitespace inside `trimmed` are kept as-is
-		// because HTML collapses them at render time anyway.
+		// Mixed text: boundary whitespace is one space, so inline markup
+		// like `word <code>x</code> word` stays correct, and internal runs
+		// collapse to one space as HTML renders them (task 059).
+		trimmed = collapseHTMLSpace(trimmed)
 		leading := ""
 		if len(text) > 0 && isHTMLSpace(text[0]) {
 			leading = " "
@@ -1208,6 +1237,12 @@ func (p *parser) parseComponentNode(name string, elementStart int) (Node, error)
 		}
 
 		defaultSlot = append(defaultSlot, child)
+	}
+	// Named slot content was taken out of the list; the spaces around it
+	// are not content of the default slot.
+	defaultSlot = trimEdgeWhitespace(defaultSlot)
+	for name, nodes := range comp.Slots {
+		comp.Slots[name] = trimEdgeWhitespace(nodes)
 	}
 	if len(defaultSlot) > 0 {
 		comp.Slots["default"] = defaultSlot
@@ -2377,4 +2412,112 @@ func scriptContextClient(src string) bool {
 		return false
 	}
 	return scriptContextPattern.MatchString(src[start : start+end+1])
+}
+
+// collapseHTMLSpace replaces every run of HTML whitespace with one space.
+func collapseHTMLSpace(s string) string {
+	var b strings.Builder
+	space := false
+	for i := 0; i < len(s); i++ {
+		if isHTMLSpace(s[i]) {
+			if !space {
+				b.WriteByte(' ')
+			}
+			space = true
+			continue
+		}
+		space = false
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+// trimEdgeWhitespace finishes a child list (task 059): adjacent text nodes
+// become one text run (C-4.3), and whitespace at the start and the end of
+// the list is removed. Preformatted text is left as written.
+func trimEdgeWhitespace(nodes []Node) []Node {
+	var out []Node
+	for _, node := range nodes {
+		text, ok := node.(*TextNode)
+		if ok && len(out) > 0 {
+			if prev, ok := out[len(out)-1].(*TextNode); ok && prev.Preformatted == text.Preformatted {
+				joined := &TextNode{Span: SectionSpan{Start: prev.Span.Start, End: text.Span.End}, Preformatted: prev.Preformatted}
+				joined.Parts = append(append(joined.Parts, prev.Parts...), text.Parts...)
+				if !joined.Preformatted {
+					joined.Parts = joinSpaces(joined.Parts)
+				}
+				out[len(out)-1] = joined
+				continue
+			}
+		}
+		out = append(out, node)
+	}
+	if len(out) > 0 {
+		if text, ok := out[0].(*TextNode); ok && !text.Preformatted {
+			if text.Parts = trimTextParts(text.Parts, true); len(text.Parts) == 0 {
+				out = out[1:]
+			}
+		}
+	}
+	if len(out) > 0 {
+		if text, ok := out[len(out)-1].(*TextNode); ok && !text.Preformatted {
+			if text.Parts = trimTextParts(text.Parts, false); len(text.Parts) == 0 {
+				out = out[:len(out)-1]
+			}
+		}
+	}
+	return out
+}
+
+// joinSpaces drops the second of two spaces where static parts meet.
+func joinSpaces(parts []*Part) []*Part {
+	var out []*Part
+	for _, part := range parts {
+		if part.Static && len(out) > 0 {
+			if prev := out[len(out)-1]; prev.Static && strings.HasSuffix(prev.Value, " ") && strings.HasPrefix(part.Value, " ") {
+				trimmed := *part
+				trimmed.Value = part.Value[1:]
+				if trimmed.Value == "" {
+					continue
+				}
+				part = &trimmed
+			}
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
+// trimTextParts removes the leading (or trailing) whitespace of the static
+// edge parts of a text node; parts that become empty are dropped.
+func trimTextParts(parts []*Part, leading bool) []*Part {
+	for len(parts) > 0 {
+		i := len(parts) - 1
+		if leading {
+			i = 0
+		}
+		part := parts[i]
+		if !part.Static {
+			return parts
+		}
+		// HTML whitespace only: a no-break space is content.
+		htmlSpace := func(r rune) bool { return r < 0x80 && isHTMLSpace(byte(r)) }
+		value := strings.TrimRightFunc(part.Value, htmlSpace)
+		if leading {
+			value = strings.TrimLeftFunc(part.Value, htmlSpace)
+		}
+		if value != "" {
+			trimmed := *part
+			trimmed.Value = value
+			out := append([]*Part{}, parts...)
+			out[i] = &trimmed
+			return out
+		}
+		if leading {
+			parts = parts[1:]
+		} else {
+			parts = parts[:i]
+		}
+	}
+	return parts
 }

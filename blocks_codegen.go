@@ -273,10 +273,10 @@ func (f *blocksFragment) decl(scopeLocals []blocksLocal) JsStmt {
 	return &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: f.name, Params: params, Body: genBlock(body...)}
 }
 
-// buildBlocksChildren lowers a child list with these whitespace rules:
-// an all-static list with an element is one static subtree; a list of static
-// nodes and text holes keeps its whitespace; otherwise whitespace-only static
-// runs between dynamic nodes are dropped.
+// buildBlocksChildren lowers a child list: an all-static list with an
+// element is one static subtree; otherwise runs of static nodes become
+// static templates between the dynamic nodes. Whitespace was decided by the
+// parser (task 059), so the server writes the same text runs (M-5.10).
 func (g *ASTGen) buildBlocksChildren(nodes []Node, isRoot bool) {
 	if len(nodes) == 0 {
 		return
@@ -285,18 +285,14 @@ func (g *ASTGen) buildBlocksChildren(nodes []Node, isRoot bool) {
 		g.blocksStatic(nodes)
 		return
 	}
-	keepWhitespace := !isRoot && astHoleSubtreeOK(nodes)
+	// The parser keeps whitespace only where HTML renders it (one space
+	// between siblings, task 059), so every static run is created.
 	var run []Node
-	kept := func() bool {
-		return keepWhitespace || hasPreformattedText(run) || strings.TrimSpace(emitStaticHTML(run, g.elementScope)) != ""
-	}
 	flush := func() {
 		if len(run) == 0 {
 			return
 		}
-		if kept() {
-			g.blocksStatic(run)
-		}
+		g.blocksStatic(run)
 		run = nil
 	}
 	for _, node := range nodes {
@@ -308,7 +304,7 @@ func (g *ASTGen) buildBlocksChildren(nodes []Node, isRoot bool) {
 		// with it (C-4.3): the server writes them together and the HTML
 		// parser joins them, so a separate client node failed hydration
 		// (task 031).
-		if text, ok := node.(*TextNode); ok && len(run) > 0 && kept() {
+		if text, ok := node.(*TextNode); ok && len(run) > 0 {
 			if last, ok := run[len(run)-1].(*TextNode); ok && last.Preformatted == text.Preformatted {
 				joined := *text
 				joined.Parts = append(append([]*Part{}, last.Parts...), text.Parts...)
@@ -711,47 +707,6 @@ func (g *ASTGen) buildBlocksSlot(slot *SlotNode) {
 		fallback = id(g.blocksNestedFragment(slot.Fallback, nil))
 	}
 	g.blocksBlockCall("$$slot", genComputedMember(id("$$slots"), strLit(slot.Name)), fallback)
-}
-
-// blocksDroppedWhitespace returns the whitespace-only static text nodes
-// among siblings that the block engine does not create (M-5.10): a run of
-// consecutive static nodes is dropped when it is only whitespace, unless the
-// siblings are a fully static subtree or a subtree without structural
-// blocks and element wiring. A single root element has no text siblings,
-// so the root flag of buildBlocksChildren does not change the result. The
-// SSR render plan records the same decision, so server and client write the
-// same text runs.
-func blocksDroppedWhitespace(nodes []Node) map[*TextNode]bool {
-	if (hasElement(nodes) && allStatic(nodes)) || astHoleSubtreeOK(nodes) {
-		return nil
-	}
-	dropped := map[*TextNode]bool{}
-	var run []Node
-	flush := func() {
-		blank := true
-		for _, node := range run {
-			text, ok := node.(*TextNode)
-			if !ok || text.Preformatted || strings.TrimSpace(textNodeStaticValue(text)) != "" {
-				blank = false
-				break
-			}
-		}
-		if blank {
-			for _, node := range run {
-				dropped[node.(*TextNode)] = true
-			}
-		}
-		run = nil
-	}
-	for _, node := range nodes {
-		if isStaticNode(node) {
-			run = append(run, node)
-			continue
-		}
-		flush()
-	}
-	flush()
-	return dropped
 }
 
 func textNodeStaticValue(text *TextNode) string {
