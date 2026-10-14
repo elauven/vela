@@ -3,7 +3,7 @@
 // browser with a warm cache would not; set ASSETS=0 to skip them.
 import http from 'k6/http';
 import { check, group, sleep } from 'k6';
-import { BASE, ISSUES, ORIGIN, PROJECTS, json, options as base, pick } from './lib.js';
+import { BASE, ISSUES, json, options as base, ORIGIN, pick, PROJECTS, tick } from './lib.js';
 
 export const options = { ...base, discardResponseBodies: false };
 const THINK = Number(__ENV.THINK || 1);
@@ -21,6 +21,7 @@ function get(path, name) {
 }
 
 export default function () {
+  tick();
   const project = pick(PROJECTS);
   group('board', () => get(`/projects/${project}/board`, 'board'));
   sleep(THINK);

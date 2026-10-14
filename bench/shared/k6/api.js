@@ -1,12 +1,13 @@
 // JSON API without HTML: 80% list reads, 10% status moves, 10% comments.
 import http from 'k6/http';
 import { check } from 'k6';
-import { BASE, ISSUES, PROJECTS, json, options as base, pick } from './lib.js';
+import { BASE, ISSUES, json, options as base, pick, PROJECTS, tick } from './lib.js';
 
 export const options = base;
 const STATUSES = ['backlog', 'todo', 'in_progress', 'done'];
 
 export default function () {
+  tick();
   const roll = Math.random();
   let res;
   if (roll < 0.8) {

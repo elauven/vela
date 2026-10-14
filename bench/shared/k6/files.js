@@ -4,7 +4,7 @@
 // about UPLOADS × req/s × duration × SIZE (≈ 0.4 GB for 30 s at 1400 req/s).
 import http from 'k6/http';
 import { check } from 'k6';
-import { BASE, ISSUES, ORIGIN, options as base, pick } from './lib.js';
+import { BASE, ISSUES, options as base, ORIGIN, pick, tick } from './lib.js';
 
 export const options = { ...base, discardResponseBodies: false };
 const SIZE = Number(__ENV.SIZE || 100) * 1024;
@@ -13,6 +13,7 @@ const payload = 'x'.repeat(SIZE);
 const mine = [];
 
 export default function () {
+  tick();
   if (mine.length === 0 || Math.random() < UPLOADS) {
     const res = http.post(`${BASE}/api/issues/${pick(ISSUES)}/attachments`,
       { file: http.file(payload, 'load.bin', 'application/octet-stream') }, { headers: ORIGIN, tags: { name: 'upload' } });

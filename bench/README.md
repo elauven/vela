@@ -36,7 +36,25 @@ Full measurement on one Linux host (pins PostgreSQL to CPUs 0–1 — start it w
 go build -o bin/seed ./seed && vela-app/build.sh && (cd sveltekit-app && npm ci && npm run build)
 node shared/runner.mjs                       # all scenarios, 1 and 4 CPUs, both apps
 node shared/runner.mjs --apps vela --cpus 1 --scenarios render-200
+node shared/runner.mjs --profile step --scenarios render-200,issue    # saturation curves
+node shared/runner.mjs --profile spike --scenarios render-200,issue   # 20 → 200 → 20 VUs
+node shared/runner.mjs --profile soak --duration 30m --cpus 1 --scenarios journey
+node shared/runner.mjs --mode browser --cpus 1                        # Chromium metrics
+node shared/runner.mjs --mode build                                   # build time, sizes
 ```
+
+| Profile or mode | What it reports |
+| --- | --- |
+| `constant` (default) | One row per scenario: req/s, latency percentiles, failures, CPU, peak RSS, cold start |
+| `step` | Saturation curve: the 25 s hold of 10, 50, 100, 200 and 400 VUs, with the peak |
+| `spike` | 5 s windows through a jump from 20 to 200 VUs and back; worst p95 and the time until p95 is back within 1.5× |
+| `soak` | One window per minute: latency and RSS drift over `--duration` |
+| `--mode browser` | `shared/browser-metrics.mjs` per app, desktop and mobile throttling: TTFB, FCP, LCP, hydration, TBT, HTML and JS bytes, heap, typing, drag and drop and filter latency |
+| `--mode build` | Build time, server artifact, client JavaScript (raw and gzip) |
+
+Time windows come from k6 itself: `shared/k6/lib.js` tags every request with
+its window, and a threshold per window makes the summary carry the window's
+metrics.
 
 With Docker (not yet run): `APP_CPUS=1 docker compose up --build -d db seed vela
 sveltekit` starts PostgreSQL, seeds it, and runs both applications with the
