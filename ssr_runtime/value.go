@@ -128,6 +128,18 @@ func (o *Object) Lookup(key string) (any, bool) {
 
 // Keys returns the property names in JavaScript enumeration order.
 func (o *Object) Keys() []string {
+	integer := false
+	for _, key := range o.keys {
+		if arrayIndexKey(key) {
+			integer = true
+			break
+		}
+	}
+	if !integer {
+		// Insertion order already is the JavaScript order. The capacity is
+		// capped so that a caller's append cannot reach the object's keys.
+		return o.keys[:len(o.keys):len(o.keys)]
+	}
 	var integers, others []string
 	for _, key := range o.keys {
 		if arrayIndexKey(key) {
@@ -146,23 +158,7 @@ func (o *Object) Keys() []string {
 
 // MarshalJSON writes the properties in enumeration order.
 func (o *Object) MarshalJSON() ([]byte, error) {
-	var out bytes.Buffer
-	out.WriteByte('{')
-	for i, key := range o.Keys() {
-		if i > 0 {
-			out.WriteByte(',')
-		}
-		name, _ := json.Marshal(key)
-		out.Write(name)
-		out.WriteByte(':')
-		value, err := json.Marshal(o.values[key])
-		if err != nil {
-			return nil, err
-		}
-		out.Write(value)
-	}
-	out.WriteByte('}')
-	return out.Bytes(), nil
+	return appendJSON(nil, o)
 }
 
 // arrayIndexKey reports a canonical array index ("0", "17", not "01").

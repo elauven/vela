@@ -268,7 +268,7 @@ func PropProvided(props any, name string) bool {
 // props, so a failure here points to a non-serializable declared prop rather
 // than an arbitrary server-only sidecar field.
 func MarshalHydrationPayload(value any) ([]byte, error) {
-	encoded, err := json.Marshal(value)
+	encoded, err := appendJSON(nil, value)
 	if err != nil {
 		return nil, fmt.Errorf("VELA-SSR-PROPS: declared Vela props must be JSON-serializable: %w", err)
 	}
@@ -552,6 +552,12 @@ type streamWriter struct {
 	hostScope string
 }
 
+// WriteString passes strings to the underlying writer without a []byte
+// copy when it implements io.StringWriter (task 058).
+func (sw *streamWriter) WriteString(s string) (int, error) {
+	return io.WriteString(sw.Writer, s)
+}
+
 // StaticWriter makes a render write plain HTML: no block markers, no
 // payload script (A-8.3).
 func StaticWriter(w io.Writer) io.Writer {
@@ -657,14 +663,19 @@ func writeRootPayload(w io.Writer, props json.RawMessage, stream *Stream) error 
 	if len(props) == 0 {
 		props = json.RawMessage("{}")
 	}
-	encoded, err := json.Marshal(struct {
-		Version int             `json:"v"`
-		Props   json.RawMessage `json:"props"`
-		Entries []any           `json:"entries"`
-	}{RootPayloadVersion, props, entries})
+	// The same bytes as json.Marshal of {v, props, entries}, in one pass.
+	encoded := append(make([]byte, 0, 4096), `{"v":`...)
+	encoded = strconv.AppendInt(encoded, int64(RootPayloadVersion), 10)
+	encoded = append(encoded, `,"props":`...)
+	encoded, err := appendCompactJSON(encoded, props)
 	if err != nil {
 		return err
 	}
+	encoded = append(encoded, `,"entries":`...)
+	if encoded, err = appendJSON(encoded, entries); err != nil {
+		return err
+	}
+	encoded = append(encoded, '}')
 	if err := WriteString(w, `<script type="application/json" data-vela-root>`); err != nil {
 		return err
 	}
