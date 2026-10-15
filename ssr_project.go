@@ -3,6 +3,9 @@ package main
 import (
 	"crypto/md5"
 	"fmt"
+	goast "go/ast"
+	goparser "go/parser"
+	"go/token"
 	"go/types"
 	"os"
 	"path"
@@ -372,6 +375,9 @@ func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, hos
 		return err
 	}
 	bindSSRHosts(plan, hosts, src, analysis)
+	if plan.PropsWithoutPresence, err = ssrPropsWithoutPresence(layout.propsPath(src, srcRoot), plan.ComponentName+"Props"); err != nil {
+		return err
+	}
 	if hosts.RootModes != nil {
 		plan.RootStatic = !ssrInteractive(hosts.RootModes, src)
 	}
@@ -457,4 +463,54 @@ func goFileStem(name string) string {
 		return "component"
 	}
 	return stem
+}
+
+// ssrPropsWithoutPresence reports whether the preserved props sidecar at path
+// declares typeName without the Set map[string]bool presence field. A missing
+// file is generated with the field, so it reports false (task 060).
+func ssrPropsWithoutPresence(path, typeName string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	file, err := goparser.ParseFile(token.NewFileSet(), path, data, goparser.SkipObjectResolution)
+	if err != nil {
+		// The Go build reports the broken sidecar; keep the reflective check.
+		return true, nil
+	}
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*goast.GenDecl)
+		if !ok || gen.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			typeSpec := spec.(*goast.TypeSpec)
+			structType, ok := typeSpec.Type.(*goast.StructType)
+			if typeSpec.Name.Name != typeName || !ok || typeSpec.TypeParams != nil {
+				continue
+			}
+			for _, field := range structType.Fields.List {
+				for _, name := range field.Names {
+					if name.Name == "Set" {
+						return !ssrIsStringBoolMap(field.Type), nil
+					}
+				}
+			}
+			return true, nil
+		}
+	}
+	return true, nil
+}
+
+func ssrIsStringBoolMap(expr goast.Expr) bool {
+	m, ok := expr.(*goast.MapType)
+	if !ok {
+		return false
+	}
+	key, keyOK := m.Key.(*goast.Ident)
+	value, valueOK := m.Value.(*goast.Ident)
+	return keyOK && valueOK && key.Name == "string" && value.Name == "bool"
 }

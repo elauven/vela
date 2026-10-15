@@ -27,7 +27,7 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 	emitter := ssrGoEmitter{
 		ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, elementScope: plan.ElementScope,
 		awaitOptions: goast.NewIdent("options"), componentName: plan.ComponentName,
-		region: region, facts: map[JsExpr]ssrIRFacts{},
+		region: region, facts: map[JsExpr]ssrIRFacts{}, propsWithoutPresence: plan.PropsWithoutPresence,
 	}
 	// A single root element is the component's element; any other root gets
 	// the display:contents wrapper the client creates (B-3.8). Either one

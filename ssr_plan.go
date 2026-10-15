@@ -20,7 +20,11 @@ type SSRRenderPlan struct {
 	// component has styles, "" otherwise (as the client, task 059).
 	ElementScope string
 	Props        []SSRPlanProp
-	SlotNames    []string
+	// PropsWithoutPresence is set when a preserved props sidecar has no
+	// Set map[string]bool field: defaults then go through vela.PropProvided
+	// (reflection) instead of reading props.Set directly (task 060).
+	PropsWithoutPresence bool
+	SlotNames            []string
 	// ReactiveNames is analysis metadata for diagnostics and bridge safety.
 	// It is not emitted into server code.
 	ReactiveNames []string

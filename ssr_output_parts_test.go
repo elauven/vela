@@ -24,7 +24,7 @@ func TestBuildSSRGoFileAppliesDefaultPropsFromExplicitPresence(t *testing.T) {
 	}
 	for _, want := range []string{
 		"map[string]bool `json:\"-\"`",
-		`if !vela.PropProvided(props, "title") {`,
+		`if props.Set != nil && !props.Set["title"] {`,
 		`props.Title = "fallback"`,
 	} {
 		if !strings.Contains(string(src), want) {

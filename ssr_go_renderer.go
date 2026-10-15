@@ -60,27 +60,39 @@ func (e *ssrGoEmitter) propDefaults(props []SSRPlanProp) ([]goast.Stmt, error) {
 				&goast.UnaryExpr{Op: token.AND, X: field}, value, ssrGoString(e.componentNameOrPlan() + "." + prop.SourceName),
 			}})
 		}
-		out = append(out, &goast.IfStmt{
-			Cond: &goast.UnaryExpr{Op: token.NOT, X: &goast.CallExpr{Fun: goSelector("vela", "PropProvided"), Args: []goast.Expr{goast.NewIdent("props"), &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(prop.SourceName)}}}},
-			Body: &goast.BlockStmt{List: []goast.Stmt{assign}},
+		name := &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(prop.SourceName)}
+		// props.Set != nil && !props.Set["name"]: the presence contract of
+		// vela.PropProvided without reflection (task 060). A nil Set means
+		// every prop was provided.
+		set := goSelector("props", "Set")
+		missing := goast.Expr(&goast.BinaryExpr{
+			X:  &goast.BinaryExpr{X: set, Op: token.NEQ, Y: goast.NewIdent("nil")},
+			Op: token.LAND,
+			Y:  &goast.UnaryExpr{Op: token.NOT, X: &goast.IndexExpr{X: goSelector("props", "Set"), Index: name}},
 		})
+		if e.propsWithoutPresence {
+			missing = &goast.UnaryExpr{Op: token.NOT, X: &goast.CallExpr{Fun: goSelector("vela", "PropProvided"), Args: []goast.Expr{goast.NewIdent("props"), name}}}
+		}
+		out = append(out, &goast.IfStmt{Cond: missing, Body: &goast.BlockStmt{List: []goast.Stmt{assign}}})
 	}
 	return out, nil
 }
 
 type ssrGoEmitter struct {
-	ctx            SSRExprContext
-	packageName    string
-	scopeID        string
-	elementScope   string
-	awaitOptions   goast.Expr
-	needsEscaping  bool
-	eachNext       int
-	imports        map[string]string
-	selectValue    *TemplateExpr
-	selectMultiple bool
-	componentName  string
-	rootElement    *SSRPlanElement // single root element; nil with a wrapper root
+	ctx SSRExprContext
+	// propsWithoutPresence: SSRRenderPlan.PropsWithoutPresence.
+	propsWithoutPresence bool
+	packageName          string
+	scopeID              string
+	elementScope         string
+	awaitOptions         goast.Expr
+	needsEscaping        bool
+	eachNext             int
+	imports              map[string]string
+	selectValue          *TemplateExpr
+	selectMultiple       bool
+	componentName        string
+	rootElement          *SSRPlanElement // single root element; nil with a wrapper root
 	// region records the sites this renderer lowers (ssr_region.go); nil
 	// for callers without a region. speculative counts enclosing branches
 	// whose failure has a fallback. facts holds the IR facts of each

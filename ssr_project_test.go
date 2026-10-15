@@ -98,6 +98,18 @@ func TestSSRProjectPreservesDeveloperPropsSidecar(t *testing.T) {
 	if err := compileSSRProjectFile(source, srcRoot, layout); err != nil {
 		t.Fatal(err)
 	}
+	// The generated sidecar has Set: defaults read it directly (task 060).
+	assertServerContains := func(want, absent string) {
+		t.Helper()
+		server, err := os.ReadFile(layout.serverPath(source, srcRoot))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(server), want) || strings.Contains(string(server), absent) {
+			t.Fatalf("renderer: want %q, not %q:\n%s", want, absent, server)
+		}
+	}
+	assertServerContains(`if props.Set != nil && !props.Set["title"] {`, "vela.PropProvided")
 	custom := []byte("package components\n\ntype AppProps struct {\n\tTitle string\n\tMarker int\n}\n")
 	if err := os.WriteFile(layout.propsPath(source, srcRoot), custom, 0o644); err != nil {
 		t.Fatal(err)
@@ -111,7 +123,8 @@ func TestSSRProjectPreservesDeveloperPropsSidecar(t *testing.T) {
 	}
 	if string(got) != string(custom) {
 		t.Fatalf("user props sidecar was overwritten:\n%s", got)
-	}
+	}	// A sidecar without Set keeps the reflective compatibility check.
+	assertServerContains(`if !vela.PropProvided(props, "title") {`, "props.Set")
 }
 
 func TestValidateSSRProjectPackagesChecksOneDirectoryAsOnePackage(t *testing.T) {
