@@ -149,7 +149,7 @@ func TestBuildSSRGoFileRendersIfBranches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), "if props.Visible {") || !strings.Contains(string(src), "} else {") || !strings.Contains(string(src), "vela.WriteString(w, vela.EscapeString(vela.String(props.Title)))") {
+	if !strings.Contains(string(src), "if props.Visible {") || !strings.Contains(string(src), "} else {") || !strings.Contains(string(src), "vela.WriteEscaped(w, vela.String(props.Title))") {
 		t.Fatalf("unexpected if renderer:\n%s", src)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", src); err != nil {

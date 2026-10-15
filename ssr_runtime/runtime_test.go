@@ -1,8 +1,11 @@
 package ssr_runtime
 
 import (
+	"bytes"
+	"errors"
 	"io"
 	"math"
+	"math/rand/v2"
 	"reflect"
 	"strings"
 	"testing"
@@ -414,5 +417,90 @@ func TestBeginComponentWithoutStateWritesNoEntry(t *testing.T) {
 	}
 	if want := `{"v":3,"props":{},"entries":[["s","Child",{"now":1}]]}`; !strings.Contains(out.String(), want) {
 		t.Fatalf("payload %s, want %s", out.String(), want)
+	}
+}
+
+// The render buffer (task 060): output reaches the writer in order, in
+// chunks, at the end of the outermost component and also when the render
+// stops with an error (T-6.5c); a writer error reaches the renderer.
+func TestRenderBufferFlushesInOrder(t *testing.T) {
+	var out strings.Builder
+	render := func(fail bool) error {
+		w, root := BeginComponent(&out, "Page", nil)
+		defer LeaveComponent(w)
+		WriteString(w, "<p>")
+		child, _ := BeginComponent(w, "Child", nil)
+		io.WriteString(child, "slot ") // a slot written by hand
+		child.Write([]byte("bytes"))
+		LeaveComponent(child)
+		if fail {
+			return errors.New("render failed")
+		}
+		WriteString(w, "</p>")
+		return EndComponent(w, root, nil)
+	}
+	if err := render(true); err == nil || out.String() != "<p>slot bytes" {
+		t.Fatalf("after error: %q, %v", out.String(), err)
+	}
+	out.Reset()
+	if err := render(false); err != nil || !strings.HasPrefix(out.String(), "<p>slot bytes</p><script") {
+		t.Fatalf("after success: %q, %v", out.String(), err)
+	}
+
+	// Chunks: a large render reaches the writer before it ends.
+	var chunks countingWriter
+	w, _ := BeginComponent(StaticWriter(&chunks), "Page", nil)
+	big := strings.Repeat("x", 1000)
+	for i := 0; i < 100; i++ {
+		WriteString(w, big)
+	}
+	if chunks.writes == 0 || chunks.bytes >= 100*len(big) {
+		t.Fatalf("no chunk written before the end: %+v", chunks)
+	}
+	LeaveComponent(w)
+	if chunks.bytes != 100*len(big) {
+		t.Fatalf("bytes after the end: %d", chunks.bytes)
+	}
+
+	// A writer error stops the render.
+	w, _ = BeginComponent(StaticWriter(failingWriter{}), "Page", nil)
+	var err error
+	for i := 0; i < 100 && err == nil; i++ {
+		err = WriteString(w, big)
+	}
+	if err == nil || err.Error() != "disk full" {
+		t.Fatalf("writer error = %v", err)
+	}
+}
+
+type countingWriter struct{ writes, bytes int }
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.writes++
+	c.bytes += len(p)
+	return len(p), nil
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+// WriteEscaped writes exactly EscapeString (task 060).
+func TestWriteEscapedMatchesEscapeString(t *testing.T) {
+	r := rand.New(rand.NewPCG(5, 6))
+	alphabet := []string{"a", "&", "<", ">", "\"", "'", "é", "😀", "\xed\xa0\x80", "\xed\x9f\xbf", "\xff", " "}
+	for i := 0; i < 3000; i++ {
+		var b strings.Builder
+		for n := r.IntN(8); n > 0; n-- {
+			b.WriteString(alphabet[r.IntN(len(alphabet))])
+		}
+		var out bytes.Buffer
+		w, _ := BeginComponent(StaticWriter(&out), "T", nil)
+		if err := WriteEscaped(w, b.String()); err != nil {
+			t.Fatal(err)
+		}
+		if out.String() != EscapeString(b.String()) {
+			t.Fatalf("WriteEscaped(%q) = %q, want %q", b.String(), out.String(), EscapeString(b.String()))
+		}
 	}
 }

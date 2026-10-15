@@ -144,3 +144,19 @@ func TestObjectAcrossIndexThreshold(t *testing.T) {
 		t.Fatalf("spread keys %v", spread.Keys())
 	}
 }
+
+// The integer fast path of appendJSONFloat writes what json.Marshal writes.
+func TestAppendJSONIntegersMatchMarshal(t *testing.T) {
+	r := rand.New(rand.NewPCG(7, 8))
+	values := []float64{0, math.Copysign(0, -1), 1, -1, 1<<53 - 1, -(1<<53 - 1), 1 << 53, 1e20, 1e21, 123456789012}
+	for i := 0; i < 3000; i++ {
+		values = append(values, float64(r.Int64N(1<<54)-1<<53), math.Trunc(r.NormFloat64()*1e9))
+	}
+	for _, v := range values {
+		want, _ := json.Marshal(v)
+		got, err := appendJSON(nil, v)
+		if err != nil || string(got) != string(want) {
+			t.Fatalf("appendJSON(%v) = %s, want %s", v, got, want)
+		}
+	}
+}

@@ -90,6 +90,7 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 		return nil, err
 	}
 	render.Body.List = body
+	optimizeSSRWrites(file)
 	appendSSRGoImports(file, emitter.imports)
 	appendSSRGoImports(file, emitter.region.hostImports)
 	return file, nil
@@ -147,6 +148,9 @@ func ssrBlocksBeginComponent(plan *SSRRenderPlan, evaluated map[string]bool) []g
 			Tok: token.DEFINE,
 			Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "BeginComponent"), Args: beginArgs}},
 		},
+		// The outermost component writes the buffered output when it
+		// returns, also with an error (T-6.5c, task 060).
+		&goast.DeferStmt{Call: &goast.CallExpr{Fun: goSelector("vela", "LeaveComponent"), Args: []goast.Expr{goast.NewIdent("w")}}},
 		&goast.DeclStmt{Decl: &goast.GenDecl{Tok: token.VAR, Specs: []goast.Spec{&goast.ValueSpec{
 			Names: []*goast.Ident{goast.NewIdent("ssrProps")},
 			Type:  &goast.ArrayType{Elt: goast.NewIdent("byte")},

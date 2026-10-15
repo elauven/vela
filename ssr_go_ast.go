@@ -361,6 +361,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	ssrRuntimeAddFunc(pkg, "ContainsString", []*types.Var{types.NewVar(token.NoPos, pkg, "values", anyType), types.NewVar(token.NoPos, pkg, "candidate", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.Typ[types.Bool])})
 	ssrRuntimeAddFunc(pkg, "Iter", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", types.NewSlice(anyType))})
 	ssrRuntimeAddFunc(pkg, "Get", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType), types.NewVar(token.NoPos, pkg, "key", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", anyType)})
+	ssrRuntimeAddFunc(pkg, "WriteEscaped", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "value", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "EscapeString", []*types.Var{types.NewVar(token.NoPos, pkg, "value", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
 
 	// Dynamic tier (ssr_runtime/value.go).
@@ -524,6 +525,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 		types.NewVar(token.NoPos, pkg, "state", anyType),
 		types.NewVar(token.NoPos, pkg, "omitted", types.NewSlice(stringType)),
 	), types.NewTuple(types.NewVar(token.NoPos, pkg, "", writer), types.NewVar(token.NoPos, pkg, "", boolType)), true)))
+	ssrRuntimeAddFunc(pkg, "LeaveComponent", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, nil)
 	ssrRuntimeAddFunc(pkg, "EndComponent", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "root", boolType), types.NewVar(token.NoPos, pkg, "props", rawMessage)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "OpenRange", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "state", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "CloseRange", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})

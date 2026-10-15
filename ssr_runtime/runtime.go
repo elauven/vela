@@ -1,6 +1,7 @@
 package ssr_runtime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 )
 
@@ -268,12 +271,21 @@ func PropProvided(props any, name string) bool {
 // props, so a failure here points to a non-serializable declared prop rather
 // than an arbitrary server-only sidecar field.
 func MarshalHydrationPayload(value any) ([]byte, error) {
-	encoded, err := appendJSON(nil, value)
+	// The buffer starts at the size of the previous payload of the same
+	// props type: one allocation instead of a series of growths, which was
+	// half of the bytes a large render allocated (task 060).
+	hint, _ := payloadSizes.LoadOrStore(reflect.TypeOf(value), new(atomic.Int64))
+	size := hint.(*atomic.Int64)
+	encoded, err := appendJSON(make([]byte, 0, size.Load()*9/8+64), value)
 	if err != nil {
 		return nil, fmt.Errorf("VELA-SSR-PROPS: declared Vela props must be JSON-serializable: %w", err)
 	}
+	size.Store(int64(len(encoded)))
 	return encoded, nil
 }
+
+// payloadSizes maps a props type to the length of its last payload.
+var payloadSizes sync.Map
 
 // Slot is a server-rendered component slot. Phase 2 will populate named slot
 // fields with this type while the Phase 1 slot struct remains intentionally
@@ -281,10 +293,35 @@ func MarshalHydrationPayload(value any) ([]byte, error) {
 type Slot func(io.Writer) error
 
 // WriteString preserves direct error propagation from a renderer write.
+// Inside a render it appends to the render's buffer (task 060).
 func WriteString(writer io.Writer, value string) error {
+	if sw, ok := writer.(*streamWriter); ok {
+		return sw.out.writeString(value)
+	}
 	_, err := io.WriteString(writer, value)
 	return err
 }
+
+// WriteEscaped writes EscapeString(value): text without characters to
+// escape, the usual case, is written as is without a new string.
+func WriteEscaped(writer io.Writer, value string) error {
+	ascii := true
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if htmlSpecial[c] {
+			return WriteString(writer, EscapeString(value))
+		}
+		ascii = ascii && c < utf8.RuneSelf
+	}
+	if !ascii && !utf8.ValidString(value) {
+		// WellFormed replaces ill-formed text (T-6.3b).
+		return WriteString(writer, EscapeString(value))
+	}
+	return WriteString(writer, value)
+}
+
+// htmlSpecial marks the five characters html.EscapeString escapes.
+var htmlSpecial = [256]bool{'&': true, '\'': true, '<': true, '>': true, '"': true}
 
 // String implements the template-facing JavaScript ToString subset used for
 // standalone interpolation and ordinary dynamic attributes. Null and
@@ -562,7 +599,7 @@ type Stream struct {
 // component and slot: they all receive an io.Writer, so the stream needs no
 // extra renderer parameter. static suppresses markers and entries (A-8.3).
 type streamWriter struct {
-	io.Writer
+	out    *out
 	stream *Stream
 	static bool
 	// ctx is the render context (WithContext). pending marks a writer that
@@ -574,10 +611,91 @@ type streamWriter struct {
 	hostScope string
 }
 
-// WriteString passes strings to the underlying writer without a []byte
-// copy when it implements io.StringWriter (task 058).
+// Write and WriteString let a slot written by hand use w as any writer;
+// the bytes join the render's buffer in order.
+func (sw *streamWriter) Write(p []byte) (int, error) {
+	if err := sw.out.write(p); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
 func (sw *streamWriter) WriteString(s string) (int, error) {
-	return io.WriteString(sw.Writer, s)
+	if err := sw.out.writeString(s); err != nil {
+		return 0, err
+	}
+	return len(s), nil
+}
+
+// out is the output of one render, shared by every writer of it (the
+// copies WithContext, StaticWriter and BeginComponent make). Generated code
+// writes many short strings; they are appended to buf, which goes to w in
+// chunks of outChunk bytes and when the outermost component returns, also
+// with an error: output written before an error is not rolled back
+// (T-6.5c). A *bytes.Buffer is written directly (task 060).
+type out struct {
+	w      io.Writer
+	direct *bytes.Buffer
+	buf    []byte
+	// depth counts the components being rendered; at 0 nothing is buffered.
+	depth int
+	err   error
+}
+
+const outChunk = 32 << 10
+
+// outBuffers keeps the buffers of finished renders.
+var outBuffers = sync.Pool{New: func() any { b := make([]byte, 0, 2*outChunk); return &b }}
+
+func newOut(w io.Writer) *out {
+	if direct, ok := w.(*bytes.Buffer); ok {
+		return &out{w: w, direct: direct}
+	}
+	return &out{w: w, buf: (*outBuffers.Get().(*[]byte))[:0]}
+}
+
+// release returns the buffer after the outermost component; later writes
+// outside a component go straight to w.
+func (o *out) release() {
+	if o.buf != nil && cap(o.buf) <= 1<<20 {
+		buf := o.buf[:0]
+		outBuffers.Put(&buf)
+	}
+	o.buf = nil
+}
+
+func (o *out) writeString(s string) error {
+	if o.direct != nil {
+		o.direct.WriteString(s)
+		return nil
+	}
+	o.buf = append(o.buf, s...)
+	if len(o.buf) >= outChunk || o.depth == 0 {
+		return o.flush()
+	}
+	return o.err
+}
+
+func (o *out) write(p []byte) error {
+	if o.direct != nil {
+		o.direct.Write(p)
+		return nil
+	}
+	o.buf = append(o.buf, p...)
+	if len(o.buf) >= outChunk || o.depth == 0 {
+		return o.flush()
+	}
+	return o.err
+}
+
+// flush writes the buffered bytes to w. The first error of w is kept and
+// returned by every later write.
+func (o *out) flush() error {
+	if o.err == nil && len(o.buf) > 0 {
+		_, o.err = o.w.Write(o.buf)
+	}
+	o.buf = o.buf[:0]
+	return o.err
 }
 
 // StaticWriter makes a render write plain HTML: no block markers, no
@@ -588,10 +706,10 @@ func StaticWriter(w io.Writer) io.Writer {
 			return sw
 		}
 		if sw.pending {
-			return &streamWriter{Writer: sw.Writer, ctx: sw.ctx, static: true}
+			return &streamWriter{out: sw.out, ctx: sw.ctx, static: true}
 		}
 	}
-	return &streamWriter{Writer: w, static: true}
+	return &streamWriter{out: newOut(w), static: true}
 }
 
 // BeginComponent registers a component instance. When w does not belong to
@@ -604,10 +722,11 @@ func BeginComponent(w io.Writer, component string, state any, omitted ...string)
 	sw, ok := w.(*streamWriter)
 	root := !ok || sw.pending
 	if !ok {
-		sw = &streamWriter{Writer: w, stream: &Stream{}}
+		sw = &streamWriter{out: newOut(w), stream: &Stream{}}
 	} else if sw.pending {
-		sw = &streamWriter{Writer: sw.Writer, ctx: sw.ctx, stream: &Stream{}}
+		sw = &streamWriter{out: sw.out, ctx: sw.ctx, stream: &Stream{}}
 	}
+	sw.out.depth++
 	if sw.static {
 		return sw, root
 	}
@@ -635,10 +754,28 @@ func EndComponent(w io.Writer, root bool, props json.RawMessage) error {
 	if !ok {
 		return fmt.Errorf("vela: EndComponent without BeginComponent")
 	}
-	if sw.static || !root {
-		return nil
+	if !sw.static && root {
+		if err := writeRootPayload(sw.out, props, sw.stream); err != nil {
+			return err
+		}
 	}
-	return writeRootPayload(sw.Writer, props, sw.stream)
+	// The outermost component, or the root even when a child did not end.
+	if root || sw.out.depth == 1 {
+		return sw.out.flush()
+	}
+	return sw.out.err
+}
+
+// LeaveComponent is deferred by every renderer after BeginComponent: the
+// outermost one writes what is still buffered, also when the render
+// returns an error (T-6.5c).
+func LeaveComponent(w io.Writer) {
+	if sw, ok := w.(*streamWriter); ok {
+		if sw.out.depth--; sw.out.depth == 0 {
+			sw.out.flush()
+			sw.out.release()
+		}
+	}
 }
 
 // OpenRange writes the start marker of a block range with its state token
@@ -691,7 +828,7 @@ func AwaitEntry(w io.Writer, site, state string, value, errValue any) string {
 // writeRootPayload writes the payload script of a root. encoding/json
 // escapes <, > and & (and U+2028/U+2029), so the content cannot close the
 // script element or open a comment (S-6.6).
-func writeRootPayload(w io.Writer, props json.RawMessage, stream *Stream) error {
+func writeRootPayload(o *out, props json.RawMessage, stream *Stream) error {
 	entries := stream.entries
 	if entries == nil {
 		entries = []any{}
@@ -699,27 +836,33 @@ func writeRootPayload(w io.Writer, props json.RawMessage, stream *Stream) error 
 	if len(props) == 0 {
 		props = json.RawMessage("{}")
 	}
-	// The same bytes as json.Marshal of {v, props, entries}, in one pass.
-	// props is the output of MarshalHydrationPayload (appendJSON): compact,
-	// valid and escaped for a script element already, so it is not
-	// re-validated (that copy was 10% of a large render, task 058).
-	encoded := append(make([]byte, 0, 4096+len(props)), `{"v":`...)
-	encoded = strconv.AppendInt(encoded, int64(RootPayloadVersion), 10)
-	encoded = append(encoded, `,"props":`...)
-	encoded = append(encoded, props...)
-	encoded = append(encoded, `,"entries":`...)
-	encoded, err := appendJSON(encoded, entries)
+	// The same bytes as json.Marshal of {v, props, entries}, in one pass,
+	// appended to the render's output. props is the output of
+	// MarshalHydrationPayload (appendJSON): compact, valid and escaped for a
+	// script element already, so it is not re-validated (task 058).
+	var b []byte
+	if o.direct != nil {
+		o.direct.Grow(len(props) + 4096)
+		b = o.direct.AvailableBuffer()
+	} else {
+		b = o.buf
+	}
+	b = append(b, `<script type="application/json" data-vela-root>{"v":`...)
+	b = strconv.AppendInt(b, int64(RootPayloadVersion), 10)
+	b = append(b, `,"props":`...)
+	b = append(b, props...)
+	b = append(b, `,"entries":`...)
+	b, err := appendJSON(b, entries)
 	if err != nil {
 		return err
 	}
-	encoded = append(encoded, '}')
-	if err := WriteString(w, `<script type="application/json" data-vela-root>`); err != nil {
-		return err
+	b = append(b, `}</script>`...)
+	if o.direct != nil {
+		o.direct.Write(b)
+		return nil
 	}
-	if _, err := w.Write(encoded); err != nil {
-		return err
-	}
-	return WriteString(w, `</script>`)
+	o.buf = b
+	return o.err
 }
 
 // SetHostScope passes the parent's scope attribute to the root element of

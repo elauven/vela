@@ -270,7 +270,11 @@ panics.
   never cause a Go index-out-of-range or nil-map panic.
 - **T-6.5c** Output written before an error is not rolled back. Applications
   that need all-or-nothing responses render into a buffer. The existing
-  payload preflight (`VELA-SSR-PROPS`) keeps its stronger guarantee.
+  payload preflight (`VELA-SSR-PROPS`) keeps its stronger guarantee. A
+  render collects its output in chunks (written directly into a
+  `*bytes.Buffer`) and writes what it has when the outermost component
+  returns, with or without an error, so the writer receives the same
+  bytes in fewer calls.
 - **T-6.5d** `try` / `catch` / `finally` follow JavaScript semantics. `catch`
   receives thrown JS values, runtime JS exceptions (T-6.5a), and host errors
   (exposed as described in T-7.4h). `finally` runs after normal completion,

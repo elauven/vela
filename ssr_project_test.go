@@ -123,7 +123,8 @@ func TestSSRProjectPreservesDeveloperPropsSidecar(t *testing.T) {
 	}
 	if string(got) != string(custom) {
 		t.Fatalf("user props sidecar was overwritten:\n%s", got)
-	}	// A sidecar without Set keeps the reflective compatibility check.
+	}
+	// A sidecar without Set keeps the reflective compatibility check.
 	assertServerContains(`if !vela.PropProvided(props, "title") {`, "props.Set")
 }
 

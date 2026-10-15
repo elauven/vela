@@ -22,7 +22,7 @@ func TestBuildSSRGoFileRendersArrayLiteralWithJSJoinSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `vela.EscapeString(vela.String([]any{1.0, vela.Hole(), 3.0}))`) {
+	if !strings.Contains(string(source), `vela.WriteEscaped(w, vela.String([]any{1.0, vela.Hole(), 3.0}))`) {
 		t.Fatalf("array literal SSR output is not lowered through Vela conversion:\n%s", source)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
@@ -47,7 +47,7 @@ func TestBuildSSRGoFileRendersPlainObjectLiteral(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `vela.EscapeString(vela.String(vela.NewObject().Set("title", "ready")))`) {
+	if !strings.Contains(string(source), `vela.WriteEscaped(w, vela.String(vela.NewObject().Set("title", "ready")))`) {
 		t.Fatalf("object literal SSR output is not lowered through Vela conversion:\n%s", source)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
@@ -73,7 +73,7 @@ func TestBuildSSRGoFileRendersSafeDerivedValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The derived value is evaluated once in declaration order (T-6.6d).
-	for _, want := range []string{`ssrL_count := 2.0`, `ssrL_doubled := vela.NumberMultiply(ssrL_count, 2.0)`, `vela.EscapeString(vela.String(ssrL_doubled))`} {
+	for _, want := range []string{`ssrL_count := 2.0`, `ssrL_doubled := vela.NumberMultiply(ssrL_count, 2.0)`, `vela.WriteEscaped(w, vela.String(ssrL_doubled))`} {
 		if !strings.Contains(string(source), want) {
 			t.Fatalf("derived SSR output misses %q:\n%s", want, source)
 		}
@@ -126,7 +126,7 @@ func TestBuildSSRGoFileRendersStaticTemplateLiteral(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `vela.EscapeString(vela.String("ready\nnow"))`) {
+	if !strings.Contains(string(source), `vela.WriteEscaped(w, vela.String("ready\nnow"))`) {
 		t.Fatalf("static template literal is not lowered through SSR text conversion:\n%s", source)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
@@ -151,7 +151,7 @@ func TestBuildSSRGoFileRendersTypedInterpolatedTemplateLiteral(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `vela.EscapeString(vela.String(vela.TemplateString("hello ", props.Title, "!")))`) {
+	if !strings.Contains(string(source), `vela.WriteEscaped(w, vela.String(vela.TemplateString("hello ", props.Title, "!")))`) {
 		t.Fatalf("interpolated template literal is not lowered through SSR conversion:\n%s", source)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {
@@ -201,7 +201,7 @@ func TestBuildSSRGoFileLowersLogicalOperandsWithJSResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(source), `vela.EscapeString(vela.String(vela.OrLazy(func() any {`) {
+	if !strings.Contains(string(source), `vela.WriteEscaped(w, vela.String(vela.OrLazy(func() any {`) {
 		t.Fatalf("logical SSR expression is not lowered through JS operand semantics:\n%s", source)
 	}
 	if err := ValidateGeneratedSSRGo("Page.go", source); err != nil {

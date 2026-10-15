@@ -157,6 +157,10 @@ func appendJSONFloat(b []byte, f float64) ([]byte, error) {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return nil, &json.UnsupportedValueError{Str: strconv.FormatFloat(f, 'g', -1, 64)}
 	}
+	if f == math.Trunc(f) && f > -1<<53 && f < 1<<53 && (f != 0 || !math.Signbit(f)) {
+		// An integer, as ids and counts usually are: the same digits.
+		return strconv.AppendInt(b, int64(f), 10), nil
+	}
 	format := byte('f')
 	if abs := math.Abs(f); abs != 0 && (abs < 1e-6 || abs >= 1e21) {
 		format = 'e'
@@ -187,12 +191,25 @@ var asciiEscapes = func() (table [utf8.RuneSelf]string) {
 	return table
 }()
 
+// jsonSafe[c] is true for an ASCII byte written as is: one byte load per
+// character instead of a string header in the common case (task 060).
+var jsonSafe = func() (table [utf8.RuneSelf]bool) {
+	for c, escape := range asciiEscapes {
+		table[c] = escape == ""
+	}
+	return table
+}()
+
 func appendJSONString(b []byte, s string) []byte {
 	b = append(b, '"')
 	start := 0
 	for i := 0; i < len(s); {
 		c := s[i]
 		if c < utf8.RuneSelf {
+			if jsonSafe[c] {
+				i++
+				continue
+			}
 			if escape := asciiEscapes[c]; escape != "" {
 				b = append(b, s[start:i]...)
 				b = append(b, escape...)

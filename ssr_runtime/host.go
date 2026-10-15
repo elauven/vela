@@ -63,7 +63,7 @@ func WithContext(w io.Writer, ctx context.Context) io.Writer {
 		copy.ctx = ctx
 		return &copy
 	}
-	return &streamWriter{Writer: w, ctx: ctx, pending: true}
+	return &streamWriter{out: newOut(w), ctx: ctx, pending: true}
 }
 
 // ContextOf returns the render context carried by w, or
