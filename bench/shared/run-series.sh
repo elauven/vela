@@ -14,6 +14,7 @@ set -u
 cd "$(dirname "$0")/.."
 CPUS=${1:-1,2}
 SOAK_CPUS=${SOAK_CPUS:-1}
+SOAK_DURATION=${SOAK_DURATION:-30m}
 RUNNER_ARGS=${RUNNER_ARGS:-}
 mkdir -p results
 vmstat -n 5 > results/series-vmstat.log &
@@ -29,7 +30,7 @@ run() {
 run constant --cpus "$CPUS"
 run step --profile step --cpus "$CPUS" --scenarios render-200,issue,board,api
 run spike --profile spike --cpus "$CPUS" --scenarios render-200,issue
-run soak --profile soak --duration 30m --cpus "$SOAK_CPUS" --scenarios journey
+run soak --profile soak --duration "$SOAK_DURATION" --cpus "$SOAK_CPUS" --scenarios journey
 run browser --mode browser --cpus 1
 run build --mode build
 kill "$VMSTAT"
