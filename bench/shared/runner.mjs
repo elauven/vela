@@ -70,7 +70,8 @@ function coreLayout() {
   return layout;
 }
 const CORES = coreLayout();
-for (const n of args.cpus.split(',')) {
+// Build mode starts no application, so it needs no application cores.
+for (const n of args.mode === 'build' ? [] : args.cpus.split(',')) {
   if (!CORES.app[n]) throw new Error(`no cores for --cpus ${n} on this host (layout ${JSON.stringify(CORES)}); use --cores-app`);
 }
 
