@@ -71,14 +71,15 @@ func appendJSON(b []byte, value any) ([]byte, error) {
 			return append(b, "null"...), nil
 		}
 		b = append(b, '{')
-		for i, key := range v.Keys() {
+		keys, vals := v.entries()
+		for i, key := range keys {
 			if i > 0 {
 				b = append(b, ',')
 			}
 			b = appendJSONString(b, key)
 			b = append(b, ':')
 			var err error
-			if b, err = appendJSON(b, v.values[key]); err != nil {
+			if b, err = appendJSON(b, vals[i]); err != nil {
 				return nil, err
 			}
 		}

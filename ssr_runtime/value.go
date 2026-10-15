@@ -78,24 +78,77 @@ func (js *JS) throw(kind, message, site string) UndefinedValue {
 // insertion order, and enumeration follows JavaScript: integer-like keys
 // in ascending numeric order first, then the other keys in insertion order
 // (T-5.1c).
+//
+// Values sit next to their keys (vals[i] belongs to keys[i]). A small object
+// is searched linearly, which beats hashing for a few short keys and needs
+// no map per object; past objectIndexKeys keys an index is built (task 060).
 type Object struct {
-	keys   []string
-	values map[string]any
+	keys  []string
+	vals  []any
+	index map[string]int
 	// frozen is set by Object.freeze: JavaScript writes throw TypeError.
 	frozen bool
 }
 
+// objectIndexKeys is the size above which an object gets a key index.
+const objectIndexKeys = 16
+
 // NewObject returns an empty object.
-func NewObject() *Object { return &Object{values: map[string]any{}} }
+func NewObject() *Object { return &Object{} }
+
+// find returns the position of key, or -1.
+func (o *Object) find(key string) int {
+	if o.index != nil {
+		if i, ok := o.index[key]; ok {
+			return i
+		}
+		return -1
+	}
+	for i, k := range o.keys {
+		if k == key {
+			return i
+		}
+	}
+	return -1
+}
 
 // Set defines or replaces a property and returns the object, so a literal
 // lowers to one expression.
 func (o *Object) Set(key string, value any) *Object {
-	if _, exists := o.values[key]; !exists {
-		o.keys = append(o.keys, key)
+	if i := o.find(key); i >= 0 {
+		o.vals[i] = value
+		return o
 	}
-	o.values[key] = value
+	if o.keys == nil {
+		// Most translated objects are literals of a few properties.
+		o.keys, o.vals = make([]string, 0, 8), make([]any, 0, 8)
+	}
+	o.keys = append(o.keys, key)
+	o.vals = append(o.vals, value)
+	switch {
+	case o.index != nil:
+		o.index[key] = len(o.keys) - 1
+	case len(o.keys) > objectIndexKeys:
+		o.index = make(map[string]int, 2*len(o.keys))
+		for i, k := range o.keys {
+			o.index[k] = i
+		}
+	}
 	return o
+}
+
+// entries returns the keys and their values in enumeration order (Keys).
+// Without integer-like keys these are the object's own slices: read only.
+func (o *Object) entries() ([]string, []any) {
+	keys := o.Keys()
+	if len(keys) > 0 && len(o.keys) > 0 && &keys[0] == &o.keys[0] {
+		return keys, o.vals
+	}
+	vals := make([]any, len(keys))
+	for i, key := range keys {
+		vals[i] = o.vals[o.find(key)]
+	}
+	return keys, vals
 }
 
 // Spread copies the own enumerable properties of value, as {...value}
@@ -113,8 +166,9 @@ func (o *Object) Spread(value any) *Object {
 			o.Set(strconv.Itoa(index), item)
 		}
 	case *Object:
-		for _, key := range source.Keys() {
-			o.Set(key, source.values[key])
+		keys, vals := source.entries()
+		for i, key := range keys {
+			o.Set(key, vals[i])
 		}
 	}
 	return o
@@ -122,8 +176,10 @@ func (o *Object) Spread(value any) *Object {
 
 // Lookup returns a property and whether it exists.
 func (o *Object) Lookup(key string) (any, bool) {
-	value, ok := o.values[key]
-	return value, ok
+	if i := o.find(key); i >= 0 {
+		return o.vals[i], true
+	}
+	return nil, false
 }
 
 // Keys returns the property names in JavaScript enumeration order.

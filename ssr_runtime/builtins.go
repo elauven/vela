@@ -752,9 +752,10 @@ func (js *JS) stringify(site string, b *strings.Builder, value any, gap, indent 
 		inner := indent + gap
 		wrote := false
 		b.WriteByte('{')
-		for _, key := range v.Keys() {
+		keys, vals := v.entries()
+		for i, key := range keys {
 			var member strings.Builder
-			if !js.stringify(site, &member, v.values[key], gap, inner, seen) {
+			if !js.stringify(site, &member, vals[i], gap, inner, seen) {
 				if js.Failed() {
 					return false
 				}

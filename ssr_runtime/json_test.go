@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -108,5 +109,38 @@ func TestStringFastPathsMatchNumberText(t *testing.T) {
 	}
 	if String("<b>") != "<b>" || String(true) != "true" || String(false) != "false" {
 		t.Fatal("string and bool fast paths")
+	}
+}
+
+// An object keeps its keys, values and order across the size at which it
+// builds a key index (task 060).
+func TestObjectAcrossIndexThreshold(t *testing.T) {
+	o := NewObject()
+	for i := 0; i < 3*objectIndexKeys; i++ {
+		key := "k" + strconv.Itoa(i)
+		o.Set(key, float64(i))
+		o.Set("k0", "first") // overwrite keeps the position
+		if (len(o.keys) > objectIndexKeys) != (o.index != nil) {
+			t.Fatalf("index at %d keys: %v", len(o.keys), o.index != nil)
+		}
+		for j := 1; j <= i; j++ {
+			if got, ok := o.Lookup("k" + strconv.Itoa(j)); !ok || got != float64(j) {
+				t.Fatalf("after %d keys: k%d = %v, %v", i+1, j, got, ok)
+			}
+		}
+		if _, ok := o.Lookup("missing"); ok {
+			t.Fatal("missing key found")
+		}
+	}
+	if got, _ := o.Lookup("k0"); got != "first" || o.Keys()[0] != "k0" || len(o.Keys()) != 3*objectIndexKeys {
+		t.Fatalf("k0=%v keys=%v", got, o.Keys())
+	}
+	mixed := NewObject().Set("b", 1.0).Set("2", "two").Set("a", true).Set("0", nil)
+	data, err := json.Marshal(mixed)
+	if err != nil || string(data) != `{"0":null,"2":"two","b":1,"a":true}` {
+		t.Fatalf("mixed = %s, %v", data, err)
+	}
+	if spread := NewObject().Spread(mixed); !reflect.DeepEqual(spread.Keys(), mixed.Keys()) {
+		t.Fatalf("spread keys %v", spread.Keys())
 	}
 }

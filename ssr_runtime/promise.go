@@ -222,23 +222,20 @@ func clientOnlyState(state any, omitted []string) (any, []string) {
 		return state, omitted
 	}
 	var kept *Object
-	for _, key := range object.keys {
-		switch object.values[key].(type) {
+	for i, key := range object.keys {
+		switch object.vals[i].(type) {
 		case *Promise, Func:
 			if kept == nil {
 				kept = NewObject()
-				for _, previous := range object.keys {
-					if previous == key {
-						break
-					}
-					kept.Set(previous, object.values[previous])
+				for j := 0; j < i; j++ {
+					kept.Set(object.keys[j], object.vals[j])
 				}
 			}
 			omitted = append(omitted, key)
 			continue
 		}
 		if kept != nil {
-			kept.Set(key, object.values[key])
+			kept.Set(key, object.vals[i])
 		}
 	}
 	if kept == nil {
