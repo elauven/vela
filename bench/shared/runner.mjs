@@ -27,6 +27,15 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 const bench = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+// k6 from PATH (server-setup.sh installs it in /usr/local/bin), or go install's.
+function findK6() {
+  try {
+    return execFileSync('sh', ['-c', 'command -v k6'], { encoding: 'utf8' }).trim() || `${process.env.HOME}/go/bin/k6`;
+  } catch {
+    return `${process.env.HOME}/go/bin/k6`;
+  }
+}
 const { values: args } = parseArgs({
   options: {
     apps: { type: 'string', default: 'vela,sveltekit' },
@@ -37,12 +46,33 @@ const { values: args } = parseArgs({
     vus: { type: 'string', default: '64' },
     duration: { type: 'string', default: '30s' },
     warmup: { type: 'string', default: '10s' },
-    k6: { type: 'string', default: process.env.K6 || `${process.env.HOME}/go/bin/k6` },
+    k6: { type: 'string', default: process.env.K6 || findK6() },
+    // Core layout overrides, as taskset lists: --cores-db 0 --cores-k6 3
+    // --cores-app "1=1;2=1,2".
+    'cores-db': { type: 'string' },
+    'cores-k6': { type: 'string' },
+    'cores-app': { type: 'string' },
   },
 });
 
-// Core layout on an 8-core host: PostgreSQL 0-1, application 2-5, k6 6-7.
-const CORES = { db: '0,1', k6: '6,7', app: { 1: '2', 2: '2,3', 4: '2-5' } };
+// Core layout by host size; the application gets 1, 2 (or 4) of its own
+// cores, PostgreSQL and k6 the rest.
+//   8+ CPUs: PostgreSQL 0-1, application 2 / 2-3 / 2-5, k6 6-7
+//   4 CPUs:  PostgreSQL 0,   application 1 / 1-2,       k6 3
+function coreLayout() {
+  const n = Number(execFileSync('nproc', { encoding: 'utf8' }).trim());
+  const layout = n >= 8 ? { db: '0,1', k6: '6,7', app: { 1: '2', 2: '2,3', 4: '2-5' } }
+    : n >= 4 ? { db: '0', k6: '3', app: { 1: '1', 2: '1,2' } }
+    : { db: '0', k6: '0', app: { 1: '1' } };
+  if (args['cores-db']) layout.db = args['cores-db'];
+  if (args['cores-k6']) layout.k6 = args['cores-k6'];
+  if (args['cores-app']) layout.app = Object.fromEntries(args['cores-app'].split(';').map((p) => p.split('=')).map(([k, v]) => [k, v]));
+  return layout;
+}
+const CORES = coreLayout();
+for (const n of args.cpus.split(',')) {
+  if (!CORES.app[n]) throw new Error(`no cores for --cpus ${n} on this host (layout ${JSON.stringify(CORES)}); use --cores-app`);
+}
 
 const SCENARIOS = [
   { name: 'render-50', script: 'render.js', env: { N: 50 } },
@@ -83,7 +113,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // `taskset -c 0,1 pg_ctlcluster 18 main start` when its affinity cannot be
 // changed afterwards (another user, no CAP_SYS_NICE).
 function pinPostgres() {
-  const pids = execFileSync('pgrep', ['-x', 'postgres'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+  let pids = [];
+  try {
+    pids = execFileSync('pgrep', ['-x', 'postgres'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+  } catch {
+    if (args.mode !== 'build') console.error('warning: PostgreSQL is not running');
+    return;
+  }
   for (const pid of pids) {
     try {
       execFileSync('taskset', ['-acp', CORES.db, pid], { stdio: 'ignore' });
@@ -297,8 +333,8 @@ if (args.mode === 'browser') {
       for (const profile of ['desktop', 'mobile']) {
         console.error(`== ${name}, ${profile}`);
         const outFile = join(resultsDir, `${stamp}-browser-${name}-${profile}.json`);
-        // Chromium and the script run beside the server, away from its core.
-        const r = spawnSync('taskset', ['-c', '3-7', 'node', join(bench, 'shared/browser-metrics.mjs'), `http://localhost:${app.port}`, outFile, '--runs', '5', '--profile', profile], { stdio: ['ignore', 'ignore', 'inherit'] });
+        // Chromium and the script run on the load generator's cores.
+        const r = spawnSync('taskset', ['-c', CORES.k6, 'node', join(bench, 'shared/browser-metrics.mjs'), `http://localhost:${app.port}`, outFile, '--runs', '5', '--profile', profile], { stdio: ['ignore', 'ignore', 'inherit'] });
         if (r.status !== 0) throw new Error(`browser metrics failed for ${name} ${profile}`);
         runs[`${name}-${profile}`] = JSON.parse(readFileSync(outFile, 'utf8'));
       }

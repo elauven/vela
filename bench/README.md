@@ -61,6 +61,14 @@ sveltekit` starts PostgreSQL, seeds it, and runs both applications with the
 same CPU and memory limits; `docker compose run --rm k6 run -e
 BASE=http://vela:8081 /scripts/render.js` runs a scenario.
 
+## Server (everything on one host)
+
+`sudo bench/server-setup.sh` prepares a fresh Ubuntu 26.04 server: PostgreSQL
+(pinned to CPU 0 by systemd), Go, Node, k6, Chromium, both applications and the
+seed. The runner picks the core layout from `nproc`: on 4 CPUs PostgreSQL on
+0, the application on 1 (`--cpus 1`) or 1–2 (`--cpus 2`), k6 and Chromium on
+3; `--cores-db`, `--cores-k6` and `--cores-app "1=1;2=1,2"` override it.
+
 ## Environment
 
 | Variable | Default | Meaning |
