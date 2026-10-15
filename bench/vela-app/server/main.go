@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -32,7 +33,7 @@ type app struct {
 }
 
 func main() {
-	dsn := envOr("DATABASE_URL", "postgres://bench:bench@localhost:5432/bench")
+	dsn := envOr("DATABASE_URL", "postgres://bench:bench@localhost:5432/bench?sslmode=disable")
 	poolSize, _ := strconv.Atoi(envOr("DB_POOL", "20"))
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
@@ -75,6 +76,17 @@ func main() {
 	mux.HandleFunc("POST /api/issues/{id}/comments", a.apiComment)
 	mux.HandleFunc("POST /api/issues/{id}/attachments", a.apiUpload)
 	mux.HandleFunc("GET /files/{id}", a.file)
+
+	// PPROF_ADDR (for example localhost:6060) serves net/http/pprof on a
+	// separate listener, for profiling under load; off in measurements.
+	if pprofAddr := os.Getenv("PPROF_ADDR"); pprofAddr != "" {
+		debug := http.NewServeMux()
+		debug.HandleFunc("/debug/pprof/", pprof.Index)
+		debug.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		debug.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		debug.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		go func() { log.Println(http.ListenAndServe(pprofAddr, debug)) }()
+	}
 
 	addr := ":" + envOr("PORT", "8081")
 	log.Printf("vela-app on %s (GOMAXPROCS=%d, pool=%d)", addr, runtime.GOMAXPROCS(0), poolSize)

@@ -38,7 +38,7 @@ var (
 var epoch = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 
 func main() {
-	dsn := flag.String("dsn", envOr("DATABASE_URL", "postgres://bench:bench@localhost:5432/bench"), "PostgreSQL connection string")
+	dsn := flag.String("dsn", envOr("DATABASE_URL", "postgres://bench:bench@localhost:5432/bench?sslmode=disable"), "PostgreSQL connection string")
 	schema := flag.String("schema", "shared/schema.sql", "schema to apply first")
 	projects := flag.Int("projects", 20, "number of projects")
 	users := flag.Int("users", 50, "number of users")

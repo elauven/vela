@@ -18,7 +18,7 @@ results: [`RESULTS.md`](RESULTS.md).
 
 ```sh
 cd bench
-export DATABASE_URL=postgres://bench:bench@localhost:5432/bench
+export DATABASE_URL=postgres://bench:bench@localhost:5432/bench?sslmode=disable
 GOWORK=off go run ./seed               # schema + 50k issues, 200k comments (~10 s)
 
 vela-app/build.sh && APP_DIR=$PWD/vela-app vela-app/bin/server   # http://localhost:8081
@@ -73,7 +73,7 @@ seed. The runner picks the core layout from `nproc`: on 4 CPUs PostgreSQL on
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `DATABASE_URL` | `postgres://bench:bench@localhost:5432/bench` | PostgreSQL |
+| `DATABASE_URL` | `postgres://bench:bench@localhost:5432/bench?sslmode=disable` | PostgreSQL. `sslmode=disable` for both apps: pgx defaults to `prefer` and encrypts even to localhost when the server offers TLS (Ubuntu's default), postgres.js does not, which made Vela pay for TLS alone until 2026-10-15 |
 | `PORT` | `8081` (Vela), `8082` (SvelteKit) | HTTP port |
 | `DB_POOL` | `20` | Connection pool size |
 | `STORAGE_DIR` | `bench/storage` | Uploaded files |

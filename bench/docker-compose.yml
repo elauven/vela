@@ -18,20 +18,20 @@ services:
   seed:
     build: { context: .., dockerfile: bench/vela-app/Dockerfile }
     command: ["/app/bin/seed", "-schema", "/app/shared/schema.sql", "-fixture", ""]
-    environment: { DATABASE_URL: postgres://bench:bench@db:5432/bench }
+    environment: { DATABASE_URL: postgres://bench:bench@db:5432/bench?sslmode=disable }
     depends_on: { db: { condition: service_healthy } }
 
   vela:
     build: { context: .., dockerfile: bench/vela-app/Dockerfile }
     <<: *limits
-    environment: { DATABASE_URL: postgres://bench:bench@db:5432/bench, GOMAXPROCS: "${APP_CPUS:-1}" }
+    environment: { DATABASE_URL: postgres://bench:bench@db:5432/bench?sslmode=disable, GOMAXPROCS: "${APP_CPUS:-1}" }
     ports: ["8081:8081"]
     depends_on: { seed: { condition: service_completed_successfully } }
 
   sveltekit:
     build: { context: ., dockerfile: sveltekit-app/Dockerfile, args: { ORIGIN: "http://localhost:8082" } }
     <<: *limits
-    environment: { DATABASE_URL: postgres://bench:bench@db:5432/bench, WORKERS: "${APP_CPUS:-1}" }
+    environment: { DATABASE_URL: postgres://bench:bench@db:5432/bench?sslmode=disable, WORKERS: "${APP_CPUS:-1}" }
     ports: ["8082:8082"]
     depends_on: { seed: { condition: service_completed_successfully } }
 
