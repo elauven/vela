@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"math/rand/v2"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -84,5 +85,28 @@ func randomValue(r *rand.Rand, depth int) any {
 			o.Set([]string{"id", "name", "10", "2", "z", "é"}[r.IntN(6)], randomValue(r, depth-1))
 		}
 		return o
+	}
+}
+
+// The fast paths of String agree with the JavaScript number formatting
+// (task 058).
+func TestStringFastPathsMatchNumberText(t *testing.T) {
+	r := rand.New(rand.NewPCG(3, 4))
+	values := []float64{0, math.Copysign(0, -1), 1, -1, 42, 1 << 52, 1<<53 - 1, 1 << 53, -(1<<53 - 1), 1e15, 1e21, 0.5, -2.25}
+	for i := 0; i < 2000; i++ {
+		values = append(values, float64(r.Int64N(1<<54)-1<<53), math.Trunc(r.NormFloat64()*1e6), r.NormFloat64()*1e6)
+	}
+	for _, v := range values {
+		if got, want := String(v), numberString(reflect.ValueOf(v)); got != want {
+			t.Fatalf("String(%v) = %q, want %q", v, got, want)
+		}
+		if v == math.Trunc(v) && math.Abs(v) < 1<<62 {
+			if got, want := String(int64(v)), numberString(reflect.ValueOf(int64(v))); got != want {
+				t.Fatalf("String(int64(%v)) = %q, want %q", v, got, want)
+			}
+		}
+	}
+	if String("<b>") != "<b>" || String(true) != "true" || String(false) != "false" {
+		t.Fatal("string and bool fast paths")
 	}
 }

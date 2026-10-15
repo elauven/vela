@@ -291,8 +291,30 @@ func WriteString(writer io.Writer, value string) error {
 // undefined are observable JavaScript values here; array joining intentionally
 // has its own nullish-member rule below.
 func String(value any) string {
-	if value == nil {
+	// Fast paths for the values templates print most (task 058): a string
+	// went through reflection and fmt.Sprint.
+	switch v := value.(type) {
+	case nil:
 		return "null"
+	case string:
+		return v
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	case float64:
+		if v == math.Trunc(v) && math.Abs(v) < 1<<53 {
+			return strconv.FormatInt(int64(v), 10)
+		}
+	case int:
+		if v > -1<<53 && v < 1<<53 {
+			return strconv.Itoa(v)
+		}
+	case int64:
+		if v > -1<<53 && v < 1<<53 {
+			return strconv.FormatInt(v, 10)
+		}
 	}
 	if _, promise := value.(*Promise); promise {
 		return "[object Promise]"
@@ -625,7 +647,17 @@ func OpenRange(w io.Writer, state string) error {
 	if sw, ok := w.(*streamWriter); ok && sw.static {
 		return nil
 	}
-	return WriteString(w, "<!--["+state+"-->")
+	if state == "" {
+		return WriteString(w, "<!--[-->")
+	}
+	// Three writes instead of a concatenated string per range.
+	if err := WriteString(w, "<!--["); err != nil {
+		return err
+	}
+	if err := WriteString(w, state); err != nil {
+		return err
+	}
+	return WriteString(w, "-->")
 }
 
 func CloseRange(w io.Writer) error {
@@ -668,15 +700,16 @@ func writeRootPayload(w io.Writer, props json.RawMessage, stream *Stream) error 
 		props = json.RawMessage("{}")
 	}
 	// The same bytes as json.Marshal of {v, props, entries}, in one pass.
-	encoded := append(make([]byte, 0, 4096), `{"v":`...)
+	// props is the output of MarshalHydrationPayload (appendJSON): compact,
+	// valid and escaped for a script element already, so it is not
+	// re-validated (that copy was 10% of a large render, task 058).
+	encoded := append(make([]byte, 0, 4096+len(props)), `{"v":`...)
 	encoded = strconv.AppendInt(encoded, int64(RootPayloadVersion), 10)
 	encoded = append(encoded, `,"props":`...)
-	encoded, err := appendCompactJSON(encoded, props)
-	if err != nil {
-		return err
-	}
+	encoded = append(encoded, props...)
 	encoded = append(encoded, `,"entries":`...)
-	if encoded, err = appendJSON(encoded, entries); err != nil {
+	encoded, err := appendJSON(encoded, entries)
+	if err != nil {
 		return err
 	}
 	encoded = append(encoded, '}')
