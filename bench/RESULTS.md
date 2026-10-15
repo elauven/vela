@@ -2,7 +2,8 @@
 
 Measurements of task 058, 2026-10-14; the main table is the third run, after
 the runtime fix (`b82dc3c`) and the page-size work of task 059. A second
-series on a 4-vCPU cloud server, 2026-10-15, is in
+series on a 4-vCPU cloud server, 2026-10-15, and a second one on one CPU
+with the runtime work of task 060 are in
 [Server run](#server-run-4-vcpu-cloud-server). Method and contract:
 [README.md](README.md). Raw k6 summaries: `bench/results/` (not committed;
 the server series is in `bench/results/server-2026-10-15/`).
@@ -428,6 +429,117 @@ The build step of the series first failed: the runner checked application
 cores for `--cpus 1,4` also in build mode, which starts no application. It
 was fixed and the build measured separately.
 
+### Second server run: one CPU, task 060
+
+The same server, 2026-10-15 12:40–14:06 UTC, `RUNNER_ARGS='--cores-db 0,1
+--cores-app 1=2 --cores-k6 3' SOAK_DURATION=15m shared/run-series.sh 1`.
+
+What changed from the first run:
+- **Code.** Commit `e83fe98`, with the runtime work of task 060.
+- **Database.** PostgreSQL got two vCPUs (0–1); only the 1-CPU
+  configuration was measured.
+- **TLS.** Both applications connect without it.
+- **Soak.** 15 minutes instead of 30.
+
+Raw results are in `bench/results/server-2026-10-15-1cpu/`.
+
+**The host was slower this time.** Steal averaged 18.6% (p90 32%, max
+47%) against 12.5% in the first run; during the constant load it was 24%
+against 11%. SvelteKit, whose code did not change, rendered 13–22% fewer
+pages than in the first run. Absolute numbers of the two runs are
+therefore not comparable. The ratios within each run are.
+
+#### Constant load, Vela against SvelteKit
+
+req/s (p95 ms). The last two columns give Vela's lead in req/s, first run
+→ this run.
+
+| Scenario | Vela | SvelteKit | Vela ahead, first run | Vela ahead, this run |
+| --- | ---: | ---: | ---: | ---: |
+| `render-50` | 1131 (97) | 155 (543) | +160% | **+630%** |
+| `render-200` | 261 (381) | 53 (1429) | +104% | **+392%** |
+| `render-500` | 111 (1171) | 26 (2734) | +120% | **+327%** |
+| `board` | 31 (2648) | 19 (4507) | −4% | **+63%** |
+| `issues` | 113 (816) | 111 (1027) | −8% | +2% |
+| `issue` | 678 (155) | 290 (336) | +207% | +134% |
+| `dashboard` | 9 (8423) | 8 (11621) | 0% | +12% |
+| `api` | 217 (446) | 192 (706) | −7% | +13% |
+| `files-100k` | 1126 (123) | 329 (319) | +279% | +242% |
+| `journey` | 130 (2205) | 94 (2420) | +39% | +38% |
+
+Peak RSS: Vela 24–60 MB, SvelteKit 286–393 MB. Cold start 353 against
+410 ms.
+
+- **Rendering.** Despite the slower host, Vela renders 68–119% more pages
+  than in the first run (`render-200` 139 → 261 req/s) while SvelteKit
+  renders 13–22% fewer. This is the effect of task 060 under load:
+  `BenchmarkRenderBoard` is 2.8 times faster. Vela now serves 4.3–7.3
+  times SvelteKit's pages, with 57–82% lower p95.
+- **Database pages.** With two vCPUs PostgreSQL limits less. Both
+  applications serve more: `api` 126 → 217 req/s for Vela, 136 → 192 for
+  SvelteKit. Vela gains more, from the runtime work and from dropping TLS:
+  `board` +63%, `api` +13%, p95 21–41% lower on every database page.
+- **Issue page.** Vela served fewer requests than in the first run (678
+  against 1033) while using only 0.73 of its core. The application is not
+  the limit here. The saturation curve reaches 873 req/s at 400 VUs.
+  k6 on one shared vCPU with 24% steal is the likely limit; the data does
+  not prove it. The lead stays 2.3×.
+
+#### Saturation curves
+
+| Scenario | CPUs | VUs | Vela req/s | Vela p95 | Vela max | SvelteKit req/s | SvelteKit p95 | SvelteKit max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `render-200` | 1 | 10 | 282 | 64 | 144 | 53 | 388 | 966 |
+| `render-200` | 1 | 50 | 322 | 233 | 400 | 68 | 803 | 12351 |
+| `render-200` | 1 | 100 | 327 | 429 | 832 | 69 | 1170 | 50894 |
+| `render-200` | 1 | 200 | 306 | 942 | 1721 | 67 | 1626 | 57856 |
+| `render-200` | 1 | 400 | 286 | 1869 | 3713 | 69 | 1772 | 31188 |
+| `board` | 1 | 10 | 26 | 563 | 722 | 20 | 740 | 877 |
+| `board` | 1 | 50 | 29 | 2275 | 3444 | 27 | 2586 | 3097 |
+| `board` | 1 | 100 | 26 | 4549 | 5236 | 28 | 4731 | 5684 |
+| `board` | 1 | 200 | 29 | 7584 | 8403 | 28 | 9660 | 15519 |
+| `board` | 1 | 400 | 30 | 13769 | 14257 | 25 | 10512 | 40403 |
+| `issue` | 1 | 10 | 460 | 42 | 96 | 250 | 75 | 162 |
+| `issue` | 1 | 50 | 744 | 112 | 190 | 339 | 238 | 391 |
+| `issue` | 1 | 100 | 745 | 207 | 370 | 357 | 429 | 614 |
+| `issue` | 1 | 200 | 795 | 390 | 705 | 454 | 614 | 1654 |
+| `issue` | 1 | 400 | 873 | 692 | 940 | 435 | 1138 | 20096 |
+| `api` | 1 | 10 | 222 | 87 | 228 | 174 | 111 | 283 |
+| `api` | 1 | 50 | 233 | 332 | 630 | 246 | 365 | 741 |
+| `api` | 1 | 100 | 207 | 689 | 1176 | 257 | 716 | 1601 |
+| `api` | 1 | 200 | 191 | 1466 | 1672 | 246 | 1604 | 3446 |
+| `api` | 1 | 400 | 195 | 2488 | 2725 | 243 | 3135 | 5109 |
+
+Vela's rendering plateau is 4.1–5.3 times SvelteKit's, the issue page's
+1.8–2.2 times. SvelteKit's slowest requests still wait 31–58 s on
+`render-200` from 100 VUs on and 40 s on `board` at 400 VUs. Vela's slowest stays at about
+twice its p95.
+
+#### Spike
+
+| Scenario | CPUs | App | p95 before | worst p95 in the spike | req/s in the spike | slowest request | p95 5 s after | errors |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `render-200` | 1 | vela | 92 | 852 | 338 | 1631 | 93 | 0.0% |
+| `issue` | 1 | vela | 34 | 418 | 1125 | 671 | 52 | 0.0% |
+| `render-200` | 1 | sveltekit | 531 | 60001 | 57 | 60017 | 416 | 15.1% |
+| `issue` | 1 | sveltekit | 144 | 1434 | 361 | 5783 | 128 | 0.0% |
+
+With one worker, SvelteKit again left the requests that started during
+the jump unanswered until k6's 60 s timeout: 15.1% of that window. Vela's
+slowest request took 1.6 s. Both recover within 5 s.
+
+#### Soak, browser and build
+
+- **Soak**, 15 minutes of `journey`. Vela 189 req/s, SvelteKit 139
+  (+36%), with p95 1.34 against 1.38 s. Memory: Vela 43–47 MB, SvelteKit
+  305 → 330 MB. No errors.
+- **Browser, time to hydrated.** Vela is ahead by 39–60% on desktop
+  (board 599 against 988 ms, issue page 153 against 385 ms) and by 28–57%
+  on the mobile profile. Interactions are equal within the timer's 8 ms
+  steps.
+- **Build.** Vela 1.02 s + esbuild 0.09 s + go build 2.79 s with the cache
+  (58.4 s without), against vite build 9.10 s.
+
 ## History of the Vela numbers
 
 | | First run | Runtime fix (`b82dc3c`) | Task 059 (`50dae72`) |
@@ -465,7 +577,8 @@ was fixed and the build measured separately.
   `BenchmarkRenderBoard` went from 1.76 ms, 9990 allocations and 784 KB to
   0.62 ms, 3044 allocations and 233 KB. A short check at 16 VUs on one CPU
   went from 414 to 965 req/s (`render-200`), 3060 to 3872 (`issue`) and 68
-  to 93 (`board`). A full series is still to run.
+  to 93 (`board`). The second server run measures it under load: Vela's
+  rendering went from 2.0–2.6 to 4.3–7.3 times SvelteKit's on one CPU.
 
 Also fixed on the way: missing browser globals (`XMLHttpRequest`, `Intl`,
 `AbortController`, observers…) in the compiler's scope analysis.
@@ -488,9 +601,9 @@ Also fixed on the way: missing browser globals (`XMLHttpRequest`, `Intl`,
 
 ## Next
 
-- A full series with the code of task 060, preferably on dedicated vCPUs
-  (no steal) with more cores, so that k6 and PostgreSQL do not limit the
-  2-CPU configuration.
+- A series on dedicated vCPUs (no steal) with more cores, so that k6 and
+  PostgreSQL do not limit Vela, and with the laptop table re-measured on
+  the code of task 060.
 - Report latency with coordinated omission corrected (an open-model k6
   scenario at a fixed arrival rate), so that overload compares what users
   wait for rather than per-request percentiles; Vela's higher single-CPU
