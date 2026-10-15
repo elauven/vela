@@ -24,7 +24,8 @@ if ! /usr/local/go/bin/go version 2>/dev/null | grep -q "go$GO_VERSION "; then
   rm -rf /usr/local/go
   curl -fsSL "https://go.dev/dl/go$GO_VERSION.linux-amd64.tar.gz" | tar -C /usr/local -xz
 fi
-export PATH=/usr/local/go/bin:$PATH
+ln -sf /usr/local/go/bin/go /usr/local/bin/go
+ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
 
 echo "== Node $NODE_VERSION"
 if ! node --version 2>/dev/null | grep -q "v$NODE_VERSION"; then
@@ -86,6 +87,13 @@ vela-app/build.sh
 (cd sveltekit-app && npm ci --no-audit --no-fund && npm run build)
 echo "== seed"
 bin/seed -fixture ''
+
+# The setup runs as root; the runner runs as the invoking user, who needs
+# the build outputs and a Chromium of their own.
+if [ -n "${SUDO_USER:-}" ]; then
+  chown -R "$SUDO_USER:$SUDO_USER" "$REPO"
+  su "$SUDO_USER" -c "cd '$REPO' && npx playwright install chromium" || echo "warning: Chromium for $SUDO_USER did not install"
+fi
 
 cat <<EOF
 
