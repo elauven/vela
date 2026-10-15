@@ -5,10 +5,16 @@
 # results/series-*.md and results/*.json. Run it with nohup on a server:
 #
 #   nohup shared/run-series.sh 1,2 > results/series.log 2>&1 &
+#
+# RUNNER_ARGS is passed to every runner call, for example a core layout:
+#
+#   RUNNER_ARGS='--cores-db 0,1 --cores-app 1=2 --cores-k6 3' \
+#     nohup shared/run-series.sh 1 > results/series.log 2>&1 &
 set -u
 cd "$(dirname "$0")/.."
 CPUS=${1:-1,2}
 SOAK_CPUS=${SOAK_CPUS:-1}
+RUNNER_ARGS=${RUNNER_ARGS:-}
 mkdir -p results
 vmstat -n 5 > results/series-vmstat.log &
 VMSTAT=$!
@@ -16,7 +22,8 @@ run() {
   name=$1
   shift
   echo "== $name $(date -u +%H:%M:%S)"
-  node shared/runner.mjs "$@" > "results/series-$name.md" 2> "results/series-$name.err"
+  # shellcheck disable=SC2086 # RUNNER_ARGS is a list of options
+  node shared/runner.mjs "$@" $RUNNER_ARGS > "results/series-$name.md" 2> "results/series-$name.err"
   echo "   exit $?"
 }
 run constant --cpus "$CPUS"
