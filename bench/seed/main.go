@@ -204,8 +204,17 @@ func seed(ctx context.Context, conn *pgx.Conn, nProjects, nUsers, nIssues, nComm
 			return err
 		}
 	}
-	_, err := conn.Exec(ctx, "ANALYZE")
-	return err
+	// Every block starts from the same database state: vacuumed (visibility
+	// map set, so no autovacuum runs during the measurement), analyzed and
+	// checkpointed. CHECKPOINT needs the pg_checkpoint role
+	// (bench/server-setup.sh grants it); without it the seed warns.
+	if _, err := conn.Exec(ctx, "VACUUM (ANALYZE) users, projects, issues, labels, issue_labels, comments, attachments"); err != nil {
+		return err
+	}
+	if _, err := conn.Exec(ctx, "CHECKPOINT"); err != nil {
+		log.Printf("warning: CHECKPOINT failed (grant pg_checkpoint to the user): %v", err)
+	}
+	return nil
 }
 
 // FixtureCard is one card of the render fixture; the applications build

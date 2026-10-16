@@ -59,6 +59,8 @@ su postgres -c "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='bench'\"" | gr
   su postgres -c "psql -qc \"CREATE ROLE bench LOGIN PASSWORD 'bench'\""
 su postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='bench'\"" | grep -q 1 ||
   su postgres -c "psql -qc 'CREATE DATABASE bench OWNER bench'"
+# The seed ends with CHECKPOINT, so every block starts without dirty buffers.
+su postgres -c "psql -qc 'GRANT pg_checkpoint TO bench'"
 
 echo "== system"
 cat > /etc/sysctl.d/90-bench.conf <<EOF

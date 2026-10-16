@@ -41,7 +41,18 @@ node shared/runner.mjs --profile spike --scenarios render-200,issue   # 20 → 2
 node shared/runner.mjs --profile soak --duration 30m --cpus 1 --scenarios journey
 node shared/runner.mjs --mode browser --cpus 1                        # Chromium metrics
 node shared/runner.mjs --mode build                                   # build time, sizes
+node shared/runner.mjs --repeat 3 --cpus 1                            # 3 rounds, rotated app order
 ```
+
+Before every application block the runner reseeds the database; the seed
+ends with `VACUUM (ANALYZE)` and `CHECKPOINT` (the user needs the
+`pg_checkpoint` role, `GRANT pg_checkpoint TO bench`), so autovacuum and
+checkpoints do not fall into a measurement. The runner refuses to start when
+PostgreSQL is in crash recovery: restart PostgreSQL cleanly before a series,
+without diagnostic extensions such as `pg_stat_statements` preloaded. `--repeat N` runs every block N
+times with the application order rotated each round and reports the median
+round and the range of req/s; a single round can mislead on the database
+pages (task 060).
 
 | Profile or mode | What it reports |
 | --- | --- |

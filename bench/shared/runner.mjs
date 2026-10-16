@@ -12,6 +12,13 @@
 //   node shared/runner.mjs --profile spike --scenarios render-200,issue
 //   node shared/runner.mjs --mode browser        # shared/browser-metrics.mjs per app
 //   node shared/runner.mjs --mode build          # build time and artifact sizes
+//   node shared/runner.mjs --repeat 3            # three rounds, rotated app order
+//
+// --repeat N runs every application block N times. The application order
+// rotates each round (A B C, B C A, C A B), so a drift of the host over time
+// does not favour one application. The whole-run table then shows, for every
+// scenario, the round with the median req/s and the range of req/s over the
+// rounds; window tables are printed for every round.
 //
 // Profiles (shared/k6/lib.js): constant VUs; step 10 → 400 VUs; soak for
 // --duration; spike 20 → 200 → 20 VUs. step, soak and spike report every
@@ -46,6 +53,7 @@ const { values: args } = parseArgs({
     vus: { type: 'string', default: '64' },
     duration: { type: 'string', default: '30s' },
     warmup: { type: 'string', default: '10s' },
+    repeat: { type: 'string', default: '1' },
     k6: { type: 'string', default: process.env.K6 || findK6() },
     // Core layout overrides, as taskset lists: --cores-db 0 --cores-k6 3
     // --cores-app "1=1;2=1,2".
@@ -129,6 +137,19 @@ function pinPostgres() {
       if (current !== CORES.db.replace(',', '-') && current !== CORES.db) console.error(`warning: postgres ${pid} runs on ${current}, not ${CORES.db}`);
     }
   }
+}
+
+// A PostgreSQL in crash recovery (started after an unclean stop) measured
+// half its normal throughput for one application (task 060): stop the run.
+function checkPostgres() {
+  const url = process.env.DATABASE_URL || 'postgres://bench:bench@localhost:5432/bench?sslmode=disable';
+  let out;
+  try {
+    out = execFileSync('psql', [url, '-tAc', 'SELECT pg_is_in_recovery()'], { encoding: 'utf8' }).trim();
+  } catch (err) {
+    throw new Error(`PostgreSQL is not reachable: ${err.message}`);
+  }
+  if (out === 't') throw new Error('PostgreSQL is in recovery; restart it cleanly before measuring');
 }
 
 function reseed() {
@@ -361,13 +382,19 @@ if (args.mode === 'browser') {
   process.exit(0);
 }
 
-for (const name of args.apps.split(',')) {
+checkPostgres();
+const rounds = Math.max(1, Number(args.repeat));
+const appList = args.apps.split(',');
+for (let round = 0; round < rounds; round++) {
+ const order = appList.map((_, i) => appList[(i + round) % appList.length]);
+ const tag = rounds > 1 ? `-r${round + 1}` : '';
+ for (const name of order) {
   for (const n of args.cpus.split(',').map(Number)) {
-    console.error(`== ${name}, ${n} CPU: reseeding`);
+    console.error(`== ${name}, ${n} CPU${rounds > 1 ? `, round ${round + 1}/${rounds}` : ''}: reseeding`);
     reseed();
     const app = APPS[name](n);
     // Server output (errors under load) goes to results/<time>-<app>-<cpus>.log.
-    const log = openSync(join(resultsDir, `${stamp}-${name}-${n}.log`), 'a');
+    const log = openSync(join(resultsDir, `${stamp}-${name}-${n}${tag}.log`), 'a');
     const spawnAt = Date.now();
     const child = await startApp(app, CORES.app[n], log);
     const coldStartMs = Date.now() - spawnAt;
@@ -377,7 +404,7 @@ for (const name of args.apps.split(',')) {
       for (const scenario of selected) {
         console.error(`   ${scenario.name}`);
         await k6(scenario.script, base, scenario.env, args.warmup, 16, null);
-        const summary = join(resultsDir, `${stamp}-${name}-${n}-${scenario.name}.json`);
+        const summary = join(resultsDir, `${stamp}-${name}-${n}-${scenario.name}${tag}.json`);
         const before = treeStats(child.pid);
         const started = Date.now();
         let maxRss = before.rss;
@@ -394,7 +421,7 @@ for (const name of args.apps.split(',')) {
         const seconds = (Date.now() - started) / 1000;
         const m = JSON.parse(readFileSync(summary, 'utf8')).metrics;
         results.push({
-          app: name, cpus: n, scenario: scenario.name, k6Exit: code,
+          app: name, cpus: n, scenario: scenario.name, round: round + 1, k6Exit: code,
           rps: m.http_reqs.rate, med: m.http_req_duration.med, p95: m.http_req_duration['p(95)'], p99: m.http_req_duration['p(99)'],
           failed: m.http_req_failed.value, cpu: (after.cpu - before.cpu) / ticks / seconds, rssMB: maxRss / 1024,
           receivedMBs: m.data_received.rate / 1e6, storageMB: storageMB(), coldStartMs,
@@ -405,6 +432,7 @@ for (const name of args.apps.split(',')) {
       await stopApp(child);
     }
   }
+ }
 }
 
 // Leave no uploads behind; the sizes are in the results.
@@ -413,11 +441,11 @@ for (const entry of readdirSync(STORAGE)) rmSync(join(STORAGE, entry), { recursi
 writeFileSync(join(resultsDir, `${stamp}.json`), JSON.stringify({ args, cores: CORES, results }, null, 2));
 const f = (x, d = 1) => x.toFixed(d);
 console.log(`\nProfile ${args.profile}, VUs ${args.vus}, ${args.duration} per scenario after ${args.warmup} warm-up; results/${stamp}.json\n`);
-const blocks = [...new Map(results.map((r) => [`${r.app}-${r.cpus}`, r])).values()];
+const blocks = [...new Map(results.map((r) => [`${r.app}-${r.cpus}-${r.round}`, r])).values()];
 console.log('Cold start (process start to the first /healthz answer): ' + blocks.map((r) => `${r.app} ${r.cpus} CPU ${r.coldStartMs} ms`).join(', ') + '\n');
 if (args.profile !== 'constant') {
   for (const r of results) {
-    console.log(`### ${r.scenario}, ${r.app}, ${r.cpus} CPU\n`);
+    console.log(`### ${r.scenario}, ${r.app}, ${r.cpus} CPU${rounds > 1 ? `, round ${r.round}` : ''}\n`);
     console.log('| Window | VUs | req/s | med ms | p95 ms | p99 ms | failed | RSS MB |');
     console.log('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
     for (const w of r.windows) console.log(`| ${w.w} | ${w.vus} | ${f(w.rps, 0)} | ${f(w.med)} | ${f(w.p95)} | ${f(w.p99)} | ${f(w.failed * 100, 2)}% | ${f(w.rssMB, 0)} |`);
@@ -434,9 +462,23 @@ if (args.profile !== 'constant') {
   }
   writeFileSync(join(resultsDir, `${stamp}.json`), JSON.stringify({ args, cores: CORES, results }, null, 2));
 }
-console.log('Whole runs:\n');
-console.log('| Scenario | App | CPUs | req/s | med ms | p95 ms | p99 ms | failed | CPU cores | max RSS MB | MB/s | storage MB |');
-console.log('| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
-for (const r of results.sort((a, b) => a.scenario.localeCompare(b.scenario) || a.cpus - b.cpus || a.app.localeCompare(b.app))) {
-  console.log(`| ${r.scenario} | ${r.app} | ${r.cpus} | ${f(r.rps, 0)} | ${f(r.med)} | ${f(r.p95)} | ${f(r.p99)} | ${f(r.failed * 100, 2)}% | ${f(r.cpu, 2)} | ${f(r.rssMB, 0)} | ${f(r.receivedMBs)} | ${f(r.storageMB, 0)} |`);
+// With --repeat, one row per scenario × app × CPUs: the round with the
+// median req/s, and the range of req/s over the rounds.
+const groups = new Map();
+for (const r of results) {
+  const key = `${r.scenario}|${r.app}|${r.cpus}`;
+  groups.set(key, [...(groups.get(key) || []), r]);
+}
+const rows = [...groups.values()].map((runs) => {
+  const sorted = [...runs].sort((a, b) => a.rps - b.rps);
+  const median = sorted[Math.floor((sorted.length - 1) / 2)];
+  return { ...median, spread: runs.length > 1 ? (sorted.at(-1).rps - sorted[0].rps) / median.rps : null };
+});
+console.log(rounds > 1 ? `Whole runs (median round of ${rounds}; range = (max − min) ÷ median req/s):\n` : 'Whole runs:\n');
+const spreadHead = rounds > 1 ? ' range |' : '';
+console.log(`| Scenario | App | CPUs | req/s |${spreadHead} med ms | p95 ms | p99 ms | failed | CPU cores | max RSS MB | MB/s | storage MB |`);
+console.log(`| --- | --- | ---: | ---: |${rounds > 1 ? ' ---: |' : ''} ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |`);
+for (const r of rows.sort((a, b) => a.scenario.localeCompare(b.scenario) || a.cpus - b.cpus || a.app.localeCompare(b.app))) {
+  const spread = rounds > 1 ? ` ${f(r.spread * 100, 1)}% |` : '';
+  console.log(`| ${r.scenario} | ${r.app} | ${r.cpus} | ${f(r.rps, 0)} |${spread} ${f(r.med)} | ${f(r.p95)} | ${f(r.p99)} | ${f(r.failed * 100, 2)}% | ${f(r.cpu, 2)} | ${f(r.rssMB, 0)} | ${f(r.receivedMBs)} | ${f(r.storageMB, 0)} |`);
 }
