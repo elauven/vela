@@ -124,6 +124,18 @@ runtime module `github.com/elauven/vela/ssr_runtime`.
 [`examples/ssr-host`](examples/ssr-host) is a complete server, and
 [docs/SSR.md](docs/SSR.md) explains the model.
 
+## Performance
+
+Vela renders on the server in plain Go, with no JavaScript engine in the
+request path. The same tracker app, built with Vela and with SvelteKit (run
+on Node and on Bun):
+
+![Vela SSR against SvelteKit on Node and Bun](docs/assets/ssr-performance.svg)
+
+Pages limited by the database serve about as many requests in all three;
+Vela answers them sooner and with less CPU, as the JSON API shows. Method,
+every scenario and the tables: [bench/RESULTS.md](bench/RESULTS.md).
+
 ## Language at a glance
 
 | Syntax | Meaning |
