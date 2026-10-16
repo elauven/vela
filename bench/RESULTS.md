@@ -4,7 +4,9 @@ Measurements of task 058, 2026-10-14; the main table is the third run, after
 the runtime fix (`b82dc3c`) and the page-size work of task 059. A second
 series on a 4-vCPU cloud server, 2026-10-15, and a second one on one CPU
 with the runtime work of task 060 are in
-[Server run](#server-run-4-vcpu-cloud-server). Method and contract:
+[Server run](#server-run-4-vcpu-cloud-server). Stable laptop runs at a
+fixed frequency comparing SvelteKit on Node and on Bun with Vela are in
+[Stable laptop runs](#stable-laptop-runs-node-bun-and-vela). Method and contract:
 [README.md](README.md). Raw k6 summaries: `bench/results/` (not committed;
 the server series is in `bench/results/server-2026-10-15/`).
 
@@ -540,6 +542,134 @@ slowest request took 1.6 s. Both recover within 5 s.
 - **Build.** Vela 1.02 s + esbuild 0.09 s + go build 2.79 s with the cache
   (58.4 s without), against vite build 9.10 s.
 
+## Stable laptop runs: Node, Bun and Vela
+
+2026-10-15 and 2026-10-16, the laptop of the main table, with the noise
+removed as far as one laptop allows. SvelteKit is measured on Node and on
+Bun; Vela is measured with the runtime of task 060.
+
+| | |
+| --- | --- |
+| Frequency | `performance` governor, turbo off: every core at a fixed 1.8 GHz (the main table ran with turbo up to 4 GHz, so absolute numbers are lower) |
+| Pinning by physical core | The i7-8550U pairs logical CPUs 0+4, 1+5, 2+6 and 3+7 on one core. The application gets CPU 2 and its sibling 6 stays idle. Earlier runs put the application on 2 next to k6 on 6, and the 4-CPU configuration on cores shared with PostgreSQL and k6 |
+| Configuration | One application core only |
+| Rounds | Constant load three times, the application order rotated each round (A B C, B C A, C A B); median round reported, range = (max − min) ÷ median req/s |
+| Bun | Bun 1.4.3 runs the same `build/index.js` of adapter-node. It was measured with a local copy of the runner, not yet part of `shared/runner.mjs` |
+
+With fixed frequency and physical-core pinning, the three rounds of
+rendering agree within 0.4–3.8% for all three applications, and the issue
+page and file transfers within 0.4–9%. Before this the noise was up to
+±10%.
+
+### PostgreSQL on one core
+
+PostgreSQL on core 0 (CPUs 0, 4), k6 on cores 1 and 3. Constant load, 64
+VUs, req/s with the range over three rounds; p95 in milliseconds.
+
+| Scenario | Node | Bun | Vela | Bun vs Node | Vela vs Bun | p95 Node / Bun / Vela |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `render-50` | 368 (0.5%) | 482 (1.2%) | **1867** (0.7%) | +31% | **×3.9** | 242 / 167 / 55 |
+| `render-200` | 111 (0.9%) | 160 (3.8%) | **587** (0.9%) | +44% | **×3.7** | 650 / 485 / 182 |
+| `render-500` | 46 (2.2%) | 69 (1.4%) | **253** (0.4%) | +50% | **×3.7** | 1352 / 1057 / 464 |
+| `issue` | 851 (0.4%) | 927 (7.0%) | **2745** (0.5%) | +9% | **×3.0** | 107 / 94 / 29 |
+| `files-100k` | 839 (1.2%) | 1093 (2.7%) | **2438** (8.7%) | +30% | **×2.2** | 125 / 93 / 50 |
+| `journey` | 134 | 135 | 178 | +1% | +32% | 1853 / 1936 / 1555 |
+| `board`, `issues`, `api`, `dashboard` | 32 / 149 / 250 / 9 | 32 / 138 / 256 / 9 | 32 / 144 / 243 / 9 | — | — | Vela 16–73% lower |
+
+Peak RSS: Node 295–409 MB, Bun 87–243 MB, Vela 23–38 MB. Cold start: Node
+319–321 ms, Bun 216–220 ms, Vela 193–212 ms.
+
+Saturation and spike were run once (req/s / p95 / slowest request):
+
+| | Node | Bun | Vela |
+| --- | --- | --- | --- |
+| `render-200`, 400 VUs | 112 / 1323 ms / **28.5 s** | 177 / 2598 ms / 2.6 s | 594 / 945 ms / 1.0 s |
+| `issue`, 400 VUs | 732 / 700 ms / 9.7 s | 810 / 638 ms / 0.8 s | 2699 / 157 ms / 0.2 s |
+| Spike `render-200`: req/s in the spike / slowest | 109 / **54.8 s** | 168 / 2.1 s | 592 / 0.6 s |
+| Spike `issue`: req/s in the spike / slowest | 977 / 0.4 s | 1045 / 0.4 s | 2588 / 0.1 s |
+
+- **Bun:**
+  - It speeds SvelteKit's rendering up by 31–50% and file transfers by 30%;
+    other pages are within noise.
+  - It does not starve requests under overload as Node does: the slowest
+    request takes 1–2.6 s on Bun against 28–55 s on Node.
+  - It needs half of Node's memory.
+- **Vela with task 060:**
+  - On one core it renders 3.7–3.9 times Bun's pages and serves the issue
+    page 3 times and files 2.2 times faster.
+  - It has the lowest latency and 3–6 times less memory.
+  - Its single-core p95 under overload, higher than SvelteKit's in the main
+    table, is now the lowest of the three: rendering got fast enough that
+    fair CPU sharing no longer shows.
+- **Database pages:** all three are limited by PostgreSQL on one core.
+
+### PostgreSQL on two cores
+
+PostgreSQL on cores 0 and 3 (CPUs 0, 3, 4, 7) and k6 on core 1. Only the
+scenarios that use the database were run, with the seed of `8a773fe`
+(vacuum and checkpoint) and `--repeat 3` for constant load and
+saturation.
+
+| Scenario | Node | Bun | Vela | Vela vs Node | Vela vs Bun | p95 Node / Bun / Vela |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `issue` | 806 (2.1%) | 941 (4.4%) | **3414** (0.1%) | **×4.2** | **×3.6** | 121 / 94 / 27 |
+| `board` | 44 (0.5%) | 57 (4.5%) | **70** (0.3%) | **+59%** | **+23%** | 1934 / 1515 / 1011 |
+| `journey` | 233 (4.8%) | 246 (4.8%) | **369** (8.3%) | **+58%** | **+50%** | 721 / 685 / 596 |
+| `api` | 437 (10.2%) | 495 (6.6%) | 504 (19.3%) | +15% | +2% | 462 / 610 / 171 |
+| `issues` | 268 (14.5%) | 277 (1.5%) | 303 (11.9%) | +13% | +9% | 507 / 471 / 310 |
+| `dashboard` | 18 (0.2%) | 18 (0.2%) | 18 (0.2%) | 0% | 0% | 5328 / 5368 / 4034 |
+
+Application CPU on the database pages: Node 0.6–0.96 of its core, Bun
+0.6–0.95, Vela 0.3–0.5. Peak RSS: Node 296–356 MB, Bun 93–150 MB, Vela
+28–35 MB.
+
+Saturation, median of three rounds (req/s, p95):
+
+| Scenario | VUs | Node | Bun | Vela |
+| --- | ---: | --- | --- | --- |
+| `board` | 400 | 47, 9.7 s | 62, 8.7 s | **70, 5.8 s** |
+| `issue` | 400 | 723, 723 ms | 812, 651 ms | **3256, 192 ms** |
+| `api` | 10 | 443, 38 ms | 477, 35 ms | 511, 34 ms |
+| `api` | 100 | 416, 478 ms | 391, 579 ms | 387, 358 ms |
+| `api` | 400 | 284, 4.1 s | 373, 3.0 s | 325, 1.8 s |
+
+- **The limit moves.** With a second PostgreSQL core, Vela nearly doubles
+  on the database pages while using a third to a half of its core. On the
+  issue page it now reaches its own core (0.98) and leads by 3.6–4.2 times.
+  Node and Bun were already limited by their core there.
+- **`api` and `issues`:** all three share PostgreSQL's limit. Their
+  throughput differs by less than the range between rounds. Vela's p95 is
+  1.5–3.5 times lower.
+- **`api` under overload:** all three lose throughput from about 450–510
+  req/s at 10 VUs to 280–370 at 400. The rounds at 400 VUs scatter for all
+  three (Vela 259–469, Node 276–373): this is PostgreSQL under many
+  concurrent writes, not one application.
+
+### What the noise was
+
+A first two-core run without the vacuum and with single saturation rounds
+showed two artefacts:
+- **Node and Bun went bimodal on the database pages.** Some rounds matched
+  the one-core numbers (`issues` 154, `api` 257); others nearly doubled.
+- **Vela's `api` seemed to collapse** to 253 req/s at 400 VUs.
+
+The diagnosis (`pg_stat_statements` under load):
+- both applications run the same two statements per list request, the
+  same number of times;
+- Vela's statements were slightly cheaper (12.1 / 17.3 ms against 13.4 /
+  19.8 ms);
+- its process stayed at 0.2–0.5 of its core, so neither `*vela.Object`
+  nor pgx's prepared statements were the cause (pgx's `exec` mode gave the
+  same 258 req/s).
+
+The same code then gave 525–531 req/s at both 64 and 400 VUs, equal to
+Node, after a clean restart of PostgreSQL. The slow state followed an
+unclean PostgreSQL start and the autovacuum that a fresh seed triggers
+during the first scenarios of a block. Since `8a773fe` the seed vacuums and
+checkpoints, the runner refuses a PostgreSQL in recovery, and `--repeat`
+runs rounds in rotated order. The repeated run above no longer shows either
+artefact.
+
 ## History of the Vela numbers
 
 | | First run | Runtime fix (`b82dc3c`) | Task 059 (`50dae72`) |
@@ -602,8 +732,9 @@ Also fixed on the way: missing browser globals (`XMLHttpRequest`, `Intl`,
 ## Next
 
 - A series on dedicated vCPUs (no steal) with more cores, so that k6 and
-  PostgreSQL do not limit Vela, and with the laptop table re-measured on
-  the code of task 060.
+  PostgreSQL do not limit Vela.
+- Bun as a third application in `shared/runner.mjs` (now a local copy), and
+  the remaining profiles (soak, browser) for it.
 - Report latency with coordinated omission corrected (an open-model k6
   scenario at a fixed arrival rate), so that overload compares what users
   wait for rather than per-request percentiles; Vela's higher single-CPU
