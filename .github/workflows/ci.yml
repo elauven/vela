@@ -25,10 +25,14 @@ jobs:
 
       # The Go runtime is a nested module (ssr_runtime/go.mod, task 049); the
       # committed go.work lets both modules build and test together.
+      # bash on every runner: PowerShell splits -coverprofile=coverage.out at
+      # the dot.
       - name: Vet
+        shell: bash
         run: go vet ./... ./ssr_runtime/...
 
       - name: Test
+        shell: bash
         run: go test -v -race -coverprofile=coverage.out ./... ./ssr_runtime/...
 
       # go install builds the compiler without the workspace.
