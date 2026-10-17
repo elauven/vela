@@ -501,7 +501,12 @@ func ctParse(src string) ctParsed {
 		}()
 		r.prog, r.diags = ParseJSWithDiagnostics(src)
 	}()
-	timer := time.NewTimer(3 * time.Second)
+	// The race detector makes parsing several times slower.
+	timeout := 3 * time.Second
+	if raceEnabled {
+		timeout *= 10
+	}
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case r := <-done:
