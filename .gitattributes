@@ -1,0 +1,4 @@
+# Check out text files with LF on every platform: the embedded runtime, golden
+# files and fixtures are compared byte for byte (Windows runners default to
+# core.autocrlf=true).
+* text=auto eol=lf
