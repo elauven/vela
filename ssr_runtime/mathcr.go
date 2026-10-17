@@ -119,7 +119,7 @@ func jsPow(base, exponent float64) float64 {
 		}
 		base = -base
 	}
-	return sign * crPow(base, exponent)
+	return float64(sign * crPow(base, exponent))
 }
 
 // integerPow computes a finite base to a small integer power exactly and

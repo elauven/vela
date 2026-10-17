@@ -111,13 +111,13 @@ func ParseInt(text, radix any) float64 {
 	digits := s[:end]
 	if r == 10 {
 		value, _ := strconv.ParseFloat(digits, 64)
-		return sign * value
+		return float64(sign * value)
 	}
 	value := 0.0
 	for i := 0; i < len(digits); i++ {
-		value = value*float64(r) + float64(digitValue(digits[i]))
+		value = float64(value*float64(r)) + float64(digitValue(digits[i]))
 	}
-	return sign * value
+	return float64(sign * value)
 }
 
 func digitValue(c byte) int {
@@ -424,12 +424,12 @@ func MathHypot(values ...any) float64 {
 	sum, compensation := 0.0, 0.0
 	for _, x := range numbers {
 		scaled := x / largest
-		term := scaled*scaled - compensation
+		term := float64(scaled*scaled) - compensation
 		total := sum + term
 		compensation = (total - sum) - term
 		sum = total
 	}
-	return math.Sqrt(sum) * largest
+	return float64(math.Sqrt(sum) * largest)
 }
 
 // ── Number methods (§2.6) ────────────────────────────────────────────────

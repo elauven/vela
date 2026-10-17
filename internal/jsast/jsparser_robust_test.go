@@ -173,9 +173,15 @@ func TestCompatPathologicalShapes(t *testing.T) {
 	for _, c := range cases {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
+			// A wall-clock bound catches quadratic behaviour; the race
+			// detector makes everything several times slower.
+			limit := 2500 * time.Millisecond
+			if raceEnabled {
+				limit *= 10
+			}
 			start := time.Now()
 			ctNoCrash(t, c.src)
-			if d := time.Since(start); d > 2500*time.Millisecond {
+			if d := time.Since(start); d > limit {
 				t.Errorf("took %v (possible quadratic behaviour)", d)
 			}
 		})

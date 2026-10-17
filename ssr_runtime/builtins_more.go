@@ -58,13 +58,13 @@ func radixString(value float64, radix int) string {
 	}
 	integer := math.Floor(value)
 	fraction := value - integer
-	delta := 0.5 * (math.Nextafter(value, math.Inf(1)) - value)
+	delta := float64(0.5 * (math.Nextafter(value, math.Inf(1)) - value))
 	delta = math.Max(math.Nextafter(0, 1), delta)
 	var frac []byte
 	if fraction >= delta {
 		for {
-			fraction *= float64(radix)
-			delta *= float64(radix)
+			fraction = float64(fraction * (float64(radix)))
+			delta = float64(delta * (float64(radix)))
 			digit := int(fraction)
 			frac = append(frac, radixDigits[digit])
 			fraction -= float64(digit)
@@ -250,9 +250,9 @@ func (js *JS) toExponential(site string, x float64, fraction any) any {
 func MathLog(value any) float64   { return fdLog(num(value)) }
 func MathLog2(value any) float64  { return fdLog2(num(value)) }
 func MathLog10(value any) float64 { return fdLog10(num(value)) }
-func MathLog1p(value any) float64 { return math.Log1p(num(value)) }
+func MathLog1p(value any) float64 { return fdlibmLog1p(num(value)) }
 func MathExp(value any) float64   { return fdExp(num(value)) }
-func MathExpm1(value any) float64 { return math.Expm1(num(value)) }
+func MathExpm1(value any) float64 { return fdlibmExpm1(num(value)) }
 func MathSin(value any) float64   { return fdSin(num(value)) }
 func MathCos(value any) float64   { return fdCos(num(value)) }
 func MathTan(value any) float64   { return fdTan(num(value)) }

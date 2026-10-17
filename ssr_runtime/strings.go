@@ -274,7 +274,7 @@ func (js *JS) stringMethod(site, s, name string, args []any) (any, bool) {
 		if n < 0 || math.IsInf(n, 1) {
 			return js.throw("RangeError", fmt.Sprintf("Invalid count value: %s", String(ToNumber(arg(0)))), site), true
 		}
-		if n*float64(len(u)) > 1<<29 {
+		if float64(n*float64(len(u))) > 1<<29 {
 			return js.throw("RangeError", "Invalid string length", site), true
 		}
 		return strings.Repeat(s, int(n)), true
