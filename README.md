@@ -188,13 +188,10 @@ npm ci && npx playwright install chromium
 node tools/run-ssr-browser-baseline.mjs  # strict browser baseline
 ```
 
-Work is planned as [taskmd](https://github.com/driangle/taskmd) tasks in
-[tasks/](tasks/).
-
 ## License
 
 [MIT](LICENSE). The Go SSR runtime (`ssr_runtime/`) and the npm package
-`@vela/runtime` are released under the same license.
+`@govela/runtime` are released under the same license.
 
 ---
 

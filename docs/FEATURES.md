@@ -40,7 +40,7 @@ proxy, helpers), `runtime/runtime-blocks.js` (block engine) and
 `--runtime-import=relative`, every build (project or listed files) writes
 them once at the output root and generated modules import them by relative
 paths, so a page loads one runtime instance. With `bare`, modules import the
-npm package `@vela/runtime` instead (see Runtime delivery below).
+npm package `@govela/runtime` instead (see Runtime delivery below).
 
 State and prop writes mark component-local dirty flags; one microtask flush
 per synchronous burst runs structural reconciliation first, then each
@@ -90,7 +90,7 @@ full keyed reconciler.
 | Minification and DCE | **Stable** | `--minify` | Includes conservative dead-binding elimination in addition to JS minification. |
 | Build mode | **Stable** | `--mode=development` (default) or `--mode=production` | Production builds stage a runtime with development warnings and hydration value checks disabled. Independent of `--minify`. |
 | DOM engine | **Stable** | block engine (`runtime-blocks.js`) | The block engine (docs/HYDRATION_ARCHITECTURE.md) builds CSR components, the Go SSR markup, and hydration from one render plan. It is the only engine: the legacy engine and the `--dom-engine` flag were removed in task 042. |
-| Runtime delivery | **Stable** | `--runtime-import=relative` (default), `--runtime-import=bare` | `relative` writes the runtime beside the output and imports it by relative paths. `bare` imports the npm package `@vela/runtime` (same version as `vela --version`) for applications that bundle their client: one runtime instance per page, development checks removed by the bundler's `process.env.NODE_ENV` replacement, a version mismatch fails at bundle time. Recipes for esbuild, Vite, Rollup and import maps: docs/GUIDE.md "Building an application"; the esbuild recipe runs in CI. The compiler does not bundle. |
+| Runtime delivery | **Stable** | `--runtime-import=relative` (default), `--runtime-import=bare` | `relative` writes the runtime beside the output and imports it by relative paths. `bare` imports the npm package `@govela/runtime` (same version as `vela --version`) for applications that bundle their client: one runtime instance per page, development checks removed by the bundler's `process.env.NODE_ENV` replacement, a version mismatch fails at bundle time. Recipes for esbuild, Vite, Rollup and import maps: docs/GUIDE.md "Building an application"; the esbuild recipe runs in CI. The compiler does not bundle. |
 | Source maps | **Experimental** | `--sourcemap` | Writes an external v3 `.js.map`; template expressions map to their source offsets. No CSS maps; cannot be combined with `--minify`. |
 | Input AST dump | **Stable** | `--ast` | Emits `<name>.ast.json` for the parsed SFC/template AST. |
 | Generated JS AST dump | **Stable** | `--emit-gen-ast` | Emits `<name>.genast.json` for AST-codegen inspection. |

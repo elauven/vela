@@ -10,9 +10,9 @@ One application, an issue tracker with attachments, written twice:
 | [`seed/`](seed) | Deterministic data generator |
 
 Both versions implement the contract below with the same database, data and
-CSS, so the measurements compare the stacks, not two different apps. Method
-and fairness rules: task [058](../tasks/058-bench-vela-vs-sveltekit.md);
-results: [`RESULTS.md`](RESULTS.md).
+CSS, so the measurements compare the stacks, not two different apps. The
+contract and the runner below are the method; results:
+[`RESULTS.md`](RESULTS.md).
 
 ## Quick start (local PostgreSQL)
 

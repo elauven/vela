@@ -826,7 +826,7 @@ src/blocks/BarChart.vela:12:9: [error] VELA-SSR-HOST-MISSING
   (бандлер, import map, сервер), и он никогда не разрешает, не копирует, не
   хеширует и не собирает зависимости приложения. Импорты пакетов выводятся
   как написаны. Runtime дополнительно публикуется как npm-пакет
-  `@vela/runtime`, генерируемый из `runtime/` в `packages/runtime` (тест на
+  `@govela/runtime`, генерируемый из `runtime/` в `packages/runtime` (тест на
   расхождение), с версией компилятора и экспортами `.`, `./blocks` и
   `./hydrate`; его проверку режима разработки сворачивает замена
   `process.env.NODE_ENV` в бандлере. `--runtime-import=relative|bare`

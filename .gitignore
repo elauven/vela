@@ -1,6 +1,14 @@
 dist/
 vela
-app*/
+/app*/
 node_modules/
 test_projects/*/public/runtime/
 test_projects/*/public/dist
+
+# Internal planning and documentation, kept out of the public repository.
+/tasks/
+/.taskmd/
+/.taskmd.yaml
+/docs/archive/
+/docs/SSR_DELIVERY_SPEC.md
+/docs/ONBOARDING.md

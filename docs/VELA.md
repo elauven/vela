@@ -11,12 +11,12 @@ authoring syntax read [GUIDE.md](GUIDE.md); for feature status,
 | `*.go` (root, `package main`) | The compiler and the `vela` CLI |
 | `internal/jsast/` | JavaScript lexer, parser (ES2025 modules), AST, printer, walker and early errors |
 | `runtime/` | Browser runtime: `runtime.js`, `runtime-blocks.js`, `runtime-hydrate.js` (embedded in the binary) |
-| `packages/runtime/` | The npm package `@vela/runtime`, generated from `runtime/` (`runtime_package.go`) |
+| `packages/runtime/` | The npm package `@govela/runtime`, generated from `runtime/` (`runtime_package.go`) |
 | `ssr_runtime/` | Go runtime of generated renderers, nested module `github.com/elauven/vela/ssr_runtime` |
 | `examples/` | Example components, a dashboard, and the SSR server with hosts (`examples/ssr-host`) |
 | `test_projects/`, `testdata/` | Compatibility corpus (applications written by AI models) and fixtures |
 | `tools/` | Node harnesses for jsdom/Chromium tests, oracle generators, gate checks |
-| `tasks/` | Planned and finished work ([taskmd](https://github.com/driangle/taskmd)) |
+| `bench/` | Benchmark against SvelteKit on Node and Bun ([bench/README.md](../bench/README.md), [results](../bench/RESULTS.md)) |
 
 `go.work` joins the compiler and `ssr_runtime/` for tests. The compiler
 itself does not import the runtime and builds without the workspace
@@ -69,7 +69,7 @@ itself does not import the runtime and builds without the workspace
 | `ssr_go_ast.go`, `ssr_go_renderer.go`, `ssr_go_blocks.go`, `html_nesting.go` | Go renderer generation, HTML parse stability |
 | `ssr_host.go` | Host implementations (`//vela:host`) |
 | `ssr_builtins.go`, `ssr_catalogue.go` | Built-in catalogue (matrix §2) |
-| `runtime_package.go` | Version, `@vela/runtime` generator |
+| `runtime_package.go` | Version, `@govela/runtime` generator |
 
 ## Output
 
@@ -95,7 +95,7 @@ Scoped CSS is injected by the module (`--css=inject`) or written next to it
 | `vela --out dist A.vela B.vela` | `A.js`, `B.js` and the runtime in `dist/` |
 | `vela --project src --out dist` | the tree of `src/` as `.js`, copied `.js` modules, the runtime at the root, `vela.manifest.json` |
 | `vela --ssr --project src --out out` | `out/client/` (the above), `out/server/` (Go), `out/styles/` |
-| `--runtime-import=bare` | no runtime copy; modules import `@vela/runtime` |
+| `--runtime-import=bare` | no runtime copy; modules import `@govela/runtime` |
 
 ## CLI
 
@@ -113,7 +113,7 @@ vela --project <dir> [flags]    compile a source tree
 | `--minify` | off | Minify output and drop dead bindings |
 | `--sourcemap` | off | External v3 source maps (not with `--minify`) |
 | `--css` | `inject` | `inject` or `external` |
-| `--runtime-import` | `relative` | `relative` (runtime copied) or `bare` (`@vela/runtime`) |
+| `--runtime-import` | `relative` | `relative` (runtime copied) or `bare` (`@govela/runtime`) |
 | `--check-deps` | off | Warn about package imports missing from `node_modules` |
 | `--target` | `permissive` | Host globals profile: `permissive`, `browser`, `worker`, `node`, `ssr` |
 | `--strict` | off | Proven unresolved reads are errors |

@@ -1,0 +1,8 @@
+<script>
+  import { pad2 } from 'tiny-fmt';
+  import { label } from './label.js';
+  let count = $state(7);
+</script>
+<template>
+  <button class="inc" @click={() => count++}>{label('count')} {pad2(count)}</button>
+</template>

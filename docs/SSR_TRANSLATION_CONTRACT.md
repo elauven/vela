@@ -798,7 +798,7 @@ regression.
   compiler: its output is plain ES modules for the application's own
   toolchain (a bundler, an import map, a server), and it never resolves,
   copies, hashes or bundles application dependencies. Package imports are
-  emitted as written. The runtime is also the npm package `@vela/runtime`,
+  emitted as written. The runtime is also the npm package `@govela/runtime`,
   generated from `runtime/` into `packages/runtime` (drift test), with the
   compiler's version and the exports `.`, `./blocks` and `./hydrate`; its
   development check is folded by a bundler's `process.env.NODE_ENV`

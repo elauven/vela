@@ -84,7 +84,7 @@ nil `Set` means "every field is supplied", including zero values.
 The client entry is your own module:
 
 ```js
-import { hydrate } from './runtime-hydrate.js';   // or '@vela/runtime/hydrate'
+import { hydrate } from './runtime-hydrate.js';   // or '@govela/runtime/hydrate'
 import { Page } from './Page.js';
 
 hydrate(Page, document.getElementById('app'), {
@@ -214,5 +214,3 @@ Streaming, partial hydration and islands, an HTTP framework or router, and a
 dev server. Vela does not bundle: the client entry is built by your own
 tools ([GUIDE.md](GUIDE.md), "Building an application").
 
-History: the original design document is kept in
-[archive/SSR_DESIGN.md](archive/SSR_DESIGN.md).

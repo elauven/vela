@@ -1,6 +1,6 @@
 {
-  "name": "@vela/runtime",
-  "version": "0.1.0-dev",
+  "name": "@govela/runtime",
+  "version": "0.3.0",
   "description": "Runtime of components compiled by the Vela compiler. Generated from runtime/; do not edit.",
   "license": "MIT",
   "type": "module",

@@ -16,7 +16,7 @@ Compiled components import a small runtime: `runtime.js` (scheduler,
 stores, deep state), `runtime-blocks.js` (DOM blocks) and
 `runtime-hydrate.js` (`hydrate()`, only for server-rendered pages). The
 compiler writes them next to the output, or the application installs the
-`@vela/runtime` package (see "Building an application"). Every generated
+`@govela/runtime` package (see "Building an application"). Every generated
 module imports a contract marker, so a runtime from another compiler
 version fails at load time instead of misbehaving.
 
@@ -662,8 +662,8 @@ What the output contains:
   - `relative` (default): `runtime.js`, `runtime-blocks.js` and
     `runtime-hydrate.js` at the root of the output, imported by relative
     paths. Works without npm.
-  - `bare`: nothing is copied; generated modules import `@vela/runtime`,
-    `@vela/runtime/blocks` and `@vela/runtime/hydrate`. Install the package
+  - `bare`: nothing is copied; generated modules import `@govela/runtime`,
+    `@govela/runtime/blocks` and `@govela/runtime/hydrate`. Install the package
     with the same version as the compiler (`vela --version`). A bundler then
     includes one runtime for the whole page, also when components come from
     several output directories, and a version mismatch fails at bundle time
@@ -753,7 +753,7 @@ them.
 `vela --ssr` writes the client modules to `out/client` with the same
 options. The Go server renders the page; the client entry calls
 `hydrate(Component, container)` from `runtime-hydrate.js` (relative) or
-`@vela/runtime/hydrate` (bare) and can be bundled like any other entry.
+`@govela/runtime/hydrate` (bare) and can be bundled like any other entry.
 `examples/ssr-host` serves the unbundled output. The rest of server
 rendering is in "Server rendering" below.
 

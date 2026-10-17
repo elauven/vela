@@ -1,10 +1,10 @@
-# @vela/runtime
+# @govela/runtime
 
 Runtime of components compiled by the Vela compiler, for applications that
 bundle their client (esbuild, Vite, Rollup).
 
 Compile with `vela --runtime-import=bare` so generated modules import
-`@vela/runtime`, `@vela/runtime/blocks` and `@vela/runtime/hydrate` instead of
+`@govela/runtime`, `@govela/runtime/blocks` and `@govela/runtime/hydrate` instead of
 copies next to the output. The package version must equal the compiler
 version; a mismatch fails when the bundler links the modules
 (missing `$$runtimeContract…` export).

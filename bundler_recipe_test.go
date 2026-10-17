@@ -35,7 +35,7 @@ func newBundlerFixture(t *testing.T) *bundlerFixture {
 	}
 	f := &bundlerFixture{t: t, root: t.TempDir(), esbuild: esbuild, node: node}
 	f.copyDir(filepath.Join("testdata", "bundler", "packages", "tiny-fmt"), filepath.Join(f.root, "node_modules", "tiny-fmt"), nil)
-	f.copyDir(runtimePackageDir, filepath.Join(f.root, "node_modules", "@vela", "runtime"), nil)
+	f.copyDir(runtimePackageDir, filepath.Join(f.root, "node_modules", filepath.FromSlash(RuntimePackageName)), nil)
 	return f
 }
 
@@ -197,7 +197,7 @@ func TestBundlerRecipeEsbuild(t *testing.T) {
 	}
 
 	// A runtime of another contract fails when esbuild links the modules.
-	f.copyDir(runtimePackageDir, filepath.Join(f.root, "node_modules", "@vela", "runtime"), func(name, src string) string {
+	f.copyDir(runtimePackageDir, filepath.Join(f.root, "node_modules", filepath.FromSlash(RuntimePackageName)), func(name, src string) string {
 		return strings.ReplaceAll(src, runtimeContractExport, "$$runtimeContractOther")
 	})
 	out, err := f.bundle("build/main.js", "dist/mismatch.js")

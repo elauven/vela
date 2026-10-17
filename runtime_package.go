@@ -1,6 +1,6 @@
 package main
 
-// runtime_package.go — the @vela/runtime npm package (contract R-12.2f,
+// runtime_package.go — the @govela/runtime npm package (contract R-12.2f,
 // task 048), generated from runtime/ into packages/runtime. Applications
 // that bundle their client install it and compile with
 // --runtime-import=bare; the compiler never resolves or bundles it.
@@ -18,10 +18,10 @@ var licenseText []byte
 
 // Version is the compiler version. The runtime npm package and the Go
 // runtime module are released with the same version (docs/RELEASING.md).
-const Version = "0.1.0-dev"
+const Version = "0.3.0"
 
 // RuntimePackageName is the npm package of the JavaScript runtime.
-const RuntimePackageName = "@vela/runtime"
+const RuntimePackageName = "@govela/runtime"
 
 // runtimePackageDir is where the generated package lives in the repository.
 const runtimePackageDir = "packages/runtime"

@@ -1,0 +1,56 @@
+name: Release
+
+# A tag vX.Y.Z (docs/RELEASING.md) builds the compiler for every platform and
+# publishes a GitHub release with the binaries and their checksums. The Go
+# runtime is released by its own tag ssr_runtime/vX.Y.Z, which needs no build;
+# the npm package is published by hand.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Check the version
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          got=$(GOWORK=off go run . --version | cut -d' ' -f2)
+          if [ "$got" != "$want" ]; then
+            echo "tag $GITHUB_REF_NAME, but Version in runtime_package.go is $got" >&2
+            exit 1
+          fi
+
+      - name: Test
+        run: go test ./... ./ssr_runtime/...
+
+      - name: Build all platforms
+        env:
+          GOWORK: 'off'
+          CGO_ENABLED: '0'
+        run: |
+          mkdir dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os=${target%/*}; arch=${target#*/}; ext=""
+            [ "$os" = windows ] && ext=.exe
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "dist/vela-$os-$arch$ext" .
+          done
+          (cd dist && sha256sum vela-* > SHA256SUMS)
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Vela $GITHUB_REF_NAME" --generate-notes --verify-tag
