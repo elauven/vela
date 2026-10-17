@@ -179,7 +179,7 @@ func Number(value any) float64 {
 // runtime behaviour instead of becoming Go compile errors.
 func NumberAdd(left, right any) float64      { return Number(left) + Number(right) }
 func NumberSubtract(left, right any) float64 { return Number(left) - Number(right) }
-func NumberMultiply(left, right any) float64 { return Number(left) * Number(right) }
+func NumberMultiply(left, right any) float64 { return float64(Number(left) * Number(right)) }
 func NumberDivide(left, right any) float64   { return Number(left) / Number(right) }
 func NumberRemainder(left, right any) float64 {
 	return math.Mod(Number(left), Number(right))

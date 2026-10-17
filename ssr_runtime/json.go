@@ -191,6 +191,17 @@ var asciiEscapes = func() (table [utf8.RuneSelf]string) {
 	return table
 }()
 
+// jsonInvalidUTF8 is how json.Marshal writes a byte that is not valid
+// UTF-8: the replacement character U+FFFD, raw in newer releases and as the
+// escape \ufffd in Go 1.25. Taken from json.Marshal, as asciiEscapes.
+var jsonInvalidUTF8 = func() string {
+	encoded, err := json.Marshal(string([]byte{0x80}))
+	if err != nil {
+		panic(fmt.Sprintf("vela: json.Marshal of an invalid byte: %v", err))
+	}
+	return string(encoded[1 : len(encoded)-1])
+}()
+
 // jsonSafe[c] is true for an ASCII byte written as is: one byte load per
 // character instead of a string header in the common case (task 060).
 var jsonSafe = func() (table [utf8.RuneSelf]bool) {
@@ -221,7 +232,7 @@ func appendJSONString(b []byte, s string) []byte {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		if r == utf8.RuneError && size == 1 {
 			b = append(b, s[start:i]...)
-			b = append(b, `�`...)
+			b = append(b, jsonInvalidUTF8...)
 			i += size
 			start = i
 			continue

@@ -43,19 +43,19 @@ func fdlibmCbrt(x float64) float64 {
 		if uint32(hx)|low == 0 {
 			return x
 		}
-		t = fromWords(0x43500000, 0) * x
+		t = float64(fromWords(0x43500000, 0) * x)
 		high := uint32(hi(t))
 		t = fromWords(int32(sign|((high&0x7fffffff)/3+cbrtB2)), 0)
 	} else {
 		t = fromWords(int32(sign|(uint32(hx)/3+cbrtB1)), 0)
 	}
-	r := (t * t) * (t / x)
-	t = t * ((cbrtP0 + r*(cbrtP1+r*cbrtP2)) + ((r*r)*r)*(cbrtP3+r*cbrtP4))
+	r := float64((float64(t * t)) * (t / x))
+	t = float64(t * ((cbrtP0 + float64(r*(cbrtP1+float64(r*cbrtP2)))) + float64((float64((float64(r*r))*r))*(cbrtP3+float64(r*cbrtP4)))))
 	bits := (math.Float64bits(t) + 0x80000000) & 0xffffffffc0000000
 	t = math.Float64frombits(bits)
-	s := t * t
+	s := float64(t * t)
 	r = x / s
 	w := t + t
 	r = (r - t) / (w + r)
-	return t + t*r
+	return t + float64(t*r)
 }

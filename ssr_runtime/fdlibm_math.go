@@ -6,8 +6,12 @@ import "math"
 // ieee754.cc), so that the transcendental functions match JavaScript bit
 // for bit (TestTranscendentalMatchesNode). Go's math differs: its amd64
 // assembly for Log and Exp, its Log2 near 1, its trigonometric reduction
-// for large arguments, and its hyperbolic functions. math.Log1p,
-// math.Expm1, and math.Sqrt are already the same algorithms (or exact).
+// for large arguments, and its hyperbolic functions. Log1p and Expm1 are
+// Go's algorithms, copied (fdlibm_log1p.go) because the standard library
+// may be built with fused multiply-add on other architectures; math.Sqrt
+// is exact. Every floating-point product in this package is wrapped in an
+// explicit conversion, which prevents the compiler from fusing it
+// (TestNoFusedMultiplyAdd).
 
 var (
 	fdHuge = 1.0e300
@@ -38,13 +42,13 @@ func kernelSin(x, y float64, iy int) float64 {
 	if ix < 0x3e400000 && int(x) == 0 {
 		return x
 	}
-	z := x * x
-	v := z * x
-	r := kS2 + z*(kS3+z*(kS4+z*(kS5+z*kS6)))
+	z := float64(x * x)
+	v := float64(z * x)
+	r := kS2 + float64(z*(kS3+float64(z*(kS4+float64(z*(kS5+float64(z*kS6)))))))
 	if iy == 0 {
-		return x + v*(kS1+z*r)
+		return x + float64(v*(kS1+float64(z*r)))
 	}
-	return x - ((z*(0.5*y-v*r) - y) - v*kS1)
+	return x - ((float64(z*(float64(0.5*y)-float64(v*r))) - y) - float64(v*kS1))
 }
 
 func kernelCos(x, y float64) float64 {
@@ -52,10 +56,10 @@ func kernelCos(x, y float64) float64 {
 	if ix < 0x3e400000 && int(x) == 0 {
 		return 1
 	}
-	z := x * x
-	r := z * (kC1 + z*(kC2+z*(kC3+z*(kC4+z*(kC5+z*kC6)))))
+	z := float64(x * x)
+	r := float64(z * (kC1 + float64(z*(kC2+float64(z*(kC3+float64(z*(kC4+float64(z*(kC5+float64(z*kC6)))))))))))
 	if ix < 0x3FD33333 {
-		return 1 - (0.5*z - (z*r - x*y))
+		return 1 - (float64(0.5*z) - (float64(z*r) - float64(x*y)))
 	}
 	var qx float64
 	if ix > 0x3fe90000 {
@@ -63,9 +67,9 @@ func kernelCos(x, y float64) float64 {
 	} else {
 		qx = fromWords(ix-0x00200000, 0)
 	}
-	hz := 0.5*z - qx
+	hz := float64(0.5*z) - qx
 	a := 1 - qx
-	return a - (hz - (z*r - x*y))
+	return a - (hz - (float64(z*r) - float64(x*y)))
 }
 
 var kTan = [...]float64{
@@ -104,8 +108,8 @@ func kernelTan(x, y float64, iy int) float64 {
 		v := y - (z - x)
 		a := -1 / w
 		t := withLow(a, 0)
-		s := 1 + t*z
-		return t + a*(s+t*v)
+		s := 1 + float64(t*z)
+		return t + float64(a*(s+float64(t*v)))
 	}
 	if ix >= 0x3FE59428 {
 		if hx < 0 {
@@ -116,17 +120,17 @@ func kernelTan(x, y float64, iy int) float64 {
 		x = z + w
 		y = 0
 	}
-	z := x * x
-	w := z * z
-	r := kTan[1] + w*(kTan[3]+w*(kTan[5]+w*(kTan[7]+w*(kTan[9]+w*kTan[11]))))
-	v := z * (kTan[2] + w*(kTan[4]+w*(kTan[6]+w*(kTan[8]+w*(kTan[10]+w*kTan[12])))))
-	s := z * x
-	r = y + z*(s*(r+v)+y)
-	r += kTan[0] * s
+	z := float64(x * x)
+	w := float64(z * z)
+	r := kTan[1] + float64(w*(kTan[3]+float64(w*(kTan[5]+float64(w*(kTan[7]+float64(w*(kTan[9]+float64(w*kTan[11])))))))))
+	v := float64(z * (kTan[2] + float64(w*(kTan[4]+float64(w*(kTan[6]+float64(w*(kTan[8]+float64(w*(kTan[10]+float64(w*kTan[12])))))))))))
+	s := float64(z * x)
+	r = y + float64(z*(float64(s*(r+v))+y))
+	r += float64(kTan[0] * s)
 	w = x + r
 	if ix >= 0x3FE59428 {
 		v = float64(iy)
-		return float64(1-((hx>>30)&2)) * (v - 2.0*(x-(w*w/(w+v)-r)))
+		return float64(float64(1-((hx>>30)&2)) * (v - float64(2.0*(x-(float64(w*w)/(w+v)-r)))))
 	}
 	if iy == 1 {
 		return w
@@ -135,8 +139,8 @@ func kernelTan(x, y float64, iy int) float64 {
 	v = r - (z - x)
 	a := -1 / w
 	t := withLow(a, 0)
-	s = 1 + t*z
-	return t + a*(s+t*v)
+	s = 1 + float64(t*z)
+	return t + float64(a*(s+float64(t*v)))
 }
 
 // ── Argument reduction ───────────────────────────────────────────────────
@@ -216,10 +220,10 @@ func remPio2(x float64) (int, float64, float64) {
 	}
 	if ix <= 0x413921fb {
 		t := math.Abs(x)
-		n := int(t*rInvpio2 + 0.5)
+		n := int(float64(t*rInvpio2) + 0.5)
 		fn := float64(n)
-		r := t - fn*rPio2_1
-		w := fn * rPio2_1t
+		r := t - float64(fn*rPio2_1)
+		w := float64(fn * rPio2_1t)
 		var y0 float64
 		if n < 32 && ix != npio2HW[n-1] {
 			y0 = r - w
@@ -229,16 +233,16 @@ func remPio2(x float64) (int, float64, float64) {
 			i := j - ((hi(y0) >> 20) & 0x7ff)
 			if i > 16 {
 				t = r
-				w = fn * rPio2_2
+				w = float64(fn * rPio2_2)
 				r = t - w
-				w = fn*rPio2_2t - ((t - r) - w)
+				w = float64(fn*rPio2_2t) - ((t - r) - w)
 				y0 = r - w
 				i = j - ((hi(y0) >> 20) & 0x7ff)
 				if i > 49 {
 					t = r
-					w = fn * rPio2_3
+					w = float64(fn * rPio2_3)
 					r = t - w
-					w = fn*rPio2_3t - ((t - r) - w)
+					w = float64(fn*rPio2_3t) - ((t - r) - w)
 					y0 = r - w
 				}
 			}
@@ -257,7 +261,7 @@ func remPio2(x float64) (int, float64, float64) {
 	var tx [3]float64
 	for i := 0; i < 2; i++ {
 		tx[i] = float64(int32(z))
-		z = (z - tx[i]) * rTwo24
+		z = float64((z - tx[i]) * rTwo24)
 	}
 	tx[2] = z
 	nx := 3
@@ -296,7 +300,7 @@ func kernelRemPio2(x []float64, e0 int) (int, float64, float64) {
 	for i := 0; i <= jk; i++ {
 		fw := 0.0
 		for j := 0; j <= jx; j++ {
-			fw += x[j] * f[jx+i-j]
+			fw += float64(x[j] * f[jx+i-j])
 		}
 		q[i] = fw
 	}
@@ -308,12 +312,12 @@ func kernelRemPio2(x []float64, e0 int) (int, float64, float64) {
 		i := 0
 		z = q[jz]
 		for j := jz; j > 0; i, j = i+1, j-1 {
-			fw := float64(int32(rTwon24 * z))
-			iq[i] = int32(z - rTwo24*fw)
+			fw := float64(int32(float64(rTwon24 * z)))
+			iq[i] = int32(z - float64(rTwo24*fw))
 			z = q[j-1] + fw
 		}
 		z = math.Ldexp(z, q0)
-		z -= 8.0 * math.Floor(z*0.125)
+		z -= float64(8.0 * math.Floor(float64(z*0.125)))
 		n = int32(z)
 		z -= float64(n)
 		ih = 0
@@ -370,7 +374,7 @@ func kernelRemPio2(x []float64, e0 int) (int, float64, float64) {
 					f[jx+i] = float64(twoOverPi[jv+i])
 					fw := 0.0
 					for j := 0; j <= jx; j++ {
-						fw += x[j] * f[jx+i-j]
+						fw += float64(x[j] * f[jx+i-j])
 					}
 					q[i] = fw
 				}
@@ -390,8 +394,8 @@ func kernelRemPio2(x []float64, e0 int) (int, float64, float64) {
 	} else {
 		z = math.Ldexp(z, -q0)
 		if z >= rTwo24 {
-			fw := float64(int32(rTwon24 * z))
-			iq[jz] = int32(z - rTwo24*fw)
+			fw := float64(int32(float64(rTwon24 * z)))
+			iq[jz] = int32(z - float64(rTwo24*fw))
 			jz++
 			q0 += 24
 			iq[jz] = int32(fw)
@@ -401,13 +405,13 @@ func kernelRemPio2(x []float64, e0 int) (int, float64, float64) {
 	}
 	fw := math.Ldexp(1, q0)
 	for i := jz; i >= 0; i-- {
-		q[i] = fw * float64(iq[i])
-		fw *= rTwon24
+		q[i] = float64(fw * float64(iq[i]))
+		fw = float64(fw * (rTwon24))
 	}
 	for i := jz; i >= 0; i-- {
 		fw := 0.0
 		for k := 0; k <= jp && k <= jz-i; k++ {
-			fw += pio2Parts[k] * q[i+k]
+			fw += float64(pio2Parts[k] * q[i+k])
 		}
 		fq[jz-i] = fw
 	}
@@ -508,7 +512,7 @@ func fdAsin(x float64) float64 {
 	ix := hx & 0x7fffffff
 	if ix >= 0x3ff00000 {
 		if uint32(ix-0x3ff00000)|lo(x) == 0 {
-			return x*aPio2Hi + x*aPio2Lo
+			return float64(x*aPio2Hi) + float64(x*aPio2Lo)
 		}
 		return (x - x) / (x - x)
 	}
@@ -516,25 +520,25 @@ func fdAsin(x float64) float64 {
 		if ix < 0x3e400000 {
 			return x
 		}
-		t := x * x
-		p := t * (pS0 + t*(pS1+t*(pS2+t*(pS3+t*(pS4+t*pS5)))))
-		q := 1 + t*(qS1+t*(qS2+t*(qS3+t*qS4)))
-		return x + x*(p/q)
+		t := float64(x * x)
+		p := float64(t * (pS0 + float64(t*(pS1+float64(t*(pS2+float64(t*(pS3+float64(t*(pS4+float64(t*pS5)))))))))))
+		q := 1 + float64(t*(qS1+float64(t*(qS2+float64(t*(qS3+float64(t*qS4)))))))
+		return x + float64(x*(p/q))
 	}
 	w := 1 - math.Abs(x)
-	t := w * 0.5
-	p := t * (pS0 + t*(pS1+t*(pS2+t*(pS3+t*(pS4+t*pS5)))))
-	q := 1 + t*(qS1+t*(qS2+t*(qS3+t*qS4)))
+	t := float64(w * 0.5)
+	p := float64(t * (pS0 + float64(t*(pS1+float64(t*(pS2+float64(t*(pS3+float64(t*(pS4+float64(t*pS5)))))))))))
+	q := 1 + float64(t*(qS1+float64(t*(qS2+float64(t*(qS3+float64(t*qS4)))))))
 	s := math.Sqrt(t)
 	if ix >= 0x3FEF3333 {
 		w = p / q
-		t = aPio2Hi - (2.0*(s+s*w) - aPio2Lo)
+		t = aPio2Hi - (float64(2.0*(s+float64(s*w))) - aPio2Lo)
 	} else {
 		w = withLow(s, 0)
-		c := (t - w*w) / (s + w)
+		c := (t - float64(w*w)) / (s + w)
 		r := p / q
-		p = 2.0*s*r - (aPio2Lo - 2.0*c)
-		q = aPio4Hi - 2.0*w
+		p = float64(float64(2.0*s)*r) - (aPio2Lo - float64(2.0*c))
+		q = aPio4Hi - float64(2.0*w)
 		t = aPio4Hi - (p - q)
 	}
 	if hx > 0 {
@@ -559,30 +563,30 @@ func fdAcos(x float64) float64 {
 		if ix <= 0x3c600000 {
 			return aPio2Hi + aPio2Lo
 		}
-		z := x * x
-		p := z * (pS0 + z*(pS1+z*(pS2+z*(pS3+z*(pS4+z*pS5)))))
-		q := 1 + z*(qS1+z*(qS2+z*(qS3+z*qS4)))
+		z := float64(x * x)
+		p := float64(z * (pS0 + float64(z*(pS1+float64(z*(pS2+float64(z*(pS3+float64(z*(pS4+float64(z*pS5)))))))))))
+		q := 1 + float64(z*(qS1+float64(z*(qS2+float64(z*(qS3+float64(z*qS4)))))))
 		r := p / q
-		return aPio2Hi - (x - (aPio2Lo - x*r))
+		return aPio2Hi - (x - (aPio2Lo - float64(x*r)))
 	}
 	if hx < 0 {
-		z := (1 + x) * 0.5
-		p := z * (pS0 + z*(pS1+z*(pS2+z*(pS3+z*(pS4+z*pS5)))))
-		q := 1 + z*(qS1+z*(qS2+z*(qS3+z*qS4)))
+		z := float64((1 + x) * 0.5)
+		p := float64(z * (pS0 + float64(z*(pS1+float64(z*(pS2+float64(z*(pS3+float64(z*(pS4+float64(z*pS5)))))))))))
+		q := 1 + float64(z*(qS1+float64(z*(qS2+float64(z*(qS3+float64(z*qS4)))))))
 		s := math.Sqrt(z)
 		r := p / q
-		w := r*s - aPio2Lo
-		return aPi - 2.0*(s+w)
+		w := float64(r*s) - aPio2Lo
+		return aPi - float64(2.0*(s+w))
 	}
-	z := (1 - x) * 0.5
+	z := float64((1 - x) * 0.5)
 	s := math.Sqrt(z)
 	df := withLow(s, 0)
-	c := (z - df*df) / (s + df)
-	p := z * (pS0 + z*(pS1+z*(pS2+z*(pS3+z*(pS4+z*pS5)))))
-	q := 1 + z*(qS1+z*(qS2+z*(qS3+z*qS4)))
+	c := (z - float64(df*df)) / (s + df)
+	p := float64(z * (pS0 + float64(z*(pS1+float64(z*(pS2+float64(z*(pS3+float64(z*(pS4+float64(z*pS5)))))))))))
+	q := 1 + float64(z*(qS1+float64(z*(qS2+float64(z*(qS3+float64(z*qS4)))))))
 	r := p / q
-	w := r*s + c
-	return 2.0 * (df + w)
+	w := float64(r*s) + c
+	return float64(2.0 * (df + w))
 }
 
 var atanHi = [...]float64{
@@ -635,27 +639,27 @@ func fdAtan(x float64) float64 {
 		if ix < 0x3ff30000 {
 			if ix < 0x3fe60000 {
 				id = 0
-				x = (2.0*x - 1) / (2.0 + x)
+				x = (float64(2.0*x) - 1) / (2.0 + x)
 			} else {
 				id = 1
 				x = (x - 1) / (x + 1)
 			}
 		} else if ix < 0x40038000 {
 			id = 2
-			x = (x - 1.5) / (1 + 1.5*x)
+			x = (x - 1.5) / (1 + float64(1.5*x))
 		} else {
 			id = 3
 			x = -1.0 / x
 		}
 	}
-	z := x * x
-	w := z * z
-	s1 := z * (aT[0] + w*(aT[2]+w*(aT[4]+w*(aT[6]+w*(aT[8]+w*aT[10])))))
-	s2 := w * (aT[1] + w*(aT[3]+w*(aT[5]+w*(aT[7]+w*aT[9]))))
+	z := float64(x * x)
+	w := float64(z * z)
+	s1 := float64(z * (aT[0] + float64(w*(aT[2]+float64(w*(aT[4]+float64(w*(aT[6]+float64(w*(aT[8]+float64(w*aT[10])))))))))))
+	s2 := float64(w * (aT[1] + float64(w*(aT[3]+float64(w*(aT[5]+float64(w*(aT[7]+float64(w*aT[9])))))))))
 	if id < 0 {
-		return x - x*(s1+s2)
+		return x - float64(x*(s1+s2))
 	}
-	z = atanHi[id] - ((x*(s1+s2) - atanLo[id]) - x)
+	z = atanHi[id] - ((float64(x*(s1+s2)) - atanLo[id]) - x)
 	if hx < 0 {
 		return -z
 	}
@@ -776,7 +780,7 @@ func fdExp(x float64) float64 {
 			return 0
 		}
 		if x > eOThreshold {
-			return fdHuge * fdHuge
+			return float64(fdHuge * fdHuge)
 		}
 		if x < eUThreshold {
 			return eTwom1000 * eTwom1000
@@ -801,28 +805,28 @@ func fdExp(x float64) float64 {
 			if xsb == 1 {
 				half = -0.5
 			}
-			k = int(eInvln2*x + half)
+			k = int(float64(eInvln2*x) + half)
 			t := float64(k)
-			hiPart = x - t*eLn2Hi
-			loPart = t * eLn2Lo
+			hiPart = x - float64(t*eLn2Hi)
+			loPart = float64(t * eLn2Lo)
 		}
 		x = hiPart - loPart
 	} else if hx < 0x3e300000 {
 		return 1 + x
 	}
-	t := x * x
-	c := x - t*(eP1+t*(eP2+t*(eP3+t*(eP4+t*eP5))))
+	t := float64(x * x)
+	c := x - float64(t*(eP1+float64(t*(eP2+float64(t*(eP3+float64(t*(eP4+float64(t*eP5)))))))))
 	if k == 0 {
-		return 1 - ((x*c)/(c-2.0) - x)
+		return 1 - ((float64(x*c))/(c-2.0) - x)
 	}
-	y := 1 - ((loPart - (x*c)/(2.0-c)) - hiPart)
+	y := 1 - ((loPart - (float64(x*c))/(2.0-c)) - hiPart)
 	if k >= -1021 {
 		if k == 1024 {
-			return y * 2.0 * math.Ldexp(1, 1023)
+			return float64(float64(y*2.0) * math.Ldexp(1, 1023))
 		}
 		return withHigh(y, hi(y)+int32(k<<20))
 	}
-	return withHigh(y, hi(y)+int32((k+1000)<<20)) * eTwom1000
+	return float64(withHigh(y, hi(y)+int32((k+1000)<<20)) * eTwom1000)
 }
 
 const (
@@ -848,7 +852,7 @@ func fdLog(x float64) float64 {
 			return math.NaN()
 		}
 		k -= 54
-		x *= lTwo54
+		x = float64(x * (lTwo54))
 		hx = hi(x)
 	}
 	if hx >= 0x7ff00000 {
@@ -866,48 +870,48 @@ func fdLog(x float64) float64 {
 				return 0
 			}
 			dk := float64(k)
-			return dk*eLn2Hi + dk*eLn2Lo
+			return float64(dk*eLn2Hi) + float64(dk*eLn2Lo)
 		}
-		r := f * f * (0.5 - 0.33333333333333333*f)
+		r := float64(float64(f*f) * (0.5 - float64(0.33333333333333333*f)))
 		if k == 0 {
 			return f - r
 		}
 		dk := float64(k)
-		return dk*eLn2Hi - ((r - dk*eLn2Lo) - f)
+		return float64(dk*eLn2Hi) - ((r - float64(dk*eLn2Lo)) - f)
 	}
 	s := f / (2.0 + f)
 	dk := float64(k)
-	z := s * s
+	z := float64(s * s)
 	i = hx - 0x6147a
-	w := z * z
+	w := float64(z * z)
 	j := 0x6b851 - hx
-	t1 := w * (lg2 + w*(lg4+w*lg6))
-	t2 := z * (lg1 + w*(lg3+w*(lg5+w*lg7)))
+	t1 := float64(w * (lg2 + float64(w*(lg4+float64(w*lg6)))))
+	t2 := float64(z * (lg1 + float64(w*(lg3+float64(w*(lg5+float64(w*lg7)))))))
 	i |= j
 	r := t2 + t1
 	if i > 0 {
-		hfsq := 0.5 * f * f
+		hfsq := float64(float64(0.5*f) * f)
 		if k == 0 {
-			return f - (hfsq - s*(hfsq+r))
+			return f - (hfsq - float64(s*(hfsq+r)))
 		}
-		return dk*eLn2Hi - ((hfsq - (s*(hfsq+r) + dk*eLn2Lo)) - f)
+		return float64(dk*eLn2Hi) - ((hfsq - (float64(s*(hfsq+r)) + float64(dk*eLn2Lo))) - f)
 	}
 	if k == 0 {
-		return f - s*(f-r)
+		return f - float64(s*(f-r))
 	}
-	return dk*eLn2Hi - ((s*(f-r) - dk*eLn2Lo) - f)
+	return float64(dk*eLn2Hi) - ((float64(s*(f-r)) - float64(dk*eLn2Lo)) - f)
 }
 
 // kLog1p is k_log1p of FreeBSD's k_log.h.
 func kLog1p(f float64) float64 {
 	s := f / (2.0 + f)
-	z := s * s
-	w := z * z
-	t1 := w * (lg2 + w*(lg4+w*lg6))
-	t2 := z * (lg1 + w*(lg3+w*(lg5+w*lg7)))
+	z := float64(s * s)
+	w := float64(z * z)
+	t1 := float64(w * (lg2 + float64(w*(lg4+float64(w*lg6)))))
+	t2 := float64(z * (lg1 + float64(w*(lg3+float64(w*(lg5+float64(w*lg7)))))))
 	r := t2 + t1
-	hfsq := 0.5 * f * f
-	return s * (hfsq + r)
+	hfsq := float64(float64(0.5*f) * f)
+	return float64(s * (hfsq + r))
 }
 
 // logParts reduces x for log2 and log10: x = 2^k·(1+f).
@@ -922,7 +926,7 @@ func logParts(x float64) (k int32, f float64, special bool, value float64) {
 			return 0, 0, true, math.NaN()
 		}
 		k -= 54
-		x *= lTwo54
+		x = float64(x * (lTwo54))
 		hx = hi(x)
 	}
 	if hx >= 0x7ff00000 {
@@ -953,12 +957,12 @@ func fdLog2(x float64) float64 {
 		return value
 	}
 	y := float64(k)
-	hfsq := 0.5 * f * f
+	hfsq := float64(float64(0.5*f) * f)
 	r := kLog1p(f)
 	h := withLow(f-hfsq, 0)
 	l := (f - h) - hfsq + r
-	valHi := h * ivln2hi
-	valLo := (l+h)*ivln2lo + l*ivln2hi
+	valHi := float64(h * ivln2hi)
+	valLo := float64((l+h)*ivln2lo) + float64(l*ivln2hi)
 	w := y + valHi
 	valLo += (y - w) + valHi
 	valHi = w
@@ -978,7 +982,7 @@ func fdLog10(x float64) float64 {
 			return math.NaN()
 		}
 		k -= 54
-		x *= lTwo54
+		x = float64(x * (lTwo54))
 		hx = hi(x)
 	}
 	if hx >= 0x7ff00000 {
@@ -989,8 +993,8 @@ func fdLog10(x float64) float64 {
 	hx = (hx & 0x000fffff) | ((0x3ff - i) << 20)
 	y := float64(k + i)
 	x = withHigh(x, hx)
-	z := y*log10_2lo + ivln10*fdLog(x)
-	return z + y*log10_2hi
+	z := float64(y*log10_2lo) + float64(ivln10*fdLog(x))
+	return z + float64(y*log10_2hi)
 }
 
 // ── Hyperbolic functions ─────────────────────────────────────────────────
@@ -1009,49 +1013,49 @@ func fdSinh(x float64) float64 {
 		if ix < 0x3e300000 {
 			return x
 		}
-		t := math.Expm1(math.Abs(x))
+		t := fdlibmExpm1(math.Abs(x))
 		if ix < 0x3ff00000 {
-			return h * (2.0*t - t*t/(t+1))
+			return float64(h * (float64(2.0*t) - float64(t*t)/(t+1)))
 		}
-		return h * (t + t/(t+1))
+		return float64(h * (t + t/(t+1)))
 	}
 	if ix < 0x40862E42 {
-		return h * fdExp(math.Abs(x))
+		return float64(h * fdExp(math.Abs(x)))
 	}
 	if ix < 0x408633CE || ix == 0x408633ce && lo(x) <= 0x8fb9f87d {
-		w := fdExp(0.5 * math.Abs(x))
-		t := h * w
-		return t * w
+		w := fdExp(float64(0.5 * math.Abs(x)))
+		t := float64(h * w)
+		return float64(t * w)
 	}
-	return x * 1.0e307
+	return float64(x * 1.0e307)
 }
 
 func fdCosh(x float64) float64 {
 	ix := hi(x) & 0x7fffffff
 	if ix >= 0x7ff00000 {
-		return x * x
+		return float64(x * x)
 	}
 	if ix < 0x3fd62e43 {
-		t := math.Expm1(math.Abs(x))
+		t := fdlibmExpm1(math.Abs(x))
 		w := 1 + t
 		if ix < 0x3c800000 {
 			return w
 		}
-		return 1 + (t*t)/(w+w)
+		return 1 + (float64(t*t))/(w+w)
 	}
 	if ix < 0x40360000 {
 		t := fdExp(math.Abs(x))
-		return 0.5*t + 0.5/t
+		return float64(0.5*t) + 0.5/t
 	}
 	if ix < 0x40862E42 {
-		return 0.5 * fdExp(math.Abs(x))
+		return float64(0.5 * fdExp(math.Abs(x)))
 	}
 	if ix < 0x408633CE || ix == 0x408633ce && lo(x) <= 0x8fb9f87d {
-		w := fdExp(0.5 * math.Abs(x))
-		t := 0.5 * w
-		return t * w
+		w := fdExp(float64(0.5 * math.Abs(x)))
+		t := float64(0.5 * w)
+		return float64(t * w)
 	}
-	return fdHuge * fdHuge
+	return float64(fdHuge * fdHuge)
 }
 
 func fdTanh(x float64) float64 {
@@ -1069,10 +1073,10 @@ func fdTanh(x float64) float64 {
 			return x
 		}
 		if ix >= 0x3ff00000 {
-			t := math.Expm1(2 * math.Abs(x))
+			t := fdlibmExpm1(float64(2 * math.Abs(x)))
 			z = 1 - 2/(t+2)
 		} else {
-			t := math.Expm1(-2 * math.Abs(x))
+			t := fdlibmExpm1(float64(-2 * math.Abs(x)))
 			z = -t / (t + 2)
 		}
 	} else {
@@ -1101,10 +1105,10 @@ func fdAsinh(x float64) float64 {
 		w = fdLog(math.Abs(x)) + hLn2
 	case ix > 0x40000000:
 		t := math.Abs(x)
-		w = fdLog(2.0*t + 1/(math.Sqrt(x*x+1)+t))
+		w = fdLog(float64(2.0*t) + 1/(math.Sqrt(float64(x*x)+1)+t))
 	default:
-		t := x * x
-		w = math.Log1p(math.Abs(x) + t/(1+math.Sqrt(1+t)))
+		t := float64(x * x)
+		w = fdlibmLog1p(math.Abs(x) + t/(1+math.Sqrt(1+t)))
 	}
 	if hx > 0 {
 		return w
@@ -1125,11 +1129,11 @@ func fdAcosh(x float64) float64 {
 	case uint32(hx-0x3ff00000)|lo(x) == 0:
 		return 0
 	case hx > 0x40000000:
-		t := x * x
-		return fdLog(2.0*x - 1/(x+math.Sqrt(t-1)))
+		t := float64(x * x)
+		return fdLog(float64(2.0*x) - 1/(x+math.Sqrt(t-1)))
 	}
 	t := x - 1
-	return math.Log1p(t + math.Sqrt(2.0*t+t*t))
+	return fdlibmLog1p(t + math.Sqrt(float64(2.0*t)+float64(t*t)))
 }
 
 func fdAtanh(x float64) float64 {
@@ -1149,9 +1153,9 @@ func fdAtanh(x float64) float64 {
 	var t float64
 	if ix < 0x3fe00000 {
 		t = x + x
-		t = 0.5 * math.Log1p(t+t*x/(1-x))
+		t = float64(0.5 * fdlibmLog1p(t+float64(t*x)/(1-x)))
 	} else {
-		t = 0.5 * math.Log1p((x+x)/(1-x))
+		t = float64(0.5 * fdlibmLog1p((x+x)/(1-x)))
 	}
 	if hx >= 0 {
 		return t
