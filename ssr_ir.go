@@ -1682,4 +1682,4 @@ func ssrComponentContext(ctx SSRExprContext) SSRExprContext {
 
 // ssrGlobalNamespaces are the global objects whose functions the
 // catalogue lists (docs/SSR_TRANSLATION_MATRIX.md §2).
-var ssrGlobalNamespaces = map[string]bool{"Math": true, "Number": true, "Object": true, "JSON": true, "Array": true, "String": true, "Promise": true, "Intl": true, "Date": true, "localStorage": true, "sessionStorage": true, "console": true, "window": true, "document": true}
+var ssrGlobalNamespaces = map[string]bool{"Math": true, "Number": true, "Object": true, "JSON": true, "Array": true, "String": true, "Promise": true, "Intl": true, "Date": true, "Map": true, "Set": true, "localStorage": true, "sessionStorage": true, "console": true, "window": true, "document": true}

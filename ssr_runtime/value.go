@@ -357,7 +357,7 @@ func arrayIndexKey(key string) bool {
 // time.Time, or a []byte is read through JSON (T-5.1).
 func jsValue(value any) any {
 	switch v := value.(type) {
-	case Func, *Promise, *Date:
+	case Func, *Promise, *Date, *Collection:
 		return v
 	case nil, UndefinedValue, bool, string, float64, []any, *Object, map[string]any:
 		if m, ok := v.(map[string]any); ok {
@@ -558,6 +558,11 @@ func property(value any, key string) any {
 	case *Date:
 		// A Date has no own properties; its methods are called by Method.
 		return Undefined()
+	case *Collection:
+		if key == "size" {
+			return float64(v.size)
+		}
+		return Undefined()
 	case *Object:
 		if result, ok := v.Lookup(key); ok {
 			return result
@@ -668,6 +673,8 @@ func (js *JS) SpreadItems(value any, site string) []any {
 		return unholed(v)
 	case string:
 		return codePoints(v)
+	case *Collection:
+		return v.items("")
 	case nil, UndefinedValue:
 		js.throw("TypeError", nullishName(v)+" is not iterable", site)
 		return nil
@@ -780,6 +787,8 @@ func toPrimitiveHint(value any, hint string) any {
 		return v.toPrimitive(hint)
 	case *Date:
 		return v.toPrimitive(hint)
+	case *Collection:
+		return "[object " + v.kindName() + "]"
 	default:
 		return v
 	}

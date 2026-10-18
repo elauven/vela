@@ -127,6 +127,39 @@ func TestSSRDateTimeZoneDependentStaysRejected(t *testing.T) {
 	}
 }
 
+// TestSSRForOfChangingItsCollectionStaysRejected: for…of iterates the
+// items taken before the first iteration, so a body that adds or removes
+// items of the iterated array or collection is rejected.
+func TestSSRForOfChangingItsCollectionStaysRejected(t *testing.T) {
+	src := writeSSRModuleFixture(t, map[string]string{
+		"Walk.vela": `<script>
+  export let items = [1, 2];
+  function walk(xs) { const q = [...xs]; let n = 0; for (const x of q) { if (x < 3) q.push(x + 2); n += x; } return n; }
+  function drain(xs) { const s = new Set(xs); let n = 0; for (const x of s) { s.delete(x + 1); n += x; } return n; }
+  function copy(xs) { const out = []; for (const x of xs) out.push(x); return out.length; }
+</script>
+<template><p>{walk(items)} {drain(items)} {copy(items)}</p></template>
+`,
+	})
+	out := filepath.Join(filepath.Dir(src), "out")
+	report := filepath.Join(out, "report.json")
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/walk/server", SSRReport: report}
+	buildSSRProject(collectVela(src), src, out, opts, false)
+	data, err := os.ReadFile(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{`walk has no server-native translation: the body of for…of changes \"q\"`, `drain has no server-native translation: the body of for…of changes \"s\"`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("report lacks %s\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, `copy has no`) {
+		t.Errorf("copy() must translate:\n%s", text)
+	}
+}
+
 // TestSSRLabelledJumpsAcrossTryStayRejected: break and continue, labelled
 // or not, cannot leave a try part, whose statements run in a closure.
 func TestSSRLabelledJumpsAcrossTryStayRejected(t *testing.T) {

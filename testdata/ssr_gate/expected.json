@@ -91,7 +91,7 @@
             "attribute#5": "server-native",
             "attribute#6": "server-native",
             "attribute#7": "server-native",
-            "each#1": "unsupported",
+            "each#1": "server-native",
             "each#2": "unsupported",
             "each-key#1": "server-native",
             "each-key#2": "server-native",

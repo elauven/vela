@@ -324,6 +324,15 @@ panics.
   without an offset or in another format fail the render with
   `VELA-SSR-UNSUPPORTED` when reached, which `catch` does not receive. A
   Date in `$state` is omitted from the payload and recomputed by the client.
+- **T-6.6f Map and Set.** Collections keep insertion order and compare
+  keys with SameValueZero; objects, arrays, Dates and collections are keys
+  by identity. A collection a translated function created during the render
+  may change (`set`, `add`, `delete`, `clear`), checked at run time; any
+  other fails the render with `VELA-SSR-IMPURE`. `forEach` sees the changes
+  made during the iteration; `for…of` iterates the entries taken before
+  the first iteration, so a loop body that changes the collection it
+  iterates is `unsupported`. A collection in `$state` is omitted from the
+  payload and recomputed by the client.
 - **T-6.6d Initialization order.** Prop defaults, then `$state` initializers,
   then `$derived` values evaluate once, in script declaration order — the
   same order as client initialization. `$state(prop)` and `$derived` over

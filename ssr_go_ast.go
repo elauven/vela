@@ -518,6 +518,8 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	jsMethod("NewDate", []*types.Var{v("site", stringType), v("value", anyType)}, anyType)
 	jsMethod("DateParse", []*types.Var{v("site", stringType), v("text", anyType)}, floatT)
 	ssrRuntimeAddVariadicFunc(pkg, "DateUTC", []*types.Var{v("args", anySlice)}, []*types.Var{v("", floatT)})
+	jsMethod("NewCollection", []*types.Var{v("site", stringType), v("set", boolT), v("local", boolT), v("iterable", anyType)}, anyType)
+	jsMethod("MapGroupBy", []*types.Var{v("site", stringType), v("items", anyType), v("callback", anyType), v("local", boolT)}, anyType)
 	jsMethod("ObjectGroupBy", []*types.Var{v("site", stringType), v("items", anyType), v("callback", anyType)}, anyType)
 	ssrRuntimeAddFunc(pkg, "ObjectFreeze", []*types.Var{v("value", anyType)}, []*types.Var{v("", anyType)})
 	jsMethod("ObjectIsFrozen", []*types.Var{v("site", stringType), v("value", anyType)}, boolT)

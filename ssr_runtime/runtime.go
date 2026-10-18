@@ -361,6 +361,9 @@ func String(value any) string {
 	if date, ok := value.(*Date); ok {
 		return String(date.toPrimitive("string"))
 	}
+	if collection, ok := value.(*Collection); ok {
+		return "[object " + collection.kindName() + "]"
+	}
 	if _, undefined := value.(UndefinedValue); undefined {
 		return "undefined"
 	}

@@ -41,6 +41,10 @@ func (js *JS) Method(site string, receiver any, name string, args ...any) any {
 		if result, ok := js.dateMethod(site, v, name, args); ok {
 			return result
 		}
+	case *Collection:
+		if result, ok := js.collectionMethod(site, v, name, args); ok {
+			return result
+		}
 	case bool:
 		if name == "toString" {
 			return String(v)
@@ -101,6 +105,8 @@ func HasMethod(receiver any, name string) bool {
 		return name == "toString" || name == "valueOf"
 	case *Date:
 		return dateMethodNames[name]
+	case *Collection:
+		return v.methodNames()[name]
 	case *Object:
 		_, ok := property(v, name).(Func)
 		return ok
@@ -197,6 +203,8 @@ func (js *JS) In(key, object any, site string) bool {
 		return promisePrototypeNames[name] || objectPrototypeNames[name]
 	case *Date:
 		return dateMethodNames[name] || datePrototypeNames[name] || name == "constructor" || objectPrototypeNames[name]
+	case *Collection:
+		return v.methodNames()[name] || collectionPrototypeNames[name] || objectPrototypeNames[name]
 	case Func:
 		js.fail(&RenderError{Kind: "Error", Message: "the in operator on a function value is not supported during server rendering", Site: site})
 		return false
@@ -232,6 +240,8 @@ func (js *JS) ArrayIterItems(receiver any, name, site string) []any {
 			}
 		}
 		return out
+	case *Collection:
+		return v.items(name)
 	case *Object:
 		if fn, ok := property(v, name).(Func); ok {
 			return js.SpreadItems(fn(receiver), site)
@@ -350,6 +360,8 @@ func (js *JS) StructuredClone(site string, value any) any {
 			return out, true
 		case *Date:
 			return &Date{time: v.time, js: js}, true
+		case *Collection:
+			return v.clone(js, clone)
 		case Func:
 			js.throw("DataCloneError", "function could not be cloned.", site)
 		case *Promise:
@@ -991,6 +1003,8 @@ func (js *JS) ArrayFrom(site string, source any, mapFn any) any {
 		items = codePoints(v)
 	case []any:
 		items = unholed(append([]any{}, v...))
+	case *Collection:
+		items = v.items("")
 	case *Object:
 		length := toIntegerOrInfinity(property(v, "length"))
 		for i := 0; i < int(math.Min(length, 1<<24)); i++ {
@@ -1074,7 +1088,7 @@ func (js *JS) stringify(site string, b *strings.Builder, key string, value any, 
 		quoteJSON(b, v)
 	case Func:
 		return false
-	case *Promise:
+	case *Promise, *Collection:
 		b.WriteString("{}")
 	case []any:
 		key := fmt.Sprintf("%p", v)

@@ -327,6 +327,18 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `d1 - d2`, `d1 < d2`, `+d` | `vela.ToNumber` (hint "number") | T-6.4c | The time value; `===` compares identity. | `date` | implemented |
 | `String(d)`, `` `${d}` ``, `d + ''`, `d.toString()`, text of a Date in the template | fails the render | T-6.6e | Local time: the server and the browser format it in different time zones. Fails the render as `VELA-SSR-UNSUPPORTED`; use `toISOString()` or the `getUTC…` methods. | — | never |
 | `Date.now()`, `new Date()`, local getters and setters (`getFullYear`, `getHours`, `setDate`, …), `getTimezoneOffset`, `toDateString`, `toTimeString`, `toUTCString`, `toLocale…` | host / `{#client}` | T-6.6c | The clock and the time zone of the machine (decision of §5). | — | never |
+
+### 2.11 Map and Set
+
+| Built-in | Go helper | Rule | Divergence / required edge cases | Oracles | Status |
+| --- | --- | --- | --- | --- | --- |
+| `new Map(iterable)`, `new Set(iterable)` | `ssrJS.NewCollection` | T-6.6f | Insertion order; keys compared with SameValueZero (`NaN` equals `NaN`, `-0` is stored as `+0`), objects, arrays, Dates and collections by identity. A Map entry that is not an object throws `TypeError`. A function or a Go struct as a key fails the render (`VELA-SSR-UNSUPPORTED`). | `collections` | implemented |
+| `get`, `has`, `size`, `forEach` | `ssrJS.Method` | T-6.6f | `forEach(fn(value, key, collection))` visits the entries added during the iteration and skips the deleted ones; a Set passes the value as the key. | `collections` | implemented |
+| `set`, `add`, `delete`, `clear` | `ssrJS.Method` | T-6.6b, T-6.6f | Admitted on a collection a translated function created during the render, checked at run time; on any other (state, a module value) `VELA-SSR-IMPURE`. A deleted and added again key moves to the end. | `collections` | implemented |
+| iteration: `for…of`, spread, `Array.from`, `keys()`, `values()`, `entries()` | `ssrJS.SpreadItems`, `ssrJS.ArrayIterItems` | T-6.6f | A Map iterates `[key, value]` pairs, a Set its values (`entries()` gives `[value, value]`); `keys()`, `values()` and `entries()` only where they are consumed at once, as for arrays. `for…of` takes the entries before the first iteration, so a loop body that adds or removes items of the collection it iterates is rejected. | `collections` | implemented |
+| `Map.groupBy(items, fn)` | `ssrJS.MapGroupBy` | T-6.6f | Keys are `fn(item, index)` compared with SameValueZero, in the order they first appear. | `collections` | implemented |
+| text, JSON, `structuredClone` of a collection | `vela.String`, `ssrJS.JSONStringify`, `ssrJS.StructuredClone` | T-6.6f | `String(map)` is `[object Map]`, `JSON.stringify(map)` is `{}`; `structuredClone` copies keys and values. A collection in `$state` is omitted from the payload and recomputed by the client (decision of §5). | `collections` | implemented |
+| `WeakMap`, `WeakSet` | host | — |  | — | never |
 ---
 
 ## 3. Never native
@@ -347,7 +359,7 @@ instead. All are `never` and produce a diagnostic that names the route.
 | `localStorage`, `sessionStorage`, `indexedDB`, `document.cookie` | `{#client}`; request cookies through host and `ctx` | §9, H-8.3c | Browser state. |
 | `IntersectionObserver`, `ResizeObserver`, `MutationObserver`, `Worker` | `{#client}` | §9 | Browser APIs. |
 | `Promise.race`, `Promise.any`, `new Promise(executor)` | host or `{#client}` | T-7.4d | Timing. |
-| `Map`, `Set`, `WeakMap`, `WeakSet` | host | — | Not in v1; see §5. |
+| `WeakMap`, `WeakSet` | host | — | Not in v1; `Map` and `Set` are native (§2.11). |
 | `BigInt`, `Symbol`, typed arrays, `ArrayBuffer`, `DataView` | host | — | Not in v1. |
 | `Proxy`, `Reflect`, `eval`, `Function` constructor, dynamic `import()`, `with` | rejected | §6.2 | No faithful translation. |
 | imports from npm packages | host or `{#client}` | T-7.3c | |
@@ -389,7 +401,7 @@ Each needs a product decision before the slice that implements it.
 | Item | Options | Needed by |
 | --- | --- | --- |
 | `console.*` in region code | **decided 2026-10-07:** forward to the observer of `vela.WithConsoleObserver(ctx, f)`; nothing without one | S5 (done) |
-| `Map` / `Set` native support | host-only in v1 (current), native after beta | after beta |
+| `Map` / `Set` native support | **decided 2026-10-18:** native (§2.11); a collection in `$state` is omitted from the payload and the client evaluates the initializer, because JSON has no form for it (`{}`) | S8 (done) |
 | `Date` and the time zone | **decided 2026-10-18:** UTC operations are native (§2.10); local-time methods, text conversion and date-time strings without an offset do not take a time zone from `ctx` (no `vela.WithTimeZone`): the browser formats in its own zone, so a server zone would still differ; they keep the host or `{#client}` route, and a text conversion reached at run time fails the render (`VELA-SSR-UNSUPPORTED`) | S8 (done) |
 | A `Date` in `$state` | **decided 2026-10-18:** omitted from the payload, the client evaluates the initializer (an ISO string would arrive as a string, not a Date); the same for state that holds an object with methods or accessors | S8 (done) |
 | Transcendental `Math` functions (`log`, `exp`, `sin`, …) | **decided 2026-10-07:** exact V8 results, ports of the fdlibm functions V8 uses (Go `math` was measured beyond 1 ulp and wrong for subnormal logarithms) | S5 (done) |

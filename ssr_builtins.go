@@ -47,6 +47,8 @@ var ssrBuiltinMethods = map[string]ssrIRFacts{
 	"setTime": {Number: true}, "setUTCFullYear": {Number: true}, "setUTCMonth": {Number: true},
 	"setUTCDate": {Number: true}, "setUTCHours": {Number: true}, "setUTCMinutes": {Number: true},
 	"setUTCSeconds": {Number: true}, "setUTCMilliseconds": {Number: true},
+	// Map and Set (§2.11).
+	"get": {}, "set": {}, "has": {Bool: true}, "add": {}, "delete": {Bool: true}, "clear": {},
 }
 
 // ssrDateSetters change the Date they are called on: admitted on a date the
@@ -101,6 +103,8 @@ var ssrBuiltinGlobals = map[string]ssrBuiltinGlobal{
 	// §2.10
 	"Date.UTC":   {Helper: "DateUTC", Args: -1, Facts: ssrIRFacts{Number: true}},
 	"Date.parse": {Helper: "DateParse", JS: true, Args: 1, Facts: ssrIRFacts{Number: true}},
+	// §2.11; the compiler adds whether a translated function creates the Map.
+	"Map.groupBy": {Helper: "MapGroupBy", JS: true, Args: 2},
 	// §2.3
 	"Array.from": {Helper: "ArrayFrom", JS: true, Args: 2},
 	"Array.of":   {Helper: "ArrayOf", Args: -1, Facts: ssrIRFacts{Array: true}},
@@ -338,6 +342,9 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 			lowered = append([]goast.Expr{ssrGoString(b.site)}, lowered...)
 			b.usedJS, b.throws = true, true
 		}
+		if name == "Map.groupBy" {
+			lowered = append(lowered, goast.NewIdent(strconv.FormatBool(b.funcCompiler != nil)))
+		}
 		if name == "Object.assign" {
 			if len(call.Args) == 0 {
 				return nil, true, ssrExprUnsupported(pos, "Object.assign needs a target")
@@ -574,7 +581,8 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 					builtin = true
 				}
 				if property, ok := member.Prop.(*JsIdent); ok && !member.Computed {
-					if _, method := ssrBuiltinMethods[property.Name]; method && property.Name != "concat" {
+					// concat, set and add keep their arguments in the result.
+					if _, method := ssrBuiltinMethods[property.Name]; method && property.Name != "concat" && property.Name != "set" && property.Name != "add" {
 						builtin = true
 					}
 				}

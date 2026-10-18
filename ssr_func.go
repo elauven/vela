@@ -1208,6 +1208,11 @@ func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+	if name := identName(s.Right); s.IsOf && name != "" && ssrChangesCollection(s.Body, name) {
+		// The loop iterates the items taken before the first iteration; in
+		// JavaScript it also visits what the body adds.
+		return nil, c.fail("the body of for…of changes %q, the array or collection it iterates, which is not supported during server rendering", name)
+	}
 	c.scopes = append(c.scopes, map[string]string{})
 	defer func() { c.scopes = c.scopes[:len(c.scopes)-1] }()
 	item := c.declare("$item")
@@ -1238,6 +1243,27 @@ func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
 	}
 	loop := &goast.RangeStmt{Key: goast.NewIdent("_"), Value: goast.NewIdent(item), Tok: token.DEFINE, X: items, Body: &goast.BlockStmt{List: append(bind, inner...)}}
 	return []goast.Stmt{labeled(labels, loop), c.unwind()}, nil
+}
+
+// ssrCollectionChanges are the methods that add or remove items of an
+// array, a Map, or a Set.
+var ssrCollectionChanges = map[string]bool{"push": true, "pop": true, "shift": true, "unshift": true, "splice": true, "set": true, "add": true, "delete": true, "clear": true}
+
+// ssrChangesCollection reports a call name.m(…) in body that adds or
+// removes items of name.
+func ssrChangesCollection(body JsNode, name string) bool {
+	changes := false
+	WalkNode(body, func(n JsNode) bool {
+		if call, ok := n.(*JsCallExpr); ok {
+			if member, ok := call.Callee.(*JsMemberExpr); ok && !member.Computed && identName(member.Obj) == name {
+				if property, ok := member.Prop.(*JsIdent); ok && ssrCollectionChanges[property.Name] {
+					changes = true
+				}
+			}
+		}
+		return !changes
+	})
+	return changes
 }
 
 // switchStatement matches with === in order; a case body without break,
@@ -1467,8 +1493,11 @@ func (b *ssrIRBuilder) newError(node *JsNewExpr, pos int) (SSRIRExpr, error) {
 	if ok && callee.Name == "Date" && !b.shadowedGlobal("Date") {
 		return b.newDate(node, pos)
 	}
+	if ok && (callee.Name == "Map" || callee.Name == "Set") && !b.shadowedGlobal(callee.Name) {
+		return b.newCollection(callee.Name, node, pos)
+	}
 	if !ok || (callee.Name != "Error" && callee.Name != "TypeError" && callee.Name != "RangeError") {
-		return nil, ssrExprUnsupported(pos, "new is admitted only for Error, TypeError, RangeError, and Date (§6.2)")
+		return nil, ssrExprUnsupported(pos, "new is admitted only for Error, TypeError, RangeError, Date, Map, and Set (§6.2)")
 	}
 	var message SSRIRExpr = &ssrIRUndefined{ssrIRBase: b.base(pos, ssrIRFacts{})}
 	if len(node.Args) > 0 {
@@ -1502,6 +1531,32 @@ func (b *ssrIRBuilder) newDate(node *JsNewExpr, pos int) (SSRIRExpr, error) {
 	}
 	b.usedJS, b.throws = true, true
 	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "NewDate"), Args: []goast.Expr{ssrGoString(b.site), lowerSSRIR(value)}}}, nil
+}
+
+// newCollection lowers new Map(iterable) and new Set(iterable) (T-6.6f). A
+// collection a translated function creates may change (T-6.6b).
+func (b *ssrIRBuilder) newCollection(kind string, node *JsNewExpr, pos int) (SSRIRExpr, error) {
+	if !b.js {
+		return nil, ssrExprUnsupported(pos, "new %s is available only in translated script code", kind)
+	}
+	if len(node.Args) > 1 {
+		return nil, ssrExprUnsupported(pos, "new %s takes one iterable", kind)
+	}
+	var iterable goast.Expr = ssrUndefined()
+	if len(node.Args) == 1 {
+		if _, spread := node.Args[0].(*JsSpreadExpr); spread {
+			return nil, ssrExprUnsupported(pos, "spread arguments to new %s are not supported", kind)
+		}
+		value, err := b.iterable(node.Args[0], pos)
+		if err != nil {
+			return nil, err
+		}
+		iterable = lowerSSRIR(value)
+	}
+	b.usedJS, b.throws = true, true
+	set := goast.NewIdent(strconv.FormatBool(kind == "Set"))
+	local := goast.NewIdent(strconv.FormatBool(b.funcCompiler != nil))
+	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "NewCollection"), Args: []goast.Expr{ssrGoString(b.site), set, local, iterable}}}, nil
 }
 
 var _ = fmt.Sprintf
