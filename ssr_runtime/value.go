@@ -100,6 +100,17 @@ type Object struct {
 	// valueOf property, or throw TypeError when it finds no primitive
 	// (OrdinaryToPrimitive); the exception is recorded here.
 	js *JS
+	// local marks an object that a translated function created during this
+	// render: its methods may write properties through this (T-6.6b).
+	local bool
+	// accessors is set once a property is defined by a getter or setter.
+	accessors bool
+}
+
+// accessor is the value of a property defined by a getter and/or a
+// setter ({ get x() {}, set x(v) {} }).
+type accessor struct {
+	get, set Func
 }
 
 // objectIndexKeys is the size above which an object gets a key index.
@@ -111,6 +122,9 @@ func NewObject() *Object { return &Object{} }
 // NewObject returns an empty object created by translated code of this
 // render.
 func (js *JS) NewObject() *Object { return &Object{js: js} }
+
+// LocalObject returns an empty object created by a translated function.
+func (js *JS) LocalObject() *Object { return &Object{js: js, local: true} }
 
 // find returns the position of key, or -1.
 func (o *Object) find(key string) int {
@@ -128,17 +142,70 @@ func (o *Object) find(key string) int {
 	return -1
 }
 
-// Set defines or replaces a property and returns the object, so a literal
-// lowers to one expression.
+// Set assigns a property and returns the object, so a literal lowers to
+// one expression. A property with a setter calls it; one with only a
+// getter throws TypeError (module code is strict).
 func (o *Object) Set(key string, value any) *Object {
 	if o.hasMessage && key == "message" {
 		o.message = value
 		return o
 	}
 	if i := o.find(key); i >= 0 {
+		if property, ok := o.vals[i].(*accessor); ok {
+			if property.set == nil {
+				o.js.throw("TypeError", fmt.Sprintf("Cannot set property %s of #<Object> which has only a getter", key), "")
+				return o
+			}
+			property.set(o, value)
+			return o
+		}
 		o.vals[i] = value
 		return o
 	}
+	return o.add(key, value)
+}
+
+// Define defines a data property of an object literal: a later property of
+// the same name replaces an accessor and keeps the first position.
+func (o *Object) Define(key string, value any) *Object {
+	if i := o.find(key); i >= 0 {
+		o.vals[i] = value
+		return o
+	}
+	return o.add(key, value)
+}
+
+// DefineGetter and DefineSetter define the accessor halves of an object
+// literal's get x() {} and set x(v) {}.
+func (o *Object) DefineGetter(key string, get Func) *Object {
+	return o.defineAccessor(key, get, nil)
+}
+
+func (o *Object) DefineSetter(key string, set Func) *Object {
+	return o.defineAccessor(key, nil, set)
+}
+
+func (o *Object) defineAccessor(key string, get, set Func) *Object {
+	o.accessors = true
+	if i := o.find(key); i >= 0 {
+		property, ok := o.vals[i].(*accessor)
+		if !ok {
+			property = &accessor{}
+			o.vals[i] = property
+		}
+		if get != nil {
+			property.get = get
+		}
+		if set != nil {
+			property.set = set
+		}
+		return o
+	}
+	return o.add(key, &accessor{get: get, set: set})
+}
+
+// add appends a new property.
+func (o *Object) add(key string, value any) *Object {
 	if o.keys == nil {
 		// Most translated objects are literals of a few properties.
 		o.keys, o.vals = make([]string, 0, 8), make([]any, 0, 8)
@@ -157,18 +224,32 @@ func (o *Object) Set(key string, value any) *Object {
 	return o
 }
 
-// entries returns the keys and their values in enumeration order (Keys).
-// Without integer-like keys these are the object's own slices: read only.
+// entries returns the keys and their values in enumeration order (Keys),
+// getters called. Without integer-like keys or accessors these are the
+// object's own slices: read only.
 func (o *Object) entries() ([]string, []any) {
 	keys := o.Keys()
-	if len(keys) > 0 && len(o.keys) > 0 && &keys[0] == &o.keys[0] {
+	if len(keys) > 0 && len(o.keys) > 0 && &keys[0] == &o.keys[0] && !o.accessors {
 		return keys, o.vals
 	}
 	vals := make([]any, len(keys))
 	for i, key := range keys {
-		vals[i] = o.vals[o.find(key)]
+		vals[i] = o.read(o.vals[o.find(key)])
 	}
 	return keys, vals
+}
+
+// read returns the value of a property: its getter's result for an
+// accessor (undefined without a getter).
+func (o *Object) read(value any) any {
+	property, ok := value.(*accessor)
+	if !ok {
+		return value
+	}
+	if property.get == nil {
+		return Undefined()
+	}
+	return property.get(o)
 }
 
 // Spread copies the own enumerable properties of value, as {...value}
@@ -188,7 +269,7 @@ func (o *Object) Spread(value any) *Object {
 	case *Object:
 		keys, vals := source.entries()
 		for i, key := range keys {
-			o.Set(key, vals[i])
+			o.Define(key, vals[i])
 		}
 		if o.js == nil {
 			o.js = source.js
@@ -197,10 +278,10 @@ func (o *Object) Spread(value any) *Object {
 	return o
 }
 
-// Lookup returns a property and whether it exists.
+// Lookup returns a property, its getter called, and whether it exists.
 func (o *Object) Lookup(key string) (any, bool) {
 	if i := o.find(key); i >= 0 {
-		return o.vals[i], true
+		return o.read(o.vals[i]), true
 	}
 	if o.errorName != "" {
 		// Error.prototype gives name, and message "" when none was given.
@@ -719,7 +800,7 @@ func (o *Object) toPrimitive(hint string) any {
 		if !ok {
 			continue
 		}
-		result := jsValue(fn())
+		result := jsValue(fn(o))
 		if o.js.Failed() {
 			return Undefined()
 		}

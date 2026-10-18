@@ -52,7 +52,7 @@ func TestSetMemberAndCall(t *testing.T) {
 		t.Fatal("growing an array must fail")
 	}
 	js = NewJS()
-	if js.Call("s", Func(func(args ...any) any { return Arg(args, 1) }), 1.0) != Undefined() {
+	if js.Call("s", Func(func(_ any, args ...any) any { return Arg(args, 1) }), 1.0) != Undefined() {
 		t.Fatal("missing argument must be undefined")
 	}
 	js.Call("s", 3.0)

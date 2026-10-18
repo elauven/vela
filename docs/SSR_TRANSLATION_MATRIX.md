@@ -75,7 +75,7 @@ disagree, the contract wins and the row is a bug.
 | `obj[key]` | native | slice index / field / object lookup | `ssrJS.Index` | T-6.5b | member-computed | implemented | Any receiver and key, with JavaScript property-key conversion. |
 | `.length` of string | native | UTF-16 length | `ssrJS.Length` | T-6.3a | strings-length | implemented | `null.length` throws `TypeError`; an object without `length` yields `undefined`. |
 | `.length` of array | native | `len(x)` | `ssrJS.Length` | — | strings-length | implemented | |
-| `a?.b`, `a?.[k]`, `f?.()`, `a.b?.()` | native | nil/undefined check, then access | `vela.OptionalChain` with lazy rest, `ssrJS.OptionalMethod` | T-6.1b | ops-optional, ops-optional-call | implemented | After a nullish link the rest of the chain, method calls included, is not evaluated (`a?.b.trim()` is `undefined`); parentheses end the chain (`(a?.b).c` throws). `f?.()` calls a function value; arguments are evaluated only when the callee is not nullish, and a non-callable callee throws `TypeError`. `a.b?.()` admits catalogue methods: a name the receiver kind does not have (`"x".join`) is `undefined`. Calling functions stored in object properties waits for task 057. |
+| `a?.b`, `a?.[k]`, `f?.()`, `a.b?.()` | native | nil/undefined check, then access | `vela.OptionalChain` with lazy rest, `ssrJS.OptionalMethod` | T-6.1b | ops-optional, ops-optional-call | implemented | After a nullish link the rest of the chain, method calls included, is not evaluated (`a?.b.trim()` is `undefined`); parentheses end the chain (`(a?.b).c` throws). `f?.()` calls a function value; arguments are evaluated only when the callee is not nullish, and a non-callable callee throws `TypeError`. `a.b?.()` admits catalogue methods: a name the receiver kind does not have (`"x".join`) is `undefined`. Calling functions stored in object properties: T-7.1c. |
 
 ### 1.3 Operators
 
@@ -110,7 +110,7 @@ disagree, the contract wins and the row is a bug.
 | array spread `[...a]` | native | `vela.JoinArrays` + `ssrJS.SpreadItems` | same | §6.2 | arrays-spread | implemented | Strings spread by code point; spreading `null` throws `TypeError`. |
 | object literal | native | `*vela.Object` | `*vela.Object` | T-5.1c | objects-order, obj-computed | implemented | Computed keys `{ [k]: v }` with ToPropertyKey (`vela.PropertyKey`), key before value. Insertion order with JavaScript key ordering, observed through the payload (`testdata/ssr_init_oracle.json`). A closed-shape struct lowering is an optimisation not done yet. |
 | object spread `{...o}` | native | `(*vela.Object).Spread` | same | T-5.1c | objects-spread | implemented | |
-| object methods, getters/setters | rejected | — | — | §6.2 | — | never | v1. |
+| object methods, getters/setters, functions in properties, `o.m()` | native | `vela.Func` with `this`; `(*vela.Object).DefineGetter` / `DefineSetter`; `ssrJS.Method` | same | T-7.1c | obj-methods | implemented | `o.m(…)` calls a function stored in a property with `o` as `this`; a value without that function throws `TypeError`. A getter runs on every read (`Object.keys` lists it, spread, `JSON.stringify` and `Object.values` read it), a setter on assignment; assigning a property with only a getter throws `TypeError`. A later data property of the literal replaces an accessor. Names of built-in methods the server does not model (`test`, `match`, `localeCompare`, `keys`/`entries`/`values` outside `for…of`, `call`/`apply`/`bind`, `Date` methods) keep their diagnostic. State that holds an object with methods or accessors is not in the payload: the client evaluates its initializer (S-6.3). |
 | destructuring (declarations, parameters, defaults, rest) | native | Go locals | same | §7.1 | stmt-destructure, stmt-destructure-rest | implemented | Array patterns iterate as `for…of` (string code points, holes as `undefined`, `TypeError` for other values); a rest element copies the remaining items, a rest property the remaining own enumerable keys in T-5.1c order. Rest parameters `(...xs)`. Computed keys `{ [k]: v }` are evaluated before their value. |
 | arrow function as local value, argument, or callback prop | native | `vela.Func` closure | same | §7.1 | fn-closures | implemented | A function value created in a template defers writes to state, props, or module bindings to a run-time `VELA-SSR-IMPURE` error, raised only if the render calls it (an event callback passed as a prop is never called). |
 | arrow function as built-in callback | native | `vela.Func` closure called by the built-in | same | T-7.2b | arr-callbacks | implemented | Callback parameters are dynamic; typed element parameters come with the typed variants (T-7.2a). |
@@ -120,7 +120,8 @@ disagree, the contract wins and the row is a bug.
 | recursion | native | Go recursion | same | T-7.1b | fn-recursion | implemented | |
 | call bound by `//vela:host` | host | `vela.CallHost` (reflection; §8.4 conversions) | same | §8 | host-e2e | partial | Functions of components and of local `.js` modules, and parameterless hosts for module values (§8.7). Covered by Go end-to-end tests (`TestSSRHost*`); the host fixture tooling of V-11.3e is not done. |
 | `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | native | `vela.NewError(kind, m)` | same | §6.2 | errors-new | implemented | |
-| other `new`, `this`, `class` | rejected | — | — | §6.2 | — | never | v1. |
+| `this` | native | the `this` parameter of `vela.Func` | same | T-7.1c | obj-methods | implemented | The receiver of a method call; `undefined` in a plain call, in callbacks of built-ins and outside functions (module code is strict); an arrow function keeps the enclosing function's. Writes through `this` are admitted on an object a translated function created during the render, otherwise `VELA-SSR-IMPURE` at run time. |
+| other `new`, `class` | rejected | — | — | §6.2 | — | never | v1. |
 | regular expression literal | host | — | — | §3 | — | never | See §3. |
 
 ### 1.5 Statements
@@ -336,7 +337,7 @@ instead. All are `never` and produce a diagnostic that names the route.
 | `BigInt`, `Symbol`, typed arrays, `ArrayBuffer`, `DataView` | host | — | Not in v1. |
 | `Proxy`, `Reflect`, `eval`, `Function` constructor, dynamic `import()`, `with` | rejected | §6.2 | No faithful translation. |
 | imports from npm packages | host or `{#client}` | T-7.3c | |
-| `class`, `this`, generators | rejected | §6.2, §7.1 | Not in v1. |
+| `class`, generators | rejected | §6.2, §7.1 | Not in v1. |
 
 ---
 

@@ -447,10 +447,13 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 
 	// Translated functions (ssr_runtime/func.go).
 	funcName := types.NewTypeName(token.NoPos, pkg, "Func", nil)
-	funcSig := types.NewSignatureType(nil, nil, nil, types.NewTuple(v("args", anySlice)), types.NewTuple(v("", anyType)), true)
+	funcSig := types.NewSignatureType(nil, nil, nil, types.NewTuple(v("this", anyType), v("args", anySlice)), types.NewTuple(v("", anyType)), true)
 	funcType := types.NewNamed(funcName, funcSig, nil)
 	pkg.Scope().Insert(funcName)
 	_ = funcType
+	objectType.AddMethod(types.NewFunc(token.NoPos, pkg, "Define", types.NewSignatureType(objectRecv, nil, nil, types.NewTuple(v("key", stringType), v("value", anyType)), types.NewTuple(v("", objectPtr)), false)))
+	objectType.AddMethod(types.NewFunc(token.NoPos, pkg, "DefineGetter", types.NewSignatureType(objectRecv, nil, nil, types.NewTuple(v("key", stringType), v("get", funcType)), types.NewTuple(v("", objectPtr)), false)))
+	objectType.AddMethod(types.NewFunc(token.NoPos, pkg, "DefineSetter", types.NewSignatureType(objectRecv, nil, nil, types.NewTuple(v("key", stringType), v("set", funcType)), types.NewTuple(v("", objectPtr)), false)))
 	ssrRuntimeAddFunc(pkg, "Arg", []*types.Var{v("args", anySlice), v("i", types.Typ[types.Int])}, []*types.Var{v("", anyType)})
 	ssrRuntimeAddFunc(pkg, "PropertyKey", []*types.Var{v("key", anyType)}, []*types.Var{v("", stringType)})
 	ssrRuntimeAddFunc(pkg, "ForInKeys", []*types.Var{v("value", anyType)}, []*types.Var{v("", anySlice)})
@@ -461,6 +464,8 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	jsMethod("Catch", []*types.Var{v("ctx", contextT)}, anyType)
 	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "Call", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("fn", anyType), v("args", anySlice)), types.NewTuple(v("", anyType)), true)))
 	jsMethod("SetMember", []*types.Var{v("object", anyType), v("key", anyType), v("value", anyType), v("site", stringType)}, anyType)
+	jsMethod("SetThis", []*types.Var{v("this", anyType), v("key", anyType), v("value", anyType), v("site", stringType)}, anyType)
+	jsMethod("LocalObject", nil, objectPtr)
 	part := types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(v("", anyType), v("", boolT)), false)
 	catchPart := types.NewSignatureType(nil, nil, nil, types.NewTuple(v("error", anyType)), types.NewTuple(v("", anyType), v("", boolT)), false)
 	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, "Try", types.NewSignatureType(nil, nil, nil, types.NewTuple(

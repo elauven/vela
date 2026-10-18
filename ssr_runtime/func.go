@@ -15,7 +15,7 @@ import (
 // pending exception (T-6.5d).
 
 // Func is a translated JavaScript function value.
-type Func func(args ...any) any
+type Func func(this any, args ...any) any
 
 // Arg returns argument i, or undefined when the call passed fewer.
 func Arg(args []any, i int) any {
@@ -137,7 +137,7 @@ func Try(js *JS, ctx context.Context, try func() (any, bool), catch func(error a
 // Call calls a function value (`f(x)` where f is a value).
 func (js *JS) Call(site string, fn any, args ...any) any {
 	if function, ok := fn.(Func); ok {
-		return function(args...)
+		return function(Undefined(), args...)
 	}
 	return js.throw("TypeError", fmt.Sprintf("%s is not a function", describe(jsValue(fn))), site)
 }
@@ -154,6 +154,16 @@ func (js *JS) SetMember(object, key, value any, site string) any {
 	case *Object:
 		if target.js == nil {
 			target.js = js
+		}
+		// The compiler admits this write only on an object the function
+		// created (T-6.6b), so its methods may write through this.
+		target.local = true
+		if i := target.find(name); i >= 0 {
+			if _, ok := target.vals[i].(*accessor); ok {
+				// A setter runs even on a frozen object.
+				target.Set(name, value)
+				return value
+			}
 		}
 		if target.frozen {
 			if target.find(name) >= 0 {
@@ -178,6 +188,30 @@ func (js *JS) SetMember(object, key, value any, site string) any {
 		return js.throw("TypeError", fmt.Sprintf("Cannot set properties of %s (setting '%s')", nullishName(object), name), site)
 	}
 	return value
+}
+
+// SetThis assigns this[key] = value in a translated function. The write
+// is admitted on an object a translated function created during this render
+// (T-6.6b); an object of state, props, or a module fails the render with
+// VELA-SSR-IMPURE. A primitive or nullish this throws TypeError.
+func (js *JS) SetThis(this, key, value any, site string) any {
+	if js.Failed() {
+		return Undefined()
+	}
+	name := propertyKey(key)
+	switch target := this.(type) {
+	case *Object:
+		if !target.local {
+			return js.Impure(fmt.Sprintf("a method writes property %q of an object that a translated function did not create during this render (T-6.6b)", name), site)
+		}
+		return js.SetMember(target, name, value, site)
+	case []any:
+		return js.Impure(fmt.Sprintf("a method writes property %q of an array (T-6.6b)", name), site)
+	}
+	if nullish(this) {
+		return js.throw("TypeError", fmt.Sprintf("Cannot set properties of %s (setting '%s')", nullishName(this), name), site)
+	}
+	return js.throw("TypeError", fmt.Sprintf("Cannot create property '%s' on %s '%s'", name, TypeOf(this), String(jsValue(this))), site)
 }
 
 // NewError creates an error object: new Error(message), new TypeError(…).

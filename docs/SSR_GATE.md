@@ -18,14 +18,14 @@ outcomes fails CI; a regression can only be recorded with a decision in
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | examples | 24 | 14 | 14 | 0 | 0 | VELA-SSR-EXPR ×9, VELA-SSR-HOST-MISSING ×1 |
 | ssr-host | 1 | 1 | 1 | 0 | 0 |  |
-| qdash | 6 | 2 | 2 | 0 | 0 | VELA-SSR-EXPR ×1, VELA-SSR-HOST-MISSING ×3 |
+| qdash | 6 | 2 | 2 | 0 | 0 | VELA-SSR-HOST-MISSING ×4 |
 | qpage-builder | 27 | 19 | 19 | 0 | 0 | VELA-SSR-CHILD ×2, VELA-SSR-EXPR ×3, VELA-SSR-HOST-MISSING ×3 |
 | qwen-dashboard | 4 | 1 | 1 | 0 | 0 | VELA-SSR-HOST-MISSING ×3 |
 | gpt-todo | 1 | 1 | 1 | 0 | 0 |  |
 | deepseek-fixed | 1 | 1 | 1 | 0 | 0 |  |
 | gpt-fixed | 1 | 1 | 1 | 0 | 0 |  |
 | qwen-fixed | 2 | 1 | 0 | 1 | 0 | VELA-SSR-HOST-MISSING ×1 |
-| **total** | 67 | 41 | 40 | 1 | 0 | VELA-SSR-CHILD ×2, VELA-SSR-EXPR ×13, VELA-SSR-HOST-MISSING ×11 |
+| **total** | 67 | 41 | 40 | 1 | 0 | VELA-SSR-CHILD ×2, VELA-SSR-EXPR ×12, VELA-SSR-HOST-MISSING ×12 |
 
 A component is not checked in the browser when its default props make
 the render throw (as the client would), or when its Go package cannot

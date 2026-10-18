@@ -235,7 +235,8 @@ panics.
 | `k in o` | Admitted on objects and arrays (own and prototype properties, as in Node 24); a primitive right operand throws `TypeError`. |
 | comma `(a, b)`, `void e` | Admitted; operands are evaluated left to right with their effects; `void` yields `undefined`. |
 | `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | Admitted; produce error objects with `name` from the prototype and a non-enumerable `message`; text conversion is `Error.prototype.toString`. |
-| other `new`, `this`, `class`, getters/setters, `delete`, `instanceof`, regex literals, tagged templates | `unsupported` in v1. |
+| object methods, getters/setters, `this`, `o.m()` | Admitted (T-7.1c). |
+| other `new`, `class`, `delete`, `instanceof`, regex literals, tagged templates | `unsupported` in v1. |
 
 ### 6.3 Strings
 
@@ -335,11 +336,20 @@ labels of loops, `switch` and blocks), `return`, `throw`, `try` / `catch`
 declarations, block scoping, `async` functions and `await` (§7.4).
 
 Not admitted in v1: generators and async generators, `for await`, classes,
-`with`, `eval`, `arguments`, `var` hoisting across blocks, getters/setters.
+`with`, `eval`, `arguments`, `var` hoisting across blocks.
 
 - **T-7.1a** A helper with several statements is translated as a Go function,
   not inlined. The current single-`return` inliner becomes an optimisation of
   this path.
+- **T-7.1c** A function value takes `this`: the receiver of a method call
+  `o.m(…)`, `undefined` in a plain call and in callbacks of built-ins
+  (module code is strict), the enclosing function's in an arrow function.
+  Object literal methods, functions stored in properties, getters and
+  setters are admitted; a getter runs on every read, a setter on
+  assignment, and assigning a property that has only a getter throws
+  `TypeError`. A write through `this` is admitted on an object a
+  translated function created during the render (T-6.6b, checked at run
+  time); on any other object it fails the render with `VELA-SSR-IMPURE`.
 - **T-7.1b** Recursion is allowed. Termination is the developer's
   responsibility, as in JavaScript.
 

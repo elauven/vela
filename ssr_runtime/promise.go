@@ -109,7 +109,7 @@ func (js *JS) Then(ctx context.Context, site string, value, onFulfilled, onRejec
 	promise := Resolve(value)
 	if promise.reason == nil {
 		if fn, ok := onFulfilled.(Func); ok {
-			return js.settle(func() any { return fn(promise.value) })
+			return js.settle(func() any { return fn(Undefined(), promise.value) })
 		}
 		return promise
 	}
@@ -118,7 +118,7 @@ func (js *JS) Then(ctx context.Context, site string, value, onFulfilled, onRejec
 	}
 	if fn, ok := onRejected.(Func); ok {
 		reason := js.reasonValue(ctx, promise.reason)
-		return js.settle(func() any { return fn(reason) })
+		return js.settle(func() any { return fn(Undefined(), reason) })
 	}
 	return promise
 }
@@ -136,7 +136,7 @@ func (js *JS) Finally(ctx context.Context, site string, value, onFinally any) an
 	}
 	promise := Resolve(value)
 	if fn, ok := onFinally.(Func); ok {
-		result := js.settle(func() any { return fn() })
+		result := js.settle(func() any { return fn(Undefined()) })
 		if result.reason != nil {
 			return result
 		}
@@ -238,6 +238,33 @@ var _ json.Marshaler = (*Promise)(nil)
 // array: null.
 func (Func) MarshalJSON() ([]byte, error) { return []byte("null"), nil }
 
+// clientOnlyValue reports a value that JSON cannot restore: a promise, a
+// function, an accessor, or an array or object that holds one (an object
+// with methods would arrive without them).
+func clientOnlyValue(value any, seen map[any]bool) bool {
+	switch v := value.(type) {
+	case *Promise, Func, *accessor:
+		return true
+	case []any:
+		for _, item := range v {
+			if clientOnlyValue(item, seen) {
+				return true
+			}
+		}
+	case *Object:
+		if seen[v] {
+			return false
+		}
+		seen[v] = true
+		for _, item := range v.vals {
+			if clientOnlyValue(item, seen) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // clientOnlyState moves the state values that cannot be restored from
 // JSON, promises and functions, to omitted: the client evaluates their
 // initializers instead (S-6.3).
@@ -248,8 +275,7 @@ func clientOnlyState(state any, omitted []string) (any, []string) {
 	}
 	var kept *Object
 	for i, key := range object.keys {
-		switch object.vals[i].(type) {
-		case *Promise, Func:
+		if clientOnlyValue(object.vals[i], map[any]bool{}) {
 			if kept == nil {
 				kept = NewObject()
 				for j := 0; j < i; j++ {

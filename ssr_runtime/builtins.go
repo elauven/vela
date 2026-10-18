@@ -46,7 +46,7 @@ func (js *JS) Method(site string, receiver any, name string, args ...any) any {
 		}
 	case *Object:
 		if fn, ok := property(v, name).(Func); ok {
-			return fn(args...)
+			return fn(receiver, args...)
 		}
 	}
 	return js.throw("TypeError", fmt.Sprintf("%s.%s is not a function", describe(jsValue(receiver)), name), site)
@@ -214,7 +214,7 @@ func (js *JS) ArrayIterItems(receiver any, name, site string) []any {
 		return out
 	case *Object:
 		if fn, ok := property(v, name).(Func); ok {
-			return js.SpreadItems(fn(), site)
+			return js.SpreadItems(fn(receiver), site)
 		}
 	}
 	js.throw("TypeError", fmt.Sprintf("%s.%s is not a function", describe(jsValue(receiver)), name), site)
@@ -954,7 +954,7 @@ func (js *JS) ArrayFrom(site string, source any, mapFn any) any {
 		return Undefined()
 	}
 	for i, item := range items {
-		items[i] = fn(item, float64(i))
+		items[i] = fn(Undefined(), item, float64(i))
 		if js.Failed() {
 			return Undefined()
 		}
@@ -994,7 +994,7 @@ func (js *JS) stringify(site string, b *strings.Builder, key string, value any, 
 	}
 	if object, ok := value.(*Object); ok {
 		if fn, ok := property(object, "toJSON").(Func); ok {
-			value = fn(key)
+			value = fn(object, key)
 			if js.Failed() {
 				return false
 			}
@@ -1200,18 +1200,18 @@ func (js *JS) parseJSONValue(decoder *json.Decoder) (any, error) {
 // items.filter(Boolean) or values.map(String).
 func (js *JS) GlobalFunc(site, name string) Func {
 	one := func(f func(any) any) Func {
-		return func(args ...any) any { return f(Arg(args, 0)) }
+		return func(_ any, args ...any) any { return f(Arg(args, 0)) }
 	}
 	switch name {
 	case "String":
-		return func(args ...any) any {
+		return func(_ any, args ...any) any {
 			if len(args) == 0 {
 				return ""
 			}
 			return ToStringValue(args[0])
 		}
 	case "Number":
-		return func(args ...any) any {
+		return func(_ any, args ...any) any {
 			if len(args) == 0 {
 				return 0.0
 			}
@@ -1220,7 +1220,7 @@ func (js *JS) GlobalFunc(site, name string) Func {
 	case "Boolean":
 		return one(func(v any) any { return ToBoolean(v) })
 	case "parseInt":
-		return func(args ...any) any { return ParseInt(Arg(args, 0), Arg(args, 1)) }
+		return func(_ any, args ...any) any { return ParseInt(Arg(args, 0), Arg(args, 1)) }
 	case "parseFloat":
 		return one(func(v any) any { return ParseFloat(v) })
 	case "isNaN":
@@ -1236,5 +1236,5 @@ func (js *JS) GlobalFunc(site, name string) Func {
 	case "decodeURI":
 		return one(func(v any) any { return js.DecodeURI(site, v) })
 	}
-	return func(...any) any { return js.throw("TypeError", name+" is not a function", site) }
+	return func(any, ...any) any { return js.throw("TypeError", name+" is not a function", site) }
 }

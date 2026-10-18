@@ -10,9 +10,9 @@ import (
 func TestPromiseChain(t *testing.T) {
 	js := NewJS()
 	ctx := context.Background()
-	double := Func(func(args ...any) any { return Arg(args, 0).(float64) * 2 })
-	fail := Func(func(args ...any) any { js.Throw("boom", "s"); return Undefined() })
-	handled := Func(func(args ...any) any { return "caught " + String(Arg(args, 0)) })
+	double := Func(func(_ any, args ...any) any { return Arg(args, 0).(float64) * 2 })
+	fail := Func(func(_ any, args ...any) any { js.Throw("boom", "s"); return Undefined() })
+	handled := Func(func(_ any, args ...any) any { return "caught " + String(Arg(args, 0)) })
 	if got := js.Await(ctx, js.Then(ctx, "s", Resolve(2.0), double, nil)); got != 4.0 {
 		t.Fatalf("then = %v", got)
 	}
@@ -24,7 +24,7 @@ func TestPromiseChain(t *testing.T) {
 		t.Fatalf("catch = %v", got)
 	}
 	// finally keeps the settlement unless its reaction throws.
-	if got := js.Await(ctx, js.Finally(ctx, "s", Resolve(5.0), Func(func(...any) any { return 9.0 }))); got != 5.0 {
+	if got := js.Await(ctx, js.Finally(ctx, "s", Resolve(5.0), Func(func(any, ...any) any { return 9.0 }))); got != 5.0 {
 		t.Fatalf("finally = %v", got)
 	}
 	overridden := js.Finally(ctx, "s", Resolve(5.0), fail)
@@ -39,7 +39,7 @@ func TestPromiseAllOrder(t *testing.T) {
 	js := NewJS()
 	ctx := context.Background()
 	all := js.All("s", []any{Resolve(1.0), 2.0, Reject("first", "s"), Reject("second", "s")})
-	if got := js.CatchPromise(ctx, "s", all, Func(func(args ...any) any { return Arg(args, 0) })); js.Await(ctx, got) != "first" {
+	if got := js.CatchPromise(ctx, "s", all, Func(func(_ any, args ...any) any { return Arg(args, 0) })); js.Await(ctx, got) != "first" {
 		t.Fatal("Promise.all rejects with the first rejection in array order")
 	}
 	settled := js.Await(ctx, js.AllSettled(ctx, "s", []any{Resolve(1.0), Reject("x", "s")})).([]any)
@@ -59,6 +59,22 @@ func TestAwaitCancelledIsNotCaught(t *testing.T) {
 	}, func(any) (any, bool) { caught = true; return nil, false }, nil)
 	if caught || !errors.Is(js.Err(), context.Canceled) {
 		t.Fatalf("caught=%v err=%v", caught, js.Err())
+	}
+}
+
+// TestStateWithMethodsIsOmitted: JSON would drop the methods and accessors
+// of an object, so state that holds one is recomputed by the client.
+func TestStateWithMethodsIsOmitted(t *testing.T) {
+	var out strings.Builder
+	withMethod := NewObject().Set("n", 1.0).Set("m", Func(nil))
+	withGetter := NewObject().DefineGetter("x", Func(func(any, ...any) any { return 1.0 }))
+	state := NewObject().Set("a", 1.0).Set("o", withMethod).Set("l", []any{2.0, []any{withGetter}}).Set("d", NewObject().Set("k", "v"))
+	w, root := BeginComponent(&out, "C", state)
+	if err := EndComponent(w, root, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `["s","C",{"a":1,"d":{"k":"v"}},{"omitted":["o","l"]}]`) {
+		t.Fatalf("payload = %s", out.String())
 	}
 }
 

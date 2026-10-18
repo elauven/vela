@@ -457,7 +457,7 @@
       "components": {
         "App.vela": {
           "status": "error",
-          "error": "VELA-SSR-EXPR",
+          "error": "VELA-SSR-HOST-MISSING",
           "sites": {
             "class#1": "unsupported",
             "class#2": "unsupported",
