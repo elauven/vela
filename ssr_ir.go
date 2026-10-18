@@ -478,6 +478,26 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			out.Exprs = append(out.Exprs, value)
 		}
 		return out, nil
+	case *JsTaggedTemplate:
+		// String.raw is the only admitted tag: the raw text of the
+		// template (escapes kept, line terminators normalised to \n) with
+		// the substitutions converted to strings.
+		if b.globalName(node.Tag) != "String.raw" || node.Quasi == nil || len(node.Quasi.Quasis) != len(node.Quasi.Exprs)+1 {
+			return nil, ssrExprUnsupported(pos, "tagged templates are admitted only with String.raw")
+		}
+		out := &ssrIRTemplate{ssrIRBase: b.base(pos, ssrIRFacts{String: true})}
+		for index, quasi := range node.Quasi.Quasis {
+			out.Quasis = append(out.Quasis, strings.ReplaceAll(strings.ReplaceAll(quasi, "\r\n", "\n"), "\r", "\n"))
+			if index == len(node.Quasi.Exprs) {
+				continue
+			}
+			value, err := b.build(node.Quasi.Exprs[index], pos)
+			if err != nil {
+				return nil, err
+			}
+			out.Exprs = append(out.Exprs, value)
+		}
+		return out, nil
 	case *JsUnaryExpr:
 		if node.Op == "++" || node.Op == "--" {
 			return nil, ssrImpure(pos, "update operator %q writes a binding during server rendering", node.Op)

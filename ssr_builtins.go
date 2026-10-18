@@ -34,6 +34,7 @@ var ssrBuiltinMethods = map[string]ssrIRFacts{
 	"some": {Bool: true}, "every": {Bool: true}, "find": {}, "findIndex": {Number: true},
 	"findLast": {}, "findLastIndex": {Number: true}, "reduce": {}, "reduceRight": {},
 	"flat": {Array: true}, "flatMap": {Array: true}, "toSorted": {Array: true}, "toReversed": {Array: true},
+	"with": {Array: true}, "toSpliced": {Array: true},
 	// Numbers (§2.6).
 	"toFixed": {String: true}, "toPrecision": {String: true}, "toExponential": {String: true},
 	// Strings, by the decisions of §5.
@@ -47,7 +48,7 @@ var ssrBuiltinMethods = map[string]ssrIRFacts{
 var ssrMutatingMethods = map[string]bool{"push": true, "pop": true, "shift": true, "unshift": true, "splice": true, "sort": false, "reverse": false, "fill": false}
 
 // ssrFreshMethods return a new array or object.
-var ssrFreshMethods = map[string]bool{"map": true, "filter": true, "slice": true, "concat": true, "flat": true, "flatMap": true, "toSorted": true, "toReversed": true, "split": true}
+var ssrFreshMethods = map[string]bool{"map": true, "filter": true, "slice": true, "concat": true, "flat": true, "flatMap": true, "toSorted": true, "toReversed": true, "with": true, "toSpliced": true, "split": true}
 
 // ssrBuiltinGlobal lowers one global function or namespace function.
 type ssrBuiltinGlobal struct {
@@ -80,6 +81,11 @@ var ssrBuiltinGlobals = map[string]ssrBuiltinGlobal{
 	"Number.parseInt":      {Helper: "ParseInt", Args: 2, Facts: ssrIRFacts{Number: true}},
 	"Number.parseFloat":    {Helper: "ParseFloat", Args: 1, Facts: ssrIRFacts{Number: true}},
 	"Array.isArray":        {Helper: "IsArray", Args: 1, Facts: ssrIRFacts{Bool: true}},
+	// §2.2
+	"String.fromCharCode":  {Helper: "StringFromCharCode", Args: -1, Facts: ssrIRFacts{String: true}},
+	"String.fromCodePoint": {Helper: "StringFromCodePoint", JS: true, Args: -1},
+	// §2.8
+	"structuredClone": {Helper: "StructuredClone", JS: true, Args: 1},
 	// §2.3
 	"Array.from": {Helper: "ArrayFrom", JS: true, Args: 2},
 	"Array.of":   {Helper: "ArrayOf", Args: -1, Facts: ssrIRFacts{Array: true}},
@@ -429,6 +435,9 @@ func ssrFreshExpr(expr JsExpr) bool {
 		callee, ok := e.Callee.(*JsIdent)
 		return ok && (callee.Name == "Error" || callee.Name == "TypeError" || callee.Name == "RangeError")
 	case *JsCallExpr:
+		if callee, ok := e.Callee.(*JsIdent); ok && callee.Name == "structuredClone" {
+			return true
+		}
 		member, ok := e.Callee.(*JsMemberExpr)
 		if !ok || member.Computed {
 			return false

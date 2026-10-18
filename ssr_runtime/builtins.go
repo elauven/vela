@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"math/big"
+	"reflect"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -73,7 +74,7 @@ var arrayMethodNames = map[string]bool{
 	"reduce": true, "reduceRight": true, "flat": true, "flatMap": true,
 	"toSorted": true, "toReversed": true, "sort": true, "reverse": true,
 	"push": true, "unshift": true, "pop": true, "shift": true, "splice": true,
-	"fill": true,
+	"fill": true, "with": true, "toSpliced": true,
 }
 
 var numberMethodNames = map[string]bool{
@@ -218,6 +219,132 @@ func (js *JS) ArrayIterItems(receiver any, name, site string) []any {
 	}
 	js.throw("TypeError", fmt.Sprintf("%s.%s is not a function", describe(jsValue(receiver)), name), site)
 	return nil
+}
+
+// StringFromCharCode is String.fromCharCode: each argument is a UTF-16
+// code unit (ToUint16); a lone surrogate is kept (WTF-8, T-6.3b).
+func StringFromCharCode(codes ...any) string {
+	u := make([]uint16, len(codes))
+	for i, code := range codes {
+		n := ToNumber(code)
+		if math.IsNaN(n) || math.IsInf(n, 0) {
+			continue
+		}
+		m := math.Mod(math.Trunc(n), 65536)
+		if m < 0 {
+			m += 65536
+		}
+		u[i] = uint16(m)
+	}
+	return fromUnits(u)
+}
+
+// StringFromCodePoint is String.fromCodePoint: each argument must be an
+// integer code point up to U+10FFFF, else RangeError.
+func (js *JS) StringFromCodePoint(site string, codes ...any) any {
+	u := make([]uint16, 0, len(codes))
+	for _, code := range codes {
+		n := ToNumber(code)
+		if n != math.Trunc(n) || n < 0 || n > 0x10FFFF {
+			return js.throw("RangeError", "Invalid code point "+String(n), site)
+		}
+		if n < 0x10000 {
+			u = append(u, uint16(n))
+			continue
+		}
+		c := int(n) - 0x10000
+		u = append(u, uint16(0xD800+c>>10), uint16(0xDC00+c&0x3FF))
+	}
+	return fromUnits(u)
+}
+
+// errorKinds are the error constructors structuredClone keeps; another
+// name clones as Error.
+var errorKinds = map[string]bool{"Error": true, "EvalError": true, "RangeError": true, "ReferenceError": true, "SyntaxError": true, "TypeError": true, "URIError": true}
+
+// StructuredClone is structuredClone(value) over the JSON value domain:
+// objects with their own enumerable properties (not frozen), arrays with
+// their holes, primitives, and error objects (kind and message only, as
+// V8 serialises them). Shared and cyclic references stay shared. A
+// function or promise throws DataCloneError.
+func (js *JS) StructuredClone(site string, value any) any {
+	objects := map[*Object]*Object{}
+	type sliceKey struct {
+		pointer  uintptr
+		len, cap int
+	}
+	slices := map[sliceKey][]any{}
+	var clone func(any) (any, bool)
+	clone = func(value any) (any, bool) {
+		switch v := jsValue(value).(type) {
+		case nil, UndefinedValue, bool, float64, string:
+			return v, true
+		case []any:
+			key := sliceKey{reflect.ValueOf(v).Pointer(), len(v), cap(v)}
+			if done, ok := slices[key]; ok && cap(v) > 0 {
+				return done, true
+			}
+			out := make([]any, len(v))
+			if cap(v) > 0 {
+				slices[key] = out
+			}
+			for i, item := range v {
+				if isHole(item) {
+					out[i] = item
+					continue
+				}
+				cloned, ok := clone(item)
+				if !ok {
+					return nil, false
+				}
+				out[i] = cloned
+			}
+			return out, true
+		case *Object:
+			if done, ok := objects[v]; ok {
+				return done, true
+			}
+			if v.errorName != "" {
+				name, _ := v.Lookup("name")
+				kind := String(jsValue(name))
+				if !errorKinds[kind] {
+					kind = "Error"
+				}
+				out := &Object{errorName: kind}
+				if v.hasMessage {
+					out.message, out.hasMessage = String(jsValue(v.message)), true
+				}
+				objects[v] = out
+				return out, true
+			}
+			out := NewObject()
+			objects[v] = out
+			keys, vals := v.entries()
+			for i, key := range keys {
+				cloned, ok := clone(vals[i])
+				if !ok {
+					return nil, false
+				}
+				out.Set(key, cloned)
+			}
+			return out, true
+		case Func:
+			js.throw("DataCloneError", "function could not be cloned.", site)
+		case *Promise:
+			js.throw("DataCloneError", "#<Promise> could not be cloned.", site)
+		default:
+			js.throw("DataCloneError", "value could not be cloned.", site)
+		}
+		return nil, false
+	}
+	if js.Failed() {
+		return Undefined()
+	}
+	out, ok := clone(value)
+	if !ok {
+		return Undefined()
+	}
+	return out
 }
 
 // MutateArray calls a method that changes an array the function created

@@ -105,7 +105,7 @@ disagree, the contract wins and the row is a bug.
 | Construct | Outcome | Typed | Dynamic | Rule | Oracles | Status | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | template literal | native | `vela.TemplateString` | same | §6.2 | value-text | implemented | |
-| tagged template | rejected | — | — | §6.2 | — | never | v1. |
+| tagged template | rejected, except ``String.raw`…` `` (§2.2) | — | — | §6.2 | str-raw | never | Other tags are functions with a strings array; v1. |
 | array literal | native | `[]any{…}` with holes | same | §6.2 | value-text (`array-hole`) | implemented | |
 | array spread `[...a]` | native | `vela.JoinArrays` + `ssrJS.SpreadItems` | same | §6.2 | arrays-spread | implemented | Strings spread by code point; spreading `null` throws `TypeError`. |
 | object literal | native | `*vela.Object` | `*vela.Object` | T-5.1c | objects-order, obj-computed | implemented | Computed keys `{ [k]: v }` with ToPropertyKey (`vela.PropertyKey`), key before value. Insertion order with JavaScript key ordering, observed through the payload (`testdata/ssr_init_oracle.json`). A closed-shape struct lowering is an optimisation not done yet. |
@@ -223,6 +223,9 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `concat`, `toString`, `valueOf` | `ssrJS.Method` | — |  | `str-concat`, `num-tostring` | implemented |
 | spread / `for…of` over a string | code-point iteration | T-6.3a | `[..."😀"].length` is `1` ✓. | `arrays-spread` | implemented |
 | `normalize(form)` | `ssrJS.Method` (`golang.org/x/text/unicode/norm`) | T-6.5a | NFC, NFD, NFKC, NFKD; another form throws `RangeError`. Unicode 17 tables, as in Node 24 (decision of §5). | `str-normalize` | implemented |
+| `String.fromCharCode(...codes)` | `vela.StringFromCharCode` | T-6.3a, T-6.3b | Each argument is a UTF-16 unit (ToUint16: `65601` is `"A"`, `NaN` is `\u0000`); a lone surrogate stays a lone unit (WTF-8), so `fromCharCode(0xD83D, 0xDE00)` is `"😀"`. | `str-fromcharcode` | implemented |
+| `String.fromCodePoint(...points)` | `ssrJS.StringFromCodePoint` | T-6.3a | An argument that is not an integer from 0 to 0x10FFFF throws `RangeError`. | `str-fromcharcode` | implemented |
+| ``String.raw`…` `` | template of the raw text | §6.2 | The only admitted tag: escapes stay as written, line terminators become `\n`, substitutions convert as in a template literal. `String.raw` called as a function and other tags are rejected. | `str-raw` | implemented |
 | `localeCompare`, `toLocaleUpperCase`, `toLocaleLowerCase` | host | §3 | Locale-dependent. | — | never |
 | `match`, `matchAll`, `search`, `replace`/`split` with a RegExp | host | §3 |  | — | never |
 
@@ -243,6 +246,7 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `sort`, `toSorted` | `ssrJS.Method`, `ssrJS.MutateArray` | T-6.3a, T-6.6b | Stable. Without comparator: compares `String(x)` by UTF-16 units and places `undefined` last, holes after it: `[10,9,undefined,1].sort()` is `[1,10,9,undefined]` ✓. Comparator result `NaN` counts as `0`. `sort` only on arrays the function created. | `arr-sort`, `arr-mutate` | implemented |
 | `reverse`, `toReversed` | `ssrJS.Method`, `ssrJS.MutateArray` | T-6.6b | `reverse` mutates: only on arrays the function created. | `arr-reverse`, `arr-mutate` | implemented |
 | `push`, `pop`, `shift`, `unshift`, `splice`, `fill` | `ssrJS.MutateArray` | T-6.6b | As a statement, a `const`/`let` initializer, or the right-hand side of an assignment, on a local array the function created; methods that change the length also need the array not to be copied into another variable, literal, or call argument. Otherwise `VELA-SSR-IMPURE`. | `arr-mutate` | implemented |
+| `with(index, value)`, `toSpliced(start, count, ...items)` | `ssrJS.Method` | — | Copies with holes read as `undefined`; `with` takes a negative index from the end and throws `RangeError` outside the array; `toSpliced` clamps as `splice`. The result is an array the function created. | `arr-with`, `arr-tospliced` | implemented |
 | `entries`, `keys`, `values` of arrays, iterated at once | `ssrJS.ArrayIterItems` | §7.1 | As `for…of` sources, spread elements and the source of `Array.from`; holes are visited as `undefined`. The iterator itself (`xs.keys().length`, `const it = xs.entries()`) is rejected: it is not an array in JavaScript. | `arr-iterators` | implemented |
 | `Array.from(arrayLike, mapFn)` | `ssrJS.ArrayFrom` | — | Strings by code point; `{length: n}`; holes become `undefined`. | `arr-from` | implemented |
 | `Array.of` | `vela.ArrayOf` | — |  | `arr-from` | implemented |
@@ -255,6 +259,8 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `Object.fromEntries` | `ssrJS.ObjectFromEntries` | T-5.1c | Later duplicate keys win but keep the first position. | `obj-from` | implemented |
 | `Object.assign` | `ssrJS.ObjectAssign` | T-6.6b | The target must be an object literal: `Object.assign({}, a, b)`. | `obj-assign` | implemented |
 | `Object.hasOwn` | `ssrJS.ObjectHasOwn` | — |  | `obj-hasown` | implemented |
+| `Object.groupBy(items, fn)` | host / client | T-6.4a | Not native yet: the result has a null prototype, so converting it to text throws `TypeError`, which the text conversion helpers cannot raise (task 057). | — | planned (task 057) |
+| `structuredClone(value)` | `ssrJS.StructuredClone` | T-5.1c | Objects (own enumerable keys in T-5.1c order, not frozen), arrays with their holes, primitives, `undefined` members kept; shared and cyclic references stay shared. An error object clones as its kind (another name as `Error`) with its message only, as V8 serialises it. A function or promise throws an error named `DataCloneError`; its message does not quote the source as V8 does. | `structured-clone` | implemented |
 | `Object.freeze`, `Object.isFrozen` | `vela.ObjectFreeze`, `ssrJS.ObjectIsFrozen` | T-6.6b | A frozen object throws `TypeError` on writes, as in strict-mode JavaScript; freezing is shallow. An array is returned unchanged and `Object.isFrozen` rejects arrays (at build time when the type is proven, else at run time): a Go slice has no identity to mark (decision of §5). | `obj-freeze` | implemented |
 
 ### 2.5 Math
