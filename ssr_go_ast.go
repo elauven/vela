@@ -515,6 +515,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 		jsMethod(name, []*types.Var{v("site", stringType), v("value", anyType)}, anyType)
 	}
 	jsMethod("ObjectHasOwn", []*types.Var{v("site", stringType), v("value", anyType), v("key", anyType)}, anyType)
+	jsMethod("ObjectGroupBy", []*types.Var{v("site", stringType), v("items", anyType), v("callback", anyType)}, anyType)
 	ssrRuntimeAddFunc(pkg, "ObjectFreeze", []*types.Var{v("value", anyType)}, []*types.Var{v("", anyType)})
 	jsMethod("ObjectIsFrozen", []*types.Var{v("site", stringType), v("value", anyType)}, boolT)
 	jsMethod("ArrayFrom", []*types.Var{v("site", stringType), v("source", anyType), v("mapFn", anyType)}, anyType)

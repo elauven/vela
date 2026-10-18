@@ -168,7 +168,7 @@ func (js *JS) In(key, object any, site string) bool {
 		if v.errorName != "" && errorPrototypeNames[name] {
 			return true
 		}
-		return objectPrototypeNames[name]
+		return !v.nullProto && objectPrototypeNames[name]
 	case []any:
 		if arrayIndexKey(name) {
 			n, _ := strconv.Atoi(name)
@@ -891,6 +891,38 @@ func (js *JS) ObjectAssign(site string, target any, sources ...any) any {
 		}
 	}
 	return object
+}
+
+// ObjectGroupBy is Object.groupBy(items, fn): an object without a
+// prototype whose keys are fn(item, index) converted with ToPropertyKey, in
+// the order they first appear, each holding the items of its group.
+func (js *JS) ObjectGroupBy(site string, items, callback any) any {
+	values := js.SpreadItems(items, site)
+	if js.Failed() {
+		return Undefined()
+	}
+	fn, ok := js.callable(site, "groupBy", callback)
+	if !ok {
+		return Undefined()
+	}
+	out := js.LocalObject()
+	out.nullProto = true
+	for i, item := range values {
+		key := fn(Undefined(), item, float64(i))
+		if js.Failed() {
+			return Undefined()
+		}
+		name := propertyKey(key)
+		if js.Failed() {
+			return Undefined()
+		}
+		if at := out.find(name); at >= 0 {
+			out.vals[at] = append(out.vals[at].([]any), item)
+		} else {
+			out.add(name, []any{item})
+		}
+	}
+	return out
 }
 
 // ObjectHasOwn is Object.hasOwn(value, key).

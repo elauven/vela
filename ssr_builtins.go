@@ -98,6 +98,7 @@ var ssrBuiltinGlobals = map[string]ssrBuiltinGlobal{
 	"Object.hasOwn":      {Helper: "ObjectHasOwn", JS: true, Args: 2},
 	"Object.freeze":      {Helper: "ObjectFreeze", Args: 1},
 	"Object.isFrozen":    {Helper: "ObjectIsFrozen", JS: true, Args: 1, Facts: ssrIRFacts{Bool: true}},
+	"Object.groupBy":     {Helper: "ObjectGroupBy", JS: true, Args: 2, Facts: ssrIRFacts{Object: true}},
 	// §2.5
 	"Math.round": {Helper: "MathRound", Args: 1, Facts: ssrIRFacts{Number: true}},
 	"Math.floor": {Helper: "MathFloor", Args: 1, Facts: ssrIRFacts{Number: true}},
@@ -459,7 +460,7 @@ func ssrFreshExpr(expr JsExpr) bool {
 		}
 		if object, ok := member.Obj.(*JsIdent); ok {
 			switch object.Name + "." + property.Name {
-			case "Object.keys", "Object.values", "Object.entries", "Object.fromEntries", "Array.from", "Array.of", "JSON.parse":
+			case "Object.keys", "Object.values", "Object.entries", "Object.fromEntries", "Object.groupBy", "Array.from", "Array.of", "JSON.parse":
 				return true
 			}
 		}

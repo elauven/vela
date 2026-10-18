@@ -105,6 +105,9 @@ type Object struct {
 	local bool
 	// accessors is set once a property is defined by a getter or setter.
 	accessors bool
+	// nullProto marks an object without a prototype (Object.groupBy): it
+	// has no toString or valueOf, so converting it throws TypeError.
+	nullProto bool
 }
 
 // accessor is the value of a property defined by a getter and/or a
@@ -791,7 +794,7 @@ func (o *Object) toPrimitive(hint string) any {
 	for _, name := range names {
 		value, own := o.Lookup(name)
 		if !own {
-			if name == "toString" {
+			if name == "toString" && !o.nullProto {
 				return objectString(o)
 			}
 			continue
