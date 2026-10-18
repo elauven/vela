@@ -145,6 +145,10 @@ func (js *JS) Call(site string, fn any, args ...any) any {
 // SetMember assigns object[key] = value for an object or array the
 // function created (T-6.6b).
 func (js *JS) SetMember(object, key, value any, site string) any {
+	if js.Failed() {
+		// The object, key or value threw: nothing is assigned.
+		return Undefined()
+	}
 	name := propertyKey(key)
 	switch target := object.(type) {
 	case *Object:

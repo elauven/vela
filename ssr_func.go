@@ -856,7 +856,16 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 		if err != nil {
 			return nil, err
 		}
-		return c.checked(&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(goName)}, Tok: token.ASSIGN, Rhs: []goast.Expr{result}}, throws), nil
+		if !throws {
+			return []goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(goName)}, Tok: token.ASSIGN, Rhs: []goast.Expr{result}}}, nil
+		}
+		// An exception in the value leaves the binding unchanged.
+		temp := c.declare("$value")
+		return []goast.Stmt{
+			&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(temp)}, Tok: token.DEFINE, Rhs: []goast.Expr{result}},
+			c.unwind(),
+			&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(goName)}, Tok: token.ASSIGN, Rhs: []goast.Expr{goast.NewIdent(temp)}},
+		}, nil
 	case *JsMemberExpr:
 		root := JsExpr(t)
 		for {
