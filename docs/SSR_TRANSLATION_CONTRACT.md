@@ -210,7 +210,9 @@ panics.
 - **T-6.1a** Operands, arguments, and object/array elements evaluate left to
   right, each exactly once.
 - **T-6.1b** `&&`, `||`, `??`, `?:` and `?.` short-circuit: the unselected
-  operand is never evaluated (R1). Recovering from a panic is not an
+  operand is never evaluated (R1). A nullish value before `?.` ends the
+  whole chain, its member reads and calls, as in `a?.b.c()` and `f?.(x)`;
+  parentheses end the chain. Recovering from a panic is not an
   implementation of short-circuiting.
 - **T-6.1c** A host call executes exactly once per evaluation of its call
   site, at the position JavaScript would call it, and is never hoisted,
@@ -228,10 +230,12 @@ panics.
 | `!`, `typeof`, unary `-`/`+` | JS semantics; `typeof` of a Go-originated value follows the JSON view. |
 | `?.`, `??` | Admitted in both tiers. |
 | template literals | Text-conversion contract (`SSR.md`, "Text conversion"). |
-| array/object literal, spread of arrays/objects | Admitted; objects build `*vela.Object` with insertion order. |
+| array/object literal, spread of arrays/objects, computed keys `{ [k]: v }` | Admitted; objects build `*vela.Object` with insertion order; a computed key is evaluated before its value and converted with ToPropertyKey. |
 | arrow functions | Admitted as callbacks to admitted built-ins and as local values; closures may read captured bindings. |
-| `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | Admitted; produce error objects with `name` and `message`. |
-| other `new`, `this`, `class`, getters/setters, `delete`, `in`, `instanceof`, comma, `void`, regex literals, tagged templates | `unsupported` in v1. |
+| `k in o` | Admitted on objects and arrays (own and prototype properties, as in Node 24); a primitive right operand throws `TypeError`. |
+| comma `(a, b)`, `void e` | Admitted; operands are evaluated left to right with their effects; `void` yields `undefined`. |
+| `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | Admitted; produce error objects with `name` from the prototype and a non-enumerable `message`; text conversion is `Error.prototype.toString`. |
+| other `new`, `this`, `class`, getters/setters, `delete`, `instanceof`, regex literals, tagged templates | `unsupported` in v1. |
 
 ### 6.3 Strings
 
@@ -313,16 +317,17 @@ panics.
 ### 7.1 Admitted statements (v1)
 
 `const` / `let` declarations (including array/object destructuring with
-defaults), assignment to local bindings, compound assignment, `++`/`--` on
-local bindings, `if`/`else`, `for (;;)`, `for…of` over arrays and strings,
-`while`, `do…while`, `break` / `continue` (without labels), `return`,
-`throw`, `try` / `catch` / `finally` (T-6.5d), `switch` with `===` matching,
-nested function declarations, block scoping, `async` functions and `await`
-(§7.4).
+defaults, rest elements and computed keys), rest parameters, assignment to
+local bindings, compound assignment, `++`/`--` on local bindings,
+`if`/`else`, `for (;;)`, `for…of` over arrays and strings, `for…in` (keys
+in `Object.keys` order, taken before the first iteration; none for `null`
+and `undefined`), `while`, `do…while`, `break` / `continue` (also with
+labels of loops, `switch` and blocks), `return`, `throw`, `try` / `catch`
+/ `finally` (T-6.5d), `switch` with `===` matching, nested function
+declarations, block scoping, `async` functions and `await` (§7.4).
 
-Not admitted in v1: labels, `for…in`, generators and async generators,
-`for await`, classes, `with`, `eval`, `arguments`, `var` hoisting across
-blocks, getters/setters.
+Not admitted in v1: generators and async generators, `for await`, classes,
+`with`, `eval`, `arguments`, `var` hoisting across blocks, getters/setters.
 
 - **T-7.1a** A helper with several statements is translated as a Go function,
   not inlined. The current single-`return` inliner becomes an optimisation of
@@ -392,7 +397,8 @@ in one synchronous pass.
   `server-host`, the server evaluates it synchronously and renders the `then`
   branch with the value or the `catch` branch with the error, never
   `pending`. The settled snapshot (state plus the JSON view of the value or
-  error) is written to the payload. Hydration adopts the settled branch, and
+  error; an error object in the form of S-6.11, since its JSON view is
+  `{}`) is written to the payload. Hydration adopts the settled branch, and
   the client does not re-evaluate the operand for initial hydration; it
   re-evaluates only when the operand's dependencies change. (Required
   behaviour: verify the current client runtime and change it if it

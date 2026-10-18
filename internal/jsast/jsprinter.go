@@ -553,14 +553,33 @@ func (p *jsPrinter) forInit(s JsStmt) {
 				p.sp()
 				p.ch('=')
 				p.sp()
-				p.expr(d.Init, precAssign)
+				p.forInitExpr(d.Init, precAssign)
 			}
 		}
 	case *JsExprStmt:
-		p.expr(n.X, 0)
+		p.forInitExpr(n.X, 0)
 	default:
 		p.stmt(s)
 	}
+}
+
+// forInitExpr prints an expression of a for initializer, where a bare in
+// operator would read as for…in: one that contains in is parenthesised.
+func (p *jsPrinter) forInitExpr(e JsExpr, parentPrec int) {
+	hasIn := false
+	WalkNode(e, func(n JsNode) bool {
+		if binary, ok := n.(*JsBinaryExpr); ok && binary.Op == "in" {
+			hasIn = true
+		}
+		return !hasIn
+	})
+	if !hasIn {
+		p.expr(e, parentPrec)
+		return
+	}
+	p.ch('(')
+	p.expr(e, 0)
+	p.ch(')')
 }
 
 func (p *jsPrinter) block(b *JsBlock) {

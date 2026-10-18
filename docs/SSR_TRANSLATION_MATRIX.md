@@ -75,7 +75,7 @@ disagree, the contract wins and the row is a bug.
 | `obj[key]` | native | slice index / field / object lookup | `ssrJS.Index` | T-6.5b | member-computed | implemented | Any receiver and key, with JavaScript property-key conversion. |
 | `.length` of string | native | UTF-16 length | `ssrJS.Length` | T-6.3a | strings-length | implemented | `null.length` throws `TypeError`; an object without `length` yields `undefined`. |
 | `.length` of array | native | `len(x)` | `ssrJS.Length` | — | strings-length | implemented | |
-| `a?.b`, `a?.[k]`, `f?.()` | native | nil/undefined check, then access | `vela.OptionalChain` with lazy rest | T-6.1b | ops-optional | partial | `a?.b` and `a?.[k]` implemented; the rest of the chain is not evaluated after a nullish link. `f?.()` is rejected; planned in task 056. |
+| `a?.b`, `a?.[k]`, `f?.()`, `a.b?.()` | native | nil/undefined check, then access | `vela.OptionalChain` with lazy rest, `ssrJS.OptionalMethod` | T-6.1b | ops-optional, ops-optional-call | implemented | After a nullish link the rest of the chain, method calls included, is not evaluated (`a?.b.trim()` is `undefined`); parentheses end the chain (`(a?.b).c` throws). `f?.()` calls a function value; arguments are evaluated only when the callee is not nullish, and a non-callable callee throws `TypeError`. `a.b?.()` admits catalogue methods: a name the receiver kind does not have (`"x".join`) is `undefined`. Calling functions stored in object properties waits for task 057. |
 
 ### 1.3 Operators
 
@@ -94,22 +94,24 @@ disagree, the contract wins and the row is a bug.
 | `&&`, `\|\|` | native | `vela.AndLazy` / `vela.OrLazy` | same | T-6.1b (R1) | ops-logical | implemented | |
 | `??` | native | lazy nullish check | `vela.NullishLazy` | T-6.1b | ops-nullish | implemented | |
 | `c ? a : b` | native | `vela.TernaryLazy` | same | T-6.1b (R1) | ops-conditional | implemented | |
-| `=`, `+=`, `++`, … on local bindings | native | Go assignment | same | T-6.6b | stmt-assign | implemented | Only inside translated functions. |
+| `=`, `+=`, `++`, … on local bindings | native | Go assignment | same | T-6.6b | stmt-assign | implemented | Only inside translated functions, as statements (also in a comma statement); an assignment or `++` used as a value is rejected. |
 | assignment to state, props, module bindings | rejected | — | — | T-6.6a | go-tests | partial | `VELA-SSR-IMPURE` (S1) for assignments and `++` / `--`; covered by a Go test, not an oracle group. |
-| comma, `void`, `delete`, `in`, `instanceof` | rejected | — | — | §6.2 | — | never | v1. |
+| comma `(a, b)`, `void e` | native | closure with the operands as statements, in order | same | §6.2 | ops-comma-void | implemented | Every operand is evaluated, left to right, with its effects; `void` yields `undefined`. |
+| `k in o` | native | `ssrJS.In` | same | §6.2 | ops-in | implemented | Own properties and the prototype names of Node 24 (`'toString' in {}`, `'map' in []`, `'stack'` of errors); array index keys skip holes; Go values through their JSON view. A primitive right operand throws `TypeError`; a function value fails the render (its own properties depend on how it was written). `#x in o` stays rejected (classes are not translated). |
+| `delete`, `instanceof` | rejected | — | — | §6.2 | — | never | v1. |
 
 ### 1.4 Compound values and functions
 
 | Construct | Outcome | Typed | Dynamic | Rule | Oracles | Status | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | template literal | native | `vela.TemplateString` | same | §6.2 | value-text | implemented | |
-| tagged template | rejected | — | — | §6.2 | — | never | v1. |
+| tagged template | rejected, except ``String.raw`…` `` (§2.2) | — | — | §6.2 | str-raw | never | Other tags are functions with a strings array; v1. |
 | array literal | native | `[]any{…}` with holes | same | §6.2 | value-text (`array-hole`) | implemented | |
 | array spread `[...a]` | native | `vela.JoinArrays` + `ssrJS.SpreadItems` | same | §6.2 | arrays-spread | implemented | Strings spread by code point; spreading `null` throws `TypeError`. |
-| object literal | native | `*vela.Object` | `*vela.Object` | T-5.1c | objects-order | implemented | Insertion order with JavaScript key ordering, observed through the payload (`testdata/ssr_init_oracle.json`). A closed-shape struct lowering is an optimisation not done yet. |
+| object literal | native | `*vela.Object` | `*vela.Object` | T-5.1c | objects-order, obj-computed | implemented | Computed keys `{ [k]: v }` with ToPropertyKey (`vela.PropertyKey`), key before value. Insertion order with JavaScript key ordering, observed through the payload (`testdata/ssr_init_oracle.json`). A closed-shape struct lowering is an optimisation not done yet. |
 | object spread `{...o}` | native | `(*vela.Object).Spread` | same | T-5.1c | objects-spread | implemented | |
 | object methods, getters/setters | rejected | — | — | §6.2 | — | never | v1. |
-| destructuring (declarations, parameters, defaults) | native | Go locals | same | §7.1 | stmt-destructure | implemented | Rest elements and computed keys are rejected for now. |
+| destructuring (declarations, parameters, defaults, rest) | native | Go locals | same | §7.1 | stmt-destructure, stmt-destructure-rest | implemented | Array patterns iterate as `for…of` (string code points, holes as `undefined`, `TypeError` for other values); a rest element copies the remaining items, a rest property the remaining own enumerable keys in T-5.1c order. Rest parameters `(...xs)`. Computed keys `{ [k]: v }` are evaluated before their value. |
 | arrow function as local value, argument, or callback prop | native | `vela.Func` closure | same | §7.1 | fn-closures | implemented | A function value created in a template defers writes to state, props, or module bindings to a run-time `VELA-SSR-IMPURE` error, raised only if the render calls it (an event callback passed as a prop is never called). |
 | arrow function as built-in callback | native | `vela.Func` closure called by the built-in | same | T-7.2b | arr-callbacks | implemented | Callback parameters are dynamic; typed element parameters come with the typed variants (T-7.2a). |
 | call to local function with one `return` | native | inlined expression | same | T-7.1a | fn-inline | partial | Existing inliner; becomes an optimisation of the next row. |
@@ -126,8 +128,8 @@ disagree, the contract wins and the row is a bug.
 Statements are admitted inside component functions with more than one
 statement, translated as Go closures `ssrF_<name>` of type `vela.Func`
 (ssr_func.go, task 045). Oracle groups: `fn-statements`, `fn-try`,
-`fn-closures`, `fn-recursion`, `stmt-destructure`, `stmt-assign`,
-`errors-new`. Functions have typed variants per argument types besides the
+`fn-closures`, `fn-recursion`, `stmt-destructure`, `stmt-destructure-rest`,
+`stmt-assign`, `stmt-for-in`, `stmt-labels`, `stmt-for-let`, `errors-new`. Functions have typed variants per argument types besides the
 dynamic one (T-7.2a, see "monomorphised variants" above). Status:
 `implemented` unless the notes say otherwise.
 
@@ -135,20 +137,21 @@ dynamic one (T-7.2a, see "monomorphised variants" above). Status:
 | --- | --- | --- | --- |
 | `const`, `let`, block scoping | Go locals in nested blocks | §7.1 | Shadowing is renamed deterministically. |
 | `if` / `else` | Go `if` on `vela.Truthy` | §7.1 | |
-| `for (;;)` | Go `for` | §7.1 | One Go variable per loop: a function created in the body that captures a `let` loop variable is rejected (per-iteration copies are not generated yet). |
+| `for (;;)` | Go `for` | §7.1 | An update of several statements, or a test that can throw, runs at the head of each iteration after the first, so `continue` reaches it. `let` and `const` loop variables are Go loop variables of the init clause: each iteration has its own copy, made before the update runs (Go 1.22 semantics, the same as CreatePerIterationEnvironment), so a closure created in the body keeps its iteration's value; a closure created in the initializer sees the initial binding. stmt-for-let. |
 | `for…of` over arrays | Go `range` | §7.1 | Holes are visited as `undefined`. |
 | `for…of` over strings | iterate code points | §7.1, T-6.3a | Not UTF-16 units. |
+| `for…in` | Go `range` over `vela.ForInKeys` | §7.1, T-5.1c | Keys taken before the first iteration (properties added in the body are not visited, as in V8): own enumerable keys in `Object.keys` order, array indices without holes, string indices by UTF-16 unit; no iteration for `null`, `undefined` and other primitives. |
 | `while`, `do…while` | Go `for` | §7.1 | |
-| `break`, `continue` (no labels) | Go `break` / `continue` | §7.1 | |
+| `break`, `continue`, labels | Go `break` / `continue`; a label of a loop or `switch` is a Go label of it, a label of another statement a Go label after it reached by `goto` | §7.1 | stmt-labels. Several labels of one loop share one Go label. A jump out of a `try` part, labelled or not, is rejected. |
 | `return` | Go `return` | §7.1 | |
 | `throw` | `ssrJS.Throw` records `*vela.Thrown`; uncaught, it is a `*vela.RenderError` of the error's name | T-6.5a | `new Error`, `TypeError`, `RangeError` create error objects. |
 | `try` / `catch` / `finally` | `vela.Try` with closures completing `(value, returned)` | T-6.5d | `return`/`throw` in `finally` overrides. Host errors are caught as `Error("Internal error")` unless wrapped in `vela.PublicError` (T-7.4h). `break`/`continue` across a `try` is rejected. Go panics are not caught. |
 | `switch` | Go `switch` with `vela.StrictEqual` cases; fall-through preserved | §7.1 | |
 | nested function declaration | Go closure | §7.1 | Hoisted within its block; arrow and function expressions are `vela.Func` values; recursion is supported. |
-| destructuring `const {a, b = 1} = o`, `const [x, y] = a` | `ssrJS.Get` / `ssrJS.Index` | §7.1 | Rest elements and computed keys are rejected for now. |
+| destructuring `const {a, b = 1, ...r} = o`, `const [x, y, ...t] = a`, `function f(...xs)` | `ssrJS.Get`, `ssrJS.SpreadItems`, `vela.RestItems`, `ssrJS.ObjectRest` | §7.1 | Destructuring `null`/`undefined` throws `TypeError`, also for an empty pattern. A computed key is converted once (`vela.PropertyKey`) before its value is read. |
 | assignment to locals and to members of local objects; compound operators, `++`, `--` | Go assignment, `ssrJS.SetMember` | T-6.6b | Writes to state, props, or module bindings are impure (T-6.6a). Growing an array by index assignment throws until arrays get identity (task 046). |
 | `var` declarations | rejected | §7.1 | Use `let` or `const`. |
-| labels, `for…in`, generators, `for await`, `with`, `eval`, `arguments`, cross-block `var` hoisting | rejected | §7.1 | `never` in v1. |
+| generators, `for await`, `with`, `eval`, `arguments`, cross-block `var` hoisting | rejected | §7.1 | `never` in v1. |
 
 ### 1.6 Asynchronous code
 
@@ -220,6 +223,9 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `concat`, `toString`, `valueOf` | `ssrJS.Method` | — |  | `str-concat`, `num-tostring` | implemented |
 | spread / `for…of` over a string | code-point iteration | T-6.3a | `[..."😀"].length` is `1` ✓. | `arrays-spread` | implemented |
 | `normalize(form)` | `ssrJS.Method` (`golang.org/x/text/unicode/norm`) | T-6.5a | NFC, NFD, NFKC, NFKD; another form throws `RangeError`. Unicode 17 tables, as in Node 24 (decision of §5). | `str-normalize` | implemented |
+| `String.fromCharCode(...codes)` | `vela.StringFromCharCode` | T-6.3a, T-6.3b | Each argument is a UTF-16 unit (ToUint16: `65601` is `"A"`, `NaN` is `\u0000`); a lone surrogate stays a lone unit (WTF-8), so `fromCharCode(0xD83D, 0xDE00)` is `"😀"`. | `str-fromcharcode` | implemented |
+| `String.fromCodePoint(...points)` | `ssrJS.StringFromCodePoint` | T-6.3a | An argument that is not an integer from 0 to 0x10FFFF throws `RangeError`. | `str-fromcharcode` | implemented |
+| ``String.raw`…` `` | template of the raw text | §6.2 | The only admitted tag: escapes stay as written, line terminators become `\n`, substitutions convert as in a template literal. `String.raw` called as a function and other tags are rejected. | `str-raw` | implemented |
 | `localeCompare`, `toLocaleUpperCase`, `toLocaleLowerCase` | host | §3 | Locale-dependent. | — | never |
 | `match`, `matchAll`, `search`, `replace`/`split` with a RegExp | host | §3 |  | — | never |
 
@@ -240,7 +246,8 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `sort`, `toSorted` | `ssrJS.Method`, `ssrJS.MutateArray` | T-6.3a, T-6.6b | Stable. Without comparator: compares `String(x)` by UTF-16 units and places `undefined` last, holes after it: `[10,9,undefined,1].sort()` is `[1,10,9,undefined]` ✓. Comparator result `NaN` counts as `0`. `sort` only on arrays the function created. | `arr-sort`, `arr-mutate` | implemented |
 | `reverse`, `toReversed` | `ssrJS.Method`, `ssrJS.MutateArray` | T-6.6b | `reverse` mutates: only on arrays the function created. | `arr-reverse`, `arr-mutate` | implemented |
 | `push`, `pop`, `shift`, `unshift`, `splice`, `fill` | `ssrJS.MutateArray` | T-6.6b | As a statement, a `const`/`let` initializer, or the right-hand side of an assignment, on a local array the function created; methods that change the length also need the array not to be copied into another variable, literal, or call argument. Otherwise `VELA-SSR-IMPURE`. | `arr-mutate` | implemented |
-| `entries`, `keys`, `values` in `for…of` | index loop | §7.1 | Only as `for…of` sources in v1. | — | planned (task 056) |
+| `with(index, value)`, `toSpliced(start, count, ...items)` | `ssrJS.Method` | — | Copies with holes read as `undefined`; `with` takes a negative index from the end and throws `RangeError` outside the array; `toSpliced` clamps as `splice`. The result is an array the function created. | `arr-with`, `arr-tospliced` | implemented |
+| `entries`, `keys`, `values` of arrays, iterated at once | `ssrJS.ArrayIterItems` | §7.1 | As `for…of` sources, spread elements and the source of `Array.from`; holes are visited as `undefined`. The iterator itself (`xs.keys().length`, `const it = xs.entries()`) is rejected: it is not an array in JavaScript. | `arr-iterators` | implemented |
 | `Array.from(arrayLike, mapFn)` | `ssrJS.ArrayFrom` | — | Strings by code point; `{length: n}`; holes become `undefined`. | `arr-from` | implemented |
 | `Array.of` | `vela.ArrayOf` | — |  | `arr-from` | implemented |
 
@@ -252,6 +259,8 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `Object.fromEntries` | `ssrJS.ObjectFromEntries` | T-5.1c | Later duplicate keys win but keep the first position. | `obj-from` | implemented |
 | `Object.assign` | `ssrJS.ObjectAssign` | T-6.6b | The target must be an object literal: `Object.assign({}, a, b)`. | `obj-assign` | implemented |
 | `Object.hasOwn` | `ssrJS.ObjectHasOwn` | — |  | `obj-hasown` | implemented |
+| `Object.groupBy(items, fn)` | host / client | T-6.4a | Not native yet: the result has a null prototype, so converting it to text throws `TypeError`, which the text conversion helpers cannot raise (task 057). | — | planned (task 057) |
+| `structuredClone(value)` | `ssrJS.StructuredClone` | T-5.1c | Objects (own enumerable keys in T-5.1c order, not frozen), arrays with their holes, primitives, `undefined` members kept; shared and cyclic references stay shared. An error object clones as its kind (another name as `Error`) with its message only, as V8 serialises it. A function or promise throws an error named `DataCloneError`; its message does not quote the source as V8 does. | `structured-clone` | implemented |
 | `Object.freeze`, `Object.isFrozen` | `vela.ObjectFreeze`, `ssrJS.ObjectIsFrozen` | T-6.6b | A frozen object throws `TypeError` on writes, as in strict-mode JavaScript; freezing is shallow. An array is returned unchanged and `Object.isFrozen` rejects arrays (at build time when the type is proven, else at run time): a Go slice has no identity to mark (decision of §5). | `obj-freeze` | implemented |
 
 ### 2.5 Math
@@ -299,7 +308,7 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | Built-in | Go helper | Rule | Divergence / required edge cases | Oracles | Status |
 | --- | --- | --- | --- | --- | --- |
 | `err.message`, `err.name`, `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | `vela.NewError` | T-6.5d, T-7.4h | Host errors expose `"Internal error"` unless `vela.PublicError`. | `errors-new`, `fn-try` | implemented |
-| `String(err)` | `vela.String` | — | `"[object Object]"` on the server; JavaScript gives `"Error: message"`. | — | planned (task 056) |
+| `String(err)`, `` `${err}` ``, `'' + err` | `vela.String` | T-6.4a | `Error.prototype.toString`: `"Name: message"`, the name alone when the message is empty, the message alone when the name is empty. The message is not enumerable: `Object.keys`, spread and `JSON.stringify` do not see it (`{}`), as in JavaScript. | `errors-tostring` | implemented |
 | `err.stack` | — | — |  | — | never |
 ---
 
@@ -362,6 +371,6 @@ Each needs a product decision before the slice that implements it.
 | `Map` / `Set` native support | host-only in v1 (current), native after beta | after beta |
 | Transcendental `Math` functions (`log`, `exp`, `sin`, …) | **decided 2026-10-07:** exact V8 results, ports of the fdlibm functions V8 uses (Go `math` was measured beyond 1 ulp and wrong for subnormal logarithms) | S5 (done) |
 | `String.prototype.normalize` | **decided 2026-10-07:** `golang.org/x/text` v0.41.0 (Unicode 17); the module requires Go 1.25 | S5 (done) |
-| Computed object keys `{[k]: v}` | admit in S2; keep rejected in v1 | S2 |
+| Computed object keys `{[k]: v}` | **decided 2026-10-18:** admitted in literals and destructuring patterns; the key is evaluated before its value and converted with ToPropertyKey | S7 (done) |
 | `Number.prototype.toString(radix)`, `toPrecision`, `toExponential` | **decided 2026-10-07:** included in the beta | S5 (done) |
 | `Object.freeze` / `isFrozen` | **decided 2026-10-07:** real freezing of objects (writes throw `TypeError`); arrays returned unchanged, `isFrozen` rejects arrays | S5 (done) |

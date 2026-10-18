@@ -53,3 +53,68 @@ func TestSSRMutationRules(t *testing.T) {
 		t.Errorf("fine() must translate")
 	}
 }
+
+// TestSSRArrayIteratorsOnlyWhenIterated: xs.entries(), keys() and values()
+// translate where the iterator is iterated at once (for…of, spread,
+// Array.from); any other use of the iterator object stays rejected.
+func TestSSRArrayIteratorsOnlyWhenIterated(t *testing.T) {
+	src := writeSSRModuleFixture(t, map[string]string{
+		"Iter.vela": `<script>
+  export let items = [1, 2];
+  function size(xs) { const it = xs.keys(); return it; }
+  function count(xs) { return xs.entries().length; }
+  function pairs(xs) { let n = 0; for (const [i] of xs.entries()) n += i; return [...xs.values(), n]; }
+</script>
+<template><p>{size(items)} {count(items)} {pairs(items)}</p></template>
+`,
+	})
+	out := filepath.Join(filepath.Dir(src), "out")
+	report := filepath.Join(out, "report.json")
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/iter/server", SSRReport: report}
+	buildSSRProject(collectVela(src), src, out, opts, false)
+	data, err := os.ReadFile(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{`size has no server-native translation: method value.keys is not available`, `count has no server-native translation: method value.entries is not available`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("report lacks %s", want)
+		}
+	}
+	if strings.Contains(text, `pairs has no`) {
+		t.Errorf("pairs() must translate:\n%s", text)
+	}
+}
+
+// TestSSRLabelledJumpsAcrossTryStayRejected: break and continue, labelled
+// or not, cannot leave a try part, whose statements run in a closure.
+func TestSSRLabelledJumpsAcrossTryStayRejected(t *testing.T) {
+	src := writeSSRModuleFixture(t, map[string]string{
+		"Jumps.vela": `<script>
+  export let n = 2;
+  function labelled(k) { let s = 0; outer: for (let i = 0; i < k; i++) { try { continue outer; } catch (e) { s++; } } return s; }
+  function plain(k) { let s = 0; for (let i = 0; i < k; i++) { try { break; } finally { s++; } } return s; }
+  function inside(k) { let s = 0; try { inner: for (let i = 0; i < k; i++) { if (i) break inner; s++; } } catch (e) {} return s; }
+</script>
+<template><p>{labelled(n)} {plain(n)} {inside(n)}</p></template>
+`,
+	})
+	out := filepath.Join(filepath.Dir(src), "out")
+	report := filepath.Join(out, "report.json")
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/jumps/server", SSRReport: report}
+	buildSSRProject(collectVela(src), src, out, opts, false)
+	data, err := os.ReadFile(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{`labelled has no server-native translation: break or continue across a try statement`, `plain has no server-native translation: break or continue across a try statement`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("report lacks %s", want)
+		}
+	}
+	if strings.Contains(text, `inside has no`) {
+		t.Errorf("a labelled loop inside a try part must translate:\n%s", text)
+	}
+}

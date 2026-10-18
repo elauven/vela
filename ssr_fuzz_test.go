@@ -41,7 +41,7 @@ func TestSSRExpressionDifferentialFuzz(t *testing.T) {
 	}
 	rows := make([]ssrExpressionOracleRow, count)
 	for i := range rows {
-		rows[i] = ssrExpressionOracleRow{Group: "fuzz", Name: fmt.Sprintf("fuzz-%d-%d", seed, i), Expression: g.top(), Values: values}
+		rows[i] = ssrExpressionOracleRow{Group: "fuzz", Name: fmt.Sprintf("fuzz-%d-%d", seed, i), Expression: g.top(), Functions: ssrFuzzFunctions, Values: values}
 	}
 	// Node computes the expected text or exception of every row.
 	script := `
@@ -49,7 +49,7 @@ const rows = JSON.parse(require('fs').readFileSync(0, 'utf8'));
 for (const row of rows) {
   const names = Object.keys(row.values);
   try {
-    row.expected = String(Function(...names, '"use strict"; return (' + row.expression + ');')(...names.map((n) => row.values[n])));
+    row.expected = String(Function(...names, '"use strict"; ' + row.functions + '; return (' + row.expression + ');')(...names.map((n) => row.values[n])));
   } catch (e) {
     row.throws = e.constructor.name;
   }
@@ -84,6 +84,17 @@ var ssrFuzzValues = map[string]string{
 	"yes": `true`, "no": `false`, "z": `null`,
 }
 
+// ssrFuzzFunctions are called by generated expressions with generated
+// arguments, so that statements are fuzzed too: rest elements and
+// properties, computed keys, for…in, labels, and closures over per-iteration
+// loop bindings (task 056).
+const ssrFuzzFunctions = `function fr(a) { const [h, ...t] = a; const { a: x, [String(h)]: y, ...r } = o; return JSON.stringify([h, t, x, y, r]); }
+function fi(v) { let s = ''; for (const k in v) s += k + ':'; return s; }
+function fl(a) { let s = ''; outer: for (const x of a) { for (const y of a) { if (y === x) continue outer; if (String(y) > String(x)) break outer; s += x + '' + y + ','; } } return s; }
+function fc(n) { const fs = []; for (let i = 0; i < Math.min(Math.abs(n), 5); i++) fs.push(() => i * n); return fs.map((g) => g()).join(); }
+function fk(v) { let s = ''; for (const [i, x] of [v, ...xs].entries()) { if (i > 3) break; s += i + '=' + x + ';'; } return s; }
+function fo(v, w) { const g = v ? (x) => x + w : undefined; return String(g?.(w)) + String(v?.length.toFixed?.(1)); }`
+
 type ssrFuzzGenerator struct{ rand *rand.Rand }
 
 func (g *ssrFuzzGenerator) pick(options ...string) string { return options[g.rand.Intn(len(options))] }
@@ -110,7 +121,7 @@ func (g *ssrFuzzGenerator) num(depth int) string {
 		return g.pick("n", "m", "k", "big", "frac", "(0)", "(1.5)", "(-0.5)", "(100)", "xs.length", "s.length")
 	}
 	d := depth - 1
-	switch g.rand.Intn(16) {
+	switch g.rand.Intn(18) {
 	case 0:
 		return "(" + g.num(d) + " " + g.pick("+", "-", "*", "/", "%") + " " + g.num(d) + ")"
 	case 1:
@@ -141,6 +152,10 @@ func (g *ssrFuzzGenerator) num(depth int) string {
 		return "(" + g.bool(d) + " ? " + g.num(d) + " : " + g.num(d) + ")"
 	case 14:
 		return "-(" + g.num(d) + ")"
+	case 15:
+		return "(" + g.any(d) + ", " + g.num(d) + ")"
+	case 16:
+		return g.arr(d) + ".toSpliced(" + g.smallInt() + ", " + g.smallInt() + ").length"
 	}
 	return "(Number.isInteger(" + g.num(d) + ") ? 1 : 0)"
 }
@@ -150,7 +165,7 @@ func (g *ssrFuzzGenerator) str(depth int) string {
 		return g.pick("s", "t", "e", "h", "'ab'", "'Ж'", "'😀'", "' x '", "'$&'")
 	}
 	d := depth - 1
-	switch g.rand.Intn(20) {
+	switch g.rand.Intn(29) {
 	case 0:
 		return "(" + g.str(d) + " + " + g.any(d) + ")"
 	case 1:
@@ -197,6 +212,24 @@ func (g *ssrFuzzGenerator) str(depth int) string {
 		return "typeof " + g.any(d)
 	case 18:
 		return "o." + g.pick("b", "missing", "c")
+	case 19:
+		return "JSON.stringify({ [" + g.str(d) + "]: " + g.any(d) + ", [" + g.num(d) + "]: " + g.any(d) + " })"
+	case 20:
+		return "String(" + g.pick("z?.a.trim()", "o?.missing?.x", "o.b?.trim?.()", "o.a?.trim?.()", "s.join?.('-')", "xs.join?.('-')", "void "+g.any(d)) + ")"
+	case 21:
+		return g.pick("fr", "fl") + "(" + g.arr(d) + ")"
+	case 22:
+		return g.pick("fi", "fk") + "(" + g.any(d) + ")"
+	case 23:
+		return "fc(" + g.num(d) + ")"
+	case 24:
+		return "fo(" + g.any(d) + ", " + g.any(d) + ")"
+	case 25:
+		return "String." + g.pick("fromCharCode", "fromCodePoint") + "(" + g.num(d) + ", " + g.pick("65", "0xD83D", "128512") + ")"
+	case 26:
+		return "String.raw`" + g.pick("a\\n", "\\u0041", "x") + "${" + g.any(d) + "}`"
+	case 27:
+		return "JSON.stringify(structuredClone(" + g.any(d) + "))"
 	}
 	return "Object.entries(o).map((e) => e[0] + '=' + e[1]).join(';')"
 }
@@ -206,7 +239,7 @@ func (g *ssrFuzzGenerator) bool(depth int) string {
 		return g.pick("yes", "no", "true", "false")
 	}
 	d := depth - 1
-	switch g.rand.Intn(10) {
+	switch g.rand.Intn(11) {
 	case 0:
 		return "(" + g.num(d) + " " + g.pick("<", "<=", ">", ">=", "===", "!==") + " " + g.num(d) + ")"
 	case 1:
@@ -225,6 +258,8 @@ func (g *ssrFuzzGenerator) bool(depth int) string {
 		return "(" + g.bool(d) + " " + g.pick("&&", "||") + " " + g.bool(d) + ")"
 	case 8:
 		return "ns." + g.pick("some", "every") + "((x) => x > " + g.num(d) + ")"
+	case 9:
+		return "(" + g.pick(g.str(0), g.smallInt(), "'length'", "'map'", "'toString'") + " in " + g.pick("o", "xs", "ns", "[1, , 3]", "o.c", g.arr(d)) + ")"
 	}
 	return "Object.hasOwn(o, " + g.str(0) + ")"
 }
@@ -234,7 +269,7 @@ func (g *ssrFuzzGenerator) arr(depth int) string {
 		return g.pick("xs", "ns", "ss", "[]", "[1, , 3]")
 	}
 	d := depth - 1
-	switch g.rand.Intn(12) {
+	switch g.rand.Intn(14) {
 	case 0:
 		return "ns.map((x, i) => x * i + " + g.num(d) + ")"
 	case 1:
@@ -257,6 +292,10 @@ func (g *ssrFuzzGenerator) arr(depth int) string {
 		return "ns.toSorted((a, b) => b - a)"
 	case 10:
 		return "[..." + g.arr(d) + ", ..." + g.str(0) + "]"
+	case 11:
+		return g.arr(d) + ".with(" + g.smallInt() + ", " + g.any(d) + ")"
+	case 12:
+		return "[..." + g.arr(d) + "." + g.pick("keys", "values", "entries") + "()]"
 	}
 	return g.arr(d) + ".toReversed()"
 }

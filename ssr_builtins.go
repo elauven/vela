@@ -34,6 +34,7 @@ var ssrBuiltinMethods = map[string]ssrIRFacts{
 	"some": {Bool: true}, "every": {Bool: true}, "find": {}, "findIndex": {Number: true},
 	"findLast": {}, "findLastIndex": {Number: true}, "reduce": {}, "reduceRight": {},
 	"flat": {Array: true}, "flatMap": {Array: true}, "toSorted": {Array: true}, "toReversed": {Array: true},
+	"with": {Array: true}, "toSpliced": {Array: true},
 	// Numbers (§2.6).
 	"toFixed": {String: true}, "toPrecision": {String: true}, "toExponential": {String: true},
 	// Strings, by the decisions of §5.
@@ -47,7 +48,7 @@ var ssrBuiltinMethods = map[string]ssrIRFacts{
 var ssrMutatingMethods = map[string]bool{"push": true, "pop": true, "shift": true, "unshift": true, "splice": true, "sort": false, "reverse": false, "fill": false}
 
 // ssrFreshMethods return a new array or object.
-var ssrFreshMethods = map[string]bool{"map": true, "filter": true, "slice": true, "concat": true, "flat": true, "flatMap": true, "toSorted": true, "toReversed": true, "split": true}
+var ssrFreshMethods = map[string]bool{"map": true, "filter": true, "slice": true, "concat": true, "flat": true, "flatMap": true, "toSorted": true, "toReversed": true, "with": true, "toSpliced": true, "split": true}
 
 // ssrBuiltinGlobal lowers one global function or namespace function.
 type ssrBuiltinGlobal struct {
@@ -80,6 +81,11 @@ var ssrBuiltinGlobals = map[string]ssrBuiltinGlobal{
 	"Number.parseInt":      {Helper: "ParseInt", Args: 2, Facts: ssrIRFacts{Number: true}},
 	"Number.parseFloat":    {Helper: "ParseFloat", Args: 1, Facts: ssrIRFacts{Number: true}},
 	"Array.isArray":        {Helper: "IsArray", Args: 1, Facts: ssrIRFacts{Bool: true}},
+	// §2.2
+	"String.fromCharCode":  {Helper: "StringFromCharCode", Args: -1, Facts: ssrIRFacts{String: true}},
+	"String.fromCodePoint": {Helper: "StringFromCodePoint", JS: true, Args: -1},
+	// §2.8
+	"structuredClone": {Helper: "StructuredClone", JS: true, Args: 1},
 	// §2.3
 	"Array.from": {Helper: "ArrayFrom", JS: true, Args: 2},
 	"Array.of":   {Helper: "ArrayOf", Args: -1, Facts: ssrIRFacts{Array: true}},
@@ -191,6 +197,33 @@ func (b *ssrIRBuilder) spreadArgs(call *JsCallExpr, pos int) (goast.Expr, error)
 	return nil, nil
 }
 
+// iterable builds a value that is iterated at once (for…of, spread,
+// Array.from): xs.entries(), xs.keys() and xs.values() become the list of
+// their items, the only use of these iterators that is translated.
+func (b *ssrIRBuilder) iterable(expr JsExpr, pos int) (SSRIRExpr, error) {
+	call, ok := expr.(*JsCallExpr)
+	if !ok || call.Optional || len(call.Args) != 0 || !b.js {
+		return b.build(expr, pos)
+	}
+	member, ok := call.Callee.(*JsMemberExpr)
+	if !ok || member.Computed || member.Optional || ssrParenthesized(member, call) {
+		return b.build(expr, pos)
+	}
+	property, ok := member.Prop.(*JsIdent)
+	if !ok || (property.Name != "entries" && property.Name != "keys" && property.Name != "values") {
+		return b.build(expr, pos)
+	}
+	if object, global := member.Obj.(*JsIdent); global && ssrGlobalNamespaces[object.Name] {
+		return b.build(expr, pos) // Object.entries(o)
+	}
+	receiver, err := b.build(member.Obj, pos)
+	if err != nil {
+		return nil, err
+	}
+	b.usedJS, b.throws = true, true
+	return &ssrIRJS{ssrIRBase: b.base(pos, ssrIRFacts{}), Method: "ArrayIterItems", Args: []SSRIRExpr{receiver}, Strings: []string{property.Name}, Site: b.site}, nil
+}
+
 func (b *ssrIRBuilder) buildArgs(call *JsCallExpr, pos int) ([]SSRIRExpr, error) {
 	args := make([]SSRIRExpr, 0, len(call.Args))
 	for _, argument := range call.Args {
@@ -243,8 +276,19 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 			}
 			return &ssrIRGo{ssrIRBase: b.base(pos, global.Facts), Expr: &goast.CallExpr{Fun: fun, Args: append(fixed, spread), Ellipsis: 1}}, true, nil
 		}
-		args, err := b.buildArgs(call, pos)
-		if err != nil {
+		var args []SSRIRExpr
+		if name == "Array.from" && len(call.Args) > 0 {
+			// The source is iterated at once: xs.entries() is admitted.
+			first, err := b.iterable(call.Args[0], pos)
+			if err != nil {
+				return nil, true, err
+			}
+			rest, err := b.buildArgs(&JsCallExpr{Args: call.Args[1:]}, pos)
+			if err != nil {
+				return nil, true, err
+			}
+			args = append([]SSRIRExpr{first}, rest...)
+		} else if args, err = b.buildArgs(call, pos); err != nil {
 			return nil, true, err
 		}
 		if name == "Object.isFrozen" && len(args) == 1 && args[0].irBase().Facts.Array {
@@ -381,12 +425,19 @@ func ssrJSNumberText(value float64) string {
 }
 
 // ssrFreshExpr reports an expression that creates a new array or object:
-// a literal, or a call to a built-in that returns a new one.
+// a literal, an error object, or a call to a built-in that returns a new
+// one.
 func ssrFreshExpr(expr JsExpr) bool {
 	switch e := expr.(type) {
 	case *JsArrayExpr, *JsObjectExpr:
 		return true
+	case *JsNewExpr:
+		callee, ok := e.Callee.(*JsIdent)
+		return ok && (callee.Name == "Error" || callee.Name == "TypeError" || callee.Name == "RangeError")
 	case *JsCallExpr:
+		if callee, ok := e.Callee.(*JsIdent); ok && callee.Name == "structuredClone" {
+			return true
+		}
 		member, ok := e.Callee.(*JsMemberExpr)
 		if !ok || member.Computed {
 			return false
@@ -435,6 +486,16 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 			for _, declarator := range node.Decls {
 				name := identName(declarator.Id)
 				if name == "" {
+					// A rest element or property binds a new array or
+					// object; the other names of a pattern hold parts of
+					// the value.
+					ssrPatternNames(declarator.Id, false, func(name string, rest bool) {
+						if rest {
+							f.fresh[name] = true
+						} else {
+							stale[name] = true
+						}
+					})
 					continue
 				}
 				if declarator.Init != nil && ssrFreshExpr(declarator.Init) {
@@ -513,6 +574,35 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 		}
 	}
 	return f
+}
+
+// ssrPatternNames visits the names a binding pattern declares; rest is true
+// for an identifier that is the target of a rest element or property.
+func ssrPatternNames(pattern JsExpr, rest bool, visit func(name string, rest bool)) {
+	switch p := pattern.(type) {
+	case *JsIdent:
+		visit(p.Name, rest)
+	case *JsAssignExpr:
+		ssrPatternNames(p.L, false, visit)
+	case *JsSpreadExpr:
+		_, nested := p.X.(*JsIdent)
+		ssrPatternNames(p.X, nested, visit)
+	case *JsArrayExpr:
+		for _, element := range p.Elems {
+			if element != nil {
+				ssrPatternNames(element, false, visit)
+			}
+		}
+	case *JsObjectExpr:
+		for _, property := range p.Props {
+			target := property.Value
+			if target == nil {
+				target = property.Key
+			}
+			_, plain := target.(*JsIdent)
+			ssrPatternNames(target, property.Spread && plain, visit)
+		}
+	}
 }
 
 // ssrMutationStatement lowers xs.push(…) and the other methods that change

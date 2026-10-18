@@ -272,6 +272,33 @@ func (js *JS) arrayMethod(site string, a []any, name string, args []any) (result
 		}
 		result, _, _ := js.arrayMethod(site, copied, "sort", args)
 		return result, nil, true
+	case "with":
+		// A copy with one item replaced; holes read as undefined.
+		k := toIntegerOrInfinity(arg(0))
+		if k < 0 {
+			k += float64(n)
+		}
+		if k < 0 || k >= float64(n) {
+			return js.throw("RangeError", "Invalid index : "+String(jsValue(arg(0))), site), nil, true
+		}
+		copied := unholed(append([]any{}, a...))
+		copied[int(k)] = arg(1)
+		return copied, nil, true
+	case "toSpliced":
+		// splice on a copy, returning the copy; holes read as undefined.
+		start := relative(arg(0), n)
+		count := n - start
+		if len(args) == 0 {
+			count = 0
+		} else if len(args) > 1 {
+			count = int(math.Max(0, math.Min(toIntegerOrInfinity(args[1]), float64(n-start))))
+		}
+		var inserted []any
+		if len(args) > 2 {
+			inserted = args[2:]
+		}
+		copied := append(append(append([]any{}, a[:start]...), inserted...), a[start+count:]...)
+		return unholed(copied), nil, true
 	case "sort":
 		return js.sortArray(site, a, arg(0)), nil, true
 	case "reverse":

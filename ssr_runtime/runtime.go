@@ -333,6 +333,8 @@ func String(value any) string {
 	switch v := value.(type) {
 	case nil:
 		return "null"
+	case *Object:
+		return objectString(v)
 	case string:
 		return v
 	case bool:

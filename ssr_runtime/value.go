@@ -88,6 +88,13 @@ type Object struct {
 	index map[string]int
 	// frozen is set by Object.freeze: JavaScript writes throw TypeError.
 	frozen bool
+	// errorName is the name on the prototype of an error object (new
+	// Error, new TypeError, …) and empty for other objects. An error's
+	// message, when given, is an own property that is not enumerable: it
+	// stays out of keys, so Object.keys, spread and JSON do not see it.
+	errorName  string
+	message    any
+	hasMessage bool
 }
 
 // objectIndexKeys is the size above which an object gets a key index.
@@ -115,6 +122,10 @@ func (o *Object) find(key string) int {
 // Set defines or replaces a property and returns the object, so a literal
 // lowers to one expression.
 func (o *Object) Set(key string, value any) *Object {
+	if o.hasMessage && key == "message" {
+		o.message = value
+		return o
+	}
 	if i := o.find(key); i >= 0 {
 		o.vals[i] = value
 		return o
@@ -178,6 +189,17 @@ func (o *Object) Spread(value any) *Object {
 func (o *Object) Lookup(key string) (any, bool) {
 	if i := o.find(key); i >= 0 {
 		return o.vals[i], true
+	}
+	if o.errorName != "" {
+		// Error.prototype gives name, and message "" when none was given.
+		switch {
+		case key == "message" && o.hasMessage:
+			return o.message, true
+		case key == "message":
+			return "", true
+		case key == "name":
+			return o.errorName, true
+		}
 	}
 	return nil, false
 }
@@ -556,6 +578,69 @@ func (js *JS) SpreadItems(value any, site string) []any {
 	}
 }
 
+// ForInKeys returns the keys for…in visits, taken before the first
+// iteration: the own enumerable keys of an object in enumeration order,
+// the indices of an array without its holes and of a string's code units;
+// none for other values, null and undefined included.
+func ForInKeys(value any) []any {
+	var keys []string
+	switch v := jsValue(value).(type) {
+	case *Object:
+		keys = v.Keys()
+	case []any:
+		for i, item := range v {
+			if !isHole(item) {
+				keys = append(keys, strconv.Itoa(i))
+			}
+		}
+	case string:
+		for i := range units(v) {
+			keys = append(keys, strconv.Itoa(i))
+		}
+	}
+	out := make([]any, len(keys))
+	for i, key := range keys {
+		out[i] = key
+	}
+	return out
+}
+
+// RestItems returns a copy of items from index from: the array a rest
+// element or a rest parameter binds.
+func RestItems(items []any, from int) []any {
+	if from >= len(items) {
+		return []any{}
+	}
+	return append([]any{}, items[from:]...)
+}
+
+// ObjectRest returns the object a rest property of an object pattern binds:
+// a copy of the own enumerable properties of value without the excluded
+// keys, in enumeration order. Destructuring null or undefined throws
+// TypeError.
+func (js *JS) ObjectRest(value any, excluded []string, site string) *Object {
+	if nullish(value) {
+		js.throw("TypeError", fmt.Sprintf("Cannot destructure '%s' as it is %s.", String(jsValue(value)), nullishName(value)), site)
+		return NewObject()
+	}
+	all := NewObject().Spread(value)
+	if len(excluded) == 0 {
+		return all
+	}
+	rest := NewObject()
+	keys, vals := all.entries()
+next:
+	for i, key := range keys {
+		for _, skip := range excluded {
+			if key == skip {
+				continue next
+			}
+		}
+		rest.Set(key, vals[i])
+	}
+	return rest
+}
+
 // JoinArrays concatenates the literal segments and spread elements of an
 // array literal.
 func JoinArrays(parts ...[]any) []any {
@@ -571,6 +656,12 @@ func propertyKey(key any) string {
 	return String(jsValue(key))
 }
 
+// PropertyKey converts the key of a computed property ({ [k]: v }) to a
+// property name (ToPropertyKey).
+func PropertyKey(key any) string {
+	return propertyKey(key)
+}
+
 // ── Conversions ──────────────────────────────────────────────────────────
 
 // toPrimitive applies ToPrimitive: arrays and objects become their string
@@ -580,10 +671,33 @@ func toPrimitive(value any) any {
 	case []any:
 		return String(v)
 	case *Object:
-		return "[object Object]"
+		return objectString(v)
 	default:
 		return v
 	}
+}
+
+// objectString converts an object to text: Error.prototype.toString for an
+// error object ("Name: message", either part alone when the other is
+// empty), "[object Object]" for other objects.
+func objectString(o *Object) string {
+	if o.errorName == "" {
+		return "[object Object]"
+	}
+	name, message := "Error", ""
+	if value, _ := o.Lookup("name"); !isUndefinedValue(value) {
+		name = String(value)
+	}
+	if value, _ := o.Lookup("message"); !isUndefinedValue(value) {
+		message = String(value)
+	}
+	switch {
+	case name == "":
+		return message
+	case message == "":
+		return name
+	}
+	return name + ": " + message
 }
 
 // ToNumber implements JavaScript ToNumber over the value domain.

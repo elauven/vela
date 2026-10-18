@@ -463,6 +463,10 @@ func TestPrinterRoundTrip(t *testing.T) {
 		`let x = void 0;`,
 		`let x = delete a.b;`,
 		`let x = a in b;`,
+		// in inside a for initializer must stay parenthesised
+		`for (let i = ('a' in o) ? 1 : 0; i < 3; i++) {}`,
+		`for (let i = 0, j = ('k' in o); i < j; i++) {}`,
+		`for (('k' in o); ;) break;`,
 		`let x = a instanceof B;`,
 		`let x = - -a;`,
 		`let x = a, b, c;`,

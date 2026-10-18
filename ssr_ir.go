@@ -95,9 +95,12 @@ type (
 	}
 	ssrIRObject struct {
 		ssrIRBase
-		Keys   []string // "" with Spread
+		Keys   []string // "" with Spread or a computed key
 		Values []SSRIRExpr
 		Spread []bool
+		// Computed holds the key expression of a computed property
+		// ({ [k]: v }), nil for the others.
+		Computed []SSRIRExpr
 	}
 	ssrIRTemplate struct {
 		ssrIRBase
@@ -150,6 +153,24 @@ type (
 		Base  SSRIRExpr
 		Param string
 		Rest  SSRIRExpr
+	}
+	// ssrIRSeq evaluates Exprs in order for their effects and yields the
+	// last (the comma operator), or undefined after all of them (void).
+	ssrIRSeq struct {
+		ssrIRBase
+		Exprs []SSRIRExpr
+		Void  bool
+	}
+	// ssrIROptionalMethod is an optional method call receiver.name?.(…):
+	// Rest, the call on Param and the rest of the chain, runs only when
+	// receiver.name is not null or undefined.
+	ssrIROptionalMethod struct {
+		ssrIRBase
+		Receiver SSRIRExpr
+		Name     string
+		Param    string
+		Rest     SSRIRExpr
+		Site     string
 	}
 	// ssrIRInline is a local binding initializer or a function body inlined
 	// at its use; Name and Kind describe it for diagnostics and the report.
@@ -213,7 +234,12 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 				object = &goast.CallExpr{Fun: goSelectorExpr(object, "Spread"), Args: []goast.Expr{lowerSSRIR(value)}}
 				continue
 			}
-			object = &goast.CallExpr{Fun: goSelectorExpr(object, "Set"), Args: []goast.Expr{ssrGoString(n.Keys[i]), lowerSSRIR(value)}}
+			key := ssrGoString(n.Keys[i])
+			if n.Computed[i] != nil {
+				// Go evaluates the key before the value, as JavaScript.
+				key = &goast.CallExpr{Fun: goSelector("vela", "PropertyKey"), Args: []goast.Expr{lowerSSRIR(n.Computed[i])}}
+			}
+			object = &goast.CallExpr{Fun: goSelectorExpr(object, "Set"), Args: []goast.Expr{key, lowerSSRIR(value)}}
 		}
 		return object
 	case *ssrIRTemplate:
@@ -289,6 +315,39 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 			Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{lowerSSRIR(n.Rest)}}}},
 		}
 		return &goast.CallExpr{Fun: goSelector("vela", "OptionalChain"), Args: []goast.Expr{lowerSSRIR(n.Base), rest}}
+	case *ssrIRSeq:
+		// Statements fix the order: Go leaves the order of a variable
+		// read against a call among operands unspecified.
+		var body []goast.Stmt
+		last := len(n.Exprs) - 1
+		if n.Void {
+			last = len(n.Exprs)
+		}
+		for _, expr := range n.Exprs[:last] {
+			switch expr.(type) {
+			case *ssrIRLiteral, *ssrIRUndefined:
+				continue // no effect; _ = nil would not compile
+			}
+			body = append(body, &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []goast.Expr{lowerSSRIR(expr)}})
+		}
+		result := ssrUndefined()
+		if !n.Void {
+			result = lowerSSRIR(n.Exprs[last])
+		}
+		body = append(body, &goast.ReturnStmt{Results: []goast.Expr{result}})
+		return &goast.CallExpr{Fun: &goast.FuncLit{
+			Type: &goast.FuncType{Params: &goast.FieldList{}, Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("any")}}}},
+			Body: &goast.BlockStmt{List: body},
+		}}
+	case *ssrIROptionalMethod:
+		rest := &goast.FuncLit{
+			Type: &goast.FuncType{
+				Params:  &goast.FieldList{List: []*goast.Field{{Names: []*goast.Ident{goast.NewIdent(n.Param)}, Type: goast.NewIdent("any")}}},
+				Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("any")}}},
+			},
+			Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{lowerSSRIR(n.Rest)}}}},
+		}
+		return &goast.CallExpr{Fun: goSelector("ssrJS", "OptionalMethod"), Args: []goast.Expr{ssrGoString(n.Site), lowerSSRIR(n.Receiver), ssrGoString(n.Name), rest}}
 	case *ssrIRInline:
 		return lowerSSRIR(n.Body)
 	}
@@ -370,7 +429,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 				if !b.js {
 					return nil, ssrExprUnsupported(pos, "array spread is not available to static SSR")
 				}
-				value, err := b.build(spread.X, pos)
+				value, err := b.iterable(spread.X, pos)
 				if err != nil {
 					return nil, err
 				}
@@ -419,13 +478,41 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			out.Exprs = append(out.Exprs, value)
 		}
 		return out, nil
+	case *JsTaggedTemplate:
+		// String.raw is the only admitted tag: the raw text of the
+		// template (escapes kept, line terminators normalised to \n) with
+		// the substitutions converted to strings.
+		if b.globalName(node.Tag) != "String.raw" || node.Quasi == nil || len(node.Quasi.Quasis) != len(node.Quasi.Exprs)+1 {
+			return nil, ssrExprUnsupported(pos, "tagged templates are admitted only with String.raw")
+		}
+		out := &ssrIRTemplate{ssrIRBase: b.base(pos, ssrIRFacts{String: true})}
+		for index, quasi := range node.Quasi.Quasis {
+			out.Quasis = append(out.Quasis, strings.ReplaceAll(strings.ReplaceAll(quasi, "\r\n", "\n"), "\r", "\n"))
+			if index == len(node.Quasi.Exprs) {
+				continue
+			}
+			value, err := b.build(node.Quasi.Exprs[index], pos)
+			if err != nil {
+				return nil, err
+			}
+			out.Exprs = append(out.Exprs, value)
+		}
+		return out, nil
 	case *JsUnaryExpr:
 		if node.Op == "++" || node.Op == "--" {
 			return nil, ssrImpure(pos, "update operator %q writes a binding during server rendering", node.Op)
 		}
+		if node.Op == "void" {
+			if _, literal := node.X.(*JsLiteral); literal {
+				return &ssrIRUndefined{ssrIRBase: b.base(pos, ssrIRFacts{})}, nil
+			}
+		}
 		x, err := b.build(node.X, pos)
 		if err != nil {
 			return nil, err
+		}
+		if node.Op == "void" {
+			return &ssrIRSeq{ssrIRBase: b.base(pos, ssrIRFacts{}), Exprs: []SSRIRExpr{x}, Void: true}, nil
 		}
 		// JavaScript's ! accepts every value and first applies JS truthiness.
 		if node.Op == "!" {
@@ -445,6 +532,16 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 		return nil, ssrExprUnsupported(pos, "unary operator %q is not supported", node.Op)
 	case *JsBinaryExpr:
 		return b.binary(node, pos)
+	case *JsSeqExpr:
+		seq := &ssrIRSeq{ssrIRBase: b.base(pos, ssrIRFacts{})}
+		for _, item := range node.Exprs {
+			value, err := b.build(item, pos)
+			if err != nil {
+				return nil, err
+			}
+			seq.Exprs = append(seq.Exprs, value)
+		}
+		return seq, nil
 	case *JsLogicalExpr:
 		left, err := b.build(node.L, pos)
 		if err != nil {
@@ -633,8 +730,8 @@ func (b *ssrIRBuilder) literal(node *JsLiteral, pos int) (SSRIRExpr, error) {
 	return nil, ssrExprUnsupported(pos, "literal kind %q is not supported", node.Kind)
 }
 
-// object admits data properties with identifier or string keys and spread
-// properties. Every value is evaluated in source order; a later duplicate
+// object admits data properties with identifier, string or computed keys
+// and spread properties. Every value is evaluated in source order; a later duplicate
 // key replaces the value and keeps the first position, as in JavaScript.
 func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 	out := &ssrIRObject{ssrIRBase: b.base(pos, ssrIRFacts{Object: true})}
@@ -654,13 +751,28 @@ func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 			out.Keys = append(out.Keys, "")
 			out.Values = append(out.Values, value)
 			out.Spread = append(out.Spread, true)
+			out.Computed = append(out.Computed, nil)
 			continue
-		}
-		if property.Computed {
-			return nil, ssrExprUnsupported(pos, "computed object property names are not available to static SSR")
 		}
 		if property.Method || property.Kind != "init" {
 			return nil, ssrExprUnsupported(pos, "object methods and accessors are not available to static SSR")
+		}
+		if property.Computed {
+			// { [k]: v } converts k with ToPropertyKey; a computed
+			// "__proto__" is an ordinary own property.
+			key, err := b.build(property.Key, pos)
+			if err != nil {
+				return nil, err
+			}
+			value, err := b.build(property.Value, pos)
+			if err != nil {
+				return nil, err
+			}
+			out.Keys = append(out.Keys, "")
+			out.Values = append(out.Values, value)
+			out.Spread = append(out.Spread, false)
+			out.Computed = append(out.Computed, key)
+			continue
 		}
 		key, err := translateSSRObjectKey(property.Key, pos)
 		if err != nil {
@@ -676,6 +788,7 @@ func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 		out.Keys = append(out.Keys, key)
 		out.Values = append(out.Values, value)
 		out.Spread = append(out.Spread, false)
+		out.Computed = append(out.Computed, nil)
 	}
 	return out, nil
 }
@@ -750,6 +863,12 @@ func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: name, Args: []SSRIRExpr{left, right}}, nil
 	case "**":
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: "Pow", Args: []SSRIRExpr{left, right}}, nil
+	case "in":
+		if !b.js {
+			return nil, ssrExprUnsupported(pos, "the in operator is available only in translated script code")
+		}
+		b.usedJS, b.throws = true, true
+		return &ssrIRJS{ssrIRBase: b.base(pos, ssrIRFacts{Bool: true}), Method: "In", Args: []SSRIRExpr{left, right}, Site: b.site}, nil
 	}
 	return nil, ssrExprUnsupported(pos, "binary operator %q is not supported", node.Op)
 }
@@ -765,14 +884,16 @@ func ssrNullishLiteral(expr JsExpr) bool {
 	return false
 }
 
-// member builds a member chain a.b[c]?.d: the root, then each link. An
-// optional link (?.) stops the rest of the chain when its object is null or
-// undefined (T-6.1b).
+// member builds a member chain a.b[c]: the root, then each link. A chain
+// with an optional link (?.) is built by optionalChain (T-6.1b).
 func (b *ssrIRBuilder) member(node *JsMemberExpr, pos int) (SSRIRExpr, error) {
 	if b.js {
 		if value, ok := b.builtinConstant(node, pos); ok {
 			return value, nil
 		}
+	}
+	if value, handled, err := b.optionalChain(node, pos); handled {
+		return value, err
 	}
 	var links []*JsMemberExpr
 	var root JsExpr = node
@@ -783,29 +904,17 @@ func (b *ssrIRBuilder) member(node *JsMemberExpr, pos int) (SSRIRExpr, error) {
 		}
 		links = append([]*JsMemberExpr{link}, links...)
 		root = link.Obj
+		if ssrParenthesized(root, link) {
+			// (a?.b).c: the parentheses end the optional chain.
+			break
+		}
 	}
 	base, err := b.build(root, pos)
 	if err != nil {
 		return nil, err
 	}
-	return b.memberLinks(base, links, false, pos)
-}
-
-// memberLinks applies links to base. When entered is set, the first link is
-// the optional link whose nullish check has already passed.
-func (b *ssrIRBuilder) memberLinks(base SSRIRExpr, links []*JsMemberExpr, entered bool, pos int) (SSRIRExpr, error) {
-	for i, link := range links {
-		if link.Optional && !(entered && i == 0) {
-			param := "ssrOpt" + strconv.Itoa(b.optionals)
-			b.optionals++
-			inner := &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: goast.NewIdent(param)}
-			rest, err := b.memberLinks(inner, links[i:], true, pos)
-			if err != nil {
-				return nil, err
-			}
-			return &ssrIROptional{ssrIRBase: b.base(pos, ssrIRFacts{}), Base: base, Param: param, Rest: rest}, nil
-		}
-		next, err := b.memberLink(base, link, entered && i == 0, pos)
+	for _, link := range links {
+		next, err := b.memberLink(base, link, false, pos)
 		if err != nil {
 			return nil, err
 		}
@@ -840,13 +949,188 @@ func (b *ssrIRBuilder) memberLink(object SSRIRExpr, link *JsMemberExpr, nonNulli
 	return &ssrIRJS{ssrIRBase: b.base(pos, ssrIRFacts{}), Method: "Index", Args: []SSRIRExpr{object, index}, Site: b.site, NoJS: !b.js}, nil
 }
 
+// ssrChainLink is one link of an optional chain: a member read or a call.
+type ssrChainLink struct {
+	member *JsMemberExpr
+	call   *JsCallExpr
+}
+
+func (l ssrChainLink) optional() bool {
+	if l.member != nil {
+		return l.member.Optional
+	}
+	return l.call.Optional
+}
+
+// ssrParenthesized reports a child expression written in parentheses: it
+// starts after its parent, as in (a?.b).c or (f)().
+func ssrParenthesized(child, parent JsNode) bool {
+	return child.NodePos() != parent.NodePos()
+}
+
+// ssrChain splits a chain a?.b.c(x)?.(y) into its root and links, up to a
+// parenthesised part. A call whose callee is neither a link nor optional
+// (f(x)?.y) is the root: it resolves as any call.
+func ssrChain(expr JsExpr) (JsExpr, []ssrChainLink) {
+	var links []ssrChainLink
+	current := expr
+	for {
+		var next JsExpr
+		switch node := current.(type) {
+		case *JsMemberExpr:
+			links = append([]ssrChainLink{{member: node}}, links...)
+			next = node.Obj
+		case *JsCallExpr:
+			if _, method := node.Callee.(*JsMemberExpr); !method && !node.Optional {
+				return current, links
+			}
+			links = append([]ssrChainLink{{call: node}}, links...)
+			next = node.Callee
+		default:
+			return current, links
+		}
+		if ssrParenthesized(next, current) {
+			return next, links
+		}
+		current = next
+	}
+}
+
+// optionalChain builds a chain with an optional link (T-6.1b): a nullish
+// value before ?. ends the whole chain, calls included, with undefined.
+// Chains without one are not handled here.
+func (b *ssrIRBuilder) optionalChain(expr JsExpr, pos int) (SSRIRExpr, bool, error) {
+	root, links := ssrChain(expr)
+	optional, calls := false, false
+	for _, link := range links {
+		optional = optional || link.optional()
+		calls = calls || link.call != nil
+	}
+	if !optional {
+		return nil, false, nil
+	}
+	if calls && !b.js {
+		return nil, true, ssrExprUnsupported(pos, "calls in optional chains are available only in translated script code")
+	}
+	if ident, ok := root.(*JsIdent); ok && links[0].call != nil {
+		_, local := b.params[ident.Name]
+		_, binding := b.ctx.Bindings[ident.Name]
+		if !local && !binding {
+			// f?.() of a declared, host or module function: never nullish.
+			plain := *links[0].call
+			plain.Optional = false
+			base, err := b.call(&plain, pos)
+			if err != nil {
+				return nil, true, err
+			}
+			value, err := b.chainLinks(base, links[1:], false, pos)
+			return value, true, err
+		}
+	}
+	base, err := b.build(root, pos)
+	if err != nil {
+		return nil, true, err
+	}
+	value, err := b.chainLinks(base, links, false, pos)
+	return value, true, err
+}
+
+// chainLinks applies chain links to base. When entered is set, the first
+// link is the optional link whose nullish check has already passed.
+func (b *ssrIRBuilder) chainLinks(base SSRIRExpr, links []ssrChainLink, entered bool, pos int) (SSRIRExpr, error) {
+	for i := 0; i < len(links); i++ {
+		link := links[i]
+		if link.optional() && !(entered && i == 0) {
+			param := "ssrOpt" + strconv.Itoa(b.optionals)
+			b.optionals++
+			inner := &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: goast.NewIdent(param)}
+			rest, err := b.chainLinks(inner, links[i:], true, pos)
+			if err != nil {
+				return nil, err
+			}
+			return &ssrIROptional{ssrIRBase: b.base(pos, ssrIRFacts{}), Base: base, Param: param, Rest: rest}, nil
+		}
+		nonNullish := entered && i == 0
+		if link.member != nil && i+1 < len(links) && links[i+1].call != nil && links[i+1].call.Callee == link.member {
+			call := links[i+1].call
+			if !call.Optional {
+				value, err := b.methodOn(base, link.member, call, pos)
+				if err != nil {
+					return nil, err
+				}
+				base, i = value, i+1
+				continue
+			}
+			// a.b?.(): the call and the rest of the chain run only when
+			// a.b is not nullish.
+			property, named := link.member.Prop.(*JsIdent)
+			if link.member.Computed || !named {
+				return nil, ssrExprUnsupported(pos, "optional calls of computed members are not supported")
+			}
+			param := "ssrOpt" + strconv.Itoa(b.optionals)
+			b.optionals++
+			receiver := &ssrIRGo{ssrIRBase: b.base(pos, base.irBase().Facts), Expr: goast.NewIdent(param)}
+			value, err := b.methodOn(receiver, link.member, call, pos)
+			if err != nil {
+				return nil, err
+			}
+			rest, err := b.chainLinks(value, links[i+2:], false, pos)
+			if err != nil {
+				return nil, err
+			}
+			b.usedJS, b.throws = true, true
+			return &ssrIROptionalMethod{ssrIRBase: b.base(pos, ssrIRFacts{}), Receiver: base, Name: property.Name, Param: param, Rest: rest, Site: b.site}, nil
+		}
+		if link.member != nil {
+			next, err := b.memberLink(base, link.member, nonNullish, pos)
+			if err != nil {
+				return nil, err
+			}
+			base = next
+			continue
+		}
+		// A call of a function value: f?.(), g(x)?.(), a?.b.c?.().
+		value, err := b.valueCall(base, link.call, pos)
+		if err != nil {
+			return nil, err
+		}
+		base = value
+	}
+	return base, nil
+}
+
+// methodOn calls a catalogue method on an already built receiver, as
+// builtinCall does for receiver.name(args).
+func (b *ssrIRBuilder) methodOn(receiver SSRIRExpr, member *JsMemberExpr, call *JsCallExpr, pos int) (SSRIRExpr, error) {
+	name := "\x00receiver" + strconv.Itoa(b.optionals)
+	b.optionals++
+	if b.params == nil {
+		b.params = map[string]SSRIRExpr{}
+	}
+	b.params[name] = receiver
+	defer delete(b.params, name)
+	synthetic := &JsCallExpr{
+		BaseExpr: call.BaseExpr,
+		Callee:   &JsMemberExpr{BaseExpr: member.BaseExpr, Obj: &JsIdent{BaseExpr: member.BaseExpr, Name: name}, Prop: member.Prop, Computed: member.Computed},
+		Args:     call.Args,
+	}
+	value, handled, err := b.builtinCall(synthetic, pos)
+	if !handled {
+		if property, named := member.Prop.(*JsIdent); named && !member.Computed {
+			return nil, ssrExprUnsupported(pos, "method value.%s is not available during server rendering", property.Name)
+		}
+		return nil, ssrExprUnsupported(pos, "computed method calls are not supported")
+	}
+	return value, err
+}
+
 // call resolves a call in the order of T-4.1: a declared host
 // implementation, then native translation of a top-level named function
 // with one return expression (inlined), otherwise the call is unsupported
 // and the diagnostic names the host implementation that would fix it.
 func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
-	if call.Optional {
-		return nil, ssrExprUnsupported(pos, "optional JavaScript calls are not available to static SSR")
+	if value, handled, err := b.optionalChain(call, pos); handled {
+		return value, err
 	}
 	if member, ok := call.Callee.(*JsMemberExpr); ok && b.js {
 		if value, handled, err := b.promiseCall(member, call, pos); handled {

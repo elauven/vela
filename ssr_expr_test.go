@@ -721,7 +721,7 @@ func TestTranslateSSRExpressionKeepsLastDuplicateObjectProperty(t *testing.T) {
 
 func TestTranslateSSRExpressionRejectsUnsupportedObjectForms(t *testing.T) {
 	for _, source := range []string{
-		`<script>export let key = '';</script><template>{ { [key]: 1 } }</template>`,
+		`<template>{ { get x() { return 1; } } }</template>`,
 		`<template>{ { __proto__: null } }</template>`,
 	} {
 		sfc, err := parseSFC(source)
