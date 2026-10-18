@@ -87,13 +87,19 @@ var ssrFuzzValues = map[string]string{
 // ssrFuzzFunctions are called by generated expressions with generated
 // arguments, so that statements are fuzzed too: rest elements and
 // properties, computed keys, for…in, labels, and closures over per-iteration
-// loop bindings (task 056).
+// loop bindings (task 056); methods, accessors and conversions of objects,
+// dates, Map and Set, groupBy, and array identity (task 057).
 const ssrFuzzFunctions = `function fr(a) { const [h, ...t] = a; const { a: x, [String(h)]: y, ...r } = o; return JSON.stringify([h, t, x, y, r]); }
 function fi(v) { let s = ''; for (const k in v) s += k + ':'; return s; }
 function fl(a) { let s = ''; outer: for (const x of a) { for (const y of a) { if (y === x) continue outer; if (String(y) > String(x)) break outer; s += x + '' + y + ','; } } return s; }
 function fc(n) { const fs = []; for (let i = 0; i < Math.min(Math.abs(n), 5); i++) fs.push(() => i * n); return fs.map((g) => g()).join(); }
 function fk(v) { let s = ''; for (const [i, x] of [v, ...xs].entries()) { if (i > 3) break; s += i + '=' + x + ';'; } return s; }
-function fo(v, w) { const g = v ? (x) => x + w : undefined; return String(g?.(w)) + String(v?.length.toFixed?.(1)); }`
+function fo(v, w) { const g = v ? (x) => x + w : undefined; return String(g?.(w)) + String(v?.length.toFixed?.(1)); }
+function fm(v, w) { const p = { v, get g() { return this.v; }, set g(x) { this.v = x; }, toString() { return 'P' + this.v; }, valueOf() { return typeof this.v === 'number' ? this.v : 7; } }; const a = String(p) + '|' + (p + 1) + '|' + (p > 2); p.g = w; return a + '|' + p.g + '|' + JSON.stringify(p) + '|' + Object.keys(p).join(); }
+function fd(n, w) { const d = new Date(Math.round(n * 1000) * 86400); const r = d.setUTCMonth(Math.trunc(w) % 30); return Number.isNaN(r) ? 'invalid ' + JSON.stringify(d) : d.toISOString() + d.getUTCDay() + (d - new Date(0)); }
+function fs(a) { const m = new Map(); for (const x of a) m.set(x, (m.get(x) ?? 0) + 1); const s = new Set(a); s.delete(a[0]); return [...m].join(';') + '|' + s.size + '|' + s.has(a[1]) + '|' + [...s.values()].join(); }
+function fg(a) { return JSON.stringify(Object.groupBy(a, (x) => typeof x)) + [...Map.groupBy(a, (x) => x === null || x === '')].map(([k, v]) => k + ':' + v.length).join(); }
+function fa(a) { const b = [...a]; const h = { b }; b.length = Math.min(b.length, 3); h.b[5] = 'x'; delete b[0]; b.push(a.length); return JSON.stringify(h) + (1 in b); }`
 
 type ssrFuzzGenerator struct{ rand *rand.Rand }
 
@@ -165,7 +171,7 @@ func (g *ssrFuzzGenerator) str(depth int) string {
 		return g.pick("s", "t", "e", "h", "'ab'", "'Ж'", "'😀'", "' x '", "'$&'")
 	}
 	d := depth - 1
-	switch g.rand.Intn(29) {
+	switch g.rand.Intn(30) {
 	case 0:
 		return "(" + g.str(d) + " + " + g.any(d) + ")"
 	case 1:
@@ -230,6 +236,18 @@ func (g *ssrFuzzGenerator) str(depth int) string {
 		return "String.raw`" + g.pick("a\\n", "\\u0041", "x") + "${" + g.any(d) + "}`"
 	case 27:
 		return "JSON.stringify(structuredClone(" + g.any(d) + "))"
+	case 28:
+		switch g.rand.Intn(5) {
+		case 0:
+			return "fm(" + g.any(d) + ", " + g.any(d) + ")"
+		case 1:
+			return "fd(" + g.num(d) + ", " + g.num(d) + ")"
+		case 2:
+			return "fs(" + g.arr(d) + ")"
+		case 3:
+			return "fg(" + g.arr(d) + ")"
+		}
+		return "fa(" + g.arr(d) + ")"
 	}
 	return "Object.entries(o).map((e) => e[0] + '=' + e[1]).join(';')"
 }
