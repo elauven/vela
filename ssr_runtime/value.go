@@ -578,6 +578,42 @@ func (js *JS) SpreadItems(value any, site string) []any {
 	}
 }
 
+// RestItems returns a copy of items from index from: the array a rest
+// element or a rest parameter binds.
+func RestItems(items []any, from int) []any {
+	if from >= len(items) {
+		return []any{}
+	}
+	return append([]any{}, items[from:]...)
+}
+
+// ObjectRest returns the object a rest property of an object pattern binds:
+// a copy of the own enumerable properties of value without the excluded
+// keys, in enumeration order. Destructuring null or undefined throws
+// TypeError.
+func (js *JS) ObjectRest(value any, excluded []string, site string) *Object {
+	if nullish(value) {
+		js.throw("TypeError", fmt.Sprintf("Cannot destructure '%s' as it is %s.", String(jsValue(value)), nullishName(value)), site)
+		return NewObject()
+	}
+	all := NewObject().Spread(value)
+	if len(excluded) == 0 {
+		return all
+	}
+	rest := NewObject()
+	keys, vals := all.entries()
+next:
+	for i, key := range keys {
+		for _, skip := range excluded {
+			if key == skip {
+				continue next
+			}
+		}
+		rest.Set(key, vals[i])
+	}
+	return rest
+}
+
 // JoinArrays concatenates the literal segments and spread elements of an
 // array literal.
 func JoinArrays(parts ...[]any) []any {

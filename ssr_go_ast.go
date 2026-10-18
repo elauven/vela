@@ -388,6 +388,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	objectType := types.NewNamed(objectName, types.NewStruct(nil, nil), nil)
 	pkg.Scope().Insert(objectName)
 	objectPtr := types.NewPointer(objectType)
+	jsMethod("ObjectRest", []*types.Var{v("value", anyType), v("excluded", types.NewSlice(stringType)), v("site", stringType)}, objectPtr)
 	objectRecv := v("o", objectPtr)
 	objectType.AddMethod(types.NewFunc(token.NoPos, pkg, "Set", types.NewSignatureType(objectRecv, nil, nil, types.NewTuple(v("key", stringType), v("value", anyType)), types.NewTuple(v("", objectPtr)), false)))
 	objectType.AddMethod(types.NewFunc(token.NoPos, pkg, "Spread", types.NewSignatureType(objectRecv, nil, nil, types.NewTuple(v("value", anyType)), types.NewTuple(v("", objectPtr)), false)))
@@ -445,6 +446,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	pkg.Scope().Insert(funcName)
 	_ = funcType
 	ssrRuntimeAddFunc(pkg, "Arg", []*types.Var{v("args", anySlice), v("i", types.Typ[types.Int])}, []*types.Var{v("", anyType)})
+	ssrRuntimeAddFunc(pkg, "RestItems", []*types.Var{v("items", anySlice), v("from", types.Typ[types.Int])}, []*types.Var{v("", anySlice)})
 	ssrRuntimeAddFunc(pkg, "NewError", []*types.Var{v("kind", stringType), v("message", anyType)}, []*types.Var{v("", objectPtr)})
 	jsMethod("Throw", []*types.Var{v("value", anyType), v("site", stringType)}, undefinedType)
 	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "Failed", types.NewSignatureType(jsRecv, nil, nil, nil, types.NewTuple(v("", boolT)), false)))

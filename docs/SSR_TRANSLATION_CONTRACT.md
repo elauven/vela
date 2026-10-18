@@ -313,7 +313,7 @@ panics.
 ### 7.1 Admitted statements (v1)
 
 `const` / `let` declarations (including array/object destructuring with
-defaults), assignment to local bindings, compound assignment, `++`/`--` on
+defaults and rest elements), rest parameters, assignment to local bindings, compound assignment, `++`/`--` on
 local bindings, `if`/`else`, `for (;;)`, `for…of` over arrays and strings,
 `while`, `do…while`, `break` / `continue` (without labels), `return`,
 `throw`, `try` / `catch` / `finally` (T-6.5d), `switch` with `===` matching,

@@ -109,7 +109,7 @@ disagree, the contract wins and the row is a bug.
 | object literal | native | `*vela.Object` | `*vela.Object` | T-5.1c | objects-order | implemented | Insertion order with JavaScript key ordering, observed through the payload (`testdata/ssr_init_oracle.json`). A closed-shape struct lowering is an optimisation not done yet. |
 | object spread `{...o}` | native | `(*vela.Object).Spread` | same | T-5.1c | objects-spread | implemented | |
 | object methods, getters/setters | rejected | — | — | §6.2 | — | never | v1. |
-| destructuring (declarations, parameters, defaults) | native | Go locals | same | §7.1 | stmt-destructure | implemented | Rest elements and computed keys are rejected for now. |
+| destructuring (declarations, parameters, defaults, rest) | native | Go locals | same | §7.1 | stmt-destructure, stmt-destructure-rest | implemented | Array patterns iterate as `for…of` (string code points, holes as `undefined`, `TypeError` for other values); a rest element copies the remaining items, a rest property the remaining own enumerable keys in T-5.1c order. Rest parameters `(...xs)`. Computed keys are rejected for now. |
 | arrow function as local value, argument, or callback prop | native | `vela.Func` closure | same | §7.1 | fn-closures | implemented | A function value created in a template defers writes to state, props, or module bindings to a run-time `VELA-SSR-IMPURE` error, raised only if the render calls it (an event callback passed as a prop is never called). |
 | arrow function as built-in callback | native | `vela.Func` closure called by the built-in | same | T-7.2b | arr-callbacks | implemented | Callback parameters are dynamic; typed element parameters come with the typed variants (T-7.2a). |
 | call to local function with one `return` | native | inlined expression | same | T-7.1a | fn-inline | partial | Existing inliner; becomes an optimisation of the next row. |
@@ -145,7 +145,7 @@ dynamic one (T-7.2a, see "monomorphised variants" above). Status:
 | `try` / `catch` / `finally` | `vela.Try` with closures completing `(value, returned)` | T-6.5d | `return`/`throw` in `finally` overrides. Host errors are caught as `Error("Internal error")` unless wrapped in `vela.PublicError` (T-7.4h). `break`/`continue` across a `try` is rejected. Go panics are not caught. |
 | `switch` | Go `switch` with `vela.StrictEqual` cases; fall-through preserved | §7.1 | |
 | nested function declaration | Go closure | §7.1 | Hoisted within its block; arrow and function expressions are `vela.Func` values; recursion is supported. |
-| destructuring `const {a, b = 1} = o`, `const [x, y] = a` | `ssrJS.Get` / `ssrJS.Index` | §7.1 | Rest elements and computed keys are rejected for now. |
+| destructuring `const {a, b = 1, ...r} = o`, `const [x, y, ...t] = a`, `function f(...xs)` | `ssrJS.Get`, `ssrJS.SpreadItems`, `vela.RestItems`, `ssrJS.ObjectRest` | §7.1 | Destructuring `null`/`undefined` throws `TypeError`, also for an empty pattern. Computed keys are rejected for now. |
 | assignment to locals and to members of local objects; compound operators, `++`, `--` | Go assignment, `ssrJS.SetMember` | T-6.6b | Writes to state, props, or module bindings are impure (T-6.6a). Growing an array by index assignment throws until arrays get identity (task 046). |
 | `var` declarations | rejected | §7.1 | Use `let` or `const`. |
 | labels, `for…in`, generators, `for await`, `with`, `eval`, `arguments`, cross-block `var` hoisting | rejected | §7.1 | `never` in v1. |

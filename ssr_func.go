@@ -375,6 +375,9 @@ func (c *ssrFuncCompiler) function(function *JsFuncDecl) (*goast.FuncLit, error)
 	body = append(body, &goast.IfStmt{Cond: &goast.CallExpr{Fun: goSelector("ssrJS", "Failed")}, Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{ssrUndefined()}}}}})
 	for i, param := range function.Params {
 		arg := &goast.CallExpr{Fun: goSelector("vela", "Arg"), Args: []goast.Expr{goast.NewIdent("ssrArgs"), &goast.BasicLit{Kind: token.INT, Value: strconv.Itoa(i)}}}
+		if _, rest := param.(*JsSpreadExpr); rest {
+			arg.Fun = goSelector("vela", "RestItems")
+		}
 		if typed, ok := c.typedParam(function, i, param, arg); ok {
 			body = append(body, typed...)
 			continue
@@ -821,16 +824,21 @@ func (c *ssrFuncCompiler) bind(pattern JsExpr, value goast.Expr) ([]goast.Stmt, 
 		}
 		return append(out, rest...), nil
 	case *JsArrayExpr:
+		// The value is iterated as for…of: array elements with holes as
+		// undefined, string code points; another value throws TypeError.
 		temp := c.declare("$array")
-		out := []goast.Stmt{ssrVarAny(temp, value), ssrUse(temp)}
+		items := &goast.CallExpr{Fun: goSelector("ssrJS", "SpreadItems"), Args: []goast.Expr{value, ssrGoString(c.site)}}
+		out := []goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(temp)}, Tok: token.DEFINE, Rhs: []goast.Expr{items}}, ssrUse(temp), c.unwind()}
 		for i, element := range p.Elems {
 			if element == nil {
 				continue
 			}
-			if _, spread := element.(*JsSpreadExpr); spread {
-				return nil, c.fail("rest elements in destructuring are not supported yet")
+			index := &goast.BasicLit{Kind: token.INT, Value: strconv.Itoa(i)}
+			var item goast.Expr = &goast.CallExpr{Fun: goSelector("vela", "Arg"), Args: []goast.Expr{goast.NewIdent(temp), index}}
+			if spread, ok := element.(*JsSpreadExpr); ok {
+				element = spread.X
+				item = &goast.CallExpr{Fun: goSelector("vela", "RestItems"), Args: []goast.Expr{goast.NewIdent(temp), index}}
 			}
-			item := &goast.CallExpr{Fun: goSelector("ssrJS", "Index"), Args: []goast.Expr{goast.NewIdent(temp), &goast.BasicLit{Kind: token.FLOAT, Value: strconv.Itoa(i) + ".0"}, ssrGoString(c.site)}}
 			stmts, err := c.bind(element, item)
 			if err != nil {
 				return nil, err
@@ -841,14 +849,21 @@ func (c *ssrFuncCompiler) bind(pattern JsExpr, value goast.Expr) ([]goast.Stmt, 
 	case *JsObjectExpr:
 		temp := c.declare("$object")
 		out := []goast.Stmt{ssrVarAny(temp, value), ssrUse(temp)}
+		var keys []goast.Expr
+		rest := len(p.Props) == 0
 		for _, property := range p.Props {
-			if property.Spread || property.Computed {
-				return nil, c.fail("rest and computed properties in destructuring are not supported yet")
+			if property.Spread {
+				rest = true
+				continue
+			}
+			if property.Computed {
+				return nil, c.fail("computed properties in destructuring are not supported yet")
 			}
 			key, err := translateSSRObjectKey(property.Key, 0)
 			if err != nil {
 				return nil, err
 			}
+			keys = append(keys, ssrGoString(key))
 			item := &goast.CallExpr{Fun: goSelector("ssrJS", "Get"), Args: []goast.Expr{goast.NewIdent(temp), ssrGoString(key), ssrGoString(c.site)}}
 			target := property.Value
 			if target == nil {
@@ -860,7 +875,26 @@ func (c *ssrFuncCompiler) bind(pattern JsExpr, value goast.Expr) ([]goast.Stmt, 
 			}
 			out = append(out, stmts...)
 		}
+		if rest {
+			// The rest property copies the remaining own enumerable keys; an
+			// empty pattern still throws TypeError for null and undefined.
+			excluded := &goast.CompositeLit{Type: &goast.ArrayType{Elt: goast.NewIdent("string")}, Elts: keys}
+			copied := &goast.CallExpr{Fun: goSelector("ssrJS", "ObjectRest"), Args: []goast.Expr{goast.NewIdent(temp), excluded, ssrGoString(c.site)}}
+			if last := p.Props; len(last) > 0 && last[len(last)-1].Spread {
+				out = append(out, c.unwind())
+				stmts, err := c.bind(last[len(last)-1].Value, copied)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, stmts...)
+			} else {
+				out = append(out, &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []goast.Expr{copied}})
+			}
+		}
 		return append(out, c.unwind()), nil
+	case *JsSpreadExpr:
+		// A rest parameter: value is the argument list from its position.
+		return c.bind(p.X, value)
 	}
 	return nil, c.fail("binding pattern %T is not supported", pattern)
 }

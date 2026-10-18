@@ -439,6 +439,16 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 			for _, declarator := range node.Decls {
 				name := identName(declarator.Id)
 				if name == "" {
+					// A rest element or property binds a new array or
+					// object; the other names of a pattern hold parts of
+					// the value.
+					ssrPatternNames(declarator.Id, false, func(name string, rest bool) {
+						if rest {
+							f.fresh[name] = true
+						} else {
+							stale[name] = true
+						}
+					})
 					continue
 				}
 				if declarator.Init != nil && ssrFreshExpr(declarator.Init) {
@@ -517,6 +527,35 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 		}
 	}
 	return f
+}
+
+// ssrPatternNames visits the names a binding pattern declares; rest is true
+// for an identifier that is the target of a rest element or property.
+func ssrPatternNames(pattern JsExpr, rest bool, visit func(name string, rest bool)) {
+	switch p := pattern.(type) {
+	case *JsIdent:
+		visit(p.Name, rest)
+	case *JsAssignExpr:
+		ssrPatternNames(p.L, false, visit)
+	case *JsSpreadExpr:
+		_, nested := p.X.(*JsIdent)
+		ssrPatternNames(p.X, nested, visit)
+	case *JsArrayExpr:
+		for _, element := range p.Elems {
+			if element != nil {
+				ssrPatternNames(element, false, visit)
+			}
+		}
+	case *JsObjectExpr:
+		for _, property := range p.Props {
+			target := property.Value
+			if target == nil {
+				target = property.Key
+			}
+			_, plain := target.(*JsIdent)
+			ssrPatternNames(target, property.Spread && plain, visit)
+		}
+	}
 }
 
 // ssrMutationStatement lowers xs.push(…) and the other methods that change
