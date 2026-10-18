@@ -299,6 +299,92 @@ type ssrFuncCompiler struct {
 	// the innermost try part.
 	tries int
 	loops []int
+	// labels are the enclosing labelled statements, innermost last;
+	// loopLabels label the loop or switch compiled next.
+	labels     []*ssrLabel
+	loopLabels []*ssrLabel
+}
+
+// ssrLabel is a JavaScript label and the Go label it lowers to. A label of
+// a loop or switch is a Go label of that statement (break and continue);
+// a label of another statement is a Go label after it, reached by goto.
+type ssrLabel struct {
+	name, goName string
+	loop, iterates bool
+	tries          int
+	used           bool
+}
+
+// claimLabels takes the labels of the loop or switch being compiled;
+// iterates tells whether continue may name them.
+func (c *ssrFuncCompiler) claimLabels(iterates bool) []*ssrLabel {
+	labels := c.loopLabels
+	c.loopLabels = nil
+	for _, label := range labels {
+		// a: b: for (…) is one Go label: continue needs the label of the
+		// loop itself.
+		label.loop, label.iterates, label.goName = true, iterates, labels[0].goName
+	}
+	return labels
+}
+
+// labeled puts the Go label of labels on a loop or switch when a break or
+// continue used one of them.
+func labeled(labels []*ssrLabel, stmt goast.Stmt) goast.Stmt {
+	for _, label := range labels {
+		if label.used {
+			return &goast.LabeledStmt{Label: goast.NewIdent(label.goName), Stmt: stmt}
+		}
+	}
+	return stmt
+}
+
+// labelStatement lowers label: body. A loop or switch body takes the label
+// itself; for another statement, break label jumps past it.
+func (c *ssrFuncCompiler) labelStatement(s *JsLabeledStmt) ([]goast.Stmt, error) {
+	for _, label := range c.labels {
+		if label.name == s.Label {
+			return nil, c.fail("label %q is already declared", s.Label)
+		}
+	}
+	label := &ssrLabel{name: s.Label, goName: c.declare("$label_" + s.Label), tries: c.tries}
+	c.labels = append(c.labels, label)
+	defer func() { c.labels = c.labels[:len(c.labels)-1] }()
+	switch s.Body.(type) {
+	case *JsForStmt, *JsWhileStmt, *JsDoWhileStmt, *JsForInStmt, *JsSwitchStmt, *JsLabeledStmt:
+		c.loopLabels = append(c.loopLabels, label)
+	default:
+		c.loopLabels = nil
+	}
+	stmts, err := c.statement(s.Body)
+	c.loopLabels = nil
+	if err != nil || label.loop || !label.used {
+		return stmts, err
+	}
+	// Not claimed by a loop or switch: break label jumps past the body.
+	return append(stmts, &goast.LabeledStmt{Label: goast.NewIdent(label.goName), Stmt: &goast.EmptyStmt{Implicit: true}}), nil
+}
+
+// jump lowers break or continue with a label.
+func (c *ssrFuncCompiler) jump(tok token.Token, name string) ([]goast.Stmt, error) {
+	for i := len(c.labels) - 1; i >= 0; i-- {
+		label := c.labels[i]
+		if label.name != name {
+			continue
+		}
+		if label.tries != c.tries {
+			return nil, c.fail("break or continue across a try statement is not supported during server rendering")
+		}
+		if tok == token.CONTINUE && !label.iterates {
+			return nil, c.fail("continue %s does not name a loop", name)
+		}
+		label.used = true
+		if !label.loop {
+			return []goast.Stmt{&goast.BranchStmt{Tok: token.GOTO, Label: goast.NewIdent(label.goName)}}, nil
+		}
+		return []goast.Stmt{&goast.BranchStmt{Tok: tok, Label: goast.NewIdent(label.goName)}}, nil
+	}
+	return nil, c.fail("label %q is not declared", name)
 }
 
 func (c *ssrFuncCompiler) fail(format string, args ...any) error {
@@ -639,7 +725,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 			tok = token.CONTINUE
 		}
 		if label != "" {
-			return nil, c.fail("labels are not admitted (§7.1)")
+			return c.jump(tok, label)
 		}
 		if len(c.loops) == 0 || c.loops[len(c.loops)-1] == 0 {
 			if tok == token.CONTINUE || c.tries > 0 {
@@ -652,7 +738,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 	case *JsTryStmt:
 		return c.tryStatement(s)
 	case *JsLabeledStmt:
-		return nil, c.fail("labels are not admitted (§7.1)")
+		return c.labelStatement(s)
 	}
 	return nil, c.fail("statement %T is not admitted during server rendering (§7.1)", stmt)
 }
@@ -932,6 +1018,7 @@ func (c *ssrFuncCompiler) bind(pattern JsExpr, value goast.Expr) ([]goast.Stmt, 
 // loop lowers while (post nil, doWhile false) and do…while. A do…while
 // evaluates its test after the body and after continue.
 func (c *ssrFuncCompiler) loop(init []goast.Stmt, test JsExpr, post []goast.Stmt, body JsStmt, doWhile bool) ([]goast.Stmt, error) {
+	labels := c.claimLabels(true)
 	c.loops = append(c.loops, 1)
 	defer func() { c.loops = c.loops[:len(c.loops)-1] }()
 	inner, err := c.block(body)
@@ -954,22 +1041,36 @@ func (c *ssrFuncCompiler) loop(init []goast.Stmt, test JsExpr, post []goast.Stmt
 			Post: &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(first)}, Tok: token.ASSIGN, Rhs: []goast.Expr{goast.NewIdent("false")}},
 			Body: &goast.BlockStmt{List: inner},
 		}
-		return []goast.Stmt{loop, c.unwind()}, nil
+		return []goast.Stmt{labeled(labels, loop), c.unwind()}, nil
 	}
-	if throws {
-		// The test runs at the top of every iteration; an exception in it
-		// leaves the loop and unwinds.
-		body := append([]goast.Stmt{&goast.IfStmt{Cond: &goast.UnaryExpr{Op: token.NOT, X: cond}, Body: &goast.BlockStmt{List: []goast.Stmt{&goast.BranchStmt{Tok: token.BREAK}}}}, c.unwind()}, inner...)
-		body = append(body, post...)
-		return append(init, &goast.ForStmt{Body: &goast.BlockStmt{List: body}}, c.unwind()), nil
+	if throws || len(post) > 1 {
+		// The update runs at the top of every iteration but the first, so
+		// that continue reaches it, then the test; an exception in the
+		// test leaves the loop and unwinds.
+		first := c.declare("$first")
+		var head []goast.Stmt
+		if len(post) > 0 {
+			head = append(head, &goast.IfStmt{Cond: &goast.UnaryExpr{Op: token.NOT, X: goast.NewIdent(first)}, Body: &goast.BlockStmt{List: post}})
+		}
+		head = append(head, &goast.IfStmt{Cond: &goast.UnaryExpr{Op: token.NOT, X: cond}, Body: &goast.BlockStmt{List: []goast.Stmt{&goast.BranchStmt{Tok: token.BREAK}}}})
+		if throws {
+			head = append(head, c.unwind())
+		}
+		loop := &goast.ForStmt{
+			Init: &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(first)}, Tok: token.DEFINE, Rhs: []goast.Expr{goast.NewIdent("true")}},
+			Post: &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(first)}, Tok: token.ASSIGN, Rhs: []goast.Expr{goast.NewIdent("false")}},
+			Body: &goast.BlockStmt{List: append(head, inner...)},
+		}
+		if len(post) == 0 {
+			loop.Init, loop.Post = nil, nil
+		}
+		return append(init, labeled(labels, loop), c.unwind()), nil
 	}
 	loop := &goast.ForStmt{Cond: cond, Body: &goast.BlockStmt{List: inner}}
 	if len(post) == 1 {
 		loop.Post = post[0]
-	} else if len(post) > 1 {
-		loop.Body.List = append(loop.Body.List, post...)
 	}
-	return append(init, loop, c.unwind()), nil
+	return append(init, labeled(labels, loop), c.unwind()), nil
 }
 
 func (c *ssrFuncCompiler) forStatement(s *JsForStmt) ([]goast.Stmt, error) {
@@ -1038,6 +1139,7 @@ func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+	labels := c.claimLabels(true)
 	c.loops = append(c.loops, 1)
 	inner, err := c.block(s.Body)
 	c.loops = c.loops[:len(c.loops)-1]
@@ -1049,7 +1151,7 @@ func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
 		items = &goast.CallExpr{Fun: goSelector("vela", "ForInKeys"), Args: []goast.Expr{collection}}
 	}
 	loop := &goast.RangeStmt{Key: goast.NewIdent("_"), Value: goast.NewIdent(item), Tok: token.DEFINE, X: items, Body: &goast.BlockStmt{List: append(bind, inner...)}}
-	return []goast.Stmt{loop, c.unwind()}, nil
+	return []goast.Stmt{labeled(labels, loop), c.unwind()}, nil
 }
 
 // switchStatement matches with === in order; a case body without break,
@@ -1065,6 +1167,7 @@ func (c *ssrFuncCompiler) switchStatement(s *JsSwitchStmt) ([]goast.Stmt, error)
 		out = append(out, c.unwind())
 	}
 	sw := &goast.SwitchStmt{Body: &goast.BlockStmt{}}
+	labels := c.claimLabels(false)
 	c.loops = append(c.loops, 1) // break leaves the switch
 	defer func() { c.loops = c.loops[:len(c.loops)-1] }()
 	for i, kase := range s.Cases {
@@ -1086,7 +1189,7 @@ func (c *ssrFuncCompiler) switchStatement(s *JsSwitchStmt) ([]goast.Stmt, error)
 		clause.Body = body
 		sw.Body.List = append(sw.Body.List, clause)
 	}
-	return append(out, sw), nil
+	return append(out, labeled(labels, sw)), nil
 }
 
 func ssrCompletesAbruptly(body []JsStmt) bool {

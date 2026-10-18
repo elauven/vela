@@ -321,14 +321,13 @@ defaults, rest elements and computed keys), rest parameters, assignment to
 local bindings, compound assignment, `++`/`--` on local bindings,
 `if`/`else`, `for (;;)`, `for…of` over arrays and strings, `for…in` (keys
 in `Object.keys` order, taken before the first iteration; none for `null`
-and `undefined`), `while`, `do…while`, `break` / `continue` (without
-labels), `return`, `throw`, `try` / `catch` / `finally` (T-6.5d), `switch`
-with `===` matching, nested function declarations, block scoping, `async`
-functions and `await` (§7.4).
+and `undefined`), `while`, `do…while`, `break` / `continue` (also with
+labels of loops, `switch` and blocks), `return`, `throw`, `try` / `catch`
+/ `finally` (T-6.5d), `switch` with `===` matching, nested function
+declarations, block scoping, `async` functions and `await` (§7.4).
 
-Not admitted in v1: labels, generators and async generators,
-`for await`, classes, `with`, `eval`, `arguments`, `var` hoisting across
-blocks, getters/setters.
+Not admitted in v1: generators and async generators, `for await`, classes,
+`with`, `eval`, `arguments`, `var` hoisting across blocks, getters/setters.
 
 - **T-7.1a** A helper with several statements is translated as a Go function,
   not inlined. The current single-`return` inliner becomes an optimisation of
