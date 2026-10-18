@@ -117,12 +117,25 @@ func ssrInlinable(function *JsFuncDecl) bool {
 	if !ok || result.Arg == nil {
 		return false
 	}
+	params := map[string]bool{}
 	for _, param := range function.Params {
 		if identName(param) == "" {
 			return false
 		}
+		params[identName(param)] = true
 	}
-	return true
+	// A closure that reads a parameter needs the compiled function: an
+	// inlined parameter is an expression, not a variable it can capture.
+	captures := false
+	WalkNode(result.Arg, func(n JsNode) bool {
+		switch n.(type) {
+		case *JsArrowFunc, *JsFuncExpr:
+			ssrWalkIdents(n, func(name string) { captures = captures || params[name] })
+			return false
+		}
+		return !captures
+	})
+	return !captures
 }
 
 // ssrWalkIdents visits every identifier read in a statement tree.

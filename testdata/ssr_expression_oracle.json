@@ -309,5 +309,6 @@
  {"group":"ops-comma-void","name":"void-null","functions":"function f(x) { return String(void null) + String(void x); }","expression":"f(a)","values":{"a":null},"expected":"undefinedundefined"},
  {"group":"ops-comma-void","name":"void-throws","functions":"function f(o) { return void o.x.y; }","expression":"f(a)","values":{"a":{}},"throws":"TypeError"},
  {"group":"ops-comma-void","name":"void-template","expression":"String(void a)","values":{"a":3},"expected":"undefined"},
- {"group":"ops-comma-void","name":"comma-arrow-body","functions":"function f(xs) { let total = 0, n = 0; xs.forEach((x) => { total += x, n += 1; }); return total + '/' + n; }","expression":"f(a)","values":{"a":[1,2,3]},"expected":"6/3"}
+ {"group":"ops-comma-void","name":"comma-arrow-body","functions":"function f(xs) { let total = 0, n = 0; xs.forEach((x) => { total += x, n += 1; }); return total + '/' + n; }","expression":"f(a)","values":{"a":[1,2,3]},"expected":"6/3"},
+ {"group":"fn-closures","name":"fn-closure-captures-inlined-param","functions":"function f(o) { return ['a', 'b'].map((k) => k + o.a).join(); }","expression":"f(a)","values":{"a":{"a":1}},"expected":"a1,b1"}
 ]
