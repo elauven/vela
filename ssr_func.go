@@ -309,7 +309,7 @@ type ssrFuncCompiler struct {
 // a loop or switch is a Go label of that statement (break and continue);
 // a label of another statement is a Go label after it, reached by goto.
 type ssrLabel struct {
-	name, goName string
+	name, goName   string
 	loop, iterates bool
 	tries          int
 	used           bool
@@ -708,9 +708,9 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 		}
 		return c.guardTest(branch, throws), nil
 	case *JsWhileStmt:
-		return c.loop(nil, s.Test, nil, s.Body, false)
+		return c.loop(nil, nil, s.Test, nil, s.Body, false)
 	case *JsDoWhileStmt:
-		return c.loop(nil, s.Test, nil, s.Body, true)
+		return c.loop(nil, nil, s.Test, nil, s.Body, true)
 	case *JsForStmt:
 		return c.forStatement(s)
 	case *JsForInStmt:
@@ -1015,15 +1015,24 @@ func (c *ssrFuncCompiler) bind(pattern JsExpr, value goast.Expr) ([]goast.Stmt, 
 	return nil, c.fail("binding pattern %T is not supported", pattern)
 }
 
-// loop lowers while (post nil, doWhile false) and do…while. A do…while
-// evaluates its test after the body and after continue.
-func (c *ssrFuncCompiler) loop(init []goast.Stmt, test JsExpr, post []goast.Stmt, body JsStmt, doWhile bool) ([]goast.Stmt, error) {
+// loop lowers while (post nil, doWhile false), do…while, and the loop of
+// for (;;). A do…while evaluates its test after the body and after
+// continue. vars declares the loop variables of for (let …;;) in the Go
+// init clause, where Go gives each iteration its own copy, made before the
+// update runs, as JavaScript does (CreatePerIterationEnvironment); uses
+// mark them used.
+func (c *ssrFuncCompiler) loop(vars *goast.AssignStmt, uses []goast.Stmt, test JsExpr, post []goast.Stmt, body JsStmt, doWhile bool) ([]goast.Stmt, error) {
 	labels := c.claimLabels(true)
 	c.loops = append(c.loops, 1)
 	defer func() { c.loops = c.loops[:len(c.loops)-1] }()
 	inner, err := c.block(body)
 	if err != nil {
 		return nil, err
+	}
+	inner = append(uses, inner...)
+	var init goast.Stmt
+	if vars != nil {
+		init = vars
 	}
 	var cond goast.Expr = goast.NewIdent("true")
 	throws := false
@@ -1056,29 +1065,28 @@ func (c *ssrFuncCompiler) loop(init []goast.Stmt, test JsExpr, post []goast.Stmt
 		if throws {
 			head = append(head, c.unwind())
 		}
+		start := &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(first)}, Tok: token.DEFINE, Rhs: []goast.Expr{goast.NewIdent("true")}}
+		if vars != nil {
+			start.Lhs, start.Rhs = append(start.Lhs, vars.Lhs...), append(start.Rhs, vars.Rhs...)
+		}
 		loop := &goast.ForStmt{
-			Init: &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(first)}, Tok: token.DEFINE, Rhs: []goast.Expr{goast.NewIdent("true")}},
+			Init: start,
 			Post: &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(first)}, Tok: token.ASSIGN, Rhs: []goast.Expr{goast.NewIdent("false")}},
 			Body: &goast.BlockStmt{List: append(head, inner...)},
 		}
 		if len(post) == 0 {
-			loop.Init, loop.Post = nil, nil
+			loop.Init, loop.Post = init, nil
 		}
-		return append(init, labeled(labels, loop), c.unwind()), nil
+		return []goast.Stmt{labeled(labels, loop), c.unwind()}, nil
 	}
-	loop := &goast.ForStmt{Cond: cond, Body: &goast.BlockStmt{List: inner}}
+	loop := &goast.ForStmt{Init: init, Cond: cond, Body: &goast.BlockStmt{List: inner}}
 	if len(post) == 1 {
 		loop.Post = post[0]
 	}
-	return append(init, labeled(labels, loop), c.unwind()), nil
+	return []goast.Stmt{labeled(labels, loop), c.unwind()}, nil
 }
 
 func (c *ssrFuncCompiler) forStatement(s *JsForStmt) ([]goast.Stmt, error) {
-	if decl, ok := s.Init.(*JsVarDecl); ok && ssrClosesOver(s.Body, decl) {
-		// JavaScript gives each iteration its own copy of a let loop
-		// variable; the lowering shares one Go variable.
-		return nil, c.fail("a function created in a for loop body must not capture the loop variable during server rendering")
-	}
 	c.scopes = append(c.scopes, map[string]string{})
 	defer func() { c.scopes = c.scopes[:len(c.scopes)-1] }()
 	var init []goast.Stmt
@@ -1086,6 +1094,30 @@ func (c *ssrFuncCompiler) forStatement(s *JsForStmt) ([]goast.Stmt, error) {
 		var err error
 		if init, err = c.statement(s.Init); err != nil {
 			return nil, err
+		}
+	}
+	// The declared loop variables get Go loop variables, one copy per
+	// iteration, initialised from the declarations.
+	var vars *goast.AssignStmt
+	var uses []goast.Stmt
+	if decl, ok := s.Init.(*JsVarDecl); ok {
+		c.scopes = append(c.scopes, map[string]string{})
+		defer func() { c.scopes = c.scopes[:len(c.scopes)-1] }()
+		vars = &goast.AssignStmt{Tok: token.DEFINE}
+		for _, declarator := range decl.Decls {
+			ssrPatternNames(declarator.Id, false, func(name string, _ bool) {
+				outer, _ := c.lookup(name)
+				inner := c.declare(name)
+				if facts, typed := c.varFacts[outer]; typed {
+					c.varFacts[inner] = facts
+				}
+				vars.Lhs = append(vars.Lhs, goast.NewIdent(inner))
+				vars.Rhs = append(vars.Rhs, goast.NewIdent(outer))
+				uses = append(uses, ssrUse(inner))
+			})
+		}
+		if len(vars.Lhs) == 0 {
+			vars, uses = nil, nil
 		}
 	}
 	var post []goast.Stmt
@@ -1104,7 +1136,7 @@ func (c *ssrFuncCompiler) forStatement(s *JsForStmt) ([]goast.Stmt, error) {
 			post = stmts
 		}
 	}
-	stmts, err := c.loop(nil, s.Test, post, s.Body, false)
+	stmts, err := c.loop(vars, uses, s.Test, post, s.Body, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1406,31 +1438,6 @@ func ssrEndsWithReturn(stmts []goast.Stmt) bool {
 	}
 	_, ok := stmts[len(stmts)-1].(*goast.ReturnStmt)
 	return ok
-}
-
-// ssrClosesOver reports a function inside body that reads a name declared
-// by decl.
-func ssrClosesOver(body JsStmt, decl *JsVarDecl) bool {
-	names := map[string]bool{}
-	for _, declarator := range decl.Decls {
-		if ident, ok := declarator.Id.(*JsIdent); ok {
-			names[ident.Name] = true
-		}
-	}
-	found := false
-	WalkNode(body, func(n JsNode) bool {
-		switch n.(type) {
-		case *JsArrowFunc, *JsFuncExpr, *JsFuncDecl:
-			ssrWalkIdents(n, func(name string) {
-				if names[name] {
-					found = true
-				}
-			})
-			return false
-		}
-		return !found
-	})
-	return found
 }
 
 func (t *ssrFuncTable) contextExpr() goast.Expr {

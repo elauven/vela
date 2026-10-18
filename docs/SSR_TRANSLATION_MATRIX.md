@@ -129,7 +129,7 @@ Statements are admitted inside component functions with more than one
 statement, translated as Go closures `ssrF_<name>` of type `vela.Func`
 (ssr_func.go, task 045). Oracle groups: `fn-statements`, `fn-try`,
 `fn-closures`, `fn-recursion`, `stmt-destructure`, `stmt-destructure-rest`,
-`stmt-assign`, `stmt-for-in`, `stmt-labels`, `errors-new`. Functions have typed variants per argument types besides the
+`stmt-assign`, `stmt-for-in`, `stmt-labels`, `stmt-for-let`, `errors-new`. Functions have typed variants per argument types besides the
 dynamic one (T-7.2a, see "monomorphised variants" above). Status:
 `implemented` unless the notes say otherwise.
 
@@ -137,7 +137,7 @@ dynamic one (T-7.2a, see "monomorphised variants" above). Status:
 | --- | --- | --- | --- |
 | `const`, `let`, block scoping | Go locals in nested blocks | §7.1 | Shadowing is renamed deterministically. |
 | `if` / `else` | Go `if` on `vela.Truthy` | §7.1 | |
-| `for (;;)` | Go `for` | §7.1 | An update of several statements, or a test that can throw, runs at the head of each iteration after the first, so `continue` reaches it. One Go variable per loop: a function created in the body that captures a `let` loop variable is rejected (per-iteration copies are not generated yet). |
+| `for (;;)` | Go `for` | §7.1 | An update of several statements, or a test that can throw, runs at the head of each iteration after the first, so `continue` reaches it. `let` and `const` loop variables are Go loop variables of the init clause: each iteration has its own copy, made before the update runs (Go 1.22 semantics, the same as CreatePerIterationEnvironment), so a closure created in the body keeps its iteration's value; a closure created in the initializer sees the initial binding. stmt-for-let. |
 | `for…of` over arrays | Go `range` | §7.1 | Holes are visited as `undefined`. |
 | `for…of` over strings | iterate code points | §7.1, T-6.3a | Not UTF-16 units. |
 | `for…in` | Go `range` over `vela.ForInKeys` | §7.1, T-5.1c | Keys taken before the first iteration (properties added in the body are not visited, as in V8): own enumerable keys in `Object.keys` order, array indices without holes, string indices by UTF-16 unit; no iteration for `null`, `undefined` and other primitives. |
