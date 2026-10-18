@@ -319,7 +319,10 @@ components write no entry.
     reads none; which components write one is decided at compile time from
     the same source, so server and client agree (payload version 3, task
     059). `$bindable` props are not in the entry: the client takes them from
-    the props (S-6.2, S-6.3).
+    the props (S-6.2, S-6.3). A value JSON cannot restore — a promise, a
+    function, a Date, a Map or Set, an object with methods or accessors, or
+    an array or object that holds one — is left out and named in a fourth
+    element `{"omitted": [names]}`; the client evaluates its initializer.
   - `["a", site, snapshot]` — written when a server-evaluated `{#await}`
     renders (T-7.4f). `site` is the compile-time await site identifier.
 - **S-6.5 Nothing for client-only code.** The main branch of `{#client}` and
