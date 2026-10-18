@@ -207,6 +207,28 @@ func (o *Object) defineAccessor(key string, get, set Func) *Object {
 	return o.add(key, &accessor{get: get, set: set})
 }
 
+// remove deletes an own property, keeping the order of the others. An
+// error's message falls back to the prototype's "".
+func (o *Object) remove(key string) {
+	if o.hasMessage && key == "message" {
+		o.message, o.hasMessage = nil, false
+		return
+	}
+	i := o.find(key)
+	if i < 0 {
+		return
+	}
+	// New slices: Keys and entries hand out the current ones.
+	o.keys = append(append(make([]string, 0, len(o.keys)-1), o.keys[:i]...), o.keys[i+1:]...)
+	o.vals = append(append(make([]any, 0, len(o.vals)-1), o.vals[:i]...), o.vals[i+1:]...)
+	if o.index != nil {
+		o.index = make(map[string]int, 2*len(o.keys))
+		for j, k := range o.keys {
+			o.index[k] = j
+		}
+	}
+}
+
 // add appends a new property.
 func (o *Object) add(key string, value any) *Object {
 	if o.keys == nil {

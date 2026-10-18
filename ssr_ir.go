@@ -533,6 +533,9 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 		if node.Op == "++" || node.Op == "--" {
 			return nil, ssrImpure(pos, "update operator %q writes a binding during server rendering", node.Op)
 		}
+		if node.Op == "delete" {
+			return b.deleteExpr(node, pos)
+		}
 		if node.Op == "void" {
 			if _, literal := node.X.(*JsLiteral); literal {
 				return &ssrIRUndefined{ssrIRBase: b.base(pos, ssrIRFacts{})}, nil
@@ -1003,6 +1006,55 @@ func ssrIsFunction(expr JsExpr) bool {
 		return true
 	}
 	return false
+}
+
+// deleteExpr lowers delete o.k and delete a[i] on a value the function
+// created (T-6.6b), and delete this.k on an object a translated function
+// created during the render.
+func (b *ssrIRBuilder) deleteExpr(node *JsUnaryExpr, pos int) (SSRIRExpr, error) {
+	member, ok := node.X.(*JsMemberExpr)
+	if !ok || member.Optional {
+		return nil, ssrExprUnsupported(pos, "delete is admitted only on a property, as in delete o.k or delete a[i]")
+	}
+	c := b.funcCompiler
+	root := JsExpr(member)
+	for {
+		inner, isMember := root.(*JsMemberExpr)
+		if !isMember {
+			break
+		}
+		root = inner.Obj
+	}
+	_, viaThis := member.Obj.(*JsThisExpr)
+	if !viaThis {
+		name := identName(root)
+		fresh := false
+		if c != nil && name != "" && c.freshness != nil {
+			_, local := c.lookup(name)
+			fresh = local && c.freshness.fresh[name]
+		}
+		if !fresh {
+			return nil, ssrImpure(pos, "delete changes a value the function did not create (T-6.6a)")
+		}
+	}
+	object, err := b.build(member.Obj, pos)
+	if err != nil {
+		return nil, err
+	}
+	var key goast.Expr
+	if member.Computed {
+		value, err := b.build(member.Prop, pos)
+		if err != nil {
+			return nil, err
+		}
+		key = lowerSSRIR(value)
+	} else if property, named := member.Prop.(*JsIdent); named {
+		key = ssrGoString(property.Name)
+	} else {
+		return nil, ssrExprUnsupported(pos, "member name %T is not supported", member.Prop)
+	}
+	b.usedJS, b.throws = true, true
+	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{Bool: true}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "Delete"), Args: []goast.Expr{lowerSSRIR(object), key, goast.NewIdent(strconv.FormatBool(viaThis)), ssrGoString(b.site)}}}, nil
 }
 
 // ssrConversionKeys are the properties that conversions of an object call.

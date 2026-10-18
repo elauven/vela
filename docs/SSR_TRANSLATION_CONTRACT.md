@@ -236,7 +236,8 @@ panics.
 | comma `(a, b)`, `void e` | Admitted; operands are evaluated left to right with their effects; `void` yields `undefined`. |
 | `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | Admitted; produce error objects with `name` from the prototype and a non-enumerable `message`; text conversion is `Error.prototype.toString`. |
 | object methods, getters/setters, `this`, `o.m()` | Admitted (T-7.1c). |
-| other `new`, `class`, `delete`, `instanceof`, regex literals, tagged templates | `unsupported` in v1. |
+| `delete o.k`, `delete a[i]` | Admitted on values the function created (T-6.6b). |
+| other `new`, `class`, `instanceof`, regex literals, tagged templates | `unsupported` in v1. |
 
 ### 6.3 Strings
 

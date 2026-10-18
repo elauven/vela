@@ -465,6 +465,8 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "Call", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("fn", anyType), v("args", anySlice)), types.NewTuple(v("", anyType)), true)))
 	jsMethod("SetMember", []*types.Var{v("object", anyType), v("key", anyType), v("value", anyType), v("site", stringType)}, anyType)
 	jsMethod("SetThis", []*types.Var{v("this", anyType), v("key", anyType), v("value", anyType), v("site", stringType)}, anyType)
+	jsMethod("SetElement", []*types.Var{v("target", anyType), v("key", anyType), v("value", anyType), v("site", stringType)}, anyType)
+	jsMethod("Delete", []*types.Var{v("target", anyType), v("key", anyType), v("local", boolT), v("site", stringType)}, boolT)
 	jsMethod("LocalObject", nil, objectPtr)
 	part := types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(v("", anyType), v("", boolT)), false)
 	catchPart := types.NewSignatureType(nil, nil, nil, types.NewTuple(v("error", anyType)), types.NewTuple(v("", anyType), v("", boolT)), false)

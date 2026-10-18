@@ -98,7 +98,8 @@ disagree, the contract wins and the row is a bug.
 | assignment to state, props, module bindings | rejected | — | — | T-6.6a | go-tests | partial | `VELA-SSR-IMPURE` (S1) for assignments and `++` / `--`; covered by a Go test, not an oracle group. |
 | comma `(a, b)`, `void e` | native | closure with the operands as statements, in order | same | §6.2 | ops-comma-void | implemented | Every operand is evaluated, left to right, with its effects; `void` yields `undefined`. |
 | `k in o` | native | `ssrJS.In` | same | §6.2 | ops-in | implemented | Own properties and the prototype names of Node 24 (`'toString' in {}`, `'map' in []`, `'stack'` of errors); array index keys skip holes; Go values through their JSON view. A primitive right operand throws `TypeError`; a function value fails the render (its own properties depend on how it was written). `#x in o` stays rejected (classes are not translated). |
-| `delete`, `instanceof` | rejected | — | — | §6.2 | — | never | v1. |
+| `delete o.k`, `delete a[i]` | native | `ssrJS.Delete` | same | T-6.6b | arr-delete | implemented | On an object or array the function created; `delete this.k` on an object a translated function created during the render (checked at run time). An array index becomes a hole; a deleted and added again key moves to the end; deleting `length` or a property of a frozen object throws `TypeError`. On state, props, or module values `VELA-SSR-IMPURE`. |
+| `instanceof` | rejected | — | — | §6.2 | — | never | v1. |
 
 ### 1.4 Compound values and functions
 
@@ -150,7 +151,7 @@ dynamic one (T-7.2a, see "monomorphised variants" above). Status:
 | `switch` | Go `switch` with `vela.StrictEqual` cases; fall-through preserved | §7.1 | |
 | nested function declaration | Go closure | §7.1 | Hoisted within its block; arrow and function expressions are `vela.Func` values; recursion is supported. |
 | destructuring `const {a, b = 1, ...r} = o`, `const [x, y, ...t] = a`, `function f(...xs)` | `ssrJS.Get`, `ssrJS.SpreadItems`, `vela.RestItems`, `ssrJS.ObjectRest` | §7.1 | Destructuring `null`/`undefined` throws `TypeError`, also for an empty pattern. A computed key is converted once (`vela.PropertyKey`) before its value is read. |
-| assignment to locals and to members of local objects; compound operators, `++`, `--` | Go assignment, `ssrJS.SetMember` | T-6.6b | Writes to state, props, or module bindings are impure (T-6.6a). Growing an array by index assignment throws until arrays get identity (task 046). |
+| assignment to locals and to members of local objects; compound operators, `++`, `--` | Go assignment, `ssrJS.SetMember` | T-6.6b | Writes to state, props, or module bindings are impure (T-6.6a). On an array the function created and does not copy into another variable or value, an index beyond the length grows the array with holes and `length` truncates or extends it (`ssrJS.SetElement`, arr-growth; an invalid length throws `RangeError`, lengths above 2^24 fail the render). On an array that is copied, these writes fail the render as `VELA-SSR-UNSUPPORTED`, as do properties other than indices and `length`. |
 | `var` declarations | rejected | §7.1 | Use `let` or `const`. |
 | generators, `for await`, `with`, `eval`, `arguments`, cross-block `var` hoisting | rejected | §7.1 | `never` in v1. |
 

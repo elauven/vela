@@ -946,6 +946,13 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 		if viaThis {
 			setter = "SetThis"
 		}
+		if !viaThis && t.Obj == root && c.freshness.unaliased[ident.Name] {
+			// No other variable or value holds the array: an index beyond
+			// the length and a length assignment reassign the local.
+			goName, _ := c.lookup(ident.Name)
+			set := &goast.CallExpr{Fun: goSelector("ssrJS", "SetElement"), Args: []goast.Expr{object, key, result, ssrGoString(c.site)}}
+			return c.checked(&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(goName)}, Tok: token.ASSIGN, Rhs: []goast.Expr{set}}, true), nil
+		}
 		set := &goast.CallExpr{Fun: goSelector("ssrJS", setter), Args: []goast.Expr{object, key, result, ssrGoString(c.site)}}
 		_ = objectThrows || keyThrows || resultThrows
 		return c.checked(&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []goast.Expr{set}}, true), nil
