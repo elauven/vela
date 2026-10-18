@@ -843,6 +843,12 @@ func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: name, Args: []SSRIRExpr{left, right}}, nil
 	case "**":
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: "Pow", Args: []SSRIRExpr{left, right}}, nil
+	case "in":
+		if !b.js {
+			return nil, ssrExprUnsupported(pos, "the in operator is available only in translated script code")
+		}
+		b.usedJS, b.throws = true, true
+		return &ssrIRJS{ssrIRBase: b.base(pos, ssrIRFacts{Bool: true}), Method: "In", Args: []SSRIRExpr{left, right}, Site: b.site}, nil
 	}
 	return nil, ssrExprUnsupported(pos, "binary operator %q is not supported", node.Op)
 }

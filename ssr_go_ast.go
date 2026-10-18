@@ -382,6 +382,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	jsMethod("Index", []*types.Var{v("value", anyType), v("key", anyType), v("site", stringType)}, anyType)
 	jsMethod("Length", []*types.Var{v("value", anyType), v("site", stringType)}, anyType)
 	jsMethod("SpreadItems", []*types.Var{v("value", anyType), v("site", stringType)}, anySlice)
+	jsMethod("In", []*types.Var{v("key", anyType), v("object", anyType), v("site", stringType)}, types.Typ[types.Bool])
 	restFunc := types.NewSignatureType(nil, nil, nil, types.NewTuple(v("receiver", anyType)), types.NewTuple(v("", anyType)), false)
 	jsMethod("OptionalMethod", []*types.Var{v("site", stringType), v("receiver", anyType), v("name", stringType), v("call", restFunc)}, anyType)
 	jsMethod("Err", nil, errorType)

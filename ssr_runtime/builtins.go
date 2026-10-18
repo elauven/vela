@@ -118,6 +118,72 @@ func (js *JS) OptionalMethod(site string, receiver any, name string, call func(a
 	return call(receiver)
 }
 
+// The property names the in operator finds on prototypes, as
+// Object.getOwnPropertyNames gives them in Node 24 (V8). An error object
+// also has an own stack in V8.
+var objectPrototypeNames = map[string]bool{
+	"constructor": true, "__defineGetter__": true, "__defineSetter__": true,
+	"hasOwnProperty": true, "__lookupGetter__": true,
+	"__lookupSetter__": true, "isPrototypeOf": true,
+	"propertyIsEnumerable": true, "toString": true, "valueOf": true,
+	"__proto__": true, "toLocaleString": true,
+}
+
+var arrayPrototypeNames = map[string]bool{
+	"length": true, "constructor": true, "at": true, "concat": true,
+	"copyWithin": true, "fill": true, "find": true, "findIndex": true,
+	"findLast": true, "findLastIndex": true, "lastIndexOf": true, "pop": true,
+	"push": true, "reverse": true, "shift": true, "unshift": true,
+	"slice": true, "sort": true, "splice": true, "includes": true,
+	"indexOf": true, "join": true, "keys": true, "entries": true,
+	"values": true, "forEach": true, "filter": true, "flat": true,
+	"flatMap": true, "map": true, "every": true, "some": true, "reduce": true,
+	"reduceRight": true, "toReversed": true, "toSorted": true,
+	"toSpliced": true, "with": true, "toLocaleString": true, "toString": true,
+}
+
+var errorPrototypeNames = map[string]bool{
+	"constructor": true, "name": true, "message": true, "toString": true,
+	"stack": true,
+}
+
+var promisePrototypeNames = map[string]bool{
+	"constructor": true, "then": true, "catch": true, "finally": true,
+}
+
+// In implements key in object: an own property or one of a prototype. A
+// primitive object throws TypeError; a function value fails the render,
+// since its own properties depend on how it was written.
+func (js *JS) In(key, object any, site string) bool {
+	if js.Failed() {
+		return false
+	}
+	name := propertyKey(key)
+	switch v := jsValue(object).(type) {
+	case *Object:
+		if _, found := v.Lookup(name); found {
+			return true
+		}
+		if v.errorName != "" && errorPrototypeNames[name] {
+			return true
+		}
+		return objectPrototypeNames[name]
+	case []any:
+		if arrayIndexKey(name) {
+			n, _ := strconv.Atoi(name)
+			return n < len(v) && !isHole(v[n])
+		}
+		return arrayPrototypeNames[name] || objectPrototypeNames[name]
+	case *Promise:
+		return promisePrototypeNames[name] || objectPrototypeNames[name]
+	case Func:
+		js.fail(&RenderError{Kind: "Error", Message: "the in operator on a function value is not supported during server rendering", Site: site})
+		return false
+	}
+	js.throw("TypeError", fmt.Sprintf("Cannot use 'in' operator to search for '%s' in %s", name, String(jsValue(object))), site)
+	return false
+}
+
 // MutateArray calls a method that changes an array the function created
 // (push, pop, shift, unshift, splice, sort, reverse, fill) and returns the
 // array's new contents with the method's result (T-6.6b).

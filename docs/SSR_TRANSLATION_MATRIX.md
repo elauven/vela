@@ -97,7 +97,8 @@ disagree, the contract wins and the row is a bug.
 | `=`, `+=`, `++`, … on local bindings | native | Go assignment | same | T-6.6b | stmt-assign | implemented | Only inside translated functions, as statements (also in a comma statement); an assignment or `++` used as a value is rejected. |
 | assignment to state, props, module bindings | rejected | — | — | T-6.6a | go-tests | partial | `VELA-SSR-IMPURE` (S1) for assignments and `++` / `--`; covered by a Go test, not an oracle group. |
 | comma `(a, b)`, `void e` | native | closure with the operands as statements, in order | same | §6.2 | ops-comma-void | implemented | Every operand is evaluated, left to right, with its effects; `void` yields `undefined`. |
-| `delete`, `in`, `instanceof` | rejected | — | — | §6.2 | — | never | v1. |
+| `k in o` | native | `ssrJS.In` | same | §6.2 | ops-in | implemented | Own properties and the prototype names of Node 24 (`'toString' in {}`, `'map' in []`, `'stack'` of errors); array index keys skip holes; Go values through their JSON view. A primitive right operand throws `TypeError`; a function value fails the render (its own properties depend on how it was written). `#x in o` stays rejected (classes are not translated). |
+| `delete`, `instanceof` | rejected | — | — | §6.2 | — | never | v1. |
 
 ### 1.4 Compound values and functions
 
