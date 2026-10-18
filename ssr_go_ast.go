@@ -510,8 +510,10 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "StringFromCodePoint", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("codes", anySlice)), types.NewTuple(v("", anyType)), true)))
 	jsMethod("StructuredClone", []*types.Var{v("site", stringType), v("value", anyType)}, anyType)
 	ssrRuntimeAddFunc(pkg, "Hole", nil, []*types.Var{v("", undefinedType)})
+	ssrRuntimeAddFunc(pkg, "Box", []*types.Var{v("value", anyType)}, []*types.Var{v("", anyType)})
+	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "MutateShared", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("receiver", anyType), v("name", stringType), v("args", anySlice)), types.NewTuple(v("", anyType)), true)))
 	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "Method", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("receiver", anyType), v("name", stringType), v("args", anySlice)), types.NewTuple(v("", anyType)), true)))
-	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "MutateArray", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("array", anyType), v("name", stringType), v("args", anySlice)), types.NewTuple(v("", anySlice), v("", anyType)), true)))
+	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "MutateArray", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("array", anyType), v("name", stringType), v("args", anySlice)), types.NewTuple(v("", anyType), v("", anyType)), true)))
 	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "ObjectAssign", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("target", anyType), v("sources", anySlice)), types.NewTuple(v("", anyType)), true)))
 	for _, name := range []string{"EncodeURIComponent", "EncodeURI", "DecodeURIComponent", "DecodeURI", "ObjectKeys", "ObjectValues", "ObjectEntries", "ObjectFromEntries", "JSONParse"} {
 		jsMethod(name, []*types.Var{v("site", stringType), v("value", anyType)}, anyType)

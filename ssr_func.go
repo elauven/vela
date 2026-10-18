@@ -142,6 +142,13 @@ func ssrInlinable(function *JsFuncDecl) bool {
 	return !captures
 }
 
+// shared reports a local that holds an array or object the function
+// created and copies into another variable or value: an array in it is
+// boxed (vela.Box), so that changes through any holder are seen by all.
+func (c *ssrFuncCompiler) shared(name string) bool {
+	return c.freshness != nil && c.freshness.fresh[name] && !c.freshness.unaliased[name]
+}
+
 // ssrUsesThis reports this in node outside nested non-arrow functions,
 // which have their own.
 func ssrUsesThis(node JsNode) bool {
@@ -662,6 +669,9 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 				if value, throws, err = c.valueOf(declarator.Init); err != nil {
 					return nil, err
 				}
+				if name := identName(declarator.Id); name != "" && c.shared(name) {
+					value = &goast.CallExpr{Fun: goSelector("vela", "Box"), Args: []goast.Expr{value}}
+				}
 			}
 			stmts, err := c.bind(declarator.Id, value)
 			if err != nil {
@@ -893,6 +903,9 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 		if err != nil {
 			return nil, err
 		}
+		if c.shared(t.Name) {
+			result = &goast.CallExpr{Fun: goSelector("vela", "Box"), Args: []goast.Expr{result}}
+		}
 		if !throws {
 			return []goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(goName)}, Tok: token.ASSIGN, Rhs: []goast.Expr{result}}}, nil
 		}
@@ -938,7 +951,14 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 		} else {
 			return nil, c.fail("member name %T is not supported", t.Prop)
 		}
-		result, resultThrows, err := c.valueOf(right)
+		var result goast.Expr
+		var resultThrows bool
+		if op == "=" && ssrFunctionOf("", right) == nil {
+			// An array stored in a property is boxed (boxStored).
+			result, resultThrows, err = c.exprWith(right, (*ssrIRBuilder).stored)
+		} else {
+			result, resultThrows, err = c.valueOf(right)
+		}
 		if err != nil {
 			return nil, err
 		}

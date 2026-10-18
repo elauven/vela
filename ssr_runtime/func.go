@@ -181,6 +181,8 @@ func (js *JS) SetMember(object, key, value any, site string) any {
 		}
 		target.Set(name, value)
 		return value
+	case *Array:
+		return js.setItem(target, name, value, site)
 	case []any:
 		// Growing an array needs an array identity: SetElement grows an
 		// array no other variable or value holds.
@@ -220,6 +222,7 @@ func (js *JS) SetElement(target, key, value any, site string) any {
 	}
 	items, ok := target.([]any)
 	if !ok {
+		// An object, or a boxed array, which changes in place.
 		js.SetMember(target, key, value, site)
 		return target
 	}
@@ -285,6 +288,8 @@ func (js *JS) Delete(target, key any, local bool, site string) bool {
 		}
 		v.remove(name)
 		return true
+	case *Array:
+		return js.Delete(v.items, name, false, site)
 	case []any:
 		if local {
 			js.Impure(fmt.Sprintf("a method deletes index %q of an array (T-6.6b)", name), site)

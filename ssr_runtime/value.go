@@ -381,6 +381,8 @@ func jsValue(value any) any {
 	switch v := value.(type) {
 	case Func, *Promise, *Date, *Collection:
 		return v
+	case *Array:
+		return v.items
 	case nil, UndefinedValue, bool, string, float64, []any, *Object, map[string]any:
 		if m, ok := v.(map[string]any); ok {
 			return objectFromMap(m)
@@ -580,6 +582,8 @@ func property(value any, key string) any {
 	case *Date:
 		// A Date has no own properties; its methods are called by Method.
 		return Undefined()
+	case *Array:
+		return property(v.items, key)
 	case *Collection:
 		if key == "size" {
 			return float64(v.size)

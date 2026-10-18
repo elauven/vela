@@ -257,9 +257,109 @@ func (b *ssrIRBuilder) buildArgs(call *JsCallExpr, pos int) ([]SSRIRExpr, error)
 		if err != nil {
 			return nil, err
 		}
+		if member, ok := call.Callee.(*JsMemberExpr); ok && !member.Computed {
+			if property, ok := member.Prop.(*JsIdent); ok && (ssrStoringMethods[property.Name] || !ssrKnownMethod(property.Name)) {
+				value = b.boxStored(argument, value)
+			}
+		}
 		args = append(args, value)
 	}
 	return args, nil
+}
+
+// sharedReceiver reports the receiver of an array change that may hold a
+// boxed array: a local the function created and copies (shared), or a value
+// reached from such a local or from this (o.list, m.get(k), this.items).
+func (b *ssrIRBuilder) sharedReceiver(expr JsExpr) bool {
+	c := b.funcCompiler
+	if c == nil {
+		return false
+	}
+	if name := identName(expr); name != "" {
+		_, local := c.lookup(name)
+		return local && c.shared(name)
+	}
+	root := expr
+	for {
+		switch node := root.(type) {
+		case *JsMemberExpr:
+			root = node.Obj
+			continue
+		case *JsCallExpr:
+			if member, ok := node.Callee.(*JsMemberExpr); ok {
+				root = member.Obj
+				continue
+			}
+		}
+		break
+	}
+	if _, this := root.(*JsThisExpr); this {
+		return true
+	}
+	name := identName(root)
+	if name == "" || c.freshness == nil {
+		return false
+	}
+	_, local := c.lookup(name)
+	return local && c.freshness.fresh[name]
+}
+
+// ssrStoringMethods keep their arguments in the receiver.
+var ssrStoringMethods = map[string]bool{"push": true, "unshift": true, "splice": true, "set": true, "add": true}
+
+// ssrKnownMethod reports a built-in method name.
+func ssrKnownMethod(name string) bool {
+	_, builtin := ssrBuiltinMethods[name]
+	_, mutating := ssrMutatingMethods[name]
+	return builtin || mutating
+}
+
+// boxStored boxes an array a translated function creates and stores in
+// another value (an object or array literal, a collection, a property, the
+// argument of a method), so that a change through any holder is seen by
+// all (T-6.6b).
+// The branches of a logical or conditional expression are boxed one by
+// one: only a fresh array is boxed, never one of state or props.
+func (b *ssrIRBuilder) boxStored(expr JsExpr, value SSRIRExpr) SSRIRExpr {
+	if b.funcCompiler == nil {
+		return value
+	}
+	switch e := expr.(type) {
+	case *JsLogicalExpr:
+		if lazy, ok := value.(*ssrIRLazy); ok && len(lazy.Args) == 2 {
+			lazy.Args[0] = b.boxStored(e.L, lazy.Args[0])
+			lazy.Args[1] = b.boxStored(e.R, lazy.Args[1])
+		}
+		return value
+	case *JsConditionalExpr:
+		if lazy, ok := value.(*ssrIRLazy); ok && len(lazy.Args) == 3 {
+			lazy.Args[1] = b.boxStored(e.Then, lazy.Args[1])
+			lazy.Args[2] = b.boxStored(e.Else, lazy.Args[2])
+		}
+		return value
+	}
+	if !ssrFreshArrayExpr(expr) {
+		return value
+	}
+	return &ssrIRHelper{ssrIRBase: b.base(value.irBase().Pos, ssrIRFacts{}), Name: "Box", Args: []SSRIRExpr{value}}
+}
+
+// stored builds a value stored in another value (boxStored).
+func (b *ssrIRBuilder) stored(expr JsExpr, pos int) (SSRIRExpr, error) {
+	value, err := b.build(expr, pos)
+	if err != nil {
+		return nil, err
+	}
+	return b.boxStored(expr, value), nil
+}
+
+// ssrFreshArrayExpr reports a fresh value that can be an array.
+func ssrFreshArrayExpr(expr JsExpr) bool {
+	switch expr.(type) {
+	case *JsObjectExpr, *JsNewExpr:
+		return false
+	}
+	return ssrFreshExpr(expr)
 }
 
 // builtinCall lowers a call to a global function, a namespace function, or
@@ -365,6 +465,24 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 	}
 	name := property.Name
 	facts, admitted := ssrBuiltinMethods[name]
+	if _, isMutating := ssrMutatingMethods[name]; isMutating && b.sharedReceiver(member.Obj) {
+		// Through a value the function created: a boxed array changes in
+		// place; any other array fails the render (MutateShared).
+		receiver, err := b.build(member.Obj, pos)
+		if err != nil {
+			return nil, true, err
+		}
+		args, err := b.buildArgs(call, pos)
+		if err != nil {
+			return nil, true, err
+		}
+		lowered := []goast.Expr{ssrGoString(b.site), lowerSSRIR(receiver), ssrGoString(name)}
+		for _, arg := range args {
+			lowered = append(lowered, lowerSSRIR(arg))
+		}
+		b.usedJS, b.throws = true, true
+		return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "MutateShared"), Args: lowered}}, true, nil
+	}
 	if mutating, isMutating := ssrMutatingMethods[name]; isMutating {
 		if mutating || !ssrFreshExpr(member.Obj) {
 			if b.funcCompiler != nil && b.funcCompiler.deferImpure {
@@ -474,7 +592,7 @@ func ssrFreshExpr(expr JsExpr) bool {
 		return true
 	case *JsNewExpr:
 		callee, ok := e.Callee.(*JsIdent)
-		return ok && (callee.Name == "Error" || callee.Name == "TypeError" || callee.Name == "RangeError" || callee.Name == "Date")
+		return ok && (callee.Name == "Error" || callee.Name == "TypeError" || callee.Name == "RangeError" || callee.Name == "Date" || callee.Name == "Map" || callee.Name == "Set")
 	case *JsCallExpr:
 		if callee, ok := e.Callee.(*JsIdent); ok && callee.Name == "structuredClone" {
 			return true
@@ -520,9 +638,29 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 	f := &ssrFreshness{fresh: map[string]bool{}, unaliased: map[string]bool{}}
 	stale := map[string]bool{}
 	aliased := map[string]bool{}
+	// copies maps a local declared as const ys = xs to xs: when xs is
+	// fresh, ys holds the same value.
+	copies := map[string]string{}
 	readOnly := map[string]bool{"Math": true, "JSON": true, "Number": true, "String": true, "Boolean": true, "Array": true, "Object": true}
 	WalkNode(body, func(n JsNode) bool {
 		switch node := n.(type) {
+		case *JsArrowFunc, *JsFuncExpr, *JsFuncDecl:
+			// An array a nested function changes is shared with it: boxed,
+			// so that the change is seen through the captured variable.
+			WalkNode(node, func(inner JsNode) bool {
+				if call, ok := inner.(*JsCallExpr); ok {
+					if member, ok := call.Callee.(*JsMemberExpr); ok && !member.Computed {
+						if property, ok := member.Prop.(*JsIdent); ok {
+							if _, mutating := ssrMutatingMethods[property.Name]; mutating {
+								if name := identName(member.Obj); name != "" {
+									aliased[name] = true
+								}
+							}
+						}
+					}
+				}
+				return true
+			})
 		case *JsVarDecl:
 			for _, declarator := range node.Decls {
 				name := identName(declarator.Id)
@@ -541,6 +679,8 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 				}
 				if declarator.Init != nil && ssrFreshExpr(declarator.Init) {
 					f.fresh[name] = true
+				} else if alias := identName(declarator.Init); alias != "" && node.Kind == "const" {
+					copies[name] = alias
 				} else {
 					stale[name] = true
 				}
@@ -609,8 +749,19 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 	for name := range f.fresh {
 		if stale[name] {
 			delete(f.fresh, name)
-			continue
 		}
+	}
+	// A copy of a fresh local holds the same array or object: both are
+	// shared (aliased), so an array in them is boxed.
+	for changed := true; changed; {
+		changed = false
+		for name, source := range copies {
+			if f.fresh[source] && !f.fresh[name] && !stale[name] {
+				f.fresh[name], aliased[name], aliased[source], changed = true, true, true, true
+			}
+		}
+	}
+	for name := range f.fresh {
 		if !aliased[name] {
 			f.unaliased[name] = true
 		}
@@ -665,15 +816,14 @@ func (c *ssrFuncCompiler) mutationStatement(call *JsCallExpr, target string, dec
 		return nil, false, nil
 	}
 	goName, local := c.lookup(receiver)
-	if !local || !c.freshness.fresh[receiver] || changesLength && !c.freshness.unaliased[receiver] {
-		reason := "an array the function created"
-		if changesLength {
-			reason = "an array the function created and does not copy into another variable or value"
-		}
-		problem := fmt.Sprintf("%s.%s changes %q; during server rendering it is admitted only on %s (T-6.6b)", receiver, property.Name, receiver, reason)
+	if !local || !c.freshness.fresh[receiver] {
+		problem := fmt.Sprintf("%s.%s changes %q; during server rendering it is admitted only on an array the function created (T-6.6b)", receiver, property.Name, receiver)
 		stmts, err := c.impure(problem)
 		return stmts, true, err
 	}
+	// An array copied into another variable or value is boxed (c.shared):
+	// it changes in place, so every holder sees the change.
+	shared := changesLength && !c.freshness.unaliased[receiver]
 	b := c.builder()
 	args, err := b.buildArgs(call, 0)
 	c.absorb(b)
@@ -687,6 +837,17 @@ func (c *ssrFuncCompiler) mutationStatement(call *JsCallExpr, target string, dec
 	var out []goast.Stmt
 	if target != "" && declare {
 		out = append(out, ssrVarAny(target, nil), ssrUse(target))
+	}
+	if shared {
+		result := c.declare("$result")
+		out = append(out,
+			&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(result)}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("ssrJS", "MutateShared"), Args: lowered}}},
+			ssrUse(result),
+		)
+		if target != "" {
+			out = append(out, &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(target)}, Tok: token.ASSIGN, Rhs: []goast.Expr{goast.NewIdent(result)}})
+		}
+		return append(out, c.unwind()), true, nil
 	}
 	array, result := c.declare("$array"), c.declare("$result")
 	out = append(out,

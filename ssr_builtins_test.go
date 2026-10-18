@@ -38,13 +38,16 @@ func TestSSRMutationRules(t *testing.T) {
 	}
 	text := string(data)
 	for _, want := range []string{
-		`xs.push changes \"xs\"; during server rendering it is admitted only on an array the function created and does not copy`,
-		`b.push changes \"b\"`,
+		`xs.push changes \"xs\"; during server rendering it is admitted only on an array the function created (T-6.6b)`,
 		`assignment to a member of \"o\" changes a value the function did not create`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("report lacks %s", want)
 		}
+	}
+	// An array copied into another variable is boxed: both see the change.
+	if strings.Contains(text, `aliased has no`) {
+		t.Errorf("aliased() must translate")
 	}
 	if strings.Contains(text, `select`) {
 		t.Errorf("a state-writing function used as a value must build")

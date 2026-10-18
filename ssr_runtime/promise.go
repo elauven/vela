@@ -246,6 +246,8 @@ func clientOnlyValue(value any, seen map[any]bool) bool {
 	case *Promise, Func, *accessor, *Date, *Collection:
 		// A Date would arrive as its ISO text.
 		return true
+	case *Array:
+		return clientOnlyValue(v.items, seen)
 	case []any:
 		for _, item := range v {
 			if clientOnlyValue(item, seen) {

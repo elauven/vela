@@ -384,14 +384,15 @@ func (js *JS) StructuredClone(site string, value any) any {
 // MutateArray calls a method that changes an array the function created
 // (push, pop, shift, unshift, splice, sort, reverse, fill) and returns the
 // array's new contents with the method's result (T-6.6b).
-func (js *JS) MutateArray(site string, array any, name string, args ...any) ([]any, any) {
+func (js *JS) MutateArray(site string, array any, name string, args ...any) (any, any) {
 	if js.Failed() {
-		a, _ := array.([]any)
-		return a, Undefined()
+		return array, Undefined()
 	}
 	a, ok := array.([]any)
 	if !ok {
-		return a, js.throw("TypeError", fmt.Sprintf("%s.%s is not a function", describe(jsValue(array)), name), site)
+		// A boxed array changes in place; an object with its own push or a
+		// Map's set is called: the local keeps its value.
+		return array, js.MutateShared(site, array, name, args...)
 	}
 	result, out, _ := js.arrayMethod(site, a, name, args)
 	if out == nil {

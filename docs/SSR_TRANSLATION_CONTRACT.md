@@ -307,7 +307,13 @@ panics.
   arrays and objects that it created itself during the current invocation
   (for example `const out = []; out.push(x)`), and may reassign its own
   `let` bindings. The compiler proves this by local allocation analysis; it
-  does not attempt general escape analysis.
+  does not attempt general escape analysis. Arrays have identity: one that
+  is copied into another variable, stored in another value, or changed by a
+  nested function is boxed, so a change through any holder (an alias,
+  `o.list`, `m.get(k)`, `this.items`) is seen by all, and an index or
+  `length` assignment grows or truncates it. A change through a value that
+  is not the function's own (state, props, a module) fails the render with
+  `VELA-SSR-IMPURE` at run time.
 - **T-6.6c Nondeterminism.** `Date.now()`, `new Date()`, `Math.random()`,
   `crypto.*`, `performance.now()`, `Promise.race`, and `Promise.any` are
   never native. In a `$state`

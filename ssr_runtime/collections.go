@@ -39,7 +39,7 @@ type referenceKey struct {
 // without a stable identity on the server (a function value, a Go struct).
 func collectionKey(key any) (any, bool) {
 	switch k := key.(type) {
-	case nil, UndefinedValue, bool, string, *Object, *Date, *Promise, *Collection:
+	case nil, UndefinedValue, bool, string, *Object, *Date, *Promise, *Collection, *Array:
 		return k, true
 	case Func:
 		return nil, false

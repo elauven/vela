@@ -478,7 +478,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			if err != nil {
 				return nil, err
 			}
-			elements = append(elements, value)
+			elements = append(elements, b.boxStored(element, value))
 		}
 		for spreads != nil && len(spreads) < len(elements) {
 			spreads = append(spreads, false)
@@ -845,6 +845,7 @@ func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 		if err != nil {
 			return nil, err
 		}
+		value = b.boxStored(property.Value, value)
 		out.Keys = append(out.Keys, key)
 		out.Values = append(out.Values, value)
 		out.Spread = append(out.Spread, false)
