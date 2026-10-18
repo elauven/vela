@@ -128,8 +128,8 @@ disagree, the contract wins and the row is a bug.
 Statements are admitted inside component functions with more than one
 statement, translated as Go closures `ssrF_<name>` of type `vela.Func`
 (ssr_func.go, task 045). Oracle groups: `fn-statements`, `fn-try`,
-`fn-closures`, `fn-recursion`, `stmt-destructure`, `stmt-assign`,
-`errors-new`. Functions have typed variants per argument types besides the
+`fn-closures`, `fn-recursion`, `stmt-destructure`, `stmt-destructure-rest`,
+`stmt-assign`, `stmt-for-in`, `errors-new`. Functions have typed variants per argument types besides the
 dynamic one (T-7.2a, see "monomorphised variants" above). Status:
 `implemented` unless the notes say otherwise.
 
@@ -140,6 +140,7 @@ dynamic one (T-7.2a, see "monomorphised variants" above). Status:
 | `for (;;)` | Go `for` | §7.1 | One Go variable per loop: a function created in the body that captures a `let` loop variable is rejected (per-iteration copies are not generated yet). |
 | `for…of` over arrays | Go `range` | §7.1 | Holes are visited as `undefined`. |
 | `for…of` over strings | iterate code points | §7.1, T-6.3a | Not UTF-16 units. |
+| `for…in` | Go `range` over `vela.ForInKeys` | §7.1, T-5.1c | Keys taken before the first iteration (properties added in the body are not visited, as in V8): own enumerable keys in `Object.keys` order, array indices without holes, string indices by UTF-16 unit; no iteration for `null`, `undefined` and other primitives. |
 | `while`, `do…while` | Go `for` | §7.1 | |
 | `break`, `continue` (no labels) | Go `break` / `continue` | §7.1 | |
 | `return` | Go `return` | §7.1 | |
@@ -150,7 +151,7 @@ dynamic one (T-7.2a, see "monomorphised variants" above). Status:
 | destructuring `const {a, b = 1, ...r} = o`, `const [x, y, ...t] = a`, `function f(...xs)` | `ssrJS.Get`, `ssrJS.SpreadItems`, `vela.RestItems`, `ssrJS.ObjectRest` | §7.1 | Destructuring `null`/`undefined` throws `TypeError`, also for an empty pattern. A computed key is converted once (`vela.PropertyKey`) before its value is read. |
 | assignment to locals and to members of local objects; compound operators, `++`, `--` | Go assignment, `ssrJS.SetMember` | T-6.6b | Writes to state, props, or module bindings are impure (T-6.6a). Growing an array by index assignment throws until arrays get identity (task 046). |
 | `var` declarations | rejected | §7.1 | Use `let` or `const`. |
-| labels, `for…in`, generators, `for await`, `with`, `eval`, `arguments`, cross-block `var` hoisting | rejected | §7.1 | `never` in v1. |
+| labels, generators, `for await`, `with`, `eval`, `arguments`, cross-block `var` hoisting | rejected | §7.1 | `never` in v1. |
 
 ### 1.6 Asynchronous code
 

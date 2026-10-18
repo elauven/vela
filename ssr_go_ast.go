@@ -450,6 +450,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	_ = funcType
 	ssrRuntimeAddFunc(pkg, "Arg", []*types.Var{v("args", anySlice), v("i", types.Typ[types.Int])}, []*types.Var{v("", anyType)})
 	ssrRuntimeAddFunc(pkg, "PropertyKey", []*types.Var{v("key", anyType)}, []*types.Var{v("", stringType)})
+	ssrRuntimeAddFunc(pkg, "ForInKeys", []*types.Var{v("value", anyType)}, []*types.Var{v("", anySlice)})
 	ssrRuntimeAddFunc(pkg, "RestItems", []*types.Var{v("items", anySlice), v("from", types.Typ[types.Int])}, []*types.Var{v("", anySlice)})
 	ssrRuntimeAddFunc(pkg, "NewError", []*types.Var{v("kind", stringType), v("message", anyType)}, []*types.Var{v("", objectPtr)})
 	jsMethod("Throw", []*types.Var{v("value", anyType), v("site", stringType)}, undefinedType)

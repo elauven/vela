@@ -622,9 +622,6 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 	case *JsForStmt:
 		return c.forStatement(s)
 	case *JsForInStmt:
-		if !s.IsOf {
-			return nil, c.fail("for…in is not admitted; use for…of over Object.keys (§7.1)")
-		}
 		return c.forOf(s)
 	case *JsBreakStmt, *JsContinueStmt:
 		label := ""
@@ -1007,8 +1004,13 @@ func (c *ssrFuncCompiler) forStatement(s *JsForStmt) ([]goast.Stmt, error) {
 	return []goast.Stmt{&goast.BlockStmt{List: append(init, stmts...)}}, nil
 }
 
-// forOf iterates array elements or string code points.
+// forOf iterates array elements or string code points (for…of), or the
+// keys for…in visits.
 func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
+	kind := "for…of"
+	if !s.IsOf {
+		kind = "for…in"
+	}
 	collection, _, err := c.expr(s.Right)
 	if err != nil {
 		return nil, err
@@ -1020,11 +1022,11 @@ func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
 	switch left := s.Left.(type) {
 	case *JsVarDecl:
 		if len(left.Decls) != 1 {
-			return nil, c.fail("for…of declares one binding")
+			return nil, c.fail("%s declares one binding", kind)
 		}
 		pattern = left.Decls[0].Id
 	default:
-		return nil, c.fail("for…of must declare its binding with let or const")
+		return nil, c.fail("%s must declare its binding with let or const", kind)
 	}
 	bind, err := c.bind(pattern, goast.NewIdent(item))
 	if err != nil {
@@ -1037,6 +1039,9 @@ func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
 		return nil, err
 	}
 	items := &goast.CallExpr{Fun: goSelector("ssrJS", "SpreadItems"), Args: []goast.Expr{collection, ssrGoString(c.site)}}
+	if !s.IsOf {
+		items = &goast.CallExpr{Fun: goSelector("vela", "ForInKeys"), Args: []goast.Expr{collection}}
+	}
 	loop := &goast.RangeStmt{Key: goast.NewIdent("_"), Value: goast.NewIdent(item), Tok: token.DEFINE, X: items, Body: &goast.BlockStmt{List: append(bind, inner...)}}
 	return []goast.Stmt{loop, c.unwind()}, nil
 }

@@ -578,6 +578,33 @@ func (js *JS) SpreadItems(value any, site string) []any {
 	}
 }
 
+// ForInKeys returns the keys for…in visits, taken before the first
+// iteration: the own enumerable keys of an object in enumeration order,
+// the indices of an array without its holes and of a string's code units;
+// none for other values, null and undefined included.
+func ForInKeys(value any) []any {
+	var keys []string
+	switch v := jsValue(value).(type) {
+	case *Object:
+		keys = v.Keys()
+	case []any:
+		for i, item := range v {
+			if !isHole(item) {
+				keys = append(keys, strconv.Itoa(i))
+			}
+		}
+	case string:
+		for i := range units(v) {
+			keys = append(keys, strconv.Itoa(i))
+		}
+	}
+	out := make([]any, len(keys))
+	for i, key := range keys {
+		out[i] = key
+	}
+	return out
+}
+
 // RestItems returns a copy of items from index from: the array a rest
 // element or a rest parameter binds.
 func RestItems(items []any, from int) []any {

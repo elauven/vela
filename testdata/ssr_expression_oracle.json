@@ -330,5 +330,22 @@
  {"group":"ops-in","name":"in-condition","functions":"function f(o) { if ('x' in o) return 'has'; return 'none'; }","expression":"f(a)","values":{"a":{"x":0}},"expected":"has"},
  {"group":"ops-in","name":"in-promise","functions":"async function g() { return 1; } function f(n) { const p = g(); return ('then' in p) + ',' + ('x' in p); }","expression":"f(a)","values":{"a":1},"expected":"true,false"},
  {"group":"ops-in","name":"in-for-init","functions":"function f(o) { let n = 0; for (let i = ('a' in o) ? 1 : 0; i < 3; i++) n++; return n; }","expression":"f(a)","values":{"a":{"a":1}},"expected":"2"},
- {"group":"fn-closures","name":"fn-closure-captures-inlined-param","functions":"function f(o) { return ['a', 'b'].map((k) => k + o.a).join(); }","expression":"f(a)","values":{"a":{"a":1}},"expected":"a1,b1"}
+ {"group":"fn-closures","name":"fn-closure-captures-inlined-param","functions":"function f(o) { return ['a', 'b'].map((k) => k + o.a).join(); }","expression":"f(a)","values":{"a":{"a":1}},"expected":"a1,b1"},
+ {"group":"stmt-for-in","name":"for-in-object","functions":"function f(o) { let s = ''; for (const k in o) s += k + '=' + o[k] + ';'; return s; }","expression":"f(a)","values":{"a":{"a":2,"b":1}},"expected":"a=2;b=1;"},
+ {"group":"stmt-for-in","name":"for-in-order","functions":"function f(n) { const o = { z: n, 10: 'ten', b: 1, 2: 'two', a: 3 }; let s = ''; for (let k in o) s += k + ','; return s; }","expression":"f(a)","values":{"a":0},"expected":"2,10,z,b,a,"},
+ {"group":"stmt-for-in","name":"for-in-array","functions":"function f(xs) { let s = ''; for (const i in xs) s += typeof i + i + ':' + xs[i] + ' '; return s; }","expression":"f(a)","values":{"a":["x","y"]},"expected":"string0:x string1:y "},
+ {"group":"stmt-for-in","name":"for-in-array-holes","functions":"function f(n) { const xs = [n, , 3]; let s = ''; for (const i in xs) s += i; return s; }","expression":"f(a)","values":{"a":1},"expected":"02"},
+ {"group":"stmt-for-in","name":"for-in-string","functions":"function f(t) { let s = ''; for (const i in t) s += i + t[i]; return s; }","expression":"f(a)","values":{"a":"ab"},"expected":"0a1b"},
+ {"group":"stmt-for-in","name":"for-in-string-surrogate","functions":"function f(t) { let n = 0; for (const i in t) n++; return n; }","expression":"f(a)","values":{"a":"😀b"},"expected":"3"},
+ {"group":"stmt-for-in","name":"for-in-null","functions":"function f(o) { let n = 0; for (const k in o) n++; return n; }","expression":"f(a)","values":{"a":null},"expected":"0"},
+ {"group":"stmt-for-in","name":"for-in-undefined","functions":"function f(o) { let n = 0; for (const k in o) n++; return 'ran ' + n; }","expression":"f(a)","values":{"a":"__undefined__"},"expected":"ran 0"},
+ {"group":"stmt-for-in","name":"for-in-number","functions":"function f(o) { let n = 0; for (const k in o) n++; return n; }","expression":"f(a)","values":{"a":42},"expected":"0"},
+ {"group":"stmt-for-in","name":"for-in-break-continue","functions":"function f(o) { let s = ''; for (const k in o) { if (k === 'b') continue; if (k === 'd') break; s += k; } return s; }","expression":"f(a)","values":{"a":{"a":1,"b":2,"c":3,"d":4,"e":5}},"expected":"ac"},
+ {"group":"stmt-for-in","name":"for-in-return","functions":"function f(o) { for (const k in o) { if (o[k] > 1) return k; } return 'none'; }","expression":"f(a)","values":{"a":{"a":1,"b":2}},"expected":"b"},
+ {"group":"stmt-for-in","name":"for-in-added-during","functions":"function f(n) { const o = { a: n }; let s = ''; for (const k in o) { o.b = 2; s += k; } return s + '|' + Object.keys(o).join(); }","expression":"f(a)","values":{"a":1},"expected":"a|a,b"},
+ {"group":"stmt-for-in","name":"for-in-error","functions":"function f(m) { const e = new Error(m); e.code = 3; let s = ''; for (const k in e) s += k; return s; }","expression":"f(a)","values":{"a":"x"},"expected":"code"},
+ {"group":"stmt-for-in","name":"for-in-destructure-key","functions":"function f(o) { let s = ''; for (const [first] in o) s += first; return s; }","expression":"f(a)","values":{"a":{"xy":1,"zw":2}},"expected":"xz"},
+ {"group":"stmt-for-in","name":"for-in-closures","functions":"function f(o) { const fs = []; for (const k in o) fs.push(() => k); return fs.map((g) => g()).join(); }","expression":"f(a)","values":{"a":{"p":1,"q":2}},"expected":"p,q"},
+ {"group":"stmt-for-in","name":"for-in-nested","functions":"function f(o) { let s = ''; for (const k in o) for (const j in o[k]) s += k + j; return s; }","expression":"f(a)","values":{"a":{"a":{"x":1},"b":{"y":1,"z":2}}},"expected":"axbybz"},
+ {"group":"stmt-for-in","name":"for-in-throws","functions":"function f(o) { for (const k in o.x.y) return k; return 'none'; }","expression":"f(a)","values":{"a":{}},"throws":"TypeError"}
 ]
