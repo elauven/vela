@@ -210,7 +210,9 @@ panics.
 - **T-6.1a** Operands, arguments, and object/array elements evaluate left to
   right, each exactly once.
 - **T-6.1b** `&&`, `||`, `??`, `?:` and `?.` short-circuit: the unselected
-  operand is never evaluated (R1). Recovering from a panic is not an
+  operand is never evaluated (R1). A nullish value before `?.` ends the
+  whole chain, its member reads and calls, as in `a?.b.c()` and `f?.(x)`;
+  parentheses end the chain. Recovering from a panic is not an
   implementation of short-circuiting.
 - **T-6.1c** A host call executes exactly once per evaluation of its call
   site, at the position JavaScript would call it, and is never hoisted,

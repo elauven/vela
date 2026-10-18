@@ -154,6 +154,17 @@ type (
 		Param string
 		Rest  SSRIRExpr
 	}
+	// ssrIROptionalMethod is an optional method call receiver.name?.(…):
+	// Rest, the call on Param and the rest of the chain, runs only when
+	// receiver.name is not null or undefined.
+	ssrIROptionalMethod struct {
+		ssrIRBase
+		Receiver SSRIRExpr
+		Name     string
+		Param    string
+		Rest     SSRIRExpr
+		Site     string
+	}
 	// ssrIRInline is a local binding initializer or a function body inlined
 	// at its use; Name and Kind describe it for diagnostics and the report.
 	ssrIRInline struct {
@@ -297,6 +308,15 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 			Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{lowerSSRIR(n.Rest)}}}},
 		}
 		return &goast.CallExpr{Fun: goSelector("vela", "OptionalChain"), Args: []goast.Expr{lowerSSRIR(n.Base), rest}}
+	case *ssrIROptionalMethod:
+		rest := &goast.FuncLit{
+			Type: &goast.FuncType{
+				Params:  &goast.FieldList{List: []*goast.Field{{Names: []*goast.Ident{goast.NewIdent(n.Param)}, Type: goast.NewIdent("any")}}},
+				Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("any")}}},
+			},
+			Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{lowerSSRIR(n.Rest)}}}},
+		}
+		return &goast.CallExpr{Fun: goSelector("ssrJS", "OptionalMethod"), Args: []goast.Expr{ssrGoString(n.Site), lowerSSRIR(n.Receiver), ssrGoString(n.Name), rest}}
 	case *ssrIRInline:
 		return lowerSSRIR(n.Body)
 	}
@@ -789,14 +809,16 @@ func ssrNullishLiteral(expr JsExpr) bool {
 	return false
 }
 
-// member builds a member chain a.b[c]?.d: the root, then each link. An
-// optional link (?.) stops the rest of the chain when its object is null or
-// undefined (T-6.1b).
+// member builds a member chain a.b[c]: the root, then each link. A chain
+// with an optional link (?.) is built by optionalChain (T-6.1b).
 func (b *ssrIRBuilder) member(node *JsMemberExpr, pos int) (SSRIRExpr, error) {
 	if b.js {
 		if value, ok := b.builtinConstant(node, pos); ok {
 			return value, nil
 		}
+	}
+	if value, handled, err := b.optionalChain(node, pos); handled {
+		return value, err
 	}
 	var links []*JsMemberExpr
 	var root JsExpr = node
@@ -807,29 +829,17 @@ func (b *ssrIRBuilder) member(node *JsMemberExpr, pos int) (SSRIRExpr, error) {
 		}
 		links = append([]*JsMemberExpr{link}, links...)
 		root = link.Obj
+		if ssrParenthesized(root, link) {
+			// (a?.b).c: the parentheses end the optional chain.
+			break
+		}
 	}
 	base, err := b.build(root, pos)
 	if err != nil {
 		return nil, err
 	}
-	return b.memberLinks(base, links, false, pos)
-}
-
-// memberLinks applies links to base. When entered is set, the first link is
-// the optional link whose nullish check has already passed.
-func (b *ssrIRBuilder) memberLinks(base SSRIRExpr, links []*JsMemberExpr, entered bool, pos int) (SSRIRExpr, error) {
-	for i, link := range links {
-		if link.Optional && !(entered && i == 0) {
-			param := "ssrOpt" + strconv.Itoa(b.optionals)
-			b.optionals++
-			inner := &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: goast.NewIdent(param)}
-			rest, err := b.memberLinks(inner, links[i:], true, pos)
-			if err != nil {
-				return nil, err
-			}
-			return &ssrIROptional{ssrIRBase: b.base(pos, ssrIRFacts{}), Base: base, Param: param, Rest: rest}, nil
-		}
-		next, err := b.memberLink(base, link, entered && i == 0, pos)
+	for _, link := range links {
+		next, err := b.memberLink(base, link, false, pos)
 		if err != nil {
 			return nil, err
 		}
@@ -864,13 +874,188 @@ func (b *ssrIRBuilder) memberLink(object SSRIRExpr, link *JsMemberExpr, nonNulli
 	return &ssrIRJS{ssrIRBase: b.base(pos, ssrIRFacts{}), Method: "Index", Args: []SSRIRExpr{object, index}, Site: b.site, NoJS: !b.js}, nil
 }
 
+// ssrChainLink is one link of an optional chain: a member read or a call.
+type ssrChainLink struct {
+	member *JsMemberExpr
+	call   *JsCallExpr
+}
+
+func (l ssrChainLink) optional() bool {
+	if l.member != nil {
+		return l.member.Optional
+	}
+	return l.call.Optional
+}
+
+// ssrParenthesized reports a child expression written in parentheses: it
+// starts after its parent, as in (a?.b).c or (f)().
+func ssrParenthesized(child, parent JsNode) bool {
+	return child.NodePos() != parent.NodePos()
+}
+
+// ssrChain splits a chain a?.b.c(x)?.(y) into its root and links, up to a
+// parenthesised part. A call whose callee is neither a link nor optional
+// (f(x)?.y) is the root: it resolves as any call.
+func ssrChain(expr JsExpr) (JsExpr, []ssrChainLink) {
+	var links []ssrChainLink
+	current := expr
+	for {
+		var next JsExpr
+		switch node := current.(type) {
+		case *JsMemberExpr:
+			links = append([]ssrChainLink{{member: node}}, links...)
+			next = node.Obj
+		case *JsCallExpr:
+			if _, method := node.Callee.(*JsMemberExpr); !method && !node.Optional {
+				return current, links
+			}
+			links = append([]ssrChainLink{{call: node}}, links...)
+			next = node.Callee
+		default:
+			return current, links
+		}
+		if ssrParenthesized(next, current) {
+			return next, links
+		}
+		current = next
+	}
+}
+
+// optionalChain builds a chain with an optional link (T-6.1b): a nullish
+// value before ?. ends the whole chain, calls included, with undefined.
+// Chains without one are not handled here.
+func (b *ssrIRBuilder) optionalChain(expr JsExpr, pos int) (SSRIRExpr, bool, error) {
+	root, links := ssrChain(expr)
+	optional, calls := false, false
+	for _, link := range links {
+		optional = optional || link.optional()
+		calls = calls || link.call != nil
+	}
+	if !optional {
+		return nil, false, nil
+	}
+	if calls && !b.js {
+		return nil, true, ssrExprUnsupported(pos, "calls in optional chains are available only in translated script code")
+	}
+	if ident, ok := root.(*JsIdent); ok && links[0].call != nil {
+		_, local := b.params[ident.Name]
+		_, binding := b.ctx.Bindings[ident.Name]
+		if !local && !binding {
+			// f?.() of a declared, host or module function: never nullish.
+			plain := *links[0].call
+			plain.Optional = false
+			base, err := b.call(&plain, pos)
+			if err != nil {
+				return nil, true, err
+			}
+			value, err := b.chainLinks(base, links[1:], false, pos)
+			return value, true, err
+		}
+	}
+	base, err := b.build(root, pos)
+	if err != nil {
+		return nil, true, err
+	}
+	value, err := b.chainLinks(base, links, false, pos)
+	return value, true, err
+}
+
+// chainLinks applies chain links to base. When entered is set, the first
+// link is the optional link whose nullish check has already passed.
+func (b *ssrIRBuilder) chainLinks(base SSRIRExpr, links []ssrChainLink, entered bool, pos int) (SSRIRExpr, error) {
+	for i := 0; i < len(links); i++ {
+		link := links[i]
+		if link.optional() && !(entered && i == 0) {
+			param := "ssrOpt" + strconv.Itoa(b.optionals)
+			b.optionals++
+			inner := &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: goast.NewIdent(param)}
+			rest, err := b.chainLinks(inner, links[i:], true, pos)
+			if err != nil {
+				return nil, err
+			}
+			return &ssrIROptional{ssrIRBase: b.base(pos, ssrIRFacts{}), Base: base, Param: param, Rest: rest}, nil
+		}
+		nonNullish := entered && i == 0
+		if link.member != nil && i+1 < len(links) && links[i+1].call != nil && links[i+1].call.Callee == link.member {
+			call := links[i+1].call
+			if !call.Optional {
+				value, err := b.methodOn(base, link.member, call, pos)
+				if err != nil {
+					return nil, err
+				}
+				base, i = value, i+1
+				continue
+			}
+			// a.b?.(): the call and the rest of the chain run only when
+			// a.b is not nullish.
+			property, named := link.member.Prop.(*JsIdent)
+			if link.member.Computed || !named {
+				return nil, ssrExprUnsupported(pos, "optional calls of computed members are not supported")
+			}
+			param := "ssrOpt" + strconv.Itoa(b.optionals)
+			b.optionals++
+			receiver := &ssrIRGo{ssrIRBase: b.base(pos, base.irBase().Facts), Expr: goast.NewIdent(param)}
+			value, err := b.methodOn(receiver, link.member, call, pos)
+			if err != nil {
+				return nil, err
+			}
+			rest, err := b.chainLinks(value, links[i+2:], false, pos)
+			if err != nil {
+				return nil, err
+			}
+			b.usedJS, b.throws = true, true
+			return &ssrIROptionalMethod{ssrIRBase: b.base(pos, ssrIRFacts{}), Receiver: base, Name: property.Name, Param: param, Rest: rest, Site: b.site}, nil
+		}
+		if link.member != nil {
+			next, err := b.memberLink(base, link.member, nonNullish, pos)
+			if err != nil {
+				return nil, err
+			}
+			base = next
+			continue
+		}
+		// A call of a function value: f?.(), g(x)?.(), a?.b.c?.().
+		value, err := b.valueCall(base, link.call, pos)
+		if err != nil {
+			return nil, err
+		}
+		base = value
+	}
+	return base, nil
+}
+
+// methodOn calls a catalogue method on an already built receiver, as
+// builtinCall does for receiver.name(args).
+func (b *ssrIRBuilder) methodOn(receiver SSRIRExpr, member *JsMemberExpr, call *JsCallExpr, pos int) (SSRIRExpr, error) {
+	name := "\x00receiver" + strconv.Itoa(b.optionals)
+	b.optionals++
+	if b.params == nil {
+		b.params = map[string]SSRIRExpr{}
+	}
+	b.params[name] = receiver
+	defer delete(b.params, name)
+	synthetic := &JsCallExpr{
+		BaseExpr: call.BaseExpr,
+		Callee:   &JsMemberExpr{BaseExpr: member.BaseExpr, Obj: &JsIdent{BaseExpr: member.BaseExpr, Name: name}, Prop: member.Prop, Computed: member.Computed},
+		Args:     call.Args,
+	}
+	value, handled, err := b.builtinCall(synthetic, pos)
+	if !handled {
+		if property, named := member.Prop.(*JsIdent); named && !member.Computed {
+			return nil, ssrExprUnsupported(pos, "method value.%s is not available during server rendering", property.Name)
+		}
+		return nil, ssrExprUnsupported(pos, "computed method calls are not supported")
+	}
+	return value, err
+}
+
 // call resolves a call in the order of T-4.1: a declared host
 // implementation, then native translation of a top-level named function
 // with one return expression (inlined), otherwise the call is unsupported
 // and the diagnostic names the host implementation that would fix it.
 func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
-	if call.Optional {
-		return nil, ssrExprUnsupported(pos, "optional JavaScript calls are not available to static SSR")
+	if value, handled, err := b.optionalChain(call, pos); handled {
+		return value, err
 	}
 	if member, ok := call.Callee.(*JsMemberExpr); ok && b.js {
 		if value, handled, err := b.promiseCall(member, call, pos); handled {

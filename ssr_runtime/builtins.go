@@ -51,6 +51,73 @@ func (js *JS) Method(site string, receiver any, name string, args ...any) any {
 	return js.throw("TypeError", fmt.Sprintf("%s.%s is not a function", describe(jsValue(receiver)), name), site)
 }
 
+// The built-in method names per receiver kind, as Method dispatches them;
+// an optional call (a.b?.()) reads any other name as undefined. Kept equal
+// to the dispatch by TestMethodNamesMatchDispatch.
+var stringMethodNames = map[string]bool{
+	"toString": true, "valueOf": true, "at": true, "charAt": true,
+	"charCodeAt": true, "codePointAt": true, "includes": true,
+	"startsWith": true, "endsWith": true, "indexOf": true,
+	"lastIndexOf": true, "slice": true, "substring": true,
+	"toUpperCase": true, "toLowerCase": true, "trim": true, "trimStart": true,
+	"trimEnd": true, "padStart": true, "padEnd": true, "repeat": true,
+	"concat": true, "split": true, "replace": true, "replaceAll": true,
+	"normalize": true,
+}
+
+var arrayMethodNames = map[string]bool{
+	"at": true, "includes": true, "indexOf": true, "lastIndexOf": true,
+	"join": true, "toString": true, "slice": true, "concat": true,
+	"map": true, "filter": true, "forEach": true, "some": true, "every": true,
+	"find": true, "findIndex": true, "findLast": true, "findLastIndex": true,
+	"reduce": true, "reduceRight": true, "flat": true, "flatMap": true,
+	"toSorted": true, "toReversed": true, "sort": true, "reverse": true,
+	"push": true, "unshift": true, "pop": true, "shift": true, "splice": true,
+	"fill": true,
+}
+
+var numberMethodNames = map[string]bool{
+	"toString": true, "toPrecision": true, "toExponential": true,
+	"valueOf": true, "toFixed": true,
+}
+
+// HasMethod reports whether receiver.name is a function: a built-in method
+// of a string, array, number or boolean, or a function in a property of an
+// object.
+func HasMethod(receiver any, name string) bool {
+	switch v := jsValue(receiver).(type) {
+	case string:
+		return stringMethodNames[name]
+	case []any:
+		return arrayMethodNames[name]
+	case float64:
+		return numberMethodNames[name]
+	case bool:
+		return name == "toString" || name == "valueOf"
+	case *Object:
+		_, ok := property(v, name).(Func)
+		return ok
+	}
+	return false
+}
+
+// OptionalMethod is receiver.name?.(…): undefined, without evaluating the
+// arguments, when receiver.name is null or undefined; otherwise call, which
+// makes the call and evaluates the rest of the chain. A nullish receiver
+// throws TypeError (it is read before the optional call).
+func (js *JS) OptionalMethod(site string, receiver any, name string, call func(any) any) any {
+	if js.Failed() {
+		return Undefined()
+	}
+	if nullish(receiver) {
+		return js.throw("TypeError", fmt.Sprintf("Cannot read properties of %s (reading '%s')", nullishName(receiver), name), site)
+	}
+	if !HasMethod(receiver, name) && nullish(property(jsValue(receiver), name)) {
+		return Undefined()
+	}
+	return call(receiver)
+}
+
 // MutateArray calls a method that changes an array the function created
 // (push, pop, shift, unshift, splice, sort, reverse, fill) and returns the
 // array's new contents with the method's result (T-6.6b).

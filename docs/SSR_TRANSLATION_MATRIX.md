@@ -75,7 +75,7 @@ disagree, the contract wins and the row is a bug.
 | `obj[key]` | native | slice index / field / object lookup | `ssrJS.Index` | T-6.5b | member-computed | implemented | Any receiver and key, with JavaScript property-key conversion. |
 | `.length` of string | native | UTF-16 length | `ssrJS.Length` | T-6.3a | strings-length | implemented | `null.length` throws `TypeError`; an object without `length` yields `undefined`. |
 | `.length` of array | native | `len(x)` | `ssrJS.Length` | — | strings-length | implemented | |
-| `a?.b`, `a?.[k]`, `f?.()` | native | nil/undefined check, then access | `vela.OptionalChain` with lazy rest | T-6.1b | ops-optional | partial | `a?.b` and `a?.[k]` implemented; the rest of the chain is not evaluated after a nullish link. `f?.()` is rejected; planned in task 056. |
+| `a?.b`, `a?.[k]`, `f?.()`, `a.b?.()` | native | nil/undefined check, then access | `vela.OptionalChain` with lazy rest, `ssrJS.OptionalMethod` | T-6.1b | ops-optional, ops-optional-call | implemented | After a nullish link the rest of the chain, method calls included, is not evaluated (`a?.b.trim()` is `undefined`); parentheses end the chain (`(a?.b).c` throws). `f?.()` calls a function value; arguments are evaluated only when the callee is not nullish, and a non-callable callee throws `TypeError`. `a.b?.()` admits catalogue methods: a name the receiver kind does not have (`"x".join`) is `undefined`. Calling functions stored in object properties waits for task 057. |
 
 ### 1.3 Operators
 
