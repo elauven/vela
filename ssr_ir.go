@@ -154,6 +154,13 @@ type (
 		Param string
 		Rest  SSRIRExpr
 	}
+	// ssrIRSeq evaluates Exprs in order for their effects and yields the
+	// last (the comma operator), or undefined after all of them (void).
+	ssrIRSeq struct {
+		ssrIRBase
+		Exprs []SSRIRExpr
+		Void  bool
+	}
 	// ssrIROptionalMethod is an optional method call receiver.name?.(…):
 	// Rest, the call on Param and the rest of the chain, runs only when
 	// receiver.name is not null or undefined.
@@ -308,6 +315,30 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 			Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{lowerSSRIR(n.Rest)}}}},
 		}
 		return &goast.CallExpr{Fun: goSelector("vela", "OptionalChain"), Args: []goast.Expr{lowerSSRIR(n.Base), rest}}
+	case *ssrIRSeq:
+		// Statements fix the order: Go leaves the order of a variable
+		// read against a call among operands unspecified.
+		var body []goast.Stmt
+		last := len(n.Exprs) - 1
+		if n.Void {
+			last = len(n.Exprs)
+		}
+		for _, expr := range n.Exprs[:last] {
+			switch expr.(type) {
+			case *ssrIRLiteral, *ssrIRUndefined:
+				continue // no effect; _ = nil would not compile
+			}
+			body = append(body, &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []goast.Expr{lowerSSRIR(expr)}})
+		}
+		result := ssrUndefined()
+		if !n.Void {
+			result = lowerSSRIR(n.Exprs[last])
+		}
+		body = append(body, &goast.ReturnStmt{Results: []goast.Expr{result}})
+		return &goast.CallExpr{Fun: &goast.FuncLit{
+			Type: &goast.FuncType{Params: &goast.FieldList{}, Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("any")}}}},
+			Body: &goast.BlockStmt{List: body},
+		}}
 	case *ssrIROptionalMethod:
 		rest := &goast.FuncLit{
 			Type: &goast.FuncType{
@@ -451,9 +482,17 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 		if node.Op == "++" || node.Op == "--" {
 			return nil, ssrImpure(pos, "update operator %q writes a binding during server rendering", node.Op)
 		}
+		if node.Op == "void" {
+			if _, literal := node.X.(*JsLiteral); literal {
+				return &ssrIRUndefined{ssrIRBase: b.base(pos, ssrIRFacts{})}, nil
+			}
+		}
 		x, err := b.build(node.X, pos)
 		if err != nil {
 			return nil, err
+		}
+		if node.Op == "void" {
+			return &ssrIRSeq{ssrIRBase: b.base(pos, ssrIRFacts{}), Exprs: []SSRIRExpr{x}, Void: true}, nil
 		}
 		// JavaScript's ! accepts every value and first applies JS truthiness.
 		if node.Op == "!" {
@@ -473,6 +512,16 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 		return nil, ssrExprUnsupported(pos, "unary operator %q is not supported", node.Op)
 	case *JsBinaryExpr:
 		return b.binary(node, pos)
+	case *JsSeqExpr:
+		seq := &ssrIRSeq{ssrIRBase: b.base(pos, ssrIRFacts{})}
+		for _, item := range node.Exprs {
+			value, err := b.build(item, pos)
+			if err != nil {
+				return nil, err
+			}
+			seq.Exprs = append(seq.Exprs, value)
+		}
+		return seq, nil
 	case *JsLogicalExpr:
 		left, err := b.build(node.L, pos)
 		if err != nil {

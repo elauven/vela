@@ -94,9 +94,10 @@ disagree, the contract wins and the row is a bug.
 | `&&`, `\|\|` | native | `vela.AndLazy` / `vela.OrLazy` | same | T-6.1b (R1) | ops-logical | implemented | |
 | `??` | native | lazy nullish check | `vela.NullishLazy` | T-6.1b | ops-nullish | implemented | |
 | `c ? a : b` | native | `vela.TernaryLazy` | same | T-6.1b (R1) | ops-conditional | implemented | |
-| `=`, `+=`, `++`, … on local bindings | native | Go assignment | same | T-6.6b | stmt-assign | implemented | Only inside translated functions. |
+| `=`, `+=`, `++`, … on local bindings | native | Go assignment | same | T-6.6b | stmt-assign | implemented | Only inside translated functions, as statements (also in a comma statement); an assignment or `++` used as a value is rejected. |
 | assignment to state, props, module bindings | rejected | — | — | T-6.6a | go-tests | partial | `VELA-SSR-IMPURE` (S1) for assignments and `++` / `--`; covered by a Go test, not an oracle group. |
-| comma, `void`, `delete`, `in`, `instanceof` | rejected | — | — | §6.2 | — | never | v1. |
+| comma `(a, b)`, `void e` | native | closure with the operands as statements, in order | same | §6.2 | ops-comma-void | implemented | Every operand is evaluated, left to right, with its effects; `void` yields `undefined`. |
+| `delete`, `in`, `instanceof` | rejected | — | — | §6.2 | — | never | v1. |
 
 ### 1.4 Compound values and functions
 

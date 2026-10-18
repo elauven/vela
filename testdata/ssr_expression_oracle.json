@@ -296,5 +296,18 @@
  {"group":"ops-optional-call","name":"chain-paren-ends","functions":"function f(o) { try { return (o?.a).b; } catch (e) { return e.name; } }","expression":"f(a)","values":{"a":null},"expected":"TypeError"},
  {"group":"ops-optional-call","name":"chain-paren-method","functions":"function f(o) { try { return (o?.a).trim(); } catch (e) { return e.name; } }","expression":"f(a)","values":{"a":null},"expected":"TypeError"},
  {"group":"ops-optional-call","name":"chain-paren-inner","functions":"function f(o) { return String((o?.a)?.b); }","expression":"f(a)","values":{"a":null},"expected":"undefined"},
- {"group":"ops-optional-call","name":"chain-call-result","functions":"function g(o) { return o; } function f(o) { return String(g(o)?.x.trim()); }","expression":"f(a)","values":{"a":null},"expected":"undefined"}
+ {"group":"ops-optional-call","name":"chain-call-result","functions":"function g(o) { return o; } function f(o) { return String(g(o)?.x.trim()); }","expression":"f(a)","values":{"a":null},"expected":"undefined"},
+ {"group":"ops-comma-void","name":"comma-last","functions":"function f(x) { return (x, x + 1); }","expression":"f(a)","values":{"a":1},"expected":"2"},
+ {"group":"ops-comma-void","name":"comma-effects-order","functions":"function f(x) { let log = ''; const t = (s) => { log += s; return s; }; const v = (t('a'), t('b'), t(x)); return v + '|' + log; }","expression":"f(a)","values":{"a":"c"},"expected":"c|abc"},
+ {"group":"ops-comma-void","name":"comma-read-after-call","functions":"function f(x) { let n = x; const bump = () => { n = n + 10; return 0; }; return (bump(), n); }","expression":"f(a)","values":{"a":1},"expected":"11"},
+ {"group":"ops-comma-void","name":"comma-literals","functions":"function f(x) { return (null, undefined, 'k', x); }","expression":"f(a)","values":{"a":"z"},"expected":"z"},
+ {"group":"ops-comma-void","name":"comma-template","expression":"(a, b)","values":{"a":1,"b":"second"},"expected":"second"},
+ {"group":"ops-comma-void","name":"comma-throws","functions":"function f(o) { return (o.x.y, 1); }","expression":"f(a)","values":{"a":{}},"throws":"TypeError"},
+ {"group":"ops-comma-void","name":"comma-in-for","functions":"function f(n) { let s = ''; for (let i = 0, j = n; i < j; i++, j--) s += i + ':' + j + ' '; return s; }","expression":"f(a)","values":{"a":5},"expected":"0:5 1:4 2:3 "},
+ {"group":"ops-comma-void","name":"void-zero","functions":"function f(x) { return String(void 0) + typeof void x; }","expression":"f(a)","values":{"a":1},"expected":"undefinedundefined"},
+ {"group":"ops-comma-void","name":"void-effect","functions":"function f(x) { let log = ''; const t = (s) => { log += s; return s; }; const v = void t(x); return String(v) + '|' + log; }","expression":"f(a)","values":{"a":"done"},"expected":"undefined|done"},
+ {"group":"ops-comma-void","name":"void-null","functions":"function f(x) { return String(void null) + String(void x); }","expression":"f(a)","values":{"a":null},"expected":"undefinedundefined"},
+ {"group":"ops-comma-void","name":"void-throws","functions":"function f(o) { return void o.x.y; }","expression":"f(a)","values":{"a":{}},"throws":"TypeError"},
+ {"group":"ops-comma-void","name":"void-template","expression":"String(void a)","values":{"a":3},"expected":"undefined"},
+ {"group":"ops-comma-void","name":"comma-arrow-body","functions":"function f(xs) { let total = 0, n = 0; xs.forEach((x) => { total += x, n += 1; }); return total + '/' + n; }","expression":"f(a)","values":{"a":[1,2,3]},"expected":"6/3"}
 ]
