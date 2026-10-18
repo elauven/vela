@@ -429,7 +429,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 				if !b.js {
 					return nil, ssrExprUnsupported(pos, "array spread is not available to static SSR")
 				}
-				value, err := b.build(spread.X, pos)
+				value, err := b.iterable(spread.X, pos)
 				if err != nil {
 					return nil, err
 				}

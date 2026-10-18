@@ -243,7 +243,7 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `sort`, `toSorted` | `ssrJS.Method`, `ssrJS.MutateArray` | T-6.3a, T-6.6b | Stable. Without comparator: compares `String(x)` by UTF-16 units and places `undefined` last, holes after it: `[10,9,undefined,1].sort()` is `[1,10,9,undefined]` ✓. Comparator result `NaN` counts as `0`. `sort` only on arrays the function created. | `arr-sort`, `arr-mutate` | implemented |
 | `reverse`, `toReversed` | `ssrJS.Method`, `ssrJS.MutateArray` | T-6.6b | `reverse` mutates: only on arrays the function created. | `arr-reverse`, `arr-mutate` | implemented |
 | `push`, `pop`, `shift`, `unshift`, `splice`, `fill` | `ssrJS.MutateArray` | T-6.6b | As a statement, a `const`/`let` initializer, or the right-hand side of an assignment, on a local array the function created; methods that change the length also need the array not to be copied into another variable, literal, or call argument. Otherwise `VELA-SSR-IMPURE`. | `arr-mutate` | implemented |
-| `entries`, `keys`, `values` in `for…of` | index loop | §7.1 | Only as `for…of` sources in v1. | — | planned (task 056) |
+| `entries`, `keys`, `values` of arrays, iterated at once | `ssrJS.ArrayIterItems` | §7.1 | As `for…of` sources, spread elements and the source of `Array.from`; holes are visited as `undefined`. The iterator itself (`xs.keys().length`, `const it = xs.entries()`) is rejected: it is not an array in JavaScript. | `arr-iterators` | implemented |
 | `Array.from(arrayLike, mapFn)` | `ssrJS.ArrayFrom` | — | Strings by code point; `{length: n}`; holes become `undefined`. | `arr-from` | implemented |
 | `Array.of` | `vela.ArrayOf` | — |  | `arr-from` | implemented |
 

@@ -345,8 +345,14 @@ func (c *ssrFuncCompiler) builder() *ssrIRBuilder {
 // expr builds and lowers an expression; throws reports whether it can
 // throw.
 func (c *ssrFuncCompiler) expr(expr JsExpr) (goast.Expr, bool, error) {
+	return c.exprWith(expr, (*ssrIRBuilder).build)
+}
+
+// exprWith lowers expr with a builder method: build, or iterable for a
+// value that is iterated at once.
+func (c *ssrFuncCompiler) exprWith(expr JsExpr, build func(*ssrIRBuilder, JsExpr, int) (SSRIRExpr, error)) (goast.Expr, bool, error) {
 	b := c.builder()
-	ir, err := b.build(expr, 0)
+	ir, err := build(b, expr, 0)
 	c.absorb(b)
 	if err != nil {
 		return nil, false, err
@@ -1007,11 +1013,11 @@ func (c *ssrFuncCompiler) forStatement(s *JsForStmt) ([]goast.Stmt, error) {
 // forOf iterates array elements or string code points (for…of), or the
 // keys for…in visits.
 func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
-	kind := "for…of"
+	kind, build := "for…of", (*ssrIRBuilder).iterable
 	if !s.IsOf {
-		kind = "for…in"
+		kind, build = "for…in", (*ssrIRBuilder).build
 	}
-	collection, _, err := c.expr(s.Right)
+	collection, _, err := c.exprWith(s.Right, build)
 	if err != nil {
 		return nil, err
 	}

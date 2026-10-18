@@ -184,6 +184,42 @@ func (js *JS) In(key, object any, site string) bool {
 	return false
 }
 
+// ArrayIterItems returns the items of receiver.name() for name entries,
+// keys or values, where the iterator is consumed at once (for…of, spread,
+// Array.from): [index, item] pairs, indices, or items, holes visited as
+// undefined. A function in a property of an object is called and its result
+// iterated.
+func (js *JS) ArrayIterItems(receiver any, name, site string) []any {
+	if js.Failed() {
+		return nil
+	}
+	if nullish(receiver) {
+		js.throw("TypeError", fmt.Sprintf("Cannot read properties of %s (reading '%s')", nullishName(receiver), name), site)
+		return nil
+	}
+	switch v := jsValue(receiver).(type) {
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			switch name {
+			case "entries":
+				out[i] = []any{float64(i), unhole(item)}
+			case "keys":
+				out[i] = float64(i)
+			default:
+				out[i] = unhole(item)
+			}
+		}
+		return out
+	case *Object:
+		if fn, ok := property(v, name).(Func); ok {
+			return js.SpreadItems(fn(), site)
+		}
+	}
+	js.throw("TypeError", fmt.Sprintf("%s.%s is not a function", describe(jsValue(receiver)), name), site)
+	return nil
+}
+
 // MutateArray calls a method that changes an array the function created
 // (push, pop, shift, unshift, splice, sort, reverse, fill) and returns the
 // array's new contents with the method's result (T-6.6b).

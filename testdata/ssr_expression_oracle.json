@@ -347,5 +347,20 @@
  {"group":"stmt-for-in","name":"for-in-destructure-key","functions":"function f(o) { let s = ''; for (const [first] in o) s += first; return s; }","expression":"f(a)","values":{"a":{"xy":1,"zw":2}},"expected":"xz"},
  {"group":"stmt-for-in","name":"for-in-closures","functions":"function f(o) { const fs = []; for (const k in o) fs.push(() => k); return fs.map((g) => g()).join(); }","expression":"f(a)","values":{"a":{"p":1,"q":2}},"expected":"p,q"},
  {"group":"stmt-for-in","name":"for-in-nested","functions":"function f(o) { let s = ''; for (const k in o) for (const j in o[k]) s += k + j; return s; }","expression":"f(a)","values":{"a":{"a":{"x":1},"b":{"y":1,"z":2}}},"expected":"axbybz"},
- {"group":"stmt-for-in","name":"for-in-throws","functions":"function f(o) { for (const k in o.x.y) return k; return 'none'; }","expression":"f(a)","values":{"a":{}},"throws":"TypeError"}
+ {"group":"stmt-for-in","name":"for-in-throws","functions":"function f(o) { for (const k in o.x.y) return k; return 'none'; }","expression":"f(a)","values":{"a":{}},"throws":"TypeError"},
+ {"group":"arr-iterators","name":"for-of-entries","functions":"function f(xs) { let s = ''; for (const [i, x] of xs.entries()) s += i + '=' + x + ' '; return s; }","expression":"f(a)","values":{"a":["a","b"]},"expected":"0=a 1=b "},
+ {"group":"arr-iterators","name":"for-of-keys","functions":"function f(xs) { let s = 0; for (const i of xs.keys()) s += i; return s + typeof xs.length; }","expression":"f(a)","values":{"a":[5,6,7]},"expected":"3number"},
+ {"group":"arr-iterators","name":"for-of-values","functions":"function f(xs) { let s = ''; for (const x of xs.values()) s += x; return s; }","expression":"f(a)","values":{"a":["p","q"]},"expected":"pq"},
+ {"group":"arr-iterators","name":"entries-holes","functions":"function f(n) { const xs = [n, , 3]; let s = ''; for (const [i, x] of xs.entries()) s += i + ':' + x + ' '; return s; }","expression":"f(a)","values":{"a":1},"expected":"0:1 1:undefined 2:3 "},
+ {"group":"arr-iterators","name":"keys-holes","functions":"function f(n) { return Array.from([n, , 3].keys()).join(); }","expression":"f(a)","values":{"a":1},"expected":"0,1,2"},
+ {"group":"arr-iterators","name":"array-from-entries","functions":"function f(xs) { return JSON.stringify(Array.from(xs.entries())); }","expression":"f(a)","values":{"a":["x","y"]},"expected":"[[0,\"x\"],[1,\"y\"]]"},
+ {"group":"arr-iterators","name":"array-from-values-map","functions":"function f(xs) { return Array.from(xs.values(), (x) => x * 2).join(); }","expression":"f(a)","values":{"a":[1,2]},"expected":"2,4"},
+ {"group":"arr-iterators","name":"spread-keys","functions":"function f(xs) { return [...xs.keys(), 'end'].join(); }","expression":"f(a)","values":{"a":["a","b"]},"expected":"0,1,end"},
+ {"group":"arr-iterators","name":"spread-call-args","functions":"function f(xs) { return Math.max(...xs.values()); }","expression":"f(a)","values":{"a":[3,9,4]},"expected":"9"},
+ {"group":"arr-iterators","name":"template-spread-entries","expression":"JSON.stringify([...a.entries()])","values":{"a":[true]},"expected":"[[0,true]]"},
+ {"group":"arr-iterators","name":"entries-null","functions":"function f(xs) { for (const e of xs.entries()) return e; return 'none'; }","expression":"f(a)","values":{"a":null},"throws":"TypeError"},
+ {"group":"arr-iterators","name":"entries-string","functions":"function f(s) { for (const e of s.entries()) return e; return 'none'; }","expression":"f(a)","values":{"a":"ab"},"throws":"TypeError"},
+ {"group":"arr-iterators","name":"entries-empty","functions":"function f(xs) { let n = 0; for (const e of xs.entries()) n++; return n; }","expression":"f(a)","values":{"a":[]},"expected":"0"},
+ {"group":"arr-iterators","name":"entries-break","functions":"function f(xs) { let s = ''; for (const [i, x] of xs.entries()) { if (i === 2) break; s += x; } return s; }","expression":"f(a)","values":{"a":["a","b","c","d"]},"expected":"ab"},
+ {"group":"arr-iterators","name":"entries-snapshot","functions":"function f(n) { const xs = [n, 2]; let s = ''; for (const [i, x] of xs.entries()) { s += x; } xs.push(3); return s + xs.length; }","expression":"f(a)","values":{"a":1},"expected":"123"}
 ]

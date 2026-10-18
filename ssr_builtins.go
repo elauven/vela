@@ -191,6 +191,33 @@ func (b *ssrIRBuilder) spreadArgs(call *JsCallExpr, pos int) (goast.Expr, error)
 	return nil, nil
 }
 
+// iterable builds a value that is iterated at once (for…of, spread,
+// Array.from): xs.entries(), xs.keys() and xs.values() become the list of
+// their items, the only use of these iterators that is translated.
+func (b *ssrIRBuilder) iterable(expr JsExpr, pos int) (SSRIRExpr, error) {
+	call, ok := expr.(*JsCallExpr)
+	if !ok || call.Optional || len(call.Args) != 0 || !b.js {
+		return b.build(expr, pos)
+	}
+	member, ok := call.Callee.(*JsMemberExpr)
+	if !ok || member.Computed || member.Optional || ssrParenthesized(member, call) {
+		return b.build(expr, pos)
+	}
+	property, ok := member.Prop.(*JsIdent)
+	if !ok || (property.Name != "entries" && property.Name != "keys" && property.Name != "values") {
+		return b.build(expr, pos)
+	}
+	if object, global := member.Obj.(*JsIdent); global && ssrGlobalNamespaces[object.Name] {
+		return b.build(expr, pos) // Object.entries(o)
+	}
+	receiver, err := b.build(member.Obj, pos)
+	if err != nil {
+		return nil, err
+	}
+	b.usedJS, b.throws = true, true
+	return &ssrIRJS{ssrIRBase: b.base(pos, ssrIRFacts{}), Method: "ArrayIterItems", Args: []SSRIRExpr{receiver}, Strings: []string{property.Name}, Site: b.site}, nil
+}
+
 func (b *ssrIRBuilder) buildArgs(call *JsCallExpr, pos int) ([]SSRIRExpr, error) {
 	args := make([]SSRIRExpr, 0, len(call.Args))
 	for _, argument := range call.Args {
@@ -243,8 +270,19 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 			}
 			return &ssrIRGo{ssrIRBase: b.base(pos, global.Facts), Expr: &goast.CallExpr{Fun: fun, Args: append(fixed, spread), Ellipsis: 1}}, true, nil
 		}
-		args, err := b.buildArgs(call, pos)
-		if err != nil {
+		var args []SSRIRExpr
+		if name == "Array.from" && len(call.Args) > 0 {
+			// The source is iterated at once: xs.entries() is admitted.
+			first, err := b.iterable(call.Args[0], pos)
+			if err != nil {
+				return nil, true, err
+			}
+			rest, err := b.buildArgs(&JsCallExpr{Args: call.Args[1:]}, pos)
+			if err != nil {
+				return nil, true, err
+			}
+			args = append([]SSRIRExpr{first}, rest...)
+		} else if args, err = b.buildArgs(call, pos); err != nil {
 			return nil, true, err
 		}
 		if name == "Object.isFrozen" && len(args) == 1 && args[0].irBase().Facts.Array {
