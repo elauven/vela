@@ -565,6 +565,17 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
 // Branch fragments receive { value } or { error }. A settlement of a promise
 // that is no longer current is ignored.
 
+// reviveError rebuilds an error object the server wrote in its payload
+// form: kind, own message, own enumerable properties.
+const errorKinds = { Error, TypeError, RangeError };
+function reviveError(form) {
+  const error = new (errorKinds[form.kind] || Error)();
+  if ('message' in form) {
+    Object.defineProperty(error, 'message', { value: form.message, writable: true, configurable: true });
+  }
+  return Object.assign(error, form.props);
+}
+
 export function $$await(cursor, operand, pending, then, catcher, changed) {
   let anchor;
   let promise = null;
@@ -620,7 +631,8 @@ export function $$await(cursor, operand, pending, then, catcher, changed) {
       if (then) current = cursor.mount(then, { value: entry.value });
     } else if (token === 'c') {
       state = 2;
-      if (catcher) current = cursor.mount(catcher, { error: entry.error });
+      const error = entry.errorObject ? reviveError(entry.error) : entry.error;
+      if (catcher) current = cursor.mount(catcher, { error });
     } else {
       state = 0;
       if (pending) current = cursor.mount(pending);

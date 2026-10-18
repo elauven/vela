@@ -200,11 +200,36 @@ func AwaitSettle(w io.Writer, js *JS, site string, operand any) (string, any) {
 		}
 		token, value = "c", js.reasonValue(ctx, promise.reason)
 		snapshot = map[string]any{"state": "c", "error": value}
+		if form := errorForm(value); form != nil {
+			// The JSON view of an error is {} (its message is not
+			// enumerable); the client revives the error from this form.
+			snapshot = map[string]any{"state": "c", "error": form, "errorObject": true}
+		}
 	}
 	if sw, ok := w.(*streamWriter); ok && !sw.static {
 		sw.stream.entries = append(sw.stream.entries, []any{"a", site, snapshot})
 	}
 	return token, value
+}
+
+// errorForm is the payload form of an error object: its kind, its own
+// message when it has one, and its own enumerable properties; nil for any
+// other value.
+func errorForm(value any) *Object {
+	object, ok := value.(*Object)
+	if !ok || object.errorName == "" {
+		return nil
+	}
+	form := NewObject().Set("kind", object.errorName)
+	if object.hasMessage {
+		form.Set("message", object.message)
+	}
+	own := NewObject()
+	keys, vals := object.entries()
+	for i, key := range keys {
+		own.Set(key, vals[i])
+	}
+	return form.Set("props", own)
 }
 
 var _ json.Marshaler = (*Promise)(nil)

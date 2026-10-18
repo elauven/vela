@@ -175,13 +175,11 @@ func (js *JS) SetMember(object, key, value any, site string) any {
 
 // NewError creates an error object: new Error(message), new TypeError(…).
 func NewError(kind string, message any) *Object {
-	text := ""
-	if _, undefined := message.(UndefinedValue); !undefined && message != nil {
-		text = String(jsValue(message))
-	} else if message == nil {
-		text = "null"
+	object := &Object{errorName: kind}
+	if _, undefined := message.(UndefinedValue); !undefined {
+		object.message, object.hasMessage = String(jsValue(message)), true
 	}
-	return NewObject().Set("name", kind).Set("message", text)
+	return object
 }
 
 // As lets errors.As view an uncaught error object as a *RenderError of its

@@ -392,7 +392,8 @@ in one synchronous pass.
   `server-host`, the server evaluates it synchronously and renders the `then`
   branch with the value or the `catch` branch with the error, never
   `pending`. The settled snapshot (state plus the JSON view of the value or
-  error) is written to the payload. Hydration adopts the settled branch, and
+  error; an error object in the form of S-6.11, since its JSON view is
+  `{}`) is written to the payload. Hydration adopts the settled branch, and
   the client does not re-evaluate the operand for initial hydration; it
   re-evaluates only when the operand's dependencies change. (Required
   behaviour: verify the current client runtime and change it if it

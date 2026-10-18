@@ -299,7 +299,7 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | Built-in | Go helper | Rule | Divergence / required edge cases | Oracles | Status |
 | --- | --- | --- | --- | --- | --- |
 | `err.message`, `err.name`, `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | `vela.NewError` | T-6.5d, T-7.4h | Host errors expose `"Internal error"` unless `vela.PublicError`. | `errors-new`, `fn-try` | implemented |
-| `String(err)` | `vela.String` | — | `"[object Object]"` on the server; JavaScript gives `"Error: message"`. | — | planned (task 056) |
+| `String(err)`, `` `${err}` ``, `'' + err` | `vela.String` | T-6.4a | `Error.prototype.toString`: `"Name: message"`, the name alone when the message is empty, the message alone when the name is empty. The message is not enumerable: `Object.keys`, spread and `JSON.stringify` do not see it (`{}`), as in JavaScript. | `errors-tostring` | implemented |
 | `err.stack` | — | — |  | — | never |
 ---
 

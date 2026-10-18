@@ -364,7 +364,11 @@ components write no entry.
   **not** evaluate the operand. The operand is evaluated again only when its
   dependencies change. For `p` (rendered only when a caller supplied a
   pending snapshot through `RenderOptions.Await`), it adopts the pending
-  branch and evaluates the operand after the root commits.
+  branch and evaluates the operand after the root commits. An error object
+  (`new Error`, `TypeError`, `RangeError`, or a runtime error) has the JSON
+  view `{}`, so a `c` entry writes it as `{"kind", "message", "props"}` with
+  `"errorObject": true`, and the client revives an error of that kind with
+  the same own message and own enumerable properties.
 
 ---
 

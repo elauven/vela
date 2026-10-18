@@ -112,7 +112,7 @@ var ssrCatalogue = []ssrCatalogueSection{
 	}},
 	{Title: "2.9 Error objects", Rows: []ssrCatalogueRow{
 		{Builtin: "`err.message`, `err.name`, `new Error(m)`, `new TypeError(m)`, `new RangeError(m)`", Helper: "`vela.NewError`", Rule: "T-6.5d, T-7.4h", Divergence: "Host errors expose `\"Internal error\"` unless `vela.PublicError`.", Status: "implemented", Oracles: []string{"errors-new", "fn-try"}},
-		{Builtin: "`String(err)`", Helper: "`vela.String`", Rule: "—", Divergence: "`\"[object Object]\"` on the server; JavaScript gives `\"Error: message\"`.", Status: "planned (task 056)"},
+		{Builtin: "`String(err)`, `` `${err}` ``, `'' + err`", Helper: "`vela.String`", Rule: "T-6.4a", Divergence: "`Error.prototype.toString`: `\"Name: message\"`, the name alone when the message is empty, the message alone when the name is empty. The message is not enumerable: `Object.keys`, spread and `JSON.stringify` do not see it (`{}`), as in JavaScript.", Status: "implemented", Oracles: []string{"errors-tostring"}},
 		{Builtin: "`err.stack`", Helper: "—", Rule: "—", Status: "never"},
 	}},
 }

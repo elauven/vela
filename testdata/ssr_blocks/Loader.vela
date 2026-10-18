@@ -6,7 +6,7 @@
 
 <template>
   <section>
-    {#await load(id + shift)}<i>wait</i>{:then item}<b>{item.label} #{item.id}</b>{:catch e}<s>{e.name}: {e.message}</s>{/await}
+    {#await load(id + shift)}<i>wait</i>{:then item}<b>{item.label} #{item.id}</b>{:catch e}<s>{e.name}: {e.message}</s><u>{e}</u>{/await}
     <button class="next" @click={() => shift = shift + 1}>next</button>
     <button class="neg" @click={() => shift = -10}>neg</button>
   </section>

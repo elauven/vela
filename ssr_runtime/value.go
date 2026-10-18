@@ -88,6 +88,13 @@ type Object struct {
 	index map[string]int
 	// frozen is set by Object.freeze: JavaScript writes throw TypeError.
 	frozen bool
+	// errorName is the name on the prototype of an error object (new
+	// Error, new TypeError, …) and empty for other objects. An error's
+	// message, when given, is an own property that is not enumerable: it
+	// stays out of keys, so Object.keys, spread and JSON do not see it.
+	errorName  string
+	message    any
+	hasMessage bool
 }
 
 // objectIndexKeys is the size above which an object gets a key index.
@@ -115,6 +122,10 @@ func (o *Object) find(key string) int {
 // Set defines or replaces a property and returns the object, so a literal
 // lowers to one expression.
 func (o *Object) Set(key string, value any) *Object {
+	if o.hasMessage && key == "message" {
+		o.message = value
+		return o
+	}
 	if i := o.find(key); i >= 0 {
 		o.vals[i] = value
 		return o
@@ -178,6 +189,17 @@ func (o *Object) Spread(value any) *Object {
 func (o *Object) Lookup(key string) (any, bool) {
 	if i := o.find(key); i >= 0 {
 		return o.vals[i], true
+	}
+	if o.errorName != "" {
+		// Error.prototype gives name, and message "" when none was given.
+		switch {
+		case key == "message" && o.hasMessage:
+			return o.message, true
+		case key == "message":
+			return "", true
+		case key == "name":
+			return o.errorName, true
+		}
 	}
 	return nil, false
 }
@@ -580,10 +602,33 @@ func toPrimitive(value any) any {
 	case []any:
 		return String(v)
 	case *Object:
-		return "[object Object]"
+		return objectString(v)
 	default:
 		return v
 	}
+}
+
+// objectString converts an object to text: Error.prototype.toString for an
+// error object ("Name: message", either part alone when the other is
+// empty), "[object Object]" for other objects.
+func objectString(o *Object) string {
+	if o.errorName == "" {
+		return "[object Object]"
+	}
+	name, message := "Error", ""
+	if value, _ := o.Lookup("name"); !isUndefinedValue(value) {
+		name = String(value)
+	}
+	if value, _ := o.Lookup("message"); !isUndefinedValue(value) {
+		message = String(value)
+	}
+	switch {
+	case name == "":
+		return message
+	case message == "":
+		return name
+	}
+	return name + ": " + message
 }
 
 // ToNumber implements JavaScript ToNumber over the value domain.

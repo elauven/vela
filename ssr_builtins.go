@@ -381,11 +381,15 @@ func ssrJSNumberText(value float64) string {
 }
 
 // ssrFreshExpr reports an expression that creates a new array or object:
-// a literal, or a call to a built-in that returns a new one.
+// a literal, an error object, or a call to a built-in that returns a new
+// one.
 func ssrFreshExpr(expr JsExpr) bool {
 	switch e := expr.(type) {
 	case *JsArrayExpr, *JsObjectExpr:
 		return true
+	case *JsNewExpr:
+		callee, ok := e.Callee.(*JsIdent)
+		return ok && (callee.Name == "Error" || callee.Name == "TypeError" || callee.Name == "RangeError")
 	case *JsCallExpr:
 		member, ok := e.Callee.(*JsMemberExpr)
 		if !ok || member.Computed {
