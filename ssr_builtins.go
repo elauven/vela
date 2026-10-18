@@ -39,7 +39,19 @@ var ssrBuiltinMethods = map[string]ssrIRFacts{
 	"toFixed": {String: true}, "toPrecision": {String: true}, "toExponential": {String: true},
 	// Strings, by the decisions of §5.
 	"normalize": {String: true},
+	// Dates (§2.10): the UTC methods; the setters change the date.
+	"getTime": {Number: true}, "toISOString": {String: true}, "toJSON": {},
+	"getUTCFullYear": {Number: true}, "getUTCMonth": {Number: true}, "getUTCDate": {Number: true},
+	"getUTCDay": {Number: true}, "getUTCHours": {Number: true}, "getUTCMinutes": {Number: true},
+	"getUTCSeconds": {Number: true}, "getUTCMilliseconds": {Number: true},
+	"setTime": {Number: true}, "setUTCFullYear": {Number: true}, "setUTCMonth": {Number: true},
+	"setUTCDate": {Number: true}, "setUTCHours": {Number: true}, "setUTCMinutes": {Number: true},
+	"setUTCSeconds": {Number: true}, "setUTCMilliseconds": {Number: true},
 }
+
+// ssrDateSetters change the Date they are called on: admitted on a date the
+// function created (T-6.6b).
+var ssrDateSetters = map[string]bool{"setTime": true, "setUTCFullYear": true, "setUTCMonth": true, "setUTCDate": true, "setUTCHours": true, "setUTCMinutes": true, "setUTCSeconds": true, "setUTCMilliseconds": true}
 
 // ssrMutatingMethods change the array they are called on (T-6.6b). sort,
 // reverse, and fill keep the array's length and are admitted on any array
@@ -86,6 +98,9 @@ var ssrBuiltinGlobals = map[string]ssrBuiltinGlobal{
 	"String.fromCodePoint": {Helper: "StringFromCodePoint", JS: true, Args: -1},
 	// §2.8
 	"structuredClone": {Helper: "StructuredClone", JS: true, Args: 1},
+	// §2.10
+	"Date.UTC":   {Helper: "DateUTC", Args: -1, Facts: ssrIRFacts{Number: true}},
+	"Date.parse": {Helper: "DateParse", JS: true, Args: 1, Facts: ssrIRFacts{Number: true}},
 	// §2.3
 	"Array.from": {Helper: "ArrayFrom", JS: true, Args: 2},
 	"Array.of":   {Helper: "ArrayOf", Args: -1, Facts: ssrIRFacts{Array: true}},
@@ -358,6 +373,18 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 	if !admitted {
 		return nil, false, nil
 	}
+	if ssrDateSetters[name] {
+		c := b.funcCompiler
+		root := identName(member.Obj)
+		fresh := false
+		if c != nil && root != "" && c.freshness != nil {
+			_, local := c.lookup(root)
+			fresh = local && c.freshness.fresh[root]
+		}
+		if !fresh {
+			return nil, true, ssrImpure(pos, "%s changes its date; during server rendering it is admitted only on a date the function created, as in const d = new Date(ms) (T-6.6b)", name)
+		}
+	}
 	receiver, err := b.build(member.Obj, pos)
 	if err != nil {
 		return nil, true, err
@@ -440,7 +467,7 @@ func ssrFreshExpr(expr JsExpr) bool {
 		return true
 	case *JsNewExpr:
 		callee, ok := e.Callee.(*JsIdent)
-		return ok && (callee.Name == "Error" || callee.Name == "TypeError" || callee.Name == "RangeError")
+		return ok && (callee.Name == "Error" || callee.Name == "TypeError" || callee.Name == "RangeError" || callee.Name == "Date")
 	case *JsCallExpr:
 		if callee, ok := e.Callee.(*JsIdent); ok && callee.Name == "structuredClone" {
 			return true

@@ -117,7 +117,7 @@ func Try(js *JS, ctx context.Context, try func() (any, bool), catch func(error a
 		return nil, false
 	}
 	value, returned := try()
-	if js.Failed() && catch != nil && !cancelled(js.err) {
+	if js.Failed() && catch != nil && !cancelled(js.err) && !unsupported(js.err) {
 		value, returned = catch(js.Catch(ctx))
 	}
 	if finally == nil {
@@ -132,6 +132,13 @@ func Try(js *JS, ctx context.Context, try func() (any, bool), catch func(error a
 	}
 	js.err = pending
 	return value, returned
+}
+
+// unsupported reports an UnsupportedError: not a JavaScript exception, so
+// catch does not receive it.
+func unsupported(err error) bool {
+	var target *UnsupportedError
+	return errors.As(err, &target)
 }
 
 // Call calls a function value (`f(x)` where f is a value).

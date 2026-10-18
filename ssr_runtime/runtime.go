@@ -358,6 +358,9 @@ func String(value any) string {
 	if _, promise := value.(*Promise); promise {
 		return "[object Promise]"
 	}
+	if date, ok := value.(*Date); ok {
+		return String(date.toPrimitive("string"))
+	}
 	if _, undefined := value.(UndefinedValue); undefined {
 		return "undefined"
 	}

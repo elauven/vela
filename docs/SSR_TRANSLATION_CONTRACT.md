@@ -313,6 +313,17 @@ panics.
   initializer they may be `server-host` (the value travels in the payload).
   In a `$derived` or template expression they require `client-deferred`,
   because the client recomputes them and would diverge.
+- **T-6.6e Deterministic Date.** A `Date` holds a time value in UTC
+  milliseconds. Construction from a time value, a Date, an ECMAScript date
+  time string with `Z` or an offset, or `Date.UTC(…)`, the `getUTC…` and
+  `setUTC…` methods (setters on a date the function created, T-6.6b),
+  `getTime`, `valueOf`, `toISOString`, `toJSON` and arithmetic through the
+  time value are native and exact. What depends on the time zone of the
+  machine is not: local-time construction, getters and setters keep the
+  host route (T-6.6c); text conversion of a Date and parsing a date-time
+  without an offset or in another format fail the render with
+  `VELA-SSR-UNSUPPORTED` when reached, which `catch` does not receive. A
+  Date in `$state` is omitted from the payload and recomputed by the client.
 - **T-6.6d Initialization order.** Prop defaults, then `$state` initializers,
   then `$derived` values evaluate once, in script declaration order — the
   same order as client initialization. `$state(prop)` and `$derived` over

@@ -243,7 +243,8 @@ func (Func) MarshalJSON() ([]byte, error) { return []byte("null"), nil }
 // with methods would arrive without them).
 func clientOnlyValue(value any, seen map[any]bool) bool {
 	switch v := value.(type) {
-	case *Promise, Func, *accessor:
+	case *Promise, Func, *accessor, *Date:
+		// A Date would arrive as its ISO text.
 		return true
 	case []any:
 		for _, item := range v {

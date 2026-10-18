@@ -1460,11 +1460,15 @@ func (b *ssrIRBuilder) valueCall(callee SSRIRExpr, call *JsCallExpr, pos int) (S
 	return &ssrIRCallFunc{ssrIRBase: b.base(pos, ssrIRFacts{}), Value: callee, Args: args, Site: b.site}, nil
 }
 
-// newError lowers new Error(m), new TypeError(m), new RangeError(m).
+// newError lowers new Error(m), new TypeError(m), new RangeError(m), and
+// new Date(value).
 func (b *ssrIRBuilder) newError(node *JsNewExpr, pos int) (SSRIRExpr, error) {
 	callee, ok := node.Callee.(*JsIdent)
+	if ok && callee.Name == "Date" && !b.shadowedGlobal("Date") {
+		return b.newDate(node, pos)
+	}
 	if !ok || (callee.Name != "Error" && callee.Name != "TypeError" && callee.Name != "RangeError") {
-		return nil, ssrExprUnsupported(pos, "new is admitted only for Error, TypeError, and RangeError (§6.2)")
+		return nil, ssrExprUnsupported(pos, "new is admitted only for Error, TypeError, RangeError, and Date (§6.2)")
 	}
 	var message SSRIRExpr = &ssrIRUndefined{ssrIRBase: b.base(pos, ssrIRFacts{})}
 	if len(node.Args) > 0 {
@@ -1476,6 +1480,28 @@ func (b *ssrIRBuilder) newError(node *JsNewExpr, pos int) (SSRIRExpr, error) {
 	}
 	kind := &ssrIRLiteral{ssrIRBase: b.base(pos, ssrIRFacts{String: true}), Kind: token.STRING, Value: callee.Name}
 	return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Object: true}), Name: "NewError", Args: []SSRIRExpr{kind, message}}, nil
+}
+
+// newDate lowers new Date(value) (T-6.6e). new Date() reads the clock and
+// new Date(y, m, …) reads local time: both keep the host route.
+func (b *ssrIRBuilder) newDate(node *JsNewExpr, pos int) (SSRIRExpr, error) {
+	switch {
+	case !b.js:
+		return nil, ssrExprUnsupported(pos, "new Date is available only in translated script code")
+	case len(node.Args) == 0:
+		return nil, ssrExprUnsupported(pos, "new Date() reads the clock (T-6.6c); pass the time as a prop or compute it in a host")
+	case len(node.Args) > 1:
+		return nil, ssrExprUnsupported(pos, "new Date(year, month, …) is local time, which differs between the server and the browser; use new Date(Date.UTC(year, month, …))")
+	}
+	if _, spread := node.Args[0].(*JsSpreadExpr); spread {
+		return nil, ssrExprUnsupported(pos, "spread arguments to new Date are not supported")
+	}
+	value, err := b.build(node.Args[0], pos)
+	if err != nil {
+		return nil, err
+	}
+	b.usedJS, b.throws = true, true
+	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "NewDate"), Args: []goast.Expr{ssrGoString(b.site), lowerSSRIR(value)}}}, nil
 }
 
 var _ = fmt.Sprintf

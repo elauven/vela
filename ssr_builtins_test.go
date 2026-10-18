@@ -87,6 +87,46 @@ func TestSSRArrayIteratorsOnlyWhenIterated(t *testing.T) {
 	}
 }
 
+// TestSSRDateTimeZoneDependentStaysRejected: new Date(), local-time
+// construction and getters, and setters on a date the function did not
+// create keep their diagnostics (T-6.6e).
+func TestSSRDateTimeZoneDependentStaysRejected(t *testing.T) {
+	src := writeSSRModuleFixture(t, map[string]string{
+		"When.vela": `<script>
+  export let ms = 0;
+  function now() { return new Date().getTime(); }
+  function local(y) { return new Date(y, 0).getTime(); }
+  function year(t) { return new Date(t).getFullYear(); }
+  function shift(d) { d.setUTCDate(1); return d.getTime(); }
+  function iso(t) { const d = new Date(t); d.setUTCDate(1); return d.toISOString(); }
+</script>
+<template><p>{now()} {local(ms)} {year(ms)} {shift(new Date(ms))} {iso(ms)}</p></template>
+`,
+	})
+	out := filepath.Join(filepath.Dir(src), "out")
+	report := filepath.Join(out, "report.json")
+	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/when/server", SSRReport: report}
+	buildSSRProject(collectVela(src), src, out, opts, false)
+	data, err := os.ReadFile(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		`now has no server-native translation: new Date() reads the clock`,
+		`local has no server-native translation: new Date(year, month, …) is local time`,
+		`year has no server-native translation: method value.getFullYear is not available`,
+		`setUTCDate changes its date; during server rendering it is admitted only on a date the function created`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("report lacks %s\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, `iso has no`) {
+		t.Errorf("iso() must translate:\n%s", text)
+	}
+}
+
 // TestSSRLabelledJumpsAcrossTryStayRejected: break and continue, labelled
 // or not, cannot leave a try part, whose statements run in a closure.
 func TestSSRLabelledJumpsAcrossTryStayRejected(t *testing.T) {

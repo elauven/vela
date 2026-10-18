@@ -36,9 +36,9 @@ the site and the host or `{#client}` route that would fix it.
 
 | Outcome | Sites |
 | --- | ---: |
-| server-native | 786 |
+| server-native | 787 |
 | server-host | 2 |
-| unsupported | 113 |
+| unsupported | 112 |
 
 ## Negative corpus
 

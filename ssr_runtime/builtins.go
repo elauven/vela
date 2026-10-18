@@ -37,6 +37,10 @@ func (js *JS) Method(site string, receiver any, name string, args ...any) any {
 		if result, ok := js.numberMethod(site, v, name, args); ok {
 			return result
 		}
+	case *Date:
+		if result, ok := js.dateMethod(site, v, name, args); ok {
+			return result
+		}
 	case bool:
 		if name == "toString" {
 			return String(v)
@@ -95,6 +99,8 @@ func HasMethod(receiver any, name string) bool {
 		return numberMethodNames[name]
 	case bool:
 		return name == "toString" || name == "valueOf"
+	case *Date:
+		return dateMethodNames[name]
 	case *Object:
 		_, ok := property(v, name).(Func)
 		return ok
@@ -148,6 +154,18 @@ var errorPrototypeNames = map[string]bool{
 	"stack": true,
 }
 
+// datePrototypeNames are the methods of Date.prototype that the server does
+// not dispatch (local time, locale formats).
+var datePrototypeNames = map[string]bool{
+	"getDate": true, "getDay": true, "getFullYear": true, "getHours": true,
+	"getMilliseconds": true, "getMinutes": true, "getMonth": true, "getSeconds": true,
+	"getTimezoneOffset": true, "getYear": true, "setDate": true, "setFullYear": true,
+	"setHours": true, "setMilliseconds": true, "setMinutes": true, "setMonth": true,
+	"setSeconds": true, "setYear": true, "toDateString": true, "toTimeString": true,
+	"toUTCString": true, "toGMTString": true, "toLocaleString": true,
+	"toLocaleDateString": true, "toLocaleTimeString": true,
+}
+
 var promisePrototypeNames = map[string]bool{
 	"constructor": true, "then": true, "catch": true, "finally": true,
 }
@@ -177,6 +195,8 @@ func (js *JS) In(key, object any, site string) bool {
 		return arrayPrototypeNames[name] || objectPrototypeNames[name]
 	case *Promise:
 		return promisePrototypeNames[name] || objectPrototypeNames[name]
+	case *Date:
+		return dateMethodNames[name] || datePrototypeNames[name] || name == "constructor" || objectPrototypeNames[name]
 	case Func:
 		js.fail(&RenderError{Kind: "Error", Message: "the in operator on a function value is not supported during server rendering", Site: site})
 		return false
@@ -328,6 +348,8 @@ func (js *JS) StructuredClone(site string, value any) any {
 				out.Set(key, cloned)
 			}
 			return out, true
+		case *Date:
+			return &Date{time: v.time, js: js}, true
 		case Func:
 			js.throw("DataCloneError", "function could not be cloned.", site)
 		case *Promise:
@@ -1031,6 +1053,9 @@ func (js *JS) stringify(site string, b *strings.Builder, key string, value any, 
 				return false
 			}
 		}
+	}
+	if date, ok := value.(*Date); ok {
+		value, _ = js.dateMethod(site, date, "toJSON", nil)
 	}
 	switch v := jsValue(value).(type) {
 	case nil:

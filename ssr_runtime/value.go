@@ -357,7 +357,7 @@ func arrayIndexKey(key string) bool {
 // time.Time, or a []byte is read through JSON (T-5.1).
 func jsValue(value any) any {
 	switch v := value.(type) {
-	case Func, *Promise:
+	case Func, *Promise, *Date:
 		return v
 	case nil, UndefinedValue, bool, string, float64, []any, *Object, map[string]any:
 		if m, ok := v.(map[string]any); ok {
@@ -555,6 +555,9 @@ func collectJSONFields(t reflect.Type, prefix []int, fields map[string]jsonField
 // index or length, or a string length or code unit; otherwise undefined.
 func property(value any, key string) any {
 	switch v := value.(type) {
+	case *Date:
+		// A Date has no own properties; its methods are called by Method.
+		return Undefined()
 	case *Object:
 		if result, ok := v.Lookup(key); ok {
 			return result
@@ -774,6 +777,8 @@ func toPrimitiveHint(value any, hint string) any {
 	case []any:
 		return String(v)
 	case *Object:
+		return v.toPrimitive(hint)
+	case *Date:
 		return v.toPrimitive(hint)
 	default:
 		return v

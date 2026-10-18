@@ -313,6 +313,20 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `err.message`, `err.name`, `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | `vela.NewError` | T-6.5d, T-7.4h | Host errors expose `"Internal error"` unless `vela.PublicError`. | `errors-new`, `fn-try` | implemented |
 | `String(err)`, `` `${err}` ``, `'' + err` | `vela.String` | T-6.4a | `Error.prototype.toString`: `"Name: message"`, the name alone when the message is empty, the message alone when the name is empty. The message is not enumerable: `Object.keys`, spread and `JSON.stringify` do not see it (`{}`), as in JavaScript. | `errors-tostring` | implemented |
 | `err.stack` | — | — |  | — | never |
+
+### 2.10 Date
+
+| Built-in | Go helper | Rule | Divergence / required edge cases | Oracles | Status |
+| --- | --- | --- | --- | --- | --- |
+| `new Date(value)` | `ssrJS.NewDate` | T-6.6e | A number is a time value (TimeClip: `NaN` beyond ±8.64e15, fractions truncated), a Date is copied, a string is parsed as by `Date.parse`, other values go through ToPrimitive. `new Date()` reads the clock and `new Date(y, m, …)` is local time: both keep the host route; write `new Date(Date.UTC(y, m, …))`. | `date` | implemented |
+| `Date.UTC(y, m, d, h, min, s, ms)` | `vela.DateUTC` | T-6.6e | MakeDay/MakeTime: months and days overflow into the next year or month, years 0–99 are 1900–1999, a missing month is 0, `Date.UTC()` is `NaN`. | `date` | implemented |
+| `Date.parse(s)`, string argument of `new Date` | `ssrJS.DateParse` | T-6.6e | The ECMAScript date time string format with V8's limits (a day up to 31 in any month overflows, `T24:00` is the next day, digits after the milliseconds are ignored, out-of-range fields are `NaN`). A date-time without `Z` or an offset is local time and any other format is parsed by engine-specific rules: both fail the render as `VELA-SSR-UNSUPPORTED`, which `catch` does not receive. | `date` | implemented |
+| `getTime`, `valueOf`, `getUTCFullYear`, `getUTCMonth`, `getUTCDate`, `getUTCDay`, `getUTCHours`, `getUTCMinutes`, `getUTCSeconds`, `getUTCMilliseconds` | `ssrJS.Method` | T-6.6e | `NaN` for an invalid date; years before 1970 and before year 0. | `date` | implemented |
+| `setTime`, `setUTCFullYear`, `setUTCMonth`, `setUTCDate`, `setUTCHours`, `setUTCMinutes`, `setUTCSeconds`, `setUTCMilliseconds` | `ssrJS.Method` | T-6.6b, T-6.6e | Admitted on a date the function created (`const d = new Date(ms)`); every argument is converted before the date changes; an invalid date stays invalid except with `setUTCFullYear`, which starts from 0. | `date` | implemented |
+| `toISOString`, `toJSON`, `JSON.stringify(date)` | `ssrJS.Method`, `ssrJS.JSONStringify` | T-6.6e | Years outside 0–9999 as `±YYYYYY`; `toISOString` of an invalid date throws `RangeError`, `toJSON` gives `null`. | `date` | implemented |
+| `d1 - d2`, `d1 < d2`, `+d` | `vela.ToNumber` (hint "number") | T-6.4c | The time value; `===` compares identity. | `date` | implemented |
+| `String(d)`, `` `${d}` ``, `d + ''`, `d.toString()`, text of a Date in the template | fails the render | T-6.6e | Local time: the server and the browser format it in different time zones. Fails the render as `VELA-SSR-UNSUPPORTED`; use `toISOString()` or the `getUTC…` methods. | — | never |
+| `Date.now()`, `new Date()`, local getters and setters (`getFullYear`, `getHours`, `setDate`, …), `getTimezoneOffset`, `toDateString`, `toTimeString`, `toUTCString`, `toLocale…` | host / `{#client}` | T-6.6c | The clock and the time zone of the machine (decision of §5). | — | never |
 ---
 
 ## 3. Never native
@@ -324,7 +338,7 @@ instead. All are `never` and produce a diagnostic that names the route.
 | --- | --- | --- | --- |
 | `Intl.*` (`NumberFormat`, `DateTimeFormat`, `PluralRules`, `RelativeTimeFormat`, `Collator`, `ListFormat`, `Segmenter`) | host, locale from `ctx` | H-8.3c | Locale data and ICU behaviour. |
 | `toLocaleString`, `toLocaleDateString`, `toLocaleTimeString`, `localeCompare` | host | H-8.3c | Locale-dependent. |
-| `Date` (constructor, `Date.now`, `Date.parse`, all methods) | host in `$state` initializers; `{#client}` elsewhere | T-6.6c | Nondeterministic and time-zone dependent. |
+| `Date.now()`, `new Date()`, `Date` in local time and its text (`toString`, `toLocale…`, local getters and setters) | host in `$state` initializers; `{#client}` elsewhere | T-6.6c, T-6.6e | Nondeterministic and time-zone dependent; the UTC operations are native (§2.10). |
 | RegExp literals and constructor; `match`, `matchAll`, `search`, `test`, `exec`, RegExp `replace`/`split` | host | §6.2 | Go `regexp` is RE2: no backreferences or lookaround, different semantics. |
 | `Math.random`, `crypto.*`, `performance.now` | host in `$state` initializers; `{#client}` elsewhere | T-6.6c | Nondeterministic. |
 | `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource` | host (server data loading) | T-7.4e | Browser I/O. |
@@ -376,6 +390,8 @@ Each needs a product decision before the slice that implements it.
 | --- | --- | --- |
 | `console.*` in region code | **decided 2026-10-07:** forward to the observer of `vela.WithConsoleObserver(ctx, f)`; nothing without one | S5 (done) |
 | `Map` / `Set` native support | host-only in v1 (current), native after beta | after beta |
+| `Date` and the time zone | **decided 2026-10-18:** UTC operations are native (§2.10); local-time methods, text conversion and date-time strings without an offset do not take a time zone from `ctx` (no `vela.WithTimeZone`): the browser formats in its own zone, so a server zone would still differ; they keep the host or `{#client}` route, and a text conversion reached at run time fails the render (`VELA-SSR-UNSUPPORTED`) | S8 (done) |
+| A `Date` in `$state` | **decided 2026-10-18:** omitted from the payload, the client evaluates the initializer (an ISO string would arrive as a string, not a Date); the same for state that holds an object with methods or accessors | S8 (done) |
 | Transcendental `Math` functions (`log`, `exp`, `sin`, …) | **decided 2026-10-07:** exact V8 results, ports of the fdlibm functions V8 uses (Go `math` was measured beyond 1 ulp and wrong for subnormal logarithms) | S5 (done) |
 | `String.prototype.normalize` | **decided 2026-10-07:** `golang.org/x/text` v0.41.0 (Unicode 17); the module requires Go 1.25 | S5 (done) |
 | Computed object keys `{[k]: v}` | **decided 2026-10-18:** admitted in literals and destructuring patterns; the key is evaluated before its value and converted with ToPropertyKey | S7 (done) |

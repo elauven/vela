@@ -1252,16 +1252,13 @@ var ssrUnmodeledMethods = map[string]bool{
 	"keys": true, "entries": true, "values": true, "copyWithin": true,
 	"call": true, "apply": true, "bind": true,
 	"hasOwnProperty": true, "isPrototypeOf": true, "propertyIsEnumerable": true,
+	// Date methods in local time and formats (§2.10).
 	"getDate": true, "getDay": true, "getFullYear": true, "getHours": true,
 	"getMilliseconds": true, "getMinutes": true, "getMonth": true, "getSeconds": true,
-	"getTime": true, "getTimezoneOffset": true, "getYear": true,
-	"getUTCDate": true, "getUTCDay": true, "getUTCFullYear": true, "getUTCHours": true,
-	"getUTCMilliseconds": true, "getUTCMinutes": true, "getUTCMonth": true, "getUTCSeconds": true,
+	"getTimezoneOffset": true, "getYear": true,
 	"setDate": true, "setFullYear": true, "setHours": true, "setMilliseconds": true,
-	"setMinutes": true, "setMonth": true, "setSeconds": true, "setTime": true,
-	"setUTCDate": true, "setUTCFullYear": true, "setUTCHours": true, "setUTCMilliseconds": true,
-	"setUTCMinutes": true, "setUTCMonth": true, "setUTCSeconds": true,
-	"toISOString": true, "toDateString": true, "toTimeString": true, "toUTCString": true,
+	"setMinutes": true, "setMonth": true, "setSeconds": true,
+	"toDateString": true, "toTimeString": true, "toUTCString": true, "toGMTString": true,
 }
 
 // objectMethodCall calls receiver.name(args): a function stored in a
