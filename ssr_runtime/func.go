@@ -152,6 +152,9 @@ func (js *JS) SetMember(object, key, value any, site string) any {
 	name := propertyKey(key)
 	switch target := object.(type) {
 	case *Object:
+		if target.js == nil {
+			target.js = js
+		}
 		if target.frozen {
 			if target.find(name) >= 0 {
 				return js.throw("TypeError", fmt.Sprintf("Cannot assign to read only property '%s' of object '#<Object>'", name), site)

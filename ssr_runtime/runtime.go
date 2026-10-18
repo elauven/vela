@@ -334,7 +334,7 @@ func String(value any) string {
 	case nil:
 		return "null"
 	case *Object:
-		return objectString(v)
+		return String(v.toPrimitive("string"))
 	case string:
 		return v
 	case bool:

@@ -222,7 +222,7 @@ panics.
 
 | Construct | Contract |
 | --- | --- |
-| `+` | JS `ToPrimitive` / string-or-number rule, both tiers. |
+| `+` | JS `ToPrimitive` (hint "default", OrdinaryToPrimitive for objects, T-6.4c) / string-or-number rule, both tiers. |
 | `- * / % **` | IEEE-754 `float64`; `%` is JS remainder (sign of dividend); `**` follows `Math.pow` edge cases. |
 | `< <= > >=` | Number comparison, or UTF-16 code-unit string comparison when both operands are strings, otherwise JS abstract relational comparison. |
 | `===` / `!==` | JS strict equality (`NaN !== NaN`, `+0 === -0`); objects compare by identity. |
@@ -261,6 +261,14 @@ panics.
   `(2.5).toFixed(0)` is `"3"` in JS and `"2"` with
   `strconv.FormatFloat(2.5, 'f', 0, 64)`; `Math.round(-2.5)` is `-2` in JS
   and `-3` with `math.Round`.
+- **T-6.4c** An object converts to a primitive with OrdinaryToPrimitive:
+  a function in an own `valueOf` or `toString` property is called
+  (`valueOf` first for numbers, `+` and comparisons, `toString` first for
+  text), an own property that is not a function hides the method of the
+  prototype, and a conversion that finds no primitive throws `TypeError`.
+  `JSON.stringify` calls a function in an own `toJSON` property with the
+  property key. A conversion of a value that is not proven primitive is a
+  site that can throw (T-6.5e); a prop never has methods (a Go value).
 
 ### 6.5 Exceptions
 

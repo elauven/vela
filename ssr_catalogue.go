@@ -26,6 +26,7 @@ type ssrCatalogueSection struct {
 var ssrCatalogue = []ssrCatalogueSection{
 	{Title: "2.1 Conversions and global functions", Rows: []ssrCatalogueRow{
 		{Builtin: "`String(x)`", Helper: "`vela.ToStringValue`", Rule: "T-6.4a", Divergence: "`String()` is `\"\"`; arrays join; `-0` is `\"0\"`.", Status: "implemented", Names: []string{"String"}, Oracles: []string{"conv-call"}},
+		{Builtin: "objects with own `toString` / `valueOf` in conversions (`String(o)`, `` `${o}` ``, `o + x`, `o * 2`, `o < x`, `Math.max(o)`, `join`, text in the template)", Helper: "`vela.String`, `vela.ToNumber`, `vela.Add` (OrdinaryToPrimitive)", Rule: "T-6.4c", Divergence: "A function in an own `toString` or `valueOf` property is called: `valueOf` first for numbers, `+` and comparisons, `toString` first for text; a result that is an object moves on to the other method. An own property that is not a function hides the prototype's method. When neither gives a primitive the conversion throws `TypeError`, which `catch` receives.", Status: "implemented", Oracles: []string{"obj-to-primitive"}},
 		{Builtin: "`Number(x)`", Helper: "`vela.ToNumber`", Rule: "§6.2", Divergence: "`Number(\"\")` is `0`, `Number(\" 12 \")` is `12`, `Number(\"0x1f\")` is `31`, `Number(\"1_0\")` is `NaN` ✓; `strconv.ParseFloat` differs on all four.", Status: "implemented", Names: []string{"Number"}, Oracles: []string{"conv-call"}},
 		{Builtin: "`Boolean(x)`", Helper: "`vela.ToBoolean`", Rule: "§6.2", Status: "implemented", Names: []string{"Boolean"}, Oracles: []string{"conv-call"}},
 		{Builtin: "`parseInt(s, radix)`", Helper: "`vela.ParseInt`", Rule: "—", Divergence: "Parses a prefix: `parseInt(\"12px\")` is `12` ✓, while `strconv.ParseInt` fails; `0x` prefix with radix 16 or absent; radix outside 2–36 is `NaN`.", Status: "implemented", Names: []string{"parseInt", "Number.parseInt"}, Oracles: []string{"parseInt"}},
@@ -109,7 +110,8 @@ var ssrCatalogue = []ssrCatalogueSection{
 	}},
 	{Title: "2.7 JSON", Rows: []ssrCatalogueRow{
 		{Builtin: "`JSON.stringify(v)`, `JSON.stringify(v, null, indent)`", Helper: "`ssrJS.JSONStringify`", Rule: "T-5.1c, T-6.4a", Divergence: "JS does not escape `<`, `>`, `&`; `undefined` members and functions omitted, `NaN`/`Infinity` become `null`, `-0` becomes `0` ✓; lone surrogates are `\\u` escapes; key order per T-5.1c; cycles throw `TypeError`.", Status: "implemented", Names: []string{"JSON.stringify"}, Oracles: []string{"json-stringify"}},
-		{Builtin: "`JSON.stringify` with replacer, `toJSON` methods", Helper: "—", Rule: "—", Divergence: "Not in v1.", Status: "never"},
+		{Builtin: "`toJSON` methods in `JSON.stringify`", Helper: "`ssrJS.JSONStringify`", Rule: "T-6.4c", Divergence: "A function in an own `toJSON` property is called with the property key (`\"\"` at the top, the index in an array) and its result is written; `undefined` omits the member.", Status: "implemented", Oracles: []string{"obj-to-primitive"}},
+		{Builtin: "`JSON.stringify` with replacer", Helper: "—", Rule: "—", Divergence: "Not in v1.", Status: "never"},
 		{Builtin: "`JSON.parse(s)`", Helper: "`ssrJS.JSONParse`", Rule: "T-6.5a", Divergence: "Result in the JSON value domain with `*vela.Object`; invalid input throws `SyntaxError` (message text differs from V8).", Status: "implemented", Names: []string{"JSON.parse"}, Oracles: []string{"json-parse"}},
 	}},
 	{Title: "2.8 Promise", Rows: []ssrCatalogueRow{

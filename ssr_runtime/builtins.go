@@ -317,7 +317,7 @@ func (js *JS) StructuredClone(site string, value any) any {
 				objects[v] = out
 				return out, true
 			}
-			out := NewObject()
+			out := js.NewObject()
 			objects[v] = out
 			keys, vals := v.entries()
 			for i, key := range keys {
@@ -861,7 +861,7 @@ func (js *JS) ObjectFromEntries(site string, entries any) any {
 	if js.Failed() {
 		return Undefined()
 	}
-	out := NewObject()
+	out := js.NewObject()
 	for _, entry := range items {
 		if nullish(entry) || TypeOf(entry) != "object" {
 			return js.throw("TypeError", fmt.Sprintf("Iterator value %s is not an entry object", String(jsValue(entry))), site)
@@ -877,6 +877,9 @@ func (js *JS) ObjectAssign(site string, target any, sources ...any) any {
 	object, ok := target.(*Object)
 	if !ok {
 		return js.throw("TypeError", "Object.assign target must be an object literal during server rendering", site)
+	}
+	if object.js == nil {
+		object.js = js
 	}
 	for _, source := range sources {
 		if nullish(source) {
@@ -976,16 +979,26 @@ func (js *JS) JSONStringify(site string, value, replacer, indent any) any {
 		gap = fromUnits(u[:min(10, len(u))])
 	}
 	var b strings.Builder
-	if !js.stringify(site, &b, value, gap, "", map[any]bool{}) {
+	if !js.stringify(site, &b, "", value, gap, "", map[any]bool{}) {
 		return Undefined()
 	}
 	return b.String()
 }
 
-// stringify writes value; it returns false for a value JSON omits.
-func (js *JS) stringify(site string, b *strings.Builder, value any, gap, indent string, seen map[any]bool) bool {
+// stringify writes the value of property key; it returns false for a
+// value JSON omits. An object with a function in an own toJSON property is
+// replaced by toJSON(key) first (SerializeJSONProperty).
+func (js *JS) stringify(site string, b *strings.Builder, key string, value any, gap, indent string, seen map[any]bool) bool {
 	if js.Failed() {
 		return false
+	}
+	if object, ok := value.(*Object); ok {
+		if fn, ok := property(object, "toJSON").(Func); ok {
+			value = fn(key)
+			if js.Failed() {
+				return false
+			}
+		}
 	}
 	switch v := jsValue(value).(type) {
 	case nil:
@@ -1027,7 +1040,7 @@ func (js *JS) stringify(site string, b *strings.Builder, value any, gap, indent 
 			if gap != "" {
 				b.WriteString("\n" + inner)
 			}
-			if !js.stringify(site, b, item, gap, inner, seen) {
+			if !js.stringify(site, b, strconv.Itoa(i), item, gap, inner, seen) {
 				if js.Failed() {
 					return false
 				}
@@ -1051,7 +1064,7 @@ func (js *JS) stringify(site string, b *strings.Builder, value any, gap, indent 
 		keys, vals := v.entries()
 		for i, key := range keys {
 			var member strings.Builder
-			if !js.stringify(site, &member, vals[i], gap, inner, seen) {
+			if !js.stringify(site, &member, key, vals[i], gap, inner, seen) {
 				if js.Failed() {
 					return false
 				}
@@ -1076,7 +1089,7 @@ func (js *JS) stringify(site string, b *strings.Builder, value any, gap, indent 
 		}
 		b.WriteByte('}')
 	default:
-		return js.stringify(site, b, jsonView(v), gap, indent, seen)
+		return js.stringify(site, b, key, jsonView(v), gap, indent, seen)
 	}
 	return true
 }
@@ -1122,7 +1135,7 @@ func quoteJSON(b *strings.Builder, s string) {
 func (js *JS) JSONParse(site string, text any) any {
 	decoder := json.NewDecoder(strings.NewReader(String(jsValue(text))))
 	decoder.UseNumber()
-	value, err := parseJSONValue(decoder)
+	value, err := js.parseJSONValue(decoder)
 	if err == nil {
 		if _, extra := decoder.Token(); extra != io.EOF {
 			err = fmt.Errorf("unexpected non-whitespace character after JSON")
@@ -1134,7 +1147,7 @@ func (js *JS) JSONParse(site string, text any) any {
 	return value
 }
 
-func parseJSONValue(decoder *json.Decoder) (any, error) {
+func (js *JS) parseJSONValue(decoder *json.Decoder) (any, error) {
 	token, err := decoder.Token()
 	if err != nil {
 		if err == io.EOF {
@@ -1148,7 +1161,7 @@ func parseJSONValue(decoder *json.Decoder) (any, error) {
 		case '[':
 			out := []any{}
 			for decoder.More() {
-				item, err := parseJSONValue(decoder)
+				item, err := js.parseJSONValue(decoder)
 				if err != nil {
 					return nil, err
 				}
@@ -1157,13 +1170,13 @@ func parseJSONValue(decoder *json.Decoder) (any, error) {
 			_, err := decoder.Token()
 			return out, err
 		case '{':
-			out := NewObject()
+			out := js.NewObject()
 			for decoder.More() {
 				key, err := decoder.Token()
 				if err != nil {
 					return nil, err
 				}
-				value, err := parseJSONValue(decoder)
+				value, err := js.parseJSONValue(decoder)
 				if err != nil {
 					return nil, err
 				}

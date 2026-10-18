@@ -190,6 +190,7 @@ against Node and Go on 2026-10-03.
 | Built-in | Go helper | Rule | Divergence / required edge cases | Oracles | Status |
 | --- | --- | --- | --- | --- | --- |
 | `String(x)` | `vela.ToStringValue` | T-6.4a | `String()` is `""`; arrays join; `-0` is `"0"`. | `conv-call` | implemented |
+| objects with own `toString` / `valueOf` in conversions (`String(o)`, `` `${o}` ``, `o + x`, `o * 2`, `o < x`, `Math.max(o)`, `join`, text in the template) | `vela.String`, `vela.ToNumber`, `vela.Add` (OrdinaryToPrimitive) | T-6.4c | A function in an own `toString` or `valueOf` property is called: `valueOf` first for numbers, `+` and comparisons, `toString` first for text; a result that is an object moves on to the other method. An own property that is not a function hides the prototype's method. When neither gives a primitive the conversion throws `TypeError`, which `catch` receives. | `obj-to-primitive` | implemented |
 | `Number(x)` | `vela.ToNumber` | §6.2 | `Number("")` is `0`, `Number(" 12 ")` is `12`, `Number("0x1f")` is `31`, `Number("1_0")` is `NaN` ✓; `strconv.ParseFloat` differs on all four. | `conv-call` | implemented |
 | `Boolean(x)` | `vela.ToBoolean` | §6.2 |  | `conv-call` | implemented |
 | `parseInt(s, radix)` | `vela.ParseInt` | — | Parses a prefix: `parseInt("12px")` is `12` ✓, while `strconv.ParseInt` fails; `0x` prefix with radix 16 or absent; radix outside 2–36 is `NaN`. | `parseInt` | implemented |
@@ -293,7 +294,8 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | Built-in | Go helper | Rule | Divergence / required edge cases | Oracles | Status |
 | --- | --- | --- | --- | --- | --- |
 | `JSON.stringify(v)`, `JSON.stringify(v, null, indent)` | `ssrJS.JSONStringify` | T-5.1c, T-6.4a | JS does not escape `<`, `>`, `&`; `undefined` members and functions omitted, `NaN`/`Infinity` become `null`, `-0` becomes `0` ✓; lone surrogates are `\u` escapes; key order per T-5.1c; cycles throw `TypeError`. | `json-stringify` | implemented |
-| `JSON.stringify` with replacer, `toJSON` methods | — | — | Not in v1. | — | never |
+| `toJSON` methods in `JSON.stringify` | `ssrJS.JSONStringify` | T-6.4c | A function in an own `toJSON` property is called with the property key (`""` at the top, the index in an array) and its result is written; `undefined` omits the member. | `obj-to-primitive` | implemented |
+| `JSON.stringify` with replacer | — | — | Not in v1. | — | never |
 | `JSON.parse(s)` | `ssrJS.JSONParse` | T-6.5a | Result in the JSON value domain with `*vela.Object`; invalid input throws `SyntaxError` (message text differs from V8). | `json-parse` | implemented |
 
 ### 2.8 Promise
@@ -358,6 +360,10 @@ Observed in the code on 2026-10-03; status on 2026-10-05 after task 044.
 7. **`??`** was rejected. Fixed (`ops-nullish`).
 8. **Hydration payload state** was a compile-time constant. Fixed: computed
    `s` entries of the payload stream.
+9. **Conversions of objects** ignored a function in an own `toString` or
+   `valueOf` (`String({ toString: () => 'x' })` was `[object Object]`),
+   found on 2026-10-18. Fixed by task 057: OrdinaryToPrimitive, T-6.4c
+   (`obj-to-primitive`).
 
 ---
 

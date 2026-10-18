@@ -118,6 +118,9 @@ var ssrBuiltinGlobals = map[string]ssrBuiltinGlobal{
 	"JSON.parse":     {Helper: "JSONParse", JS: true, Args: 1},
 }
 
+// ssrNonConvertingGlobals do not convert their arguments to primitives.
+var ssrNonConvertingGlobals = map[string]bool{"Boolean": true, "Array.isArray": true, "Array.of": true, "Object.freeze": true}
+
 // ssrBuiltinConstants are the admitted constant properties.
 var ssrBuiltinConstants = map[string]float64{
 	"Math.PI": math.Pi, "Math.E": math.E, "Math.LN2": math.Ln2, "Math.LN10": math.Ln10,
@@ -309,6 +312,9 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 		}
 		if name == "Number" && len(call.Args) == 0 {
 			lowered = []goast.Expr{&goast.BasicLit{Kind: token.FLOAT, Value: "0.0"}}
+		}
+		if !ssrNonConvertingGlobals[name] {
+			b.converts(args...)
 		}
 		fun := goSelector("vela", global.Helper)
 		if global.JS {

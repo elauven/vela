@@ -101,6 +101,9 @@ type (
 		// Computed holds the key expression of a computed property
 		// ({ [k]: v }), nil for the others.
 		Computed []SSRIRExpr
+		// JS creates the object with the render's evaluation state, which
+		// receives the exceptions of its conversions to primitives.
+		JS bool
 	}
 	ssrIRTemplate struct {
 		ssrIRBase
@@ -229,6 +232,9 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 		return &goast.CallExpr{Fun: goSelector("vela", "JoinArrays"), Args: parts}
 	case *ssrIRObject:
 		object := goast.Expr(&goast.CallExpr{Fun: goSelector("vela", "NewObject")})
+		if n.JS {
+			object = &goast.CallExpr{Fun: goSelector("ssrJS", "NewObject")}
+		}
 		for i, value := range n.Values {
 			if n.Spread[i] {
 				object = &goast.CallExpr{Fun: goSelectorExpr(object, "Spread"), Args: []goast.Expr{lowerSSRIR(value)}}
@@ -475,6 +481,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			if err != nil {
 				return nil, err
 			}
+			b.converts(value)
 			out.Exprs = append(out.Exprs, value)
 		}
 		return out, nil
@@ -495,6 +502,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			if err != nil {
 				return nil, err
 			}
+			b.converts(value)
 			out.Exprs = append(out.Exprs, value)
 		}
 		return out, nil
@@ -523,6 +531,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 		}
 		// Number and NumberNegate apply ToNumber, so both tiers share them.
 		if node.Op == "+" || node.Op == "-" {
+			b.converts(x)
 			name := "Number"
 			if node.Op == "-" {
 				name = "NumberNegate"
@@ -735,6 +744,15 @@ func (b *ssrIRBuilder) literal(node *JsLiteral, pos int) (SSRIRExpr, error) {
 // key replaces the value and keeps the first position, as in JavaScript.
 func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 	out := &ssrIRObject{ssrIRBase: b.base(pos, ssrIRFacts{Object: true})}
+	defer func() {
+		// Only an object that can have its own toString, valueOf, or toJSON
+		// needs the evaluation state for its conversions.
+		for i, key := range out.Keys {
+			if b.js && (out.Spread[i] || out.Computed[i] != nil || ssrConversionKeys[key]) {
+				out.JS, b.usedJS = true, true
+			}
+		}
+	}()
 	for _, property := range node.Props {
 		if property == nil {
 			return nil, ssrExprUnsupported(pos, "object property is missing")
@@ -819,6 +837,7 @@ func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
 	case "===", "!==":
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Bool: true}), Name: "StrictEqual", Args: []SSRIRExpr{left, right}, Not: node.Op == "!=="}, nil
 	case "<", "<=", ">", ">=":
+		b.converts(left, right)
 		facts := ssrIRFacts{Bool: true}
 		if l.String && r.String {
 			// a > b is b < a; a <= b is !(b < a); a >= b is !(a < b).
@@ -844,12 +863,15 @@ func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
 		name := map[string]string{"<": "Less", "<=": "LessEqual", ">": "Greater", ">=": "GreaterEqual"}[node.Op]
 		return &ssrIRHelper{ssrIRBase: b.base(pos, facts), Name: name, Args: []SSRIRExpr{left, right}}, nil
 	case "+":
+		b.converts(left, right)
 		// JavaScript + concatenates when either operand is a string.
 		switch {
 		case l.String || r.String:
 			if l.String != r.String {
-				left = &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: "String", Args: []SSRIRExpr{left}}
-				right = &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: "String", Args: []SSRIRExpr{right}}
+				// The other operand is converted with the hint "default":
+				// an object's valueOf comes before its toString.
+				left = &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: ssrAddStringHelper(left), Args: []SSRIRExpr{left}}
+				right = &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: ssrAddStringHelper(right), Args: []SSRIRExpr{right}}
 			}
 			return &ssrIRBinary{ssrIRBase: b.base(pos, ssrIRFacts{String: true}), Op: token.ADD, X: left, Y: right}, nil
 		case l.Number && r.Number:
@@ -858,10 +880,12 @@ func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
 		// Dynamic tier: ToPrimitive, then concatenation or addition.
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: "Add", Args: []SSRIRExpr{left, right}}, nil
 	case "-", "*", "/", "%":
+		b.converts(left, right)
 		// The Number helpers apply ToNumber, so both tiers share them.
 		name := map[string]string{"-": "NumberSubtract", "*": "NumberMultiply", "/": "NumberDivide", "%": "NumberRemainder"}[node.Op]
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: name, Args: []SSRIRExpr{left, right}}, nil
 	case "**":
+		b.converts(left, right)
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: "Pow", Args: []SSRIRExpr{left, right}}, nil
 	case "in":
 		if !b.js {
@@ -921,6 +945,47 @@ func (b *ssrIRBuilder) member(node *JsMemberExpr, pos int) (SSRIRExpr, error) {
 		base = next
 	}
 	return base, nil
+}
+
+// ssrAddStringHelper converts an operand of + next to a string: String for
+// a proven primitive, AddString (hint "default") for the others.
+func ssrAddStringHelper(value SSRIRExpr) string {
+	if ssrIRPrimitive(value) {
+		return "String"
+	}
+	return "AddString"
+}
+
+// ssrConversionKeys are the properties that conversions of an object call.
+var ssrConversionKeys = map[string]bool{"toString": true, "valueOf": true, "toJSON": true}
+
+// converts records that a value is converted to a primitive. Unless it is
+// proven primitive, or is a prop (a Go value has no methods), the
+// conversion can call a function in an own toString or valueOf property or
+// throw TypeError (OrdinaryToPrimitive), so the site can throw.
+func (b *ssrIRBuilder) converts(values ...SSRIRExpr) {
+	if !b.js {
+		return
+	}
+	for _, value := range values {
+		if !ssrIRPrimitive(value) {
+			b.usedJS, b.throws = true, true
+			return
+		}
+	}
+}
+
+// ssrIRPrimitive reports a value whose conversion to a primitive calls no
+// function and cannot throw.
+func ssrIRPrimitive(value SSRIRExpr) bool {
+	if f := value.irBase().Facts; f.String || f.Number || f.Bool {
+		return true
+	}
+	switch value.(type) {
+	case *ssrIRProp, *ssrIRLiteral, *ssrIRUndefined:
+		return true
+	}
+	return false
 }
 
 // memberLink reads one property. A read on a value that is not proven to

@@ -95,6 +95,11 @@ type Object struct {
 	errorName  string
 	message    any
 	hasMessage bool
+	// js is the evaluation state of the render that created the object. A
+	// conversion to a primitive can call a function in an own toString or
+	// valueOf property, or throw TypeError when it finds no primitive
+	// (OrdinaryToPrimitive); the exception is recorded here.
+	js *JS
 }
 
 // objectIndexKeys is the size above which an object gets a key index.
@@ -102,6 +107,10 @@ const objectIndexKeys = 16
 
 // NewObject returns an empty object.
 func NewObject() *Object { return &Object{} }
+
+// NewObject returns an empty object created by translated code of this
+// render.
+func (js *JS) NewObject() *Object { return &Object{js: js} }
 
 // find returns the position of key, or -1.
 func (o *Object) find(key string) int {
@@ -180,6 +189,9 @@ func (o *Object) Spread(value any) *Object {
 		keys, vals := source.entries()
 		for i, key := range keys {
 			o.Set(key, vals[i])
+		}
+		if o.js == nil {
+			o.js = source.js
 		}
 	}
 	return o
@@ -621,13 +633,13 @@ func RestItems(items []any, from int) []any {
 func (js *JS) ObjectRest(value any, excluded []string, site string) *Object {
 	if nullish(value) {
 		js.throw("TypeError", fmt.Sprintf("Cannot destructure '%s' as it is %s.", String(jsValue(value)), nullishName(value)), site)
-		return NewObject()
+		return js.NewObject()
 	}
-	all := NewObject().Spread(value)
+	all := js.NewObject().Spread(value)
 	if len(excluded) == 0 {
 		return all
 	}
-	rest := NewObject()
+	rest := js.NewObject()
 	keys, vals := all.entries()
 next:
 	for i, key := range keys {
@@ -664,17 +676,59 @@ func PropertyKey(key any) string {
 
 // ── Conversions ──────────────────────────────────────────────────────────
 
-// toPrimitive applies ToPrimitive: arrays and objects become their string
-// form (Array.prototype.toString, "[object Object]").
+// toPrimitive applies ToPrimitive with the hint "default": arrays become
+// their string form (Array.prototype.toString), objects follow
+// OrdinaryToPrimitive.
 func toPrimitive(value any) any {
+	return toPrimitiveHint(value, "default")
+}
+
+// toPrimitiveHint applies ToPrimitive with a hint: "string", "number", or
+// "default".
+func toPrimitiveHint(value any, hint string) any {
 	switch v := jsValue(value).(type) {
 	case []any:
 		return String(v)
 	case *Object:
-		return objectString(v)
+		return v.toPrimitive(hint)
 	default:
 		return v
 	}
+}
+
+// toPrimitive is OrdinaryToPrimitive: valueOf then toString, toString first
+// for the hint "string". A function in an own property is called and its
+// result taken when it is a primitive; an own property that is not a
+// function hides the method of the prototype. Object.prototype.valueOf
+// returns the object itself, so the inherited toString ends the search.
+// When no method gives a primitive, the conversion throws TypeError.
+func (o *Object) toPrimitive(hint string) any {
+	names := [2]string{"valueOf", "toString"}
+	if hint == "string" {
+		names = [2]string{"toString", "valueOf"}
+	}
+	for _, name := range names {
+		value, own := o.Lookup(name)
+		if !own {
+			if name == "toString" {
+				return objectString(o)
+			}
+			continue
+		}
+		fn, ok := value.(Func)
+		if !ok {
+			continue
+		}
+		result := jsValue(fn())
+		if o.js.Failed() {
+			return Undefined()
+		}
+		switch result.(type) {
+		case nil, UndefinedValue, bool, float64, string:
+			return result
+		}
+	}
+	return o.js.throw("TypeError", "Cannot convert object to primitive value", "")
 }
 
 // objectString converts an object to text: Error.prototype.toString for an
@@ -702,7 +756,7 @@ func objectString(o *Object) string {
 
 // ToNumber implements JavaScript ToNumber over the value domain.
 func ToNumber(value any) float64 {
-	switch v := toPrimitive(value).(type) {
+	switch v := toPrimitiveHint(value, "number").(type) {
 	case nil:
 		return 0
 	case UndefinedValue:
@@ -807,6 +861,15 @@ func Add(left, right any) any {
 	return ToNumber(l) + ToNumber(r)
 }
 
+// AddString converts an operand of + whose other operand is a string:
+// ToPrimitive with the hint "default", then ToString.
+func AddString(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return String(toPrimitive(value))
+}
+
 // Pow implements ** with the edge cases of Math.pow: a NaN exponent and
 // ±1 ** ±Infinity are NaN, where Go's math.Pow returns 1.
 func Pow(left, right any) float64 {
@@ -823,7 +886,7 @@ func Pow(left, right any) float64 {
 // compare implements the abstract relational comparison x < y. ok is
 // false when a NaN makes the result undefined.
 func compare(left, right any) (less, ok bool) {
-	l, r := toPrimitive(left), toPrimitive(right)
+	l, r := toPrimitiveHint(left, "number"), toPrimitiveHint(right, "number")
 	ls, lIsString := l.(string)
 	rs, rIsString := r.(string)
 	if lIsString && rIsString {
