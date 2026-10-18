@@ -46,6 +46,7 @@ compiler the runtime path appears only in `SSRRuntimeImportPath`.
 | `v0.2.0` | 2026-08-28 | JavaScript generated from an AST, before server rendering |
 | `v0.3.0` | | Server rendering to Go and hydration; first release with `ssr_runtime/v0.3.0` and `@govela/runtime` |
 | `v0.3.1` | | Fixes of v0.3.0: the Go runtime on arm64 and other fused multiply-add architectures matches JavaScript, JSON of invalid UTF-8 matches every Go version; `ssr_runtime/v0.3.0` is retracted and `@govela/runtime@0.3.0` deprecated |
+| `v0.4.0` | | Exact server translation of more JavaScript: rest elements and parameters, computed keys, optional calls, comma and `void`, `in`, `for…in`, labels, a fresh `let` binding per loop iteration, array `entries`/`keys`/`values`, `String.fromCharCode`/`fromCodePoint`/`raw`, `with`, `toSpliced`, `structuredClone`; error objects convert to text as in JavaScript and keep their kind through the `{#await}` payload. Runtime contract `ContractV2`: `ssr_runtime/v0.4.0` and `@govela/runtime@0.4.0` are required together |
 
 A published tag is never moved: the Go module proxy and checksum database
 keep the first content of a version, and npm never reuses a version number.
