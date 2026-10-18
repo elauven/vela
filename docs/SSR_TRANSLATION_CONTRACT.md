@@ -228,9 +228,9 @@ panics.
 | `!`, `typeof`, unary `-`/`+` | JS semantics; `typeof` of a Go-originated value follows the JSON view. |
 | `?.`, `??` | Admitted in both tiers. |
 | template literals | Text-conversion contract (`SSR.md`, "Text conversion"). |
-| array/object literal, spread of arrays/objects | Admitted; objects build `*vela.Object` with insertion order. |
+| array/object literal, spread of arrays/objects, computed keys `{ [k]: v }` | Admitted; objects build `*vela.Object` with insertion order; a computed key is evaluated before its value and converted with ToPropertyKey. |
 | arrow functions | Admitted as callbacks to admitted built-ins and as local values; closures may read captured bindings. |
-| `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | Admitted; produce error objects with `name` and `message`. |
+| `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | Admitted; produce error objects with `name` from the prototype and a non-enumerable `message`; text conversion is `Error.prototype.toString`. |
 | other `new`, `this`, `class`, getters/setters, `delete`, `in`, `instanceof`, comma, `void`, regex literals, tagged templates | `unsupported` in v1. |
 
 ### 6.3 Strings

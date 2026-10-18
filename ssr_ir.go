@@ -95,9 +95,12 @@ type (
 	}
 	ssrIRObject struct {
 		ssrIRBase
-		Keys   []string // "" with Spread
+		Keys   []string // "" with Spread or a computed key
 		Values []SSRIRExpr
 		Spread []bool
+		// Computed holds the key expression of a computed property
+		// ({ [k]: v }), nil for the others.
+		Computed []SSRIRExpr
 	}
 	ssrIRTemplate struct {
 		ssrIRBase
@@ -213,7 +216,12 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 				object = &goast.CallExpr{Fun: goSelectorExpr(object, "Spread"), Args: []goast.Expr{lowerSSRIR(value)}}
 				continue
 			}
-			object = &goast.CallExpr{Fun: goSelectorExpr(object, "Set"), Args: []goast.Expr{ssrGoString(n.Keys[i]), lowerSSRIR(value)}}
+			key := ssrGoString(n.Keys[i])
+			if n.Computed[i] != nil {
+				// Go evaluates the key before the value, as JavaScript.
+				key = &goast.CallExpr{Fun: goSelector("vela", "PropertyKey"), Args: []goast.Expr{lowerSSRIR(n.Computed[i])}}
+			}
+			object = &goast.CallExpr{Fun: goSelectorExpr(object, "Set"), Args: []goast.Expr{key, lowerSSRIR(value)}}
 		}
 		return object
 	case *ssrIRTemplate:
@@ -633,8 +641,8 @@ func (b *ssrIRBuilder) literal(node *JsLiteral, pos int) (SSRIRExpr, error) {
 	return nil, ssrExprUnsupported(pos, "literal kind %q is not supported", node.Kind)
 }
 
-// object admits data properties with identifier or string keys and spread
-// properties. Every value is evaluated in source order; a later duplicate
+// object admits data properties with identifier, string or computed keys
+// and spread properties. Every value is evaluated in source order; a later duplicate
 // key replaces the value and keeps the first position, as in JavaScript.
 func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 	out := &ssrIRObject{ssrIRBase: b.base(pos, ssrIRFacts{Object: true})}
@@ -654,13 +662,28 @@ func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 			out.Keys = append(out.Keys, "")
 			out.Values = append(out.Values, value)
 			out.Spread = append(out.Spread, true)
+			out.Computed = append(out.Computed, nil)
 			continue
-		}
-		if property.Computed {
-			return nil, ssrExprUnsupported(pos, "computed object property names are not available to static SSR")
 		}
 		if property.Method || property.Kind != "init" {
 			return nil, ssrExprUnsupported(pos, "object methods and accessors are not available to static SSR")
+		}
+		if property.Computed {
+			// { [k]: v } converts k with ToPropertyKey; a computed
+			// "__proto__" is an ordinary own property.
+			key, err := b.build(property.Key, pos)
+			if err != nil {
+				return nil, err
+			}
+			value, err := b.build(property.Value, pos)
+			if err != nil {
+				return nil, err
+			}
+			out.Keys = append(out.Keys, "")
+			out.Values = append(out.Values, value)
+			out.Spread = append(out.Spread, false)
+			out.Computed = append(out.Computed, key)
+			continue
 		}
 		key, err := translateSSRObjectKey(property.Key, pos)
 		if err != nil {
@@ -676,6 +699,7 @@ func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 		out.Keys = append(out.Keys, key)
 		out.Values = append(out.Values, value)
 		out.Spread = append(out.Spread, false)
+		out.Computed = append(out.Computed, nil)
 	}
 	return out, nil
 }

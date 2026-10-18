@@ -856,15 +856,29 @@ func (c *ssrFuncCompiler) bind(pattern JsExpr, value goast.Expr) ([]goast.Stmt, 
 				rest = true
 				continue
 			}
+			var key goast.Expr
 			if property.Computed {
-				return nil, c.fail("computed properties in destructuring are not supported yet")
+				// The key is evaluated and converted once, before its
+				// value is read (ToPropertyKey).
+				computed, throws, err := c.valueOf(property.Key)
+				if err != nil {
+					return nil, err
+				}
+				name := c.declare("$key")
+				out = append(out, &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(name)}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "PropertyKey"), Args: []goast.Expr{computed}}}}, ssrUse(name))
+				if throws {
+					out = append(out, c.unwind())
+				}
+				key = goast.NewIdent(name)
+			} else {
+				name, err := translateSSRObjectKey(property.Key, 0)
+				if err != nil {
+					return nil, err
+				}
+				key = ssrGoString(name)
 			}
-			key, err := translateSSRObjectKey(property.Key, 0)
-			if err != nil {
-				return nil, err
-			}
-			keys = append(keys, ssrGoString(key))
-			item := &goast.CallExpr{Fun: goSelector("ssrJS", "Get"), Args: []goast.Expr{goast.NewIdent(temp), ssrGoString(key), ssrGoString(c.site)}}
+			keys = append(keys, key)
+			item := &goast.CallExpr{Fun: goSelector("ssrJS", "Get"), Args: []goast.Expr{goast.NewIdent(temp), key, ssrGoString(c.site)}}
 			target := property.Value
 			if target == nil {
 				target = property.Key

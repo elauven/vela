@@ -629,6 +629,12 @@ func propertyKey(key any) string {
 	return String(jsValue(key))
 }
 
+// PropertyKey converts the key of a computed property ({ [k]: v }) to a
+// property name (ToPropertyKey).
+func PropertyKey(key any) string {
+	return propertyKey(key)
+}
+
 // ── Conversions ──────────────────────────────────────────────────────────
 
 // toPrimitive applies ToPrimitive: arrays and objects become their string
