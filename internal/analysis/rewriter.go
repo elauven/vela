@@ -1,6 +1,9 @@
-package main
+package analysis
 
 import (
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfc"
+
 	"fmt"
 	"sort"
 	"strings"
@@ -95,7 +98,7 @@ type repl struct {
 // RewriteAssignments finds every assignment or update expression that targets
 // a state variable and replaces it with the appropriate $$set_X(...) call.
 // It operates on src (which may be a CleanScript snippet) and its parsed prog.
-func RewriteAssignments(src string, prog *JsProgram, stateSet map[string]bool) string {
+func RewriteAssignments(src string, prog *jsast.JsProgram, stateSet map[string]bool) string {
 	var repls []repl
 	collectRepls(prog, src, stateSet, &repls)
 	return applyRepls(src, repls)
@@ -109,7 +112,7 @@ func RewriteAssignments(src string, prog *JsProgram, stateSet map[string]bool) s
 // The transform intentionally mirrors the statement forms supported by the
 // legacy source rewriter. It descends into nested blocks and closures so an
 // assignment in a timer, promise callback, or event listener is reactive too.
-func RewriteAssignmentsAST(block *JsBlock, stateSet map[string]bool) {
+func RewriteAssignmentsAST(block *jsast.JsBlock, stateSet map[string]bool) {
 	if block == nil || len(stateSet) == 0 {
 		return
 	}
@@ -120,23 +123,23 @@ func RewriteAssignmentsAST(block *JsBlock, stateSet map[string]bool) {
 // user statement. ScriptPlan uses it after input validation so ordinary
 // functions and top-level statements never cross a source-text ParseJS
 // boundary during target generation.
-func RewriteStatementAssignmentsAST(stmt JsStmt, stateSet map[string]bool) JsStmt {
+func RewriteStatementAssignmentsAST(stmt jsast.JsStmt, stateSet map[string]bool) jsast.JsStmt {
 	return rewriteAssignmentStmt(stmt, stateSet)
 }
 
 // RewriteHandlerAssignmentsAST applies the same state-write lowering to a
 // cached template event handler. Block-bodied arrows reuse the callback-block
 // transform; concise bodies are replaced with the generated setter call.
-func RewriteHandlerAssignmentsAST(expr JsExpr, stateSet map[string]bool) JsExpr {
-	arrow, ok := expr.(*JsArrowFunc)
+func RewriteHandlerAssignmentsAST(expr jsast.JsExpr, stateSet map[string]bool) jsast.JsExpr {
+	arrow, ok := expr.(*jsast.JsArrowFunc)
 	if !ok {
 		return expr
 	}
-	if block, ok := arrow.Body.(*JsBlock); ok {
+	if block, ok := arrow.Body.(*jsast.JsBlock); ok {
 		RewriteAssignmentsAST(block, stateSet)
 		return arrow
 	}
-	body, ok := arrow.Body.(JsExpr)
+	body, ok := arrow.Body.(jsast.JsExpr)
 	if !ok {
 		return arrow
 	}
@@ -147,7 +150,7 @@ func RewriteHandlerAssignmentsAST(expr JsExpr, stateSet map[string]bool) JsExpr 
 	return arrow
 }
 
-func rewriteAssignmentBlock(block *JsBlock, stateSet map[string]bool) {
+func rewriteAssignmentBlock(block *jsast.JsBlock, stateSet map[string]bool) {
 	if block == nil {
 		return
 	}
@@ -156,50 +159,50 @@ func rewriteAssignmentBlock(block *JsBlock, stateSet map[string]bool) {
 	}
 }
 
-func rewriteAssignmentStmt(stmt JsStmt, stateSet map[string]bool) JsStmt {
+func rewriteAssignmentStmt(stmt jsast.JsStmt, stateSet map[string]bool) jsast.JsStmt {
 	if stmt == nil {
 		return nil
 	}
 	switch s := stmt.(type) {
-	case *JsExprStmt:
+	case *jsast.JsExprStmt:
 		rewriteAssignmentExpr(s.X, stateSet)
 		if setter := reactiveSetterStmt(s.X, stateSet); setter != nil {
 			return setter
 		}
-	case *JsBlock:
+	case *jsast.JsBlock:
 		rewriteAssignmentBlock(s, stateSet)
-	case *JsIfStmt:
+	case *jsast.JsIfStmt:
 		rewriteAssignmentExpr(s.Test, stateSet)
 		s.Then = rewriteAssignmentStmt(s.Then, stateSet)
 		if s.Else != nil {
 			s.Else = rewriteAssignmentStmt(s.Else, stateSet)
 		}
-	case *JsForStmt:
+	case *jsast.JsForStmt:
 		if s.Init != nil {
 			s.Init = rewriteAssignmentStmt(s.Init, stateSet)
 		}
 		rewriteAssignmentExpr(s.Test, stateSet)
 		rewriteAssignmentExpr(s.Update, stateSet)
 		s.Body = rewriteAssignmentStmt(s.Body, stateSet)
-	case *JsForInStmt:
+	case *jsast.JsForInStmt:
 		s.Left = rewriteAssignmentStmt(s.Left, stateSet)
 		rewriteAssignmentExpr(s.Right, stateSet)
 		s.Body = rewriteAssignmentStmt(s.Body, stateSet)
-	case *JsWhileStmt:
+	case *jsast.JsWhileStmt:
 		rewriteAssignmentExpr(s.Test, stateSet)
 		s.Body = rewriteAssignmentStmt(s.Body, stateSet)
-	case *JsDoWhileStmt:
+	case *jsast.JsDoWhileStmt:
 		s.Body = rewriteAssignmentStmt(s.Body, stateSet)
 		rewriteAssignmentExpr(s.Test, stateSet)
-	case *JsReturnStmt:
+	case *jsast.JsReturnStmt:
 		rewriteAssignmentExpr(s.Arg, stateSet)
-	case *JsThrowStmt:
+	case *jsast.JsThrowStmt:
 		rewriteAssignmentExpr(s.Arg, stateSet)
-	case *JsTryStmt:
+	case *jsast.JsTryStmt:
 		rewriteAssignmentBlock(s.Block, stateSet)
 		rewriteAssignmentBlock(s.Handler, stateSet)
 		rewriteAssignmentBlock(s.Finalizer, stateSet)
-	case *JsSwitchStmt:
+	case *jsast.JsSwitchStmt:
 		rewriteAssignmentExpr(s.Disc, stateSet)
 		for _, c := range s.Cases {
 			rewriteAssignmentExpr(c.Test, stateSet)
@@ -207,18 +210,18 @@ func rewriteAssignmentStmt(stmt JsStmt, stateSet map[string]bool) JsStmt {
 				c.Body[i] = rewriteAssignmentStmt(caseStmt, stateSet)
 			}
 		}
-	case *JsLabeledStmt:
+	case *jsast.JsLabeledStmt:
 		s.Body = rewriteAssignmentStmt(s.Body, stateSet)
-	case *JsVarDecl:
+	case *jsast.JsVarDecl:
 		for _, d := range s.Decls {
 			rewriteAssignmentExpr(d.Init, stateSet)
 		}
-	case *JsFuncDecl:
+	case *jsast.JsFuncDecl:
 		rewriteAssignmentBlock(s.Body, stateSet)
-	case *JsClassDecl:
+	case *jsast.JsClassDecl:
 		rewriteAssignmentExpr(s.SuperClass, stateSet)
 		rewriteAssignmentMembers(s.Members, stateSet)
-	case *JsExportDecl:
+	case *jsast.JsExportDecl:
 		if s.Declaration != nil {
 			s.Declaration = rewriteAssignmentStmt(s.Declaration, stateSet)
 		}
@@ -228,7 +231,7 @@ func rewriteAssignmentStmt(stmt JsStmt, stateSet map[string]bool) JsStmt {
 
 // rewriteAssignmentMembers rewrites state writes in class bodies: methods,
 // accessors, field initializers, computed keys and static blocks (task 055).
-func rewriteAssignmentMembers(members []*JsClassMember, stateSet map[string]bool) {
+func rewriteAssignmentMembers(members []*jsast.JsClassMember, stateSet map[string]bool) {
 	for _, m := range members {
 		if m.Computed {
 			rewriteAssignmentExpr(m.Key, stateSet)
@@ -238,9 +241,9 @@ func rewriteAssignmentMembers(members []*JsClassMember, stateSet map[string]bool
 	}
 }
 
-func reactiveSetterStmt(expr JsExpr, stateSet map[string]bool) JsStmt {
+func reactiveSetterStmt(expr jsast.JsExpr, stateSet map[string]bool) jsast.JsStmt {
 	if setter := reactiveSetterExpr(expr, stateSet); setter != nil {
-		return GenExprStmt(setter)
+		return jsast.GenExprStmt(setter)
 	}
 	if block := reactivePatternAssignment(expr, stateSet); block != nil {
 		return block
@@ -252,58 +255,58 @@ func reactiveSetterStmt(expr JsExpr, stateSet map[string]bool) JsStmt {
 // `[a, b] = [b, a]` or `({ a = 5, b } = o)`, into assignments to block-local
 // temporaries followed by one setter per state target (task 055). Without it
 // the state changed without notifying the view.
-func reactivePatternAssignment(expr JsExpr, stateSet map[string]bool) JsStmt {
-	assign, ok := expr.(*JsAssignExpr)
+func reactivePatternAssignment(expr jsast.JsExpr, stateSet map[string]bool) jsast.JsStmt {
+	assign, ok := expr.(*jsast.JsAssignExpr)
 	if !ok || assign.Op != "=" {
 		return nil
 	}
 	switch assign.L.(type) {
-	case *JsArrayExpr, *JsObjectExpr:
+	case *jsast.JsArrayExpr, *jsast.JsObjectExpr:
 	default:
 		return nil
 	}
 	var names []string
 	seen := map[string]bool{}
-	replacePatternTargets(assign.L, stateSet, func(name string) JsExpr {
+	replacePatternTargets(assign.L, stateSet, func(name string) jsast.JsExpr {
 		if !seen[name] {
 			seen[name] = true
 			names = append(names, name)
 		}
-		return GenIdent("$$d_" + name)
+		return jsast.GenIdent("$$d_" + name)
 	})
 	if len(names) == 0 {
 		return nil
 	}
-	decl := &JsVarDecl{BaseStmt: BaseStmt{BaseNode: GenNode()}, Kind: "let"}
+	decl := &jsast.JsVarDecl{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}, Kind: "let"}
 	for _, name := range names {
-		decl.Decls = append(decl.Decls, &JsVarDeclarator{BaseNode: GenNode(), Id: GenIdent("$$d_" + name)})
+		decl.Decls = append(decl.Decls, &jsast.JsVarDeclarator{BaseNode: jsast.GenNode(), Id: jsast.GenIdent("$$d_" + name)})
 	}
-	body := []JsStmt{decl, GenExprStmt(assign)}
+	body := []jsast.JsStmt{decl, jsast.GenExprStmt(assign)}
 	for _, name := range names {
-		body = append(body, GenExprStmt(GenCall(GenIdent("$$set_"+name), GenIdent("$$d_"+name))))
+		body = append(body, jsast.GenExprStmt(jsast.GenCall(jsast.GenIdent("$$set_"+name), jsast.GenIdent("$$d_"+name))))
 	}
-	return GenBlock(body...)
+	return jsast.GenBlock(body...)
 }
 
 // replacePatternTargets replaces every state identifier that a destructuring
 // pattern assigns with the expression temp returns for it.
-func replacePatternTargets(pattern JsExpr, stateSet map[string]bool, temp func(string) JsExpr) JsExpr {
+func replacePatternTargets(pattern jsast.JsExpr, stateSet map[string]bool, temp func(string) jsast.JsExpr) jsast.JsExpr {
 	switch p := pattern.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		if stateSet[p.Name] {
 			return temp(p.Name)
 		}
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		p.L = replacePatternTargets(p.L, stateSet, temp)
-	case *JsSpreadExpr:
+	case *jsast.JsSpreadExpr:
 		p.X = replacePatternTargets(p.X, stateSet, temp)
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		for i, el := range p.Elems {
 			if el != nil {
 				p.Elems[i] = replacePatternTargets(el, stateSet, temp)
 			}
 		}
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		for _, prop := range p.Props {
 			prop.Value = replacePatternTargets(prop.Value, stateSet, temp)
 		}
@@ -311,18 +314,18 @@ func replacePatternTargets(pattern JsExpr, stateSet map[string]bool, temp func(s
 	return pattern
 }
 
-func reactiveSetterExpr(expr JsExpr, stateSet map[string]bool) JsExpr {
-	if update, ok := expr.(*JsUnaryExpr); ok && (update.Op == "++" || update.Op == "--") {
+func reactiveSetterExpr(expr jsast.JsExpr, stateSet map[string]bool) jsast.JsExpr {
+	if update, ok := expr.(*jsast.JsUnaryExpr); ok && (update.Op == "++" || update.Op == "--") {
 		if name, ok := reactiveIdent(update.X, stateSet); ok {
 			op := "+"
 			if update.Op == "--" {
 				op = "-"
 			}
-			return GenCall(GenIdent("$$set_"+name), GenBinary(op, GenIdent(name), GenNumLit(1)))
+			return jsast.GenCall(jsast.GenIdent("$$set_"+name), jsast.GenBinary(op, jsast.GenIdent(name), jsast.GenNumLit(1)))
 		}
 	}
 
-	assign, ok := expr.(*JsAssignExpr)
+	assign, ok := expr.(*jsast.JsAssignExpr)
 	if !ok {
 		return nil
 	}
@@ -332,120 +335,120 @@ func reactiveSetterExpr(expr JsExpr, stateSet map[string]bool) JsExpr {
 	}
 
 	if assign.Op == "=" {
-		return GenCall(GenIdent("$$set_"+name), assign.R)
+		return jsast.GenCall(jsast.GenIdent("$$set_"+name), assign.R)
 	}
 	op := strings.TrimSuffix(assign.Op, "=")
 	if op == assign.Op {
 		return nil
 	}
 	if op == "&&" || op == "||" || op == "??" {
-		return GenCall(GenIdent("$$set_"+name), GenLogical(op, GenIdent(name), assign.R))
+		return jsast.GenCall(jsast.GenIdent("$$set_"+name), jsast.GenLogical(op, jsast.GenIdent(name), assign.R))
 	}
 	switch op {
 	case "+", "-", "*", "/", "%", "**":
-		return GenCall(GenIdent("$$set_"+name), GenBinary(op, GenIdent(name), assign.R))
+		return jsast.GenCall(jsast.GenIdent("$$set_"+name), jsast.GenBinary(op, jsast.GenIdent(name), assign.R))
 	default:
 		return nil
 	}
 }
 
-func reactiveIdent(expr JsExpr, stateSet map[string]bool) (string, bool) {
-	id, ok := expr.(*JsIdent)
+func reactiveIdent(expr jsast.JsExpr, stateSet map[string]bool) (string, bool) {
+	id, ok := expr.(*jsast.JsIdent)
 	if !ok || !stateSet[id.Name] {
 		return "", false
 	}
 	return id.Name, true
 }
 
-func rewriteAssignmentExpr(expr JsExpr, stateSet map[string]bool) {
+func rewriteAssignmentExpr(expr jsast.JsExpr, stateSet map[string]bool) {
 	if expr == nil {
 		return
 	}
 	switch e := expr.(type) {
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		for _, item := range e.Elems {
 			rewriteAssignmentExpr(item, stateSet)
 		}
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		for _, prop := range e.Props {
 			if prop.Computed {
 				rewriteAssignmentExpr(prop.Key, stateSet)
 			}
 			rewriteAssignmentExpr(prop.Value, stateSet)
 		}
-	case *JsFuncExpr:
+	case *jsast.JsFuncExpr:
 		rewriteAssignmentBlock(e.Body, stateSet)
-	case *JsArrowFunc:
-		if block, ok := e.Body.(*JsBlock); ok {
+	case *jsast.JsArrowFunc:
+		if block, ok := e.Body.(*jsast.JsBlock); ok {
 			rewriteAssignmentBlock(block, stateSet)
-		} else if body, ok := e.Body.(JsExpr); ok {
+		} else if body, ok := e.Body.(jsast.JsExpr); ok {
 			rewriteAssignmentExpr(body, stateSet)
 		}
-	case *JsUnaryExpr:
+	case *jsast.JsUnaryExpr:
 		rewriteAssignmentExpr(e.X, stateSet)
-	case *JsBinaryExpr:
+	case *jsast.JsBinaryExpr:
 		rewriteAssignmentExpr(e.L, stateSet)
 		rewriteAssignmentExpr(e.R, stateSet)
-	case *JsLogicalExpr:
+	case *jsast.JsLogicalExpr:
 		rewriteAssignmentExpr(e.L, stateSet)
 		rewriteAssignmentExpr(e.R, stateSet)
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		rewriteAssignmentExpr(e.L, stateSet)
 		rewriteAssignmentExpr(e.R, stateSet)
-	case *JsMemberExpr:
+	case *jsast.JsMemberExpr:
 		rewriteAssignmentExpr(e.Obj, stateSet)
 		if e.Computed {
 			rewriteAssignmentExpr(e.Prop, stateSet)
 		}
-	case *JsCallExpr:
+	case *jsast.JsCallExpr:
 		rewriteAssignmentExpr(e.Callee, stateSet)
 		for _, arg := range e.Args {
 			rewriteAssignmentExpr(arg, stateSet)
 		}
-	case *JsNewExpr:
+	case *jsast.JsNewExpr:
 		rewriteAssignmentExpr(e.Callee, stateSet)
 		for _, arg := range e.Args {
 			rewriteAssignmentExpr(arg, stateSet)
 		}
-	case *JsConditionalExpr:
+	case *jsast.JsConditionalExpr:
 		rewriteAssignmentExpr(e.Test, stateSet)
 		rewriteAssignmentExpr(e.Then, stateSet)
 		rewriteAssignmentExpr(e.Else, stateSet)
-	case *JsSeqExpr:
+	case *jsast.JsSeqExpr:
 		for _, item := range e.Exprs {
 			rewriteAssignmentExpr(item, stateSet)
 		}
-	case *JsSpreadExpr:
+	case *jsast.JsSpreadExpr:
 		rewriteAssignmentExpr(e.X, stateSet)
-	case *JsAwaitExpr:
+	case *jsast.JsAwaitExpr:
 		rewriteAssignmentExpr(e.X, stateSet)
-	case *JsYieldExpr:
+	case *jsast.JsYieldExpr:
 		rewriteAssignmentExpr(e.X, stateSet)
-	case *JsTemplateLit:
+	case *jsast.JsTemplateLit:
 		for _, item := range e.Exprs {
 			rewriteAssignmentExpr(item, stateSet)
 		}
-	case *JsTaggedTemplate:
+	case *jsast.JsTaggedTemplate:
 		rewriteAssignmentExpr(e.Tag, stateSet)
 		rewriteAssignmentExpr(e.Quasi, stateSet)
-	case *JsClassExpr:
+	case *jsast.JsClassExpr:
 		rewriteAssignmentExpr(e.SuperClass, stateSet)
 		rewriteAssignmentMembers(e.Members, stateSet)
 	}
 }
 
 // collectRepls walks the AST and accumulates replacements for assignment nodes.
-func collectRepls(root JsNode, src string, stateSet map[string]bool, out *[]repl) {
-	WalkNode(root, func(n JsNode) bool {
-		stmt, ok := n.(*JsExprStmt)
+func collectRepls(root jsast.JsNode, src string, stateSet map[string]bool, out *[]repl) {
+	jsast.WalkNode(root, func(n jsast.JsNode) bool {
+		stmt, ok := n.(*jsast.JsExprStmt)
 		if !ok {
 			return true
 		}
 
 		// ── Postfix/prefix update:  x++  x--  ++x  --x ────────────────────────
-		if upd, ok := stmt.X.(*JsUnaryExpr); ok {
+		if upd, ok := stmt.X.(*jsast.JsUnaryExpr); ok {
 			if upd.Op == "++" || upd.Op == "--" {
-				if id, ok := upd.X.(*JsIdent); ok && stateSet[id.Name] {
+				if id, ok := upd.X.(*jsast.JsIdent); ok && stateSet[id.Name] {
 					op := "+"
 					if upd.Op == "--" {
 						op = "-"
@@ -460,7 +463,7 @@ func collectRepls(root JsNode, src string, stateSet map[string]bool, out *[]repl
 		}
 
 		// ── Assignment expression:  x = …  x += …  x -= …  etc. ─────────────
-		if assign, ok := stmt.X.(*JsAssignExpr); ok {
+		if assign, ok := stmt.X.(*jsast.JsAssignExpr); ok {
 			// Destructuring-assignment LHS:  ({x} = obj)  [a, b] = pair
 			// Only plain `=` makes sense for patterns (compound ops are nonsense
 			// syntax in JS).  We rewrite the whole statement into:
@@ -472,20 +475,20 @@ func collectRepls(root JsNode, src string, stateSet map[string]bool, out *[]repl
 			// parse as two statements and this branch won't match.  In practice
 			// templates rarely use defaults; users will get a clear parse error
 			// via the existing unrewritten path.
-			if _, isObj := assign.L.(*JsObjectExpr); isObj && assign.Op == "=" {
+			if _, isObj := assign.L.(*jsast.JsObjectExpr); isObj && assign.Op == "=" {
 				if rewritten, ok := rewritePatternAssign(src, assign, stateSet); ok {
 					*out = append(*out, repl{stmt.Pos, stmt.End, rewritten})
 					return false
 				}
 			}
-			if _, isArr := assign.L.(*JsArrayExpr); isArr && assign.Op == "=" {
+			if _, isArr := assign.L.(*jsast.JsArrayExpr); isArr && assign.Op == "=" {
 				if rewritten, ok := rewritePatternAssign(src, assign, stateSet); ok {
 					*out = append(*out, repl{stmt.Pos, stmt.End, rewritten})
 					return false
 				}
 			}
 
-			id, ok := assign.L.(*JsIdent)
+			id, ok := assign.L.(*jsast.JsIdent)
 			if !ok || !stateSet[id.Name] {
 				return true
 			}
@@ -609,7 +612,7 @@ var patternTempCounter int
 //
 // Returns ok=false if the pattern references zero reactive variables —
 // callers then leave the original statement intact.
-func rewritePatternAssign(src string, assign *JsAssignExpr, stateSet map[string]bool) (string, bool) {
+func rewritePatternAssign(src string, assign *jsast.JsAssignExpr, stateSet map[string]bool) (string, bool) {
 	// Collect (accessPath, reactiveName) pairs for every state-var ident
 	// inside the pattern.  accessPath is the suffix appended to the temp
 	// variable — e.g. ".count", "[0]", ".nested.x".
@@ -647,13 +650,13 @@ type patternTarget struct {
 // The JsAssignExpr-inside-pattern case (default values, `{x = 5}`) is
 // currently unreachable because the parser doesn't represent it this way
 // — but we defensively handle it by descending through its L side anyway.
-func collectPatternTargets(node JsExpr, path string, stateSet map[string]bool, out *[]patternTarget) {
+func collectPatternTargets(node jsast.JsExpr, path string, stateSet map[string]bool, out *[]patternTarget) {
 	switch n := node.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		if stateSet[n.Name] {
 			*out = append(*out, patternTarget{name: n.Name, path: path})
 		}
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		for _, p := range n.Props {
 			if p.Spread {
 				// { ...rest } — can't map back to setters cleanly
@@ -664,9 +667,9 @@ func collectPatternTargets(node JsExpr, path string, stateSet map[string]bool, o
 				continue
 			}
 			var keyName string
-			if id, ok := p.Key.(*JsIdent); ok {
+			if id, ok := p.Key.(*jsast.JsIdent); ok {
 				keyName = id.Name
-			} else if lit, ok := p.Key.(*JsLiteral); ok {
+			} else if lit, ok := p.Key.(*jsast.JsLiteral); ok {
 				// String literal keys:  {"foo": x}
 				keyName = strings.Trim(lit.Raw, `"'`)
 			} else {
@@ -680,12 +683,12 @@ func collectPatternTargets(node JsExpr, path string, stateSet map[string]bool, o
 			}
 			collectPatternTargets(p.Value, sub, stateSet, out)
 		}
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		for i, el := range n.Elems {
 			if el == nil {
 				continue // hole: [, , x]
 			}
-			if sp, ok := el.(*JsSpreadExpr); ok {
+			if sp, ok := el.(*jsast.JsSpreadExpr); ok {
 				// [...rest] — same issue as object rest. Skip.
 				_ = sp
 				continue
@@ -693,7 +696,7 @@ func collectPatternTargets(node JsExpr, path string, stateSet map[string]bool, o
 			sub := fmt.Sprintf("%s[%d]", path, i)
 			collectPatternTargets(el, sub, stateSet, out)
 		}
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		// { x = 5 } default-value form (rare; parser may not reach here, but
 		// defensive).  The L side is the binding target.
 		if n.Op == "=" {
@@ -740,11 +743,11 @@ func quote(s string) string {
 // template event handler. Template attributes bypass script-level rewriting,
 // so concise and block-bodied arrows need this dedicated entry point.
 func rewriteTemplateHandlerAssignments(handler string, analysis *Analysis) string {
-	handler = UnwrapBraces(handler)
+	handler = sfc.UnwrapBraces(handler)
 	if analysis == nil || (len(analysis.StateVars) == 0 && len(analysis.Props) == 0) {
 		return handler
 	}
-	stateSet := analysis.stateSet()
+	stateSet := analysis.StateSet()
 
 	arrowIdx := strings.Index(handler, "=>")
 	if arrowIdx < 0 {
@@ -755,7 +758,7 @@ func rewriteTemplateHandlerAssignments(handler string, analysis *Analysis) strin
 
 	if strings.HasPrefix(body, "{") && strings.HasSuffix(strings.TrimSpace(body), "}") {
 		inner := body[1 : len(body)-1]
-		rewritten := RewriteAssignments(inner, ParseJS(inner), stateSet)
+		rewritten := RewriteAssignments(inner, jsast.ParseJS(inner), stateSet)
 		return params + " { " + strings.TrimSpace(rewritten) + " }"
 	}
 
@@ -764,7 +767,7 @@ func rewriteTemplateHandlerAssignments(handler string, analysis *Analysis) strin
 		body = strings.TrimSpace(body[1 : len(body)-1])
 	}
 	bodyStmt := body + ";"
-	rewritten := RewriteAssignments(bodyStmt, ParseJS(bodyStmt), stateSet)
+	rewritten := RewriteAssignments(bodyStmt, jsast.ParseJS(bodyStmt), stateSet)
 	if rewritten == bodyStmt {
 		return handler
 	}

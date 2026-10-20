@@ -68,7 +68,7 @@ func TestASTToJSON_ValidJSON(t *testing.T) {
 		if err != nil {
 			t.Fatalf("[%s] parseTemplate: %v", name, err)
 		}
-		analysis := analyzeScript(sfc.Script)
+		analysis := AnalyzeScript(sfc.Script)
 		prog := buildProgram(name, sfc, tmpl, analysis, "vela-000000")
 		js := ASTToJSON(prog, false)
 

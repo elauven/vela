@@ -1,4 +1,4 @@
-package main
+package analysis
 
 import (
 	"strings"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestRewriteTemplateHandlerAssignments(t *testing.T) {
-	analysis := analyzeScript(`let count = $state(0); let label = $state("");`)
+	analysis := AnalyzeScript(`let count = $state(0); let label = $state("");`)
 
 	got := rewriteTemplateHandlerAssignments(
 		`{($event) => count = $event.target.value}`, analysis)

@@ -41,7 +41,7 @@ func TestBuildSSRGoFileRejectsSingleSelectWithKnownNullBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, AnalyzeScriptAST(sfc.ScriptAST), "vela-page")
 	if err != nil {
 		t.Fatal(err)
 	}

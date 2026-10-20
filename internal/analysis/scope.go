@@ -1,4 +1,4 @@
-package main
+package analysis
 
 // scope.go — lexical scope and binding analysis for the JS AST.
 //
@@ -19,7 +19,12 @@ package main
 // that gap and is also the substrate any future optimizer (DCE,
 // constant folding, etc.) will want anyway.
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/elauven/vela/internal/diag"
+	"github.com/elauven/vela/internal/jsast"
+)
 
 // ─────────────────────────────────────────────
 //  Bindings
@@ -86,8 +91,8 @@ type Binding struct {
 	Pos    int // declaration position (0 for builtins)
 	End    int // declaration end
 	Scope  *Scope
-	Refs   []*JsIdent // every read reference resolved to this binding
-	Writes []*JsIdent // every write reference (subset of Refs)
+	Refs   []*jsast.JsIdent // every read reference resolved to this binding
+	Writes []*jsast.JsIdent // every write reference (subset of Refs)
 }
 
 // ─────────────────────────────────────────────
@@ -125,11 +130,11 @@ type Scope struct {
 	Parent   *Scope
 	Children []*Scope
 	Kind     ScopeKind
-	Node     JsNode // owning AST node — nil for the synthetic builtin scope
+	Node     jsast.JsNode // owning AST node — nil for the synthetic builtin scope
 	Bindings map[string]*Binding
 }
 
-func newScope(parent *Scope, kind ScopeKind, node JsNode) *Scope {
+func newScope(parent *Scope, kind ScopeKind, node jsast.JsNode) *Scope {
 	s := &Scope{
 		Parent:   parent,
 		Kind:     kind,
@@ -230,7 +235,7 @@ var defaultGlobals = []string{
 // ─────────────────────────────────────────────
 
 type scopeBuilder struct {
-	ds                      *DiagSet
+	ds                      *diag.DiagSet
 	cur                     *Scope // top of the scope stack
 	root                    *Scope // program scope (for hoisting / globals)
 	target                  TargetProfile
@@ -253,14 +258,14 @@ type ScopeOptions struct {
 // inspect bindings (e.g. for an unused-var pass).
 //
 // Safe to call with prog == nil — returns nil.
-func BuildScopes(prog *JsProgram, ds *DiagSet) *Scope {
+func BuildScopes(prog *jsast.JsProgram, ds *diag.DiagSet) *Scope {
 	return BuildScopesWithOptions(prog, ds, ScopeOptions{})
 }
 
 // BuildScopesWith is like BuildScopes but lets the caller supply extra
 // pre-declared globals (e.g. injected by a host environment).  These
 // merge with defaultGlobals.
-func BuildScopesWith(prog *JsProgram, ds *DiagSet, extraGlobals []string) *Scope {
+func BuildScopesWith(prog *jsast.JsProgram, ds *diag.DiagSet, extraGlobals []string) *Scope {
 	return BuildScopesWithOptions(prog, ds, ScopeOptions{ExtraGlobals: extraGlobals})
 }
 
@@ -268,7 +273,7 @@ func BuildScopesWith(prog *JsProgram, ds *DiagSet, extraGlobals []string) *Scope
 // and unavailable direct capabilities. All known globals stay declared so the
 // permissive default remains compatible; resolveRef reports selected absences
 // only when it can prove the reference is that builtin.
-func BuildScopesWithOptions(prog *JsProgram, ds *DiagSet, opts ScopeOptions) *Scope {
+func BuildScopesWithOptions(prog *jsast.JsProgram, ds *diag.DiagSet, opts ScopeOptions) *Scope {
 	if prog == nil {
 		return nil
 	}
@@ -345,15 +350,15 @@ func BuildScopesWithOptions(prog *JsProgram, ds *DiagSet, opts ScopeOptions) *Sc
 // Duplicate-declaration detection is still done here — emitting an
 // error during pre-decl is cleaner than waiting for the walk pass to
 // hit the same name again.
-func (b *scopeBuilder) preDeclareLexical(stmts []JsStmt) {
+func (b *scopeBuilder) preDeclareLexical(stmts []jsast.JsStmt) {
 	for _, s := range stmts {
 		b.preDeclareLexicalStmt(s)
 	}
 }
 
-func (b *scopeBuilder) preDeclareLexicalStmt(s JsStmt) {
+func (b *scopeBuilder) preDeclareLexicalStmt(s jsast.JsStmt) {
 	switch n := s.(type) {
-	case *JsVarDecl:
+	case *jsast.JsVarDecl:
 		if n.Kind == "var" {
 			return // var is function-scoped, handled by hoist
 		}
@@ -362,19 +367,19 @@ func (b *scopeBuilder) preDeclareLexicalStmt(s JsStmt) {
 			kind = BindConst
 		}
 		for _, d := range n.Decls {
-			eachPatternIdent(d.Id, func(id *JsIdent) {
+			eachPatternIdent(d.Id, func(id *jsast.JsIdent) {
 				b.predeclare(id.Name, kind, id.Pos, id.End)
 			})
 		}
-	case *JsClassDecl:
+	case *jsast.JsClassDecl:
 		if n.Name != "" {
 			b.predeclare(n.Name, BindClass, n.Pos, n.End)
 		}
-	case *JsLabeledStmt:
+	case *jsast.JsLabeledStmt:
 		// Labels are transparent — a labeled `let x = 1` still
 		// introduces x into the enclosing scope.
 		b.preDeclareLexicalStmt(n.Body)
-	case *JsExportDecl:
+	case *jsast.JsExportDecl:
 		// `export let x = …` / `export class X …` introduces x
 		// into module scope exactly as the bare declaration would
 		// — unwrap so the inner let/const/class is pre-declared.
@@ -420,24 +425,24 @@ func (b *scopeBuilder) predeclare(name string, kind BindingKind, pos, end int) {
 // if/else, loops, switch cases, try/catch/finally, labels) but stops at
 // function boundaries — those have their own hoisting handled when we
 // recurse into them in pass 2.
-func (b *scopeBuilder) hoist(stmts []JsStmt) {
+func (b *scopeBuilder) hoist(stmts []jsast.JsStmt) {
 	for _, s := range stmts {
 		b.hoistStmt(s)
 	}
 }
 
-func (b *scopeBuilder) hoistStmt(s JsStmt) {
+func (b *scopeBuilder) hoistStmt(s jsast.JsStmt) {
 	if s == nil {
 		return
 	}
 	switch n := s.(type) {
-	case *JsVarDecl:
+	case *jsast.JsVarDecl:
 		if n.Kind != "var" {
 			return // let/const/class are not hoisted
 		}
 		target := b.cur.hoistTarget()
 		for _, d := range n.Decls {
-			eachPatternIdent(d.Id, func(id *JsIdent) {
+			eachPatternIdent(d.Id, func(id *jsast.JsIdent) {
 				if _, exists := target.Bindings[id.Name]; exists {
 					return // legal var-on-var redeclaration
 				}
@@ -448,7 +453,7 @@ func (b *scopeBuilder) hoistStmt(s JsStmt) {
 				target.Bindings[id.Name] = bind
 			})
 		}
-	case *JsFuncDecl:
+	case *jsast.JsFuncDecl:
 		if n.Name == "" {
 			return
 		}
@@ -459,22 +464,22 @@ func (b *scopeBuilder) hoistStmt(s JsStmt) {
 				Scope: target,
 			}
 		}
-	case *JsBlock:
+	case *jsast.JsBlock:
 		b.hoist(n.Body)
-	case *JsIfStmt:
+	case *jsast.JsIfStmt:
 		b.hoistStmt(n.Then)
 		b.hoistStmt(n.Else)
-	case *JsForStmt:
+	case *jsast.JsForStmt:
 		b.hoistStmt(n.Init)
 		b.hoistStmt(n.Body)
-	case *JsForInStmt:
+	case *jsast.JsForInStmt:
 		b.hoistStmt(n.Left)
 		b.hoistStmt(n.Body)
-	case *JsWhileStmt:
+	case *jsast.JsWhileStmt:
 		b.hoistStmt(n.Body)
-	case *JsDoWhileStmt:
+	case *jsast.JsDoWhileStmt:
 		b.hoistStmt(n.Body)
-	case *JsTryStmt:
+	case *jsast.JsTryStmt:
 		if n.Block != nil {
 			b.hoist(n.Block.Body)
 		}
@@ -484,11 +489,11 @@ func (b *scopeBuilder) hoistStmt(s JsStmt) {
 		if n.Finalizer != nil {
 			b.hoist(n.Finalizer.Body)
 		}
-	case *JsSwitchStmt:
+	case *jsast.JsSwitchStmt:
 		for _, c := range n.Cases {
 			b.hoist(c.Body)
 		}
-	case *JsLabeledStmt:
+	case *jsast.JsLabeledStmt:
 		b.hoistStmt(n.Body)
 	}
 	// Function/class declarations inside expressions don't count for
@@ -500,7 +505,7 @@ func (b *scopeBuilder) hoistStmt(s JsStmt) {
 //  Pass 2 — walk
 // ─────────────────────────────────────────────
 
-func (b *scopeBuilder) enterScope(kind ScopeKind, node JsNode) {
+func (b *scopeBuilder) enterScope(kind ScopeKind, node jsast.JsNode) {
 	b.cur = newScope(b.cur, kind, node)
 }
 
@@ -554,13 +559,13 @@ func (b *scopeBuilder) declare(name string, kind BindingKind, pos, end int) *Bin
 	return bind
 }
 
-func (b *scopeBuilder) walkStmt(stmt JsStmt) {
+func (b *scopeBuilder) walkStmt(stmt jsast.JsStmt) {
 	if stmt == nil {
 		return
 	}
 	switch s := stmt.(type) {
 
-	case *JsBlock:
+	case *jsast.JsBlock:
 		b.enterScope(ScopeBlock, s)
 		b.preDeclareLexical(s.Body)
 		for _, x := range s.Body {
@@ -568,7 +573,7 @@ func (b *scopeBuilder) walkStmt(stmt JsStmt) {
 		}
 		b.leaveScope()
 
-	case *JsVarDecl:
+	case *jsast.JsVarDecl:
 		for _, d := range s.Decls {
 			// Walk the pattern's default-value expressions and computed
 			// keys as references.  For let/const the binding itself was
@@ -588,7 +593,7 @@ func (b *scopeBuilder) walkStmt(stmt JsStmt) {
 			}
 		}
 
-	case *JsFuncDecl:
+	case *jsast.JsFuncDecl:
 		// Already hoisted at the enclosing function/program scope.
 		// Recurse into params + body in a fresh function scope.
 		b.enterScope(ScopeFunction, s)
@@ -603,14 +608,14 @@ func (b *scopeBuilder) walkStmt(stmt JsStmt) {
 		}
 		b.leaveScope()
 
-	case *JsClassDecl:
+	case *jsast.JsClassDecl:
 		// Already pre-declared at the enclosing scope.
 		if s.SuperClass != nil {
 			b.walkExpr(s.SuperClass)
 		}
 		b.walkClassMembers(s.Members)
 
-	case *JsImportDecl:
+	case *jsast.JsImportDecl:
 		if s.DefaultName != "" {
 			b.declare(s.DefaultName, BindImport, s.Pos, s.End)
 		}
@@ -623,22 +628,22 @@ func (b *scopeBuilder) walkStmt(stmt JsStmt) {
 			b.declare(sp.Local, BindImport, s.Pos, s.End)
 		}
 
-	case *JsExportDecl:
+	case *jsast.JsExportDecl:
 		if s.Declaration != nil {
 			b.walkStmt(s.Declaration)
 		}
 
-	case *JsExprStmt:
+	case *jsast.JsExprStmt:
 		b.walkExpr(s.X)
 
-	case *JsIfStmt:
+	case *jsast.JsIfStmt:
 		b.walkExpr(s.Test)
 		b.walkStmt(s.Then)
 		if s.Else != nil {
 			b.walkStmt(s.Else)
 		}
 
-	case *JsForStmt:
+	case *jsast.JsForStmt:
 		// Per-iteration scope: `for (let i …)` is a fresh `i` each iter.
 		// We collapse that to one ScopeForBinding for analysis purposes.
 		b.enterScope(ScopeForBinding, s)
@@ -655,7 +660,7 @@ func (b *scopeBuilder) walkStmt(stmt JsStmt) {
 		b.walkStmt(s.Body)
 		b.leaveScope()
 
-	case *JsForInStmt:
+	case *jsast.JsForInStmt:
 		b.enterScope(ScopeForBinding, s)
 		if s.Left != nil {
 			b.preDeclareLexicalStmt(s.Left)
@@ -665,23 +670,23 @@ func (b *scopeBuilder) walkStmt(stmt JsStmt) {
 		b.walkStmt(s.Body)
 		b.leaveScope()
 
-	case *JsWhileStmt:
+	case *jsast.JsWhileStmt:
 		b.walkExpr(s.Test)
 		b.walkStmt(s.Body)
 
-	case *JsDoWhileStmt:
+	case *jsast.JsDoWhileStmt:
 		b.walkStmt(s.Body)
 		b.walkExpr(s.Test)
 
-	case *JsReturnStmt:
+	case *jsast.JsReturnStmt:
 		if s.Arg != nil {
 			b.walkExpr(s.Arg)
 		}
 
-	case *JsThrowStmt:
+	case *jsast.JsThrowStmt:
 		b.walkExpr(s.Arg)
 
-	case *JsTryStmt:
+	case *jsast.JsTryStmt:
 		if s.Block != nil {
 			b.walkStmt(s.Block)
 		}
@@ -700,7 +705,7 @@ func (b *scopeBuilder) walkStmt(stmt JsStmt) {
 			b.walkStmt(s.Finalizer)
 		}
 
-	case *JsSwitchStmt:
+	case *jsast.JsSwitchStmt:
 		b.walkExpr(s.Disc)
 		b.enterScope(ScopeBlock, s)
 		// All case bodies share a single block scope.  Pre-declare
@@ -720,7 +725,7 @@ func (b *scopeBuilder) walkStmt(stmt JsStmt) {
 		}
 		b.leaveScope()
 
-	case *JsLabeledStmt:
+	case *jsast.JsLabeledStmt:
 		b.walkStmt(s.Body)
 	}
 }
@@ -729,16 +734,16 @@ func (b *scopeBuilder) walkStmt(stmt JsStmt) {
 // nested) and creates a binding for each name.  Patterns can carry
 // default-value expressions and computed keys; those evaluate as
 // references and are walked accordingly.
-func (b *scopeBuilder) declarePattern(node JsExpr, kind BindingKind) {
+func (b *scopeBuilder) declarePattern(node jsast.JsExpr, kind BindingKind) {
 	if node == nil {
 		return
 	}
 	switch p := node.(type) {
 
-	case *JsIdent:
+	case *jsast.JsIdent:
 		b.declare(p.Name, kind, p.Pos, p.End)
 
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		for _, elem := range p.Elems {
 			if elem == nil {
 				continue // hole
@@ -746,7 +751,7 @@ func (b *scopeBuilder) declarePattern(node JsExpr, kind BindingKind) {
 			b.declarePatternElem(elem, kind)
 		}
 
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		for _, prop := range p.Props {
 			if prop.Spread {
 				// { ...rest }
@@ -765,7 +770,7 @@ func (b *scopeBuilder) declarePattern(node JsExpr, kind BindingKind) {
 			b.declarePatternElem(target, kind)
 		}
 
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		// Top-level default in parameter context: `function f(a = 1)`.
 		// Pattern context lands here too via array/object dispatch.
 		if p.R != nil {
@@ -773,28 +778,28 @@ func (b *scopeBuilder) declarePattern(node JsExpr, kind BindingKind) {
 		}
 		b.declarePattern(p.L, kind)
 
-	case *JsSpreadExpr:
+	case *jsast.JsSpreadExpr:
 		b.declarePattern(p.X, kind)
 	}
 }
 
 // declarePatternElem unwraps default-value and rest wrappers around a
 // pattern element before delegating to declarePattern.
-func (b *scopeBuilder) declarePatternElem(node JsExpr, kind BindingKind) {
+func (b *scopeBuilder) declarePatternElem(node jsast.JsExpr, kind BindingKind) {
 	target := node
-	if a, ok := target.(*JsAssignExpr); ok {
+	if a, ok := target.(*jsast.JsAssignExpr); ok {
 		if a.R != nil {
 			b.walkExpr(a.R)
 		}
 		target = a.L
 	}
-	if s, ok := target.(*JsSpreadExpr); ok {
+	if s, ok := target.(*jsast.JsSpreadExpr); ok {
 		target = s.X
 	}
 	b.declarePattern(target, kind)
 }
 
-func (b *scopeBuilder) declareParams(params []JsExpr) {
+func (b *scopeBuilder) declareParams(params []jsast.JsExpr) {
 	for _, p := range params {
 		b.declarePattern(p, BindParam)
 	}
@@ -809,21 +814,21 @@ func (b *scopeBuilder) declareParams(params []JsExpr) {
 //
 // Mirrors declarePattern's structure but with declares replaced by
 // no-ops on the identifier leaves.
-func (b *scopeBuilder) walkPatternRHS(node JsExpr) {
+func (b *scopeBuilder) walkPatternRHS(node jsast.JsExpr) {
 	if node == nil {
 		return
 	}
 	switch p := node.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		// Binding leaf — already pre-declared, nothing to read.
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		for _, el := range p.Elems {
 			if el == nil {
 				continue
 			}
 			b.walkPatternRHSElem(el)
 		}
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		for _, prop := range p.Props {
 			if prop.Spread {
 				b.walkPatternRHSElem(prop.Value)
@@ -838,25 +843,25 @@ func (b *scopeBuilder) walkPatternRHS(node JsExpr) {
 			}
 			b.walkPatternRHSElem(target)
 		}
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		if p.R != nil {
 			b.walkExpr(p.R)
 		}
 		b.walkPatternRHS(p.L)
-	case *JsSpreadExpr:
+	case *jsast.JsSpreadExpr:
 		b.walkPatternRHS(p.X)
 	}
 }
 
-func (b *scopeBuilder) walkPatternRHSElem(node JsExpr) {
+func (b *scopeBuilder) walkPatternRHSElem(node jsast.JsExpr) {
 	target := node
-	if a, ok := target.(*JsAssignExpr); ok {
+	if a, ok := target.(*jsast.JsAssignExpr); ok {
 		if a.R != nil {
 			b.walkExpr(a.R)
 		}
 		target = a.L
 	}
-	if s, ok := target.(*JsSpreadExpr); ok {
+	if s, ok := target.(*jsast.JsSpreadExpr); ok {
 		target = s.X
 	}
 	b.walkPatternRHS(target)
@@ -866,33 +871,33 @@ func (b *scopeBuilder) walkPatternRHSElem(node JsExpr) {
 //  Pass 2 — expression walk + reference resolution
 // ─────────────────────────────────────────────
 
-func (b *scopeBuilder) walkExpr(node JsExpr) {
+func (b *scopeBuilder) walkExpr(node jsast.JsExpr) {
 	if node == nil {
 		return
 	}
 	switch e := node.(type) {
 
-	case *JsIdent:
+	case *jsast.JsIdent:
 		// A private name (`#x in o`) is not a variable reference.
 		if !strings.HasPrefix(e.Name, "#") {
 			b.resolveRef(e, false)
 		}
 
-	case *JsLiteral, *JsThisExpr, *JsSuperExpr:
+	case *jsast.JsLiteral, *jsast.JsThisExpr, *jsast.JsSuperExpr:
 		// no references
 
-	case *JsTemplateLit:
+	case *jsast.JsTemplateLit:
 		// Interpolation expressions can reference variables.
 		for _, x := range e.Exprs {
 			b.walkExpr(x)
 		}
 
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		for _, el := range e.Elems {
 			b.walkExpr(el)
 		}
 
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		for _, p := range e.Props {
 			if p.Spread {
 				b.walkExpr(p.Value)
@@ -904,7 +909,7 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 			if p.Shorthand {
 				// { a } — the value is the reference; the key is a
 				// separate name node.
-				if id, ok := p.Value.(*JsIdent); ok {
+				if id, ok := p.Value.(*jsast.JsIdent); ok {
 					b.resolveRef(id, false)
 					continue
 				}
@@ -912,7 +917,7 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 			b.walkExpr(p.Value)
 		}
 
-	case *JsClassExpr:
+	case *jsast.JsClassExpr:
 		if e.SuperClass != nil {
 			b.walkExpr(e.SuperClass)
 		}
@@ -924,11 +929,11 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 		b.walkClassMembers(e.Members)
 		b.leaveScope()
 
-	case *JsTaggedTemplate:
+	case *jsast.JsTaggedTemplate:
 		b.walkExpr(e.Tag)
 		b.walkExpr(e.Quasi)
 
-	case *JsFuncExpr:
+	case *jsast.JsFuncExpr:
 		b.enterScope(ScopeFunction, e)
 		// Named function expression: the name is visible *inside* the
 		// body only.  Bind it in this scope, not the enclosing one.
@@ -945,11 +950,11 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 		}
 		b.leaveScope()
 
-	case *JsArrowFunc:
+	case *jsast.JsArrowFunc:
 		b.enterScope(ScopeFunction, e)
 		b.declareParams(e.Params)
 		switch body := e.Body.(type) {
-		case *JsBlock:
+		case *jsast.JsBlock:
 			if body != nil {
 				b.hoist(body.Body)
 				b.preDeclareLexical(body.Body)
@@ -957,47 +962,47 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 					b.walkStmt(x)
 				}
 			}
-		case JsExpr:
+		case jsast.JsExpr:
 			b.walkExpr(body)
 		}
 		b.leaveScope()
 
-	case *JsUnaryExpr:
+	case *jsast.JsUnaryExpr:
 		// ++x / --x / x++ / x-- on a bare Ident is a write *and* read.
 		if (e.Op == "++" || e.Op == "--") && e.X != nil {
-			if id, ok := e.X.(*JsIdent); ok {
+			if id, ok := e.X.(*jsast.JsIdent); ok {
 				b.resolveRef(id, true)
 				return
 			}
 		}
 		b.walkExpr(e.X)
 
-	case *JsBinaryExpr:
+	case *jsast.JsBinaryExpr:
 		b.walkExpr(e.L)
 		b.walkExpr(e.R)
 
-	case *JsLogicalExpr:
+	case *jsast.JsLogicalExpr:
 		b.walkExpr(e.L)
 		b.walkExpr(e.R)
 
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		// LHS: identifier → write reference.  Member expression →
 		// the *object* is read, but the property name itself isn't a
 		// variable reference.  Pattern (destructuring assignment) →
 		// each ident is a write.
 		switch lhs := e.L.(type) {
-		case *JsIdent:
+		case *jsast.JsIdent:
 			b.resolveRef(lhs, true)
-		case *JsMemberExpr:
+		case *jsast.JsMemberExpr:
 			b.walkExpr(lhs)
-		case *JsArrayExpr, *JsObjectExpr:
+		case *jsast.JsArrayExpr, *jsast.JsObjectExpr:
 			b.walkAssignPattern(lhs)
 		default:
 			b.walkExpr(lhs)
 		}
 		b.walkExpr(e.R)
 
-	case *JsMemberExpr:
+	case *jsast.JsMemberExpr:
 		// `new.target` and `import.meta` are meta properties.
 		if !isMetaProperty(e) {
 			b.walkExpr(e.Obj)
@@ -1008,38 +1013,38 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 		// Non-computed: e.Prop is a JsIdent representing the property
 		// *name*, not a variable reference.  Do not resolveRef it.
 
-	case *JsCallExpr:
+	case *jsast.JsCallExpr:
 		// Dynamic `import(…)` is syntax, not a call of a variable.
-		if callee, ok := e.Callee.(*JsIdent); !ok || callee.Name != "import" {
+		if callee, ok := e.Callee.(*jsast.JsIdent); !ok || callee.Name != "import" {
 			b.walkExpr(e.Callee)
 		}
 		for _, a := range e.Args {
 			b.walkExpr(a)
 		}
 
-	case *JsNewExpr:
+	case *jsast.JsNewExpr:
 		b.walkExpr(e.Callee)
 		for _, a := range e.Args {
 			b.walkExpr(a)
 		}
 
-	case *JsConditionalExpr:
+	case *jsast.JsConditionalExpr:
 		b.walkExpr(e.Test)
 		b.walkExpr(e.Then)
 		b.walkExpr(e.Else)
 
-	case *JsSeqExpr:
+	case *jsast.JsSeqExpr:
 		for _, x := range e.Exprs {
 			b.walkExpr(x)
 		}
 
-	case *JsSpreadExpr:
+	case *jsast.JsSpreadExpr:
 		b.walkExpr(e.X)
 
-	case *JsAwaitExpr:
+	case *jsast.JsAwaitExpr:
 		b.walkExpr(e.X)
 
-	case *JsYieldExpr:
+	case *jsast.JsYieldExpr:
 		if e.X != nil {
 			b.walkExpr(e.X)
 		}
@@ -1048,7 +1053,7 @@ func (b *scopeBuilder) walkExpr(node JsExpr) {
 
 // walkClassMembers walks a class body. Each method has its own function
 // scope; field initializers and static blocks run in implicit functions too.
-func (b *scopeBuilder) walkClassMembers(members []*JsClassMember) {
+func (b *scopeBuilder) walkClassMembers(members []*jsast.JsClassMember) {
 	for _, m := range members {
 		if m.Computed && m.Key != nil {
 			b.walkExpr(m.Key)
@@ -1069,30 +1074,30 @@ func (b *scopeBuilder) walkClassMembers(members []*JsClassMember) {
 }
 
 // isMetaProperty reports `new.target` and `import.meta`.
-func isMetaProperty(e *JsMemberExpr) bool {
-	obj, ok := e.Obj.(*JsIdent)
+func isMetaProperty(e *jsast.JsMemberExpr) bool {
+	obj, ok := e.Obj.(*jsast.JsIdent)
 	if !ok || e.Computed {
 		return false
 	}
-	prop, ok := e.Prop.(*JsIdent)
+	prop, ok := e.Prop.(*jsast.JsIdent)
 	return ok && (obj.Name == "new" && prop.Name == "target" || obj.Name == "import" && prop.Name == "meta")
 }
 
 // walkAssignPattern handles destructuring assignment LHSes like
 // `[a, b] = arr` or `({x, y} = obj)` — each named element is a write
 // reference, not a declaration.
-func (b *scopeBuilder) walkAssignPattern(node JsExpr) {
+func (b *scopeBuilder) walkAssignPattern(node jsast.JsExpr) {
 	if node == nil {
 		return
 	}
 	switch p := node.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		b.resolveRef(p, true)
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		for _, el := range p.Elems {
 			b.walkAssignPatternElem(el)
 		}
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		for _, prop := range p.Props {
 			if prop.Spread {
 				b.walkAssignPattern(prop.Value)
@@ -1107,7 +1112,7 @@ func (b *scopeBuilder) walkAssignPattern(node JsExpr) {
 			}
 			b.walkAssignPatternElem(target)
 		}
-	case *JsMemberExpr:
+	case *jsast.JsMemberExpr:
 		// `[obj.x] = arr` — obj is read, property is name.
 		b.walkExpr(p)
 	default:
@@ -1115,18 +1120,18 @@ func (b *scopeBuilder) walkAssignPattern(node JsExpr) {
 	}
 }
 
-func (b *scopeBuilder) walkAssignPatternElem(node JsExpr) {
+func (b *scopeBuilder) walkAssignPatternElem(node jsast.JsExpr) {
 	if node == nil {
 		return
 	}
 	target := node
-	if a, ok := target.(*JsAssignExpr); ok {
+	if a, ok := target.(*jsast.JsAssignExpr); ok {
 		if a.R != nil {
 			b.walkExpr(a.R)
 		}
 		target = a.L
 	}
-	if s, ok := target.(*JsSpreadExpr); ok {
+	if s, ok := target.(*jsast.JsSpreadExpr); ok {
 		target = s.X
 	}
 	b.walkAssignPattern(target)
@@ -1140,7 +1145,7 @@ func (b *scopeBuilder) walkAssignPatternElem(node JsExpr) {
 // diagnostic if anything's wrong.  isWrite is true for assignment
 // targets and update expressions; that path also flags writes to
 // const/import bindings.
-func (b *scopeBuilder) resolveRef(id *JsIdent, isWrite bool) {
+func (b *scopeBuilder) resolveRef(id *jsast.JsIdent, isWrite bool) {
 	if id == nil || id.Name == "" {
 		return
 	}
@@ -1232,18 +1237,18 @@ func (b *scopeBuilder) noFunctionBetween(target *Scope) bool {
 // binding pattern.  Used by hoisting to extract var names without
 // running the full declarePattern (which would resolve defaults as
 // references — wrong during the hoist pre-pass).
-func eachPatternIdent(node JsExpr, fn func(*JsIdent)) {
+func eachPatternIdent(node jsast.JsExpr, fn func(*jsast.JsIdent)) {
 	if node == nil {
 		return
 	}
 	switch p := node.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		fn(p)
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		for _, el := range p.Elems {
 			eachPatternIdent(unwrapPatternElem(el), fn)
 		}
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		for _, prop := range p.Props {
 			if prop.Spread {
 				eachPatternIdent(unwrapPatternElem(prop.Value), fn)
@@ -1255,18 +1260,18 @@ func eachPatternIdent(node JsExpr, fn func(*JsIdent)) {
 			}
 			eachPatternIdent(unwrapPatternElem(target), fn)
 		}
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		eachPatternIdent(p.L, fn)
-	case *JsSpreadExpr:
+	case *jsast.JsSpreadExpr:
 		eachPatternIdent(p.X, fn)
 	}
 }
 
-func unwrapPatternElem(node JsExpr) JsExpr {
-	if a, ok := node.(*JsAssignExpr); ok {
+func unwrapPatternElem(node jsast.JsExpr) jsast.JsExpr {
+	if a, ok := node.(*jsast.JsAssignExpr); ok {
 		return a.L
 	}
-	if s, ok := node.(*JsSpreadExpr); ok {
+	if s, ok := node.(*jsast.JsSpreadExpr); ok {
 		return s.X
 	}
 	return node
@@ -1281,7 +1286,7 @@ func unwrapPatternElem(node JsExpr) JsExpr {
 // usually a deliberate side-effect import, and builtins are noise.
 // Parameter and catch-binding noise is also skipped (those routinely
 // go unused for ergonomic reasons).
-func ReportUnused(root *Scope, ds *DiagSet) {
+func ReportUnused(root *Scope, ds *diag.DiagSet) {
 	if root == nil {
 		return
 	}

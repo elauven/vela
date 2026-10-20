@@ -14,7 +14,7 @@ import (
 
 func runDCE(t *testing.T, script, template string) string {
 	t.Helper()
-	a := analyzeScript(script)
+	a := AnalyzeScript(script)
 	out, _ := EliminateDeadCodeFixedPoint(script, a, template)
 	// Result must be valid JS.
 	if out != "" && ParseJS(out) == nil {
@@ -238,10 +238,10 @@ func TestDCEIsIdempotent(t *testing.T) {
 		const used = 2;
 		console.log(used);
 	`
-	a := analyzeScript(script)
+	a := AnalyzeScript(script)
 	out1, _ := EliminateDeadCodeFixedPoint(script, a, "")
 
-	a2 := analyzeScript(out1)
+	a2 := AnalyzeScript(out1)
 	out2, _ := EliminateDeadCodeFixedPoint(out1, a2, "")
 
 	if out1 != out2 {
@@ -251,7 +251,7 @@ func TestDCEIsIdempotent(t *testing.T) {
 
 func TestDCENoChangeReportsFalse(t *testing.T) {
 	// A script with nothing to remove should return changed=false.
-	a := analyzeScript(`const x = 1; console.log(x);`)
+	a := AnalyzeScript(`const x = 1; console.log(x);`)
 	_, changed := EliminateDeadCode(`const x = 1; console.log(x);`, a, "")
 	if changed {
 		t.Fatalf("expected changed=false")

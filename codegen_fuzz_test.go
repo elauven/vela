@@ -283,7 +283,7 @@ func FuzzCodegen(f *testing.F) {
 			t.Skipf("generator produced unparseable template: %v\n%s",
 				err, src)
 		}
-		analysis := analyzeScript(sfc.Script)
+		analysis := AnalyzeScript(sfc.Script)
 
 		// 1. Compilation must not panic.
 		var js string

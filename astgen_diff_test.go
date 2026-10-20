@@ -204,7 +204,7 @@ func compileASTFixture(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
-	return generateCodeAST("Test", sfc, tmpl, analyzeScript(sfc.Script), "vela-000000")
+	return generateCodeAST("Test", sfc, tmpl, AnalyzeScript(sfc.Script), "vela-000000")
 }
 
 func TestASTGenFixtureValidity(t *testing.T) {

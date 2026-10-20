@@ -72,7 +72,7 @@ func TestSSRInitOracle(t *testing.T) {
 			}
 		}
 		serialized[i] = map[string]bool{}
-		for _, sv := range analyzeScript(script.String()).SerializedState() {
+		for _, sv := range AnalyzeScript(script.String()).SerializedState() {
 			serialized[i][sv.Name] = true
 		}
 		component := fmt.Sprintf("Init%d", i)

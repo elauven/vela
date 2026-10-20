@@ -736,7 +736,7 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 		obj.Props = append(obj.Props, prop)
 		if attr.IsTwoWay && g.analysis != nil {
 			target, isIdent := templateExprIdent(attr.Expr)
-			if isIdent && g.analysis.stateSet()[target] {
+			if isIdent && g.analysis.StateSet()[target] {
 				obj.Props = append(obj.Props, &JsProp{
 					BaseNode: GenNode(), Key: GenIdent("$$onChange_" + attr.Name),
 					Value: &JsArrowFunc{
@@ -753,7 +753,7 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 func (g *ASTGen) componentPropExpr(attr *Attr) JsExpr {
 	value := g.templateExpr(attr.Expr)
 	if _, isArrow := value.(*JsArrowFunc); isArrow && g.analysis != nil {
-		value = RewriteHandlerAssignmentsAST(value, g.analysis.stateSet())
+		value = RewriteHandlerAssignmentsAST(value, g.analysis.StateSet())
 	}
 	return value
 }
@@ -798,7 +798,7 @@ func buildProgramUnvalidated(
 	// Input validation consumes the immutable ScriptAST before this point.
 	// Lower callback assignments only while assembling target code, so the
 	// shared source tree cannot leak generated $$set_* names into user scopes.
-	analysis.lowerReactiveCallbackBodies()
+	analysis.LowerReactiveCallbackBodies()
 	g := &ASTGen{
 		name:         name,
 		scopeID:      scopeID,
@@ -1229,7 +1229,7 @@ func (g *ASTGen) buildImportDecls() []JsStmt {
 			src = "./runtime.js"
 			kept := specifiers[:0]
 			for _, spec := range specifiers {
-				if !velaCompilerIntrinsics[spec.Imported] {
+				if !VelaCompilerIntrinsics[spec.Imported] {
 					kept = append(kept, spec)
 				}
 			}
@@ -1302,7 +1302,7 @@ func stripVelaIntrinsics(spec string) string {
 		if i := strings.Index(p, " as "); i > 0 {
 			name = strings.TrimSpace(p[:i])
 		}
-		if velaCompilerIntrinsics[name] {
+		if VelaCompilerIntrinsics[name] {
 			continue
 		}
 		kept = append(kept, p)
@@ -1383,7 +1383,7 @@ func (g *ASTGen) reactiveNames() []string {
 	if g.analysis == nil {
 		return nil
 	}
-	return g.analysis.reactiveNames()
+	return g.analysis.ReactiveNames()
 }
 
 // buildPropDecls emits one `let` per prop, initialized from $$props
@@ -2180,7 +2180,7 @@ func (g *ASTGen) hasReactiveSetter(name string) bool {
 	if name == "" || g.analysis == nil {
 		return false
 	}
-	if g.analysis.stateSet()[name] {
+	if g.analysis.StateSet()[name] {
 		return true
 	}
 	for _, prop := range g.analysis.Props {
@@ -2205,7 +2205,7 @@ func (g *ASTGen) eventHandlerExpr(attr *Attr) JsExpr {
 	}
 	root = g.templateExpr(attr.Expr)
 	if g.analysis != nil {
-		root = RewriteHandlerAssignmentsAST(root, g.analysis.stateSet())
+		root = RewriteHandlerAssignmentsAST(root, g.analysis.StateSet())
 	}
 	// Browser source-map consumers may stop at a nested handler node rather
 	// than the arrow root. Keep the attribute's exact origin on the complete

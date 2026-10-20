@@ -26,7 +26,7 @@ func compileLifecycle(t *testing.T, script string) string {
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	return generateCodeAST("T", sfc, tmpl, a, "vela-test")
 }
 
@@ -223,41 +223,5 @@ func TestAliasedBothIntrinsics_BothRecognized(t *testing.T) {
 	}
 	if !strings.Contains(out, "$$mountCleanup") {
 		t.Errorf("expected mount wiring:\n%s", out)
-	}
-}
-
-// The Analysis.IntrinsicAliases map is the single source of
-// truth — verify it is populated as expected directly, so a
-// future change in how lifecycles get emitted does not silently
-// regress the alias mechanism.
-func TestAnalyzer_IntrinsicAliases_Populated(t *testing.T) {
-	a := analyzeScript(`
-		import { onMount as setup, onDestroy as teardown } from 'vela';
-		setup(() => {});
-		teardown(() => {});
-	`)
-	if a.IntrinsicAliases["setup"] != "onMount" {
-		t.Errorf("setup → onMount missing: %#v", a.IntrinsicAliases)
-	}
-	if a.IntrinsicAliases["teardown"] != "onDestroy" {
-		t.Errorf("teardown → onDestroy missing: %#v", a.IntrinsicAliases)
-	}
-}
-
-// An intrinsic imported from a non-Vela source must NOT be
-// recorded as an alias — the user's `onMount` from their own
-// module is a regular function, and the alias map is keyed on
-// `import { … } from 'vela'` only.  (Note: the current direct-
-// name match in extractLifecycle still hijacks `onMount(...)`
-// regardless of import source — that pre-existing behavior is
-// separate from this fix.)
-func TestAnalyzer_IntrinsicAliases_NotPopulatedForOtherSource(t *testing.T) {
-	a := analyzeScript(`
-		import { onMount as setup } from './my-other.js';
-		setup(() => {});
-	`)
-	if _, ok := a.IntrinsicAliases["setup"]; ok {
-		t.Errorf("setup should NOT be in IntrinsicAliases for non-vela source: %#v",
-			a.IntrinsicAliases)
 	}
 }

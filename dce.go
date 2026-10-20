@@ -119,7 +119,7 @@ func EliminateDeadCodeFixedPoint(script string, analysis *Analysis, templateText
 		// Re-analyze so the next iteration sees the updated reactive
 		// set.  Removing a binding can change which names look reactive
 		// (in pathological cases — usually it's a no-op).
-		curA = analyzeScript(cur)
+		curA = AnalyzeScript(cur)
 	}
 	return cur, curA
 }
@@ -139,7 +139,7 @@ func EliminateDeadCodeAST(script *ScriptAST, analysis *Analysis, templateText st
 			break
 		}
 		filterDeadProgram(script.Program, drops)
-		current = analyzeScriptAST(script)
+		current = AnalyzeScriptAST(script)
 	}
 	return current
 }
@@ -356,7 +356,7 @@ func reactiveNameSet(a *Analysis) map[string]bool {
 	if a == nil {
 		return m
 	}
-	for _, name := range a.reactiveNames() {
+	for _, name := range a.ReactiveNames() {
 		m[name] = true
 	}
 	return m

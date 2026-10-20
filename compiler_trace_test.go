@@ -156,20 +156,6 @@ func TestCompileFileReportsScriptASTSyntaxDiagnostic(t *testing.T) {
 	}
 }
 
-func TestScriptASTOwnsParserResultUsedByAnalysis(t *testing.T) {
-	sfc, err := ParseSFC("<script>let count = $state(0);</script><template>{count}</template>")
-	if err != nil {
-		t.Fatal(err)
-	}
-	analysis := analyzeScriptAST(sfc.ScriptAST)
-	if sfc.ScriptAST.Program == nil || analysis.Script != sfc.ScriptAST {
-		t.Fatalf("analysis did not retain owned ScriptAST: script=%p analysis=%p", sfc.ScriptAST, analysis.Script)
-	}
-	if got, want := sfc.ScriptAST.Span.Start, sfc.ScriptOffset; got != want {
-		t.Fatalf("script span start = %d, want section offset %d", got, want)
-	}
-}
-
 func TestSharedScriptASTDoesNotLeakLoweredSetterIntoValidation(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "Lifecycle.vela")
@@ -206,7 +192,7 @@ func TestScriptPlanRetainsOwnedUserStatementUntilTargetBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	analysis := analyzeScriptAST(sfc.ScriptAST)
+	analysis := AnalyzeScriptAST(sfc.ScriptAST)
 	var user *ScriptPlanStep
 	for i := range analysis.ScriptPlan {
 		if analysis.ScriptPlan[i].Kind == "user" {

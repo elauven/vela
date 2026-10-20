@@ -16,7 +16,7 @@ func regionForSource(t *testing.T, source string) (*SSRRegion, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analyzeScriptAST(sfc.ScriptAST), "vela-page")
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, AnalyzeScriptAST(sfc.ScriptAST), "vela-page")
 	if err != nil {
 		t.Fatal(err)
 	}

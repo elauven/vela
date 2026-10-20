@@ -157,7 +157,7 @@ func TestValidateEveryFixtureClean(t *testing.T) {
 		if err != nil {
 			t.Fatalf("[%s] parseTemplate: %v", name, err)
 		}
-		prog := buildProgramUnvalidated(name, sfc, tmpl, analyzeScript(sfc.Script), "vela-000000", false)
+		prog := buildProgramUnvalidated(name, sfc, tmpl, AnalyzeScript(sfc.Script), "vela-000000", false)
 		if issues := ValidateProgram(prog); len(issues) > 0 {
 			var b strings.Builder
 			for _, iss := range issues {
@@ -189,7 +189,7 @@ func TestNestedEachBranchUsesFragmentLocalHoists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramUnvalidated("NestedEach", sfc, nodes, analyzeScriptAST(sfc.ScriptAST), "vela-test", false)
+	prog := buildProgramUnvalidated("NestedEach", sfc, nodes, AnalyzeScriptAST(sfc.ScriptAST), "vela-test", false)
 	for _, issue := range ValidateProgram(prog) {
 		if issue.Kind == "duplicate-decl" {
 			t.Fatalf("nested each fragment leaked duplicate declaration: %s", issue.Msg)

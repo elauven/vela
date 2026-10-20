@@ -10,7 +10,7 @@ import "strings"
 // diagnostics: unused state vars, effects with no deps, direct mutation of
 // derived vars, missing required props, etc.
 func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
-	stateSet := a.stateSet()
+	stateSet := a.StateSet()
 	derivedSet := make(map[string]bool, len(a.DerivedVars))
 	for _, dv := range a.DerivedVars {
 		derivedSet[dv.Name] = true

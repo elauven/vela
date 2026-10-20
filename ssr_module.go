@@ -173,7 +173,7 @@ func (m *SSRModules) compile(module *ssrModule) {
 				continue
 			}
 			for _, declarator := range decl.Decls {
-				name := identName(declarator.Id)
+				name := IdentName(declarator.Id)
 				if name == "" || declarator.Init == nil {
 					m.fail(module, program, stmt, "top-level destructuring is not supported during server rendering")
 					continue

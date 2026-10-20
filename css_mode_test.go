@@ -28,7 +28,7 @@ func cssModeCompile(t *testing.T, src string, external bool) string {
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	return generateCodeASTCSS("Test", sfc, tmpl, a, "vela-test", external)
 }
 

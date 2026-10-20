@@ -60,7 +60,7 @@ func TestScriptPlanPreservesStatementOrigins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramCSS("Demo", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
+	prog := buildProgramCSS("Demo", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test", false)
 	ShiftTree(prog, sfc.ScriptOffset)
 	wantFunction := strings.Index(raw, "function explode")
 	wantThrow := strings.Index(raw, "throw new Error")
@@ -155,7 +155,7 @@ func TestInlineAwaitPromiseSourceMapOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramCSS("InlineAwait", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
+	prog := buildProgramCSS("InlineAwait", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test", false)
 	ShiftTree(prog, sfc.ScriptOffset)
 	promisePos := strings.Index(raw, "request then")
 	inlineKeywordPos := strings.Index(raw, "then value")
@@ -179,7 +179,7 @@ func TestRepeatedTemplateExpressionsKeepDistinctOrigins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramCSS("Repeated", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
+	prog := buildProgramCSS("Repeated", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test", false)
 	ShiftTree(prog, sfc.ScriptOffset)
 	first := strings.Index(raw, "{value}") + 1
 	second := strings.Index(raw[first+len("value}"):], "{value}") + first + len("value}") + 1
@@ -206,7 +206,7 @@ func TestComponentEventSourceMapOriginAndEventParameter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramCSS("Parent", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
+	prog := buildProgramCSS("Parent", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test", false)
 	ShiftTree(prog, sfc.ScriptOffset)
 	output := PrintJS(prog, PrintPretty)
 	if !strings.Contains(output, "($e) =>") || !strings.Contains(output, "$e instanceof CustomEvent") {
@@ -232,7 +232,7 @@ func TestEachRowTextExpressionKeepsSourceMapOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramCSS("Rows", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
+	prog := buildProgramCSS("Rows", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test", false)
 	ShiftTree(prog, sfc.ScriptOffset)
 	want := strings.Index(raw, "item.title")
 	found := false
@@ -254,7 +254,7 @@ func TestEachRowAttributeAndHandlerExpressionsKeepSourceMapOrigins(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramCSS("Rows", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
+	prog := buildProgramCSS("Rows", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test", false)
 	ShiftTree(prog, sfc.ScriptOffset)
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) {
@@ -283,7 +283,7 @@ func TestSlotFallbackExpressionKeepsSourceMapOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramCSS("SlotFallback", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
+	prog := buildProgramCSS("SlotFallback", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test", false)
 	ShiftTree(prog, sfc.ScriptOffset)
 	slotNode := nodes[0].(*SlotNode)
 	part := slotNode.Fallback[0].(*TextNode).Parts[0]
@@ -309,7 +309,7 @@ func TestStructuredIfBranchExpressionKeepsSourceMapOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramCSS("Conditional", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
+	prog := buildProgramCSS("Conditional", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test", false)
 	ShiftTree(prog, sfc.ScriptOffset)
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) {
@@ -335,7 +335,7 @@ func TestStructuredIfDynamicDOMKeepsSourceMapOrigins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramCSS("ConditionalDOM", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
+	prog := buildProgramCSS("ConditionalDOM", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test", false)
 	ShiftTree(prog, sfc.ScriptOffset)
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) {
@@ -365,7 +365,7 @@ func TestStructuredKeyComponentKeepsSourceMapOrigins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramCSS("KeyedParent", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
+	prog := buildProgramCSS("KeyedParent", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test", false)
 	ShiftTree(prog, sfc.ScriptOffset)
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) { seen[loc.SourcePos] = true })
@@ -390,7 +390,7 @@ func TestNestedEachAndIfExpressionsKeepSourceMapOrigins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramCSS("NestedRows", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
+	prog := buildProgramCSS("NestedRows", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test", false)
 	ShiftTree(prog, sfc.ScriptOffset)
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) { seen[loc.SourcePos] = true })
@@ -421,7 +421,7 @@ func TestAwaitBranchExpressionsKeepSourceMapOrigins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog := buildProgramCSS("AwaitOrigins", sfc, nodes, analyzeScript(sfc.Script), "vela-test", false)
+	prog := buildProgramCSS("AwaitOrigins", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test", false)
 	ShiftTree(prog, sfc.ScriptOffset)
 	seen := map[int]bool{}
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) { seen[loc.SourcePos] = true })

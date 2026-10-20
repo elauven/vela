@@ -65,7 +65,7 @@ func ssrRootModes(files []string, srcRoot string) map[string]bool {
 			own[key] = true
 			continue
 		}
-		analysis := analyzeScriptAST(sfc.ScriptAST)
+		analysis := AnalyzeScriptAST(sfc.ScriptAST)
 		// {#client} content and client-only components need the client.
 		own[key] = sfc.ClientOnly || ssrHasClientBlock(sfc.TemplateAST.Nodes) || ssrOwnInteractive(sfc.TemplateAST.Nodes, analysis)
 		links, _ := ResolveSSRLocalComponentLinks(src, srcRoot, analysis)

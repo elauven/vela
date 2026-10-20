@@ -16,7 +16,7 @@ func TestResolveSSRLocalComponentLinksRetainsAliasedCanonicalImport(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	analysis := analyzeScriptAST(sfc.ScriptAST)
+	analysis := AnalyzeScriptAST(sfc.ScriptAST)
 	links, err := ResolveSSRLocalComponentLinks(parent, root, analysis)
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestResolveSSRLocalComponentLinksRejectsEscapingImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ResolveSSRLocalComponentLinks(src, filepath.Join(root, "src"), analyzeScriptAST(sfc.ScriptAST)); err == nil {
+	if _, err := ResolveSSRLocalComponentLinks(src, filepath.Join(root, "src"), AnalyzeScriptAST(sfc.ScriptAST)); err == nil {
 		t.Fatal("escaping .vela import was accepted")
 	}
 }

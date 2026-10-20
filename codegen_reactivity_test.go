@@ -31,7 +31,7 @@ func compileGenerated(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	return generateCodeAST("Test", sfc, tmpl, a, "vela-test")
 }
 

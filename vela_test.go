@@ -173,7 +173,7 @@ func TestParseTemplate_Nested(t *testing.T) {
 // ──────────────────────────────────────────────
 
 func TestAnalyzeScript_StateVars(t *testing.T) {
-	a := analyzeScript(`
+	a := AnalyzeScript(`
 let count = $state(0);
 const name  = $state('hello');
 let active  = $state(false);
@@ -187,7 +187,7 @@ let active  = $state(false);
 }
 
 func TestAnalyzeScript_DerivedVars(t *testing.T) {
-	a := analyzeScript(`
+	a := AnalyzeScript(`
 let count   = $state(0);
 let doubled = $derived(count * 2);
 let label   = $derived(count > 0 ? 'positive' : 'zero');
@@ -205,7 +205,7 @@ let label   = $derived(count > 0 ? 'positive' : 'zero');
 }
 
 func TestAnalyzeScript_Effects(t *testing.T) {
-	a := analyzeScript(`
+	a := AnalyzeScript(`
 let count = $state(0);
 $effect(() => {
   document.title = count;
@@ -219,86 +219,9 @@ $effect(() => {
 	}
 }
 
-func TestAnalyzeScript_CleanScript(t *testing.T) {
-	a := analyzeScript(`
-let count = $state(0);
-$effect(() => { console.log(count); });
-
-function increment() {
-  count++;
-}
-`)
-	if strings.Contains(a.CleanScript(), "$state") {
-		t.Error("CleanScript should have $state removed")
-	}
-	if strings.Contains(a.CleanScript(), "$effect") {
-		t.Error("CleanScript should have $effect removed")
-	}
-	if !strings.Contains(a.CleanScript(), "function increment") {
-		t.Error("CleanScript should retain function declarations")
-	}
-}
-
 // ──────────────────────────────────────────────
 //  AST-based assignment rewriter
 // ──────────────────────────────────────────────
-
-func TestRewriteAssignments(t *testing.T) {
-	stateSet := map[string]bool{"count": true, "x": true}
-
-	cases := []struct {
-		src  string
-		want string
-	}{
-		{"count++;", "$$set_count(count+1);"},
-		{"count--;", "$$set_count(count-1);"},
-		{"count = 42;", "$$set_count(42);"},
-		{"count += 5;", "$$set_count(count+5);"},
-		{"count -= 2;", "$$set_count(count-2);"},
-		{"count *= 3;", "$$set_count(count*3);"},
-		{"count **= 2;", "$$set_count(count**2);"},
-		// Reading count — must NOT be rewritten
-		{"const y = count + 1;", "const y = count + 1;"},
-		// Property assign — must NOT be rewritten
-		{"obj.count = 5;", "obj.count = 5;"},
-	}
-
-	for _, tc := range cases {
-		prog := ParseJS(tc.src)
-		got := RewriteAssignments(tc.src, prog, stateSet)
-		if !strings.Contains(got, strings.SplitN(tc.want, "(", 2)[0]) {
-			t.Errorf("RewriteAssignments(%q):\n  want %q\n  got  %q", tc.src, tc.want, got)
-		}
-	}
-}
-
-func TestRewriteAssignments_InsideArrow(t *testing.T) {
-	// Assignment inside a nested arrow function must be rewritten.
-	src := `store.subscribe(v => { todos = v; });`
-	stateSet := map[string]bool{"todos": true}
-	prog := ParseJS(src)
-	got := RewriteAssignments(src, prog, stateSet)
-	if !strings.Contains(got, "$$set_todos") {
-		t.Errorf("expected $$set_todos in rewritten source, got: %s", got)
-	}
-}
-
-func TestCleanScript_AssignmentsRewritten(t *testing.T) {
-	// End-to-end: analyzeScript should produce CleanScript with setters.
-	a := analyzeScript(`
-let count = $state(0);
-function inc() { count++; }
-function dec() { count--; }
-function set(n) { count = n; }
-`)
-	clean := a.CleanScript()
-	if !strings.Contains(clean, "$$set_count") {
-		t.Errorf("CleanScript should contain $$set_count; got:\n%s", clean)
-	}
-	if strings.Contains(clean, "$state") {
-		t.Error("CleanScript should not contain $state")
-	}
-}
 
 // ──────────────────────────────────────────────
 //  Code generator — smoke tests
@@ -311,7 +234,7 @@ func TestGenerateCode_ScopedStyle(t *testing.T) {
 		Template: `<p>hi</p>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	analysis := analyzeScript(sfc.Script)
+	analysis := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Styled", sfc, nodes, analysis, "vela-abc")
 
 	if !strings.Contains(code, "createElement('style')") {
@@ -432,50 +355,6 @@ func TestWalkNode_EarlyStop(t *testing.T) {
 	}
 }
 
-func TestScanTemplateHoles_Simple(t *testing.T) {
-	holes := scanTemplateHoles("`hello ${name}!`")
-	if len(holes) != 1 || holes[0] != "name" {
-		t.Errorf("expected [name], got %v", holes)
-	}
-}
-
-func TestScanTemplateHoles_Multiple(t *testing.T) {
-	holes := scanTemplateHoles("`${a} and ${b}`")
-	if len(holes) != 2 {
-		t.Fatalf("expected 2 holes, got %v", holes)
-	}
-	if holes[0] != "a" || holes[1] != "b" {
-		t.Errorf("expected [a b], got %v", holes)
-	}
-}
-
-func TestScanTemplateHoles_NestedBraces(t *testing.T) {
-	// Nested object literal inside hole — fails with simple [^}]* regex
-	holes := scanTemplateHoles("`result: ${fn({ key: val })}`")
-	if len(holes) != 1 {
-		t.Fatalf("expected 1 hole, got %v", holes)
-	}
-	if !strings.Contains(holes[0], "fn") {
-		t.Errorf("hole should contain fn, got %q", holes[0])
-	}
-}
-
-func TestScanTemplateHoles_NestedString(t *testing.T) {
-	// String containing } inside hole — confuses naive scanners
-	holes := scanTemplateHoles("`${\"}\" + x}`")
-	if len(holes) != 1 {
-		t.Fatalf("expected 1 hole, got %v", holes)
-	}
-}
-
-func TestScanTemplateHoles_Escaped(t *testing.T) {
-	// \${ is NOT a hole
-	holes := scanTemplateHoles("`\\${notAHole} ${isAHole}`")
-	if len(holes) != 1 {
-		t.Errorf("expected 1 hole (escaped should be ignored), got %v", holes)
-	}
-}
-
 func TestCollectIdents_TemplateInDerived(t *testing.T) {
 	// $derived with template literal — deps inside ${} must be found
 	prog := ParseJS("`Count: ${count} items, doubled: ${doubled}`")
@@ -488,33 +367,9 @@ func TestCollectIdents_TemplateInDerived(t *testing.T) {
 	}
 }
 
-func TestAnalyzeScript_ImportSpec(t *testing.T) {
-	// Import spec reconstruction from typed AST (not raw string slicing)
-	cases := []struct {
-		src  string
-		spec string
-	}{
-		{`import { writable, derived } from 'vela/store';`, "{ writable, derived }"},
-		{`import * as Store from 'vela/store';`, "* as Store"},
-		{`import Default from 'mod';`, "Default"},
-		{`import Default, { named } from 'mod';`, "Default, { named }"},
-	}
-	for _, tc := range cases {
-		a := analyzeScript(tc.src)
-		if len(a.Imports) == 0 {
-			t.Errorf("no imports parsed for: %s", tc.src)
-			continue
-		}
-		if formatImportSpec(a.Imports[0]) != tc.spec {
-			t.Errorf("import spec:\n  want %q\n  got  %q\n  src: %s",
-				tc.spec, formatImportSpec(a.Imports[0]), tc.src)
-		}
-	}
-}
-
 func TestAnalyzeScript_DerivedDepsTransitive(t *testing.T) {
 	// doubled depends on count; label depends on doubled — both must chain correctly
-	a := analyzeScript(`
+	a := AnalyzeScript(`
 		let count   = $state(0);
 		let doubled = $derived(count * 2);
 		let label   = $derived(doubled > 10 ? 'big' : 'small');
@@ -532,7 +387,7 @@ func TestAnalyzeScript_DerivedDepsTransitive(t *testing.T) {
 
 func TestAnalyzeScript_EffectDepsInTemplate(t *testing.T) {
 	// Effect referencing state via template literal — deps must be found
-	a := analyzeScript(`
+	a := AnalyzeScript(`
 		let count = $state(0);
 		$effect(() => {
 			document.title = ` + "`" + `Count: ${count}` + "`" + `;
@@ -544,70 +399,6 @@ func TestAnalyzeScript_EffectDepsInTemplate(t *testing.T) {
 	if !containsStr(a.Effects[0].Deps, "count") {
 		t.Errorf("effect should depend on count; deps=%v body=%q",
 			a.Effects[0].Deps, sourceBlock(a.Effects[0].BodyAST))
-	}
-}
-
-func TestRewriteAssignments_MemberExprNotRewritten(t *testing.T) {
-	// obj.count = 5 must NOT be rewritten even though "count" is a state var
-	src := `obj.count = 5;`
-	prog := ParseJS(src)
-	stateSet := map[string]bool{"count": true}
-	got := RewriteAssignments(src, prog, stateSet)
-	if strings.Contains(got, "$$set_count") {
-		t.Errorf("member-expr assignment should not be rewritten: %s", got)
-	}
-}
-
-func TestRewriteAssignments_NullishAndLogical(t *testing.T) {
-	for _, op := range []string{"??=", "&&=", "||="} {
-		src := "count " + op + " 0;"
-		prog := ParseJS(src)
-		got := RewriteAssignments(src, prog, map[string]bool{"count": true})
-		if !strings.Contains(got, "$$set_count") {
-			t.Errorf("op %s should be rewritten; got: %s", op, got)
-		}
-	}
-}
-
-func TestRewriteAssignments_PreservesNonState(t *testing.T) {
-	// Only state vars should be rewritten; other vars stay as-is
-	src := `
-		let localVar = 0;
-		localVar = 42;
-		count = 1;
-	`
-	prog := ParseJS(src)
-	got := RewriteAssignments(src, prog, map[string]bool{"count": true})
-	if !strings.Contains(got, "localVar = 42") {
-		t.Errorf("non-state assignment should be preserved; got:\n%s", got)
-	}
-	if !strings.Contains(got, "$$set_count") {
-		t.Errorf("state assignment should be rewritten; got:\n%s", got)
-	}
-}
-
-func TestPrintNode_RoundTrip(t *testing.T) {
-	// printNode is used to reconstruct effect bodies — check key constructs
-	cases := []string{
-		"x + y",
-		"a ? b : c",
-		"foo(a, b, c)",
-		"obj.method()",
-		"[1, 2, 3]",
-		"{ a: 1, b: 2 }",
-	}
-	for _, expr := range cases {
-		prog := ParseJS(expr)
-		if len(prog.Body) == 0 {
-			t.Errorf("no stmts parsed for %q", expr)
-			continue
-		}
-		got := printNode(prog.Body[0])
-		// The round-trip output should contain all the identifiers and operators
-		// (we don't require character-identical output, just semantic equivalence)
-		if got == "" {
-			t.Errorf("printNode(%q) returned empty string", expr)
-		}
 	}
 }
 
@@ -714,7 +505,7 @@ func TestParseTemplate_ComponentSelfClose(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestAnalyzeScript_ExportLetProps(t *testing.T) {
-	a := analyzeScript(`
+	a := AnalyzeScript(`
 		export let name = 'World';
 		export let count = 0;
 		export let required;
@@ -725,7 +516,7 @@ func TestAnalyzeScript_ExportLetProps(t *testing.T) {
 	if a.Props[0].Name != "name" || sourceExpr(a.Props[0].DefaultAST) != "'World'" {
 		t.Errorf("prop[0]: got name=%q default=%q", a.Props[0].Name, sourceExpr(a.Props[0].DefaultAST))
 	}
-	if got := printNode(a.Props[0].DefaultAST); got != "'World'" {
+	if got := PrintNode(a.Props[0].DefaultAST); got != "'World'" {
 		t.Errorf("prop[0] default AST: want %q, got %q", "'World'", got)
 	}
 	if a.Props[2].Name != "required" || a.Props[2].DefaultAST != nil {
@@ -733,20 +524,6 @@ func TestAnalyzeScript_ExportLetProps(t *testing.T) {
 	}
 	if a.Props[2].DefaultAST != nil {
 		t.Errorf("required prop must not have a default AST: %#v", a.Props[2].DefaultAST)
-	}
-}
-
-func TestAnalyzeScript_PropsNotInCleanScript(t *testing.T) {
-	// export let should be removed from CleanScript (it's handled by codegen)
-	a := analyzeScript(`
-		export let name = 'World';
-		function greet() { return name; }
-	`)
-	if strings.Contains(a.CleanScript(), "export let") {
-		t.Errorf("export let should not appear in CleanScript: %s", a.CleanScript())
-	}
-	if !strings.Contains(a.CleanScript(), "function greet") {
-		t.Errorf("greet function should be in CleanScript: %s", a.CleanScript())
 	}
 }
 
@@ -760,7 +537,7 @@ func TestGenerateCode_Props(t *testing.T) {
 		Template: `<p>{greeting}, {name}!</p>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	analysis := analyzeScript(sfc.Script)
+	analysis := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Greeter", sfc, nodes, analysis, "vela-test")
 
 	// Props initialised from $$props with fallback to default
@@ -905,7 +682,7 @@ func TestValidateScript_WarnsDerivedAssignment(t *testing.T) {
 		function badOp() { doubled = 10; }
 	`
 	prog := ParseJS(script)
-	a := analyzeScript(script)
+	a := AnalyzeScript(script)
 	ds := NewDiagSet("test.vela", script)
 	validateScript(prog, a, ds)
 	// Should warn about assigning to derived var
@@ -925,7 +702,7 @@ func TestValidateScript_WarnsEffectNoDeps(t *testing.T) {
 		$effect(() => { console.log("hello"); });
 	`
 	prog := ParseJS(script)
-	a := analyzeScript(script)
+	a := AnalyzeScript(script)
 	ds := NewDiagSet("test.vela", script)
 	// The effect-no-deps warning moved from validateScript into
 	// validateEffectBody (reactivity.go) so it could carry an
@@ -948,7 +725,7 @@ func TestValidateTemplate_WarnsUnimportedComponent(t *testing.T) {
 		Template: `<div><MyWidget /></div>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	ds := NewDiagSet("test.vela", sfc.Script)
 	validateTemplate(nodes, a, ds)
 	found := false
@@ -968,7 +745,7 @@ func TestValidateTemplate_NoWarnWhenImported(t *testing.T) {
 		Template: `<div><MyWidget /></div>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	ds := NewDiagSet("test.vela", sfc.Script)
 	validateTemplate(nodes, a, ds)
 	for _, d := range ds.Warnings() {
@@ -983,7 +760,7 @@ func TestValidateTemplate_NoWarnWhenImported(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestAnalyzeScript_OnMount(t *testing.T) {
-	a := analyzeScript(`
+	a := AnalyzeScript(`
 		let pollId = null;
 		onMount(() => {
 			pollId = setInterval(() => {}, 1000);
@@ -1001,40 +778,13 @@ func TestAnalyzeScript_OnMount(t *testing.T) {
 	}
 }
 
-func TestAnalyzeScript_OnDestroy(t *testing.T) {
-	a := analyzeScript(`
-		onDestroy(() => {
-			clearInterval(pollId);
-		});
-	`)
-	if len(a.Lifecycles) != 1 {
-		t.Fatalf("expected 1 lifecycle, got %d", len(a.Lifecycles))
-	}
-	if a.Lifecycles[0].Kind != "onDestroy" {
-		t.Errorf("kind: want 'onDestroy', got %q", a.Lifecycles[0].Kind)
-	}
-}
-
-func TestAnalyzeScript_LifecycleNotInCleanScript(t *testing.T) {
-	a := analyzeScript(`
-		onMount(() => { document.title = 'hi'; });
-		function greet() { return 'hello'; }
-	`)
-	if strings.Contains(a.CleanScript(), "onMount") {
-		t.Errorf("onMount should be removed from CleanScript; got:\n%s", a.CleanScript())
-	}
-	if !strings.Contains(a.CleanScript(), "function greet") {
-		t.Errorf("user functions should remain in CleanScript")
-	}
-}
-
 func TestGenerateCode_OnMount(t *testing.T) {
 	sfc := &SFC{
 		Script:   `onMount(() => { document.body.classList.add('loaded'); });`,
 		Template: `<div>hello</div>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 	if !strings.Contains(code, "document.body.classList.add") {
 		t.Errorf("onMount body should appear in generated code:\n%s", code)
@@ -1047,7 +797,7 @@ func TestGenerateCode_OnDestroy(t *testing.T) {
 		Template: `<div>bye</div>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Bye", sfc, nodes, a, "vela-test")
 	// onDestroy body must appear inside destroy()
 	destroyStart := strings.Index(code, "destroy()")
@@ -1065,7 +815,7 @@ func TestGenerateCode_OnDestroy(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestAnalyzeScript_Bindable(t *testing.T) {
-	a := analyzeScript(`export let value = $bindable(0);`)
+	a := AnalyzeScript(`export let value = $bindable(0);`)
 	if len(a.Props) != 1 {
 		t.Fatalf("expected 1 prop, got %d", len(a.Props))
 	}
@@ -1076,13 +826,13 @@ func TestAnalyzeScript_Bindable(t *testing.T) {
 	if sourceExpr(p.DefaultAST) != "0" {
 		t.Errorf("default: want '0', got %q", sourceExpr(p.DefaultAST))
 	}
-	if got := printNode(p.DefaultAST); got != "0" {
+	if got := PrintNode(p.DefaultAST); got != "0" {
 		t.Errorf("default AST: want %q, got %q", "0", got)
 	}
 }
 
 func TestAnalyzeScript_BindableNoDefault(t *testing.T) {
-	a := analyzeScript(`export let val = $bindable();`)
+	a := AnalyzeScript(`export let val = $bindable();`)
 	if len(a.Props) != 1 {
 		t.Fatalf("expected 1 prop, got %d", len(a.Props))
 	}
@@ -1100,7 +850,7 @@ func TestGenerateCode_BindableCallback(t *testing.T) {
 		Template: `<span>{count}</span>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Counter", sfc, nodes, a, "vela-test")
 	// Should emit $$onChange_count reference
 	if !strings.Contains(code, "$$onChange_count") {
@@ -1151,7 +901,7 @@ func TestGenerateCode_SlotRendering(t *testing.T) {
 		Template: `<div><slot name="header">Default header</slot></div>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Card", sfc, nodes, a, "vela-test")
 	if !strings.Contains(code, `$$slots["header"]`) && !strings.Contains(code, `$$slots['header']`) {
 		t.Errorf("expected slot lookup in generated code:\n%s", code)
@@ -1167,7 +917,7 @@ func TestGenerateCode_ComponentPassesSlots(t *testing.T) {
 		Template: `<Card><p slot="header">My Title</p></Card>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 	// The component mount call should include a slots argument
 	if !strings.Contains(code, "\"header\"") && !strings.Contains(code, "'header'") {
@@ -1186,7 +936,7 @@ func TestGenerateCode_ComponentPassesSlots(t *testing.T) {
 func TestGenerateCode_DispatchFunction(t *testing.T) {
 	sfc := &SFC{Script: ``, Template: `<div>hello</div>`}
 	nodes, _ := ParseTemplate(sfc.Template)
-	code := generateCodeAST("MyComp", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
+	code := generateCodeAST("MyComp", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test")
 	// Runtime helpers are usage-tracked. A component without child events
 	// must not import or bind dispatch machinery.
 	if strings.Contains(code, "$$dispatch") {
@@ -1224,7 +974,7 @@ func TestFullPipeline_UserCard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("UserCard", sfc, nodes, a, "vela-card")
 
 	must := []string{
@@ -1336,7 +1086,7 @@ func TestGenerateCode_ArrowHandlerNotDoubleWrapped(t *testing.T) {
 		Template: `<button @click="() => foo()">click</button>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Btn", sfc, nodes, a, "vela-test")
 
 	// Should NOT produce: ($event) => { () => foo(); }
@@ -1357,7 +1107,7 @@ func TestGenerateCode_ExprHandlerNotDoubleWrapped(t *testing.T) {
 		Template: `<input @input="($e) => v = $e.target.value" />`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Input", sfc, nodes, a, "vela-test")
 
 	// Must NOT double-wrap: ($event) => { ($e) => v = $e.target.value; }
@@ -1450,7 +1200,7 @@ func TestGenerateCode_BooleanBindingCheckbox(t *testing.T) {
 		Template: `<input type="checkbox" :checked="done" />`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Check", sfc, nodes, a, "vela-test")
 
 	// Must not use setAttribute for checked
@@ -1469,7 +1219,7 @@ func TestGenerateCode_BooleanBindingDisabled(t *testing.T) {
 		Template: `<button :disabled="loading">Submit</button>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Btn", sfc, nodes, a, "vela-test")
 
 	if strings.Contains(code, "setAttribute('disabled'") {
@@ -1486,7 +1236,7 @@ func TestGenerateCode_BooleanBindingHidden(t *testing.T) {
 		Template: `<div :hidden="!visible">content</div>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Vis", sfc, nodes, a, "vela-test")
 
 	if strings.Contains(code, "setAttribute('hidden'") {
@@ -1501,34 +1251,6 @@ func TestGenerateCode_BooleanBindingHidden(t *testing.T) {
 //  Prop assignment rewriting
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestStatesSet_IncludesProps(t *testing.T) {
-	a := analyzeScript(`
-		export let name = $bindable('World');
-		export let count = 0;
-		let x = $state(0);
-	`)
-	ss := a.stateSet()
-	for _, want := range []string{"name", "count", "x"} {
-		if !ss[want] {
-			t.Errorf("stateSet() should include %q", want)
-		}
-	}
-}
-
-func TestCleanScript_PropAssignmentRewritten(t *testing.T) {
-	// export let name is a prop — assigning name = "new" should become $$set_name("new")
-	a := analyzeScript(`
-		export let name = $bindable('World');
-		function rename(v) { name = v; }
-	`)
-	if !strings.Contains(a.CleanScript(), "$$set_name") {
-		t.Errorf("prop assignment should be rewritten to $$set_name:\n%s", a.CleanScript())
-	}
-	if strings.Contains(a.CleanScript(), "name = v") {
-		t.Errorf("raw prop assignment should be gone:\n%s", a.CleanScript())
-	}
-}
-
 func TestGenerateCode_PropAssignmentInMethod(t *testing.T) {
 	sfc := &SFC{
 		Script: `
@@ -1539,7 +1261,7 @@ func TestGenerateCode_PropAssignmentInMethod(t *testing.T) {
 		Template: `<div>{name}</div>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Card", sfc, nodes, a, "vela-test")
 
 	if !strings.Contains(code, "$$set_name") {
@@ -1550,92 +1272,6 @@ func TestGenerateCode_PropAssignmentInMethod(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  Lifecycle body rewriting
 // ─────────────────────────────────────────────────────────────────────────────
-
-func TestLifecycle_OnMountBodyRewritten(t *testing.T) {
-	a := analyzeScript(`
-		let online = $state(false);
-		onMount(() => {
-			online = true;
-		});
-	`)
-	if len(a.Lifecycles) == 0 {
-		t.Fatal("no lifecycles found")
-	}
-	lc := a.Lifecycles[0]
-	body := printNode(lc.BodyAST)
-	if strings.Contains(body, "online = true") && !strings.Contains(body, "$$set_online") {
-		t.Errorf("onMount AST body state assignment should be rewritten:\n%s", body)
-	}
-	if !strings.Contains(body, "$$set_online(true)") {
-		t.Errorf("expected $$set_online(true) in onMount AST body:\n%s", body)
-	}
-}
-
-func TestLifecycle_OnMountRewritesNestedClosureAssignment(t *testing.T) {
-	// online = x inside a setInterval callback inside onMount should be rewritten
-	a := analyzeScript(`
-		let online = $state(false);
-		onMount(() => {
-			setInterval(() => { online = Math.random() > 0.5; }, 1000);
-		});
-	`)
-	if len(a.Lifecycles) == 0 {
-		t.Fatal("no lifecycles found")
-	}
-	lc := a.Lifecycles[0]
-	body := printNode(lc.BodyAST)
-	if !strings.Contains(body, "$$set_online") {
-		t.Errorf("nested state assignment in onMount AST body not rewritten:\n%s", body)
-	}
-}
-
-func TestLifecycle_PropAssignmentInOnMount(t *testing.T) {
-	// Props should also be rewritten inside onMount
-	a := analyzeScript(`
-		export let count = $bindable(0);
-		onMount(() => { count = 42; });
-	`)
-	if len(a.Lifecycles) == 0 {
-		t.Fatal("no lifecycle found")
-	}
-	lc := a.Lifecycles[0]
-	body := printNode(lc.BodyAST)
-	if !strings.Contains(body, "$$set_count") {
-		t.Errorf("prop assignment in onMount AST body not rewritten:\n%s", body)
-	}
-}
-
-func TestLifecycle_OnDestroyBodyRewritten(t *testing.T) {
-	a := analyzeScript(`
-		let status = $state('active');
-		onDestroy(() => { status = 'destroyed'; });
-	`)
-	if len(a.Lifecycles) == 0 {
-		t.Fatal("no lifecycle found")
-	}
-	lc := a.Lifecycles[0]
-	body := printNode(lc.BodyAST)
-	if !strings.Contains(body, "$$set_status") {
-		t.Errorf("onDestroy AST body state assignment not rewritten:\n%s", body)
-	}
-}
-
-func TestEffect_BodyRewritten(t *testing.T) {
-	// $effect bodies that mutate other state should be rewritten
-	a := analyzeScript(`
-		let count = $state(0);
-		let doubled = $state(0);
-		$effect(() => { doubled = count * 2; });
-	`)
-	if len(a.Effects) == 0 {
-		t.Fatal("no effect found")
-	}
-	eff := a.Effects[0]
-	body := printNode(eff.BodyAST)
-	if !strings.Contains(body, "$$set_doubled") {
-		t.Errorf("effect AST body state assignment not rewritten:\n%s", body)
-	}
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Full pipeline — UserCard-like with all features
@@ -1677,7 +1313,7 @@ func TestFullPipeline_PropBindingAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Profile", sfc, nodes, a, "vela-prof")
 
 	checks := []struct{ desc, want, notWant string }{
@@ -1704,80 +1340,6 @@ func TestFullPipeline_PropBindingAndLifecycle(t *testing.T) {
 //  RHS extraction with parenthesised expressions
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Regression: `x = (a > b) ? 'yes' : 'no'`
-// parsePrimary strips outer parens, so ConditionalExpr.Pos pointed to `a`
-// instead of `(`, causing rhs to be `a > b) ? 'yes' : 'no'` (wrong).
-func TestRewriteAssignments_ParenthesisedTernary(t *testing.T) {
-	cases := []struct {
-		src  string
-		want string
-	}{
-		{
-			`x = (h >= 12) ? 'PM' : 'AM';`,
-			`$$set_x((h >= 12) ? 'PM' : 'AM')`,
-		},
-		{
-			`x = (a > 0) ? a : -a;`,
-			`$$set_x((a > 0) ? a : -a)`,
-		},
-		{
-			// No outer parens — must still work
-			`x = h >= 12 ? 'PM' : 'AM';`,
-			`$$set_x(h >= 12 ? 'PM' : 'AM')`,
-		},
-		{
-			// Compound assignment with parenthesised RHS
-			`x += (n * 2);`,
-			`$$set_x(x+(n * 2))`,
-		},
-	}
-
-	stateSet := map[string]bool{"x": true}
-	for _, tc := range cases {
-		prog := ParseJS(tc.src)
-		got := RewriteAssignments(tc.src, prog, stateSet)
-		if !strings.Contains(got, tc.want) {
-			t.Errorf("RewriteAssignments(%q):\n  want to contain %q\n  got  %q",
-				tc.src, tc.want, got)
-		}
-		// Must not have the bug pattern: closing paren before the ternary operator
-		if strings.Contains(got, ") ? ") && strings.Contains(got, "$$set_") {
-			// Check it's the correct form: the ) closes the setter call, not the outer paren
-			if strings.Contains(got, "$$set_x() ? ") || strings.Contains(got, "$$set_x(h >= 12) ?") {
-				t.Errorf("detected double-wrapped / truncated ternary bug: %q", got)
-			}
-		}
-	}
-}
-
-func TestExtractRHS_SimpleAssign(t *testing.T) {
-	// x = 42  →  lhsEnd=1, op="=", stmtEnd=6 (or wherever)
-	// The src used here simulates the statement text
-	src := "x = 42;"
-	rhs := extractRHS(src, 1, "=", len(src))
-	if rhs != "42" {
-		t.Errorf("extractRHS simple: want '42', got %q", rhs)
-	}
-}
-
-func TestExtractRHS_Ternary(t *testing.T) {
-	src := "ampm = (h >= 12) ? 'PM' : 'AM';"
-	rhs := extractRHS(src, len("ampm"), "=", len(src))
-	want := "(h >= 12) ? 'PM' : 'AM'"
-	if rhs != want {
-		t.Errorf("extractRHS ternary:\n  want %q\n  got  %q", want, rhs)
-	}
-}
-
-func TestExtractRHS_Compound(t *testing.T) {
-	src := "count += step * 2;"
-	rhs := extractRHS(src, len("count"), "+=", len(src))
-	want := "step * 2"
-	if rhs != want {
-		t.Errorf("extractRHS compound:\n  want %q\n  got  %q", want, rhs)
-	}
-}
-
 // Full pipeline: the Clock component had this exact bug in its onMount body
 func TestFullPipeline_ClockTernaryInOnMount(t *testing.T) {
 	src := `
@@ -1802,13 +1364,13 @@ func TestFullPipeline_ClockTernaryInOnMount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 
 	// The onMount body should have the ternary rewritten correctly
 	if len(a.Lifecycles) == 0 {
 		t.Fatal("no lifecycle found")
 	}
-	body := printNode(a.Lifecycles[0].BodyAST)
+	body := PrintNode(a.Lifecycles[0].BodyAST)
 
 	// Must produce a valid setter call — not a truncated one
 	if !strings.Contains(body, "$$set_ampm") {
@@ -1882,7 +1444,7 @@ func TestGenerateCode_PlainComponentGuardsCustomEvent(t *testing.T) {
 		Template: `<div><Modal @close="($e) => handleClose($e.detail)" @select="onSelect" /></div>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	if !strings.Contains(code, "instanceof CustomEvent") {
@@ -1901,7 +1463,7 @@ func TestRewriteHandlerAssignments_ConciseArrow(t *testing.T) {
 		Template: `<input type="checkbox" @change="($e) => visible = $e.target.checked" />`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
 	// The handler must call $$set_visible, NOT do a raw assignment
@@ -1922,7 +1484,7 @@ func TestComponentCallbackPropInlineAssignmentIsReactive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code := generateCodeAST("Editor", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
+	code := generateCodeAST("Editor", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test")
 	if !strings.Contains(code, "$$set_selectedId(id)") {
 		t.Fatalf("inline component callback bypassed reactive setter:\n%s", code)
 	}
@@ -1937,7 +1499,7 @@ func TestRewriteHandlerAssignments_BlockBody(t *testing.T) {
 		Template: `<button @click="($e) => { count = count + step; step = 2; }">go</button>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
 	if !strings.Contains(code, "$$set_count") {
@@ -1954,7 +1516,7 @@ func TestRewriteHandlerAssignments_MultipleAssignments(t *testing.T) {
 		Template: `<button @click="() => { x = 1; y = 2; }">set</button>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
 	if !strings.Contains(code, "$$set_x(1)") {
@@ -1972,7 +1534,7 @@ func TestRewriteHandlerAssignments_NoFalsePositive(t *testing.T) {
 		Template: `<button @click="($e) => { $e.preventDefault(); localVar = 5; }">go</button>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
 	// localVar is not state — should NOT be rewritten
@@ -2048,47 +1610,6 @@ func TestParseTemplate_IfElseGroupedThreeLevelsDeep(t *testing.T) {
 //  Prop deps in derived vars + branch component re-render
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestReactiveNames_IncludesProps(t *testing.T) {
-	a := analyzeScript(`
-		export let pinned = false;
-		export let selected = false;
-		let editMode = $state(false);
-		let cardClass = $derived('card' + (pinned ? ' pinned' : '') + (selected ? ' selected' : '') + (editMode ? ' editing' : ''));
-	`)
-	names := a.reactiveNames()
-	nameSet := map[string]bool{}
-	for _, n := range names {
-		nameSet[n] = true
-	}
-	for _, want := range []string{"pinned", "selected", "editMode", "cardClass"} {
-		if !nameSet[want] {
-			t.Errorf("reactiveNames should include %q; got: %v", want, names)
-		}
-	}
-}
-
-func TestDerivedDeps_IncludesPropVars(t *testing.T) {
-	a := analyzeScript(`
-		export let pinned = false;
-		export let selected = false;
-		let editMode = $state(false);
-		let cardClass = $derived('card' + (pinned ? ' pinned' : '') + (selected ? ' selected' : '') + (editMode ? ' editing' : ''));
-	`)
-	if len(a.DerivedVars) == 0 {
-		t.Fatal("no derived vars found")
-	}
-	dv := a.DerivedVars[0] // cardClass
-	deps := map[string]bool{}
-	for _, d := range dv.Deps {
-		deps[d] = true
-	}
-	for _, want := range []string{"pinned", "selected", "editMode"} {
-		if !deps[want] {
-			t.Errorf("cardClass.Deps should include %q; got: %v", want, dv.Deps)
-		}
-	}
-}
-
 func TestGenerateCode_PropChangeTriggersDerivedUpdate(t *testing.T) {
 	// When a prop changes via set(), the derived vars that depend on it must update.
 	sfc := &SFC{
@@ -2101,7 +1622,7 @@ func TestGenerateCode_PropChangeTriggersDerivedUpdate(t *testing.T) {
 		Template: `<div :class="cardClass">content</div>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Card", sfc, nodes, a, "vela-test")
 
 	// $$set_pinned must call $$upd_cardClass
@@ -2130,25 +1651,6 @@ func TestGenerateCode_PropChangeTriggersDerivedUpdate(t *testing.T) {
 	selSetter := code[selSetStart:selSetEnd]
 	if !strings.Contains(selSetter, "$$upd_cardClass") {
 		t.Errorf("$$set_selected must call $$upd_cardClass; setter:\n%s", selSetter)
-	}
-}
-
-func TestAnalyzeScript_AsyncFunctionPreserved(t *testing.T) {
-	a := analyzeScript(`
-		async function fetchData(url) {
-			const res = await fetch(url);
-			return res.json();
-		}
-		async function search() {
-			const data = await fetchData('/api');
-			return data;
-		}
-	`)
-	if !strings.Contains(a.CleanScript(), "async function fetchData") {
-		t.Errorf("async keyword lost from fetchData:\n%s", a.CleanScript())
-	}
-	if !strings.Contains(a.CleanScript(), "async function search") {
-		t.Errorf("async keyword lost from search:\n%s", a.CleanScript())
 	}
 }
 
@@ -2197,79 +1699,6 @@ func TestParseTemplate_ComponentIfElseifChainGrouped(t *testing.T) {
 	}
 }
 
-func TestFindWrittenVars(t *testing.T) {
-	prog := ParseJS(`
-		const unsub = store.subscribe(state => {
-			isAuthenticated = state.isAuthenticated;
-			theme = state.theme;
-		});
-		return unsub;
-	`)
-	written := findWrittenVars(prog)
-	if !written["isAuthenticated"] {
-		t.Error("isAuthenticated should be in written vars")
-	}
-	if !written["theme"] {
-		t.Error("theme should be in written vars")
-	}
-	// 'state' is only read, not written
-	if written["state"] {
-		t.Error("state is read, not written — should not be in written vars")
-	}
-	// 'unsub' is declared (not assigned via =), depends on parser treatment
-	// The key thing is the written vars are isAuthenticated and theme
-}
-
-func TestEffectDeps_ExcludeWrittenVars(t *testing.T) {
-	// This effect reads isAuthenticated from a store callback but also WRITES
-	// isAuthenticated — the dep should not include isAuthenticated, only the
-	// store-external deps, otherwise $$set_isAuthenticated → $$effect0 →
-	// $$set_isAuthenticated → ∞
-	a := analyzeScript(`
-		let isAuthenticated = $state(false);
-		$effect(() => {
-			const unsub = auth.subscribe(state => {
-				isAuthenticated = state.isAuthenticated;
-			});
-			return unsub;
-		});
-	`)
-	if len(a.Effects) == 0 {
-		t.Fatal("no effects found")
-	}
-	eff := a.Effects[0]
-	for _, dep := range eff.Deps {
-		if dep == "isAuthenticated" {
-			t.Errorf("isAuthenticated is WRITTEN in the effect body — must not be a dep (causes infinite recursion)")
-		}
-	}
-}
-
-func TestEffectDeps_SimpleSubscribePattern(t *testing.T) {
-	// The common store-subscribe pattern: writes x = value.x inside callback
-	// The effect should have NO reactive deps (it only reads from external stores)
-	a := analyzeScript(`
-		let count = $state(0);
-		let theme = $state('light');
-		$effect(() => {
-			const unsub = someStore.subscribe(s => {
-				count = s.count;
-				theme = s.theme;
-			});
-			return unsub;
-		});
-	`)
-	if len(a.Effects) == 0 {
-		t.Fatal("no effects")
-	}
-	eff := a.Effects[0]
-	for _, dep := range eff.Deps {
-		if dep == "count" || dep == "theme" {
-			t.Errorf("var %q is written inside the effect — should not be a dep", dep)
-		}
-	}
-}
-
 func TestGenerateCode_EffectDoesNotCallItsOwnSetter(t *testing.T) {
 	// When isAuthenticated is WRITTEN inside an effect,
 	// $$set_isAuthenticated must NOT call $$effect0 again.
@@ -2286,7 +1715,7 @@ func TestGenerateCode_EffectDoesNotCallItsOwnSetter(t *testing.T) {
 		Template: `{#if isAuthenticated}<div>logged in</div>{/if}`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	// Find $$set_isAuthenticated body
@@ -2320,7 +1749,7 @@ func TestGenerateCode_EffectCleanupEmitted(t *testing.T) {
 		Template: `<div>{x}</div>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	if !strings.Contains(code, "$$cleanup0") {
@@ -2344,81 +1773,6 @@ func TestGenerateCode_EffectCleanupEmitted(t *testing.T) {
 //  Effect dep analysis — written vars excluded, cleanup support
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestEffectDeps_ExcludesWrittenVars(t *testing.T) {
-	// The effect WRITES isAuthenticated via $$set_isAuthenticated.
-	// isAuthenticated must NOT be in Deps — if it were, $$set_isAuthenticated
-	// would re-run the effect, which calls $$set_isAuthenticated again → infinite loop.
-	a := analyzeScript(`
-		let isAuthenticated = $state(false);
-		let theme = $state('light');
-		$effect(() => {
-			const unsub = auth.subscribe(state => {
-				isAuthenticated = state.isAuthenticated;
-			});
-			return unsub;
-		});
-	`)
-	if len(a.Effects) == 0 {
-		t.Fatal("no effects found")
-	}
-	eff := a.Effects[0]
-	for _, dep := range eff.Deps {
-		if dep == "isAuthenticated" {
-			t.Errorf("effect Deps must not include written var 'isAuthenticated' (causes infinite loop); got Deps=%v", eff.Deps)
-		}
-	}
-}
-
-func TestEffectDeps_KeepsReadVars(t *testing.T) {
-	// Variables only READ (not written) inside an effect must remain as deps.
-	a := analyzeScript(`
-		let count = $state(0);
-		let title = $state('');
-		$effect(() => {
-			document.title = title + ' - ' + count;
-		});
-	`)
-	if len(a.Effects) == 0 {
-		t.Fatal("no effects found")
-	}
-	eff := a.Effects[0]
-	deps := map[string]bool{}
-	for _, d := range eff.Deps {
-		deps[d] = true
-	}
-	for _, want := range []string{"title", "count"} {
-		if !deps[want] {
-			t.Errorf("effect should depend on read-only var %q; got Deps=%v", want, eff.Deps)
-		}
-	}
-}
-
-func TestEffectDeps_MixedReadWrite(t *testing.T) {
-	// An effect that reads 'source' and writes 'derived' should depend on 'source' only.
-	a := analyzeScript(`
-		let source = $state(0);
-		let derived = $state(0);
-		$effect(() => {
-			derived = source * 2;
-		});
-	`)
-	if len(a.Effects) == 0 {
-		t.Fatal("no effects found")
-	}
-	eff := a.Effects[0]
-	deps := map[string]bool{}
-	for _, d := range eff.Deps {
-		deps[d] = true
-	}
-
-	if !deps["source"] {
-		t.Errorf("effect should depend on 'source' (read); Deps=%v", eff.Deps)
-	}
-	if deps["derived"] {
-		t.Errorf("effect must NOT depend on 'derived' (written); Deps=%v", eff.Deps)
-	}
-}
-
 func TestGenerateCode_EffectHasCleanup(t *testing.T) {
 	sfc := &SFC{
 		Script: `
@@ -2431,7 +1785,7 @@ func TestGenerateCode_EffectHasCleanup(t *testing.T) {
 		Template: `<div>{x}</div>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	// Cleanup variable must be declared
@@ -2479,7 +1833,7 @@ func TestGenerateCode_SubscribeEffectNoInfiniteLoop(t *testing.T) {
 		Template: `<div>{isAuthenticated ? 'logged in' : 'logged out'}</div>`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
 	// Find $$set_isAuthenticated
@@ -2924,7 +2278,7 @@ func compileVelaString(t *testing.T, name, raw string) string {
 	if err != nil {
 		t.Fatalf("%s: template: %v", name, err)
 	}
-	analysis := analyzeScript(sfc.Script)
+	analysis := AnalyzeScript(sfc.Script)
 	return generateCodeAST(name, sfc, tmpl, analysis, "vela-reg")
 }
 
@@ -3500,74 +2854,6 @@ func braceDepthAt(src string, pos int) int {
 
 // ── A4: RewriteAssignments destructuring-LHS support ──────────────────────
 
-func TestRewritePatternAssign_Object(t *testing.T) {
-	// ({count, name} = obj)  →  const $$dN = obj; $$set_count($$dN.count); $$set_name($$dN.name);
-	src := `({count, name} = obj);`
-	stateSet := map[string]bool{"count": true, "name": true}
-	prog := ParseJS(src)
-	got := RewriteAssignments(src, prog, stateSet)
-
-	if !strings.Contains(got, "$$set_count(") {
-		t.Errorf("expected $$set_count call; got: %s", got)
-	}
-	if !strings.Contains(got, "$$set_name(") {
-		t.Errorf("expected $$set_name call; got: %s", got)
-	}
-	// Must introduce a temp binding for the RHS so obj is only evaluated once.
-	if !strings.Contains(got, "const $$d") {
-		t.Errorf("expected const $$dN temp binding; got: %s", got)
-	}
-	// Access paths: $$dN.count, $$dN.name
-	if !regexp.MustCompile(`\$\$set_count\(\$\$d\d+\.count\)`).MatchString(got) {
-		t.Errorf("expected setter reads temp.count; got: %s", got)
-	}
-}
-
-func TestRewritePatternAssign_Array(t *testing.T) {
-	// [a, b] = pair  →  const $$dN = pair; $$set_a($$dN[0]); $$set_b($$dN[1]);
-	src := `[a, b] = pair;`
-	stateSet := map[string]bool{"a": true, "b": true}
-	prog := ParseJS(src)
-	got := RewriteAssignments(src, prog, stateSet)
-
-	if !regexp.MustCompile(`\$\$set_a\(\$\$d\d+\[0\]\)`).MatchString(got) {
-		t.Errorf("expected $$set_a with [0] index; got: %s", got)
-	}
-	if !regexp.MustCompile(`\$\$set_b\(\$\$d\d+\[1\]\)`).MatchString(got) {
-		t.Errorf("expected $$set_b with [1] index; got: %s", got)
-	}
-}
-
-func TestRewritePatternAssign_Renamed(t *testing.T) {
-	// ({foo: count} = obj)  →  const $$dN = obj; $$set_count($$dN.foo);
-	// The KEY is foo (access path), but the BINDING is count (state var).
-	src := `({foo: count} = obj);`
-	stateSet := map[string]bool{"count": true}
-	prog := ParseJS(src)
-	got := RewriteAssignments(src, prog, stateSet)
-
-	if !regexp.MustCompile(`\$\$set_count\(\$\$d\d+\.foo\)`).MatchString(got) {
-		t.Errorf("expected $$set_count reading temp.foo (renamed key); got: %s", got)
-	}
-}
-
-func TestRewritePatternAssign_SkipsNonState(t *testing.T) {
-	// Non-state vars in a pattern should NOT be rewritten; only the state
-	// var gets a setter.  The non-state binding is silently dropped (a
-	// documented limitation of the rewriter).
-	src := `({count, misc} = obj);`
-	stateSet := map[string]bool{"count": true}
-	prog := ParseJS(src)
-	got := RewriteAssignments(src, prog, stateSet)
-
-	if !strings.Contains(got, "$$set_count(") {
-		t.Errorf("expected $$set_count call; got: %s", got)
-	}
-	if strings.Contains(got, "$$set_misc(") {
-		t.Errorf("$$set_misc should NOT be emitted for non-state var; got: %s", got)
-	}
-}
-
 // ── A8: rewriteItemRef scope tracking ──────────────────────────────────────
 
 func TestRewriteItemRef_Shadowing(t *testing.T) {
@@ -3685,7 +2971,7 @@ func TestTwoWayBinding_OneWayBindDoesNotWireListener(t *testing.T) {
 		Template: `<input :value="name" />`,
 	}
 	nodes, _ := ParseTemplate(sfc.Template)
-	a := analyzeScript(sfc.Script)
+	a := AnalyzeScript(sfc.Script)
 	code := generateCodeAST("Form", sfc, nodes, a, "vela-test")
 
 	if strings.Contains(code, ".addEventListener('input',") {
@@ -3971,29 +3257,12 @@ func TestVoidTags_ContainsKnownVoidElements(t *testing.T) {
 	}
 }
 
-func TestAnalyzeScriptOrdersDerivedDependencies(t *testing.T) {
-	analysis := analyzeScript(`
-		let count = $state(2);
-		let total = $derived(doubled + 1);
-		let doubled = $derived(count * 2);
-	`)
-	if len(analysis.DerivedVars) != 2 {
-		t.Fatalf("derived count = %d, want 2", len(analysis.DerivedVars))
-	}
-	if got := analysis.DerivedVars[0].Name; got != "doubled" {
-		t.Fatalf("first derived = %q, want dependency doubled", got)
-	}
-	if got := analysis.DerivedVars[1].Name; got != "total" {
-		t.Fatalf("second derived = %q, want dependent total", got)
-	}
-}
-
 func TestValidateDerivedCycles(t *testing.T) {
 	src := `
 		let first = $derived(second + 1);
 		let second = $derived(first + 1);
 	`
-	analysis := analyzeScript(src)
+	analysis := AnalyzeScript(src)
 	if len(analysis.DerivedCycles) != 1 {
 		t.Fatalf("cycles = %+v, want one cycle", analysis.DerivedCycles)
 	}
@@ -4010,7 +3279,7 @@ func TestScriptPlanInitializesDerivedBeforeFollowingUserStatement(t *testing.T) 
 		let doubled = $derived(count * 2);
 		const captured = doubled + 1;
 	`
-	analysis := analyzeScript(script)
+	analysis := AnalyzeScript(script)
 	sfc, err := ParseSFC("<script>" + script + "</script><template><p>{captured}</p></template>")
 	if err != nil {
 		t.Fatal(err)

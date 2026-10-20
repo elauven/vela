@@ -353,7 +353,7 @@ func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, hos
 	}
 	hash := md5.Sum([]byte(src))
 	scopeID := fmt.Sprintf("vela-%x", hash[:3])
-	analysis := analyzeScriptAST(sfc.ScriptAST)
+	analysis := AnalyzeScriptAST(sfc.ScriptAST)
 	links, err := ResolveSSRLocalComponentLinks(src, srcRoot, analysis)
 	if err != nil {
 		return err

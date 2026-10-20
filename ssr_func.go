@@ -119,10 +119,10 @@ func ssrInlinable(function *JsFuncDecl) bool {
 	}
 	params := map[string]bool{}
 	for _, param := range function.Params {
-		if identName(param) == "" {
+		if IdentName(param) == "" {
 			return false
 		}
-		params[identName(param)] = true
+		params[IdentName(param)] = true
 	}
 	// this belongs to the call: an inlined body would see the caller's.
 	if ssrUsesThis(result.Arg) {
@@ -652,9 +652,9 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 		}
 		var out []goast.Stmt
 		for _, declarator := range s.Decls {
-			if call, ok := declarator.Init.(*JsCallExpr); ok && identName(declarator.Id) != "" {
+			if call, ok := declarator.Init.(*JsCallExpr); ok && IdentName(declarator.Id) != "" {
 				if _, mutating := c.mutationTarget(call); mutating {
-					stmts, _, err := c.mutationStatement(call, c.declare(identName(declarator.Id)), true)
+					stmts, _, err := c.mutationStatement(call, c.declare(IdentName(declarator.Id)), true)
 					if err != nil {
 						return nil, err
 					}
@@ -669,7 +669,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 				if value, throws, err = c.valueOf(declarator.Init); err != nil {
 					return nil, err
 				}
-				if name := identName(declarator.Id); name != "" && c.shared(name) {
+				if name := IdentName(declarator.Id); name != "" && c.shared(name) {
 					value = &goast.CallExpr{Fun: goSelector("vela", "Box"), Args: []goast.Expr{value}}
 				}
 			}
@@ -1235,7 +1235,7 @@ func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	if name := identName(s.Right); s.IsOf && name != "" && ssrChangesCollection(s.Body, name) {
+	if name := IdentName(s.Right); s.IsOf && name != "" && ssrChangesCollection(s.Body, name) {
 		// The loop iterates the items taken before the first iteration; in
 		// JavaScript it also visits what the body adds.
 		return nil, c.fail("the body of for…of changes %q, the array or collection it iterates, which is not supported during server rendering", name)
@@ -1282,7 +1282,7 @@ func ssrChangesCollection(body JsNode, name string) bool {
 	changes := false
 	WalkNode(body, func(n JsNode) bool {
 		if call, ok := n.(*JsCallExpr); ok {
-			if member, ok := call.Callee.(*JsMemberExpr); ok && !member.Computed && identName(member.Obj) == name {
+			if member, ok := call.Callee.(*JsMemberExpr); ok && !member.Computed && IdentName(member.Obj) == name {
 				if property, ok := member.Prop.(*JsIdent); ok && ssrCollectionChanges[property.Name] {
 					changes = true
 				}
@@ -1769,7 +1769,7 @@ func ssrAssignmentRoot(target JsExpr) string {
 	for {
 		member, ok := target.(*JsMemberExpr)
 		if !ok {
-			return identName(target)
+			return IdentName(target)
 		}
 		target = member.Obj
 	}
@@ -1780,7 +1780,7 @@ func ssrAssignmentRoot(target JsExpr) string {
 // typedParam declares parameter i as a typed Go local when the variant
 // proves its type and the body never assigns it.
 func (c *ssrFuncCompiler) typedParam(function *JsFuncDecl, i int, param JsExpr, arg goast.Expr) ([]goast.Stmt, bool) {
-	name := identName(param)
+	name := IdentName(param)
 	if name == "" || i >= len(c.paramFacts) || ssrAssigns(function.Body, name) {
 		return nil, false
 	}
@@ -1816,11 +1816,11 @@ func ssrAssigns(body *JsBlock, name string) bool {
 	WalkNode(body, func(n JsNode) bool {
 		switch node := n.(type) {
 		case *JsAssignExpr:
-			if identName(node.L) == name {
+			if IdentName(node.L) == name {
 				found = true
 			}
 		case *JsUnaryExpr:
-			if (node.Op == "++" || node.Op == "--") && identName(node.X) == name {
+			if (node.Op == "++" || node.Op == "--") && IdentName(node.X) == name {
 				found = true
 			}
 		}

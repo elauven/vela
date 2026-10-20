@@ -517,7 +517,7 @@ func (g *ASTGen) blocksBindingWrite(ref string, attr *Attr, multipleAware bool) 
 func (g *ASTGen) blocksBindThis(ref string, attr *Attr) []JsStmt {
 	name, isIdent := templateExprIdent(attr.Expr)
 	var set, clear JsStmt
-	if isIdent && g.analysis != nil && g.analysis.stateSet()[name] {
+	if isIdent && g.analysis != nil && g.analysis.StateSet()[name] {
 		set = GenInvoke("$$set_"+name, GenIdent(ref))
 		clear = GenInvoke("$$set_"+name, GenNull())
 	} else {
@@ -689,7 +689,7 @@ func (g *ASTGen) blocksComponentEventHandler(attr *Attr) JsExpr {
 	if _, isIdent := templateExprIdent(attr.Expr); !isIdent && !templateExprIsHandler(attr.Expr) {
 		invoke = GenExprStmt(handler)
 		if g.analysis != nil {
-			invoke = RewriteStatementAssignmentsAST(invoke, g.analysis.stateSet())
+			invoke = RewriteStatementAssignmentsAST(invoke, g.analysis.StateSet())
 		}
 		pos := g.sfc.TemplateOffset + attr.Expr.Pos
 		WalkNode(invoke, func(node JsNode) bool {

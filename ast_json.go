@@ -202,14 +202,14 @@ func sourceExpr(expr JsExpr) string {
 	if expr == nil {
 		return ""
 	}
-	return strings.TrimSpace(printNode(expr))
+	return strings.TrimSpace(PrintNode(expr))
 }
 
 func sourceBlock(block *JsBlock) string {
 	if block == nil {
 		return ""
 	}
-	return strings.TrimSpace(printNode(block))
+	return strings.TrimSpace(PrintNode(block))
 }
 
 func analysisToJSON(a *Analysis) ScriptJSON {
@@ -271,7 +271,7 @@ func DumpAST(filename, src string) (string, error) {
 		return "", fmt.Errorf("parseTemplate: %s", sfc.TemplateAST.Diagnostics[0].Message)
 	}
 
-	analysis := analyzeScriptAST(sfc.ScriptAST)
+	analysis := AnalyzeScriptAST(sfc.ScriptAST)
 	return DumpParsedAST(filename, sfc, sfc.TemplateAST.Nodes, analysis)
 }
 

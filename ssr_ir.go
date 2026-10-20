@@ -1028,7 +1028,7 @@ func (b *ssrIRBuilder) deleteExpr(node *JsUnaryExpr, pos int) (SSRIRExpr, error)
 	}
 	_, viaThis := member.Obj.(*JsThisExpr)
 	if !viaThis {
-		name := identName(root)
+		name := IdentName(root)
 		fresh := false
 		if c != nil && name != "" && c.freshness != nil {
 			_, local := c.lookup(name)
@@ -1444,7 +1444,7 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 		params[name] = value
 	}
 	for index, parameter := range function.Params {
-		name := identName(parameter)
+		name := IdentName(parameter)
 		if name == "" {
 			return fail("local formatter %q has a non-identifier parameter", callee.Name)
 		}
@@ -1476,7 +1476,7 @@ func (b *ssrIRBuilder) hostMissing(cause error, symbol SSRHostSymbol, call *JsCa
 	for i, argument := range call.Args {
 		name := fmt.Sprintf("arg%d", i+1)
 		if function != nil && i < len(function.Params) {
-			if param := identName(function.Params[i]); param != "" {
+			if param := IdentName(function.Params[i]); param != "" {
 				name = param
 			}
 		}

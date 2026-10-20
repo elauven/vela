@@ -16,7 +16,7 @@ func TestASTReactiveComponentsImportScheduler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := generateCodeAST("Scheduler", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
+	out := generateCodeAST("Scheduler", sfc, nodes, AnalyzeScript(sfc.Script), "vela-test")
 
 	if !strings.Contains(out, sigil+sigil+"defer") || !strings.Contains(out, "from './runtime.js'") {
 		t.Fatalf("reactive component must import scheduler from runtime:\n%s", out)

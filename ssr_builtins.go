@@ -275,7 +275,7 @@ func (b *ssrIRBuilder) sharedReceiver(expr JsExpr) bool {
 	if c == nil {
 		return false
 	}
-	if name := identName(expr); name != "" {
+	if name := IdentName(expr); name != "" {
 		_, local := c.lookup(name)
 		return local && c.shared(name)
 	}
@@ -296,7 +296,7 @@ func (b *ssrIRBuilder) sharedReceiver(expr JsExpr) bool {
 	if _, this := root.(*JsThisExpr); this {
 		return true
 	}
-	name := identName(root)
+	name := IdentName(root)
 	if name == "" || c.freshness == nil {
 		return false
 	}
@@ -500,7 +500,7 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 	}
 	if ssrDateSetters[name] {
 		c := b.funcCompiler
-		root := identName(member.Obj)
+		root := IdentName(member.Obj)
 		fresh := false
 		if c != nil && root != "" && c.freshness != nil {
 			_, local := c.lookup(root)
@@ -652,7 +652,7 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 					if member, ok := call.Callee.(*JsMemberExpr); ok && !member.Computed {
 						if property, ok := member.Prop.(*JsIdent); ok {
 							if _, mutating := ssrMutatingMethods[property.Name]; mutating {
-								if name := identName(member.Obj); name != "" {
+								if name := IdentName(member.Obj); name != "" {
 									aliased[name] = true
 								}
 							}
@@ -663,7 +663,7 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 			})
 		case *JsVarDecl:
 			for _, declarator := range node.Decls {
-				name := identName(declarator.Id)
+				name := IdentName(declarator.Id)
 				if name == "" {
 					// A rest element or property binds a new array or
 					// object; the other names of a pattern hold parts of
@@ -679,25 +679,25 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 				}
 				if declarator.Init != nil && ssrFreshExpr(declarator.Init) {
 					f.fresh[name] = true
-				} else if alias := identName(declarator.Init); alias != "" && node.Kind == "const" {
+				} else if alias := IdentName(declarator.Init); alias != "" && node.Kind == "const" {
 					copies[name] = alias
 				} else {
 					stale[name] = true
 				}
-				if alias := identName(declarator.Init); alias != "" {
+				if alias := IdentName(declarator.Init); alias != "" {
 					aliased[alias] = true
 				}
 			}
 		case *JsAssignExpr:
-			if name := identName(node.L); name != "" && (node.Op != "=" || !ssrFreshExpr(node.R)) {
+			if name := IdentName(node.L); name != "" && (node.Op != "=" || !ssrFreshExpr(node.R)) {
 				stale[name] = true
 			}
-			if alias := identName(node.R); alias != "" {
+			if alias := IdentName(node.R); alias != "" {
 				aliased[alias] = true
 			}
 		case *JsArrayExpr:
 			for _, element := range node.Elems {
-				if alias := identName(element); alias != "" {
+				if alias := IdentName(element); alias != "" {
 					aliased[alias] = true
 				}
 			}
@@ -710,7 +710,7 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 				if value == nil {
 					value = property.Key
 				}
-				if alias := identName(value); alias != "" {
+				if alias := IdentName(value); alias != "" {
 					aliased[alias] = true
 				}
 			}
@@ -729,7 +729,7 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 			}
 			if !builtin {
 				for _, argument := range node.Args {
-					if alias := identName(argument); alias != "" {
+					if alias := IdentName(argument); alias != "" {
 						aliased[alias] = true
 					}
 				}
@@ -737,7 +737,7 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 				// push(x) and unshift(x) store x in the array.
 				if property, ok := member.Prop.(*JsIdent); ok && (property.Name == "push" || property.Name == "unshift" || property.Name == "splice" || property.Name == "fill") {
 					for _, argument := range node.Args {
-						if alias := identName(argument); alias != "" {
+						if alias := IdentName(argument); alias != "" {
 							aliased[alias] = true
 						}
 					}
@@ -811,7 +811,7 @@ func (c *ssrFuncCompiler) mutationStatement(call *JsCallExpr, target string, dec
 		return nil, false, nil
 	}
 	changesLength, mutating := ssrMutatingMethods[property.Name]
-	receiver := identName(member.Obj)
+	receiver := IdentName(member.Obj)
 	if !mutating || receiver == "" {
 		return nil, false, nil
 	}
@@ -895,7 +895,7 @@ func (c *ssrFuncCompiler) mutationTarget(call *JsCallExpr) (string, bool) {
 	if _, mutating := ssrMutatingMethods[property.Name]; !mutating {
 		return "", false
 	}
-	receiver := identName(member.Obj)
+	receiver := IdentName(member.Obj)
 	return receiver, receiver != ""
 }
 

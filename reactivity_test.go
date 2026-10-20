@@ -15,7 +15,7 @@ func runDerivedPurity(t *testing.T, script string) *DiagSet {
 	if prog == nil {
 		t.Fatalf("parse failed: %q", script)
 	}
-	a := analyzeScript(script)
+	a := AnalyzeScript(script)
 	ds := NewDiagSet("test.vela", script)
 	validateDerivedPurity(prog, a, ds)
 	return ds
@@ -27,7 +27,7 @@ func runEffectBody(t *testing.T, script string) *DiagSet {
 	if prog == nil {
 		t.Fatalf("parse failed: %q", script)
 	}
-	a := analyzeScript(script)
+	a := AnalyzeScript(script)
 	ds := NewDiagSet("test.vela", script)
 	validateEffectBody(prog, a, ds)
 	return ds
@@ -39,7 +39,7 @@ func runTemplateRefs(t *testing.T, script, template string) *DiagSet {
 	if prog == nil {
 		t.Fatalf("script parse failed: %q", script)
 	}
-	a := analyzeScript(script)
+	a := AnalyzeScript(script)
 	ds := NewDiagSet("test.vela", script+"\n"+template)
 	scope := BuildScopes(prog, NewDiagSet("", script))
 	nodes, err := ParseTemplate(template)
@@ -151,7 +151,7 @@ func TestTemplateRefsUndeclared(t *testing.T) {
 func TestTemplateRefsUseExactExpressionPosition(t *testing.T) {
 	template := `<p>{known}</p><p>{missing}</p>`
 	prog := ParseJS(`let known = $state(0);`)
-	analysis := analyzeScript(`let known = $state(0);`)
+	analysis := AnalyzeScript(`let known = $state(0);`)
 	ds := NewDiagSet("test.vela", template)
 	nodes, err := ParseTemplate(template)
 	if err != nil {
@@ -170,7 +170,7 @@ func TestTemplateRefsUseExactExpressionPosition(t *testing.T) {
 func TestTemplateRefsUseExactDynamicAttributeExpressionPosition(t *testing.T) {
 	template := `<button :aria-label={missing}>x</button>`
 	prog := ParseJS(`let known = $state(0);`)
-	analysis := analyzeScript(`let known = $state(0);`)
+	analysis := AnalyzeScript(`let known = $state(0);`)
 	ds := NewDiagSet("test.vela", template)
 	nodes, err := ParseTemplate(template)
 	if err != nil {
@@ -232,7 +232,7 @@ func TestTemplateRefsBuiltinsAreSilent(t *testing.T) {
 func TestTemplateRefsUseExactBlockConditionPosition(t *testing.T) {
 	template := `{#if missing}<p>content</p>{/if}`
 	prog := ParseJS("")
-	analysis := analyzeScript("")
+	analysis := AnalyzeScript("")
 	ds := NewDiagSet("test.vela", template)
 	nodes, err := ParseTemplate(template)
 	if err != nil {
@@ -251,7 +251,7 @@ func TestTemplateRefsUseExactBlockConditionPosition(t *testing.T) {
 func TestTemplateRefsUseExactElseIfConditionPosition(t *testing.T) {
 	template := `{#if false}<p>a</p>{:else if missing}<p>b</p>{/if}`
 	prog := ParseJS("")
-	analysis := analyzeScript("")
+	analysis := AnalyzeScript("")
 	ds := NewDiagSet("test.vela", template)
 	nodes, err := ParseTemplate(template)
 	if err != nil {
@@ -283,7 +283,7 @@ func TestTemplateRefsKeyExpression(t *testing.T) {
 func TestTemplateRefsEachKeyUsesExactExpressionPosition(t *testing.T) {
 	template := `{#each items as item ( missing )}<p>{item}</p>{/each}`
 	prog := ParseJS(`let items = [];`)
-	analysis := analyzeScript(`let items = [];`)
+	analysis := AnalyzeScript(`let items = [];`)
 	ds := NewDiagSet("test.vela", template)
 	nodes, err := ParseTemplate(template)
 	if err != nil {

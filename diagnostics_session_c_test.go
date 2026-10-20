@@ -10,7 +10,7 @@ import (
 // can assert on severity and message.
 func runValidateTemplate(t *testing.T, script, template string) *DiagSet {
 	t.Helper()
-	a := analyzeScript(script)
+	a := AnalyzeScript(script)
 	nodes, err := ParseTemplate(template)
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)

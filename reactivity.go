@@ -56,7 +56,7 @@ func validateDerivedCycles(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
 			for _, d := range decl.Decls {
 				if call, ok := d.Init.(*JsCallExpr); ok {
 					if callee, ok := call.Callee.(*JsIdent); ok && callee.Name == "$derived" {
-						positions[identName(d.Id)] = d.Id.NodePos()
+						positions[IdentName(d.Id)] = d.Id.NodePos()
 					}
 				}
 			}
@@ -75,7 +75,7 @@ func validateDerivedPurity(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
 	if prog == nil {
 		return
 	}
-	stateSet := analysis.stateSet()
+	stateSet := analysis.StateSet()
 
 	WalkNode(prog, func(n JsNode) bool {
 		decl, ok := n.(*JsVarDecl)
@@ -213,7 +213,7 @@ func validateScriptFormsWithAnalysis(prog *JsProgram, analysis *Analysis, ds *Di
 // 'vela/store': the compiler intrinsics and the public exports of the runtime.
 func velaModuleExports() map[string]bool {
 	names := map[string]bool{}
-	for name := range velaCompilerIntrinsics {
+	for name := range VelaCompilerIntrinsics {
 		names[name] = true
 	}
 	for name := range runtimeExportNames(runtime.Core) {
@@ -456,7 +456,7 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 	// Reactive names are bindings too, but include them defensively
 	// in case scope-graph construction missed any (e.g. if the
 	// analyzer found something the parser didn't).
-	for _, name := range analysis.reactiveNames() {
+	for _, name := range analysis.ReactiveNames() {
 		known[name] = true
 	}
 

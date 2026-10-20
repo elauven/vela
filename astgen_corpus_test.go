@@ -444,7 +444,7 @@ func TestASTGenCorpus(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseTemplate: %v", err)
 			}
-			analysis := analyzeScript(sfc.Script)
+			analysis := AnalyzeScript(sfc.Script)
 
 			// generateCodeAST panics internally if ValidateProgram
 			// finds a malformed AST — so reaching past this call is
@@ -477,7 +477,7 @@ func TestASTGenTransitiveDerived(t *testing.T) {
 	src := corpus["derived_chain"]
 	sfc, _ := ParseSFC(src)
 	tmpl, _ := ParseTemplate(sfc.Template)
-	analysis := analyzeScript(sfc.Script)
+	analysis := AnalyzeScript(sfc.Script)
 	out := generateCodeAST("derived_chain", sfc, tmpl, analysis, "vela-000000")
 
 	// $$set_n must call $$upd_d1, $$upd_d2 AND $$upd_d3 — the full

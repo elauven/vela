@@ -303,7 +303,7 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		scopeID = "vela-" + componentName
 	}
 	if analysis == nil {
-		analysis = analyzeScriptAST(sfc.ScriptAST)
+		analysis = AnalyzeScriptAST(sfc.ScriptAST)
 	}
 	props, err := buildSSRPlanProps(analysis, sfc.ScriptAST)
 	if err != nil {
@@ -313,7 +313,7 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		ComponentName:       componentName,
 		ScopeID:             scopeID,
 		Props:               props,
-		ReactiveNames:       analysis.reactiveNames(),
+		ReactiveNames:       analysis.ReactiveNames(),
 		StateInitializers:   ssrStateInitializers(analysis),
 		DerivedInitializers: ssrDerivedInitializers(analysis),
 		PlainInitializers:   ssrPlainInitializers(analysis),
@@ -380,20 +380,20 @@ func ssrPlainInitializers(analysis *Analysis) map[string]JsExpr {
 		return initializers
 	}
 	reactive := map[string]bool{}
-	for _, name := range analysis.reactiveNames() {
+	for _, name := range analysis.ReactiveNames() {
 		reactive[name] = true
 	}
 	if analysis.Script.Program == nil {
 		return initializers
 	}
-	written := findWrittenVars(analysis.Script.Program)
+	written := FindWrittenVars(analysis.Script.Program)
 	for _, stmt := range analysis.Script.Program.Body {
 		decl, ok := stmt.(*JsVarDecl)
 		if !ok || (decl.Kind != "const" && decl.Kind != "let") {
 			continue
 		}
 		for _, declarator := range decl.Decls {
-			name := identName(declarator.Id)
+			name := IdentName(declarator.Id)
 			if name == "" || declarator.Init == nil || reactive[name] || written[name] {
 				continue
 			}

@@ -289,7 +289,7 @@ func ssrCollectFunctions(program *JsProgram, exportedOnly bool, out map[string]*
 			// A const arrow function, or a module value a parameterless host
 			// can provide (§8.7).
 			for _, declarator := range decl.Decls {
-				if name := identName(declarator.Id); name != "" && declarator.Init != nil {
+				if name := IdentName(declarator.Id); name != "" && declarator.Init != nil {
 					out[name] = nil
 				}
 			}
@@ -556,7 +556,7 @@ func bindSSRHosts(plan *SSRRenderPlan, hosts *SSRHosts, src string, analysis *An
 		plan.HostSymbols[name] = SSRHostSymbol{Source: own, Name: name}
 	}
 	if analysis != nil {
-		for name := range analysis.constArrowFunctions() {
+		for name := range ssrConstArrowFunctions(analysis) {
 			plan.HostSymbols[name] = SSRHostSymbol{Source: own, Name: name}
 		}
 		for name := range plan.PlainInitializers {
@@ -588,8 +588,8 @@ func bindSSRHosts(plan *SSRRenderPlan, hosts *SSRHosts, src string, analysis *An
 	}
 }
 
-// constArrowFunctions lists top-level `const name = (…) => …` functions.
-func (a *Analysis) constArrowFunctions() map[string]bool {
+// ssrConstArrowFunctions lists top-level `const name = (…) => …` functions.
+func ssrConstArrowFunctions(a *Analysis) map[string]bool {
 	out := map[string]bool{}
 	if a == nil || a.Script == nil || a.Script.Program == nil {
 		return out
@@ -721,7 +721,7 @@ func (hosts *SSRHosts) boundName(src string, sfc *SFC, local string) (string, bo
 	}
 	project := hosts.Project
 	symbol := SSRHostSymbol{Source: project.relative(src), Name: local}
-	if analysis := analyzeScriptAST(sfc.ScriptAST); analysis != nil {
+	if analysis := AnalyzeScriptAST(sfc.ScriptAST); analysis != nil {
 		for _, imp := range analysis.Imports {
 			if imp == nil || !strings.HasPrefix(imp.Source, ".") || path.Ext(imp.Source) != ".js" {
 				continue

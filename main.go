@@ -699,7 +699,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 			ds.PopOffset()
 			return fmt.Errorf("script syntax validation failed")
 		}
-		analysis = analyzeScriptAST(sfc.ScriptAST)
+		analysis = AnalyzeScriptAST(sfc.ScriptAST)
 		if opts.CheckDeps {
 			checkScriptPackageImports(src, sfc.ScriptAST, ds)
 		}
