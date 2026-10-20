@@ -6,6 +6,12 @@ means that focused tests exist; it does not claim an unavailable optional
 runtime has run. Browser and jsdom suites deliberately skip when their external
 dependencies are missing.
 
+Unit tests of the layers under `internal/` live with their package: a file
+named below is in the repository root or, for those layers, in
+`internal/<package>/` (for example `internal/codegen/sourcemap_test.go`,
+`internal/analyzer/scope_test.go`). End-to-end, browser, oracle and corpus
+tests stay in the root package.
+
 ## Pipeline coverage
 
 | Pipeline stage | Unit and invariant coverage | Corpus / generated-JS coverage | jsdom runtime coverage | Chromium coverage | Source-map coverage | Known gap / owner |
@@ -35,8 +41,8 @@ dependencies are missing.
 | Compiler, parser, AST, corpus, jsdom/browser tests registered in Go | `go test ./... ./ssr_runtime/... -count=1` | Node/jsdom and Playwright tests skip if unavailable. |
 | Strict browser baseline (required tests, skips fail) | `node tools/run-ssr-browser-baseline.mjs` | Node, jsdom, Playwright Chromium. |
 | SSR beta gate | `go test -run TestSSRGate -count=1 .` | Node, Playwright Chromium, Go. |
-| Focused target-AST / structural gateway proof | `go test -run "Test(Validate|ASTGen|StructuralString)" -count=1` | None. |
-| Source-map proof | `go test -run "Test(BrowserSourceMap|SourceMap)" -count=1` | Browser subset needs Playwright Chromium. |
+| Focused target-AST / structural gateway proof | `go test -run "Test(Validate|ASTGen|StructuralString)" -count=1 ./...` | None. |
+| Source-map proof | `go test -run "Test(BrowserSourceMap|SourceMap)" -count=1 ./...` | Browser subset needs Playwright Chromium. |
 | Browser application compatibility | `go test -run "TestBrowserRuntime" -count=1` | Node, Playwright package, Chromium. |
 | Generator robustness | `go test -run "^$" -fuzz=FuzzCodegen -fuzztime=30s` | Run manually/CI time budget. |
 | Task registry | `taskmd validate` | None. |

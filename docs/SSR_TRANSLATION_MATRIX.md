@@ -129,7 +129,7 @@ disagree, the contract wins and the row is a bug.
 
 Statements are admitted inside component functions with more than one
 statement, translated as Go closures `ssrF_<name>` of type `vela.Func`
-(ssr_func.go, task 045). Oracle groups: `fn-statements`, `fn-try`,
+(internal/ssr/ssr_func.go, task 045). Oracle groups: `fn-statements`, `fn-try`,
 `fn-closures`, `fn-recursion`, `stmt-destructure`, `stmt-destructure-rest`,
 `stmt-assign`, `stmt-for-in`, `stmt-labels`, `stmt-for-let`, `errors-new`. Functions have typed variants per argument types besides the
 dynamic one (T-7.2a, see "monomorphised variants" above). Status:
@@ -180,7 +180,7 @@ dynamic one (T-7.2a, see "monomorphised variants" above). Status:
 
 ## 2. Built-ins
 
-Generated from `ssr_catalogue.go` (V-11.1a); regenerate with
+Generated from `internal/ssr/ssr_catalogue.go` (V-11.1a); regenerate with
 `VELA_UPDATE_MATRIX=1 go test -run TestSSRMatrixBuiltins .`. The
 *Divergence* column lists the known places where the obvious Go call
 differs from JavaScript; each has rows in the listed oracle groups of

@@ -15,7 +15,10 @@ authoring syntax read [GUIDE.md](GUIDE.md); for feature status,
 | `internal/css/` | CSS tokenizer, parser, validation and scoping |
 | `internal/diag/` | Diagnostic types (`Diagnostic`, `DiagSet`, JSON form) |
 | `internal/srcspan/` | `SectionSpan`, byte ranges in component source |
-| `runtime/` | Browser runtime: `runtime.js`, `runtime-blocks.js`, `runtime-hydrate.js` (embedded in the binary) |
+| `internal/codegen/` | Client code generation, module specifiers, HTML nesting checks, source maps |
+| `internal/ssr/` | Server render plan, server IR, Go translation and renderers, hosts, root modes |
+| `internal/project/` | Source discovery and output paths |
+| `runtime/` | Browser runtime: `runtime.js`, `runtime-blocks.js`, `runtime-hydrate.js`, embedded in the binary by `runtime/embed.go`, which also holds `Version` |
 | `packages/runtime/` | The npm package `@govela/runtime`, generated from `runtime/` (`runtime_package.go`) |
 | `ssr_runtime/` | Go runtime of generated renderers, nested module `github.com/elauven/vela/ssr_runtime` |
 | `examples/` | Example components, a dashboard, and the SSR server with hosts (`examples/ssr-host`) |
@@ -60,19 +63,27 @@ itself does not import the runtime and builds without the workspace
 
 ### Main files
 
+Package main (repository root) holds the CLI and the build drivers; the
+compiler layers are packages under `internal/`. Package main reaches them
+through generated aliases (`*_compat.go`, `go generate .`) while call sites
+move; new code imports the packages directly.
+
 | File | Role |
 | --- | --- |
 | `main.go` | CLI, file and project builds, runtime staging, watch mode |
-| `analyzer.go`, `scope.go`, `reactivity.go`, `unreachable.go`, `diagnostics.go` | Script analysis and diagnostic checks |
-| `astgen.go`, `blocks_codegen.go`, `template_codegen_helpers.go` | Client code generation |
-| `rewriter.go`, `dce.go`, `minifier.go`, `sourcemap.go` | Rewrites, dead-binding elimination, validation, output |
-| `imports.go`, `package_imports.go`, `package_resolve.go` | `.vela`/runtime specifiers, `vela.manifest.json`, `--check-deps` |
-| `ssr_project.go`, `ssr_roots.go` | SSR project build, root modes, manifest |
-| `ssr_plan.go`, `ssr_region.go`, `ssr_expr.go`, `ssr_ir.go`, `ssr_func.go`, `ssr_module.go`, `ssr_init.go` | Server render plan and translation |
-| `ssr_go_ast.go`, `ssr_go_renderer.go`, `ssr_go_blocks.go`, `html_nesting.go` | Go renderer generation, HTML parse stability |
-| `ssr_host.go` | Host implementations (`//vela:host`) |
-| `ssr_builtins.go`, `ssr_catalogue.go` | Built-in catalogue (matrix §2) |
-| `runtime_package.go` | Version, `@govela/runtime` generator |
+| `reactivity.go`, `unreachable.go`, `diagnostics.go`, `dce.go` | Diagnostic checks over the analysis, dead-binding elimination |
+| `minifier.go`, `compiler_trace.go`, `ast_json.go`, `astjson.go` | Minification, compiler trace, AST debug output |
+| `package_imports.go`, `package_resolve.go` | Package imports, `vela.manifest.json`, `--check-deps` |
+| `ssr_project.go`, `ssr_roots.go` | SSR project build, manifest |
+| `runtime_package.go` | `@govela/runtime` generator |
+
+| Package | Role |
+| --- | --- |
+| `internal/analyzer` | `analyzer.go`, `rewriter.go`, `scope.go`, `target_profile.go`: script analysis, reactive rewrites, scope graph |
+| `internal/codegen` | `astgen.go`, `blocks_codegen.go`, `template_codegen_helpers.go`: client code generation; `imports.go`: `.vela`/runtime specifiers; `html_nesting.go`: HTML parse stability; `sourcemap.go` |
+| `internal/ssr` | `ssr_plan.go`, `ssr_region.go`, `ssr_expr.go`, `ssr_ir.go`, `ssr_func.go`, `ssr_module.go`, `ssr_init.go`: render plan and translation; `ssr_go_*.go`: Go renderer generation; `ssr_host.go`: hosts (`//vela:host`); `ssr_builtins.go`, `ssr_catalogue.go`: built-in catalogue (matrix §2); `ssr_rootmodes.go`, `ssr_layout.go`, `ssr_compile.go`: root modes, output layout, per-component build |
+| `internal/project` | Source discovery and output paths |
+| `runtime` | Embedded runtime sources, `Version`, the npm package name |
 
 ## Output
 
