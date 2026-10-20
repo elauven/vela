@@ -1,4 +1,4 @@
-package analysis
+package analyzer
 
 // scope.go — lexical scope and binding analysis for the JS AST.
 //

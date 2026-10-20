@@ -1,8 +1,8 @@
-package analysis
+package analyzer
 
 import (
 	"github.com/elauven/vela/internal/jsast"
-	"github.com/elauven/vela/internal/sfc"
+	"github.com/elauven/vela/internal/sfcast"
 
 	"fmt"
 	"sort"
@@ -743,7 +743,7 @@ func quote(s string) string {
 // template event handler. Template attributes bypass script-level rewriting,
 // so concise and block-bodied arrows need this dedicated entry point.
 func rewriteTemplateHandlerAssignments(handler string, analysis *Analysis) string {
-	handler = sfc.UnwrapBraces(handler)
+	handler = sfcast.UnwrapBraces(handler)
 	if analysis == nil || (len(analysis.StateVars) == 0 && len(analysis.Props) == 0) {
 		return handler
 	}

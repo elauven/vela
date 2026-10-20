@@ -9,8 +9,9 @@ authoring syntax read [GUIDE.md](GUIDE.md); for feature status,
 | Path | Contents |
 | --- | --- |
 | `*.go` (root, `package main`) | The compiler and the `vela` CLI |
+| `internal/analyzer/` | Script analysis, reactive assignment rewriting, scope graph, target profiles |
 | `internal/jsast/` | JavaScript lexer, parser (ES2025 modules), AST, printer, walker, early errors and AST validation |
-| `internal/sfc/` | SFC split, template parser and template AST, template expression parsing |
+| `internal/sfcast/` | SFC split, template parser and template AST, template expression parsing |
 | `internal/css/` | CSS tokenizer, parser, validation and scoping |
 | `internal/diag/` | Diagnostic types (`Diagnostic`, `DiagSet`, JSON form) |
 | `internal/srcspan/` | `SectionSpan`, byte ranges in component source |

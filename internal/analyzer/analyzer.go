@@ -1,8 +1,10 @@
-package analysis
+// Package analyzer analyzes component scripts (state, props, derived values,
+// effects, lifecycle), rewrites reactive assignments and builds the scope graph.
+package analyzer
 
 import (
 	"github.com/elauven/vela/internal/jsast"
-	"github.com/elauven/vela/internal/sfc"
+	"github.com/elauven/vela/internal/sfcast"
 
 	"strings"
 )
@@ -26,7 +28,7 @@ type ScriptPlanStep struct {
 }
 
 type Analysis struct {
-	Script        *sfc.ScriptAST
+	Script        *sfcast.ScriptAST
 	StateVars     []*StateVar
 	DerivedVars   []*DerivedVar
 	Effects       []*Effect
@@ -119,7 +121,7 @@ type Prop struct {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func AnalyzeScript(src string) *Analysis {
-	analysis := AnalyzeScriptAST(sfc.NewScriptAST(src, 0))
+	analysis := AnalyzeScriptAST(sfcast.NewScriptAST(src, 0))
 	// This source-only helper predates owned component ScriptASTs and exposes
 	// lowered callback bodies to its standalone callers. The compiler pipeline
 	// uses analyzeScriptAST directly and postpones this mutation until after
@@ -131,9 +133,9 @@ func AnalyzeScript(src string) *Analysis {
 // AnalyzeScriptAST consumes the owned script program created by parseSFC.
 // The compatibility analyzeScript wrapper above remains for unit tests and
 // standalone callers that only have source text.
-func AnalyzeScriptAST(script *sfc.ScriptAST) *Analysis {
+func AnalyzeScriptAST(script *sfcast.ScriptAST) *Analysis {
 	if script == nil {
-		script = sfc.NewScriptAST("", 0)
+		script = sfcast.NewScriptAST("", 0)
 	}
 	prog := script.Program
 	a := &Analysis{Script: script}

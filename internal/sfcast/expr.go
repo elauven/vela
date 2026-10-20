@@ -1,4 +1,4 @@
-package sfc
+package sfcast
 
 import "github.com/elauven/vela/internal/jsast"
 

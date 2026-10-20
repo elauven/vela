@@ -1,4 +1,4 @@
-package analysis
+package analyzer
 
 import (
 	"regexp"
@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	"github.com/elauven/vela/internal/jsast"
-	"github.com/elauven/vela/internal/sfc"
+	"github.com/elauven/vela/internal/sfcast"
 )
 
 func TestScriptASTOwnsParserResultUsedByAnalysis(t *testing.T) {
-	sfc, err := sfc.ParseSFC("<script>let count = $state(0);</script><template>{count}</template>")
+	sfc, err := sfcast.ParseSFC("<script>let count = $state(0);</script><template>{count}</template>")
 	if err != nil {
 		t.Fatal(err)
 	}

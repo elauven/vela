@@ -1,4 +1,4 @@
-package sfc
+package sfcast
 
 import "strings"
 

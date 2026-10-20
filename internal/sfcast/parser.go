@@ -1,4 +1,6 @@
-package sfc
+// Package sfcast splits a .vela component into its sections and parses the
+// template into the template AST.
+package sfcast
 
 import (
 	"github.com/elauven/vela/internal/css"
