@@ -72,7 +72,7 @@ func (f *bundlerFixture) compile(project, out string, bare bool) {
 	if bare {
 		opts.RuntimeImport = runtime.PackageName
 	}
-	if errors := buildProject(collectVela(srcRoot), srcRoot, filepath.Join(f.root, out), opts, false); errors != 0 {
+	if errors := buildProject(CollectVela(srcRoot), srcRoot, filepath.Join(f.root, out), opts, false); errors != 0 {
 		f.t.Fatalf("build of %s failed with %d error(s)", project, errors)
 	}
 }

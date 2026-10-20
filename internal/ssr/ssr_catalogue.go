@@ -1,4 +1,4 @@
-package main
+package ssr
 
 import (
 	"fmt"
@@ -23,7 +23,7 @@ type ssrCatalogueSection struct {
 	Rows  []ssrCatalogueRow
 }
 
-var ssrCatalogue = []ssrCatalogueSection{
+var SSRCatalogue = []ssrCatalogueSection{
 	{Title: "2.1 Conversions and global functions", Rows: []ssrCatalogueRow{
 		{Builtin: "`String(x)`", Helper: "`vela.ToStringValue`", Rule: "T-6.4a", Divergence: "`String()` is `\"\"`; arrays join; `-0` is `\"0\"`.", Status: "implemented", Names: []string{"String"}, Oracles: []string{"conv-call"}},
 		{Builtin: "objects with own `toString` / `valueOf` in conversions (`String(o)`, `` `${o}` ``, `o + x`, `o * 2`, `o < x`, `Math.max(o)`, `join`, text in the template)", Helper: "`vela.String`, `vela.ToNumber`, `vela.Add` (OrdinaryToPrimitive)", Rule: "T-6.4c", Divergence: "A function in an own `toString` or `valueOf` property is called: `valueOf` first for numbers, `+` and comparisons, `toString` first for text; a result that is an object moves on to the other method. An own property that is not a function hides the prototype's method. When neither gives a primitive the conversion throws `TypeError`, which `catch` receives.", Status: "implemented", Oracles: []string{"obj-to-primitive"}},
@@ -145,12 +145,12 @@ var ssrCatalogue = []ssrCatalogueSection{
 	}},
 }
 
-// renderSSRCatalogue renders matrix §2.
-func renderSSRCatalogue() string {
+// RenderSSRCatalogue renders matrix §2.
+func RenderSSRCatalogue() string {
 	var b strings.Builder
 	b.WriteString("## 2. Built-ins\n\n")
 	b.WriteString("Generated from `ssr_catalogue.go` (V-11.1a); regenerate with\n`VELA_UPDATE_MATRIX=1 go test -run TestSSRMatrixBuiltins .`. The\n*Divergence* column lists the known places where the obvious Go call\ndiffers from JavaScript; each has rows in the listed oracle groups of\n`testdata/ssr_expression_oracle.json`. Examples marked ✓ were checked\nagainst Node and Go on 2026-10-03.\n")
-	for _, section := range ssrCatalogue {
+	for _, section := range SSRCatalogue {
 		fmt.Fprintf(&b, "\n### %s\n\n", section.Title)
 		if section.Intro != "" {
 			b.WriteString(section.Intro + "\n\n")

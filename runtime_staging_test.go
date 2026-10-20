@@ -32,7 +32,7 @@ func TestBuildProjectStagesOneRuntimeAtTheOutputRoot(t *testing.T) {
 		}
 	}
 
-	files := collectVela(srcRoot)
+	files := CollectVela(srcRoot)
 	if errors := buildProject(files, srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
 		t.Fatalf("project build failed with %d error(s)", errors)
 	}
@@ -101,7 +101,7 @@ func TestStaleRuntimeContractFailsAtModuleLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	outRoot := t.TempDir()
-	if errors := buildProject(collectVela(srcRoot), srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
+	if errors := buildProject(CollectVela(srcRoot), srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
 		t.Fatalf("project build failed with %d error(s)", errors)
 	}
 	if err := os.WriteFile(filepath.Join(outRoot, "package.json"), []byte(`{"type":"module"}`), 0o644); err != nil {
@@ -144,7 +144,7 @@ func TestCollectVelaAcceptsDotRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = os.Chdir(previous) }()
-	files := collectVela(".")
+	files := CollectVela(".")
 	if len(files) != 2 {
 		t.Fatalf("collectVela(\".\") = %v, want App.vela and nested/Child.vela", files)
 	}

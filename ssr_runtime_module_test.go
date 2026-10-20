@@ -81,13 +81,13 @@ func buildRuntimeModuleProject(t *testing.T, root string) {
 	t.Helper()
 	srcRoot := filepath.Join(root, "src")
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: SSRDefaultModule, SSRScaffoldHosts: true}
-	buildSSRProject(collectVela(srcRoot), srcRoot, filepath.Join(root, "out"), opts, false)
+	buildSSRProject(CollectVela(srcRoot), srcRoot, filepath.Join(root, "out"), opts, false)
 	stub := filepath.Join(root, "ssrhost", "src", "page", "shout_host.go")
 	data, err := os.ReadFile(stub)
 	if err != nil {
 		t.Fatalf("host stub: %v", err)
 	}
-	if !strings.Contains(string(data), `vela "`+ssrRuntimeImport()+`"`) && !strings.Contains(string(data), "vela.ErrHostNotImplemented") {
+	if !strings.Contains(string(data), `vela "`+SSRRuntimeImport()+`"`) && !strings.Contains(string(data), "vela.ErrHostNotImplemented") {
 		t.Fatalf("stub does not use the runtime module:\n%s", data)
 	}
 	impl := strings.Replace(string(data), "return nil, vela.ErrHostNotImplemented", "_ = vela.ErrHostNotImplemented\n\treturn strings.ToUpper(s), nil", 1)
@@ -96,7 +96,7 @@ func buildRuntimeModuleProject(t *testing.T, root string) {
 		t.Fatal(err)
 	}
 	opts.SSRScaffoldHosts = false
-	if errors := buildSSRProject(collectVela(srcRoot), srcRoot, filepath.Join(root, "out"), opts, false); errors != 0 {
+	if errors := buildSSRProject(CollectVela(srcRoot), srcRoot, filepath.Join(root, "out"), opts, false); errors != 0 {
 		t.Fatalf("SSR build failed with %d error(s)", errors)
 	}
 }
@@ -122,8 +122,8 @@ func TestSSRRuntimeModuleOverride(t *testing.T) {
 	copyRuntimeModule(t, runtimeDir, module, nil)
 	runtimeModuleProject(t, root, module, runtimeDir)
 	buildRuntimeModuleProject(t, root)
-	if ssrRuntimeImport() != SSRRuntimeImportPath {
-		t.Fatalf("the override leaked out of the build: %s", ssrRuntimeImport())
+	if SSRRuntimeImport() != SSRRuntimeImportPath {
+		t.Fatalf("the override leaked out of the build: %s", SSRRuntimeImport())
 	}
 	renderer, err := os.ReadFile(filepath.Join(root, "out", "server", "components", "page.go"))
 	if err != nil {

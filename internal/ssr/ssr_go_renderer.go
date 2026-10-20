@@ -1,6 +1,10 @@
-package main
+package ssr
 
 import (
+	"github.com/elauven/vela/internal/codegen"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfcast"
+
 	"fmt"
 	goast "go/ast"
 	"go/token"
@@ -89,7 +93,7 @@ type ssrGoEmitter struct {
 	needsEscaping        bool
 	eachNext             int
 	imports              map[string]string
-	selectValue          *TemplateExpr
+	selectValue          *sfcast.TemplateExpr
 	selectMultiple       bool
 	componentName        string
 	rootElement          *SSRPlanElement // single root element; nil with a wrapper root
@@ -99,10 +103,10 @@ type ssrGoEmitter struct {
 	// translated expression for conditions.
 	region      *SSRRegion
 	speculative int
-	facts       map[JsExpr]ssrIRFacts
+	facts       map[jsast.JsExpr]ssrIRFacts
 	// primitive marks the translated expressions proven primitive
 	// (ssrIRPrimitive), whose text conversion cannot throw.
-	primitive map[JsExpr]bool
+	primitive map[jsast.JsExpr]bool
 }
 
 func (e *ssrGoEmitter) nodes(nodes []SSRPlanNode) ([]goast.Stmt, error) {
@@ -168,7 +172,7 @@ func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
 			// serializable server prop and attach after hydration adoption.
 			continue
 		case SSRAttrStatic:
-			if attr.ValueKind == AttrValueMissing {
+			if attr.ValueKind == sfcast.AttrValueMissing {
 				return nil, ssrExprUnsupported(attr.Span.Start, "component prop %q requires a value", attr.Name)
 			}
 			value = &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(attr.Value)}
@@ -459,14 +463,14 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 				continue
 			}
 			if e.selectValue != nil && node.Tag == "option" && attr.Name == "value" {
-				if attr.ValueKind == AttrValueMissing {
+				if attr.ValueKind == sfcast.AttrValueMissing {
 					return nil, ssrExprUnsupported(attr.Span.Start, "an option under select bind:value requires an explicit value")
 				}
 				optionValue = attr
 				hasOptionValue = true
 			}
 			open += " " + attr.Name
-			if attr.ValueKind != AttrValueMissing {
+			if attr.ValueKind != sfcast.AttrValueMissing {
 				open += "=\"" + html.EscapeString(attr.Value) + "\""
 			}
 		case SSRAttrEvent:
@@ -528,7 +532,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			if attr.Expr == nil {
 				return nil, ssrExprUnsupported(attr.Span.Start, "dynamic attribute %q has no cached expression", attr.Name)
 			}
-			if IsBoolAttr(attr.Name) {
+			if codegen.IsBoolAttr(attr.Name) {
 				condition, err := e.translate("attribute", attr.Name, attr.Expr, e.ctx)
 				if err != nil {
 					return nil, err
@@ -753,7 +757,7 @@ func ssrGoTruthy(value goast.Expr) goast.Expr {
 	return &goast.CallExpr{Fun: goSelector("vela", "Truthy"), Args: []goast.Expr{value}}
 }
 
-func (e *ssrGoEmitter) condition(expr *TemplateExpr, value goast.Expr) goast.Expr {
+func (e *ssrGoEmitter) condition(expr *sfcast.TemplateExpr, value goast.Expr) goast.Expr {
 	// The IR of the expression decides whether its Go form is a bool.
 	if expr != nil && e.facts[expr.Root()].Bool {
 		return value
@@ -774,7 +778,7 @@ func ssrContextWithBindings(base SSRExprContext) SSRExprContext {
 	return ctx
 }
 
-func (e *ssrGoEmitter) outputValue(kind, name string, static bool, literal string, expr *TemplateExpr) (goast.Expr, error) {
+func (e *ssrGoEmitter) outputValue(kind, name string, static bool, literal string, expr *sfcast.TemplateExpr) (goast.Expr, error) {
 	if static {
 		return &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(literal)}, nil
 	}
@@ -792,7 +796,7 @@ func (e *ssrGoEmitter) outputValue(kind, name string, static bool, literal strin
 // outputFormValue is deliberately separate from outputValue: browser
 // input/textarea properties convert null to an empty string, whereas template
 // text and ordinary attributes visibly render it as "null".
-func (e *ssrGoEmitter) outputFormValue(expr *TemplateExpr) (goast.Expr, error) {
+func (e *ssrGoEmitter) outputFormValue(expr *sfcast.TemplateExpr) (goast.Expr, error) {
 	value, err := e.translate("form-value", "bind:value", expr, e.ctx)
 	if err != nil {
 		return nil, err
@@ -828,18 +832,18 @@ func ssrSingleSelectHasKnownNullBinding(node *SSRPlanElement, ctx SSRExprContext
 	return false
 }
 
-func ssrExprIsKnownNull(expr *TemplateExpr, ctx SSRExprContext, seen map[string]bool) bool {
+func ssrExprIsKnownNull(expr *sfcast.TemplateExpr, ctx SSRExprContext, seen map[string]bool) bool {
 	if expr == nil || expr.Root() == nil {
 		return false
 	}
 	return ssrJSExprIsKnownNull(expr.Root(), ctx, seen)
 }
 
-func ssrJSExprIsKnownNull(expr JsExpr, ctx SSRExprContext, seen map[string]bool) bool {
+func ssrJSExprIsKnownNull(expr jsast.JsExpr, ctx SSRExprContext, seen map[string]bool) bool {
 	switch node := expr.(type) {
-	case *JsLiteral:
+	case *jsast.JsLiteral:
 		return node.Kind == "null"
-	case *JsIdent:
+	case *jsast.JsIdent:
 		if seen[node.Name] {
 			return false
 		}
@@ -855,7 +859,7 @@ func ssrJSExprIsKnownNull(expr JsExpr, ctx SSRExprContext, seen map[string]bool)
 	return false
 }
 
-func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionValue SSRPlanAttr, multiple bool) (goast.Expr, error) {
+func (e *ssrGoEmitter) selectOptionCondition(selectValue *sfcast.TemplateExpr, optionValue SSRPlanAttr, multiple bool) (goast.Expr, error) {
 	selected, err := e.translate("form-value", "select bind:value", selectValue, e.ctx)
 	if err != nil {
 		return nil, err

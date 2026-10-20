@@ -1,6 +1,8 @@
-package main
+package ssr
 
 import (
+	"github.com/elauven/vela/internal/jsast"
+
 	"fmt"
 	goast "go/ast"
 	"go/token"
@@ -45,8 +47,8 @@ func (e *ssrGoEmitter) localsPrologue(plan *SSRRenderPlan, extra []string) ssrIn
 	// A payload-only binding needs the bindings its initializer reads.
 	base := ssrComponentContext(NewSSRExprContext(plan))
 	base.funcs = e.ctx.funcs
-	initializer := func(name string) JsExpr {
-		for _, initializers := range []map[string]JsExpr{plan.StateInitializers, plan.DeepInitializers, plan.DerivedInitializers, plan.PlainInitializers} {
+	initializer := func(name string) jsast.JsExpr {
+		for _, initializers := range []map[string]jsast.JsExpr{plan.StateInitializers, plan.DeepInitializers, plan.DerivedInitializers, plan.PlainInitializers} {
 			if init, ok := initializers[name]; ok {
 				return init
 			}
@@ -74,7 +76,7 @@ func (e *ssrGoEmitter) localsPrologue(plan *SSRRenderPlan, extra []string) ssrIn
 		var ir SSRIRExpr
 		var err error
 		if binding, ok := plan.Hosts[name]; ok && e.region != nil && plan.PlainInitializers[name] != nil {
-			ir, err = builder.hostCall(binding, &JsCallExpr{Callee: &JsIdent{Name: name}}, fmt.Sprintf("value %q", name), 0)
+			ir, err = builder.hostCall(binding, &jsast.JsCallExpr{Callee: &jsast.JsIdent{Name: name}}, fmt.Sprintf("value %q", name), 0)
 		} else {
 			ir, err = builder.build(init, 0)
 		}

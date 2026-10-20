@@ -30,7 +30,7 @@ func TestProjectJSModulesImportCompiledComponents(t *testing.T) {
 		}
 	}
 	outRoot := t.TempDir()
-	if errors := buildProject(collectVela(srcRoot), srcRoot, outRoot, CompileOptions{StatusWriter: os.Stderr}, false); errors != 0 {
+	if errors := buildProject(CollectVela(srcRoot), srcRoot, outRoot, CompileOptions{StatusWriter: os.Stderr}, false); errors != 0 {
 		t.Fatalf("build failed with %d error(s)", errors)
 	}
 	main, err := os.ReadFile(filepath.Join(outRoot, "main.js"))

@@ -36,7 +36,7 @@ func TestBlocksCorpusHydrates(t *testing.T) {
 		outRoot := filepath.Join(root, "out")
 		module := "example.com/corpus"
 		layout := NewSSRProjectLayoutWithModule(outRoot, module+"/server")
-		files := collectVela(srcRoot)
+		files := CollectVela(srcRoot)
 
 		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: module + "/server"}
 		_ = captureStderr(t, func() { buildSSRProject(files, srcRoot, outRoot, opts, false) })
@@ -65,10 +65,10 @@ func TestBlocksCorpusHydrates(t *testing.T) {
 			if entry.Mode != "interactive" {
 				continue
 			}
-			if _, err := os.Stat(layout.serverPath(src, srcRoot)); err != nil {
+			if _, err := os.Stat(layout.ServerPath(src, srcRoot)); err != nil {
 				continue // the component does not translate yet
 			}
-			importPath := layout.importPath(src, srcRoot)
+			importPath := layout.ImportPath(src, srcRoot)
 			alias, ok := imports[importPath]
 			if !ok {
 				alias = fmt.Sprintf("p%d", len(imports))
@@ -102,7 +102,7 @@ func TestBlocksCorpusHydrates(t *testing.T) {
 			used := map[string]string{}
 			for _, entry := range rendered {
 				src := filepath.Join(srcRoot, filepath.FromSlash(entry.Source))
-				path := layout.importPath(src, srcRoot)
+				path := layout.ImportPath(src, srcRoot)
 				if broken[path] {
 					continue
 				}

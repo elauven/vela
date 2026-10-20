@@ -25,14 +25,14 @@ func runBrowserProjectWithStorage(t *testing.T, srcRoot, entry string, storage m
 	t.Helper()
 	node := requirePlaywright(t)
 	outRoot := t.TempDir()
-	files := collectVela(srcRoot)
+	files := CollectVela(srcRoot)
 	if len(files) == 0 {
 		t.Fatalf("project %s has no .vela files", srcRoot)
 	}
 	if errors := buildProject(files, srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
 		t.Fatalf("project build failed with %d error(s)", errors)
 	}
-	config := browserRuntimeConfig{RootDir: outRoot, Entry: entry, ExportName: componentName(entry), Steps: steps, Storage: storage}
+	config := browserRuntimeConfig{RootDir: outRoot, Entry: entry, ExportName: ComponentName(entry), Steps: steps, Storage: storage}
 	data, err := json.Marshal(config)
 	if err != nil {
 		t.Fatal(err)

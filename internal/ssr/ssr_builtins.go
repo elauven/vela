@@ -1,6 +1,9 @@
-package main
+package ssr
 
 import (
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/jsast"
+
 	"fmt"
 	goast "go/ast"
 	"go/token"
@@ -169,7 +172,7 @@ func (b *ssrIRBuilder) shadowedGlobal(name string) bool {
 		return true
 	}
 	ctx := b.ctx
-	for _, names := range []map[string]JsExpr{ctx.StateInitializers, ctx.DerivedInitializers, ctx.PlainInitializers, ctx.DeepInitializers} {
+	for _, names := range []map[string]jsast.JsExpr{ctx.StateInitializers, ctx.DerivedInitializers, ctx.PlainInitializers, ctx.DeepInitializers} {
 		if _, ok := names[name]; ok {
 			return true
 		}
@@ -188,15 +191,15 @@ func (b *ssrIRBuilder) shadowedGlobal(name string) bool {
 
 // globalName returns "Math.floor" for Math.floor and "parseInt" for
 // parseInt when the root is an unshadowed global.
-func (b *ssrIRBuilder) globalName(callee JsExpr) string {
+func (b *ssrIRBuilder) globalName(callee jsast.JsExpr) string {
 	switch c := callee.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		if !b.shadowedGlobal(c.Name) {
 			return c.Name
 		}
-	case *JsMemberExpr:
-		object, ok := c.Obj.(*JsIdent)
-		property, named := c.Prop.(*JsIdent)
+	case *jsast.JsMemberExpr:
+		object, ok := c.Obj.(*jsast.JsIdent)
+		property, named := c.Prop.(*jsast.JsIdent)
 		if ok && named && !c.Computed && !c.Optional && ssrGlobalNamespaces[object.Name] && !b.shadowedGlobal(object.Name) {
 			return object.Name + "." + property.Name
 		}
@@ -207,10 +210,10 @@ func (b *ssrIRBuilder) globalName(callee JsExpr) string {
 // spreadArgs lowers the arguments of a call with a spread argument to one
 // []any, passed with ... to a variadic Go function; spread is nil when no
 // argument is spread.
-func (b *ssrIRBuilder) spreadArgs(call *JsCallExpr, pos int) (goast.Expr, error) {
+func (b *ssrIRBuilder) spreadArgs(call *jsast.JsCallExpr, pos int) (goast.Expr, error) {
 	for _, argument := range call.Args {
-		if _, spread := argument.(*JsSpreadExpr); spread {
-			array, err := b.build(&JsArrayExpr{Elems: call.Args}, pos)
+		if _, spread := argument.(*jsast.JsSpreadExpr); spread {
+			array, err := b.build(&jsast.JsArrayExpr{Elems: call.Args}, pos)
 			if err != nil {
 				return nil, err
 			}
@@ -223,20 +226,20 @@ func (b *ssrIRBuilder) spreadArgs(call *JsCallExpr, pos int) (goast.Expr, error)
 // iterable builds a value that is iterated at once (for…of, spread,
 // Array.from): xs.entries(), xs.keys() and xs.values() become the list of
 // their items, the only use of these iterators that is translated.
-func (b *ssrIRBuilder) iterable(expr JsExpr, pos int) (SSRIRExpr, error) {
-	call, ok := expr.(*JsCallExpr)
+func (b *ssrIRBuilder) iterable(expr jsast.JsExpr, pos int) (SSRIRExpr, error) {
+	call, ok := expr.(*jsast.JsCallExpr)
 	if !ok || call.Optional || len(call.Args) != 0 || !b.js {
 		return b.build(expr, pos)
 	}
-	member, ok := call.Callee.(*JsMemberExpr)
+	member, ok := call.Callee.(*jsast.JsMemberExpr)
 	if !ok || member.Computed || member.Optional || ssrParenthesized(member, call) {
 		return b.build(expr, pos)
 	}
-	property, ok := member.Prop.(*JsIdent)
+	property, ok := member.Prop.(*jsast.JsIdent)
 	if !ok || (property.Name != "entries" && property.Name != "keys" && property.Name != "values") {
 		return b.build(expr, pos)
 	}
-	if object, global := member.Obj.(*JsIdent); global && ssrGlobalNamespaces[object.Name] {
+	if object, global := member.Obj.(*jsast.JsIdent); global && ssrGlobalNamespaces[object.Name] {
 		return b.build(expr, pos) // Object.entries(o)
 	}
 	receiver, err := b.build(member.Obj, pos)
@@ -247,18 +250,18 @@ func (b *ssrIRBuilder) iterable(expr JsExpr, pos int) (SSRIRExpr, error) {
 	return &ssrIRJS{ssrIRBase: b.base(pos, ssrIRFacts{}), Method: "ArrayIterItems", Args: []SSRIRExpr{receiver}, Strings: []string{property.Name}, Site: b.site}, nil
 }
 
-func (b *ssrIRBuilder) buildArgs(call *JsCallExpr, pos int) ([]SSRIRExpr, error) {
+func (b *ssrIRBuilder) buildArgs(call *jsast.JsCallExpr, pos int) ([]SSRIRExpr, error) {
 	args := make([]SSRIRExpr, 0, len(call.Args))
 	for _, argument := range call.Args {
-		if _, spread := argument.(*JsSpreadExpr); spread {
+		if _, spread := argument.(*jsast.JsSpreadExpr); spread {
 			return nil, ssrExprUnsupported(pos, "spread arguments are not supported yet")
 		}
 		value, err := b.build(argument, pos)
 		if err != nil {
 			return nil, err
 		}
-		if member, ok := call.Callee.(*JsMemberExpr); ok && !member.Computed {
-			if property, ok := member.Prop.(*JsIdent); ok && (ssrStoringMethods[property.Name] || !ssrKnownMethod(property.Name)) {
+		if member, ok := call.Callee.(*jsast.JsMemberExpr); ok && !member.Computed {
+			if property, ok := member.Prop.(*jsast.JsIdent); ok && (ssrStoringMethods[property.Name] || !ssrKnownMethod(property.Name)) {
 				value = b.boxStored(argument, value)
 			}
 		}
@@ -270,33 +273,33 @@ func (b *ssrIRBuilder) buildArgs(call *JsCallExpr, pos int) ([]SSRIRExpr, error)
 // sharedReceiver reports the receiver of an array change that may hold a
 // boxed array: a local the function created and copies (shared), or a value
 // reached from such a local or from this (o.list, m.get(k), this.items).
-func (b *ssrIRBuilder) sharedReceiver(expr JsExpr) bool {
+func (b *ssrIRBuilder) sharedReceiver(expr jsast.JsExpr) bool {
 	c := b.funcCompiler
 	if c == nil {
 		return false
 	}
-	if name := IdentName(expr); name != "" {
+	if name := analyzer.IdentName(expr); name != "" {
 		_, local := c.lookup(name)
 		return local && c.shared(name)
 	}
 	root := expr
 	for {
 		switch node := root.(type) {
-		case *JsMemberExpr:
+		case *jsast.JsMemberExpr:
 			root = node.Obj
 			continue
-		case *JsCallExpr:
-			if member, ok := node.Callee.(*JsMemberExpr); ok {
+		case *jsast.JsCallExpr:
+			if member, ok := node.Callee.(*jsast.JsMemberExpr); ok {
 				root = member.Obj
 				continue
 			}
 		}
 		break
 	}
-	if _, this := root.(*JsThisExpr); this {
+	if _, this := root.(*jsast.JsThisExpr); this {
 		return true
 	}
-	name := IdentName(root)
+	name := analyzer.IdentName(root)
 	if name == "" || c.freshness == nil {
 		return false
 	}
@@ -320,18 +323,18 @@ func ssrKnownMethod(name string) bool {
 // all (T-6.6b).
 // The branches of a logical or conditional expression are boxed one by
 // one: only a fresh array is boxed, never one of state or props.
-func (b *ssrIRBuilder) boxStored(expr JsExpr, value SSRIRExpr) SSRIRExpr {
+func (b *ssrIRBuilder) boxStored(expr jsast.JsExpr, value SSRIRExpr) SSRIRExpr {
 	if b.funcCompiler == nil {
 		return value
 	}
 	switch e := expr.(type) {
-	case *JsLogicalExpr:
+	case *jsast.JsLogicalExpr:
 		if lazy, ok := value.(*ssrIRLazy); ok && len(lazy.Args) == 2 {
 			lazy.Args[0] = b.boxStored(e.L, lazy.Args[0])
 			lazy.Args[1] = b.boxStored(e.R, lazy.Args[1])
 		}
 		return value
-	case *JsConditionalExpr:
+	case *jsast.JsConditionalExpr:
 		if lazy, ok := value.(*ssrIRLazy); ok && len(lazy.Args) == 3 {
 			lazy.Args[1] = b.boxStored(e.Then, lazy.Args[1])
 			lazy.Args[2] = b.boxStored(e.Else, lazy.Args[2])
@@ -345,7 +348,7 @@ func (b *ssrIRBuilder) boxStored(expr JsExpr, value SSRIRExpr) SSRIRExpr {
 }
 
 // stored builds a value stored in another value (boxStored).
-func (b *ssrIRBuilder) stored(expr JsExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) stored(expr jsast.JsExpr, pos int) (SSRIRExpr, error) {
 	value, err := b.build(expr, pos)
 	if err != nil {
 		return nil, err
@@ -354,9 +357,9 @@ func (b *ssrIRBuilder) stored(expr JsExpr, pos int) (SSRIRExpr, error) {
 }
 
 // ssrFreshArrayExpr reports a fresh value that can be an array.
-func ssrFreshArrayExpr(expr JsExpr) bool {
+func ssrFreshArrayExpr(expr jsast.JsExpr) bool {
 	switch expr.(type) {
-	case *JsObjectExpr, *JsNewExpr:
+	case *jsast.JsObjectExpr, *jsast.JsNewExpr:
 		return false
 	}
 	return ssrFreshExpr(expr)
@@ -364,7 +367,7 @@ func ssrFreshArrayExpr(expr JsExpr) bool {
 
 // builtinCall lowers a call to a global function, a namespace function, or
 // an admitted method. handled is false when the call is none of them.
-func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, error) {
+func (b *ssrIRBuilder) builtinCall(call *jsast.JsCallExpr, pos int) (SSRIRExpr, bool, error) {
 	if !b.js {
 		return nil, false, nil
 	}
@@ -406,7 +409,7 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 			if err != nil {
 				return nil, true, err
 			}
-			rest, err := b.buildArgs(&JsCallExpr{Args: call.Args[1:]}, pos)
+			rest, err := b.buildArgs(&jsast.JsCallExpr{Args: call.Args[1:]}, pos)
 			if err != nil {
 				return nil, true, err
 			}
@@ -449,17 +452,17 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 			if len(call.Args) == 0 {
 				return nil, true, ssrExprUnsupported(pos, "Object.assign needs a target")
 			}
-			if _, literal := call.Args[0].(*JsObjectExpr); !literal {
+			if _, literal := call.Args[0].(*jsast.JsObjectExpr); !literal {
 				return nil, true, ssrImpure(pos, "Object.assign changes its first argument; during server rendering it must be an object literal, as in Object.assign({}, a, b) (T-6.6b)")
 			}
 		}
 		return &ssrIRGo{ssrIRBase: b.base(pos, global.Facts), Expr: &goast.CallExpr{Fun: fun, Args: lowered}}, true, nil
 	}
-	member, ok := call.Callee.(*JsMemberExpr)
+	member, ok := call.Callee.(*jsast.JsMemberExpr)
 	if !ok || member.Computed {
 		return nil, false, nil
 	}
-	property, ok := member.Prop.(*JsIdent)
+	property, ok := member.Prop.(*jsast.JsIdent)
 	if !ok {
 		return nil, false, nil
 	}
@@ -500,7 +503,7 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 	}
 	if ssrDateSetters[name] {
 		c := b.funcCompiler
-		root := IdentName(member.Obj)
+		root := analyzer.IdentName(member.Obj)
 		fresh := false
 		if c != nil && root != "" && c.freshness != nil {
 			_, local := c.lookup(root)
@@ -557,7 +560,7 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 }
 
 // builtinConstant lowers Math.PI and the other admitted constants.
-func (b *ssrIRBuilder) builtinConstant(node *JsMemberExpr, pos int) (SSRIRExpr, bool) {
+func (b *ssrIRBuilder) builtinConstant(node *jsast.JsMemberExpr, pos int) (SSRIRExpr, bool) {
 	name := b.globalName(node)
 	value, ok := ssrBuiltinConstants[name]
 	if !ok {
@@ -586,31 +589,31 @@ func ssrJSNumberText(value float64) string {
 // ssrFreshExpr reports an expression that creates a new array or object:
 // a literal, an error object, or a call to a built-in that returns a new
 // one.
-func ssrFreshExpr(expr JsExpr) bool {
+func ssrFreshExpr(expr jsast.JsExpr) bool {
 	switch e := expr.(type) {
-	case *JsArrayExpr, *JsObjectExpr:
+	case *jsast.JsArrayExpr, *jsast.JsObjectExpr:
 		return true
-	case *JsNewExpr:
-		callee, ok := e.Callee.(*JsIdent)
+	case *jsast.JsNewExpr:
+		callee, ok := e.Callee.(*jsast.JsIdent)
 		return ok && (callee.Name == "Error" || callee.Name == "TypeError" || callee.Name == "RangeError" || callee.Name == "Date" || callee.Name == "Map" || callee.Name == "Set")
-	case *JsCallExpr:
-		if callee, ok := e.Callee.(*JsIdent); ok && callee.Name == "structuredClone" {
+	case *jsast.JsCallExpr:
+		if callee, ok := e.Callee.(*jsast.JsIdent); ok && callee.Name == "structuredClone" {
 			return true
 		}
-		member, ok := e.Callee.(*JsMemberExpr)
+		member, ok := e.Callee.(*jsast.JsMemberExpr)
 		if !ok || member.Computed {
 			return false
 		}
-		property, ok := member.Prop.(*JsIdent)
+		property, ok := member.Prop.(*jsast.JsIdent)
 		if !ok {
 			return false
 		}
-		if object, ok := member.Obj.(*JsIdent); ok && object.Name+"."+property.Name == "Object.freeze" && len(e.Args) == 1 {
+		if object, ok := member.Obj.(*jsast.JsIdent); ok && object.Name+"."+property.Name == "Object.freeze" && len(e.Args) == 1 {
 			// A frozen literal is still the function's own value: writes to
 			// it compile and throw TypeError, as in JavaScript.
 			return ssrFreshExpr(e.Args[0])
 		}
-		if object, ok := member.Obj.(*JsIdent); ok {
+		if object, ok := member.Obj.(*jsast.JsIdent); ok {
 			switch object.Name + "." + property.Name {
 			case "Object.keys", "Object.values", "Object.entries", "Object.fromEntries", "Object.groupBy", "Array.from", "Array.of", "JSON.parse":
 				return true
@@ -634,7 +637,7 @@ type ssrFreshness struct {
 
 // ssrAnalyzeFreshness analyses a function body; names are tracked
 // conservatively across scopes.
-func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
+func ssrAnalyzeFreshness(body *jsast.JsBlock) *ssrFreshness {
 	f := &ssrFreshness{fresh: map[string]bool{}, unaliased: map[string]bool{}}
 	stale := map[string]bool{}
 	aliased := map[string]bool{}
@@ -642,17 +645,17 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 	// fresh, ys holds the same value.
 	copies := map[string]string{}
 	readOnly := map[string]bool{"Math": true, "JSON": true, "Number": true, "String": true, "Boolean": true, "Array": true, "Object": true}
-	WalkNode(body, func(n JsNode) bool {
+	jsast.WalkNode(body, func(n jsast.JsNode) bool {
 		switch node := n.(type) {
-		case *JsArrowFunc, *JsFuncExpr, *JsFuncDecl:
+		case *jsast.JsArrowFunc, *jsast.JsFuncExpr, *jsast.JsFuncDecl:
 			// An array a nested function changes is shared with it: boxed,
 			// so that the change is seen through the captured variable.
-			WalkNode(node, func(inner JsNode) bool {
-				if call, ok := inner.(*JsCallExpr); ok {
-					if member, ok := call.Callee.(*JsMemberExpr); ok && !member.Computed {
-						if property, ok := member.Prop.(*JsIdent); ok {
+			jsast.WalkNode(node, func(inner jsast.JsNode) bool {
+				if call, ok := inner.(*jsast.JsCallExpr); ok {
+					if member, ok := call.Callee.(*jsast.JsMemberExpr); ok && !member.Computed {
+						if property, ok := member.Prop.(*jsast.JsIdent); ok {
 							if _, mutating := ssrMutatingMethods[property.Name]; mutating {
-								if name := IdentName(member.Obj); name != "" {
+								if name := analyzer.IdentName(member.Obj); name != "" {
 									aliased[name] = true
 								}
 							}
@@ -661,9 +664,9 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 				}
 				return true
 			})
-		case *JsVarDecl:
+		case *jsast.JsVarDecl:
 			for _, declarator := range node.Decls {
-				name := IdentName(declarator.Id)
+				name := analyzer.IdentName(declarator.Id)
 				if name == "" {
 					// A rest element or property binds a new array or
 					// object; the other names of a pattern hold parts of
@@ -679,29 +682,29 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 				}
 				if declarator.Init != nil && ssrFreshExpr(declarator.Init) {
 					f.fresh[name] = true
-				} else if alias := IdentName(declarator.Init); alias != "" && node.Kind == "const" {
+				} else if alias := analyzer.IdentName(declarator.Init); alias != "" && node.Kind == "const" {
 					copies[name] = alias
 				} else {
 					stale[name] = true
 				}
-				if alias := IdentName(declarator.Init); alias != "" {
+				if alias := analyzer.IdentName(declarator.Init); alias != "" {
 					aliased[alias] = true
 				}
 			}
-		case *JsAssignExpr:
-			if name := IdentName(node.L); name != "" && (node.Op != "=" || !ssrFreshExpr(node.R)) {
+		case *jsast.JsAssignExpr:
+			if name := analyzer.IdentName(node.L); name != "" && (node.Op != "=" || !ssrFreshExpr(node.R)) {
 				stale[name] = true
 			}
-			if alias := IdentName(node.R); alias != "" {
+			if alias := analyzer.IdentName(node.R); alias != "" {
 				aliased[alias] = true
 			}
-		case *JsArrayExpr:
+		case *jsast.JsArrayExpr:
 			for _, element := range node.Elems {
-				if alias := IdentName(element); alias != "" {
+				if alias := analyzer.IdentName(element); alias != "" {
 					aliased[alias] = true
 				}
 			}
-		case *JsObjectExpr:
+		case *jsast.JsObjectExpr:
 			for _, property := range node.Props {
 				if property.Spread {
 					continue
@@ -710,17 +713,17 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 				if value == nil {
 					value = property.Key
 				}
-				if alias := IdentName(value); alias != "" {
+				if alias := analyzer.IdentName(value); alias != "" {
 					aliased[alias] = true
 				}
 			}
-		case *JsCallExpr:
+		case *jsast.JsCallExpr:
 			builtin := false
-			if member, ok := node.Callee.(*JsMemberExpr); ok {
-				if object, ok := member.Obj.(*JsIdent); ok && readOnly[object.Name] {
+			if member, ok := node.Callee.(*jsast.JsMemberExpr); ok {
+				if object, ok := member.Obj.(*jsast.JsIdent); ok && readOnly[object.Name] {
 					builtin = true
 				}
-				if property, ok := member.Prop.(*JsIdent); ok && !member.Computed {
+				if property, ok := member.Prop.(*jsast.JsIdent); ok && !member.Computed {
 					// concat, set and add keep their arguments in the result.
 					if _, method := ssrBuiltinMethods[property.Name]; method && property.Name != "concat" && property.Name != "set" && property.Name != "add" {
 						builtin = true
@@ -729,15 +732,15 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 			}
 			if !builtin {
 				for _, argument := range node.Args {
-					if alias := IdentName(argument); alias != "" {
+					if alias := analyzer.IdentName(argument); alias != "" {
 						aliased[alias] = true
 					}
 				}
-			} else if member, ok := node.Callee.(*JsMemberExpr); ok {
+			} else if member, ok := node.Callee.(*jsast.JsMemberExpr); ok {
 				// push(x) and unshift(x) store x in the array.
-				if property, ok := member.Prop.(*JsIdent); ok && (property.Name == "push" || property.Name == "unshift" || property.Name == "splice" || property.Name == "fill") {
+				if property, ok := member.Prop.(*jsast.JsIdent); ok && (property.Name == "push" || property.Name == "unshift" || property.Name == "splice" || property.Name == "fill") {
 					for _, argument := range node.Args {
-						if alias := IdentName(argument); alias != "" {
+						if alias := analyzer.IdentName(argument); alias != "" {
 							aliased[alias] = true
 						}
 					}
@@ -771,28 +774,28 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 
 // ssrPatternNames visits the names a binding pattern declares; rest is true
 // for an identifier that is the target of a rest element or property.
-func ssrPatternNames(pattern JsExpr, rest bool, visit func(name string, rest bool)) {
+func ssrPatternNames(pattern jsast.JsExpr, rest bool, visit func(name string, rest bool)) {
 	switch p := pattern.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		visit(p.Name, rest)
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		ssrPatternNames(p.L, false, visit)
-	case *JsSpreadExpr:
-		_, nested := p.X.(*JsIdent)
+	case *jsast.JsSpreadExpr:
+		_, nested := p.X.(*jsast.JsIdent)
 		ssrPatternNames(p.X, nested, visit)
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		for _, element := range p.Elems {
 			if element != nil {
 				ssrPatternNames(element, false, visit)
 			}
 		}
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		for _, property := range p.Props {
 			target := property.Value
 			if target == nil {
 				target = property.Key
 			}
-			_, plain := target.(*JsIdent)
+			_, plain := target.(*jsast.JsIdent)
 			ssrPatternNames(target, property.Spread && plain, visit)
 		}
 	}
@@ -801,17 +804,17 @@ func ssrPatternNames(pattern JsExpr, rest bool, visit func(name string, rest boo
 // ssrMutationStatement lowers xs.push(…) and the other methods that change
 // an array the function created, as a statement or the initializer or
 // right-hand side of target (empty: the result is dropped).
-func (c *ssrFuncCompiler) mutationStatement(call *JsCallExpr, target string, declare bool) ([]goast.Stmt, bool, error) {
-	member, ok := call.Callee.(*JsMemberExpr)
+func (c *ssrFuncCompiler) mutationStatement(call *jsast.JsCallExpr, target string, declare bool) ([]goast.Stmt, bool, error) {
+	member, ok := call.Callee.(*jsast.JsMemberExpr)
 	if !ok || member.Computed {
 		return nil, false, nil
 	}
-	property, ok := member.Prop.(*JsIdent)
+	property, ok := member.Prop.(*jsast.JsIdent)
 	if !ok {
 		return nil, false, nil
 	}
 	changesLength, mutating := ssrMutatingMethods[property.Name]
-	receiver := IdentName(member.Obj)
+	receiver := analyzer.IdentName(member.Obj)
 	if !mutating || receiver == "" {
 		return nil, false, nil
 	}
@@ -861,9 +864,9 @@ func (c *ssrFuncCompiler) mutationStatement(call *JsCallExpr, target string, dec
 	return append(out, c.unwind()), true, nil
 }
 
-// ssrCatalogueNames lists every admitted built-in, for the matrix drift
+// SSRCatalogueNames lists every admitted built-in, for the matrix drift
 // test.
-func ssrCatalogueNames() []string {
+func SSRCatalogueNames() []string {
 	var names []string
 	for name := range ssrBuiltinGlobals {
 		names = append(names, name)
@@ -883,19 +886,19 @@ func ssrCatalogueNames() []string {
 
 // mutationTarget reports a call of a method that changes an array, and
 // its receiver name.
-func (c *ssrFuncCompiler) mutationTarget(call *JsCallExpr) (string, bool) {
-	member, ok := call.Callee.(*JsMemberExpr)
+func (c *ssrFuncCompiler) mutationTarget(call *jsast.JsCallExpr) (string, bool) {
+	member, ok := call.Callee.(*jsast.JsMemberExpr)
 	if !ok || member.Computed {
 		return "", false
 	}
-	property, ok := member.Prop.(*JsIdent)
+	property, ok := member.Prop.(*jsast.JsIdent)
 	if !ok {
 		return "", false
 	}
 	if _, mutating := ssrMutatingMethods[property.Name]; !mutating {
 		return "", false
 	}
-	receiver := IdentName(member.Obj)
+	receiver := analyzer.IdentName(member.Obj)
 	return receiver, receiver != ""
 }
 
@@ -906,7 +909,7 @@ var ssrGlobalFunctionValues = map[string]bool{"String": true, "Number": true, "B
 // calls go to the observer of vela.WithConsoleObserver (decision of §5).
 var ssrConsoleMethods = map[string]bool{"log": true, "info": true, "warn": true, "error": true, "debug": true}
 
-func (b *ssrIRBuilder) consoleCall(method string, call *JsCallExpr, pos int) (SSRIRExpr, bool, error) {
+func (b *ssrIRBuilder) consoleCall(method string, call *jsast.JsCallExpr, pos int) (SSRIRExpr, bool, error) {
 	if !ssrConsoleMethods[method] {
 		return nil, true, ssrExprUnsupported(pos, "console.%s is not available during server rendering; use log, info, warn, error, or debug", method)
 	}

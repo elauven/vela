@@ -117,7 +117,7 @@ console.log(JSON.stringify(out));
 	report := filepath.Join(out, "report.json")
 
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/async/server", SSRReport: report}
-	if errors := buildSSRProject(collectVela(src), src, out, opts, false); errors != 0 {
+	if errors := buildSSRProject(CollectVela(src), src, out, opts, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 

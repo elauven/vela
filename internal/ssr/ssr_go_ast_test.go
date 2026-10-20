@@ -1,12 +1,14 @@
-package main
+package ssr
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/elauven/vela/internal/sfcast"
 )
 
 func TestBuildSSRGoSkeletonUsesStandardGoAST(t *testing.T) {
-	sfc, err := ParseSFC(`<script>
+	sfc, err := sfcast.ParseSFC(`<script>
 export let title = "";
 export let count = 0;
 export let active = false;

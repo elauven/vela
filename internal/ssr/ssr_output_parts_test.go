@@ -1,12 +1,15 @@
-package main
+package ssr
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/sfcast"
 )
 
 func TestBuildSSRGoFileAppliesDefaultPropsFromExplicitPresence(t *testing.T) {
-	sfc, err := ParseSFC(`<script>export let title = "fallback";</script><template><p>{title}</p></template>`)
+	sfc, err := sfcast.ParseSFC(`<script>export let title = "fallback";</script><template><p>{title}</p></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,11 +40,11 @@ func TestBuildSSRGoFileAppliesDefaultPropsFromExplicitPresence(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRejectsSingleSelectWithKnownNullBinding(t *testing.T) {
-	sfc, err := ParseSFC(`<script>let choice = $state(null);</script><template><select bind:value={choice}><option value="one">One</option><option value="two">Two</option></select></template>`)
+	sfc, err := sfcast.ParseSFC(`<script>let choice = $state(null);</script><template><select bind:value={choice}><option value="one">One</option><option value="two">Two</option></select></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, AnalyzeScriptAST(sfc.ScriptAST), "vela-page")
+	plan, err := BuildSSRRenderPlanWithAnalysis("Page", sfc, analyzer.AnalyzeScriptAST(sfc.ScriptAST), "vela-page")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +55,7 @@ func TestBuildSSRGoFileRejectsSingleSelectWithKnownNullBinding(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRejectsSelectBindingOptionWithoutStaticValue(t *testing.T) {
-	sfc, err := ParseSFC(`<script>export let choice="a";</script><template><select bind:value={choice}><option>A</option></select></template>`)
+	sfc, err := sfcast.ParseSFC(`<script>export let choice="a";</script><template><select bind:value={choice}><option>A</option></select></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +73,7 @@ func TestBuildSSRGoFileRejectsUnsafeBindings(t *testing.T) {
 	for _, source := range []string{
 		`<script>export let files=[];</script><template><input type="file" bind:files={files} /></template>`,
 	} {
-		sfc, err := ParseSFC(source)
+		sfc, err := sfcast.ParseSFC(source)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -86,7 +89,7 @@ func TestBuildSSRGoFileRejectsUnsafeBindings(t *testing.T) {
 }
 
 func TestBuildSSRGoFileOmitsBindThisForHydration(t *testing.T) {
-	sfc, err := ParseSFC(`<script>export let input=null;</script><template><input bind:this={input} /></template>`)
+	sfc, err := sfcast.ParseSFC(`<script>export let input=null;</script><template><input bind:this={input} /></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +114,7 @@ func TestBuildSSRGoFileOmitsBindThisForHydration(t *testing.T) {
 }
 
 func TestBuildSSRGoFileDoesNotExecuteEffects(t *testing.T) {
-	sfc, err := ParseSFC(`<script>$effect(() => { alert("unexpected"); });</script><template><p>server only</p></template>`)
+	sfc, err := sfcast.ParseSFC(`<script>$effect(() => { alert("unexpected"); });</script><template><p>server only</p></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +136,7 @@ func TestBuildSSRGoFileDoesNotExecuteEffects(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersIfBranches(t *testing.T) {
-	sfc, err := ParseSFC(`<script>export let visible=false; export let title="";</script><template>{#if visible}<p>{title}</p>{:else}<p>hidden</p>{/if}</template>`)
+	sfc, err := sfcast.ParseSFC(`<script>export let visible=false; export let title="";</script><template>{#if visible}<p>{title}</p>{:else}<p>hidden</p>{/if}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +161,7 @@ func TestBuildSSRGoFileRendersIfBranches(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersEachAndEmptyBranch(t *testing.T) {
-	sfc, err := ParseSFC(`<script>export let items=[];</script><template>{#each items as item, index}<p>{index}:{item}</p>{:else}<p>empty</p>{/each}</template>`)
+	sfc, err := sfcast.ParseSFC(`<script>export let items=[];</script><template>{#each items as item, index}<p>{index}:{item}</p>{:else}<p>empty</p>{/each}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +192,7 @@ func TestBuildSSRGoFileRendersEachAndEmptyBranch(t *testing.T) {
 // so a block without a pending branch renders its settled branch (T-7.4f).
 func TestBlocksSSRAwaitWithoutPending(t *testing.T) {
 
-	sfc, err := ParseSFC(`<script>export let request=null;</script><template>{#await request then value}<p>{value}</p>{/await}</template>`)
+	sfc, err := sfcast.ParseSFC(`<script>export let request=null;</script><template>{#await request then value}<p>{value}</p>{/await}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}

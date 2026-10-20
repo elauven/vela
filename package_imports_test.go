@@ -76,7 +76,7 @@ func TestProjectManifestAndDepsCheck(t *testing.T) {
 	var status bytes.Buffer
 	stderr := captureStderr(t, func() {
 		opts := CompileOptions{StatusWriter: &status, CheckDeps: true}
-		if errors := buildProject(collectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
+		if errors := buildProject(CollectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
 			t.Fatalf("build failed with %d error(s)", errors)
 		}
 	})
@@ -111,7 +111,7 @@ func TestProjectManifestAndDepsCheck(t *testing.T) {
 	}
 	// Without --check-deps nothing is reported.
 	quiet := captureStderr(t, func() {
-		buildProject(collectVela(srcRoot), srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard}, false)
+		buildProject(CollectVela(srcRoot), srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard}, false)
 	})
 	if strings.Contains(quiet, DepsCheckDiagnosticCode) {
 		t.Errorf("dependencies were checked without --check-deps:\n%s", quiet)

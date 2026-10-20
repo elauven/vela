@@ -91,7 +91,7 @@ func TestSSRInitOracle(t *testing.T) {
 	projectModule := "example.com/ssrinitoracle"
 
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}
-	if errors := buildSSRProject(collectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
+	if errors := buildSSRProject(CollectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 

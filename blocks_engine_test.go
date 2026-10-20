@@ -29,7 +29,7 @@ func requireJsdom(t *testing.T) (string, string) {
 func buildForJsdom(t *testing.T, srcRoot string) string {
 	t.Helper()
 	outRoot := t.TempDir()
-	if errors := buildProject(collectVela(srcRoot), srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
+	if errors := buildProject(CollectVela(srcRoot), srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
 		t.Fatalf("project build failed with %d error(s)", errors)
 	}
 	if err := os.WriteFile(filepath.Join(outRoot, "package.json"), []byte(`{"type":"module"}`), 0o644); err != nil {

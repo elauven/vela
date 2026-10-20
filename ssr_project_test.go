@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -10,24 +9,6 @@ import (
 	"strings"
 	"testing"
 )
-
-func TestSSRArtifactManifestPreservesClientBoundaryMode(t *testing.T) {
-	source, err := json.Marshal(SSRArtifactManifest{
-		Component: "Page",
-		Mode:      SSRArtifactClientBoundary,
-		Hydrate:   "Page.hydrate.js",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var manifest SSRArtifactManifest
-	if err := json.Unmarshal(source, &manifest); err != nil {
-		t.Fatal(err)
-	}
-	if manifest.Mode != SSRArtifactClientBoundary || manifest.Hydrate != "Page.hydrate.js" {
-		t.Fatalf("client-boundary manifest=%#v", manifest)
-	}
-}
 
 func TestSSRProjectRejectsSingleSelectWithKnownNullBinding(t *testing.T) {
 	for _, contents := range []string{
@@ -44,11 +25,11 @@ func TestSSRProjectRejectsSingleSelectWithKnownNullBinding(t *testing.T) {
 			t.Fatal(err)
 		}
 		layout := NewSSRProjectLayout(filepath.Join(root, "out"))
-		err := compileSSRProjectFile(source, srcRoot, layout)
+		err := CompileSSRProjectFile(source, srcRoot, layout)
 		if err == nil || !strings.Contains(err.Error(), SSRExpressionDiagnosticCode) || !strings.Contains(err.Error(), "known null server value") {
 			t.Fatalf("single-select null SSR error=%v", err)
 		}
-		if _, statErr := os.Stat(layout.serverPath(source, srcRoot)); !os.IsNotExist(statErr) {
+		if _, statErr := os.Stat(layout.ServerPath(source, srcRoot)); !os.IsNotExist(statErr) {
 			t.Fatalf("single-select null SSR unexpectedly wrote server artifact: %v", statErr)
 		}
 	}
@@ -65,11 +46,11 @@ func TestSSRProjectRejectsLooseEqualityBeforeWritingServerArtifact(t *testing.T)
 		t.Fatal(err)
 	}
 	layout := NewSSRProjectLayout(filepath.Join(root, "out"))
-	err := compileSSRProjectFile(source, srcRoot, layout)
+	err := CompileSSRProjectFile(source, srcRoot, layout)
 	if err == nil || !strings.Contains(err.Error(), SSRExpressionDiagnosticCode) || !strings.Contains(err.Error(), "loose equality") {
 		t.Fatalf("loose equality SSR error=%v", err)
 	}
-	if _, statErr := os.Stat(layout.serverPath(source, srcRoot)); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(layout.ServerPath(source, srcRoot)); !os.IsNotExist(statErr) {
 		t.Fatalf("loose equality unexpectedly wrote server artifact: %v", statErr)
 	}
 }
@@ -95,13 +76,13 @@ func TestSSRProjectPreservesDeveloperPropsSidecar(t *testing.T) {
 		t.Fatal(err)
 	}
 	layout := NewSSRProjectLayout(filepath.Join(root, "out"))
-	if err := compileSSRProjectFile(source, srcRoot, layout); err != nil {
+	if err := CompileSSRProjectFile(source, srcRoot, layout); err != nil {
 		t.Fatal(err)
 	}
 	// The generated sidecar has Set: defaults read it directly (task 060).
 	assertServerContains := func(want, absent string) {
 		t.Helper()
-		server, err := os.ReadFile(layout.serverPath(source, srcRoot))
+		server, err := os.ReadFile(layout.ServerPath(source, srcRoot))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -111,13 +92,13 @@ func TestSSRProjectPreservesDeveloperPropsSidecar(t *testing.T) {
 	}
 	assertServerContains(`if props.Set != nil && !props.Set["title"] {`, "vela.PropProvided")
 	custom := []byte("package components\n\ntype AppProps struct {\n\tTitle string\n\tMarker int\n}\n")
-	if err := os.WriteFile(layout.propsPath(source, srcRoot), custom, 0o644); err != nil {
+	if err := os.WriteFile(layout.PropsPath(source, srcRoot), custom, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := compileSSRProjectFile(source, srcRoot, layout); err != nil {
+	if err := CompileSSRProjectFile(source, srcRoot, layout); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(layout.propsPath(source, srcRoot))
+	got, err := os.ReadFile(layout.PropsPath(source, srcRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +144,7 @@ func TestSSRProjectRendersSamePackageChildComponent(t *testing.T) {
 	if errors := buildSSRProject([]string{parent, child}, srcRoot, filepath.Join(root, "out"), CompileOptions{StatusWriter: io.Discard}, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
-	server, err := os.ReadFile(NewSSRProjectLayout(filepath.Join(root, "out")).serverPath(parent, srcRoot))
+	server, err := os.ReadFile(NewSSRProjectLayout(filepath.Join(root, "out")).ServerPath(parent, srcRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +172,7 @@ func TestSSRProjectInternalChildCallRetainsOmittedPropDefault(t *testing.T) {
 	if errors := buildSSRProject([]string{parent, child}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
-	parentSource, err := os.ReadFile(NewSSRProjectLayoutWithModule(outRoot, projectModule+"/server").serverPath(parent, srcRoot))
+	parentSource, err := os.ReadFile(NewSSRProjectLayoutWithModule(outRoot, projectModule+"/server").ServerPath(parent, srcRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +227,7 @@ func TestSSRProjectInternalChildCallPreservesExplicitZeroValues(t *testing.T) {
 	if errors := buildSSRProject([]string{parent, child}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
-	parentSource, err := os.ReadFile(NewSSRProjectLayoutWithModule(outRoot, projectModule+"/server").serverPath(parent, srcRoot))
+	parentSource, err := os.ReadFile(NewSSRProjectLayoutWithModule(outRoot, projectModule+"/server").ServerPath(parent, srcRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,11 +288,11 @@ func TestSSRProjectRendersSamePackageDefaultAndNamedSlots(t *testing.T) {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 	layout := NewSSRProjectLayout(filepath.Join(root, "out"))
-	parentSource, err := os.ReadFile(layout.serverPath(parent, srcRoot))
+	parentSource, err := os.ReadFile(layout.ServerPath(parent, srcRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
-	childSource, err := os.ReadFile(layout.serverPath(child, srcRoot))
+	childSource, err := os.ReadFile(layout.ServerPath(child, srcRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +333,7 @@ func TestSSRProjectRendersCrossPackageChildComponent(t *testing.T) {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 	layout := NewSSRProjectLayoutWithModule(outRoot, opts.SSRModule)
-	parentSource, err := os.ReadFile(layout.serverPath(parent, srcRoot))
+	parentSource, err := os.ReadFile(layout.ServerPath(parent, srcRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,24 +350,9 @@ func TestSSRProjectRendersCrossPackageChildComponent(t *testing.T) {
 	}
 }
 
-func TestGoFileStemUsesLowerSnakeCase(t *testing.T) {
-	cases := map[string]string{
-		"UserPage":      "user_page",
-		"HTTPServer":    "http_server",
-		"APIv2Client":   "ap_iv2_client",
-		"kebab-case":    "kebab_case",
-		"already_snake": "already_snake",
-	}
-	for input, want := range cases {
-		if got := goFileStem(input); got != want {
-			t.Errorf("goFileStem(%q)=%q want %q", input, got, want)
-		}
-	}
-}
-
 func TestSSRProjectLayoutMirrorsSnakeCaseGoPath(t *testing.T) {
 	layout := NewSSRProjectLayout("out")
-	got := filepath.ToSlash(layout.serverPath(filepath.Join("src", "admin", "HTTPServer.vela"), "src"))
+	got := filepath.ToSlash(layout.ServerPath(filepath.Join("src", "admin", "HTTPServer.vela"), "src"))
 	if want := "out/server/components/admin/http_server.go"; got != want {
 		t.Fatalf("serverPath=%q want %q", got, want)
 	}
@@ -394,7 +360,7 @@ func TestSSRProjectLayoutMirrorsSnakeCaseGoPath(t *testing.T) {
 
 func TestSSRProjectLayoutUsesSnakeCasePropsPath(t *testing.T) {
 	layout := NewSSRProjectLayout("out")
-	got := filepath.ToSlash(layout.propsPath(filepath.Join("src", "admin", "HTTPServer.vela"), "src"))
+	got := filepath.ToSlash(layout.PropsPath(filepath.Join("src", "admin", "HTTPServer.vela"), "src"))
 	if want := "out/server/components/admin/http_server_props.go"; got != want {
 		t.Fatalf("propsPath=%q want %q", got, want)
 	}

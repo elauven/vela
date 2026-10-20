@@ -1,6 +1,11 @@
-package main
+package ssr
 
 import (
+	"github.com/elauven/vela/internal/codegen"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/project"
+	"github.com/elauven/vela/internal/sfcast"
+
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -262,10 +267,10 @@ func (r *SSRRegion) locate(source string) {
 		if source == "" || r.Records[i].Pos < 0 || r.Records[i].Pos > len(source) {
 			continue
 		}
-		line, column := SourceLineColumn(source, r.Records[i].Pos)
+		line, column := codegen.SourceLineColumn(source, r.Records[i].Pos)
 		r.Records[i].Line, r.Records[i].Column = line+1, column+1
 		if d := r.Records[i].Diagnostic; d != nil && d.Pos >= 0 && d.Pos <= len(source) {
-			line, column := SourceLineColumn(source, d.Pos)
+			line, column := codegen.SourceLineColumn(source, d.Pos)
 			d.Line, d.Column = line+1, column+1
 		}
 	}
@@ -315,16 +320,16 @@ type SSRReportSummary struct {
 	Tiers        map[string]int `json:"tiers"`
 }
 
-// ssrReportCollector gathers component reports during one project build.
-type ssrReportCollector struct {
+// SSRReportCollector gathers component reports during one project build.
+type SSRReportCollector struct {
 	report SSRReport
 }
 
-func newSSRReportCollector() *ssrReportCollector {
-	return &ssrReportCollector{report: SSRReport{Version: 1}}
+func NewSSRReportCollector() *SSRReportCollector {
+	return &SSRReportCollector{report: SSRReport{Version: 1}}
 }
 
-func (c *ssrReportCollector) add(src, srcRoot string, region *SSRRegion, err error) {
+func (c *SSRReportCollector) Add(src, srcRoot string, region *SSRRegion, err error) {
 	if c == nil {
 		return
 	}
@@ -332,7 +337,7 @@ func (c *ssrReportCollector) add(src, srcRoot string, region *SSRRegion, err err
 	if relErr != nil {
 		rel = src
 	}
-	component := SSRComponentReport{Component: componentName(src), Source: filepath.ToSlash(rel), Status: "ok", Sites: []SSRSiteRecord{}}
+	component := SSRComponentReport{Component: project.ComponentName(src), Source: filepath.ToSlash(rel), Status: "ok", Sites: []SSRSiteRecord{}}
 	if region != nil {
 		component.Sites = region.Records
 	}
@@ -343,7 +348,7 @@ func (c *ssrReportCollector) add(src, srcRoot string, region *SSRRegion, err err
 	c.report.Components = append(c.report.Components, component)
 }
 
-func (c *ssrReportCollector) write(path string) error {
+func (c *SSRReportCollector) Write(path string) error {
 	sort.Slice(c.report.Components, func(i, j int) bool { return c.report.Components[i].Source < c.report.Components[j].Source })
 	summary := SSRReportSummary{Outcomes: map[string]int{}, Tiers: map[string]int{}}
 	for _, component := range c.report.Components {
@@ -375,7 +380,7 @@ func (c *ssrReportCollector) write(path string) error {
 // speculative branch, a failure is returned as before. With a region it is
 // recorded and an undefined placeholder is lowered, so that every failure
 // of the component is found in one pass; the renderer fails at the end.
-func (e *ssrGoEmitter) translate(kind, name string, expr *TemplateExpr, ctx SSRExprContext) (goast.Expr, error) {
+func (e *ssrGoEmitter) translate(kind, name string, expr *sfcast.TemplateExpr, ctx SSRExprContext) (goast.Expr, error) {
 	if expr == nil || expr.Root() == nil {
 		return nil, &SSRExpressionError{Message: "template expression has no cached AST"}
 	}
@@ -386,7 +391,7 @@ func (e *ssrGoEmitter) translate(kind, name string, expr *TemplateExpr, ctx SSRE
 	return e.translateJS(kind, name, expr.Root(), expr.Pos, source, ctx)
 }
 
-func (e *ssrGoEmitter) translateJS(kind, name string, expr JsExpr, pos, source int, ctx SSRExprContext) (goast.Expr, error) {
+func (e *ssrGoEmitter) translateJS(kind, name string, expr jsast.JsExpr, pos, source int, ctx SSRExprContext) (goast.Expr, error) {
 	builder := newSSRIRBuilder(ctx)
 	if e.region != nil {
 		builder.js = true
@@ -406,12 +411,12 @@ func (e *ssrGoEmitter) translateJS(kind, name string, expr JsExpr, pos, source i
 			e.region.throwing++
 		}
 		if e.facts == nil {
-			e.facts = map[JsExpr]ssrIRFacts{}
+			e.facts = map[jsast.JsExpr]ssrIRFacts{}
 		}
 		e.facts[expr] = ir.irBase().Facts
 		if ssrIRPrimitive(ir) {
 			if e.primitive == nil {
-				e.primitive = map[JsExpr]bool{}
+				e.primitive = map[jsast.JsExpr]bool{}
 			}
 			e.primitive[expr] = true
 		}
@@ -432,7 +437,7 @@ func (e *ssrGoEmitter) translateJS(kind, name string, expr JsExpr, pos, source i
 // convertsOutput records that the value of expr is converted to text. A
 // value not proven primitive can call a function in an own toString or
 // throw TypeError, so the site can throw (OrdinaryToPrimitive).
-func (e *ssrGoEmitter) convertsOutput(expr *TemplateExpr) {
+func (e *ssrGoEmitter) convertsOutput(expr *sfcast.TemplateExpr) {
 	if e.region == nil || expr == nil || e.primitive[expr.Root()] {
 		return
 	}
@@ -470,7 +475,7 @@ func (r *SSRRegion) finish(plan *SSRRenderPlan) error {
 	ctx.funcs = r.funcs
 	for _, declarations := range []struct {
 		kind         string
-		initializers map[string]JsExpr
+		initializers map[string]jsast.JsExpr
 	}{{"state", plan.StateInitializers}, {"state", plan.DeepInitializers}, {"derived", plan.DerivedInitializers}, {"binding", plan.PlainInitializers}} {
 		names := make([]string, 0, len(declarations.initializers))
 		for name := range declarations.initializers {
@@ -521,16 +526,16 @@ func (r *SSRRegion) abort(err error) error {
 	return &SSRRegionError{Region: r, Failures: failures, Then: err}
 }
 
-// ssrDiagnosticSummary is the first line of an SSR error, as the CLI has
+// SSRDiagnosticSummary is the first line of an SSR error, as the CLI has
 // always printed it.
-func ssrDiagnosticSummary(err error) string {
+func SSRDiagnosticSummary(err error) string {
 	first, _, _ := strings.Cut(err.Error(), "\n")
 	return first
 }
 
-// ssrDiagnosticDetail is the positioned §10.1 diagnostic of a region error,
+// SSRDiagnosticDetail is the positioned §10.1 diagnostic of a region error,
 // indented under the summary line, or "" for other errors.
-func ssrDiagnosticDetail(src string, err error) string {
+func SSRDiagnosticDetail(src string, err error) string {
 	var region *SSRRegionError
 	if !errors.As(err, &region) {
 		return ""
@@ -549,13 +554,13 @@ func ssrDiagnosticDetail(src string, err error) string {
 // source, or 0, 0 before locate.
 func (r *SSRRegion) position(record SSRSiteRecord) (int, int) {
 	if d := record.Diagnostic; d != nil && d.Pos >= 0 && r != nil && d.Pos <= len(r.source) {
-		line, column := SourceLineColumn(r.source, d.Pos)
+		line, column := codegen.SourceLineColumn(r.source, d.Pos)
 		return line + 1, column + 1
 	}
 	if r == nil || r.source == "" || record.Pos < 0 || record.Pos > len(r.source) {
 		return 0, 0
 	}
-	line, column := SourceLineColumn(r.source, record.Pos)
+	line, column := codegen.SourceLineColumn(r.source, record.Pos)
 	return line + 1, column + 1
 }
 
@@ -575,7 +580,7 @@ func (r *SSRRegion) siteLabel(pos int) string {
 	if r.source == "" || pos < 0 || pos > len(r.source) {
 		return file
 	}
-	line, column := SourceLineColumn(r.source, pos)
+	line, column := codegen.SourceLineColumn(r.source, pos)
 	return fmt.Sprintf("%s:%d:%d", file, line+1, column+1)
 }
 
@@ -640,8 +645,8 @@ func (r *SSRRegion) absorb(builder *ssrIRBuilder) {
 // it has no Go renderer (contract §9.2).
 var errSSRClientOnly = errors.New("client-only component")
 
-// addClientOnly records a client-only component in the report.
-func (c *ssrReportCollector) addClientOnly(src, srcRoot string) {
+// AddClientOnly records a client-only component in the report.
+func (c *SSRReportCollector) AddClientOnly(src, srcRoot string) {
 	if c == nil {
 		return
 	}
@@ -649,10 +654,10 @@ func (c *ssrReportCollector) addClientOnly(src, srcRoot string) {
 	if err != nil {
 		rel = src
 	}
-	c.report.Components = append(c.report.Components, SSRComponentReport{Component: componentName(src), Source: filepath.ToSlash(rel), Status: "client-only", Sites: []SSRSiteRecord{}})
+	c.report.Components = append(c.report.Components, SSRComponentReport{Component: project.ComponentName(src), Source: filepath.ToSlash(rel), Status: "client-only", Sites: []SSRSiteRecord{}})
 }
 
-func isSSRClientOnly(err error) bool { return errors.Is(err, errSSRClientOnly) }
+func IsSSRClientOnly(err error) bool { return errors.Is(err, errSSRClientOnly) }
 
 // ssrStructuralKind reports the site kinds whose value controls structure
 // (T-4.3): branch conditions, keys, each collections, await operands.

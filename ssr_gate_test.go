@@ -421,7 +421,7 @@ func runSSRGatePositive(t *testing.T, compiler, node string, project ssrGateProj
 	serverModule := module + "/out/server"
 	if _, err := os.Stat(filepath.Join(root, SSRConfigFile)); err != nil {
 		args = append(args, "--ssr-module", serverModule)
-	} else if config, err := loadSSRProject(filepath.Join(root, project.Src)); err == nil && config.Config.Module != "" {
+	} else if config, err := LoadSSRProject(filepath.Join(root, project.Src)); err == nil && config.Config.Module != "" {
 		serverModule = config.Config.Module
 	}
 	cli := exec.Command(compiler, args...)
@@ -484,7 +484,7 @@ func renderSSRGateProject(t *testing.T, node, root, src, serverModule string, pr
 	var renderable []string
 	for _, source := range sources {
 		file := filepath.Join(srcRoot, filepath.FromSlash(source))
-		importPath := layout.importPath(file, srcRoot)
+		importPath := layout.ImportPath(file, srcRoot)
 		ok, seen := built[importPath]
 		if !seen {
 			build := exec.Command("go", "build", importPath)
@@ -525,8 +525,8 @@ func renderSSRGateProject(t *testing.T, node, root, src, serverModule string, pr
 	var entries []gateEntry
 	for _, source := range renderable {
 		file := filepath.Join(srcRoot, filepath.FromSlash(source))
-		alias := imports[layout.importPath(file, srcRoot)]
-		name := componentName(file)
+		alias := imports[layout.ImportPath(file, srcRoot)]
+		name := ComponentName(file)
 		module := strings.TrimSuffix(filepath.ToSlash(source), ".vela") + ".js"
 		fmt.Fprintf(&pages, "\t%q: {%q, %q, func(w io.Writer) error { return %s.Render%s(w, %s.%sProps{Set: map[string]bool{}}, %s.%sSlots{}) }},\n",
 			source, module, name, alias, name, alias, name, alias, name)

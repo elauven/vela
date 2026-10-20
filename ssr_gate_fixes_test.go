@@ -79,7 +79,7 @@ func TestSSRComponentPackageWithRelativeProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := layout.importPath(abs, filepath.Join("testdata", "rel", "src")); got != "example.com/app/server/components/editor" {
+	if got := layout.ImportPath(abs, filepath.Join("testdata", "rel", "src")); got != "example.com/app/server/components/editor" {
 		t.Fatalf("import path %q", got)
 	}
 }
@@ -145,7 +145,7 @@ func TestSSRChildFailurePropagates(t *testing.T) {
 	report := filepath.Join(root, "report.json")
 	outRoot := filepath.Join(root, "out")
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/child/out/server", SSRReport: report}
-	if errors := buildSSRProject(collectVela(srcRoot), srcRoot, outRoot, opts, false); errors == 0 {
+	if errors := buildSSRProject(CollectVela(srcRoot), srcRoot, outRoot, opts, false); errors == 0 {
 		t.Fatal("the build must fail")
 	}
 	data, err := os.ReadFile(report)

@@ -1,6 +1,11 @@
-package main
+package ssr
 
 import (
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/project"
+	"github.com/elauven/vela/internal/sfcast"
+
 	"encoding/json"
 	"fmt"
 	goast "go/ast"
@@ -52,10 +57,10 @@ type SSRProject struct {
 	HostDir string // absolute
 }
 
-// loadSSRProject finds vela.ssr.json in srcRoot or its parent. Without one,
+// LoadSSRProject finds vela.ssr.json in srcRoot or its parent. Without one,
 // the project root is the parent of srcRoot and the host tree is ssrhost/
 // there, which is where diagnostics suggest host files.
-func loadSSRProject(srcRoot string) (*SSRProject, error) {
+func LoadSSRProject(srcRoot string) (*SSRProject, error) {
 	src, err := filepath.Abs(srcRoot)
 	if err != nil {
 		return nil, err
@@ -90,8 +95,8 @@ type SSRHostSymbol struct {
 	Name   string `json:"name"`
 }
 
-// relative returns a path relative to the project root, with slashes.
-func (p *SSRProject) relative(file string) string {
+// Relative returns a path relative to the project root, with slashes.
+func (p *SSRProject) Relative(file string) string {
 	abs, err := filepath.Abs(file)
 	if err != nil {
 		return filepath.ToSlash(file)
@@ -230,7 +235,7 @@ type SSRHosts struct {
 	// RootModes holds the root mode of every component (true: interactive).
 	RootModes map[string]bool
 	// Sources holds the bindable functions of every source file.
-	Sources map[string]map[string]*JsFuncDecl
+	Sources map[string]map[string]*jsast.JsFuncDecl
 	// Modules translates the local .js modules components import.
 	Modules *SSRModules
 	// Children holds, per component source, the sources of the child
@@ -248,15 +253,15 @@ func ssrSourceFunctions(project *SSRProject, files []string) map[string]ssrSourc
 		if err != nil {
 			continue
 		}
-		rel := project.relative(file)
-		symbols := ssrSourceSymbols{Source: rel, Functions: map[string]*JsFuncDecl{}}
+		rel := project.Relative(file)
+		symbols := ssrSourceSymbols{Source: rel, Functions: map[string]*jsast.JsFuncDecl{}}
 		switch filepath.Ext(file) {
 		case ".js":
-			if program := ParseJS(string(data)); program != nil {
+			if program := jsast.ParseJS(string(data)); program != nil {
 				ssrCollectFunctions(program, true, symbols.Functions)
 			}
 		case ".vela":
-			if sfc, err := ParseSFC(string(data)); err == nil && sfc.ScriptAST != nil && sfc.ScriptAST.Program != nil {
+			if sfc, err := sfcast.ParseSFC(string(data)); err == nil && sfc.ScriptAST != nil && sfc.ScriptAST.Program != nil {
 				ssrCollectFunctions(sfc.ScriptAST.Program, false, symbols.Functions)
 			}
 		}
@@ -267,29 +272,29 @@ func ssrSourceFunctions(project *SSRProject, files []string) map[string]ssrSourc
 
 type ssrSourceSymbols struct {
 	Source    string
-	Functions map[string]*JsFuncDecl // a const arrow function has a nil declaration
+	Functions map[string]*jsast.JsFuncDecl // a const arrow function has a nil declaration
 }
 
-func ssrCollectFunctions(program *JsProgram, exportedOnly bool, out map[string]*JsFuncDecl) {
+func ssrCollectFunctions(program *jsast.JsProgram, exportedOnly bool, out map[string]*jsast.JsFuncDecl) {
 	for _, stmt := range program.Body {
 		exported := false
-		if export, ok := stmt.(*JsExportDecl); ok && export.Declaration != nil {
+		if export, ok := stmt.(*jsast.JsExportDecl); ok && export.Declaration != nil {
 			stmt, exported = export.Declaration, true
 		}
 		if exportedOnly && !exported {
 			continue
 		}
 		switch decl := stmt.(type) {
-		case *JsFuncDecl:
+		case *jsast.JsFuncDecl:
 			out[decl.Name] = decl
-		case *JsVarDecl:
+		case *jsast.JsVarDecl:
 			if decl.Kind != "const" {
 				continue
 			}
 			// A const arrow function, or a module value a parameterless host
 			// can provide (§8.7).
 			for _, declarator := range decl.Decls {
-				if name := IdentName(declarator.Id); name != "" && declarator.Init != nil {
+				if name := analyzer.IdentName(declarator.Id); name != "" && declarator.Init != nil {
 					out[name] = nil
 				}
 			}
@@ -300,7 +305,7 @@ func ssrCollectFunctions(program *JsProgram, exportedOnly bool, out map[string]*
 // analyzeSSRHosts reads the host tree: directives, their targets, and
 // their signatures.
 func analyzeSSRHosts(project *SSRProject, sources map[string]ssrSourceSymbols) *SSRHosts {
-	hosts := &SSRHosts{Project: project, Bindings: map[SSRHostSymbol]*SSRHostBinding{}, Types: map[string]*types.Package{}, Sources: map[string]map[string]*JsFuncDecl{}}
+	hosts := &SSRHosts{Project: project, Bindings: map[SSRHostSymbol]*SSRHostBinding{}, Types: map[string]*types.Package{}, Sources: map[string]map[string]*jsast.JsFuncDecl{}}
 	for _, source := range sources {
 		hosts.Sources[source.Source] = source.Functions
 	}
@@ -328,14 +333,14 @@ func analyzeSSRHosts(project *SSRProject, sources map[string]ssrSourceSymbols) *
 
 func (hosts *SSRHosts) analyzePackage(dir string, filenames []string, sources map[string]ssrSourceSymbols, loader *ssrHostImporter) {
 	project := hosts.Project
-	mirror := project.relative(dir)
+	mirror := project.Relative(dir)
 	fset := token.NewFileSet()
 	var files []*goast.File
 	sort.Strings(filenames)
 	for _, filename := range filenames {
 		file, err := goparser.ParseFile(fset, filename, nil, goparser.ParseComments)
 		if err != nil {
-			hosts.Problems = append(hosts.Problems, SSRHostProblem{File: project.relative(filename), Line: 1, Code: SSRHostSignatureCode, Message: "cannot parse host file: " + err.Error()})
+			hosts.Problems = append(hosts.Problems, SSRHostProblem{File: project.Relative(filename), Line: 1, Code: SSRHostSignatureCode, Message: "cannot parse host file: " + err.Error()})
 			continue
 		}
 		files = append(files, file)
@@ -362,7 +367,7 @@ func (hosts *SSRHosts) analyzePackage(dir string, filenames []string, sources ma
 				}
 				name := strings.TrimSpace(strings.TrimPrefix(comment.Text, ssrHostDirectivePrefix))
 				position := fset.Position(comment.Pos())
-				location := SSRHostProblem{File: project.relative(position.Filename), Line: position.Line}
+				location := SSRHostProblem{File: project.Relative(position.Filename), Line: position.Line}
 				problem := func(code, format string, args ...any) {
 					location.Code, location.Message = code, fmt.Sprintf(format, args...)
 					hosts.Problems = append(hosts.Problems, location)
@@ -463,7 +468,7 @@ func ssrHostTypeKind(t types.Type, parameter bool) (kind string, acceptsUndefine
 	case "any", "interface{}":
 		return "any", true, ""
 	}
-	if named, ok := t.(*types.Named); ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == ssrRuntimeImport() && named.Obj().Name() == "Optional" {
+	if named, ok := t.(*types.Named); ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == SSRRuntimeImport() && named.Obj().Name() == "Optional" {
 		if args := named.TypeArgs(); args != nil && args.Len() == 1 {
 			kind, _, problem := ssrHostTypeKind(args.At(0), parameter)
 			return kind, true, problem
@@ -524,7 +529,7 @@ func (loader *ssrHostImporter) Import(importPath string) (*types.Package, error)
 		return pkg, nil
 	}
 	var pkg *types.Package
-	if importPath == ssrRuntimeImport() {
+	if importPath == SSRRuntimeImport() {
 		pkg, _ = ssrRuntimeTypesPackage(loader.fallback)
 	} else if !strings.Contains(strings.SplitN(importPath, "/", 2)[0], ".") {
 		pkg, _ = loader.fallback.Import(importPath)
@@ -542,7 +547,7 @@ func (loader *ssrHostImporter) Import(importPath string) (*types.Package, error)
 // bindSSRHosts attaches to a render plan the host bindings and the
 // bindable symbols of the functions its scripts call: its own top-level
 // functions and the functions it imports from local .js modules.
-func bindSSRHosts(plan *SSRRenderPlan, hosts *SSRHosts, src string, analysis *Analysis) {
+func bindSSRHosts(plan *SSRRenderPlan, hosts *SSRHosts, src string, analysis *analyzer.Analysis) {
 	if hosts == nil {
 		return
 	}
@@ -550,8 +555,8 @@ func bindSSRHosts(plan *SSRRenderPlan, hosts *SSRHosts, src string, analysis *An
 	plan.HostSymbols = map[string]SSRHostSymbol{}
 	plan.Hosts = map[string]*SSRHostBinding{}
 	plan.HostProject = project
-	plan.HostDecls = map[string]*JsFuncDecl{}
-	own := project.relative(src)
+	plan.HostDecls = map[string]*jsast.JsFuncDecl{}
+	own := project.Relative(src)
 	for name := range plan.Functions {
 		plan.HostSymbols[name] = SSRHostSymbol{Source: own, Name: name}
 	}
@@ -566,7 +571,7 @@ func bindSSRHosts(plan *SSRRenderPlan, hosts *SSRHosts, src string, analysis *An
 			if imp == nil || !strings.HasPrefix(imp.Source, ".") || path.Ext(imp.Source) != ".js" {
 				continue
 			}
-			source := project.relative(filepath.Join(filepath.Dir(src), filepath.FromSlash(imp.Source)))
+			source := project.Relative(filepath.Join(filepath.Dir(src), filepath.FromSlash(imp.Source)))
 			for _, spec := range imp.Specifiers {
 				if spec.Local != "" && spec.Imported != "" && spec.Imported != "default" {
 					plan.HostSymbols[spec.Local] = SSRHostSymbol{Source: source, Name: spec.Imported}
@@ -589,12 +594,12 @@ func bindSSRHosts(plan *SSRRenderPlan, hosts *SSRHosts, src string, analysis *An
 }
 
 // ssrConstArrowFunctions lists top-level `const name = (…) => …` functions.
-func ssrConstArrowFunctions(a *Analysis) map[string]bool {
+func ssrConstArrowFunctions(a *analyzer.Analysis) map[string]bool {
 	out := map[string]bool{}
 	if a == nil || a.Script == nil || a.Script.Program == nil {
 		return out
 	}
-	functions := map[string]*JsFuncDecl{}
+	functions := map[string]*jsast.JsFuncDecl{}
 	ssrCollectFunctions(a.Script.Program, false, functions)
 	for name, decl := range functions {
 		if decl == nil {
@@ -646,21 +651,21 @@ func ssrGoTypeForFacts(facts ssrIRFacts) string {
 // SSRDefaultModule is the default Go import root of generated packages.
 const SSRDefaultModule = "vela/generated/server"
 
-// loadSSRHosts locates the project and analyses its host tree against the
+// LoadSSRHosts locates the project and analyses its host tree against the
 // functions of its components and .js modules.
-func loadSSRHosts(srcRoot string, files []string) (*SSRHosts, error) {
-	project, err := loadSSRProject(srcRoot)
+func LoadSSRHosts(srcRoot string, files []string) (*SSRHosts, error) {
+	ssrProject, err := LoadSSRProject(srcRoot)
 	if err != nil {
 		return nil, err
 	}
-	sources := append(append([]string{}, files...), collectProjectJSModules(srcRoot)...)
-	return analyzeSSRHosts(project, ssrSourceFunctions(project, sources)), nil
+	sources := append(append([]string{}, files...), project.CollectJSModules(srcRoot)...)
+	return analyzeSSRHosts(ssrProject, ssrSourceFunctions(ssrProject, sources)), nil
 }
 
-// scaffoldSSRHosts writes a stub for every suggested host whose file does
+// ScaffoldSSRHosts writes a stub for every suggested host whose file does
 // not exist yet (H-8.6a); it never modifies an existing file. It returns
 // the created files, relative to the project root.
-func scaffoldSSRHosts(project *SSRProject, diagnostics []*SSRSiteDiagnostic) []string {
+func ScaffoldSSRHosts(project *SSRProject, diagnostics []*SSRSiteDiagnostic) []string {
 	var created []string
 	seen := map[string]bool{}
 	for _, diagnostic := range diagnostics {
@@ -687,7 +692,7 @@ func scaffoldSSRHosts(project *SSRProject, diagnostics []*SSRSiteDiagnostic) []s
 import (
 	"context"
 
-	vela "` + ssrRuntimeImport() + `"
+	vela "` + SSRRuntimeImport() + `"
 )
 
 // ` + goName + ` implements ` + name + ` during server rendering. It must
@@ -712,23 +717,23 @@ import (
 	return created
 }
 
-// boundName reports whether local, a name a component calls, is bound to
+// BoundName reports whether local, a name a component calls, is bound to
 // a host implementation, and returns the JavaScript name of the symbol
 // (for the hydration site table of development builds, V-11.3b).
-func (hosts *SSRHosts) boundName(src string, sfc *SFC, local string) (string, bool) {
+func (hosts *SSRHosts) BoundName(src string, sfc *sfcast.SFC, local string) (string, bool) {
 	if hosts == nil || sfc == nil {
 		return "", false
 	}
 	project := hosts.Project
-	symbol := SSRHostSymbol{Source: project.relative(src), Name: local}
-	if analysis := AnalyzeScriptAST(sfc.ScriptAST); analysis != nil {
+	symbol := SSRHostSymbol{Source: project.Relative(src), Name: local}
+	if analysis := analyzer.AnalyzeScriptAST(sfc.ScriptAST); analysis != nil {
 		for _, imp := range analysis.Imports {
 			if imp == nil || !strings.HasPrefix(imp.Source, ".") || path.Ext(imp.Source) != ".js" {
 				continue
 			}
 			for _, spec := range imp.Specifiers {
 				if spec.Local == local && spec.Imported != "" && spec.Imported != "default" {
-					symbol = SSRHostSymbol{Source: project.relative(filepath.Join(filepath.Dir(src), filepath.FromSlash(imp.Source))), Name: spec.Imported}
+					symbol = SSRHostSymbol{Source: project.Relative(filepath.Join(filepath.Dir(src), filepath.FromSlash(imp.Source))), Name: spec.Imported}
 				}
 			}
 		}

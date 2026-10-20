@@ -106,7 +106,7 @@ func runSSRBlocksSuite(t *testing.T, files map[string]string, cases []ssrBlocksC
 	projectModule := "example.com/ssrblocks"
 
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}
-	if errors := buildSSRProject(collectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
+	if errors := buildSSRProject(CollectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 

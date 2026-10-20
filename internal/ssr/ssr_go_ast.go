@@ -1,4 +1,4 @@
-package main
+package ssr
 
 import (
 	"bytes"
@@ -22,9 +22,9 @@ const SSRRuntimeImportPath = "github.com/elauven/vela/ssr_runtime"
 // ssrRuntimePath is the runtime module path of the project being built.
 var ssrRuntimePath = SSRRuntimeImportPath
 
-// ssrRuntimeImport returns the import path generated code and host checks
+// SSRRuntimeImport returns the import path generated code and host checks
 // use for the Go runtime.
-func ssrRuntimeImport() string { return ssrRuntimePath }
+func SSRRuntimeImport() string { return ssrRuntimePath }
 
 // SSRRuntimeContract is the contract marker every generated file references
 // (R-12.1d); it must match a constant the runtime exports.
@@ -100,7 +100,7 @@ func goSSRImportDecl() *goast.GenDecl {
 	decl.Specs = append(decl.Specs, goImportDecl("io").Specs...)
 	decl.Specs = append(decl.Specs, &goast.ImportSpec{
 		Name: goast.NewIdent("vela"),
-		Path: &goast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", ssrRuntimeImport())},
+		Path: &goast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", SSRRuntimeImport())},
 	})
 	return decl
 }
@@ -198,7 +198,7 @@ type ssrGeneratedGraphImporter struct {
 }
 
 func (loader *ssrGeneratedGraphImporter) Import(importPath string) (*types.Package, error) {
-	if importPath == ssrRuntimeImport() {
+	if importPath == SSRRuntimeImport() {
 		if loader.runtime != nil {
 			return loader.runtime, nil
 		}
@@ -309,7 +309,7 @@ func goSSRTypeExpr(kind SSRValueType) goast.Expr {
 }
 
 func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
-	pkg := types.NewPackage(ssrRuntimeImport(), "ssr_runtime")
+	pkg := types.NewPackage(SSRRuntimeImport(), "ssr_runtime")
 	pkg.Scope().Insert(types.NewConst(token.NoPos, pkg, SSRRuntimeContract, types.Typ[types.UntypedBool], constant.MakeBool(true)))
 	ioPkg, err := loader.Import("io")
 	if err != nil {

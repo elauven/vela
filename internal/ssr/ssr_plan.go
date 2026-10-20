@@ -1,6 +1,16 @@
-package main
+// Package ssr compiles a component for server rendering: the render plan, the
+// server IR of its script and template, the translation to Go, the generated
+// Go renderer, Go hosts, root modes and the SSR report.
+package ssr
 
 import (
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/codegen"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/project"
+	"github.com/elauven/vela/internal/sfcast"
+	"github.com/elauven/vela/internal/srcspan"
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,20 +42,20 @@ type SSRRenderPlan struct {
 	// for the server-safe local-state subset. It is never printable source and
 	// lets the expression translator decide whether an initializer is actually
 	// representable in Go.
-	StateInitializers map[string]JsExpr
+	StateInitializers map[string]jsast.JsExpr
 	// DerivedInitializers retains immutable, parser-owned $derived expression
 	// ASTs. The SSR expression translator resolves them only through the same
 	// admitted pure subset used for plain $state initializers.
-	DerivedInitializers map[string]JsExpr
+	DerivedInitializers map[string]jsast.JsExpr
 	// PlainInitializers retains top-level const/unchanged-let initializers from
 	// the component-owned script AST. They are admitted only through the same
 	// pure expression translator as reactive initializers.
-	PlainInitializers map[string]JsExpr
+	PlainInitializers map[string]jsast.JsExpr
 	// Functions retains parser-owned top-level named declarations. The first
 	// SSR function subset accepts only a synchronous, non-generator function
 	// whose body is one return expression; the expression translator enforces
 	// that contract at each call site.
-	Functions map[string]*JsFuncDecl
+	Functions map[string]*jsast.JsFuncDecl
 	Nodes     []SSRPlanNode
 	Dynamics  []SSRDynamicSite
 	ScopedCSS string
@@ -55,7 +65,7 @@ type SSRRenderPlan struct {
 	// host tree for diagnostics.
 	Hosts       map[string]*SSRHostBinding
 	HostSymbols map[string]SSRHostSymbol
-	HostDecls   map[string]*JsFuncDecl
+	HostDecls   map[string]*jsast.JsFuncDecl
 	HostProject *SSRProject
 	// ModuleRefs maps names imported from local .js modules to their
 	// translated exports (ssr_module.go).
@@ -65,7 +75,7 @@ type SSRRenderPlan struct {
 	// DeepInitializers holds $state.deep initializers: their initial value is
 	// an ordinary server value (T-6.6d). They are kept apart from
 	// StateInitializers.
-	DeepInitializers map[string]JsExpr
+	DeepInitializers map[string]jsast.JsExpr
 	// StateNames lists every $state and $state.deep binding, and LocalOrder
 	// every $state, $state.deep, $derived, and plain binding, in script
 	// declaration order (T-6.6d).
@@ -113,7 +123,7 @@ type SSRPlanProp struct {
 	SourceName string
 	GoName     string
 	Type       SSRValueType
-	Default    JsExpr
+	Default    jsast.JsExpr
 	Bindable   bool
 }
 
@@ -122,14 +132,14 @@ type SSRPlanNode interface {
 }
 
 type SSRPlanElement struct {
-	Span     SectionSpan
+	Span     srcspan.SectionSpan
 	Tag      string
 	Attrs    []SSRPlanAttr
 	Children []SSRPlanNode
 }
 
 type SSRPlanComponent struct {
-	Span  SectionSpan
+	Span  srcspan.SectionSpan
 	Name  string
 	Link  *SSRComponentLink
 	Attrs []SSRPlanAttr
@@ -155,58 +165,58 @@ type SSRComponentLink struct {
 // §9): the server renders only the fallback, in a range with the state
 // token "f"; the main branch is not region code (T-9.1c, T-9.2c).
 type SSRPlanClient struct {
-	Span     SectionSpan
+	Span     srcspan.SectionSpan
 	Fallback []SSRPlanNode
 }
 
 func (*SSRPlanClient) ssrPlanNode() {}
 
 type SSRPlanSlot struct {
-	Span     SectionSpan
+	Span     srcspan.SectionSpan
 	Name     string
 	Fallback []SSRPlanNode
 }
 
 type SSRPlanText struct {
-	Span  SectionSpan
+	Span  srcspan.SectionSpan
 	Parts []SSRPlanTextPart
 }
 
 type SSRPlanTextPart struct {
-	Span      SectionSpan
+	Span      srcspan.SectionSpan
 	Static    bool
 	Value     string
-	Expr      *TemplateExpr // cached expression; nil for Static parts
-	DynamicID int           // -1 for static text; paired server marker otherwise
+	Expr      *sfcast.TemplateExpr // cached expression; nil for Static parts
+	DynamicID int                  // -1 for static text; paired server marker otherwise
 }
 
 type SSRPlanIf struct {
-	Span      SectionSpan
-	Key       *TemplateExpr // non-nil for a {#key} block
+	Span      srcspan.SectionSpan
+	Key       *sfcast.TemplateExpr // non-nil for a {#key} block
 	Branches  []SSRPlanIfBranch
 	DynamicID int // paired marker around the rendered branch range
 }
 
 type SSRPlanIfBranch struct {
-	Span      SectionSpan
-	Condition *TemplateExpr // nil is the final else branch
+	Span      srcspan.SectionSpan
+	Condition *sfcast.TemplateExpr // nil is the final else branch
 	Children  []SSRPlanNode
 }
 
 type SSRPlanEach struct {
-	Span         SectionSpan
-	Iterable     *TemplateExpr
+	Span         srcspan.SectionSpan
+	Iterable     *sfcast.TemplateExpr
 	ItemName     string
 	IndexName    string
-	Key          *TemplateExpr
+	Key          *sfcast.TemplateExpr
 	Children     []SSRPlanNode
 	ElseChildren []SSRPlanNode
 	DynamicID    int // paired marker around the rendered list range
 }
 
 type SSRPlanAwait struct {
-	Span            SectionSpan
-	Promise         *TemplateExpr
+	Span            srcspan.SectionSpan
+	Promise         *sfcast.TemplateExpr
 	ValueName       string
 	ErrorName       string
 	PendingChildren []SSRPlanNode
@@ -238,12 +248,12 @@ const (
 )
 
 type SSRPlanAttr struct {
-	Span      SectionSpan
+	Span      srcspan.SectionSpan
 	Name      string
 	Value     string
-	ValueKind AttrValueKind
+	ValueKind sfcast.AttrValueKind
 	Role      SSRPlanAttrRole
-	Expr      *TemplateExpr // cached; required by every non-static dynamic role
+	Expr      *sfcast.TemplateExpr // cached; required by every non-static dynamic role
 }
 
 type SSRDynamicKind uint8
@@ -264,8 +274,8 @@ const (
 type SSRDynamicSite struct {
 	ID   int
 	Kind SSRDynamicKind
-	Expr *TemplateExpr
-	Span SectionSpan
+	Expr *sfcast.TemplateExpr
+	Span srcspan.SectionSpan
 }
 
 type ssrPlanBuilder struct {
@@ -277,22 +287,22 @@ type ssrPlanBuilder struct {
 
 // BuildSSRRenderPlan converts only the validated template AST into a typed
 // plan. It never parses source text and never emits Go or HTML strings.
-func BuildSSRRenderPlan(componentName string, sfc *SFC, scopeID string) (*SSRRenderPlan, error) {
+func BuildSSRRenderPlan(componentName string, sfc *sfcast.SFC, scopeID string) (*SSRRenderPlan, error) {
 	return BuildSSRRenderPlanWithAnalysis(componentName, sfc, nil, scopeID)
 }
 
 // BuildSSRRenderPlanWithAnalysis accepts the compiler-owned analysis when it
 // is already available in the pipeline. The nil compatibility path analyses
 // the existing ScriptAST; it never reparses script source.
-func BuildSSRRenderPlanWithAnalysis(componentName string, sfc *SFC, analysis *Analysis, scopeID string) (*SSRRenderPlan, error) {
+func BuildSSRRenderPlanWithAnalysis(componentName string, sfc *sfcast.SFC, analysis *analyzer.Analysis, scopeID string) (*SSRRenderPlan, error) {
 	return BuildSSRRenderPlanWithAnalysisAndLinks(componentName, sfc, analysis, scopeID, nil)
 }
 
-func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, analysis *Analysis, scopeID string, links map[string]SSRComponentLink) (*SSRRenderPlan, error) {
+func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *sfcast.SFC, analysis *analyzer.Analysis, scopeID string, links map[string]SSRComponentLink) (*SSRRenderPlan, error) {
 	if sfc == nil || sfc.TemplateAST == nil {
 		return nil, fmt.Errorf("ssr render plan: missing template AST")
 	}
-	if issues := ValidateTemplateAST(sfc.TemplateAST); len(issues) > 0 {
+	if issues := sfcast.ValidateTemplateAST(sfc.TemplateAST); len(issues) > 0 {
 		return nil, fmt.Errorf("ssr render plan: template AST is invalid: %s", issues[0].Message)
 	}
 	componentName = strings.TrimSpace(componentName)
@@ -303,7 +313,7 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		scopeID = "vela-" + componentName
 	}
 	if analysis == nil {
-		analysis = AnalyzeScriptAST(sfc.ScriptAST)
+		analysis = analyzer.AnalyzeScriptAST(sfc.ScriptAST)
 	}
 	props, err := buildSSRPlanProps(analysis, sfc.ScriptAST)
 	if err != nil {
@@ -318,8 +328,8 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		DerivedInitializers: ssrDerivedInitializers(analysis),
 		PlainInitializers:   ssrPlainInitializers(analysis),
 		Functions:           ssrNamedFunctions(analysis),
-		ScopedCSS:           ExtractScopedCSS(sfc, scopeID),
-		ElementScope:        ElementScopeFor(sfc, scopeID),
+		ScopedCSS:           codegen.ExtractScopedCSS(sfc, scopeID),
+		ElementScope:        codegen.ElementScopeFor(sfc, scopeID),
 		DeepInitializers:    ssrDeepInitializers(analysis),
 		TemplateOffset:      sfc.TemplateOffset,
 		ScriptOffset:        sfc.ScriptOffset,
@@ -344,8 +354,8 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 	return b.plan, nil
 }
 
-func ssrStateInitializers(analysis *Analysis) map[string]JsExpr {
-	initializers := map[string]JsExpr{}
+func ssrStateInitializers(analysis *analyzer.Analysis) map[string]jsast.JsExpr {
+	initializers := map[string]jsast.JsExpr{}
 	if analysis == nil {
 		return initializers
 	}
@@ -361,8 +371,8 @@ func ssrStateInitializers(analysis *Analysis) map[string]JsExpr {
 	return initializers
 }
 
-func ssrDerivedInitializers(analysis *Analysis) map[string]JsExpr {
-	initializers := map[string]JsExpr{}
+func ssrDerivedInitializers(analysis *analyzer.Analysis) map[string]jsast.JsExpr {
+	initializers := map[string]jsast.JsExpr{}
 	if analysis == nil {
 		return initializers
 	}
@@ -374,8 +384,8 @@ func ssrDerivedInitializers(analysis *Analysis) map[string]JsExpr {
 	return initializers
 }
 
-func ssrPlainInitializers(analysis *Analysis) map[string]JsExpr {
-	initializers := map[string]JsExpr{}
+func ssrPlainInitializers(analysis *analyzer.Analysis) map[string]jsast.JsExpr {
+	initializers := map[string]jsast.JsExpr{}
 	if analysis == nil || analysis.Script == nil {
 		return initializers
 	}
@@ -386,14 +396,14 @@ func ssrPlainInitializers(analysis *Analysis) map[string]JsExpr {
 	if analysis.Script.Program == nil {
 		return initializers
 	}
-	written := FindWrittenVars(analysis.Script.Program)
+	written := analyzer.FindWrittenVars(analysis.Script.Program)
 	for _, stmt := range analysis.Script.Program.Body {
-		decl, ok := stmt.(*JsVarDecl)
+		decl, ok := stmt.(*jsast.JsVarDecl)
 		if !ok || (decl.Kind != "const" && decl.Kind != "let") {
 			continue
 		}
 		for _, declarator := range decl.Decls {
-			name := IdentName(declarator.Id)
+			name := analyzer.IdentName(declarator.Id)
 			if name == "" || declarator.Init == nil || reactive[name] || written[name] {
 				continue
 			}
@@ -403,8 +413,8 @@ func ssrPlainInitializers(analysis *Analysis) map[string]JsExpr {
 	return initializers
 }
 
-func ssrNamedFunctions(analysis *Analysis) map[string]*JsFuncDecl {
-	functions := map[string]*JsFuncDecl{}
+func ssrNamedFunctions(analysis *analyzer.Analysis) map[string]*jsast.JsFuncDecl {
+	functions := map[string]*jsast.JsFuncDecl{}
 	if analysis == nil || analysis.Script == nil {
 		return functions
 	}
@@ -412,14 +422,14 @@ func ssrNamedFunctions(analysis *Analysis) map[string]*JsFuncDecl {
 		return functions
 	}
 	for _, stmt := range analysis.Script.Program.Body {
-		if function, ok := stmt.(*JsFuncDecl); ok && function.Name != "" {
+		if function, ok := stmt.(*jsast.JsFuncDecl); ok && function.Name != "" {
 			functions[function.Name] = function
 		}
 	}
 	return functions
 }
 
-func (b *ssrPlanBuilder) dynamic(kind SSRDynamicKind, expr *TemplateExpr, span SectionSpan) int {
+func (b *ssrPlanBuilder) dynamic(kind SSRDynamicKind, expr *sfcast.TemplateExpr, span srcspan.SectionSpan) int {
 	id := b.dynamicNext
 	b.plan.Dynamics = append(b.plan.Dynamics, SSRDynamicSite{
 		ID: id, Kind: kind, Expr: expr, Span: span,
@@ -428,13 +438,13 @@ func (b *ssrPlanBuilder) dynamic(kind SSRDynamicKind, expr *TemplateExpr, span S
 	return id
 }
 
-func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
+func (b *ssrPlanBuilder) nodes(nodes []sfcast.Node) []SSRPlanNode {
 	out := make([]SSRPlanNode, 0, len(nodes))
 	for _, node := range nodes {
 		switch n := node.(type) {
-		case *ElementNode:
+		case *sfcast.ElementNode:
 			out = append(out, b.element(n))
-		case *ComponentNode:
+		case *sfcast.ComponentNode:
 			if link, ok := b.links[n.Name]; ok && link.ClientOnly {
 				// Lowered as {#client}<X />{/client} with an empty fallback
 				// (T-9.2b); its props and slots are not region code.
@@ -442,12 +452,12 @@ func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
 				continue
 			}
 			out = append(out, b.component(n))
-		case *SlotNode:
+		case *sfcast.SlotNode:
 			b.slotNames[n.Name] = true
 			out = append(out, &SSRPlanSlot{Span: n.Span, Name: n.Name, Fallback: b.nodes(n.Fallback)})
-		case *TextNode:
+		case *sfcast.TextNode:
 			out = append(out, b.text(n))
-		case *IfChainNode:
+		case *sfcast.IfChainNode:
 			if n.Client {
 				client := &SSRPlanClient{Span: n.Span}
 				if len(n.Branches) > 1 {
@@ -476,7 +486,7 @@ func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
 				})
 			}
 			out = append(out, &SSRPlanIf{Span: n.Span, Key: n.KeyAST, Branches: branches, DynamicID: markerID})
-		case *EachBlockNode:
+		case *sfcast.EachBlockNode:
 			markerID := b.dynamic(SSRDynamicEach, n.IterExpr, n.Span)
 			if n.HasKey() {
 				b.dynamic(SSRDynamicEachKey, n.KeyAST, n.Span)
@@ -485,7 +495,7 @@ func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
 				Span: n.Span, Iterable: n.IterExpr, ItemName: n.ItemName, IndexName: n.IndexName,
 				Key: n.KeyAST, Children: b.nodes(n.Children), ElseChildren: b.nodes(n.ElseChildren), DynamicID: markerID,
 			})
-		case *AwaitBlockNode:
+		case *sfcast.AwaitBlockNode:
 			markerID := b.dynamic(SSRDynamicAwait, n.Expr, n.Span)
 			out = append(out, &SSRPlanAwait{
 				Span: n.Span, Promise: n.Expr, ValueName: n.ValueName, ErrorName: n.ErrorName,
@@ -496,11 +506,11 @@ func (b *ssrPlanBuilder) nodes(nodes []Node) []SSRPlanNode {
 	return out
 }
 
-func (b *ssrPlanBuilder) element(node *ElementNode) *SSRPlanElement {
+func (b *ssrPlanBuilder) element(node *sfcast.ElementNode) *SSRPlanElement {
 	return &SSRPlanElement{Span: node.Span, Tag: node.Tag, Attrs: b.attrs(node.Attrs), Children: b.nodes(node.Children)}
 }
 
-func (b *ssrPlanBuilder) component(node *ComponentNode) *SSRPlanComponent {
+func (b *ssrPlanBuilder) component(node *sfcast.ComponentNode) *SSRPlanComponent {
 	attrs := b.attrs(node.Attrs)
 	slots := make(map[string][]SSRPlanNode, len(node.Slots))
 	names := make([]string, 0, len(node.Slots))
@@ -523,7 +533,7 @@ func (b *ssrPlanBuilder) component(node *ComponentNode) *SSRPlanComponent {
 // not infer package names or Go import paths yet; those are a later project
 // linking concern. Returning canonical source paths here keeps both later
 // stages independent of import spelling and aliases.
-func ResolveSSRLocalComponentLinks(src, srcRoot string, analysis *Analysis) (map[string]SSRComponentLink, error) {
+func ResolveSSRLocalComponentLinks(src, srcRoot string, analysis *analyzer.Analysis) (map[string]SSRComponentLink, error) {
 	links := map[string]SSRComponentLink{}
 	if analysis == nil {
 		return links, nil
@@ -556,18 +566,18 @@ func ResolveSSRLocalComponentLinks(src, srcRoot string, analysis *Analysis) (map
 // module-path policy out of template parsing and Go-AST emission.
 func LinkSSRComponentPackages(links map[string]SSRComponentLink, srcRoot string, layout SSRProjectLayout) map[string]SSRComponentLink {
 	for name, link := range links {
-		link.PackageName = layout.packageName(link.SourcePath, srcRoot)
-		link.ImportPath = layout.importPath(link.SourcePath, srcRoot)
-		link.GoName = componentName(link.SourcePath)
+		link.PackageName = layout.PackageName(link.SourcePath, srcRoot)
+		link.ImportPath = layout.ImportPath(link.SourcePath, srcRoot)
+		link.GoName = project.ComponentName(link.SourcePath)
 		if data, err := os.ReadFile(link.SourcePath); err == nil {
-			link.ClientOnly = ScriptContextClient(string(data))
+			link.ClientOnly = sfcast.ScriptContextClient(string(data))
 		}
 		links[name] = link
 	}
 	return links
 }
 
-func (b *ssrPlanBuilder) text(node *TextNode) *SSRPlanText {
+func (b *ssrPlanBuilder) text(node *sfcast.TextNode) *SSRPlanText {
 	parts := make([]SSRPlanTextPart, 0, len(node.Parts))
 	for _, part := range node.Parts {
 		if part == nil {
@@ -582,7 +592,7 @@ func (b *ssrPlanBuilder) text(node *TextNode) *SSRPlanText {
 	return &SSRPlanText{Span: node.Span, Parts: parts}
 }
 
-func (b *ssrPlanBuilder) attrs(attrs []*Attr) []SSRPlanAttr {
+func (b *ssrPlanBuilder) attrs(attrs []*sfcast.Attr) []SSRPlanAttr {
 	out := make([]SSRPlanAttr, 0, len(attrs))
 	for _, attr := range attrs {
 		if attr == nil {
@@ -611,7 +621,7 @@ func (b *ssrPlanBuilder) attrs(attrs []*Attr) []SSRPlanAttr {
 	return out
 }
 
-func buildSSRPlanProps(analysis *Analysis, script *ScriptAST) ([]SSRPlanProp, error) {
+func buildSSRPlanProps(analysis *analyzer.Analysis, script *sfcast.ScriptAST) ([]SSRPlanProp, error) {
 	if analysis == nil {
 		return nil, nil
 	}
@@ -647,9 +657,9 @@ func ssrGoExportName(name string) string {
 	return ""
 }
 
-func inferSSRValueType(expr JsExpr) SSRValueType {
+func inferSSRValueType(expr jsast.JsExpr) SSRValueType {
 	switch node := expr.(type) {
-	case *JsLiteral:
+	case *jsast.JsLiteral:
 		switch node.Kind {
 		case "string":
 			return SSRTypeString
@@ -661,18 +671,18 @@ func inferSSRValueType(expr JsExpr) SSRValueType {
 			}
 			return SSRTypeInt
 		}
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		return SSRTypeSlice
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		return SSRTypeObject
-	case *JsUnaryExpr:
+	case *jsast.JsUnaryExpr:
 		if node.Op == "+" || node.Op == "-" {
 			kind := inferSSRValueType(node.X)
 			if kind == SSRTypeInt || kind == SSRTypeFloat {
 				return SSRTypeFloat
 			}
 		}
-	case *JsBinaryExpr:
+	case *jsast.JsBinaryExpr:
 		left := inferSSRValueType(node.L)
 		right := inferSSRValueType(node.R)
 		if node.Op == "+" && (left == SSRTypeString || right == SSRTypeString) {
@@ -690,26 +700,26 @@ func inferSSRValueType(expr JsExpr) SSRValueType {
 	return SSRTypeAny
 }
 
-func inferSSRPropType(script *ScriptAST, name string, fallback JsExpr) SSRValueType {
+func inferSSRPropType(script *sfcast.ScriptAST, name string, fallback jsast.JsExpr) SSRValueType {
 	if script != nil {
 		for _, comment := range script.DocComments {
 			if comment.TargetName != name {
 				continue
 			}
 			switch comment.Type {
-			case JSDocTypeString:
+			case sfcast.JSDocTypeString:
 				return SSRTypeString
-			case JSDocTypeBool:
+			case sfcast.JSDocTypeBool:
 				return SSRTypeBool
-			case JSDocTypeNumber:
+			case sfcast.JSDocTypeNumber:
 				return SSRTypeFloat
-			case JSDocTypeInteger:
+			case sfcast.JSDocTypeInteger:
 				return SSRTypeInt
-			case JSDocTypeSlice:
+			case sfcast.JSDocTypeSlice:
 				return SSRTypeSlice
-			case JSDocTypeObject:
+			case sfcast.JSDocTypeObject:
 				return SSRTypeObject
-			case JSDocTypeAny:
+			case sfcast.JSDocTypeAny:
 				return SSRTypeAny
 			}
 		}
@@ -717,8 +727,8 @@ func inferSSRPropType(script *ScriptAST, name string, fallback JsExpr) SSRValueT
 	return inferSSRValueType(fallback)
 }
 
-func ssrDeepInitializers(analysis *Analysis) map[string]JsExpr {
-	initializers := map[string]JsExpr{}
+func ssrDeepInitializers(analysis *analyzer.Analysis) map[string]jsast.JsExpr {
+	initializers := map[string]jsast.JsExpr{}
 	if analysis == nil {
 		return initializers
 	}
@@ -732,14 +742,14 @@ func ssrDeepInitializers(analysis *Analysis) map[string]JsExpr {
 
 // ssrDeclarationOrder orders the local bindings by the script position of
 // their initializers, which is their declaration order.
-func ssrDeclarationOrder(plan *SSRRenderPlan, analysis *Analysis) (states, locals []string) {
+func ssrDeclarationOrder(plan *SSRRenderPlan, analysis *analyzer.Analysis) (states, locals []string) {
 	type declaration struct {
 		name string
 		pos  int
 	}
 	var declarations []declaration
 	seen := map[string]bool{}
-	for _, initializers := range []map[string]JsExpr{plan.StateInitializers, plan.DeepInitializers, plan.DerivedInitializers, plan.PlainInitializers} {
+	for _, initializers := range []map[string]jsast.JsExpr{plan.StateInitializers, plan.DeepInitializers, plan.DerivedInitializers, plan.PlainInitializers} {
 		for name, initializer := range initializers {
 			if !seen[name] {
 				seen[name] = true

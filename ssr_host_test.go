@@ -83,7 +83,7 @@ func (p *ssrHostProject) build(scaffold bool) (int, string) {
 	stderr := captureStderr(p.t, func() {
 
 		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: SSRDefaultModule, SSRScaffoldHosts: scaffold}
-		errors = buildSSRProject(collectVela(srcRoot), srcRoot, filepath.Join(p.root, "out"), opts, false)
+		errors = buildSSRProject(CollectVela(srcRoot), srcRoot, filepath.Join(p.root, "out"), opts, false)
 
 	})
 	return errors, stderr

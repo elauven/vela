@@ -1,6 +1,9 @@
-package main
+package ssr
 
 import (
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/jsast"
+
 	"fmt"
 	goast "go/ast"
 	"go/token"
@@ -58,13 +61,13 @@ type ssrModuleRef struct {
 	Export string
 }
 
-func newSSRModules(layout SSRProjectLayout, srcRoot string, hosts *SSRHosts) *SSRModules {
+func NewSSRModules(layout SSRProjectLayout, srcRoot string, hosts *SSRHosts) *SSRModules {
 	return &SSRModules{layout: layout, srcRoot: srcRoot, hosts: hosts, modules: map[string]*ssrModule{}}
 }
 
 // refs resolves the named imports of local .js modules of a program in
 // file (absolute) to their modules, compiling them on first use.
-func (m *SSRModules) refs(file string, imports []*Import) map[string]ssrModuleRef {
+func (m *SSRModules) refs(file string, imports []*analyzer.Import) map[string]ssrModuleRef {
 	out := map[string]ssrModuleRef{}
 	if m == nil {
 		return out
@@ -86,7 +89,7 @@ func (m *SSRModules) refs(file string, imports []*Import) map[string]ssrModuleRe
 // module returns the compiled module of a source file.
 func (m *SSRModules) module(file string) *ssrModule {
 	abs, _ := filepath.Abs(file)
-	source := m.hosts.Project.relative(abs)
+	source := m.hosts.Project.Relative(abs)
 	if module, ok := m.modules[source]; ok {
 		if module.compiling && module.problem == nil {
 			module.problem = ssrExprUnsupported(0, "%s is part of a circular module import, which is not supported during server rendering", source)
@@ -143,37 +146,37 @@ func (m *SSRModules) compile(module *ssrModule) {
 		module.problem = err
 		return
 	}
-	program, diagnostics := ParseJSWithDiagnostics(string(data))
+	program, diagnostics := jsast.ParseJSWithDiagnostics(string(data))
 	if program == nil || len(diagnostics) > 0 {
 		module.problem = ssrExprUnsupported(0, "%s does not parse", module.Source)
 		return
 	}
 	plan := &SSRRenderPlan{
-		ComponentName: module.Package, Functions: map[string]*JsFuncDecl{}, PlainInitializers: map[string]JsExpr{},
-		StateInitializers: map[string]JsExpr{}, DerivedInitializers: map[string]JsExpr{},
+		ComponentName: module.Package, Functions: map[string]*jsast.JsFuncDecl{}, PlainInitializers: map[string]jsast.JsExpr{},
+		StateInitializers: map[string]jsast.JsExpr{}, DerivedInitializers: map[string]jsast.JsExpr{},
 	}
 	var exports []string
-	var imports []*Import
+	var imports []*analyzer.Import
 	for _, stmt := range program.Body {
 		exported := false
-		if export, ok := stmt.(*JsExportDecl); ok && export.Declaration != nil && !export.Default {
+		if export, ok := stmt.(*jsast.JsExportDecl); ok && export.Declaration != nil && !export.Default {
 			stmt, exported = export.Declaration, true
 		}
 		switch decl := stmt.(type) {
-		case *JsImportDecl:
-			imports = append(imports, &Import{Source: decl.Source, Specifiers: decl.Specifiers})
-		case *JsFuncDecl:
+		case *jsast.JsImportDecl:
+			imports = append(imports, &analyzer.Import{Source: decl.Source, Specifiers: decl.Specifiers})
+		case *jsast.JsFuncDecl:
 			plan.Functions[decl.Name] = decl
 			if exported {
 				exports = append(exports, decl.Name)
 			}
-		case *JsVarDecl:
+		case *jsast.JsVarDecl:
 			if decl.Kind != "const" {
 				m.fail(module, program, stmt, "top-level %s bindings are mutable module state; only const is admitted (T-7.3b)", decl.Kind)
 				continue
 			}
 			for _, declarator := range decl.Decls {
-				name := IdentName(declarator.Id)
+				name := analyzer.IdentName(declarator.Id)
 				if name == "" || declarator.Init == nil {
 					m.fail(module, program, stmt, "top-level destructuring is not supported during server rendering")
 					continue
@@ -184,7 +187,7 @@ func (m *SSRModules) compile(module *ssrModule) {
 					exports = append(exports, name)
 				}
 			}
-		case *JsEmptyStmt:
+		case *jsast.JsEmptyStmt:
 		default:
 			m.fail(module, program, stmt, "top-level statements other than imports, functions, and const declarations are side effects (T-7.3b)")
 		}
@@ -202,7 +205,7 @@ func (m *SSRModules) compile(module *ssrModule) {
 	}
 	// Host bindings of the module's own functions and imported names.
 	plan.HostProject = m.hosts.Project
-	plan.Hosts, plan.HostSymbols, plan.HostDecls = map[string]*SSRHostBinding{}, map[string]SSRHostSymbol{}, map[string]*JsFuncDecl{}
+	plan.Hosts, plan.HostSymbols, plan.HostDecls = map[string]*SSRHostBinding{}, map[string]SSRHostSymbol{}, map[string]*jsast.JsFuncDecl{}
 	for name := range ssrComponentFunctions(plan) {
 		plan.HostSymbols[name] = SSRHostSymbol{Source: module.Source, Name: name}
 	}
@@ -332,7 +335,7 @@ func (m *SSRModules) compile(module *ssrModule) {
 
 	importDecl := &goast.GenDecl{Tok: token.IMPORT, Lparen: 1, Specs: []goast.Spec{
 		&goast.ImportSpec{Path: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("context")}},
-		&goast.ImportSpec{Name: goast.NewIdent("vela"), Path: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(ssrRuntimeImport())}},
+		&goast.ImportSpec{Name: goast.NewIdent("vela"), Path: &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(SSRRuntimeImport())}},
 	}}
 	module.file = &goast.File{
 		Name: goast.NewIdent(module.Package),
@@ -356,7 +359,7 @@ func (m *SSRModules) compile(module *ssrModule) {
 	appendSSRGoImports(module.file, region.hostImports)
 }
 
-func (m *SSRModules) fail(module *ssrModule, program *JsProgram, stmt JsStmt, format string, args ...any) {
+func (m *SSRModules) fail(module *ssrModule, program *jsast.JsProgram, stmt jsast.JsStmt, format string, args ...any) {
 	if module.problem == nil {
 		module.problem = ssrExprUnsupported(0, "%s: "+format, append([]any{module.Source}, args...)...)
 	}
@@ -390,8 +393,8 @@ func ssrModulePrologue(region *SSRRegion, ctx goast.Expr) []goast.Stmt {
 	return out
 }
 
-// write emits the packages of the compiled modules.
-func (m *SSRModules) write() error {
+// Write emits the packages of the compiled modules.
+func (m *SSRModules) Write() error {
 	if m == nil {
 		return nil
 	}
@@ -417,8 +420,8 @@ func (m *SSRModules) write() error {
 // ── Use from components and modules ─────────────────────────────────────
 
 // moduleCall calls an export of a module.
-func (b *ssrIRBuilder) moduleCall(ref ssrModuleRef, call *JsCallExpr, reason string, pos int) (SSRIRExpr, error) {
-	name := call.Callee.(*JsIdent).Name
+func (b *ssrIRBuilder) moduleCall(ref ssrModuleRef, call *jsast.JsCallExpr, reason string, pos int) (SSRIRExpr, error) {
+	name := call.Callee.(*jsast.JsIdent).Name
 	if err := ref.err(); err != nil {
 		problem := err
 		if symbol, bindable := b.ctx.HostSymbols[name]; bindable {
@@ -429,7 +432,7 @@ func (b *ssrIRBuilder) moduleCall(ref ssrModuleRef, call *JsCallExpr, reason str
 	callee := b.moduleValue(ref)
 	var args []SSRIRExpr
 	for _, argument := range call.Args {
-		if _, spread := argument.(*JsSpreadExpr); spread {
+		if _, spread := argument.(*jsast.JsSpreadExpr); spread {
 			return nil, ssrExprUnsupported(pos, "spread arguments are not supported yet")
 		}
 		value, err := b.build(argument, pos)

@@ -7,3 +7,5 @@ package main
 //go:generate go run ./tools/aliasgen internal/sfcast sfcast github.com/elauven/vela/internal/sfcast sfcast_compat.go
 //go:generate go run ./tools/aliasgen internal/analyzer analyzer github.com/elauven/vela/internal/analyzer analyzer_compat.go
 //go:generate go run ./tools/aliasgen internal/codegen codegen github.com/elauven/vela/internal/codegen codegen_compat.go
+//go:generate go run ./tools/aliasgen internal/project project github.com/elauven/vela/internal/project project_compat.go
+//go:generate go run ./tools/aliasgen internal/ssr ssr github.com/elauven/vela/internal/ssr ssr_compat.go

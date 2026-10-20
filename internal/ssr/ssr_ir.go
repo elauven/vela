@@ -1,6 +1,10 @@
-package main
+package ssr
 
 import (
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfcast"
+
 	"fmt"
 	goast "go/ast"
 	"go/token"
@@ -421,14 +425,14 @@ type ssrIRBuilder struct {
 }
 
 // BuildSSRIR builds the IR of one template expression.
-func BuildSSRIR(expr *TemplateExpr, ctx SSRExprContext) (SSRIRExpr, error) {
+func BuildSSRIR(expr *sfcast.TemplateExpr, ctx SSRExprContext) (SSRIRExpr, error) {
 	if expr == nil || expr.Root() == nil {
 		return nil, &SSRExpressionError{Message: "template expression has no cached AST"}
 	}
 	return buildSSRIR(expr.Root(), ctx, expr.Pos)
 }
 
-func buildSSRIR(expr JsExpr, ctx SSRExprContext, pos int) (SSRIRExpr, error) {
+func buildSSRIR(expr jsast.JsExpr, ctx SSRExprContext, pos int) (SSRIRExpr, error) {
 	return newSSRIRBuilder(ctx).build(expr, pos)
 }
 
@@ -440,13 +444,13 @@ func (b *ssrIRBuilder) base(pos int, facts ssrIRFacts) ssrIRBase {
 	return ssrIRBase{Pos: pos, Facts: facts}
 }
 
-func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) build(expr jsast.JsExpr, pos int) (SSRIRExpr, error) {
 	switch node := expr.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		return b.ident(node, pos)
-	case *JsLiteral:
+	case *jsast.JsLiteral:
 		return b.literal(node, pos)
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		elements := make([]SSRIRExpr, 0, len(node.Elems))
 		var spreads []bool
 		for _, element := range node.Elems {
@@ -454,7 +458,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 				elements = append(elements, nil)
 				continue
 			}
-			if spread, ok := element.(*JsSpreadExpr); ok {
+			if spread, ok := element.(*jsast.JsSpreadExpr); ok {
 				if !b.js {
 					return nil, ssrExprUnsupported(pos, "array spread is not available to static SSR")
 				}
@@ -484,9 +488,9 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			spreads = append(spreads, false)
 		}
 		return &ssrIRArray{ssrIRBase: b.base(pos, ssrIRFacts{Array: true}), Elems: elements, Spread: spreads, Site: b.site}, nil
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		return b.object(node, pos)
-	case *JsTemplateLit:
+	case *jsast.JsTemplateLit:
 		if len(node.Quasis) != len(node.Exprs)+1 {
 			return nil, ssrExprUnsupported(pos, "template literal has an invalid parser structure")
 		}
@@ -508,7 +512,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			out.Exprs = append(out.Exprs, value)
 		}
 		return out, nil
-	case *JsTaggedTemplate:
+	case *jsast.JsTaggedTemplate:
 		// String.raw is the only admitted tag: the raw text of the
 		// template (escapes kept, line terminators normalised to \n) with
 		// the substitutions converted to strings.
@@ -529,7 +533,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			out.Exprs = append(out.Exprs, value)
 		}
 		return out, nil
-	case *JsUnaryExpr:
+	case *jsast.JsUnaryExpr:
 		if node.Op == "++" || node.Op == "--" {
 			return nil, ssrImpure(pos, "update operator %q writes a binding during server rendering", node.Op)
 		}
@@ -537,7 +541,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			return b.deleteExpr(node, pos)
 		}
 		if node.Op == "void" {
-			if _, literal := node.X.(*JsLiteral); literal {
+			if _, literal := node.X.(*jsast.JsLiteral); literal {
 				return &ssrIRUndefined{ssrIRBase: b.base(pos, ssrIRFacts{})}, nil
 			}
 		}
@@ -565,9 +569,9 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: name, Args: []SSRIRExpr{x}}, nil
 		}
 		return nil, ssrExprUnsupported(pos, "unary operator %q is not supported", node.Op)
-	case *JsBinaryExpr:
+	case *jsast.JsBinaryExpr:
 		return b.binary(node, pos)
-	case *JsSeqExpr:
+	case *jsast.JsSeqExpr:
 		seq := &ssrIRSeq{ssrIRBase: b.base(pos, ssrIRFacts{})}
 		for _, item := range node.Exprs {
 			value, err := b.build(item, pos)
@@ -577,7 +581,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			seq.Exprs = append(seq.Exprs, value)
 		}
 		return seq, nil
-	case *JsLogicalExpr:
+	case *jsast.JsLogicalExpr:
 		left, err := b.build(node.L, pos)
 		if err != nil {
 			return nil, err
@@ -598,9 +602,9 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			return nil, ssrExprUnsupported(pos, "logical operator %q is not supported", node.Op)
 		}
 		return &ssrIRLazy{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: name, Args: []SSRIRExpr{left, right}}, nil
-	case *JsMemberExpr:
+	case *jsast.JsMemberExpr:
 		return b.member(node, pos)
-	case *JsConditionalExpr:
+	case *jsast.JsConditionalExpr:
 		test, err := b.build(node.Test, pos)
 		if err != nil {
 			return nil, err
@@ -616,17 +620,17 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 		t, e := thenValue.irBase().Facts, elseValue.irBase().Facts
 		facts := ssrIRFacts{String: t.String && e.String, Number: t.Number && e.Number, Array: t.Array && e.Array, Object: t.Object && e.Object}
 		return &ssrIRLazy{ssrIRBase: b.base(pos, facts), Name: "TernaryLazy", Args: []SSRIRExpr{test, thenValue, elseValue}}, nil
-	case *JsCallExpr:
+	case *jsast.JsCallExpr:
 		return b.call(node, pos)
-	case *JsNewExpr:
+	case *jsast.JsNewExpr:
 		return b.newError(node, pos)
-	case *JsArrowFunc, *JsFuncExpr:
+	case *jsast.JsArrowFunc, *jsast.JsFuncExpr:
 		return b.functionValue(node, pos)
-	case *JsAwaitExpr:
+	case *jsast.JsAwaitExpr:
 		return b.await(node, pos)
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		return nil, ssrImpure(pos, "assignments are not available to static SSR")
-	case *JsThisExpr:
+	case *jsast.JsThisExpr:
 		// this is the receiver of a method call; a plain call and code
 		// outside functions have undefined (module code is strict).
 		if b.funcCompiler != nil && b.funcCompiler.this != nil {
@@ -638,7 +642,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 	}
 }
 
-func (b *ssrIRBuilder) ident(node *JsIdent, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) ident(node *jsast.JsIdent, pos int) (SSRIRExpr, error) {
 	// Bool follows the established condition rule: only a declared bool
 	// prop of that name, whatever shadows it.
 	boolProp := false
@@ -678,7 +682,7 @@ func (b *ssrIRBuilder) ident(node *JsIdent, pos int) (SSRIRExpr, error) {
 	if b.locals {
 		for _, local := range []struct {
 			kind         string
-			initializers map[string]JsExpr
+			initializers map[string]jsast.JsExpr
 		}{{"reactive", b.ctx.StateInitializers}, {"reactive", b.ctx.DeepInitializers}, {"derived", b.ctx.DerivedInitializers}, {"plain", b.ctx.PlainInitializers}} {
 			if initializer, ok := local.initializers[node.Name]; ok {
 				return b.localRef(node.Name, local.kind, initializer, pos, boolProp)
@@ -687,7 +691,7 @@ func (b *ssrIRBuilder) ident(node *JsIdent, pos int) (SSRIRExpr, error) {
 	}
 	for _, local := range []struct {
 		kind         string
-		initializers map[string]JsExpr
+		initializers map[string]jsast.JsExpr
 	}{{"reactive", b.ctx.StateInitializers}, {"derived", b.ctx.DerivedInitializers}, {"plain", b.ctx.PlainInitializers}} {
 		if initializer, ok := local.initializers[node.Name]; ok {
 			return b.local(node.Name, local.kind, initializer, pos, boolProp)
@@ -699,7 +703,7 @@ func (b *ssrIRBuilder) ident(node *JsIdent, pos int) (SSRIRExpr, error) {
 	if function := b.ctx.Functions[node.Name]; function != nil && b.ctx.funcs != nil && b.js {
 		// A component function used as a value (a callback prop): compiled
 		// here as a closure, like an arrow, with writes deferred to run time.
-		value := &JsFuncExpr{Params: function.Params, Body: function.Body, Async: function.Async, Generator: function.Generator}
+		value := &jsast.JsFuncExpr{Params: function.Params, Body: function.Body, Async: function.Async, Generator: function.Generator}
 		value.BaseExpr.BaseNode = function.BaseStmt.BaseNode
 		return b.functionValue(value, pos)
 	}
@@ -718,7 +722,7 @@ func (b *ssrIRBuilder) ident(node *JsIdent, pos int) (SSRIRExpr, error) {
 }
 
 // local inlines a $state, $derived, or plain binding initializer.
-func (b *ssrIRBuilder) local(name, kind string, initializer JsExpr, pos int, boolProp bool) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) local(name, kind string, initializer jsast.JsExpr, pos int, boolProp bool) (SSRIRExpr, error) {
 	if b.resolving[name] {
 		return nil, ssrExprUnsupported(pos, "local %s binding %q has a circular server initializer", kind, name)
 	}
@@ -746,7 +750,7 @@ func ssrLocalReason(kind, name string) string {
 	return fmt.Sprintf("binding %q", name)
 }
 
-func (b *ssrIRBuilder) literal(node *JsLiteral, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) literal(node *jsast.JsLiteral, pos int) (SSRIRExpr, error) {
 	switch node.Kind {
 	case "string":
 		value := node.Value
@@ -775,7 +779,7 @@ func (b *ssrIRBuilder) literal(node *JsLiteral, pos int) (SSRIRExpr, error) {
 // object admits data properties with identifier, string or computed keys
 // and spread properties. Every value is evaluated in source order; a later duplicate
 // key replaces the value and keeps the first position, as in JavaScript.
-func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) object(node *jsast.JsObjectExpr, pos int) (SSRIRExpr, error) {
 	out := &ssrIRObject{ssrIRBase: b.base(pos, ssrIRFacts{Object: true})}
 	defer func() {
 		// Only an object that can have its own toString, valueOf, or
@@ -855,7 +859,7 @@ func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 	return out, nil
 }
 
-func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) binary(node *jsast.JsBinaryExpr, pos int) (SSRIRExpr, error) {
 	left, err := b.build(node.L, pos)
 	if err != nil {
 		return nil, err
@@ -942,11 +946,11 @@ func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
 }
 
 // ssrNullishLiteral reports null or undefined written in the source.
-func ssrNullishLiteral(expr JsExpr) bool {
+func ssrNullishLiteral(expr jsast.JsExpr) bool {
 	switch node := expr.(type) {
-	case *JsLiteral:
+	case *jsast.JsLiteral:
 		return node.Kind == "null"
-	case *JsIdent:
+	case *jsast.JsIdent:
 		return node.Name == "undefined"
 	}
 	return false
@@ -954,7 +958,7 @@ func ssrNullishLiteral(expr JsExpr) bool {
 
 // member builds a member chain a.b[c]: the root, then each link. A chain
 // with an optional link (?.) is built by optionalChain (T-6.1b).
-func (b *ssrIRBuilder) member(node *JsMemberExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) member(node *jsast.JsMemberExpr, pos int) (SSRIRExpr, error) {
 	if b.js {
 		if value, ok := b.builtinConstant(node, pos); ok {
 			return value, nil
@@ -963,14 +967,14 @@ func (b *ssrIRBuilder) member(node *JsMemberExpr, pos int) (SSRIRExpr, error) {
 	if value, handled, err := b.optionalChain(node, pos); handled {
 		return value, err
 	}
-	var links []*JsMemberExpr
-	var root JsExpr = node
+	var links []*jsast.JsMemberExpr
+	var root jsast.JsExpr = node
 	for {
-		link, ok := root.(*JsMemberExpr)
+		link, ok := root.(*jsast.JsMemberExpr)
 		if !ok {
 			break
 		}
-		links = append([]*JsMemberExpr{link}, links...)
+		links = append([]*jsast.JsMemberExpr{link}, links...)
 		root = link.Obj
 		if ssrParenthesized(root, link) {
 			// (a?.b).c: the parentheses end the optional chain.
@@ -1001,9 +1005,9 @@ func ssrAddStringHelper(value SSRIRExpr) string {
 }
 
 // ssrIsFunction reports a function expression.
-func ssrIsFunction(expr JsExpr) bool {
+func ssrIsFunction(expr jsast.JsExpr) bool {
 	switch expr.(type) {
-	case *JsArrowFunc, *JsFuncExpr:
+	case *jsast.JsArrowFunc, *jsast.JsFuncExpr:
 		return true
 	}
 	return false
@@ -1012,23 +1016,23 @@ func ssrIsFunction(expr JsExpr) bool {
 // deleteExpr lowers delete o.k and delete a[i] on a value the function
 // created (T-6.6b), and delete this.k on an object a translated function
 // created during the render.
-func (b *ssrIRBuilder) deleteExpr(node *JsUnaryExpr, pos int) (SSRIRExpr, error) {
-	member, ok := node.X.(*JsMemberExpr)
+func (b *ssrIRBuilder) deleteExpr(node *jsast.JsUnaryExpr, pos int) (SSRIRExpr, error) {
+	member, ok := node.X.(*jsast.JsMemberExpr)
 	if !ok || member.Optional {
 		return nil, ssrExprUnsupported(pos, "delete is admitted only on a property, as in delete o.k or delete a[i]")
 	}
 	c := b.funcCompiler
-	root := JsExpr(member)
+	root := jsast.JsExpr(member)
 	for {
-		inner, isMember := root.(*JsMemberExpr)
+		inner, isMember := root.(*jsast.JsMemberExpr)
 		if !isMember {
 			break
 		}
 		root = inner.Obj
 	}
-	_, viaThis := member.Obj.(*JsThisExpr)
+	_, viaThis := member.Obj.(*jsast.JsThisExpr)
 	if !viaThis {
-		name := IdentName(root)
+		name := analyzer.IdentName(root)
 		fresh := false
 		if c != nil && name != "" && c.freshness != nil {
 			_, local := c.lookup(name)
@@ -1049,7 +1053,7 @@ func (b *ssrIRBuilder) deleteExpr(node *JsUnaryExpr, pos int) (SSRIRExpr, error)
 			return nil, err
 		}
 		key = lowerSSRIR(value)
-	} else if property, named := member.Prop.(*JsIdent); named {
+	} else if property, named := member.Prop.(*jsast.JsIdent); named {
 		key = ssrGoString(property.Name)
 	} else {
 		return nil, ssrExprUnsupported(pos, "member name %T is not supported", member.Prop)
@@ -1092,14 +1096,14 @@ func ssrIRPrimitive(value SSRIRExpr) bool {
 
 // memberLink reads one property. A read on a value that is not proven to
 // be an object, array, or string can throw TypeError (T-6.5a).
-func (b *ssrIRBuilder) memberLink(object SSRIRExpr, link *JsMemberExpr, nonNullish bool, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) memberLink(object SSRIRExpr, link *jsast.JsMemberExpr, nonNullish bool, pos int) (SSRIRExpr, error) {
 	b.usedJS = b.usedJS || b.js
 	o := object.irBase().Facts
 	if !nonNullish && !o.String && !o.Array && !o.Object {
 		b.throws = b.throws || b.js
 	}
 	if !link.Computed {
-		property, ok := link.Prop.(*JsIdent)
+		property, ok := link.Prop.(*jsast.JsIdent)
 		if !ok {
 			return nil, ssrExprUnsupported(pos, "member name %T is not supported (private names are not part of the server region)", link.Prop)
 		}
@@ -1118,8 +1122,8 @@ func (b *ssrIRBuilder) memberLink(object SSRIRExpr, link *JsMemberExpr, nonNulli
 
 // ssrChainLink is one link of an optional chain: a member read or a call.
 type ssrChainLink struct {
-	member *JsMemberExpr
-	call   *JsCallExpr
+	member *jsast.JsMemberExpr
+	call   *jsast.JsCallExpr
 }
 
 func (l ssrChainLink) optional() bool {
@@ -1131,24 +1135,24 @@ func (l ssrChainLink) optional() bool {
 
 // ssrParenthesized reports a child expression written in parentheses: it
 // starts after its parent, as in (a?.b).c or (f)().
-func ssrParenthesized(child, parent JsNode) bool {
+func ssrParenthesized(child, parent jsast.JsNode) bool {
 	return child.NodePos() != parent.NodePos()
 }
 
 // ssrChain splits a chain a?.b.c(x)?.(y) into its root and links, up to a
 // parenthesised part. A call whose callee is neither a link nor optional
 // (f(x)?.y) is the root: it resolves as any call.
-func ssrChain(expr JsExpr) (JsExpr, []ssrChainLink) {
+func ssrChain(expr jsast.JsExpr) (jsast.JsExpr, []ssrChainLink) {
 	var links []ssrChainLink
 	current := expr
 	for {
-		var next JsExpr
+		var next jsast.JsExpr
 		switch node := current.(type) {
-		case *JsMemberExpr:
+		case *jsast.JsMemberExpr:
 			links = append([]ssrChainLink{{member: node}}, links...)
 			next = node.Obj
-		case *JsCallExpr:
-			if _, method := node.Callee.(*JsMemberExpr); !method && !node.Optional {
+		case *jsast.JsCallExpr:
+			if _, method := node.Callee.(*jsast.JsMemberExpr); !method && !node.Optional {
 				return current, links
 			}
 			links = append([]ssrChainLink{{call: node}}, links...)
@@ -1166,7 +1170,7 @@ func ssrChain(expr JsExpr) (JsExpr, []ssrChainLink) {
 // optionalChain builds a chain with an optional link (T-6.1b): a nullish
 // value before ?. ends the whole chain, calls included, with undefined.
 // Chains without one are not handled here.
-func (b *ssrIRBuilder) optionalChain(expr JsExpr, pos int) (SSRIRExpr, bool, error) {
+func (b *ssrIRBuilder) optionalChain(expr jsast.JsExpr, pos int) (SSRIRExpr, bool, error) {
 	root, links := ssrChain(expr)
 	optional, calls := false, false
 	for _, link := range links {
@@ -1179,7 +1183,7 @@ func (b *ssrIRBuilder) optionalChain(expr JsExpr, pos int) (SSRIRExpr, bool, err
 	if calls && !b.js {
 		return nil, true, ssrExprUnsupported(pos, "calls in optional chains are available only in translated script code")
 	}
-	if ident, ok := root.(*JsIdent); ok && links[0].call != nil {
+	if ident, ok := root.(*jsast.JsIdent); ok && links[0].call != nil {
 		_, local := b.params[ident.Name]
 		_, binding := b.ctx.Bindings[ident.Name]
 		if !local && !binding {
@@ -1230,7 +1234,7 @@ func (b *ssrIRBuilder) chainLinks(base SSRIRExpr, links []ssrChainLink, entered 
 			}
 			// a.b?.(): the call and the rest of the chain run only when
 			// a.b is not nullish.
-			property, named := link.member.Prop.(*JsIdent)
+			property, named := link.member.Prop.(*jsast.JsIdent)
 			if link.member.Computed || !named {
 				return nil, ssrExprUnsupported(pos, "optional calls of computed members are not supported")
 			}
@@ -1268,7 +1272,7 @@ func (b *ssrIRBuilder) chainLinks(base SSRIRExpr, links []ssrChainLink, entered 
 
 // methodOn calls a catalogue method on an already built receiver, as
 // builtinCall does for receiver.name(args).
-func (b *ssrIRBuilder) methodOn(receiver SSRIRExpr, member *JsMemberExpr, call *JsCallExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) methodOn(receiver SSRIRExpr, member *jsast.JsMemberExpr, call *jsast.JsCallExpr, pos int) (SSRIRExpr, error) {
 	name := "\x00receiver" + strconv.Itoa(b.optionals)
 	b.optionals++
 	if b.params == nil {
@@ -1276,14 +1280,14 @@ func (b *ssrIRBuilder) methodOn(receiver SSRIRExpr, member *JsMemberExpr, call *
 	}
 	b.params[name] = receiver
 	defer delete(b.params, name)
-	synthetic := &JsCallExpr{
+	synthetic := &jsast.JsCallExpr{
 		BaseExpr: call.BaseExpr,
-		Callee:   &JsMemberExpr{BaseExpr: member.BaseExpr, Obj: &JsIdent{BaseExpr: member.BaseExpr, Name: name}, Prop: member.Prop, Computed: member.Computed},
+		Callee:   &jsast.JsMemberExpr{BaseExpr: member.BaseExpr, Obj: &jsast.JsIdent{BaseExpr: member.BaseExpr, Name: name}, Prop: member.Prop, Computed: member.Computed},
 		Args:     call.Args,
 	}
 	value, handled, err := b.builtinCall(synthetic, pos)
 	if !handled {
-		if property, named := member.Prop.(*JsIdent); named && !member.Computed {
+		if property, named := member.Prop.(*jsast.JsIdent); named && !member.Computed {
 			if b.js && !ssrUnmodeledMethods[property.Name] {
 				return b.objectMethodCall(receiver, property.Name, call, pos)
 			}
@@ -1317,7 +1321,7 @@ var ssrUnmodeledMethods = map[string]bool{
 // objectMethodCall calls receiver.name(args): a function stored in a
 // property of an object, called with the receiver as this (§7.1). Any
 // other receiver throws TypeError, as in JavaScript.
-func (b *ssrIRBuilder) objectMethodCall(receiver SSRIRExpr, name string, call *JsCallExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) objectMethodCall(receiver SSRIRExpr, name string, call *jsast.JsCallExpr, pos int) (SSRIRExpr, error) {
 	lowered := []goast.Expr{ssrGoString(b.site), lowerSSRIR(receiver), ssrGoString(name)}
 	ellipsis := token.NoPos
 	spread, err := b.spreadArgs(call, pos)
@@ -1343,11 +1347,11 @@ func (b *ssrIRBuilder) objectMethodCall(receiver SSRIRExpr, name string, call *J
 // implementation, then native translation of a top-level named function
 // with one return expression (inlined), otherwise the call is unsupported
 // and the diagnostic names the host implementation that would fix it.
-func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) call(call *jsast.JsCallExpr, pos int) (SSRIRExpr, error) {
 	if value, handled, err := b.optionalChain(call, pos); handled {
 		return value, err
 	}
-	if member, ok := call.Callee.(*JsMemberExpr); ok && b.js {
+	if member, ok := call.Callee.(*jsast.JsMemberExpr); ok && b.js {
 		if value, handled, err := b.promiseCall(member, call, pos); handled {
 			return value, err
 		}
@@ -1355,12 +1359,12 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 	if value, handled, err := b.builtinCall(call, pos); handled {
 		return value, err
 	}
-	callee, ok := call.Callee.(*JsIdent)
+	callee, ok := call.Callee.(*jsast.JsIdent)
 	if !ok {
-		if member, isMember := call.Callee.(*JsMemberExpr); isMember && !member.Computed {
-			if property, named := member.Prop.(*JsIdent); named {
+		if member, isMember := call.Callee.(*jsast.JsMemberExpr); isMember && !member.Computed {
+			if property, named := member.Prop.(*jsast.JsIdent); named {
 				owner := "value"
-				object, global := member.Obj.(*JsIdent)
+				object, global := member.Obj.(*jsast.JsIdent)
 				if global && ssrGlobalNamespaces[object.Name] && !b.shadowedGlobal(object.Name) {
 					owner = object.Name
 				} else if b.js && !ssrUnmodeledMethods[property.Name] {
@@ -1424,7 +1428,7 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 	if function.Body == nil || len(function.Body.Body) != 1 {
 		return fail("local formatter %q must contain exactly one return expression", callee.Name)
 	}
-	result, ok := function.Body.Body[0].(*JsReturnStmt)
+	result, ok := function.Body.Body[0].(*jsast.JsReturnStmt)
 	if !ok || result.Arg == nil {
 		return fail("local formatter %q must contain exactly one return expression", callee.Name)
 	}
@@ -1444,7 +1448,7 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 		params[name] = value
 	}
 	for index, parameter := range function.Params {
-		name := IdentName(parameter)
+		name := analyzer.IdentName(parameter)
 		if name == "" {
 			return fail("local formatter %q has a non-identifier parameter", callee.Name)
 		}
@@ -1471,12 +1475,12 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 // hostMissing turns the failure of a bindable function into
 // VELA-SSR-HOST-MISSING: the function needs a host implementation, whose
 // file and signature (inferred from this call) the diagnostic gives.
-func (b *ssrIRBuilder) hostMissing(cause error, symbol SSRHostSymbol, call *JsCallExpr, function *JsFuncDecl, reason string) error {
+func (b *ssrIRBuilder) hostMissing(cause error, symbol SSRHostSymbol, call *jsast.JsCallExpr, function *jsast.JsFuncDecl, reason string) error {
 	suggestion := &ssrHostSuggestion{Symbol: symbol}
 	for i, argument := range call.Args {
 		name := fmt.Sprintf("arg%d", i+1)
 		if function != nil && i < len(function.Params) {
-			if param := IdentName(function.Params[i]); param != "" {
+			if param := analyzer.IdentName(function.Params[i]); param != "" {
 				name = param
 			}
 		}
@@ -1506,7 +1510,7 @@ func (b *ssrIRBuilder) hostMissing(cause error, symbol SSRHostSymbol, call *JsCa
 // hostCall lowers a call to a //vela:host function. Arguments the
 // signature cannot take are build errors (VELA-SSR-HOST-SIG, H-8.3e);
 // values of unproven type are converted at run time.
-func (b *ssrIRBuilder) hostCall(binding *SSRHostBinding, call *JsCallExpr, reason string, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) hostCall(binding *SSRHostBinding, call *jsast.JsCallExpr, reason string, pos int) (SSRIRExpr, error) {
 	signatureError := func(format string, args ...interface{}) (SSRIRExpr, error) {
 		problem := ssrExprUnsupported(pos, format, args...).(*SSRExpressionError)
 		problem.Code = SSRHostSignatureCode
@@ -1518,7 +1522,7 @@ func (b *ssrIRBuilder) hostCall(binding *SSRHostBinding, call *JsCallExpr, reaso
 	}
 	arguments := make([]SSRIRExpr, 0, len(call.Args))
 	for i, argument := range call.Args {
-		if _, spread := argument.(*JsSpreadExpr); spread {
+		if _, spread := argument.(*jsast.JsSpreadExpr); spread {
 			return signatureError("spread arguments to host %s are not supported", binding.Symbol.Name)
 		}
 		value, err := b.build(argument, pos)
@@ -1616,7 +1620,7 @@ func ssrGoExprFacts(expr goast.Expr, ctx SSRExprContext) ssrIRFacts {
 
 // locate marks err with the source position of node in the component
 // script, unless a deeper position is already set.
-func (b *ssrIRBuilder) locate(err error, node JsNode) {
+func (b *ssrIRBuilder) locate(err error, node jsast.JsNode) {
 	problem, ok := err.(*SSRExpressionError)
 	if !ok || problem.SourceSet || b.ctx.scriptOffset <= 0 || node == nil {
 		return
@@ -1678,7 +1682,7 @@ func ssrLocalName(name string) string { return "ssrL_" + name }
 // a failure is reported at the site that reads it; the prologue lowers it
 // once. A read of a binding declared later is a ReferenceError in
 // JavaScript and is rejected.
-func (b *ssrIRBuilder) localRef(name, kind string, initializer JsExpr, pos int, boolProp bool) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) localRef(name, kind string, initializer jsast.JsExpr, pos int, boolProp bool) (SSRIRExpr, error) {
 	if binding, ok := b.ctx.Hosts[name]; ok && kind == "plain" && b.js {
 		// A module value provided by a parameterless host (§8.7): the
 		// prologue calls it once per render.

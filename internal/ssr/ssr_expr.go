@@ -1,6 +1,9 @@
-package main
+package ssr
 
 import (
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfcast"
+
 	"bytes"
 	"fmt"
 	goast "go/ast"
@@ -98,19 +101,19 @@ type SSRExprContext struct {
 	Props               map[string]SSRPlanProp
 	Bindings            map[string]goast.Expr
 	ReactiveNames       map[string]bool
-	StateInitializers   map[string]JsExpr
-	DerivedInitializers map[string]JsExpr
-	PlainInitializers   map[string]JsExpr
-	DeepInitializers    map[string]JsExpr
+	StateInitializers   map[string]jsast.JsExpr
+	DerivedInitializers map[string]jsast.JsExpr
+	PlainInitializers   map[string]jsast.JsExpr
+	DeepInitializers    map[string]jsast.JsExpr
 	Hosts               map[string]*SSRHostBinding
-	HostDecls           map[string]*JsFuncDecl
+	HostDecls           map[string]*jsast.JsFuncDecl
 	HostSymbols         map[string]SSRHostSymbol
 	ModuleRefs          map[string]ssrModuleRef
 	// localIndex is the declaration position of each local binding.
 	localIndex map[string]int
 	// funcs compiles multi-statement component functions (task 045).
 	funcs              *ssrFuncTable
-	Functions          map[string]*JsFuncDecl
+	Functions          map[string]*jsast.JsFuncDecl
 	resolving          map[string]bool
 	resolvingFunctions map[string]bool
 	// scriptOffset places script AST node positions in the .vela source;
@@ -123,10 +126,10 @@ func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
 		Props:               map[string]SSRPlanProp{},
 		Bindings:            map[string]goast.Expr{},
 		ReactiveNames:       map[string]bool{},
-		StateInitializers:   map[string]JsExpr{},
-		DerivedInitializers: map[string]JsExpr{},
-		PlainInitializers:   map[string]JsExpr{},
-		Functions:           map[string]*JsFuncDecl{},
+		StateInitializers:   map[string]jsast.JsExpr{},
+		DerivedInitializers: map[string]jsast.JsExpr{},
+		PlainInitializers:   map[string]jsast.JsExpr{},
+		Functions:           map[string]*jsast.JsFuncDecl{},
 	}
 	if plan == nil {
 		return ctx
@@ -165,7 +168,7 @@ func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
 // TranslateSSRExpression lowers one cached TemplateExpr into Go AST through
 // the Server IR. It does not accept source text, so all renderer paths
 // share the parser and expression ownership of ComponentAST.
-func TranslateSSRExpression(expr *TemplateExpr, ctx SSRExprContext) (goast.Expr, error) {
+func TranslateSSRExpression(expr *sfcast.TemplateExpr, ctx SSRExprContext) (goast.Expr, error) {
 	ir, err := BuildSSRIR(expr, ctx)
 	if err != nil {
 		return nil, err
@@ -173,7 +176,7 @@ func TranslateSSRExpression(expr *TemplateExpr, ctx SSRExprContext) (goast.Expr,
 	return lowerSSRIR(ir), nil
 }
 
-func translateSSRExpr(expr JsExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
+func translateSSRExpr(expr jsast.JsExpr, ctx SSRExprContext, pos int) (goast.Expr, error) {
 	ir, err := buildSSRIR(expr, ctx, pos)
 	if err != nil {
 		return nil, err
@@ -241,11 +244,11 @@ func ssrLazyExpr(value goast.Expr) goast.Expr {
 	}
 }
 
-func translateSSRObjectKey(key JsExpr, pos int) (string, error) {
+func translateSSRObjectKey(key jsast.JsExpr, pos int) (string, error) {
 	switch node := key.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		return node.Name, nil
-	case *JsLiteral:
+	case *jsast.JsLiteral:
 		if node.Kind == "number" {
 			// A numeric key is its number's text: 0x10 is "16".
 			if spelled, ok := ssrJSNumberLiteral(node.Raw); ok {

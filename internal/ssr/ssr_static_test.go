@@ -1,12 +1,14 @@
-package main
+package ssr
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/elauven/vela/internal/sfcast"
 )
 
 func TestBuildSSRGoFileRendersArrayLiteralWithJSJoinSemantics(t *testing.T) {
-	sfc, err := ParseSFC(`<template><p>{[1, , 3]}</p></template>`)
+	sfc, err := sfcast.ParseSFC(`<template><p>{[1, , 3]}</p></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +33,7 @@ func TestBuildSSRGoFileRendersArrayLiteralWithJSJoinSemantics(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersPlainObjectLiteral(t *testing.T) {
-	sfc, err := ParseSFC(`<template><p>{ { title: 'ready' } }</p></template>`)
+	sfc, err := sfcast.ParseSFC(`<template><p>{ { title: 'ready' } }</p></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +58,7 @@ func TestBuildSSRGoFileRendersPlainObjectLiteral(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersSafeDerivedValue(t *testing.T) {
-	sfc, err := ParseSFC(`<script>let count = $state(2); let doubled = $derived(count * 2);</script><template><p>{doubled}</p></template>`)
+	sfc, err := sfcast.ParseSFC(`<script>let count = $state(2); let doubled = $derived(count * 2);</script><template><p>{doubled}</p></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +86,7 @@ func TestBuildSSRGoFileRendersSafeDerivedValue(t *testing.T) {
 }
 
 func TestBuildSSRGoFileUsesJSTruthinessForTernaryIfCondition(t *testing.T) {
-	sfc, err := ParseSFC(`<script>export let count = 0;</script><template>{#if count ? 'ready' : ''}<p>ready</p>{:else}<p>empty</p>{/if}</template>`)
+	sfc, err := sfcast.ParseSFC(`<script>export let count = 0;</script><template>{#if count ? 'ready' : ''}<p>ready</p>{:else}<p>empty</p>{/if}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +112,7 @@ func TestBuildSSRGoFileUsesJSTruthinessForTernaryIfCondition(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersStaticTemplateLiteral(t *testing.T) {
-	sfc, err := ParseSFC("<template><p>{`ready\\nnow`}</p></template>")
+	sfc, err := sfcast.ParseSFC("<template><p>{`ready\\nnow`}</p></template>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +137,7 @@ func TestBuildSSRGoFileRendersStaticTemplateLiteral(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersTypedInterpolatedTemplateLiteral(t *testing.T) {
-	sfc, err := ParseSFC("<script>export let title = ''; </script><template><p>{`hello ${title}!`}</p></template>")
+	sfc, err := sfcast.ParseSFC("<script>export let title = ''; </script><template><p>{`hello ${title}!`}</p></template>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +162,7 @@ func TestBuildSSRGoFileRendersTypedInterpolatedTemplateLiteral(t *testing.T) {
 }
 
 func TestBuildSSRGoFileRendersUndefinedTemplateInterpolation(t *testing.T) {
-	sfc, err := ParseSFC("<template><p>{`value=${undefined}`}</p></template>")
+	sfc, err := sfcast.ParseSFC("<template><p>{`value=${undefined}`}</p></template>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +187,7 @@ func TestBuildSSRGoFileRendersUndefinedTemplateInterpolation(t *testing.T) {
 }
 
 func TestBuildSSRGoFileLowersLogicalOperandsWithJSResults(t *testing.T) {
-	sfc, err := ParseSFC(`<script>export let title = '';</script><template><p>{title || 'Untitled'}</p></template>`)
+	sfc, err := sfcast.ParseSFC(`<script>export let title = '';</script><template><p>{title || 'Untitled'}</p></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}

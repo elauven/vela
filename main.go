@@ -240,7 +240,7 @@ func main() {
 	exitCode := 0
 	compile := func() {
 		for _, src := range args {
-			dest := filepath.Join(*outDir, componentName(src)+".js")
+			dest := filepath.Join(*outDir, ComponentName(src)+".js")
 			if !compilePrint(src, dest, opts) {
 				exitCode = 1
 			}
@@ -318,7 +318,7 @@ func runSSRProject(srcRoot, outRoot string, opts CompileOptions, parallel bool) 
 	}
 	fmt.Fprintln(status)
 	start := time.Now()
-	files := collectVela(srcRoot)
+	files := CollectVela(srcRoot)
 	if len(files) == 0 {
 		fmt.Fprintln(status, "  no .vela files found")
 		return
@@ -361,7 +361,7 @@ func runProject(srcRoot, outRoot string, opts CompileOptions, watch, parallel bo
 	fmt.Fprintln(status)
 
 	start := time.Now()
-	files := collectVela(srcRoot)
+	files := CollectVela(srcRoot)
 
 	if len(files) == 0 {
 		fmt.Fprintln(status, "  no .vela files found")
@@ -439,7 +439,7 @@ func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 }
 
 func compileProjectFile(src, srcRoot, outRoot string, opts CompileOptions) bool {
-	dest := mirrorPath(src, srcRoot, outRoot, ".js")
+	dest := MirrorPath(src, srcRoot, outRoot, ".js")
 	opts.RuntimeImport = runtimeSpecifier(opts, filepath.Dir(dest), outRoot)
 	if rel, err := filepath.Rel(srcRoot, src); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		opts.TraceComponentID = filepath.ToSlash(rel)
@@ -473,7 +473,7 @@ func runWatchFiles(files []string, outDir string, opts CompileOptions) {
 			if info.ModTime().After(mtimes[src]) {
 				mtimes[src] = info.ModTime()
 				fmt.Fprintf(status, "\n  ↻  %s\n", src)
-				dest := filepath.Join(outDir, componentName(src)+".js")
+				dest := filepath.Join(outDir, ComponentName(src)+".js")
 				compilePrint(src, dest, opts)
 			}
 		}
@@ -485,7 +485,7 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 	fmt.Fprintln(status, "\nWatching for changes… (Ctrl-C to stop)")
 
 	mtimes := map[string]time.Time{}
-	for _, f := range collectVela(srcRoot) {
+	for _, f := range CollectVela(srcRoot) {
 		if info, err := os.Stat(f); err == nil {
 			mtimes[f] = info.ModTime()
 		}
@@ -494,7 +494,7 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 	for {
 		time.Sleep(150 * time.Millisecond)
 
-		current := collectVela(srcRoot)
+		current := CollectVela(srcRoot)
 		currentSet := map[string]bool{}
 		for _, f := range current {
 			currentSet[f] = true
@@ -509,7 +509,7 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 			}
 			prev, known := mtimes[f]
 			if !known {
-				fmt.Fprintf(status, "\n  +  %s (new)\n", relOrBase(f, srcRoot))
+				fmt.Fprintf(status, "\n  +  %s (new)\n", RelOrBase(f, srcRoot))
 			}
 			if !known || info.ModTime().After(prev) {
 				mtimes[f] = info.ModTime()
@@ -521,12 +521,12 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 		for f := range mtimes {
 			if !currentSet[f] {
 				delete(mtimes, f)
-				dest := mirrorPath(f, srcRoot, outRoot, ".js")
+				dest := MirrorPath(f, srcRoot, outRoot, ".js")
 				_ = os.Remove(dest)
 				if opts.EmitAST {
 					_ = os.Remove(strings.TrimSuffix(dest, ".js") + ".ast.json")
 				}
-				fmt.Fprintf(status, "\n  −  %s (removed)\n", relOrBase(f, srcRoot))
+				fmt.Fprintf(status, "\n  −  %s (removed)\n", RelOrBase(f, srcRoot))
 			}
 		}
 
@@ -584,7 +584,7 @@ func compilePrint(src, dest string, opts CompileOptions) bool {
 // compileFile compiles one .vela source file, writing JS to dest (full path).
 // The output directory is created automatically.
 func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, err error) {
-	name := componentName(src)
+	name := ComponentName(src)
 	trace := newTraceRecorder(src, name, opts)
 	var ds *DiagSet
 	internalFailure := false
@@ -651,7 +651,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 		}
 		if opts.Hosts != nil {
 			hosts, file := opts.Hosts, src
-			sfc.SiteHosts = func(local string) (string, bool) { return hosts.boundName(file, sfc, local) }
+			sfc.SiteHosts = func(local string) (string, bool) { return hosts.BoundName(file, sfc, local) }
 		}
 	}
 
@@ -925,50 +925,6 @@ const EmitCheckDiagnosticCode = "VELA-INTERNAL-EMIT"
 //  Path helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// mirrorPath maps  <srcRoot>/a/b/C.vela  →  <outRoot>/a/b/C<ext>
-//
-// Example:
-//
-//	src/dashboard/components/Card.vela  →  dist/dashboard/components/Card.js
-func mirrorPath(src, srcRoot, outRoot, ext string) string {
-	rel, err := filepath.Rel(srcRoot, src)
-	if err != nil {
-		rel = filepath.Base(src)
-	}
-	noExt := strings.TrimSuffix(rel, filepath.Ext(rel))
-	return filepath.Join(outRoot, noExt+ext)
-}
-
-// collectVela recursively finds all .vela files under root,
-// skipping hidden directories, node_modules, and common output dirs.
-func collectVela(root string) []string {
-	skipDirs := map[string]bool{
-		"node_modules": true,
-		"dist":         true,
-		".git":         true,
-		".svn":         true,
-	}
-	var files []string
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			name := d.Name()
-			// The project root itself is never skipped, so `--project .` works.
-			if path != root && (strings.HasPrefix(name, ".") || skipDirs[name]) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if strings.EqualFold(filepath.Ext(path), ".vela") {
-			files = append(files, path)
-		}
-		return nil
-	})
-	return files
-}
-
 // runtimeSpecifier is the core runtime import of a module written to dir:
 // the runtime package with --runtime-import=bare, else the relative path to
 // the runtime staged at outRoot.
@@ -985,7 +941,7 @@ func runtimeSpecifier(opts CompileOptions, dir, outRoot string) string {
 // output and dependencies cannot be copied back into the project.
 func copyProjectJSModules(srcRoot, outRoot string, opts CompileOptions) int {
 	errors := 0
-	for _, src := range collectProjectJSModules(srcRoot) {
+	for _, src := range CollectJSModules(srcRoot) {
 		rel, err := filepath.Rel(srcRoot, src)
 		if err != nil {
 			errors++
@@ -1009,47 +965,6 @@ func copyProjectJSModules(srcRoot, outRoot string, opts CompileOptions) int {
 		}
 	}
 	return errors
-}
-
-func collectProjectJSModules(root string) []string {
-	skipDirs := map[string]bool{
-		"node_modules": true,
-		"dist":         true,
-		".git":         true,
-		".svn":         true,
-	}
-	var files []string
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			name := d.Name()
-			// The project root itself is never skipped, so `--project .` works.
-			if path != root && (strings.HasPrefix(name, ".") || skipDirs[name]) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if strings.EqualFold(filepath.Ext(path), ".js") {
-			files = append(files, path)
-		}
-		return nil
-	})
-	return files
-}
-
-// relOrBase returns path relative to root, or just the base name on error.
-func relOrBase(f, root string) string {
-	if rel, err := filepath.Rel(root, f); err == nil {
-		return rel
-	}
-	return filepath.Base(f)
-}
-
-func componentName(path string) string {
-	base := filepath.Base(path)
-	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
 // hydrateRuntimeSource returns runtime-hydrate.js with the default

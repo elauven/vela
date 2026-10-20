@@ -30,7 +30,7 @@ func TestSSRMutationRules(t *testing.T) {
 	report := filepath.Join(out, "report.json")
 
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/rules/server", SSRReport: report}
-	buildSSRProject(collectVela(src), src, out, opts, false)
+	buildSSRProject(CollectVela(src), src, out, opts, false)
 
 	data, err := os.ReadFile(report)
 	if err != nil {
@@ -74,7 +74,7 @@ func TestSSRArrayIteratorsOnlyWhenIterated(t *testing.T) {
 	out := filepath.Join(filepath.Dir(src), "out")
 	report := filepath.Join(out, "report.json")
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/iter/server", SSRReport: report}
-	buildSSRProject(collectVela(src), src, out, opts, false)
+	buildSSRProject(CollectVela(src), src, out, opts, false)
 	data, err := os.ReadFile(report)
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +109,7 @@ func TestSSRDateTimeZoneDependentStaysRejected(t *testing.T) {
 	out := filepath.Join(filepath.Dir(src), "out")
 	report := filepath.Join(out, "report.json")
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/when/server", SSRReport: report}
-	buildSSRProject(collectVela(src), src, out, opts, false)
+	buildSSRProject(CollectVela(src), src, out, opts, false)
 	data, err := os.ReadFile(report)
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestSSRForOfChangingItsCollectionStaysRejected(t *testing.T) {
 	out := filepath.Join(filepath.Dir(src), "out")
 	report := filepath.Join(out, "report.json")
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/walk/server", SSRReport: report}
-	buildSSRProject(collectVela(src), src, out, opts, false)
+	buildSSRProject(CollectVela(src), src, out, opts, false)
 	data, err := os.ReadFile(report)
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestSSRLabelledJumpsAcrossTryStayRejected(t *testing.T) {
 	out := filepath.Join(filepath.Dir(src), "out")
 	report := filepath.Join(out, "report.json")
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/jumps/server", SSRReport: report}
-	buildSSRProject(collectVela(src), src, out, opts, false)
+	buildSSRProject(CollectVela(src), src, out, opts, false)
 	data, err := os.ReadFile(report)
 	if err != nil {
 		t.Fatal(err)

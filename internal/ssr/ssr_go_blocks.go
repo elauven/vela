@@ -1,6 +1,10 @@
-package main
+package ssr
 
 import (
+	"github.com/elauven/vela/internal/codegen"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfcast"
+
 	"fmt"
 	goast "go/ast"
 	"go/token"
@@ -27,7 +31,7 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 	emitter := ssrGoEmitter{
 		ctx: NewSSRExprContext(plan), packageName: packageName, scopeID: plan.ScopeID, elementScope: plan.ElementScope,
 		awaitOptions: goast.NewIdent("options"), componentName: plan.ComponentName,
-		region: region, facts: map[JsExpr]ssrIRFacts{}, propsWithoutPresence: plan.PropsWithoutPresence,
+		region: region, facts: map[jsast.JsExpr]ssrIRFacts{}, propsWithoutPresence: plan.PropsWithoutPresence,
 	}
 	// A single root element is the component's element; any other root gets
 	// the display:contents wrapper the client creates (B-3.8). Either one
@@ -363,11 +367,11 @@ func writeSSRBlocksProjectFile(src, srcRoot string, layout SSRProjectLayout, pla
 	if err != nil {
 		return err
 	}
-	serverPath := layout.serverPath(src, srcRoot)
+	serverPath := layout.ServerPath(src, srcRoot)
 	if err := os.MkdirAll(filepath.Dir(serverPath), 0o755); err != nil {
 		return err
 	}
-	if _, err := ssrProjectPropsSource(plan, layout.propsPath(src, srcRoot), layout.packageName(src, srcRoot)); err != nil {
+	if _, err := ssrProjectPropsSource(plan, layout.PropsPath(src, srcRoot), layout.PackageName(src, srcRoot)); err != nil {
 		return err
 	}
 	if err := os.WriteFile(serverPath, source, 0o644); err != nil {
@@ -376,7 +380,7 @@ func writeSSRBlocksProjectFile(src, srcRoot string, layout SSRProjectLayout, pla
 	if plan.ScopedCSS == "" {
 		return nil
 	}
-	stylePath := layout.stylePath(src, srcRoot)
+	stylePath := layout.StylePath(src, srcRoot)
 	if err := os.MkdirAll(filepath.Dir(stylePath), 0o755); err != nil {
 		return err
 	}
@@ -386,8 +390,8 @@ func writeSSRBlocksProjectFile(src, srcRoot string, layout SSRProjectLayout, pla
 // checkSSRBlocksNesting rejects a template whose server HTML the browser
 // would parse into a different node sequence (§5.2), with a source position.
 // A child component's root tag comes from its own template.
-func checkSSRBlocksNesting(filename, source string, nodes []Node, links map[string]SSRComponentLink) error {
-	ctx := HTMLNestingContext{ComponentRoot: func(component *ComponentNode) string {
+func checkSSRBlocksNesting(filename, source string, nodes []sfcast.Node, links map[string]SSRComponentLink) error {
+	ctx := codegen.HTMLNestingContext{ComponentRoot: func(component *sfcast.ComponentNode) string {
 		link, ok := links[component.Name]
 		if !ok {
 			return ""
@@ -396,19 +400,19 @@ func checkSSRBlocksNesting(filename, source string, nodes []Node, links map[stri
 		if err != nil {
 			return ""
 		}
-		child, err := ParseSFC(string(data))
+		child, err := sfcast.ParseSFC(string(data))
 		if err != nil || child.TemplateAST == nil {
 			return ""
 		}
 		if len(child.TemplateAST.Nodes) == 1 {
-			if element, ok := child.TemplateAST.Nodes[0].(*ElementNode); ok {
+			if element, ok := child.TemplateAST.Nodes[0].(*sfcast.ElementNode); ok {
 				return element.Tag
 			}
 		}
 		return "div"
 	}}
-	if err := CheckHTMLNesting(nodes, ctx); err != nil {
-		line, column := SourceLineColumn(source, err.Pos)
+	if err := codegen.CheckHTMLNesting(nodes, ctx); err != nil {
+		line, column := codegen.SourceLineColumn(source, err.Pos)
 		return fmt.Errorf("%s:%d:%d: %w", filename, line+1, column+1, err)
 	}
 	return nil
@@ -468,7 +472,7 @@ func (e *ssrGoEmitter) blocksAwaitBlock(node *SSRPlanAwait, pending []goast.Stmt
 			}
 			e.imports["fmt"] = "fmt"
 			return []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{&goast.CallExpr{Fun: goSelector("fmt", "Errorf"), Args: []goast.Expr{
-				ssrGoString("SSR await snapshot " + id + " branch cannot be rendered on the server: " + ssrDiagnosticSummary(err)),
+				ssrGoString("SSR await snapshot " + id + " branch cannot be rendered on the server: " + SSRDiagnosticSummary(err)),
 			}}}}}, nil
 		}
 		return body, nil

@@ -1,6 +1,9 @@
-package main
+package ssr
 
 import (
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/jsast"
+
 	"fmt"
 	goast "go/ast"
 	"go/token"
@@ -51,8 +54,8 @@ func newSSRFuncTable(plan *SSRRenderPlan, region *SSRRegion) *ssrFuncTable {
 	// functions they call.
 	functions := ssrComponentFunctions(plan)
 	visited := map[string]bool{}
-	var visit func(function *JsFuncDecl)
-	visit = func(function *JsFuncDecl) {
+	var visit func(function *jsast.JsFuncDecl)
+	visit = func(function *jsast.JsFuncDecl) {
 		ssrWalkIdents(function.Body, func(ident string) {
 			if locals[ident] {
 				table.captured[ident] = true
@@ -74,8 +77,8 @@ func newSSRFuncTable(plan *SSRRenderPlan, region *SSRRegion) *ssrFuncTable {
 
 // ssrComponentFunctions returns the top-level functions of the component
 // script: function declarations and const arrow or function expressions.
-func ssrComponentFunctions(plan *SSRRenderPlan) map[string]*JsFuncDecl {
-	out := map[string]*JsFuncDecl{}
+func ssrComponentFunctions(plan *SSRRenderPlan) map[string]*jsast.JsFuncDecl {
+	out := map[string]*jsast.JsFuncDecl{}
 	for name, function := range plan.Functions {
 		out[name] = function
 	}
@@ -88,41 +91,41 @@ func ssrComponentFunctions(plan *SSRRenderPlan) map[string]*JsFuncDecl {
 }
 
 // ssrFunctionOf turns an arrow or function expression into a declaration.
-func ssrFunctionOf(name string, expr JsExpr) *JsFuncDecl {
+func ssrFunctionOf(name string, expr jsast.JsExpr) *jsast.JsFuncDecl {
 	switch fn := expr.(type) {
-	case *JsArrowFunc:
-		decl := &JsFuncDecl{Name: name, Params: fn.Params, Async: fn.Async}
-		decl.BaseStmt = BaseStmt{BaseNode: fn.BaseExpr.BaseNode}
+	case *jsast.JsArrowFunc:
+		decl := &jsast.JsFuncDecl{Name: name, Params: fn.Params, Async: fn.Async}
+		decl.BaseStmt = jsast.BaseStmt{BaseNode: fn.BaseExpr.BaseNode}
 		switch body := fn.Body.(type) {
-		case *JsBlock:
+		case *jsast.JsBlock:
 			decl.Body = body
-		case JsExpr:
-			decl.Body = &JsBlock{Body: []JsStmt{&JsReturnStmt{Arg: body}}}
+		case jsast.JsExpr:
+			decl.Body = &jsast.JsBlock{Body: []jsast.JsStmt{&jsast.JsReturnStmt{Arg: body}}}
 		}
 		return decl
-	case *JsFuncExpr:
-		decl := &JsFuncDecl{Name: name, Params: fn.Params, Body: fn.Body, Async: fn.Async, Generator: fn.Generator}
-		decl.BaseStmt = BaseStmt{BaseNode: fn.BaseExpr.BaseNode}
+	case *jsast.JsFuncExpr:
+		decl := &jsast.JsFuncDecl{Name: name, Params: fn.Params, Body: fn.Body, Async: fn.Async, Generator: fn.Generator}
+		decl.BaseStmt = jsast.BaseStmt{BaseNode: fn.BaseExpr.BaseNode}
 		return decl
 	}
 	return nil
 }
 
 // ssrInlinable reports a function the single-return inliner handles.
-func ssrInlinable(function *JsFuncDecl) bool {
+func ssrInlinable(function *jsast.JsFuncDecl) bool {
 	if function == nil || function.Async || function.Generator || function.Body == nil || len(function.Body.Body) != 1 {
 		return false
 	}
-	result, ok := function.Body.Body[0].(*JsReturnStmt)
+	result, ok := function.Body.Body[0].(*jsast.JsReturnStmt)
 	if !ok || result.Arg == nil {
 		return false
 	}
 	params := map[string]bool{}
 	for _, param := range function.Params {
-		if IdentName(param) == "" {
+		if analyzer.IdentName(param) == "" {
 			return false
 		}
-		params[IdentName(param)] = true
+		params[analyzer.IdentName(param)] = true
 	}
 	// this belongs to the call: an inlined body would see the caller's.
 	if ssrUsesThis(result.Arg) {
@@ -131,9 +134,9 @@ func ssrInlinable(function *JsFuncDecl) bool {
 	// A closure that reads a parameter needs the compiled function: an
 	// inlined parameter is an expression, not a variable it can capture.
 	captures := false
-	WalkNode(result.Arg, func(n JsNode) bool {
+	jsast.WalkNode(result.Arg, func(n jsast.JsNode) bool {
 		switch n.(type) {
-		case *JsArrowFunc, *JsFuncExpr:
+		case *jsast.JsArrowFunc, *jsast.JsFuncExpr:
 			ssrWalkIdents(n, func(name string) { captures = captures || params[name] })
 			return false
 		}
@@ -151,13 +154,13 @@ func (c *ssrFuncCompiler) shared(name string) bool {
 
 // ssrUsesThis reports this in node outside nested non-arrow functions,
 // which have their own.
-func ssrUsesThis(node JsNode) bool {
+func ssrUsesThis(node jsast.JsNode) bool {
 	uses := false
-	WalkNode(node, func(n JsNode) bool {
+	jsast.WalkNode(node, func(n jsast.JsNode) bool {
 		switch n.(type) {
-		case *JsThisExpr:
+		case *jsast.JsThisExpr:
 			uses = true
-		case *JsFuncExpr, *JsFuncDecl:
+		case *jsast.JsFuncExpr, *jsast.JsFuncDecl:
 			return false
 		}
 		return !uses
@@ -166,9 +169,9 @@ func ssrUsesThis(node JsNode) bool {
 }
 
 // ssrWalkIdents visits every identifier read in a statement tree.
-func ssrWalkIdents(node JsNode, visit func(string)) {
-	WalkNode(node, func(n JsNode) bool {
-		if ident, ok := n.(*JsIdent); ok {
+func ssrWalkIdents(node jsast.JsNode, visit func(string)) {
+	jsast.WalkNode(node, func(n jsast.JsNode) bool {
+		if ident, ok := n.(*jsast.JsIdent); ok {
 			visit(ident.Name)
 		}
 		return true
@@ -373,7 +376,7 @@ func labeled(labels []*ssrLabel, stmt goast.Stmt) goast.Stmt {
 
 // labelStatement lowers label: body. A loop or switch body takes the label
 // itself; for another statement, break label jumps past it.
-func (c *ssrFuncCompiler) labelStatement(s *JsLabeledStmt) ([]goast.Stmt, error) {
+func (c *ssrFuncCompiler) labelStatement(s *jsast.JsLabeledStmt) ([]goast.Stmt, error) {
 	for _, label := range c.labels {
 		if label.name == s.Label {
 			return nil, c.fail("label %q is already declared", s.Label)
@@ -383,7 +386,7 @@ func (c *ssrFuncCompiler) labelStatement(s *JsLabeledStmt) ([]goast.Stmt, error)
 	c.labels = append(c.labels, label)
 	defer func() { c.labels = c.labels[:len(c.labels)-1] }()
 	switch s.Body.(type) {
-	case *JsForStmt, *JsWhileStmt, *JsDoWhileStmt, *JsForInStmt, *JsSwitchStmt, *JsLabeledStmt:
+	case *jsast.JsForStmt, *jsast.JsWhileStmt, *jsast.JsDoWhileStmt, *jsast.JsForInStmt, *jsast.JsSwitchStmt, *jsast.JsLabeledStmt:
 		c.loopLabels = append(c.loopLabels, label)
 	default:
 		c.loopLabels = nil
@@ -462,13 +465,13 @@ func (c *ssrFuncCompiler) builder() *ssrIRBuilder {
 
 // expr builds and lowers an expression; throws reports whether it can
 // throw.
-func (c *ssrFuncCompiler) expr(expr JsExpr) (goast.Expr, bool, error) {
+func (c *ssrFuncCompiler) expr(expr jsast.JsExpr) (goast.Expr, bool, error) {
 	return c.exprWith(expr, (*ssrIRBuilder).build)
 }
 
 // exprWith lowers expr with a builder method: build, or iterable for a
 // value that is iterated at once.
-func (c *ssrFuncCompiler) exprWith(expr JsExpr, build func(*ssrIRBuilder, JsExpr, int) (SSRIRExpr, error)) (goast.Expr, bool, error) {
+func (c *ssrFuncCompiler) exprWith(expr jsast.JsExpr, build func(*ssrIRBuilder, jsast.JsExpr, int) (SSRIRExpr, error)) (goast.Expr, bool, error) {
 	b := c.builder()
 	ir, err := build(b, expr, 0)
 	c.absorb(b)
@@ -495,7 +498,7 @@ func (c *ssrFuncCompiler) absorb(b *ssrIRBuilder) {
 // function compiles a declaration to func(ssrThis any, ssrArgs ...any) any.
 // An arrow function has no this of its own: its this parameter is unnamed
 // and this in its body is the enclosing function's.
-func (c *ssrFuncCompiler) function(function *JsFuncDecl) (*goast.FuncLit, error) {
+func (c *ssrFuncCompiler) function(function *jsast.JsFuncDecl) (*goast.FuncLit, error) {
 	if function.Generator {
 		return nil, c.fail("generator function %q is not admitted (§7.1)", c.name)
 	}
@@ -520,7 +523,7 @@ func (c *ssrFuncCompiler) function(function *JsFuncDecl) (*goast.FuncLit, error)
 	body = append(body, &goast.IfStmt{Cond: &goast.CallExpr{Fun: goSelector("ssrJS", "Failed")}, Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ReturnStmt{Results: []goast.Expr{ssrUndefined()}}}}})
 	for i, param := range function.Params {
 		arg := &goast.CallExpr{Fun: goSelector("vela", "Arg"), Args: []goast.Expr{goast.NewIdent("ssrArgs"), &goast.BasicLit{Kind: token.INT, Value: strconv.Itoa(i)}}}
-		if _, rest := param.(*JsSpreadExpr); rest {
+		if _, rest := param.(*jsast.JsSpreadExpr); rest {
 			arg.Fun = goSelector("vela", "RestItems")
 		}
 		if typed, ok := c.typedParam(function, i, param, arg); ok {
@@ -586,11 +589,11 @@ func (c *ssrFuncCompiler) unwind() goast.Stmt {
 	return &goast.IfStmt{Cond: &goast.CallExpr{Fun: goSelector("ssrJS", "Failed")}, Body: &goast.BlockStmt{List: []goast.Stmt{exit}}}
 }
 
-func (c *ssrFuncCompiler) statements(list []JsStmt) ([]goast.Stmt, error) {
+func (c *ssrFuncCompiler) statements(list []jsast.JsStmt) ([]goast.Stmt, error) {
 	var out []goast.Stmt
 	// Function declarations are hoisted within their block.
 	for _, stmt := range list {
-		if decl, ok := stmt.(*JsFuncDecl); ok {
+		if decl, ok := stmt.(*jsast.JsFuncDecl); ok {
 			goName := c.declare(decl.Name)
 			out = append(out, ssrVarAny(goName, nil), ssrUse(goName))
 		}
@@ -598,7 +601,7 @@ func (c *ssrFuncCompiler) statements(list []JsStmt) ([]goast.Stmt, error) {
 	// Hoisted declarations come first, so that calls before them see the
 	// function.
 	for _, stmt := range list {
-		if _, ok := stmt.(*JsFuncDecl); ok {
+		if _, ok := stmt.(*jsast.JsFuncDecl); ok {
 			stmts, err := c.statement(stmt)
 			if err != nil {
 				return nil, err
@@ -607,7 +610,7 @@ func (c *ssrFuncCompiler) statements(list []JsStmt) ([]goast.Stmt, error) {
 		}
 	}
 	for _, stmt := range list {
-		if _, ok := stmt.(*JsFuncDecl); ok {
+		if _, ok := stmt.(*jsast.JsFuncDecl); ok {
 			continue
 		}
 		stmts, err := c.statement(stmt)
@@ -619,13 +622,13 @@ func (c *ssrFuncCompiler) statements(list []JsStmt) ([]goast.Stmt, error) {
 	return out, nil
 }
 
-func (c *ssrFuncCompiler) block(stmt JsStmt) ([]goast.Stmt, error) {
+func (c *ssrFuncCompiler) block(stmt jsast.JsStmt) ([]goast.Stmt, error) {
 	c.scopes = append(c.scopes, map[string]string{})
 	defer func() { c.scopes = c.scopes[:len(c.scopes)-1] }()
-	if block, ok := stmt.(*JsBlock); ok {
+	if block, ok := stmt.(*jsast.JsBlock); ok {
 		return c.statements(block.Body)
 	}
-	return c.statements([]JsStmt{stmt})
+	return c.statements([]jsast.JsStmt{stmt})
 }
 
 // checked appends the unwind check after a statement that can throw.
@@ -636,25 +639,25 @@ func (c *ssrFuncCompiler) checked(stmt goast.Stmt, throws bool) []goast.Stmt {
 	return []goast.Stmt{stmt}
 }
 
-func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
+func (c *ssrFuncCompiler) statement(stmt jsast.JsStmt) ([]goast.Stmt, error) {
 	switch s := stmt.(type) {
-	case *JsEmptyStmt:
+	case *jsast.JsEmptyStmt:
 		return nil, nil
-	case *JsBlock:
+	case *jsast.JsBlock:
 		body, err := c.block(s)
 		if err != nil {
 			return nil, err
 		}
 		return []goast.Stmt{&goast.BlockStmt{List: body}}, nil
-	case *JsVarDecl:
+	case *jsast.JsVarDecl:
 		if s.Kind == "var" {
 			return nil, c.fail("var declarations are not admitted; use let or const (§7.1)")
 		}
 		var out []goast.Stmt
 		for _, declarator := range s.Decls {
-			if call, ok := declarator.Init.(*JsCallExpr); ok && IdentName(declarator.Id) != "" {
+			if call, ok := declarator.Init.(*jsast.JsCallExpr); ok && analyzer.IdentName(declarator.Id) != "" {
 				if _, mutating := c.mutationTarget(call); mutating {
-					stmts, _, err := c.mutationStatement(call, c.declare(IdentName(declarator.Id)), true)
+					stmts, _, err := c.mutationStatement(call, c.declare(analyzer.IdentName(declarator.Id)), true)
 					if err != nil {
 						return nil, err
 					}
@@ -669,7 +672,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 				if value, throws, err = c.valueOf(declarator.Init); err != nil {
 					return nil, err
 				}
-				if name := IdentName(declarator.Id); name != "" && c.shared(name) {
+				if name := analyzer.IdentName(declarator.Id); name != "" && c.shared(name) {
 					value = &goast.CallExpr{Fun: goSelector("vela", "Box"), Args: []goast.Expr{value}}
 				}
 			}
@@ -683,7 +686,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 			}
 		}
 		return out, nil
-	case *JsFuncDecl:
+	case *jsast.JsFuncDecl:
 		goName, _ := c.lookup(s.Name)
 		closure, err := (&ssrFuncCompiler{table: c.table, name: s.Name, scopes: c.scopes, next: c.next, ctx: c.ctx, site: c.site, deferImpure: c.deferImpure, freshness: c.freshness, this: c.this}).function(s)
 		if err != nil {
@@ -692,14 +695,14 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 		return []goast.Stmt{
 			&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(goName)}, Tok: token.ASSIGN, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "Func"), Args: []goast.Expr{closure}}}},
 		}, nil
-	case *JsExprStmt:
+	case *jsast.JsExprStmt:
 		return c.exprStatement(s.X)
-	case *JsReturnStmt:
+	case *jsast.JsReturnStmt:
 		if s.Arg == nil {
 			c.noteReturn(ssrIRFacts{})
 			return []goast.Stmt{c.returnStmt(ssrUndefined())}, nil
 		}
-		if assignment, ok := s.Arg.(*JsAssignExpr); ok {
+		if assignment, ok := s.Arg.(*jsast.JsAssignExpr); ok {
 			// An arrow such as (v) => x = v: assign, then return the target.
 			stmts, err := c.assign(assignment.L, assignment.Op, assignment.R)
 			if err != nil {
@@ -709,7 +712,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 			if _, local := c.lookup(ssrAssignmentRoot(assignment.L)); !local {
 				return append(stmts, c.returnStmt(ssrUndefined())), nil
 			}
-			result, err := c.statement(&JsReturnStmt{Arg: assignment.L})
+			result, err := c.statement(&jsast.JsReturnStmt{Arg: assignment.L})
 			if err != nil {
 				return nil, err
 			}
@@ -726,7 +729,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 		// The result is not returned when evaluating it threw.
 		temp := c.declare("$result")
 		return []goast.Stmt{ssrVarAny(temp, value), c.unwind(), c.returnStmt(goast.NewIdent(temp))}, nil
-	case *JsThrowStmt:
+	case *jsast.JsThrowStmt:
 		value, _, err := c.valueOf(s.Arg)
 		if err != nil {
 			return nil, err
@@ -735,7 +738,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 			&goast.ExprStmt{X: &goast.CallExpr{Fun: goSelector("ssrJS", "Throw"), Args: []goast.Expr{value, ssrGoString(c.site)}}},
 			c.unwind(),
 		}, nil
-	case *JsIfStmt:
+	case *jsast.JsIfStmt:
 		test, throws, err := c.condition(s.Test)
 		if err != nil {
 			return nil, err
@@ -753,21 +756,21 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 			branch.Else = &goast.BlockStmt{List: otherwise}
 		}
 		return c.guardTest(branch, throws), nil
-	case *JsWhileStmt:
+	case *jsast.JsWhileStmt:
 		return c.loop(nil, nil, s.Test, nil, s.Body, false)
-	case *JsDoWhileStmt:
+	case *jsast.JsDoWhileStmt:
 		return c.loop(nil, nil, s.Test, nil, s.Body, true)
-	case *JsForStmt:
+	case *jsast.JsForStmt:
 		return c.forStatement(s)
-	case *JsForInStmt:
+	case *jsast.JsForInStmt:
 		return c.forOf(s)
-	case *JsBreakStmt, *JsContinueStmt:
+	case *jsast.JsBreakStmt, *jsast.JsContinueStmt:
 		label := ""
 		tok := token.BREAK
-		if b, ok := s.(*JsBreakStmt); ok {
+		if b, ok := s.(*jsast.JsBreakStmt); ok {
 			label = b.Label
 		} else {
-			label = s.(*JsContinueStmt).Label
+			label = s.(*jsast.JsContinueStmt).Label
 			tok = token.CONTINUE
 		}
 		if label != "" {
@@ -779,11 +782,11 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 			}
 		}
 		return []goast.Stmt{&goast.BranchStmt{Tok: tok}}, nil
-	case *JsSwitchStmt:
+	case *jsast.JsSwitchStmt:
 		return c.switchStatement(s)
-	case *JsTryStmt:
+	case *jsast.JsTryStmt:
 		return c.tryStatement(s)
-	case *JsLabeledStmt:
+	case *jsast.JsLabeledStmt:
 		return c.labelStatement(s)
 	}
 	return nil, c.fail("statement %T is not admitted during server rendering (§7.1)", stmt)
@@ -791,9 +794,9 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 
 // valueOf builds an expression value; a function value is compiled as a
 // closure.
-func (c *ssrFuncCompiler) valueOf(expr JsExpr) (goast.Expr, bool, error) {
+func (c *ssrFuncCompiler) valueOf(expr jsast.JsExpr) (goast.Expr, bool, error) {
 	if function := ssrFunctionOf("", expr); function != nil {
-		_, arrow := expr.(*JsArrowFunc)
+		_, arrow := expr.(*jsast.JsArrowFunc)
 		closure, err := (&ssrFuncCompiler{table: c.table, name: "function", scopes: c.scopes, next: c.next, ctx: c.ctx, site: c.site, deferImpure: c.deferImpure, freshness: c.freshness, arrow: arrow, this: c.this}).function(function)
 		if err != nil {
 			return nil, false, err
@@ -805,7 +808,7 @@ func (c *ssrFuncCompiler) valueOf(expr JsExpr) (goast.Expr, bool, error) {
 }
 
 // condition lowers a test with JavaScript truthiness.
-func (c *ssrFuncCompiler) condition(expr JsExpr) (goast.Expr, bool, error) {
+func (c *ssrFuncCompiler) condition(expr jsast.JsExpr) (goast.Expr, bool, error) {
 	b := c.builder()
 	ir, err := b.build(expr, 0)
 	c.absorb(b)
@@ -837,25 +840,25 @@ func (c *ssrFuncCompiler) guardTest(stmt *goast.IfStmt, throws bool) []goast.Stm
 // exprStatement lowers an expression statement: an assignment or update
 // of a local, a member assignment, or an expression evaluated for its
 // effect (a call).
-func (c *ssrFuncCompiler) exprStatement(expr JsExpr) ([]goast.Stmt, error) {
-	if call, ok := expr.(*JsCallExpr); ok {
+func (c *ssrFuncCompiler) exprStatement(expr jsast.JsExpr) ([]goast.Stmt, error) {
+	if call, ok := expr.(*jsast.JsCallExpr); ok {
 		if stmts, handled, err := c.mutationStatement(call, "", false); handled {
 			return stmts, err
 		}
 	}
 	switch e := expr.(type) {
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		return c.assign(e.L, e.Op, e.R)
-	case *JsUnaryExpr:
+	case *jsast.JsUnaryExpr:
 		if e.Op == "++" || e.Op == "--" {
 			op := "+="
 			if e.Op == "--" {
 				op = "-="
 			}
-			one := &JsLiteral{Kind: "number", Raw: "1"}
+			one := &jsast.JsLiteral{Kind: "number", Raw: "1"}
 			return c.assign(e.X, op, one)
 		}
-	case *JsSeqExpr:
+	case *jsast.JsSeqExpr:
 		var out []goast.Stmt
 		for _, item := range e.Exprs {
 			stmts, err := c.exprStatement(item)
@@ -878,22 +881,22 @@ var ssrCompoundOps = map[string]string{"+=": "+", "-=": "-", "*=": "*", "/=": "/
 // assign lowers target op= value for a local variable or a member of a
 // local value (T-6.6b). Writes to component state, props, or module
 // bindings are impure (T-6.6a).
-func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goast.Stmt, error) {
+func (c *ssrFuncCompiler) assign(target jsast.JsExpr, op string, value jsast.JsExpr) ([]goast.Stmt, error) {
 	right := value
 	if binary, ok := ssrCompoundOps[op]; ok {
-		right = &JsBinaryExpr{Op: binary, L: target, R: value}
+		right = &jsast.JsBinaryExpr{Op: binary, L: target, R: value}
 	} else if op == "&&=" || op == "||=" || op == "??=" {
-		right = &JsLogicalExpr{Op: op[:2], L: target, R: value}
+		right = &jsast.JsLogicalExpr{Op: op[:2], L: target, R: value}
 	} else if op != "=" {
 		return nil, c.fail("assignment operator %s is not supported", op)
 	}
 	switch t := target.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		goName, ok := c.lookup(t.Name)
 		if !ok {
 			return c.impure(fmt.Sprintf("%q is not a local of the function; server rendering must not change state, props, or module bindings (T-6.6a)", t.Name))
 		}
-		if call, isCall := value.(*JsCallExpr); isCall && op == "=" {
+		if call, isCall := value.(*jsast.JsCallExpr); isCall && op == "=" {
 			if _, mutating := c.mutationTarget(call); mutating {
 				stmts, _, err := c.mutationStatement(call, goName, false)
 				return stmts, err
@@ -916,17 +919,17 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 			c.unwind(),
 			&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(goName)}, Tok: token.ASSIGN, Rhs: []goast.Expr{goast.NewIdent(temp)}},
 		}, nil
-	case *JsMemberExpr:
-		root := JsExpr(t)
+	case *jsast.JsMemberExpr:
+		root := jsast.JsExpr(t)
 		for {
-			member, ok := root.(*JsMemberExpr)
+			member, ok := root.(*jsast.JsMemberExpr)
 			if !ok {
 				break
 			}
 			root = member.Obj
 		}
-		_, viaThis := root.(*JsThisExpr)
-		ident, ok := root.(*JsIdent)
+		_, viaThis := root.(*jsast.JsThisExpr)
+		ident, ok := root.(*jsast.JsIdent)
 		if !ok && !viaThis {
 			return nil, c.fail("assignment to a member of a computed value is not supported")
 		}
@@ -946,7 +949,7 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 			if key, keyThrows, err = c.expr(t.Prop); err != nil {
 				return nil, err
 			}
-		} else if property, ok := t.Prop.(*JsIdent); ok {
+		} else if property, ok := t.Prop.(*jsast.JsIdent); ok {
 			key = ssrGoString(property.Name)
 		} else {
 			return nil, c.fail("member name %T is not supported", t.Prop)
@@ -982,12 +985,12 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 
 // bind declares the names of a binding pattern: an identifier, an array or
 // object pattern, with defaults (§7.1).
-func (c *ssrFuncCompiler) bind(pattern JsExpr, value goast.Expr) ([]goast.Stmt, error) {
+func (c *ssrFuncCompiler) bind(pattern jsast.JsExpr, value goast.Expr) ([]goast.Stmt, error) {
 	switch p := pattern.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		goName := c.declare(p.Name)
 		return []goast.Stmt{ssrVarAny(goName, value), ssrUse(goName)}, nil
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		// A default applies when the value is undefined.
 		temp := c.declare("$default")
 		fallback, _, err := c.valueOf(p.R)
@@ -1006,7 +1009,7 @@ func (c *ssrFuncCompiler) bind(pattern JsExpr, value goast.Expr) ([]goast.Stmt, 
 			return nil, err
 		}
 		return append(out, rest...), nil
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		// The value is iterated as for…of: array elements with holes as
 		// undefined, string code points; another value throws TypeError.
 		temp := c.declare("$array")
@@ -1018,7 +1021,7 @@ func (c *ssrFuncCompiler) bind(pattern JsExpr, value goast.Expr) ([]goast.Stmt, 
 			}
 			index := &goast.BasicLit{Kind: token.INT, Value: strconv.Itoa(i)}
 			var item goast.Expr = &goast.CallExpr{Fun: goSelector("vela", "Arg"), Args: []goast.Expr{goast.NewIdent(temp), index}}
-			if spread, ok := element.(*JsSpreadExpr); ok {
+			if spread, ok := element.(*jsast.JsSpreadExpr); ok {
 				element = spread.X
 				item = &goast.CallExpr{Fun: goSelector("vela", "RestItems"), Args: []goast.Expr{goast.NewIdent(temp), index}}
 			}
@@ -1029,7 +1032,7 @@ func (c *ssrFuncCompiler) bind(pattern JsExpr, value goast.Expr) ([]goast.Stmt, 
 			out = append(out, stmts...)
 		}
 		return append(out, c.unwind()), nil
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		temp := c.declare("$object")
 		out := []goast.Stmt{ssrVarAny(temp, value), ssrUse(temp)}
 		var keys []goast.Expr
@@ -1089,7 +1092,7 @@ func (c *ssrFuncCompiler) bind(pattern JsExpr, value goast.Expr) ([]goast.Stmt, 
 			}
 		}
 		return append(out, c.unwind()), nil
-	case *JsSpreadExpr:
+	case *jsast.JsSpreadExpr:
 		// A rest parameter: value is the argument list from its position.
 		return c.bind(p.X, value)
 	}
@@ -1102,7 +1105,7 @@ func (c *ssrFuncCompiler) bind(pattern JsExpr, value goast.Expr) ([]goast.Stmt, 
 // init clause, where Go gives each iteration its own copy, made before the
 // update runs, as JavaScript does (CreatePerIterationEnvironment); uses
 // mark them used.
-func (c *ssrFuncCompiler) loop(vars *goast.AssignStmt, uses []goast.Stmt, test JsExpr, post []goast.Stmt, body JsStmt, doWhile bool) ([]goast.Stmt, error) {
+func (c *ssrFuncCompiler) loop(vars *goast.AssignStmt, uses []goast.Stmt, test jsast.JsExpr, post []goast.Stmt, body jsast.JsStmt, doWhile bool) ([]goast.Stmt, error) {
 	labels := c.claimLabels(true)
 	c.loops = append(c.loops, 1)
 	defer func() { c.loops = c.loops[:len(c.loops)-1] }()
@@ -1167,7 +1170,7 @@ func (c *ssrFuncCompiler) loop(vars *goast.AssignStmt, uses []goast.Stmt, test J
 	return []goast.Stmt{labeled(labels, loop), c.unwind()}, nil
 }
 
-func (c *ssrFuncCompiler) forStatement(s *JsForStmt) ([]goast.Stmt, error) {
+func (c *ssrFuncCompiler) forStatement(s *jsast.JsForStmt) ([]goast.Stmt, error) {
 	c.scopes = append(c.scopes, map[string]string{})
 	defer func() { c.scopes = c.scopes[:len(c.scopes)-1] }()
 	var init []goast.Stmt
@@ -1181,7 +1184,7 @@ func (c *ssrFuncCompiler) forStatement(s *JsForStmt) ([]goast.Stmt, error) {
 	// iteration, initialised from the declarations.
 	var vars *goast.AssignStmt
 	var uses []goast.Stmt
-	if decl, ok := s.Init.(*JsVarDecl); ok {
+	if decl, ok := s.Init.(*jsast.JsVarDecl); ok {
 		c.scopes = append(c.scopes, map[string]string{})
 		defer func() { c.scopes = c.scopes[:len(c.scopes)-1] }()
 		vars = &goast.AssignStmt{Tok: token.DEFINE}
@@ -1226,7 +1229,7 @@ func (c *ssrFuncCompiler) forStatement(s *JsForStmt) ([]goast.Stmt, error) {
 
 // forOf iterates array elements or string code points (for…of), or the
 // keys for…in visits.
-func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
+func (c *ssrFuncCompiler) forOf(s *jsast.JsForInStmt) ([]goast.Stmt, error) {
 	kind, build := "for…of", (*ssrIRBuilder).iterable
 	if !s.IsOf {
 		kind, build = "for…in", (*ssrIRBuilder).build
@@ -1235,7 +1238,7 @@ func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	if name := IdentName(s.Right); s.IsOf && name != "" && ssrChangesCollection(s.Body, name) {
+	if name := analyzer.IdentName(s.Right); s.IsOf && name != "" && ssrChangesCollection(s.Body, name) {
 		// The loop iterates the items taken before the first iteration; in
 		// JavaScript it also visits what the body adds.
 		return nil, c.fail("the body of for…of changes %q, the array or collection it iterates, which is not supported during server rendering", name)
@@ -1243,9 +1246,9 @@ func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
 	c.scopes = append(c.scopes, map[string]string{})
 	defer func() { c.scopes = c.scopes[:len(c.scopes)-1] }()
 	item := c.declare("$item")
-	var pattern JsExpr
+	var pattern jsast.JsExpr
 	switch left := s.Left.(type) {
-	case *JsVarDecl:
+	case *jsast.JsVarDecl:
 		if len(left.Decls) != 1 {
 			return nil, c.fail("%s declares one binding", kind)
 		}
@@ -1278,12 +1281,12 @@ var ssrCollectionChanges = map[string]bool{"push": true, "pop": true, "shift": t
 
 // ssrChangesCollection reports a call name.m(…) in body that adds or
 // removes items of name.
-func ssrChangesCollection(body JsNode, name string) bool {
+func ssrChangesCollection(body jsast.JsNode, name string) bool {
 	changes := false
-	WalkNode(body, func(n JsNode) bool {
-		if call, ok := n.(*JsCallExpr); ok {
-			if member, ok := call.Callee.(*JsMemberExpr); ok && !member.Computed && IdentName(member.Obj) == name {
-				if property, ok := member.Prop.(*JsIdent); ok && ssrCollectionChanges[property.Name] {
+	jsast.WalkNode(body, func(n jsast.JsNode) bool {
+		if call, ok := n.(*jsast.JsCallExpr); ok {
+			if member, ok := call.Callee.(*jsast.JsMemberExpr); ok && !member.Computed && analyzer.IdentName(member.Obj) == name {
+				if property, ok := member.Prop.(*jsast.JsIdent); ok && ssrCollectionChanges[property.Name] {
 					changes = true
 				}
 			}
@@ -1295,7 +1298,7 @@ func ssrChangesCollection(body JsNode, name string) bool {
 
 // switchStatement matches with === in order; a case body without break,
 // return, throw, or continue at its end falls through.
-func (c *ssrFuncCompiler) switchStatement(s *JsSwitchStmt) ([]goast.Stmt, error) {
+func (c *ssrFuncCompiler) switchStatement(s *jsast.JsSwitchStmt) ([]goast.Stmt, error) {
 	discriminant, throws, err := c.expr(s.Disc)
 	if err != nil {
 		return nil, err
@@ -1318,7 +1321,7 @@ func (c *ssrFuncCompiler) switchStatement(s *JsSwitchStmt) ([]goast.Stmt, error)
 			}
 			clause.List = []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "StrictEqual"), Args: []goast.Expr{goast.NewIdent(temp), test}}}
 		}
-		body, err := c.block(&JsBlock{Body: kase.Body})
+		body, err := c.block(&jsast.JsBlock{Body: kase.Body})
 		if err != nil {
 			return nil, err
 		}
@@ -1331,22 +1334,22 @@ func (c *ssrFuncCompiler) switchStatement(s *JsSwitchStmt) ([]goast.Stmt, error)
 	return append(out, labeled(labels, sw)), nil
 }
 
-func ssrCompletesAbruptly(body []JsStmt) bool {
+func ssrCompletesAbruptly(body []jsast.JsStmt) bool {
 	if len(body) == 0 {
 		return false
 	}
 	switch last := body[len(body)-1].(type) {
-	case *JsBreakStmt, *JsReturnStmt, *JsThrowStmt, *JsContinueStmt:
+	case *jsast.JsBreakStmt, *jsast.JsReturnStmt, *jsast.JsThrowStmt, *jsast.JsContinueStmt:
 		return true
-	case *JsBlock:
+	case *jsast.JsBlock:
 		return ssrCompletesAbruptly(last.Body)
 	}
 	return false
 }
 
 // tryStatement lowers try/catch/finally through vela.Try (T-6.5d).
-func (c *ssrFuncCompiler) tryStatement(s *JsTryStmt) ([]goast.Stmt, error) {
-	part := func(body *JsBlock, param JsExpr) (*goast.FuncLit, error) {
+func (c *ssrFuncCompiler) tryStatement(s *jsast.JsTryStmt) ([]goast.Stmt, error) {
+	part := func(body *jsast.JsBlock, param jsast.JsExpr) (*goast.FuncLit, error) {
 		c.tries++
 		c.loops = append(c.loops, 0)
 		defer func() {
@@ -1386,7 +1389,7 @@ func (c *ssrFuncCompiler) tryStatement(s *JsTryStmt) ([]goast.Stmt, error) {
 	if s.Handler != nil {
 		param := s.CatchParam
 		if param == nil {
-			param = &JsIdent{Name: "$ignored"}
+			param = &jsast.JsIdent{Name: "$ignored"}
 		}
 		literal, err := part(s.Handler, param)
 		if err != nil {
@@ -1459,14 +1462,14 @@ func lowerSSRCallFunc(n *ssrIRCallFunc) goast.Expr {
 
 // compiledCall calls component function name through its compiled
 // closure, compiling it on first use.
-func (b *ssrIRBuilder) compiledCall(name string, call *JsCallExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) compiledCall(name string, call *jsast.JsCallExpr, pos int) (SSRIRExpr, error) {
 	table := b.ctx.funcs
 	if table == nil || !b.js {
 		return nil, ssrExprUnsupported(pos, "local formatter %q must contain exactly one return expression", name)
 	}
 	var args []SSRIRExpr
 	for _, argument := range call.Args {
-		if _, spread := argument.(*JsSpreadExpr); spread {
+		if _, spread := argument.(*jsast.JsSpreadExpr); spread {
 			return nil, ssrExprUnsupported(pos, "spread arguments are not supported yet")
 		}
 		value, err := b.build(argument, pos)
@@ -1500,7 +1503,7 @@ func (b *ssrIRBuilder) compiledCall(name string, call *JsCallExpr, pos int) (SSR
 
 // valueCall calls a function value held by a local of a translated
 // function.
-func (b *ssrIRBuilder) valueCall(callee SSRIRExpr, call *JsCallExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) valueCall(callee SSRIRExpr, call *jsast.JsCallExpr, pos int) (SSRIRExpr, error) {
 	var args []SSRIRExpr
 	for _, argument := range call.Args {
 		value, err := b.build(argument, pos)
@@ -1515,8 +1518,8 @@ func (b *ssrIRBuilder) valueCall(callee SSRIRExpr, call *JsCallExpr, pos int) (S
 
 // newError lowers new Error(m), new TypeError(m), new RangeError(m), and
 // new Date(value).
-func (b *ssrIRBuilder) newError(node *JsNewExpr, pos int) (SSRIRExpr, error) {
-	callee, ok := node.Callee.(*JsIdent)
+func (b *ssrIRBuilder) newError(node *jsast.JsNewExpr, pos int) (SSRIRExpr, error) {
+	callee, ok := node.Callee.(*jsast.JsIdent)
 	if ok && callee.Name == "Date" && !b.shadowedGlobal("Date") {
 		return b.newDate(node, pos)
 	}
@@ -1540,7 +1543,7 @@ func (b *ssrIRBuilder) newError(node *JsNewExpr, pos int) (SSRIRExpr, error) {
 
 // newDate lowers new Date(value) (T-6.6e). new Date() reads the clock and
 // new Date(y, m, …) reads local time: both keep the host route.
-func (b *ssrIRBuilder) newDate(node *JsNewExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) newDate(node *jsast.JsNewExpr, pos int) (SSRIRExpr, error) {
 	switch {
 	case !b.js:
 		return nil, ssrExprUnsupported(pos, "new Date is available only in translated script code")
@@ -1549,7 +1552,7 @@ func (b *ssrIRBuilder) newDate(node *JsNewExpr, pos int) (SSRIRExpr, error) {
 	case len(node.Args) > 1:
 		return nil, ssrExprUnsupported(pos, "new Date(year, month, …) is local time, which differs between the server and the browser; use new Date(Date.UTC(year, month, …))")
 	}
-	if _, spread := node.Args[0].(*JsSpreadExpr); spread {
+	if _, spread := node.Args[0].(*jsast.JsSpreadExpr); spread {
 		return nil, ssrExprUnsupported(pos, "spread arguments to new Date are not supported")
 	}
 	value, err := b.build(node.Args[0], pos)
@@ -1562,7 +1565,7 @@ func (b *ssrIRBuilder) newDate(node *JsNewExpr, pos int) (SSRIRExpr, error) {
 
 // newCollection lowers new Map(iterable) and new Set(iterable) (T-6.6f). A
 // collection a translated function creates may change (T-6.6b).
-func (b *ssrIRBuilder) newCollection(kind string, node *JsNewExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) newCollection(kind string, node *jsast.JsNewExpr, pos int) (SSRIRExpr, error) {
 	if !b.js {
 		return nil, ssrExprUnsupported(pos, "new %s is available only in translated script code", kind)
 	}
@@ -1571,7 +1574,7 @@ func (b *ssrIRBuilder) newCollection(kind string, node *JsNewExpr, pos int) (SSR
 	}
 	var iterable goast.Expr = ssrUndefined()
 	if len(node.Args) == 1 {
-		if _, spread := node.Args[0].(*JsSpreadExpr); spread {
+		if _, spread := node.Args[0].(*jsast.JsSpreadExpr); spread {
 			return nil, ssrExprUnsupported(pos, "spread arguments to new %s are not supported", kind)
 		}
 		value, err := b.iterable(node.Args[0], pos)
@@ -1615,7 +1618,7 @@ func (t *ssrFuncTable) contextExpr() goast.Expr {
 
 // functionValue lowers an arrow or function expression to a vela.Func
 // closure, inside a translated function or in a template expression.
-func (b *ssrIRBuilder) functionValue(expr JsExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) functionValue(expr jsast.JsExpr, pos int) (SSRIRExpr, error) {
 	var c *ssrFuncCompiler
 	switch {
 	case b.funcCompiler != nil:
@@ -1628,7 +1631,7 @@ func (b *ssrIRBuilder) functionValue(expr JsExpr, pos int) (SSRIRExpr, error) {
 	default:
 		return nil, ssrExprUnsupported(pos, "arrow functions are not available to static SSR")
 	}
-	_, c.arrow = expr.(*JsArrowFunc)
+	_, c.arrow = expr.(*jsast.JsArrowFunc)
 	literal, err := c.function(ssrFunctionOf("", expr))
 	if err != nil {
 		return nil, err
@@ -1649,7 +1652,7 @@ func (b *ssrIRBuilder) contextExpr() goast.Expr {
 }
 
 // await lowers await e inside an async function (T-7.4a).
-func (b *ssrIRBuilder) await(node *JsAwaitExpr, pos int) (SSRIRExpr, error) {
+func (b *ssrIRBuilder) await(node *jsast.JsAwaitExpr, pos int) (SSRIRExpr, error) {
 	if b.funcCompiler == nil || !b.funcCompiler.async {
 		return nil, ssrExprUnsupported(pos, "await is admitted only inside async functions; top-level await in a component script is not supported (T-7.4d)")
 	}
@@ -1664,8 +1667,8 @@ func (b *ssrIRBuilder) await(node *JsAwaitExpr, pos int) (SSRIRExpr, error) {
 // promiseCall lowers the promise operations of T-7.4b: the methods then,
 // catch, and finally, and Promise.resolve, reject, all, and allSettled.
 // handled is false for any other member call.
-func (b *ssrIRBuilder) promiseCall(member *JsMemberExpr, call *JsCallExpr, pos int) (SSRIRExpr, bool, error) {
-	property, ok := member.Prop.(*JsIdent)
+func (b *ssrIRBuilder) promiseCall(member *jsast.JsMemberExpr, call *jsast.JsCallExpr, pos int) (SSRIRExpr, bool, error) {
+	property, ok := member.Prop.(*jsast.JsIdent)
 	if !ok || member.Computed || member.Optional {
 		return nil, false, nil
 	}
@@ -1678,7 +1681,7 @@ func (b *ssrIRBuilder) promiseCall(member *JsMemberExpr, call *JsCallExpr, pos i
 	}
 	build := func() error {
 		for _, argument := range call.Args {
-			if _, spread := argument.(*JsSpreadExpr); spread {
+			if _, spread := argument.(*jsast.JsSpreadExpr); spread {
 				return ssrExprUnsupported(pos, "spread arguments are not supported yet")
 			}
 			value, err := b.build(argument, pos)
@@ -1694,7 +1697,7 @@ func (b *ssrIRBuilder) promiseCall(member *JsMemberExpr, call *JsCallExpr, pos i
 		b.usedJS, b.throws = true, true
 		return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: fun, Args: values}}, true, nil
 	}
-	if object, ok := member.Obj.(*JsIdent); ok && object.Name == "Promise" && !b.shadowed("Promise") {
+	if object, ok := member.Obj.(*jsast.JsIdent); ok && object.Name == "Promise" && !b.shadowed("Promise") {
 		switch property.Name {
 		case "resolve", "reject", "all", "allSettled":
 		case "race", "any":
@@ -1765,11 +1768,11 @@ func (c *ssrFuncCompiler) impure(message string) ([]goast.Stmt, error) {
 
 // ssrAssignmentRoot is the variable an assignment target writes through:
 // x for x, x.a, and x[i].b.
-func ssrAssignmentRoot(target JsExpr) string {
+func ssrAssignmentRoot(target jsast.JsExpr) string {
 	for {
-		member, ok := target.(*JsMemberExpr)
+		member, ok := target.(*jsast.JsMemberExpr)
 		if !ok {
-			return IdentName(target)
+			return analyzer.IdentName(target)
 		}
 		target = member.Obj
 	}
@@ -1779,8 +1782,8 @@ func ssrAssignmentRoot(target JsExpr) string {
 
 // typedParam declares parameter i as a typed Go local when the variant
 // proves its type and the body never assigns it.
-func (c *ssrFuncCompiler) typedParam(function *JsFuncDecl, i int, param JsExpr, arg goast.Expr) ([]goast.Stmt, bool) {
-	name := IdentName(param)
+func (c *ssrFuncCompiler) typedParam(function *jsast.JsFuncDecl, i int, param jsast.JsExpr, arg goast.Expr) ([]goast.Stmt, bool) {
+	name := analyzer.IdentName(param)
 	if name == "" || i >= len(c.paramFacts) || ssrAssigns(function.Body, name) {
 		return nil, false
 	}
@@ -1811,16 +1814,16 @@ func (c *ssrFuncCompiler) typedParam(function *JsFuncDecl, i int, param JsExpr, 
 }
 
 // ssrAssigns reports an assignment or update of name anywhere in body.
-func ssrAssigns(body *JsBlock, name string) bool {
+func ssrAssigns(body *jsast.JsBlock, name string) bool {
 	found := false
-	WalkNode(body, func(n JsNode) bool {
+	jsast.WalkNode(body, func(n jsast.JsNode) bool {
 		switch node := n.(type) {
-		case *JsAssignExpr:
-			if IdentName(node.L) == name {
+		case *jsast.JsAssignExpr:
+			if analyzer.IdentName(node.L) == name {
 				found = true
 			}
-		case *JsUnaryExpr:
-			if (node.Op == "++" || node.Op == "--") && IdentName(node.X) == name {
+		case *jsast.JsUnaryExpr:
+			if (node.Op == "++" || node.Op == "--") && analyzer.IdentName(node.X) == name {
 				found = true
 			}
 		}

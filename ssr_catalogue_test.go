@@ -25,7 +25,7 @@ func TestSSRMatrixBuiltins(t *testing.T) {
 		t.Fatal("matrix §2 not found")
 	}
 	end += start
-	want := renderSSRCatalogue()
+	want := RenderSSRCatalogue()
 	if text[start:end+1] != want {
 		if os.Getenv("VELA_UPDATE_MATRIX") == "1" {
 			if err := os.WriteFile(path, []byte(text[:start]+want+text[end+1:]), 0o644); err != nil {
@@ -37,11 +37,11 @@ func TestSSRMatrixBuiltins(t *testing.T) {
 	}
 
 	admitted := map[string]bool{}
-	for _, name := range ssrCatalogueNames() {
+	for _, name := range SSRCatalogueNames() {
 		admitted[name] = true
 	}
 	listed := map[string]bool{}
-	for _, section := range ssrCatalogue {
+	for _, section := range SSRCatalogue {
 		for _, row := range section.Rows {
 			for _, name := range row.Names {
 				if row.Status != "implemented" {
@@ -75,7 +75,7 @@ func TestSSRMatrixBuiltins(t *testing.T) {
 	for _, row := range rows {
 		groups[row.Group] = true
 	}
-	for _, section := range ssrCatalogue {
+	for _, section := range SSRCatalogue {
 		for _, row := range section.Rows {
 			if row.Status != "implemented" {
 				continue

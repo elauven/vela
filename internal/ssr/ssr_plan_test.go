@@ -1,8 +1,10 @@
-package main
+package ssr
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/elauven/vela/internal/sfcast"
 )
 
 func TestBuildSSRRenderPlanUsesCachedExpressions(t *testing.T) {
@@ -11,7 +13,7 @@ export let title = "";
 export let active = false;
 export let items = [];
 </script><style>.box { color: red; }</style><template><button @click={track} @focus={observe}>{title}</button>{#if active}<p :title={title}>{message}</p>{/if}{#each items as item (item.id)}<span>{item.label}</span>{/each}</template>`
-	sfc, err := ParseSFC(src)
+	sfc, err := sfcast.ParseSFC(src)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
@@ -33,7 +35,7 @@ export let items = [];
 	if !ok {
 		t.Fatalf("first plan node = %T, want *SSRPlanElement", plan.Nodes[0])
 	}
-	sourceButton, ok := sfc.TemplateAST.Nodes[0].(*ElementNode)
+	sourceButton, ok := sfc.TemplateAST.Nodes[0].(*sfcast.ElementNode)
 	if !ok {
 		t.Fatalf("source node = %T, want *ElementNode", sfc.TemplateAST.Nodes[0])
 	}
@@ -41,7 +43,7 @@ export let items = [];
 		t.Fatal("event handlers were not preserved as cached template expression ASTs")
 	}
 	text := button.Children[0].(*SSRPlanText)
-	if text.Parts[0].Expr != sourceButton.Children[0].(*TextNode).Parts[0].Expr {
+	if text.Parts[0].Expr != sourceButton.Children[0].(*sfcast.TextNode).Parts[0].Expr {
 		t.Fatal("text expression was reparsed or replaced")
 	}
 
@@ -76,7 +78,7 @@ func TestBuildSSRRenderPlanRejectsMissingInputs(t *testing.T) {
 	if _, err := BuildSSRRenderPlan("Demo", nil, ""); err == nil {
 		t.Fatal("missing SFC did not fail")
 	}
-	sfc, err := ParseSFC(`<template><p>ok</p></template>`)
+	sfc, err := sfcast.ParseSFC(`<template><p>ok</p></template>`)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
@@ -86,7 +88,7 @@ func TestBuildSSRRenderPlanRejectsMissingInputs(t *testing.T) {
 }
 
 func TestBuildSSRRenderPlanUsesTypedJSDocProps(t *testing.T) {
-	sfc, err := ParseSFC(`<script>
+	sfc, err := sfcast.ParseSFC(`<script>
 /** @type {string} */
 export let title = null;
 /** @type {number[]} */
@@ -122,7 +124,7 @@ const ignored = "/** @type {boolean} */ export let fake = null;";
 }
 
 func TestBuildSSRRenderPlanInfersNumericExpressionPropTypes(t *testing.T) {
-	sfc, err := ParseSFC(`<script>
+	sfc, err := sfcast.ParseSFC(`<script>
 export let negative = -1;
 export let ratio = 1 / 2;
 export let label = 'item ' + 2;
@@ -150,7 +152,7 @@ export let label = 'item ' + 2;
 }
 
 func TestBuildSSRRenderPlanRejectsPresenceFieldPropCollision(t *testing.T) {
-	sfc, err := ParseSFC(`<script>export let set = false;</script><template>{set}</template>`)
+	sfc, err := sfcast.ParseSFC(`<script>export let set = false;</script><template>{set}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}

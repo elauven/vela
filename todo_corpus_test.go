@@ -91,7 +91,7 @@ func TestPositiveCorpusProjectsBuildAsProjects(t *testing.T) {
 	for _, srcRoot := range projects {
 		t.Run(filepath.Base(filepath.Dir(srcRoot)), func(t *testing.T) {
 			outRoot := t.TempDir()
-			files := collectVela(srcRoot)
+			files := CollectVela(srcRoot)
 			if len(files) == 0 {
 				t.Fatal("fixture has no .vela files")
 			}
@@ -99,7 +99,7 @@ func TestPositiveCorpusProjectsBuildAsProjects(t *testing.T) {
 				t.Fatalf("project build failed with %d error(s)", errors)
 			}
 			for _, src := range files {
-				dest := mirrorPath(src, srcRoot, outRoot, ".js")
+				dest := MirrorPath(src, srcRoot, outRoot, ".js")
 				code, err := os.ReadFile(dest)
 				if err != nil {
 					t.Fatalf("missing compiled module %s: %v", dest, err)
@@ -115,7 +115,7 @@ func TestPositiveCorpusProjectsBuildAsProjects(t *testing.T) {
 					}
 				}
 			}
-			for _, module := range collectProjectJSModules(srcRoot) {
+			for _, module := range CollectJSModules(srcRoot) {
 				rel, err := filepath.Rel(srcRoot, module)
 				if err != nil {
 					t.Fatal(err)
