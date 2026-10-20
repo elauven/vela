@@ -9,7 +9,11 @@ authoring syntax read [GUIDE.md](GUIDE.md); for feature status,
 | Path | Contents |
 | --- | --- |
 | `*.go` (root, `package main`) | The compiler and the `vela` CLI |
-| `internal/jsast/` | JavaScript lexer, parser (ES2025 modules), AST, printer, walker and early errors |
+| `internal/jsast/` | JavaScript lexer, parser (ES2025 modules), AST, printer, walker, early errors and AST validation |
+| `internal/sfc/` | SFC split, template parser and template AST, template expression parsing |
+| `internal/css/` | CSS tokenizer, parser, validation and scoping |
+| `internal/diag/` | Diagnostic types (`Diagnostic`, `DiagSet`, JSON form) |
+| `internal/srcspan/` | `SectionSpan`, byte ranges in component source |
 | `runtime/` | Browser runtime: `runtime.js`, `runtime-blocks.js`, `runtime-hydrate.js` (embedded in the binary) |
 | `packages/runtime/` | The npm package `@govela/runtime`, generated from `runtime/` (`runtime_package.go`) |
 | `ssr_runtime/` | Go runtime of generated renderers, nested module `github.com/elauven/vela/ssr_runtime` |
@@ -30,7 +34,7 @@ itself does not import the runtime and builds without the workspace
             │                                        derived, effects)  Vela diagnostics
             ├──► <template> ─► parseTemplate (elements, blocks, directives,
             │                  cached expression ASTs)
-            └──► <style>    ─► cssparser (scoped [vela-xxxxxx] rules)
+            └──► <style>    ─► internal/css (scoped [vela-xxxxxx] rules)
                                    │
                        ┌───────────┴───────────┐
                        ▼                       ▼
@@ -58,12 +62,10 @@ itself does not import the runtime and builds without the workspace
 | File | Role |
 | --- | --- |
 | `main.go` | CLI, file and project builds, runtime staging, watch mode |
-| `parser.go` | SFC split and template parser |
-| `analyzer.go`, `scope.go`, `reactivity.go`, `unreachable.go`, `diagnostics.go` | Script analysis and diagnostics |
+| `analyzer.go`, `scope.go`, `reactivity.go`, `unreachable.go`, `diagnostics.go` | Script analysis and diagnostic checks |
 | `astgen.go`, `blocks_codegen.go`, `template_codegen_helpers.go` | Client code generation |
-| `rewriter.go`, `dce.go`, `astvalidate.go`, `minifier.go`, `sourcemap.go` | Rewrites, dead-binding elimination, validation, output |
+| `rewriter.go`, `dce.go`, `minifier.go`, `sourcemap.go` | Rewrites, dead-binding elimination, validation, output |
 | `imports.go`, `package_imports.go`, `package_resolve.go` | `.vela`/runtime specifiers, `vela.manifest.json`, `--check-deps` |
-| `cssparser.go` | Scoped CSS |
 | `ssr_project.go`, `ssr_roots.go` | SSR project build, root modes, manifest |
 | `ssr_plan.go`, `ssr_region.go`, `ssr_expr.go`, `ssr_ir.go`, `ssr_func.go`, `ssr_module.go`, `ssr_init.go` | Server render plan and translation |
 | `ssr_go_ast.go`, `ssr_go_renderer.go`, `ssr_go_blocks.go`, `html_nesting.go` | Go renderer generation, HTML parse stability |
@@ -140,5 +142,5 @@ vela --project <dir> [flags]    compile a source tree
 Setup for browser tests: `npm ci && npx playwright install chromium`.
 Regenerating checked-in outputs: `VELA_UPDATE_RUNTIME_PACKAGE=1` (npm
 package), `VELA_SSR_GATE_UPDATE=1` (gate expectations), `go generate .`
-(`jsast_compat.go`). The test inventory is in
+(`*_compat.go` aliases). The test inventory is in
 [COMPILER_TEST_MATRIX.md](COMPILER_TEST_MATRIX.md).
