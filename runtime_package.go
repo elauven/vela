@@ -18,7 +18,7 @@ var licenseText []byte
 
 // Version is the compiler version. The runtime npm package and the Go
 // runtime module are released with the same version (docs/RELEASING.md).
-const Version = "0.4.0"
+const Version = "0.4.1"
 
 // RuntimePackageName is the npm package of the JavaScript runtime.
 const RuntimePackageName = "@govela/runtime"

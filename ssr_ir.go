@@ -101,6 +101,14 @@ type (
 		// Computed holds the key expression of a computed property
 		// ({ [k]: v }), nil for the others.
 		Computed []SSRIRExpr
+		// Accessor is "get" or "set" for the halves of an accessor
+		// property, "" for data properties.
+		Accessor []string
+		// JS creates the object with the render's evaluation state, which
+		// receives the exceptions of its conversions to primitives and
+		// accessors; Local marks an object a translated function creates,
+		// whose methods may write through this (T-6.6b).
+		JS, Local bool
 	}
 	ssrIRTemplate struct {
 		ssrIRBase
@@ -229,6 +237,20 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 		return &goast.CallExpr{Fun: goSelector("vela", "JoinArrays"), Args: parts}
 	case *ssrIRObject:
 		object := goast.Expr(&goast.CallExpr{Fun: goSelector("vela", "NewObject")})
+		switch {
+		case n.Local:
+			object = &goast.CallExpr{Fun: goSelector("ssrJS", "LocalObject")}
+		case n.JS:
+			object = &goast.CallExpr{Fun: goSelector("ssrJS", "NewObject")}
+		}
+		// With accessors a data property is defined rather than assigned,
+		// so that it replaces an accessor of the same name.
+		set := "Set"
+		for _, kind := range n.Accessor {
+			if kind != "" {
+				set = "Define"
+			}
+		}
 		for i, value := range n.Values {
 			if n.Spread[i] {
 				object = &goast.CallExpr{Fun: goSelectorExpr(object, "Spread"), Args: []goast.Expr{lowerSSRIR(value)}}
@@ -239,7 +261,14 @@ func lowerSSRIR(node SSRIRExpr) goast.Expr {
 				// Go evaluates the key before the value, as JavaScript.
 				key = &goast.CallExpr{Fun: goSelector("vela", "PropertyKey"), Args: []goast.Expr{lowerSSRIR(n.Computed[i])}}
 			}
-			object = &goast.CallExpr{Fun: goSelectorExpr(object, "Set"), Args: []goast.Expr{key, lowerSSRIR(value)}}
+			method := set
+			switch n.Accessor[i] {
+			case "get":
+				method = "DefineGetter"
+			case "set":
+				method = "DefineSetter"
+			}
+			object = &goast.CallExpr{Fun: goSelectorExpr(object, method), Args: []goast.Expr{key, lowerSSRIR(value)}}
 		}
 		return object
 	case *ssrIRTemplate:
@@ -449,7 +478,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			if err != nil {
 				return nil, err
 			}
-			elements = append(elements, value)
+			elements = append(elements, b.boxStored(element, value))
 		}
 		for spreads != nil && len(spreads) < len(elements) {
 			spreads = append(spreads, false)
@@ -475,6 +504,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			if err != nil {
 				return nil, err
 			}
+			b.converts(value)
 			out.Exprs = append(out.Exprs, value)
 		}
 		return out, nil
@@ -495,12 +525,16 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 			if err != nil {
 				return nil, err
 			}
+			b.converts(value)
 			out.Exprs = append(out.Exprs, value)
 		}
 		return out, nil
 	case *JsUnaryExpr:
 		if node.Op == "++" || node.Op == "--" {
 			return nil, ssrImpure(pos, "update operator %q writes a binding during server rendering", node.Op)
+		}
+		if node.Op == "delete" {
+			return b.deleteExpr(node, pos)
 		}
 		if node.Op == "void" {
 			if _, literal := node.X.(*JsLiteral); literal {
@@ -523,6 +557,7 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 		}
 		// Number and NumberNegate apply ToNumber, so both tiers share them.
 		if node.Op == "+" || node.Op == "-" {
+			b.converts(x)
 			name := "Number"
 			if node.Op == "-" {
 				name = "NumberNegate"
@@ -591,6 +626,13 @@ func (b *ssrIRBuilder) build(expr JsExpr, pos int) (SSRIRExpr, error) {
 		return b.await(node, pos)
 	case *JsAssignExpr:
 		return nil, ssrImpure(pos, "assignments are not available to static SSR")
+	case *JsThisExpr:
+		// this is the receiver of a method call; a plain call and code
+		// outside functions have undefined (module code is strict).
+		if b.funcCompiler != nil && b.funcCompiler.this != nil {
+			return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: b.funcCompiler.this}, nil
+		}
+		return &ssrIRUndefined{ssrIRBase: b.base(pos, ssrIRFacts{})}, nil
 	default:
 		return nil, ssrExprUnsupported(pos, "JavaScript expression %T is not supported", expr)
 	}
@@ -735,6 +777,19 @@ func (b *ssrIRBuilder) literal(node *JsLiteral, pos int) (SSRIRExpr, error) {
 // key replaces the value and keeps the first position, as in JavaScript.
 func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 	out := &ssrIRObject{ssrIRBase: b.base(pos, ssrIRFacts{Object: true})}
+	defer func() {
+		// Only an object that can have its own toString, valueOf, or
+		// toJSON, or that has methods or accessors, needs the evaluation
+		// state.
+		for i, key := range out.Keys {
+			if b.js && (out.Spread[i] || out.Computed[i] != nil || ssrConversionKeys[key] || out.Accessor[i] != "" || ssrIsFunction(node.Props[i].Value)) {
+				out.JS, b.usedJS = true, true
+			}
+		}
+		// An object a translated function creates may be written through
+		// this by its methods.
+		out.Local = out.JS && b.funcCompiler != nil
+	}()
 	for _, property := range node.Props {
 		if property == nil {
 			return nil, ssrExprUnsupported(pos, "object property is missing")
@@ -752,10 +807,14 @@ func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 			out.Values = append(out.Values, value)
 			out.Spread = append(out.Spread, true)
 			out.Computed = append(out.Computed, nil)
+			out.Accessor = append(out.Accessor, "")
 			continue
 		}
-		if property.Method || property.Kind != "init" {
-			return nil, ssrExprUnsupported(pos, "object methods and accessors are not available to static SSR")
+		accessor := ""
+		if property.Kind == "get" || property.Kind == "set" {
+			accessor = property.Kind
+		} else if property.Kind != "init" {
+			return nil, ssrExprUnsupported(pos, "object property kind %q is not supported", property.Kind)
 		}
 		if property.Computed {
 			// { [k]: v } converts k with ToPropertyKey; a computed
@@ -772,6 +831,7 @@ func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 			out.Values = append(out.Values, value)
 			out.Spread = append(out.Spread, false)
 			out.Computed = append(out.Computed, key)
+			out.Accessor = append(out.Accessor, accessor)
 			continue
 		}
 		key, err := translateSSRObjectKey(property.Key, pos)
@@ -785,10 +845,12 @@ func (b *ssrIRBuilder) object(node *JsObjectExpr, pos int) (SSRIRExpr, error) {
 		if err != nil {
 			return nil, err
 		}
+		value = b.boxStored(property.Value, value)
 		out.Keys = append(out.Keys, key)
 		out.Values = append(out.Values, value)
 		out.Spread = append(out.Spread, false)
 		out.Computed = append(out.Computed, nil)
+		out.Accessor = append(out.Accessor, accessor)
 	}
 	return out, nil
 }
@@ -819,6 +881,7 @@ func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
 	case "===", "!==":
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Bool: true}), Name: "StrictEqual", Args: []SSRIRExpr{left, right}, Not: node.Op == "!=="}, nil
 	case "<", "<=", ">", ">=":
+		b.converts(left, right)
 		facts := ssrIRFacts{Bool: true}
 		if l.String && r.String {
 			// a > b is b < a; a <= b is !(b < a); a >= b is !(a < b).
@@ -844,12 +907,15 @@ func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
 		name := map[string]string{"<": "Less", "<=": "LessEqual", ">": "Greater", ">=": "GreaterEqual"}[node.Op]
 		return &ssrIRHelper{ssrIRBase: b.base(pos, facts), Name: name, Args: []SSRIRExpr{left, right}}, nil
 	case "+":
+		b.converts(left, right)
 		// JavaScript + concatenates when either operand is a string.
 		switch {
 		case l.String || r.String:
 			if l.String != r.String {
-				left = &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: "String", Args: []SSRIRExpr{left}}
-				right = &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: "String", Args: []SSRIRExpr{right}}
+				// The other operand is converted with the hint "default":
+				// an object's valueOf comes before its toString.
+				left = &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: ssrAddStringHelper(left), Args: []SSRIRExpr{left}}
+				right = &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: ssrAddStringHelper(right), Args: []SSRIRExpr{right}}
 			}
 			return &ssrIRBinary{ssrIRBase: b.base(pos, ssrIRFacts{String: true}), Op: token.ADD, X: left, Y: right}, nil
 		case l.Number && r.Number:
@@ -858,10 +924,12 @@ func (b *ssrIRBuilder) binary(node *JsBinaryExpr, pos int) (SSRIRExpr, error) {
 		// Dynamic tier: ToPrimitive, then concatenation or addition.
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{}), Name: "Add", Args: []SSRIRExpr{left, right}}, nil
 	case "-", "*", "/", "%":
+		b.converts(left, right)
 		// The Number helpers apply ToNumber, so both tiers share them.
 		name := map[string]string{"-": "NumberSubtract", "*": "NumberMultiply", "/": "NumberDivide", "%": "NumberRemainder"}[node.Op]
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: name, Args: []SSRIRExpr{left, right}}, nil
 	case "**":
+		b.converts(left, right)
 		return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Number: true}), Name: "Pow", Args: []SSRIRExpr{left, right}}, nil
 	case "in":
 		if !b.js {
@@ -921,6 +989,105 @@ func (b *ssrIRBuilder) member(node *JsMemberExpr, pos int) (SSRIRExpr, error) {
 		base = next
 	}
 	return base, nil
+}
+
+// ssrAddStringHelper converts an operand of + next to a string: String for
+// a proven primitive, AddString (hint "default") for the others.
+func ssrAddStringHelper(value SSRIRExpr) string {
+	if ssrIRPrimitive(value) {
+		return "String"
+	}
+	return "AddString"
+}
+
+// ssrIsFunction reports a function expression.
+func ssrIsFunction(expr JsExpr) bool {
+	switch expr.(type) {
+	case *JsArrowFunc, *JsFuncExpr:
+		return true
+	}
+	return false
+}
+
+// deleteExpr lowers delete o.k and delete a[i] on a value the function
+// created (T-6.6b), and delete this.k on an object a translated function
+// created during the render.
+func (b *ssrIRBuilder) deleteExpr(node *JsUnaryExpr, pos int) (SSRIRExpr, error) {
+	member, ok := node.X.(*JsMemberExpr)
+	if !ok || member.Optional {
+		return nil, ssrExprUnsupported(pos, "delete is admitted only on a property, as in delete o.k or delete a[i]")
+	}
+	c := b.funcCompiler
+	root := JsExpr(member)
+	for {
+		inner, isMember := root.(*JsMemberExpr)
+		if !isMember {
+			break
+		}
+		root = inner.Obj
+	}
+	_, viaThis := member.Obj.(*JsThisExpr)
+	if !viaThis {
+		name := identName(root)
+		fresh := false
+		if c != nil && name != "" && c.freshness != nil {
+			_, local := c.lookup(name)
+			fresh = local && c.freshness.fresh[name]
+		}
+		if !fresh {
+			return nil, ssrImpure(pos, "delete changes a value the function did not create (T-6.6a)")
+		}
+	}
+	object, err := b.build(member.Obj, pos)
+	if err != nil {
+		return nil, err
+	}
+	var key goast.Expr
+	if member.Computed {
+		value, err := b.build(member.Prop, pos)
+		if err != nil {
+			return nil, err
+		}
+		key = lowerSSRIR(value)
+	} else if property, named := member.Prop.(*JsIdent); named {
+		key = ssrGoString(property.Name)
+	} else {
+		return nil, ssrExprUnsupported(pos, "member name %T is not supported", member.Prop)
+	}
+	b.usedJS, b.throws = true, true
+	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{Bool: true}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "Delete"), Args: []goast.Expr{lowerSSRIR(object), key, goast.NewIdent(strconv.FormatBool(viaThis)), ssrGoString(b.site)}}}, nil
+}
+
+// ssrConversionKeys are the properties that conversions of an object call.
+var ssrConversionKeys = map[string]bool{"toString": true, "valueOf": true, "toJSON": true}
+
+// converts records that a value is converted to a primitive. Unless it is
+// proven primitive, or is a prop (a Go value has no methods), the
+// conversion can call a function in an own toString or valueOf property or
+// throw TypeError (OrdinaryToPrimitive), so the site can throw.
+func (b *ssrIRBuilder) converts(values ...SSRIRExpr) {
+	if !b.js {
+		return
+	}
+	for _, value := range values {
+		if !ssrIRPrimitive(value) {
+			b.usedJS, b.throws = true, true
+			return
+		}
+	}
+}
+
+// ssrIRPrimitive reports a value whose conversion to a primitive calls no
+// function and cannot throw.
+func ssrIRPrimitive(value SSRIRExpr) bool {
+	if f := value.irBase().Facts; f.String || f.Number || f.Bool {
+		return true
+	}
+	switch value.(type) {
+	case *ssrIRProp, *ssrIRLiteral, *ssrIRUndefined:
+		return true
+	}
+	return false
 }
 
 // memberLink reads one property. A read on a value that is not proven to
@@ -1117,11 +1284,59 @@ func (b *ssrIRBuilder) methodOn(receiver SSRIRExpr, member *JsMemberExpr, call *
 	value, handled, err := b.builtinCall(synthetic, pos)
 	if !handled {
 		if property, named := member.Prop.(*JsIdent); named && !member.Computed {
+			if b.js && !ssrUnmodeledMethods[property.Name] {
+				return b.objectMethodCall(receiver, property.Name, call, pos)
+			}
 			return nil, ssrExprUnsupported(pos, "method value.%s is not available during server rendering", property.Name)
 		}
 		return nil, ssrExprUnsupported(pos, "computed method calls are not supported")
 	}
 	return value, err
+}
+
+// ssrUnmodeledMethods are method names of built-in prototypes the server
+// does not model (RegExp, Date, Function, the array iterators outside
+// for…of, locale methods): a call keeps its diagnostic and host route
+// instead of reaching a function stored in an object.
+var ssrUnmodeledMethods = map[string]bool{
+	"test": true, "exec": true, "match": true, "matchAll": true, "search": true,
+	"localeCompare": true, "toLocaleUpperCase": true, "toLocaleLowerCase": true,
+	"toLocaleString": true, "toLocaleDateString": true, "toLocaleTimeString": true,
+	"keys": true, "entries": true, "values": true, "copyWithin": true,
+	"call": true, "apply": true, "bind": true,
+	"hasOwnProperty": true, "isPrototypeOf": true, "propertyIsEnumerable": true,
+	// Date methods in local time and formats (§2.10).
+	"getDate": true, "getDay": true, "getFullYear": true, "getHours": true,
+	"getMilliseconds": true, "getMinutes": true, "getMonth": true, "getSeconds": true,
+	"getTimezoneOffset": true, "getYear": true,
+	"setDate": true, "setFullYear": true, "setHours": true, "setMilliseconds": true,
+	"setMinutes": true, "setMonth": true, "setSeconds": true,
+	"toDateString": true, "toTimeString": true, "toUTCString": true, "toGMTString": true,
+}
+
+// objectMethodCall calls receiver.name(args): a function stored in a
+// property of an object, called with the receiver as this (§7.1). Any
+// other receiver throws TypeError, as in JavaScript.
+func (b *ssrIRBuilder) objectMethodCall(receiver SSRIRExpr, name string, call *JsCallExpr, pos int) (SSRIRExpr, error) {
+	lowered := []goast.Expr{ssrGoString(b.site), lowerSSRIR(receiver), ssrGoString(name)}
+	ellipsis := token.NoPos
+	spread, err := b.spreadArgs(call, pos)
+	if err != nil {
+		return nil, err
+	}
+	if spread != nil {
+		lowered, ellipsis = append(lowered, spread), 1
+	} else {
+		args, err := b.buildArgs(call, pos)
+		if err != nil {
+			return nil, err
+		}
+		for _, arg := range args {
+			lowered = append(lowered, lowerSSRIR(arg))
+		}
+	}
+	b.usedJS, b.throws = true, true
+	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "Method"), Args: lowered, Ellipsis: ellipsis}}, nil
 }
 
 // call resolves a call in the order of T-4.1: a declared host
@@ -1145,8 +1360,15 @@ func (b *ssrIRBuilder) call(call *JsCallExpr, pos int) (SSRIRExpr, error) {
 		if member, isMember := call.Callee.(*JsMemberExpr); isMember && !member.Computed {
 			if property, named := member.Prop.(*JsIdent); named {
 				owner := "value"
-				if object, global := member.Obj.(*JsIdent); global && ssrGlobalNamespaces[object.Name] {
+				object, global := member.Obj.(*JsIdent)
+				if global && ssrGlobalNamespaces[object.Name] && !b.shadowedGlobal(object.Name) {
 					owner = object.Name
+				} else if b.js && !ssrUnmodeledMethods[property.Name] {
+					receiver, err := b.build(member.Obj, pos)
+					if err != nil {
+						return nil, err
+					}
+					return b.objectMethodCall(receiver, property.Name, call, pos)
 				}
 				return nil, ssrExprUnsupported(pos, "method %s.%s is not available during server rendering", owner, property.Name)
 			}
@@ -1513,4 +1735,4 @@ func ssrComponentContext(ctx SSRExprContext) SSRExprContext {
 
 // ssrGlobalNamespaces are the global objects whose functions the
 // catalogue lists (docs/SSR_TRANSLATION_MATRIX.md §2).
-var ssrGlobalNamespaces = map[string]bool{"Math": true, "Number": true, "Object": true, "JSON": true, "Array": true, "String": true, "Promise": true, "Intl": true, "Date": true, "localStorage": true, "sessionStorage": true, "console": true, "window": true, "document": true}
+var ssrGlobalNamespaces = map[string]bool{"Math": true, "Number": true, "Object": true, "JSON": true, "Array": true, "String": true, "Promise": true, "Intl": true, "Date": true, "Map": true, "Set": true, "localStorage": true, "sessionStorage": true, "console": true, "window": true, "document": true}

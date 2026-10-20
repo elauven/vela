@@ -100,6 +100,9 @@ type ssrGoEmitter struct {
 	region      *SSRRegion
 	speculative int
 	facts       map[JsExpr]ssrIRFacts
+	// primitive marks the translated expressions proven primitive
+	// (ssrIRPrimitive), whose text conversion cannot throw.
+	primitive map[JsExpr]bool
 }
 
 func (e *ssrGoEmitter) nodes(nodes []SSRPlanNode) ([]goast.Stmt, error) {
@@ -779,6 +782,7 @@ func (e *ssrGoEmitter) outputValue(kind, name string, static bool, literal strin
 	if err != nil {
 		return nil, err
 	}
+	e.convertsOutput(expr)
 	e.needsEscaping = true
 	return &goast.CallExpr{Fun: goSelector("vela", "EscapeString"), Args: []goast.Expr{
 		&goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{value}},
@@ -793,6 +797,7 @@ func (e *ssrGoEmitter) outputFormValue(expr *TemplateExpr) (goast.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+	e.convertsOutput(expr)
 	e.needsEscaping = true
 	return &goast.CallExpr{Fun: goSelector("vela", "EscapeString"), Args: []goast.Expr{
 		&goast.CallExpr{Fun: goSelector("vela", "FormValueString"), Args: []goast.Expr{value}},
@@ -855,6 +860,7 @@ func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionVa
 	if err != nil {
 		return nil, err
 	}
+	e.convertsOutput(selectValue)
 	var option goast.Expr
 	switch optionValue.Role {
 	case SSRAttrStatic:
@@ -864,6 +870,7 @@ func (e *ssrGoEmitter) selectOptionCondition(selectValue *TemplateExpr, optionVa
 		if err != nil {
 			return nil, err
 		}
+		e.convertsOutput(optionValue.Expr)
 		option = &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{value}}
 	default:
 		return nil, ssrExprUnsupported(optionValue.Span.Start, "an option under select bind:value has no renderable value")

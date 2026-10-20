@@ -1,0 +1,18 @@
+<script>
+  export let start = 0;
+  let day = $state(new Date(start));
+  let seen = $state(new Set(['a', 'b', 'a']));
+  let counter = $state({ n: 1, label() { return 'n' + this.n; } });
+  function shift(d, n) { const c = new Date(d); c.setUTCDate(c.getUTCDate() + n); return c; }
+  let next = $derived(shift(day, 1).toISOString().slice(0, 10));
+  function week() { day = shift(day, 7); }
+</script>
+<template>
+  <div class="cal">
+    <p class="day">{day.toISOString()}</p>
+    <p class="next">{next}</p>
+    <p class="seen">{seen.size} {seen.has('a')}</p>
+    <p class="label">{counter.label()}</p>
+    <button class="week" @click={week}>week</button>
+  </div>
+</template>

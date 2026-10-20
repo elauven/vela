@@ -37,6 +37,14 @@ func (js *JS) Method(site string, receiver any, name string, args ...any) any {
 		if result, ok := js.numberMethod(site, v, name, args); ok {
 			return result
 		}
+	case *Date:
+		if result, ok := js.dateMethod(site, v, name, args); ok {
+			return result
+		}
+	case *Collection:
+		if result, ok := js.collectionMethod(site, v, name, args); ok {
+			return result
+		}
 	case bool:
 		if name == "toString" {
 			return String(v)
@@ -46,7 +54,7 @@ func (js *JS) Method(site string, receiver any, name string, args ...any) any {
 		}
 	case *Object:
 		if fn, ok := property(v, name).(Func); ok {
-			return fn(args...)
+			return fn(receiver, args...)
 		}
 	}
 	return js.throw("TypeError", fmt.Sprintf("%s.%s is not a function", describe(jsValue(receiver)), name), site)
@@ -95,6 +103,10 @@ func HasMethod(receiver any, name string) bool {
 		return numberMethodNames[name]
 	case bool:
 		return name == "toString" || name == "valueOf"
+	case *Date:
+		return dateMethodNames[name]
+	case *Collection:
+		return v.methodNames()[name]
 	case *Object:
 		_, ok := property(v, name).(Func)
 		return ok
@@ -148,6 +160,18 @@ var errorPrototypeNames = map[string]bool{
 	"stack": true,
 }
 
+// datePrototypeNames are the methods of Date.prototype that the server does
+// not dispatch (local time, locale formats).
+var datePrototypeNames = map[string]bool{
+	"getDate": true, "getDay": true, "getFullYear": true, "getHours": true,
+	"getMilliseconds": true, "getMinutes": true, "getMonth": true, "getSeconds": true,
+	"getTimezoneOffset": true, "getYear": true, "setDate": true, "setFullYear": true,
+	"setHours": true, "setMilliseconds": true, "setMinutes": true, "setMonth": true,
+	"setSeconds": true, "setYear": true, "toDateString": true, "toTimeString": true,
+	"toUTCString": true, "toGMTString": true, "toLocaleString": true,
+	"toLocaleDateString": true, "toLocaleTimeString": true,
+}
+
 var promisePrototypeNames = map[string]bool{
 	"constructor": true, "then": true, "catch": true, "finally": true,
 }
@@ -168,7 +192,7 @@ func (js *JS) In(key, object any, site string) bool {
 		if v.errorName != "" && errorPrototypeNames[name] {
 			return true
 		}
-		return objectPrototypeNames[name]
+		return !v.nullProto && objectPrototypeNames[name]
 	case []any:
 		if arrayIndexKey(name) {
 			n, _ := strconv.Atoi(name)
@@ -177,6 +201,10 @@ func (js *JS) In(key, object any, site string) bool {
 		return arrayPrototypeNames[name] || objectPrototypeNames[name]
 	case *Promise:
 		return promisePrototypeNames[name] || objectPrototypeNames[name]
+	case *Date:
+		return dateMethodNames[name] || datePrototypeNames[name] || name == "constructor" || objectPrototypeNames[name]
+	case *Collection:
+		return v.methodNames()[name] || collectionPrototypeNames[name] || objectPrototypeNames[name]
 	case Func:
 		js.fail(&RenderError{Kind: "Error", Message: "the in operator on a function value is not supported during server rendering", Site: site})
 		return false
@@ -212,9 +240,11 @@ func (js *JS) ArrayIterItems(receiver any, name, site string) []any {
 			}
 		}
 		return out
+	case *Collection:
+		return v.items(name)
 	case *Object:
 		if fn, ok := property(v, name).(Func); ok {
-			return js.SpreadItems(fn(), site)
+			return js.SpreadItems(fn(receiver), site)
 		}
 	}
 	js.throw("TypeError", fmt.Sprintf("%s.%s is not a function", describe(jsValue(receiver)), name), site)
@@ -317,7 +347,7 @@ func (js *JS) StructuredClone(site string, value any) any {
 				objects[v] = out
 				return out, true
 			}
-			out := NewObject()
+			out := js.NewObject()
 			objects[v] = out
 			keys, vals := v.entries()
 			for i, key := range keys {
@@ -328,6 +358,10 @@ func (js *JS) StructuredClone(site string, value any) any {
 				out.Set(key, cloned)
 			}
 			return out, true
+		case *Date:
+			return &Date{time: v.time, js: js}, true
+		case *Collection:
+			return v.clone(js, clone)
 		case Func:
 			js.throw("DataCloneError", "function could not be cloned.", site)
 		case *Promise:
@@ -350,14 +384,15 @@ func (js *JS) StructuredClone(site string, value any) any {
 // MutateArray calls a method that changes an array the function created
 // (push, pop, shift, unshift, splice, sort, reverse, fill) and returns the
 // array's new contents with the method's result (T-6.6b).
-func (js *JS) MutateArray(site string, array any, name string, args ...any) ([]any, any) {
+func (js *JS) MutateArray(site string, array any, name string, args ...any) (any, any) {
 	if js.Failed() {
-		a, _ := array.([]any)
-		return a, Undefined()
+		return array, Undefined()
 	}
 	a, ok := array.([]any)
 	if !ok {
-		return a, js.throw("TypeError", fmt.Sprintf("%s.%s is not a function", describe(jsValue(array)), name), site)
+		// A boxed array changes in place; an object with its own push or a
+		// Map's set is called: the local keeps its value.
+		return array, js.MutateShared(site, array, name, args...)
 	}
 	result, out, _ := js.arrayMethod(site, a, name, args)
 	if out == nil {
@@ -861,7 +896,7 @@ func (js *JS) ObjectFromEntries(site string, entries any) any {
 	if js.Failed() {
 		return Undefined()
 	}
-	out := NewObject()
+	out := js.NewObject()
 	for _, entry := range items {
 		if nullish(entry) || TypeOf(entry) != "object" {
 			return js.throw("TypeError", fmt.Sprintf("Iterator value %s is not an entry object", String(jsValue(entry))), site)
@@ -878,6 +913,9 @@ func (js *JS) ObjectAssign(site string, target any, sources ...any) any {
 	if !ok {
 		return js.throw("TypeError", "Object.assign target must be an object literal during server rendering", site)
 	}
+	if object.js == nil {
+		object.js = js
+	}
 	for _, source := range sources {
 		if nullish(source) {
 			continue
@@ -888,6 +926,38 @@ func (js *JS) ObjectAssign(site string, target any, sources ...any) any {
 		}
 	}
 	return object
+}
+
+// ObjectGroupBy is Object.groupBy(items, fn): an object without a
+// prototype whose keys are fn(item, index) converted with ToPropertyKey, in
+// the order they first appear, each holding the items of its group.
+func (js *JS) ObjectGroupBy(site string, items, callback any) any {
+	values := js.SpreadItems(items, site)
+	if js.Failed() {
+		return Undefined()
+	}
+	fn, ok := js.callable(site, "groupBy", callback)
+	if !ok {
+		return Undefined()
+	}
+	out := js.LocalObject()
+	out.nullProto = true
+	for i, item := range values {
+		key := fn(Undefined(), item, float64(i))
+		if js.Failed() {
+			return Undefined()
+		}
+		name := propertyKey(key)
+		if js.Failed() {
+			return Undefined()
+		}
+		if at := out.find(name); at >= 0 {
+			out.vals[at] = append(out.vals[at].([]any), item)
+		} else {
+			out.add(name, []any{item})
+		}
+	}
+	return out
 }
 
 // ObjectHasOwn is Object.hasOwn(value, key).
@@ -934,6 +1004,8 @@ func (js *JS) ArrayFrom(site string, source any, mapFn any) any {
 		items = codePoints(v)
 	case []any:
 		items = unholed(append([]any{}, v...))
+	case *Collection:
+		items = v.items("")
 	case *Object:
 		length := toIntegerOrInfinity(property(v, "length"))
 		for i := 0; i < int(math.Min(length, 1<<24)); i++ {
@@ -951,7 +1023,7 @@ func (js *JS) ArrayFrom(site string, source any, mapFn any) any {
 		return Undefined()
 	}
 	for i, item := range items {
-		items[i] = fn(item, float64(i))
+		items[i] = fn(Undefined(), item, float64(i))
 		if js.Failed() {
 			return Undefined()
 		}
@@ -976,16 +1048,29 @@ func (js *JS) JSONStringify(site string, value, replacer, indent any) any {
 		gap = fromUnits(u[:min(10, len(u))])
 	}
 	var b strings.Builder
-	if !js.stringify(site, &b, value, gap, "", map[any]bool{}) {
+	if !js.stringify(site, &b, "", value, gap, "", map[any]bool{}) {
 		return Undefined()
 	}
 	return b.String()
 }
 
-// stringify writes value; it returns false for a value JSON omits.
-func (js *JS) stringify(site string, b *strings.Builder, value any, gap, indent string, seen map[any]bool) bool {
+// stringify writes the value of property key; it returns false for a
+// value JSON omits. An object with a function in an own toJSON property is
+// replaced by toJSON(key) first (SerializeJSONProperty).
+func (js *JS) stringify(site string, b *strings.Builder, key string, value any, gap, indent string, seen map[any]bool) bool {
 	if js.Failed() {
 		return false
+	}
+	if object, ok := value.(*Object); ok {
+		if fn, ok := property(object, "toJSON").(Func); ok {
+			value = fn(object, key)
+			if js.Failed() {
+				return false
+			}
+		}
+	}
+	if date, ok := value.(*Date); ok {
+		value, _ = js.dateMethod(site, date, "toJSON", nil)
 	}
 	switch v := jsValue(value).(type) {
 	case nil:
@@ -1004,7 +1089,7 @@ func (js *JS) stringify(site string, b *strings.Builder, value any, gap, indent 
 		quoteJSON(b, v)
 	case Func:
 		return false
-	case *Promise:
+	case *Promise, *Collection:
 		b.WriteString("{}")
 	case []any:
 		key := fmt.Sprintf("%p", v)
@@ -1027,7 +1112,7 @@ func (js *JS) stringify(site string, b *strings.Builder, value any, gap, indent 
 			if gap != "" {
 				b.WriteString("\n" + inner)
 			}
-			if !js.stringify(site, b, item, gap, inner, seen) {
+			if !js.stringify(site, b, strconv.Itoa(i), item, gap, inner, seen) {
 				if js.Failed() {
 					return false
 				}
@@ -1051,7 +1136,7 @@ func (js *JS) stringify(site string, b *strings.Builder, value any, gap, indent 
 		keys, vals := v.entries()
 		for i, key := range keys {
 			var member strings.Builder
-			if !js.stringify(site, &member, vals[i], gap, inner, seen) {
+			if !js.stringify(site, &member, key, vals[i], gap, inner, seen) {
 				if js.Failed() {
 					return false
 				}
@@ -1076,7 +1161,7 @@ func (js *JS) stringify(site string, b *strings.Builder, value any, gap, indent 
 		}
 		b.WriteByte('}')
 	default:
-		return js.stringify(site, b, jsonView(v), gap, indent, seen)
+		return js.stringify(site, b, key, jsonView(v), gap, indent, seen)
 	}
 	return true
 }
@@ -1122,7 +1207,7 @@ func quoteJSON(b *strings.Builder, s string) {
 func (js *JS) JSONParse(site string, text any) any {
 	decoder := json.NewDecoder(strings.NewReader(String(jsValue(text))))
 	decoder.UseNumber()
-	value, err := parseJSONValue(decoder)
+	value, err := js.parseJSONValue(decoder)
 	if err == nil {
 		if _, extra := decoder.Token(); extra != io.EOF {
 			err = fmt.Errorf("unexpected non-whitespace character after JSON")
@@ -1134,7 +1219,7 @@ func (js *JS) JSONParse(site string, text any) any {
 	return value
 }
 
-func parseJSONValue(decoder *json.Decoder) (any, error) {
+func (js *JS) parseJSONValue(decoder *json.Decoder) (any, error) {
 	token, err := decoder.Token()
 	if err != nil {
 		if err == io.EOF {
@@ -1148,7 +1233,7 @@ func parseJSONValue(decoder *json.Decoder) (any, error) {
 		case '[':
 			out := []any{}
 			for decoder.More() {
-				item, err := parseJSONValue(decoder)
+				item, err := js.parseJSONValue(decoder)
 				if err != nil {
 					return nil, err
 				}
@@ -1157,13 +1242,13 @@ func parseJSONValue(decoder *json.Decoder) (any, error) {
 			_, err := decoder.Token()
 			return out, err
 		case '{':
-			out := NewObject()
+			out := js.NewObject()
 			for decoder.More() {
 				key, err := decoder.Token()
 				if err != nil {
 					return nil, err
 				}
-				value, err := parseJSONValue(decoder)
+				value, err := js.parseJSONValue(decoder)
 				if err != nil {
 					return nil, err
 				}
@@ -1187,18 +1272,18 @@ func parseJSONValue(decoder *json.Decoder) (any, error) {
 // items.filter(Boolean) or values.map(String).
 func (js *JS) GlobalFunc(site, name string) Func {
 	one := func(f func(any) any) Func {
-		return func(args ...any) any { return f(Arg(args, 0)) }
+		return func(_ any, args ...any) any { return f(Arg(args, 0)) }
 	}
 	switch name {
 	case "String":
-		return func(args ...any) any {
+		return func(_ any, args ...any) any {
 			if len(args) == 0 {
 				return ""
 			}
 			return ToStringValue(args[0])
 		}
 	case "Number":
-		return func(args ...any) any {
+		return func(_ any, args ...any) any {
 			if len(args) == 0 {
 				return 0.0
 			}
@@ -1207,7 +1292,7 @@ func (js *JS) GlobalFunc(site, name string) Func {
 	case "Boolean":
 		return one(func(v any) any { return ToBoolean(v) })
 	case "parseInt":
-		return func(args ...any) any { return ParseInt(Arg(args, 0), Arg(args, 1)) }
+		return func(_ any, args ...any) any { return ParseInt(Arg(args, 0), Arg(args, 1)) }
 	case "parseFloat":
 		return one(func(v any) any { return ParseFloat(v) })
 	case "isNaN":
@@ -1223,5 +1308,5 @@ func (js *JS) GlobalFunc(site, name string) Func {
 	case "decodeURI":
 		return one(func(v any) any { return js.DecodeURI(site, v) })
 	}
-	return func(...any) any { return js.throw("TypeError", name+" is not a function", site) }
+	return func(any, ...any) any { return js.throw("TypeError", name+" is not a function", site) }
 }

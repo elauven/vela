@@ -334,7 +334,7 @@ func String(value any) string {
 	case nil:
 		return "null"
 	case *Object:
-		return objectString(v)
+		return String(v.toPrimitive("string"))
 	case string:
 		return v
 	case bool:
@@ -357,6 +357,15 @@ func String(value any) string {
 	}
 	if _, promise := value.(*Promise); promise {
 		return "[object Promise]"
+	}
+	if date, ok := value.(*Date); ok {
+		return String(date.toPrimitive("string"))
+	}
+	if collection, ok := value.(*Collection); ok {
+		return "[object " + collection.kindName() + "]"
+	}
+	if array, ok := value.(*Array); ok {
+		return String(array.items)
 	}
 	if _, undefined := value.(UndefinedValue); undefined {
 		return "undefined"
@@ -454,6 +463,9 @@ func Length(value any) int {
 	}
 	if stringValue, ok := value.(string); ok {
 		return len(units(stringValue))
+	}
+	if array, ok := value.(*Array); ok {
+		return len(array.items)
 	}
 	reflected := reflect.ValueOf(value)
 	if reflected.Kind() == reflect.Slice || reflected.Kind() == reflect.Array || reflected.Kind() == reflect.Map {
@@ -558,6 +570,9 @@ func ContainsString(values any, candidate string) bool {
 func Iter(value any) []any {
 	if value == nil {
 		return nil
+	}
+	if array, ok := value.(*Array); ok {
+		return array.items
 	}
 	reflected := reflect.ValueOf(value)
 	if reflected.Kind() != reflect.Slice && reflected.Kind() != reflect.Array {

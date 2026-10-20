@@ -91,7 +91,7 @@
             "attribute#5": "server-native",
             "attribute#6": "server-native",
             "attribute#7": "server-native",
-            "each#1": "unsupported",
+            "each#1": "server-native",
             "each#2": "unsupported",
             "each-key#1": "server-native",
             "each-key#2": "server-native",
@@ -457,7 +457,7 @@
       "components": {
         "App.vela": {
           "status": "error",
-          "error": "VELA-SSR-EXPR",
+          "error": "VELA-SSR-HOST-MISSING",
           "sites": {
             "class#1": "unsupported",
             "class#2": "unsupported",
@@ -655,7 +655,7 @@
           "sites": {
             "derived#1": "unsupported",
             "derived#2": "unsupported",
-            "derived#3": "unsupported",
+            "derived#3": "server-native",
             "derived#4": "unsupported",
             "derived#5": "unsupported",
             "derived#6": "unsupported",

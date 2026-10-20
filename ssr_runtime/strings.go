@@ -369,7 +369,7 @@ func (js *JS) replace(site, s string, u []uint16, all bool, args []any) any {
 		b.WriteString(fromUnits(u[last:p]))
 		matched := fromUnits(u[p : p+len(pattern)])
 		if isFunc {
-			result := fn(matched, float64(p), s)
+			result := fn(Undefined(), matched, float64(p), s)
 			if js.Failed() {
 				return Undefined()
 			}

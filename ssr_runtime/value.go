@@ -95,6 +95,25 @@ type Object struct {
 	errorName  string
 	message    any
 	hasMessage bool
+	// js is the evaluation state of the render that created the object. A
+	// conversion to a primitive can call a function in an own toString or
+	// valueOf property, or throw TypeError when it finds no primitive
+	// (OrdinaryToPrimitive); the exception is recorded here.
+	js *JS
+	// local marks an object that a translated function created during this
+	// render: its methods may write properties through this (T-6.6b).
+	local bool
+	// accessors is set once a property is defined by a getter or setter.
+	accessors bool
+	// nullProto marks an object without a prototype (Object.groupBy): it
+	// has no toString or valueOf, so converting it throws TypeError.
+	nullProto bool
+}
+
+// accessor is the value of a property defined by a getter and/or a
+// setter ({ get x() {}, set x(v) {} }).
+type accessor struct {
+	get, set Func
 }
 
 // objectIndexKeys is the size above which an object gets a key index.
@@ -102,6 +121,13 @@ const objectIndexKeys = 16
 
 // NewObject returns an empty object.
 func NewObject() *Object { return &Object{} }
+
+// NewObject returns an empty object created by translated code of this
+// render.
+func (js *JS) NewObject() *Object { return &Object{js: js} }
+
+// LocalObject returns an empty object created by a translated function.
+func (js *JS) LocalObject() *Object { return &Object{js: js, local: true} }
 
 // find returns the position of key, or -1.
 func (o *Object) find(key string) int {
@@ -119,17 +145,92 @@ func (o *Object) find(key string) int {
 	return -1
 }
 
-// Set defines or replaces a property and returns the object, so a literal
-// lowers to one expression.
+// Set assigns a property and returns the object, so a literal lowers to
+// one expression. A property with a setter calls it; one with only a
+// getter throws TypeError (module code is strict).
 func (o *Object) Set(key string, value any) *Object {
 	if o.hasMessage && key == "message" {
 		o.message = value
 		return o
 	}
 	if i := o.find(key); i >= 0 {
+		if property, ok := o.vals[i].(*accessor); ok {
+			if property.set == nil {
+				o.js.throw("TypeError", fmt.Sprintf("Cannot set property %s of #<Object> which has only a getter", key), "")
+				return o
+			}
+			property.set(o, value)
+			return o
+		}
 		o.vals[i] = value
 		return o
 	}
+	return o.add(key, value)
+}
+
+// Define defines a data property of an object literal: a later property of
+// the same name replaces an accessor and keeps the first position.
+func (o *Object) Define(key string, value any) *Object {
+	if i := o.find(key); i >= 0 {
+		o.vals[i] = value
+		return o
+	}
+	return o.add(key, value)
+}
+
+// DefineGetter and DefineSetter define the accessor halves of an object
+// literal's get x() {} and set x(v) {}.
+func (o *Object) DefineGetter(key string, get Func) *Object {
+	return o.defineAccessor(key, get, nil)
+}
+
+func (o *Object) DefineSetter(key string, set Func) *Object {
+	return o.defineAccessor(key, nil, set)
+}
+
+func (o *Object) defineAccessor(key string, get, set Func) *Object {
+	o.accessors = true
+	if i := o.find(key); i >= 0 {
+		property, ok := o.vals[i].(*accessor)
+		if !ok {
+			property = &accessor{}
+			o.vals[i] = property
+		}
+		if get != nil {
+			property.get = get
+		}
+		if set != nil {
+			property.set = set
+		}
+		return o
+	}
+	return o.add(key, &accessor{get: get, set: set})
+}
+
+// remove deletes an own property, keeping the order of the others. An
+// error's message falls back to the prototype's "".
+func (o *Object) remove(key string) {
+	if o.hasMessage && key == "message" {
+		o.message, o.hasMessage = nil, false
+		return
+	}
+	i := o.find(key)
+	if i < 0 {
+		return
+	}
+	// New slices: Keys and entries hand out the current ones.
+	o.keys = append(append(make([]string, 0, len(o.keys)-1), o.keys[:i]...), o.keys[i+1:]...)
+	o.vals = append(append(make([]any, 0, len(o.vals)-1), o.vals[:i]...), o.vals[i+1:]...)
+	if o.index != nil {
+		o.index = make(map[string]int, 2*len(o.keys))
+		for j, k := range o.keys {
+			o.index[k] = j
+		}
+	}
+}
+
+// add appends a new property.
+func (o *Object) add(key string, value any) *Object {
 	if o.keys == nil {
 		// Most translated objects are literals of a few properties.
 		o.keys, o.vals = make([]string, 0, 8), make([]any, 0, 8)
@@ -148,18 +249,32 @@ func (o *Object) Set(key string, value any) *Object {
 	return o
 }
 
-// entries returns the keys and their values in enumeration order (Keys).
-// Without integer-like keys these are the object's own slices: read only.
+// entries returns the keys and their values in enumeration order (Keys),
+// getters called. Without integer-like keys or accessors these are the
+// object's own slices: read only.
 func (o *Object) entries() ([]string, []any) {
 	keys := o.Keys()
-	if len(keys) > 0 && len(o.keys) > 0 && &keys[0] == &o.keys[0] {
+	if len(keys) > 0 && len(o.keys) > 0 && &keys[0] == &o.keys[0] && !o.accessors {
 		return keys, o.vals
 	}
 	vals := make([]any, len(keys))
 	for i, key := range keys {
-		vals[i] = o.vals[o.find(key)]
+		vals[i] = o.read(o.vals[o.find(key)])
 	}
 	return keys, vals
+}
+
+// read returns the value of a property: its getter's result for an
+// accessor (undefined without a getter).
+func (o *Object) read(value any) any {
+	property, ok := value.(*accessor)
+	if !ok {
+		return value
+	}
+	if property.get == nil {
+		return Undefined()
+	}
+	return property.get(o)
 }
 
 // Spread copies the own enumerable properties of value, as {...value}
@@ -179,16 +294,19 @@ func (o *Object) Spread(value any) *Object {
 	case *Object:
 		keys, vals := source.entries()
 		for i, key := range keys {
-			o.Set(key, vals[i])
+			o.Define(key, vals[i])
+		}
+		if o.js == nil {
+			o.js = source.js
 		}
 	}
 	return o
 }
 
-// Lookup returns a property and whether it exists.
+// Lookup returns a property, its getter called, and whether it exists.
 func (o *Object) Lookup(key string) (any, bool) {
 	if i := o.find(key); i >= 0 {
-		return o.vals[i], true
+		return o.read(o.vals[i]), true
 	}
 	if o.errorName != "" {
 		// Error.prototype gives name, and message "" when none was given.
@@ -261,8 +379,10 @@ func arrayIndexKey(key string) bool {
 // time.Time, or a []byte is read through JSON (T-5.1).
 func jsValue(value any) any {
 	switch v := value.(type) {
-	case Func, *Promise:
+	case Func, *Promise, *Date, *Collection:
 		return v
+	case *Array:
+		return v.items
 	case nil, UndefinedValue, bool, string, float64, []any, *Object, map[string]any:
 		if m, ok := v.(map[string]any); ok {
 			return objectFromMap(m)
@@ -459,6 +579,16 @@ func collectJSONFields(t reflect.Type, prefix []int, fields map[string]jsonField
 // index or length, or a string length or code unit; otherwise undefined.
 func property(value any, key string) any {
 	switch v := value.(type) {
+	case *Date:
+		// A Date has no own properties; its methods are called by Method.
+		return Undefined()
+	case *Array:
+		return property(v.items, key)
+	case *Collection:
+		if key == "size" {
+			return float64(v.size)
+		}
+		return Undefined()
 	case *Object:
 		if result, ok := v.Lookup(key); ok {
 			return result
@@ -569,6 +699,8 @@ func (js *JS) SpreadItems(value any, site string) []any {
 		return unholed(v)
 	case string:
 		return codePoints(v)
+	case *Collection:
+		return v.items("")
 	case nil, UndefinedValue:
 		js.throw("TypeError", nullishName(v)+" is not iterable", site)
 		return nil
@@ -621,13 +753,13 @@ func RestItems(items []any, from int) []any {
 func (js *JS) ObjectRest(value any, excluded []string, site string) *Object {
 	if nullish(value) {
 		js.throw("TypeError", fmt.Sprintf("Cannot destructure '%s' as it is %s.", String(jsValue(value)), nullishName(value)), site)
-		return NewObject()
+		return js.NewObject()
 	}
-	all := NewObject().Spread(value)
+	all := js.NewObject().Spread(value)
 	if len(excluded) == 0 {
 		return all
 	}
-	rest := NewObject()
+	rest := js.NewObject()
 	keys, vals := all.entries()
 next:
 	for i, key := range keys {
@@ -664,17 +796,63 @@ func PropertyKey(key any) string {
 
 // ── Conversions ──────────────────────────────────────────────────────────
 
-// toPrimitive applies ToPrimitive: arrays and objects become their string
-// form (Array.prototype.toString, "[object Object]").
+// toPrimitive applies ToPrimitive with the hint "default": arrays become
+// their string form (Array.prototype.toString), objects follow
+// OrdinaryToPrimitive.
 func toPrimitive(value any) any {
+	return toPrimitiveHint(value, "default")
+}
+
+// toPrimitiveHint applies ToPrimitive with a hint: "string", "number", or
+// "default".
+func toPrimitiveHint(value any, hint string) any {
 	switch v := jsValue(value).(type) {
 	case []any:
 		return String(v)
 	case *Object:
-		return objectString(v)
+		return v.toPrimitive(hint)
+	case *Date:
+		return v.toPrimitive(hint)
+	case *Collection:
+		return "[object " + v.kindName() + "]"
 	default:
 		return v
 	}
+}
+
+// toPrimitive is OrdinaryToPrimitive: valueOf then toString, toString first
+// for the hint "string". A function in an own property is called and its
+// result taken when it is a primitive; an own property that is not a
+// function hides the method of the prototype. Object.prototype.valueOf
+// returns the object itself, so the inherited toString ends the search.
+// When no method gives a primitive, the conversion throws TypeError.
+func (o *Object) toPrimitive(hint string) any {
+	names := [2]string{"valueOf", "toString"}
+	if hint == "string" {
+		names = [2]string{"toString", "valueOf"}
+	}
+	for _, name := range names {
+		value, own := o.Lookup(name)
+		if !own {
+			if name == "toString" && !o.nullProto {
+				return objectString(o)
+			}
+			continue
+		}
+		fn, ok := value.(Func)
+		if !ok {
+			continue
+		}
+		result := jsValue(fn(o))
+		if o.js.Failed() {
+			return Undefined()
+		}
+		switch result.(type) {
+		case nil, UndefinedValue, bool, float64, string:
+			return result
+		}
+	}
+	return o.js.throw("TypeError", "Cannot convert object to primitive value", "")
 }
 
 // objectString converts an object to text: Error.prototype.toString for an
@@ -702,7 +880,7 @@ func objectString(o *Object) string {
 
 // ToNumber implements JavaScript ToNumber over the value domain.
 func ToNumber(value any) float64 {
-	switch v := toPrimitive(value).(type) {
+	switch v := toPrimitiveHint(value, "number").(type) {
 	case nil:
 		return 0
 	case UndefinedValue:
@@ -807,6 +985,15 @@ func Add(left, right any) any {
 	return ToNumber(l) + ToNumber(r)
 }
 
+// AddString converts an operand of + whose other operand is a string:
+// ToPrimitive with the hint "default", then ToString.
+func AddString(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return String(toPrimitive(value))
+}
+
 // Pow implements ** with the edge cases of Math.pow: a NaN exponent and
 // ±1 ** ±Infinity are NaN, where Go's math.Pow returns 1.
 func Pow(left, right any) float64 {
@@ -823,7 +1010,7 @@ func Pow(left, right any) float64 {
 // compare implements the abstract relational comparison x < y. ok is
 // false when a NaN makes the result undefined.
 func compare(left, right any) (less, ok bool) {
-	l, r := toPrimitive(left), toPrimitive(right)
+	l, r := toPrimitiveHint(left, "number"), toPrimitiveHint(right, "number")
 	ls, lIsString := l.(string)
 	rs, rIsString := r.(string)
 	if lIsString && rIsString {

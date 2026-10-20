@@ -75,7 +75,7 @@ disagree, the contract wins and the row is a bug.
 | `obj[key]` | native | slice index / field / object lookup | `ssrJS.Index` | T-6.5b | member-computed | implemented | Any receiver and key, with JavaScript property-key conversion. |
 | `.length` of string | native | UTF-16 length | `ssrJS.Length` | T-6.3a | strings-length | implemented | `null.length` throws `TypeError`; an object without `length` yields `undefined`. |
 | `.length` of array | native | `len(x)` | `ssrJS.Length` | — | strings-length | implemented | |
-| `a?.b`, `a?.[k]`, `f?.()`, `a.b?.()` | native | nil/undefined check, then access | `vela.OptionalChain` with lazy rest, `ssrJS.OptionalMethod` | T-6.1b | ops-optional, ops-optional-call | implemented | After a nullish link the rest of the chain, method calls included, is not evaluated (`a?.b.trim()` is `undefined`); parentheses end the chain (`(a?.b).c` throws). `f?.()` calls a function value; arguments are evaluated only when the callee is not nullish, and a non-callable callee throws `TypeError`. `a.b?.()` admits catalogue methods: a name the receiver kind does not have (`"x".join`) is `undefined`. Calling functions stored in object properties waits for task 057. |
+| `a?.b`, `a?.[k]`, `f?.()`, `a.b?.()` | native | nil/undefined check, then access | `vela.OptionalChain` with lazy rest, `ssrJS.OptionalMethod` | T-6.1b | ops-optional, ops-optional-call | implemented | After a nullish link the rest of the chain, method calls included, is not evaluated (`a?.b.trim()` is `undefined`); parentheses end the chain (`(a?.b).c` throws). `f?.()` calls a function value; arguments are evaluated only when the callee is not nullish, and a non-callable callee throws `TypeError`. `a.b?.()` admits catalogue methods: a name the receiver kind does not have (`"x".join`) is `undefined`. Calling functions stored in object properties: T-7.1c. |
 
 ### 1.3 Operators
 
@@ -98,7 +98,8 @@ disagree, the contract wins and the row is a bug.
 | assignment to state, props, module bindings | rejected | — | — | T-6.6a | go-tests | partial | `VELA-SSR-IMPURE` (S1) for assignments and `++` / `--`; covered by a Go test, not an oracle group. |
 | comma `(a, b)`, `void e` | native | closure with the operands as statements, in order | same | §6.2 | ops-comma-void | implemented | Every operand is evaluated, left to right, with its effects; `void` yields `undefined`. |
 | `k in o` | native | `ssrJS.In` | same | §6.2 | ops-in | implemented | Own properties and the prototype names of Node 24 (`'toString' in {}`, `'map' in []`, `'stack'` of errors); array index keys skip holes; Go values through their JSON view. A primitive right operand throws `TypeError`; a function value fails the render (its own properties depend on how it was written). `#x in o` stays rejected (classes are not translated). |
-| `delete`, `instanceof` | rejected | — | — | §6.2 | — | never | v1. |
+| `delete o.k`, `delete a[i]` | native | `ssrJS.Delete` | same | T-6.6b | arr-delete | implemented | On an object or array the function created; `delete this.k` on an object a translated function created during the render (checked at run time). An array index becomes a hole; a deleted and added again key moves to the end; deleting `length` or a property of a frozen object throws `TypeError`. On state, props, or module values `VELA-SSR-IMPURE`. |
+| `instanceof` | rejected | — | — | §6.2 | — | never | v1. |
 
 ### 1.4 Compound values and functions
 
@@ -110,7 +111,7 @@ disagree, the contract wins and the row is a bug.
 | array spread `[...a]` | native | `vela.JoinArrays` + `ssrJS.SpreadItems` | same | §6.2 | arrays-spread | implemented | Strings spread by code point; spreading `null` throws `TypeError`. |
 | object literal | native | `*vela.Object` | `*vela.Object` | T-5.1c | objects-order, obj-computed | implemented | Computed keys `{ [k]: v }` with ToPropertyKey (`vela.PropertyKey`), key before value. Insertion order with JavaScript key ordering, observed through the payload (`testdata/ssr_init_oracle.json`). A closed-shape struct lowering is an optimisation not done yet. |
 | object spread `{...o}` | native | `(*vela.Object).Spread` | same | T-5.1c | objects-spread | implemented | |
-| object methods, getters/setters | rejected | — | — | §6.2 | — | never | v1. |
+| object methods, getters/setters, functions in properties, `o.m()` | native | `vela.Func` with `this`; `(*vela.Object).DefineGetter` / `DefineSetter`; `ssrJS.Method` | same | T-7.1c | obj-methods | implemented | `o.m(…)` calls a function stored in a property with `o` as `this`; a value without that function throws `TypeError`. A getter runs on every read (`Object.keys` lists it, spread, `JSON.stringify` and `Object.values` read it), a setter on assignment; assigning a property with only a getter throws `TypeError`. A later data property of the literal replaces an accessor. Names of built-in methods the server does not model (`test`, `match`, `localeCompare`, `keys`/`entries`/`values` outside `for…of`, `call`/`apply`/`bind`, `Date` methods) keep their diagnostic. State that holds an object with methods or accessors is not in the payload: the client evaluates its initializer (S-6.3). |
 | destructuring (declarations, parameters, defaults, rest) | native | Go locals | same | §7.1 | stmt-destructure, stmt-destructure-rest | implemented | Array patterns iterate as `for…of` (string code points, holes as `undefined`, `TypeError` for other values); a rest element copies the remaining items, a rest property the remaining own enumerable keys in T-5.1c order. Rest parameters `(...xs)`. Computed keys `{ [k]: v }` are evaluated before their value. |
 | arrow function as local value, argument, or callback prop | native | `vela.Func` closure | same | §7.1 | fn-closures | implemented | A function value created in a template defers writes to state, props, or module bindings to a run-time `VELA-SSR-IMPURE` error, raised only if the render calls it (an event callback passed as a prop is never called). |
 | arrow function as built-in callback | native | `vela.Func` closure called by the built-in | same | T-7.2b | arr-callbacks | implemented | Callback parameters are dynamic; typed element parameters come with the typed variants (T-7.2a). |
@@ -120,7 +121,8 @@ disagree, the contract wins and the row is a bug.
 | recursion | native | Go recursion | same | T-7.1b | fn-recursion | implemented | |
 | call bound by `//vela:host` | host | `vela.CallHost` (reflection; §8.4 conversions) | same | §8 | host-e2e | partial | Functions of components and of local `.js` modules, and parameterless hosts for module values (§8.7). Covered by Go end-to-end tests (`TestSSRHost*`); the host fixture tooling of V-11.3e is not done. |
 | `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | native | `vela.NewError(kind, m)` | same | §6.2 | errors-new | implemented | |
-| other `new`, `this`, `class` | rejected | — | — | §6.2 | — | never | v1. |
+| `this` | native | the `this` parameter of `vela.Func` | same | T-7.1c | obj-methods | implemented | The receiver of a method call; `undefined` in a plain call, in callbacks of built-ins and outside functions (module code is strict); an arrow function keeps the enclosing function's. Writes through `this` are admitted on an object a translated function created during the render, otherwise `VELA-SSR-IMPURE` at run time. |
+| other `new`, `class` | rejected | — | — | §6.2 | — | never | v1. |
 | regular expression literal | host | — | — | §3 | — | never | See §3. |
 
 ### 1.5 Statements
@@ -149,7 +151,7 @@ dynamic one (T-7.2a, see "monomorphised variants" above). Status:
 | `switch` | Go `switch` with `vela.StrictEqual` cases; fall-through preserved | §7.1 | |
 | nested function declaration | Go closure | §7.1 | Hoisted within its block; arrow and function expressions are `vela.Func` values; recursion is supported. |
 | destructuring `const {a, b = 1, ...r} = o`, `const [x, y, ...t] = a`, `function f(...xs)` | `ssrJS.Get`, `ssrJS.SpreadItems`, `vela.RestItems`, `ssrJS.ObjectRest` | §7.1 | Destructuring `null`/`undefined` throws `TypeError`, also for an empty pattern. A computed key is converted once (`vela.PropertyKey`) before its value is read. |
-| assignment to locals and to members of local objects; compound operators, `++`, `--` | Go assignment, `ssrJS.SetMember` | T-6.6b | Writes to state, props, or module bindings are impure (T-6.6a). Growing an array by index assignment throws until arrays get identity (task 046). |
+| assignment to locals and to members of local objects; compound operators, `++`, `--` | Go assignment, `ssrJS.SetMember` | T-6.6b | Writes to state, props, or module bindings are impure (T-6.6a). On an array the function created and does not copy into another variable or value, an index beyond the length grows the array with holes and `length` truncates or extends it (`ssrJS.SetElement`, arr-growth; an invalid length throws `RangeError`, lengths above 2^24 fail the render). On an array that is copied, these writes fail the render as `VELA-SSR-UNSUPPORTED`, as do properties other than indices and `length`. |
 | `var` declarations | rejected | §7.1 | Use `let` or `const`. |
 | generators, `for await`, `with`, `eval`, `arguments`, cross-block `var` hoisting | rejected | §7.1 | `never` in v1. |
 
@@ -190,6 +192,7 @@ against Node and Go on 2026-10-03.
 | Built-in | Go helper | Rule | Divergence / required edge cases | Oracles | Status |
 | --- | --- | --- | --- | --- | --- |
 | `String(x)` | `vela.ToStringValue` | T-6.4a | `String()` is `""`; arrays join; `-0` is `"0"`. | `conv-call` | implemented |
+| objects with own `toString` / `valueOf` in conversions (`String(o)`, `` `${o}` ``, `o + x`, `o * 2`, `o < x`, `Math.max(o)`, `join`, text in the template) | `vela.String`, `vela.ToNumber`, `vela.Add` (OrdinaryToPrimitive) | T-6.4c | A function in an own `toString` or `valueOf` property is called: `valueOf` first for numbers, `+` and comparisons, `toString` first for text; a result that is an object moves on to the other method. An own property that is not a function hides the prototype's method. When neither gives a primitive the conversion throws `TypeError`, which `catch` receives. | `obj-to-primitive` | implemented |
 | `Number(x)` | `vela.ToNumber` | §6.2 | `Number("")` is `0`, `Number(" 12 ")` is `12`, `Number("0x1f")` is `31`, `Number("1_0")` is `NaN` ✓; `strconv.ParseFloat` differs on all four. | `conv-call` | implemented |
 | `Boolean(x)` | `vela.ToBoolean` | §6.2 |  | `conv-call` | implemented |
 | `parseInt(s, radix)` | `vela.ParseInt` | — | Parses a prefix: `parseInt("12px")` is `12` ✓, while `strconv.ParseInt` fails; `0x` prefix with radix 16 or absent; radix outside 2–36 is `NaN`. | `parseInt` | implemented |
@@ -245,7 +248,7 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `flat(depth)`, `flatMap` | `ssrJS.Method` | — | Default depth 1; holes removed. | `arr-flat` | implemented |
 | `sort`, `toSorted` | `ssrJS.Method`, `ssrJS.MutateArray` | T-6.3a, T-6.6b | Stable. Without comparator: compares `String(x)` by UTF-16 units and places `undefined` last, holes after it: `[10,9,undefined,1].sort()` is `[1,10,9,undefined]` ✓. Comparator result `NaN` counts as `0`. `sort` only on arrays the function created. | `arr-sort`, `arr-mutate` | implemented |
 | `reverse`, `toReversed` | `ssrJS.Method`, `ssrJS.MutateArray` | T-6.6b | `reverse` mutates: only on arrays the function created. | `arr-reverse`, `arr-mutate` | implemented |
-| `push`, `pop`, `shift`, `unshift`, `splice`, `fill` | `ssrJS.MutateArray` | T-6.6b | As a statement, a `const`/`let` initializer, or the right-hand side of an assignment, on a local array the function created; methods that change the length also need the array not to be copied into another variable, literal, or call argument. Otherwise `VELA-SSR-IMPURE`. | `arr-mutate` | implemented |
+| `push`, `pop`, `shift`, `unshift`, `splice`, `fill` | `ssrJS.MutateArray` | T-6.6b | On an array the function created: a local, a value reached from one (`o.list.push(x)`, `m.get(k).push(x)`) or from `this`. An array that is copied into another variable or stored in another value, or changed by a nested function, is boxed (`vela.Box`) and changes in place, so every holder sees it (`ssrJS.MutateShared`); a local that is never copied stays a Go slice. An array of state, props, or a module fails the render with `VELA-SSR-IMPURE`; a parameter is rejected at build time. | `arr-mutate`, `arr-identity` | implemented |
 | `with(index, value)`, `toSpliced(start, count, ...items)` | `ssrJS.Method` | — | Copies with holes read as `undefined`; `with` takes a negative index from the end and throws `RangeError` outside the array; `toSpliced` clamps as `splice`. The result is an array the function created. | `arr-with`, `arr-tospliced` | implemented |
 | `entries`, `keys`, `values` of arrays, iterated at once | `ssrJS.ArrayIterItems` | §7.1 | As `for…of` sources, spread elements and the source of `Array.from`; holes are visited as `undefined`. The iterator itself (`xs.keys().length`, `const it = xs.entries()`) is rejected: it is not an array in JavaScript. | `arr-iterators` | implemented |
 | `Array.from(arrayLike, mapFn)` | `ssrJS.ArrayFrom` | — | Strings by code point; `{length: n}`; holes become `undefined`. | `arr-from` | implemented |
@@ -259,7 +262,7 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `Object.fromEntries` | `ssrJS.ObjectFromEntries` | T-5.1c | Later duplicate keys win but keep the first position. | `obj-from` | implemented |
 | `Object.assign` | `ssrJS.ObjectAssign` | T-6.6b | The target must be an object literal: `Object.assign({}, a, b)`. | `obj-assign` | implemented |
 | `Object.hasOwn` | `ssrJS.ObjectHasOwn` | — |  | `obj-hasown` | implemented |
-| `Object.groupBy(items, fn)` | host / client | T-6.4a | Not native yet: the result has a null prototype, so converting it to text throws `TypeError`, which the text conversion helpers cannot raise (task 057). | — | planned (task 057) |
+| `Object.groupBy(items, fn)` | `ssrJS.ObjectGroupBy` | T-6.4c | Keys are `fn(item, index)` with ToPropertyKey, in the order they first appear (integer-like keys first, T-5.1c); the result has no prototype: converting it to text throws `TypeError`, `'toString' in groups` is `false`. | `obj-groupby` | implemented |
 | `structuredClone(value)` | `ssrJS.StructuredClone` | T-5.1c | Objects (own enumerable keys in T-5.1c order, not frozen), arrays with their holes, primitives, `undefined` members kept; shared and cyclic references stay shared. An error object clones as its kind (another name as `Error`) with its message only, as V8 serialises it. A function or promise throws an error named `DataCloneError`; its message does not quote the source as V8 does. | `structured-clone` | implemented |
 | `Object.freeze`, `Object.isFrozen` | `vela.ObjectFreeze`, `ssrJS.ObjectIsFrozen` | T-6.6b | A frozen object throws `TypeError` on writes, as in strict-mode JavaScript; freezing is shallow. An array is returned unchanged and `Object.isFrozen` rejects arrays (at build time when the type is proven, else at run time): a Go slice has no identity to mark (decision of §5). | `obj-freeze` | implemented |
 
@@ -293,7 +296,8 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | Built-in | Go helper | Rule | Divergence / required edge cases | Oracles | Status |
 | --- | --- | --- | --- | --- | --- |
 | `JSON.stringify(v)`, `JSON.stringify(v, null, indent)` | `ssrJS.JSONStringify` | T-5.1c, T-6.4a | JS does not escape `<`, `>`, `&`; `undefined` members and functions omitted, `NaN`/`Infinity` become `null`, `-0` becomes `0` ✓; lone surrogates are `\u` escapes; key order per T-5.1c; cycles throw `TypeError`. | `json-stringify` | implemented |
-| `JSON.stringify` with replacer, `toJSON` methods | — | — | Not in v1. | — | never |
+| `toJSON` methods in `JSON.stringify` | `ssrJS.JSONStringify` | T-6.4c | A function in an own `toJSON` property is called with the property key (`""` at the top, the index in an array) and its result is written; `undefined` omits the member. | `obj-to-primitive` | implemented |
+| `JSON.stringify` with replacer | — | — | Not in v1. | — | never |
 | `JSON.parse(s)` | `ssrJS.JSONParse` | T-6.5a | Result in the JSON value domain with `*vela.Object`; invalid input throws `SyntaxError` (message text differs from V8). | `json-parse` | implemented |
 
 ### 2.8 Promise
@@ -310,6 +314,32 @@ Method calls dispatch on the receiver at run time (`ssrJS.Method`), so the metho
 | `err.message`, `err.name`, `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | `vela.NewError` | T-6.5d, T-7.4h | Host errors expose `"Internal error"` unless `vela.PublicError`. | `errors-new`, `fn-try` | implemented |
 | `String(err)`, `` `${err}` ``, `'' + err` | `vela.String` | T-6.4a | `Error.prototype.toString`: `"Name: message"`, the name alone when the message is empty, the message alone when the name is empty. The message is not enumerable: `Object.keys`, spread and `JSON.stringify` do not see it (`{}`), as in JavaScript. | `errors-tostring` | implemented |
 | `err.stack` | — | — |  | — | never |
+
+### 2.10 Date
+
+| Built-in | Go helper | Rule | Divergence / required edge cases | Oracles | Status |
+| --- | --- | --- | --- | --- | --- |
+| `new Date(value)` | `ssrJS.NewDate` | T-6.6e | A number is a time value (TimeClip: `NaN` beyond ±8.64e15, fractions truncated), a Date is copied, a string is parsed as by `Date.parse`, other values go through ToPrimitive. `new Date()` reads the clock and `new Date(y, m, …)` is local time: both keep the host route; write `new Date(Date.UTC(y, m, …))`. | `date` | implemented |
+| `Date.UTC(y, m, d, h, min, s, ms)` | `vela.DateUTC` | T-6.6e | MakeDay/MakeTime: months and days overflow into the next year or month, years 0–99 are 1900–1999, a missing month is 0, `Date.UTC()` is `NaN`. | `date` | implemented |
+| `Date.parse(s)`, string argument of `new Date` | `ssrJS.DateParse` | T-6.6e | The ECMAScript date time string format with V8's limits (a day up to 31 in any month overflows, `T24:00` is the next day, digits after the milliseconds are ignored, out-of-range fields are `NaN`). A date-time without `Z` or an offset is local time and any other format is parsed by engine-specific rules: both fail the render as `VELA-SSR-UNSUPPORTED`, which `catch` does not receive. | `date` | implemented |
+| `getTime`, `valueOf`, `getUTCFullYear`, `getUTCMonth`, `getUTCDate`, `getUTCDay`, `getUTCHours`, `getUTCMinutes`, `getUTCSeconds`, `getUTCMilliseconds` | `ssrJS.Method` | T-6.6e | `NaN` for an invalid date; years before 1970 and before year 0. | `date` | implemented |
+| `setTime`, `setUTCFullYear`, `setUTCMonth`, `setUTCDate`, `setUTCHours`, `setUTCMinutes`, `setUTCSeconds`, `setUTCMilliseconds` | `ssrJS.Method` | T-6.6b, T-6.6e | Admitted on a date the function created (`const d = new Date(ms)`); every argument is converted before the date changes; an invalid date stays invalid except with `setUTCFullYear`, which starts from 0. | `date` | implemented |
+| `toISOString`, `toJSON`, `JSON.stringify(date)` | `ssrJS.Method`, `ssrJS.JSONStringify` | T-6.6e | Years outside 0–9999 as `±YYYYYY`; `toISOString` of an invalid date throws `RangeError`, `toJSON` gives `null`. | `date` | implemented |
+| `d1 - d2`, `d1 < d2`, `+d` | `vela.ToNumber` (hint "number") | T-6.4c | The time value; `===` compares identity. | `date` | implemented |
+| `String(d)`, `` `${d}` ``, `d + ''`, `d.toString()`, text of a Date in the template | fails the render | T-6.6e | Local time: the server and the browser format it in different time zones. Fails the render as `VELA-SSR-UNSUPPORTED`; use `toISOString()` or the `getUTC…` methods. | — | never |
+| `Date.now()`, `new Date()`, local getters and setters (`getFullYear`, `getHours`, `setDate`, …), `getTimezoneOffset`, `toDateString`, `toTimeString`, `toUTCString`, `toLocale…` | host / `{#client}` | T-6.6c | The clock and the time zone of the machine (decision of §5). | — | never |
+
+### 2.11 Map and Set
+
+| Built-in | Go helper | Rule | Divergence / required edge cases | Oracles | Status |
+| --- | --- | --- | --- | --- | --- |
+| `new Map(iterable)`, `new Set(iterable)` | `ssrJS.NewCollection` | T-6.6f | Insertion order; keys compared with SameValueZero (`NaN` equals `NaN`, `-0` is stored as `+0`), objects, arrays, Dates and collections by identity. A Map entry that is not an object throws `TypeError`. A function or a Go struct as a key fails the render (`VELA-SSR-UNSUPPORTED`). | `collections` | implemented |
+| `get`, `has`, `size`, `forEach` | `ssrJS.Method` | T-6.6f | `forEach(fn(value, key, collection))` visits the entries added during the iteration and skips the deleted ones; a Set passes the value as the key. | `collections` | implemented |
+| `set`, `add`, `delete`, `clear` | `ssrJS.Method` | T-6.6b, T-6.6f | Admitted on a collection a translated function created during the render, checked at run time; on any other (state, a module value) `VELA-SSR-IMPURE`. A deleted and added again key moves to the end. | `collections` | implemented |
+| iteration: `for…of`, spread, `Array.from`, `keys()`, `values()`, `entries()` | `ssrJS.SpreadItems`, `ssrJS.ArrayIterItems` | T-6.6f | A Map iterates `[key, value]` pairs, a Set its values (`entries()` gives `[value, value]`); `keys()`, `values()` and `entries()` only where they are consumed at once, as for arrays. `for…of` takes the entries before the first iteration, so a loop body that adds or removes items of the collection it iterates is rejected. | `collections` | implemented |
+| `Map.groupBy(items, fn)` | `ssrJS.MapGroupBy` | T-6.6f | Keys are `fn(item, index)` compared with SameValueZero, in the order they first appear. | `collections` | implemented |
+| text, JSON, `structuredClone` of a collection | `vela.String`, `ssrJS.JSONStringify`, `ssrJS.StructuredClone` | T-6.6f | `String(map)` is `[object Map]`, `JSON.stringify(map)` is `{}`; `structuredClone` copies keys and values. A collection in `$state` is omitted from the payload and recomputed by the client (decision of §5). | `collections` | implemented |
+| `WeakMap`, `WeakSet` | host | — |  | — | never |
 ---
 
 ## 3. Never native
@@ -321,7 +351,7 @@ instead. All are `never` and produce a diagnostic that names the route.
 | --- | --- | --- | --- |
 | `Intl.*` (`NumberFormat`, `DateTimeFormat`, `PluralRules`, `RelativeTimeFormat`, `Collator`, `ListFormat`, `Segmenter`) | host, locale from `ctx` | H-8.3c | Locale data and ICU behaviour. |
 | `toLocaleString`, `toLocaleDateString`, `toLocaleTimeString`, `localeCompare` | host | H-8.3c | Locale-dependent. |
-| `Date` (constructor, `Date.now`, `Date.parse`, all methods) | host in `$state` initializers; `{#client}` elsewhere | T-6.6c | Nondeterministic and time-zone dependent. |
+| `Date.now()`, `new Date()`, `Date` in local time and its text (`toString`, `toLocale…`, local getters and setters) | host in `$state` initializers; `{#client}` elsewhere | T-6.6c, T-6.6e | Nondeterministic and time-zone dependent; the UTC operations are native (§2.10). |
 | RegExp literals and constructor; `match`, `matchAll`, `search`, `test`, `exec`, RegExp `replace`/`split` | host | §6.2 | Go `regexp` is RE2: no backreferences or lookaround, different semantics. |
 | `Math.random`, `crypto.*`, `performance.now` | host in `$state` initializers; `{#client}` elsewhere | T-6.6c | Nondeterministic. |
 | `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource` | host (server data loading) | T-7.4e | Browser I/O. |
@@ -330,11 +360,11 @@ instead. All are `never` and produce a diagnostic that names the route.
 | `localStorage`, `sessionStorage`, `indexedDB`, `document.cookie` | `{#client}`; request cookies through host and `ctx` | §9, H-8.3c | Browser state. |
 | `IntersectionObserver`, `ResizeObserver`, `MutationObserver`, `Worker` | `{#client}` | §9 | Browser APIs. |
 | `Promise.race`, `Promise.any`, `new Promise(executor)` | host or `{#client}` | T-7.4d | Timing. |
-| `Map`, `Set`, `WeakMap`, `WeakSet` | host | — | Not in v1; see §5. |
+| `WeakMap`, `WeakSet` | host | — | Not in v1; `Map` and `Set` are native (§2.11). |
 | `BigInt`, `Symbol`, typed arrays, `ArrayBuffer`, `DataView` | host | — | Not in v1. |
 | `Proxy`, `Reflect`, `eval`, `Function` constructor, dynamic `import()`, `with` | rejected | §6.2 | No faithful translation. |
 | imports from npm packages | host or `{#client}` | T-7.3c | |
-| `class`, `this`, generators | rejected | §6.2, §7.1 | Not in v1. |
+| `class`, generators | rejected | §6.2, §7.1 | Not in v1. |
 
 ---
 
@@ -358,6 +388,10 @@ Observed in the code on 2026-10-03; status on 2026-10-05 after task 044.
 7. **`??`** was rejected. Fixed (`ops-nullish`).
 8. **Hydration payload state** was a compile-time constant. Fixed: computed
    `s` entries of the payload stream.
+9. **Conversions of objects** ignored a function in an own `toString` or
+   `valueOf` (`String({ toString: () => 'x' })` was `[object Object]`),
+   found on 2026-10-18. Fixed by task 057: OrdinaryToPrimitive, T-6.4c
+   (`obj-to-primitive`).
 
 ---
 
@@ -368,7 +402,9 @@ Each needs a product decision before the slice that implements it.
 | Item | Options | Needed by |
 | --- | --- | --- |
 | `console.*` in region code | **decided 2026-10-07:** forward to the observer of `vela.WithConsoleObserver(ctx, f)`; nothing without one | S5 (done) |
-| `Map` / `Set` native support | host-only in v1 (current), native after beta | after beta |
+| `Map` / `Set` native support | **decided 2026-10-18:** native (§2.11); a collection in `$state` is omitted from the payload and the client evaluates the initializer, because JSON has no form for it (`{}`) | S8 (done) |
+| `Date` and the time zone | **decided 2026-10-18:** UTC operations are native (§2.10); local-time methods, text conversion and date-time strings without an offset do not take a time zone from `ctx` (no `vela.WithTimeZone`): the browser formats in its own zone, so a server zone would still differ; they keep the host or `{#client}` route, and a text conversion reached at run time fails the render (`VELA-SSR-UNSUPPORTED`) | S8 (done) |
+| A `Date` in `$state` | **decided 2026-10-18:** omitted from the payload, the client evaluates the initializer (an ISO string would arrive as a string, not a Date); the same for state that holds an object with methods or accessors | S8 (done) |
 | Transcendental `Math` functions (`log`, `exp`, `sin`, …) | **decided 2026-10-07:** exact V8 results, ports of the fdlibm functions V8 uses (Go `math` was measured beyond 1 ulp and wrong for subnormal logarithms) | S5 (done) |
 | `String.prototype.normalize` | **decided 2026-10-07:** `golang.org/x/text` v0.41.0 (Unicode 17); the module requires Go 1.25 | S5 (done) |
 | Computed object keys `{[k]: v}` | **decided 2026-10-18:** admitted in literals and destructuring patterns; the key is evaluated before its value and converted with ToPropertyKey | S7 (done) |

@@ -39,7 +39,21 @@ var ssrBuiltinMethods = map[string]ssrIRFacts{
 	"toFixed": {String: true}, "toPrecision": {String: true}, "toExponential": {String: true},
 	// Strings, by the decisions of §5.
 	"normalize": {String: true},
+	// Dates (§2.10): the UTC methods; the setters change the date.
+	"getTime": {Number: true}, "toISOString": {String: true}, "toJSON": {},
+	"getUTCFullYear": {Number: true}, "getUTCMonth": {Number: true}, "getUTCDate": {Number: true},
+	"getUTCDay": {Number: true}, "getUTCHours": {Number: true}, "getUTCMinutes": {Number: true},
+	"getUTCSeconds": {Number: true}, "getUTCMilliseconds": {Number: true},
+	"setTime": {Number: true}, "setUTCFullYear": {Number: true}, "setUTCMonth": {Number: true},
+	"setUTCDate": {Number: true}, "setUTCHours": {Number: true}, "setUTCMinutes": {Number: true},
+	"setUTCSeconds": {Number: true}, "setUTCMilliseconds": {Number: true},
+	// Map and Set (§2.11).
+	"get": {}, "set": {}, "has": {Bool: true}, "add": {}, "delete": {Bool: true}, "clear": {},
 }
+
+// ssrDateSetters change the Date they are called on: admitted on a date the
+// function created (T-6.6b).
+var ssrDateSetters = map[string]bool{"setTime": true, "setUTCFullYear": true, "setUTCMonth": true, "setUTCDate": true, "setUTCHours": true, "setUTCMinutes": true, "setUTCSeconds": true, "setUTCMilliseconds": true}
 
 // ssrMutatingMethods change the array they are called on (T-6.6b). sort,
 // reverse, and fill keep the array's length and are admitted on any array
@@ -86,6 +100,11 @@ var ssrBuiltinGlobals = map[string]ssrBuiltinGlobal{
 	"String.fromCodePoint": {Helper: "StringFromCodePoint", JS: true, Args: -1},
 	// §2.8
 	"structuredClone": {Helper: "StructuredClone", JS: true, Args: 1},
+	// §2.10
+	"Date.UTC":   {Helper: "DateUTC", Args: -1, Facts: ssrIRFacts{Number: true}},
+	"Date.parse": {Helper: "DateParse", JS: true, Args: 1, Facts: ssrIRFacts{Number: true}},
+	// §2.11; the compiler adds whether a translated function creates the Map.
+	"Map.groupBy": {Helper: "MapGroupBy", JS: true, Args: 2},
 	// §2.3
 	"Array.from": {Helper: "ArrayFrom", JS: true, Args: 2},
 	"Array.of":   {Helper: "ArrayOf", Args: -1, Facts: ssrIRFacts{Array: true}},
@@ -98,6 +117,7 @@ var ssrBuiltinGlobals = map[string]ssrBuiltinGlobal{
 	"Object.hasOwn":      {Helper: "ObjectHasOwn", JS: true, Args: 2},
 	"Object.freeze":      {Helper: "ObjectFreeze", Args: 1},
 	"Object.isFrozen":    {Helper: "ObjectIsFrozen", JS: true, Args: 1, Facts: ssrIRFacts{Bool: true}},
+	"Object.groupBy":     {Helper: "ObjectGroupBy", JS: true, Args: 2, Facts: ssrIRFacts{Object: true}},
 	// §2.5
 	"Math.round": {Helper: "MathRound", Args: 1, Facts: ssrIRFacts{Number: true}},
 	"Math.floor": {Helper: "MathFloor", Args: 1, Facts: ssrIRFacts{Number: true}},
@@ -117,6 +137,9 @@ var ssrBuiltinGlobals = map[string]ssrBuiltinGlobal{
 	"JSON.stringify": {Helper: "JSONStringify", JS: true, Args: 3},
 	"JSON.parse":     {Helper: "JSONParse", JS: true, Args: 1},
 }
+
+// ssrNonConvertingGlobals do not convert their arguments to primitives.
+var ssrNonConvertingGlobals = map[string]bool{"Boolean": true, "Array.isArray": true, "Array.of": true, "Object.freeze": true}
 
 // ssrBuiltinConstants are the admitted constant properties.
 var ssrBuiltinConstants = map[string]float64{
@@ -234,9 +257,109 @@ func (b *ssrIRBuilder) buildArgs(call *JsCallExpr, pos int) ([]SSRIRExpr, error)
 		if err != nil {
 			return nil, err
 		}
+		if member, ok := call.Callee.(*JsMemberExpr); ok && !member.Computed {
+			if property, ok := member.Prop.(*JsIdent); ok && (ssrStoringMethods[property.Name] || !ssrKnownMethod(property.Name)) {
+				value = b.boxStored(argument, value)
+			}
+		}
 		args = append(args, value)
 	}
 	return args, nil
+}
+
+// sharedReceiver reports the receiver of an array change that may hold a
+// boxed array: a local the function created and copies (shared), or a value
+// reached from such a local or from this (o.list, m.get(k), this.items).
+func (b *ssrIRBuilder) sharedReceiver(expr JsExpr) bool {
+	c := b.funcCompiler
+	if c == nil {
+		return false
+	}
+	if name := identName(expr); name != "" {
+		_, local := c.lookup(name)
+		return local && c.shared(name)
+	}
+	root := expr
+	for {
+		switch node := root.(type) {
+		case *JsMemberExpr:
+			root = node.Obj
+			continue
+		case *JsCallExpr:
+			if member, ok := node.Callee.(*JsMemberExpr); ok {
+				root = member.Obj
+				continue
+			}
+		}
+		break
+	}
+	if _, this := root.(*JsThisExpr); this {
+		return true
+	}
+	name := identName(root)
+	if name == "" || c.freshness == nil {
+		return false
+	}
+	_, local := c.lookup(name)
+	return local && c.freshness.fresh[name]
+}
+
+// ssrStoringMethods keep their arguments in the receiver.
+var ssrStoringMethods = map[string]bool{"push": true, "unshift": true, "splice": true, "set": true, "add": true}
+
+// ssrKnownMethod reports a built-in method name.
+func ssrKnownMethod(name string) bool {
+	_, builtin := ssrBuiltinMethods[name]
+	_, mutating := ssrMutatingMethods[name]
+	return builtin || mutating
+}
+
+// boxStored boxes an array a translated function creates and stores in
+// another value (an object or array literal, a collection, a property, the
+// argument of a method), so that a change through any holder is seen by
+// all (T-6.6b).
+// The branches of a logical or conditional expression are boxed one by
+// one: only a fresh array is boxed, never one of state or props.
+func (b *ssrIRBuilder) boxStored(expr JsExpr, value SSRIRExpr) SSRIRExpr {
+	if b.funcCompiler == nil {
+		return value
+	}
+	switch e := expr.(type) {
+	case *JsLogicalExpr:
+		if lazy, ok := value.(*ssrIRLazy); ok && len(lazy.Args) == 2 {
+			lazy.Args[0] = b.boxStored(e.L, lazy.Args[0])
+			lazy.Args[1] = b.boxStored(e.R, lazy.Args[1])
+		}
+		return value
+	case *JsConditionalExpr:
+		if lazy, ok := value.(*ssrIRLazy); ok && len(lazy.Args) == 3 {
+			lazy.Args[1] = b.boxStored(e.Then, lazy.Args[1])
+			lazy.Args[2] = b.boxStored(e.Else, lazy.Args[2])
+		}
+		return value
+	}
+	if !ssrFreshArrayExpr(expr) {
+		return value
+	}
+	return &ssrIRHelper{ssrIRBase: b.base(value.irBase().Pos, ssrIRFacts{}), Name: "Box", Args: []SSRIRExpr{value}}
+}
+
+// stored builds a value stored in another value (boxStored).
+func (b *ssrIRBuilder) stored(expr JsExpr, pos int) (SSRIRExpr, error) {
+	value, err := b.build(expr, pos)
+	if err != nil {
+		return nil, err
+	}
+	return b.boxStored(expr, value), nil
+}
+
+// ssrFreshArrayExpr reports a fresh value that can be an array.
+func ssrFreshArrayExpr(expr JsExpr) bool {
+	switch expr.(type) {
+	case *JsObjectExpr, *JsNewExpr:
+		return false
+	}
+	return ssrFreshExpr(expr)
 }
 
 // builtinCall lowers a call to a global function, a namespace function, or
@@ -310,11 +433,17 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 		if name == "Number" && len(call.Args) == 0 {
 			lowered = []goast.Expr{&goast.BasicLit{Kind: token.FLOAT, Value: "0.0"}}
 		}
+		if !ssrNonConvertingGlobals[name] {
+			b.converts(args...)
+		}
 		fun := goSelector("vela", global.Helper)
 		if global.JS {
 			fun = goSelector("ssrJS", global.Helper)
 			lowered = append([]goast.Expr{ssrGoString(b.site)}, lowered...)
 			b.usedJS, b.throws = true, true
+		}
+		if name == "Map.groupBy" {
+			lowered = append(lowered, goast.NewIdent(strconv.FormatBool(b.funcCompiler != nil)))
 		}
 		if name == "Object.assign" {
 			if len(call.Args) == 0 {
@@ -336,6 +465,24 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 	}
 	name := property.Name
 	facts, admitted := ssrBuiltinMethods[name]
+	if _, isMutating := ssrMutatingMethods[name]; isMutating && b.sharedReceiver(member.Obj) {
+		// Through a value the function created: a boxed array changes in
+		// place; any other array fails the render (MutateShared).
+		receiver, err := b.build(member.Obj, pos)
+		if err != nil {
+			return nil, true, err
+		}
+		args, err := b.buildArgs(call, pos)
+		if err != nil {
+			return nil, true, err
+		}
+		lowered := []goast.Expr{ssrGoString(b.site), lowerSSRIR(receiver), ssrGoString(name)}
+		for _, arg := range args {
+			lowered = append(lowered, lowerSSRIR(arg))
+		}
+		b.usedJS, b.throws = true, true
+		return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "MutateShared"), Args: lowered}}, true, nil
+	}
 	if mutating, isMutating := ssrMutatingMethods[name]; isMutating {
 		if mutating || !ssrFreshExpr(member.Obj) {
 			if b.funcCompiler != nil && b.funcCompiler.deferImpure {
@@ -350,6 +497,18 @@ func (b *ssrIRBuilder) builtinCall(call *JsCallExpr, pos int) (SSRIRExpr, bool, 
 	}
 	if !admitted {
 		return nil, false, nil
+	}
+	if ssrDateSetters[name] {
+		c := b.funcCompiler
+		root := identName(member.Obj)
+		fresh := false
+		if c != nil && root != "" && c.freshness != nil {
+			_, local := c.lookup(root)
+			fresh = local && c.freshness.fresh[root]
+		}
+		if !fresh {
+			return nil, true, ssrImpure(pos, "%s changes its date; during server rendering it is admitted only on a date the function created, as in const d = new Date(ms) (T-6.6b)", name)
+		}
 	}
 	receiver, err := b.build(member.Obj, pos)
 	if err != nil {
@@ -433,7 +592,7 @@ func ssrFreshExpr(expr JsExpr) bool {
 		return true
 	case *JsNewExpr:
 		callee, ok := e.Callee.(*JsIdent)
-		return ok && (callee.Name == "Error" || callee.Name == "TypeError" || callee.Name == "RangeError")
+		return ok && (callee.Name == "Error" || callee.Name == "TypeError" || callee.Name == "RangeError" || callee.Name == "Date" || callee.Name == "Map" || callee.Name == "Set")
 	case *JsCallExpr:
 		if callee, ok := e.Callee.(*JsIdent); ok && callee.Name == "structuredClone" {
 			return true
@@ -453,7 +612,7 @@ func ssrFreshExpr(expr JsExpr) bool {
 		}
 		if object, ok := member.Obj.(*JsIdent); ok {
 			switch object.Name + "." + property.Name {
-			case "Object.keys", "Object.values", "Object.entries", "Object.fromEntries", "Array.from", "Array.of", "JSON.parse":
+			case "Object.keys", "Object.values", "Object.entries", "Object.fromEntries", "Object.groupBy", "Array.from", "Array.of", "JSON.parse":
 				return true
 			}
 		}
@@ -479,9 +638,29 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 	f := &ssrFreshness{fresh: map[string]bool{}, unaliased: map[string]bool{}}
 	stale := map[string]bool{}
 	aliased := map[string]bool{}
+	// copies maps a local declared as const ys = xs to xs: when xs is
+	// fresh, ys holds the same value.
+	copies := map[string]string{}
 	readOnly := map[string]bool{"Math": true, "JSON": true, "Number": true, "String": true, "Boolean": true, "Array": true, "Object": true}
 	WalkNode(body, func(n JsNode) bool {
 		switch node := n.(type) {
+		case *JsArrowFunc, *JsFuncExpr, *JsFuncDecl:
+			// An array a nested function changes is shared with it: boxed,
+			// so that the change is seen through the captured variable.
+			WalkNode(node, func(inner JsNode) bool {
+				if call, ok := inner.(*JsCallExpr); ok {
+					if member, ok := call.Callee.(*JsMemberExpr); ok && !member.Computed {
+						if property, ok := member.Prop.(*JsIdent); ok {
+							if _, mutating := ssrMutatingMethods[property.Name]; mutating {
+								if name := identName(member.Obj); name != "" {
+									aliased[name] = true
+								}
+							}
+						}
+					}
+				}
+				return true
+			})
 		case *JsVarDecl:
 			for _, declarator := range node.Decls {
 				name := identName(declarator.Id)
@@ -500,6 +679,8 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 				}
 				if declarator.Init != nil && ssrFreshExpr(declarator.Init) {
 					f.fresh[name] = true
+				} else if alias := identName(declarator.Init); alias != "" && node.Kind == "const" {
+					copies[name] = alias
 				} else {
 					stale[name] = true
 				}
@@ -540,7 +721,8 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 					builtin = true
 				}
 				if property, ok := member.Prop.(*JsIdent); ok && !member.Computed {
-					if _, method := ssrBuiltinMethods[property.Name]; method && property.Name != "concat" {
+					// concat, set and add keep their arguments in the result.
+					if _, method := ssrBuiltinMethods[property.Name]; method && property.Name != "concat" && property.Name != "set" && property.Name != "add" {
 						builtin = true
 					}
 				}
@@ -567,8 +749,19 @@ func ssrAnalyzeFreshness(body *JsBlock) *ssrFreshness {
 	for name := range f.fresh {
 		if stale[name] {
 			delete(f.fresh, name)
-			continue
 		}
+	}
+	// A copy of a fresh local holds the same array or object: both are
+	// shared (aliased), so an array in them is boxed.
+	for changed := true; changed; {
+		changed = false
+		for name, source := range copies {
+			if f.fresh[source] && !f.fresh[name] && !stale[name] {
+				f.fresh[name], aliased[name], aliased[source], changed = true, true, true, true
+			}
+		}
+	}
+	for name := range f.fresh {
 		if !aliased[name] {
 			f.unaliased[name] = true
 		}
@@ -623,15 +816,14 @@ func (c *ssrFuncCompiler) mutationStatement(call *JsCallExpr, target string, dec
 		return nil, false, nil
 	}
 	goName, local := c.lookup(receiver)
-	if !local || !c.freshness.fresh[receiver] || changesLength && !c.freshness.unaliased[receiver] {
-		reason := "an array the function created"
-		if changesLength {
-			reason = "an array the function created and does not copy into another variable or value"
-		}
-		problem := fmt.Sprintf("%s.%s changes %q; during server rendering it is admitted only on %s (T-6.6b)", receiver, property.Name, receiver, reason)
+	if !local || !c.freshness.fresh[receiver] {
+		problem := fmt.Sprintf("%s.%s changes %q; during server rendering it is admitted only on an array the function created (T-6.6b)", receiver, property.Name, receiver)
 		stmts, err := c.impure(problem)
 		return stmts, true, err
 	}
+	// An array copied into another variable or value is boxed (c.shared):
+	// it changes in place, so every holder sees the change.
+	shared := changesLength && !c.freshness.unaliased[receiver]
 	b := c.builder()
 	args, err := b.buildArgs(call, 0)
 	c.absorb(b)
@@ -645,6 +837,17 @@ func (c *ssrFuncCompiler) mutationStatement(call *JsCallExpr, target string, dec
 	var out []goast.Stmt
 	if target != "" && declare {
 		out = append(out, ssrVarAny(target, nil), ssrUse(target))
+	}
+	if shared {
+		result := c.declare("$result")
+		out = append(out,
+			&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(result)}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("ssrJS", "MutateShared"), Args: lowered}}},
+			ssrUse(result),
+		)
+		if target != "" {
+			out = append(out, &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(target)}, Tok: token.ASSIGN, Rhs: []goast.Expr{goast.NewIdent(result)}})
+		}
+		return append(out, c.unwind()), true, nil
 	}
 	array, result := c.declare("$array"), c.declare("$result")
 	out = append(out,

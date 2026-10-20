@@ -409,6 +409,12 @@ func (e *ssrGoEmitter) translateJS(kind, name string, expr JsExpr, pos, source i
 			e.facts = map[JsExpr]ssrIRFacts{}
 		}
 		e.facts[expr] = ir.irBase().Facts
+		if ssrIRPrimitive(ir) {
+			if e.primitive == nil {
+				e.primitive = map[JsExpr]bool{}
+			}
+			e.primitive[expr] = true
+		}
 	}
 	if e.region == nil || (err != nil && e.speculative > 0) {
 		if err != nil {
@@ -421,6 +427,17 @@ func (e *ssrGoEmitter) translateJS(kind, name string, expr JsExpr, pos, source i
 		return lowerSSRIR(&ssrIRUndefined{}), nil
 	}
 	return lowerSSRIR(ir), nil
+}
+
+// convertsOutput records that the value of expr is converted to text. A
+// value not proven primitive can call a function in an own toString or
+// throw TypeError, so the site can throw (OrdinaryToPrimitive).
+func (e *ssrGoEmitter) convertsOutput(expr *TemplateExpr) {
+	if e.region == nil || expr == nil || e.primitive[expr.Root()] {
+		return
+	}
+	e.region.usesJS = true
+	e.region.throwing++
 }
 
 // speculate runs emit and drops the sites it recorded when it fails: a

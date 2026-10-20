@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 )
 
@@ -15,7 +16,7 @@ import (
 // pending exception (T-6.5d).
 
 // Func is a translated JavaScript function value.
-type Func func(args ...any) any
+type Func func(this any, args ...any) any
 
 // Arg returns argument i, or undefined when the call passed fewer.
 func Arg(args []any, i int) any {
@@ -117,7 +118,7 @@ func Try(js *JS, ctx context.Context, try func() (any, bool), catch func(error a
 		return nil, false
 	}
 	value, returned := try()
-	if js.Failed() && catch != nil && !cancelled(js.err) {
+	if js.Failed() && catch != nil && !cancelled(js.err) && !unsupported(js.err) {
 		value, returned = catch(js.Catch(ctx))
 	}
 	if finally == nil {
@@ -134,10 +135,17 @@ func Try(js *JS, ctx context.Context, try func() (any, bool), catch func(error a
 	return value, returned
 }
 
+// unsupported reports an UnsupportedError: not a JavaScript exception, so
+// catch does not receive it.
+func unsupported(err error) bool {
+	var target *UnsupportedError
+	return errors.As(err, &target)
+}
+
 // Call calls a function value (`f(x)` where f is a value).
 func (js *JS) Call(site string, fn any, args ...any) any {
 	if function, ok := fn.(Func); ok {
-		return function(args...)
+		return function(Undefined(), args...)
 	}
 	return js.throw("TypeError", fmt.Sprintf("%s is not a function", describe(jsValue(fn))), site)
 }
@@ -152,6 +160,19 @@ func (js *JS) SetMember(object, key, value any, site string) any {
 	name := propertyKey(key)
 	switch target := object.(type) {
 	case *Object:
+		if target.js == nil {
+			target.js = js
+		}
+		// The compiler admits this write only on an object the function
+		// created (T-6.6b), so its methods may write through this.
+		target.local = true
+		if i := target.find(name); i >= 0 {
+			if _, ok := target.vals[i].(*accessor); ok {
+				// A setter runs even on a frozen object.
+				target.Set(name, value)
+				return value
+			}
+		}
 		if target.frozen {
 			if target.find(name) >= 0 {
 				return js.throw("TypeError", fmt.Sprintf("Cannot assign to read only property '%s' of object '#<Object>'", name), site)
@@ -160,21 +181,159 @@ func (js *JS) SetMember(object, key, value any, site string) any {
 		}
 		target.Set(name, value)
 		return value
+	case *Array:
+		return js.setItem(target, name, value, site)
 	case []any:
-		// Growing an array needs an array identity (task 046).
+		// Growing an array needs an array identity: SetElement grows an
+		// array no other variable or value holds.
 		if n, err := strconv.Atoi(name); err == nil && arrayIndexKey(name) {
 			if n < len(target) {
 				target[n] = value
 				return value
 			}
-			return js.throw("RangeError", fmt.Sprintf("assigning index %d beyond the length %d of an array is not supported during server rendering", n, len(target)), site)
+			return js.unsupported(fmt.Sprintf("assigning index %d beyond the length %d of an array that is copied into another variable or value is not supported during server rendering", n, len(target)), site)
 		}
-		return value
+		if name == "length" {
+			if ToNumber(jsValue(value)) == float64(len(target)) {
+				return value
+			}
+			return js.unsupported("changing the length of an array that is copied into another variable or value is not supported during server rendering", site)
+		}
+		return js.unsupported(fmt.Sprintf("property %q of an array is not supported during server rendering: an array holds its items and length", name), site)
 	}
 	if nullish(object) {
 		return js.throw("TypeError", fmt.Sprintf("Cannot set properties of %s (setting '%s')", nullishName(object), name), site)
 	}
 	return value
+}
+
+// maxArrayLength bounds the arrays that index and length assignments
+// grow; a longer array fails the render instead of allocating it.
+const maxArrayLength = 1 << 24
+
+// SetElement assigns target[key] = value where target is a local holding an
+// array or object the function created and did not copy into another
+// variable or value (T-6.6b), and returns the new value of the local: an
+// index beyond the length grows the array with holes, and length truncates
+// it or extends it with holes, as in JavaScript.
+func (js *JS) SetElement(target, key, value any, site string) any {
+	if js.Failed() {
+		return target
+	}
+	items, ok := target.([]any)
+	if !ok {
+		// An object, or a boxed array, which changes in place.
+		js.SetMember(target, key, value, site)
+		return target
+	}
+	name := propertyKey(key)
+	if name == "length" {
+		n := ToNumber(jsValue(value))
+		if js.Failed() {
+			return target
+		}
+		if n < 0 || n != math.Trunc(n) || n > math.MaxUint32-1 || math.IsInf(n, 0) {
+			js.throw("RangeError", "Invalid array length", site)
+			return target
+		}
+		if n > maxArrayLength {
+			js.unsupported(fmt.Sprintf("an array length of %v is beyond the limit of server rendering (%d)", n, maxArrayLength), site)
+			return target
+		}
+		if int(n) <= len(items) {
+			return items[:int(n):int(n)]
+		}
+		for len(items) < int(n) {
+			items = append(items, Hole())
+		}
+		return items
+	}
+	if index, err := strconv.Atoi(name); err == nil && arrayIndexKey(name) && index >= len(items) {
+		if index >= maxArrayLength {
+			js.unsupported(fmt.Sprintf("an array index of %d is beyond the limit of server rendering (%d)", index, maxArrayLength), site)
+			return target
+		}
+		for len(items) < index {
+			items = append(items, Hole())
+		}
+		return append(items, value)
+	}
+	js.SetMember(items, name, value, site)
+	return items
+}
+
+// Delete implements delete target[key] on an array or object the function
+// created (T-6.6b): an object loses the property, an array index becomes a
+// hole. Deleting a property of a frozen object, length, or an index of a
+// string throws TypeError (module code is strict). local requires an object
+// a translated function created during this render (delete this.k).
+func (js *JS) Delete(target, key any, local bool, site string) bool {
+	if js.Failed() {
+		return false
+	}
+	name := propertyKey(key)
+	if nullish(target) {
+		js.throw("TypeError", "Cannot convert undefined or null to object", site)
+		return false
+	}
+	switch v := target.(type) {
+	case *Object:
+		if local && !v.local {
+			js.Impure(fmt.Sprintf("a method deletes property %q of an object that a translated function did not create during this render (T-6.6b)", name), site)
+			return false
+		}
+		if v.frozen && (v.find(name) >= 0 || v.hasMessage && name == "message") {
+			js.throw("TypeError", fmt.Sprintf("Cannot delete property '%s' of #<Object>", name), site)
+			return false
+		}
+		v.remove(name)
+		return true
+	case *Array:
+		return js.Delete(v.items, name, false, site)
+	case []any:
+		if local {
+			js.Impure(fmt.Sprintf("a method deletes index %q of an array (T-6.6b)", name), site)
+			return false
+		}
+		if name == "length" {
+			js.throw("TypeError", "Cannot delete property 'length' of [object Array]", site)
+			return false
+		}
+		if index, err := strconv.Atoi(name); err == nil && arrayIndexKey(name) && index < len(v) {
+			v[index] = Hole()
+		}
+		return true
+	case string:
+		if index, err := strconv.Atoi(name); name == "length" || err == nil && arrayIndexKey(name) && index < len(units(v)) {
+			js.throw("TypeError", fmt.Sprintf("Cannot delete property '%s' of [object String]", name), site)
+			return false
+		}
+	}
+	return true
+}
+
+// SetThis assigns this[key] = value in a translated function. The write
+// is admitted on an object a translated function created during this render
+// (T-6.6b); an object of state, props, or a module fails the render with
+// VELA-SSR-IMPURE. A primitive or nullish this throws TypeError.
+func (js *JS) SetThis(this, key, value any, site string) any {
+	if js.Failed() {
+		return Undefined()
+	}
+	name := propertyKey(key)
+	switch target := this.(type) {
+	case *Object:
+		if !target.local {
+			return js.Impure(fmt.Sprintf("a method writes property %q of an object that a translated function did not create during this render (T-6.6b)", name), site)
+		}
+		return js.SetMember(target, name, value, site)
+	case []any:
+		return js.Impure(fmt.Sprintf("a method writes property %q of an array (T-6.6b)", name), site)
+	}
+	if nullish(this) {
+		return js.throw("TypeError", fmt.Sprintf("Cannot set properties of %s (setting '%s')", nullishName(this), name), site)
+	}
+	return js.throw("TypeError", fmt.Sprintf("Cannot create property '%s' on %s '%s'", name, TypeOf(this), String(jsValue(this))), site)
 }
 
 // NewError creates an error object: new Error(message), new TypeError(…).

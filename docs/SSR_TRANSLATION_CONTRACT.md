@@ -222,7 +222,7 @@ panics.
 
 | Construct | Contract |
 | --- | --- |
-| `+` | JS `ToPrimitive` / string-or-number rule, both tiers. |
+| `+` | JS `ToPrimitive` (hint "default", OrdinaryToPrimitive for objects, T-6.4c) / string-or-number rule, both tiers. |
 | `- * / % **` | IEEE-754 `float64`; `%` is JS remainder (sign of dividend); `**` follows `Math.pow` edge cases. |
 | `< <= > >=` | Number comparison, or UTF-16 code-unit string comparison when both operands are strings, otherwise JS abstract relational comparison. |
 | `===` / `!==` | JS strict equality (`NaN !== NaN`, `+0 === -0`); objects compare by identity. |
@@ -235,7 +235,9 @@ panics.
 | `k in o` | Admitted on objects and arrays (own and prototype properties, as in Node 24); a primitive right operand throws `TypeError`. |
 | comma `(a, b)`, `void e` | Admitted; operands are evaluated left to right with their effects; `void` yields `undefined`. |
 | `new Error(m)`, `new TypeError(m)`, `new RangeError(m)` | Admitted; produce error objects with `name` from the prototype and a non-enumerable `message`; text conversion is `Error.prototype.toString`. |
-| other `new`, `this`, `class`, getters/setters, `delete`, `instanceof`, regex literals, tagged templates | `unsupported` in v1. |
+| object methods, getters/setters, `this`, `o.m()` | Admitted (T-7.1c). |
+| `delete o.k`, `delete a[i]` | Admitted on values the function created (T-6.6b). |
+| other `new`, `class`, `instanceof`, regex literals, tagged templates | `unsupported` in v1. |
 
 ### 6.3 Strings
 
@@ -261,6 +263,14 @@ panics.
   `(2.5).toFixed(0)` is `"3"` in JS and `"2"` with
   `strconv.FormatFloat(2.5, 'f', 0, 64)`; `Math.round(-2.5)` is `-2` in JS
   and `-3` with `math.Round`.
+- **T-6.4c** An object converts to a primitive with OrdinaryToPrimitive:
+  a function in an own `valueOf` or `toString` property is called
+  (`valueOf` first for numbers, `+` and comparisons, `toString` first for
+  text), an own property that is not a function hides the method of the
+  prototype, and a conversion that finds no primitive throws `TypeError`.
+  `JSON.stringify` calls a function in an own `toJSON` property with the
+  property key. A conversion of a value that is not proven primitive is a
+  site that can throw (T-6.5e); a prop never has methods (a Go value).
 
 ### 6.5 Exceptions
 
@@ -297,13 +307,39 @@ panics.
   arrays and objects that it created itself during the current invocation
   (for example `const out = []; out.push(x)`), and may reassign its own
   `let` bindings. The compiler proves this by local allocation analysis; it
-  does not attempt general escape analysis.
+  does not attempt general escape analysis. Arrays have identity: one that
+  is copied into another variable, stored in another value, or changed by a
+  nested function is boxed, so a change through any holder (an alias,
+  `o.list`, `m.get(k)`, `this.items`) is seen by all, and an index or
+  `length` assignment grows or truncates it. A change through a value that
+  is not the function's own (state, props, a module) fails the render with
+  `VELA-SSR-IMPURE` at run time.
 - **T-6.6c Nondeterminism.** `Date.now()`, `new Date()`, `Math.random()`,
   `crypto.*`, `performance.now()`, `Promise.race`, and `Promise.any` are
   never native. In a `$state`
   initializer they may be `server-host` (the value travels in the payload).
   In a `$derived` or template expression they require `client-deferred`,
   because the client recomputes them and would diverge.
+- **T-6.6e Deterministic Date.** A `Date` holds a time value in UTC
+  milliseconds. Construction from a time value, a Date, an ECMAScript date
+  time string with `Z` or an offset, or `Date.UTC(…)`, the `getUTC…` and
+  `setUTC…` methods (setters on a date the function created, T-6.6b),
+  `getTime`, `valueOf`, `toISOString`, `toJSON` and arithmetic through the
+  time value are native and exact. What depends on the time zone of the
+  machine is not: local-time construction, getters and setters keep the
+  host route (T-6.6c); text conversion of a Date and parsing a date-time
+  without an offset or in another format fail the render with
+  `VELA-SSR-UNSUPPORTED` when reached, which `catch` does not receive. A
+  Date in `$state` is omitted from the payload and recomputed by the client.
+- **T-6.6f Map and Set.** Collections keep insertion order and compare
+  keys with SameValueZero; objects, arrays, Dates and collections are keys
+  by identity. A collection a translated function created during the render
+  may change (`set`, `add`, `delete`, `clear`), checked at run time; any
+  other fails the render with `VELA-SSR-IMPURE`. `forEach` sees the changes
+  made during the iteration; `for…of` iterates the entries taken before
+  the first iteration, so a loop body that changes the collection it
+  iterates is `unsupported`. A collection in `$state` is omitted from the
+  payload and recomputed by the client.
 - **T-6.6d Initialization order.** Prop defaults, then `$state` initializers,
   then `$derived` values evaluate once, in script declaration order — the
   same order as client initialization. `$state(prop)` and `$derived` over
@@ -327,11 +363,20 @@ labels of loops, `switch` and blocks), `return`, `throw`, `try` / `catch`
 declarations, block scoping, `async` functions and `await` (§7.4).
 
 Not admitted in v1: generators and async generators, `for await`, classes,
-`with`, `eval`, `arguments`, `var` hoisting across blocks, getters/setters.
+`with`, `eval`, `arguments`, `var` hoisting across blocks.
 
 - **T-7.1a** A helper with several statements is translated as a Go function,
   not inlined. The current single-`return` inliner becomes an optimisation of
   this path.
+- **T-7.1c** A function value takes `this`: the receiver of a method call
+  `o.m(…)`, `undefined` in a plain call and in callbacks of built-ins
+  (module code is strict), the enclosing function's in an arrow function.
+  Object literal methods, functions stored in properties, getters and
+  setters are admitted; a getter runs on every read, a setter on
+  assignment, and assigning a property that has only a getter throws
+  `TypeError`. A write through `this` is admitted on an object a
+  translated function created during the render (T-6.6b, checked at run
+  time); on any other object it fails the render with `VELA-SSR-IMPURE`.
 - **T-7.1b** Recursion is allowed. Termination is the developer's
   responsibility, as in JavaScript.
 
@@ -770,9 +815,9 @@ regression.
   committed `go.work`, so `go install` of the compiler needs no runtime
   version and no `replace`. Implemented in task 049 (2026-10-09).
 - **R-12.1d Contract check.** The runtime exports a contract marker
-  (currently `ContractV1`, `ssr_runtime/contract.go`; the compiler names it in
+  (currently `ContractV3`, `ssr_runtime/contract.go`; the compiler names it in
   `SSRRuntimeContract`), and every generated file references the marker it
-  was generated for (`var _ = vela.ContractV1`). A compiler/runtime mismatch
+  was generated for (`var _ = vela.ContractV3`). A compiler/runtime mismatch
   then fails `go build` with an undefined-identifier error instead of
   misbehaving at runtime. The marker changes whenever generated code starts
   to depend on a new or changed runtime API.

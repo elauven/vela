@@ -28,7 +28,7 @@ func ssrRuntimeImport() string { return ssrRuntimePath }
 
 // SSRRuntimeContract is the contract marker every generated file references
 // (R-12.1d); it must match a constant the runtime exports.
-const SSRRuntimeContract = "ContractV2"
+const SSRRuntimeContract = "ContractV3"
 
 // BuildSSRGoSkeleton creates the declarations of a server renderer file,
 // including its Props type, entirely through the standard Go AST. The
@@ -86,7 +86,7 @@ func goImportDecl(path string) *goast.GenDecl {
 }
 
 // goRuntimeContractDecl references the runtime contract marker
-// (`var _ = vela.ContractV2`), so a runtime of another version fails go build
+// (`var _ = vela.ContractV3`), so a runtime of another version fails go build
 // with an undefined identifier (R-12.1d).
 func goRuntimeContractDecl() *goast.GenDecl {
 	return &goast.GenDecl{Tok: token.VAR, Specs: []goast.Spec{&goast.ValueSpec{
@@ -336,6 +336,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	pkg.Scope().Insert(slotName)
 	ssrRuntimeAddFunc(pkg, "WriteString", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "value", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "String", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
+	ssrRuntimeAddFunc(pkg, "AddString", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
 	ssrRuntimeAddFunc(pkg, "FormValueString", []*types.Var{types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", stringType)})
 	undefinedName := types.NewTypeName(token.NoPos, pkg, "UndefinedValue", nil)
 	undefinedType := types.NewNamed(undefinedName, types.NewStruct(nil, nil), nil)
@@ -393,6 +394,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	pkg.Scope().Insert(objectName)
 	objectPtr := types.NewPointer(objectType)
 	jsMethod("ObjectRest", []*types.Var{v("value", anyType), v("excluded", types.NewSlice(stringType)), v("site", stringType)}, objectPtr)
+	jsMethod("NewObject", nil, objectPtr)
 	objectRecv := v("o", objectPtr)
 	objectType.AddMethod(types.NewFunc(token.NoPos, pkg, "Set", types.NewSignatureType(objectRecv, nil, nil, types.NewTuple(v("key", stringType), v("value", anyType)), types.NewTuple(v("", objectPtr)), false)))
 	objectType.AddMethod(types.NewFunc(token.NoPos, pkg, "Spread", types.NewSignatureType(objectRecv, nil, nil, types.NewTuple(v("value", anyType)), types.NewTuple(v("", objectPtr)), false)))
@@ -445,10 +447,13 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 
 	// Translated functions (ssr_runtime/func.go).
 	funcName := types.NewTypeName(token.NoPos, pkg, "Func", nil)
-	funcSig := types.NewSignatureType(nil, nil, nil, types.NewTuple(v("args", anySlice)), types.NewTuple(v("", anyType)), true)
+	funcSig := types.NewSignatureType(nil, nil, nil, types.NewTuple(v("this", anyType), v("args", anySlice)), types.NewTuple(v("", anyType)), true)
 	funcType := types.NewNamed(funcName, funcSig, nil)
 	pkg.Scope().Insert(funcName)
 	_ = funcType
+	objectType.AddMethod(types.NewFunc(token.NoPos, pkg, "Define", types.NewSignatureType(objectRecv, nil, nil, types.NewTuple(v("key", stringType), v("value", anyType)), types.NewTuple(v("", objectPtr)), false)))
+	objectType.AddMethod(types.NewFunc(token.NoPos, pkg, "DefineGetter", types.NewSignatureType(objectRecv, nil, nil, types.NewTuple(v("key", stringType), v("get", funcType)), types.NewTuple(v("", objectPtr)), false)))
+	objectType.AddMethod(types.NewFunc(token.NoPos, pkg, "DefineSetter", types.NewSignatureType(objectRecv, nil, nil, types.NewTuple(v("key", stringType), v("set", funcType)), types.NewTuple(v("", objectPtr)), false)))
 	ssrRuntimeAddFunc(pkg, "Arg", []*types.Var{v("args", anySlice), v("i", types.Typ[types.Int])}, []*types.Var{v("", anyType)})
 	ssrRuntimeAddFunc(pkg, "PropertyKey", []*types.Var{v("key", anyType)}, []*types.Var{v("", stringType)})
 	ssrRuntimeAddFunc(pkg, "ForInKeys", []*types.Var{v("value", anyType)}, []*types.Var{v("", anySlice)})
@@ -459,6 +464,10 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	jsMethod("Catch", []*types.Var{v("ctx", contextT)}, anyType)
 	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "Call", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("fn", anyType), v("args", anySlice)), types.NewTuple(v("", anyType)), true)))
 	jsMethod("SetMember", []*types.Var{v("object", anyType), v("key", anyType), v("value", anyType), v("site", stringType)}, anyType)
+	jsMethod("SetThis", []*types.Var{v("this", anyType), v("key", anyType), v("value", anyType), v("site", stringType)}, anyType)
+	jsMethod("SetElement", []*types.Var{v("target", anyType), v("key", anyType), v("value", anyType), v("site", stringType)}, anyType)
+	jsMethod("Delete", []*types.Var{v("target", anyType), v("key", anyType), v("local", boolT), v("site", stringType)}, boolT)
+	jsMethod("LocalObject", nil, objectPtr)
 	part := types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(v("", anyType), v("", boolT)), false)
 	catchPart := types.NewSignatureType(nil, nil, nil, types.NewTuple(v("error", anyType)), types.NewTuple(v("", anyType), v("", boolT)), false)
 	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, "Try", types.NewSignatureType(nil, nil, nil, types.NewTuple(
@@ -501,13 +510,21 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "StringFromCodePoint", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("codes", anySlice)), types.NewTuple(v("", anyType)), true)))
 	jsMethod("StructuredClone", []*types.Var{v("site", stringType), v("value", anyType)}, anyType)
 	ssrRuntimeAddFunc(pkg, "Hole", nil, []*types.Var{v("", undefinedType)})
+	ssrRuntimeAddFunc(pkg, "Box", []*types.Var{v("value", anyType)}, []*types.Var{v("", anyType)})
+	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "MutateShared", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("receiver", anyType), v("name", stringType), v("args", anySlice)), types.NewTuple(v("", anyType)), true)))
 	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "Method", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("receiver", anyType), v("name", stringType), v("args", anySlice)), types.NewTuple(v("", anyType)), true)))
-	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "MutateArray", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("array", anyType), v("name", stringType), v("args", anySlice)), types.NewTuple(v("", anySlice), v("", anyType)), true)))
+	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "MutateArray", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("array", anyType), v("name", stringType), v("args", anySlice)), types.NewTuple(v("", anyType), v("", anyType)), true)))
 	jsType.AddMethod(types.NewFunc(token.NoPos, pkg, "ObjectAssign", types.NewSignatureType(jsRecv, nil, nil, types.NewTuple(v("site", stringType), v("target", anyType), v("sources", anySlice)), types.NewTuple(v("", anyType)), true)))
 	for _, name := range []string{"EncodeURIComponent", "EncodeURI", "DecodeURIComponent", "DecodeURI", "ObjectKeys", "ObjectValues", "ObjectEntries", "ObjectFromEntries", "JSONParse"} {
 		jsMethod(name, []*types.Var{v("site", stringType), v("value", anyType)}, anyType)
 	}
 	jsMethod("ObjectHasOwn", []*types.Var{v("site", stringType), v("value", anyType), v("key", anyType)}, anyType)
+	jsMethod("NewDate", []*types.Var{v("site", stringType), v("value", anyType)}, anyType)
+	jsMethod("DateParse", []*types.Var{v("site", stringType), v("text", anyType)}, floatT)
+	ssrRuntimeAddVariadicFunc(pkg, "DateUTC", []*types.Var{v("args", anySlice)}, []*types.Var{v("", floatT)})
+	jsMethod("NewCollection", []*types.Var{v("site", stringType), v("set", boolT), v("local", boolT), v("iterable", anyType)}, anyType)
+	jsMethod("MapGroupBy", []*types.Var{v("site", stringType), v("items", anyType), v("callback", anyType), v("local", boolT)}, anyType)
+	jsMethod("ObjectGroupBy", []*types.Var{v("site", stringType), v("items", anyType), v("callback", anyType)}, anyType)
 	ssrRuntimeAddFunc(pkg, "ObjectFreeze", []*types.Var{v("value", anyType)}, []*types.Var{v("", anyType)})
 	jsMethod("ObjectIsFrozen", []*types.Var{v("site", stringType), v("value", anyType)}, boolT)
 	jsMethod("ArrayFrom", []*types.Var{v("site", stringType), v("source", anyType), v("mapFn", anyType)}, anyType)

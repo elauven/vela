@@ -124,6 +124,10 @@ func ssrInlinable(function *JsFuncDecl) bool {
 		}
 		params[identName(param)] = true
 	}
+	// this belongs to the call: an inlined body would see the caller's.
+	if ssrUsesThis(result.Arg) {
+		return false
+	}
 	// A closure that reads a parameter needs the compiled function: an
 	// inlined parameter is an expression, not a variable it can capture.
 	captures := false
@@ -136,6 +140,29 @@ func ssrInlinable(function *JsFuncDecl) bool {
 		return !captures
 	})
 	return !captures
+}
+
+// shared reports a local that holds an array or object the function
+// created and copies into another variable or value: an array in it is
+// boxed (vela.Box), so that changes through any holder are seen by all.
+func (c *ssrFuncCompiler) shared(name string) bool {
+	return c.freshness != nil && c.freshness.fresh[name] && !c.freshness.unaliased[name]
+}
+
+// ssrUsesThis reports this in node outside nested non-arrow functions,
+// which have their own.
+func ssrUsesThis(node JsNode) bool {
+	uses := false
+	WalkNode(node, func(n JsNode) bool {
+		switch n.(type) {
+		case *JsThisExpr:
+			uses = true
+		case *JsFuncExpr, *JsFuncDecl:
+			return false
+		}
+		return !uses
+	})
+	return uses
 }
 
 // ssrWalkIdents visits every identifier read in a statement tree.
@@ -303,6 +330,11 @@ type ssrFuncCompiler struct {
 	// loopLabels label the loop or switch compiled next.
 	labels     []*ssrLabel
 	loopLabels []*ssrLabel
+	// arrow marks an arrow function; this is the Go expression of this in
+	// the body: the function's this parameter, the enclosing function's
+	// for an arrow, nil (undefined) outside functions.
+	arrow bool
+	this  goast.Expr
 }
 
 // ssrLabel is a JavaScript label and the Go label it lowers to. A label of
@@ -460,7 +492,9 @@ func (c *ssrFuncCompiler) absorb(b *ssrIRBuilder) {
 	}
 }
 
-// function compiles a declaration to func(ssrArgs ...any) any.
+// function compiles a declaration to func(ssrThis any, ssrArgs ...any) any.
+// An arrow function has no this of its own: its this parameter is unnamed
+// and this in its body is the enclosing function's.
 func (c *ssrFuncCompiler) function(function *JsFuncDecl) (*goast.FuncLit, error) {
 	if function.Generator {
 		return nil, c.fail("generator function %q is not admitted (§7.1)", c.name)
@@ -474,6 +508,12 @@ func (c *ssrFuncCompiler) function(function *JsFuncDecl) (*goast.FuncLit, error)
 	}
 	c.scopes = append(c.scopes, map[string]string{})
 	defer func() { c.scopes = c.scopes[:len(c.scopes)-1] }()
+	thisParam := "_"
+	if !c.arrow {
+		thisParam = "ssrThis" + strconv.Itoa(*c.next)
+		*c.next++
+		c.this = goast.NewIdent(thisParam)
+	}
 	var body []goast.Stmt
 	// An exception already pending (an earlier operand threw) is not
 	// seen by this call's catch clauses: the call does not run.
@@ -516,7 +556,10 @@ func (c *ssrFuncCompiler) function(function *JsFuncDecl) (*goast.FuncLit, error)
 	}
 	return &goast.FuncLit{
 		Type: &goast.FuncType{
-			Params:  &goast.FieldList{List: []*goast.Field{{Names: []*goast.Ident{goast.NewIdent("ssrArgs")}, Type: &goast.Ellipsis{Elt: goast.NewIdent("any")}}}},
+			Params: &goast.FieldList{List: []*goast.Field{
+				{Names: []*goast.Ident{goast.NewIdent(thisParam)}, Type: goast.NewIdent("any")},
+				{Names: []*goast.Ident{goast.NewIdent("ssrArgs")}, Type: &goast.Ellipsis{Elt: goast.NewIdent("any")}},
+			}},
 			Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("any")}}},
 		},
 		Body: &goast.BlockStmt{List: body},
@@ -626,6 +669,9 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 				if value, throws, err = c.valueOf(declarator.Init); err != nil {
 					return nil, err
 				}
+				if name := identName(declarator.Id); name != "" && c.shared(name) {
+					value = &goast.CallExpr{Fun: goSelector("vela", "Box"), Args: []goast.Expr{value}}
+				}
 			}
 			stmts, err := c.bind(declarator.Id, value)
 			if err != nil {
@@ -639,7 +685,7 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 		return out, nil
 	case *JsFuncDecl:
 		goName, _ := c.lookup(s.Name)
-		closure, err := (&ssrFuncCompiler{table: c.table, name: s.Name, scopes: c.scopes, next: c.next, ctx: c.ctx, site: c.site, deferImpure: c.deferImpure, freshness: c.freshness}).function(s)
+		closure, err := (&ssrFuncCompiler{table: c.table, name: s.Name, scopes: c.scopes, next: c.next, ctx: c.ctx, site: c.site, deferImpure: c.deferImpure, freshness: c.freshness, this: c.this}).function(s)
 		if err != nil {
 			return nil, err
 		}
@@ -747,7 +793,8 @@ func (c *ssrFuncCompiler) statement(stmt JsStmt) ([]goast.Stmt, error) {
 // closure.
 func (c *ssrFuncCompiler) valueOf(expr JsExpr) (goast.Expr, bool, error) {
 	if function := ssrFunctionOf("", expr); function != nil {
-		closure, err := (&ssrFuncCompiler{table: c.table, name: "function", scopes: c.scopes, next: c.next, ctx: c.ctx, site: c.site, deferImpure: c.deferImpure, freshness: c.freshness}).function(function)
+		_, arrow := expr.(*JsArrowFunc)
+		closure, err := (&ssrFuncCompiler{table: c.table, name: "function", scopes: c.scopes, next: c.next, ctx: c.ctx, site: c.site, deferImpure: c.deferImpure, freshness: c.freshness, arrow: arrow, this: c.this}).function(function)
 		if err != nil {
 			return nil, false, err
 		}
@@ -856,6 +903,9 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 		if err != nil {
 			return nil, err
 		}
+		if c.shared(t.Name) {
+			result = &goast.CallExpr{Fun: goSelector("vela", "Box"), Args: []goast.Expr{result}}
+		}
 		if !throws {
 			return []goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(goName)}, Tok: token.ASSIGN, Rhs: []goast.Expr{result}}}, nil
 		}
@@ -875,11 +925,15 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 			}
 			root = member.Obj
 		}
+		_, viaThis := root.(*JsThisExpr)
 		ident, ok := root.(*JsIdent)
-		if !ok {
+		if !ok && !viaThis {
 			return nil, c.fail("assignment to a member of a computed value is not supported")
 		}
-		if _, local := c.lookup(ident.Name); !local || c.freshness == nil || !c.freshness.fresh[ident.Name] {
+		if viaThis {
+			// The receiver is known only at run time: SetThis admits the
+			// write on an object a translated function created (T-6.6b).
+		} else if _, local := c.lookup(ident.Name); !local || c.freshness == nil || !c.freshness.fresh[ident.Name] {
 			return c.impure(fmt.Sprintf("assignment to a member of %q changes a value the function did not create (T-6.6a)", ident.Name))
 		}
 		object, objectThrows, err := c.expr(t.Obj)
@@ -897,11 +951,29 @@ func (c *ssrFuncCompiler) assign(target JsExpr, op string, value JsExpr) ([]goas
 		} else {
 			return nil, c.fail("member name %T is not supported", t.Prop)
 		}
-		result, resultThrows, err := c.valueOf(right)
+		var result goast.Expr
+		var resultThrows bool
+		if op == "=" && ssrFunctionOf("", right) == nil {
+			// An array stored in a property is boxed (boxStored).
+			result, resultThrows, err = c.exprWith(right, (*ssrIRBuilder).stored)
+		} else {
+			result, resultThrows, err = c.valueOf(right)
+		}
 		if err != nil {
 			return nil, err
 		}
-		set := &goast.CallExpr{Fun: goSelector("ssrJS", "SetMember"), Args: []goast.Expr{object, key, result, ssrGoString(c.site)}}
+		setter := "SetMember"
+		if viaThis {
+			setter = "SetThis"
+		}
+		if !viaThis && t.Obj == root && c.freshness.unaliased[ident.Name] {
+			// No other variable or value holds the array: an index beyond
+			// the length and a length assignment reassign the local.
+			goName, _ := c.lookup(ident.Name)
+			set := &goast.CallExpr{Fun: goSelector("ssrJS", "SetElement"), Args: []goast.Expr{object, key, result, ssrGoString(c.site)}}
+			return c.checked(&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(goName)}, Tok: token.ASSIGN, Rhs: []goast.Expr{set}}, true), nil
+		}
+		set := &goast.CallExpr{Fun: goSelector("ssrJS", setter), Args: []goast.Expr{object, key, result, ssrGoString(c.site)}}
 		_ = objectThrows || keyThrows || resultThrows
 		return c.checked(&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []goast.Expr{set}}, true), nil
 	}
@@ -1163,6 +1235,11 @@ func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+	if name := identName(s.Right); s.IsOf && name != "" && ssrChangesCollection(s.Body, name) {
+		// The loop iterates the items taken before the first iteration; in
+		// JavaScript it also visits what the body adds.
+		return nil, c.fail("the body of for…of changes %q, the array or collection it iterates, which is not supported during server rendering", name)
+	}
 	c.scopes = append(c.scopes, map[string]string{})
 	defer func() { c.scopes = c.scopes[:len(c.scopes)-1] }()
 	item := c.declare("$item")
@@ -1193,6 +1270,27 @@ func (c *ssrFuncCompiler) forOf(s *JsForInStmt) ([]goast.Stmt, error) {
 	}
 	loop := &goast.RangeStmt{Key: goast.NewIdent("_"), Value: goast.NewIdent(item), Tok: token.DEFINE, X: items, Body: &goast.BlockStmt{List: append(bind, inner...)}}
 	return []goast.Stmt{labeled(labels, loop), c.unwind()}, nil
+}
+
+// ssrCollectionChanges are the methods that add or remove items of an
+// array, a Map, or a Set.
+var ssrCollectionChanges = map[string]bool{"push": true, "pop": true, "shift": true, "unshift": true, "splice": true, "set": true, "add": true, "delete": true, "clear": true}
+
+// ssrChangesCollection reports a call name.m(…) in body that adds or
+// removes items of name.
+func ssrChangesCollection(body JsNode, name string) bool {
+	changes := false
+	WalkNode(body, func(n JsNode) bool {
+		if call, ok := n.(*JsCallExpr); ok {
+			if member, ok := call.Callee.(*JsMemberExpr); ok && !member.Computed && identName(member.Obj) == name {
+				if property, ok := member.Prop.(*JsIdent); ok && ssrCollectionChanges[property.Name] {
+					changes = true
+				}
+			}
+		}
+		return !changes
+	})
+	return changes
 }
 
 // switchStatement matches with === in order; a case body without break,
@@ -1342,6 +1440,8 @@ func lowerSSRCallFunc(n *ssrIRCallFunc) goast.Expr {
 	if n.Value != nil {
 		return &goast.CallExpr{Fun: goSelector("ssrJS", "Call"), Args: args}
 	}
+	// A plain call passes undefined as this (module code is strict).
+	args = append([]goast.Expr{ssrUndefined()}, args...)
 	if n.Callee != nil {
 		return &goast.CallExpr{Fun: n.Callee, Args: args}
 	}
@@ -1413,11 +1513,18 @@ func (b *ssrIRBuilder) valueCall(callee SSRIRExpr, call *JsCallExpr, pos int) (S
 	return &ssrIRCallFunc{ssrIRBase: b.base(pos, ssrIRFacts{}), Value: callee, Args: args, Site: b.site}, nil
 }
 
-// newError lowers new Error(m), new TypeError(m), new RangeError(m).
+// newError lowers new Error(m), new TypeError(m), new RangeError(m), and
+// new Date(value).
 func (b *ssrIRBuilder) newError(node *JsNewExpr, pos int) (SSRIRExpr, error) {
 	callee, ok := node.Callee.(*JsIdent)
+	if ok && callee.Name == "Date" && !b.shadowedGlobal("Date") {
+		return b.newDate(node, pos)
+	}
+	if ok && (callee.Name == "Map" || callee.Name == "Set") && !b.shadowedGlobal(callee.Name) {
+		return b.newCollection(callee.Name, node, pos)
+	}
 	if !ok || (callee.Name != "Error" && callee.Name != "TypeError" && callee.Name != "RangeError") {
-		return nil, ssrExprUnsupported(pos, "new is admitted only for Error, TypeError, and RangeError (§6.2)")
+		return nil, ssrExprUnsupported(pos, "new is admitted only for Error, TypeError, RangeError, Date, Map, and Set (§6.2)")
 	}
 	var message SSRIRExpr = &ssrIRUndefined{ssrIRBase: b.base(pos, ssrIRFacts{})}
 	if len(node.Args) > 0 {
@@ -1429,6 +1536,54 @@ func (b *ssrIRBuilder) newError(node *JsNewExpr, pos int) (SSRIRExpr, error) {
 	}
 	kind := &ssrIRLiteral{ssrIRBase: b.base(pos, ssrIRFacts{String: true}), Kind: token.STRING, Value: callee.Name}
 	return &ssrIRHelper{ssrIRBase: b.base(pos, ssrIRFacts{Object: true}), Name: "NewError", Args: []SSRIRExpr{kind, message}}, nil
+}
+
+// newDate lowers new Date(value) (T-6.6e). new Date() reads the clock and
+// new Date(y, m, …) reads local time: both keep the host route.
+func (b *ssrIRBuilder) newDate(node *JsNewExpr, pos int) (SSRIRExpr, error) {
+	switch {
+	case !b.js:
+		return nil, ssrExprUnsupported(pos, "new Date is available only in translated script code")
+	case len(node.Args) == 0:
+		return nil, ssrExprUnsupported(pos, "new Date() reads the clock (T-6.6c); pass the time as a prop or compute it in a host")
+	case len(node.Args) > 1:
+		return nil, ssrExprUnsupported(pos, "new Date(year, month, …) is local time, which differs between the server and the browser; use new Date(Date.UTC(year, month, …))")
+	}
+	if _, spread := node.Args[0].(*JsSpreadExpr); spread {
+		return nil, ssrExprUnsupported(pos, "spread arguments to new Date are not supported")
+	}
+	value, err := b.build(node.Args[0], pos)
+	if err != nil {
+		return nil, err
+	}
+	b.usedJS, b.throws = true, true
+	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "NewDate"), Args: []goast.Expr{ssrGoString(b.site), lowerSSRIR(value)}}}, nil
+}
+
+// newCollection lowers new Map(iterable) and new Set(iterable) (T-6.6f). A
+// collection a translated function creates may change (T-6.6b).
+func (b *ssrIRBuilder) newCollection(kind string, node *JsNewExpr, pos int) (SSRIRExpr, error) {
+	if !b.js {
+		return nil, ssrExprUnsupported(pos, "new %s is available only in translated script code", kind)
+	}
+	if len(node.Args) > 1 {
+		return nil, ssrExprUnsupported(pos, "new %s takes one iterable", kind)
+	}
+	var iterable goast.Expr = ssrUndefined()
+	if len(node.Args) == 1 {
+		if _, spread := node.Args[0].(*JsSpreadExpr); spread {
+			return nil, ssrExprUnsupported(pos, "spread arguments to new %s are not supported", kind)
+		}
+		value, err := b.iterable(node.Args[0], pos)
+		if err != nil {
+			return nil, err
+		}
+		iterable = lowerSSRIR(value)
+	}
+	b.usedJS, b.throws = true, true
+	set := goast.NewIdent(strconv.FormatBool(kind == "Set"))
+	local := goast.NewIdent(strconv.FormatBool(b.funcCompiler != nil))
+	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("ssrJS", "NewCollection"), Args: []goast.Expr{ssrGoString(b.site), set, local, iterable}}}, nil
 }
 
 var _ = fmt.Sprintf
@@ -1465,7 +1620,7 @@ func (b *ssrIRBuilder) functionValue(expr JsExpr, pos int) (SSRIRExpr, error) {
 	switch {
 	case b.funcCompiler != nil:
 		parent := b.funcCompiler
-		c = &ssrFuncCompiler{table: parent.table, name: "function", scopes: parent.scopes, next: parent.next, ctx: parent.ctx, site: parent.site, deferImpure: parent.deferImpure, freshness: parent.freshness}
+		c = &ssrFuncCompiler{table: parent.table, name: "function", scopes: parent.scopes, next: parent.next, ctx: parent.ctx, site: parent.site, deferImpure: parent.deferImpure, freshness: parent.freshness, this: parent.this}
 	case b.ctx.funcs != nil && b.js:
 		ctx := b.ctx
 		ctx.resolving, ctx.resolvingFunctions = nil, nil
@@ -1473,6 +1628,7 @@ func (b *ssrIRBuilder) functionValue(expr JsExpr, pos int) (SSRIRExpr, error) {
 	default:
 		return nil, ssrExprUnsupported(pos, "arrow functions are not available to static SSR")
 	}
+	_, c.arrow = expr.(*JsArrowFunc)
 	literal, err := c.function(ssrFunctionOf("", expr))
 	if err != nil {
 		return nil, err

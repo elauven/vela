@@ -45,7 +45,7 @@ func (UndefinedValue) MarshalJSON() ([]byte, error) { return []byte("null"), nil
 // callback calls fn with (item, index, array); ok is false when the call
 // threw.
 func (js *JS) callback(fn Func, item any, index int, array []any) (any, bool) {
-	result := fn(unhole(item), float64(index), array)
+	result := fn(Undefined(), unhole(item), float64(index), array)
 	return result, !js.Failed()
 }
 
@@ -245,7 +245,7 @@ func (js *JS) arrayMethod(site string, a []any, name string, args []any) (result
 			accumulator, order = a[order[0]], order[1:]
 		}
 		for _, i := range order {
-			accumulator = fn(accumulator, a[i], float64(i), a)
+			accumulator = fn(Undefined(), accumulator, a[i], float64(i), a)
 			if js.Failed() {
 				return Undefined(), nil, true
 			}
@@ -408,7 +408,7 @@ func (js *JS) sortArray(site string, a []any, comparator any) []any {
 			if js.Failed() {
 				return false
 			}
-			n := ToNumber(jsValue(fn(x, y)))
+			n := ToNumber(jsValue(fn(Undefined(), x, y)))
 			return n < 0
 		}
 		return StringLess(String(jsValue(x)), String(jsValue(y)))
