@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/elauven/vela/runtime"
+
 	"crypto/md5"
 	_ "embed"
 	"flag"
@@ -12,15 +14,6 @@ import (
 	"sync"
 	"time"
 )
-
-//go:embed runtime/runtime.js
-var embeddedRuntime []byte
-
-//go:embed runtime/runtime-blocks.js
-var embeddedBlocksRuntime []byte
-
-//go:embed runtime/runtime-hydrate.js
-var embeddedHydrateRuntime []byte
 
 // stageRuntime writes the compiler canonical runtime into outDir. Project
 // builds write it once at the output root, and every generated module imports
@@ -34,7 +27,7 @@ func stageRuntime(outDir string, opts CompileOptions) error {
 	if err := os.WriteFile(filepath.Join(outDir, "runtime.js"), runtimeSource(opts.Production), 0o644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(outDir, "runtime-blocks.js"), embeddedBlocksRuntime, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(outDir, "runtime-blocks.js"), runtime.Blocks, 0o644); err != nil {
 		return err
 	}
 	// hydrate() of the block engine; a page imports it only to hydrate server
@@ -42,17 +35,12 @@ func stageRuntime(outDir string, opts CompileOptions) error {
 	return os.WriteFile(filepath.Join(outDir, "runtime-hydrate.js"), hydrateRuntimeSource(opts.HydrationVerify), 0o644)
 }
 
-// runtimeDevelopmentFlag is the core runtime's development switch. The
-// production variant replaces it with a constant so warnings and other
-// development-only paths are disabled.
-const runtimeDevelopmentFlag = "const DEV = typeof process !== 'undefined'\n  ? process.env.NODE_ENV !== 'production'\n  : !globalThis.__VELA_PROD__;"
-
 // runtimeSource returns the core runtime for the build mode.
 func runtimeSource(production bool) []byte {
 	if !production {
-		return embeddedRuntime
+		return runtime.Core
 	}
-	return []byte(strings.Replace(string(embeddedRuntime), runtimeDevelopmentFlag, "const DEV = false;", 1))
+	return []byte(strings.Replace(string(runtime.Core), runtime.DevelopmentFlag, "const DEV = false;", 1))
 }
 
 // CompileOptions controls code generation behaviour.
@@ -125,13 +113,13 @@ func main() {
 	ssrScaffold := flag.Bool("ssr-scaffold-hosts", false, "with --ssr, create Go stubs in the host tree for functions that need a host implementation; existing files are never changed")
 	hydrationVerify := flag.String("hydration-verify", "", "development hydration value verification: repair (default), fail, or off")
 	mode := flag.String("mode", "development", "build mode: 'development' (default) or 'production'")
-	runtimeImport := flag.String("runtime-import", "relative", "runtime imports of generated modules: 'relative' (default; the runtime is written beside the output) or 'bare' (import "+RuntimePackageName+", installed by the application, for bundlers)")
+	runtimeImport := flag.String("runtime-import", "relative", "runtime imports of generated modules: 'relative' (default; the runtime is written beside the output) or 'bare' (import "+runtime.PackageName+", installed by the application, for bundlers)")
 	checkDeps := flag.Bool("check-deps", false, "warn when a package import does not resolve in node_modules (the compiler never resolves or bundles packages)")
 	showVersion := flag.Bool("version", false, "print the compiler version")
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println("vela " + Version)
+		fmt.Println("vela " + runtime.Version)
 		return
 	}
 	switch *runtimeImport {
@@ -194,7 +182,7 @@ func main() {
 		CheckDeps:               *checkDeps,
 	}
 	if opts.BareRuntimeImports {
-		opts.RuntimeImport = RuntimePackageName
+		opts.RuntimeImport = runtime.PackageName
 	}
 	if closeTrace, traceErr := configureTrace(&opts, *tracePath); traceErr != nil {
 		fmt.Fprintf(os.Stderr, "vela: %v\n", traceErr)
@@ -986,7 +974,7 @@ func collectVela(root string) []string {
 // the runtime staged at outRoot.
 func runtimeSpecifier(opts CompileOptions, dir, outRoot string) string {
 	if opts.BareRuntimeImports {
-		return RuntimePackageName
+		return runtime.PackageName
 	}
 	return runtimeImportFor(dir, outRoot)
 }
@@ -1068,7 +1056,7 @@ func componentName(path string) string {
 // development verification policy (V-11.3c).
 func hydrateRuntimeSource(verify string) []byte {
 	if verify == "" || verify == "repair" {
-		return embeddedHydrateRuntime
+		return runtime.Hydrate
 	}
-	return []byte(strings.Replace(string(embeddedHydrateRuntime), "const VERIFY = 'repair';", "const VERIFY = '"+verify+"';", 1))
+	return []byte(strings.Replace(string(runtime.Hydrate), "const VERIFY = 'repair';", "const VERIFY = '"+verify+"';", 1))
 }

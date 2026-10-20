@@ -28,7 +28,7 @@ jobs:
           want="${GITHUB_REF_NAME#v}"
           got=$(GOWORK=off go run . --version | cut -d' ' -f2)
           if [ "$got" != "$want" ]; then
-            echo "tag $GITHUB_REF_NAME, but Version in runtime_package.go is $got" >&2
+            echo "tag $GITHUB_REF_NAME, but Version in runtime/embed.go is $got" >&2
             exit 1
           fi
 

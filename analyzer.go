@@ -983,3 +983,13 @@ func (a *Analysis) isStateName(name string) bool {
 	}
 	return false
 }
+
+// velaCompilerIntrinsics is the set of names that look like imports
+// from 'vela' but are actually compiler intrinsics — extracted at
+// analysis time and wired directly into generated code.  An import
+// statement that mentions one of these must not pass the name
+// through to the runtime module.
+var velaCompilerIntrinsics = map[string]bool{
+	"onMount":   true,
+	"onDestroy": true,
+}

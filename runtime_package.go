@@ -6,6 +6,8 @@ package main
 // --runtime-import=bare; the compiler never resolves or bundles it.
 
 import (
+	"github.com/elauven/vela/runtime"
+
 	_ "embed"
 	"encoding/json"
 	"strings"
@@ -16,23 +18,8 @@ import (
 //go:embed LICENSE
 var licenseText []byte
 
-// Version is the compiler version. The runtime npm package and the Go
-// runtime module are released with the same version (docs/RELEASING.md).
-const Version = "0.4.1"
-
-// RuntimePackageName is the npm package of the JavaScript runtime.
-const RuntimePackageName = "@govela/runtime"
-
 // runtimePackageDir is where the generated package lives in the repository.
 const runtimePackageDir = "packages/runtime"
-
-// runtimePackageSpecifiers maps the staged runtime files to the package
-// exports that generated code imports with --runtime-import=bare.
-var runtimePackageSpecifiers = map[string]string{
-	"runtime.js":         RuntimePackageName,
-	"runtime-blocks.js":  RuntimePackageName + "/blocks",
-	"runtime-hydrate.js": RuntimePackageName + "/hydrate",
-}
 
 // bundlerDevelopmentFlag replaces runtimeDevelopmentFlag in the package. A
 // bundler replaces process.env.NODE_ENV with a string, so the check becomes a
@@ -42,11 +29,11 @@ const bundlerDevelopmentFlag = "const DEV = process.env.NODE_ENV !== 'production
 
 // runtimePackageFiles returns the files of packages/runtime.
 func runtimePackageFiles() (map[string][]byte, error) {
-	core := string(embeddedRuntime)
-	if !strings.Contains(core, runtimeDevelopmentFlag) {
+	core := string(runtime.Core)
+	if !strings.Contains(core, runtime.DevelopmentFlag) {
 		panic("vela: runtime.js no longer contains the development flag")
 	}
-	core = strings.Replace(core, runtimeDevelopmentFlag, bundlerDevelopmentFlag, 1)
+	core = strings.Replace(core, runtime.DevelopmentFlag, bundlerDevelopmentFlag, 1)
 	// The core runtime registers shared state on globalThis when it is
 	// evaluated; the block and hydration modules have no import effects.
 	manifest := struct {
@@ -59,8 +46,8 @@ func runtimePackageFiles() (map[string][]byte, error) {
 		Exports     map[string]string `json:"exports"`
 		Files       []string          `json:"files"`
 	}{
-		Name:        RuntimePackageName,
-		Version:     Version,
+		Name:        runtime.PackageName,
+		Version:     runtime.Version,
 		Description: "Runtime of components compiled by the Vela compiler. Generated from runtime/; do not edit.",
 		License:     "MIT",
 		Type:        "module",
@@ -76,11 +63,11 @@ func runtimePackageFiles() (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	readme := "# " + RuntimePackageName + "\n\n" +
+	readme := "# " + runtime.PackageName + "\n\n" +
 		"Runtime of components compiled by the Vela compiler, for applications that\n" +
 		"bundle their client (esbuild, Vite, Rollup).\n\n" +
 		"Compile with `vela --runtime-import=bare` so generated modules import\n" +
-		"`" + RuntimePackageName + "`, `" + RuntimePackageName + "/blocks` and `" + RuntimePackageName + "/hydrate` instead of\n" +
+		"`" + runtime.PackageName + "`, `" + runtime.PackageName + "/blocks` and `" + runtime.PackageName + "/hydrate` instead of\n" +
 		"copies next to the output. The package version must equal the compiler\n" +
 		"version; a mismatch fails when the bundler links the modules\n" +
 		"(missing `$$runtimeContract…` export).\n\n" +
@@ -94,7 +81,7 @@ func runtimePackageFiles() (map[string][]byte, error) {
 		"README.md":          []byte(readme),
 		"LICENSE":            licenseText,
 		"runtime.js":         []byte(core),
-		"runtime-blocks.js":  embeddedBlocksRuntime,
-		"runtime-hydrate.js": embeddedHydrateRuntime,
+		"runtime-blocks.js":  runtime.Blocks,
+		"runtime-hydrate.js": runtime.Hydrate,
 	}, nil
 }

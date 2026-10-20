@@ -22,7 +22,7 @@ compiler the runtime path appears only in `SSRRuntimeImportPath`.
 
 1. All suites pass, including the strict browser baseline:
    `go test ./... ./ssr_runtime/...` and `node tools/run-ssr-browser-baseline.mjs`.
-2. Set `Version` in `runtime_package.go` to `X.Y.Z` and regenerate the npm
+2. Set `Version` in `runtime/embed.go` to `X.Y.Z` and regenerate the npm
    package: `VELA_UPDATE_RUNTIME_PACKAGE=1 go test -run TestRuntimePackageIsGenerated .`.
 3. If generated code started to depend on a new or changed runtime API since
    the last release, the contract marker changed (`ssr_runtime/contract.go`

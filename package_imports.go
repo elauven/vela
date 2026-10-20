@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/elauven/vela/runtime"
+
 	"path/filepath"
 	"sort"
 	"strings"
@@ -76,7 +78,7 @@ func programPackageImports(prog *JsProgram) []string {
 	seen := map[string]bool{}
 	var specs []string
 	add := func(spec string) {
-		if isPackageSpecifier(spec) && packageName(spec) != RuntimePackageName && !seen[spec] {
+		if isPackageSpecifier(spec) && packageName(spec) != runtime.PackageName && !seen[spec] {
 			seen[spec] = true
 			specs = append(specs, spec)
 		}

@@ -26,6 +26,8 @@ package main
 // translation to file coordinates via PushOffset.
 
 import (
+	"github.com/elauven/vela/runtime"
+
 	"fmt"
 	"sort"
 	"strings"
@@ -214,7 +216,7 @@ func velaModuleExports() map[string]bool {
 	for name := range velaCompilerIntrinsics {
 		names[name] = true
 	}
-	for name := range runtimeExportNames(embeddedRuntime) {
+	for name := range runtimeExportNames(runtime.Core) {
 		if !strings.HasPrefix(name, "$") {
 			names[name] = true
 		}

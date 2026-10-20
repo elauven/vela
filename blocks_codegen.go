@@ -17,6 +17,8 @@ package main
 // nested fragments that read them update too.
 
 import (
+	"github.com/elauven/vela/runtime"
+
 	"fmt"
 	"sort"
 	"strings"
@@ -27,7 +29,7 @@ import (
 const blocksRuntimeImport = "./runtime-blocks.js"
 
 // blocksRuntimeExports lists the helpers exported by runtime-blocks.js.
-var blocksRuntimeExports = runtimeExportNames(embeddedBlocksRuntime)
+var blocksRuntimeExports = runtimeExportNames(runtime.Blocks)
 
 // blocksState is the per-component state of the block lowering.
 type blocksState struct {
@@ -111,11 +113,11 @@ func blocksDirtyTest(names map[string]bool) JsExpr {
 	sort.Strings(sorted)
 	var test JsExpr
 	for _, name := range sorted {
-		check := JsExpr(genMember(id("$$d"), name))
+		check := JsExpr(GenMember(GenIdent("$$d"), name))
 		if test == nil {
 			test = check
 		} else {
-			test = genLogical("||", test, check)
+			test = GenLogical("||", test, check)
 		}
 	}
 	return test
@@ -124,13 +126,13 @@ func blocksDirtyTest(names map[string]bool) JsExpr {
 // blocksChanged wraps a guard into a `($$d) => …` predicate for a block.
 func blocksChanged(test JsExpr) JsExpr {
 	if test == nil {
-		return genNull()
+		return GenNull()
 	}
-	return &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$d")}, Body: test}
+	return &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: GenNode()}, Params: []JsExpr{GenIdent("$$d")}, Body: test}
 }
 
 func blocksArrow(params []JsExpr, body JsNode) *JsArrowFunc {
-	return &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: params, Body: body}
+	return &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: GenNode()}, Params: params, Body: body}
 }
 
 // blocksUpdate registers an update statement of the current fragment.
@@ -138,13 +140,13 @@ func (g *ASTGen) blocksUpdate(test JsExpr, stmt JsStmt) {
 	if test == nil {
 		return
 	}
-	g.blocks.frag.updates = append(g.blocks.frag.updates, genIf(test, stmt))
+	g.blocks.frag.updates = append(g.blocks.frag.updates, GenIf(test, stmt))
 }
 
 // blocksInit runs an initial DOM write through the cursor (F-2.2) and
 // re-runs it when the expression's inputs change.
 func (g *ASTGen) blocksInitAndUpdate(stmt JsStmt, exprs ...*TemplateExpr) []JsStmt {
-	init := genExprStmt(genCall(genMember(id("$$c"), "init"), blocksArrow(nil, genBlock(stmt))))
+	init := GenExprStmt(GenCall(GenMember(GenIdent("$$c"), "init"), blocksArrow(nil, GenBlock(stmt))))
 	g.blocksUpdate(g.blocksGuard(exprs...), stmt)
 	if len(exprs) > 0 {
 		if at := g.blocksSiteStmt(exprs[0]); at != nil {
@@ -168,7 +170,7 @@ func (g *ASTGen) buildBlocksView(nodes []Node) {
 	// Multiple roots, a structural root or a text root get a
 	// display:contents wrapper (B-3.8); the runtime
 	// creates or adopts it ($$mountComponent).
-	g.body = append(g.body, genLet("$$root", genNull()))
+	g.body = append(g.body, GenLet("$$root", GenNull()))
 	// A single root element is assigned to $$root by the root fragment.
 	g.blocks.assignRoot = rootIsElement
 	root := g.buildBlocksFragment(nodes, nil)
@@ -176,11 +178,11 @@ func (g *ASTGen) buildBlocksView(nodes []Node) {
 
 	// One structural flush entry runs the view for every reactive name the
 	// template reads.
-	update := &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: "$$viewUpdate", Body: genBlock(
-		genIf(genUnary("!", id("$$view")), genReturn(nil)),
-		genConst("$$d", id("$$dirty")),
-		genAssignStmt(id("$$dirty"), genCall(genMember(id("Object"), "create"), genNull())),
-		genExprStmt(genCall(genMember(id("$$view"), "p"), id("$$d"))),
+	update := &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: GenNode()}, Name: "$$viewUpdate", Body: GenBlock(
+		GenIf(GenUnary("!", GenIdent("$$view")), GenReturn(nil)),
+		GenConst("$$d", GenIdent("$$dirty")),
+		GenAssignStmt(GenIdent("$$dirty"), GenCall(GenMember(GenIdent("Object"), "create"), GenNull())),
+		GenExprStmt(GenCall(GenMember(GenIdent("$$view"), "p"), GenIdent("$$d"))),
 	)}
 	g.body = append(g.body, update)
 	deps := make([]string, 0, len(g.blocks.deps))
@@ -188,19 +190,19 @@ func (g *ASTGen) buildBlocksView(nodes []Node) {
 		deps = append(deps, dep)
 	}
 	sort.Strings(deps)
-	call := genInvoke("$$viewUpdate")
+	call := GenInvoke("$$viewUpdate")
 	for _, dep := range deps {
 		g.addStructuralUpdate(dep, call)
 	}
 
-	wrapper := JsExpr(genNull())
+	wrapper := JsExpr(GenNull())
 	if !rootIsElement {
-		wrapper = strLit(g.elementScope)
+		wrapper = GenStrLit(g.elementScope)
 	}
-	setRoot := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$el")}, Body: genBlock(genAssignStmt(id("$$root"), id("$$el")))}
-	getRoot := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: id("$$root")}
-	g.initBody = append(g.initBody, genAssignStmt(id("$$view"), genCall(id("$$mountComponent"), id("$$target"), id(rootFragmentName), wrapper, setRoot, getRoot)))
-	g.cleanup = append(g.cleanup, genIf(id("$$view"), genExprStmt(genCall(genMember(id("$$view"), "release")))))
+	setRoot := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: GenNode()}, Params: []JsExpr{GenIdent("$$el")}, Body: GenBlock(GenAssignStmt(GenIdent("$$root"), GenIdent("$$el")))}
+	getRoot := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: GenNode()}, Body: GenIdent("$$root")}
+	g.initBody = append(g.initBody, GenAssignStmt(GenIdent("$$view"), GenCall(GenIdent("$$mountComponent"), GenIdent("$$target"), GenIdent(rootFragmentName), wrapper, setRoot, getRoot)))
+	g.cleanup = append(g.cleanup, GenIf(GenIdent("$$view"), GenExprStmt(GenCall(GenMember(GenIdent("$$view"), "release")))))
 }
 
 const rootFragmentName = "$$f_root"
@@ -219,7 +221,7 @@ func (g *ASTGen) buildBlocksFragment(nodes []Node, scopeLocals []blocksLocal) Js
 	g.blocks.frag = frag
 	for _, local := range scopeLocals {
 		g.blocks.locals = append(g.blocks.locals, local)
-		frag.scope = append(frag.scope, genLet(local.name, genMember(id("$$s"), local.source)))
+		frag.scope = append(frag.scope, GenLet(local.name, GenMember(GenIdent("$$s"), local.source)))
 		if local.mutable {
 			frag.locals = append(frag.locals, local.name)
 		}
@@ -232,13 +234,13 @@ func (g *ASTGen) buildBlocksFragment(nodes []Node, scopeLocals []blocksLocal) Js
 
 // decl prints the fragment as a function declaration.
 func (f *blocksFragment) decl(scopeLocals []blocksLocal) JsStmt {
-	params := []JsExpr{id("$$c")}
+	params := []JsExpr{GenIdent("$$c")}
 	if f.scoped {
-		params = append(params, id("$$s"))
+		params = append(params, GenIdent("$$s"))
 	}
 	body := append([]JsStmt{}, f.scope...)
 	if f.live {
-		body = append(body, genConst("$$live", genNew(id("Set"))))
+		body = append(body, GenConst("$$live", GenNew(GenIdent("Set"))))
 	}
 	body = append(body, f.nested...)
 	body = append(body, f.body...)
@@ -246,31 +248,31 @@ func (f *blocksFragment) decl(scopeLocals []blocksLocal) JsStmt {
 		var update []JsStmt
 		if len(f.locals) > 0 {
 			refresh := []JsStmt{}
-			marks := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
+			marks := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}}
 			for _, local := range scopeLocals {
 				if !local.mutable {
 					continue
 				}
-				refresh = append(refresh, genAssignStmt(id(local.name), genMember(id("$$s"), local.source)))
-				marks.Props = append(marks.Props, &JsProp{BaseNode: genNode(), Key: id(local.name), Value: boolLit(true)})
+				refresh = append(refresh, GenAssignStmt(GenIdent(local.name), GenMember(GenIdent("$$s"), local.source)))
+				marks.Props = append(marks.Props, &JsProp{BaseNode: GenNode(), Key: GenIdent(local.name), Value: GenBoolLit(true)})
 			}
-			refresh = append(refresh, genAssignStmt(id("$$d"), genCall(genMember(id("Object"), "assign"),
-				genCall(genMember(id("Object"), "create"), genNull()), id("$$d"), marks)))
-			update = append(update, genIf(id("$$sc"), genBlock(refresh...)))
+			refresh = append(refresh, GenAssignStmt(GenIdent("$$d"), GenCall(GenMember(GenIdent("Object"), "assign"),
+				GenCall(GenMember(GenIdent("Object"), "create"), GenNull()), GenIdent("$$d"), marks)))
+			update = append(update, GenIf(GenIdent("$$sc"), GenBlock(refresh...)))
 		}
 		update = append(update, f.updates...)
 		if f.live {
 			// Slot content built here lives inside a child component but is
 			// updated with this fragment's dirty state (B-3.7).
-			update = append(update, genForOf("$$h", id("$$live"), genBlock(genExprStmt(genCall(genMember(id("$$h"), "p"), id("$$d"))))))
+			update = append(update, GenForOf("$$h", GenIdent("$$live"), GenBlock(GenExprStmt(GenCall(GenMember(GenIdent("$$h"), "p"), GenIdent("$$d"))))))
 		}
 		method := &JsProp{
-			BaseNode: genNode(), Kind: "init", Method: true, Key: id("p"),
-			Value: &JsFuncExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$d"), id("$$sc")}, Body: genBlock(update...)},
+			BaseNode: GenNode(), Kind: "init", Method: true, Key: GenIdent("p"),
+			Value: &JsFuncExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Params: []JsExpr{GenIdent("$$d"), GenIdent("$$sc")}, Body: GenBlock(update...)},
 		}
-		body = append(body, genReturn(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Props: []*JsProp{method}}))
+		body = append(body, GenReturn(&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Props: []*JsProp{method}}))
 	}
-	return &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Name: f.name, Params: params, Body: genBlock(body...)}
+	return &JsFuncDecl{BaseStmt: BaseStmt{BaseNode: GenNode()}, Name: f.name, Params: params, Body: GenBlock(body...)}
 }
 
 // buildBlocksChildren lowers a child list: an all-static list with an
@@ -332,8 +334,8 @@ func isElementNode(node Node) bool {
 // blocksStatic clones a module-level template holding static nodes.
 func (g *ASTGen) blocksStatic(nodes []Node) {
 	name := "$$tpl_" + g.name + "_" + itoa(len(g.blocks.templates))
-	g.blocks.templates = append(g.blocks.templates, genConst(name, genCall(id("$$template"), strLit(emitStaticHTML(nodes, g.elementScope)))))
-	g.blocksEmit(genExprStmt(genCall(genMember(id("$$c"), "static"), id(name))))
+	g.blocks.templates = append(g.blocks.templates, GenConst(name, GenCall(GenIdent("$$template"), GenStrLit(emitStaticHTML(nodes, g.elementScope)))))
+	g.blocksEmit(GenExprStmt(GenCall(GenMember(GenIdent("$$c"), "static"), GenIdent(name))))
 }
 
 func (g *ASTGen) buildBlocksNode(node Node, isRoot bool) {
@@ -370,7 +372,7 @@ func (g *ASTGen) buildBlocksText(text *TextNode) {
 		for _, part := range text.Parts {
 			value += part.Value
 		}
-		g.blocksEmit(genExprStmt(genCall(genMember(id("$$c"), "text"), strLit(value))))
+		g.blocksEmit(GenExprStmt(GenCall(GenMember(GenIdent("$$c"), "text"), GenStrLit(value))))
 		return
 	}
 	for _, part := range text.Parts {
@@ -379,7 +381,7 @@ func (g *ASTGen) buildBlocksText(text *TextNode) {
 			break
 		}
 	}
-	g.blocksEmit(genConst(ref, genCall(genMember(id("$$c"), "text"), g.textValueExpr(text.Parts))))
+	g.blocksEmit(GenConst(ref, GenCall(GenMember(GenIdent("$$c"), "text"), g.textValueExpr(text.Parts))))
 	var exprs []*TemplateExpr
 	for _, part := range text.Parts {
 		if !part.Static {
@@ -391,19 +393,19 @@ func (g *ASTGen) buildBlocksText(text *TextNode) {
 
 func (g *ASTGen) buildBlocksElement(el *ElementNode, isRoot bool) {
 	ref := g.blocks.next("$$e")
-	attrs := genArray()
+	attrs := GenArray()
 	if g.elementScope != "" {
-		attrs = genArray(strLit(g.elementScope), strLit(""))
+		attrs = GenArray(GenStrLit(g.elementScope), GenStrLit(""))
 	}
 	for _, attr := range el.Attrs {
 		if attr.IsEvent || attr.IsTwoWay || attr.IsBind || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
 			continue
 		}
-		attrs.Elems = append(attrs.Elems, strLit(attr.Name), strLit(attr.Value))
+		attrs.Elems = append(attrs.Elems, GenStrLit(attr.Name), GenStrLit(attr.Value))
 	}
-	g.blocksEmit(genConst(ref, genCall(genMember(id("$$c"), "element"), strLit(el.Tag), attrs)))
+	g.blocksEmit(GenConst(ref, GenCall(GenMember(GenIdent("$$c"), "element"), GenStrLit(el.Tag), attrs)))
 	if isRoot {
-		g.blocksEmit(genAssignStmt(id("$$root"), id(ref)))
+		g.blocksEmit(GenAssignStmt(GenIdent("$$root"), GenIdent(ref)))
 	}
 
 	// Listeners first; DOM writes after the children exist, so a select's
@@ -428,10 +430,10 @@ func (g *ASTGen) buildBlocksElement(el *ElementNode, isRoot bool) {
 		if prop, ok := rawTextProp(el.Tag); ok {
 			if _, ok := singleInterpolation(el.Children); ok {
 				expr := el.Children[0].(*TextNode).Parts[0].Expr
-				write := genAssignStmt(genMember(id(ref), prop), genString(g.templateExpr(expr)))
+				write := GenAssignStmt(GenMember(GenIdent(ref), prop), GenString(g.templateExpr(expr)))
 				writes = append(writes, g.blocksInitAndUpdate(write, expr)...)
 			} else if text, ok := staticRawText(el.Children); ok {
-				g.blocksEmit(genAssignStmt(genMember(id(ref), prop), strLit(text)))
+				g.blocksEmit(GenAssignStmt(GenMember(GenIdent(ref), prop), GenStrLit(text)))
 			} else if text, ok := el.Children[0].(*TextNode); ok && len(el.Children) == 1 {
 				// Static text with interpolations: the property gets the whole
 				// text, as the server writes it.
@@ -441,31 +443,31 @@ func (g *ASTGen) buildBlocksElement(el *ElementNode, isRoot bool) {
 						exprs = append(exprs, part.Expr)
 					}
 				}
-				write := genAssignStmt(genMember(id(ref), prop), g.textValueExpr(text.Parts))
+				write := GenAssignStmt(GenMember(GenIdent(ref), prop), g.textValueExpr(text.Parts))
 				writes = append(writes, g.blocksInitAndUpdate(write, exprs...)...)
 			}
 		} else {
-			g.blocksEmit(genExprStmt(genCall(genMember(id("$$c"), "enter"), id(ref))))
+			g.blocksEmit(GenExprStmt(GenCall(GenMember(GenIdent("$$c"), "enter"), GenIdent(ref))))
 			g.buildBlocksChildren(el.Children, false)
-			g.blocksEmit(genExprStmt(genCall(genMember(id("$$c"), "exit"))))
+			g.blocksEmit(GenExprStmt(GenCall(GenMember(GenIdent("$$c"), "exit"))))
 		}
 	}
 	g.blocksEmit(writes...)
 }
 
 func (g *ASTGen) blocksListen(ref, event string, handler JsExpr) JsStmt {
-	return genExprStmt(genCall(genMember(id("$$c"), "listen"), id(ref), strLit(event), handler))
+	return GenExprStmt(GenCall(GenMember(GenIdent("$$c"), "listen"), GenIdent(ref), GenStrLit(event), handler))
 }
 
 func (g *ASTGen) blocksEventHandler(attr *Attr) JsExpr {
 	handler := g.eventHandlerExpr(attr)
 	if handler == nil {
-		return id("undefined")
+		return GenIdent("undefined")
 	}
 	if _, isIdent := templateExprIdent(attr.Expr); isIdent || templateExprIsHandler(attr.Expr) {
 		return handler
 	}
-	return blocksArrow([]JsExpr{id("$event")}, genBlock(genExprStmt(handler)))
+	return blocksArrow([]JsExpr{GenIdent("$event")}, GenBlock(GenExprStmt(handler)))
 }
 
 // blocksBinding lowers bind:value / bind:checked and one-way :attr writes.
@@ -473,13 +475,13 @@ func (g *ASTGen) blocksBinding(ref, tag string, attr *Attr) []JsStmt {
 	spec, ok := twoWayBindSpec(tag, attr.Name)
 	sv, isIdent := templateExprIdent(attr.Expr)
 	if attr.IsTwoWay && ok && isIdent && g.hasReactiveSetter(sv) {
-		handler := blocksArrow([]JsExpr{id("$e")}, twoWaySetterFromEvent("$$set_"+sv, tag == "select" && attr.Name == "value", spec.readProp))
+		handler := blocksArrow([]JsExpr{GenIdent("$e")}, twoWaySetterFromEvent("$$set_"+sv, tag == "select" && attr.Name == "value", spec.readProp))
 		g.blocksEmit(g.blocksListen(ref, spec.event, handler))
 		if tag != "select" && (attr.Name == "value" || attr.Name == "checked") {
 			// Hydration adopts a value the user entered before it (C-4.5).
 			read := blocksArrow(nil, g.templateExpr(attr.Expr))
-			write := blocksArrow([]JsExpr{id("$$v")}, genCall(id("$$set_"+sv), id("$$v")))
-			g.blocksEmit(genExprStmt(genCall(genMember(id("$$c"), "adopt"), id(ref), strLit(attr.Name), read, write)))
+			write := blocksArrow([]JsExpr{GenIdent("$$v")}, GenCall(GenIdent("$$set_"+sv), GenIdent("$$v")))
+			g.blocksEmit(GenExprStmt(GenCall(GenMember(GenIdent("$$c"), "adopt"), GenIdent(ref), GenStrLit(attr.Name), read, write)))
 		}
 	}
 	write := g.attrWriteStmt(ref, attr)
@@ -494,19 +496,19 @@ func (g *ASTGen) blocksBinding(ref, tag string, attr *Attr) []JsStmt {
 func (g *ASTGen) blocksBindingWrite(ref string, attr *Attr, multipleAware bool) JsStmt {
 	value := g.templateExpr(attr.Expr)
 	if attr.Name == "checked" {
-		value = genBool(value)
+		value = GenBool(value)
 	}
-	target := genMember(id(ref), attr.Name)
+	target := GenMember(GenIdent(ref), attr.Name)
 	if multipleAware && attr.Name == "value" {
-		return genBlock(
-			genConst("$$v", value),
-			genIf(genMember(id(ref), "multiple"), genExprStmt(genCall(id("$$writeSelectValues"), id(ref), id("$$v")))),
-			genIf(genUnary("!", genMember(id(ref), "multiple")), genIf(genBinary("!==", target, id("$$v")), genAssignStmt(target, id("$$v")))),
+		return GenBlock(
+			GenConst("$$v", value),
+			GenIf(GenMember(GenIdent(ref), "multiple"), GenExprStmt(GenCall(GenIdent("$$writeSelectValues"), GenIdent(ref), GenIdent("$$v")))),
+			GenIf(GenUnary("!", GenMember(GenIdent(ref), "multiple")), GenIf(GenBinary("!==", target, GenIdent("$$v")), GenAssignStmt(target, GenIdent("$$v")))),
 		)
 	}
-	return genBlock(
-		genConst("$$v", value),
-		genIf(genBinary("!==", target, id("$$v")), genAssignStmt(target, id("$$v"))),
+	return GenBlock(
+		GenConst("$$v", value),
+		GenIf(GenBinary("!==", target, GenIdent("$$v")), GenAssignStmt(target, GenIdent("$$v"))),
 	)
 }
 
@@ -516,18 +518,18 @@ func (g *ASTGen) blocksBindThis(ref string, attr *Attr) []JsStmt {
 	name, isIdent := templateExprIdent(attr.Expr)
 	var set, clear JsStmt
 	if isIdent && g.analysis != nil && g.analysis.stateSet()[name] {
-		set = genInvoke("$$set_"+name, id(ref))
-		clear = genInvoke("$$set_"+name, genNull())
+		set = GenInvoke("$$set_"+name, GenIdent(ref))
+		clear = GenInvoke("$$set_"+name, GenNull())
 	} else {
 		target := g.templateExpr(attr.Expr)
-		set = genAssignStmt(target, id(ref))
-		clear = genAssignStmt(g.templateExpr(attr.Expr), genNull())
+		set = GenAssignStmt(target, GenIdent(ref))
+		clear = GenAssignStmt(g.templateExpr(attr.Expr), GenNull())
 	}
 	// The reference is assigned on creation and on hydration alike (C-4.5),
 	// so it is not an initial DOM write.
 	return []JsStmt{
 		set,
-		genExprStmt(genCall(genMember(genMember(id("$$c"), "owner"), "add"), blocksArrow(nil, genBlock(clear)))),
+		GenExprStmt(GenCall(GenMember(GenMember(GenIdent("$$c"), "owner"), "add"), blocksArrow(nil, GenBlock(clear)))),
 	}
 }
 
@@ -535,9 +537,9 @@ func (g *ASTGen) blocksBindThis(ref string, attr *Attr) []JsStmt {
 // updates to it.
 func (g *ASTGen) blocksBlockCall(kind string, args ...JsExpr) {
 	ref := g.blocks.next("$$b")
-	call := genCall(genMember(id("$$c"), "block"), append([]JsExpr{id(kind)}, args...)...)
-	g.blocksEmit(genConst(ref, call))
-	g.blocks.frag.updates = append(g.blocks.frag.updates, genExprStmt(genCall(genMember(id(ref), "p"), id("$$d"))))
+	call := GenCall(GenMember(GenIdent("$$c"), "block"), append([]JsExpr{GenIdent(kind)}, args...)...)
+	g.blocksEmit(GenConst(ref, call))
+	g.blocks.frag.updates = append(g.blocks.frag.updates, GenExprStmt(GenCall(GenMember(GenIdent(ref), "p"), GenIdent("$$d"))))
 }
 
 // blocksNestedFragment builds a child fragment and declares it inside the
@@ -552,25 +554,25 @@ func (g *ASTGen) blocksNestedFragment(nodes []Node, locals []blocksLocal) string
 func (g *ASTGen) buildBlocksIf(chain *IfChainNode) {
 	var exprs []*TemplateExpr
 	var fragments []JsExpr
-	var select_ JsExpr = numLit(-1)
+	var select_ JsExpr = GenNumLit(-1)
 	for i := len(chain.Branches) - 1; i >= 0; i-- {
 		branch := chain.Branches[i]
 		var name string
 		g.withBranchTemplateBindings(branch, func() {
 			name = g.blocksNestedFragment(branch.Children, nil)
 		})
-		fragments = append([]JsExpr{id(name)}, fragments...)
+		fragments = append([]JsExpr{GenIdent(name)}, fragments...)
 		if branch.Expr != nil {
 			exprs = append(exprs, branch.Expr)
-			select_ = &JsConditionalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Test: g.templateExpr(branch.Expr), Then: numLit(i), Else: select_}
+			select_ = &JsConditionalExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Test: g.templateExpr(branch.Expr), Then: GenNumLit(i), Else: select_}
 		} else {
-			select_ = numLit(i)
+			select_ = GenNumLit(i)
 		}
 	}
 	if len(exprs) > 0 {
 		g.blocksSite(exprs[len(exprs)-1])
 	}
-	g.blocksBlockCall("$$if", blocksArrow(nil, select_), genArray(fragments...), blocksChanged(g.blocksGuard(exprs...)))
+	g.blocksBlockCall("$$if", blocksArrow(nil, select_), GenArray(fragments...), blocksChanged(g.blocksGuard(exprs...)))
 }
 
 func (g *ASTGen) buildBlocksKey(chain *IfChainNode) {
@@ -580,7 +582,7 @@ func (g *ASTGen) buildBlocksKey(chain *IfChainNode) {
 	}
 	name := g.blocksNestedFragment(body, nil)
 	g.blocksSite(chain.KeyAST)
-	g.blocksBlockCall("$$key", blocksArrow(nil, g.templateExpr(chain.KeyAST)), id(name), blocksChanged(g.blocksGuard(chain.KeyAST)))
+	g.blocksBlockCall("$$key", blocksArrow(nil, g.templateExpr(chain.KeyAST)), GenIdent(name), blocksChanged(g.blocksGuard(chain.KeyAST)))
 }
 
 func (g *ASTGen) buildBlocksEach(each *EachBlockNode) {
@@ -590,23 +592,23 @@ func (g *ASTGen) buildBlocksEach(each *EachBlockNode) {
 	}
 	locals := []blocksLocal{{name: each.ItemName, source: "item", mutable: true}, {name: index, source: "index", mutable: true}}
 	row := g.blocksNestedFragment(each.Children, locals)
-	key := JsExpr(genNull())
+	key := JsExpr(GenNull())
 	if each.HasKey() {
 		// Keyed rows compare String(key), so 1 and "1" are one row.
 		g.blocks.locals = append(g.blocks.locals, locals...)
-		key = blocksArrow([]JsExpr{id(each.ItemName), id(index)}, genString(g.templateExpr(each.KeyAST)))
+		key = blocksArrow([]JsExpr{GenIdent(each.ItemName), GenIdent(index)}, GenString(g.templateExpr(each.KeyAST)))
 		g.blocks.locals = g.blocks.locals[:len(g.blocks.locals)-len(locals)]
 	}
-	fallback := JsExpr(genNull())
+	fallback := JsExpr(GenNull())
 	if len(each.ElseChildren) > 0 {
-		fallback = id(g.blocksNestedFragment(each.ElseChildren, nil))
+		fallback = GenIdent(g.blocksNestedFragment(each.ElseChildren, nil))
 	}
-	args := []JsExpr{blocksArrow(nil, g.templateExpr(each.IterExpr)), key, id(row), fallback, blocksChanged(g.blocksGuard(each.IterExpr))}
+	args := []JsExpr{blocksArrow(nil, g.templateExpr(each.IterExpr)), key, GenIdent(row), fallback, blocksChanged(g.blocksGuard(each.IterExpr))}
 	// A keyed each over a $state.deep collection refreshes only the rows that
 	// in-place mutations touched (task 023).
 	if each.HasKey() {
 		if plan := g.eachIncrementalPlanFor(each); plan != nil {
-			args = append(args, blocksArrow(nil, genCall(id("$$eachRowsForMutations"), id("$$activeMutations_"+plan.stateName), strLit(plan.keyField))))
+			args = append(args, blocksArrow(nil, GenCall(GenIdent("$$eachRowsForMutations"), GenIdent("$$activeMutations_"+plan.stateName), GenStrLit(plan.keyField))))
 		}
 	}
 	g.blocksSite(each.IterExpr)
@@ -616,13 +618,13 @@ func (g *ASTGen) buildBlocksEach(each *EachBlockNode) {
 func (g *ASTGen) buildBlocksAwait(await *AwaitBlockNode) {
 	branch := func(nodes []Node, name, source string, present bool) JsExpr {
 		if !present {
-			return genNull()
+			return GenNull()
 		}
 		var locals []blocksLocal
 		if name != "" {
 			locals = []blocksLocal{{name: name, source: source}}
 		}
-		return id(g.blocksNestedFragment(nodes, locals))
+		return GenIdent(g.blocksNestedFragment(nodes, locals))
 	}
 	pending := branch(await.PendingChildren, "", "", len(await.PendingChildren) > 0)
 	then := branch(await.ThenChildren, await.ValueName, "value", await.ThenChildren != nil)
@@ -636,7 +638,7 @@ func (g *ASTGen) buildBlocksAwait(await *AwaitBlockNode) {
 // updated here; props, component events and bind: to a $bindable prop use
 // the component protocol of $component.
 func (g *ASTGen) buildBlocksComponent(comp *ComponentNode) {
-	slots := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
+	slots := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}}
 	names := make([]string, 0, len(comp.Slots))
 	for name := range comp.Slots {
 		names = append(names, name)
@@ -646,19 +648,19 @@ func (g *ASTGen) buildBlocksComponent(comp *ComponentNode) {
 		fragment := g.blocksNestedFragment(comp.Slots[name], nil)
 		g.blocks.frag.live = true
 		slots.Props = append(slots.Props, &JsProp{
-			BaseNode: genNode(),
-			Key:      strLit(name),
-			Value:    genCall(id("$$slotFactory"), id("$$c"), id("$$live"), id(fragment)),
+			BaseNode: GenNode(),
+			Key:      GenStrLit(name),
+			Value:    GenCall(GenIdent("$$slotFactory"), GenIdent("$$c"), GenIdent("$$live"), GenIdent(fragment)),
 		})
 	}
 
-	events := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
+	events := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}}
 	var exprs []*TemplateExpr
 	for _, attr := range comp.Attrs {
 		if attr.IsEvent {
 			events.Props = append(events.Props, &JsProp{
-				BaseNode: genNode(),
-				Key:      strLit(strings.TrimPrefix(attr.Name, "on:")),
+				BaseNode: GenNode(),
+				Key:      GenStrLit(strings.TrimPrefix(attr.Name, "on:")),
 				Value:    g.blocksComponentEventHandler(attr),
 			})
 			continue
@@ -667,12 +669,12 @@ func (g *ASTGen) buildBlocksComponent(comp *ComponentNode) {
 			exprs = append(exprs, attr.Expr)
 		}
 	}
-	var eventsArg JsExpr = genNull()
+	var eventsArg JsExpr = GenNull()
 	if len(events.Props) > 0 {
 		eventsArg = events
 	}
 	props := blocksArrow(nil, g.componentPropsExpr(comp.Attrs))
-	g.blocksBlockCall("$$component", id(comp.Name), props, slots, eventsArg, blocksChanged(g.blocksGuard(exprs...)), strLit(g.elementScope))
+	g.blocksBlockCall("$$component", GenIdent(comp.Name), props, slots, eventsArg, blocksChanged(g.blocksGuard(exprs...)), GenStrLit(g.elementScope))
 }
 
 // blocksComponentEventHandler forwards only CustomEvents dispatched by the
@@ -681,11 +683,11 @@ func (g *ASTGen) buildBlocksComponent(comp *ComponentNode) {
 func (g *ASTGen) blocksComponentEventHandler(attr *Attr) JsExpr {
 	handler := g.eventHandlerExpr(attr)
 	if handler == nil {
-		handler = id("undefined")
+		handler = GenIdent("undefined")
 	}
-	var invoke JsStmt = genExprStmt(genCall(handler, id("$e")))
+	var invoke JsStmt = GenExprStmt(GenCall(handler, GenIdent("$e")))
 	if _, isIdent := templateExprIdent(attr.Expr); !isIdent && !templateExprIsHandler(attr.Expr) {
-		invoke = genExprStmt(handler)
+		invoke = GenExprStmt(handler)
 		if g.analysis != nil {
 			invoke = RewriteStatementAssignmentsAST(invoke, g.analysis.stateSet())
 		}
@@ -695,18 +697,18 @@ func (g *ASTGen) blocksComponentEventHandler(attr *Attr) JsExpr {
 			return true
 		})
 	}
-	return blocksArrow([]JsExpr{id("$e")}, genBlock(
-		genIf(genBinary("instanceof", id("$e"), id("CustomEvent")), genBlock(invoke)),
+	return blocksArrow([]JsExpr{GenIdent("$e")}, GenBlock(
+		GenIf(GenBinary("instanceof", GenIdent("$e"), GenIdent("CustomEvent")), GenBlock(invoke)),
 	))
 }
 
 // buildBlocksSlot opens the parent's slot content, or mounts the fallback.
 func (g *ASTGen) buildBlocksSlot(slot *SlotNode) {
-	var fallback JsExpr = genNull()
+	var fallback JsExpr = GenNull()
 	if len(slot.Fallback) > 0 {
-		fallback = id(g.blocksNestedFragment(slot.Fallback, nil))
+		fallback = GenIdent(g.blocksNestedFragment(slot.Fallback, nil))
 	}
-	g.blocksBlockCall("$$slot", genComputedMember(id("$$slots"), strLit(slot.Name)), fallback)
+	g.blocksBlockCall("$$slot", GenComputedMember(GenIdent("$$slots"), GenStrLit(slot.Name)), fallback)
 }
 
 func textNodeStaticValue(text *TextNode) string {
@@ -733,11 +735,11 @@ func hasPreformattedText(run []Node) bool {
 // an empty fallback (T-9.1b).
 func (g *ASTGen) buildBlocksClient(chain *IfChainNode) {
 	main := g.blocksNestedFragment(chain.Branches[0].Children, nil)
-	fallback := JsExpr(genNull())
+	fallback := JsExpr(GenNull())
 	if len(chain.Branches) > 1 && len(chain.Branches[1].Children) > 0 {
-		fallback = id(g.blocksNestedFragment(chain.Branches[1].Children, nil))
+		fallback = GenIdent(g.blocksNestedFragment(chain.Branches[1].Children, nil))
 	}
-	g.blocksBlockCall("$$client", id(main), fallback)
+	g.blocksBlockCall("$$client", GenIdent(main), fallback)
 }
 
 // blocksSite emits $$c.at(site) before an adopted site in development
@@ -754,13 +756,13 @@ func (g *ASTGen) blocksSiteStmt(expr *TemplateExpr) JsStmt {
 		return nil
 	}
 	line, column := sourceLineColumn(g.sfc.Source, g.sfc.TemplateOffset+expr.Pos)
-	host := JsExpr(genNull())
+	host := JsExpr(GenNull())
 	if g.sfc.SiteHosts != nil && expr.Root() != nil {
 		WalkNode(expr.Root(), func(n JsNode) bool {
 			if call, ok := n.(*JsCallExpr); ok {
 				if callee, ok := call.Callee.(*JsIdent); ok {
 					if name, bound := g.sfc.SiteHosts(callee.Name); bound {
-						host = strLit(name)
+						host = GenStrLit(name)
 						return false
 					}
 				}
@@ -769,6 +771,6 @@ func (g *ASTGen) blocksSiteStmt(expr *TemplateExpr) JsStmt {
 		})
 	}
 	site := len(g.blocks.sites)
-	g.blocks.sites = append(g.blocks.sites, genArray(numLit(site), strLit(fmt.Sprintf("%s:%d:%d", g.sfc.SitePath, line+1, column+1)), host))
-	return genExprStmt(genCall(genMember(id("$$c"), "at"), &JsMemberExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Obj: id("$$sites"), Prop: numLit(site), Computed: true}))
+	g.blocks.sites = append(g.blocks.sites, GenArray(GenNumLit(site), GenStrLit(fmt.Sprintf("%s:%d:%d", g.sfc.SitePath, line+1, column+1)), host))
+	return GenExprStmt(GenCall(GenMember(GenIdent("$$c"), "at"), &JsMemberExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Obj: GenIdent("$$sites"), Prop: GenNumLit(site), Computed: true}))
 }

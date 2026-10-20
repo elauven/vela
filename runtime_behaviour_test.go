@@ -18,6 +18,8 @@ package main
 // environments.
 
 import (
+	"github.com/elauven/vela/runtime"
+
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -112,7 +114,7 @@ func runRuntimeHarnessWithModules(t *testing.T, entry string,
 		t.Fatalf("cannot stage runtime.js: %v", err)
 	}
 	// Components compiled by the block engine also import its runtime.
-	if err := os.WriteFile(filepath.Join(dir, "runtime-blocks.js"), embeddedBlocksRuntime, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "runtime-blocks.js"), runtime.Blocks, 0o644); err != nil {
 		t.Fatalf("cannot stage runtime-blocks.js: %v", err)
 	}
 

@@ -14,124 +14,6 @@ import (
 	"strings"
 )
 
-// ─────────────────────────────────────────────
-//  AST construction helpers
-// ─────────────────────────────────────────────
-//
-// Hand-building AST nodes is verbose, so these helpers cover the shapes
-// astgen reaches for most often. Every compiler-authored construct is made
-// through typed nodes; user-authored <script> enters separately through the
-// cached source-ordered ScriptPlan. Everything constructed here is marked
-// OriginGenerated.
-
-// gen marks a freshly built node as compiler-generated.
-func genNode() BaseNode { return BaseNode{Origin: OriginGenerated} }
-
-// id builds an identifier.
-func id(name string) *JsIdent {
-	return &JsIdent{BaseExpr: BaseExpr{BaseNode: genNode()}, Name: name}
-}
-
-// strLit builds a decoded compiler-generated string literal. The printer
-// owns JavaScript escaping, so callers always pass the semantic string value.
-func strLit(value string) *JsLiteral {
-	return &JsLiteral{
-		BaseExpr: BaseExpr{BaseNode: genNode()},
-		Kind:     "string",
-		Value:    value,
-		Decoded:  true,
-	}
-}
-
-func genMember(obj JsExpr, prop string) *JsMemberExpr {
-	return &JsMemberExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Obj: obj, Prop: id(prop)}
-}
-
-func genCall(callee JsExpr, args ...JsExpr) *JsCallExpr {
-	return &JsCallExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Callee: callee, Args: args}
-}
-
-func genExprStmt(expr JsExpr) *JsExprStmt {
-	return &JsExprStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, X: expr}
-}
-
-func genAssignStmt(left, right JsExpr) *JsExprStmt {
-	return genExprStmt(&JsAssignExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "=", L: left, R: right})
-}
-
-func genVar(kind, name string, init JsExpr) *JsVarDecl {
-	return &JsVarDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Kind: kind, Decls: []*JsVarDeclarator{{Id: id(name), Init: init}}}
-}
-
-func genConst(name string, init JsExpr) *JsVarDecl { return genVar("const", name, init) }
-
-func genLet(name string, init JsExpr) *JsVarDecl { return genVar("let", name, init) }
-
-func genInvoke(name string, args ...JsExpr) *JsExprStmt {
-	return genExprStmt(genCall(id(name), args...))
-}
-
-func genBinary(op string, left, right JsExpr) *JsBinaryExpr {
-	return &JsBinaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: op, L: left, R: right}
-}
-
-func genIf(test JsExpr, then JsStmt) *JsIfStmt {
-	return &JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: test, Then: then}
-}
-
-func genNull() *JsLiteral {
-	return &JsLiteral{BaseExpr: BaseExpr{BaseNode: genNode()}, Raw: "null", Kind: "null"}
-}
-
-func numLit(value int) *JsLiteral {
-	return &JsLiteral{BaseExpr: BaseExpr{BaseNode: genNode()}, Raw: itoa(value), Kind: "number"}
-}
-
-func boolLit(value bool) *JsLiteral {
-	if value {
-		return &JsLiteral{BaseExpr: BaseExpr{BaseNode: genNode()}, Raw: "true", Kind: "boolean"}
-	}
-	return &JsLiteral{BaseExpr: BaseExpr{BaseNode: genNode()}, Raw: "false", Kind: "boolean"}
-}
-
-func genComputedMember(obj, prop JsExpr) *JsMemberExpr {
-	return &JsMemberExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Obj: obj, Prop: prop, Computed: true}
-}
-
-func genLogical(op string, left, right JsExpr) *JsLogicalExpr {
-	return &JsLogicalExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: op, L: left, R: right}
-}
-
-func genUnary(op string, expr JsExpr) *JsUnaryExpr {
-	return &JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: op, Prefix: true, X: expr}
-}
-
-func genNew(callee JsExpr, args ...JsExpr) *JsNewExpr {
-	return &JsNewExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Callee: callee, Args: args}
-}
-
-func genArray(elems ...JsExpr) *JsArrayExpr {
-	return &JsArrayExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Elems: elems}
-}
-
-func genBlock(body ...JsStmt) *JsBlock {
-	return &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: body}
-}
-
-func genReturn(arg JsExpr) *JsReturnStmt {
-	return &JsReturnStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Arg: arg}
-}
-
-func genForOf(name string, iterable JsExpr, body JsStmt) *JsForInStmt {
-	return &JsForInStmt{
-		BaseStmt: BaseStmt{BaseNode: genNode()},
-		Left:     genConst(name, nil),
-		Right:    iterable,
-		Body:     body,
-		IsOf:     true,
-	}
-}
-
 // generatedMemberPath turns a compiler-owned dotted path into a member AST.
 // It must not receive user JavaScript.
 func generatedMemberPath(path string) JsExpr {
@@ -139,12 +21,12 @@ func generatedMemberPath(path string) JsExpr {
 	if len(parts) == 0 || parts[0] == "" {
 		panic("empty compiler-generated member path")
 	}
-	var expr JsExpr = id(parts[0])
+	var expr JsExpr = GenIdent(parts[0])
 	for _, part := range parts[1:] {
 		if part == "" {
 			panic("invalid compiler-generated member path: " + path)
 		}
-		expr = genMember(expr, part)
+		expr = GenMember(expr, part)
 	}
 	return expr
 }
@@ -511,61 +393,61 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 	// Every component owns one liveness flag. It is set before teardown so
 	// queued flushes and late user callbacks become harmless no-ops.
 	var out []JsStmt
-	out = append(out, genLet("$$disposed", boolLit(false)))
+	out = append(out, GenLet("$$disposed", GenBoolLit(false)))
 	if len(plan.entries) == 0 && len(plan.effectFlags) == 0 {
 		return out
 	}
 
-	out = append(out, genLet("$$flushQueued", boolLit(false)))
+	out = append(out, GenLet("$$flushQueued", GenBoolLit(false)))
 	for _, entry := range plan.entries {
-		out = append(out, genLet(entry.flag, boolLit(false)))
+		out = append(out, GenLet(entry.flag, GenBoolLit(false)))
 	}
 	for _, index := range plan.structural {
-		out = append(out, genLet(plan.entries[index].ran, boolLit(false)))
+		out = append(out, GenLet(plan.entries[index].ran, GenBoolLit(false)))
 	}
 	for _, flag := range plan.effectFlags {
-		out = append(out, genLet(flag, boolLit(false)))
+		out = append(out, GenLet(flag, GenBoolLit(false)))
 	}
 
 	flushBody := []JsStmt{
-		genAssignStmt(id("$$flushQueued"), boolLit(false)),
-		genIf(id("$$disposed"), genReturn(nil)),
+		GenAssignStmt(GenIdent("$$flushQueued"), GenBoolLit(false)),
+		GenIf(GenIdent("$$disposed"), GenReturn(nil)),
 	}
 	if g.analysis != nil {
 		for _, state := range g.analysis.StateVars {
 			if state.Deep {
 				flushBody = append(flushBody,
-					genAssignStmt(id("$$activeMutations_"+state.Name), id("$$pendingMutations_"+state.Name)),
-					genAssignStmt(id("$$pendingMutations_"+state.Name), genArray()),
+					GenAssignStmt(GenIdent("$$activeMutations_"+state.Name), GenIdent("$$pendingMutations_"+state.Name)),
+					GenAssignStmt(GenIdent("$$pendingMutations_"+state.Name), GenArray()),
 				)
 			}
 		}
 	}
 	for _, index := range plan.structural {
-		flushBody = append(flushBody, genAssignStmt(id(plan.entries[index].ran), boolLit(false)))
+		flushBody = append(flushBody, GenAssignStmt(GenIdent(plan.entries[index].ran), GenBoolLit(false)))
 	}
 	appendEntry := func(index int, structural bool) {
 		entry := plan.entries[index]
-		body := []JsStmt{genAssignStmt(id(entry.flag), boolLit(false))}
+		body := []JsStmt{GenAssignStmt(GenIdent(entry.flag), GenBoolLit(false))}
 		if structural {
-			body = append(body, genAssignStmt(id(entry.ran), boolLit(true)), shareStmt(entry.stmt))
+			body = append(body, GenAssignStmt(GenIdent(entry.ran), GenBoolLit(true)), shareStmt(entry.stmt))
 		} else {
-			shouldRun := JsExpr(boolLit(true))
+			shouldRun := JsExpr(GenBoolLit(true))
 			hasOwnerRun := false
 			for _, owner := range g.updateStructuralOwners[entry.key] {
-				structuralKey := reactiveFlushStmtKey(genInvoke(owner))
+				structuralKey := reactiveFlushStmtKey(GenInvoke(owner))
 				if ran := ownerRuns[structuralKey]; ran != "" {
 					hasOwnerRun = true
-					shouldRun = genLogical("&&", shouldRun, genUnary("!", id(ran)))
+					shouldRun = GenLogical("&&", shouldRun, GenUnary("!", GenIdent(ran)))
 				}
 			}
 			if hasOwnerRun {
-				body = append(body, genIf(shouldRun, shareStmt(entry.stmt)))
+				body = append(body, GenIf(shouldRun, shareStmt(entry.stmt)))
 			} else {
 				body = append(body, shareStmt(entry.stmt))
 			}
 		}
-		flushBody = append(flushBody, genIf(id(entry.flag), genBlock(body...)))
+		flushBody = append(flushBody, GenIf(GenIdent(entry.flag), GenBlock(body...)))
 	}
 	for _, index := range plan.structural {
 		appendEntry(index, true)
@@ -574,9 +456,9 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 		appendEntry(index, false)
 	}
 	for i, flag := range plan.effectFlags {
-		flushBody = append(flushBody, genIf(id(flag), genBlock(
-			genAssignStmt(id(flag), boolLit(false)),
-			genInvoke("$$effect"+itoa(i)),
+		flushBody = append(flushBody, GenIf(GenIdent(flag), GenBlock(
+			GenAssignStmt(GenIdent(flag), GenBoolLit(false)),
+			GenInvoke("$$effect"+itoa(i)),
 		)))
 	}
 	// Active mutation metadata belongs only to this flush. Mutations from an
@@ -584,23 +466,23 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 	if g.analysis != nil {
 		for _, state := range g.analysis.StateVars {
 			if state.Deep {
-				flushBody = append(flushBody, genAssignStmt(id("$$activeMutations_"+state.Name), genArray()))
+				flushBody = append(flushBody, GenAssignStmt(GenIdent("$$activeMutations_"+state.Name), GenArray()))
 			}
 		}
 	}
 	out = append(out, &JsFuncDecl{
-		BaseStmt: BaseStmt{BaseNode: genNode()},
+		BaseStmt: BaseStmt{BaseNode: GenNode()},
 		Name:     "$$flush",
-		Body:     genBlock(flushBody...),
+		Body:     GenBlock(flushBody...),
 	})
 	out = append(out, &JsFuncDecl{
-		BaseStmt: BaseStmt{BaseNode: genNode()},
+		BaseStmt: BaseStmt{BaseNode: GenNode()},
 		Name:     "$$scheduleFlush",
-		Body: genBlock(
-			genIf(id("$$disposed"), genReturn(nil)),
-			genIf(id("$$flushQueued"), genReturn(nil)),
-			genAssignStmt(id("$$flushQueued"), boolLit(true)),
-			genInvoke("$$defer", id("$$flush")),
+		Body: GenBlock(
+			GenIf(GenIdent("$$disposed"), GenReturn(nil)),
+			GenIf(GenIdent("$$flushQueued"), GenReturn(nil)),
+			GenAssignStmt(GenIdent("$$flushQueued"), GenBoolLit(true)),
+			GenInvoke("$$defer", GenIdent("$$flush")),
 		),
 	})
 	return out
@@ -716,7 +598,7 @@ func templateExprIsHandler(expr *TemplateExpr) bool {
 func (g *ASTGen) templateExpr(expr *TemplateExpr) JsExpr {
 	root := cloneJsExpr(templateExprRoot(expr))
 	if root == nil {
-		return id("undefined")
+		return GenIdent("undefined")
 	}
 	// The innermost template binding wins when nested each/await blocks reuse
 	// a binding name. Rewriting in reverse order preserves lexical shadowing.
@@ -731,9 +613,9 @@ func (g *ASTGen) templateExpr(expr *TemplateExpr) JsExpr {
 
 func (g *ASTGen) textValueExpr(parts []*Part) JsExpr {
 	if len(parts) == 1 && !parts[0].Static {
-		return &JsCallExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Callee: id("String"), Args: []JsExpr{g.templateExpr(parts[0].Expr)}}
+		return &JsCallExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Callee: GenIdent("String"), Args: []JsExpr{g.templateExpr(parts[0].Expr)}}
 	}
-	t := &JsTemplateLit{BaseExpr: BaseExpr{BaseNode: genNode()}, Quasis: []string{""}}
+	t := &JsTemplateLit{BaseExpr: BaseExpr{BaseNode: GenNode()}, Quasis: []string{""}}
 	for _, part := range parts {
 		if part.Static {
 			t.Quasis[len(t.Quasis)-1] += escapeTL(part.Value)
@@ -746,52 +628,43 @@ func (g *ASTGen) textValueExpr(parts []*Part) JsExpr {
 }
 
 func (g *ASTGen) textWriteStmt(ref string, parts []*Part) JsStmt {
-	return genAssignStmt(genMember(id(ref), "data"), g.textValueExpr(parts))
+	return GenAssignStmt(GenMember(GenIdent(ref), "data"), g.textValueExpr(parts))
 }
-
-func genBool(expr JsExpr) JsExpr {
-	return &JsUnaryExpr{
-		BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "!", Prefix: true,
-		X: &JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "!", Prefix: true, X: expr},
-	}
-}
-
-func genString(expr JsExpr) JsExpr { return genCall(id("String"), expr) }
 
 // attrWriteStmt handles ordinary dynamic attributes. Two-way form bindings use
 // bindingWriteStmt below so their live property write can be guarded.
 func (g *ASTGen) attrWriteStmt(varName string, attr *Attr) JsStmt {
 	expr := g.templateExpr(attr.Expr)
 	if isBoolAttr(attr.Name) {
-		return genAssignStmt(genMember(id(varName), attr.Name), genBool(expr))
+		return GenAssignStmt(GenMember(GenIdent(varName), attr.Name), GenBool(expr))
 	}
 	if attr.Name == "class" {
-		return genAssignStmt(genMember(id(varName), "className"), genString(expr))
+		return GenAssignStmt(GenMember(GenIdent(varName), "className"), GenString(expr))
 	}
-	return genExprStmt(genCall(genMember(id(varName), "setAttribute"), strLit(attr.Name), genString(expr)))
+	return GenExprStmt(GenCall(GenMember(GenIdent(varName), "setAttribute"), GenStrLit(attr.Name), GenString(expr)))
 }
 
 func twoWaySetterFromEvent(setter string, multipleAware bool, readProp string) JsNode {
-	target := genMember(id("$e"), "target")
-	scalar := genCall(id(setter), genMember(target, readProp))
+	target := GenMember(GenIdent("$e"), "target")
+	scalar := GenCall(GenIdent(setter), GenMember(target, readProp))
 	if !multipleAware {
 		return scalar
 	}
-	return genBlock(
-		genIf(genMember(target, "multiple"), genBlock(
-			genExprStmt(genCall(id(setter), genCall(id("$$readSelectValues"), target))),
-			genReturn(nil),
+	return GenBlock(
+		GenIf(GenMember(target, "multiple"), GenBlock(
+			GenExprStmt(GenCall(GenIdent(setter), GenCall(GenIdent("$$readSelectValues"), target))),
+			GenReturn(nil),
 		)),
-		genReturn(scalar),
+		GenReturn(scalar),
 	)
 }
 
 func (g *ASTGen) classDirStmtAST(varName string, attr *Attr) JsStmt {
-	return genExprStmt(genCall(genMember(genMember(id(varName), "classList"), "toggle"), strLit(attr.Name), genBool(g.templateExpr(attr.Expr))))
+	return GenExprStmt(GenCall(GenMember(GenMember(GenIdent(varName), "classList"), "toggle"), GenStrLit(attr.Name), GenBool(g.templateExpr(attr.Expr))))
 }
 
 func (g *ASTGen) styleDirStmtAST(varName string, attr *Attr) JsStmt {
-	return genExprStmt(genCall(genMember(genMember(id(varName), "style"), "setProperty"), strLit(attr.Name), genString(g.templateExpr(attr.Expr))))
+	return GenExprStmt(GenCall(GenMember(GenMember(GenIdent(varName), "style"), "setProperty"), GenStrLit(attr.Name), GenString(g.templateExpr(attr.Expr))))
 }
 func setTemplateOrigin(n JsNode, pos int) {
 	switch x := n.(type) {
@@ -844,12 +717,12 @@ func setTemplateOrigin(n JsNode, pos int) {
 }
 
 func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
-	obj := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}
+	obj := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}}
 	for _, attr := range attrs {
 		if attr.IsEvent {
 			continue
 		}
-		prop := &JsProp{Key: id(attr.Name)}
+		prop := &JsProp{Key: GenIdent(attr.Name)}
 		if attr.IsBind {
 			// Callback props are ordinary component inputs, not CustomEvents.
 			// An inline arrow can still assign Vela state and therefore needs
@@ -858,17 +731,17 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 			// local variable but bypasses the setter cascade.
 			prop.Value = g.componentPropExpr(attr)
 		} else {
-			prop.Value = strLit(attr.Value)
+			prop.Value = GenStrLit(attr.Value)
 		}
 		obj.Props = append(obj.Props, prop)
 		if attr.IsTwoWay && g.analysis != nil {
 			target, isIdent := templateExprIdent(attr.Expr)
 			if isIdent && g.analysis.stateSet()[target] {
 				obj.Props = append(obj.Props, &JsProp{
-					BaseNode: genNode(), Key: id("$$onChange_" + attr.Name),
+					BaseNode: GenNode(), Key: GenIdent("$$onChange_" + attr.Name),
 					Value: &JsArrowFunc{
-						BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$v")},
-						Body: genCall(id("$$set_"+target), id("$$v")),
+						BaseExpr: BaseExpr{BaseNode: GenNode()}, Params: []JsExpr{GenIdent("$$v")},
+						Body: GenCall(GenIdent("$$set_"+target), GenIdent("$$v")),
 					},
 				})
 			}
@@ -1036,24 +909,24 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 		prog.Body = append(prog.Body, imp)
 	}
 
-	fnBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}}
+	fnBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}}
 
 	// ── Preamble: normalize props/slots ──────────────────────
 	fnBody.Body = append(fnBody.Body,
-		genAssignStmt(id("$$props"), genCall(genMember(id("Object"), "assign"),
-			&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}}, id("$$props"))),
-		genAssignStmt(id("$$slots"), &JsLogicalExpr{
-			BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "||", L: id("$$slots"),
-			R: &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: genNode()}},
+		GenAssignStmt(GenIdent("$$props"), GenCall(GenMember(GenIdent("Object"), "assign"),
+			&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}}, GenIdent("$$props"))),
+		GenAssignStmt(GenIdent("$$slots"), &JsLogicalExpr{
+			BaseExpr: BaseExpr{BaseNode: GenNode()}, Op: "||", L: GenIdent("$$slots"),
+			R: &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}},
 		}),
-		genExprStmt(&JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "void", Prefix: true, X: id("$$slots")}),
+		GenExprStmt(&JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Op: "void", Prefix: true, X: GenIdent("$$slots")}),
 	)
 
 	// A hydrating instance restores its serialized state from the payload
 	// stream (S-6.8); a created one gets null. A component whose state is
 	// all reproducible has no entry and reads none (S-6.4, task 059).
 	if g.analysis != nil && len(g.analysis.SerializedState()) > 0 {
-		fnBody.Body = append(fnBody.Body, genConst("$$velaState", genCall(id("$$hydrationState"), strLit(g.name))))
+		fnBody.Body = append(fnBody.Body, GenConst("$$velaState", GenCall(GenIdent("$$hydrationState"), GenStrLit(g.name))))
 	}
 
 	// ── Runtime helpers ──────────────────────────────────────
@@ -1086,8 +959,8 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// Setters may run while the script initialises, before the view
 	// mounts; their dirty marks are collected from the start.
 	fnBody.Body = append(fnBody.Body,
-		genLet("$$dirty", genCall(genMember(id("Object"), "create"), genNull())),
-		genLet("$$view", genNull()),
+		GenLet("$$dirty", GenCall(GenMember(GenIdent("Object"), "create"), GenNull())),
+		GenLet("$$view", GenNull()),
 	)
 
 	// ── Source-ordered component setup ─────────────────────
@@ -1156,26 +1029,26 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 
 	// ── Wrap in the exported function declaration ────────────
 	fn := &JsFuncDecl{
-		BaseStmt: BaseStmt{BaseNode: genNode()},
+		BaseStmt: BaseStmt{BaseNode: GenNode()},
 		Name:     g.name,
-		Params:   []JsExpr{id("$$target"), id("$$props"), id("$$slots")},
+		Params:   []JsExpr{GenIdent("$$target"), GenIdent("$$props"), GenIdent("$$slots")},
 		Body:     fnBody,
 	}
 
 	// Static subtrees are parsed once per module.
 	prog.Body = append(prog.Body, g.blocks.templates...)
 	if len(g.blocks.sites) > 0 {
-		prog.Body = append(prog.Body, genConst("$$sites", genArray(g.blocks.sites...)))
+		prog.Body = append(prog.Body, GenConst("$$sites", GenArray(g.blocks.sites...)))
 	}
 
 	prog.Body = append(prog.Body, &JsExportDecl{
-		BaseStmt:    BaseStmt{BaseNode: genNode()},
+		BaseStmt:    BaseStmt{BaseNode: GenNode()},
 		Declaration: fn,
 	})
 	if g.sfc != nil && g.sfc.ClientOnly {
 		// A client-only component (contract §9.2): $$component mounts it
 		// after the root commits instead of adopting server DOM.
-		prog.Body = append(prog.Body, genAssignStmt(genMember(id(g.name), "$$clientOnly"), boolLit(true)))
+		prog.Body = append(prog.Body, GenAssignStmt(GenMember(GenIdent(g.name), "$$clientOnly"), GenBoolLit(true)))
 	}
 
 	// Also expose the component factory as the module's DEFAULT
@@ -1186,9 +1059,9 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// `export default Name;` makes both the default and the named
 	// import resolve to the same factory.
 	prog.Body = append(prog.Body, &JsExportDecl{
-		BaseStmt:    BaseStmt{BaseNode: genNode()},
+		BaseStmt:    BaseStmt{BaseNode: GenNode()},
 		Default:     true,
-		Declaration: genExprStmt(id(g.name)),
+		Declaration: GenExprStmt(GenIdent(g.name)),
 	})
 
 	// Prepend runtime-helper imports + the $$dispatch binding for
@@ -1330,10 +1203,10 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	// Comment anchor in the parent's DOM, and dispatching there
 	// would fire on the parent — leaking to sibling components.
 	if usesDispatch {
-		bind := genConst("$$dispatch", &JsArrowFunc{
-			BaseExpr: BaseExpr{BaseNode: genNode()},
-			Params:   []JsExpr{id("name"), id("detail")},
-			Body:     genCall(id("$$rt_dispatch"), id("$$root"), id("name"), id("detail")),
+		bind := GenConst("$$dispatch", &JsArrowFunc{
+			BaseExpr: BaseExpr{BaseNode: GenNode()},
+			Params:   []JsExpr{GenIdent("name"), GenIdent("detail")},
+			Body:     GenCall(GenIdent("$$rt_dispatch"), GenIdent("$$root"), GenIdent("name"), GenIdent("detail")),
 		})
 		fnBody.Body = append([]JsStmt{bind}, fnBody.Body...)
 	}
@@ -1371,7 +1244,7 @@ func (g *ASTGen) buildImportDecls() []JsStmt {
 		}
 
 		out = append(out, &JsImportDecl{
-			BaseStmt:    BaseStmt{BaseNode: genNode()},
+			BaseStmt:    BaseStmt{BaseNode: GenNode()},
 			DefaultName: defaultName,
 			Namespace:   namespace,
 			Specifiers:  specifiers,
@@ -1379,16 +1252,6 @@ func (g *ASTGen) buildImportDecls() []JsStmt {
 		})
 	}
 	return out
-}
-
-// velaCompilerIntrinsics is the set of names that look like imports
-// from 'vela' but are actually compiler intrinsics — extracted at
-// analysis time and wired directly into generated code.  An import
-// statement that mentions one of these must not pass the name
-// through to the runtime module.
-var velaCompilerIntrinsics = map[string]bool{
-	"onMount":   true,
-	"onDestroy": true,
 }
 
 // stripVelaIntrinsics rewrites an import specifier string (the part
@@ -1479,7 +1342,7 @@ func (g *ASTGen) buildScriptPlan() []JsStmt {
 				}
 			}
 			if ready {
-				out = append(out, genInvoke("$$upd_"+derived.Name))
+				out = append(out, GenInvoke("$$upd_"+derived.Name))
 				initialized[derived.Name] = true
 			}
 		}
@@ -1539,22 +1402,22 @@ func (g *ASTGen) buildPropDecls() []JsStmt {
 	}
 	var out []JsStmt
 	for _, p := range g.analysis.Props {
-		value := JsExpr(genMember(id("$$props"), p.Name))
+		value := JsExpr(GenMember(GenIdent("$$props"), p.Name))
 		if p.DefaultAST != nil {
 			value = &JsConditionalExpr{
-				BaseExpr: BaseExpr{BaseNode: genNode()},
-				Test:     genBinary("!==", genMember(id("$$props"), p.Name), id("undefined")),
-				Then:     genMember(id("$$props"), p.Name),
+				BaseExpr: BaseExpr{BaseNode: GenNode()},
+				Test:     GenBinary("!==", GenMember(GenIdent("$$props"), p.Name), GenIdent("undefined")),
+				Then:     GenMember(GenIdent("$$props"), p.Name),
 				Else:     p.DefaultAST,
 			}
 		}
-		out = append(out, genLet(p.Name, value))
+		out = append(out, GenLet(p.Name, value))
 	}
 	// $$onChange handles for bindable props.
 	for _, p := range g.analysis.Props {
 		if p.Bindable {
-			out = append(out, genConst("$$onChange_"+p.Name,
-				genLogical("||", genMember(id("$$props"), "$$onChange_"+p.Name), genNull())))
+			out = append(out, GenConst("$$onChange_"+p.Name,
+				GenLogical("||", GenMember(GenIdent("$$props"), "$$onChange_"+p.Name), GenNull())))
 		}
 	}
 	return out
@@ -1581,9 +1444,9 @@ func (g *ASTGen) buildStyleInjection() []JsStmt {
 	}
 	css := scopedCSSForSFC(g.sfc, g.scopeID)
 	return []JsStmt{
-		genConst("$$style", genCall(genMember(id("document"), "createElement"), strLit("style"))),
-		genAssignStmt(genMember(id("$$style"), "textContent"), strLit(css)),
-		genExprStmt(genCall(genMember(genMember(id("document"), "head"), "appendChild"), id("$$style"))),
+		GenConst("$$style", GenCall(GenMember(GenIdent("document"), "createElement"), GenStrLit("style"))),
+		GenAssignStmt(GenMember(GenIdent("$$style"), "textContent"), GenStrLit(css)),
+		GenExprStmt(GenCall(GenMember(GenMember(GenIdent("document"), "head"), "appendChild"), GenIdent("$$style"))),
 	}
 }
 
@@ -1649,29 +1512,29 @@ func (g *ASTGen) hasDeepState() bool {
 func (g *ASTGen) buildStateDecl(sv *StateVar) []JsStmt {
 	init := sv.InitialAST
 	if init == nil {
-		init = id("undefined")
+		init = GenIdent("undefined")
 	}
 	if !sv.Reproducible {
 		// A reproducible initializer is computed on the client also while
 		// hydrating; the others come from the payload when present.
-		hasState := genCall(generatedMemberPath("Object.prototype.hasOwnProperty.call"), id("$$velaState"), strLit(sv.Name))
+		hasState := GenCall(generatedMemberPath("Object.prototype.hasOwnProperty.call"), GenIdent("$$velaState"), GenStrLit(sv.Name))
 		init = &JsConditionalExpr{
-			BaseExpr: BaseExpr{BaseNode: genNode()},
-			Test:     genLogical("&&", id("$$velaState"), hasState),
-			Then:     genMember(id("$$velaState"), sv.Name),
+			BaseExpr: BaseExpr{BaseNode: GenNode()},
+			Test:     GenLogical("&&", GenIdent("$$velaState"), hasState),
+			Then:     GenMember(GenIdent("$$velaState"), sv.Name),
 			Else:     init,
 		}
 	}
 
 	if !sv.Deep {
-		return []JsStmt{genLet(sv.Name, init)}
+		return []JsStmt{GenLet(sv.Name, init)}
 	}
 	mutName := "$$mut_" + sv.Name
 	return []JsStmt{
-		genConst(mutName, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$$mutation")}, Body: genCall(id("$$set_"+sv.Name+"_notify"), id("$$mutation"))}),
-		genLet("$$pendingMutations_"+sv.Name, genArray()),
-		genLet("$$activeMutations_"+sv.Name, genArray()),
-		genLet(sv.Name, genCall(id("$$proxy"), init, id(mutName))),
+		GenConst(mutName, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: GenNode()}, Params: []JsExpr{GenIdent("$$mutation")}, Body: GenCall(GenIdent("$$set_"+sv.Name+"_notify"), GenIdent("$$mutation"))}),
+		GenLet("$$pendingMutations_"+sv.Name, GenArray()),
+		GenLet("$$activeMutations_"+sv.Name, GenArray()),
+		GenLet(sv.Name, GenCall(GenIdent("$$proxy"), init, GenIdent(mutName))),
 	}
 }
 
@@ -1699,13 +1562,13 @@ func (g *ASTGen) buildStateDecls() []JsStmt {
 func (g *ASTGen) buildDerivedDecl(dv *DerivedVar) []JsStmt {
 	expr := dv.ExprAST
 	if expr == nil {
-		expr = id("undefined")
+		expr = GenIdent("undefined")
 	}
 	return []JsStmt{
-		genLet(dv.Name, nil),
-		genConst("$$upd_"+dv.Name, &JsArrowFunc{
-			BaseExpr: BaseExpr{BaseNode: genNode()},
-			Body:     genBlock(genAssignStmt(id(dv.Name), expr)),
+		GenLet(dv.Name, nil),
+		GenConst("$$upd_"+dv.Name, &JsArrowFunc{
+			BaseExpr: BaseExpr{BaseNode: GenNode()},
+			Body:     GenBlock(GenAssignStmt(GenIdent(dv.Name), expr)),
 		}),
 	}
 }
@@ -1716,16 +1579,16 @@ func (g *ASTGen) buildDerivedDecls() []JsStmt {
 	}
 	var out []JsStmt
 	for _, dv := range g.analysis.DerivedVars {
-		out = append(out, genLet(dv.Name, nil))
+		out = append(out, GenLet(dv.Name, nil))
 	}
 	for _, dv := range g.analysis.DerivedVars {
 		expr := dv.ExprAST
 		if expr == nil {
-			expr = id("undefined")
+			expr = GenIdent("undefined")
 		}
-		out = append(out, genConst("$$upd_"+dv.Name, &JsArrowFunc{
-			BaseExpr: BaseExpr{BaseNode: genNode()},
-			Body:     genBlock(genAssignStmt(id(dv.Name), expr)),
+		out = append(out, GenConst("$$upd_"+dv.Name, &JsArrowFunc{
+			BaseExpr: BaseExpr{BaseNode: GenNode()},
+			Body:     GenBlock(GenAssignStmt(GenIdent(dv.Name), expr)),
 		}))
 	}
 	return out
@@ -1739,7 +1602,7 @@ func (g *ASTGen) buildDerivedInit() []JsStmt {
 	}
 	var out []JsStmt
 	for _, dv := range g.analysis.DerivedVars {
-		out = append(out, genInvoke("$$upd_"+dv.Name))
+		out = append(out, GenInvoke("$$upd_"+dv.Name))
 	}
 	return out
 }
@@ -1760,22 +1623,22 @@ func (g *ASTGen) buildEffectDecls() []JsStmt {
 		cleanup := "$$cleanup" + n
 		body := eff.BodyAST
 		if body == nil {
-			body = genBlock()
+			body = GenBlock()
 		}
 		runner := &JsArrowFunc{
-			BaseExpr: BaseExpr{BaseNode: genNode()},
-			Body: genBlock(
-				genIf(id(cleanup), genBlock(
-					genInvoke(cleanup),
-					genAssignStmt(id(cleanup), genNull()),
+			BaseExpr: BaseExpr{BaseNode: GenNode()},
+			Body: GenBlock(
+				GenIf(GenIdent(cleanup), GenBlock(
+					GenInvoke(cleanup),
+					GenAssignStmt(GenIdent(cleanup), GenNull()),
 				)),
-				genAssignStmt(id(cleanup), genCall(&JsFuncExpr{
-					BaseExpr: BaseExpr{BaseNode: genNode()},
+				GenAssignStmt(GenIdent(cleanup), GenCall(&JsFuncExpr{
+					BaseExpr: BaseExpr{BaseNode: GenNode()},
 					Body:     body,
 				})),
 			),
 		}
-		out = append(out, genLet(cleanup, genNull()), genConst("$$effect"+n, runner))
+		out = append(out, GenLet(cleanup, GenNull()), GenConst("$$effect"+n, runner))
 	}
 	return out
 }
@@ -1788,7 +1651,7 @@ func (g *ASTGen) buildEffectInit() []JsStmt {
 	}
 	var out []JsStmt
 	for i := range g.analysis.Effects {
-		out = append(out, genInvoke("$$effect"+itoa(i)))
+		out = append(out, GenInvoke("$$effect"+itoa(i)))
 	}
 	return out
 }
@@ -1814,11 +1677,11 @@ func (g *ASTGen) buildOnMount() []JsStmt {
 		}
 		body := lc.BodyAST
 		if body == nil {
-			body = genBlock()
+			body = GenBlock()
 		}
 		cleanup := "$$mountCleanup" + itoa(i)
-		out = append(out, genConst(cleanup, genCall(&JsFuncExpr{
-			BaseExpr: BaseExpr{BaseNode: genNode()},
+		out = append(out, GenConst(cleanup, GenCall(&JsFuncExpr{
+			BaseExpr: BaseExpr{BaseNode: GenNode()},
 			Body:     body,
 		})))
 
@@ -1842,9 +1705,9 @@ func (g *ASTGen) buildOnDestroyCleanup() []JsStmt {
 			continue
 		}
 		cv := "$$mountCleanup" + itoa(i)
-		out = append(out, genIf(
-			genBinary("===", &JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "typeof", Prefix: true, X: id(cv)}, strLit("function")),
-			genInvoke(cv),
+		out = append(out, GenIf(
+			GenBinary("===", &JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Op: "typeof", Prefix: true, X: GenIdent(cv)}, GenStrLit("function")),
+			GenInvoke(cv),
 		))
 	}
 	// onDestroy callback bodies, inline.
@@ -1909,9 +1772,9 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 	if g.analysis != nil {
 		for _, p := range g.analysis.Props {
 			if p.Name == name && p.Bindable {
-				out = append(out, genIf(
-					id("$$onChange_"+name),
-					genInvoke("$$onChange_"+name, id(name)),
+				out = append(out, GenIf(
+					GenIdent("$$onChange_"+name),
+					GenInvoke("$$onChange_"+name, GenIdent(name)),
 				))
 			}
 		}
@@ -1938,7 +1801,7 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 			if depDirty {
 				dirty[dv.Name] = true
 				dependentDerived = append(dependentDerived, dv)
-				out = append(out, genInvoke("$$upd_"+dv.Name))
+				out = append(out, GenInvoke("$$upd_"+dv.Name))
 			}
 		}
 	}
@@ -1969,9 +1832,9 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 	// The block engine's fragments read which names changed from $$dirty:
 	// the name itself and every derived value recomputed above.
 
-	out = append(out, genAssignStmt(genMember(id("$$dirty"), name), boolLit(true)))
+	out = append(out, GenAssignStmt(GenMember(GenIdent("$$dirty"), name), GenBoolLit(true)))
 	for _, dv := range dependentDerived {
-		out = append(out, genAssignStmt(genMember(id("$$dirty"), dv.Name), boolLit(true)))
+		out = append(out, GenAssignStmt(GenMember(GenIdent("$$dirty"), dv.Name), GenBoolLit(true)))
 	}
 
 	// Setters mark component-local flags instead of enqueueing a fresh closure.
@@ -1983,7 +1846,7 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 			return
 		}
 		marked[flag] = true
-		out = append(out, genAssignStmt(id(flag), boolLit(true)))
+		out = append(out, GenAssignStmt(GenIdent(flag), GenBoolLit(true)))
 	}
 	for _, stmt := range updates {
 		if g.flushPlan != nil {
@@ -2008,7 +1871,7 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 		}
 	}
 	if len(marked) > 0 {
-		out = append(out, genInvoke("$$scheduleFlush"))
+		out = append(out, GenInvoke("$$scheduleFlush"))
 	}
 	return out
 }
@@ -2017,8 +1880,8 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 // plain ($state / prop) reactive variable: a guard, the
 // assignment, then the reactive cascade.
 func (g *ASTGen) buildOneSetter(name string) JsStmt {
-	body := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}}
-	body.Body = append(body.Body, genIf(id("$$disposed"), genReturn(nil)))
+	body := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}}
+	body.Body = append(body.Body, GenIf(GenIdent("$$disposed"), GenReturn(nil)))
 
 	// if (<name> === $$v && !$$isProxy($$v)) return;
 	//
@@ -2032,47 +1895,47 @@ func (g *ASTGen) buildOneSetter(name string) JsStmt {
 	// identity-equal proxy through to the cascade; primitives and
 	// plain objects keep the fast skip.
 	body.Body = append(body.Body, &JsIfStmt{
-		BaseStmt: BaseStmt{BaseNode: genNode()},
+		BaseStmt: BaseStmt{BaseNode: GenNode()},
 		Test: &JsBinaryExpr{
-			BaseExpr: BaseExpr{BaseNode: genNode()},
+			BaseExpr: BaseExpr{BaseNode: GenNode()},
 			Op:       "&&",
 			L: &JsBinaryExpr{
-				BaseExpr: BaseExpr{BaseNode: genNode()},
+				BaseExpr: BaseExpr{BaseNode: GenNode()},
 				Op:       "===",
-				L:        id(name),
-				R:        id("$$v"),
+				L:        GenIdent(name),
+				R:        GenIdent("$$v"),
 			},
 			R: &JsUnaryExpr{
-				BaseExpr: BaseExpr{BaseNode: genNode()},
+				BaseExpr: BaseExpr{BaseNode: GenNode()},
 				Op:       "!",
 				Prefix:   true,
 				X: &JsCallExpr{
-					BaseExpr: BaseExpr{BaseNode: genNode()},
-					Callee:   id("$$isProxy"),
-					Args:     []JsExpr{id("$$v")},
+					BaseExpr: BaseExpr{BaseNode: GenNode()},
+					Callee:   GenIdent("$$isProxy"),
+					Args:     []JsExpr{GenIdent("$$v")},
 				},
 			},
 		},
-		Then: &JsReturnStmt{BaseStmt: BaseStmt{BaseNode: genNode()}},
+		Then: &JsReturnStmt{BaseStmt: BaseStmt{BaseNode: GenNode()}},
 	})
 
 	// <name> = $$v;
 	body.Body = append(body.Body, &JsExprStmt{
-		BaseStmt: BaseStmt{BaseNode: genNode()},
+		BaseStmt: BaseStmt{BaseNode: GenNode()},
 		X: &JsAssignExpr{
-			BaseExpr: BaseExpr{BaseNode: genNode()},
+			BaseExpr: BaseExpr{BaseNode: GenNode()},
 			Op:       "=",
-			L:        id(name),
-			R:        id("$$v"),
+			L:        GenIdent(name),
+			R:        GenIdent("$$v"),
 		},
 	})
 
 	body.Body = append(body.Body, g.buildSetterCascade(name)...)
 
 	return &JsFuncDecl{
-		BaseStmt: BaseStmt{BaseNode: genNode()},
+		BaseStmt: BaseStmt{BaseNode: GenNode()},
 		Name:     "$$set_" + name,
-		Params:   []JsExpr{id("$$v")},
+		Params:   []JsExpr{GenIdent("$$v")},
 		Body:     body,
 	}
 }
@@ -2092,21 +1955,21 @@ func (g *ASTGen) buildOneSetter(name string) JsStmt {
 // full reassignment.
 func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 	pendingMutations := "$$pendingMutations_" + name
-	mutationCapture := genIf(id("$$mutation"),
-		genIf(genBinary("!==", id(pendingMutations), genNull()),
-			genExprStmt(genCall(genMember(id(pendingMutations), "push"), id("$$mutation")))),
+	mutationCapture := GenIf(GenIdent("$$mutation"),
+		GenIf(GenBinary("!==", GenIdent(pendingMutations), GenNull()),
+			GenExprStmt(GenCall(GenMember(GenIdent(pendingMutations), "push"), GenIdent("$$mutation")))),
 	)
-	mutationCapture.Else = genAssignStmt(id(pendingMutations), genNull())
+	mutationCapture.Else = GenAssignStmt(GenIdent(pendingMutations), GenNull())
 
 	// $$set_X_notify — the cascade body.
-	notifyBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}}
-	notifyBody.Body = append(notifyBody.Body, genIf(id("$$disposed"), genReturn(nil)))
+	notifyBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}}
+	notifyBody.Body = append(notifyBody.Body, GenIf(GenIdent("$$disposed"), GenReturn(nil)))
 	notifyBody.Body = append(notifyBody.Body, mutationCapture)
 	notifyBody.Body = append(notifyBody.Body, g.buildSetterCascade(name)...)
 	notify := &JsFuncDecl{
-		BaseStmt: BaseStmt{BaseNode: genNode()},
+		BaseStmt: BaseStmt{BaseNode: GenNode()},
 		Name:     "$$set_" + name + "_notify",
-		Params:   []JsExpr{id("$$mutation")},
+		Params:   []JsExpr{GenIdent("$$mutation")},
 		Body:     notifyBody,
 	}
 
@@ -2115,39 +1978,39 @@ func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 	// agree; for a deep var the new value is normally raw (proxy
 	// !== raw, so the guard never fired anyway), but a re-passed
 	// proxy must still fall through to a re-wrap + notify.
-	setBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}}
-	setBody.Body = append(setBody.Body, genIf(id("$$disposed"), genReturn(nil)))
+	setBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}}
+	setBody.Body = append(setBody.Body, GenIf(GenIdent("$$disposed"), GenReturn(nil)))
 	setBody.Body = append(setBody.Body, &JsIfStmt{
-		BaseStmt: BaseStmt{BaseNode: genNode()},
+		BaseStmt: BaseStmt{BaseNode: GenNode()},
 		Test: &JsBinaryExpr{
-			BaseExpr: BaseExpr{BaseNode: genNode()},
+			BaseExpr: BaseExpr{BaseNode: GenNode()},
 			Op:       "&&",
 			L: &JsBinaryExpr{
-				BaseExpr: BaseExpr{BaseNode: genNode()},
+				BaseExpr: BaseExpr{BaseNode: GenNode()},
 				Op:       "===",
-				L:        id(name),
-				R:        id("$$v"),
+				L:        GenIdent(name),
+				R:        GenIdent("$$v"),
 			},
 			R: &JsUnaryExpr{
-				BaseExpr: BaseExpr{BaseNode: genNode()},
+				BaseExpr: BaseExpr{BaseNode: GenNode()},
 				Op:       "!",
 				Prefix:   true,
 				X: &JsCallExpr{
-					BaseExpr: BaseExpr{BaseNode: genNode()},
-					Callee:   id("$$isProxy"),
-					Args:     []JsExpr{id("$$v")},
+					BaseExpr: BaseExpr{BaseNode: GenNode()},
+					Callee:   GenIdent("$$isProxy"),
+					Args:     []JsExpr{GenIdent("$$v")},
 				},
 			},
 		},
-		Then: &JsReturnStmt{BaseStmt: BaseStmt{BaseNode: genNode()}},
+		Then: &JsReturnStmt{BaseStmt: BaseStmt{BaseNode: GenNode()}},
 	})
 	setBody.Body = append(setBody.Body,
-		genAssignStmt(id(name), genCall(id("$$proxy"), id("$$v"), id("$$mut_"+name))),
-		genInvoke("$$set_"+name+"_notify"))
+		GenAssignStmt(GenIdent(name), GenCall(GenIdent("$$proxy"), GenIdent("$$v"), GenIdent("$$mut_"+name))),
+		GenInvoke("$$set_"+name+"_notify"))
 	set := &JsFuncDecl{
-		BaseStmt: BaseStmt{BaseNode: genNode()},
+		BaseStmt: BaseStmt{BaseNode: GenNode()},
 		Name:     "$$set_" + name,
-		Params:   []JsExpr{id("$$v")},
+		Params:   []JsExpr{GenIdent("$$v")},
 		Body:     setBody,
 	}
 
@@ -2376,33 +2239,33 @@ func (g *ASTGen) buildReturn() JsStmt {
 	hasSettable := g.analysis != nil &&
 		(len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0)
 
-	destroyBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}}
+	destroyBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}}
 	// Mark disposal before user cleanup. This makes repeated destroy() calls and
 	// setters reached from cleanup or later callbacks harmless.
 	destroyBody.Body = append(destroyBody.Body,
-		genIf(id("$$disposed"), genReturn(nil)),
-		genAssignStmt(id("$$disposed"), boolLit(true)),
+		GenIf(GenIdent("$$disposed"), GenReturn(nil)),
+		GenAssignStmt(GenIdent("$$disposed"), GenBoolLit(true)),
 	)
 	// A shared runtime queue may still hold a component flush; it will observe disposal,
 	// while clearing component-local bookkeeping releases the current batch.
 	if g.flushPlan != nil && (len(g.flushPlan.entries) > 0 || len(g.flushPlan.effectFlags) > 0) {
-		destroyBody.Body = append(destroyBody.Body, genAssignStmt(id("$$flushQueued"), boolLit(false)))
+		destroyBody.Body = append(destroyBody.Body, GenAssignStmt(GenIdent("$$flushQueued"), GenBoolLit(false)))
 		for _, entry := range g.flushPlan.entries {
-			destroyBody.Body = append(destroyBody.Body, genAssignStmt(id(entry.flag), boolLit(false)))
+			destroyBody.Body = append(destroyBody.Body, GenAssignStmt(GenIdent(entry.flag), GenBoolLit(false)))
 			if entry.ran != "" {
-				destroyBody.Body = append(destroyBody.Body, genAssignStmt(id(entry.ran), boolLit(false)))
+				destroyBody.Body = append(destroyBody.Body, GenAssignStmt(GenIdent(entry.ran), GenBoolLit(false)))
 			}
 		}
 		for _, flag := range g.flushPlan.effectFlags {
-			destroyBody.Body = append(destroyBody.Body, genAssignStmt(id(flag), boolLit(false)))
+			destroyBody.Body = append(destroyBody.Body, GenAssignStmt(GenIdent(flag), GenBoolLit(false)))
 		}
 	}
 	if g.analysis != nil {
 		for _, state := range g.analysis.StateVars {
 			if state.Deep {
 				destroyBody.Body = append(destroyBody.Body,
-					genAssignStmt(id("$$pendingMutations_"+state.Name), genArray()),
-					genAssignStmt(id("$$activeMutations_"+state.Name), genArray()),
+					GenAssignStmt(GenIdent("$$pendingMutations_"+state.Name), GenArray()),
+					GenAssignStmt(GenIdent("$$activeMutations_"+state.Name), GenArray()),
 				)
 			}
 		}
@@ -2412,7 +2275,7 @@ func (g *ASTGen) buildReturn() JsStmt {
 		for i := range g.analysis.Effects {
 			n := itoa(i)
 			destroyBody.Body = append(destroyBody.Body,
-				genIf(id("$$cleanup"+n), genInvoke("$$cleanup"+n)))
+				GenIf(GenIdent("$$cleanup"+n), GenInvoke("$$cleanup"+n)))
 		}
 	}
 	// 2-3. onMount cleanup fns + onDestroy bodies.
@@ -2424,19 +2287,19 @@ func (g *ASTGen) buildReturn() JsStmt {
 	//    mode — no runtime <style> was injected.
 	if g.hasStyle() && !g.cssExternal {
 		destroyBody.Body = append(destroyBody.Body,
-			genExprStmt(genCall(genMember(id("$$style"), "remove"))))
+			GenExprStmt(GenCall(GenMember(GenIdent("$$style"), "remove"))))
 	}
 	// 6. Root removal.
 	destroyBody.Body = append(destroyBody.Body,
-		genExprStmt(genCall(genMember(id("$$root"), "remove"))))
+		GenExprStmt(GenCall(GenMember(GenIdent("$$root"), "remove"))))
 
 	destroyProp := &JsProp{
-		BaseNode: genNode(),
+		BaseNode: GenNode(),
 		Kind:     "init",
 		Method:   true,
-		Key:      id("destroy"),
+		Key:      GenIdent("destroy"),
 		Value: &JsFuncExpr{
-			BaseExpr: BaseExpr{BaseNode: genNode()},
+			BaseExpr: BaseExpr{BaseNode: GenNode()},
 			Body:     destroyBody,
 		},
 	}
@@ -2447,10 +2310,10 @@ func (g *ASTGen) buildReturn() JsStmt {
 	// mount: the parent's @event listeners now target inst.el
 	// (instead of a wrapper div the parent itself controls).
 	elProp := &JsProp{
-		BaseNode: genNode(),
+		BaseNode: GenNode(),
 		Kind:     "init",
-		Key:      id("el"),
-		Value:    id("$$root"),
+		Key:      GenIdent("el"),
+		Value:    GenIdent("$$root"),
 	}
 
 	props := []*JsProp{elProp, destroyProp}
@@ -2458,18 +2321,18 @@ func (g *ASTGen) buildReturn() JsStmt {
 
 		// abandon releases everything but leaves the root in the document:
 		// hydration rollback keeps the server DOM for a retry (B-3.4, X-7.4).
-		abandonBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: destroyBody.Body[:len(destroyBody.Body)-1]}
-		props = append(props, &JsProp{BaseNode: genNode(), Kind: "init", Method: true, Key: id("abandon"), Value: &JsFuncExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Body: abandonBody}})
+		abandonBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}, Body: destroyBody.Body[:len(destroyBody.Body)-1]}
+		props = append(props, &JsProp{BaseNode: GenNode(), Kind: "init", Method: true, Key: GenIdent("abandon"), Value: &JsFuncExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Body: abandonBody}})
 	}
 
 	if hasSettable {
 		// set(props) { if (props.X !== undefined) $$set_X(props.X); … }
-		setBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}}
+		setBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}}
 		emit := func(name string) {
-			prop := genMember(id("props"), name)
+			prop := GenMember(GenIdent("props"), name)
 			setBody.Body = append(setBody.Body,
-				genIf(genBinary("!==", prop, id("undefined")),
-					genInvoke("$$set_"+name, genMember(id("props"), name))))
+				GenIf(GenBinary("!==", prop, GenIdent("undefined")),
+					GenInvoke("$$set_"+name, GenMember(GenIdent("props"), name))))
 		}
 		for _, sv := range g.analysis.StateVars {
 			emit(sv.Name)
@@ -2478,22 +2341,22 @@ func (g *ASTGen) buildReturn() JsStmt {
 			emit(p.Name)
 		}
 		props = append(props, &JsProp{
-			BaseNode: genNode(),
+			BaseNode: GenNode(),
 			Kind:     "init",
 			Method:   true,
-			Key:      id("set"),
+			Key:      GenIdent("set"),
 			Value: &JsFuncExpr{
-				BaseExpr: BaseExpr{BaseNode: genNode()},
-				Params:   []JsExpr{id("props")},
+				BaseExpr: BaseExpr{BaseNode: GenNode()},
+				Params:   []JsExpr{GenIdent("props")},
 				Body:     setBody,
 			},
 		})
 	}
 
 	return &JsReturnStmt{
-		BaseStmt: BaseStmt{BaseNode: genNode()},
+		BaseStmt: BaseStmt{BaseNode: GenNode()},
 		Arg: &JsObjectExpr{
-			BaseExpr: BaseExpr{BaseNode: genNode()},
+			BaseExpr: BaseExpr{BaseNode: GenNode()},
 			Props:    props,
 		},
 	}

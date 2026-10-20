@@ -240,7 +240,7 @@ func rewriteAssignmentMembers(members []*JsClassMember, stateSet map[string]bool
 
 func reactiveSetterStmt(expr JsExpr, stateSet map[string]bool) JsStmt {
 	if setter := reactiveSetterExpr(expr, stateSet); setter != nil {
-		return genExprStmt(setter)
+		return GenExprStmt(setter)
 	}
 	if block := reactivePatternAssignment(expr, stateSet); block != nil {
 		return block
@@ -269,20 +269,20 @@ func reactivePatternAssignment(expr JsExpr, stateSet map[string]bool) JsStmt {
 			seen[name] = true
 			names = append(names, name)
 		}
-		return id("$$d_" + name)
+		return GenIdent("$$d_" + name)
 	})
 	if len(names) == 0 {
 		return nil
 	}
-	decl := &JsVarDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Kind: "let"}
+	decl := &JsVarDecl{BaseStmt: BaseStmt{BaseNode: GenNode()}, Kind: "let"}
 	for _, name := range names {
-		decl.Decls = append(decl.Decls, &JsVarDeclarator{BaseNode: genNode(), Id: id("$$d_" + name)})
+		decl.Decls = append(decl.Decls, &JsVarDeclarator{BaseNode: GenNode(), Id: GenIdent("$$d_" + name)})
 	}
-	body := []JsStmt{decl, genExprStmt(assign)}
+	body := []JsStmt{decl, GenExprStmt(assign)}
 	for _, name := range names {
-		body = append(body, genExprStmt(genCall(id("$$set_"+name), id("$$d_"+name))))
+		body = append(body, GenExprStmt(GenCall(GenIdent("$$set_"+name), GenIdent("$$d_"+name))))
 	}
-	return genBlock(body...)
+	return GenBlock(body...)
 }
 
 // replacePatternTargets replaces every state identifier that a destructuring
@@ -318,7 +318,7 @@ func reactiveSetterExpr(expr JsExpr, stateSet map[string]bool) JsExpr {
 			if update.Op == "--" {
 				op = "-"
 			}
-			return genCall(id("$$set_"+name), genBinary(op, id(name), numLit(1)))
+			return GenCall(GenIdent("$$set_"+name), GenBinary(op, GenIdent(name), GenNumLit(1)))
 		}
 	}
 
@@ -332,18 +332,18 @@ func reactiveSetterExpr(expr JsExpr, stateSet map[string]bool) JsExpr {
 	}
 
 	if assign.Op == "=" {
-		return genCall(id("$$set_"+name), assign.R)
+		return GenCall(GenIdent("$$set_"+name), assign.R)
 	}
 	op := strings.TrimSuffix(assign.Op, "=")
 	if op == assign.Op {
 		return nil
 	}
 	if op == "&&" || op == "||" || op == "??" {
-		return genCall(id("$$set_"+name), genLogical(op, id(name), assign.R))
+		return GenCall(GenIdent("$$set_"+name), GenLogical(op, GenIdent(name), assign.R))
 	}
 	switch op {
 	case "+", "-", "*", "/", "%", "**":
-		return genCall(id("$$set_"+name), genBinary(op, id(name), assign.R))
+		return GenCall(GenIdent("$$set_"+name), GenBinary(op, GenIdent(name), assign.R))
 	default:
 		return nil
 	}

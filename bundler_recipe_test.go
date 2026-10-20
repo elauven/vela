@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/elauven/vela/runtime"
+
 	"encoding/json"
 	"io"
 	"os"
@@ -35,7 +37,7 @@ func newBundlerFixture(t *testing.T) *bundlerFixture {
 	}
 	f := &bundlerFixture{t: t, root: t.TempDir(), esbuild: esbuild, node: node}
 	f.copyDir(filepath.Join("testdata", "bundler", "packages", "tiny-fmt"), filepath.Join(f.root, "node_modules", "tiny-fmt"), nil)
-	f.copyDir(runtimePackageDir, filepath.Join(f.root, "node_modules", filepath.FromSlash(RuntimePackageName)), nil)
+	f.copyDir(runtimePackageDir, filepath.Join(f.root, "node_modules", filepath.FromSlash(runtime.PackageName)), nil)
 	return f
 }
 
@@ -68,7 +70,7 @@ func (f *bundlerFixture) compile(project, out string, bare bool) {
 	srcRoot := filepath.Join("testdata", "bundler", project)
 	opts := CompileOptions{StatusWriter: io.Discard, BareRuntimeImports: bare}
 	if bare {
-		opts.RuntimeImport = RuntimePackageName
+		opts.RuntimeImport = runtime.PackageName
 	}
 	if errors := buildProject(collectVela(srcRoot), srcRoot, filepath.Join(f.root, out), opts, false); errors != 0 {
 		f.t.Fatalf("build of %s failed with %d error(s)", project, errors)
@@ -136,7 +138,7 @@ func TestBundlerRecipeEsbuild(t *testing.T) {
 		t.Fatalf("entry point still imports the component source:\n%s", main)
 	}
 	app := f.read("build/App.js")
-	for _, want := range []string{"from '" + RuntimePackageName + "'", "from '" + RuntimePackageName + "/blocks'", "from 'tiny-fmt'"} {
+	for _, want := range []string{"from '" + runtime.PackageName + "'", "from '" + runtime.PackageName + "/blocks'", "from 'tiny-fmt'"} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("App.js misses %q:\n%s", want, app)
 		}
@@ -156,7 +158,7 @@ func TestBundlerRecipeEsbuild(t *testing.T) {
 		// The development check of the runtime is a constant after the
 		// bundler's replacement: run code that reads it in Node, where
 		// process exists, so only the replacement decides.
-		probe := "import { $$isDev } from '" + RuntimePackageName + "';\nconsole.log('dev=' + $$isDev());\n"
+		probe := "import { $$isDev } from '" + runtime.PackageName + "';\nconsole.log('dev=' + $$isDev());\n"
 		if err := os.WriteFile(filepath.Join(f.root, "probe.js"), []byte(probe), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -197,7 +199,7 @@ func TestBundlerRecipeEsbuild(t *testing.T) {
 	}
 
 	// A runtime of another contract fails when esbuild links the modules.
-	f.copyDir(runtimePackageDir, filepath.Join(f.root, "node_modules", filepath.FromSlash(RuntimePackageName)), func(name, src string) string {
+	f.copyDir(runtimePackageDir, filepath.Join(f.root, "node_modules", filepath.FromSlash(runtime.PackageName)), func(name, src string) string {
 		return strings.ReplaceAll(src, runtimeContractExport, "$$runtimeContractOther")
 	})
 	out, err := f.bundle("build/main.js", "dist/mismatch.js")

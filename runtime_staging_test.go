@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/elauven/vela/runtime"
+
 	"bytes"
 	"os"
 	"os/exec"
@@ -38,7 +40,7 @@ func TestBuildProjectStagesOneRuntimeAtTheOutputRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("missing staged runtime at the output root: %v", err)
 	}
-	if !bytes.Equal(got, embeddedRuntime) {
+	if !bytes.Equal(got, runtime.Core) {
 		t.Fatal("staged runtime differs from the canonical embedded source")
 	}
 	for _, dir := range []string{filepath.Join(outRoot, "nested"), filepath.Join(outRoot, "nested", "deep")} {
@@ -77,14 +79,14 @@ func TestRuntimeImportFor(t *testing.T) {
 }
 
 func TestProductionRuntimeDisablesDevelopmentChecks(t *testing.T) {
-	if !bytes.Contains(embeddedRuntime, []byte(runtimeDevelopmentFlag)) {
+	if !bytes.Contains(runtime.Core, []byte(runtime.DevelopmentFlag)) {
 		t.Fatal("core runtime no longer contains the development flag the production variant replaces")
 	}
 	production := runtimeSource(true)
-	if bytes.Contains(production, []byte(runtimeDevelopmentFlag)) || !bytes.Contains(production, []byte("const DEV = false;")) {
+	if bytes.Contains(production, []byte(runtime.DevelopmentFlag)) || !bytes.Contains(production, []byte("const DEV = false;")) {
 		t.Fatal("production runtime keeps the development flag")
 	}
-	if !bytes.Equal(runtimeSource(false), embeddedRuntime) {
+	if !bytes.Equal(runtimeSource(false), runtime.Core) {
 		t.Fatal("development runtime differs from the embedded runtime")
 	}
 }
@@ -113,7 +115,7 @@ func TestStaleRuntimeContractFailsAtModuleLoad(t *testing.T) {
 	if out, err := load(); err != nil {
 		t.Fatalf("module with the current runtime failed to load: %v\n%s", err, out)
 	}
-	stale := bytes.Replace(embeddedRuntime, []byte("export const "+runtimeContractExport), []byte("export const $$runtimeContract0"), 1)
+	stale := bytes.Replace(runtime.Core, []byte("export const "+runtimeContractExport), []byte("export const $$runtimeContract0"), 1)
 	if err := os.WriteFile(filepath.Join(outRoot, "runtime.js"), stale, 0o644); err != nil {
 		t.Fatal(err)
 	}

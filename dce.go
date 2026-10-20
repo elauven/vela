@@ -225,7 +225,7 @@ func filterDeadNestedStmt(stmt JsStmt, drops map[int]bool) JsStmt {
 	if len(filtered) > 0 {
 		return filtered[0]
 	}
-	return &JsEmptyStmt{BaseStmt: BaseStmt{BaseNode: genNode()}}
+	return &JsEmptyStmt{BaseStmt: BaseStmt{BaseNode: GenNode()}}
 }
 
 // ─────────────────────────────────────────────

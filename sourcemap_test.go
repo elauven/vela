@@ -32,19 +32,19 @@ func TestSourceMapUsesUTF16Columns(t *testing.T) {
 }
 
 func TestPrintJSWithLocationsUsesExplicitTemplateOrigin(t *testing.T) {
-	expr := id("answer")
+	expr := GenIdent("answer")
 	setTemplateOrigin(expr, 17)
 	var locations []PrintLocation
-	PrintJSWithLocations(&JsProgram{Body: []JsStmt{&JsExprStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, X: expr}}}, PrintPretty, func(loc PrintLocation) { locations = append(locations, loc) })
+	PrintJSWithLocations(&JsProgram{Body: []JsStmt{&JsExprStmt{BaseStmt: BaseStmt{BaseNode: GenNode()}, X: expr}}}, PrintPretty, func(loc PrintLocation) { locations = append(locations, loc) })
 	if len(locations) != 1 || locations[0].SourcePos != 17 {
 		t.Fatalf("locations = %+v, want one template-origin mapping at 17", locations)
 	}
 }
 
 func TestPrintJSWithLocationsSkipsGeneratedNodes(t *testing.T) {
-	expr := id("generated")
+	expr := GenIdent("generated")
 	var locations []PrintLocation
-	PrintJSWithLocations(&JsProgram{Body: []JsStmt{&JsExprStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, X: expr}}}, PrintPretty, func(loc PrintLocation) { locations = append(locations, loc) })
+	PrintJSWithLocations(&JsProgram{Body: []JsStmt{&JsExprStmt{BaseStmt: BaseStmt{BaseNode: GenNode()}, X: expr}}}, PrintPretty, func(loc PrintLocation) { locations = append(locations, loc) })
 	if len(locations) != 0 {
 		t.Fatalf("generated expression produced mappings: %+v", locations)
 	}
@@ -439,11 +439,11 @@ func TestAwaitBranchExpressionsKeepSourceMapOrigins(t *testing.T) {
 
 func TestPrintJSWithLocationsReportsNestedHoistedHandlerCallOrigin(t *testing.T) {
 	const want = 67
-	call := &JsCallExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Callee: id("$$set_count"), Args: []JsExpr{id("$e")}}
+	call := &JsCallExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Callee: GenIdent("$$set_count"), Args: []JsExpr{GenIdent("$e")}}
 	setTemplateOrigin(call, want)
-	guard := &JsIfStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, Test: &JsBinaryExpr{BaseExpr: BaseExpr{BaseNode: genNode()}, Op: "instanceof", L: id("$e"), R: id("CustomEvent")}, Then: &JsExprStmt{BaseStmt: BaseStmt{BaseNode: genNode()}, X: call}}
-	wrapper := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: genNode()}, Params: []JsExpr{id("$e")}, Body: &JsBlock{BaseStmt: BaseStmt{BaseNode: genNode()}, Body: []JsStmt{guard}}}
-	prog := &JsProgram{Body: []JsStmt{&JsVarDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Kind: "const", Decls: []*JsVarDeclarator{{Id: id("$$handler"), Init: wrapper}}}}}
+	guard := &JsIfStmt{BaseStmt: BaseStmt{BaseNode: GenNode()}, Test: &JsBinaryExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Op: "instanceof", L: GenIdent("$e"), R: GenIdent("CustomEvent")}, Then: &JsExprStmt{BaseStmt: BaseStmt{BaseNode: GenNode()}, X: call}}
+	wrapper := &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: GenNode()}, Params: []JsExpr{GenIdent("$e")}, Body: &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}, Body: []JsStmt{guard}}}
+	prog := &JsProgram{Body: []JsStmt{&JsVarDecl{BaseStmt: BaseStmt{BaseNode: GenNode()}, Kind: "const", Decls: []*JsVarDeclarator{{Id: GenIdent("$$handler"), Init: wrapper}}}}}
 	seen := false
 	PrintJSWithLocations(prog, PrintPretty, func(loc PrintLocation) { seen = seen || loc.SourcePos == want })
 	if !seen {

@@ -8,6 +8,8 @@ package main
 //   3. Emit the rewritten imports into the generated JS output
 
 import (
+	"github.com/elauven/vela/runtime"
+
 	"path/filepath"
 	"strings"
 )
@@ -288,7 +290,7 @@ func runtimeImportDecls(specs []JsImportSpec) []JsStmt {
 			continue
 		}
 		decls = append(decls, &JsImportDecl{
-			BaseStmt:   BaseStmt{BaseNode: genNode()},
+			BaseStmt:   BaseStmt{BaseNode: GenNode()},
 			Specifiers: group.specs,
 			Source:     group.source,
 		})
@@ -323,8 +325,8 @@ func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
 		runtimeSpecifier = defaultRuntimeImport
 	}
 	blocksSpecifier := strings.TrimSuffix(runtimeSpecifier, "runtime.js") + "runtime-blocks.js"
-	if runtimeSpecifier == RuntimePackageName {
-		blocksSpecifier = runtimePackageSpecifiers["runtime-blocks.js"]
+	if runtimeSpecifier == runtime.PackageName {
+		blocksSpecifier = runtime.PackageSpecifiers["runtime-blocks.js"]
 	}
 	var core *JsImportDecl
 	usesRuntime := false
@@ -349,7 +351,7 @@ func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
 		return
 	}
 	if core == nil {
-		core = &JsImportDecl{BaseStmt: BaseStmt{BaseNode: genNode()}, Source: runtimeSpecifier}
+		core = &JsImportDecl{BaseStmt: BaseStmt{BaseNode: GenNode()}, Source: runtimeSpecifier}
 		prog.Body = append([]JsStmt{core}, prog.Body...)
 	}
 	for _, spec := range core.Specifiers {
