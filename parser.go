@@ -56,12 +56,6 @@ type SFC struct {
 	TemplateOffset int
 }
 
-// SectionSpan is an immutable half-open byte range in the full .vela source.
-type SectionSpan struct {
-	Start int
-	End   int
-}
-
 // ScriptAST is the script portion of a ComponentAST. Program node positions
 // remain relative to Source; Span translates those positions to the component
 // source file. Diagnostics are structured parser failures collected during the
@@ -172,7 +166,7 @@ func parseSFC(src string) (*SFC, error) {
 	}
 	sfc.ScriptAST = newScriptAST(sfc.Script, sfc.ScriptOffset)
 	sfc.TemplateAST = newTemplateAST(sfc.Template, sfc.TemplateOffset)
-	sfc.StyleAST = newCssStylesheet(sfc.Style, sfc.StyleOffset)
+	sfc.StyleAST = NewCssStylesheet(sfc.Style, sfc.StyleOffset)
 	sfc.AST = &ComponentAST{
 		Source:   src,
 		Script:   sfc.ScriptAST,

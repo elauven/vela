@@ -1616,7 +1616,7 @@ func scopedCSSForSFC(sfc *SFC, scopeID string) string {
 	}
 	sheet := sfc.StyleAST
 	if sheet == nil {
-		sheet = newCssStylesheet(sfc.Style, sfc.StyleOffset)
+		sheet = NewCssStylesheet(sfc.Style, sfc.StyleOffset)
 	}
 	return ScopeCssStylesheet(sheet, scopeID)
 }
