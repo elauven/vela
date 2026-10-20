@@ -436,11 +436,11 @@ func TestASTGenCorpus(t *testing.T) {
 	for name, src := range corpus {
 		name, src := name, src
 		t.Run(name, func(t *testing.T) {
-			sfc, err := parseSFC(src)
+			sfc, err := ParseSFC(src)
 			if err != nil {
 				t.Fatalf("parseSFC: %v", err)
 			}
-			tmpl, err := parseTemplate(sfc.Template)
+			tmpl, err := ParseTemplate(sfc.Template)
 			if err != nil {
 				t.Fatalf("parseTemplate: %v", err)
 			}
@@ -475,8 +475,8 @@ func TestASTGenCorpus(t *testing.T) {
 
 func TestASTGenTransitiveDerived(t *testing.T) {
 	src := corpus["derived_chain"]
-	sfc, _ := parseSFC(src)
-	tmpl, _ := parseTemplate(sfc.Template)
+	sfc, _ := ParseSFC(src)
+	tmpl, _ := ParseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
 	out := generateCodeAST("derived_chain", sfc, tmpl, analysis, "vela-000000")
 

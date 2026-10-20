@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/elauven/vela/internal/source"
+	"github.com/elauven/vela/internal/srcspan"
 )
 
 func TestScopeCSS(t *testing.T) {
@@ -151,7 +151,7 @@ func TestScopeCSS_CustomProperty(t *testing.T) {
 func TestValidateCssASTRejectsBrokenShapes(t *testing.T) {
 	sheet := &CssStylesheet{
 		Source: "p {}",
-		Span:   source.SectionSpan{Start: 0, End: len("p {}")},
+		Span:   srcspan.SectionSpan{Start: 0, End: len("p {}")},
 		Rules: []CssNode{
 			&CssQualifiedRule{Selectors: []*CssSelector{nil}, Decls: []*CssDecl{nil}},
 			nil,
@@ -166,10 +166,10 @@ func TestValidateCssASTRejectsBrokenShapes(t *testing.T) {
 func TestValidateCssASTRejectsEscapingSpan(t *testing.T) {
 	sheet := &CssStylesheet{
 		Source: "p {}",
-		Span:   source.SectionSpan{Start: 10, End: 14},
+		Span:   srcspan.SectionSpan{Start: 10, End: 14},
 		Rules: []CssNode{&CssQualifiedRule{
-			Span:      source.SectionSpan{Start: 10, End: 20},
-			Selectors: []*CssSelector{{Span: source.SectionSpan{Start: 10, End: 11}, Parts: []CssTok{{Kind: CssTokIdent, Val: "p"}}}},
+			Span:      srcspan.SectionSpan{Start: 10, End: 20},
+			Selectors: []*CssSelector{{Span: srcspan.SectionSpan{Start: 10, End: 11}, Parts: []CssTok{{Kind: CssTokIdent, Val: "p"}}}},
 		}},
 	}
 	issues := ValidateCssAST(sheet)

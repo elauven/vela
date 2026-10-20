@@ -48,7 +48,7 @@ func TestGeneratedSSRRendererMatchesValueTextOracle(t *testing.T) {
 		template.WriteString(`}</p>`)
 	}
 	template.WriteString("</main></template>")
-	sfc, err := parseSFC(template.String())
+	sfc, err := ParseSFC(template.String())
 	if err != nil {
 		t.Fatal(err)
 	}

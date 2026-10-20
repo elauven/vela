@@ -52,11 +52,11 @@ func TestPrintJSWithLocationsSkipsGeneratedNodes(t *testing.T) {
 
 func TestScriptPlanPreservesStatementOrigins(t *testing.T) {
 	raw := "<script>\nlet before = 1;\n\nfunction explode() {\n  throw new Error('boom');\n}\n</script>\n<template><p>ok</p></template>"
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,11 +147,11 @@ func TestSourceMapRejectsUnsupportedModes(t *testing.T) {
 
 func TestInlineAwaitPromiseSourceMapOrigin(t *testing.T) {
 	raw := "<script>let request = $state(Promise.resolve(1));</script><template>{#await request then value}<p>{value}</p>{/await}</template>"
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,11 +171,11 @@ func TestInlineAwaitPromiseSourceMapOrigin(t *testing.T) {
 
 func TestRepeatedTemplateExpressionsKeepDistinctOrigins(t *testing.T) {
 	raw := "<script>let value = $state('');</script><template><p>{value} {value}</p></template>"
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,11 +198,11 @@ func TestRepeatedTemplateExpressionsKeepDistinctOrigins(t *testing.T) {
 
 func TestComponentEventSourceMapOriginAndEventParameter(t *testing.T) {
 	raw := "<script>let count = $state(0);</script><template><Child @on:close={count++} /></template>"
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,11 +224,11 @@ func TestComponentEventSourceMapOriginAndEventParameter(t *testing.T) {
 
 func TestEachRowTextExpressionKeepsSourceMapOrigin(t *testing.T) {
 	raw := "<script>let items = $state.deep([]);</script><template>{#each items as item}<p>{item.title}</p>{/each}</template>"
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,11 +246,11 @@ func TestEachRowTextExpressionKeepsSourceMapOrigin(t *testing.T) {
 
 func TestEachRowAttributeAndHandlerExpressionsKeepSourceMapOrigins(t *testing.T) {
 	raw := "<script>let items = $state.deep([]); let count = $state(0);</script><template>{#each items as item}<button :title={item.title} class:selected={item.done} style:opacity={item.opacity} @click={() => count++}>{item.title}</button>{/each}</template>"
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,11 +275,11 @@ func TestEachRowAttributeAndHandlerExpressionsKeepSourceMapOrigins(t *testing.T)
 
 func TestSlotFallbackExpressionKeepsSourceMapOrigin(t *testing.T) {
 	raw := "<script>let fallback = $state(\"default\");</script><template><slot>{fallback}</slot></template>"
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,11 +301,11 @@ func TestSlotFallbackExpressionKeepsSourceMapOrigin(t *testing.T) {
 
 func TestStructuredIfBranchExpressionKeepsSourceMapOrigin(t *testing.T) {
 	raw := "<script>let visible = $state(true); let title = $state('ready');</script><template>{#if visible}<p>{title}</p>{:else}<p>hidden</p>{/if}</template>"
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,11 +327,11 @@ func TestStructuredIfBranchExpressionKeepsSourceMapOrigin(t *testing.T) {
 
 func TestStructuredIfDynamicDOMKeepsSourceMapOrigins(t *testing.T) {
 	raw := "<script>let visible = $state(true); let active = $state(false); let label = $state(\"ready\"); let count = $state(0);</script><template>{#if visible}<input :data-label={label} class:selected={active} style:opacity={active ? 1 : 0.5} bind:value={label} @click={() => count++} />{/if}</template>"
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,11 +357,11 @@ func TestStructuredIfDynamicDOMKeepsSourceMapOrigins(t *testing.T) {
 
 func TestStructuredKeyComponentKeepsSourceMapOrigins(t *testing.T) {
 	raw := "<script>let identity = $state(1); let value = $state(\"one\"); let count = $state(0);</script><template>{#key identity}<Child :value={value} @on:close={count++} />{/key}</template>"
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,11 +382,11 @@ func TestStructuredKeyComponentKeepsSourceMapOrigins(t *testing.T) {
 
 func TestNestedEachAndIfExpressionsKeepSourceMapOrigins(t *testing.T) {
 	raw := "<script>let items = $state.deep([]); let flag = $state(true); let show = $state(true);</script><template>{#each items as item}<p>{#if flag}<span :title={item.title}>{item.title}</span>{/if}</p>{/each}{#if show}<ul>{#each items as item}<li>{item.title}</li>{/each}</ul>{/if}</template>"
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,11 +413,11 @@ func TestNestedEachAndIfExpressionsKeepSourceMapOrigins(t *testing.T) {
 
 func TestAwaitBranchExpressionsKeepSourceMapOrigins(t *testing.T) {
 	raw := "<script>let request = $state(Promise.resolve(\"ok\")); let pendingLabel = $state(\"loading\");</script><template>{#await request}<p>{pendingLabel}</p>{:then value}<p :title={value}>{value}</p>{:catch error}<p>{error.message}</p>{/await}</template>"
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}

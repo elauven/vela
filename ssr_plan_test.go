@@ -11,7 +11,7 @@ export let title = "";
 export let active = false;
 export let items = [];
 </script><style>.box { color: red; }</style><template><button @click={track} @focus={observe}>{title}</button>{#if active}<p :title={title}>{message}</p>{/if}{#each items as item (item.id)}<span>{item.label}</span>{/each}</template>`
-	sfc, err := parseSFC(src)
+	sfc, err := ParseSFC(src)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestBuildSSRRenderPlanRejectsMissingInputs(t *testing.T) {
 	if _, err := BuildSSRRenderPlan("Demo", nil, ""); err == nil {
 		t.Fatal("missing SFC did not fail")
 	}
-	sfc, err := parseSFC(`<template><p>ok</p></template>`)
+	sfc, err := ParseSFC(`<template><p>ok</p></template>`)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestBuildSSRRenderPlanRejectsMissingInputs(t *testing.T) {
 }
 
 func TestBuildSSRRenderPlanUsesTypedJSDocProps(t *testing.T) {
-	sfc, err := parseSFC(`<script>
+	sfc, err := ParseSFC(`<script>
 /** @type {string} */
 export let title = null;
 /** @type {number[]} */
@@ -122,7 +122,7 @@ const ignored = "/** @type {boolean} */ export let fake = null;";
 }
 
 func TestBuildSSRRenderPlanInfersNumericExpressionPropTypes(t *testing.T) {
-	sfc, err := parseSFC(`<script>
+	sfc, err := ParseSFC(`<script>
 export let negative = -1;
 export let ratio = 1 / 2;
 export let label = 'item ' + 2;
@@ -150,7 +150,7 @@ export let label = 'item ' + 2;
 }
 
 func TestBuildSSRRenderPlanRejectsPresenceFieldPropCollision(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let set = false;</script><template>{set}</template>`)
+	sfc, err := ParseSFC(`<script>export let set = false;</script><template>{set}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}

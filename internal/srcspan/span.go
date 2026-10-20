@@ -1,6 +1,6 @@
-// Package source holds positions in .vela component source shared by the
+// Package srcspan holds positions in .vela component source shared by the
 // compiler layers.
-package source
+package srcspan
 
 // SectionSpan is an immutable half-open byte range in the full .vela source.
 type SectionSpan struct {

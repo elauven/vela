@@ -77,7 +77,7 @@ func TestParseTemplate_AwaitInlineBranches(t *testing.T) {
 		{"{#await request catch failure}<p>{failure.message}</p>{/await}", "", "failure"},
 	}
 	for _, tc := range tests {
-		nodes, err := parseTemplate(tc.src)
+		nodes, err := ParseTemplate(tc.src)
 		if err != nil {
 			t.Fatalf("parseTemplate(%q): %v", tc.src, err)
 		}
@@ -96,7 +96,7 @@ func TestParseTemplate_AwaitInlineBranches(t *testing.T) {
 		}
 	}
 
-	nodes, err := parseTemplate("{#await Promise.resolve({ then: 1 }) then value}{value}{/await}")
+	nodes, err := ParseTemplate("{#await Promise.resolve({ then: 1 }) then value}{value}{/await}")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestParseTemplate_AwaitBindingDiagnostics(t *testing.T) {
 		"{#await p then value}<p>{value}</p>{:catch error}<p>{error}</p>{/await}",
 		"{#await p}{:then value}<p>{value}</p>{:then duplicate}<p>{duplicate}</p>{/await}",
 	} {
-		if _, err := parseTemplate(src); err == nil {
+		if _, err := ParseTemplate(src); err == nil {
 			t.Errorf("parseTemplate(%q) succeeded, want await diagnostic", src)
 		}
 	}

@@ -343,7 +343,7 @@ func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, hos
 	if err != nil {
 		return err
 	}
-	sfc, err := parseSFC(string(data))
+	sfc, err := ParseSFC(string(data))
 	if err != nil {
 		return fmt.Errorf("parse component: %w", err)
 	}

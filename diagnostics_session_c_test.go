@@ -11,7 +11,7 @@ import (
 func runValidateTemplate(t *testing.T, script, template string) *DiagSet {
 	t.Helper()
 	a := analyzeScript(script)
-	nodes, err := parseTemplate(template)
+	nodes, err := ParseTemplate(template)
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestVelaFormDiagnostics(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			prog := ParseJS(tc.script)
-			nodes, err := parseTemplate(tc.template)
+			nodes, err := ParseTemplate(tc.template)
 			if err != nil {
 				t.Fatal(err)
 			}

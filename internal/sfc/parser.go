@@ -1,6 +1,10 @@
-package main
+package sfc
 
 import (
+	"github.com/elauven/vela/internal/css"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/srcspan"
+
 	"fmt"
 	"regexp"
 	"strings"
@@ -18,7 +22,7 @@ type ComponentAST struct {
 	Source   string
 	Script   *ScriptAST
 	Template *TemplateAST
-	Style    *CssStylesheet
+	Style    *css.CssStylesheet
 }
 
 type SFC struct {
@@ -39,7 +43,7 @@ type SFC struct {
 
 	AST         *ComponentAST
 	TemplateAST *TemplateAST
-	StyleAST    *CssStylesheet
+	StyleAST    *css.CssStylesheet
 
 	// ScriptAST owns the one parsed representation of the <script> section.
 	// Script remains temporarily for source extraction and user-facing tooling;
@@ -84,29 +88,29 @@ type JSDocComment struct {
 
 type ScriptAST struct {
 	Source      string
-	Span        SectionSpan
-	Program     *JsProgram
-	Diagnostics []JSParseDiagnostic
+	Span        srcspan.SectionSpan
+	Program     *jsast.JsProgram
+	Diagnostics []jsast.JSParseDiagnostic
 	DocComments []JSDocComment
 }
 
-func newScriptAST(source string, offset int) *ScriptAST {
-	program, diagnostics := ParseJSWithDiagnostics(source)
+func NewScriptAST(source string, offset int) *ScriptAST {
+	program, diagnostics := jsast.ParseJSWithDiagnostics(source)
 	if len(diagnostics) == 0 {
 		// Early errors would make the generated module fail to load. The
 		// script runs inside the component factory, a plain function.
-		diagnostics = EarlyErrors(program, EarlyOptions{TopLevelIsFunction: true})
+		diagnostics = jsast.EarlyErrors(program, jsast.EarlyOptions{TopLevelIsFunction: true})
 	}
 	return &ScriptAST{
 		Source:      source,
-		Span:        SectionSpan{Start: offset, End: offset + len(source)},
+		Span:        srcspan.SectionSpan{Start: offset, End: offset + len(source)},
 		Program:     program,
 		Diagnostics: diagnostics,
 		DocComments: scanJSDocComments(source),
 	}
 }
 
-// parseSFC splits a .vela source file into its three sections by scanning for
+// ParseSFC splits a .vela source file into its three sections by scanning for
 // <script>, <style>, and <template> open/close tags without using regexp.
 // The scanner is case-insensitive and tolerates arbitrary tag attributes.
 //
@@ -118,7 +122,7 @@ func newScriptAST(source string, offset int) *ScriptAST {
 // whitespace bytes were trimmed and add that to the offset.  Without
 // this, every diagnostic in a `<script>\n  let x = …` block would be
 // off by the newline + indent.
-func parseSFC(src string) (*SFC, error) {
+func ParseSFC(src string) (*SFC, error) {
 	sfc := &SFC{Source: src}
 
 	// extractBlock finds the first occurrence of <tag …>…</tag>
@@ -157,16 +161,16 @@ func parseSFC(src string) (*SFC, error) {
 	}
 
 	sfc.Script, sfc.ScriptOffset = extractBlock("script")
-	sfc.ClientOnly = scriptContextClient(src)
+	sfc.ClientOnly = ScriptContextClient(src)
 	sfc.Style, sfc.StyleOffset = extractBlock("style")
 	sfc.Template, sfc.TemplateOffset = extractBlock("template")
 
 	if sfc.Template == "" {
 		return nil, fmt.Errorf("missing <template> section")
 	}
-	sfc.ScriptAST = newScriptAST(sfc.Script, sfc.ScriptOffset)
+	sfc.ScriptAST = NewScriptAST(sfc.Script, sfc.ScriptOffset)
 	sfc.TemplateAST = newTemplateAST(sfc.Template, sfc.TemplateOffset)
-	sfc.StyleAST = NewCssStylesheet(sfc.Style, sfc.StyleOffset)
+	sfc.StyleAST = css.NewCssStylesheet(sfc.Style, sfc.StyleOffset)
 	sfc.AST = &ComponentAST{
 		Source:   src,
 		Script:   sfc.ScriptAST,
@@ -197,7 +201,7 @@ func asciiLower(src string) string {
 // parsed representation used by compiler stages.
 type TemplateAST struct {
 	Source      string
-	Span        SectionSpan
+	Span        srcspan.SectionSpan
 	Nodes       []Node
 	Diagnostics []TemplateParseDiagnostic
 }
@@ -211,7 +215,7 @@ func newTemplateAST(source string, offset int) *TemplateAST {
 	nodes, err := parseTemplateAt(source, offset)
 	ast := &TemplateAST{
 		Source: source,
-		Span:   SectionSpan{Start: offset, End: offset + len(source)},
+		Span:   srcspan.SectionSpan{Start: offset, End: offset + len(source)},
 		Nodes:  nodes,
 	}
 	if err != nil {
@@ -236,7 +240,7 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 	if ast.Span.Start < 0 || ast.Span.End < ast.Span.Start || ast.Span.End-ast.Span.Start != len(ast.Source) {
 		add(0, "template source span does not match its owned source")
 	}
-	checkSpan := func(span SectionSpan, label string) {
+	checkSpan := func(span srcspan.SectionSpan, label string) {
 		if span.Start == 0 && span.End == 0 {
 			return
 		}
@@ -363,7 +367,7 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 					walkNodes(branch.Children)
 				}
 			default:
-				add(0, "template contains unsupported node kind %q", node.nodeKind())
+				add(0, "template contains unsupported node kind %q", node.NodeKind())
 			}
 		}
 	}
@@ -371,11 +375,11 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 	return issues
 }
 
-type Node interface{ nodeKind() string }
+type Node interface{ NodeKind() string }
 
 // ElementNode represents a DOM element.
 type ElementNode struct {
-	Span     SectionSpan
+	Span     srcspan.SectionSpan
 	Tag      string
 	Attrs    []*Attr
 	Children []Node
@@ -383,7 +387,7 @@ type ElementNode struct {
 
 // IfChainNode represents a standard {#if} chain or a {#key} block.
 type IfChainNode struct {
-	Span     SectionSpan
+	Span     srcspan.SectionSpan
 	Branches []*IfBranch // [0]=if, [1..n-1]=elseif, last may have Cond==""(else)
 
 	// KeyExpr, if non-empty, marks this chain as a {#key expr} block.
@@ -402,11 +406,11 @@ type IfChainNode struct {
 }
 
 type IfBranch struct {
-	Span          SectionSpan
+	Span          srcspan.SectionSpan
 	Cond          string // empty string → #else branch
 	CondPos       int    // byte offset of condition in template
 	Expr          *TemplateExpr
-	SyntheticCond JsExpr // compiler-generated condition AST for synthetic branches
+	SyntheticCond jsast.JsExpr // compiler-generated condition AST for synthetic branches
 
 	Children []Node // branch body
 }
@@ -421,7 +425,7 @@ func (b *IfBranch) HasCondition() bool {
 // EachBlockNode is produced by Svelte-style {#each items as item (key)}...{/each}.
 // The children are the content of each row; they may include multiple nodes.
 type EachBlockNode struct {
-	Span SectionSpan
+	Span srcspan.SectionSpan
 	// EachExpr is retained as source/debug metadata. Standard block consumers use
 	// IterExpr, ItemName, and IndexName instead of re-parsing this string.
 	EachExpr     string // e.g. "items as item" or "items as item, index"
@@ -462,7 +466,7 @@ func (e *EachBlockNode) HasKey() bool { return e != nil && e.KeyAST != nil }
 // it and reattaches the .then/.catch handlers — so reactive prompts
 // (e.g. await fetch(`/api/${id}`)) work as expected.
 type AwaitBlockNode struct {
-	Span            SectionSpan
+	Span            srcspan.SectionSpan
 	PromiseExpr     string // the JS expression after `#await`
 	ExprPos         int
 	Expr            *TemplateExpr
@@ -474,7 +478,7 @@ type AwaitBlockNode struct {
 	mode            awaitMode
 }
 
-func (a *AwaitBlockNode) nodeKind() string { return "awaitblock" }
+func (a *AwaitBlockNode) NodeKind() string { return "awaitblock" }
 
 // awaitMode records whether an await block used the normal multi-branch form
 // or one of Svelte's single-branch opening-tag shortcuts. It is parser-only:
@@ -489,7 +493,7 @@ const (
 
 // ComponentNode represents a child component invocation: <MyComp :prop="val" />
 type ComponentNode struct {
-	Span  SectionSpan
+	Span  srcspan.SectionSpan
 	Name  string            // component name, e.g. "MyComp"
 	Attrs []*Attr           // :prop bindings and @event handlers
 	Slots map[string][]Node // slot name → children (default slot keyed as "default")
@@ -501,16 +505,16 @@ func (c *IfChainNode) HasKey() bool { return c != nil && c.KeyAST != nil }
 
 // SlotNode represents a <slot> element — renders $$slots["name"] from parent.
 type SlotNode struct {
-	Span     SectionSpan
+	Span     srcspan.SectionSpan
 	Name     string // "default" for bare <slot />, or the name attr value
 	Fallback []Node // children rendered if slot is not filled
 }
 
-func (s *SlotNode) nodeKind() string      { return "slot" }
-func (e *EachBlockNode) nodeKind() string { return "eachblock" }
+func (s *SlotNode) NodeKind() string      { return "slot" }
+func (e *EachBlockNode) NodeKind() string { return "eachblock" }
 
 type TextNode struct {
-	Span  SectionSpan
+	Span  srcspan.SectionSpan
 	Parts []*Part
 	// Preformatted marks text inside <pre>, <textarea>, or <listing>: its
 	// whitespace is kept verbatim and never dropped.
@@ -519,38 +523,38 @@ type TextNode struct {
 
 // Part is one segment of a text node.
 type TemplateExpr struct {
-	Span    SectionSpan
+	Span    srcspan.SectionSpan
 	Source  string
 	Pos     int
-	Program *JsProgram
+	Program *jsast.JsProgram
 	Errors  []string
 }
 
 // Root returns the single JavaScript expression owned by a template
 // expression. Template syntax never accepts statement lists here; callers
 // that need executable meaning must use this typed root rather than Source.
-func (e *TemplateExpr) Root() JsExpr {
+func (e *TemplateExpr) Root() jsast.JsExpr {
 	if e == nil || e.Program == nil || len(e.Program.Body) != 1 {
 		return nil
 	}
-	stmt, ok := e.Program.Body[0].(*JsExprStmt)
+	stmt, ok := e.Program.Body[0].(*jsast.JsExprStmt)
 	if !ok {
 		return nil
 	}
 	return stmt.X
 }
 
-func newTemplateExpr(source string, pos int) *TemplateExpr {
+func NewTemplateExpr(source string, pos int) *TemplateExpr {
 	return newTemplateExprAt(source, pos, pos)
 }
 
 func newTemplateExprAt(source string, pos, absolutePos int) *TemplateExpr {
 	leading := len(source) - len(strings.TrimLeftFunc(source, unicode.IsSpace))
 	source = strings.TrimSpace(source)
-	prog, errs := parseTemplateExpression(source)
+	prog, errs := ParseTemplateExpression(source)
 	start := absolutePos + leading
 	return &TemplateExpr{
-		Span:    SectionSpan{Start: start, End: start + len(source)},
+		Span:    srcspan.SectionSpan{Start: start, End: start + len(source)},
 		Source:  source,
 		Pos:     pos + leading,
 		Program: prog,
@@ -569,22 +573,22 @@ func (p *parser) templateExpr(source string, pos int) *TemplateExpr {
 // reparsing an invalid `{size}px` fragment and preserves a single AST for both
 // initial DOM writes and reactive updates.
 func newAttributeTemplateExpr(value string, pos int) *TemplateExpr {
-	return newTemplateExpr(attrExprToJS(value), pos)
+	return NewTemplateExpr(AttrExprToJS(value), pos)
 }
 
 func (p *parser) attributeTemplateExpr(value string, pos int) *TemplateExpr {
-	return newTemplateExprAt(attrExprToJS(value), pos, p.base+pos)
+	return newTemplateExprAt(AttrExprToJS(value), pos, p.base+pos)
 }
 
-func templateExprDeps(expr *TemplateExpr, vars []string) []string {
+func TemplateExprDeps(expr *TemplateExpr, vars []string) []string {
 	if expr == nil || expr.Program == nil || len(expr.Errors) != 0 {
 		return nil
 	}
-	return FindDepsInNode(expr.Program, vars)
+	return jsast.FindDepsInNode(expr.Program, vars)
 }
 
 type Part struct {
-	Span   SectionSpan
+	Span   srcspan.SectionSpan
 	Static bool // true → literal text; false → JS expression
 	Value  string
 	Pos    int
@@ -624,7 +628,7 @@ func (k AttrValueKind) String() string {
 
 // Attr holds one HTML attribute, annotated with its sigil role.
 type Attr struct {
-	Span       SectionSpan
+	Span       srcspan.SectionSpan
 	Name       string // without the leading sigil
 	Value      string
 	ValueKind  AttrValueKind
@@ -638,10 +642,10 @@ type Attr struct {
 	Expr       *TemplateExpr
 }
 
-func (e *ElementNode) nodeKind() string   { return "element" }
-func (c *IfChainNode) nodeKind() string   { return "ifchain" }
-func (c *ComponentNode) nodeKind() string { return "component" }
-func (t *TextNode) nodeKind() string      { return "text" }
+func (e *ElementNode) NodeKind() string   { return "element" }
+func (c *IfChainNode) NodeKind() string   { return "ifchain" }
+func (c *ComponentNode) NodeKind() string { return "component" }
+func (t *TextNode) NodeKind() string      { return "text" }
 
 // ──────────────────────────────────────────────
 //  Template Parser
@@ -719,7 +723,7 @@ func (s *templateJSSyntax) skip(src string, i int) (int, bool) {
 	return i, false
 }
 
-func parseTemplate(html string) ([]Node, error) {
+func ParseTemplate(html string) ([]Node, error) {
 	return parseTemplateAt(html, 0)
 }
 
@@ -775,7 +779,7 @@ func (p *parser) parseNodeList(stopTags []string) ([]Node, error) {
 	separate := func() {
 		if space && len(nodes) > 0 {
 			nodes = append(nodes, &TextNode{
-				Span:  SectionSpan{Start: p.base + spaceStart, End: p.base + spaceStart + 1},
+				Span:  srcspan.SectionSpan{Start: p.base + spaceStart, End: p.base + spaceStart + 1},
 				Parts: []*Part{{Static: true, Value: " "}},
 			})
 		}
@@ -853,7 +857,7 @@ func (p *parser) parseNodeList(stopTags []string) ([]Node, error) {
 				space = false
 				if pending && len(nodes) > 0 {
 					nodes = append(nodes, &TextNode{
-						Span:  SectionSpan{Start: p.base + spaceStart, End: p.base + elementStart},
+						Span:  srcspan.SectionSpan{Start: p.base + spaceStart, End: p.base + elementStart},
 						Parts: []*Part{{Static: true, Value: " "}},
 					})
 				}
@@ -867,7 +871,7 @@ func (p *parser) parseNodeList(stopTags []string) ([]Node, error) {
 			if node != nil {
 				if space && len(nodes) > 0 && !node.Preformatted {
 					// The space before the text joins it: one text run (C-4.3).
-					node.Parts = append([]*Part{{Static: true, Value: " ", Span: SectionSpan{Start: p.base + spaceStart, End: p.base + spaceStart + 1}}}, node.Parts...)
+					node.Parts = append([]*Part{{Static: true, Value: " ", Span: srcspan.SectionSpan{Start: p.base + spaceStart, End: p.base + spaceStart + 1}}}, node.Parts...)
 					node.Span.Start = p.base + spaceStart
 				} else if space && len(nodes) > 0 {
 					separate()
@@ -911,18 +915,18 @@ func (p *parser) parseText() (*TextNode, error) {
 	if p.preformatted > 0 {
 		return p.preformattedText(raw, start)
 	}
-	parts := parseInterpolationsAt(raw, p.pos-len(raw))
+	parts := ParseInterpolationsAt(raw, p.pos-len(raw))
 	if len(parts) == 0 {
 		return nil, nil
 	}
-	span := SectionSpan{Start: p.base + start, End: p.base + p.pos}
+	span := srcspan.SectionSpan{Start: p.base + start, End: p.base + p.pos}
 	for _, part := range parts {
 		if part == nil {
 			continue
 		}
 		part.Span = span
 		if !part.Static && part.Expr != nil {
-			part.Expr.Span = SectionSpan{
+			part.Expr.Span = srcspan.SectionSpan{
 				Start: p.base + part.Expr.Pos,
 				End:   p.base + part.Expr.Pos + len(part.Expr.Source),
 			}
@@ -939,11 +943,11 @@ func isHTMLSpace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'
 }
 
-// parseInterpolations splits a raw string into static and dynamic parts
+// ParseInterpolations splits a raw string into static and dynamic parts
 // by scanning for {expr} sequences.
-func parseInterpolations(s string) []*Part { return parseInterpolationsAt(s, 0) }
+func ParseInterpolations(s string) []*Part { return ParseInterpolationsAt(s, 0) }
 
-func parseInterpolationsAt(s string, base int) []*Part {
+func ParseInterpolationsAt(s string, base int) []*Part {
 	return parseInterpolationsMode(s, base, false)
 }
 
@@ -1025,7 +1029,7 @@ func parseInterpolationsMode(s string, base int, verbatim bool) []*Part {
 			}
 			expr := strings.TrimSpace(s[start:i])
 			if expr != "" {
-				parts = append(parts, &Part{Static: false, Value: expr, Pos: base + start, Expr: newTemplateExpr(expr, base+start)})
+				parts = append(parts, &Part{Static: false, Value: expr, Pos: base + start, Expr: NewTemplateExpr(expr, base+start)})
 			}
 			if i < len(s) {
 				i++ // skip the matched '}'
@@ -1069,7 +1073,7 @@ func (p *parser) parseElement() (Node, error) {
 		return p.parseComponentNode(tag, elementStart)
 	}
 
-	elem := &ElementNode{Tag: tag, Span: SectionSpan{Start: p.base + elementStart}}
+	elem := &ElementNode{Tag: tag, Span: srcspan.SectionSpan{Start: p.base + elementStart}}
 
 	if err := p.parseAttrs(elem); err != nil {
 		return nil, err
@@ -1083,7 +1087,7 @@ func (p *parser) parseElement() (Node, error) {
 		p.pos++
 	}
 
-	if !selfClose && !isVoidElement(tag) {
+	if !selfClose && !IsVoidElement(tag) {
 		pre := isPreformattedTag(tag)
 		if pre {
 			p.preformatted++
@@ -1116,7 +1120,7 @@ func (p *parser) parseElement() (Node, error) {
 
 // parseSlotNode parses a <slot name="header">fallback</slot> element.
 func (p *parser) parseSlotNode(elementStart int) (Node, error) {
-	slot := &SlotNode{Span: SectionSpan{Start: p.base + elementStart}}
+	slot := &SlotNode{Span: srcspan.SectionSpan{Start: p.base + elementStart}}
 	scratch := &ElementNode{}
 	if err := p.parseAttrs(scratch); err != nil {
 		return nil, err
@@ -1159,7 +1163,7 @@ func (p *parser) parseSlotNode(elementStart int) (Node, error) {
 	return slot, nil
 }
 func (p *parser) parseComponentNode(name string, elementStart int) (Node, error) {
-	comp := &ComponentNode{Span: SectionSpan{Start: p.base + elementStart}, Name: name, Slots: map[string][]Node{}}
+	comp := &ComponentNode{Span: srcspan.SectionSpan{Start: p.base + elementStart}, Name: name, Slots: map[string][]Node{}}
 	scratch := &ElementNode{}
 	if err := p.parseAttrs(scratch); err != nil {
 		return nil, err
@@ -1356,7 +1360,7 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 		if len(elem.Attrs) > attrCount {
 			a := elem.Attrs[len(elem.Attrs)-1]
 			a.Pos = start
-			a.Span = SectionSpan{Start: p.base + start, End: p.base + p.pos}
+			a.Span = srcspan.SectionSpan{Start: p.base + start, End: p.base + p.pos}
 			if valueKind == AttrValueMissing && (a.IsClassDir || a.IsStyleDir) {
 				valueKind = AttrValueSynthetic
 			}
@@ -1379,7 +1383,7 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 				} else if a.ValueKind == AttrValueQuotedObjectCompat {
 					a.Expr = p.templateExpr(a.Value, exprPos)
 				} else {
-					a.Expr = p.templateExpr(stripBraces(a.Value), exprPos)
+					a.Expr = p.templateExpr(UnwrapBraces(a.Value), exprPos)
 				}
 			}
 		}
@@ -1427,7 +1431,7 @@ func mergeStaticClass(elem *ElementNode) {
 }
 
 func legacyElementDirectiveError(name, value string) error {
-	expr := strings.TrimSpace(stripBraces(value))
+	expr := strings.TrimSpace(UnwrapBraces(value))
 	switch name {
 	case "#if":
 		return fmt.Errorf("element directive #if is no longer supported; wrap the element in {#if %s} ... {/if}", expr)
@@ -1589,7 +1593,7 @@ func (p *parser) parseSvelteIfBlock(condRaw string, condPos int, branchStart int
 		}
 
 		chain.Branches = append(chain.Branches, &IfBranch{
-			Span:     SectionSpan{Start: p.base + branchStart, End: p.base + p.lastTagStart},
+			Span:     srcspan.SectionSpan{Start: p.base + branchStart, End: p.base + p.lastTagStart},
 			Cond:     cond,
 			CondPos:  condPos,
 			Expr:     p.templateExpr(cond, condPos),
@@ -1610,7 +1614,7 @@ func (p *parser) parseSvelteIfBlock(condRaw string, condPos int, branchStart int
 				return nil, err2
 			}
 			chain.Branches = append(chain.Branches, &IfBranch{
-				Span:     SectionSpan{Start: p.base + branchStart, End: p.base + p.lastTagStart},
+				Span:     srcspan.SectionSpan{Start: p.base + branchStart, End: p.base + p.lastTagStart},
 				Cond:     "",
 				Children: elseChildren,
 			})
@@ -1635,7 +1639,7 @@ func (p *parser) parseSvelteEachBlock(raw string, exprPos int) (Node, error) {
 	key := ""
 	keyPos := 0
 	var keyAST *TemplateExpr
-	if keyStart := eachTerminalKeyStart(raw); keyStart >= 0 {
+	if keyStart := EachTerminalKeyStart(raw); keyStart >= 0 {
 		keyRaw := raw[keyStart+1 : len(raw)-1]
 		key = strings.TrimSpace(keyRaw)
 		keyPos = exprPos + keyStart + 1 + len(keyRaw) - len(strings.TrimLeftFunc(keyRaw, unicode.IsSpace))
@@ -1714,11 +1718,11 @@ func eachAsDelimiter(raw string) int {
 	return -1
 }
 
-// eachTerminalKeyStart returns the opening parenthesis of a terminal
+// EachTerminalKeyStart returns the opening parenthesis of a terminal
 // `{#each iterable as item (key)}` suffix, or -1 when the header has no key.
 // Requiring the closing parenthesis to be the final token distinguishes the
 // suffix from a normal call expression in the iterable.
-func eachTerminalKeyStart(raw string) int {
+func EachTerminalKeyStart(raw string) int {
 	if !strings.HasSuffix(raw, ")") || eachAsDelimiter(raw) < 0 {
 		return -1
 	}
@@ -1896,11 +1900,11 @@ func splitAwaitClause(raw string) (promise, binding string, mode awaitMode, err 
 				depth--
 			}
 		default:
-			if depth != 0 || !IsIdentStart(c) || i == 0 || !unicode.IsSpace(rune(raw[i-1])) {
+			if depth != 0 || !jsast.IsIdentStart(c) || i == 0 || !unicode.IsSpace(rune(raw[i-1])) {
 				continue
 			}
 			end := i + 1
-			for end < len(raw) && IsIdentCont(raw[end]) {
+			for end < len(raw) && jsast.IsIdentCont(raw[end]) {
 				end++
 			}
 			word := raw[i:end]
@@ -1933,11 +1937,11 @@ func awaitBranchBinding(term, prefix string) (string, error) {
 }
 
 func isPlainAwaitBinding(name string) bool {
-	if name == "" || !IsIdentStart(name[0]) || KeywordMap[name] != TokIllegal {
+	if name == "" || !jsast.IsIdentStart(name[0]) || jsast.KeywordMap[name] != jsast.TokIllegal {
 		return false
 	}
 	for i := 1; i < len(name); i++ {
-		if !IsIdentCont(name[i]) {
+		if !jsast.IsIdentCont(name[i]) {
 			return false
 		}
 	}
@@ -2017,7 +2021,7 @@ func (p *parser) parseSvelteBlockBody() ([]Node, string, error) {
 // parseSvelteFragment parses <svelte:fragment slot="name">...</svelte:fragment>.
 // Returns an ElementNode with Tag="svelte:fragment" so slot sorting can detect it.
 func (p *parser) parseSvelteFragment(elementStart int) (Node, error) {
-	elem := &ElementNode{Span: SectionSpan{Start: p.base + elementStart}, Tag: "svelte:fragment"}
+	elem := &ElementNode{Span: srcspan.SectionSpan{Start: p.base + elementStart}, Tag: "svelte:fragment"}
 	if err := p.parseAttrs(elem); err != nil {
 		return nil, err
 	}
@@ -2156,7 +2160,7 @@ func isAttrStop(c byte) bool {
 	return c == '=' || c == '>' || c == '/' || c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
-func isVoidElement(tag string) bool {
+func IsVoidElement(tag string) bool {
 	void := map[string]bool{
 		"area": true, "base": true, "br": true, "col": true,
 		"embed": true, "hr": true, "img": true, "input": true,
@@ -2167,7 +2171,7 @@ func isVoidElement(tag string) bool {
 }
 
 func setTemplateNodeSpan(node Node, start, end int) {
-	span := SectionSpan{Start: start, End: end}
+	span := srcspan.SectionSpan{Start: start, End: end}
 	switch n := node.(type) {
 	case *IfChainNode:
 		n.Span = span
@@ -2342,11 +2346,11 @@ func (p *parser) preformattedText(raw string, start int) (*TextNode, error) {
 	if len(parts) == 0 {
 		return nil, nil
 	}
-	span := SectionSpan{Start: p.base + start, End: p.base + p.pos}
+	span := srcspan.SectionSpan{Start: p.base + start, End: p.base + p.pos}
 	for _, part := range parts {
 		part.Span = span
 		if !part.Static && part.Expr != nil {
-			part.Expr.Span = SectionSpan{Start: p.base + part.Expr.Pos, End: p.base + part.Expr.Pos + len(part.Expr.Source)}
+			part.Expr.Span = srcspan.SectionSpan{Start: p.base + part.Expr.Pos, End: p.base + part.Expr.Pos + len(part.Expr.Source)}
 			part.Span = part.Expr.Span
 		}
 	}
@@ -2354,7 +2358,7 @@ func (p *parser) preformattedText(raw string, start int) (*TextNode, error) {
 }
 
 // parseVerbatimInterpolationsAt splits text into parts like
-// parseInterpolationsAt but keeps every static segment as written.
+// ParseInterpolationsAt but keeps every static segment as written.
 func parseVerbatimInterpolationsAt(s string, base int) []*Part {
 	return parseInterpolationsMode(s, base, true)
 }
@@ -2368,7 +2372,7 @@ func (p *parser) parseSvelteClientBlock(branchStart int) (Node, error) {
 		return nil, err
 	}
 	chain := &IfChainNode{Client: true, Branches: []*IfBranch{{
-		Span:     SectionSpan{Start: p.base + branchStart, End: p.base + p.lastTagStart},
+		Span:     srcspan.SectionSpan{Start: p.base + branchStart, End: p.base + p.lastTagStart},
 		Children: children,
 	}}}
 	switch {
@@ -2382,7 +2386,7 @@ func (p *parser) parseSvelteClientBlock(branchStart int) (Node, error) {
 			return nil, fmt.Errorf("{#client} block must end with {/client}, found {%s}", end)
 		}
 		chain.Branches = append(chain.Branches, &IfBranch{
-			Span:     SectionSpan{Start: p.base + elseStart, End: p.base + p.lastTagStart},
+			Span:     srcspan.SectionSpan{Start: p.base + elseStart, End: p.base + p.lastTagStart},
 			Children: fallback,
 		})
 	case term == "/client":
@@ -2394,9 +2398,9 @@ func (p *parser) parseSvelteClientBlock(branchStart int) (Node, error) {
 
 var scriptContextPattern = regexp.MustCompile(`(?i)^<script\b[^>]*\scontext\s*=\s*["']?client["']?[\s/>]`)
 
-// scriptContextClient reports <script context="client"> on the first
+// ScriptContextClient reports <script context="client"> on the first
 // script tag.
-func scriptContextClient(src string) bool {
+func ScriptContextClient(src string) bool {
 	start := strings.Index(asciiLower(src), "<script")
 	if start < 0 {
 		return false
@@ -2435,7 +2439,7 @@ func trimEdgeWhitespace(nodes []Node) []Node {
 		text, ok := node.(*TextNode)
 		if ok && len(out) > 0 {
 			if prev, ok := out[len(out)-1].(*TextNode); ok && prev.Preformatted == text.Preformatted {
-				joined := &TextNode{Span: SectionSpan{Start: prev.Span.Start, End: text.Span.End}, Preformatted: prev.Preformatted}
+				joined := &TextNode{Span: srcspan.SectionSpan{Start: prev.Span.Start, End: text.Span.End}, Preformatted: prev.Preformatted}
 				joined.Parts = append(append(joined.Parts, prev.Parts...), text.Parts...)
 				if !joined.Preformatted {
 					joined.Parts = joinSpaces(joined.Parts)

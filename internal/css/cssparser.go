@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/elauven/vela/internal/source"
+	"github.com/elauven/vela/internal/srcspan"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -193,7 +193,7 @@ type CssNode interface{ cssNode() }
 // CssStylesheet is the root node.
 type CssStylesheet struct {
 	Source      string
-	Span        source.SectionSpan
+	Span        srcspan.SectionSpan
 	Rules       []CssNode
 	Diagnostics []CssParseDiagnostic
 }
@@ -207,7 +207,7 @@ func (c *CssStylesheet) cssNode() {}
 
 // CssQualifiedRule holds a selector list + a declaration block.
 type CssQualifiedRule struct {
-	Span      source.SectionSpan
+	Span      srcspan.SectionSpan
 	Selectors []*CssSelector // comma-separated list
 	Decls     []*CssDecl
 }
@@ -216,7 +216,7 @@ func (c *CssQualifiedRule) cssNode() {}
 
 // CssAtRule represents @media, @keyframes, @supports, etc.
 type CssAtRule struct {
-	Span    source.SectionSpan
+	Span    srcspan.SectionSpan
 	Name    string    // e.g. "media", "keyframes", "supports"
 	Prelude string    // everything between @name and { or ;
 	Block   []CssNode // inner rules (nil for statement at-rules ending in ;)
@@ -229,13 +229,13 @@ func (c *CssAtRule) cssNode() {}
 // Parts is the raw token sequence; we keep tokens so we can accurately
 // insert the scoping attribute at the right position.
 type CssSelector struct {
-	Span  source.SectionSpan
+	Span  srcspan.SectionSpan
 	Parts []CssTok // raw token stream for this selector
 }
 
 // CssDecl is a single property: value declaration.
 type CssDecl struct {
-	Span      source.SectionSpan
+	Span      srcspan.SectionSpan
 	Prop      string
 	Value     string
 	Important bool
@@ -253,7 +253,7 @@ type CssParser struct {
 func NewCssStylesheet(src string, offset int) *CssStylesheet {
 	ss := ParseCSS(src)
 	ss.Source = src
-	ss.Span = source.SectionSpan{Start: offset, End: offset + len(src)}
+	ss.Span = srcspan.SectionSpan{Start: offset, End: offset + len(src)}
 	offsetCSSSpans(ss, offset)
 	ss.Diagnostics = validateCSSSource(src)
 	return ss
@@ -265,7 +265,7 @@ func offsetCSSSpans(sheet *CssStylesheet, offset int) {
 	if sheet == nil || offset == 0 {
 		return
 	}
-	shift := func(span *source.SectionSpan) {
+	shift := func(span *srcspan.SectionSpan) {
 		span.Start += offset
 		span.End += offset
 	}
@@ -364,7 +364,7 @@ func (p *CssParser) parseAtRule() *CssAtRule {
 
 	if p.cur.Kind == CssTokSemi {
 		rule.IsStmt = true
-		rule.Span = source.SectionSpan{Start: start, End: p.cur.End}
+		rule.Span = srcspan.SectionSpan{Start: start, End: p.cur.End}
 		p.advance()
 		return rule
 	}
@@ -388,7 +388,7 @@ func (p *CssParser) parseAtRule() *CssAtRule {
 		end = p.cur.End
 		p.advance()
 	}
-	rule.Span = source.SectionSpan{Start: start, End: end}
+	rule.Span = srcspan.SectionSpan{Start: start, End: end}
 	return rule
 }
 
@@ -416,7 +416,7 @@ func (p *CssParser) parseKeyframeBlock() []CssNode {
 	// Return as an opaque at-rule with no name (just raw prelude as block text).
 	// The closing brace belongs to the parent @keyframes rule.
 	return []CssNode{&CssAtRule{
-		Span:    source.SectionSpan{Start: start, End: p.cur.Start},
+		Span:    srcspan.SectionSpan{Start: start, End: p.cur.Start},
 		Name:    "raw",
 		Prelude: raw.String(),
 		IsStmt:  false,
@@ -437,7 +437,7 @@ func (p *CssParser) parseQualifiedRule() *CssQualifiedRule {
 	}
 	p.advance() // consume {
 
-	rule := &CssQualifiedRule{Span: source.SectionSpan{Start: start}}
+	rule := &CssQualifiedRule{Span: srcspan.SectionSpan{Start: start}}
 	rule.Selectors = splitSelectors(selectorToks)
 	rule.Decls = p.parseDeclBlock()
 
@@ -466,7 +466,7 @@ func splitSelectors(toks []CssTok) []*CssSelector {
 			current = current[:len(current)-1]
 		}
 		if len(current) > 0 {
-			selectors = append(selectors, &CssSelector{Span: source.SectionSpan{Start: current[0].Start, End: current[len(current)-1].End}, Parts: current})
+			selectors = append(selectors, &CssSelector{Span: srcspan.SectionSpan{Start: current[0].Start, End: current[len(current)-1].End}, Parts: current})
 		}
 		current = nil
 	}
@@ -542,7 +542,7 @@ func (p *CssParser) parseDeclBlock() []*CssDecl {
 		}
 
 		decls = append(decls, &CssDecl{
-			Span:      source.SectionSpan{Start: start, End: end},
+			Span:      srcspan.SectionSpan{Start: start, End: end},
 			Prop:      prop,
 			Value:     valStr,
 			Important: important,
@@ -936,10 +936,10 @@ func ValidateCssAST(sheet *CssStylesheet) []CssParseDiagnostic {
 	if sheet.Span.Start < 0 || sheet.Span.End < sheet.Span.Start || sheet.Span.End-sheet.Span.Start != len(sheet.Source) {
 		add(0, "stylesheet source span does not match its owned source")
 	}
-	contains := func(span source.SectionSpan) bool {
+	contains := func(span srcspan.SectionSpan) bool {
 		return span.Start >= sheet.Span.Start && span.End >= span.Start && span.End <= sheet.Span.End
 	}
-	checkSpan := func(span source.SectionSpan, label string) {
+	checkSpan := func(span srcspan.SectionSpan, label string) {
 		if span.Start == 0 && span.End == 0 {
 			return
 		}
@@ -966,13 +966,13 @@ func ValidateCssAST(sheet *CssStylesheet) []CssParseDiagnostic {
 					} else {
 						checkSpan(selector.Span, "selector")
 						for _, token := range selector.Parts {
-							span := source.SectionSpan{Start: token.Start, End: token.End}
+							span := srcspan.SectionSpan{Start: token.Start, End: token.End}
 							if token.End <= token.Start {
 								add(0, "selector contains a token with an empty span")
 								continue
 							}
 							checkSpan(span, "selector token")
-							if selector.Span != (source.SectionSpan{}) && (span.Start < selector.Span.Start || span.End > selector.Span.End) {
+							if selector.Span != (srcspan.SectionSpan{}) && (span.Start < selector.Span.Start || span.End > selector.Span.End) {
 								add(0, "selector token span escapes selector")
 							}
 						}

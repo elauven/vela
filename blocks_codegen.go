@@ -83,7 +83,7 @@ func (g *ASTGen) blocksGuard(exprs ...*TemplateExpr) JsExpr {
 		if expr == nil || expr.Root() == nil {
 			continue
 		}
-		for _, dep := range templateExprDeps(expr, reactive) {
+		for _, dep := range TemplateExprDeps(expr, reactive) {
 			names[dep] = true
 			g.blocks.deps[dep] = true
 		}

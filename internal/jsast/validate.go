@@ -1,11 +1,11 @@
-package main
+package jsast
 
 import (
 	"reflect"
 	"sort"
 )
 
-// astvalidate.go — validation passes over the generated JS AST.
+// validate.go — validation passes over the generated JS AST.
 //
 // This is the payoff of the AST migration.  The string-concatenation
 // generator could emit syntactically-invalid JavaScript — `if ()`
@@ -38,7 +38,7 @@ type ValidationIssue struct {
 // generated tree is structurally sound.
 func ValidateProgram(prog *JsProgram) []ValidationIssue {
 	var issues []ValidationIssue
-	issues = append(issues, checkEmptyNodes(prog)...)
+	issues = append(issues, CheckEmptyNodes(prog)...)
 	issues = append(issues, checkUndeclaredRefs(prog)...)
 	issues = append(issues, checkLexicalOrder(prog)...)
 	issues = append(issues, checkUnreachable(prog)...)
@@ -49,11 +49,11 @@ func ValidateProgram(prog *JsProgram) []ValidationIssue {
 //  Pass 1 — empty / malformed nodes
 // ─────────────────────────────────────────────
 
-// checkEmptyNodes walks the tree for structurally-incomplete nodes:
+// CheckEmptyNodes walks the tree for structurally-incomplete nodes:
 // control structures missing a required child, calls without a
 // callee, operators missing an operand.  These are exactly the
 // shapes the string generator could emit as `if ()`, `()` etc.
-func checkEmptyNodes(prog *JsProgram) []ValidationIssue {
+func CheckEmptyNodes(prog *JsProgram) []ValidationIssue {
 	var issues []ValidationIssue
 	report := func(what string) {
 		issues = append(issues, ValidationIssue{

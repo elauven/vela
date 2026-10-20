@@ -8,7 +8,7 @@ import (
 func nestingNodes(t *testing.T, template string) (string, []Node) {
 	t.Helper()
 	source := "<template>" + template + "</template>"
-	sfc, err := parseSFC(source)
+	sfc, err := ParseSFC(source)
 	if err != nil {
 		t.Fatalf("parse %q: %v", template, err)
 	}

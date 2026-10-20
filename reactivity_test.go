@@ -42,7 +42,7 @@ func runTemplateRefs(t *testing.T, script, template string) *DiagSet {
 	a := analyzeScript(script)
 	ds := NewDiagSet("test.vela", script+"\n"+template)
 	scope := BuildScopes(prog, NewDiagSet("", script))
-	nodes, err := parseTemplate(template)
+	nodes, err := ParseTemplate(template)
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestTemplateRefsUseExactExpressionPosition(t *testing.T) {
 	prog := ParseJS(`let known = $state(0);`)
 	analysis := analyzeScript(`let known = $state(0);`)
 	ds := NewDiagSet("test.vela", template)
-	nodes, err := parseTemplate(template)
+	nodes, err := ParseTemplate(template)
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestTemplateRefsUseExactDynamicAttributeExpressionPosition(t *testing.T) {
 	prog := ParseJS(`let known = $state(0);`)
 	analysis := analyzeScript(`let known = $state(0);`)
 	ds := NewDiagSet("test.vela", template)
-	nodes, err := parseTemplate(template)
+	nodes, err := ParseTemplate(template)
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestTemplateRefsUseExactBlockConditionPosition(t *testing.T) {
 	prog := ParseJS("")
 	analysis := analyzeScript("")
 	ds := NewDiagSet("test.vela", template)
-	nodes, err := parseTemplate(template)
+	nodes, err := ParseTemplate(template)
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestTemplateRefsUseExactElseIfConditionPosition(t *testing.T) {
 	prog := ParseJS("")
 	analysis := analyzeScript("")
 	ds := NewDiagSet("test.vela", template)
-	nodes, err := parseTemplate(template)
+	nodes, err := ParseTemplate(template)
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestTemplateRefsEachKeyUsesExactExpressionPosition(t *testing.T) {
 	prog := ParseJS(`let items = [];`)
 	analysis := analyzeScript(`let items = [];`)
 	ds := NewDiagSet("test.vela", template)
-	nodes, err := parseTemplate(template)
+	nodes, err := ParseTemplate(template)
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}

@@ -256,7 +256,7 @@ func ssrSourceFunctions(project *SSRProject, files []string) map[string]ssrSourc
 				ssrCollectFunctions(program, true, symbols.Functions)
 			}
 		case ".vela":
-			if sfc, err := parseSFC(string(data)); err == nil && sfc.ScriptAST != nil && sfc.ScriptAST.Program != nil {
+			if sfc, err := ParseSFC(string(data)); err == nil && sfc.ScriptAST != nil && sfc.ScriptAST.Program != nil {
 				ssrCollectFunctions(sfc.ScriptAST.Program, false, symbols.Functions)
 			}
 		}

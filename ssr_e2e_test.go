@@ -12,7 +12,7 @@ import (
 // be evaluated by generated Go. In particular, props.Items[0] is unsafe for
 // the empty collection but is valid in the selected non-empty branches.
 func TestGeneratedSSRRendererShortCircuitsUnsafeCollectionReads(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let items = [];</script><template><main><p>{items.length ? items[0] : 'empty'}</p><p>{items.length && items[0]}</p><p>{!items.length || items[0]}</p><p>{items.length ? (items.length && items[0]) : (!items.length || items[0])}</p></main></template>`)
+	sfc, err := ParseSFC(`<script>export let items = [];</script><template><main><p>{items.length ? items[0] : 'empty'}</p><p>{items.length && items[0]}</p><p>{!items.length || items[0]}</p><p>{items.length ? (items.length && items[0]) : (!items.length || items[0])}</p></main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func main() {
 // R3: Go-rendered interpolation must retain the same visible nullish text as
 // CSR, while array joining keeps JavaScript's distinct empty-field behaviour.
 func TestGeneratedSSRRendererPreservesNullishTextAndArrayJoin(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let value = null;</script><template><main><p>{value}</p><p>{undefined}</p><p>{[1, null, undefined, [2, null], 3]}</p></main></template>`)
+	sfc, err := ParseSFC(`<script>export let value = null;</script><template><main><p>{value}</p><p>{undefined}</p><p>{[1, null, undefined, [2, null], 3]}</p></main></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}

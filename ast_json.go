@@ -259,7 +259,7 @@ func analysisToJSON(a *Analysis) ScriptJSON {
 // has source text. Compilation itself must use DumpParsedAST so --ast does not
 // parse the component a second time.
 func DumpAST(filename, src string) (string, error) {
-	sfc, err := parseSFC(src)
+	sfc, err := ParseSFC(src)
 	if err != nil {
 		return "", fmt.Errorf("parseSFC: %w", err)
 	}

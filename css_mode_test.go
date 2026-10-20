@@ -20,11 +20,11 @@ const cssModeSrc = `<script>
 
 func cssModeCompile(t *testing.T, src string, external bool) string {
 	t.Helper()
-	sfc, err := parseSFC(src)
+	sfc, err := ParseSFC(src)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
-	tmpl, err := parseTemplate(sfc.Template)
+	tmpl, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestCSSMode_ExternalEmitsNoRuntimeStyle(t *testing.T) {
 // ExtractScopedCSS returns the scope-transformed stylesheet that
 // the compiler writes to the sibling .css file.
 func TestCSSMode_ExtractScopedCSS(t *testing.T) {
-	sfc, err := parseSFC(cssModeSrc)
+	sfc, err := ParseSFC(cssModeSrc)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestCSSMode_ExtractScopedCSS(t *testing.T) {
 func TestCSSMode_NoStyleNoCss(t *testing.T) {
 	src := `<script>let n = $state(0);</script>
 <template><p>{n}</p></template>`
-	sfc, err := parseSFC(src)
+	sfc, err := ParseSFC(src)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestCSSMode_NoStyleNoCss(t *testing.T) {
 // The scoped CSS must be byte-identical whether delivered inline or
 // externally — only the delivery mechanism differs, not the scoping.
 func TestCSSMode_ScopingIdenticalBothModes(t *testing.T) {
-	sfc, err := parseSFC(cssModeSrc)
+	sfc, err := ParseSFC(cssModeSrc)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}

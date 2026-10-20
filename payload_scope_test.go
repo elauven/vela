@@ -18,7 +18,7 @@ func TestScopeAttributeOnlyWithStyles(t *testing.T) {
 		t.Errorf("a component with styles lost its scope attribute:\n%s", out)
 	}
 	for src, want := range map[string]string{plain: "", styled: "vela-test"} {
-		sfc, err := parseSFC(src)
+		sfc, err := ParseSFC(src)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -67,7 +67,7 @@ func TestPayloadEntryOnlyForSerializedState(t *testing.T) {
 		t.Errorf("a component with serialized state does not read its entry:\n%s", out)
 	}
 	for src, want := range map[string]int{reproducible: 0, serialized: 1} {
-		sfc, err := parseSFC(src)
+		sfc, err := ParseSFC(src)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -101,7 +101,7 @@ func shape(nodes []Node) string {
 			}
 			parts = append(parts, `"`+b.String()+`"`)
 		default:
-			parts = append(parts, node.nodeKind())
+			parts = append(parts, node.NodeKind())
 		}
 	}
 	return strings.Join(parts, ",")
@@ -122,7 +122,7 @@ func TestHTMLWhitespaceRules(t *testing.T) {
 		{"<ul>\n  {#each xs as x}\n    <li>{x}</li>\n  {/each}\n</ul>", `eachblock`},
 	}
 	for _, c := range cases {
-		nodes, err := parseTemplate(c.template)
+		nodes, err := ParseTemplate(c.template)
 		if err != nil {
 			t.Fatalf("%q: %v", c.template, err)
 		}
@@ -130,7 +130,7 @@ func TestHTMLWhitespaceRules(t *testing.T) {
 			t.Errorf("%q: children %s, want %s", c.template, got, c.want)
 		}
 	}
-	nodes, err := parseTemplate("<Card>\n  <p>x</p>\n  <svelte:fragment slot=\"a\"><b>y</b></svelte:fragment>\n</Card>")
+	nodes, err := ParseTemplate("<Card>\n  <p>x</p>\n  <svelte:fragment slot=\"a\"><b>y</b></svelte:fragment>\n</Card>")
 	if err != nil {
 		t.Fatal(err)
 	}

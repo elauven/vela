@@ -75,6 +75,7 @@ type (
 	PrintMode         = jsast.PrintMode
 	TokKind           = jsast.TokKind
 	Token             = jsast.Token
+	ValidationIssue   = jsast.ValidationIssue
 )
 
 const (
@@ -193,8 +194,11 @@ const (
 )
 
 var (
+	CheckEmptyNodes        = jsast.CheckEmptyNodes
+	CollectIdents          = jsast.CollectIdents
 	EarlyErrors            = jsast.EarlyErrors
 	EncodeGeneratedString  = jsast.EncodeGeneratedString
+	FindDepsInNode         = jsast.FindDepsInNode
 	IsIdentCont            = jsast.IsIdentCont
 	IsIdentStart           = jsast.IsIdentStart
 	NewLexer               = jsast.NewLexer
@@ -205,6 +209,7 @@ var (
 	PrintJS                = jsast.PrintJS
 	PrintJSWithLocations   = jsast.PrintJSWithLocations
 	ShiftTree              = jsast.ShiftTree
+	ValidateProgram        = jsast.ValidateProgram
 	WalkNode               = jsast.WalkNode
 )
 

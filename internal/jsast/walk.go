@@ -200,3 +200,46 @@ func WalkNode(node JsNode, fn func(JsNode) bool) {
 		// JsImportDecl, JsBreakStmt, JsContinueStmt, JsEmptyStmt, JsDebuggerStmt
 	}
 }
+
+// CollectIdents returns every identifier name that appears in the subtree
+// rooted at node, including identifiers inside template literal expressions.
+func CollectIdents(node JsNode) []string {
+	seen := map[string]bool{}
+	var names []string
+
+	add := func(name string) {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+
+	WalkNode(node, func(n JsNode) bool {
+		switch x := n.(type) {
+		case *JsIdent:
+			add(x.Name)
+		}
+		return true
+	})
+	return names
+}
+
+// FindDepsInNode returns the subset of vars that appear as identifiers
+// somewhere in the AST rooted at node (including inside template literals).
+func FindDepsInNode(node JsNode, vars []string) []string {
+	varSet := make(map[string]bool, len(vars))
+	for _, v := range vars {
+		varSet[v] = true
+	}
+
+	allIdents := CollectIdents(node)
+	seen := map[string]bool{}
+	var deps []string
+	for _, name := range allIdents {
+		if varSet[name] && !seen[name] {
+			seen[name] = true
+			deps = append(deps, name)
+		}
+	}
+	return deps
+}

@@ -196,11 +196,11 @@ var diffFixtures = map[string]string{
 // compileASTFixture compiles a fixture through the sole supported generator.
 func compileASTFixture(t *testing.T, src string) string {
 	t.Helper()
-	sfc, err := parseSFC(src)
+	sfc, err := ParseSFC(src)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
-	tmpl, err := parseTemplate(sfc.Template)
+	tmpl, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}

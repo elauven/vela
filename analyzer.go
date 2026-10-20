@@ -116,7 +116,7 @@ type Prop struct {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func analyzeScript(src string) *Analysis {
-	analysis := analyzeScriptAST(newScriptAST(src, 0))
+	analysis := analyzeScriptAST(NewScriptAST(src, 0))
 	// This source-only helper predates owned component ScriptASTs and exposes
 	// lowered callback bodies to its standalone callers. The compiler pipeline
 	// uses analyzeScriptAST directly and postpones this mutation until after
@@ -130,7 +130,7 @@ func analyzeScript(src string) *Analysis {
 // standalone callers that only have source text.
 func analyzeScriptAST(script *ScriptAST) *Analysis {
 	if script == nil {
-		script = newScriptAST("", 0)
+		script = NewScriptAST("", 0)
 	}
 	prog := script.Program
 	a := &Analysis{Script: script}

@@ -18,11 +18,11 @@ import (
 func compileLifecycle(t *testing.T, script string) string {
 	t.Helper()
 	src := "<script>\n" + script + "\n</script>\n<template><p>x</p></template>"
-	sfc, err := parseSFC(src)
+	sfc, err := ParseSFC(src)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
-	tmpl, err := parseTemplate(sfc.Template)
+	tmpl, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}

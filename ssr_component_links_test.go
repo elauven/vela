@@ -12,7 +12,7 @@ func TestResolveSSRLocalComponentLinksRetainsAliasedCanonicalImport(t *testing.T
 	if err := os.MkdirAll(filepath.Dir(parent), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	sfc, err := parseSFC(`<script>import { Card as ProfileCard } from '../ui/Card.vela';</script><template><ProfileCard /></template>`)
+	sfc, err := ParseSFC(`<script>import { Card as ProfileCard } from '../ui/Card.vela';</script><template><ProfileCard /></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestResolveSSRLocalComponentLinksRetainsAliasedCanonicalImport(t *testing.T
 func TestResolveSSRLocalComponentLinksRejectsEscapingImport(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "src", "Parent.vela")
-	sfc, err := parseSFC(`<script>import { Card } from '../../outside/Card.vela';</script><template><Card /></template>`)
+	sfc, err := ParseSFC(`<script>import { Card } from '../../outside/Card.vela';</script><template><Card /></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}

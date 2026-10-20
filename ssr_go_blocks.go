@@ -396,7 +396,7 @@ func checkSSRBlocksNesting(filename, source string, nodes []Node, links map[stri
 		if err != nil {
 			return ""
 		}
-		child, err := parseSFC(string(data))
+		child, err := ParseSFC(string(data))
 		if err != nil || child.TemplateAST == nil {
 			return ""
 		}

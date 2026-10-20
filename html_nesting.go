@@ -108,7 +108,7 @@ func checkNestingNode(node Node, parent string, ancestors []string, ctx HTMLNest
 		if err := checkNestingTag(n.Tag, n.Span.Start, parent, ancestors); err != nil {
 			return err
 		}
-		if isVoidElement(n.Tag) && len(n.Children) > 0 {
+		if IsVoidElement(n.Tag) && len(n.Children) > 0 {
 			return &HTMLNestingError{Pos: n.Span.Start,
 				Message: fmt.Sprintf("<%s> is a void element and cannot have children", n.Tag),
 				Fix:     "move the children after it"}

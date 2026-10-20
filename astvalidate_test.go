@@ -149,11 +149,11 @@ func TestValidateUnreachable(t *testing.T) {
 // ValidateProgram explicitly for a clearer failure message.
 func TestValidateEveryFixtureClean(t *testing.T) {
 	for name, src := range diffFixtures {
-		sfc, err := parseSFC(src)
+		sfc, err := ParseSFC(src)
 		if err != nil {
 			t.Fatalf("[%s] parseSFC: %v", name, err)
 		}
-		tmpl, err := parseTemplate(sfc.Template)
+		tmpl, err := ParseTemplate(sfc.Template)
 		if err != nil {
 			t.Fatalf("[%s] parseTemplate: %v", name, err)
 		}
@@ -181,11 +181,11 @@ func TestNestedEachBranchUsesFragmentLocalHoists(t *testing.T) {
     {/if}
   {/each}
 </template>`
-	sfc, err := parseSFC(src)
+	sfc, err := ParseSFC(src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}

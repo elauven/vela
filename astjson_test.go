@@ -60,11 +60,11 @@ func TestASTToJSON_NilChild(t *testing.T) {
 // for every diff fixture compiled through the generator.
 func TestASTToJSON_ValidJSON(t *testing.T) {
 	for name, src := range diffFixtures {
-		sfc, err := parseSFC(src)
+		sfc, err := ParseSFC(src)
 		if err != nil {
 			t.Fatalf("[%s] parseSFC: %v", name, err)
 		}
-		tmpl, err := parseTemplate(sfc.Template)
+		tmpl, err := ParseTemplate(sfc.Template)
 		if err != nil {
 			t.Fatalf("[%s] parseTemplate: %v", name, err)
 		}

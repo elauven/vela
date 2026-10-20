@@ -60,7 +60,7 @@ func ssrRootModes(files []string, srcRoot string) map[string]bool {
 			own[key] = true
 			continue
 		}
-		sfc, err := parseSFC(string(data))
+		sfc, err := ParseSFC(string(data))
 		if err != nil || sfc.TemplateAST == nil {
 			own[key] = true
 			continue

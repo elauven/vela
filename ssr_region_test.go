@@ -12,7 +12,7 @@ import (
 
 func regionForSource(t *testing.T, source string) (*SSRRegion, error) {
 	t.Helper()
-	sfc, err := parseSFC(source)
+	sfc, err := ParseSFC(source)
 	if err != nil {
 		t.Fatal(err)
 	}

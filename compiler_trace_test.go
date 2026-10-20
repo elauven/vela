@@ -157,7 +157,7 @@ func TestCompileFileReportsScriptASTSyntaxDiagnostic(t *testing.T) {
 }
 
 func TestScriptASTOwnsParserResultUsedByAnalysis(t *testing.T) {
-	sfc, err := parseSFC("<script>let count = $state(0);</script><template>{count}</template>")
+	sfc, err := ParseSFC("<script>let count = $state(0);</script><template>{count}</template>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,14 +195,14 @@ func TestSharedScriptASTDoesNotLeakLoweredSetterIntoValidation(t *testing.T) {
 }
 
 func TestScriptPlanRetainsOwnedUserStatementUntilTargetBuild(t *testing.T) {
-	sfc, err := parseSFC(`<script>
+	sfc, err := ParseSFC(`<script>
   let count = $state(0);
   function increment() { count++; }
 </script><template><button>{count}</button></template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestComponentASTOwnsSectionTreesAndSpans(t *testing.T) {
   let count = $state(0);
 </script>
 <template><button>{count}</button></template>`
-	sfc, err := parseSFC(source)
+	sfc, err := ParseSFC(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +397,7 @@ func TestValidateTemplateASTRejectsMissingCachedExpression(t *testing.T) {
 
 func TestTemplateStructuralSpansUseComponentSource(t *testing.T) {
 	source := `<template><div :title={label}>{label}</div>{#each items as item}<p>{item}</p>{/each}</template>`
-	sfc, err := parseSFC(source)
+	sfc, err := ParseSFC(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +420,7 @@ func TestTemplateStructuralSpansUseComponentSource(t *testing.T) {
 
 func TestComponentAndSlotSpansUseComponentSource(t *testing.T) {
 	source := `<template><Card :title={title}><slot name="actions" /><svelte:fragment slot="footer"><p>Footer</p></svelte:fragment></Card></template>`
-	sfc, err := parseSFC(source)
+	sfc, err := ParseSFC(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,7 +440,7 @@ func TestComponentAndSlotSpansUseComponentSource(t *testing.T) {
 
 func TestIfBranchSpansUseComponentSource(t *testing.T) {
 	source := `<template>{#if first}<p>first</p>{:else if second}<p>second</p>{:else}<p>last</p>{/if}</template>`
-	sfc, err := parseSFC(source)
+	sfc, err := ParseSFC(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +459,7 @@ func TestIfBranchSpansUseComponentSource(t *testing.T) {
 
 func TestValidateTemplateASTRejectsEscapingStructuralSpans(t *testing.T) {
 	source := `<template>{#if visible}<p>{label}</p>{/if}{#each items as item}<p>{item}</p>{/each}{#await request}<p>loading</p>{/await}</template>`
-	sfc, err := parseSFC(source)
+	sfc, err := ParseSFC(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -523,7 +523,7 @@ func TestCompileFileReportsCSSSyntaxPositions(t *testing.T) {
 
 func TestCSSStructuralSpansUseComponentSource(t *testing.T) {
 	source := `<style>@media screen { .card, .panel { color: red; } }</style><template><p>ok</p></template>`
-	sfc, err := parseSFC(source)
+	sfc, err := ParseSFC(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,18 +541,18 @@ func TestCSSStructuralSpansUseComponentSource(t *testing.T) {
 }
 
 func TestTemplateExprDepsRequiresCachedAST(t *testing.T) {
-	if got := templateExprDeps(nil, []string{"count"}); len(got) != 0 {
+	if got := TemplateExprDeps(nil, []string{"count"}); len(got) != 0 {
 		t.Fatalf("nil cached expression dependencies = %v, want none", got)
 	}
-	expr := newTemplateExpr("count + other", 0)
-	if got := templateExprDeps(expr, []string{"count", "other"}); len(got) != 2 || got[0] != "count" || got[1] != "other" {
+	expr := NewTemplateExpr("count + other", 0)
+	if got := TemplateExprDeps(expr, []string{"count", "other"}); len(got) != 2 || got[0] != "count" || got[1] != "other" {
 		t.Fatalf("cached expression dependencies = %v", got)
 	}
 }
 
 func TestKeyframeOpaqueRegionUsesComponentSourceSpan(t *testing.T) {
 	source := `<style>@keyframes fade { from { opacity: 0; } to { opacity: 1; } }</style><template><p>ok</p></template>`
-	sfc, err := parseSFC(source)
+	sfc, err := ParseSFC(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -568,7 +568,7 @@ func TestKeyframeOpaqueRegionUsesComponentSourceSpan(t *testing.T) {
 
 func TestValidateCssASTRejectsEscapingSelectorTokenSpan(t *testing.T) {
 	source := `<style>.card { color: red; }</style><template><p>ok</p></template>`
-	sfc, err := parseSFC(source)
+	sfc, err := ParseSFC(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -581,7 +581,7 @@ func TestValidateCssASTRejectsEscapingSelectorTokenSpan(t *testing.T) {
 }
 
 func TestValidateTemplateASTRejectsEscapingExpressionSpan(t *testing.T) {
-	expr := newTemplateExpr("count", 1)
+	expr := NewTemplateExpr("count", 1)
 	expr.Span = SectionSpan{Start: 11, End: 30}
 	ast := &TemplateAST{
 		Source: "{count}",

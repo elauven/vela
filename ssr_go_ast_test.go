@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildSSRGoSkeletonUsesStandardGoAST(t *testing.T) {
-	sfc, err := parseSFC(`<script>
+	sfc, err := ParseSFC(`<script>
 export let title = "";
 export let count = 0;
 export let active = false;

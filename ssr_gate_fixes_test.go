@@ -37,7 +37,7 @@ func TestVelaUnknownImportIsRejected(t *testing.T) {
 
 func runTemplateForms(t *testing.T, template string) *DiagSet {
 	t.Helper()
-	nodes, err := parseTemplate(template)
+	nodes, err := ParseTemplate(template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestDuplicateAttributeAndBraces(t *testing.T) {
 }
 
 func TestStaticClassMergesWithDynamicClass(t *testing.T) {
-	nodes, err := parseTemplate("<span class=\"a  b`\" :class={v ? 'on' : ''}>x</span>")
+	nodes, err := ParseTemplate("<span class=\"a  b`\" :class={v ? 'on' : ''}>x</span>")
 	if err != nil {
 		t.Fatal(err)
 	}

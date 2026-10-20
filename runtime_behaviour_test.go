@@ -135,11 +135,11 @@ func runRuntimeHarnessWithModules(t *testing.T, entry string,
 	// needing a package.json.
 	var entryPath string
 	for name, src := range components {
-		sfc, err := parseSFC(src)
+		sfc, err := ParseSFC(src)
 		if err != nil {
 			t.Fatalf("[%s] parseSFC: %v", name, err)
 		}
-		tmpl, err := parseTemplate(sfc.Template)
+		tmpl, err := ParseTemplate(sfc.Template)
 		if err != nil {
 			t.Fatalf("[%s] parseTemplate: %v", name, err)
 		}

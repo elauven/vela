@@ -6,7 +6,7 @@ import (
 )
 
 func TestTranslateSSRExpressionUsesCachedAST(t *testing.T) {
-	sfc, err := parseSFC(`<script>
+	sfc, err := ParseSFC(`<script>
 export let title = "";
 export let count = 0;
 export let active = false;
@@ -42,7 +42,7 @@ export let items = [];
 }
 
 func TestTranslateSSRExpressionLowersNullToGoNil(t *testing.T) {
-	sfc, err := parseSFC(`<template>{null}</template>`)
+	sfc, err := ParseSFC(`<template>{null}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestTranslateSSRExpressionLowersNullToGoNil(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionReportsPositionedUnsupportedForm(t *testing.T) {
-	sfc, err := parseSFC(`<template>{format(title)}</template>`)
+	sfc, err := ParseSFC(`<template>{format(title)}</template>`)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestTranslateSSRExpressionReportsPositionedUnsupportedForm(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionExplainsLocalReactiveValue(t *testing.T) {
-	sfc, err := parseSFC(`<script>let profile = $state.deep({});</script><template>{profile}</template>`)
+	sfc, err := ParseSFC(`<script>let profile = $state.deep({});</script><template>{profile}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestTranslateSSRExpressionExplainsLocalReactiveValue(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionLowersSafeLocalStateInitializer(t *testing.T) {
-	sfc, err := parseSFC(`<script>let count = $state(1 + 1);</script><template>{count}</template>`)
+	sfc, err := ParseSFC(`<script>let count = $state(1 + 1);</script><template>{count}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestTranslateSSRExpressionLowersSafeLocalStateInitializer(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionLowersSafeLocalDerivedInitializer(t *testing.T) {
-	sfc, err := parseSFC(`<script>let count = $state(2); let doubled = $derived(count * 2);</script><template>{doubled}</template>`)
+	sfc, err := ParseSFC(`<script>let count = $state(2); let doubled = $derived(count * 2);</script><template>{doubled}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestTranslateSSRExpressionLowersSafeLocalDerivedInitializer(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionUsesJavaScriptStringConversionForMixedPlus(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let count = 0;</script><template>{'item ' + count}{count + ' items'}</template>`)
+	sfc, err := ParseSFC(`<script>export let count = 0;</script><template>{'item ' + count}{count + ' items'}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestTranslateSSRExpressionUsesJavaScriptStringConversionForMixedPlus(t *tes
 }
 
 func TestTranslateSSRExpressionNormalizesNumericPlusAndRejectsUnknownCoercion(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let whole = 1; export let fraction = 0.5;</script><template>{whole + fraction}</template>`)
+	sfc, err := ParseSFC(`<script>export let whole = 1; export let fraction = 0.5;</script><template>{whole + fraction}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestTranslateSSRExpressionNormalizesNumericPlusAndRejectsUnknownCoercion(t 
 		`<script>export let value;</script><template>{value + 1}</template>`: "vela.Add(props.Value, 1.0)",
 		`<template>{true + 1}</template>`:                                    "vela.Add(true, 1.0)",
 	} {
-		sfc, err := parseSFC(source)
+		sfc, err := ParseSFC(source)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -212,7 +212,7 @@ func TestTranslateSSRExpressionNormalizesNumericPlusAndRejectsUnknownCoercion(t 
 }
 
 func TestTranslateSSRExpressionUsesStrictEqualityRuntimeAndRejectsLooseEquality(t *testing.T) {
-	sfc, err := parseSFC(`<template>{1 === 1.0}{null !== undefined}</template>`)
+	sfc, err := ParseSFC(`<template>{1 === 1.0}{null !== undefined}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestTranslateSSRExpressionUsesStrictEqualityRuntimeAndRejectsLooseEquality(
 	}
 
 	for _, operator := range []string{"==", "!="} {
-		sfc, err := parseSFC(`<template>{1 ` + operator + ` 1}</template>`)
+		sfc, err := ParseSFC(`<template>{1 ` + operator + ` 1}</template>`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -246,7 +246,7 @@ func TestTranslateSSRExpressionUsesStrictEqualityRuntimeAndRejectsLooseEquality(
 }
 
 func TestTranslateSSRExpressionDefinesNumericAndUTF16RelationalSemantics(t *testing.T) {
-	sfc, err := parseSFC(`<template>{1 < 1.5}{'𐀀' < ''}{'same' <= 'same'}</template>`)
+	sfc, err := ParseSFC(`<template>{1 < 1.5}{'𐀀' < ''}{'same' <= 'same'}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func TestTranslateSSRExpressionDefinesNumericAndUTF16RelationalSemantics(t *test
 		`<template>{'1' < 2}</template>`:                                      `vela.Less("1", 2.0)`,
 		`<script>export let value;</script><template>{value >= 1}</template>`: "vela.GreaterEqual(props.Value, 1.0)",
 	} {
-		sfc, err := parseSFC(source)
+		sfc, err := ParseSFC(source)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -292,7 +292,7 @@ func TestTranslateSSRExpressionDefinesNumericAndUTF16RelationalSemantics(t *test
 }
 
 func TestTranslateSSRExpressionUsesJavaScriptNumberOperations(t *testing.T) {
-	sfc, err := parseSFC(`<template>{5 - 2}{3 * 4}{1 / 0}{5 % 2}{-0}{+(1 / 2)}</template>`)
+	sfc, err := ParseSFC(`<template>{5 - 2}{3 * 4}{1 / 0}{5 % 2}{-0}{+(1 / 2)}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestTranslateSSRExpressionUsesJavaScriptNumberOperations(t *testing.T) {
 		`<template>{true * 2}</template>`:                                 "vela.NumberMultiply(true, 2.0)",
 		`<script>export let value;</script><template>{-value}</template>`: "vela.NumberNegate(props.Value)",
 	} {
-		sfc, err := parseSFC(source)
+		sfc, err := ParseSFC(source)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -341,7 +341,7 @@ func TestTranslateSSRExpressionUsesJavaScriptNumberOperations(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionUsesSafeComputedMemberBoundary(t *testing.T) {
-	sfc, err := parseSFC(`<template>{[1, 2][0]}{[1][5]}{({ title: 'ready' })['title']}</template>`)
+	sfc, err := ParseSFC(`<template>{[1, 2][0]}{[1][5]}{({ title: 'ready' })['title']}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +368,7 @@ func TestTranslateSSRExpressionUsesSafeComputedMemberBoundary(t *testing.T) {
 		`<template>{({ title: 'ready' })[0]}</template>`:                    `vela.Index(vela.NewObject().Set("title", "ready"), 0.0)`,
 		`<script>export let value;</script><template>{value[0]}</template>`: "vela.Index(props.Value, 0.0)",
 	} {
-		sfc, err := parseSFC(source)
+		sfc, err := ParseSFC(source)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -388,7 +388,7 @@ func TestTranslateSSRExpressionUsesSafeComputedMemberBoundary(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionLowersNamedFormatterWithPlainConstAndDerived(t *testing.T) {
-	sfc, err := parseSFC(`<script>
+	sfc, err := ParseSFC(`<script>
 const prefix = 'Hello, ';
 let suffix = '!';
 function label(value) { return prefix + value + suffix; }
@@ -428,7 +428,7 @@ let shown = $derived(label(title));
 }
 
 func TestTranslateSSRExpressionRejectsNonExpressionNamedFormatter(t *testing.T) {
-	sfc, err := parseSFC(`<script>function label(value) { const suffix = '!'; return value + suffix; }</script><template>{label('ready')}</template>`)
+	sfc, err := ParseSFC(`<script>function label(value) { const suffix = '!'; return value + suffix; }</script><template>{label('ready')}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -467,7 +467,7 @@ func TestTranslateSSRExpressionRejectsUnsupportedNamedFormatterCalls(t *testing.
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			sfc, err := parseSFC(tc.source)
+			sfc, err := ParseSFC(tc.source)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -485,7 +485,7 @@ func TestTranslateSSRExpressionRejectsUnsupportedNamedFormatterCalls(t *testing.
 }
 
 func TestTranslateSSRExpressionRejectsCircularLocalDerivedInitializer(t *testing.T) {
-	sfc, err := parseSFC(`<script>let first = $derived(second); let second = $derived(first);</script><template>{first}</template>`)
+	sfc, err := ParseSFC(`<script>let first = $derived(second); let second = $derived(first);</script><template>{first}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +501,7 @@ func TestTranslateSSRExpressionRejectsCircularLocalDerivedInitializer(t *testing
 }
 
 func TestTranslateSSRExpressionLowersTernaryThroughRuntime(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let count = 0;</script><template>{count ? 'many' : 'none'}</template>`)
+	sfc, err := ParseSFC(`<script>export let count = 0;</script><template>{count ? 'many' : 'none'}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -529,7 +529,7 @@ func TestTranslateSSRExpressionLowersTernaryThroughRuntime(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionLowersLogicalOperandsThroughRuntime(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let title = ''; export let active = false;</script><template>{title || 'Untitled'}{active && 'active'}</template>`)
+	sfc, err := ParseSFC(`<script>export let title = ''; export let active = false;</script><template>{title || 'Untitled'}{active && 'active'}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,7 +563,7 @@ func TestTranslateSSRExpressionLowersLogicalOperandsThroughRuntime(t *testing.T)
 }
 
 func TestTranslateSSRExpressionDecodesSingleQuotedString(t *testing.T) {
-	sfc, err := parseSFC(`<template>{'it\'s\nready'}</template>`)
+	sfc, err := ParseSFC(`<template>{'it\'s\nready'}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -579,7 +579,7 @@ func TestTranslateSSRExpressionDecodesSingleQuotedString(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionLowersStaticTemplateLiteral(t *testing.T) {
-	sfc, err := parseSFC("<template>{`ready\\n\\`cost: \\$5`}</template>")
+	sfc, err := ParseSFC("<template>{`ready\\n\\`cost: \\$5`}</template>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -595,7 +595,7 @@ func TestTranslateSSRExpressionLowersStaticTemplateLiteral(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionLowersTypedInterpolatedTemplateLiteral(t *testing.T) {
-	sfc, err := parseSFC("<script>export let title = ''; </script><template>{`hello ${title}!`}</template>")
+	sfc, err := ParseSFC("<script>export let title = ''; </script><template>{`hello ${title}!`}</template>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -615,7 +615,7 @@ func TestTranslateSSRExpressionLowersTypedInterpolatedTemplateLiteral(t *testing
 }
 
 func TestTranslateSSRExpressionLowersNullishInterpolatedTemplateLiteral(t *testing.T) {
-	sfc, err := parseSFC("<script>export let value; </script><template>{`hello ${value}`}</template>")
+	sfc, err := ParseSFC("<script>export let value; </script><template>{`hello ${value}`}</template>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -635,7 +635,7 @@ func TestTranslateSSRExpressionLowersNullishInterpolatedTemplateLiteral(t *testi
 }
 
 func TestTranslateSSRExpressionLowersUndefinedAndMissingObjectTemplateValue(t *testing.T) {
-	sfc, err := parseSFC("<script>export let profile = {}; </script><template>{`u=${undefined}; m=${profile.missing}`}</template>")
+	sfc, err := ParseSFC("<script>export let profile = {}; </script><template>{`u=${undefined}; m=${profile.missing}`}</template>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -656,7 +656,7 @@ func TestTranslateSSRExpressionLowersUndefinedAndMissingObjectTemplateValue(t *t
 }
 
 func TestTranslateSSRExpressionLowersArrayLiteralAndHole(t *testing.T) {
-	sfc, err := parseSFC(`<template>{[1, , 'three']}</template>`)
+	sfc, err := ParseSFC(`<template>{[1, , 'three']}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -672,7 +672,7 @@ func TestTranslateSSRExpressionLowersArrayLiteralAndHole(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionRejectsArraySpread(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let items = [];</script><template>{[1, ...items]}</template>`)
+	sfc, err := ParseSFC(`<script>export let items = [];</script><template>{[1, ...items]}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -688,7 +688,7 @@ func TestTranslateSSRExpressionRejectsArraySpread(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionLowersPlainObjectLiteral(t *testing.T) {
-	sfc, err := parseSFC(`<template>{ { title: 'ready', selected: true } }</template>`)
+	sfc, err := ParseSFC(`<template>{ { title: 'ready', selected: true } }</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -704,7 +704,7 @@ func TestTranslateSSRExpressionLowersPlainObjectLiteral(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionKeepsLastDuplicateObjectProperty(t *testing.T) {
-	sfc, err := parseSFC(`<template>{ { title: 'old', title: 'new' } }</template>`)
+	sfc, err := ParseSFC(`<template>{ { title: 'old', title: 'new' } }</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -724,7 +724,7 @@ func TestTranslateSSRExpressionRejectsUnsupportedObjectForms(t *testing.T) {
 		`<template>{ { get x() { return 1; } } }</template>`,
 		`<template>{ { __proto__: null } }</template>`,
 	} {
-		sfc, err := parseSFC(source)
+		sfc, err := ParseSFC(source)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -740,7 +740,7 @@ func TestTranslateSSRExpressionRejectsUnsupportedObjectForms(t *testing.T) {
 }
 
 func TestTranslateSSRExpressionLowersObjectPropMember(t *testing.T) {
-	sfc, err := parseSFC(`<script>export let profile = {};</script><template>{profile.name}</template>`)
+	sfc, err := ParseSFC(`<script>export let profile = {};</script><template>{profile.name}</template>`)
 	if err != nil {
 		t.Fatal(err)
 	}

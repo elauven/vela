@@ -650,7 +650,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	var sfc *SFC
 	if err = trace.stage("parse-sfc", func() error {
 		var parseErr error
-		sfc, parseErr = parseSFC(raw)
+		sfc, parseErr = ParseSFC(raw)
 		return parseErr
 	}); err != nil {
 		ds.Error(0, "%v", err)

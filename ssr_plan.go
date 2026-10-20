@@ -560,7 +560,7 @@ func LinkSSRComponentPackages(links map[string]SSRComponentLink, srcRoot string,
 		link.ImportPath = layout.importPath(link.SourcePath, srcRoot)
 		link.GoName = componentName(link.SourcePath)
 		if data, err := os.ReadFile(link.SourcePath); err == nil {
-			link.ClientOnly = scriptContextClient(string(data))
+			link.ClientOnly = ScriptContextClient(string(data))
 		}
 		links[name] = link
 	}

@@ -274,11 +274,11 @@ func FuzzCodegen(f *testing.F) {
 
 		// Parse — a malformed generated template is a generator
 		// bug, not a codegen bug; skip rather than fail.
-		sfc, err := parseSFC(src)
+		sfc, err := ParseSFC(src)
 		if err != nil {
 			t.Skipf("generator produced unparseable SFC: %v\n%s", err, src)
 		}
-		tmpl, err := parseTemplate(sfc.Template)
+		tmpl, err := ParseTemplate(sfc.Template)
 		if err != nil {
 			t.Skipf("generator produced unparseable template: %v\n%s",
 				err, src)
@@ -336,7 +336,7 @@ func FuzzComponentASTBoundaries(f *testing.F) {
 			t.Skip()
 		}
 		source := `<script></script><template>` + template + `</template><style>` + css + `</style>`
-		sfc, err := parseSFC(source)
+		sfc, err := ParseSFC(source)
 		if err != nil {
 			return // malformed outer SFC is a valid parser outcome
 		}

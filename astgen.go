@@ -2358,7 +2358,7 @@ func (g *ASTGen) eventHandlerExpr(attr *Attr) JsExpr {
 // stripBraces removes a single surrounding {…} wrapper that the
 // template parser preserves on attribute values.
 func stripBraces(s string) string {
-	return unwrapBraces(s)
+	return UnwrapBraces(s)
 }
 
 // buildReturn constructs the `return { destroy, set };` statement.

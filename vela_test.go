@@ -21,7 +21,7 @@ func TestParseSFC_AllSections(t *testing.T) {
 <style>.a { color: red; }</style>
 <template><div>hello</div></template>
 `
-	sfc, err := parseSFC(src)
+	sfc, err := ParseSFC(src)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestParseSFC_AllSections(t *testing.T) {
 }
 
 func TestParseSFC_MissingTemplate(t *testing.T) {
-	_, err := parseSFC(`<script>let x = 1;</script>`)
+	_, err := ParseSFC(`<script>let x = 1;</script>`)
 	if err == nil {
 		t.Error("expected error for missing template")
 	}
@@ -48,7 +48,7 @@ func TestParseSFC_MissingTemplate(t *testing.T) {
 // ──────────────────────────────────────────────
 
 func TestParseTemplate_SimpleElement(t *testing.T) {
-	nodes, err := parseTemplate(`<div class="foo">hello</div>`)
+	nodes, err := ParseTemplate(`<div class="foo">hello</div>`)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestParseTemplate_SimpleElement(t *testing.T) {
 }
 
 func TestParseTemplate_Interpolation(t *testing.T) {
-	nodes, err := parseTemplate(`<p>Hello {name}!</p>`)
+	nodes, err := ParseTemplate(`<p>Hello {name}!</p>`)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestParseTemplate_Interpolation(t *testing.T) {
 
 func TestParseSFCHandlesNonASCIIBytesBeforeSections(t *testing.T) {
 	src := "<template><p>" + string([]byte{0xdf}) + "</p></template><style>.card { color: red; }</style>"
-	sfc, err := parseSFC(src)
+	sfc, err := ParseSFC(src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestParseSFCHandlesNonASCIIBytesBeforeSections(t *testing.T) {
 }
 
 func TestParseTemplate_Directives(t *testing.T) {
-	nodes, err := parseTemplate(`<div :class={cls} @click={handler}>x</div>`)
+	nodes, err := ParseTemplate(`<div :class={cls} @click={handler}>x</div>`)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestParseTemplate_Directives(t *testing.T) {
 }
 
 func TestParseTemplate_QuotedObjectClassKeepsTypedValueKind(t *testing.T) {
-	nodes, err := parseTemplate(`<div :class="{'active': enabled}" />`)
+	nodes, err := ParseTemplate(`<div :class="{'active': enabled}" />`)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -137,14 +137,14 @@ func TestParseTemplate_Each(t *testing.T) {
 		`<li #each="items as item">{item}</li>`,
 		`<li #key="item.id">x</li>`,
 	} {
-		if _, err := parseTemplate(source); err == nil || !strings.Contains(err.Error(), "no longer supported") {
+		if _, err := ParseTemplate(source); err == nil || !strings.Contains(err.Error(), "no longer supported") {
 			t.Fatalf("legacy template %q error = %v", source, err)
 		}
 	}
 }
 
 func TestParseTemplate_VoidElement(t *testing.T) {
-	nodes, err := parseTemplate(`<div><br /><input type="text" /></div>`)
+	nodes, err := ParseTemplate(`<div><br /><input type="text" /></div>`)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestParseTemplate_VoidElement(t *testing.T) {
 }
 
 func TestParseTemplate_Nested(t *testing.T) {
-	nodes, err := parseTemplate(`<ul><li>a</li><li>b</li></ul>`)
+	nodes, err := ParseTemplate(`<ul><li>a</li><li>b</li></ul>`)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestGenerateCode_ScopedStyle(t *testing.T) {
 		Style:    `p { color: blue; }`,
 		Template: `<p>hi</p>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
 	code := generateCodeAST("Styled", sfc, nodes, analysis, "vela-abc")
 
@@ -340,7 +340,7 @@ func TestParseInterpolations(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		parts := parseInterpolations(tc.input)
+		parts := ParseInterpolations(tc.input)
 		// Count dynamic parts
 		var dynVals []string
 		for _, p := range parts {
@@ -625,7 +625,7 @@ func TestParseTemplate_ElseIfElse(t *testing.T) {
 		{:else if b}<div>B</div>
 		{:else}<div>C</div>{/if}
 	`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -661,7 +661,7 @@ func TestParseTemplate_ElseIfElse(t *testing.T) {
 
 func TestParseTemplate_Component(t *testing.T) {
 	html := `<div><MyButton :label="text" @click="handler" /></div>`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -693,7 +693,7 @@ func TestParseTemplate_Component(t *testing.T) {
 
 func TestParseTemplate_ComponentSelfClose(t *testing.T) {
 	// Self-closing component with no attrs
-	nodes, err := parseTemplate(`<Container />`)
+	nodes, err := ParseTemplate(`<Container />`)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -759,7 +759,7 @@ func TestGenerateCode_Props(t *testing.T) {
 		Script:   `export let greeting = 'Hello'; export let name;`,
 		Template: `<p>{greeting}, {name}!</p>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	analysis := analyzeScript(sfc.Script)
 	code := generateCodeAST("Greeter", sfc, nodes, analysis, "vela-test")
 
@@ -947,7 +947,7 @@ func TestValidateTemplate_WarnsUnimportedComponent(t *testing.T) {
 		Script:   ``,
 		Template: `<div><MyWidget /></div>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	ds := NewDiagSet("test.vela", sfc.Script)
 	validateTemplate(nodes, a, ds)
@@ -967,7 +967,7 @@ func TestValidateTemplate_NoWarnWhenImported(t *testing.T) {
 		Script:   `import { MyWidget } from './MyWidget.js';`,
 		Template: `<div><MyWidget /></div>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	ds := NewDiagSet("test.vela", sfc.Script)
 	validateTemplate(nodes, a, ds)
@@ -1033,7 +1033,7 @@ func TestGenerateCode_OnMount(t *testing.T) {
 		Script:   `onMount(() => { document.body.classList.add('loaded'); });`,
 		Template: `<div>hello</div>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 	if !strings.Contains(code, "document.body.classList.add") {
@@ -1046,7 +1046,7 @@ func TestGenerateCode_OnDestroy(t *testing.T) {
 		Script:   `onDestroy(() => { cleanup(); });`,
 		Template: `<div>bye</div>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Bye", sfc, nodes, a, "vela-test")
 	// onDestroy body must appear inside destroy()
@@ -1099,7 +1099,7 @@ func TestGenerateCode_BindableCallback(t *testing.T) {
 		Script:   `export let count = $bindable(0);`,
 		Template: `<span>{count}</span>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Counter", sfc, nodes, a, "vela-test")
 	// Should emit $$onChange_count reference
@@ -1113,7 +1113,7 @@ func TestGenerateCode_BindableCallback(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestParseTemplate_SlotDefault(t *testing.T) {
-	nodes, err := parseTemplate(`<div><slot /></div>`)
+	nodes, err := ParseTemplate(`<div><slot /></div>`)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -1131,7 +1131,7 @@ func TestParseTemplate_SlotDefault(t *testing.T) {
 }
 
 func TestParseTemplate_SlotNamed(t *testing.T) {
-	nodes, err := parseTemplate(`<div><slot name="header">Fallback</slot></div>`)
+	nodes, err := ParseTemplate(`<div><slot name="header">Fallback</slot></div>`)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -1150,7 +1150,7 @@ func TestGenerateCode_SlotRendering(t *testing.T) {
 		Script:   ``,
 		Template: `<div><slot name="header">Default header</slot></div>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Card", sfc, nodes, a, "vela-test")
 	if !strings.Contains(code, `$$slots["header"]`) && !strings.Contains(code, `$$slots['header']`) {
@@ -1166,7 +1166,7 @@ func TestGenerateCode_ComponentPassesSlots(t *testing.T) {
 		Script:   `import { Card } from './Card.js';`,
 		Template: `<Card><p slot="header">My Title</p></Card>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 	// The component mount call should include a slots argument
@@ -1185,7 +1185,7 @@ func TestGenerateCode_ComponentPassesSlots(t *testing.T) {
 
 func TestGenerateCode_DispatchFunction(t *testing.T) {
 	sfc := &SFC{Script: ``, Template: `<div>hello</div>`}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	code := generateCodeAST("MyComp", sfc, nodes, analyzeScript(sfc.Script), "vela-test")
 	// Runtime helpers are usage-tracked. A component without child events
 	// must not import or bind dispatch machinery.
@@ -1216,11 +1216,11 @@ func TestFullPipeline_UserCard(t *testing.T) {
   </div>
 </template>
 `
-	sfc, err := parseSFC(src)
+	sfc, err := ParseSFC(src)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
@@ -1335,7 +1335,7 @@ func TestGenerateCode_ArrowHandlerNotDoubleWrapped(t *testing.T) {
 		Script:   `let x = $state(0); function foo() { x++; }`,
 		Template: `<button @click="() => foo()">click</button>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Btn", sfc, nodes, a, "vela-test")
 
@@ -1356,7 +1356,7 @@ func TestGenerateCode_ExprHandlerNotDoubleWrapped(t *testing.T) {
 		Script:   `let v = $state('');`,
 		Template: `<input @input="($e) => v = $e.target.value" />`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Input", sfc, nodes, a, "vela-test")
 
@@ -1449,7 +1449,7 @@ func TestGenerateCode_BooleanBindingCheckbox(t *testing.T) {
 		Script:   `let done = $state(false);`,
 		Template: `<input type="checkbox" :checked="done" />`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Check", sfc, nodes, a, "vela-test")
 
@@ -1468,7 +1468,7 @@ func TestGenerateCode_BooleanBindingDisabled(t *testing.T) {
 		Script:   `let loading = $state(true);`,
 		Template: `<button :disabled="loading">Submit</button>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Btn", sfc, nodes, a, "vela-test")
 
@@ -1485,7 +1485,7 @@ func TestGenerateCode_BooleanBindingHidden(t *testing.T) {
 		Script:   `let visible = $state(true);`,
 		Template: `<div :hidden="!visible">content</div>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Vis", sfc, nodes, a, "vela-test")
 
@@ -1538,7 +1538,7 @@ func TestGenerateCode_PropAssignmentInMethod(t *testing.T) {
 		`,
 		Template: `<div>{name}</div>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Card", sfc, nodes, a, "vela-test")
 
@@ -1669,11 +1669,11 @@ func TestFullPipeline_PropBindingAndLifecycle(t *testing.T) {
   </div>
 </template>
 `
-	sfc, err := parseSFC(src)
+	sfc, err := ParseSFC(src)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
@@ -1794,11 +1794,11 @@ func TestFullPipeline_ClockTernaryInOnMount(t *testing.T) {
 </script>
 <template><div>{hours} {ampm}</div></template>
 `
-	sfc, err := parseSFC(src)
+	sfc, err := ParseSFC(src)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
@@ -1840,14 +1840,14 @@ func TestFullPipeline_ClockTernaryInOnMount(t *testing.T) {
 
 func TestParseTemplate_ComponentWithEach(t *testing.T) {
 	html := `<div><MyCard #each="items as item" #key="item.id" :title="item.name" /></div>`
-	if _, err := parseTemplate(html); err == nil || !strings.Contains(err.Error(), "#each") {
+	if _, err := ParseTemplate(html); err == nil || !strings.Contains(err.Error(), "#each") {
 		t.Fatalf("component legacy #each error = %v", err)
 	}
 }
 
 func TestParseTemplate_ComponentWithIf(t *testing.T) {
 	html := `<div>{#if open}<Modal :title={header} />{/if}</div>`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -1881,7 +1881,7 @@ func TestGenerateCode_PlainComponentGuardsCustomEvent(t *testing.T) {
 		Script:   `import { Modal } from './Modal.js';`,
 		Template: `<div><Modal @close="($e) => handleClose($e.detail)" @select="onSelect" /></div>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
@@ -1900,7 +1900,7 @@ func TestRewriteHandlerAssignments_ConciseArrow(t *testing.T) {
 		Script:   `let visible = $state(false);`,
 		Template: `<input type="checkbox" @change="($e) => visible = $e.target.checked" />`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
@@ -1918,7 +1918,7 @@ func TestComponentCallbackPropInlineAssignmentIsReactive(t *testing.T) {
 		Script:   `import { Canvas } from './Canvas.vela'; let selectedId = $state(null);`,
 		Template: `<Canvas onSelect={(id) => selectedId = id} />`,
 	}
-	nodes, err := parseTemplate(sfc.Template)
+	nodes, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1936,7 +1936,7 @@ func TestRewriteHandlerAssignments_BlockBody(t *testing.T) {
 		Script:   `let count = $state(0); let step = $state(1);`,
 		Template: `<button @click="($e) => { count = count + step; step = 2; }">go</button>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
@@ -1953,7 +1953,7 @@ func TestRewriteHandlerAssignments_MultipleAssignments(t *testing.T) {
 		Script:   `let x = $state(0); let y = $state(0);`,
 		Template: `<button @click="() => { x = 1; y = 2; }">set</button>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
@@ -1971,7 +1971,7 @@ func TestRewriteHandlerAssignments_NoFalsePositive(t *testing.T) {
 		Script:   `let count = $state(0);`,
 		Template: `<button @click="($e) => { $e.preventDefault(); localVar = 5; }">go</button>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Comp", sfc, nodes, a, "vela-test")
 
@@ -1997,7 +1997,7 @@ func TestParseTemplate_IfElseifGroupedInsideElement(t *testing.T) {
 			{:else if editMode}<div>Edit mode</div>{/if}
 		</div>
 	`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2021,7 +2021,7 @@ func TestParseTemplate_IfElseifGroupedInsideElement(t *testing.T) {
 func TestParseTemplate_IfElseGroupedThreeLevelsDeep(t *testing.T) {
 	// Verify grouping works at any nesting depth
 	html := `<outer><middle>{#if a}<p>A</p>{:else if b}<p>B</p>{:else}<p>C</p>{/if}</middle></outer>`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -2100,7 +2100,7 @@ func TestGenerateCode_PropChangeTriggersDerivedUpdate(t *testing.T) {
 		`,
 		Template: `<div :class="cardClass">content</div>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Card", sfc, nodes, a, "vela-test")
 
@@ -2161,7 +2161,7 @@ func TestParseTemplate_ComponentIfElseifChainGrouped(t *testing.T) {
 			{:else if route === 'user'}<UserPage :login={params.login} />{/if}
 		</div>
 	`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -2285,7 +2285,7 @@ func TestGenerateCode_EffectDoesNotCallItsOwnSetter(t *testing.T) {
 		`,
 		Template: `{#if isAuthenticated}<div>logged in</div>{/if}`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
@@ -2319,7 +2319,7 @@ func TestGenerateCode_EffectCleanupEmitted(t *testing.T) {
 		`,
 		Template: `<div>{x}</div>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
@@ -2430,7 +2430,7 @@ func TestGenerateCode_EffectHasCleanup(t *testing.T) {
 		`,
 		Template: `<div>{x}</div>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
@@ -2478,7 +2478,7 @@ func TestGenerateCode_SubscribeEffectNoInfiniteLoop(t *testing.T) {
 		`,
 		Template: `<div>{isAuthenticated ? 'logged in' : 'logged out'}</div>`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("App", sfc, nodes, a, "vela-test")
 
@@ -2502,7 +2502,7 @@ func TestGenerateCode_SubscribeEffectNoInfiniteLoop(t *testing.T) {
 
 func TestSvelteBlock_ParseSimpleIf(t *testing.T) {
 	html := `<div>{#if show}<span>yes</span>{/if}</div>`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2530,7 +2530,7 @@ func TestSvelteBlock_ParseIfElse(t *testing.T) {
 		  <p>Login</p>
 		{/if}
 	</div>`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2552,7 +2552,7 @@ func TestSvelteBlock_ParseIfElse(t *testing.T) {
 
 func TestSvelteBlock_ParseIfElseIf(t *testing.T) {
 	html := `{#if a}<p>A</p>{:else if b}<p>B</p>{:else}<p>C</p>{/if}`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2577,7 +2577,7 @@ func TestSvelteBlock_ParseIfElseIf(t *testing.T) {
 func TestSvelteBlock_ParseIfRootLevel(t *testing.T) {
 	// {#if} at template root (no outer element)
 	html := `{#if x}<span>X</span>{/if}<p>always</p>`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2595,7 +2595,7 @@ func TestSvelteBlock_ParseIfRootLevel(t *testing.T) {
 func TestSvelteBlock_IfBranchChildren(t *testing.T) {
 	// Branch children should be parsed as proper nodes
 	html := `{#if show}<div class="a"><span>{msg}</span></div>{/if}`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2622,7 +2622,7 @@ func TestSvelteBlock_IfBranchChildren(t *testing.T) {
 
 func TestSvelteBlock_ParseEach(t *testing.T) {
 	html := `<ul>{#each items as item}<li>{item.name}</li>{/each}</ul>`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2644,7 +2644,7 @@ func TestSvelteBlock_ParseEach(t *testing.T) {
 
 func TestSvelteBlock_ParseEachWithKey(t *testing.T) {
 	html := `{#each todos as todo (todo.id)}<div>{todo.text}</div>{/each}`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2661,10 +2661,10 @@ func TestSvelteBlock_ParseEachWithKey(t *testing.T) {
 }
 
 func TestSvelteBlock_RecognizesEmptyTerminalEachKey(t *testing.T) {
-	if got := eachTerminalKeyStart("rows as row ()"); got < 0 {
+	if got := EachTerminalKeyStart("rows as row ()"); got < 0 {
 		t.Fatal("empty terminal key was not recognised as a key construct")
 	}
-	nodes, err := parseTemplate(`{#each rows as row ()}<p>{row}</p>{/each}`)
+	nodes, err := ParseTemplate(`{#each rows as row ()}<p>{row}</p>{/each}`)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2675,7 +2675,7 @@ func TestSvelteBlock_RecognizesEmptyTerminalEachKey(t *testing.T) {
 }
 
 func TestSvelteBlock_ParseEachIterableCallWithoutKey(t *testing.T) {
-	nodes, err := parseTemplate(`{#each feats(plan) as f}<li>{f}</li>{/each}`)
+	nodes, err := ParseTemplate(`{#each feats(plan) as f}<li>{f}</li>{/each}`)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2698,7 +2698,7 @@ func TestSvelteBlock_ParseEachIterableCallWithoutKey(t *testing.T) {
 }
 
 func TestSvelteBlock_ParseEachHeaderIgnoresJSStringDelimiters(t *testing.T) {
-	nodes, err := parseTemplate(`{#each collect(plan, " as ", { closing: "}" }) as feature (feature.id)}<li>{feature}</li>{/each}`)
+	nodes, err := ParseTemplate(`{#each collect(plan, " as ", { closing: "}" }) as feature (feature.id)}<li>{feature}</li>{/each}`)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2718,7 +2718,7 @@ func TestSvelteBlock_ParseEachHeaderIgnoresJSStringDelimiters(t *testing.T) {
 }
 
 func TestSvelteBlock_ReadTagIgnoresClosingBraceInJSString(t *testing.T) {
-	nodes, err := parseTemplate(`{#if message === "}"}<p>{message}</p>{/if}`)
+	nodes, err := ParseTemplate(`{#if message === "}"}<p>{message}</p>{/if}`)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2732,7 +2732,7 @@ func TestSvelteBlock_ReadTagIgnoresClosingBraceInJSString(t *testing.T) {
 }
 
 func TestSvelteBlock_ReadTagIgnoresClosingBraceInJSComment(t *testing.T) {
-	nodes, err := parseTemplate("{#if /* } */ visible}<p>{visible}</p>{/if}")
+	nodes, err := ParseTemplate("{#if /* } */ visible}<p>{visible}</p>{/if}")
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2747,7 +2747,7 @@ func TestSvelteBlock_ReadTagIgnoresClosingBraceInJSComment(t *testing.T) {
 
 func TestSvelteBlock_ParseEachWithIndex(t *testing.T) {
 	html := `{#each items as item, i (item.id)}<p>{i}: {item.name}</p>{/each}`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2758,7 +2758,7 @@ func TestSvelteBlock_ParseEachWithIndex(t *testing.T) {
 }
 
 func TestSvelteBlock_OldSyntaxIsRejected(t *testing.T) {
-	if _, err := parseTemplate(`<div #if="show">old style</div>`); err == nil || !strings.Contains(err.Error(), "no longer supported") {
+	if _, err := ParseTemplate(`<div #if="show">old style</div>`); err == nil || !strings.Contains(err.Error(), "no longer supported") {
 		t.Fatalf("legacy syntax error = %v", err)
 	}
 }
@@ -2770,7 +2770,7 @@ func TestSvelteBlock_OldSyntaxIsRejected(t *testing.T) {
 func TestSvelteFragment_ParsedAsElementWithTag(t *testing.T) {
 	// Inside a component, <svelte:fragment slot="footer"> should be parsed
 	html := `<div><Modal><svelte:fragment slot="footer"><button>OK</button><button>Cancel</button></svelte:fragment></Modal></div>`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2801,7 +2801,7 @@ func TestSvelteFragment_ParsedAsElementWithTag(t *testing.T) {
 func TestSvelteFragment_NoWrapperInDOM(t *testing.T) {
 	// The svelte:fragment itself must NOT appear in the slot — only its children
 	html := `<Modal><svelte:fragment slot="header"><h1>Title</h1><span>Sub</span></svelte:fragment></Modal>`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2823,7 +2823,7 @@ func TestSvelteFragment_NoWrapperInDOM(t *testing.T) {
 func TestSvelteFragment_DefaultSlotUnchanged(t *testing.T) {
 	// Content without slot= goes to default slot as before
 	html := `<Modal><p>Body text</p></Modal>`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2854,7 +2854,7 @@ func TestSvelteBlock_NestedInsideHtmlElement(t *testing.T) {
 			<p>No items</p>
 		{/if}
 	</section>`
-	nodes, err := parseTemplate(html)
+	nodes, err := ParseTemplate(html)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -2916,11 +2916,11 @@ func TestSvelteBlock_NestedInsideHtmlElement(t *testing.T) {
 // source string, returning the generated JS.  Test-only; avoids touching disk.
 func compileVelaString(t *testing.T, name, raw string) string {
 	t.Helper()
-	sfc, err := parseSFC(raw)
+	sfc, err := ParseSFC(raw)
 	if err != nil {
 		t.Fatalf("%s: parse: %v", name, err)
 	}
-	tmpl, err := parseTemplate(sfc.Template)
+	tmpl, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatalf("%s: template: %v", name, err)
 	}
@@ -3684,7 +3684,7 @@ func TestTwoWayBinding_OneWayBindDoesNotWireListener(t *testing.T) {
 		Script:   `let name = $state('');`,
 		Template: `<input :value="name" />`,
 	}
-	nodes, _ := parseTemplate(sfc.Template)
+	nodes, _ := ParseTemplate(sfc.Template)
 	a := analyzeScript(sfc.Script)
 	code := generateCodeAST("Form", sfc, nodes, a, "vela-test")
 
@@ -4011,11 +4011,11 @@ func TestScriptPlanInitializesDerivedBeforeFollowingUserStatement(t *testing.T) 
 		const captured = doubled + 1;
 	`
 	analysis := analyzeScript(script)
-	sfc, err := parseSFC("<script>" + script + "</script><template><p>{captured}</p></template>")
+	sfc, err := ParseSFC("<script>" + script + "</script><template><p>{captured}</p></template>")
 	if err != nil {
 		t.Fatal(err)
 	}
-	tmpl, err := parseTemplate(sfc.Template)
+	tmpl, err := ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4029,7 +4029,7 @@ func TestScriptPlanInitializesDerivedBeforeFollowingUserStatement(t *testing.T) 
 
 func TestTemplateExpressionsKeepSourcePositions(t *testing.T) {
 
-	parts := parseInterpolationsAt(`{value} {value}`, 10)
+	parts := ParseInterpolationsAt(`{value} {value}`, 10)
 	if len(parts) != 3 || parts[0].Pos != 11 || parts[2].Pos != 19 {
 		t.Fatalf("interpolation positions = %+v", parts)
 	}
