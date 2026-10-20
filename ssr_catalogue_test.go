@@ -32,7 +32,7 @@ func TestSSRMatrixBuiltins(t *testing.T) {
 				t.Fatal(err)
 			}
 		} else {
-			t.Errorf("matrix §2 differs from ssr_catalogue.go; run VELA_UPDATE_MATRIX=1 go test -run TestSSRMatrixBuiltins .")
+			t.Errorf("matrix §2 differs from internal/ssr/ssr_catalogue.go; run VELA_UPDATE_MATRIX=1 go test -run TestSSRMatrixBuiltins .")
 		}
 	}
 

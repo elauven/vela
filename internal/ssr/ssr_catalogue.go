@@ -149,7 +149,7 @@ var SSRCatalogue = []ssrCatalogueSection{
 func RenderSSRCatalogue() string {
 	var b strings.Builder
 	b.WriteString("## 2. Built-ins\n\n")
-	b.WriteString("Generated from `ssr_catalogue.go` (V-11.1a); regenerate with\n`VELA_UPDATE_MATRIX=1 go test -run TestSSRMatrixBuiltins .`. The\n*Divergence* column lists the known places where the obvious Go call\ndiffers from JavaScript; each has rows in the listed oracle groups of\n`testdata/ssr_expression_oracle.json`. Examples marked ✓ were checked\nagainst Node and Go on 2026-10-03.\n")
+	b.WriteString("Generated from `internal/ssr/ssr_catalogue.go` (V-11.1a); regenerate with\n`VELA_UPDATE_MATRIX=1 go test -run TestSSRMatrixBuiltins .`. The\n*Divergence* column lists the known places where the obvious Go call\ndiffers from JavaScript; each has rows in the listed oracle groups of\n`testdata/ssr_expression_oracle.json`. Examples marked ✓ were checked\nagainst Node and Go on 2026-10-03.\n")
 	for _, section := range SSRCatalogue {
 		fmt.Fprintf(&b, "\n### %s\n\n", section.Title)
 		if section.Intro != "" {
