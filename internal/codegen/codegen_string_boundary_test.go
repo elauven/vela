@@ -1,4 +1,4 @@
-package main
+package codegen
 
 import (
 	"go/ast"
@@ -26,12 +26,21 @@ func TestASTGenStructuralStringGatewayInventory(t *testing.T) {
 // Test files are deliberately excluded because parser fixtures may use valid
 // snippets for readability.
 func TestStructuralStringGatewaysStayInASTGen(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
+	// The compiler sources: package main at the repository root and the
+	// packages under internal/.
+	var files []string
+	for _, pattern := range []string{"../../*.go", "../*/*.go"} {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, matches...)
+	}
+	if len(files) == 0 {
+		t.Fatal("no compiler sources found")
 	}
 	for _, file := range files {
-		if file == "astgen.go" || strings.HasSuffix(file, "_test.go") {
+		if file == "../codegen/astgen.go" || strings.HasSuffix(file, "_test.go") {
 			continue
 		}
 		if calls := structuralGatewayCalls(t, file); len(calls) != 0 {
@@ -117,6 +126,12 @@ func namedCallInventory(t *testing.T, filename string, names ...string) map[stri
 				return true
 			}
 			ident, ok := call.Fun.(*ast.Ident)
+			if sel, isSel := call.Fun.(*ast.SelectorExpr); isSel {
+				// A call through a package: jsast.PrintJS.
+				if pkg, isPkg := sel.X.(*ast.Ident); isPkg && pkg.Name == "jsast" {
+					ident, ok = sel.Sel, true
+				}
+			}
 			if !ok || !wanted[ident.Name] {
 				return true
 			}
