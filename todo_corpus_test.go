@@ -130,7 +130,7 @@ func TestPositiveCorpusProjectsBuildAsProjects(t *testing.T) {
 					t.Fatal(err)
 				}
 				// Only compiler specifiers change (rewriteJSModuleSpecifiers).
-				if string(got) != rewriteJSModuleSpecifiers(string(want), runtimeImportFor(filepath.Dir(copied), outRoot)) {
+				if string(got) != RewriteJSModuleSpecifiers(string(want), RuntimeImportFor(filepath.Dir(copied), outRoot)) {
 					t.Fatalf("copied module %s differs from source", rel)
 				}
 			}

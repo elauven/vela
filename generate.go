@@ -6,3 +6,4 @@ package main
 //go:generate go run ./tools/aliasgen internal/diag diag github.com/elauven/vela/internal/diag diag_compat.go
 //go:generate go run ./tools/aliasgen internal/sfcast sfcast github.com/elauven/vela/internal/sfcast sfcast_compat.go
 //go:generate go run ./tools/aliasgen internal/analyzer analyzer github.com/elauven/vela/internal/analyzer analyzer_compat.go
+//go:generate go run ./tools/aliasgen internal/codegen codegen github.com/elauven/vela/internal/codegen codegen_compat.go

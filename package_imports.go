@@ -78,7 +78,7 @@ func programPackageImports(prog *JsProgram) []string {
 	seen := map[string]bool{}
 	var specs []string
 	add := func(spec string) {
-		if isPackageSpecifier(spec) && packageName(spec) != runtime.PackageName && !seen[spec] {
+		if IsPackageSpecifier(spec) && packageName(spec) != runtime.PackageName && !seen[spec] {
 			seen[spec] = true
 			specs = append(specs, spec)
 		}
@@ -108,8 +108,8 @@ func programPackageImports(prog *JsProgram) []string {
 func sourcePackageImports(src string) []string {
 	seen := map[string]bool{}
 	var specs []string
-	for _, spec := range moduleSpecifiers(src) {
-		if isPackageSpecifier(spec.Value) && !seen[spec.Value] {
+	for _, spec := range ModuleSpecifiers(src) {
+		if IsPackageSpecifier(spec.Value) && !seen[spec.Value] {
 			seen[spec.Value] = true
 			specs = append(specs, spec.Value)
 		}

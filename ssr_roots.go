@@ -38,7 +38,7 @@ func ssrTemplateInteractive(nodes []Node) bool {
 			}
 		}
 		interactive := false
-		forEachChildList(node, func(children []Node) {
+		ForEachChildList(node, func(children []Node) {
 			interactive = interactive || ssrTemplateInteractive(children)
 		})
 		if interactive {

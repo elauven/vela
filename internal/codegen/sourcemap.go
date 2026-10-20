@@ -1,6 +1,8 @@
-package main
+package codegen
 
 import (
+	"github.com/elauven/vela/internal/jsast"
+
 	"encoding/json"
 	"sort"
 	"strings"
@@ -19,7 +21,7 @@ type SourceMapV3 struct {
 
 // BuildSourceMapV3 converts printer locations into a single-source Source Map
 // v3 document. sourcePositions are byte offsets in sourceContent.
-func BuildSourceMapV3(file, sourceName, sourceContent string, locations []PrintLocation) SourceMapV3 {
+func BuildSourceMapV3(file, sourceName, sourceContent string, locations []jsast.PrintLocation) SourceMapV3 {
 	m := SourceMapV3{Version: 3, File: file, Sources: []string{sourceName}, SourcesContent: []string{sourceContent}, Names: []string{}}
 	if len(locations) == 0 {
 		return m
@@ -30,7 +32,7 @@ func BuildSourceMapV3(file, sourceName, sourceContent string, locations []PrintL
 		}
 		return locations[i].GeneratedColumn < locations[j].GeneratedColumn
 	})
-	line, col := sourceLineColumn(sourceContent, locations[0].SourcePos)
+	line, col := SourceLineColumn(sourceContent, locations[0].SourcePos)
 	prevSourceLine, prevSourceCol := 0, 0
 	prevGeneratedLine := 1
 	prevGeneratedCol := 0
@@ -50,7 +52,7 @@ func BuildSourceMapV3(file, sourceName, sourceContent string, locations []PrintL
 		if lineHasSegment {
 			out.WriteByte(',')
 		}
-		line, col = sourceLineColumn(sourceContent, loc.SourcePos)
+		line, col = SourceLineColumn(sourceContent, loc.SourcePos)
 		out.WriteString(encodeVLQ(loc.GeneratedColumn - prevGeneratedCol))
 		out.WriteString(encodeVLQ(0))
 		out.WriteString(encodeVLQ(line - prevSourceLine))
@@ -65,7 +67,7 @@ func BuildSourceMapV3(file, sourceName, sourceContent string, locations []PrintL
 
 func SourceMapJSON(m SourceMapV3) ([]byte, error) { return json.Marshal(m) }
 
-func sourceLineColumn(src string, pos int) (line, col int) {
+func SourceLineColumn(src string, pos int) (line, col int) {
 	if pos < 0 {
 		pos = 0
 	}

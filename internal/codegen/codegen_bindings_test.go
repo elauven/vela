@@ -1,4 +1,4 @@
-package main
+package codegen
 
 // codegen_bindings_test.go — bind:value + bind:checked + bind:this.
 //
@@ -24,6 +24,10 @@ import (
 //  Bug 11 — bind:value listener
 // ─────────────────────────────────────────────
 
+// ─────────────────────────────────────────────
+//  Bug 12 — bind:this
+// ─────────────────────────────────────────────
+
 func TestBindMultipleSelectUsesArrayRuntimeHelpers(t *testing.T) {
 	src := `<script>
   let picks = $state(['a']);
@@ -38,10 +42,6 @@ func TestBindMultipleSelectUsesArrayRuntimeHelpers(t *testing.T) {
 		}
 	}
 }
-
-// ─────────────────────────────────────────────
-//  Bug 12 — bind:this
-// ─────────────────────────────────────────────
 
 func TestBug12_BindThisInsideIfBranchWorks(t *testing.T) {
 	src := `<script>

@@ -216,7 +216,7 @@ func velaModuleExports() map[string]bool {
 	for name := range VelaCompilerIntrinsics {
 		names[name] = true
 	}
-	for name := range runtimeExportNames(runtime.Core) {
+	for name := range RuntimeExportNames(runtime.Core) {
 		if !strings.HasPrefix(name, "$") {
 			names[name] = true
 		}
@@ -820,7 +820,7 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 				report(attrPos(a), "VELA-DYNAMIC-CLASS", "Use class:name={condition}.", "%q is not a dynamic attribute; use class:%s={condition}", a.Name, strings.TrimPrefix(a.Name, "class:"))
 			}
 			if !a.IsClassDir && a.Name == "class" {
-				_, isObject := templateExprRoot(a.Expr).(*JsObjectExpr)
+				_, isObject := TemplateExprRoot(a.Expr).(*JsObjectExpr)
 				if a.ValueKind == AttrValueQuotedObjectCompat {
 					isObject = true
 				}
@@ -829,7 +829,7 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 				}
 			}
 			if a.IsTwoWay && a.Name != "this" {
-				_, isIdent := templateExprIdent(a.Expr)
+				_, isIdent := TemplateExprIdent(a.Expr)
 				if !isIdent {
 					report(attrPos(a), "VELA-BIND-MEMBER", "Use a one-way binding plus an explicit event handler for member expressions.", "bind:%s requires a plain $state or $bindable prop name; use a one-way :%s binding and an event handler for member expressions", a.Name, a.Name)
 				}

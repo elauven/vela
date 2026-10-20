@@ -322,7 +322,7 @@ func validateTemplate(nodes []Node, a *Analysis, ds *DiagSet) {
 				// the reconciler to match rows by identity, which
 				// preserves both DOM nodes and the row-to-item
 				// mapping across reorderings.
-				if n.EachKey == "" && eachHasComponent(n.Children) {
+				if n.EachKey == "" && EachHasComponent(n.Children) {
 					ds.Hint(0,
 						"unkeyed {#each %s} renders a child "+
 							"component per row; consider keying "+

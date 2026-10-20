@@ -262,10 +262,10 @@ func (r *SSRRegion) locate(source string) {
 		if source == "" || r.Records[i].Pos < 0 || r.Records[i].Pos > len(source) {
 			continue
 		}
-		line, column := sourceLineColumn(source, r.Records[i].Pos)
+		line, column := SourceLineColumn(source, r.Records[i].Pos)
 		r.Records[i].Line, r.Records[i].Column = line+1, column+1
 		if d := r.Records[i].Diagnostic; d != nil && d.Pos >= 0 && d.Pos <= len(source) {
-			line, column := sourceLineColumn(source, d.Pos)
+			line, column := SourceLineColumn(source, d.Pos)
 			d.Line, d.Column = line+1, column+1
 		}
 	}
@@ -549,13 +549,13 @@ func ssrDiagnosticDetail(src string, err error) string {
 // source, or 0, 0 before locate.
 func (r *SSRRegion) position(record SSRSiteRecord) (int, int) {
 	if d := record.Diagnostic; d != nil && d.Pos >= 0 && r != nil && d.Pos <= len(r.source) {
-		line, column := sourceLineColumn(r.source, d.Pos)
+		line, column := SourceLineColumn(r.source, d.Pos)
 		return line + 1, column + 1
 	}
 	if r == nil || r.source == "" || record.Pos < 0 || record.Pos > len(r.source) {
 		return 0, 0
 	}
-	line, column := sourceLineColumn(r.source, record.Pos)
+	line, column := SourceLineColumn(r.source, record.Pos)
 	return line + 1, column + 1
 }
 
@@ -575,7 +575,7 @@ func (r *SSRRegion) siteLabel(pos int) string {
 	if r.source == "" || pos < 0 || pos > len(r.source) {
 		return file
 	}
-	line, column := sourceLineColumn(r.source, pos)
+	line, column := SourceLineColumn(r.source, pos)
 	return fmt.Sprintf("%s:%d:%d", file, line+1, column+1)
 }
 

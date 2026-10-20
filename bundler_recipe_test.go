@@ -200,10 +200,10 @@ func TestBundlerRecipeEsbuild(t *testing.T) {
 
 	// A runtime of another contract fails when esbuild links the modules.
 	f.copyDir(runtimePackageDir, filepath.Join(f.root, "node_modules", filepath.FromSlash(runtime.PackageName)), func(name, src string) string {
-		return strings.ReplaceAll(src, runtimeContractExport, "$$runtimeContractOther")
+		return strings.ReplaceAll(src, RuntimeContractExport, "$$runtimeContractOther")
 	})
 	out, err := f.bundle("build/main.js", "dist/mismatch.js")
-	if err == nil || !strings.Contains(out, runtimeContractExport) {
+	if err == nil || !strings.Contains(out, RuntimeContractExport) {
 		t.Fatalf("a runtime of another contract bundled: %v\n%s", err, out)
 	}
 }

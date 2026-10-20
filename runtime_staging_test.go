@@ -72,7 +72,7 @@ func TestRuntimeImportFor(t *testing.T) {
 		filepath.Join(root, "a"):      "../runtime.js",
 		filepath.Join(root, "a", "b"): "../../runtime.js",
 	} {
-		if got := runtimeImportFor(dir, root); got != want {
+		if got := RuntimeImportFor(dir, root); got != want {
 			t.Fatalf("runtimeImportFor(%q) = %q, want %q", dir, got, want)
 		}
 	}
@@ -115,12 +115,12 @@ func TestStaleRuntimeContractFailsAtModuleLoad(t *testing.T) {
 	if out, err := load(); err != nil {
 		t.Fatalf("module with the current runtime failed to load: %v\n%s", err, out)
 	}
-	stale := bytes.Replace(runtime.Core, []byte("export const "+runtimeContractExport), []byte("export const $$runtimeContract0"), 1)
+	stale := bytes.Replace(runtime.Core, []byte("export const "+RuntimeContractExport), []byte("export const $$runtimeContract0"), 1)
 	if err := os.WriteFile(filepath.Join(outRoot, "runtime.js"), stale, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, err := load()
-	if err == nil || !bytes.Contains(out, []byte(runtimeContractExport)) {
+	if err == nil || !bytes.Contains(out, []byte(RuntimeContractExport)) {
 		t.Fatalf("module loaded with a runtime of another contract version: %v\n%s", err, out)
 	}
 }

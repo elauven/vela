@@ -69,7 +69,7 @@ func TestASTToJSON_ValidJSON(t *testing.T) {
 			t.Fatalf("[%s] parseTemplate: %v", name, err)
 		}
 		analysis := AnalyzeScript(sfc.Script)
-		prog := buildProgram(name, sfc, tmpl, analysis, "vela-000000")
+		prog := BuildProgram(name, sfc, tmpl, analysis, "vela-000000")
 		js := ASTToJSON(prog, false)
 
 		// Lightweight well-formedness: balanced braces/brackets and

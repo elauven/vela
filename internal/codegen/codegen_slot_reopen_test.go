@@ -1,4 +1,4 @@
-package main
+package codegen
 
 // codegen_slot_reopen_test.go — regression test for bug 10:
 // nested components inside a conditional slot (e.g. <Modal>) were

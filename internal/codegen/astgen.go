@@ -1,4 +1,7 @@
-package main
+// Package codegen generates the client JavaScript module of a component: the
+// component factory, the block engine wiring of the template, imports and
+// source maps.
+package codegen
 
 // astgen.go — the AST-based code generator.
 //
@@ -10,23 +13,29 @@ package main
 // (blocks_codegen.go).
 
 import (
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/css"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfcast"
+
 	"sort"
+	"strconv"
 	"strings"
 )
 
 // generatedMemberPath turns a compiler-owned dotted path into a member AST.
 // It must not receive user JavaScript.
-func generatedMemberPath(path string) JsExpr {
+func generatedMemberPath(path string) jsast.JsExpr {
 	parts := strings.Split(path, ".")
 	if len(parts) == 0 || parts[0] == "" {
 		panic("empty compiler-generated member path")
 	}
-	var expr JsExpr = GenIdent(parts[0])
+	var expr jsast.JsExpr = jsast.GenIdent(parts[0])
 	for _, part := range parts[1:] {
 		if part == "" {
 			panic("invalid compiler-generated member path: " + path)
 		}
-		expr = GenMember(expr, part)
+		expr = jsast.GenMember(expr, part)
 	}
 	return expr
 }
@@ -34,18 +43,18 @@ func generatedMemberPath(path string) JsExpr {
 // markGenerated recursively re-stamps every node in a tree as
 // OriginGenerated.  Used after parsing a compiler-authored snippet,
 // since the parser stamps everything OriginUser by default.
-func markGenerated(prog *JsProgram) {
+func markGenerated(prog *jsast.JsProgram) {
 	for _, s := range prog.Body {
 		markGeneratedNode(s)
 	}
 }
 
-func markGeneratedNode(n JsNode) {
+func markGeneratedNode(n jsast.JsNode) {
 	if n == nil {
 		return
 	}
-	WalkNode(n, func(c JsNode) bool {
-		setOrigin(c, OriginGenerated)
+	jsast.WalkNode(n, func(c jsast.JsNode) bool {
+		setOrigin(c, jsast.OriginGenerated)
 		return true
 	})
 }
@@ -54,91 +63,91 @@ func markGeneratedNode(n JsNode) {
 // interface; we reach the embedded BaseNode through the concrete
 // types.  Only the types astgen actually produces need handling;
 // anything else is left as-is (harmless).
-func setOrigin(n JsNode, o NodeOrigin) {
+func setOrigin(n jsast.JsNode, o jsast.NodeOrigin) {
 	switch x := n.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		x.Origin = o
-	case *JsLiteral:
+	case *jsast.JsLiteral:
 		x.Origin = o
-	case *JsTemplateLit:
+	case *jsast.JsTemplateLit:
 		x.Origin = o
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		x.Origin = o
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		x.Origin = o
-	case *JsFuncExpr:
+	case *jsast.JsFuncExpr:
 		x.Origin = o
-	case *JsArrowFunc:
+	case *jsast.JsArrowFunc:
 		x.Origin = o
-	case *JsUnaryExpr:
+	case *jsast.JsUnaryExpr:
 		x.Origin = o
-	case *JsBinaryExpr:
+	case *jsast.JsBinaryExpr:
 		x.Origin = o
-	case *JsLogicalExpr:
+	case *jsast.JsLogicalExpr:
 		x.Origin = o
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		x.Origin = o
-	case *JsMemberExpr:
+	case *jsast.JsMemberExpr:
 		x.Origin = o
-	case *JsCallExpr:
+	case *jsast.JsCallExpr:
 		x.Origin = o
-	case *JsNewExpr:
+	case *jsast.JsNewExpr:
 		x.Origin = o
-	case *JsConditionalExpr:
+	case *jsast.JsConditionalExpr:
 		x.Origin = o
-	case *JsSeqExpr:
+	case *jsast.JsSeqExpr:
 		x.Origin = o
-	case *JsSpreadExpr:
+	case *jsast.JsSpreadExpr:
 		x.Origin = o
-	case *JsAwaitExpr:
+	case *jsast.JsAwaitExpr:
 		x.Origin = o
-	case *JsYieldExpr:
+	case *jsast.JsYieldExpr:
 		x.Origin = o
-	case *JsThisExpr:
+	case *jsast.JsThisExpr:
 		x.Origin = o
-	case *JsSuperExpr:
+	case *jsast.JsSuperExpr:
 		x.Origin = o
-	case *JsVarDecl:
+	case *jsast.JsVarDecl:
 		x.Origin = o
-	case *JsFuncDecl:
+	case *jsast.JsFuncDecl:
 		x.Origin = o
-	case *JsClassDecl:
+	case *jsast.JsClassDecl:
 		x.Origin = o
-	case *JsBlock:
+	case *jsast.JsBlock:
 		x.Origin = o
-	case *JsExprStmt:
+	case *jsast.JsExprStmt:
 		x.Origin = o
-	case *JsIfStmt:
+	case *jsast.JsIfStmt:
 		x.Origin = o
-	case *JsForStmt:
+	case *jsast.JsForStmt:
 		x.Origin = o
-	case *JsForInStmt:
+	case *jsast.JsForInStmt:
 		x.Origin = o
-	case *JsWhileStmt:
+	case *jsast.JsWhileStmt:
 		x.Origin = o
-	case *JsDoWhileStmt:
+	case *jsast.JsDoWhileStmt:
 		x.Origin = o
-	case *JsReturnStmt:
+	case *jsast.JsReturnStmt:
 		x.Origin = o
-	case *JsThrowStmt:
+	case *jsast.JsThrowStmt:
 		x.Origin = o
-	case *JsTryStmt:
+	case *jsast.JsTryStmt:
 		x.Origin = o
-	case *JsSwitchStmt:
+	case *jsast.JsSwitchStmt:
 		x.Origin = o
-	case *JsBreakStmt:
+	case *jsast.JsBreakStmt:
 		x.Origin = o
-	case *JsContinueStmt:
+	case *jsast.JsContinueStmt:
 		x.Origin = o
-	case *JsLabeledStmt:
+	case *jsast.JsLabeledStmt:
 		x.Origin = o
-	case *JsEmptyStmt:
+	case *jsast.JsEmptyStmt:
 		x.Origin = o
-	case *JsDebuggerStmt:
+	case *jsast.JsDebuggerStmt:
 		x.Origin = o
-	case *JsImportDecl:
+	case *jsast.JsImportDecl:
 		x.Origin = o
-	case *JsExportDecl:
+	case *jsast.JsExportDecl:
 		x.Origin = o
 	}
 }
@@ -154,8 +163,8 @@ type ASTGen struct {
 	// the component has styles, "" otherwise (the attribute only serves
 	// scoped CSS; task 059).
 	elementScope string
-	analysis     *Analysis
-	sfc          *SFC
+	analysis     *analyzer.Analysis
+	sfc          *sfcast.SFC
 
 	// blocks is non-nil when the block DOM engine lowers this component
 	// (blocks_codegen.go).
@@ -168,25 +177,25 @@ type ASTGen struct {
 
 	// body accumulates DOM-construction statements; initBody holds
 	// the "initial render" statements that run after construction.
-	body     []JsStmt
-	initBody []JsStmt
+	body     []jsast.JsStmt
+	initBody []jsast.JsStmt
 
 	// events holds addEventListener calls; cleanup holds the
 	// matching removeEventListener calls placed in destroy().
-	events  []JsStmt
-	cleanup []JsStmt
+	events  []jsast.JsStmt
+	cleanup []jsast.JsStmt
 
 	// updates maps a reactive variable name → the list of DOM
 	// update statements that must re-run when it changes.  Block 5
 	// collects these while building holes and replays them inside
 	// each setter's $$defer body.  Mirrors CodeGen.updates.
-	updates map[string][]JsStmt
+	updates map[string][]jsast.JsStmt
 
 	// structuralUpdates maps a reactive variable name → chain
 	// re-render (mount/unmount) statements that must run BEFORE
 	// the ordinary updates for the same dependency.  See
 	// addStructuralUpdate.
-	structuralUpdates map[string][]JsStmt
+	structuralUpdates map[string][]jsast.JsStmt
 
 	// updateStructuralOwners records structural reconcile functions that build
 	// a given ordinary update. When such a reconcile runs in a flush, its
@@ -209,7 +218,7 @@ type ASTGen struct {
 	// re-running its first-open declaration — a `let` captured
 	// inside the closure would throw a TDZ ReferenceError on
 	// reopen.  Mirrors legacy walkComponent's instance-var hoist.
-	hoisted []JsStmt
+	hoisted []jsast.JsStmt
 
 	// cssExternal selects CSS delivery.  When false (default), the
 	// component injects its scoped <style> into document.head at
@@ -228,7 +237,7 @@ type ASTGen struct {
 	// branchTemplateBindings are temporary lexical bindings attached to a
 	// synthetic branch (currently {:then}/{:catch}). They are applied only
 	// while that branch's DOM plan is built, never to sibling branches.
-	branchTemplateBindings map[*IfBranch][]templateBinding
+	branchTemplateBindings map[*sfcast.IfBranch][]templateBinding
 }
 
 type templateBinding struct{ from, to string }
@@ -243,7 +252,7 @@ func (g *ASTGen) withTemplateBinding(from, to string, fn func()) {
 	fn()
 }
 
-func (g *ASTGen) withBranchTemplateBindings(branch *IfBranch, fn func()) {
+func (g *ASTGen) withBranchTemplateBindings(branch *sfcast.IfBranch, fn func()) {
 	bindings := g.branchTemplateBindings[branch]
 	var apply func(int)
 	apply = func(i int) {
@@ -269,9 +278,9 @@ func (g *ASTGen) withBranchTemplateBindings(branch *IfBranch, fn func()) {
 // update ran first, it would read now-stale state — e.g.
 // `$$each_$$nN(def.fields)` where `def` just became null —
 // throwing before the branch could be removed.
-func (g *ASTGen) addStructuralUpdate(dep string, stmt JsStmt) {
+func (g *ASTGen) addStructuralUpdate(dep string, stmt jsast.JsStmt) {
 	if g.structuralUpdates == nil {
-		g.structuralUpdates = map[string][]JsStmt{}
+		g.structuralUpdates = map[string][]jsast.JsStmt{}
 	}
 	g.structuralUpdates[dep] = append(g.structuralUpdates[dep], stmt)
 }
@@ -280,7 +289,7 @@ type reactiveFlushEntry struct {
 	key  string
 	flag string
 	ran  string
-	stmt JsStmt
+	stmt jsast.JsStmt
 }
 
 type reactiveFlushPlan struct {
@@ -291,11 +300,11 @@ type reactiveFlushPlan struct {
 	effectFlags []string
 }
 
-func reactiveFlushStmtKey(stmt JsStmt) string {
-	return PrintJS(&JsProgram{Body: []JsStmt{stmt}}, PrintMinified)
+func reactiveFlushStmtKey(stmt jsast.JsStmt) string {
+	return jsast.PrintJS(&jsast.JsProgram{Body: []jsast.JsStmt{stmt}}, jsast.PrintMinified)
 }
 
-func (p *reactiveFlushPlan) flagFor(stmt JsStmt) string {
+func (p *reactiveFlushPlan) flagFor(stmt jsast.JsStmt) string {
 	if p == nil || stmt == nil {
 		return ""
 	}
@@ -332,9 +341,9 @@ func (g *ASTGen) flushDependencyOrder() []string {
 //
 // Derived values remain synchronous in buildSetterCascade: user script may
 // read a derived immediately between two source-order assignments.
-func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
+func (g *ASTGen) buildReactiveFlushPlan() []jsast.JsStmt {
 	plan := &reactiveFlushPlan{flagsByKey: map[string]string{}}
-	register := func(stmt JsStmt, structural bool) {
+	register := func(stmt jsast.JsStmt, structural bool) {
 		if stmt == nil {
 			return
 		}
@@ -342,7 +351,7 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 		if index, exists := planIndex(plan.entries, key); exists {
 			if structural && !planHasIndex(plan.structural, index) {
 				plan.structural = append(plan.structural, index)
-				plan.entries[index].ran = "$$ran_s" + itoa(index)
+				plan.entries[index].ran = "$$ran_s" + strconv.Itoa(index)
 				plan.ordinary = planWithoutIndex(plan.ordinary, index)
 			}
 			return
@@ -354,11 +363,11 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 		index := len(plan.entries)
 		entry := reactiveFlushEntry{
 			key:  key,
-			flag: prefix + itoa(index),
+			flag: prefix + strconv.Itoa(index),
 			stmt: shareStmt(stmt),
 		}
 		if structural {
-			entry.ran = "$$ran_s" + itoa(index)
+			entry.ran = "$$ran_s" + strconv.Itoa(index)
 		}
 		plan.entries = append(plan.entries, entry)
 		plan.flagsByKey[key] = entry.flag
@@ -380,7 +389,7 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 	}
 	if g.analysis != nil {
 		for i := range g.analysis.Effects {
-			plan.effectFlags = append(plan.effectFlags, "$$dirty_e"+itoa(i))
+			plan.effectFlags = append(plan.effectFlags, "$$dirty_e"+strconv.Itoa(i))
 		}
 	}
 	ownerRuns := map[string]string{}
@@ -392,62 +401,62 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 
 	// Every component owns one liveness flag. It is set before teardown so
 	// queued flushes and late user callbacks become harmless no-ops.
-	var out []JsStmt
-	out = append(out, GenLet("$$disposed", GenBoolLit(false)))
+	var out []jsast.JsStmt
+	out = append(out, jsast.GenLet("$$disposed", jsast.GenBoolLit(false)))
 	if len(plan.entries) == 0 && len(plan.effectFlags) == 0 {
 		return out
 	}
 
-	out = append(out, GenLet("$$flushQueued", GenBoolLit(false)))
+	out = append(out, jsast.GenLet("$$flushQueued", jsast.GenBoolLit(false)))
 	for _, entry := range plan.entries {
-		out = append(out, GenLet(entry.flag, GenBoolLit(false)))
+		out = append(out, jsast.GenLet(entry.flag, jsast.GenBoolLit(false)))
 	}
 	for _, index := range plan.structural {
-		out = append(out, GenLet(plan.entries[index].ran, GenBoolLit(false)))
+		out = append(out, jsast.GenLet(plan.entries[index].ran, jsast.GenBoolLit(false)))
 	}
 	for _, flag := range plan.effectFlags {
-		out = append(out, GenLet(flag, GenBoolLit(false)))
+		out = append(out, jsast.GenLet(flag, jsast.GenBoolLit(false)))
 	}
 
-	flushBody := []JsStmt{
-		GenAssignStmt(GenIdent("$$flushQueued"), GenBoolLit(false)),
-		GenIf(GenIdent("$$disposed"), GenReturn(nil)),
+	flushBody := []jsast.JsStmt{
+		jsast.GenAssignStmt(jsast.GenIdent("$$flushQueued"), jsast.GenBoolLit(false)),
+		jsast.GenIf(jsast.GenIdent("$$disposed"), jsast.GenReturn(nil)),
 	}
 	if g.analysis != nil {
 		for _, state := range g.analysis.StateVars {
 			if state.Deep {
 				flushBody = append(flushBody,
-					GenAssignStmt(GenIdent("$$activeMutations_"+state.Name), GenIdent("$$pendingMutations_"+state.Name)),
-					GenAssignStmt(GenIdent("$$pendingMutations_"+state.Name), GenArray()),
+					jsast.GenAssignStmt(jsast.GenIdent("$$activeMutations_"+state.Name), jsast.GenIdent("$$pendingMutations_"+state.Name)),
+					jsast.GenAssignStmt(jsast.GenIdent("$$pendingMutations_"+state.Name), jsast.GenArray()),
 				)
 			}
 		}
 	}
 	for _, index := range plan.structural {
-		flushBody = append(flushBody, GenAssignStmt(GenIdent(plan.entries[index].ran), GenBoolLit(false)))
+		flushBody = append(flushBody, jsast.GenAssignStmt(jsast.GenIdent(plan.entries[index].ran), jsast.GenBoolLit(false)))
 	}
 	appendEntry := func(index int, structural bool) {
 		entry := plan.entries[index]
-		body := []JsStmt{GenAssignStmt(GenIdent(entry.flag), GenBoolLit(false))}
+		body := []jsast.JsStmt{jsast.GenAssignStmt(jsast.GenIdent(entry.flag), jsast.GenBoolLit(false))}
 		if structural {
-			body = append(body, GenAssignStmt(GenIdent(entry.ran), GenBoolLit(true)), shareStmt(entry.stmt))
+			body = append(body, jsast.GenAssignStmt(jsast.GenIdent(entry.ran), jsast.GenBoolLit(true)), shareStmt(entry.stmt))
 		} else {
-			shouldRun := JsExpr(GenBoolLit(true))
+			shouldRun := jsast.JsExpr(jsast.GenBoolLit(true))
 			hasOwnerRun := false
 			for _, owner := range g.updateStructuralOwners[entry.key] {
-				structuralKey := reactiveFlushStmtKey(GenInvoke(owner))
+				structuralKey := reactiveFlushStmtKey(jsast.GenInvoke(owner))
 				if ran := ownerRuns[structuralKey]; ran != "" {
 					hasOwnerRun = true
-					shouldRun = GenLogical("&&", shouldRun, GenUnary("!", GenIdent(ran)))
+					shouldRun = jsast.GenLogical("&&", shouldRun, jsast.GenUnary("!", jsast.GenIdent(ran)))
 				}
 			}
 			if hasOwnerRun {
-				body = append(body, GenIf(shouldRun, shareStmt(entry.stmt)))
+				body = append(body, jsast.GenIf(shouldRun, shareStmt(entry.stmt)))
 			} else {
 				body = append(body, shareStmt(entry.stmt))
 			}
 		}
-		flushBody = append(flushBody, GenIf(GenIdent(entry.flag), GenBlock(body...)))
+		flushBody = append(flushBody, jsast.GenIf(jsast.GenIdent(entry.flag), jsast.GenBlock(body...)))
 	}
 	for _, index := range plan.structural {
 		appendEntry(index, true)
@@ -456,9 +465,9 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 		appendEntry(index, false)
 	}
 	for i, flag := range plan.effectFlags {
-		flushBody = append(flushBody, GenIf(GenIdent(flag), GenBlock(
-			GenAssignStmt(GenIdent(flag), GenBoolLit(false)),
-			GenInvoke("$$effect"+itoa(i)),
+		flushBody = append(flushBody, jsast.GenIf(jsast.GenIdent(flag), jsast.GenBlock(
+			jsast.GenAssignStmt(jsast.GenIdent(flag), jsast.GenBoolLit(false)),
+			jsast.GenInvoke("$$effect"+strconv.Itoa(i)),
 		)))
 	}
 	// Active mutation metadata belongs only to this flush. Mutations from an
@@ -466,23 +475,23 @@ func (g *ASTGen) buildReactiveFlushPlan() []JsStmt {
 	if g.analysis != nil {
 		for _, state := range g.analysis.StateVars {
 			if state.Deep {
-				flushBody = append(flushBody, GenAssignStmt(GenIdent("$$activeMutations_"+state.Name), GenArray()))
+				flushBody = append(flushBody, jsast.GenAssignStmt(jsast.GenIdent("$$activeMutations_"+state.Name), jsast.GenArray()))
 			}
 		}
 	}
-	out = append(out, &JsFuncDecl{
-		BaseStmt: BaseStmt{BaseNode: GenNode()},
+	out = append(out, &jsast.JsFuncDecl{
+		BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()},
 		Name:     "$$flush",
-		Body:     GenBlock(flushBody...),
+		Body:     jsast.GenBlock(flushBody...),
 	})
-	out = append(out, &JsFuncDecl{
-		BaseStmt: BaseStmt{BaseNode: GenNode()},
+	out = append(out, &jsast.JsFuncDecl{
+		BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()},
 		Name:     "$$scheduleFlush",
-		Body: GenBlock(
-			GenIf(GenIdent("$$disposed"), GenReturn(nil)),
-			GenIf(GenIdent("$$flushQueued"), GenReturn(nil)),
-			GenAssignStmt(GenIdent("$$flushQueued"), GenBoolLit(true)),
-			GenInvoke("$$defer", GenIdent("$$flush")),
+		Body: jsast.GenBlock(
+			jsast.GenIf(jsast.GenIdent("$$disposed"), jsast.GenReturn(nil)),
+			jsast.GenIf(jsast.GenIdent("$$flushQueued"), jsast.GenReturn(nil)),
+			jsast.GenAssignStmt(jsast.GenIdent("$$flushQueued"), jsast.GenBoolLit(true)),
+			jsast.GenInvoke("$$defer", jsast.GenIdent("$$flush")),
 		),
 	})
 	return out
@@ -516,38 +525,14 @@ func planWithoutIndex(indices []int, unwanted int) []int {
 	return out
 }
 
-// itoa is a tiny base-10 formatter (avoids importing strconv just
-// for this).
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
-}
-
-// generateCodeAST is the production code generator. It constructs one
+// GenerateCodeAST is the production code generator. It constructs one
 // validated JavaScript AST directly from the parsed SFC and prints it.
 // The legacy string generator is not part of this path.
-func generateCodeAST(
+func GenerateCodeAST(
 	name string,
-	sfc *SFC,
-	nodes []Node,
-	analysis *Analysis,
+	sfc *sfcast.SFC,
+	nodes []sfcast.Node,
+	analysis *analyzer.Analysis,
 	scopeID string,
 ) string {
 	return generateCodeASTCSS(name, sfc, nodes, analysis, scopeID, false)
@@ -560,17 +545,17 @@ func generateCodeAST(
 // (inject mode) for the many existing callers and tests.
 func generateCodeASTCSS(
 	name string,
-	sfc *SFC,
-	nodes []Node,
-	analysis *Analysis,
+	sfc *sfcast.SFC,
+	nodes []sfcast.Node,
+	analysis *analyzer.Analysis,
 	scopeID string,
 	cssExternal bool,
 ) string {
-	prog := buildProgramCSS(name, sfc, nodes, analysis, scopeID, cssExternal)
-	return headerComment + "\n\n" + PrintJS(prog, PrintPretty)
+	prog := BuildProgramCSS(name, sfc, nodes, analysis, scopeID, cssExternal)
+	return HeaderComment + "\n\n" + jsast.PrintJS(prog, jsast.PrintPretty)
 }
 
-func templateExprRoot(expr *TemplateExpr) JsExpr {
+func TemplateExprRoot(expr *sfcast.TemplateExpr) jsast.JsExpr {
 	return expr.Root()
 }
 
@@ -578,27 +563,27 @@ func templateExprRoot(expr *TemplateExpr) JsExpr {
 // records its absolute SFC offset on its root. Template expressions are
 // deliberately re-used by initial-render and update shells: JsNode has no
 // parent pointers, so sharing this immutable subtree is safe.
-func templateExprIdent(expr *TemplateExpr) (string, bool) {
-	ident, ok := templateExprRoot(expr).(*JsIdent)
+func TemplateExprIdent(expr *sfcast.TemplateExpr) (string, bool) {
+	ident, ok := TemplateExprRoot(expr).(*jsast.JsIdent)
 	if !ok || ident.Name == "" {
 		return "", false
 	}
 	return ident.Name, true
 }
 
-func templateExprIsHandler(expr *TemplateExpr) bool {
-	switch templateExprRoot(expr).(type) {
-	case *JsArrowFunc, *JsFuncExpr:
+func templateExprIsHandler(expr *sfcast.TemplateExpr) bool {
+	switch TemplateExprRoot(expr).(type) {
+	case *jsast.JsArrowFunc, *jsast.JsFuncExpr:
 		return true
 	default:
 		return false
 	}
 }
 
-func (g *ASTGen) templateExpr(expr *TemplateExpr) JsExpr {
-	root := cloneJsExpr(templateExprRoot(expr))
+func (g *ASTGen) templateExpr(expr *sfcast.TemplateExpr) jsast.JsExpr {
+	root := cloneJsExpr(TemplateExprRoot(expr))
 	if root == nil {
-		return GenIdent("undefined")
+		return jsast.GenIdent("undefined")
 	}
 	// The innermost template binding wins when nested each/await blocks reuse
 	// a binding name. Rewriting in reverse order preserves lexical shadowing.
@@ -611,11 +596,11 @@ func (g *ASTGen) templateExpr(expr *TemplateExpr) JsExpr {
 	return root
 }
 
-func (g *ASTGen) textValueExpr(parts []*Part) JsExpr {
+func (g *ASTGen) textValueExpr(parts []*sfcast.Part) jsast.JsExpr {
 	if len(parts) == 1 && !parts[0].Static {
-		return &JsCallExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Callee: GenIdent("String"), Args: []JsExpr{g.templateExpr(parts[0].Expr)}}
+		return &jsast.JsCallExpr{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}, Callee: jsast.GenIdent("String"), Args: []jsast.JsExpr{g.templateExpr(parts[0].Expr)}}
 	}
-	t := &JsTemplateLit{BaseExpr: BaseExpr{BaseNode: GenNode()}, Quasis: []string{""}}
+	t := &jsast.JsTemplateLit{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}, Quasis: []string{""}}
 	for _, part := range parts {
 		if part.Static {
 			t.Quasis[len(t.Quasis)-1] += escapeTL(part.Value)
@@ -627,102 +612,102 @@ func (g *ASTGen) textValueExpr(parts []*Part) JsExpr {
 	return t
 }
 
-func (g *ASTGen) textWriteStmt(ref string, parts []*Part) JsStmt {
-	return GenAssignStmt(GenMember(GenIdent(ref), "data"), g.textValueExpr(parts))
+func (g *ASTGen) textWriteStmt(ref string, parts []*sfcast.Part) jsast.JsStmt {
+	return jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent(ref), "data"), g.textValueExpr(parts))
 }
 
 // attrWriteStmt handles ordinary dynamic attributes. Two-way form bindings use
 // bindingWriteStmt below so their live property write can be guarded.
-func (g *ASTGen) attrWriteStmt(varName string, attr *Attr) JsStmt {
+func (g *ASTGen) attrWriteStmt(varName string, attr *sfcast.Attr) jsast.JsStmt {
 	expr := g.templateExpr(attr.Expr)
-	if isBoolAttr(attr.Name) {
-		return GenAssignStmt(GenMember(GenIdent(varName), attr.Name), GenBool(expr))
+	if IsBoolAttr(attr.Name) {
+		return jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent(varName), attr.Name), jsast.GenBool(expr))
 	}
 	if attr.Name == "class" {
-		return GenAssignStmt(GenMember(GenIdent(varName), "className"), GenString(expr))
+		return jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent(varName), "className"), jsast.GenString(expr))
 	}
-	return GenExprStmt(GenCall(GenMember(GenIdent(varName), "setAttribute"), GenStrLit(attr.Name), GenString(expr)))
+	return jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent(varName), "setAttribute"), jsast.GenStrLit(attr.Name), jsast.GenString(expr)))
 }
 
-func twoWaySetterFromEvent(setter string, multipleAware bool, readProp string) JsNode {
-	target := GenMember(GenIdent("$e"), "target")
-	scalar := GenCall(GenIdent(setter), GenMember(target, readProp))
+func twoWaySetterFromEvent(setter string, multipleAware bool, readProp string) jsast.JsNode {
+	target := jsast.GenMember(jsast.GenIdent("$e"), "target")
+	scalar := jsast.GenCall(jsast.GenIdent(setter), jsast.GenMember(target, readProp))
 	if !multipleAware {
 		return scalar
 	}
-	return GenBlock(
-		GenIf(GenMember(target, "multiple"), GenBlock(
-			GenExprStmt(GenCall(GenIdent(setter), GenCall(GenIdent("$$readSelectValues"), target))),
-			GenReturn(nil),
+	return jsast.GenBlock(
+		jsast.GenIf(jsast.GenMember(target, "multiple"), jsast.GenBlock(
+			jsast.GenExprStmt(jsast.GenCall(jsast.GenIdent(setter), jsast.GenCall(jsast.GenIdent("$$readSelectValues"), target))),
+			jsast.GenReturn(nil),
 		)),
-		GenReturn(scalar),
+		jsast.GenReturn(scalar),
 	)
 }
 
-func (g *ASTGen) classDirStmtAST(varName string, attr *Attr) JsStmt {
-	return GenExprStmt(GenCall(GenMember(GenMember(GenIdent(varName), "classList"), "toggle"), GenStrLit(attr.Name), GenBool(g.templateExpr(attr.Expr))))
+func (g *ASTGen) classDirStmtAST(varName string, attr *sfcast.Attr) jsast.JsStmt {
+	return jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenMember(jsast.GenIdent(varName), "classList"), "toggle"), jsast.GenStrLit(attr.Name), jsast.GenBool(g.templateExpr(attr.Expr))))
 }
 
-func (g *ASTGen) styleDirStmtAST(varName string, attr *Attr) JsStmt {
-	return GenExprStmt(GenCall(GenMember(GenMember(GenIdent(varName), "style"), "setProperty"), GenStrLit(attr.Name), GenString(g.templateExpr(attr.Expr))))
+func (g *ASTGen) styleDirStmtAST(varName string, attr *sfcast.Attr) jsast.JsStmt {
+	return jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenMember(jsast.GenIdent(varName), "style"), "setProperty"), jsast.GenStrLit(attr.Name), jsast.GenString(g.templateExpr(attr.Expr))))
 }
-func setTemplateOrigin(n JsNode, pos int) {
+func setTemplateOrigin(n jsast.JsNode, pos int) {
 	switch x := n.(type) {
-	case *JsIdent:
+	case *jsast.JsIdent:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsLiteral:
+	case *jsast.JsLiteral:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsTemplateLit:
+	case *jsast.JsTemplateLit:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsFuncExpr:
+	case *jsast.JsFuncExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsArrowFunc:
+	case *jsast.JsArrowFunc:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsUnaryExpr:
+	case *jsast.JsUnaryExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsBinaryExpr:
+	case *jsast.JsBinaryExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsLogicalExpr:
+	case *jsast.JsLogicalExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsAssignExpr:
+	case *jsast.JsAssignExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsMemberExpr:
+	case *jsast.JsMemberExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsCallExpr:
+	case *jsast.JsCallExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsNewExpr:
+	case *jsast.JsNewExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsConditionalExpr:
+	case *jsast.JsConditionalExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsSeqExpr:
+	case *jsast.JsSeqExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsSpreadExpr:
+	case *jsast.JsSpreadExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsAwaitExpr:
+	case *jsast.JsAwaitExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsYieldExpr:
+	case *jsast.JsYieldExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsThisExpr:
+	case *jsast.JsThisExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsSuperExpr:
+	case *jsast.JsSuperExpr:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
-	case *JsThrowStmt:
+	case *jsast.JsThrowStmt:
 		x.SourceOrigin, x.HasSourceOrigin = pos, true
 	}
 }
 
-func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
-	obj := &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}}
+func (g *ASTGen) componentPropsExpr(attrs []*sfcast.Attr) jsast.JsExpr {
+	obj := &jsast.JsObjectExpr{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}}
 	for _, attr := range attrs {
 		if attr.IsEvent {
 			continue
 		}
-		prop := &JsProp{Key: GenIdent(attr.Name)}
+		prop := &jsast.JsProp{Key: jsast.GenIdent(attr.Name)}
 		if attr.IsBind {
 			// Callback props are ordinary component inputs, not CustomEvents.
 			// An inline arrow can still assign Vela state and therefore needs
@@ -731,17 +716,17 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 			// local variable but bypasses the setter cascade.
 			prop.Value = g.componentPropExpr(attr)
 		} else {
-			prop.Value = GenStrLit(attr.Value)
+			prop.Value = jsast.GenStrLit(attr.Value)
 		}
 		obj.Props = append(obj.Props, prop)
 		if attr.IsTwoWay && g.analysis != nil {
-			target, isIdent := templateExprIdent(attr.Expr)
+			target, isIdent := TemplateExprIdent(attr.Expr)
 			if isIdent && g.analysis.StateSet()[target] {
-				obj.Props = append(obj.Props, &JsProp{
-					BaseNode: GenNode(), Key: GenIdent("$$onChange_" + attr.Name),
-					Value: &JsArrowFunc{
-						BaseExpr: BaseExpr{BaseNode: GenNode()}, Params: []JsExpr{GenIdent("$$v")},
-						Body: GenCall(GenIdent("$$set_"+target), GenIdent("$$v")),
+				obj.Props = append(obj.Props, &jsast.JsProp{
+					BaseNode: jsast.GenNode(), Key: jsast.GenIdent("$$onChange_" + attr.Name),
+					Value: &jsast.JsArrowFunc{
+						BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}, Params: []jsast.JsExpr{jsast.GenIdent("$$v")},
+						Body: jsast.GenCall(jsast.GenIdent("$$set_"+target), jsast.GenIdent("$$v")),
 					},
 				})
 			}
@@ -750,51 +735,51 @@ func (g *ASTGen) componentPropsExpr(attrs []*Attr) JsExpr {
 	return obj
 }
 
-func (g *ASTGen) componentPropExpr(attr *Attr) JsExpr {
+func (g *ASTGen) componentPropExpr(attr *sfcast.Attr) jsast.JsExpr {
 	value := g.templateExpr(attr.Expr)
-	if _, isArrow := value.(*JsArrowFunc); isArrow && g.analysis != nil {
-		value = RewriteHandlerAssignmentsAST(value, g.analysis.StateSet())
+	if _, isArrow := value.(*jsast.JsArrowFunc); isArrow && g.analysis != nil {
+		value = analyzer.RewriteHandlerAssignmentsAST(value, g.analysis.StateSet())
 	}
 	return value
 }
 
-// buildProgram produces the validated JsProgram for a component. It is exposed
+// BuildProgram produces the validated JsProgram for a component. It is exposed
 // so tooling can inspect the structured AST without re-parsing generated code.
-func buildProgram(
+func BuildProgram(
 	name string,
-	sfc *SFC,
-	nodes []Node,
-	analysis *Analysis,
+	sfc *sfcast.SFC,
+	nodes []sfcast.Node,
+	analysis *analyzer.Analysis,
 	scopeID string,
-) *JsProgram {
-	return buildProgramCSS(name, sfc, nodes, analysis, scopeID, false)
+) *jsast.JsProgram {
+	return BuildProgramCSS(name, sfc, nodes, analysis, scopeID, false)
 }
 
-// buildProgramCSS is buildProgram with explicit CSS-delivery control.
-func buildProgramCSS(
+// BuildProgramCSS is buildProgram with explicit CSS-delivery control.
+func BuildProgramCSS(
 	name string,
-	sfc *SFC,
-	nodes []Node,
-	analysis *Analysis,
+	sfc *sfcast.SFC,
+	nodes []sfcast.Node,
+	analysis *analyzer.Analysis,
 	scopeID string,
 	cssExternal bool,
-) *JsProgram {
-	prog := buildProgramUnvalidated(name, sfc, nodes, analysis, scopeID, cssExternal)
-	validateGeneratedProgram(prog)
+) *jsast.JsProgram {
+	prog := BuildProgramUnvalidated(name, sfc, nodes, analysis, scopeID, cssExternal)
+	ValidateGeneratedProgram(prog)
 	return prog
 }
 
-// buildProgramUnvalidated constructs the complete target tree but deliberately
+// BuildProgramUnvalidated constructs the complete target tree but deliberately
 // does not run whole-program validation. It is used by the opt-in compiler
 // trace to measure construction and validation as separate stable stages.
-func buildProgramUnvalidated(
+func BuildProgramUnvalidated(
 	name string,
-	sfc *SFC,
-	nodes []Node,
-	analysis *Analysis,
+	sfc *sfcast.SFC,
+	nodes []sfcast.Node,
+	analysis *analyzer.Analysis,
 	scopeID string,
 	cssExternal bool,
-) *JsProgram {
+) *jsast.JsProgram {
 	// Input validation consumes the immutable ScriptAST before this point.
 	// Lower callback assignments only while assembling target code, so the
 	// shared source tree cannot leak generated $$set_* names into user scopes.
@@ -802,7 +787,7 @@ func buildProgramUnvalidated(
 	g := &ASTGen{
 		name:         name,
 		scopeID:      scopeID,
-		elementScope: elementScopeFor(sfc, scopeID),
+		elementScope: ElementScopeFor(sfc, scopeID),
 		analysis:     analysis,
 		sfc:          sfc,
 		fragCounter:  -1,
@@ -812,8 +797,8 @@ func buildProgramUnvalidated(
 	return g.buildModule(nodes)
 }
 
-func validateGeneratedProgram(prog *JsProgram) {
-	if issues := ValidateProgram(prog); len(issues) > 0 {
+func ValidateGeneratedProgram(prog *jsast.JsProgram) {
+	if issues := jsast.ValidateProgram(prog); len(issues) > 0 {
 		msg := "vela: internal codegen error — generated AST failed validation:\n"
 		for _, iss := range issues {
 			msg += "  [" + iss.Kind + "] " + iss.Msg + "\n"
@@ -822,25 +807,25 @@ func validateGeneratedProgram(prog *JsProgram) {
 	}
 }
 
-// eachHasComponent reports whether an {#each} row body contains a
+// EachHasComponent reports whether an {#each} row body contains a
 // component node anywhere — those need block-13 slot machinery.
-func eachHasComponent(nodes []Node) bool {
+func EachHasComponent(nodes []sfcast.Node) bool {
 	for _, n := range nodes {
 		switch x := n.(type) {
-		case *ComponentNode:
+		case *sfcast.ComponentNode:
 			return true
-		case *ElementNode:
-			if eachHasComponent(x.Children) {
+		case *sfcast.ElementNode:
+			if EachHasComponent(x.Children) {
 				return true
 			}
-		case *IfChainNode:
+		case *sfcast.IfChainNode:
 			for _, b := range x.Branches {
-				if eachHasComponent(b.Children) {
+				if EachHasComponent(b.Children) {
 					return true
 				}
 			}
-		case *EachBlockNode:
-			if eachHasComponent(x.Children) {
+		case *sfcast.EachBlockNode:
+			if EachHasComponent(x.Children) {
 				return true
 			}
 		}
@@ -858,12 +843,12 @@ func eachHasComponent(nodes []Node) bool {
 // — buildHoleSubtree's innerHTML + TreeWalker pass captures holes
 // at any depth.  What it cannot do is element-level dynamics, so
 // those still disqualify the subtree.
-func astHoleSubtreeOK(nodes []Node) bool {
+func astHoleSubtreeOK(nodes []sfcast.Node) bool {
 	for _, node := range nodes {
 		switch n := node.(type) {
-		case *TextNode:
+		case *sfcast.TextNode:
 			// Any text (static or hole) is fine.
-		case *ElementNode:
+		case *sfcast.ElementNode:
 			// Dynamic attributes need per-element wiring the
 			// innerHTML path cannot express.
 			for _, a := range n.Attrs {
@@ -897,8 +882,8 @@ func astHoleSubtreeOK(nodes []Node) bool {
 
 // buildModule constructs the whole component module: the exported
 // function wrapper and everything inside it.
-func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
-	prog := &JsProgram{}
+func (g *ASTGen) buildModule(nodes []sfcast.Node) *jsast.JsProgram {
+	prog := &jsast.JsProgram{}
 
 	// ── Module-scope imports (block 4) ───────────────────────
 	// User imports are hoisted out of the component function to
@@ -909,24 +894,24 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 		prog.Body = append(prog.Body, imp)
 	}
 
-	fnBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}}
+	fnBody := &jsast.JsBlock{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}}
 
 	// ── Preamble: normalize props/slots ──────────────────────
 	fnBody.Body = append(fnBody.Body,
-		GenAssignStmt(GenIdent("$$props"), GenCall(GenMember(GenIdent("Object"), "assign"),
-			&JsObjectExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}}, GenIdent("$$props"))),
-		GenAssignStmt(GenIdent("$$slots"), &JsLogicalExpr{
-			BaseExpr: BaseExpr{BaseNode: GenNode()}, Op: "||", L: GenIdent("$$slots"),
-			R: &JsObjectExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}},
+		jsast.GenAssignStmt(jsast.GenIdent("$$props"), jsast.GenCall(jsast.GenMember(jsast.GenIdent("Object"), "assign"),
+			&jsast.JsObjectExpr{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}}, jsast.GenIdent("$$props"))),
+		jsast.GenAssignStmt(jsast.GenIdent("$$slots"), &jsast.JsLogicalExpr{
+			BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}, Op: "||", L: jsast.GenIdent("$$slots"),
+			R: &jsast.JsObjectExpr{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}},
 		}),
-		GenExprStmt(&JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Op: "void", Prefix: true, X: GenIdent("$$slots")}),
+		jsast.GenExprStmt(&jsast.JsUnaryExpr{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}, Op: "void", Prefix: true, X: jsast.GenIdent("$$slots")}),
 	)
 
 	// A hydrating instance restores its serialized state from the payload
 	// stream (S-6.8); a created one gets null. A component whose state is
 	// all reproducible has no entry and reads none (S-6.4, task 059).
 	if g.analysis != nil && len(g.analysis.SerializedState()) > 0 {
-		fnBody.Body = append(fnBody.Body, GenConst("$$velaState", GenCall(GenIdent("$$hydrationState"), GenStrLit(g.name))))
+		fnBody.Body = append(fnBody.Body, jsast.GenConst("$$velaState", jsast.GenCall(jsast.GenIdent("$$hydrationState"), jsast.GenStrLit(g.name))))
 	}
 
 	// ── Runtime helpers ──────────────────────────────────────
@@ -959,8 +944,8 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// Setters may run while the script initialises, before the view
 	// mounts; their dirty marks are collected from the start.
 	fnBody.Body = append(fnBody.Body,
-		GenLet("$$dirty", GenCall(GenMember(GenIdent("Object"), "create"), GenNull())),
-		GenLet("$$view", GenNull()),
+		jsast.GenLet("$$dirty", jsast.GenCall(jsast.GenMember(jsast.GenIdent("Object"), "create"), jsast.GenNull())),
+		jsast.GenLet("$$view", jsast.GenNull()),
 	)
 
 	// ── Source-ordered component setup ─────────────────────
@@ -1028,27 +1013,27 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	fnBody.Body = append(fnBody.Body, g.buildReturn())
 
 	// ── Wrap in the exported function declaration ────────────
-	fn := &JsFuncDecl{
-		BaseStmt: BaseStmt{BaseNode: GenNode()},
+	fn := &jsast.JsFuncDecl{
+		BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()},
 		Name:     g.name,
-		Params:   []JsExpr{GenIdent("$$target"), GenIdent("$$props"), GenIdent("$$slots")},
+		Params:   []jsast.JsExpr{jsast.GenIdent("$$target"), jsast.GenIdent("$$props"), jsast.GenIdent("$$slots")},
 		Body:     fnBody,
 	}
 
 	// Static subtrees are parsed once per module.
 	prog.Body = append(prog.Body, g.blocks.templates...)
 	if len(g.blocks.sites) > 0 {
-		prog.Body = append(prog.Body, GenConst("$$sites", GenArray(g.blocks.sites...)))
+		prog.Body = append(prog.Body, jsast.GenConst("$$sites", jsast.GenArray(g.blocks.sites...)))
 	}
 
-	prog.Body = append(prog.Body, &JsExportDecl{
-		BaseStmt:    BaseStmt{BaseNode: GenNode()},
+	prog.Body = append(prog.Body, &jsast.JsExportDecl{
+		BaseStmt:    jsast.BaseStmt{BaseNode: jsast.GenNode()},
 		Declaration: fn,
 	})
 	if g.sfc != nil && g.sfc.ClientOnly {
 		// A client-only component (contract §9.2): $$component mounts it
 		// after the root commits instead of adopting server DOM.
-		prog.Body = append(prog.Body, GenAssignStmt(GenMember(GenIdent(g.name), "$$clientOnly"), GenBoolLit(true)))
+		prog.Body = append(prog.Body, jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent(g.name), "$$clientOnly"), jsast.GenBoolLit(true)))
 	}
 
 	// Also expose the component factory as the module's DEFAULT
@@ -1058,10 +1043,10 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 	// default import: `import Name from './Name.vela'`.  Emitting
 	// `export default Name;` makes both the default and the named
 	// import resolve to the same factory.
-	prog.Body = append(prog.Body, &JsExportDecl{
-		BaseStmt:    BaseStmt{BaseNode: GenNode()},
+	prog.Body = append(prog.Body, &jsast.JsExportDecl{
+		BaseStmt:    jsast.BaseStmt{BaseNode: jsast.GenNode()},
 		Default:     true,
-		Declaration: GenExprStmt(GenIdent(g.name)),
+		Declaration: jsast.GenExprStmt(jsast.GenIdent(g.name)),
 	})
 
 	// Prepend runtime-helper imports + the $$dispatch binding for
@@ -1082,11 +1067,11 @@ func (g *ASTGen) buildModule(nodes []Node) *JsProgram {
 //
 // Emitting nothing for an unused helper keeps minimal components
 // free of dead imports.
-func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
+func (g *ASTGen) finalizeRuntimeHelpers(prog *jsast.JsProgram, fnBody *jsast.JsBlock) {
 	// A program that already imports the helpers (and binds
 	// $dispatch) is left alone; adding them again would duplicate.
 	for _, st := range prog.Body {
-		imp, ok := st.(*JsImportDecl)
+		imp, ok := st.(*jsast.JsImportDecl)
 		if !ok || imp.Source != "./runtime.js" {
 			continue
 		}
@@ -1116,8 +1101,8 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 			usesProxy = true
 		}
 	}
-	WalkNode(prog, func(n JsNode) bool {
-		id, ok := n.(*JsIdent)
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
+		id, ok := n.(*jsast.JsIdent)
 		if !ok {
 			return true
 		}
@@ -1143,36 +1128,36 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	})
 
 	// Named imports, deterministic order.
-	var specs []JsImportSpec
+	var specs []jsast.JsImportSpec
 	if usesDispatch {
-		specs = append(specs, JsImportSpec{Imported: "$$dispatch", Local: "$$rt_dispatch"})
+		specs = append(specs, jsast.JsImportSpec{Imported: "$$dispatch", Local: "$$rt_dispatch"})
 	}
 	if usesInsertHTML {
-		specs = append(specs, JsImportSpec{Imported: "$$insertHTML"})
+		specs = append(specs, jsast.JsImportSpec{Imported: "$$insertHTML"})
 	}
 	if usesProxy {
-		specs = append(specs, JsImportSpec{Imported: "$$proxy"})
-		specs = append(specs, JsImportSpec{Imported: "$$eachRowsForMutations"})
+		specs = append(specs, jsast.JsImportSpec{Imported: "$$proxy"})
+		specs = append(specs, jsast.JsImportSpec{Imported: "$$eachRowsForMutations"})
 	}
 	if usesIsProxy {
-		specs = append(specs, JsImportSpec{Imported: "$$isProxy"})
+		specs = append(specs, jsast.JsImportSpec{Imported: "$$isProxy"})
 	}
 	if usesDefer {
-		specs = append(specs, JsImportSpec{Imported: "$$defer"})
+		specs = append(specs, jsast.JsImportSpec{Imported: "$$defer"})
 	}
 	if usesReadSelectValues {
-		specs = append(specs, JsImportSpec{Imported: "$$readSelectValues"})
+		specs = append(specs, jsast.JsImportSpec{Imported: "$$readSelectValues"})
 	}
 	if usesSelectValuesEqual {
-		specs = append(specs, JsImportSpec{Imported: "$$selectValuesEqual"})
+		specs = append(specs, jsast.JsImportSpec{Imported: "$$selectValuesEqual"})
 	}
 	if usesWriteSelectValues {
-		specs = append(specs, JsImportSpec{Imported: "$$writeSelectValues"})
+		specs = append(specs, jsast.JsImportSpec{Imported: "$$writeSelectValues"})
 	}
 	{
 		used := map[string]bool{}
-		WalkNode(prog, func(n JsNode) bool {
-			if ident, ok := n.(*JsIdent); ok && blocksRuntimeExports[ident.Name] {
+		jsast.WalkNode(prog, func(n jsast.JsNode) bool {
+			if ident, ok := n.(*jsast.JsIdent); ok && blocksRuntimeExports[ident.Name] {
 				used[ident.Name] = true
 			}
 			return true
@@ -1183,7 +1168,7 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 		}
 		sort.Strings(names)
 		for _, name := range names {
-			specs = append(specs, JsImportSpec{Imported: name})
+			specs = append(specs, jsast.JsImportSpec{Imported: name})
 		}
 	}
 
@@ -1203,33 +1188,33 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *JsProgram, fnBody *JsBlock) {
 	// Comment anchor in the parent's DOM, and dispatching there
 	// would fire on the parent — leaking to sibling components.
 	if usesDispatch {
-		bind := GenConst("$$dispatch", &JsArrowFunc{
-			BaseExpr: BaseExpr{BaseNode: GenNode()},
-			Params:   []JsExpr{GenIdent("name"), GenIdent("detail")},
-			Body:     GenCall(GenIdent("$$rt_dispatch"), GenIdent("$$root"), GenIdent("name"), GenIdent("detail")),
+		bind := jsast.GenConst("$$dispatch", &jsast.JsArrowFunc{
+			BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
+			Params:   []jsast.JsExpr{jsast.GenIdent("name"), jsast.GenIdent("detail")},
+			Body:     jsast.GenCall(jsast.GenIdent("$$rt_dispatch"), jsast.GenIdent("$$root"), jsast.GenIdent("name"), jsast.GenIdent("detail")),
 		})
-		fnBody.Body = append([]JsStmt{bind}, fnBody.Body...)
+		fnBody.Body = append([]jsast.JsStmt{bind}, fnBody.Body...)
 	}
 }
 
 // buildImportDecls reconstructs user imports from the typed shape captured by
 // the analyzer. Path rewriting and intrinsic filtering are applied directly to
 // JsImportDecl fields; no executable import text is built or parsed again.
-func (g *ASTGen) buildImportDecls() []JsStmt {
+func (g *ASTGen) buildImportDecls() []jsast.JsStmt {
 	if g.analysis == nil {
 		return nil
 	}
-	var out []JsStmt
+	var out []jsast.JsStmt
 	for _, imp := range g.analysis.Imports {
 		src := imp.Source
 		defaultName := imp.DefaultName
 		namespace := imp.Namespace
-		specifiers := append([]JsImportSpec(nil), imp.Specifiers...)
+		specifiers := append([]jsast.JsImportSpec(nil), imp.Specifiers...)
 		if src == "vela/store" || src == "vela" {
 			src = "./runtime.js"
 			kept := specifiers[:0]
 			for _, spec := range specifiers {
-				if !VelaCompilerIntrinsics[spec.Imported] {
+				if !analyzer.VelaCompilerIntrinsics[spec.Imported] {
 					kept = append(kept, spec)
 				}
 			}
@@ -1243,8 +1228,8 @@ func (g *ASTGen) buildImportDecls() []JsStmt {
 			}
 		}
 
-		out = append(out, &JsImportDecl{
-			BaseStmt:    BaseStmt{BaseNode: GenNode()},
+		out = append(out, &jsast.JsImportDecl{
+			BaseStmt:    jsast.BaseStmt{BaseNode: jsast.GenNode()},
 			DefaultName: defaultName,
 			Namespace:   namespace,
 			Specifiers:  specifiers,
@@ -1302,7 +1287,7 @@ func stripVelaIntrinsics(spec string) string {
 		if i := strings.Index(p, " as "); i > 0 {
 			name = strings.TrimSpace(p[:i])
 		}
-		if VelaCompilerIntrinsics[name] {
+		if analyzer.VelaCompilerIntrinsics[name] {
 			continue
 		}
 		kept = append(kept, p)
@@ -1322,11 +1307,11 @@ func stripVelaIntrinsics(spec string) string {
 	return before + ", " + named
 }
 
-func (g *ASTGen) buildScriptPlan() []JsStmt {
+func (g *ASTGen) buildScriptPlan() []jsast.JsStmt {
 	if g.analysis == nil {
 		return nil
 	}
-	var out []JsStmt
+	var out []jsast.JsStmt
 	seenDerived := map[string]bool{}
 	initialized := map[string]bool{}
 	flushReadyDerived := func() {
@@ -1342,7 +1327,7 @@ func (g *ASTGen) buildScriptPlan() []JsStmt {
 				}
 			}
 			if ready {
-				out = append(out, GenInvoke("$$upd_"+derived.Name))
+				out = append(out, jsast.GenInvoke("$$upd_"+derived.Name))
 				initialized[derived.Name] = true
 			}
 		}
@@ -1396,28 +1381,28 @@ func (g *ASTGen) reactiveNames() []string {
 // binds the prop (<Child bind:x={…}>); it is null when the prop is
 // passed one-way.  The child's setter for a bindable prop fires it
 // so the parent observes child-side changes.
-func (g *ASTGen) buildPropDecls() []JsStmt {
+func (g *ASTGen) buildPropDecls() []jsast.JsStmt {
 	if g.analysis == nil {
 		return nil
 	}
-	var out []JsStmt
+	var out []jsast.JsStmt
 	for _, p := range g.analysis.Props {
-		value := JsExpr(GenMember(GenIdent("$$props"), p.Name))
+		value := jsast.JsExpr(jsast.GenMember(jsast.GenIdent("$$props"), p.Name))
 		if p.DefaultAST != nil {
-			value = &JsConditionalExpr{
-				BaseExpr: BaseExpr{BaseNode: GenNode()},
-				Test:     GenBinary("!==", GenMember(GenIdent("$$props"), p.Name), GenIdent("undefined")),
-				Then:     GenMember(GenIdent("$$props"), p.Name),
+			value = &jsast.JsConditionalExpr{
+				BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
+				Test:     jsast.GenBinary("!==", jsast.GenMember(jsast.GenIdent("$$props"), p.Name), jsast.GenIdent("undefined")),
+				Then:     jsast.GenMember(jsast.GenIdent("$$props"), p.Name),
 				Else:     p.DefaultAST,
 			}
 		}
-		out = append(out, GenLet(p.Name, value))
+		out = append(out, jsast.GenLet(p.Name, value))
 	}
 	// $$onChange handles for bindable props.
 	for _, p := range g.analysis.Props {
 		if p.Bindable {
-			out = append(out, GenConst("$$onChange_"+p.Name,
-				GenLogical("||", GenMember(GenIdent("$$props"), "$$onChange_"+p.Name), GenNull())))
+			out = append(out, jsast.GenConst("$$onChange_"+p.Name,
+				jsast.GenLogical("||", jsast.GenMember(jsast.GenIdent("$$props"), "$$onChange_"+p.Name), jsast.GenNull())))
 		}
 	}
 	return out
@@ -1431,7 +1416,7 @@ func (g *ASTGen) hasStyle() bool {
 // buildStyleInjection emits the scoped-<style> section: a <style>
 // element whose textContent is the scope-transformed CSS, appended
 // to document.head.  Empty when the component has no <style>.
-func (g *ASTGen) buildStyleInjection() []JsStmt {
+func (g *ASTGen) buildStyleInjection() []jsast.JsStmt {
 
 	if !g.hasStyle() {
 		return nil
@@ -1443,26 +1428,26 @@ func (g *ASTGen) buildStyleInjection() []JsStmt {
 		return nil
 	}
 	css := scopedCSSForSFC(g.sfc, g.scopeID)
-	return []JsStmt{
-		GenConst("$$style", GenCall(GenMember(GenIdent("document"), "createElement"), GenStrLit("style"))),
-		GenAssignStmt(GenMember(GenIdent("$$style"), "textContent"), GenStrLit(css)),
-		GenExprStmt(GenCall(GenMember(GenMember(GenIdent("document"), "head"), "appendChild"), GenIdent("$$style"))),
+	return []jsast.JsStmt{
+		jsast.GenConst("$$style", jsast.GenCall(jsast.GenMember(jsast.GenIdent("document"), "createElement"), jsast.GenStrLit("style"))),
+		jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent("$$style"), "textContent"), jsast.GenStrLit(css)),
+		jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenMember(jsast.GenIdent("document"), "head"), "appendChild"), jsast.GenIdent("$$style"))),
 	}
 }
 
 // ExtractScopedCSS returns the scope-transformed stylesheet for an
 // SFC, or "" when it has no <style>.  Used by the compiler in
 // external-CSS mode to write a sibling .css file.
-// elementScopeFor is the scope attribute of a component's elements: none
+// ElementScopeFor is the scope attribute of a component's elements: none
 // when the component has no styles, so nothing selects on it.
-func elementScopeFor(sfc *SFC, scopeID string) string {
+func ElementScopeFor(sfc *sfcast.SFC, scopeID string) string {
 	if strings.TrimSpace(scopedCSSForSFC(sfc, scopeID)) == "" {
 		return ""
 	}
 	return scopeID
 }
 
-func ExtractScopedCSS(sfc *SFC, scopeID string) string {
+func ExtractScopedCSS(sfc *sfcast.SFC, scopeID string) string {
 	if sfc == nil || strings.TrimSpace(sfc.Style) == "" {
 		return ""
 	}
@@ -1473,15 +1458,15 @@ func ExtractScopedCSS(sfc *SFC, scopeID string) string {
 // embedders and focused tests that construct an SFC directly. Parsed SFCs
 // always own StyleAST; only the latter compatibility boundary needs a local
 // stylesheet parse before scoping.
-func scopedCSSForSFC(sfc *SFC, scopeID string) string {
+func scopedCSSForSFC(sfc *sfcast.SFC, scopeID string) string {
 	if sfc == nil || strings.TrimSpace(sfc.Style) == "" {
 		return ""
 	}
 	sheet := sfc.StyleAST
 	if sheet == nil {
-		sheet = NewCssStylesheet(sfc.Style, sfc.StyleOffset)
+		sheet = css.NewCssStylesheet(sfc.Style, sfc.StyleOffset)
 	}
-	return ScopeCssStylesheet(sheet, scopeID)
+	return css.ScopeCssStylesheet(sheet, scopeID)
 }
 
 // hasDeepState reports whether any state variable was declared
@@ -1509,40 +1494,40 @@ func (g *ASTGen) hasDeepState() bool {
 // The value is Proxy-wrapped so nested mutations route through the
 // same notify path as reassignment; $$mut_X is the mutation
 // callback the Proxy traps invoke.
-func (g *ASTGen) buildStateDecl(sv *StateVar) []JsStmt {
+func (g *ASTGen) buildStateDecl(sv *analyzer.StateVar) []jsast.JsStmt {
 	init := sv.InitialAST
 	if init == nil {
-		init = GenIdent("undefined")
+		init = jsast.GenIdent("undefined")
 	}
 	if !sv.Reproducible {
 		// A reproducible initializer is computed on the client also while
 		// hydrating; the others come from the payload when present.
-		hasState := GenCall(generatedMemberPath("Object.prototype.hasOwnProperty.call"), GenIdent("$$velaState"), GenStrLit(sv.Name))
-		init = &JsConditionalExpr{
-			BaseExpr: BaseExpr{BaseNode: GenNode()},
-			Test:     GenLogical("&&", GenIdent("$$velaState"), hasState),
-			Then:     GenMember(GenIdent("$$velaState"), sv.Name),
+		hasState := jsast.GenCall(generatedMemberPath("Object.prototype.hasOwnProperty.call"), jsast.GenIdent("$$velaState"), jsast.GenStrLit(sv.Name))
+		init = &jsast.JsConditionalExpr{
+			BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
+			Test:     jsast.GenLogical("&&", jsast.GenIdent("$$velaState"), hasState),
+			Then:     jsast.GenMember(jsast.GenIdent("$$velaState"), sv.Name),
 			Else:     init,
 		}
 	}
 
 	if !sv.Deep {
-		return []JsStmt{GenLet(sv.Name, init)}
+		return []jsast.JsStmt{jsast.GenLet(sv.Name, init)}
 	}
 	mutName := "$$mut_" + sv.Name
-	return []JsStmt{
-		GenConst(mutName, &JsArrowFunc{BaseExpr: BaseExpr{BaseNode: GenNode()}, Params: []JsExpr{GenIdent("$$mutation")}, Body: GenCall(GenIdent("$$set_"+sv.Name+"_notify"), GenIdent("$$mutation"))}),
-		GenLet("$$pendingMutations_"+sv.Name, GenArray()),
-		GenLet("$$activeMutations_"+sv.Name, GenArray()),
-		GenLet(sv.Name, GenCall(GenIdent("$$proxy"), init, GenIdent(mutName))),
+	return []jsast.JsStmt{
+		jsast.GenConst(mutName, &jsast.JsArrowFunc{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}, Params: []jsast.JsExpr{jsast.GenIdent("$$mutation")}, Body: jsast.GenCall(jsast.GenIdent("$$set_"+sv.Name+"_notify"), jsast.GenIdent("$$mutation"))}),
+		jsast.GenLet("$$pendingMutations_"+sv.Name, jsast.GenArray()),
+		jsast.GenLet("$$activeMutations_"+sv.Name, jsast.GenArray()),
+		jsast.GenLet(sv.Name, jsast.GenCall(jsast.GenIdent("$$proxy"), init, jsast.GenIdent(mutName))),
 	}
 }
 
-func (g *ASTGen) buildStateDecls() []JsStmt {
+func (g *ASTGen) buildStateDecls() []jsast.JsStmt {
 	if g.analysis == nil {
 		return nil
 	}
-	var out []JsStmt
+	var out []jsast.JsStmt
 	for _, sv := range g.analysis.StateVars {
 		out = append(out, g.buildStateDecl(sv)...)
 	}
@@ -1559,36 +1544,36 @@ func (g *ASTGen) buildStateDecls() []JsStmt {
 // reads earlier derived names, so all declarations must precede
 // all updaters; interleaving them still works at runtime (updaters
 // only run later) but diverges structurally.
-func (g *ASTGen) buildDerivedDecl(dv *DerivedVar) []JsStmt {
+func (g *ASTGen) buildDerivedDecl(dv *analyzer.DerivedVar) []jsast.JsStmt {
 	expr := dv.ExprAST
 	if expr == nil {
-		expr = GenIdent("undefined")
+		expr = jsast.GenIdent("undefined")
 	}
-	return []JsStmt{
-		GenLet(dv.Name, nil),
-		GenConst("$$upd_"+dv.Name, &JsArrowFunc{
-			BaseExpr: BaseExpr{BaseNode: GenNode()},
-			Body:     GenBlock(GenAssignStmt(GenIdent(dv.Name), expr)),
+	return []jsast.JsStmt{
+		jsast.GenLet(dv.Name, nil),
+		jsast.GenConst("$$upd_"+dv.Name, &jsast.JsArrowFunc{
+			BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
+			Body:     jsast.GenBlock(jsast.GenAssignStmt(jsast.GenIdent(dv.Name), expr)),
 		}),
 	}
 }
 
-func (g *ASTGen) buildDerivedDecls() []JsStmt {
+func (g *ASTGen) buildDerivedDecls() []jsast.JsStmt {
 	if g.analysis == nil {
 		return nil
 	}
-	var out []JsStmt
+	var out []jsast.JsStmt
 	for _, dv := range g.analysis.DerivedVars {
-		out = append(out, GenLet(dv.Name, nil))
+		out = append(out, jsast.GenLet(dv.Name, nil))
 	}
 	for _, dv := range g.analysis.DerivedVars {
 		expr := dv.ExprAST
 		if expr == nil {
-			expr = GenIdent("undefined")
+			expr = jsast.GenIdent("undefined")
 		}
-		out = append(out, GenConst("$$upd_"+dv.Name, &JsArrowFunc{
-			BaseExpr: BaseExpr{BaseNode: GenNode()},
-			Body:     GenBlock(GenAssignStmt(GenIdent(dv.Name), expr)),
+		out = append(out, jsast.GenConst("$$upd_"+dv.Name, &jsast.JsArrowFunc{
+			BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
+			Body:     jsast.GenBlock(jsast.GenAssignStmt(jsast.GenIdent(dv.Name), expr)),
 		}))
 	}
 	return out
@@ -1596,13 +1581,13 @@ func (g *ASTGen) buildDerivedDecls() []JsStmt {
 
 // buildDerivedInit emits one `$$upd_X();` per derived var, run
 // before the initial render so derived values are populated.
-func (g *ASTGen) buildDerivedInit() []JsStmt {
+func (g *ASTGen) buildDerivedInit() []jsast.JsStmt {
 	if g.analysis == nil {
 		return nil
 	}
-	var out []JsStmt
+	var out []jsast.JsStmt
 	for _, dv := range g.analysis.DerivedVars {
-		out = append(out, GenInvoke("$$upd_"+dv.Name))
+		out = append(out, jsast.GenInvoke("$$upd_"+dv.Name))
 	}
 	return out
 }
@@ -1613,45 +1598,45 @@ func (g *ASTGen) buildDerivedInit() []JsStmt {
 // The runner disposes any previous cleanup, then re-runs the
 // effect body as an IIFE whose return value (if any) becomes the
 // new cleanup function — matching the legacy generator.
-func (g *ASTGen) buildEffectDecls() []JsStmt {
+func (g *ASTGen) buildEffectDecls() []jsast.JsStmt {
 	if g.analysis == nil {
 		return nil
 	}
-	var out []JsStmt
+	var out []jsast.JsStmt
 	for i, eff := range g.analysis.Effects {
-		n := itoa(i)
+		n := strconv.Itoa(i)
 		cleanup := "$$cleanup" + n
 		body := eff.BodyAST
 		if body == nil {
-			body = GenBlock()
+			body = jsast.GenBlock()
 		}
-		runner := &JsArrowFunc{
-			BaseExpr: BaseExpr{BaseNode: GenNode()},
-			Body: GenBlock(
-				GenIf(GenIdent(cleanup), GenBlock(
-					GenInvoke(cleanup),
-					GenAssignStmt(GenIdent(cleanup), GenNull()),
+		runner := &jsast.JsArrowFunc{
+			BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
+			Body: jsast.GenBlock(
+				jsast.GenIf(jsast.GenIdent(cleanup), jsast.GenBlock(
+					jsast.GenInvoke(cleanup),
+					jsast.GenAssignStmt(jsast.GenIdent(cleanup), jsast.GenNull()),
 				)),
-				GenAssignStmt(GenIdent(cleanup), GenCall(&JsFuncExpr{
-					BaseExpr: BaseExpr{BaseNode: GenNode()},
+				jsast.GenAssignStmt(jsast.GenIdent(cleanup), jsast.GenCall(&jsast.JsFuncExpr{
+					BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
 					Body:     body,
 				})),
 			),
 		}
-		out = append(out, GenLet(cleanup, GenNull()), GenConst("$$effect"+n, runner))
+		out = append(out, jsast.GenLet(cleanup, jsast.GenNull()), jsast.GenConst("$$effect"+n, runner))
 	}
 	return out
 }
 
 // buildEffectInit emits one `$$effectN();` per effect, run once
 // after the initial render.
-func (g *ASTGen) buildEffectInit() []JsStmt {
+func (g *ASTGen) buildEffectInit() []jsast.JsStmt {
 	if g.analysis == nil {
 		return nil
 	}
-	var out []JsStmt
+	var out []jsast.JsStmt
 	for i := range g.analysis.Effects {
-		out = append(out, GenInvoke("$$effect"+itoa(i)))
+		out = append(out, jsast.GenInvoke("$$effect"+strconv.Itoa(i)))
 	}
 	return out
 }
@@ -1666,22 +1651,22 @@ func (g *ASTGen) buildEffectInit() []JsStmt {
 // cleanup return (like an $effect cleanup), NOT the component
 // factory's { destroy, set } return.  Without the wrapper the
 // return would exit the whole component function.
-func (g *ASTGen) buildOnMount() []JsStmt {
+func (g *ASTGen) buildOnMount() []jsast.JsStmt {
 	if g.analysis == nil {
 		return nil
 	}
-	var out []JsStmt
+	var out []jsast.JsStmt
 	for i, lc := range g.analysis.Lifecycles {
 		if lc.Kind != "onMount" {
 			continue
 		}
 		body := lc.BodyAST
 		if body == nil {
-			body = GenBlock()
+			body = jsast.GenBlock()
 		}
-		cleanup := "$$mountCleanup" + itoa(i)
-		out = append(out, GenConst(cleanup, GenCall(&JsFuncExpr{
-			BaseExpr: BaseExpr{BaseNode: GenNode()},
+		cleanup := "$$mountCleanup" + strconv.Itoa(i)
+		out = append(out, jsast.GenConst(cleanup, jsast.GenCall(&jsast.JsFuncExpr{
+			BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
 			Body:     body,
 		})))
 
@@ -1694,20 +1679,20 @@ func (g *ASTGen) buildOnMount() []JsStmt {
 // function), then every onDestroy callback body inline.  Effect
 // cleanup and event-listener cleanup are emitted separately by
 // buildReturn around these.
-func (g *ASTGen) buildOnDestroyCleanup() []JsStmt {
+func (g *ASTGen) buildOnDestroyCleanup() []jsast.JsStmt {
 	if g.analysis == nil {
 		return nil
 	}
-	var out []JsStmt
+	var out []jsast.JsStmt
 	// onMount cleanup functions.
 	for i, lc := range g.analysis.Lifecycles {
 		if lc.Kind != "onMount" {
 			continue
 		}
-		cv := "$$mountCleanup" + itoa(i)
-		out = append(out, GenIf(
-			GenBinary("===", &JsUnaryExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Op: "typeof", Prefix: true, X: GenIdent(cv)}, GenStrLit("function")),
-			GenInvoke(cv),
+		cv := "$$mountCleanup" + strconv.Itoa(i)
+		out = append(out, jsast.GenIf(
+			jsast.GenBinary("===", &jsast.JsUnaryExpr{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}, Op: "typeof", Prefix: true, X: jsast.GenIdent(cv)}, jsast.GenStrLit("function")),
+			jsast.GenInvoke(cv),
 		))
 	}
 	// onDestroy callback bodies, inline.
@@ -1736,14 +1721,14 @@ func (g *ASTGen) buildOnDestroyCleanup() []JsStmt {
 //
 // The DOM updates are the statements addUpdate collected for X
 // while holes were built.
-func (g *ASTGen) buildSetters() []JsStmt {
+func (g *ASTGen) buildSetters() []jsast.JsStmt {
 	if g.analysis == nil {
 		return nil
 	}
 	if len(g.analysis.StateVars) == 0 && len(g.analysis.Props) == 0 {
 		return nil
 	}
-	var out []JsStmt
+	var out []jsast.JsStmt
 
 	for _, sv := range g.analysis.StateVars {
 		if sv.Deep {
@@ -1762,8 +1747,8 @@ func (g *ASTGen) buildSetters() []JsStmt {
 // var: recompute dependent derived immediately, then mark the relevant DOM
 // sites and effects for the component-local microtask flush. Shared by the
 // plain combined setter and the deep-state notify function.
-func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
-	var out []JsStmt
+func (g *ASTGen) buildSetterCascade(name string) []jsast.JsStmt {
+	var out []jsast.JsStmt
 
 	// 0. Bindable-prop notification.  If `name` is a $bindable
 	//    prop, fire its $$onChange callback so a two-way-binding
@@ -1772,9 +1757,9 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 	if g.analysis != nil {
 		for _, p := range g.analysis.Props {
 			if p.Name == name && p.Bindable {
-				out = append(out, GenIf(
-					GenIdent("$$onChange_"+name),
-					GenInvoke("$$onChange_"+name, GenIdent(name)),
+				out = append(out, jsast.GenIf(
+					jsast.GenIdent("$$onChange_"+name),
+					jsast.GenInvoke("$$onChange_"+name, jsast.GenIdent(name)),
 				))
 			}
 		}
@@ -1788,7 +1773,7 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 	//    forward pass that grows the dirty set as it goes
 	//    recomputes each derived exactly once, after its inputs.
 	dirty := map[string]bool{name: true}
-	var dependentDerived []*DerivedVar
+	var dependentDerived []*analyzer.DerivedVar
 	if g.analysis != nil {
 		for _, dv := range g.analysis.DerivedVars {
 			depDirty := false
@@ -1801,7 +1786,7 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 			if depDirty {
 				dirty[dv.Name] = true
 				dependentDerived = append(dependentDerived, dv)
-				out = append(out, GenInvoke("$$upd_"+dv.Name))
+				out = append(out, jsast.GenInvoke("$$upd_"+dv.Name))
 			}
 		}
 	}
@@ -1809,8 +1794,8 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 	//    dependent derived). Structural re-renders come FIRST so a branch
 	//    that closes nulls its interior handles before ordinary writes run.
 	seen := map[string]bool{}
-	var updates []JsStmt
-	add := func(stmts []JsStmt) {
+	var updates []jsast.JsStmt
+	add := func(stmts []jsast.JsStmt) {
 		for _, s := range stmts {
 			key := reactiveFlushStmtKey(s)
 			if seen[key] {
@@ -1832,9 +1817,9 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 	// The block engine's fragments read which names changed from $$dirty:
 	// the name itself and every derived value recomputed above.
 
-	out = append(out, GenAssignStmt(GenMember(GenIdent("$$dirty"), name), GenBoolLit(true)))
+	out = append(out, jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent("$$dirty"), name), jsast.GenBoolLit(true)))
 	for _, dv := range dependentDerived {
-		out = append(out, GenAssignStmt(GenMember(GenIdent("$$dirty"), dv.Name), GenBoolLit(true)))
+		out = append(out, jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent("$$dirty"), dv.Name), jsast.GenBoolLit(true)))
 	}
 
 	// Setters mark component-local flags instead of enqueueing a fresh closure.
@@ -1846,7 +1831,7 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 			return
 		}
 		marked[flag] = true
-		out = append(out, GenAssignStmt(GenIdent(flag), GenBoolLit(true)))
+		out = append(out, jsast.GenAssignStmt(jsast.GenIdent(flag), jsast.GenBoolLit(true)))
 	}
 	for _, stmt := range updates {
 		if g.flushPlan != nil {
@@ -1871,7 +1856,7 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 		}
 	}
 	if len(marked) > 0 {
-		out = append(out, GenInvoke("$$scheduleFlush"))
+		out = append(out, jsast.GenInvoke("$$scheduleFlush"))
 	}
 	return out
 }
@@ -1879,9 +1864,9 @@ func (g *ASTGen) buildSetterCascade(name string) []JsStmt {
 // buildOneSetter constructs a single $$set_<name> function for a
 // plain ($state / prop) reactive variable: a guard, the
 // assignment, then the reactive cascade.
-func (g *ASTGen) buildOneSetter(name string) JsStmt {
-	body := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}}
-	body.Body = append(body.Body, GenIf(GenIdent("$$disposed"), GenReturn(nil)))
+func (g *ASTGen) buildOneSetter(name string) jsast.JsStmt {
+	body := &jsast.JsBlock{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}}
+	body.Body = append(body.Body, jsast.GenIf(jsast.GenIdent("$$disposed"), jsast.GenReturn(nil)))
 
 	// if (<name> === $$v && !$$isProxy($$v)) return;
 	//
@@ -1894,48 +1879,48 @@ func (g *ASTGen) buildOneSetter(name string) JsStmt {
 	// but Canvas did not re-render).  $$isProxy lets an
 	// identity-equal proxy through to the cascade; primitives and
 	// plain objects keep the fast skip.
-	body.Body = append(body.Body, &JsIfStmt{
-		BaseStmt: BaseStmt{BaseNode: GenNode()},
-		Test: &JsBinaryExpr{
-			BaseExpr: BaseExpr{BaseNode: GenNode()},
+	body.Body = append(body.Body, &jsast.JsIfStmt{
+		BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()},
+		Test: &jsast.JsBinaryExpr{
+			BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
 			Op:       "&&",
-			L: &JsBinaryExpr{
-				BaseExpr: BaseExpr{BaseNode: GenNode()},
+			L: &jsast.JsBinaryExpr{
+				BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
 				Op:       "===",
-				L:        GenIdent(name),
-				R:        GenIdent("$$v"),
+				L:        jsast.GenIdent(name),
+				R:        jsast.GenIdent("$$v"),
 			},
-			R: &JsUnaryExpr{
-				BaseExpr: BaseExpr{BaseNode: GenNode()},
+			R: &jsast.JsUnaryExpr{
+				BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
 				Op:       "!",
 				Prefix:   true,
-				X: &JsCallExpr{
-					BaseExpr: BaseExpr{BaseNode: GenNode()},
-					Callee:   GenIdent("$$isProxy"),
-					Args:     []JsExpr{GenIdent("$$v")},
+				X: &jsast.JsCallExpr{
+					BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
+					Callee:   jsast.GenIdent("$$isProxy"),
+					Args:     []jsast.JsExpr{jsast.GenIdent("$$v")},
 				},
 			},
 		},
-		Then: &JsReturnStmt{BaseStmt: BaseStmt{BaseNode: GenNode()}},
+		Then: &jsast.JsReturnStmt{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}},
 	})
 
 	// <name> = $$v;
-	body.Body = append(body.Body, &JsExprStmt{
-		BaseStmt: BaseStmt{BaseNode: GenNode()},
-		X: &JsAssignExpr{
-			BaseExpr: BaseExpr{BaseNode: GenNode()},
+	body.Body = append(body.Body, &jsast.JsExprStmt{
+		BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()},
+		X: &jsast.JsAssignExpr{
+			BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
 			Op:       "=",
-			L:        GenIdent(name),
-			R:        GenIdent("$$v"),
+			L:        jsast.GenIdent(name),
+			R:        jsast.GenIdent("$$v"),
 		},
 	})
 
 	body.Body = append(body.Body, g.buildSetterCascade(name)...)
 
-	return &JsFuncDecl{
-		BaseStmt: BaseStmt{BaseNode: GenNode()},
+	return &jsast.JsFuncDecl{
+		BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()},
 		Name:     "$$set_" + name,
-		Params:   []JsExpr{GenIdent("$$v")},
+		Params:   []jsast.JsExpr{jsast.GenIdent("$$v")},
 		Body:     body,
 	}
 }
@@ -1953,23 +1938,23 @@ func (g *ASTGen) buildOneSetter(name string) JsStmt {
 // The notify function is what the Proxy's mutation traps call (via
 // $$mut_X), so a nested mutation triggers the same cascade as a
 // full reassignment.
-func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
+func (g *ASTGen) buildDeepSetters(name string) []jsast.JsStmt {
 	pendingMutations := "$$pendingMutations_" + name
-	mutationCapture := GenIf(GenIdent("$$mutation"),
-		GenIf(GenBinary("!==", GenIdent(pendingMutations), GenNull()),
-			GenExprStmt(GenCall(GenMember(GenIdent(pendingMutations), "push"), GenIdent("$$mutation")))),
+	mutationCapture := jsast.GenIf(jsast.GenIdent("$$mutation"),
+		jsast.GenIf(jsast.GenBinary("!==", jsast.GenIdent(pendingMutations), jsast.GenNull()),
+			jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent(pendingMutations), "push"), jsast.GenIdent("$$mutation")))),
 	)
-	mutationCapture.Else = GenAssignStmt(GenIdent(pendingMutations), GenNull())
+	mutationCapture.Else = jsast.GenAssignStmt(jsast.GenIdent(pendingMutations), jsast.GenNull())
 
 	// $$set_X_notify — the cascade body.
-	notifyBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}}
-	notifyBody.Body = append(notifyBody.Body, GenIf(GenIdent("$$disposed"), GenReturn(nil)))
+	notifyBody := &jsast.JsBlock{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}}
+	notifyBody.Body = append(notifyBody.Body, jsast.GenIf(jsast.GenIdent("$$disposed"), jsast.GenReturn(nil)))
 	notifyBody.Body = append(notifyBody.Body, mutationCapture)
 	notifyBody.Body = append(notifyBody.Body, g.buildSetterCascade(name)...)
-	notify := &JsFuncDecl{
-		BaseStmt: BaseStmt{BaseNode: GenNode()},
+	notify := &jsast.JsFuncDecl{
+		BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()},
 		Name:     "$$set_" + name + "_notify",
-		Params:   []JsExpr{GenIdent("$$mutation")},
+		Params:   []jsast.JsExpr{jsast.GenIdent("$$mutation")},
 		Body:     notifyBody,
 	}
 
@@ -1978,43 +1963,43 @@ func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 	// agree; for a deep var the new value is normally raw (proxy
 	// !== raw, so the guard never fired anyway), but a re-passed
 	// proxy must still fall through to a re-wrap + notify.
-	setBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}}
-	setBody.Body = append(setBody.Body, GenIf(GenIdent("$$disposed"), GenReturn(nil)))
-	setBody.Body = append(setBody.Body, &JsIfStmt{
-		BaseStmt: BaseStmt{BaseNode: GenNode()},
-		Test: &JsBinaryExpr{
-			BaseExpr: BaseExpr{BaseNode: GenNode()},
+	setBody := &jsast.JsBlock{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}}
+	setBody.Body = append(setBody.Body, jsast.GenIf(jsast.GenIdent("$$disposed"), jsast.GenReturn(nil)))
+	setBody.Body = append(setBody.Body, &jsast.JsIfStmt{
+		BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()},
+		Test: &jsast.JsBinaryExpr{
+			BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
 			Op:       "&&",
-			L: &JsBinaryExpr{
-				BaseExpr: BaseExpr{BaseNode: GenNode()},
+			L: &jsast.JsBinaryExpr{
+				BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
 				Op:       "===",
-				L:        GenIdent(name),
-				R:        GenIdent("$$v"),
+				L:        jsast.GenIdent(name),
+				R:        jsast.GenIdent("$$v"),
 			},
-			R: &JsUnaryExpr{
-				BaseExpr: BaseExpr{BaseNode: GenNode()},
+			R: &jsast.JsUnaryExpr{
+				BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
 				Op:       "!",
 				Prefix:   true,
-				X: &JsCallExpr{
-					BaseExpr: BaseExpr{BaseNode: GenNode()},
-					Callee:   GenIdent("$$isProxy"),
-					Args:     []JsExpr{GenIdent("$$v")},
+				X: &jsast.JsCallExpr{
+					BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
+					Callee:   jsast.GenIdent("$$isProxy"),
+					Args:     []jsast.JsExpr{jsast.GenIdent("$$v")},
 				},
 			},
 		},
-		Then: &JsReturnStmt{BaseStmt: BaseStmt{BaseNode: GenNode()}},
+		Then: &jsast.JsReturnStmt{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}},
 	})
 	setBody.Body = append(setBody.Body,
-		GenAssignStmt(GenIdent(name), GenCall(GenIdent("$$proxy"), GenIdent("$$v"), GenIdent("$$mut_"+name))),
-		GenInvoke("$$set_"+name+"_notify"))
-	set := &JsFuncDecl{
-		BaseStmt: BaseStmt{BaseNode: GenNode()},
+		jsast.GenAssignStmt(jsast.GenIdent(name), jsast.GenCall(jsast.GenIdent("$$proxy"), jsast.GenIdent("$$v"), jsast.GenIdent("$$mut_"+name))),
+		jsast.GenInvoke("$$set_"+name+"_notify"))
+	set := &jsast.JsFuncDecl{
+		BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()},
 		Name:     "$$set_" + name,
-		Params:   []JsExpr{GenIdent("$$v")},
+		Params:   []jsast.JsExpr{jsast.GenIdent("$$v")},
 		Body:     setBody,
 	}
 
-	return []JsStmt{notify, set}
+	return []jsast.JsStmt{notify, set}
 }
 
 // shareStmt returns a registered generated statement without copying it.
@@ -2024,11 +2009,11 @@ func (g *ASTGen) buildDeepSetters(name string) []JsStmt {
 // while validation, walking, source-map collection and printing are read-only.
 // Sharing therefore avoids the former PrintJS → ParseJS clone round-trip without
 // allowing one reactive path to affect another.
-func shareStmt(s JsStmt) JsStmt { return s }
+func shareStmt(s jsast.JsStmt) jsast.JsStmt { return s }
 
 // textNodeAllStatic reports whether every part of a TextNode is
 // static (no interpolation hole).
-func textNodeAllStatic(tn *TextNode) bool {
+func textNodeAllStatic(tn *sfcast.TextNode) bool {
 	for _, p := range tn.Parts {
 		if !p.Static {
 			return false
@@ -2053,11 +2038,11 @@ func rawTextProp(tag string) (string, bool) {
 // singleInterpolation returns the JS expression of a children list
 // that is exactly one dynamic text interpolation ({expr}) with no
 // surrounding static text or sibling nodes.
-func singleInterpolation(children []Node) (string, bool) {
+func singleInterpolation(children []sfcast.Node) (string, bool) {
 	if len(children) != 1 {
 		return "", false
 	}
-	tn, ok := children[0].(*TextNode)
+	tn, ok := children[0].(*sfcast.TextNode)
 	if !ok || len(tn.Parts) != 1 || tn.Parts[0].Static {
 		return "", false
 	}
@@ -2067,10 +2052,10 @@ func singleInterpolation(children []Node) (string, bool) {
 // staticRawText returns the concatenated literal text of a children
 // list that contains only static text parts (no interpolation, no
 // elements).
-func staticRawText(children []Node) (string, bool) {
+func staticRawText(children []sfcast.Node) (string, bool) {
 	var b strings.Builder
 	for _, c := range children {
-		tn, ok := c.(*TextNode)
+		tn, ok := c.(*sfcast.TextNode)
 		if !ok {
 			return "", false
 		}
@@ -2126,8 +2111,8 @@ type eachIncrementalPlan struct {
 // eachIncrementalPlanFor returns a deliberately narrow optimisation contract:
 // a direct $state.deep list keyed by item.<field>. All other expressions use
 // the existing full keyed reconciler.
-func (g *ASTGen) eachIncrementalPlanFor(block *EachBlockNode) *eachIncrementalPlan {
-	name, ok := templateExprIdent(block.IterExpr)
+func (g *ASTGen) eachIncrementalPlanFor(block *sfcast.EachBlockNode) *eachIncrementalPlan {
+	name, ok := TemplateExprIdent(block.IterExpr)
 	if !ok || g.analysis == nil {
 		return nil
 	}
@@ -2141,12 +2126,12 @@ func (g *ASTGen) eachIncrementalPlanFor(block *EachBlockNode) *eachIncrementalPl
 	if !deep {
 		return nil
 	}
-	key, ok := templateExprRoot(block.KeyAST).(*JsMemberExpr)
+	key, ok := TemplateExprRoot(block.KeyAST).(*jsast.JsMemberExpr)
 	if !ok || key.Computed {
 		return nil
 	}
-	item, itemOK := key.Obj.(*JsIdent)
-	field, fieldOK := key.Prop.(*JsIdent)
+	item, itemOK := key.Obj.(*jsast.JsIdent)
+	field, fieldOK := key.Prop.(*jsast.JsIdent)
 	if !itemOK || !fieldOK || item.Name != block.ItemName || field.Name == "" {
 		return nil
 	}
@@ -2155,18 +2140,18 @@ func (g *ASTGen) eachIncrementalPlanFor(block *EachBlockNode) *eachIncrementalPl
 
 // isStaticNode reports whether a node has no dynamic content and
 // can be batched into a static-HTML run.
-func isStaticNode(n Node) bool {
+func isStaticNode(n sfcast.Node) bool {
 	switch x := n.(type) {
-	case *TextNode:
+	case *sfcast.TextNode:
 		return textNodeAllStatic(x)
-	case *ElementNode:
+	case *sfcast.ElementNode:
 		return isFullyStatic(x)
 	default:
 		return false
 	}
 }
 
-func (g *ASTGen) hydrationKeyedComponentRowTag(component *ComponentNode) string {
+func (g *ASTGen) hydrationKeyedComponentRowTag(component *sfcast.ComponentNode) string {
 	if component == nil {
 		return ""
 	}
@@ -2195,33 +2180,27 @@ func (g *ASTGen) hasReactiveSetter(name string) bool {
 // rewrites assignments to reactive variables into their  form. The
 // shared rewriter handles concise arrow bodies as statements, so updates such
 // as `() => count++` remain reactive.
-func (g *ASTGen) eventHandlerExpr(attr *Attr) JsExpr {
+func (g *ASTGen) eventHandlerExpr(attr *sfcast.Attr) jsast.JsExpr {
 	if attr == nil || attr.Expr == nil {
 		return nil
 	}
-	root := templateExprRoot(attr.Expr)
+	root := TemplateExprRoot(attr.Expr)
 	if root == nil {
 		return nil
 	}
 	root = g.templateExpr(attr.Expr)
 	if g.analysis != nil {
-		root = RewriteHandlerAssignmentsAST(root, g.analysis.StateSet())
+		root = analyzer.RewriteHandlerAssignmentsAST(root, g.analysis.StateSet())
 	}
 	// Browser source-map consumers may stop at a nested handler node rather
 	// than the arrow root. Keep the attribute's exact origin on the complete
 	// lowered subtree, matching the legacy rewritten-template path.
 	pos := g.sfc.TemplateOffset + attr.Expr.Pos
-	WalkNode(root, func(node JsNode) bool {
+	jsast.WalkNode(root, func(node jsast.JsNode) bool {
 		setTemplateOrigin(node, pos)
 		return true
 	})
 	return root
-}
-
-// stripBraces removes a single surrounding {…} wrapper that the
-// template parser preserves on attribute values.
-func stripBraces(s string) string {
-	return UnwrapBraces(s)
 }
 
 // buildReturn constructs the `return { destroy, set };` statement.
@@ -2235,37 +2214,37 @@ func stripBraces(s string) string {
 //
 // set() — emitted only when the component has settable reactive
 // vars — dispatches each incoming prop to its setter.
-func (g *ASTGen) buildReturn() JsStmt {
+func (g *ASTGen) buildReturn() jsast.JsStmt {
 	hasSettable := g.analysis != nil &&
 		(len(g.analysis.StateVars) > 0 || len(g.analysis.Props) > 0)
 
-	destroyBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}}
+	destroyBody := &jsast.JsBlock{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}}
 	// Mark disposal before user cleanup. This makes repeated destroy() calls and
 	// setters reached from cleanup or later callbacks harmless.
 	destroyBody.Body = append(destroyBody.Body,
-		GenIf(GenIdent("$$disposed"), GenReturn(nil)),
-		GenAssignStmt(GenIdent("$$disposed"), GenBoolLit(true)),
+		jsast.GenIf(jsast.GenIdent("$$disposed"), jsast.GenReturn(nil)),
+		jsast.GenAssignStmt(jsast.GenIdent("$$disposed"), jsast.GenBoolLit(true)),
 	)
 	// A shared runtime queue may still hold a component flush; it will observe disposal,
 	// while clearing component-local bookkeeping releases the current batch.
 	if g.flushPlan != nil && (len(g.flushPlan.entries) > 0 || len(g.flushPlan.effectFlags) > 0) {
-		destroyBody.Body = append(destroyBody.Body, GenAssignStmt(GenIdent("$$flushQueued"), GenBoolLit(false)))
+		destroyBody.Body = append(destroyBody.Body, jsast.GenAssignStmt(jsast.GenIdent("$$flushQueued"), jsast.GenBoolLit(false)))
 		for _, entry := range g.flushPlan.entries {
-			destroyBody.Body = append(destroyBody.Body, GenAssignStmt(GenIdent(entry.flag), GenBoolLit(false)))
+			destroyBody.Body = append(destroyBody.Body, jsast.GenAssignStmt(jsast.GenIdent(entry.flag), jsast.GenBoolLit(false)))
 			if entry.ran != "" {
-				destroyBody.Body = append(destroyBody.Body, GenAssignStmt(GenIdent(entry.ran), GenBoolLit(false)))
+				destroyBody.Body = append(destroyBody.Body, jsast.GenAssignStmt(jsast.GenIdent(entry.ran), jsast.GenBoolLit(false)))
 			}
 		}
 		for _, flag := range g.flushPlan.effectFlags {
-			destroyBody.Body = append(destroyBody.Body, GenAssignStmt(GenIdent(flag), GenBoolLit(false)))
+			destroyBody.Body = append(destroyBody.Body, jsast.GenAssignStmt(jsast.GenIdent(flag), jsast.GenBoolLit(false)))
 		}
 	}
 	if g.analysis != nil {
 		for _, state := range g.analysis.StateVars {
 			if state.Deep {
 				destroyBody.Body = append(destroyBody.Body,
-					GenAssignStmt(GenIdent("$$pendingMutations_"+state.Name), GenArray()),
-					GenAssignStmt(GenIdent("$$activeMutations_"+state.Name), GenArray()),
+					jsast.GenAssignStmt(jsast.GenIdent("$$pendingMutations_"+state.Name), jsast.GenArray()),
+					jsast.GenAssignStmt(jsast.GenIdent("$$activeMutations_"+state.Name), jsast.GenArray()),
 				)
 			}
 		}
@@ -2273,9 +2252,9 @@ func (g *ASTGen) buildReturn() JsStmt {
 	// 1. Effect cleanups.
 	if g.analysis != nil {
 		for i := range g.analysis.Effects {
-			n := itoa(i)
+			n := strconv.Itoa(i)
 			destroyBody.Body = append(destroyBody.Body,
-				GenIf(GenIdent("$$cleanup"+n), GenInvoke("$$cleanup"+n)))
+				jsast.GenIf(jsast.GenIdent("$$cleanup"+n), jsast.GenInvoke("$$cleanup"+n)))
 		}
 	}
 	// 2-3. onMount cleanup fns + onDestroy bodies.
@@ -2287,19 +2266,19 @@ func (g *ASTGen) buildReturn() JsStmt {
 	//    mode — no runtime <style> was injected.
 	if g.hasStyle() && !g.cssExternal {
 		destroyBody.Body = append(destroyBody.Body,
-			GenExprStmt(GenCall(GenMember(GenIdent("$$style"), "remove"))))
+			jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$style"), "remove"))))
 	}
 	// 6. Root removal.
 	destroyBody.Body = append(destroyBody.Body,
-		GenExprStmt(GenCall(GenMember(GenIdent("$$root"), "remove"))))
+		jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$root"), "remove"))))
 
-	destroyProp := &JsProp{
-		BaseNode: GenNode(),
+	destroyProp := &jsast.JsProp{
+		BaseNode: jsast.GenNode(),
 		Kind:     "init",
 		Method:   true,
-		Key:      GenIdent("destroy"),
-		Value: &JsFuncExpr{
-			BaseExpr: BaseExpr{BaseNode: GenNode()},
+		Key:      jsast.GenIdent("destroy"),
+		Value: &jsast.JsFuncExpr{
+			BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
 			Body:     destroyBody,
 		},
 	}
@@ -2309,30 +2288,30 @@ func (g *ASTGen) buildReturn() JsStmt {
 	// position information.  Required by bug-4's wrapper-less
 	// mount: the parent's @event listeners now target inst.el
 	// (instead of a wrapper div the parent itself controls).
-	elProp := &JsProp{
-		BaseNode: GenNode(),
+	elProp := &jsast.JsProp{
+		BaseNode: jsast.GenNode(),
 		Kind:     "init",
-		Key:      GenIdent("el"),
-		Value:    GenIdent("$$root"),
+		Key:      jsast.GenIdent("el"),
+		Value:    jsast.GenIdent("$$root"),
 	}
 
-	props := []*JsProp{elProp, destroyProp}
+	props := []*jsast.JsProp{elProp, destroyProp}
 	{
 
 		// abandon releases everything but leaves the root in the document:
 		// hydration rollback keeps the server DOM for a retry (B-3.4, X-7.4).
-		abandonBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}, Body: destroyBody.Body[:len(destroyBody.Body)-1]}
-		props = append(props, &JsProp{BaseNode: GenNode(), Kind: "init", Method: true, Key: GenIdent("abandon"), Value: &JsFuncExpr{BaseExpr: BaseExpr{BaseNode: GenNode()}, Body: abandonBody}})
+		abandonBody := &jsast.JsBlock{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}, Body: destroyBody.Body[:len(destroyBody.Body)-1]}
+		props = append(props, &jsast.JsProp{BaseNode: jsast.GenNode(), Kind: "init", Method: true, Key: jsast.GenIdent("abandon"), Value: &jsast.JsFuncExpr{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}, Body: abandonBody}})
 	}
 
 	if hasSettable {
 		// set(props) { if (props.X !== undefined) $$set_X(props.X); … }
-		setBody := &JsBlock{BaseStmt: BaseStmt{BaseNode: GenNode()}}
+		setBody := &jsast.JsBlock{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}}
 		emit := func(name string) {
-			prop := GenMember(GenIdent("props"), name)
+			prop := jsast.GenMember(jsast.GenIdent("props"), name)
 			setBody.Body = append(setBody.Body,
-				GenIf(GenBinary("!==", prop, GenIdent("undefined")),
-					GenInvoke("$$set_"+name, GenMember(GenIdent("props"), name))))
+				jsast.GenIf(jsast.GenBinary("!==", prop, jsast.GenIdent("undefined")),
+					jsast.GenInvoke("$$set_"+name, jsast.GenMember(jsast.GenIdent("props"), name))))
 		}
 		for _, sv := range g.analysis.StateVars {
 			emit(sv.Name)
@@ -2340,31 +2319,31 @@ func (g *ASTGen) buildReturn() JsStmt {
 		for _, p := range g.analysis.Props {
 			emit(p.Name)
 		}
-		props = append(props, &JsProp{
-			BaseNode: GenNode(),
+		props = append(props, &jsast.JsProp{
+			BaseNode: jsast.GenNode(),
 			Kind:     "init",
 			Method:   true,
-			Key:      GenIdent("set"),
-			Value: &JsFuncExpr{
-				BaseExpr: BaseExpr{BaseNode: GenNode()},
-				Params:   []JsExpr{GenIdent("props")},
+			Key:      jsast.GenIdent("set"),
+			Value: &jsast.JsFuncExpr{
+				BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
+				Params:   []jsast.JsExpr{jsast.GenIdent("props")},
 				Body:     setBody,
 			},
 		})
 	}
 
-	return &JsReturnStmt{
-		BaseStmt: BaseStmt{BaseNode: GenNode()},
-		Arg: &JsObjectExpr{
-			BaseExpr: BaseExpr{BaseNode: GenNode()},
+	return &jsast.JsReturnStmt{
+		BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()},
+		Arg: &jsast.JsObjectExpr{
+			BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()},
 			Props:    props,
 		},
 	}
 }
 
-// headerComment is the banner the legacy generator prints at the
+// HeaderComment is the banner the legacy generator prints at the
 // top of every file.  Kept identical so differential diffs aren't
 // noisy.  (The printer doesn't emit comments, so the harness
 // strips this from the legacy side before diffing — see
 // astgen_diff_test.go.)
-const headerComment = "// Generated by Vela Compiler — do not edit"
+const HeaderComment = "// Generated by Vela Compiler — do not edit"

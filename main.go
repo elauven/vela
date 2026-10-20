@@ -777,23 +777,23 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	var target *JsProgram
 	if trace != nil {
 		if err = trace.stage("build-target-ast", func() error {
-			target = buildProgramUnvalidated(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
+			target = BuildProgramUnvalidated(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
 			trace.trace.Metrics.TargetNodes = countJSNodes(target)
 			return nil
 		}); err != nil {
 			return ds.All(), err
 		}
 		if err = trace.stage("validate-target-ast", func() error {
-			validateGeneratedProgram(target)
+			ValidateGeneratedProgram(target)
 			return nil
 		}); err != nil {
 			return ds.All(), err
 		}
 	} else {
-		target = buildProgramCSS(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
+		target = BuildProgramCSS(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
 	}
 
-	finalizeRuntimeImports(target, opts.RuntimeImport)
+	FinalizeRuntimeImports(target, opts.RuntimeImport)
 	opts.PackageImports.add(dest, programPackageImports(target))
 
 	if opts.GenAST {
@@ -812,7 +812,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 				loc.GeneratedLine += 2
 				locations = append(locations, loc)
 			})
-			code = headerComment + "\n\n" + body
+			code = HeaderComment + "\n\n" + body
 			return nil
 		}); err != nil {
 			return ds.All(), err
@@ -827,7 +827,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 		}
 	} else {
 		if err = trace.stage("print-target", func() error {
-			code = headerComment + "\n\n" + PrintJS(target, PrintPretty)
+			code = HeaderComment + "\n\n" + PrintJS(target, PrintPretty)
 			return nil
 		}); err != nil {
 			return ds.All(), err
@@ -976,7 +976,7 @@ func runtimeSpecifier(opts CompileOptions, dir, outRoot string) string {
 	if opts.BareRuntimeImports {
 		return runtime.PackageName
 	}
-	return runtimeImportFor(dir, outRoot)
+	return RuntimeImportFor(dir, outRoot)
 }
 
 // copyProjectJSModules mirrors local JavaScript modules into project output,
@@ -997,7 +997,7 @@ func copyProjectJSModules(srcRoot, outRoot string, opts CompileOptions) int {
 			err = os.MkdirAll(filepath.Dir(dest), 0755)
 		}
 		if err == nil {
-			err = os.WriteFile(dest, []byte(rewriteJSModuleSpecifiers(string(data), runtimeSpecifier(opts, filepath.Dir(dest), outRoot))), 0644)
+			err = os.WriteFile(dest, []byte(RewriteJSModuleSpecifiers(string(data), runtimeSpecifier(opts, filepath.Dir(dest), outRoot))), 0644)
 			opts.PackageImports.add(dest, sourcePackageImports(string(data)))
 			if opts.CheckDeps {
 				checkModulePackageImports(src, string(data))

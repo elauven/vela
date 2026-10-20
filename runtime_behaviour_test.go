@@ -146,7 +146,7 @@ func runRuntimeHarnessWithModules(t *testing.T, entry string,
 			t.Fatalf("[%s] parseTemplate: %v", name, err)
 		}
 		analysis := AnalyzeScript(sfc.Script)
-		js := generateCodeAST(name, sfc, tmpl, analysis, "vela-000000")
+		js := GenerateCodeAST(name, sfc, tmpl, analysis, "vela-000000")
 
 		if err := os.WriteFile(filepath.Join(dir, name+".js"),
 			[]byte(js), 0o644); err != nil {

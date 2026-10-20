@@ -1,6 +1,9 @@
-package main
+package codegen
 
 import (
+	"github.com/elauven/vela/internal/sfcast"
+	"github.com/elauven/vela/internal/srcspan"
+
 	"fmt"
 	"strings"
 )
@@ -28,32 +31,32 @@ func (e *HTMLNestingError) Error() string {
 	return HTMLNestingDiagnosticCode + ": " + e.Message + "; " + e.Fix
 }
 
-// normalizeTableRows inserts the <tbody> the HTML parser creates around
+// NormalizeTableRows inserts the <tbody> the HTML parser creates around
 // rows written directly in a <table> (M-5.7). A run starts at the first row
 // or block after a table section and keeps the whitespace that follows it,
 // as the parser does. It is idempotent.
-func normalizeTableRows(nodes []Node) {
+func NormalizeTableRows(nodes []sfcast.Node) {
 	for _, node := range nodes {
-		forEachChildList(node, normalizeTableRows)
-		element, ok := node.(*ElementNode)
+		ForEachChildList(node, NormalizeTableRows)
+		element, ok := node.(*sfcast.ElementNode)
 		if !ok || element.Tag != "table" {
 			continue
 		}
-		var children []Node
-		var run []Node
+		var children []sfcast.Node
+		var run []sfcast.Node
 		flush := func() {
 			if len(run) > 0 {
-				children = append(children, &ElementNode{Span: SectionSpan{Start: templateNodeSpan(run[0]).Start, End: templateNodeSpan(run[len(run)-1]).End}, Tag: "tbody", Children: run})
+				children = append(children, &sfcast.ElementNode{Span: srcspan.SectionSpan{Start: templateNodeSpan(run[0]).Start, End: templateNodeSpan(run[len(run)-1]).End}, Tag: "tbody", Children: run})
 			}
 			run = nil
 		}
 		for _, child := range element.Children {
-			if el, ok := child.(*ElementNode); ok && tableSectionTag(el.Tag) {
+			if el, ok := child.(*sfcast.ElementNode); ok && tableSectionTag(el.Tag) {
 				flush()
 				children = append(children, child)
 				continue
 			}
-			if text, ok := child.(*TextNode); ok && len(run) == 0 && textNodeIsBlank(text) {
+			if text, ok := child.(*sfcast.TextNode); ok && len(run) == 0 && textNodeIsBlank(text) {
 				children = append(children, child)
 				continue
 			}
@@ -76,17 +79,17 @@ func tableSectionTag(tag string) bool {
 // root element tag of a child component ("div" for a display:contents
 // wrapper), or "" when it is unknown.
 type HTMLNestingContext struct {
-	ComponentRoot func(*ComponentNode) string
+	ComponentRoot func(*sfcast.ComponentNode) string
 }
 
-// checkHTMLNesting reports the first construct the HTML parser would
+// CheckHTMLNesting reports the first construct the HTML parser would
 // rearrange (M-5.8) or a text-only element with more than one text run or a
 // block (M-5.9).
-func checkHTMLNesting(nodes []Node, ctx HTMLNestingContext) *HTMLNestingError {
+func CheckHTMLNesting(nodes []sfcast.Node, ctx HTMLNestingContext) *HTMLNestingError {
 	return checkNestingNodes(nodes, "", nil, ctx)
 }
 
-func checkNestingNodes(nodes []Node, parent string, ancestors []string, ctx HTMLNestingContext) *HTMLNestingError {
+func checkNestingNodes(nodes []sfcast.Node, parent string, ancestors []string, ctx HTMLNestingContext) *HTMLNestingError {
 	for _, node := range nodes {
 		if err := checkNestingNode(node, parent, ancestors, ctx); err != nil {
 			return err
@@ -95,20 +98,20 @@ func checkNestingNodes(nodes []Node, parent string, ancestors []string, ctx HTML
 	return nil
 }
 
-func checkNestingNode(node Node, parent string, ancestors []string, ctx HTMLNestingContext) *HTMLNestingError {
+func checkNestingNode(node sfcast.Node, parent string, ancestors []string, ctx HTMLNestingContext) *HTMLNestingError {
 	switch n := node.(type) {
-	case *TextNode:
+	case *sfcast.TextNode:
 		if tableContextTag(parent) && (!textNodeAllStatic(n) || !textNodeIsBlank(n)) {
 			return &HTMLNestingError{Pos: n.Span.Start,
 				Message: fmt.Sprintf("text directly inside <%s> is moved before the table by the HTML parser", parent),
 				Fix:     "put it in a " + tableCellHint(parent)}
 		}
 		return nil
-	case *ElementNode:
+	case *sfcast.ElementNode:
 		if err := checkNestingTag(n.Tag, n.Span.Start, parent, ancestors); err != nil {
 			return err
 		}
-		if IsVoidElement(n.Tag) && len(n.Children) > 0 {
+		if sfcast.IsVoidElement(n.Tag) && len(n.Children) > 0 {
 			return &HTMLNestingError{Pos: n.Span.Start,
 				Message: fmt.Sprintf("<%s> is a void element and cannot have children", n.Tag),
 				Fix:     "move the children after it"}
@@ -120,7 +123,7 @@ func checkNestingNode(node Node, parent string, ancestors []string, ctx HTMLNest
 					Fix:     "compute the content as one expression"}
 			}
 			if len(n.Children) == 1 {
-				if _, ok := n.Children[0].(*TextNode); !ok {
+				if _, ok := n.Children[0].(*sfcast.TextNode); !ok {
 					return &HTMLNestingError{Pos: n.Span.Start,
 						Message: fmt.Sprintf("<%s> holds text only; elements and blocks inside it are parsed as text", n.Tag),
 						Fix:     "compute the content as one expression"}
@@ -129,7 +132,7 @@ func checkNestingNode(node Node, parent string, ancestors []string, ctx HTMLNest
 			return nil
 		}
 		return checkNestingNodes(n.Children, n.Tag, append(ancestors[:len(ancestors):len(ancestors)], n.Tag), ctx)
-	case *ComponentNode:
+	case *sfcast.ComponentNode:
 		if ctx.ComponentRoot != nil {
 			if root := ctx.ComponentRoot(n); root != "" {
 				if err := checkNestingTag(root, n.Span.Start, parent, ancestors); err != nil {
@@ -146,7 +149,7 @@ func checkNestingNode(node Node, parent string, ancestors []string, ctx HTMLNest
 			}
 		}
 		return nil
-	case *SlotNode:
+	case *sfcast.SlotNode:
 		if tableContextTag(parent) {
 			return &HTMLNestingError{Pos: n.Span.Start,
 				Message: fmt.Sprintf("a slot directly inside <%s> can receive content the HTML parser moves before the table", parent),
@@ -155,7 +158,7 @@ func checkNestingNode(node Node, parent string, ancestors []string, ctx HTMLNest
 		return checkNestingNodes(n.Fallback, parent, ancestors, ctx)
 	}
 	var err *HTMLNestingError
-	forEachChildList(node, func(children []Node) {
+	ForEachChildList(node, func(children []sfcast.Node) {
 		if err == nil {
 			err = checkNestingNodes(children, parent, ancestors, ctx)
 		}
@@ -262,7 +265,7 @@ func textOnlyTag(tag string) bool {
 	return false
 }
 
-func textNodeIsBlank(text *TextNode) bool {
+func textNodeIsBlank(text *sfcast.TextNode) bool {
 	for _, part := range text.Parts {
 		if !part.Static || strings.TrimSpace(part.Value) != "" {
 			return false
@@ -271,50 +274,50 @@ func textNodeIsBlank(text *TextNode) bool {
 	return true
 }
 
-// forEachChildList visits the child lists of a structural node whose
+// ForEachChildList visits the child lists of a structural node whose
 // children land in the same parent element.
-func forEachChildList(node Node, visit func([]Node)) {
+func ForEachChildList(node sfcast.Node, visit func([]sfcast.Node)) {
 	switch n := node.(type) {
-	case *ElementNode:
+	case *sfcast.ElementNode:
 		visit(n.Children)
-	case *IfChainNode:
+	case *sfcast.IfChainNode:
 		for _, branch := range n.Branches {
 			if branch != nil {
 				visit(branch.Children)
 			}
 		}
-	case *EachBlockNode:
+	case *sfcast.EachBlockNode:
 		visit(n.Children)
 		visit(n.ElseChildren)
-	case *AwaitBlockNode:
+	case *sfcast.AwaitBlockNode:
 		visit(n.PendingChildren)
 		visit(n.ThenChildren)
 		visit(n.CatchChildren)
-	case *ComponentNode:
+	case *sfcast.ComponentNode:
 		for _, children := range n.Slots {
 			visit(children)
 		}
-	case *SlotNode:
+	case *sfcast.SlotNode:
 		visit(n.Fallback)
 	}
 }
 
-func templateNodeSpan(node Node) SectionSpan {
+func templateNodeSpan(node sfcast.Node) srcspan.SectionSpan {
 	switch n := node.(type) {
-	case *ElementNode:
+	case *sfcast.ElementNode:
 		return n.Span
-	case *TextNode:
+	case *sfcast.TextNode:
 		return n.Span
-	case *IfChainNode:
+	case *sfcast.IfChainNode:
 		return n.Span
-	case *EachBlockNode:
+	case *sfcast.EachBlockNode:
 		return n.Span
-	case *AwaitBlockNode:
+	case *sfcast.AwaitBlockNode:
 		return n.Span
-	case *ComponentNode:
+	case *sfcast.ComponentNode:
 		return n.Span
-	case *SlotNode:
+	case *sfcast.SlotNode:
 		return n.Span
 	}
-	return SectionSpan{}
+	return srcspan.SectionSpan{}
 }

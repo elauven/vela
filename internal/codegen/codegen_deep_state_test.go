@@ -1,4 +1,4 @@
-package main
+package codegen
 
 // codegen_deep_state_test.go — opt-in deep reactivity via Proxy.
 //

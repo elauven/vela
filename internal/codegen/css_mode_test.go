@@ -1,8 +1,12 @@
-package main
+package codegen
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/css"
+	"github.com/elauven/vela/internal/sfcast"
 )
 
 // CSS output mode: a component's scoped <style> is delivered either
@@ -20,15 +24,15 @@ const cssModeSrc = `<script>
 
 func cssModeCompile(t *testing.T, src string, external bool) string {
 	t.Helper()
-	sfc, err := ParseSFC(src)
+	sfc, err := sfcast.ParseSFC(src)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
-	tmpl, err := ParseTemplate(sfc.Template)
+	tmpl, err := sfcast.ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
-	a := AnalyzeScript(sfc.Script)
+	a := analyzer.AnalyzeScript(sfc.Script)
 	return generateCodeASTCSS("Test", sfc, tmpl, a, "vela-test", external)
 }
 
@@ -67,7 +71,7 @@ func TestCSSMode_ExternalEmitsNoRuntimeStyle(t *testing.T) {
 // ExtractScopedCSS returns the scope-transformed stylesheet that
 // the compiler writes to the sibling .css file.
 func TestCSSMode_ExtractScopedCSS(t *testing.T) {
-	sfc, err := ParseSFC(cssModeSrc)
+	sfc, err := sfcast.ParseSFC(cssModeSrc)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
@@ -90,7 +94,7 @@ func TestCSSMode_ExtractScopedCSS(t *testing.T) {
 func TestCSSMode_NoStyleNoCss(t *testing.T) {
 	src := `<script>let n = $state(0);</script>
 <template><p>{n}</p></template>`
-	sfc, err := ParseSFC(src)
+	sfc, err := sfcast.ParseSFC(src)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
@@ -102,12 +106,12 @@ func TestCSSMode_NoStyleNoCss(t *testing.T) {
 // The scoped CSS must be byte-identical whether delivered inline or
 // externally — only the delivery mechanism differs, not the scoping.
 func TestCSSMode_ScopingIdenticalBothModes(t *testing.T) {
-	sfc, err := ParseSFC(cssModeSrc)
+	sfc, err := sfcast.ParseSFC(cssModeSrc)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
 	external := ExtractScopedCSS(sfc, "vela-test")
-	inline := ScopeCSS(sfc.Style, "vela-test")
+	inline := css.ScopeCSS(sfc.Style, "vela-test")
 	if external != inline {
 		t.Errorf("scoped CSS differs between modes:\nexternal:\n%s\ninline:\n%s",
 			external, inline)

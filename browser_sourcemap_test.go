@@ -69,7 +69,7 @@ func assertBrowserSourceMap(t *testing.T, raw, selector, sourceNeedle string) {
 	if at < 0 {
 		t.Fatalf("fixture source needle %q not found", sourceNeedle)
 	}
-	line, column := sourceLineColumn(raw, at)
+	line, column := SourceLineColumn(raw, at)
 	config := browserSourceMapConfig{RootDir: dir, Entry: "App.js", Map: "App.js.map", Selector: selector}
 	config.Expected.Source, config.Expected.Line, config.Expected.Column = filepath.ToSlash(src), line+1, column
 	data, err := json.Marshal(config)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -40,17 +39,5 @@ func TestGeneratedPrimitiveLiteralBuildersUseTypedValues(t *testing.T) {
 				t.Fatalf("typed literal origin = %v, want OriginGenerated", tc.literal.Origin)
 			}
 		})
-	}
-}
-
-func TestTypedStyleInjectionUsesDecodedCSSLiteral(t *testing.T) {
-	g := &ASTGen{sfc: &SFC{Style: `.card::before { content: "'"; }`}, scopeID: "vela-test"}
-	printed := PrintJS(&JsProgram{Body: g.buildStyleInjection()}, PrintPretty)
-	css := ScopeCSS(g.sfc.Style, g.scopeID)
-	if !strings.Contains(printed, "textContent = "+EncodeGeneratedString(css)) {
-		t.Fatalf("CSS payload was not emitted through decoded literal builder:\n%s", printed)
-	}
-	if strings.Contains(printed, "jsStmt") {
-		t.Fatalf("printer output unexpectedly contains helper text:\n%s", printed)
 	}
 }

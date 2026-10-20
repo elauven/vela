@@ -1,4 +1,4 @@
-package main
+package codegen
 
 // codegen_component_bind_test.go — bug 13: <Child bind:x={y}> was
 // emitting only the parent→child push (`{ x: y }`), never the
@@ -13,6 +13,10 @@ import (
 
 // ─────────────────────────────────────────────
 //  Callback emission
+// ─────────────────────────────────────────────
+
+// ─────────────────────────────────────────────
+//  Cycle break in setters
 // ─────────────────────────────────────────────
 
 func TestBug13_BindOnComponentEmitsOnChangeCallback(t *testing.T) {
@@ -67,10 +71,6 @@ func TestBug13_BindOnNonStateSkipsCallback(t *testing.T) {
 		t.Fatalf("non-state bind target should not get a callback:\n%s", out)
 	}
 }
-
-// ─────────────────────────────────────────────
-//  Cycle break in setters
-// ─────────────────────────────────────────────
 
 func TestBug13_SetterGuardsAgainstNoOpWrites(t *testing.T) {
 	src := `<script>

@@ -1,14 +1,16 @@
-package main
+package codegen
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/elauven/vela/internal/sfcast"
 )
 
-func nestingNodes(t *testing.T, template string) (string, []Node) {
+func nestingNodes(t *testing.T, template string) (string, []sfcast.Node) {
 	t.Helper()
 	source := "<template>" + template + "</template>"
-	sfc, err := ParseSFC(source)
+	sfc, err := sfcast.ParseSFC(source)
 	if err != nil {
 		t.Fatalf("parse %q: %v", template, err)
 	}
@@ -20,7 +22,7 @@ func nestingNodes(t *testing.T, template string) (string, []Node) {
 // construct and points at it.
 func TestHTMLNestingRejectsParserRearrangements(t *testing.T) {
 	childRoots := map[string]string{"Row": "tr", "Wide": "div"}
-	ctx := HTMLNestingContext{ComponentRoot: func(c *ComponentNode) string { return childRoots[c.Name] }}
+	ctx := HTMLNestingContext{ComponentRoot: func(c *sfcast.ComponentNode) string { return childRoots[c.Name] }}
 	for _, tc := range []struct {
 		template, at, message string
 	}{
@@ -40,7 +42,7 @@ func TestHTMLNestingRejectsParserRearrangements(t *testing.T) {
 		{`<title><b>x</b></title>`, `<title>`, "<title> holds text only"},
 	} {
 		source, nodes := nestingNodes(t, tc.template)
-		err := checkHTMLNesting(nodes, ctx)
+		err := CheckHTMLNesting(nodes, ctx)
 		if err == nil {
 			t.Errorf("%s: accepted", tc.template)
 			continue
@@ -55,7 +57,7 @@ func TestHTMLNestingRejectsParserRearrangements(t *testing.T) {
 }
 
 func TestHTMLNestingAcceptsStableTemplates(t *testing.T) {
-	ctx := HTMLNestingContext{ComponentRoot: func(c *ComponentNode) string { return "tr" }}
+	ctx := HTMLNestingContext{ComponentRoot: func(c *sfcast.ComponentNode) string { return "tr" }}
 	for _, template := range []string{
 		`<table>
   <thead><tr><th>a</th></tr></thead>
@@ -68,7 +70,7 @@ func TestHTMLNestingAcceptsStableTemplates(t *testing.T) {
 		`<textarea>{value}</textarea>`,
 	} {
 		_, nodes := nestingNodes(t, template)
-		if err := checkHTMLNesting(nodes, ctx); err != nil {
+		if err := CheckHTMLNesting(nodes, ctx); err != nil {
 			t.Errorf("%s: %v", template, err)
 		}
 	}
@@ -79,26 +81,26 @@ func TestHTMLNestingAcceptsStableTemplates(t *testing.T) {
 // stays in the table, and sections are left alone.
 func TestNormalizeTableRowsInsertsTbody(t *testing.T) {
 	_, nodes := nestingNodes(t, "<table>\n  <caption>c</caption>\n  <tr><td>a</td></tr>\n  {#each rows as row}<tr><td>{row}</td></tr>{/each}\n  <tfoot><tr><td>f</td></tr></tfoot></table>")
-	normalizeTableRows(nodes)
-	normalizeTableRows(nodes)
-	table := nodes[0].(*ElementNode)
+	NormalizeTableRows(nodes)
+	NormalizeTableRows(nodes)
+	table := nodes[0].(*sfcast.ElementNode)
 	var shape []string
 	for _, child := range table.Children {
 		switch n := child.(type) {
-		case *ElementNode:
+		case *sfcast.ElementNode:
 			inner := []string{}
 			for _, grandchild := range n.Children {
 				switch g := grandchild.(type) {
-				case *ElementNode:
+				case *sfcast.ElementNode:
 					inner = append(inner, g.Tag)
-				case *EachBlockNode:
+				case *sfcast.EachBlockNode:
 					inner = append(inner, "each")
-				case *TextNode:
+				case *sfcast.TextNode:
 					inner = append(inner, "text")
 				}
 			}
 			shape = append(shape, n.Tag+"("+strings.Join(inner, ",")+")")
-		case *TextNode:
+		case *sfcast.TextNode:
 			shape = append(shape, "text")
 		}
 	}
@@ -110,7 +112,7 @@ func TestNormalizeTableRowsInsertsTbody(t *testing.T) {
 		t.Fatalf("normalised table = %s, want %s", got, want)
 	}
 	_, nodes = nestingNodes(t, `<table><tbody>{#each rows as row}<tr><td>{row}</td></tr>{/each}</tbody></table>`)
-	if err := checkHTMLNesting(nodes, HTMLNestingContext{}); err != nil {
+	if err := CheckHTMLNesting(nodes, HTMLNestingContext{}); err != nil {
 		t.Fatal(err)
 	}
 }

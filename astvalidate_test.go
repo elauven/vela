@@ -157,42 +157,13 @@ func TestValidateEveryFixtureClean(t *testing.T) {
 		if err != nil {
 			t.Fatalf("[%s] parseTemplate: %v", name, err)
 		}
-		prog := buildProgramUnvalidated(name, sfc, tmpl, AnalyzeScript(sfc.Script), "vela-000000", false)
+		prog := BuildProgramUnvalidated(name, sfc, tmpl, AnalyzeScript(sfc.Script), "vela-000000", false)
 		if issues := ValidateProgram(prog); len(issues) > 0 {
 			var b strings.Builder
 			for _, iss := range issues {
 				b.WriteString("\n  [" + iss.Kind + "] " + iss.Msg)
 			}
 			t.Errorf("[%s] AST failed validation:%s", name, b.String())
-		}
-	}
-}
-
-func TestNestedEachBranchUsesFragmentLocalHoists(t *testing.T) {
-	src := `<script>
-  let groups = $state([]);
-</script>
-<template>
-  {#each groups as group}
-    {#if group.kind === 'first'}
-      {#each group.items as item}<button>{item}</button>{/each}
-    {:else}
-      {#each group.items as item}<input :value={item} />{/each}
-    {/if}
-  {/each}
-</template>`
-	sfc, err := ParseSFC(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nodes, err := ParseTemplate(sfc.Template)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prog := buildProgramUnvalidated("NestedEach", sfc, nodes, AnalyzeScriptAST(sfc.ScriptAST), "vela-test", false)
-	for _, issue := range ValidateProgram(prog) {
-		if issue.Kind == "duplicate-decl" {
-			t.Fatalf("nested each fragment leaked duplicate declaration: %s", issue.Msg)
 		}
 	}
 }

@@ -294,14 +294,14 @@ func FuzzCodegen(f *testing.F) {
 						r, src)
 				}
 			}()
-			js = generateCodeAST("Fuzz", sfc, tmpl, analysis, "vela-000000")
+			js = GenerateCodeAST("Fuzz", sfc, tmpl, analysis, "vela-000000")
 		}()
 
 		// 2. The generated AST must validate.  buildProgram already
 		//    panics on a validation failure, so reaching here means
 		//    it passed — but re-check buildProgram's tree directly
 		//    for a clearer message if that ever changes.
-		prog := buildProgram("Fuzz", sfc, tmpl, analysis, "vela-000000")
+		prog := BuildProgram("Fuzz", sfc, tmpl, analysis, "vela-000000")
 		if issues := ValidateProgram(prog); len(issues) > 0 {
 			var b strings.Builder
 			for _, iss := range issues {

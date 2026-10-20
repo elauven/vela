@@ -319,7 +319,7 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *SFC, anal
 		PlainInitializers:   ssrPlainInitializers(analysis),
 		Functions:           ssrNamedFunctions(analysis),
 		ScopedCSS:           ExtractScopedCSS(sfc, scopeID),
-		ElementScope:        elementScopeFor(sfc, scopeID),
+		ElementScope:        ElementScopeFor(sfc, scopeID),
 		DeepInitializers:    ssrDeepInitializers(analysis),
 		TemplateOffset:      sfc.TemplateOffset,
 		ScriptOffset:        sfc.ScriptOffset,

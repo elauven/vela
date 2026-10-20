@@ -1,6 +1,9 @@
-package main
+package codegen
 
 import (
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfcast"
+
 	"fmt"
 	"sort"
 	"strings"
@@ -34,7 +37,7 @@ import (
 // matching identifier. It intentionally excludes member-property names and
 // non-computed object keys, while preserving computed keys, shorthand values,
 // spreads, and template-literal interpolations.
-func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
+func visitItemRefs(root jsast.JsNode, itemVar string, onRef func(*jsast.JsIdent)) {
 	if root == nil || itemVar == "" || onRef == nil {
 		return
 	}
@@ -54,12 +57,12 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 	// patternBindsItem reports whether a binding pattern (JsIdent, or
 	// JsObject/JsArrayExpr used as a pattern) introduces a new binding named
 	// itemVar.  Called on function parameters and var-decl LHS.
-	var patternBindsItem func(JsNode) bool
-	patternBindsItem = func(n JsNode) bool {
+	var patternBindsItem func(jsast.JsNode) bool
+	patternBindsItem = func(n jsast.JsNode) bool {
 		switch p := n.(type) {
-		case *JsIdent:
+		case *jsast.JsIdent:
 			return p.Name == itemVar
-		case *JsObjectExpr:
+		case *jsast.JsObjectExpr:
 			for _, prop := range p.Props {
 				if prop.Spread {
 					if patternBindsItem(prop.Value) {
@@ -71,12 +74,12 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 					return true
 				}
 			}
-		case *JsArrayExpr:
+		case *jsast.JsArrayExpr:
 			for _, el := range p.Elems {
 				if el == nil {
 					continue
 				}
-				if sp, ok := el.(*JsSpreadExpr); ok {
+				if sp, ok := el.(*jsast.JsSpreadExpr); ok {
 					if patternBindsItem(sp.X) {
 						return true
 					}
@@ -86,7 +89,7 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 					return true
 				}
 			}
-		case *JsAssignExpr:
+		case *jsast.JsAssignExpr:
 			// Default value in a pattern:  { x = 5 }  or  (x = 5) => ...
 			if p.Op == "=" {
 				return patternBindsItem(p.L)
@@ -101,9 +104,9 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 	// treating a block-level var as block-scoped is safe: we only rewrite
 	// BARE references, and if something is declared by any name in an
 	// enclosing scope, rewriting the name would be wrong anyway.
-	blockShadowsItem := func(body []JsStmt) bool {
+	blockShadowsItem := func(body []jsast.JsStmt) bool {
 		for _, s := range body {
-			vd, ok := s.(*JsVarDecl)
+			vd, ok := s.(*jsast.JsVarDecl)
 			if !ok {
 				continue
 			}
@@ -118,20 +121,20 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 
 	// visit is the recursive walker.  Mirrors WalkNode's shape but handles
 	// scope push/pop and filters property-access positions explicitly.
-	var visit func(JsNode)
-	visit = func(n JsNode) {
+	var visit func(jsast.JsNode)
+	visit = func(n jsast.JsNode) {
 		if n == nil {
 			return
 		}
 		switch node := n.(type) {
 
-		case *JsIdent:
+		case *jsast.JsIdent:
 			if node.Name == itemVar && !isShadowed() {
 				onRef(node)
 			}
 
 		// ── Scope-introducing nodes ──────────────────────────────────────
-		case *JsArrowFunc:
+		case *jsast.JsArrowFunc:
 			shadowed := false
 			for _, p := range node.Params {
 				if patternBindsItem(p) {
@@ -148,7 +151,7 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 			// default expressions.
 			visit(node.Body)
 			shadow = shadow[:len(shadow)-1]
-		case *JsFuncExpr:
+		case *jsast.JsFuncExpr:
 			shadowed := false
 			for _, p := range node.Params {
 				if patternBindsItem(p) {
@@ -159,7 +162,7 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 			shadow = append(shadow, shadowed)
 			visit(node.Body)
 			shadow = shadow[:len(shadow)-1]
-		case *JsFuncDecl:
+		case *jsast.JsFuncDecl:
 			shadowed := false
 			for _, p := range node.Params {
 				if patternBindsItem(p) {
@@ -170,7 +173,7 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 			shadow = append(shadow, shadowed)
 			visit(node.Body)
 			shadow = shadow[:len(shadow)-1]
-		case *JsBlock:
+		case *jsast.JsBlock:
 			shadow = append(shadow, blockShadowsItem(node.Body))
 			for _, s := range node.Body {
 				visit(s)
@@ -178,14 +181,14 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 			shadow = shadow[:len(shadow)-1]
 
 		// ── Property-access filtering ────────────────────────────────────
-		case *JsMemberExpr:
+		case *jsast.JsMemberExpr:
 			visit(node.Obj)
 			// Skip node.Prop unless it's computed — `x[u]` should
 			// rewrite the `u`, but `x.u` should leave it alone.
 			if node.Computed {
 				visit(node.Prop)
 			}
-		case *JsObjectExpr:
+		case *jsast.JsObjectExpr:
 			for _, prop := range node.Props {
 				// Computed keys `{[expr]: x}` ARE value-position expressions
 				// and should be rewritten.  Literal keys `{u: x}` are not
@@ -205,14 +208,14 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 				visit(prop.Value)
 			}
 
-		case *JsProgram:
+		case *jsast.JsProgram:
 			for _, s := range node.Body {
 				visit(s)
 			}
-		case *JsExprStmt:
+		case *jsast.JsExprStmt:
 			visit(node.X)
-		case *JsVarDecl:
-			shadowHere := blockShadowsItem([]JsStmt{node})
+		case *jsast.JsVarDecl:
+			shadowHere := blockShadowsItem([]jsast.JsStmt{node})
 			if shadowHere {
 				// The declaration shadows — but its Init expressions are
 				// evaluated BEFORE the binding is in scope (TDZ notwithstanding
@@ -233,13 +236,13 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 					}
 				}
 			}
-		case *JsIfStmt:
+		case *jsast.JsIfStmt:
 			visit(node.Test)
 			visit(node.Then)
 			if node.Else != nil {
 				visit(node.Else)
 			}
-		case *JsForStmt:
+		case *jsast.JsForStmt:
 			if node.Init != nil {
 				visit(node.Init)
 			}
@@ -250,23 +253,23 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 				visit(node.Update)
 			}
 			visit(node.Body)
-		case *JsForInStmt:
+		case *jsast.JsForInStmt:
 			visit(node.Left)
 			visit(node.Right)
 			visit(node.Body)
-		case *JsWhileStmt:
+		case *jsast.JsWhileStmt:
 			visit(node.Test)
 			visit(node.Body)
-		case *JsDoWhileStmt:
+		case *jsast.JsDoWhileStmt:
 			visit(node.Body)
 			visit(node.Test)
-		case *JsReturnStmt:
+		case *jsast.JsReturnStmt:
 			if node.Arg != nil {
 				visit(node.Arg)
 			}
-		case *JsThrowStmt:
+		case *jsast.JsThrowStmt:
 			visit(node.Arg)
-		case *JsTryStmt:
+		case *jsast.JsTryStmt:
 			visit(node.Block)
 			if node.CatchParam != nil {
 				// catch(param) — treat the param as a new binding; if it
@@ -283,7 +286,7 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 			if node.Finalizer != nil {
 				visit(node.Finalizer)
 			}
-		case *JsSwitchStmt:
+		case *jsast.JsSwitchStmt:
 			visit(node.Disc)
 			for _, c := range node.Cases {
 				if c.Test != nil {
@@ -293,50 +296,50 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 					visit(s)
 				}
 			}
-		case *JsUnaryExpr:
+		case *jsast.JsUnaryExpr:
 			visit(node.X)
-		case *JsBinaryExpr:
+		case *jsast.JsBinaryExpr:
 			visit(node.L)
 			visit(node.R)
-		case *JsLogicalExpr:
+		case *jsast.JsLogicalExpr:
 			visit(node.L)
 			visit(node.R)
-		case *JsAssignExpr:
+		case *jsast.JsAssignExpr:
 			visit(node.L)
 			visit(node.R)
-		case *JsCallExpr:
+		case *jsast.JsCallExpr:
 			visit(node.Callee)
 			for _, a := range node.Args {
 				visit(a)
 			}
-		case *JsNewExpr:
+		case *jsast.JsNewExpr:
 			visit(node.Callee)
 			for _, a := range node.Args {
 				visit(a)
 			}
-		case *JsConditionalExpr:
+		case *jsast.JsConditionalExpr:
 			visit(node.Test)
 			visit(node.Then)
 			visit(node.Else)
-		case *JsSeqExpr:
+		case *jsast.JsSeqExpr:
 			for _, e := range node.Exprs {
 				visit(e)
 			}
-		case *JsSpreadExpr:
+		case *jsast.JsSpreadExpr:
 			visit(node.X)
-		case *JsAwaitExpr:
+		case *jsast.JsAwaitExpr:
 			visit(node.X)
-		case *JsYieldExpr:
+		case *jsast.JsYieldExpr:
 			if node.X != nil {
 				visit(node.X)
 			}
-		case *JsArrayExpr:
+		case *jsast.JsArrayExpr:
 			for _, e := range node.Elems {
 				if e != nil {
 					visit(e)
 				}
 			}
-		case *JsTemplateLit:
+		case *jsast.JsTemplateLit:
 			// Template literals are structured: descend into each
 			// ${…} interpolation expression so dependency collection
 			// sees identifiers used inside string interpolation.
@@ -344,15 +347,15 @@ func visitItemRefs(root JsNode, itemVar string, onRef func(*JsIdent)) {
 				visit(e)
 			}
 		// Leaves / no-op nodes
-		case *JsLiteral, *JsThisExpr, *JsSuperExpr,
-			*JsBreakStmt, *JsContinueStmt,
-			*JsEmptyStmt, *JsDebuggerStmt:
+		case *jsast.JsLiteral, *jsast.JsThisExpr, *jsast.JsSuperExpr,
+			*jsast.JsBreakStmt, *jsast.JsContinueStmt,
+			*jsast.JsEmptyStmt, *jsast.JsDebuggerStmt:
 		default:
 			// Fallback: fall back to generic WalkNode to at least visit
 			// children.  This may double-visit if we later add a specific
 			// case, but the hits list de-dupes via overlap-elimination
 			// at splice time.
-			WalkNode(node, func(c JsNode) bool {
+			jsast.WalkNode(node, func(c jsast.JsNode) bool {
 				if c == node {
 					return true // don't re-dispatch self
 				}
@@ -377,14 +380,14 @@ func rewriteItemRef(src, itemVar, boxVar string) string {
 		return src
 	}
 
-	prog := ParseJS(src)
+	prog := jsast.ParseJS(src)
 	if prog == nil {
 		return src
 	}
 
 	// Collect source spans, then splice them all at once in source order.
 	var hits []struct{ pos, end int }
-	visitItemRefs(prog, itemVar, func(node *JsIdent) {
+	visitItemRefs(prog, itemVar, func(node *jsast.JsIdent) {
 		hits = append(hits, struct{ pos, end int }{node.Pos, node.End})
 	})
 
@@ -415,11 +418,11 @@ func rewriteItemRef(src, itemVar, boxVar string) string {
 // row box without parsing or printing template source again. It returns root
 // for fluent use by the AST generator; the tree is deliberately mutated in
 // place because a row attribute expression is lowered exactly once.
-func rewriteItemRefAST(root JsExpr, itemVar, boxVar string) JsExpr {
+func rewriteItemRefAST(root jsast.JsExpr, itemVar, boxVar string) jsast.JsExpr {
 	if root == nil || itemVar == "" || boxVar == "" || itemVar == boxVar {
 		return root
 	}
-	visitItemRefs(root, itemVar, func(ref *JsIdent) {
+	visitItemRefs(root, itemVar, func(ref *jsast.JsIdent) {
 		ref.Name = boxVar
 	})
 	return root
@@ -431,7 +434,7 @@ func rewriteItemRefAST(root JsExpr, itemVar, boxVar string) JsExpr {
 
 // buildExpr produces a JS expression that evaluates to the text content
 // of a mixed static/dynamic TextNode.
-func buildExpr(parts []*Part) string {
+func buildExpr(parts []*sfcast.Part) string {
 	if len(parts) == 1 {
 		if parts[0].Static {
 			return backtickString(parts[0].Value)
@@ -515,11 +518,11 @@ func twoWayBindSpec(tag, attrName string) (twoWaySpec, bool) {
 	return twoWaySpec{}, false
 }
 
-// isBoolAttr reports whether name is a boolean HTML attribute.
+// IsBoolAttr reports whether name is a boolean HTML attribute.
 // Boolean attributes must be set via the DOM property (element.checked = bool)
 // rather than setAttribute, because setAttribute('checked', 'false') still
 // marks the element as checked — the mere presence of the attribute is truthy.
-func isBoolAttr(name string) bool {
+func IsBoolAttr(name string) bool {
 	switch strings.ToLower(name) {
 	case "checked", "disabled", "readonly", "required", "selected",
 		"multiple", "autofocus", "autoplay", "controls", "default",
@@ -542,8 +545,8 @@ func bindAttrStmt(elem, attr, expr, indent string) string {
 	// caller — there are many — emits the inner expression directly
 	// rather than `String({foo})`, which evaluates to "[object
 	// Object]" at runtime via the shorthand-object-literal shape.
-	expr = UnwrapBraces(expr)
-	if isBoolAttr(attr) {
+	expr = sfcast.UnwrapBraces(expr)
+	if IsBoolAttr(attr) {
 		return fmt.Sprintf("%s%s.%s = !!(%s);", indent, elem, attr, expr)
 	}
 	if attr == "class" {
@@ -560,7 +563,7 @@ func bindAttrStmt(elem, attr, expr, indent string) string {
 // "btn" always and toggles "active".
 func classDirStmt(elem, cls, expr, indent string) string {
 	return fmt.Sprintf("%s%s.classList.toggle('%s', !!(%s));",
-		indent, elem, cls, AttrExprToJS(expr))
+		indent, elem, cls, sfcast.AttrExprToJS(expr))
 }
 
 // styleDirStmt emits a `style:foo={expr}` directive — set an inline
@@ -570,7 +573,7 @@ func classDirStmt(elem, cls, expr, indent string) string {
 // them.
 func styleDirStmt(elem, prop, expr, indent string) string {
 	return fmt.Sprintf("%s%s.style.setProperty('%s', String(%s));",
-		indent, elem, prop, AttrExprToJS(expr))
+		indent, elem, prop, sfcast.AttrExprToJS(expr))
 }
 
 // isHandlerExpr returns true when s is already a function/arrow expression
@@ -592,15 +595,6 @@ func isHandlerExpr(s string) bool {
 	if idx := strings.Index(s, "=>"); idx > 0 {
 		param := strings.TrimSpace(s[:idx])
 		return isSimpleIdent(param)
-	}
-	return false
-}
-
-func containsStr(slice []string, s string) bool {
-	for _, v := range slice {
-		if v == s {
-			return true
-		}
 	}
 	return false
 }
@@ -691,9 +685,9 @@ var voidTags = map[string]bool{
 // deterministic, unchanging DOM — no reactive bindings, no events, no
 // interpolation, no structural directives, no component instantiations,
 // no slots.
-func isFullyStatic(node Node) bool {
+func isFullyStatic(node sfcast.Node) bool {
 	switch n := node.(type) {
-	case *TextNode:
+	case *sfcast.TextNode:
 		for _, p := range n.Parts {
 			if !p.Static {
 				return false
@@ -701,7 +695,7 @@ func isFullyStatic(node Node) bool {
 		}
 		return true
 
-	case *ElementNode:
+	case *sfcast.ElementNode:
 		for _, attr := range n.Attrs {
 			if attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis ||
 				attr.IsClassDir || attr.IsStyleDir {
@@ -721,7 +715,7 @@ func isFullyStatic(node Node) bool {
 }
 
 // allStatic returns true iff every node in the list is fully-static.
-func allStatic(nodes []Node) bool {
+func allStatic(nodes []sfcast.Node) bool {
 	for _, n := range nodes {
 		if !isFullyStatic(n) {
 			return false
@@ -735,9 +729,9 @@ func allStatic(nodes []Node) bool {
 // only TextNodes can still be compressed, but its savings are marginal.
 // Keeping this threshold permissive: even a single-element static subtree
 // pays back the HTML-parse cost when measured by operation count.
-func hasElement(nodes []Node) bool {
+func hasElement(nodes []sfcast.Node) bool {
 	for _, n := range nodes {
-		if _, ok := n.(*ElementNode); ok {
+		if _, ok := n.(*sfcast.ElementNode); ok {
 			return true
 		}
 	}
@@ -750,7 +744,7 @@ func hasElement(nodes []Node) bool {
 // double-quotes so the string can sit inside a single-quoted JS literal.
 //
 // Precondition: every node passed must satisfy isFullyStatic.
-func emitStaticHTML(nodes []Node, scopeID string) string {
+func emitStaticHTML(nodes []sfcast.Node, scopeID string) string {
 	var b strings.Builder
 	for _, node := range nodes {
 		emitStaticHTMLNode(&b, node, scopeID)
@@ -758,13 +752,13 @@ func emitStaticHTML(nodes []Node, scopeID string) string {
 	return b.String()
 }
 
-func emitStaticHTMLNode(b *strings.Builder, node Node, scopeID string) {
+func emitStaticHTMLNode(b *strings.Builder, node sfcast.Node, scopeID string) {
 	switch n := node.(type) {
-	case *TextNode:
+	case *sfcast.TextNode:
 		for _, p := range n.Parts {
 			b.WriteString(escapeHTMLText(p.Value))
 		}
-	case *ElementNode:
+	case *sfcast.ElementNode:
 		b.WriteByte('<')
 		b.WriteString(n.Tag)
 		if scopeID != "" {

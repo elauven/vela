@@ -180,42 +180,6 @@ func TestSharedScriptASTDoesNotLeakLoweredSetterIntoValidation(t *testing.T) {
 	}
 }
 
-func TestScriptPlanRetainsOwnedUserStatementUntilTargetBuild(t *testing.T) {
-	sfc, err := ParseSFC(`<script>
-  let count = $state(0);
-  function increment() { count++; }
-</script><template><button>{count}</button></template>`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nodes, err := ParseTemplate(sfc.Template)
-	if err != nil {
-		t.Fatal(err)
-	}
-	analysis := AnalyzeScriptAST(sfc.ScriptAST)
-	var user *ScriptPlanStep
-	for i := range analysis.ScriptPlan {
-		if analysis.ScriptPlan[i].Kind == "user" {
-			user = &analysis.ScriptPlan[i]
-			break
-		}
-	}
-	if user == nil || user.Stmt != sfc.ScriptAST.Program.Body[1] {
-		t.Fatalf("ScriptPlan did not retain the owned function statement: %+v", user)
-	}
-	if user.SourcePos != user.Stmt.NodePos() {
-		t.Fatalf("user source position = %d, want AST position %d", user.SourcePos, user.Stmt.NodePos())
-	}
-	if strings.Contains(PrintJS(&JsProgram{Body: []JsStmt{user.Stmt}}, PrintPretty), "$$set_count") {
-		t.Fatal("source ScriptAST was lowered before input validation")
-	}
-
-	target := buildProgramUnvalidated("Plan", sfc, nodes, analysis, "vela-test", false)
-	if !strings.Contains(PrintJS(target, PrintPretty), "$$set_count(count + 1)") {
-		t.Fatal("target build did not lower ScriptPlan state write")
-	}
-}
-
 func TestMinifyEliminatesFromOwnedScriptAST(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "Minify.vela")

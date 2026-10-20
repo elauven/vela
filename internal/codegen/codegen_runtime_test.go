@@ -1,4 +1,4 @@
-package main
+package codegen
 
 // codegen_runtime_test.go — regression tests for two more codegen
 // bugs surfaced by running the playground Demo against a real DOM:
@@ -22,6 +22,10 @@ import (
 
 // ─────────────────────────────────────────────
 //  Bug 8 — DocumentFragment insertAdjacentHTML
+// ─────────────────────────────────────────────
+
+// ─────────────────────────────────────────────
+//  Bug 9 — inline whitespace
 // ─────────────────────────────────────────────
 
 func TestBug8_SlotFactoryUsesHelper(t *testing.T) {
@@ -59,10 +63,6 @@ func TestBug8_SlotFactoryUsesHelper(t *testing.T) {
 		}
 	}
 }
-
-// ─────────────────────────────────────────────
-//  Bug 9 — inline whitespace
-// ─────────────────────────────────────────────
 
 func TestBug9_LeadingSpaceBeforeInlineElement(t *testing.T) {
 	src := `<script></script>

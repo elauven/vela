@@ -366,7 +366,7 @@ func compileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, hos
 			}
 		}
 	}
-	normalizeTableRows(sfc.TemplateAST.Nodes)
+	NormalizeTableRows(sfc.TemplateAST.Nodes)
 	if err := checkSSRBlocksNesting(src, string(data), sfc.TemplateAST.Nodes, links); err != nil {
 		return err
 	}

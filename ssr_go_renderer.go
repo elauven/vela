@@ -528,7 +528,7 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			if attr.Expr == nil {
 				return nil, ssrExprUnsupported(attr.Span.Start, "dynamic attribute %q has no cached expression", attr.Name)
 			}
-			if isBoolAttr(attr.Name) {
+			if IsBoolAttr(attr.Name) {
 				condition, err := e.translate("attribute", attr.Name, attr.Expr, e.ctx)
 				if err != nil {
 					return nil, err
@@ -659,9 +659,9 @@ func (e *ssrGoEmitter) eachBlock(node *SSRPlanEach) ([]goast.Stmt, error) {
 	}
 	id := e.eachNext
 	e.eachNext++
-	iterName := "ssrEach" + itoa(id)
-	itemName := "ssrEachItem" + itoa(id)
-	indexName := "ssrEachIndex" + itoa(id)
+	iterName := "ssrEach" + strconv.Itoa(id)
+	itemName := "ssrEachItem" + strconv.Itoa(id)
+	indexName := "ssrEachIndex" + strconv.Itoa(id)
 	iterIdent := goast.NewIdent(iterName)
 	itemIdent := goast.NewIdent(itemName)
 	child := *e

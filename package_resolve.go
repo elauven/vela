@@ -109,7 +109,7 @@ func checkScriptPackageImports(src string, script *ScriptAST, ds *DiagSet) {
 				spec = x.Source
 			}
 		}
-		if !isPackageSpecifier(spec) && !strings.HasPrefix(spec, "node:") {
+		if !IsPackageSpecifier(spec) && !strings.HasPrefix(spec, "node:") {
 			continue
 		}
 		if problem := checkPackageSpecifier(filepath.Dir(src), spec); problem != "" {
@@ -121,8 +121,8 @@ func checkScriptPackageImports(src string, script *ScriptAST, ds *DiagSet) {
 // checkModulePackageImports warns about the unresolved package imports of a
 // copied JavaScript module, in the compiler's diagnostic format.
 func checkModulePackageImports(src, source string) {
-	for _, spec := range moduleSpecifiers(source) {
-		if !isPackageSpecifier(spec.Value) && !strings.HasPrefix(spec.Value, "node:") {
+	for _, spec := range ModuleSpecifiers(source) {
+		if !IsPackageSpecifier(spec.Value) && !strings.HasPrefix(spec.Value, "node:") {
 			continue
 		}
 		problem := checkPackageSpecifier(filepath.Dir(src), spec.Value)

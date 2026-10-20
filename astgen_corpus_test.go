@@ -456,7 +456,7 @@ func TestASTGenCorpus(t *testing.T) {
 						t.Fatalf("generateCodeAST panicked: %v", r)
 					}
 				}()
-				out = generateCodeAST(name, sfc, tmpl, analysis, "vela-000000")
+				out = GenerateCodeAST(name, sfc, tmpl, analysis, "vela-000000")
 			}()
 
 			if !strings.Contains(out, "export function "+name) {
@@ -478,7 +478,7 @@ func TestASTGenTransitiveDerived(t *testing.T) {
 	sfc, _ := ParseSFC(src)
 	tmpl, _ := ParseTemplate(sfc.Template)
 	analysis := AnalyzeScript(sfc.Script)
-	out := generateCodeAST("derived_chain", sfc, tmpl, analysis, "vela-000000")
+	out := GenerateCodeAST("derived_chain", sfc, tmpl, analysis, "vela-000000")
 
 	// $$set_n must call $$upd_d1, $$upd_d2 AND $$upd_d3 — the full
 	// chain — and in that order.

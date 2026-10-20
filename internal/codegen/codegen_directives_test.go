@@ -1,4 +1,4 @@
-package main
+package codegen
 
 // codegen_directives_test.go — element directives `class:` and `style:`.
 //

@@ -1,4 +1,4 @@
-package main
+package codegen
 
 // imports.go — import statement processing for the Vela compiler.
 //
@@ -8,6 +8,8 @@ package main
 //   3. Emit the rewritten imports into the generated JS output
 
 import (
+	"github.com/elauven/vela/internal/jsast"
+
 	"github.com/elauven/vela/runtime"
 
 	"path/filepath"
@@ -38,19 +40,19 @@ type ImportRecord struct {
 // comments, all of which the previous regex-based implementation either
 // missed silently or tagged with the wrong `Raw` content.
 func ParseImportRecords(script string, lineOffset int) []ImportRecord {
-	return importRecordsFromProgram(script, ParseJS(script), lineOffset)
+	return importRecordsFromProgram(script, jsast.ParseJS(script), lineOffset)
 }
 
 // importRecordsFromProgram derives import metadata from an already-owned
 // program. The component pipeline calls this variant so import diagnostics and
 // project staging do not parse the <script> section a second time.
-func importRecordsFromProgram(script string, prog *JsProgram, lineOffset int) []ImportRecord {
+func importRecordsFromProgram(script string, prog *jsast.JsProgram, lineOffset int) []ImportRecord {
 	if prog == nil {
 		return nil
 	}
 	var recs []ImportRecord
 	for _, stmt := range prog.Body {
-		d, ok := stmt.(*JsImportDecl)
+		d, ok := stmt.(*jsast.JsImportDecl)
 		if !ok {
 			continue
 		}
@@ -135,7 +137,7 @@ func RewriteImportPath(importPath string) string {
 // side-effect imports — all the shapes the old regex-based rewriter
 // could not reach.
 func RewriteScriptImports(script string) string {
-	prog := ParseJS(script)
+	prog := jsast.ParseJS(script)
 	if prog == nil {
 		return script
 	}
@@ -148,7 +150,7 @@ func RewriteScriptImports(script string) string {
 	}
 	var splices []splice
 	for _, stmt := range prog.Body {
-		d, ok := stmt.(*JsImportDecl)
+		d, ok := stmt.(*jsast.JsImportDecl)
 		if !ok {
 			continue
 		}
@@ -243,15 +245,15 @@ func findLastStringLit(script string, start, end int) (int, int, bool) {
 // them to the single copies at the output root (runtimeImportFor).
 const defaultRuntimeImport = "./runtime.js"
 
-// runtimeContractExport is the contract marker every generated module that
+// RuntimeContractExport is the contract marker every generated module that
 // uses the runtime imports (R-12.2d). Change its name whenever generated code
 // starts to depend on a new or changed runtime API, so a stale runtime fails
 // at module load with a missing-export error.
-const runtimeContractExport = "$$runtimeContract1"
+const RuntimeContractExport = "$$runtimeContract1"
 
-// runtimeExportNames returns the names a runtime module exports with
+// RuntimeExportNames returns the names a runtime module exports with
 // `export function name` or `export const name`.
-func runtimeExportNames(source []byte) map[string]bool {
+func RuntimeExportNames(source []byte) map[string]bool {
 	names := map[string]bool{}
 	for _, line := range strings.Split(string(source), "\n") {
 		for _, prefix := range []string{"export function ", "export const "} {
@@ -272,8 +274,8 @@ func runtimeExportNames(source []byte) map[string]bool {
 
 // runtimeImportDecls splits runtime helper imports between the core runtime
 // and the block runtime, keeping their order.
-func runtimeImportDecls(specs []JsImportSpec) []JsStmt {
-	var core, blocks []JsImportSpec
+func runtimeImportDecls(specs []jsast.JsImportSpec) []jsast.JsStmt {
+	var core, blocks []jsast.JsImportSpec
 	for _, spec := range specs {
 		if blocksRuntimeExports[spec.Imported] {
 			blocks = append(blocks, spec)
@@ -281,16 +283,16 @@ func runtimeImportDecls(specs []JsImportSpec) []JsStmt {
 			core = append(core, spec)
 		}
 	}
-	var decls []JsStmt
+	var decls []jsast.JsStmt
 	for _, group := range []struct {
-		specs  []JsImportSpec
+		specs  []jsast.JsImportSpec
 		source string
 	}{{core, defaultRuntimeImport}, {blocks, blocksRuntimeImport}} {
 		if len(group.specs) == 0 {
 			continue
 		}
-		decls = append(decls, &JsImportDecl{
-			BaseStmt:   BaseStmt{BaseNode: GenNode()},
+		decls = append(decls, &jsast.JsImportDecl{
+			BaseStmt:   jsast.BaseStmt{BaseNode: jsast.GenNode()},
 			Specifiers: group.specs,
 			Source:     group.source,
 		})
@@ -298,9 +300,9 @@ func runtimeImportDecls(specs []JsImportSpec) []JsStmt {
 	return decls
 }
 
-// runtimeImportFor returns the relative module specifier from a generated
+// RuntimeImportFor returns the relative module specifier from a generated
 // module in fromDir to the runtime written at outRoot/runtime.js.
-func runtimeImportFor(fromDir, outRoot string) string {
+func RuntimeImportFor(fromDir, outRoot string) string {
 	rel, err := filepath.Rel(fromDir, filepath.Join(outRoot, "runtime.js"))
 	if err != nil {
 		return defaultRuntimeImport
@@ -312,12 +314,12 @@ func runtimeImportFor(fromDir, outRoot string) string {
 	return rel
 }
 
-// finalizeRuntimeImports prepares the runtime imports of a generated module
+// FinalizeRuntimeImports prepares the runtime imports of a generated module
 // for output: a module that uses the runtime also imports the contract
 // marker, and both runtime specifiers are retargeted to the copies next to
 // runtimeSpecifier (empty means "./runtime.js"), so all modules of one build
 // share one runtime instance.
-func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
+func FinalizeRuntimeImports(prog *jsast.JsProgram, runtimeSpecifier string) {
 	if prog == nil {
 		return
 	}
@@ -328,10 +330,10 @@ func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
 	if runtimeSpecifier == runtime.PackageName {
 		blocksSpecifier = runtime.PackageSpecifiers["runtime-blocks.js"]
 	}
-	var core *JsImportDecl
+	var core *jsast.JsImportDecl
 	usesRuntime := false
 	for _, stmt := range prog.Body {
-		imp, ok := stmt.(*JsImportDecl)
+		imp, ok := stmt.(*jsast.JsImportDecl)
 		if !ok {
 			continue
 		}
@@ -351,15 +353,15 @@ func finalizeRuntimeImports(prog *JsProgram, runtimeSpecifier string) {
 		return
 	}
 	if core == nil {
-		core = &JsImportDecl{BaseStmt: BaseStmt{BaseNode: GenNode()}, Source: runtimeSpecifier}
-		prog.Body = append([]JsStmt{core}, prog.Body...)
+		core = &jsast.JsImportDecl{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}, Source: runtimeSpecifier}
+		prog.Body = append([]jsast.JsStmt{core}, prog.Body...)
 	}
 	for _, spec := range core.Specifiers {
-		if spec.Imported == runtimeContractExport {
+		if spec.Imported == RuntimeContractExport {
 			return
 		}
 	}
-	core.Specifiers = append(core.Specifiers, JsImportSpec{Imported: runtimeContractExport})
+	core.Specifiers = append(core.Specifiers, jsast.JsImportSpec{Imported: RuntimeContractExport})
 }
 
 // moduleSpecifier is a module specifier string of a plain JavaScript module:
@@ -373,19 +375,19 @@ type moduleSpecifier struct {
 	Line  int
 }
 
-// moduleSpecifiers lists the module specifiers of a JavaScript module. Strings
+// ModuleSpecifiers lists the module specifiers of a JavaScript module. Strings
 // elsewhere, template literals and comments are not specifiers; a specifier
 // with escapes is skipped.
-func moduleSpecifiers(src string) []moduleSpecifier {
-	lexer := NewLexer(src)
+func ModuleSpecifiers(src string) []moduleSpecifier {
+	lexer := jsast.NewLexer(src)
 	var prev, prev2 string
 	var out []moduleSpecifier
 	for {
 		tok := lexer.Next()
-		if tok.Kind == TokEOF {
+		if tok.Kind == jsast.TokEOF {
 			break
 		}
-		if tok.Kind == TokString && len(tok.Val) >= 2 && (prev == "from" || prev == "import" || (prev == "(" && prev2 == "import")) {
+		if tok.Kind == jsast.TokString && len(tok.Val) >= 2 && (prev == "from" || prev == "import" || (prev == "(" && prev2 == "import")) {
 			value := tok.Val[1 : len(tok.Val)-1]
 			if !strings.Contains(value, "\\") {
 				out = append(out, moduleSpecifier{Value: value, Quote: tok.Val[:1], Pos: tok.Pos, End: tok.End, Line: tok.Line})
@@ -396,29 +398,29 @@ func moduleSpecifiers(src string) []moduleSpecifier {
 	return out
 }
 
-// isPackageSpecifier reports a bare specifier of an npm package: not a
+// IsPackageSpecifier reports a bare specifier of an npm package: not a
 // relative or absolute path, not a URL or node: built-in, and not one of the
 // compiler's own modules (vela, vela/store).
-func isPackageSpecifier(spec string) bool {
+func IsPackageSpecifier(spec string) bool {
 	if spec == "" || strings.HasPrefix(spec, ".") || strings.HasPrefix(spec, "/") || strings.Contains(spec, ":") {
 		return false
 	}
 	return spec != "vela" && spec != "vela/store"
 }
 
-// rewriteJSModuleSpecifiers prepares a copied JavaScript module of a project:
+// RewriteJSModuleSpecifiers prepares a copied JavaScript module of a project:
 // `.vela` specifiers point to the compiled `.js` modules, and the compiler
 // modules `vela` and `vela/store` point to the runtime (runtimeSpecifier,
 // the same import generated components use). Every other byte is kept, so a
 // project's .js files (an entry point importing App.vela, a store module)
 // reach a bundler or the browser with imports that resolve.
-func rewriteJSModuleSpecifiers(src, runtimeSpecifier string) string {
+func RewriteJSModuleSpecifiers(src, runtimeSpecifier string) string {
 	if runtimeSpecifier == "" {
 		runtimeSpecifier = defaultRuntimeImport
 	}
 	var out strings.Builder
 	last := 0
-	for _, spec := range moduleSpecifiers(src) {
+	for _, spec := range ModuleSpecifiers(src) {
 		replacement := ""
 		switch {
 		case strings.HasSuffix(spec.Value, ".vela") && (strings.HasPrefix(spec.Value, ".") || strings.HasPrefix(spec.Value, "/")):

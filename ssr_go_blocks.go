@@ -196,7 +196,7 @@ func (e *ssrGoEmitter) ranged(state string, body []goast.Stmt) []goast.Stmt {
 // awaitSite is the compile-time await site identifier of the payload stream
 // (S-6.4): the component name and the await's dynamic ID.
 func (e *ssrGoEmitter) awaitSite(id int) string {
-	return e.componentName + "#" + itoa(id)
+	return e.componentName + "#" + strconv.Itoa(id)
 }
 
 func buildSSRGoBlocksSkeleton(plan *SSRRenderPlan, packageName string, includeProps bool) (*goast.File, error) {
@@ -316,7 +316,7 @@ func (e *ssrGoEmitter) blocksIf(node *SSRPlanIf) ([]goast.Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
-		body := e.ranged(itoa(index), children)
+		body := e.ranged(strconv.Itoa(index), children)
 		if branch.Condition == nil {
 			if previous == nil {
 				return nil, ssrExprUnsupported(branch.Span.Start, "SSR if block has an unconditional first branch")
@@ -407,8 +407,8 @@ func checkSSRBlocksNesting(filename, source string, nodes []Node, links map[stri
 		}
 		return "div"
 	}}
-	if err := checkHTMLNesting(nodes, ctx); err != nil {
-		line, column := sourceLineColumn(source, err.Pos)
+	if err := CheckHTMLNesting(nodes, ctx); err != nil {
+		line, column := SourceLineColumn(source, err.Pos)
 		return fmt.Errorf("%s:%d:%d: %w", filename, line+1, column+1, err)
 	}
 	return nil
@@ -442,7 +442,7 @@ func (e *ssrGoEmitter) blocksAwaitBlock(node *SSRPlanAwait, pending []goast.Stmt
 		// Settling reads and may set the evaluation state.
 		e.region.usesJS = true
 	}
-	id := itoa(node.DynamicID)
+	id := strconv.Itoa(node.DynamicID)
 	snapshot, tokenVar, value := "ssrAwaitSnapshot"+id, "ssrAwaitToken"+id, "ssrAwaitValue"+id
 	site := &goast.BasicLit{Kind: token.STRING, Value: strconv.Quote(e.awaitSite(node.DynamicID))}
 	branch := func(nodes []SSRPlanNode, binding string) ([]goast.Stmt, error) {

@@ -1,8 +1,11 @@
-package main
+package codegen
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/sfcast"
 )
 
 // onMount and onDestroy are compiler intrinsics — they get extracted
@@ -14,20 +17,36 @@ import (
 // `import { onMount } from './runtime.js'` that fails at module load
 // with "doesn't provide an export named 'onMount'".
 
+// ─────────────────────────────────────────────
+//  Aliased intrinsics — `import { onMount as init } from 'vela'`
+// ─────────────────────────────────────────────
+
+// Before this fix: the import was stripped (the imported NAME
+// matched a Vela intrinsic), but the call survived as a
+// reference to an undeclared local — `init` is not defined at
+// module load.
+//
+// The fix records each intrinsic-from-'vela' import as
+// `localAlias → originalIntrinsic` in Analysis.IntrinsicAliases
+// and threads the map into extractLifecycle.  Aliased calls now
+// get extracted into Lifecycles like their canonical
+// counterparts, and the call site is removed from CleanScript so
+// no dangling reference survives.
+
 // compile returns the full generated JS for a small SFC.
 func compileLifecycle(t *testing.T, script string) string {
 	t.Helper()
 	src := "<script>\n" + script + "\n</script>\n<template><p>x</p></template>"
-	sfc, err := ParseSFC(src)
+	sfc, err := sfcast.ParseSFC(src)
 	if err != nil {
 		t.Fatalf("parseSFC: %v", err)
 	}
-	tmpl, err := ParseTemplate(sfc.Template)
+	tmpl, err := sfcast.ParseTemplate(sfc.Template)
 	if err != nil {
 		t.Fatalf("parseTemplate: %v", err)
 	}
-	a := AnalyzeScript(sfc.Script)
-	return generateCodeAST("T", sfc, tmpl, a, "vela-test")
+	a := analyzer.AnalyzeScript(sfc.Script)
+	return GenerateCodeAST("T", sfc, tmpl, a, "vela-test")
 }
 
 // A bare `import { onMount } from 'vela'` must vanish entirely —
@@ -157,22 +176,6 @@ func TestComponentHasDefaultExport(t *testing.T) {
 		t.Errorf("expected default export `export default T;`:\n%s", out)
 	}
 }
-
-// ─────────────────────────────────────────────
-//  Aliased intrinsics — `import { onMount as init } from 'vela'`
-// ─────────────────────────────────────────────
-
-// Before this fix: the import was stripped (the imported NAME
-// matched a Vela intrinsic), but the call survived as a
-// reference to an undeclared local — `init` is not defined at
-// module load.
-//
-// The fix records each intrinsic-from-'vela' import as
-// `localAlias → originalIntrinsic` in Analysis.IntrinsicAliases
-// and threads the map into extractLifecycle.  Aliased calls now
-// get extracted into Lifecycles like their canonical
-// counterparts, and the call site is removed from CleanScript so
-// no dangling reference survives.
 
 func TestAliasedOnMount_Recognized(t *testing.T) {
 	out := compileLifecycle(t, `
