@@ -3,3 +3,4 @@ package main
 //go:generate go run ./tools/aliasgen internal/jsast jsast github.com/elauven/vela/internal/jsast jsast_compat.go
 //go:generate go run ./tools/aliasgen internal/source source github.com/elauven/vela/internal/source source_compat.go
 //go:generate go run ./tools/aliasgen internal/css css github.com/elauven/vela/internal/css css_compat.go
+//go:generate go run ./tools/aliasgen internal/diag diag github.com/elauven/vela/internal/diag diag_compat.go
