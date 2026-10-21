@@ -12,3 +12,6 @@ test_projects/*/public/dist
 /docs/archive/
 /docs/SSR_DELIVERY_SPEC.md
 /docs/ONBOARDING.md
+
+# Binaries of the compiler platform packages, built by the release workflow.
+/packages/compiler-*/bin/

@@ -7,6 +7,11 @@ parsing the CLI's text. Protocol version: **1**.
 The protocol compiles one client component per request. Server rendering
 (`--ssr`) is a project build and is not part of it.
 
+From JavaScript, `@govela/compiler` wraps the protocol: `startService()`
+starts `vela serve --stdio`, checks the handshake against its own version,
+and returns `compile(request)` and `close()`; `compile(request)` runs one
+request in a short-lived service. The types are in its `index.d.ts`.
+
 ## Commands
 
 ```sh

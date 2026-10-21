@@ -78,6 +78,7 @@ move; new code imports the packages directly.
 | `package_imports.go`, `package_resolve.go` | Package imports, `vela.manifest.json`, `--check-deps` |
 | `ssr_project.go`, `ssr_roots.go` | SSR project build, manifest |
 | `runtime_package.go` | `@govela/runtime` generator |
+| `compiler_package.go` | Manifests of `@govela/compiler` and its platform packages |
 
 | Package | Role |
 | --- | --- |

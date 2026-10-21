@@ -73,7 +73,8 @@ JavaScript engine.
 ## Quick start
 
 ```sh
-go install github.com/elauven/vela@latest
+go install github.com/elauven/vela@latest   # or, in a JavaScript project:
+npm i -D @govela/compiler                   # then npx vela …
 
 vela --project src --out build          # compile every component in src/
 vela --project src --out build --watch  # recompile on change

@@ -677,6 +677,11 @@ that do not resolve in `node_modules` (package missing, subpath not
 exported, `node:` built-ins). It is off by default because a package may
 also come from a CDN through an import map.
 
+In a JavaScript project, install the compiler from npm instead of Go:
+`npm i -D @govela/compiler @govela/runtime` (the same version) gives
+`npx vela` with a prebuilt binary for linux, macOS and Windows, and a
+JavaScript API over the compiler service (`compile`, `startService`).
+
 Build settings can live in `vela.config.json` next to the project
 (`{"project": "src", "out": "build", "runtimeImport": "bare"}`); flags
 override it. Bundler plugins and editors compile through the compiler

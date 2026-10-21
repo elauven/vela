@@ -1,9 +1,10 @@
 name: Release
 
-# A tag vX.Y.Z (docs/RELEASING.md) builds the compiler for every platform and
-# publishes a GitHub release with the binaries and their checksums. The Go
-# runtime is released by its own tag ssr_runtime/vX.Y.Z, which needs no build;
-# the npm package is published by hand.
+# A tag vX.Y.Z (docs/RELEASING.md) builds the compiler for every platform,
+# publishes a GitHub release with the binaries and their checksums, and
+# publishes the npm packages of that version: the platform packages with the
+# binaries, @govela/compiler and @govela/runtime. The Go runtime is released
+# by its own tag ssr_runtime/vX.Y.Z, which needs no build.
 
 on:
   push:
@@ -11,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write # npm provenance
 
 jobs:
   release:
@@ -48,9 +50,56 @@ jobs:
           done
           (cd dist && sha256sum vela-* > SHA256SUMS)
 
+      # The manifests are generated with Version (TestCompilerPackagesAreGenerated,
+      # TestRuntimePackageIsGenerated); every package must carry the tag's version.
+      - name: Check the npm package versions
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          for manifest in packages/*/package.json; do
+            node -e '
+              const [file, want] = process.argv.slice(1);
+              const m = JSON.parse(require("fs").readFileSync(file, "utf8"));
+              const wrong = [m.version, ...Object.values(m.optionalDependencies ?? {})].filter((v) => v !== want);
+              if (wrong.length) { console.error(`${file}: ${wrong.join(", ")}, want ${want}`); process.exit(1); }
+            ' "$manifest" "$want"
+          done
+
+      - name: Put the binaries into the platform packages
+        run: |
+          for target in linux/amd64:linux-x64 linux/arm64:linux-arm64 darwin/amd64:darwin-x64 darwin/arm64:darwin-arm64 windows/amd64:win32-x64; do
+            go=${target%%:*}; npm=${target#*:}
+            os=${go%/*}; arch=${go#*/}; ext=""
+            [ "$os" = windows ] && ext=.exe
+            mkdir -p "packages/compiler-$npm/bin"
+            cp "dist/vela-$os-$arch$ext" "packages/compiler-$npm/bin/vela$ext"
+            chmod +x "packages/compiler-$npm/bin/vela$ext"
+          done
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "Vela $GITHUB_REF_NAME" --generate-notes --verify-tag
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Platform packages first, so the optional dependencies of
+      # @govela/compiler exist when it is published. A version that is
+      # already on npm is skipped, so a failed run can be repeated.
+      - name: Publish the npm packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for dir in packages/compiler-* packages/runtime packages/compiler; do
+            name=$(node -p "require('./$dir/package.json').name")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is already published"
+              continue
+            fi
+            npm publish "$dir" --access public --provenance
+          done

@@ -1,6 +1,6 @@
 # Releasing
 
-One repository, three published products, released together with the same
+One repository, four published products, released together with the same
 version `vX.Y.Z` while the contract is in `v0` (docs/SSR_TRANSLATION_CONTRACT.md
 §12).
 
@@ -8,11 +8,18 @@ version `vX.Y.Z` while the contract is in `v0` (docs/SSR_TRANSLATION_CONTRACT.md
 | --- | --- | --- |
 | Compiler `vela` | repository root (module `github.com/elauven/vela`) | tag `vX.Y.Z`; `.github/workflows/release.yml` builds the binaries and publishes the GitHub release |
 | Go SSR runtime | `ssr_runtime/` (nested module `github.com/elauven/vela/ssr_runtime`) | tag `ssr_runtime/vX.Y.Z` (R-12.1c) |
-| JavaScript runtime | `runtime/`, generated into `packages/runtime` | npm package `@govela/runtime` of the same version (R-12.2g) |
+| JavaScript runtime | `runtime/`, generated into `packages/runtime` | npm package `@govela/runtime` of the same version (R-12.2g), published by the release workflow |
+| Compiler for npm | `packages/compiler` (launcher `bin/vela.js`, JavaScript API `index.js`) and `packages/compiler-<os>-<cpu>` (one binary each) | npm packages `@govela/compiler` and `@govela/compiler-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64` of the same version, published by the release workflow |
 
 All three are released under the MIT license (`LICENSE`). The Go runtime
 module carries a copy in `ssr_runtime/LICENSE` (`TestLicenseCopiesMatch`), and
-the npm package gets `LICENSE` and `"license": "MIT"` from the generator.
+the npm packages get `LICENSE` and `"license": "MIT"` from the generators.
+
+The manifests of the npm packages are generated with `Version`
+(`runtime_package.go`, `compiler_package.go`): `@govela/compiler` depends on
+every platform package of exactly its version as an optional dependency, and
+npm installs the one whose `os` and `cpu` match. The platform binaries are not
+committed; the release workflow builds them into `packages/compiler-*/bin/`.
 
 The module paths are final (R-12.1b): `github.com/elauven/vela` for the
 compiler and `github.com/elauven/vela/ssr_runtime` for the runtime. In the
@@ -23,19 +30,23 @@ compiler the runtime path appears only in `SSRRuntimeImportPath`.
 1. All suites pass, including the strict browser baseline:
    `go test ./... ./ssr_runtime/...` and `node tools/run-ssr-browser-baseline.mjs`.
 2. Set `Version` in `runtime/embed.go` to `X.Y.Z` and regenerate the npm
-   package: `VELA_UPDATE_RUNTIME_PACKAGE=1 go test -run TestRuntimePackageIsGenerated .`.
+   packages: `VELA_UPDATE_RUNTIME_PACKAGE=1 go test -run 'TestRuntimePackageIsGenerated|TestCompilerPackagesAreGenerated' .`.
 3. If generated code started to depend on a new or changed runtime API since
    the last release, the contract marker changed (`ssr_runtime/contract.go`
    and `SSRRuntimeContract`, R-12.1d).
 4. Tag the Go runtime first: `git tag ssr_runtime/vX.Y.Z`.
-5. Publish the JavaScript runtime: `npm publish packages/runtime --access public`
-   (the npm organization `govela` owns the scope).
-6. Tag the compiler: `git tag vX.Y.Z`.
-7. Push both tags by name, never `--tags`:
+5. Tag the compiler: `git tag vX.Y.Z`.
+6. Push both tags by name, never `--tags`:
    `git push origin ssr_runtime/vX.Y.Z vX.Y.Z`. The release workflow checks
-   that the tag matches `Version`, runs the Go tests, builds the five
-   binaries with `SHA256SUMS` and publishes the GitHub release.
-8. Update `examples/` to require the released runtime instead of the
+   that the tag matches `Version` and every npm manifest, runs the Go tests,
+   builds the five binaries with `SHA256SUMS`, publishes the GitHub release,
+   puts the binaries into the platform packages and publishes the npm
+   packages: the platform packages, `@govela/runtime`, then
+   `@govela/compiler`, with provenance. It needs the repository secret
+   `NPM_TOKEN`, an automation token of the npm organization `govela`, which
+   owns the scope. A version already on npm is skipped, so a failed run can
+   be repeated.
+7. Update `examples/` to require the released runtime instead of the
    repository `replace`.
 
 ## History
