@@ -26,7 +26,7 @@ const DevelopmentFlag = "const DEV = typeof process !== 'undefined'\n  ? process
 
 // Version is the compiler version. The runtime npm package and the Go
 // runtime module are released with the same version (docs/RELEASING.md).
-const Version = "0.4.1"
+const Version = "0.4.2"
 
 // PackageName is the npm package of the JavaScript runtime.
 const PackageName = "@govela/runtime"
