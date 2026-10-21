@@ -90,6 +90,10 @@ func TestReleaseWorkflowCoversCompilerPlatforms(t *testing.T) {
 			t.Errorf("release.yml does not put the %s binary into %s (%s)", build, p.Dir(), stage)
 		}
 	}
+	// npm publish takes a bare "packages/x" for the GitHub repository packages/x.
+	if !strings.Contains(workflow, `npm publish "./$dir"`) {
+		t.Error(`release.yml must publish each package by a ./ path: npm publish "./$dir"`)
+	}
 }
 
 // npm publish --provenance requires repository.url to name the repository

@@ -101,5 +101,6 @@ jobs:
               echo "$name@$version is already published"
               continue
             fi
-            npm publish "$dir" --access public --provenance
+            # "./": npm reads a bare "a/b" as the GitHub repository a/b.
+            npm publish "./$dir" --access public --provenance
           done
