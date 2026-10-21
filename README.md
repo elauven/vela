@@ -77,6 +77,7 @@ go install github.com/elauven/vela@latest
 
 vela --project src --out build          # compile every component in src/
 vela --project src --out build --watch  # recompile on change
+vela check --project src                # diagnostics only, for CI
 ```
 
 Mount a component from any page:

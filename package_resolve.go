@@ -120,7 +120,7 @@ func checkScriptPackageImports(src string, script *ScriptAST, ds *DiagSet) {
 
 // checkModulePackageImports warns about the unresolved package imports of a
 // copied JavaScript module, in the compiler's diagnostic format.
-func checkModulePackageImports(src, source string) {
+func checkModulePackageImports(src, source string, opts CompileOptions) {
 	for _, spec := range ModuleSpecifiers(source) {
 		if !IsPackageSpecifier(spec.Value) && !strings.HasPrefix(spec.Value, "node:") {
 			continue
@@ -130,6 +130,7 @@ func checkModulePackageImports(src, source string) {
 			continue
 		}
 		column := spec.Pos - strings.LastIndex(source[:spec.Pos], "\n")
-		fmt.Fprintf(os.Stderr, "       %s:%d:%d: [warning] [%s] %s\n", filepath.ToSlash(src), spec.Line, column, DepsCheckDiagnosticCode, problem)
+		fmt.Fprintf(errorWriter(opts), "       %s:%d:%d: [warning] [%s] %s\n", filepath.ToSlash(src), spec.Line, column, DepsCheckDiagnosticCode, problem)
+		opts.Report.add(&Diagnostic{Sev: SevWarning, File: filepath.ToSlash(src), Line: spec.Line, Col: column, Code: DepsCheckDiagnosticCode, Message: problem})
 	}
 }

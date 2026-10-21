@@ -856,6 +856,60 @@ When the build reports a site it cannot translate, choose one of:
   skips the comparison. Use `fail` in tests.
 - `--mode=production` removes development checks from the runtime,
   including hydration value comparison.
+- `vela check --project src --ssr` reports the same diagnostics without
+  writing the output ([Checking a project](#checking-a-project)).
+
+## Checking a project
+
+`vela check` runs every check of a build and writes nothing: it builds into
+a temporary directory and removes it.
+
+```sh
+vela check --project src                 # client checks
+vela check --project src --ssr           # also the server-rendering checks
+vela check --project src --format=sarif > vela.sarif
+vela check src/App.vela src/Card.vela    # listed files
+vela check --project src --watch         # check again on every change
+```
+
+- `--format`: `text` (default), `json` (one document with the counts and
+  the diagnostics in the form of
+  [TOOLING_PROTOCOL.md](TOOLING_PROTOCOL.md#diagnostics)) or `sarif`
+  (SARIF 2.1.0, one rule per `VELA-*` code).
+- `--fail-on=error` (default) or `warning`.
+- Exit codes: 0 no diagnostics at or above `--fail-on`, 1 some, 2 a usage
+  or I/O error.
+- The file flags of the build (`--target`, `--strict`, `--check-deps`, …)
+  and `vela.config.json` apply as they do to `vela`.
+
+GitHub Actions, with the results as code scanning alerts on the pull
+request:
+
+```yaml
+jobs:
+  vela-check:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go install github.com/elauven/vela@latest
+      - run: vela check --project src --ssr --format=sarif > vela.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: vela.sarif
+```
+
+A pre-commit hook (`.git/hooks/pre-commit`):
+
+```sh
+#!/bin/sh
+exec vela check --project src
+```
 
 ## Source maps
 

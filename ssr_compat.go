@@ -124,6 +124,7 @@ var (
 	SSRCatalogueNames                      = ssr.SSRCatalogueNames
 	SSRDiagnosticDetail                    = ssr.SSRDiagnosticDetail
 	SSRDiagnosticSummary                   = ssr.SSRDiagnosticSummary
+	SSRErrorDiagnostics                    = ssr.SSRErrorDiagnostics
 	SSRInteractive                         = ssr.SSRInteractive
 	SSRRootModes                           = ssr.SSRRootModes
 	SSRRuntimeImport                       = ssr.SSRRuntimeImport

@@ -90,6 +90,10 @@ type CompileOptions struct {
 	CheckDeps bool
 	// DiagnosticsJSON prints diagnostics as JSON lines (--diagnostics=json).
 	DiagnosticsJSON bool
+	// ErrWriter receives build errors; it defaults to stderr.
+	ErrWriter io.Writer
+	// Report collects the diagnostics of a build for vela check.
+	Report *diagReport
 	// RuntimeImport is the module specifier generated code uses for the
 	// runtime. Empty means "./runtime.js"; project builds set a path to the
 	// single runtime at the output root.
@@ -103,6 +107,8 @@ func main() {
 			os.Exit(runCompileCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 		case "serve":
 			os.Exit(runServeCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		case "check":
+			os.Exit(runCheckCommand(os.Args[2:], os.Stdout, os.Stderr))
 		}
 	}
 
@@ -392,7 +398,7 @@ func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 	errors += copyProjectJSModules(srcRoot, outRoot, opts)
 	// An SSR build rewrites the manifest with root modes (writeSSRManifest).
 	if err := writeProjectManifest(files, srcRoot, outRoot, nil, opts.PackageImports); err != nil {
-		fmt.Fprintf(os.Stderr, "cannot write vela.manifest.json: %v\n", err)
+		reportBuildIssue(opts, "cannot write vela.manifest.json: %v", err)
 		errors++
 	}
 	if opts.BareRuntimeImports {
@@ -400,7 +406,7 @@ func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 		return errors
 	}
 	if err := stageRuntime(outRoot, opts); err != nil {
-		fmt.Fprintf(os.Stderr, "cannot stage runtime: %v\n", err)
+		reportBuildIssue(opts, "cannot stage runtime: %v", err)
 		errors++
 	}
 	return errors
@@ -515,26 +521,31 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 func compilePrint(src, dest string, opts CompileOptions) bool {
 	diags, err := compileFile(src, dest, opts)
 
+	opts.Report.add(diags...)
 	for _, d := range diags {
 		switch {
 		case opts.DiagnosticsJSON:
 			line, _ := json.Marshal(d.Machine())
-			fmt.Fprintf(os.Stderr, "%s\n", line)
+			fmt.Fprintf(errorWriter(opts), "%s\n", line)
 		case d.Sev == SevError:
-			fmt.Fprintf(os.Stderr, "       %s\n", d)
+			fmt.Fprintf(errorWriter(opts), "       %s\n", d)
 		default:
 			fmt.Fprintf(compilerStatusWriter(opts), "       %s\n", d)
 		}
 	}
 
 	if err != nil {
+		if !hasErrorDiagnostic(diags) {
+			// A failure without diagnostics (an unreadable file) becomes one.
+			d := buildIssue(src, "%v", err)
+			opts.Report.add(d)
+			if opts.DiagnosticsJSON {
+				line, _ := json.Marshal(d.Machine())
+				fmt.Fprintf(errorWriter(opts), "%s\n", line)
+			}
+		}
 		if !opts.DiagnosticsJSON {
-			fmt.Fprintf(os.Stderr, "  ✗  %-40s  %v\n", src, err)
-		} else if !hasErrorDiagnostic(diags) {
-			// stderr stays JSON lines: a failure without diagnostics (an
-			// unreadable file) becomes one.
-			line, _ := json.Marshal(MachineDiagnostic{Severity: "error", File: src, Line: 1, Column: 1, EndLine: 1, EndColumn: 1, Message: err.Error()})
-			fmt.Fprintf(os.Stderr, "%s\n", line)
+			fmt.Fprintf(errorWriter(opts), "  ✗  %-40s  %v\n", src, err)
 		}
 		return false
 	}
@@ -968,11 +979,12 @@ func copyProjectJSModules(srcRoot, outRoot string, opts CompileOptions) int {
 			err = os.WriteFile(dest, []byte(RewriteJSModuleSpecifiers(string(data), runtimeSpecifier(opts, filepath.Dir(dest), outRoot))), 0644)
 			opts.PackageImports.add(dest, sourcePackageImports(string(data)))
 			if opts.CheckDeps {
-				checkModulePackageImports(src, string(data))
+				checkModulePackageImports(src, string(data), opts)
 			}
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ✗ %s: copy local module: %v\n", rel, err)
+			fmt.Fprintf(errorWriter(opts), "  ✗ %s: copy local module: %v\n", rel, err)
+			opts.Report.add(buildIssue(src, "copy local module: %v", err))
 			errors++
 		}
 	}

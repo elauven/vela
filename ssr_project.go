@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // buildSSRProject adds server and styles products around the established CSR
@@ -10,7 +11,8 @@ import (
 func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOptions, parallel bool) int {
 	hosts, err := LoadSSRHosts(srcRoot, files)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  x  SSR project: %v\n", err)
+		fmt.Fprintf(errorWriter(opts), "  x  SSR project: %v\n", err)
+		opts.Report.add(buildIssue(srcRoot, "SSR project: %v", err))
 		return 1
 	}
 	if opts.SSRModule == "" || (opts.SSRModule == SSRDefaultModule && hosts.Project.Config.Module != "") {
@@ -28,7 +30,8 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	errors := buildProject(files, srcRoot, layout.ClientDir, clientOpts, parallel)
 	hosts.RootModes = SSRRootModes(files, srcRoot)
 	for _, problem := range hosts.Problems {
-		fmt.Fprintf(os.Stderr, "  x  %s\n", problem.Error())
+		fmt.Fprintf(errorWriter(opts), "  x  %s\n", problem.Error())
+		opts.Report.add(&Diagnostic{Sev: SevError, File: cwdRelative(filepath.Join(hosts.Project.Root, filepath.FromSlash(problem.File))), Line: problem.Line, Col: 1, Code: problem.Code, Message: problem.Message})
 		errors++
 	}
 	var suggestions []*SSRSiteDiagnostic
@@ -66,27 +69,31 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 		}
 		report.Add(src, srcRoot, region, err)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  x  %s: SSR: %v\n", RelOrBase(src, srcRoot), SSRDiagnosticSummary(err))
+			fmt.Fprintf(errorWriter(opts), "  x  %s: SSR: %v\n", RelOrBase(src, srcRoot), SSRDiagnosticSummary(err))
 			if detail := SSRDiagnosticDetail(hosts.Project.Relative(src), err); detail != "" {
-				fmt.Fprintln(os.Stderr, detail)
+				fmt.Fprintln(errorWriter(opts), detail)
 			}
+			opts.Report.add(SSRErrorDiagnostics(src, err)...)
 			errors++
 			continue
 		}
 		fmt.Fprintf(compilerStatusWriter(opts), "  +  %-40s -> server/styles\n", RelOrBase(src, srcRoot))
 	}
 	if err := hosts.Modules.Write(); err != nil {
-		fmt.Fprintf(os.Stderr, "  x  SSR modules: %v\n", err)
+		fmt.Fprintf(errorWriter(opts), "  x  SSR modules: %v\n", err)
+		opts.Report.add(buildIssue(srcRoot, "SSR modules: %v", err))
 		errors++
 	}
 	if errors == 0 {
 		if err := ValidateSSRProjectPackagesWithHosts(layout, hosts.Types); err != nil {
-			fmt.Fprintf(os.Stderr, "  x  SSR package validation: %v\n", err)
+			fmt.Fprintf(errorWriter(opts), "  x  SSR package validation: %v\n", err)
+			opts.Report.add(buildIssue(srcRoot, "SSR package validation: %v", err))
 			errors++
 		}
 	}
 	if err := writeSSRManifest(files, srcRoot, layout, hosts.RootModes, clientOpts.PackageImports); err != nil {
-		fmt.Fprintf(os.Stderr, "  x  SSR manifest: %v\n", err)
+		fmt.Fprintf(errorWriter(opts), "  x  SSR manifest: %v\n", err)
+		opts.Report.add(buildIssue(srcRoot, "SSR manifest: %v", err))
 		errors++
 	}
 	if opts.SSRScaffoldHosts {
@@ -96,7 +103,8 @@ func buildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	}
 	if report != nil {
 		if err := report.Write(opts.SSRReport); err != nil {
-			fmt.Fprintf(os.Stderr, "  x  SSR report: %v\n", err)
+			fmt.Fprintf(errorWriter(opts), "  x  SSR report: %v\n", err)
+			opts.Report.add(buildIssue(srcRoot, "SSR report: %v", err))
 			errors++
 		}
 	}

@@ -2,6 +2,7 @@ package ssr
 
 import (
 	"github.com/elauven/vela/internal/codegen"
+	"github.com/elauven/vela/internal/diag"
 	"github.com/elauven/vela/internal/jsast"
 	"github.com/elauven/vela/internal/project"
 	"github.com/elauven/vela/internal/sfcast"
@@ -13,8 +14,10 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf16"
 )
 
 // Server-evaluated region records (docs/SSR_TRANSLATION_CONTRACT.md §2,
@@ -548,6 +551,65 @@ func SSRDiagnosticDetail(src string, err error) string {
 		lines[i] = "       " + line
 	}
 	return strings.Join(lines, "\n")
+}
+
+// SSRErrorDiagnostics is an SSR error of the component file as
+// diagnostics: one per failing site of a region error, with the reason chain
+// in the message and the fix as the suggestion; any other error is one
+// diagnostic at the start of the file, coded when its message starts with a
+// code.
+func SSRErrorDiagnostics(file string, err error) []*diag.Diagnostic {
+	var region *SSRRegionError
+	if !errors.As(err, &region) {
+		code := ""
+		message := SSRDiagnosticSummary(err)
+		if m := ssrLeadingCode.FindStringSubmatch(message); m != nil {
+			code, message = m[1], m[2]
+		}
+		return []*diag.Diagnostic{{Sev: diag.SevError, File: file, Line: 1, Col: 1, Code: code, Message: message}}
+	}
+	var out []*diag.Diagnostic
+	for _, group := range ssrGroupFailures(region.Failures) {
+		d := group[0].Diagnostic
+		for i, record := range group {
+			line, column := region.Region.position(record)
+			if i > 0 {
+				line, column = region.Region.sitePosition(record)
+			}
+			reasons := record.Diagnostic.Reasons
+			if i == 0 {
+				reasons = d.Reasons
+			}
+			message := d.Message
+			if len(reasons) > 0 {
+				message += " (reason: " + strings.Join(reasons, " → ") + ")"
+			}
+			out = append(out, region.Region.diagnostic(file, line, column, d.Code, message, d.Fix))
+		}
+	}
+	return out
+}
+
+var ssrLeadingCode = regexp.MustCompile(`^(VELA-[A-Z0-9-]+): (.*)$`)
+
+// diagnostic is a diagnostic at a 1-based line and code point column of the
+// located source, with the column in UTF-16 units like every diagnostic.
+func (r *SSRRegion) diagnostic(file string, line, column int, code, message, fix string) *diag.Diagnostic {
+	d := &diag.Diagnostic{Sev: diag.SevError, File: file, Line: line, Col: column, Code: code, Message: message, Suggestion: fix}
+	if line < 1 {
+		d.Line, d.Col = 1, 1
+		return d
+	}
+	lines := strings.Split(r.source, "\n")
+	if line > len(lines) {
+		return d
+	}
+	text := []rune(lines[line-1])
+	if column >= 1 && column-1 <= len(text) {
+		d.Col = len(utf16.Encode(text[:column-1])) + 1
+	}
+	d.Source = string(text)
+	return d
 }
 
 // position is the 1-based line and column of a record in the located
