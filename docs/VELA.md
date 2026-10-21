@@ -71,6 +71,7 @@ move; new code imports the packages directly.
 | File | Role |
 | --- | --- |
 | `main.go` | CLI, file and project builds, runtime staging, watch mode |
+| `cli.go`, `service.go` | Shared file flags, `vela.config.json`; `vela compile` and `vela serve` ([TOOLING_PROTOCOL.md](TOOLING_PROTOCOL.md)) |
 | `reactivity.go`, `unreachable.go`, `diagnostics.go`, `dce.go` | Diagnostic checks over the analysis, dead-binding elimination |
 | `minifier.go`, `compiler_trace.go`, `ast_json.go`, `astjson.go` | Minification, compiler trace, AST debug output |
 | `package_imports.go`, `package_resolve.go` | Package imports, `vela.manifest.json`, `--check-deps` |

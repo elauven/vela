@@ -677,6 +677,12 @@ that do not resolve in `node_modules` (package missing, subpath not
 exported, `node:` built-ins). It is off by default because a package may
 also come from a CDN through an import map.
 
+Build settings can live in `vela.config.json` next to the project
+(`{"project": "src", "out": "build", "runtimeImport": "bare"}`); flags
+override it. Bundler plugins and editors compile through the compiler
+service, `vela serve --stdio`. Both are described in
+[TOOLING_PROTOCOL.md](TOOLING_PROTOCOL.md).
+
 Production: with `relative` imports, `vela --mode=production` disables the
 development checks. With `bare` imports, the bundler does it by replacing
 `process.env.NODE_ENV` with `"production"` (esbuild with `--minify` or
@@ -897,9 +903,10 @@ until enabled. Treat the schema as experimental while it is still version 1.
 
 Compiler errors identify a one-based UTF-16 source position and, where a
 canonical Vela replacement exists, include a stable VELA-* code and a help:
-line. Tools and AI agents may call DiagnosticsJSON(diags) to obtain the
-compact fields severity, code, file, line, column, message, and suggestion;
-do not parse rendered CLI text.
+line. Tools and AI agents should not parse rendered CLI text: run
+`vela --diagnostics=json` (one JSON object per line on stderr), `vela
+compile` or `vela serve --stdio`
+([TOOLING_PROTOCOL.md](TOOLING_PROTOCOL.md)).
 
 | Code | Cause | Canonical correction |
 | --- | --- | --- |

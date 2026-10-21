@@ -5,6 +5,7 @@ import (
 
 	"crypto/md5"
 	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -87,6 +88,8 @@ type CompileOptions struct {
 	// CheckDeps warns about package imports that do not resolve in
 	// node_modules (--check-deps).
 	CheckDeps bool
+	// DiagnosticsJSON prints diagnostics as JSON lines (--diagnostics=json).
+	DiagnosticsJSON bool
 	// RuntimeImport is the module specifier generated code uses for the
 	// runtime. Empty means "./runtime.js"; project builds set a path to the
 	// single runtime at the output root.
@@ -94,27 +97,29 @@ type CompileOptions struct {
 }
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "compile":
+			os.Exit(runCompileCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		case "serve":
+			os.Exit(runServeCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		}
+	}
+
 	projectDir := flag.String("project", "", "source directory — compile all .vela files, mirroring the folder structure into --out")
 	outDir := flag.String("out", "dist", "output directory")
 	watch := flag.Bool("watch", false, "watch for changes and recompile")
-	minify := flag.Bool("minify", false, "minify output JS")
 	emitAST := flag.Bool("ast", false, "emit <n>.ast.json input-AST debug files")
 	genAST := flag.Bool("emit-gen-ast", false, "emit <n>.genast.json — the generated output AST, for inspection")
 	parallel := flag.Bool("parallel", true, "compile files in parallel (project mode)")
-	cssMode := flag.String("css", "inject", "CSS delivery: 'inject' (default, CSS-in-JS) or 'external' (sibling .css files)")
-	sourceMap := flag.Bool("sourcemap", false, "emit an external v3 source map alongside AST-generated JS")
-	target := flag.String("target", "permissive", "JavaScript host profile: permissive, browser, worker, node, or ssr")
-	unavailableCapabilities := flag.String("unavailable-capabilities", "", "comma-separated direct host capabilities to reject, e.g. fetch,indexedDB")
-	strict := flag.Bool("strict", false, "treat proven unresolved JavaScript reads as errors")
+	file := addFileFlags(flag.CommandLine, buildFlagDefaults)
 	tracePath := flag.String("trace", "", "append source-free CompilationTraceV1 records as JSONL; use '-' for stdout")
 	ssr := flag.Bool("ssr", false, "emit SSR project outputs into client/, server/, and styles/")
 	ssrModule := flag.String("ssr-module", SSRDefaultModule, "Go module import root for generated SSR packages")
 	ssrReport := flag.String("ssr-report", "", "with --ssr, write the per-site SSR report (outcome, tier, type) to this JSON file")
 	ssrScaffold := flag.Bool("ssr-scaffold-hosts", false, "with --ssr, create Go stubs in the host tree for functions that need a host implementation; existing files are never changed")
-	hydrationVerify := flag.String("hydration-verify", "", "development hydration value verification: repair (default), fail, or off")
-	mode := flag.String("mode", "development", "build mode: 'development' (default) or 'production'")
-	runtimeImport := flag.String("runtime-import", "relative", "runtime imports of generated modules: 'relative' (default; the runtime is written beside the output) or 'bare' (import "+runtime.PackageName+", installed by the application, for bundlers)")
-	checkDeps := flag.Bool("check-deps", false, "warn when a package import does not resolve in node_modules (the compiler never resolves or bundles packages)")
+	configPath := flag.String("config", "", "configuration file (default: "+ConfigFileName+" in the working directory, if present)")
+	diagnostics := flag.String("diagnostics", "text", "diagnostic output: 'text' or 'json' (one JSON object per line on stderr)")
 	showVersion := flag.Bool("version", false, "print the compiler version")
 	flag.Parse()
 
@@ -122,68 +127,31 @@ func main() {
 		fmt.Println("vela " + runtime.Version)
 		return
 	}
-	switch *runtimeImport {
-	case "relative", "bare":
-	default:
-		fmt.Fprintf(os.Stderr, "vela: invalid --runtime-import value %q (want 'relative' or 'bare')\n", *runtimeImport)
-		os.Exit(2)
+	config, err := loadConfig(*configPath)
+	if err == nil && config != nil {
+		err = applyFlagValues(flag.CommandLine, ConfigFileName, config.flagValues())
 	}
-
-	targetProfile, err := ParseTargetProfile(*target)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "vela: %v\n", err)
 		os.Exit(2)
 	}
-
-	switch *mode {
-	case "development", "production":
-		// ok
+	switch *diagnostics {
+	case "text", "json":
 	default:
-		fmt.Fprintf(os.Stderr, "vela: invalid --mode value %q (want 'development' or 'production')\n", *mode)
+		fmt.Fprintf(os.Stderr, "vela: invalid --diagnostics value %q (want 'text' or 'json')\n", *diagnostics)
 		os.Exit(2)
 	}
-	switch *hydrationVerify {
-	case "", "repair", "fail", "off":
-	default:
-		fmt.Fprintf(os.Stderr, "vela: invalid --hydration-verify value %q (want repair, fail, or off)\n", *hydrationVerify)
+	opts, err := file.options()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vela: %v\n", err)
 		os.Exit(2)
 	}
-	if *hydrationVerify != "" && *mode == "production" {
-		// Production builds contain no verification code (V-11.3a, V-11.3c).
-		fmt.Fprintln(os.Stderr, "vela: --hydration-verify cannot be combined with --mode=production")
-		os.Exit(2)
-	}
-
-	switch *cssMode {
-	case "inject", "external":
-		// ok
-	default:
-		fmt.Fprintf(os.Stderr,
-			"vela: invalid --css value %q (want 'inject' or 'external')\n",
-			*cssMode)
-		os.Exit(2)
-	}
-
-	opts := CompileOptions{
-		Minify:                  *minify,
-		EmitAST:                 *emitAST,
-		GenAST:                  *genAST,
-		CSSExternal:             *cssMode == "external",
-		SourceMap:               *sourceMap,
-		TargetProfile:           targetProfile,
-		UnavailableCapabilities: splitCapabilityList(*unavailableCapabilities),
-		Strict:                  *strict,
-		SSRModule:               *ssrModule,
-		SSRReport:               *ssrReport,
-		SSRScaffoldHosts:        *ssrScaffold,
-		HydrationVerify:         *hydrationVerify,
-		Production:              *mode == "production",
-		BareRuntimeImports:      *runtimeImport == "bare",
-		CheckDeps:               *checkDeps,
-	}
-	if opts.BareRuntimeImports {
-		opts.RuntimeImport = runtime.PackageName
-	}
+	opts.EmitAST = *emitAST
+	opts.GenAST = *genAST
+	opts.SSRModule = *ssrModule
+	opts.SSRReport = *ssrReport
+	opts.SSRScaffoldHosts = *ssrScaffold
+	opts.DiagnosticsJSON = *diagnostics == "json"
 	if closeTrace, traceErr := configureTrace(&opts, *tracePath); traceErr != nil {
 		fmt.Fprintf(os.Stderr, "vela: %v\n", traceErr)
 		os.Exit(2)
@@ -548,15 +516,26 @@ func compilePrint(src, dest string, opts CompileOptions) bool {
 	diags, err := compileFile(src, dest, opts)
 
 	for _, d := range diags {
-		if d.Sev == SevError {
+		switch {
+		case opts.DiagnosticsJSON:
+			line, _ := json.Marshal(d.Machine())
+			fmt.Fprintf(os.Stderr, "%s\n", line)
+		case d.Sev == SevError:
 			fmt.Fprintf(os.Stderr, "       %s\n", d)
-		} else {
+		default:
 			fmt.Fprintf(compilerStatusWriter(opts), "       %s\n", d)
 		}
 	}
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  ✗  %-40s  %v\n", src, err)
+		if !opts.DiagnosticsJSON {
+			fmt.Fprintf(os.Stderr, "  ✗  %-40s  %v\n", src, err)
+		} else if !hasErrorDiagnostic(diags) {
+			// stderr stays JSON lines: a failure without diagnostics (an
+			// unreadable file) becomes one.
+			line, _ := json.Marshal(MachineDiagnostic{Severity: "error", File: src, Line: 1, Column: 1, EndLine: 1, EndColumn: 1, Message: err.Error()})
+			fmt.Fprintf(os.Stderr, "%s\n", line)
+		}
 		return false
 	}
 
@@ -581,10 +560,61 @@ func compilePrint(src, dest string, opts CompileOptions) bool {
 	return true
 }
 
+func hasErrorDiagnostic(diags []*Diagnostic) bool {
+	for _, d := range diags {
+		if d.Sev == SevError {
+			return true
+		}
+	}
+	return false
+}
+
 // compileFile compiles one .vela source file, writing JS to dest (full path).
 // The output directory is created automatically.
-func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, err error) {
+func compileFile(src, dest string, opts CompileOptions) ([]*Diagnostic, error) {
+	read := func() ([]byte, error) { return os.ReadFile(src) }
+	return compileComponent(src, dest, opts, read, func(m *compiledModule) error { return writeCompiledModule(dest, m) })
+}
+
+// compiledModule is the output of one component before anything is written.
+type compiledModule struct {
+	JS      string // the module, without a sourceMappingURL comment
+	Map     []byte // v3 source map with SourceMap
+	CSS     string // scoped CSS with CSSExternal
+	Imports []moduleImport
+}
+
+// writeCompiledModule writes a compiled component to dest: the module, its
+// source map and its external stylesheet.
+func writeCompiledModule(dest string, m *compiledModule) error {
+	if writeErr := os.MkdirAll(filepath.Dir(dest), 0755); writeErr != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), writeErr)
+	}
+	if len(m.Map) > 0 {
+		mapPath := dest + ".map"
+		if writeErr := os.WriteFile(mapPath, m.Map, 0644); writeErr != nil {
+			return writeErr
+		}
+		m.JS += "\n//# sourceMappingURL=" + filepath.Base(mapPath) + "\n"
+	}
+	if writeErr := os.WriteFile(dest, []byte(m.JS), 0644); writeErr != nil {
+		return writeErr
+	}
+	if m.CSS != "" {
+		cssPath := strings.TrimSuffix(dest, ".js") + ".css"
+		if writeErr := os.WriteFile(cssPath, []byte(m.CSS), 0644); writeErr != nil {
+			return fmt.Errorf("write %s: %w", cssPath, writeErr)
+		}
+	}
+	return nil
+}
+
+// compileComponent compiles the component src: read returns its source and
+// emit receives the result. dest names the output for source maps and the
+// debug AST files.
+func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte, error), emit func(*compiledModule) error) (diags []*Diagnostic, err error) {
 	name := ComponentName(src)
+	module := &compiledModule{}
 	trace := newTraceRecorder(src, name, opts)
 	var ds *DiagSet
 	internalFailure := false
@@ -616,7 +646,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	var data []byte
 	if err = trace.stage("read-source", func() error {
 		var readErr error
-		data, readErr = os.ReadFile(src)
+		data, readErr = read()
 		return readErr
 	}); err != nil {
 		return nil, err
@@ -704,6 +734,7 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 			checkScriptPackageImports(src, sfc.ScriptAST, ds)
 		}
 		scriptProg = sfc.ScriptAST.Program
+		module.Imports = sourceModuleImports(src, scriptProg)
 		return nil
 	}); err != nil {
 		return ds.All(), fmt.Errorf("compilation failed with %d error(s)", len(ds.Errors()))
@@ -847,35 +878,16 @@ func compileFile(src, dest string, opts CompileOptions) (diags []*Diagnostic, er
 	}
 
 	if err = trace.stage("write-output", func() error {
-		if len(mapBytes) > 0 {
-			if writeErr := os.MkdirAll(filepath.Dir(dest), 0755); writeErr != nil {
-				return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), writeErr)
-			}
-			mapPath := dest + ".map"
-			if writeErr := os.WriteFile(mapPath, mapBytes, 0644); writeErr != nil {
-				return writeErr
-			}
-			code += "\n//# sourceMappingURL=" + filepath.Base(mapPath) + "\n"
+		module.JS, module.Map = code, mapBytes
+		if opts.CSSExternal {
+			module.CSS = ExtractScopedCSS(sfc, scope)
 		}
-		if writeErr := os.MkdirAll(filepath.Dir(dest), 0755); writeErr != nil {
-			return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), writeErr)
-		}
-		if writeErr := os.WriteFile(dest, []byte(code), 0644); writeErr != nil {
+		if writeErr := emit(module); writeErr != nil {
 			return writeErr
 		}
 		if trace != nil {
-			trace.trace.Metrics.OutputBytes = len(code)
-		}
-		if opts.CSSExternal {
-			if css := ExtractScopedCSS(sfc, scope); css != "" {
-				cssPath := strings.TrimSuffix(dest, ".js") + ".css"
-				if writeErr := os.WriteFile(cssPath, []byte(css), 0644); writeErr != nil {
-					return fmt.Errorf("write %s: %w", cssPath, writeErr)
-				}
-				if trace != nil {
-					trace.trace.Metrics.CSSBytes = len(css)
-				}
-			}
+			trace.trace.Metrics.OutputBytes = len(module.JS)
+			trace.trace.Metrics.CSSBytes = len(module.CSS)
 		}
 		return nil
 	}); err != nil {

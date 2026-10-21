@@ -34,12 +34,17 @@ func (s DiagSeverity) String() string {
 	}
 }
 
+// MachineDiagnostic is the JSON form of a Diagnostic (docs/TOOLING_PROTOCOL.md).
+// A diagnostic marks a position; EndLine and EndColumn equal Line and Column
+// until diagnostics carry ranges.
 type MachineDiagnostic struct {
 	Severity   string
 	Code       string
 	File       string
 	Line       int
 	Column     int
+	EndLine    int
+	EndColumn  int
 	Message    string
 	Suggestion string
 }
@@ -47,7 +52,7 @@ type MachineDiagnostic struct {
 func (d MachineDiagnostic) MarshalJSON() ([]byte, error) {
 	out := map[string]interface{}{
 		"severity": d.Severity, "line": d.Line, "column": d.Column,
-		"message": d.Message,
+		"endLine": d.EndLine, "endColumn": d.EndColumn, "message": d.Message,
 	}
 	if d.Code != "" {
 		out["code"] = d.Code
@@ -63,7 +68,8 @@ func (d MachineDiagnostic) MarshalJSON() ([]byte, error) {
 func (d *Diagnostic) Machine() MachineDiagnostic {
 	return MachineDiagnostic{
 		Severity: d.Sev.String(), Code: d.Code, File: d.File, Line: d.Line,
-		Column: d.Col, Message: d.Message, Suggestion: d.Suggestion,
+		Column: d.Col, EndLine: d.Line, EndColumn: d.Col, Message: d.Message,
+		Suggestion: d.Suggestion,
 	}
 }
 
