@@ -213,7 +213,7 @@ func TestServiceDiagnosticsMatchTextDiagnostics(t *testing.T) {
 		for i, d := range diags {
 			text := d.String()
 			m := res.Diagnostics[i]
-			if !strings.HasPrefix(text, fmt.Sprintf("%s:%d:%d: [%s]", m.File, m.Line, m.Column, m.Severity)) {
+			if !strings.HasPrefix(text, fmt.Sprintf("%s:%d:%d: [%s]", filepath.FromSlash(m.File), m.Line, m.Column, m.Severity)) {
 				t.Errorf("%s: JSON %+v does not locate text %q", name, m, text)
 			}
 			if m.Code != d.Code || m.Message != d.Message || m.EndLine != m.Line || m.EndColumn != m.Column {
@@ -343,16 +343,18 @@ func TestCompileCommandExitCodes(t *testing.T) {
 func TestConfigRejectsUnknownKeysAndResolvesPaths(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "conf", ConfigFileName)
-	writeTestFile(t, path, `{"$schema": "x", "project": "src", "out": "/abs/out", "targt": "browser"}`)
+	abs := filepath.Join(dir, "abs", "out")
+	absJSON, _ := json.Marshal(abs)
+	writeTestFile(t, path, `{"$schema": "x", "project": "src", "out": `+string(absJSON)+`, "targt": "browser"}`)
 	if _, err := loadConfig(path); err == nil || !strings.Contains(err.Error(), `unknown field "targt"`) {
 		t.Fatalf("unknown key error = %v", err)
 	}
-	writeTestFile(t, path, `{"project": "src", "out": "/abs/out"}`)
+	writeTestFile(t, path, `{"project": "src", "out": `+string(absJSON)+`}`)
 	config, err := loadConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *config.Project != filepath.Join(dir, "conf", "src") || *config.Out != "/abs/out" {
+	if *config.Project != filepath.Join(dir, "conf", "src") || *config.Out != abs {
 		t.Fatalf("paths = %q %q", *config.Project, *config.Out)
 	}
 	if _, err := loadConfig(filepath.Join(dir, "missing.json")); err == nil {

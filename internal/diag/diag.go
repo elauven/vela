@@ -5,6 +5,7 @@ package diag
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"unicode/utf16"
 )
@@ -36,7 +37,7 @@ func (s DiagSeverity) String() string {
 
 // MachineDiagnostic is the JSON form of a Diagnostic (docs/TOOLING_PROTOCOL.md).
 // A diagnostic marks a position; EndLine and EndColumn equal Line and Column
-// until diagnostics carry ranges.
+// until diagnostics carry ranges. File uses forward slashes on every platform.
 type MachineDiagnostic struct {
 	Severity   string
 	Code       string
@@ -67,7 +68,7 @@ func (d MachineDiagnostic) MarshalJSON() ([]byte, error) {
 }
 func (d *Diagnostic) Machine() MachineDiagnostic {
 	return MachineDiagnostic{
-		Severity: d.Sev.String(), Code: d.Code, File: d.File, Line: d.Line,
+		Severity: d.Sev.String(), Code: d.Code, File: filepath.ToSlash(d.File), Line: d.Line,
 		Column: d.Col, EndLine: d.Line, EndColumn: d.Col, Message: d.Message,
 		Suggestion: d.Suggestion,
 	}

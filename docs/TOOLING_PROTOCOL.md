@@ -108,6 +108,7 @@ stderr, also for a component that cannot be read.
 
 - `severity`: `error`, `warning` or `hint`.
 - `code`: the stable `VELA-*` category; absent for diagnostics without one.
+- `file`: the component, with `/` separators on every platform.
 - `line`, `column`: one-based; columns count UTF-16 code units, as editors
   and source maps do.
 - `endLine`, `endColumn`: the end of the range. Diagnostics mark positions
