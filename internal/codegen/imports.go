@@ -415,6 +415,12 @@ func IsPackageSpecifier(spec string) bool {
 // project's .js files (an entry point importing App.vela, a store module)
 // reach a bundler or the browser with imports that resolve.
 func RewriteJSModuleSpecifiers(src, runtimeSpecifier string) string {
+	return RewriteJSModuleSpecifiersWith(src, runtimeSpecifier, false)
+}
+
+// RewriteJSModuleSpecifiersWith is RewriteJSModuleSpecifiers that keeps
+// `.vela` specifiers with sourceComponentImports (ProgramOptions).
+func RewriteJSModuleSpecifiersWith(src, runtimeSpecifier string, sourceComponentImports bool) string {
 	if runtimeSpecifier == "" {
 		runtimeSpecifier = defaultRuntimeImport
 	}
@@ -423,7 +429,7 @@ func RewriteJSModuleSpecifiers(src, runtimeSpecifier string) string {
 	for _, spec := range ModuleSpecifiers(src) {
 		replacement := ""
 		switch {
-		case strings.HasSuffix(spec.Value, ".vela") && (strings.HasPrefix(spec.Value, ".") || strings.HasPrefix(spec.Value, "/")):
+		case !sourceComponentImports && strings.HasSuffix(spec.Value, ".vela") && (strings.HasPrefix(spec.Value, ".") || strings.HasPrefix(spec.Value, "/")):
 			replacement = strings.TrimSuffix(spec.Value, ".vela") + ".js"
 		case spec.Value == "vela" || spec.Value == "vela/store":
 			replacement = runtimeSpecifier

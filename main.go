@@ -88,6 +88,10 @@ type CompileOptions struct {
 	// CheckDeps warns about package imports that do not resolve in
 	// node_modules (--check-deps).
 	CheckDeps bool
+
+	// SourceComponentImports (--component-imports=vela) keeps `.vela`
+	// specifiers in generated and copied modules, for bundler plugins.
+	SourceComponentImports bool
 	// DiagnosticsJSON prints diagnostics as JSON lines (--diagnostics=json).
 	DiagnosticsJSON bool
 	// ErrWriter receives build errors; it defaults to stderr.
@@ -819,7 +823,7 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 	var target *JsProgram
 	if trace != nil {
 		if err = trace.stage("build-target-ast", func() error {
-			target = BuildProgramUnvalidated(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
+			target = BuildProgramUnvalidatedWith(name, sfc, tmpl, analysis, scope, programOptions(opts))
 			trace.trace.Metrics.TargetNodes = countJSNodes(target)
 			return nil
 		}); err != nil {
@@ -832,7 +836,8 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 			return ds.All(), err
 		}
 	} else {
-		target = BuildProgramCSS(name, sfc, tmpl, analysis, scope, opts.CSSExternal)
+		target = BuildProgramUnvalidatedWith(name, sfc, tmpl, analysis, scope, programOptions(opts))
+		ValidateGeneratedProgram(target)
 	}
 
 	FinalizeRuntimeImports(target, opts.RuntimeImport)
@@ -948,6 +953,10 @@ const EmitCheckDiagnosticCode = "VELA-INTERNAL-EMIT"
 //  Path helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+func programOptions(opts CompileOptions) ProgramOptions {
+	return ProgramOptions{CSSExternal: opts.CSSExternal, SourceComponentImports: opts.SourceComponentImports}
+}
+
 // runtimeSpecifier is the core runtime import of a module written to dir:
 // the runtime package with --runtime-import=bare, else the relative path to
 // the runtime staged at outRoot.
@@ -976,7 +985,7 @@ func copyProjectJSModules(srcRoot, outRoot string, opts CompileOptions) int {
 			err = os.MkdirAll(filepath.Dir(dest), 0755)
 		}
 		if err == nil {
-			err = os.WriteFile(dest, []byte(RewriteJSModuleSpecifiers(string(data), runtimeSpecifier(opts, filepath.Dir(dest), outRoot))), 0644)
+			err = os.WriteFile(dest, []byte(RewriteJSModuleSpecifiersWith(string(data), runtimeSpecifier(opts, filepath.Dir(dest), outRoot), opts.SourceComponentImports)), 0644)
 			opts.PackageImports.add(dest, sourcePackageImports(string(data)))
 			if opts.CheckDeps {
 				checkModulePackageImports(src, string(data), opts)

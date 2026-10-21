@@ -693,54 +693,110 @@ development checks. With `bare` imports, the bundler does it by replacing
 `process.env.NODE_ENV` with `"production"` (esbuild with `--minify` or
 `--define`, Vite in `vite build`, Rollup with `@rollup/plugin-replace`).
 
-### esbuild
+### Bundler plugin
+
+`@govela/unplugin` compiles `.vela` modules inside the bundler: Vite,
+Rollup, Rolldown, esbuild, webpack and Rspack. The bundler resolves,
+bundles and serves; there is no separate `vela` build or `vela --watch`.
+
+```sh
+npm i -D @govela/unplugin && npm i @govela/runtime
+```
+
+```js
+// vite.config.js
+import vela from '@govela/unplugin/vite';
+
+export default { plugins: [vela()] };
+```
+
+```html
+<!-- index.html -->
+<div id="app"></div>
+<script type="module" src="/src/main.js"></script>
+```
+
+```js
+// src/main.js
+import App from './App.vela';
+App(document.getElementById('app'), {});
+```
+
+`vite` serves the application with the components compiled on request,
+`vite build` bundles it for production. The other bundlers take the entry
+of the same name:
+
+```js
+import vela from '@govela/unplugin/esbuild';
+await esbuild.build({ entryPoints: ['src/main.js'], bundle: true, format: 'esm', outdir: 'dist', plugins: [vela()] });
+```
+
+```js
+// rollup.config.mjs: @govela/unplugin/rollup; rolldown.config.mjs: /rolldown
+import vela from '@govela/unplugin/rollup';
+import { nodeResolve } from '@rollup/plugin-node-resolve';
+import replace from '@rollup/plugin-replace';
+
+export default {
+  input: 'src/main.js',
+  output: { dir: 'dist', format: 'es' },
+  plugins: [vela(), nodeResolve({ browser: true }), replace({ preventAssignment: true, 'process.env.NODE_ENV': JSON.stringify('production') })],
+};
+```
+
+webpack and Rspack: `plugins: [require('@govela/unplugin/webpack').default()]`
+(or `/rspack`).
+
+What the plugin does:
+
+- Components import their children as `.vela` modules, so the bundler's
+  module graph, watching and code splitting cover them; the runtime is
+  imported as `@govela/runtime`, one instance per page.
+- `vela` and `vela/store` in the application's own `.js` modules are the
+  runtime package, as in a build.
+- CSS: with `css: 'external'`, the default for Vite and esbuild, a
+  component imports its scoped CSS as the module
+  `X.vela?vela&type=style&lang.css`, so the bundler's CSS pipeline
+  (PostCSS, hashing, extraction into `.css` files) processes it; esbuild
+  writes it next to the bundle (`dist/main.css`), to be linked by the page.
+  With `css: 'inject'`, the default for Rollup, Rolldown, webpack and
+  Rspack, which need a CSS plugin or loader for `.css` modules, the
+  component adds its CSS to the document.
+- Diagnostics are the bundler's errors and warnings with file, line and
+  code; Vite shows them in its error overlay.
+- Development and production follow the bundler's replacement of
+  `process.env.NODE_ENV`.
+- Settings come from `vela.config.json` in the Vite root or the working
+  directory; the options `config`, `cwd`, `css`, `binary` and
+  `compilerOptions` (file options such as `target` or `strict`) override
+  it. Changes of `vela.config.json` apply after restarting the bundler.
+
+A changed component reloads the page in `vite`; hot module replacement
+that keeps component state is not implemented.
+
+These setups run in CI (`TestBundlerPlugin`): Vite dev server and
+builds, esbuild and Rolldown, in development and production, in Chromium.
+
+### Without the plugin
+
+Compile with the CLI and bundle the output:
 
 ```sh
 vela --project src --out build --runtime-import=bare
 esbuild build/main.js --bundle --format=esm --minify --outfile=dist/app.js
 ```
 
+The same works with Vite (`<script type="module" src="/build/main.js">`
+and `vite build`, with `vela --watch` next to `vite` during development)
+and Rollup (`input: 'build/main.js'` with `@rollup/plugin-node-resolve`,
+`@rollup/plugin-commonjs` for CommonJS packages and
+`@rollup/plugin-replace` for `process.env.NODE_ENV`). Rollup warns that
+`$$runtimeContract1` is imported but never used; the import exists only so
+that a runtime of another version fails the build.
+
 This recipe runs in CI (`TestBundlerRecipeEsbuild`): development and
 production bundles in Chromium, one runtime instance for two output
 directories, and a failing build for a runtime of another contract.
-
-### Vite
-
-Point an `index.html` at the compiled entry and build it:
-
-```html
-<div id="app"></div>
-<script type="module" src="/build/main.js"></script>
-```
-
-```sh
-vela --project src --out build --runtime-import=bare
-vite build
-```
-
-Run `vela --watch` next to `vite` during development.
-
-### Rollup
-
-```js
-// rollup.config.mjs
-import { nodeResolve } from '@rollup/plugin-node-resolve';
-import commonjs from '@rollup/plugin-commonjs';
-import replace from '@rollup/plugin-replace';
-
-export default {
-  input: 'build/main.js',
-  output: { file: 'dist/app.js', format: 'es' },
-  plugins: [
-    nodeResolve({ browser: true }),
-    commonjs(), // packages published as CommonJS
-    replace({ preventAssignment: true, 'process.env.NODE_ENV': JSON.stringify('production') }),
-  ],
-};
-```
-
-Rollup warns that `$$runtimeContract1` is imported but never used; the import
-exists only so that a runtime of another version fails the build.
 
 ### Without a bundler
 

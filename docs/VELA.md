@@ -79,6 +79,7 @@ move; new code imports the packages directly.
 | `ssr_project.go`, `ssr_roots.go` | SSR project build, manifest |
 | `runtime_package.go` | `@govela/runtime` generator |
 | `compiler_package.go` | Manifests of `@govela/compiler` and its platform packages |
+| `unplugin_package.go` | Manifest and entry points of the bundler plugin `@govela/unplugin` (`packages/unplugin`) |
 
 | Package | Role |
 | --- | --- |
@@ -132,6 +133,7 @@ vela --project <dir> [flags]    compile a source tree
 | `--css` | `inject` | `inject` or `external` |
 | `--runtime-import` | `relative` | `relative` (runtime copied) or `bare` (`@govela/runtime`) |
 | `--check-deps` | off | Warn about package imports missing from `node_modules` |
+| `--component-imports` | `js` | `js` (compiled modules) or `vela` (component imports kept, for bundler plugins) |
 | `--target` | `permissive` | Host globals profile: `permissive`, `browser`, `worker`, `node`, `ssr` |
 | `--strict` | off | Proven unresolved reads are errors |
 | `--unavailable-capabilities` | | Reject direct host capabilities, e.g. `fetch,indexedDB` |

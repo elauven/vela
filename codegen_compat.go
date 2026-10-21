@@ -12,6 +12,7 @@ type (
 	HTMLNestingContext = codegen.HTMLNestingContext
 	HTMLNestingError   = codegen.HTMLNestingError
 	ImportRecord       = codegen.ImportRecord
+	ProgramOptions     = codegen.ProgramOptions
 	SourceMapV3        = codegen.SourceMapV3
 )
 
@@ -22,30 +23,32 @@ const (
 )
 
 var (
-	BuildProgram              = codegen.BuildProgram
-	BuildProgramCSS           = codegen.BuildProgramCSS
-	BuildProgramUnvalidated   = codegen.BuildProgramUnvalidated
-	BuildSourceMapV3          = codegen.BuildSourceMapV3
-	CheckHTMLNesting          = codegen.CheckHTMLNesting
-	EachHasComponent          = codegen.EachHasComponent
-	ElementScopeFor           = codegen.ElementScopeFor
-	ExtractScopedCSS          = codegen.ExtractScopedCSS
-	FinalizeRuntimeImports    = codegen.FinalizeRuntimeImports
-	ForEachChildList          = codegen.ForEachChildList
-	GenerateCodeAST           = codegen.GenerateCodeAST
-	IsBoolAttr                = codegen.IsBoolAttr
-	IsPackageSpecifier        = codegen.IsPackageSpecifier
-	ModuleSpecifiers          = codegen.ModuleSpecifiers
-	NormalizeTableRows        = codegen.NormalizeTableRows
-	ParseImportRecords        = codegen.ParseImportRecords
-	RewriteImportPath         = codegen.RewriteImportPath
-	RewriteJSModuleSpecifiers = codegen.RewriteJSModuleSpecifiers
-	RewriteScriptImports      = codegen.RewriteScriptImports
-	RuntimeExportNames        = codegen.RuntimeExportNames
-	RuntimeImportFor          = codegen.RuntimeImportFor
-	SourceLineColumn          = codegen.SourceLineColumn
-	SourceMapJSON             = codegen.SourceMapJSON
-	TemplateExprIdent         = codegen.TemplateExprIdent
-	TemplateExprRoot          = codegen.TemplateExprRoot
-	ValidateGeneratedProgram  = codegen.ValidateGeneratedProgram
+	BuildProgram                  = codegen.BuildProgram
+	BuildProgramCSS               = codegen.BuildProgramCSS
+	BuildProgramUnvalidated       = codegen.BuildProgramUnvalidated
+	BuildProgramUnvalidatedWith   = codegen.BuildProgramUnvalidatedWith
+	BuildSourceMapV3              = codegen.BuildSourceMapV3
+	CheckHTMLNesting              = codegen.CheckHTMLNesting
+	EachHasComponent              = codegen.EachHasComponent
+	ElementScopeFor               = codegen.ElementScopeFor
+	ExtractScopedCSS              = codegen.ExtractScopedCSS
+	FinalizeRuntimeImports        = codegen.FinalizeRuntimeImports
+	ForEachChildList              = codegen.ForEachChildList
+	GenerateCodeAST               = codegen.GenerateCodeAST
+	IsBoolAttr                    = codegen.IsBoolAttr
+	IsPackageSpecifier            = codegen.IsPackageSpecifier
+	ModuleSpecifiers              = codegen.ModuleSpecifiers
+	NormalizeTableRows            = codegen.NormalizeTableRows
+	ParseImportRecords            = codegen.ParseImportRecords
+	RewriteImportPath             = codegen.RewriteImportPath
+	RewriteJSModuleSpecifiers     = codegen.RewriteJSModuleSpecifiers
+	RewriteJSModuleSpecifiersWith = codegen.RewriteJSModuleSpecifiersWith
+	RewriteScriptImports          = codegen.RewriteScriptImports
+	RuntimeExportNames            = codegen.RuntimeExportNames
+	RuntimeImportFor              = codegen.RuntimeImportFor
+	SourceLineColumn              = codegen.SourceLineColumn
+	SourceMapJSON                 = codegen.SourceMapJSON
+	TemplateExprIdent             = codegen.TemplateExprIdent
+	TemplateExprRoot              = codegen.TemplateExprRoot
+	ValidateGeneratedProgram      = codegen.ValidateGeneratedProgram
 )

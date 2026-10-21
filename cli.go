@@ -32,6 +32,7 @@ type fileFlags struct {
 	mode                    *string
 	runtimeImport           *string
 	checkDeps               *bool
+	componentImports        *string
 }
 
 // fileFlagDefaults differ between the build command (CSS injected, runtime
@@ -55,6 +56,7 @@ func addFileFlags(fs *flag.FlagSet, defaults fileFlagDefaults) *fileFlags {
 		mode:                    fs.String("mode", "development", "build mode: 'development' (default) or 'production'"),
 		runtimeImport:           fs.String("runtime-import", defaults.runtimeImport, "runtime imports of generated modules: 'relative' (the runtime is written beside the output) or 'bare' (import "+runtime.PackageName+", installed by the application, for bundlers)"),
 		checkDeps:               fs.Bool("check-deps", false, "warn when a package import does not resolve in node_modules (the compiler never resolves or bundles packages)"),
+		componentImports:        fs.String("component-imports", "js", "imports of .vela components in generated modules: 'js' (the compiled module) or 'vela' (the component, for bundler plugins that compile it)"),
 	}
 }
 
@@ -88,6 +90,11 @@ func (f *fileFlags) options() (CompileOptions, error) {
 	default:
 		return CompileOptions{}, fmt.Errorf("invalid --css value %q (want 'inject' or 'external')", *f.cssMode)
 	}
+	switch *f.componentImports {
+	case "js", "vela":
+	default:
+		return CompileOptions{}, fmt.Errorf("invalid --component-imports value %q (want 'js' or 'vela')", *f.componentImports)
+	}
 	opts := CompileOptions{
 		Minify:                  *f.minify,
 		CSSExternal:             *f.cssMode == "external",
@@ -99,6 +106,7 @@ func (f *fileFlags) options() (CompileOptions, error) {
 		Production:              *f.mode == "production",
 		BareRuntimeImports:      *f.runtimeImport == "bare",
 		CheckDeps:               *f.checkDeps,
+		SourceComponentImports:  *f.componentImports == "vela",
 	}
 	if opts.BareRuntimeImports {
 		opts.RuntimeImport = runtime.PackageName
@@ -119,6 +127,7 @@ type fileOptions struct {
 	Mode                    *string  `json:"mode,omitempty"`
 	RuntimeImport           *string  `json:"runtimeImport,omitempty"`
 	CheckDeps               *bool    `json:"checkDeps,omitempty"`
+	ComponentImports        *string  `json:"componentImports,omitempty"`
 }
 
 // velaConfig is vela.config.json. Paths are relative to the file.
@@ -157,6 +166,7 @@ func (o fileOptions) flagValues() []flagValue {
 	addString("mode", o.Mode)
 	addString("runtime-import", o.RuntimeImport)
 	addBool("check-deps", o.CheckDeps)
+	addString("component-imports", o.ComponentImports)
 	return out
 }
 

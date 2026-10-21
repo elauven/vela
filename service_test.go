@@ -249,6 +249,42 @@ func TestServiceReportsImports(t *testing.T) {
 	}
 }
 
+// componentImports "vela" keeps the component specifiers for bundler
+// plugins; the default points them to the compiled modules, as a build does.
+func TestServiceComponentImports(t *testing.T) {
+	source := `<script>
+  import { Card } from './Card.vela';
+  import { sum } from './math.js';
+  const later = () => import('./Lazy.vela');
+</script>
+<template><Card :n={sum(1, 2)} /></template>`
+	svc := &compilerService{cwd: mustGetwd(t)}
+	for _, c := range []struct {
+		option string
+		want   []string
+	}{
+		{"", []string{"'./Card.js'", "'./math.js'"}},
+		{"vela", []string{"'./Card.vela'", "'./math.js'", "'./Lazy.vela'"}},
+	} {
+		opts := fileOptions{}
+		if c.option != "" {
+			opts.ComponentImports = stringPtr(c.option)
+		}
+		res := svc.compile(serviceRequest{Path: "App.vela", Source: &source, Options: opts})
+		if !res.OK {
+			t.Fatalf("componentImports %q: %s %+v", c.option, res.Error, res.Diagnostics)
+		}
+		for _, want := range c.want {
+			if !strings.Contains(res.JS, want) {
+				t.Errorf("componentImports %q: the module misses %s:\n%s", c.option, want, res.JS)
+			}
+		}
+	}
+	if res := svc.compile(serviceRequest{Path: "App.vela", Source: &source, Options: fileOptions{ComponentImports: stringPtr("ts")}}); res.OK || !strings.Contains(res.Error, "invalid --component-imports value") {
+		t.Fatalf("invalid componentImports: %+v", res)
+	}
+}
+
 func TestServiceRejectsBadRequestsAndContinues(t *testing.T) {
 	session := startService(t, &compilerService{cwd: mustGetwd(t)})
 	source := "<template><p>x</p></template>"

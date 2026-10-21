@@ -1,0 +1,21 @@
+<script>
+  import { pad2 } from 'tiny-fmt';
+  import { Badge } from './widgets/Badge.vela';
+  import { clicks } from './store.js';
+
+  let count = $state(7);
+
+  function increment() {
+    count++;
+    clicks.update((n) => n + 1);
+  }
+</script>
+
+<template>
+  <button class="inc" @click={increment}>{pad2(count)}</button>
+  <Badge :label={`b${count}`} />
+</template>
+
+<style>
+  .inc { color: rgb(1, 2, 3); }
+</style>

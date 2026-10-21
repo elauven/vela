@@ -3,7 +3,8 @@ name: Release
 # A tag vX.Y.Z (docs/RELEASING.md) builds the compiler for every platform,
 # publishes a GitHub release with the binaries and their checksums, and
 # publishes the npm packages of that version: the platform packages with the
-# binaries, @govela/compiler and @govela/runtime. The Go runtime is released
+# binaries, @govela/runtime, @govela/compiler and the bundler plugin
+# @govela/unplugin. The Go runtime is released
 # by its own tag ssr_runtime/vX.Y.Z, which needs no build.
 
 on:
@@ -59,7 +60,8 @@ jobs:
             node -e '
               const [file, want] = process.argv.slice(1);
               const m = JSON.parse(require("fs").readFileSync(file, "utf8"));
-              const wrong = [m.version, ...Object.values(m.optionalDependencies ?? {})].filter((v) => v !== want);
+              const own = (deps) => Object.entries(deps ?? {}).filter(([name]) => name.startsWith("@govela/")).map(([, v]) => v);
+              const wrong = [m.version, ...own(m.optionalDependencies), ...own(m.dependencies), ...own(m.peerDependencies)].filter((v) => v !== want);
               if (wrong.length) { console.error(`${file}: ${wrong.join(", ")}, want ${want}`); process.exit(1); }
             ' "$manifest" "$want"
           done
@@ -87,15 +89,15 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      # Platform packages first, so the optional dependencies of
-      # @govela/compiler exist when it is published. A version that is
+      # Dependencies first: the platform packages before @govela/compiler,
+      # the runtime and the compiler before @govela/unplugin. A version that is
       # already on npm is skipped, so a failed run can be repeated.
       - name: Publish the npm packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           version="${GITHUB_REF_NAME#v}"
-          for dir in packages/compiler-* packages/runtime packages/compiler; do
+          for dir in packages/compiler-* packages/runtime packages/compiler packages/unplugin; do
             name=$(node -p "require('./$dir/package.json').name")
             if npm view "$name@$version" version >/dev/null 2>&1; then
               echo "$name@$version is already published"

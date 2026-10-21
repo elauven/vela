@@ -77,10 +77,40 @@ jobs:
       - name: Verify SSR browser gate failure accounting
         run: node tools/run-ssr-browser-baseline-self-test.mjs
 
+  # The tests that bundle and run in Chromium skip without node_modules,
+  # which the test job does not install.
+  bundlers:
+    name: Bundler plugin and recipes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install the bundlers
+        # Pinned by package-lock.json: vite, rolldown, esbuild, unplugin.
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Bundle and run in Chromium
+        env:
+          VELA_REQUIRE_BUNDLERS: '1'
+        run: go test -count=1 -v -run 'TestBundler|TestCompilerNpmPackage' .
+
   build:
     name: Build binaries
     runs-on: ubuntu-latest
-    needs: [test, ssr-browser]
+    needs: [test, ssr-browser, bundlers]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6

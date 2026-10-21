@@ -10,7 +10,8 @@ The protocol compiles one client component per request. Server rendering
 From JavaScript, `@govela/compiler` wraps the protocol: `startService()`
 starts `vela serve --stdio`, checks the handshake against its own version,
 and returns `compile(request)` and `close()`; `compile(request)` runs one
-request in a short-lived service. The types are in its `index.d.ts`.
+request in a short-lived service. The types are in its `index.d.ts`. The
+bundler plugin `@govela/unplugin` is a client of the protocol.
 
 ## Commands
 
@@ -33,7 +34,7 @@ vela compile --path src/App.vela [--stdin] [--config file] [file flags]
 *File flags* are the flags of the build command that shape one component:
 `--minify`, `--css`, `--sourcemap`, `--target`,
 `--unavailable-capabilities`, `--strict`, `--hydration-verify`, `--mode`,
-`--runtime-import`, `--check-deps`. Two defaults differ from the build
+`--runtime-import`, `--check-deps`, `--component-imports`. Two defaults differ from the build
 command, because the clients bundle the output: `--css=external` (CSS is a
 separate result) and `--runtime-import=bare` (imports `@govela/runtime`).
 
@@ -96,6 +97,8 @@ relative or absolute path), `runtime` (`vela`, `vela/store`), `package`
 Watchers use the list to recompile importers.
 
 In `js`, `.vela` imports point to the compiled `.js` modules, as in a build.
+With `componentImports: "vela"` they stay `.vela` imports, for a bundler
+plugin that compiles the imported components itself.
 
 ## Diagnostics
 
@@ -138,6 +141,7 @@ override it. Unknown keys are an error. Paths are relative to the file.
 | `minify`, `css`, `sourcemap`, `target`, `strict`, `mode` | the flag of the same name |
 | `unavailableCapabilities` | `--unavailable-capabilities` (an array) |
 | `hydrationVerify`, `runtimeImport`, `checkDeps` | `--hydration-verify`, `--runtime-import`, `--check-deps` |
+| `componentImports` | `--component-imports` (`js` or `vela`) |
 | `$schema` | ignored, for editors |
 
 The file options (all keys except `project`, `out`, `ssr`, `ssrModule`)

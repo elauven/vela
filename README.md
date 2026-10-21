@@ -64,8 +64,9 @@ JavaScript engine.
   JavaScript semantics (UTF-16 strings, number formatting, `Math` bit for
   bit). What cannot be translated exactly is a build error with a fix — write
   that function in Go once, or mark the content browser-only.
-- **A compiler, not a framework.** The output is plain ES modules. Bundle it
-  with esbuild, Vite or Rollup, or serve it as is.
+- **A compiler, not a framework.** The output is plain ES modules. Serve it
+  as is, bundle it, or compile inside Vite, Rollup, Rolldown, esbuild,
+  webpack or Rspack with the plugin `@govela/unplugin`.
 - **Diagnostics that teach.** Errors carry a stable `VELA-*` code, the
   source position and the Vela way to write it — useful for people and for
   AI agents ([AGENTS.md](AGENTS.md)).
@@ -79,6 +80,14 @@ npm i -D @govela/compiler                   # then npx vela …
 vela --project src --out build          # compile every component in src/
 vela --project src --out build --watch  # recompile on change
 vela check --project src                # diagnostics only, for CI
+```
+
+With Vite (`npm i -D @govela/unplugin && npm i @govela/runtime`):
+
+```js
+// vite.config.js
+import vela from '@govela/unplugin/vite';
+export default { plugins: [vela()] };
 ```
 
 Mount a component from any page:

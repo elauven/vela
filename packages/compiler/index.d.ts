@@ -15,6 +15,8 @@ export interface CompileOptions {
   mode?: 'development' | 'production';
   runtimeImport?: 'relative' | 'bare';
   checkDeps?: boolean;
+  /** 'vela' keeps `.vela` specifiers of component imports, for bundler plugins. */
+  componentImports?: 'js' | 'vela';
 }
 
 export interface CompileRequest {

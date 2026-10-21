@@ -9,7 +9,8 @@ import (
 	"testing"
 )
 
-// The manifests of packages/compiler and packages/compiler-* are generated
+// The manifests of packages/compiler, packages/compiler-* and
+// packages/unplugin are generated
 // with the compiler version; regenerate with
 // VELA_UPDATE_RUNTIME_PACKAGE=1 go test -run TestCompilerPackagesAreGenerated .
 func TestCompilerPackagesAreGenerated(t *testing.T) {
@@ -50,10 +51,13 @@ func TestCompilerPackagesAreGenerated(t *testing.T) {
 	for _, name := range compilerPackageSources {
 		allowed[filepath.Join(filepath.FromSlash(compilerPackageDir), filepath.FromSlash(name))] = true
 	}
+	for _, name := range unpluginPackageSources {
+		allowed[filepath.Join(filepath.FromSlash(unpluginPackageDir), name)] = true
+	}
 	for _, p := range compilerPlatforms {
 		allowed[filepath.Join(filepath.FromSlash(p.Dir()), filepath.FromSlash(p.Binary()))] = true
 	}
-	dirs := []string{compilerPackageDir}
+	dirs := []string{compilerPackageDir, unpluginPackageDir}
 	for _, p := range compilerPlatforms {
 		dirs = append(dirs, p.Dir())
 	}
@@ -67,6 +71,11 @@ func TestCompilerPackagesAreGenerated(t *testing.T) {
 	}
 	for _, name := range compilerPackageSources {
 		if _, err := os.Stat(filepath.Join(filepath.FromSlash(compilerPackageDir), filepath.FromSlash(name))); err != nil {
+			t.Errorf("package source %s: %v", name, err)
+		}
+	}
+	for _, name := range unpluginPackageSources {
+		if _, err := os.Stat(filepath.Join(filepath.FromSlash(unpluginPackageDir), name)); err != nil {
 			t.Errorf("package source %s: %v", name, err)
 		}
 	}
@@ -89,6 +98,9 @@ func TestReleaseWorkflowCoversCompilerPlatforms(t *testing.T) {
 		if stage := build + ":" + p.name(); !strings.Contains(workflow, stage) {
 			t.Errorf("release.yml does not put the %s binary into %s (%s)", build, p.Dir(), stage)
 		}
+	}
+	if !strings.Contains(workflow, "packages/compiler "+unpluginPackageDir+"; do") {
+		t.Errorf("release.yml does not publish %s after the compiler", unpluginPackageDir)
 	}
 	// npm publish takes a bare "packages/x" for the GitHub repository packages/x.
 	if !strings.Contains(workflow, `npm publish "./$dir"`) {

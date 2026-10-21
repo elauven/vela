@@ -26,14 +26,14 @@ func newBundlerFixture(t *testing.T) *bundlerFixture {
 	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node not available")
+		skipBundlers(t, "node not available")
 	}
 	esbuild, err := filepath.Abs(filepath.Join("node_modules", ".bin", "esbuild"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(esbuild); err != nil {
-		t.Skip("esbuild not installed; run npm ci")
+		skipBundlers(t, "esbuild not installed; run npm ci")
 	}
 	f := &bundlerFixture{t: t, root: t.TempDir(), esbuild: esbuild, node: node}
 	f.copyDir(filepath.Join("testdata", "bundler", "packages", "tiny-fmt"), filepath.Join(f.root, "node_modules", "tiny-fmt"), nil)
@@ -119,7 +119,7 @@ func (f *bundlerFixture) run(dir, bundle string) bundlerPageRun {
 	}
 	if result.Error != "" {
 		if strings.Contains(result.Error, "Executable doesn't exist") || strings.Contains(result.Error, "browserType.launch") {
-			f.t.Skip("chromium not installed")
+			skipBundlers(f.t, "chromium not installed")
 		}
 		f.t.Fatalf("chromium run: %s\n%v", result.Error, result.Logs)
 	}

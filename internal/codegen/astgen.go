@@ -227,6 +227,9 @@ type ASTGen struct {
 	// by the compiler, and the consumer links it.
 	cssExternal bool
 
+	// sourceComponentImports keeps `.vela` import specifiers (ProgramOptions).
+	sourceComponentImports bool
+
 	// templateBindings redirects parser-owned template identifiers into the
 	// generated lexical bindings that currently own them: an each-row's
 	// mutable item cell or an await branch's resolved value cell.  Expressions
@@ -780,19 +783,41 @@ func BuildProgramUnvalidated(
 	scopeID string,
 	cssExternal bool,
 ) *jsast.JsProgram {
+	return BuildProgramUnvalidatedWith(name, sfc, nodes, analysis, scopeID, ProgramOptions{CSSExternal: cssExternal})
+}
+
+// ProgramOptions shape the target tree of one component.
+type ProgramOptions struct {
+	CSSExternal bool
+	// SourceComponentImports keeps `.vela` specifiers of component imports
+	// instead of pointing them to the compiled `.js` modules, for bundler
+	// plugins that compile the imported components themselves.
+	SourceComponentImports bool
+}
+
+// BuildProgramUnvalidatedWith is BuildProgramUnvalidated with every option.
+func BuildProgramUnvalidatedWith(
+	name string,
+	sfc *sfcast.SFC,
+	nodes []sfcast.Node,
+	analysis *analyzer.Analysis,
+	scopeID string,
+	opts ProgramOptions,
+) *jsast.JsProgram {
 	// Input validation consumes the immutable ScriptAST before this point.
 	// Lower callback assignments only while assembling target code, so the
 	// shared source tree cannot leak generated $$set_* names into user scopes.
 	analysis.LowerReactiveCallbackBodies()
 	g := &ASTGen{
-		name:         name,
-		scopeID:      scopeID,
-		elementScope: ElementScopeFor(sfc, scopeID),
-		analysis:     analysis,
-		sfc:          sfc,
-		fragCounter:  -1,
-		cssExternal:  cssExternal,
-		blocks:       &blocksState{},
+		name:                   name,
+		scopeID:                scopeID,
+		elementScope:           ElementScopeFor(sfc, scopeID),
+		analysis:               analysis,
+		sfc:                    sfc,
+		fragCounter:            -1,
+		cssExternal:            opts.CSSExternal,
+		blocks:                 &blocksState{},
+		sourceComponentImports: opts.SourceComponentImports,
 	}
 	return g.buildModule(nodes)
 }
@@ -1223,7 +1248,7 @@ func (g *ASTGen) buildImportDecls() []jsast.JsStmt {
 				continue
 			}
 		} else {
-			if src == imp.Source {
+			if src == imp.Source && !(g.sourceComponentImports && strings.HasSuffix(src, ".vela")) {
 				src = RewriteImportPath(src)
 			}
 		}

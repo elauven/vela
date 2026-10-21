@@ -74,7 +74,7 @@ type conditionalExport struct {
 }
 
 // compilerPackageFiles returns the generated files of every compiler
-// package, by repository path.
+// package and of the bundler plugin, by repository path.
 func compilerPackageFiles() (map[string][]byte, error) {
 	files := map[string][]byte{}
 	optional := map[string]string{}
@@ -177,5 +177,12 @@ func compilerPackageFiles() (map[string][]byte, error) {
 	files[path.Join(compilerPackageDir, "package.json")] = encoded
 	files[path.Join(compilerPackageDir, "README.md")] = []byte(readme)
 	files[path.Join(compilerPackageDir, "LICENSE")] = licenseText
+	plugin, err := unpluginPackageFiles()
+	if err != nil {
+		return nil, err
+	}
+	for name, data := range plugin {
+		files[name] = data
+	}
 	return files, nil
 }
