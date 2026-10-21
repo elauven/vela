@@ -3,6 +3,11 @@
   "version": "0.4.2",
   "description": "Runtime of components compiled by the Vela compiler. Generated from runtime/; do not edit.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elauven/vela.git",
+    "directory": "packages/runtime"
+  },
   "type": "module",
   "sideEffects": [
     "./runtime.js"

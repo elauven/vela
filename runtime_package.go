@@ -21,6 +21,22 @@ var licenseText []byte
 // runtimePackageDir is where the generated package lives in the repository.
 const runtimePackageDir = "packages/runtime"
 
+// repositoryURL is the git repository of the npm packages. npm publish
+// --provenance rejects a package whose repository.url is not the repository
+// that built it.
+const repositoryURL = "git+https://github.com/elauven/vela.git"
+
+// packageRepository is the repository field of a generated package.json.
+type packageRepository struct {
+	Type      string `json:"type"`
+	URL       string `json:"url"`
+	Directory string `json:"directory"`
+}
+
+func repositoryOf(dir string) packageRepository {
+	return packageRepository{Type: "git", URL: repositoryURL, Directory: dir}
+}
+
 // bundlerDevelopmentFlag replaces runtimeDevelopmentFlag in the package. A
 // bundler replaces process.env.NODE_ENV with a string, so the check becomes a
 // constant and a production bundle drops the development code. The staged
@@ -41,6 +57,7 @@ func runtimePackageFiles() (map[string][]byte, error) {
 		Version     string            `json:"version"`
 		Description string            `json:"description"`
 		License     string            `json:"license"`
+		Repository  packageRepository `json:"repository"`
 		Type        string            `json:"type"`
 		SideEffects []string          `json:"sideEffects"`
 		Exports     map[string]string `json:"exports"`
@@ -50,6 +67,7 @@ func runtimePackageFiles() (map[string][]byte, error) {
 		Version:     runtime.Version,
 		Description: "Runtime of components compiled by the Vela compiler. Generated from runtime/; do not edit.",
 		License:     "MIT",
+		Repository:  repositoryOf(runtimePackageDir),
 		Type:        "module",
 		SideEffects: []string{"./runtime.js"},
 		Exports: map[string]string{

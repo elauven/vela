@@ -91,3 +91,16 @@ func TestReleaseWorkflowCoversCompilerPlatforms(t *testing.T) {
 		}
 	}
 }
+
+// npm publish --provenance requires repository.url to name the repository
+// the workflow runs in, which is the module's.
+func TestPackageRepositoryIsTheModule(t *testing.T) {
+	gomod, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := strings.Fields(strings.SplitN(string(gomod), "\n", 2)[0])[1]
+	if want := "git+https://" + module + ".git"; repositoryURL != want {
+		t.Fatalf("repositoryURL = %q, want %q", repositoryURL, want)
+	}
+}
