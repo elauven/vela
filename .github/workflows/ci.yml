@@ -80,7 +80,7 @@ jobs:
   # The tests that bundle and run in Chromium skip without node_modules,
   # which the test job does not install.
   bundlers:
-    name: Bundler plugin and recipes
+    name: Bundler plugin, recipes and SSR with Vite
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -105,7 +105,7 @@ jobs:
       - name: Bundle and run in Chromium
         env:
           VELA_REQUIRE_BUNDLERS: '1'
-        run: go test -count=1 -v -run 'TestBundler|TestCompilerNpmPackage' .
+        run: go test -count=1 -v -run 'TestBundler|TestSSRWithVite|TestCompilerNpmPackage' .
 
   build:
     name: Build binaries

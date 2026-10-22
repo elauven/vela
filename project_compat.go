@@ -13,4 +13,5 @@ var (
 	ComponentName    = project.ComponentName
 	MirrorPath       = project.MirrorPath
 	RelOrBase        = project.RelOrBase
+	ScopeID          = project.ScopeID
 )

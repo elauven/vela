@@ -36,7 +36,7 @@ vela --ssr --project src --out out
 | Output | Contents |
 | --- | --- |
 | `out/client/` | Client modules (the same as a CSR build), the runtime, and `vela.manifest.json` (components, root modes, package imports) |
-| `out/server/components/…` | One Go package per source directory: `page.go` (renderer) and `page_props.go` (props struct, yours to extend: it is never overwritten) |
+| `out/server/components/…` | One Go package per source directory: `page.go` (renderer) and `page_props.go` (props struct: regenerated when the props change until you edit it, then yours and never overwritten) |
 | `out/server/modules/…` | One Go package per local `.js` module that components import |
 | `out/styles/` | Scoped CSS per component |
 
@@ -112,6 +112,79 @@ hydrate(Page, document.getElementById('app'), {
 - **Form controls.** If the user edits an input before hydration, the live
   value is written into state through the normal setter. `bind:this` is
   assigned after the element is adopted.
+
+## Development and production with Vite
+
+The Go server renders the HTML; Vite serves the client in development and
+bundles it for production, with the components compiled by
+`@govela/unplugin` (docs/GUIDE.md "Bundler plugin"). Run `vela` and Vite
+in the same directory, the Vite root: the scope classes of the CSS and the
+source positions of hydration reports come from the paths relative to it,
+so the server HTML and the client agree.
+
+```json
+// vela.config.json
+{ "project": "src", "out": "out", "ssr": true, "ssrModule": "example.com/site/out/server" }
+```
+
+```js
+// vite.config.js
+import vela from '@govela/unplugin/vite';
+
+export default {
+  plugins: [vela()],
+  server: { origin: 'http://localhost:5173' },
+  build: { manifest: true, rollupOptions: { input: 'src/client.js' } },
+};
+```
+
+```js
+// src/client.js
+import { hydrate } from '@govela/runtime/hydrate';
+import App from './App.vela';
+
+hydrate(App, document.getElementById('app'));
+```
+
+The Go server takes the tags of the client from the package
+`github.com/elauven/vela/ssr_runtime/vite`:
+
+```go
+import "github.com/elauven/vela/ssr_runtime/vite"
+
+assets := vite.Dev("http://localhost:5173")                  // development
+assets, err := vite.Load("dist/.vite/manifest.json", "/")    // production
+tags, err := assets.Tags("src/client.js")                    // into <head>
+```
+
+- `Dev` gives the Vite client and the entry module from the dev server,
+  which compiles the components on request. The CSS arrives with the
+  modules, so the page is unstyled until the client has loaded.
+- `Load` reads the manifest of `vite build` and `Tags` gives, per entry,
+  the stylesheets, `<link rel="modulepreload">` for the imported chunks and
+  the module script, with the hashed file names. Serve `dist/assets/` at
+  the `base` you pass (Vite's `base`, `/` by default).
+
+**Development loop.** Three processes:
+
+```sh
+vela --watch                     # with vela.config.json: --ssr --project src --out out
+watchexec -r -w out/.vela-ready -- go run ./cmd/server
+npx vite
+```
+
+`vela --ssr --watch` rebuilds the project after every change of a
+component, a local module, `vela.ssr.json` or a host file, and removes the
+outputs of a removed component. After each build without errors it writes
+`out/.vela-ready` (the start time of the build), the signal to restart the
+Go server; a build with errors leaves it, so the last good server keeps
+running. Every rebuild is a clean build of the project (about 0.1 s for
+30 components). Vite reloads the page when a component changes; component
+state is not kept.
+
+This setup runs in CI (`TestSSRWithVite`): the Go server with `vite build`
+output and with the Vite dev server, hydrated in Chromium without
+mismatches. `TestSSRWatchRebuildsLikeACleanBuild` covers the watch mode.
 
 ## What runs on the server
 
@@ -210,7 +283,9 @@ Server text follows the client's conversion in each context:
 
 ## Not included
 
-Streaming, partial hydration and islands, an HTTP framework or router, and a
-dev server. Vela does not bundle: the client entry is built by your own
-tools ([GUIDE.md](GUIDE.md), "Building an application").
+Streaming, partial hydration and islands, an HTTP framework or router, hot
+module replacement, and a dev server of its own: Vite serves the client
+("Development and production with Vite"). Vela does not bundle: the client
+entry is built by your own tools ([GUIDE.md](GUIDE.md), "Building an
+application").
 

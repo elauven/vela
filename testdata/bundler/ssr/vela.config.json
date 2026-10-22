@@ -1,0 +1,6 @@
+{
+  "project": "src",
+  "out": "out",
+  "ssr": true,
+  "ssrModule": "example.com/site/out/server"
+}

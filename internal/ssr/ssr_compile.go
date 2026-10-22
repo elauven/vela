@@ -6,7 +6,6 @@ import (
 	"github.com/elauven/vela/internal/project"
 	"github.com/elauven/vela/internal/sfcast"
 
-	"crypto/md5"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -78,8 +77,7 @@ func CompileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, hos
 		// A client-only component has no Go renderer (T-9.2a).
 		return errSSRClientOnly
 	}
-	hash := md5.Sum([]byte(src))
-	scopeID := fmt.Sprintf("vela-%x", hash[:3])
+	scopeID := project.ScopeID(src)
 	analysis := analyzer.AnalyzeScriptAST(sfc.ScriptAST)
 	links, err := ResolveSSRLocalComponentLinks(src, srcRoot, analysis)
 	if err != nil {

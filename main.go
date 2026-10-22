@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/elauven/vela/runtime"
 
-	"crypto/md5"
 	_ "embed"
 	"encoding/json"
 	"flag"
@@ -172,11 +171,7 @@ func main() {
 	// ── Project mode ─────────────────────────────────────────────────────────
 	if *projectDir != "" {
 		if *ssr {
-			if *watch {
-				fmt.Fprintln(os.Stderr, "vela: --ssr does not support --watch yet")
-				os.Exit(2)
-			}
-			runSSRProject(*projectDir, *outDir, opts, *parallel)
+			runSSRProject(*projectDir, *outDir, opts, *watch, *parallel)
 			return
 		}
 		runProject(*projectDir, *outDir, opts, *watch, *parallel)
@@ -280,7 +275,7 @@ func splitCapabilityList(raw string) []string {
 //  Project mode
 // ─────────────────────────────────────────────────────────────────────────────
 
-func runSSRProject(srcRoot, outRoot string, opts CompileOptions, parallel bool) {
+func runSSRProject(srcRoot, outRoot string, opts CompileOptions, watch, parallel bool) {
 	srcRoot = filepath.Clean(srcRoot)
 	absRoot, err := filepath.Abs(srcRoot)
 	if err != nil {
@@ -295,6 +290,10 @@ func runSSRProject(srcRoot, outRoot string, opts CompileOptions, parallel bool) 
 		fmt.Fprintln(status, "   parallel  on")
 	}
 	fmt.Fprintln(status)
+	if watch {
+		watchSSRProject(srcRoot, outRoot, opts, parallel, 150*time.Millisecond, nil)
+		return
+	}
 	start := time.Now()
 	files := CollectVela(srcRoot)
 	if len(files) == 0 {
@@ -671,8 +670,7 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		trace.trace.Metrics.SourceBytes = len(data)
 	}
 
-	hash := md5.Sum([]byte(src))
-	scope := fmt.Sprintf("vela-%x", hash[:3])
+	scope := ScopeID(src)
 
 	ds = NewDiagSet(src, raw)
 	if opts.SourceMap && opts.Minify {

@@ -20,7 +20,7 @@ authoring syntax read [GUIDE.md](GUIDE.md); for feature status,
 | `internal/project/` | Source discovery and output paths |
 | `runtime/` | Browser runtime: `runtime.js`, `runtime-blocks.js`, `runtime-hydrate.js`, embedded in the binary by `runtime/embed.go`, which also holds `Version` |
 | `packages/runtime/` | The npm package `@govela/runtime`, generated from `runtime/` (`runtime_package.go`) |
-| `ssr_runtime/` | Go runtime of generated renderers, nested module `github.com/elauven/vela/ssr_runtime` |
+| `ssr_runtime/` | Go runtime of generated renderers, nested module `github.com/elauven/vela/ssr_runtime`; `ssr_runtime/vite`: the client's tags from Vite |
 | `examples/` | Example components, a dashboard, and the SSR server with hosts (`examples/ssr-host`) |
 | `test_projects/`, `testdata/` | Compatibility corpus (applications written by AI models) and fixtures |
 | `tools/` | Node harnesses for jsdom/Chromium tests, oracle generators, gate checks |
@@ -77,6 +77,7 @@ move; new code imports the packages directly.
 | `minifier.go`, `compiler_trace.go`, `ast_json.go`, `astjson.go` | Minification, compiler trace, AST debug output |
 | `package_imports.go`, `package_resolve.go` | Package imports, `vela.manifest.json`, `--check-deps` |
 | `ssr_project.go`, `ssr_roots.go` | SSR project build, manifest |
+| `ssr_watch.go` | `--ssr --watch`: rebuild on change, the `.vela-ready` stamp |
 | `runtime_package.go` | `@govela/runtime` generator |
 | `compiler_package.go` | Manifests of `@govela/compiler` and its platform packages |
 | `unplugin_package.go` | Manifest and entry points of the bundler plugin `@govela/unplugin` (`packages/unplugin`) |
@@ -126,7 +127,7 @@ vela --project <dir> [flags]    compile a source tree
 | --- | --- | --- |
 | `--out` | `dist` | Output directory |
 | `--project` | | Source directory; mirrors the tree into `--out` |
-| `--watch` | off | Recompile on change (no HMR) |
+| `--watch` | off | Recompile on change (no HMR); with `--ssr`, rebuild the project and write `out/.vela-ready` |
 | `--mode` | `development` | `production` disables development checks in the runtime |
 | `--minify` | off | Minify output and drop dead bindings |
 | `--sourcemap` | off | External v3 source maps (not with `--minify`) |

@@ -1,0 +1,11 @@
+<script>
+  export let label = '';
+</script>
+
+<template>
+  <span class="badge">{label}</span>
+</template>
+
+<style>
+  .badge { color: rgb(4, 5, 6); }
+</style>

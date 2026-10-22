@@ -65,6 +65,46 @@ func runSSRGeneratedProgram(root string) ([]byte, error) {
 	return output, nil
 }
 
+// A generated props sidecar follows the props of the component until the
+// developer edits it (task 064): a new prop gets its field, an edited file
+// is kept.
+func TestSSRProjectRegeneratesUneditedPropsSidecar(t *testing.T) {
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	source := filepath.Join(srcRoot, "App.vela")
+	layout := NewSSRProjectLayout(filepath.Join(root, "out"))
+	compile := func(component string) string {
+		t.Helper()
+		writeTestFile(t, source, component)
+		if err := CompileSSRProjectFile(source, srcRoot, layout); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(layout.PropsPath(source, srcRoot))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	first := compile(`<script>export let title = "";</script><template><p>{title}</p></template>`)
+	if !SSRPropsGenerated([]byte(first)) || !strings.Contains(first, "Title string") {
+		t.Fatalf("generated sidecar:\n%s", first)
+	}
+	second := compile(`<script>export let title = ""; export let count = 0;</script><template><p>{title}{count}</p></template>`)
+	if !strings.Contains(second, "Title string") || !strings.Contains(second, "Count float64") {
+		t.Fatalf("the sidecar did not follow the new prop:\n%s", second)
+	}
+	edited := strings.Replace(second, "Count float64", "Count float64\n\tMarker int", 1)
+	if err := os.WriteFile(layout.PropsPath(source, srcRoot), []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if SSRPropsGenerated([]byte(edited)) {
+		t.Fatal("an edited sidecar counts as generated")
+	}
+	if third := compile(`<script>export let title = ""; export let count = 0;</script><template><p>{count}{title}</p></template>`); third != edited {
+		t.Fatalf("an edited sidecar was overwritten:\n%s", third)
+	}
+}
+
 func TestSSRProjectPreservesDeveloperPropsSidecar(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")

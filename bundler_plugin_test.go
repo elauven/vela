@@ -37,6 +37,12 @@ type pluginApp struct {
 
 func newPluginApp(t *testing.T) *pluginApp {
 	t.Helper()
+	return newBundlerApp(t, "plugin")
+}
+
+// newBundlerApp is a pluginApp with the sources of testdata/bundler/<fixture>.
+func newBundlerApp(t *testing.T, fixture string) *pluginApp {
+	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		skipBundlers(t, "node not available")
@@ -47,7 +53,7 @@ func newPluginApp(t *testing.T) *pluginApp {
 		}
 	}
 	a := &pluginApp{t: t, root: t.TempDir(), node: node}
-	copyTree(t, filepath.Join("testdata", "bundler", "plugin"), a.root)
+	copyTree(t, filepath.Join("testdata", "bundler", fixture), a.root)
 	modules := filepath.Join(a.root, "node_modules")
 	copyTree(t, filepath.Join("testdata", "bundler", "packages", "tiny-fmt"), filepath.Join(modules, "tiny-fmt"))
 	for dir, name := range map[string]string{runtimePackageDir: runtime.PackageName, compilerPackageDir: CompilerPackageName, unpluginPackageDir: UnpluginPackageName} {
@@ -94,29 +100,37 @@ type pluginRun struct {
 	Error      string
 }
 
-// run runs tools/bundler-plugin-check.mjs. The process must end by itself:
-// a compiler service the plugin leaves running keeps it alive.
+// run runs tools/bundler-plugin-check.mjs.
 func (a *pluginApp) run(args ...string) pluginRun {
 	a.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, a.node, append([]string{filepath.Join("tools", "bundler-plugin-check.mjs"), args[0], a.root}, args[1:]...)...)
-	cmd.Env = append(os.Environ(), "VELA_BINARY="+a.binary)
-	out, err := cmd.Output()
-	if ctx.Err() != nil {
-		a.t.Fatalf("%v did not exit: a compiler service is still running?\n%s", args, out)
-	}
 	var result pluginRun
-	if err != nil || json.Unmarshal(out, &result) != nil {
-		a.t.Fatalf("%v: %v\n%s", args, err, out)
-	}
+	a.script("bundler-plugin-check.mjs", &result, args...)
 	if result.Error != "" {
-		if strings.Contains(result.Error, "Executable doesn't exist") || strings.Contains(result.Error, "browserType.launch") {
-			skipBundlers(a.t, "chromium not installed")
-		}
 		a.t.Fatalf("%v: %s\n%v", args, result.Error, result.Logs)
 	}
 	return result
+}
+
+// script runs tools/<name> <args[0]> <app> <args[1:]> and decodes its JSON
+// output into result. The process must end by itself: a compiler service
+// the plugin leaves running keeps it alive.
+func (a *pluginApp) script(name string, result any, args ...string) {
+	a.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, a.node, append([]string{filepath.Join("tools", name), args[0], a.root}, args[1:]...)...)
+	cmd.Env = append(os.Environ(), "VELA_BINARY="+a.binary)
+	out, err := cmd.Output()
+	if ctx.Err() != nil {
+		a.t.Fatalf("%s %v did not exit: a compiler service is still running?\n%s", name, args, out)
+	}
+	var failure struct{ Error string }
+	if err != nil || json.Unmarshal(out, result) != nil || json.Unmarshal(out, &failure) != nil {
+		a.t.Fatalf("%s %v: %v\n%s", name, args, err, out)
+	}
+	if strings.Contains(failure.Error, "Executable doesn't exist") || strings.Contains(failure.Error, "browserType.launch") {
+		skipBundlers(a.t, "chromium not installed")
+	}
 }
 
 func (a *pluginApp) checkPage(name, dev string, r pluginRun) {

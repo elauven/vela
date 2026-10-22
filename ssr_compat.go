@@ -126,6 +126,7 @@ var (
 	SSRDiagnosticSummary                   = ssr.SSRDiagnosticSummary
 	SSRErrorDiagnostics                    = ssr.SSRErrorDiagnostics
 	SSRInteractive                         = ssr.SSRInteractive
+	SSRPropsGenerated                      = ssr.SSRPropsGenerated
 	SSRRootModes                           = ssr.SSRRootModes
 	SSRRuntimeImport                       = ssr.SSRRuntimeImport
 	ScaffoldSSRHosts                       = ssr.ScaffoldSSRHosts

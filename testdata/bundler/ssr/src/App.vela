@@ -1,0 +1,19 @@
+<script>
+  import { Badge } from './widgets/Badge.vela';
+
+  export let start = 0;
+  let count = $state(start);
+
+  function increment() {
+    count++;
+  }
+</script>
+
+<template>
+  <button class="inc" @click={increment}>{count}</button>
+  <Badge :label={`b${count}`} />
+</template>
+
+<style>
+  .inc { color: rgb(1, 2, 3); }
+</style>
