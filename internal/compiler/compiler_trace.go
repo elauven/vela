@@ -1,6 +1,10 @@
-package main
+package compiler
 
 import (
+	"github.com/elauven/vela/internal/diag"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfcast"
+
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,7 +87,7 @@ func (s *JSONLTraceSink) Close() error {
 }
 
 // CompilationTraceV1 is the stable, source-free observability record for one
-// compileFile invocation. It is intentionally an aggregate: raw source, AST
+// CompileFile invocation. It is intentionally an aggregate: raw source, AST
 // payloads, generated output, diagnostic messages, and absolute paths are not
 // retained or serialized.
 type CompilationTraceV1 struct {
@@ -141,9 +145,9 @@ type TraceMetrics struct {
 }
 
 const (
-	traceComplete = "complete"
-	traceSkipped  = "skipped"
-	traceFailed   = "failed"
+	TraceComplete = "complete"
+	TraceSkipped  = "skipped"
+	TraceFailed   = "failed"
 )
 
 type traceRecorder struct {
@@ -200,7 +204,7 @@ func (r *traceRecorder) stage(name string, run func() error) (err error) {
 	}
 	stage := StageTrace{
 		Name:   name,
-		Status: traceComplete,
+		Status: TraceComplete,
 		Cache:  TraceCacheDecision{Decision: "not-applicable"},
 	}
 	r.trace.Stages = append(r.trace.Stages, stage)
@@ -209,11 +213,11 @@ func (r *traceRecorder) stage(name string, run func() error) (err error) {
 	defer func() {
 		r.trace.Stages[index].DurationNS = time.Since(started).Nanoseconds()
 		if panicValue := recover(); panicValue != nil {
-			r.trace.Stages[index].Status = traceFailed
+			r.trace.Stages[index].Status = TraceFailed
 			panic(panicValue)
 		}
 		if err != nil {
-			r.trace.Stages[index].Status = traceFailed
+			r.trace.Stages[index].Status = TraceFailed
 		}
 	}()
 	return run()
@@ -225,13 +229,13 @@ func (r *traceRecorder) skipped(name, reason string) {
 	}
 	r.trace.Stages = append(r.trace.Stages, StageTrace{
 		Name:   name,
-		Status: traceSkipped,
+		Status: TraceSkipped,
 		Cache:  TraceCacheDecision{Decision: "not-applicable"},
 		Reason: reason,
 	})
 }
 
-func (r *traceRecorder) finish(diags []*Diagnostic, outcome string) error {
+func (r *traceRecorder) finish(diags []*diag.Diagnostic, outcome string) error {
 	if r == nil {
 		return nil
 	}
@@ -252,37 +256,37 @@ func (r *traceRecorder) snapshot() CompilationTraceV1 {
 	return out
 }
 
-func traceDiagnostics(diags []*Diagnostic) TraceDiagnosticCounts {
+func traceDiagnostics(diags []*diag.Diagnostic) TraceDiagnosticCounts {
 	out := TraceDiagnosticCounts{}
-	for _, diag := range diags {
-		if diag == nil {
+	for _, d := range diags {
+		if d == nil {
 			continue
 		}
-		switch diag.Sev {
-		case SevError:
+		switch d.Sev {
+		case diag.SevError:
 			out.Errors++
-		case SevWarning:
+		case diag.SevWarning:
 			out.Warnings++
-		case SevHint:
+		case diag.SevHint:
 			out.Hints++
 		}
-		if diag.Code != "" {
+		if d.Code != "" {
 			if out.ByCode == nil {
 				out.ByCode = map[string]int{}
 			}
-			out.ByCode[diag.Code]++
+			out.ByCode[d.Code]++
 		}
 	}
 	return out
 }
 
-func countJSNodes(prog *JsProgram) int {
+func countJSNodes(prog *jsast.JsProgram) int {
 	if prog == nil {
 		return 0
 	}
 	count := 1
 	for _, stmt := range prog.Body {
-		WalkNode(stmt, func(JsNode) bool {
+		jsast.WalkNode(stmt, func(jsast.JsNode) bool {
 			count++
 			return true
 		})
@@ -290,34 +294,34 @@ func countJSNodes(prog *JsProgram) int {
 	return count
 }
 
-func countTemplateNodes(nodes []Node) int {
+func countTemplateNodes(nodes []sfcast.Node) int {
 	count := 0
-	var visit func([]Node)
-	visit = func(items []Node) {
+	var visit func([]sfcast.Node)
+	visit = func(items []sfcast.Node) {
 		for _, node := range items {
 			if node == nil {
 				continue
 			}
 			count++
 			switch n := node.(type) {
-			case *ElementNode:
+			case *sfcast.ElementNode:
 				visit(n.Children)
-			case *ComponentNode:
+			case *sfcast.ComponentNode:
 				for _, slot := range n.Slots {
 					visit(slot)
 				}
-			case *SlotNode:
+			case *sfcast.SlotNode:
 				visit(n.Fallback)
-			case *IfChainNode:
+			case *sfcast.IfChainNode:
 				for _, branch := range n.Branches {
 					if branch != nil {
 						visit(branch.Children)
 					}
 				}
-			case *EachBlockNode:
+			case *sfcast.EachBlockNode:
 				visit(n.Children)
 				visit(n.ElseChildren)
-			case *AwaitBlockNode:
+			case *sfcast.AwaitBlockNode:
 				visit(n.PendingChildren)
 				visit(n.ThenChildren)
 				visit(n.CatchChildren)

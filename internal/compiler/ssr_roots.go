@@ -1,6 +1,9 @@
-package main
+package compiler
 
 import (
+	"github.com/elauven/vela/internal/project"
+	"github.com/elauven/vela/internal/ssr"
+
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -39,7 +42,7 @@ type ManifestModule struct {
 
 // writeSSRManifest writes the manifest of an SSR build: root modes and the
 // package imports collected while building the client.
-func writeSSRManifest(files []string, srcRoot string, layout SSRProjectLayout, modes map[string]bool, imports *packageImports) error {
+func writeSSRManifest(files []string, srcRoot string, layout ssr.SSRProjectLayout, modes map[string]bool, imports *packageImports) error {
 	if modes == nil {
 		modes = map[string]bool{}
 	}
@@ -55,19 +58,19 @@ func writeProjectManifest(files []string, srcRoot, outRoot string, modes map[str
 		if err != nil {
 			rel = filepath.Base(src)
 		}
-		module, err := filepath.Rel(outRoot, MirrorPath(src, srcRoot, outRoot, ".js"))
+		module, err := filepath.Rel(outRoot, project.MirrorPath(src, srcRoot, outRoot, ".js"))
 		if err != nil {
 			module = filepath.Base(src)
 		}
 		mode := ""
 		if modes != nil {
 			mode = "static"
-			if SSRInteractive(modes, src) {
+			if ssr.SSRInteractive(modes, src) {
 				mode = "interactive"
 			}
 		}
 		manifest.Components = append(manifest.Components, SSRManifestComponent{
-			Component: ComponentName(src), Source: filepath.ToSlash(rel), Mode: mode, Module: filepath.ToSlash(module),
+			Component: project.ComponentName(src), Source: filepath.ToSlash(rel), Mode: mode, Module: filepath.ToSlash(module),
 		})
 	}
 	sort.Slice(manifest.Components, func(i, j int) bool { return manifest.Components[i].Source < manifest.Components[j].Source })

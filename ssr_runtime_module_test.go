@@ -81,7 +81,7 @@ func buildRuntimeModuleProject(t *testing.T, root string) {
 	t.Helper()
 	srcRoot := filepath.Join(root, "src")
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: SSRDefaultModule, SSRScaffoldHosts: true}
-	buildSSRProject(CollectVela(srcRoot), srcRoot, filepath.Join(root, "out"), opts, false)
+	BuildSSRProject(CollectVela(srcRoot), srcRoot, filepath.Join(root, "out"), opts, false)
 	stub := filepath.Join(root, "ssrhost", "src", "page", "shout_host.go")
 	data, err := os.ReadFile(stub)
 	if err != nil {
@@ -96,7 +96,7 @@ func buildRuntimeModuleProject(t *testing.T, root string) {
 		t.Fatal(err)
 	}
 	opts.SSRScaffoldHosts = false
-	if errors := buildSSRProject(CollectVela(srcRoot), srcRoot, filepath.Join(root, "out"), opts, false); errors != 0 {
+	if errors := BuildSSRProject(CollectVela(srcRoot), srcRoot, filepath.Join(root, "out"), opts, false); errors != 0 {
 		t.Fatalf("SSR build failed with %d error(s)", errors)
 	}
 }

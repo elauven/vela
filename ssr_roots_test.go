@@ -36,7 +36,7 @@ func TestSSRManifestRootModes(t *testing.T) {
 	outRoot := filepath.Join(root, "out")
 
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/modes/server"}
-	if errors := buildSSRProject(CollectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
+	if errors := BuildSSRProject(CollectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 

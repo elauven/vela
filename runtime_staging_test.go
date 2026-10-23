@@ -33,7 +33,7 @@ func TestBuildProjectStagesOneRuntimeAtTheOutputRoot(t *testing.T) {
 	}
 
 	files := CollectVela(srcRoot)
-	if errors := buildProject(files, srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
+	if errors := BuildProject(files, srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
 		t.Fatalf("project build failed with %d error(s)", errors)
 	}
 	got, err := os.ReadFile(filepath.Join(outRoot, "runtime.js"))
@@ -82,11 +82,11 @@ func TestProductionRuntimeDisablesDevelopmentChecks(t *testing.T) {
 	if !bytes.Contains(runtime.Core, []byte(runtime.DevelopmentFlag)) {
 		t.Fatal("core runtime no longer contains the development flag the production variant replaces")
 	}
-	production := runtimeSource(true)
+	production := RuntimeSource(true)
 	if bytes.Contains(production, []byte(runtime.DevelopmentFlag)) || !bytes.Contains(production, []byte("const DEV = false;")) {
 		t.Fatal("production runtime keeps the development flag")
 	}
-	if !bytes.Equal(runtimeSource(false), runtime.Core) {
+	if !bytes.Equal(RuntimeSource(false), runtime.Core) {
 		t.Fatal("development runtime differs from the embedded runtime")
 	}
 }
@@ -101,7 +101,7 @@ func TestStaleRuntimeContractFailsAtModuleLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	outRoot := t.TempDir()
-	if errors := buildProject(CollectVela(srcRoot), srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
+	if errors := BuildProject(CollectVela(srcRoot), srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
 		t.Fatalf("project build failed with %d error(s)", errors)
 	}
 	if err := os.WriteFile(filepath.Join(outRoot, "package.json"), []byte(`{"type":"module"}`), 0o644); err != nil {
@@ -156,7 +156,7 @@ func TestHydrateRuntimeCarriesTheVerificationPolicy(t *testing.T) {
 	for verify, want := range map[string]string{"": "repair", "repair": "repair", "fail": "fail", "off": "off"} {
 		dir := t.TempDir()
 
-		if err := stageRuntime(dir, CompileOptions{HydrationVerify: verify}); err != nil {
+		if err := StageRuntime(dir, CompileOptions{HydrationVerify: verify}); err != nil {
 			t.Fatal(err)
 		}
 

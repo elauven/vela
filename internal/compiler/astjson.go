@@ -1,6 +1,8 @@
-package main
+package compiler
 
 import (
+	"github.com/elauven/vela/internal/jsast"
+
 	"reflect"
 	"strconv"
 	"strings"
@@ -26,7 +28,7 @@ import (
 
 // ASTToJSON renders a JsProgram as an indented JSON string.  When
 // withPos is true, Pos/End/Origin bookkeeping fields are included.
-func ASTToJSON(prog *JsProgram, withPos bool) string {
+func ASTToJSON(prog *jsast.JsProgram, withPos bool) string {
 	var b strings.Builder
 	enc := &astEncoder{out: &b, withPos: withPos}
 	enc.encode(reflect.ValueOf(prog), 0)

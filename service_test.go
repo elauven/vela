@@ -22,7 +22,7 @@ type serviceSession struct {
 	header serviceHandshake
 }
 
-func startService(t *testing.T, s *compilerService) *serviceSession {
+func startService(t *testing.T, s *CompilerService) *serviceSession {
 	t.Helper()
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
@@ -53,13 +53,13 @@ func (s *serviceSession) send(req any) {
 	}
 }
 
-func (s *serviceSession) receive() compileResult {
+func (s *serviceSession) receive() CompileResult {
 	s.t.Helper()
 	line, err := s.out.ReadBytes('\n')
 	if err != nil {
 		s.t.Fatal(err)
 	}
-	var res compileResult
+	var res CompileResult
 	if err := json.Unmarshal(line, &res); err != nil {
 		s.t.Fatalf("response %s: %v", line, err)
 	}
@@ -84,26 +84,26 @@ func stringPtr(v string) *string { return &v }
 // the same compilation.
 type serviceVariant struct {
 	name    string
-	options fileOptions
+	options FileOptions
 	flags   []string
 }
 
 var serviceVariants = []serviceVariant{
-	{"defaults", fileOptions{}, []string{"--css", "external", "--runtime-import", "bare"}},
-	{"inject-relative", fileOptions{CSS: stringPtr("inject"), RuntimeImport: stringPtr("relative")}, nil},
-	{"sourcemap", fileOptions{SourceMap: boolPtr(true), Target: stringPtr("browser")}, []string{"--css", "external", "--runtime-import", "bare", "--sourcemap", "--target", "browser"}},
-	{"production", fileOptions{Minify: boolPtr(true), Mode: stringPtr("production")}, []string{"--css", "external", "--runtime-import", "bare", "--minify", "--mode", "production"}},
+	{"defaults", FileOptions{}, []string{"--css", "external", "--runtime-import", "bare"}},
+	{"inject-relative", FileOptions{CSS: stringPtr("inject"), RuntimeImport: stringPtr("relative")}, nil},
+	{"sourcemap", FileOptions{SourceMap: boolPtr(true), Target: stringPtr("browser")}, []string{"--css", "external", "--runtime-import", "bare", "--sourcemap", "--target", "browser"}},
+	{"production", FileOptions{Minify: boolPtr(true), Mode: stringPtr("production")}, []string{"--css", "external", "--runtime-import", "bare", "--minify", "--mode", "production"}},
 }
 
 // buildFileOptions compiles src with the build command's flag parsing.
 func buildFileOptions(t *testing.T, args []string) CompileOptions {
 	t.Helper()
 	fs := newTestFlagSet()
-	file := addFileFlags(fs, buildFlagDefaults)
+	file := AddFileFlags(fs, BuildFlagDefaults)
 	if err := fs.Parse(args); err != nil {
 		t.Fatal(err)
 	}
-	opts, err := file.options()
+	opts, err := file.Options()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestServiceMatchesFileModeForConcurrentRequests(t *testing.T) {
 	if err != nil || len(files) == 0 {
 		t.Fatalf("examples: %v %v", files, err)
 	}
-	svc := &compilerService{cwd: mustGetwd(t)}
+	svc := &CompilerService{Cwd: mustGetwd(t)}
 	session := startService(t, svc)
 	if session.header.Protocol != ServiceProtocolVersion || session.header.RuntimeContract != RuntimeContractExport {
 		t.Fatalf("handshake = %+v", session.header)
@@ -126,11 +126,11 @@ func TestServiceMatchesFileModeForConcurrentRequests(t *testing.T) {
 	go func() {
 		for _, v := range serviceVariants {
 			for _, f := range files {
-				session.send(serviceRequest{ID: json.RawMessage(fmt.Sprintf("%q", v.name+"|"+f)), Path: f, Options: v.options})
+				session.send(ServiceRequest{ID: json.RawMessage(fmt.Sprintf("%q", v.name+"|"+f)), Path: f, Options: v.options})
 			}
 		}
 	}()
-	got := map[key]compileResult{}
+	got := map[key]CompileResult{}
 	for i := 0; i < sent; i++ {
 		res := session.receive()
 		var id string
@@ -152,7 +152,7 @@ func TestServiceMatchesFileModeForConcurrentRequests(t *testing.T) {
 			dest := filepath.Join(dir, ComponentName(f)+".js")
 			opts := buildFileOptions(t, v.flags)
 			opts.SitePath = filepath.ToSlash(f)
-			diags, err := compileFile(f, dest, opts)
+			diags, err := CompileFile(f, dest, opts)
 			if (err == nil) != res.OK {
 				t.Fatalf("%s %s: file mode err = %v, service ok = %v (%s)", v.name, f, err, res.OK, res.Error)
 			}
@@ -194,19 +194,19 @@ var serviceDiagnosticCorpus = map[string]string{
 
 func TestServiceDiagnosticsMatchTextDiagnostics(t *testing.T) {
 	dir := t.TempDir()
-	svc := &compilerService{cwd: mustGetwd(t)}
+	svc := &CompilerService{Cwd: mustGetwd(t)}
 	opts := buildFileOptions(t, []string{"--css", "external", "--runtime-import", "bare", "--target", "worker"})
 	for name, source := range serviceDiagnosticCorpus {
 		src := filepath.Join(dir, "App.vela")
 		if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		opts.SitePath = filepath.ToSlash(svc.sourcePath(src))
-		diags, _ := compileFile(svc.sourcePath(src), filepath.Join(dir, "App.js"), opts)
+		opts.SitePath = filepath.ToSlash(svc.SourcePath(src))
+		diags, _ := CompileFile(svc.SourcePath(src), filepath.Join(dir, "App.js"), opts)
 		if len(diags) == 0 {
 			t.Fatalf("%s: corpus entry produces no diagnostics", name)
 		}
-		res := svc.compile(serviceRequest{Path: src, Source: &source, Options: fileOptions{Target: stringPtr("worker")}})
+		res := svc.Compile(ServiceRequest{Path: src, Source: &source, Options: FileOptions{Target: stringPtr("worker")}})
 		if len(res.Diagnostics) != len(diags) {
 			t.Fatalf("%s: %d JSON diagnostics, %d text diagnostics", name, len(res.Diagnostics), len(diags))
 		}
@@ -232,17 +232,17 @@ func TestServiceReportsImports(t *testing.T) {
   const later = () => import('./Lazy.vela');
 </script>
 <template><Card /></template>`
-	svc := &compilerService{cwd: mustGetwd(t)}
-	res := svc.compile(serviceRequest{Path: filepath.Join("src", "pages", "App.vela"), Source: &source})
+	svc := &CompilerService{Cwd: mustGetwd(t)}
+	res := svc.Compile(ServiceRequest{Path: filepath.Join("src", "pages", "App.vela"), Source: &source})
 	if !res.OK {
 		t.Fatalf("compile: %s %+v", res.Error, res.Diagnostics)
 	}
-	want := []moduleImport{
-		{"vela", "runtime", ""},
-		{"date-fns/format", "package", ""},
-		{"./Card.vela", "component", filepath.Join("src", "pages", "Card.vela")},
-		{"../lib/math.js", "module", filepath.Join("src", "lib", "math.js")},
-		{"./Lazy.vela", "component", filepath.Join("src", "pages", "Lazy.vela")},
+	want := []ModuleImport{
+		{Specifier: "vela", Kind: "runtime", Resolved: ""},
+		{Specifier: "date-fns/format", Kind: "package", Resolved: ""},
+		{Specifier: "./Card.vela", Kind: "component", Resolved: filepath.Join("src", "pages", "Card.vela")},
+		{Specifier: "../lib/math.js", Kind: "module", Resolved: filepath.Join("src", "lib", "math.js")},
+		{Specifier: "./Lazy.vela", Kind: "component", Resolved: filepath.Join("src", "pages", "Lazy.vela")},
 	}
 	if fmt.Sprint(res.Imports) != fmt.Sprint(want) {
 		t.Fatalf("imports = %+v\nwant      %+v", res.Imports, want)
@@ -258,7 +258,7 @@ func TestServiceComponentImports(t *testing.T) {
   const later = () => import('./Lazy.vela');
 </script>
 <template><Card :n={sum(1, 2)} /></template>`
-	svc := &compilerService{cwd: mustGetwd(t)}
+	svc := &CompilerService{Cwd: mustGetwd(t)}
 	for _, c := range []struct {
 		option string
 		want   []string
@@ -266,11 +266,11 @@ func TestServiceComponentImports(t *testing.T) {
 		{"", []string{"'./Card.js'", "'./math.js'"}},
 		{"vela", []string{"'./Card.vela'", "'./math.js'", "'./Lazy.vela'"}},
 	} {
-		opts := fileOptions{}
+		opts := FileOptions{}
 		if c.option != "" {
 			opts.ComponentImports = stringPtr(c.option)
 		}
-		res := svc.compile(serviceRequest{Path: "App.vela", Source: &source, Options: opts})
+		res := svc.Compile(ServiceRequest{Path: "App.vela", Source: &source, Options: opts})
 		if !res.OK {
 			t.Fatalf("componentImports %q: %s %+v", c.option, res.Error, res.Diagnostics)
 		}
@@ -280,13 +280,13 @@ func TestServiceComponentImports(t *testing.T) {
 			}
 		}
 	}
-	if res := svc.compile(serviceRequest{Path: "App.vela", Source: &source, Options: fileOptions{ComponentImports: stringPtr("ts")}}); res.OK || !strings.Contains(res.Error, "invalid --component-imports value") {
+	if res := svc.Compile(ServiceRequest{Path: "App.vela", Source: &source, Options: FileOptions{ComponentImports: stringPtr("ts")}}); res.OK || !strings.Contains(res.Error, "invalid --component-imports value") {
 		t.Fatalf("invalid componentImports: %+v", res)
 	}
 }
 
 func TestServiceRejectsBadRequestsAndContinues(t *testing.T) {
-	session := startService(t, &compilerService{cwd: mustGetwd(t)})
+	session := startService(t, &CompilerService{Cwd: mustGetwd(t)})
 	source := "<template><p>x</p></template>"
 	if _, err := session.in.Write([]byte("{\"id\": 1, \"path\": \"A.vela\", \"bogus\": true}\n")); err != nil {
 		t.Fatal(err)
@@ -294,15 +294,15 @@ func TestServiceRejectsBadRequestsAndContinues(t *testing.T) {
 	if res := session.receive(); string(res.ID) != "1" || !strings.Contains(res.Error, "invalid request") {
 		t.Fatalf("unknown field response = %+v", res)
 	}
-	session.send(serviceRequest{ID: json.RawMessage("2"), Method: "format", Path: "A.vela", Source: &source})
+	session.send(ServiceRequest{ID: json.RawMessage("2"), Method: "format", Path: "A.vela", Source: &source})
 	if res := session.receive(); !strings.Contains(res.Error, "unknown method") {
 		t.Fatalf("unknown method response = %+v", res)
 	}
-	session.send(serviceRequest{ID: json.RawMessage("3"), Path: "A.vela", Source: &source, Options: fileOptions{CSS: stringPtr("inline")}})
+	session.send(ServiceRequest{ID: json.RawMessage("3"), Path: "A.vela", Source: &source, Options: FileOptions{CSS: stringPtr("inline")}})
 	if res := session.receive(); res.OK || !strings.Contains(res.Error, "invalid --css value") {
 		t.Fatalf("invalid option response = %+v", res)
 	}
-	session.send(serviceRequest{ID: json.RawMessage("4"), Path: "A.vela", Source: &source})
+	session.send(ServiceRequest{ID: json.RawMessage("4"), Path: "A.vela", Source: &source})
 	if res := session.receive(); !res.OK || res.JS == "" {
 		t.Fatalf("valid request after errors = %+v", res)
 	}
@@ -333,7 +333,7 @@ func TestServiceOptionPrecedence(t *testing.T) {
 	if code := runCompileCommand([]string{"--path", "src/App.vela"}, nil, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d: %s %s", code, stdout.String(), stderr.String())
 	}
-	var res compileResult
+	var res CompileResult
 	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
 		t.Fatal(err)
 	}
@@ -342,15 +342,15 @@ func TestServiceOptionPrecedence(t *testing.T) {
 	}
 
 	// The command line overrides the configuration, a request overrides both.
-	svc, err := newCompilerService("", []flagValue{{"css", "external"}, {"minify", "false"}})
+	svc, err := NewCompilerService("", []FlagValue{{Name: "css", Value: "external"}, {Name: "minify", Value: "false"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	res = svc.compile(serviceRequest{Path: "src/App.vela"})
+	res = svc.Compile(ServiceRequest{Path: "src/App.vela"})
 	if res.CSS == "" || !strings.Contains(res.JS, "\n  ") {
 		t.Fatalf("command line not applied: %+v", res)
 	}
-	res = svc.compile(serviceRequest{Path: "src/App.vela", Options: fileOptions{CSS: stringPtr("inject")}})
+	res = svc.Compile(ServiceRequest{Path: "src/App.vela", Options: FileOptions{CSS: stringPtr("inject")}})
 	if res.CSS != "" {
 		t.Fatalf("request option not applied: css %q", res.CSS)
 	}
@@ -367,7 +367,7 @@ func TestCompileCommandExitCodes(t *testing.T) {
 	if code := runCompileCommand([]string{"--stdin", "--path", "App.vela"}, strings.NewReader("<script>let x = ;</script>"), &stdout, &stderr); code != 1 {
 		t.Fatalf("broken component: exit %d", code)
 	}
-	var res compileResult
+	var res CompileResult
 	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil || res.OK || len(res.Diagnostics) == 0 {
 		t.Fatalf("broken component result %s: %v", stdout.String(), err)
 	}
@@ -382,22 +382,22 @@ func TestConfigRejectsUnknownKeysAndResolvesPaths(t *testing.T) {
 	abs := filepath.Join(dir, "abs", "out")
 	absJSON, _ := json.Marshal(abs)
 	writeTestFile(t, path, `{"$schema": "x", "project": "src", "out": `+string(absJSON)+`, "targt": "browser"}`)
-	if _, err := loadConfig(path); err == nil || !strings.Contains(err.Error(), `unknown field "targt"`) {
+	if _, err := LoadConfig(path); err == nil || !strings.Contains(err.Error(), `unknown field "targt"`) {
 		t.Fatalf("unknown key error = %v", err)
 	}
 	writeTestFile(t, path, `{"project": "src", "out": `+string(absJSON)+`}`)
-	config, err := loadConfig(path)
+	config, err := LoadConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if *config.Project != filepath.Join(dir, "conf", "src") || *config.Out != abs {
 		t.Fatalf("paths = %q %q", *config.Project, *config.Out)
 	}
-	if _, err := loadConfig(filepath.Join(dir, "missing.json")); err == nil {
+	if _, err := LoadConfig(filepath.Join(dir, "missing.json")); err == nil {
 		t.Fatal("an explicit missing configuration must fail")
 	}
 	chdirForTest(t, dir)
-	if config, err := loadConfig(""); config != nil || err != nil {
+	if config, err := LoadConfig(""); config != nil || err != nil {
 		t.Fatalf("no default configuration: %v %v", config, err)
 	}
 }

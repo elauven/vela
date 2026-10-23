@@ -1,15 +1,23 @@
-package main
+package compiler
 
-import "strings"
+import (
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/codegen"
+	"github.com/elauven/vela/internal/diag"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfcast"
+
+	"strings"
+)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Script validator — runs after analysis, emits warnings/errors
 // ─────────────────────────────────────────────────────────────────────────────
 
-// validateScript walks the program AST and the Analysis to emit semantic
+// ValidateScript walks the program AST and the Analysis to emit semantic
 // diagnostics: unused state vars, effects with no deps, direct mutation of
 // derived vars, missing required props, etc.
-func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
+func ValidateScript(prog *jsast.JsProgram, a *analyzer.Analysis, ds *diag.DiagSet) {
 	stateSet := a.StateSet()
 	derivedSet := make(map[string]bool, len(a.DerivedVars))
 	for _, dv := range a.DerivedVars {
@@ -21,21 +29,21 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 	// derived var.  The rewriter doesn't produce $$set_<derived>() calls —
 	// derived names aren't in stateSet — so checking CleanScript for those
 	// was a no-op; we look at the pre-rewrite source shape instead.
-	WalkNode(prog, func(n JsNode) bool {
-		stmt, ok := n.(*JsExprStmt)
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
+		stmt, ok := n.(*jsast.JsExprStmt)
 		if !ok {
 			return true
 		}
 		// Direct assignment: doubled = …  / doubled += …  / etc.
-		if assign, ok := stmt.X.(*JsAssignExpr); ok {
-			if id, ok := assign.L.(*JsIdent); ok && derivedSet[id.Name] {
+		if assign, ok := stmt.X.(*jsast.JsAssignExpr); ok {
+			if id, ok := assign.L.(*jsast.JsIdent); ok && derivedSet[id.Name] {
 				ds.Warn(id.Pos,
 					"cannot assign to $derived variable %q — derived values are read-only", id.Name)
 			}
 		}
 		// Update expression: doubled++ / --doubled
-		if upd, ok := stmt.X.(*JsUnaryExpr); ok && (upd.Op == "++" || upd.Op == "--") {
-			if id, ok := upd.X.(*JsIdent); ok && derivedSet[id.Name] {
+		if upd, ok := stmt.X.(*jsast.JsUnaryExpr); ok && (upd.Op == "++" || upd.Op == "--") {
+			if id, ok := upd.X.(*jsast.JsIdent); ok && derivedSet[id.Name] {
 				ds.Warn(id.Pos,
 					"cannot assign to $derived variable %q — derived values are read-only", id.Name)
 			}
@@ -44,7 +52,7 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 	})
 
 	// ── $effect with no reactive deps ──────────────────────────────────────
-	// Moved to validateEffectBody (reactivity.go), which emits with
+	// Moved to ValidateEffectBody (reactivity.go), which emits with
 	// accurate positions pointing at the $effect call itself rather
 	// than the start of the script.
 
@@ -95,16 +103,16 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 		return false
 	}
 
-	WalkNode(prog, func(n JsNode) bool {
-		stmt, ok := n.(*JsExprStmt)
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
+		stmt, ok := n.(*jsast.JsExprStmt)
 		if !ok {
 			return true
 		}
-		assign, ok := stmt.X.(*JsAssignExpr)
+		assign, ok := stmt.X.(*jsast.JsAssignExpr)
 		if !ok {
 			return true
 		}
-		id, ok := assign.L.(*JsIdent)
+		id, ok := assign.L.(*jsast.JsIdent)
 		if !ok {
 			return true // member expr — fine
 		}
@@ -129,23 +137,23 @@ func validateScript(prog *JsProgram, a *Analysis, ds *DiagSet) {
 // AST-based: printed script text no longer contains setter calls.
 // $state.deep bindings are skipped because in-place mutation also updates
 // them.
-func validateStateWrites(prog *JsProgram, scriptScope *Scope, tmpl []Node, a *Analysis, ds *DiagSet) {
+func validateStateWrites(prog *jsast.JsProgram, scriptScope *analyzer.Scope, tmpl []sfcast.Node, a *analyzer.Analysis, ds *diag.DiagSet) {
 	statePos := make(map[string]int)
-	WalkNode(prog, func(n JsNode) bool {
-		decl, ok := n.(*JsVarDecl)
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
+		decl, ok := n.(*jsast.JsVarDecl)
 		if !ok {
 			return true
 		}
 		for _, d := range decl.Decls {
-			id, ok := d.Id.(*JsIdent)
+			id, ok := d.Id.(*jsast.JsIdent)
 			if !ok {
 				continue
 			}
-			call, ok := d.Init.(*JsCallExpr)
+			call, ok := d.Init.(*jsast.JsCallExpr)
 			if !ok {
 				continue
 			}
-			callee, ok := call.Callee.(*JsIdent)
+			callee, ok := call.Callee.(*jsast.JsIdent)
 			if !ok || callee.Name != "$state" {
 				continue
 			}
@@ -177,16 +185,16 @@ func validateStateWrites(prog *JsProgram, scriptScope *Scope, tmpl []Node, a *An
 // templateWrittenNames returns the identifiers that template code writes:
 // assignment and update targets inside event handlers, and the targets of
 // bind: directives on elements and components.
-func templateWrittenNames(nodes []Node) map[string]bool {
+func templateWrittenNames(nodes []sfcast.Node) map[string]bool {
 	written := make(map[string]bool)
-	visitAttrs := func(attrs []*Attr) {
+	visitAttrs := func(attrs []*sfcast.Attr) {
 		for _, attr := range attrs {
 			if attr.Expr == nil || attr.Expr.Root() == nil {
 				continue
 			}
 			root := attr.Expr.Root()
 			if attr.IsTwoWay || attr.IsBindThis {
-				if id, ok := root.(*JsIdent); ok {
+				if id, ok := root.(*jsast.JsIdent); ok {
 					written[id.Name] = true
 				}
 				continue
@@ -196,30 +204,30 @@ func templateWrittenNames(nodes []Node) map[string]bool {
 			}
 		}
 	}
-	var walk func([]Node)
-	walk = func(ns []Node) {
+	var walk func([]sfcast.Node)
+	walk = func(ns []sfcast.Node) {
 		for _, node := range ns {
 			switch n := node.(type) {
-			case *ElementNode:
+			case *sfcast.ElementNode:
 				visitAttrs(n.Attrs)
 				walk(n.Children)
-			case *ComponentNode:
+			case *sfcast.ComponentNode:
 				visitAttrs(n.Attrs)
 				for _, slotNodes := range n.Slots {
 					walk(slotNodes)
 				}
-			case *IfChainNode:
+			case *sfcast.IfChainNode:
 				for _, branch := range n.Branches {
 					walk(branch.Children)
 				}
-			case *EachBlockNode:
+			case *sfcast.EachBlockNode:
 				walk(n.Children)
 				walk(n.ElseChildren)
-			case *AwaitBlockNode:
+			case *sfcast.AwaitBlockNode:
 				walk(n.PendingChildren)
 				walk(n.ThenChildren)
 				walk(n.CatchChildren)
-			case *SlotNode:
+			case *sfcast.SlotNode:
 				walk(n.Fallback)
 			}
 		}
@@ -230,19 +238,19 @@ func templateWrittenNames(nodes []Node) map[string]bool {
 
 // collectWrittenNames adds the identifiers assigned or updated anywhere in
 // expr, including destructuring targets.
-func collectWrittenNames(expr JsNode, written map[string]bool) {
-	var addTarget func(JsExpr)
-	addTarget = func(target JsExpr) {
+func collectWrittenNames(expr jsast.JsNode, written map[string]bool) {
+	var addTarget func(jsast.JsExpr)
+	addTarget = func(target jsast.JsExpr) {
 		switch t := target.(type) {
-		case *JsIdent:
+		case *jsast.JsIdent:
 			written[t.Name] = true
-		case *JsAssignExpr:
+		case *jsast.JsAssignExpr:
 			addTarget(t.L)
-		case *JsArrayExpr:
+		case *jsast.JsArrayExpr:
 			for _, el := range t.Elems {
 				addTarget(el)
 			}
-		case *JsObjectExpr:
+		case *jsast.JsObjectExpr:
 			for _, prop := range t.Props {
 				if prop.Value != nil {
 					addTarget(prop.Value)
@@ -250,15 +258,15 @@ func collectWrittenNames(expr JsNode, written map[string]bool) {
 					addTarget(prop.Key)
 				}
 			}
-		case *JsSpreadExpr:
+		case *jsast.JsSpreadExpr:
 			addTarget(t.X)
 		}
 	}
-	WalkNode(expr, func(n JsNode) bool {
+	jsast.WalkNode(expr, func(n jsast.JsNode) bool {
 		switch node := n.(type) {
-		case *JsAssignExpr:
+		case *jsast.JsAssignExpr:
 			addTarget(node.L)
-		case *JsUnaryExpr:
+		case *jsast.JsUnaryExpr:
 			if node.Op == "++" || node.Op == "--" {
 				addTarget(node.X)
 			}
@@ -280,10 +288,10 @@ func isIdentByte(c byte) bool {
 //  Template validator
 // ─────────────────────────────────────────────────────────────────────────────
 
-// validateTemplate checks the parsed template AST against the analysis for
+// ValidateTemplate checks the parsed template AST against the analysis for
 // common mistakes: referencing undefined variables, unregistered components,
 // missing required props on component invocations.
-func validateTemplate(nodes []Node, a *Analysis, ds *DiagSet) {
+func ValidateTemplate(nodes []sfcast.Node, a *analyzer.Analysis, ds *diag.DiagSet) {
 	importedNames := make(map[string]bool)
 	for _, imp := range a.Imports {
 		for _, name := range imp.Names {
@@ -291,13 +299,13 @@ func validateTemplate(nodes []Node, a *Analysis, ds *DiagSet) {
 		}
 	}
 
-	var walkNodes func([]Node)
-	walkNodes = func(ns []Node) {
+	var walkNodes func([]sfcast.Node)
+	walkNodes = func(ns []sfcast.Node) {
 		for _, node := range ns {
 			switch n := node.(type) {
-			case *ElementNode:
+			case *sfcast.ElementNode:
 				walkNodes(n.Children)
-			case *ComponentNode:
+			case *sfcast.ComponentNode:
 				// Component must be imported
 				if !importedNames[n.Name] {
 					ds.Warn(0,
@@ -306,11 +314,11 @@ func validateTemplate(nodes []Node, a *Analysis, ds *DiagSet) {
 						n.Name, n.Name, n.Name)
 				}
 				walkNodes(flatten(n.Slots))
-			case *IfChainNode:
+			case *sfcast.IfChainNode:
 				for _, branch := range n.Branches {
 					walkNodes(branch.Children)
 				}
-			case *EachBlockNode:
+			case *sfcast.EachBlockNode:
 				// Session C — unkeyed each over component-bearing
 				// rows.  The unkeyed reconciler is positional
 				// (index-based): a middle insert or delete shifts
@@ -322,7 +330,7 @@ func validateTemplate(nodes []Node, a *Analysis, ds *DiagSet) {
 				// the reconciler to match rows by identity, which
 				// preserves both DOM nodes and the row-to-item
 				// mapping across reorderings.
-				if n.EachKey == "" && EachHasComponent(n.Children) {
+				if n.EachKey == "" && codegen.EachHasComponent(n.Children) {
 					ds.Hint(0,
 						"unkeyed {#each %s} renders a child "+
 							"component per row; consider keying "+
@@ -341,8 +349,8 @@ func validateTemplate(nodes []Node, a *Analysis, ds *DiagSet) {
 }
 
 // flatten extracts all nodes from a slot map.
-func flatten(slots map[string][]Node) []Node {
-	var out []Node
+func flatten(slots map[string][]sfcast.Node) []sfcast.Node {
+	var out []sfcast.Node
 	for _, nodes := range slots {
 		out = append(out, nodes...)
 	}

@@ -98,7 +98,7 @@ func TestSSRWatchRebuildsLikeACleanBuild(t *testing.T) {
 	waitForBuild(t, stamp, edited, &log)
 
 	clean := filepath.Join(t.TempDir(), "out")
-	if errors := buildSSRProject(CollectVela(src), src, clean, CompileOptions{StatusWriter: io.Discard, ErrWriter: io.Discard, SSRModule: SSRDefaultModule}, false); errors != 0 {
+	if errors := BuildSSRProject(CollectVela(src), src, clean, CompileOptions{StatusWriter: io.Discard, ErrWriter: io.Discard, SSRModule: SSRDefaultModule}, false); errors != 0 {
 		t.Fatalf("clean build: %d errors", errors)
 	}
 	got := readTree(t, out, map[string]bool{SSRReadyStamp: true})

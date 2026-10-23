@@ -20,7 +20,7 @@ func TestTemplateExpressionsWithExtendedSyntaxCompile(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "App.js")
-	if _, err := compileFile(file, out, CompileOptions{}); err != nil {
+	if _, err := CompileFile(file, out, CompileOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if msg, err := exec.Command(node, "--check", out).CombinedOutput(); err != nil {

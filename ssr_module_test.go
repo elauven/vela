@@ -125,7 +125,7 @@ console.log(JSON.stringify(out));
 	out := filepath.Join(filepath.Dir(src), "out")
 
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/mods/server"}
-	if errors := buildSSRProject(CollectVela(src), src, out, opts, false); errors != 0 {
+	if errors := BuildSSRProject(CollectVela(src), src, out, opts, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 
@@ -241,7 +241,7 @@ func TestSSRModuleDiagnostics(t *testing.T) {
 	report := filepath.Join(out, "report.json")
 
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/diag/server", SSRReport: report}
-	if errors := buildSSRProject(CollectVela(src), src, out, opts, false); errors == 0 {
+	if errors := BuildSSRProject(CollectVela(src), src, out, opts, false); errors == 0 {
 		t.Fatal("expected SSR errors")
 	}
 

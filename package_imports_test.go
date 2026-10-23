@@ -52,12 +52,12 @@ func TestCheckPackageSpecifier(t *testing.T) {
 		"absent":         "not installed",
 		"node:fs":        "Node.js built-in",
 	} {
-		got := checkPackageSpecifier(from, spec)
+		got := CheckPackageSpecifier(from, spec)
 		if (want == "") != (got == "") || (want != "" && !strings.Contains(got, want)) {
 			t.Errorf("%s: got %q, want %q", spec, got, want)
 		}
 	}
-	if got := packageName("@scope/pkg/sub/x"); got != "@scope/pkg" {
+	if got := PackageOfSpecifier("@scope/pkg/sub/x"); got != "@scope/pkg" {
 		t.Errorf("packageName = %q", got)
 	}
 }
@@ -76,7 +76,7 @@ func TestProjectManifestAndDepsCheck(t *testing.T) {
 	var status bytes.Buffer
 	stderr := captureStderr(t, func() {
 		opts := CompileOptions{StatusWriter: &status, CheckDeps: true}
-		if errors := buildProject(CollectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
+		if errors := BuildProject(CollectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
 			t.Fatalf("build failed with %d error(s)", errors)
 		}
 	})
@@ -111,7 +111,7 @@ func TestProjectManifestAndDepsCheck(t *testing.T) {
 	}
 	// Without --check-deps nothing is reported.
 	quiet := captureStderr(t, func() {
-		buildProject(CollectVela(srcRoot), srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard}, false)
+		BuildProject(CollectVela(srcRoot), srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard}, false)
 	})
 	if strings.Contains(quiet, DepsCheckDiagnosticCode) {
 		t.Errorf("dependencies were checked without --check-deps:\n%s", quiet)

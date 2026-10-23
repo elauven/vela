@@ -97,7 +97,7 @@ func runSSRExpressionRows(t *testing.T, rows []ssrExpressionOracleRow) []string 
 	projectModule := "example.com/ssroracle"
 
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}
-	if errors := buildSSRProject(CollectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
+	if errors := BuildSSRProject(CollectVela(srcRoot), srcRoot, outRoot, opts, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 

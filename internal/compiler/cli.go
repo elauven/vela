@@ -1,6 +1,7 @@
-package main
+package compiler
 
 import (
+	"github.com/elauven/vela/internal/analyzer"
 	"github.com/elauven/vela/runtime"
 
 	"bytes"
@@ -20,7 +21,7 @@ const ConfigFileName = "vela.config.json"
 
 // fileFlags are the flags that shape the compilation of one component. The
 // build command, `vela compile` and `vela serve` share them; a request of the
-// service sets them through serviceRequest.Options.
+// service sets them through ServiceRequest.Options.
 type fileFlags struct {
 	minify                  *bool
 	cssMode                 *string
@@ -42,9 +43,9 @@ type fileFlagDefaults struct {
 	runtimeImport string
 }
 
-var buildFlagDefaults = fileFlagDefaults{cssMode: "inject", runtimeImport: "relative"}
+var BuildFlagDefaults = fileFlagDefaults{cssMode: "inject", runtimeImport: "relative"}
 
-func addFileFlags(fs *flag.FlagSet, defaults fileFlagDefaults) *fileFlags {
+func AddFileFlags(fs *flag.FlagSet, defaults fileFlagDefaults) *fileFlags {
 	return &fileFlags{
 		minify:                  fs.Bool("minify", false, "minify output JS"),
 		cssMode:                 fs.String("css", defaults.cssMode, "CSS delivery: 'inject' (CSS-in-JS) or 'external' (sibling .css files)"),
@@ -61,13 +62,13 @@ func addFileFlags(fs *flag.FlagSet, defaults fileFlagDefaults) *fileFlags {
 }
 
 // options validates the flags and returns the compile options they select.
-func (f *fileFlags) options() (CompileOptions, error) {
+func (f *fileFlags) Options() (CompileOptions, error) {
 	switch *f.runtimeImport {
 	case "relative", "bare":
 	default:
 		return CompileOptions{}, fmt.Errorf("invalid --runtime-import value %q (want 'relative' or 'bare')", *f.runtimeImport)
 	}
-	targetProfile, err := ParseTargetProfile(*f.target)
+	targetProfile, err := analyzer.ParseTargetProfile(*f.target)
 	if err != nil {
 		return CompileOptions{}, err
 	}
@@ -100,7 +101,7 @@ func (f *fileFlags) options() (CompileOptions, error) {
 		CSSExternal:             *f.cssMode == "external",
 		SourceMap:               *f.sourceMap,
 		TargetProfile:           targetProfile,
-		UnavailableCapabilities: splitCapabilityList(*f.unavailableCapabilities),
+		UnavailableCapabilities: SplitCapabilityList(*f.unavailableCapabilities),
 		Strict:                  *f.strict,
 		HydrationVerify:         *f.hydrationVerify,
 		Production:              *f.mode == "production",
@@ -114,9 +115,9 @@ func (f *fileFlags) options() (CompileOptions, error) {
 	return opts, nil
 }
 
-// fileOptions are the per-component settings of vela.config.json and of a
+// FileOptions are the per-component settings of vela.config.json and of a
 // service request; each field is the flag of the same name.
-type fileOptions struct {
+type FileOptions struct {
 	Minify                  *bool    `json:"minify,omitempty"`
 	CSS                     *string  `json:"css,omitempty"`
 	SourceMap               *bool    `json:"sourcemap,omitempty"`
@@ -137,21 +138,21 @@ type velaConfig struct {
 	Out       *string `json:"out,omitempty"`
 	SSR       *bool   `json:"ssr,omitempty"`
 	SSRModule *string `json:"ssrModule,omitempty"`
-	fileOptions
+	FileOptions
 }
 
-type flagValue struct{ name, value string }
+type FlagValue struct{ Name, Value string }
 
-func (o fileOptions) flagValues() []flagValue {
-	var out []flagValue
+func (o FileOptions) flagValues() []FlagValue {
+	var out []FlagValue
 	addBool := func(name string, v *bool) {
 		if v != nil {
-			out = append(out, flagValue{name, strconv.FormatBool(*v)})
+			out = append(out, FlagValue{name, strconv.FormatBool(*v)})
 		}
 	}
 	addString := func(name string, v *string) {
 		if v != nil {
-			out = append(out, flagValue{name, *v})
+			out = append(out, FlagValue{name, *v})
 		}
 	}
 	addBool("minify", o.Minify)
@@ -159,7 +160,7 @@ func (o fileOptions) flagValues() []flagValue {
 	addBool("sourcemap", o.SourceMap)
 	addString("target", o.Target)
 	if o.UnavailableCapabilities != nil {
-		out = append(out, flagValue{"unavailable-capabilities", strings.Join(o.UnavailableCapabilities, ",")})
+		out = append(out, FlagValue{"unavailable-capabilities", strings.Join(o.UnavailableCapabilities, ",")})
 	}
 	addBool("strict", o.Strict)
 	addString("hydration-verify", o.HydrationVerify)
@@ -170,26 +171,26 @@ func (o fileOptions) flagValues() []flagValue {
 	return out
 }
 
-func (c *velaConfig) flagValues() []flagValue {
-	var out []flagValue
+func (c *velaConfig) FlagValues() []FlagValue {
+	var out []FlagValue
 	if c.Project != nil {
-		out = append(out, flagValue{"project", *c.Project})
+		out = append(out, FlagValue{"project", *c.Project})
 	}
 	if c.Out != nil {
-		out = append(out, flagValue{"out", *c.Out})
+		out = append(out, FlagValue{"out", *c.Out})
 	}
 	if c.SSR != nil {
-		out = append(out, flagValue{"ssr", strconv.FormatBool(*c.SSR)})
+		out = append(out, FlagValue{"ssr", strconv.FormatBool(*c.SSR)})
 	}
 	if c.SSRModule != nil {
-		out = append(out, flagValue{"ssr-module", *c.SSRModule})
+		out = append(out, FlagValue{"ssr-module", *c.SSRModule})
 	}
-	return append(out, c.fileOptions.flagValues()...)
+	return append(out, c.FileOptions.flagValues()...)
 }
 
-// decodeStrict decodes one JSON value and rejects unknown keys and
+// DecodeStrict decodes one JSON value and rejects unknown keys and
 // trailing data.
-func decodeStrict(data []byte, v any) error {
+func DecodeStrict(data []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
@@ -201,11 +202,11 @@ func decodeStrict(data []byte, v any) error {
 	return nil
 }
 
-// loadConfig reads the configuration at path, or vela.config.json in the
+// LoadConfig reads the configuration at path, or vela.config.json in the
 // working directory when path is empty; a missing default file is no
 // configuration. Relative paths of the file become relative to the working
 // directory.
-func loadConfig(path string) (*velaConfig, error) {
+func LoadConfig(path string) (*velaConfig, error) {
 	explicit := path != ""
 	if !explicit {
 		path = ConfigFileName
@@ -218,7 +219,7 @@ func loadConfig(path string) (*velaConfig, error) {
 		return nil, err
 	}
 	config := &velaConfig{}
-	if err := decodeStrict(data, config); err != nil {
+	if err := DecodeStrict(data, config); err != nil {
 		return nil, fmt.Errorf("%s: %v", path, err)
 	}
 	dir := filepath.Dir(path)
@@ -230,19 +231,19 @@ func loadConfig(path string) (*velaConfig, error) {
 	return config, nil
 }
 
-// applyFlagValues sets the flags of fs that the command line left unset.
+// ApplyFlagValues sets the flags of fs that the command line left unset.
 // Values for flags fs does not define are ignored, so one configuration
 // serves every command.
 // Errors name source, the file or request the values come from.
-func applyFlagValues(fs *flag.FlagSet, source string, values []flagValue) error {
+func ApplyFlagValues(fs *flag.FlagSet, source string, values []FlagValue) error {
 	set := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	for _, v := range values {
-		if set[v.name] || fs.Lookup(v.name) == nil {
+		if set[v.Name] || fs.Lookup(v.Name) == nil {
 			continue
 		}
-		if err := fs.Set(v.name, v.value); err != nil {
-			return fmt.Errorf("%s: invalid value %q for %s: %v", source, v.value, v.name, err)
+		if err := fs.Set(v.Name, v.Value); err != nil {
+			return fmt.Errorf("%s: invalid value %q for %s: %v", source, v.Value, v.Name, err)
 		}
 	}
 	return nil

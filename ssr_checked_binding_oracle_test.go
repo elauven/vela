@@ -67,7 +67,7 @@ func TestSSRCheckedBindingOracle(t *testing.T) {
 	}
 	outRoot := filepath.Join(root, "out")
 	projectModule := "example.com/ssrcheckedbindingoracle"
-	if errors := buildSSRProject([]string{component}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
+	if errors := BuildSSRProject([]string{component}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 	compilerRoot, err := os.Getwd()

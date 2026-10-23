@@ -270,7 +270,7 @@ func TestIsPureExprLiteral(t *testing.T) {
 			t.Fatalf("parse failed for: %s", src)
 		}
 		decl := prog.Body[0].(*JsVarDecl)
-		got := isPureExpr(decl.Decls[0].Init)
+		got := IsPureExpr(decl.Decls[0].Init)
 		if got != want {
 			t.Errorf("isPureExpr(%q) = %v, want %v", src, got, want)
 		}

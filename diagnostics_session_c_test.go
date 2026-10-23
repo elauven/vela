@@ -6,7 +6,7 @@ import (
 )
 
 // runValidateTemplate parses a template-only fragment and runs
-// validateTemplate against it.  Returns the diagnostics so tests
+// ValidateTemplate against it.  Returns the diagnostics so tests
 // can assert on severity and message.
 func runValidateTemplate(t *testing.T, script, template string) *DiagSet {
 	t.Helper()
@@ -16,7 +16,7 @@ func runValidateTemplate(t *testing.T, script, template string) *DiagSet {
 		t.Fatalf("template parse failed: %v", err)
 	}
 	ds := NewDiagSet("test.vela", script+"\n"+template)
-	validateTemplate(nodes, a, ds)
+	ValidateTemplate(nodes, a, ds)
 	return ds
 }
 
@@ -102,8 +102,8 @@ func TestVelaFormDiagnostics(t *testing.T) {
 				t.Fatal(err)
 			}
 			ds := NewDiagSet("test.vela", tc.script+"\n"+tc.template)
-			validateScriptForms(prog, ds)
-			validateTemplateForms(nodes, tc.template, ds)
+			ValidateScriptForms(prog, ds)
+			ValidateTemplateForms(nodes, tc.template, ds)
 			for _, d := range ds.Errors() {
 				if strings.Contains(d.Message, tc.want) {
 					return
@@ -116,7 +116,7 @@ func TestVelaFormDiagnostics(t *testing.T) {
 
 func TestTemplateExpressionSyntaxDiagnostic(t *testing.T) {
 	ds := NewDiagSet("test.vela", "<p>{count + }</p>")
-	checkExprRefs("format(count", map[string]bool{"count": true, "format": true}, "<p>{format(count}</p>", ds)
+	CheckExprRefs("format(count", map[string]bool{"count": true, "format": true}, "<p>{format(count}</p>", ds)
 	if len(ds.Errors()) != 1 || !strings.Contains(ds.Errors()[0].Message, "invalid template expression") {
 		t.Fatalf("template syntax diagnostic = %+v", ds.All())
 	}

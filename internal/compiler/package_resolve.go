@@ -1,10 +1,11 @@
-package main
-
-// package_resolve.go — --check-deps (task 048): reports package imports that
-// would not resolve in node_modules. It only reads package.json files; it
-// never copies, rewrites or bundles a package.
+package compiler
 
 import (
+	"github.com/elauven/vela/internal/codegen"
+	"github.com/elauven/vela/internal/diag"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfcast"
+
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,17 +13,21 @@ import (
 	"strings"
 )
 
+// package_resolve.go — --check-deps (task 048): reports package imports that
+// would not resolve in node_modules. It only reads package.json files; it
+// never copies, rewrites or bundles a package.
+
 // DepsCheckDiagnosticCode reports an import of a package that does not
 // resolve.
 const DepsCheckDiagnosticCode = "VELA-NPM-UNRESOLVED"
 
-// checkPackageSpecifier returns why spec, imported by a module in fromDir,
+// CheckPackageSpecifier returns why spec, imported by a module in fromDir,
 // does not resolve with the Node.js algorithm, or "" when it resolves.
-func checkPackageSpecifier(fromDir, spec string) string {
+func CheckPackageSpecifier(fromDir, spec string) string {
 	if strings.HasPrefix(spec, "node:") {
 		return fmt.Sprintf("%q is a Node.js built-in module; browsers cannot load it", spec)
 	}
-	name := packageName(spec)
+	name := PackageOfSpecifier(spec)
 	sub := strings.TrimPrefix(spec, name)
 	dir, err := filepath.Abs(fromDir)
 	if err != nil {
@@ -93,7 +98,7 @@ func hasSubpathKeys(exports map[string]json.RawMessage) bool {
 
 // checkScriptPackageImports warns about the unresolved package imports of a
 // component script.
-func checkScriptPackageImports(src string, script *ScriptAST, ds *DiagSet) {
+func checkScriptPackageImports(src string, script *sfcast.ScriptAST, ds *diag.DiagSet) {
 	if script == nil || script.Program == nil {
 		return
 	}
@@ -102,17 +107,17 @@ func checkScriptPackageImports(src string, script *ScriptAST, ds *DiagSet) {
 	for _, stmt := range script.Program.Body {
 		var spec string
 		switch x := stmt.(type) {
-		case *JsImportDecl:
+		case *jsast.JsImportDecl:
 			spec = x.Source
-		case *JsExportDecl:
+		case *jsast.JsExportDecl:
 			if x.HasSource {
 				spec = x.Source
 			}
 		}
-		if !IsPackageSpecifier(spec) && !strings.HasPrefix(spec, "node:") {
+		if !codegen.IsPackageSpecifier(spec) && !strings.HasPrefix(spec, "node:") {
 			continue
 		}
-		if problem := checkPackageSpecifier(filepath.Dir(src), spec); problem != "" {
+		if problem := CheckPackageSpecifier(filepath.Dir(src), spec); problem != "" {
 			ds.WarnWith(stmt.NodePos(), DepsCheckDiagnosticCode, "install the package, or provide it through the import map or bundler of the application", "%s", problem)
 		}
 	}
@@ -121,16 +126,16 @@ func checkScriptPackageImports(src string, script *ScriptAST, ds *DiagSet) {
 // checkModulePackageImports warns about the unresolved package imports of a
 // copied JavaScript module, in the compiler's diagnostic format.
 func checkModulePackageImports(src, source string, opts CompileOptions) {
-	for _, spec := range ModuleSpecifiers(source) {
-		if !IsPackageSpecifier(spec.Value) && !strings.HasPrefix(spec.Value, "node:") {
+	for _, spec := range codegen.ModuleSpecifiers(source) {
+		if !codegen.IsPackageSpecifier(spec.Value) && !strings.HasPrefix(spec.Value, "node:") {
 			continue
 		}
-		problem := checkPackageSpecifier(filepath.Dir(src), spec.Value)
+		problem := CheckPackageSpecifier(filepath.Dir(src), spec.Value)
 		if problem == "" {
 			continue
 		}
 		column := spec.Pos - strings.LastIndex(source[:spec.Pos], "\n")
-		fmt.Fprintf(errorWriter(opts), "       %s:%d:%d: [warning] [%s] %s\n", filepath.ToSlash(src), spec.Line, column, DepsCheckDiagnosticCode, problem)
-		opts.Report.add(&Diagnostic{Sev: SevWarning, File: filepath.ToSlash(src), Line: spec.Line, Col: column, Code: DepsCheckDiagnosticCode, Message: problem})
+		fmt.Fprintf(ErrorWriter(opts), "       %s:%d:%d: [warning] [%s] %s\n", filepath.ToSlash(src), spec.Line, column, DepsCheckDiagnosticCode, problem)
+		opts.Report.add(&diag.Diagnostic{Sev: diag.SevWarning, File: filepath.ToSlash(src), Line: spec.Line, Col: column, Code: DepsCheckDiagnosticCode, Message: problem})
 	}
 }

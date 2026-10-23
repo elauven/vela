@@ -1,4 +1,9 @@
-package main
+package compiler
+
+import (
+	"github.com/elauven/vela/internal/diag"
+	"github.com/elauven/vela/internal/jsast"
+)
 
 // unreachable.go — flag statements that the JS runtime can never reach.
 //
@@ -35,7 +40,7 @@ func (f flowOutcome) terminates() bool { return f != flowContinue }
 
 // DetectUnreachable scans a program for statements after a definite
 // terminator and emits warnings via ds.
-func DetectUnreachable(prog *JsProgram, ds *DiagSet) {
+func DetectUnreachable(prog *jsast.JsProgram, ds *diag.DiagSet) {
 	if prog == nil {
 		return
 	}
@@ -45,9 +50,9 @@ func DetectUnreachable(prog *JsProgram, ds *DiagSet) {
 // analyzeStmts walks a list of statements in order.  Returns the
 // outcome of the last analysed statement so the caller can propagate
 // the verdict up (used by blocks inside if/else).
-func analyzeStmts(stmts []JsStmt, ds *DiagSet) flowOutcome {
+func analyzeStmts(stmts []jsast.JsStmt, ds *diag.DiagSet) flowOutcome {
 	terminated := false
-	var firstDead JsStmt
+	var firstDead jsast.JsStmt
 	last := flowContinue
 
 	for _, s := range stmts {
@@ -72,32 +77,32 @@ func analyzeStmts(stmts []JsStmt, ds *DiagSet) flowOutcome {
 
 // analyzeStmt classifies a single statement's outcome and recurses
 // into any nested code.
-func analyzeStmt(s JsStmt, ds *DiagSet) flowOutcome {
+func analyzeStmt(s jsast.JsStmt, ds *diag.DiagSet) flowOutcome {
 	if s == nil {
 		return flowContinue
 	}
 	switch n := s.(type) {
 
-	case *JsReturnStmt:
+	case *jsast.JsReturnStmt:
 		if n.Arg != nil {
 			scanNestedFunctions(n, ds)
 		}
 		return flowReturn
 
-	case *JsThrowStmt:
+	case *jsast.JsThrowStmt:
 		scanNestedFunctions(n, ds)
 		return flowReturn
 
-	case *JsBreakStmt:
+	case *jsast.JsBreakStmt:
 		return flowBranch
 
-	case *JsContinueStmt:
+	case *jsast.JsContinueStmt:
 		return flowBranch
 
-	case *JsBlock:
+	case *jsast.JsBlock:
 		return analyzeStmts(n.Body, ds)
 
-	case *JsIfStmt:
+	case *jsast.JsIfStmt:
 		thenOut := analyzeStmt(n.Then, ds)
 		if n.Else == nil {
 			// No else → fallthrough is always possible.
@@ -115,23 +120,23 @@ func analyzeStmt(s JsStmt, ds *DiagSet) flowOutcome {
 		}
 		return flowContinue
 
-	case *JsForStmt:
+	case *jsast.JsForStmt:
 		analyzeStmt(n.Body, ds)
 		return flowContinue
 
-	case *JsForInStmt:
+	case *jsast.JsForInStmt:
 		analyzeStmt(n.Body, ds)
 		return flowContinue
 
-	case *JsWhileStmt:
+	case *jsast.JsWhileStmt:
 		analyzeStmt(n.Body, ds)
 		return flowContinue
 
-	case *JsDoWhileStmt:
+	case *jsast.JsDoWhileStmt:
 		analyzeStmt(n.Body, ds)
 		return flowContinue
 
-	case *JsTryStmt:
+	case *jsast.JsTryStmt:
 		var blockOut, handlerOut flowOutcome
 		if n.Block != nil {
 			blockOut = analyzeStmts(n.Block.Body, ds)
@@ -157,7 +162,7 @@ func analyzeStmt(s JsStmt, ds *DiagSet) flowOutcome {
 		}
 		return flowContinue
 
-	case *JsSwitchStmt:
+	case *jsast.JsSwitchStmt:
 		// Switch flow is hard (fallthrough between cases, default
 		// optional).  Just analyse each case body in isolation; don't
 		// try to claim the switch as a whole terminates.
@@ -166,7 +171,7 @@ func analyzeStmt(s JsStmt, ds *DiagSet) flowOutcome {
 		}
 		return flowContinue
 
-	case *JsFuncDecl:
+	case *jsast.JsFuncDecl:
 		// A function declaration introduces a binding but doesn't
 		// execute any code at this point; its body has its own flow.
 		if n.Body != nil {
@@ -174,17 +179,17 @@ func analyzeStmt(s JsStmt, ds *DiagSet) flowOutcome {
 		}
 		return flowContinue
 
-	case *JsClassDecl:
+	case *jsast.JsClassDecl:
 		// Method bodies have their own flow.
 		for _, m := range n.Members {
 			scanNestedFunctions(m.Value, ds)
 		}
 		return flowContinue
 
-	case *JsLabeledStmt:
+	case *jsast.JsLabeledStmt:
 		return analyzeStmt(n.Body, ds)
 
-	case *JsExprStmt:
+	case *jsast.JsExprStmt:
 		scanNestedFunctions(n.X, ds)
 		return flowContinue
 	}
@@ -198,24 +203,24 @@ func analyzeStmt(s JsStmt, ds *DiagSet) flowOutcome {
 //
 // Stops descending once a function is hit (its body has already been
 // scheduled for analysis) so we don't double-analyse nested fns.
-func scanNestedFunctions(node JsNode, ds *DiagSet) {
+func scanNestedFunctions(node jsast.JsNode, ds *diag.DiagSet) {
 	if node == nil {
 		return
 	}
-	WalkNode(node, func(n JsNode) bool {
+	jsast.WalkNode(node, func(n jsast.JsNode) bool {
 		switch fn := n.(type) {
-		case *JsFuncDecl:
+		case *jsast.JsFuncDecl:
 			if fn.Body != nil {
 				analyzeStmts(fn.Body.Body, ds)
 			}
 			return false // don't descend; analyzeStmts handled it
-		case *JsFuncExpr:
+		case *jsast.JsFuncExpr:
 			if fn.Body != nil {
 				analyzeStmts(fn.Body.Body, ds)
 			}
 			return false
-		case *JsArrowFunc:
-			if block, ok := fn.Body.(*JsBlock); ok && block != nil {
+		case *jsast.JsArrowFunc:
+			if block, ok := fn.Body.(*jsast.JsBlock); ok && block != nil {
 				analyzeStmts(block.Body, ds)
 			}
 			return false

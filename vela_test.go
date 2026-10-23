@@ -168,7 +168,7 @@ let active  = $state(false);
 	if len(a.StateVars) != 3 {
 		t.Fatalf("expected 3 state vars, got %d", len(a.StateVars))
 	}
-	if a.StateVars[0].Name != "count" || sourceExpr(a.StateVars[0].InitialAST) != "0" {
+	if a.StateVars[0].Name != "count" || SourceExpr(a.StateVars[0].InitialAST) != "0" {
 		t.Errorf("first state var: got %+v", a.StateVars[0])
 	}
 }
@@ -289,7 +289,7 @@ func TestAnalyzeScript_EffectDepsInTemplate(t *testing.T) {
 	}
 	if !slices.Contains(a.Effects[0].Deps, "count") {
 		t.Errorf("effect should depend on count; deps=%v body=%q",
-			a.Effects[0].Deps, sourceBlock(a.Effects[0].BodyAST))
+			a.Effects[0].Deps, SourceBlock(a.Effects[0].BodyAST))
 	}
 }
 
@@ -404,8 +404,8 @@ func TestAnalyzeScript_ExportLetProps(t *testing.T) {
 	if len(a.Props) != 3 {
 		t.Fatalf("expected 3 props, got %d", len(a.Props))
 	}
-	if a.Props[0].Name != "name" || sourceExpr(a.Props[0].DefaultAST) != "'World'" {
-		t.Errorf("prop[0]: got name=%q default=%q", a.Props[0].Name, sourceExpr(a.Props[0].DefaultAST))
+	if a.Props[0].Name != "name" || SourceExpr(a.Props[0].DefaultAST) != "'World'" {
+		t.Errorf("prop[0]: got name=%q default=%q", a.Props[0].Name, SourceExpr(a.Props[0].DefaultAST))
 	}
 	if got := PrintNode(a.Props[0].DefaultAST); got != "'World'" {
 		t.Errorf("prop[0] default AST: want %q, got %q", "'World'", got)
@@ -549,7 +549,7 @@ func TestValidateScript_WarnsDerivedAssignment(t *testing.T) {
 	prog := ParseJS(script)
 	a := AnalyzeScript(script)
 	ds := NewDiagSet("test.vela", script)
-	validateScript(prog, a, ds)
+	ValidateScript(prog, a, ds)
 	// Should warn about assigning to derived var
 	found := false
 	for _, d := range ds.Warnings() {
@@ -569,10 +569,10 @@ func TestValidateScript_WarnsEffectNoDeps(t *testing.T) {
 	prog := ParseJS(script)
 	a := AnalyzeScript(script)
 	ds := NewDiagSet("test.vela", script)
-	// The effect-no-deps warning moved from validateScript into
-	// validateEffectBody (reactivity.go) so it could carry an
+	// The effect-no-deps warning moved from ValidateScript into
+	// ValidateEffectBody (reactivity.go) so it could carry an
 	// accurate source position.
-	validateEffectBody(prog, a, ds)
+	ValidateEffectBody(prog, a, ds)
 	found := false
 	for _, d := range ds.Warnings() {
 		if strings.Contains(d.Message, "no reactive variables") {
@@ -592,7 +592,7 @@ func TestValidateTemplate_WarnsUnimportedComponent(t *testing.T) {
 	nodes, _ := ParseTemplate(sfc.Template)
 	a := AnalyzeScript(sfc.Script)
 	ds := NewDiagSet("test.vela", sfc.Script)
-	validateTemplate(nodes, a, ds)
+	ValidateTemplate(nodes, a, ds)
 	found := false
 	for _, d := range ds.Warnings() {
 		if strings.Contains(d.Message, "MyWidget") {
@@ -612,7 +612,7 @@ func TestValidateTemplate_NoWarnWhenImported(t *testing.T) {
 	nodes, _ := ParseTemplate(sfc.Template)
 	a := AnalyzeScript(sfc.Script)
 	ds := NewDiagSet("test.vela", sfc.Script)
-	validateTemplate(nodes, a, ds)
+	ValidateTemplate(nodes, a, ds)
 	for _, d := range ds.Warnings() {
 		if strings.Contains(d.Message, "MyWidget") {
 			t.Errorf("should not warn about imported component; got: %s", d.Message)
@@ -638,8 +638,8 @@ func TestAnalyzeScript_OnMount(t *testing.T) {
 	if lc.Kind != "onMount" {
 		t.Errorf("kind: want 'onMount', got %q", lc.Kind)
 	}
-	if !strings.Contains(sourceBlock(lc.BodyAST), "setInterval") {
-		t.Errorf("body should contain setInterval; got: %q", sourceBlock(lc.BodyAST))
+	if !strings.Contains(SourceBlock(lc.BodyAST), "setInterval") {
+		t.Errorf("body should contain setInterval; got: %q", SourceBlock(lc.BodyAST))
 	}
 }
 
@@ -656,8 +656,8 @@ func TestAnalyzeScript_Bindable(t *testing.T) {
 	if !p.Bindable {
 		t.Error("prop should be marked Bindable")
 	}
-	if sourceExpr(p.DefaultAST) != "0" {
-		t.Errorf("default: want '0', got %q", sourceExpr(p.DefaultAST))
+	if SourceExpr(p.DefaultAST) != "0" {
+		t.Errorf("default: want '0', got %q", SourceExpr(p.DefaultAST))
 	}
 	if got := PrintNode(p.DefaultAST); got != "0" {
 		t.Errorf("default AST: want %q, got %q", "0", got)
@@ -673,7 +673,7 @@ func TestAnalyzeScript_BindableNoDefault(t *testing.T) {
 		t.Error("should be bindable")
 	}
 	if a.Props[0].DefaultAST != nil {
-		t.Errorf("should have empty default, got %q", sourceExpr(a.Props[0].DefaultAST))
+		t.Errorf("should have empty default, got %q", SourceExpr(a.Props[0].DefaultAST))
 	}
 }
 
@@ -1312,7 +1312,7 @@ func TestSvelteBlock_NestedInsideHtmlElement(t *testing.T) {
 //       collision class of bug from turn 13
 // ─────────────────────────────────────────────────────────────────────────────
 
-// compileVelaString runs the same pipeline as compileFile but on an in-memory
+// compileVelaString runs the same pipeline as CompileFile but on an in-memory
 // source string, returning the generated JS.  Test-only; avoids touching disk.
 func compileVelaString(t *testing.T, name, raw string) string {
 	t.Helper()
@@ -1926,7 +1926,7 @@ func TestValidateDerivedCycles(t *testing.T) {
 		t.Fatalf("cycles = %+v, want one cycle", analysis.DerivedCycles)
 	}
 	ds := NewDiagSet("", src)
-	validateDerivedCycles(ParseJS(src), analysis, ds)
+	ValidateDerivedCycles(ParseJS(src), analysis, ds)
 	if len(ds.Errors()) != 1 || !strings.Contains(ds.Errors()[0].Message, "cyclic $derived dependencies") {
 		t.Fatalf("cycle diagnostic = %+v", ds.All())
 	}

@@ -15,7 +15,7 @@ func compileProfileScript(t *testing.T, script string, opts CompileOptions) ([]*
 	if err := os.WriteFile(src, []byte("<script>"+script+"</script><template><p>ok</p></template>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return compileFile(src, filepath.Join(dir, "App.js"), opts)
+	return CompileFile(src, filepath.Join(dir, "App.js"), opts)
 }
 
 func findDiagnostic(diags []*Diagnostic, code string) *Diagnostic {
@@ -89,7 +89,7 @@ func TestParseTargetProfileAndCapabilityList(t *testing.T) {
 	if _, err := ParseTargetProfile("edge"); err == nil {
 		t.Fatal("invalid target profile unexpectedly accepted")
 	}
-	if got := splitCapabilityList("fetch, indexedDB,fetch, "); len(got) != 2 || got[0] != "fetch" || got[1] != "indexedDB" {
+	if got := SplitCapabilityList("fetch, indexedDB,fetch, "); len(got) != 2 || got[0] != "fetch" || got[1] != "indexedDB" {
 		t.Fatalf("capability list = %#v", got)
 	}
 }
@@ -120,7 +120,7 @@ func TestProfileDiagnosticHumanJSONAndUTF16Position(t *testing.T) {
 	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	diags, err := compileFile(src, filepath.Join(dir, "App.js"), CompileOptions{TargetProfile: TargetWorker})
+	diags, err := CompileFile(src, filepath.Join(dir, "App.js"), CompileOptions{TargetProfile: TargetWorker})
 	diag := findDiagnostic(diags, "VELA-PROFILE-GLOBAL")
 	if err == nil || diag == nil || diag.Col != 16 {
 		t.Fatalf("diagnostics = %+v, err = %v; want UTF-16 column 16", diags, err)
@@ -149,7 +149,7 @@ func TestTargetProfileKeepsSourceMapOutputCompatible(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(dir, "App.js")
-	if diags, err := compileFile(src, dest, CompileOptions{TargetProfile: TargetBrowser, SourceMap: true}); err != nil {
+	if diags, err := CompileFile(src, dest, CompileOptions{TargetProfile: TargetBrowser, SourceMap: true}); err != nil {
 		t.Fatalf("diagnostics = %+v, err = %v", diags, err)
 	}
 	data, err := os.ReadFile(dest + ".map")

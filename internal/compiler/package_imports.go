@@ -1,6 +1,8 @@
-package main
+package compiler
 
 import (
+	"github.com/elauven/vela/internal/codegen"
+	"github.com/elauven/vela/internal/jsast"
 	"github.com/elauven/vela/runtime"
 
 	"path/filepath"
@@ -49,7 +51,7 @@ func (p *packageImports) manifest(outRoot string) ([]ManifestModule, []string) {
 		sort.Strings(sorted)
 		modules = append(modules, ManifestModule{Module: filepath.ToSlash(rel), Packages: sorted})
 		for _, spec := range specs {
-			names[packageName(spec)] = true
+			names[PackageOfSpecifier(spec)] = true
 		}
 	}
 	sort.Slice(modules, func(i, j int) bool { return modules[i].Module < modules[j].Module })
@@ -63,7 +65,7 @@ func (p *packageImports) manifest(outRoot string) ([]ManifestModule, []string) {
 
 // packageName is the npm package of a bare specifier: `date-fns/format` →
 // `date-fns`, `@scope/pkg/sub` → `@scope/pkg`.
-func packageName(spec string) string {
+func PackageOfSpecifier(spec string) string {
 	parts := strings.SplitN(spec, "/", 3)
 	if strings.HasPrefix(spec, "@") && len(parts) >= 2 {
 		return parts[0] + "/" + parts[1]
@@ -74,26 +76,26 @@ func packageName(spec string) string {
 // programPackageImports lists the package specifiers of a generated module:
 // static imports, re-exports and literal import(), without the runtime
 // package of --runtime-import=bare.
-func programPackageImports(prog *JsProgram) []string {
+func programPackageImports(prog *jsast.JsProgram) []string {
 	seen := map[string]bool{}
 	var specs []string
 	add := func(spec string) {
-		if IsPackageSpecifier(spec) && packageName(spec) != runtime.PackageName && !seen[spec] {
+		if codegen.IsPackageSpecifier(spec) && PackageOfSpecifier(spec) != runtime.PackageName && !seen[spec] {
 			seen[spec] = true
 			specs = append(specs, spec)
 		}
 	}
-	WalkNode(prog, func(n JsNode) bool {
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
 		switch x := n.(type) {
-		case *JsImportDecl:
+		case *jsast.JsImportDecl:
 			add(x.Source)
-		case *JsExportDecl:
+		case *jsast.JsExportDecl:
 			if x.HasSource {
 				add(x.Source)
 			}
-		case *JsCallExpr:
-			if callee, ok := x.Callee.(*JsIdent); ok && callee.Name == "import" && len(x.Args) > 0 {
-				if lit, ok := x.Args[0].(*JsLiteral); ok && lit.Kind == "string" && len(lit.Raw) >= 2 {
+		case *jsast.JsCallExpr:
+			if callee, ok := x.Callee.(*jsast.JsIdent); ok && callee.Name == "import" && len(x.Args) > 0 {
+				if lit, ok := x.Args[0].(*jsast.JsLiteral); ok && lit.Kind == "string" && len(lit.Raw) >= 2 {
 					add(lit.Raw[1 : len(lit.Raw)-1])
 				}
 			}
@@ -108,8 +110,8 @@ func programPackageImports(prog *JsProgram) []string {
 func sourcePackageImports(src string) []string {
 	seen := map[string]bool{}
 	var specs []string
-	for _, spec := range ModuleSpecifiers(src) {
-		if IsPackageSpecifier(spec.Value) && !seen[spec.Value] {
+	for _, spec := range codegen.ModuleSpecifiers(src) {
+		if codegen.IsPackageSpecifier(spec.Value) && !seen[spec.Value] {
 			seen[spec.Value] = true
 			specs = append(specs, spec.Value)
 		}

@@ -61,7 +61,7 @@ func TestJSONLTraceSinkRecordsParallelProjectWithoutSourcePaths(t *testing.T) {
 	}
 	defer func() { _ = sink.Close() }()
 
-	errors := buildProject(sourceFiles, srcRoot, outRoot, CompileOptions{
+	errors := BuildProject(sourceFiles, srcRoot, outRoot, CompileOptions{
 		TraceSink:    sink,
 		StatusWriter: io.Discard,
 	}, true)
@@ -127,13 +127,13 @@ func TestJSONLTraceSinkRecordsRepeatedProjectWatchCompile(t *testing.T) {
 	}
 	defer func() { _ = sink.Close() }()
 	opts := CompileOptions{TraceSink: sink, StatusWriter: io.Discard}
-	if !compileProjectFile(src, srcRoot, filepath.Join(dir, "dist"), opts) {
+	if !CompileProjectFile(src, srcRoot, filepath.Join(dir, "dist"), opts) {
 		t.Fatal("initial project compilation failed")
 	}
 	if err := os.WriteFile(src, []byte("<template><p>second</p></template>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if !compileProjectFile(src, srcRoot, filepath.Join(dir, "dist"), opts) {
+	if !CompileProjectFile(src, srcRoot, filepath.Join(dir, "dist"), opts) {
 		t.Fatal("watch recompilation failed")
 	}
 	records := readJSONLTraceRecords(t, tracePath)
@@ -160,7 +160,7 @@ func TestTraceSinkFailureDoesNotCorruptGeneratedOutputOrSourceMap(t *testing.T) 
 		t.Fatal(err)
 	}
 	dest := filepath.Join(dir, "App.js")
-	_, err := compileFile(src, dest, CompileOptions{
+	_, err := CompileFile(src, dest, CompileOptions{
 		SourceMap: true,
 		TraceSink: NewJSONLTraceSink(failingTraceWriter{}),
 	})

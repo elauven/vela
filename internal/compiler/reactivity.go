@@ -1,31 +1,11 @@
-package main
-
-// reactivity.go — semantic checks for the Vela reactive primitives.
-//
-// These run after BuildScopes and operate on the *parsed* JS AST so
-// positions are accurate (callers wrap them in ds.PushOffset for the
-// script section).  Three checks live here:
-//
-//   1. validateDerivedPurity — $derived(expr) must be a pure function
-//      of its dependencies.  Writing to *any* binding (especially a
-//      $state var) from inside a derived is almost always a bug:
-//      writes don't trigger re-derivation at runtime, and writing to
-//      a state var creates an infinite reactive loop.
-//
-//   2. validateEffectBody — an $effect with no reactive references
-//      runs once at mount and never again.  That's usually a mistake
-//      — the user probably meant onMount().  Reuses the analyzer's
-//      precomputed Effect.Deps so we don't re-parse the body.
-//
-//   3. validateTemplateRefs — every {expression} in the template
-//      must reference names that exist in script scope.  Catches
-//      typos like <p>{cont}</p> when the var is named `count`.
-//
-// All three emit through DiagSet with positions relative to the
-// script section (or template section for #3); the caller handles
-// translation to file coordinates via PushOffset.
+package compiler
 
 import (
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/codegen"
+	"github.com/elauven/vela/internal/diag"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfcast"
 	"github.com/elauven/vela/runtime"
 
 	"fmt"
@@ -33,11 +13,36 @@ import (
 	"strings"
 )
 
+// reactivity.go — semantic checks for the Vela reactive primitives.
+//
+// These run after BuildScopes and operate on the *parsed* JS AST so
+// positions are accurate (callers wrap them in ds.PushOffset for the
+// script section).  Three checks live here:
+//
+//   1. ValidateDerivedPurity — $derived(expr) must be a pure function
+//      of its dependencies.  Writing to *any* binding (especially a
+//      $state var) from inside a derived is almost always a bug:
+//      writes don't trigger re-derivation at runtime, and writing to
+//      a state var creates an infinite reactive loop.
+//
+//   2. ValidateEffectBody — an $effect with no reactive references
+//      runs once at mount and never again.  That's usually a mistake
+//      — the user probably meant onMount().  Reuses the analyzer's
+//      precomputed Effect.Deps so we don't re-parse the body.
+//
+//   3. ValidateTemplateRefs — every {expression} in the template
+//      must reference names that exist in script scope.  Catches
+//      typos like <p>{cont}</p> when the var is named `count`.
+//
+// All three emit through DiagSet with positions relative to the
+// script section (or template section for #3); the caller handles
+// translation to file coordinates via PushOffset.
+
 // ─────────────────────────────────────────────
 //  Validate $derived expressions
 // ─────────────────────────────────────────────
 
-// validateDerivedPurity walks every `let X = $derived(...)` in the
+// ValidateDerivedPurity walks every `let X = $derived(...)` in the
 // program and flags writes to any binding inside the derived
 // expression.  Writes to state vars are upgraded to errors because
 // they cause infinite loops; writes to other bindings are warnings
@@ -46,17 +51,17 @@ import (
 //
 // `analysis` provides the set of state-var names for severity
 // classification.
-func validateDerivedCycles(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
+func ValidateDerivedCycles(prog *jsast.JsProgram, analysis *analyzer.Analysis, ds *diag.DiagSet) {
 	if analysis == nil || len(analysis.DerivedCycles) == 0 {
 		return
 	}
 	positions := map[string]int{}
-	WalkNode(prog, func(n JsNode) bool {
-		if decl, ok := n.(*JsVarDecl); ok {
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
+		if decl, ok := n.(*jsast.JsVarDecl); ok {
 			for _, d := range decl.Decls {
-				if call, ok := d.Init.(*JsCallExpr); ok {
-					if callee, ok := call.Callee.(*JsIdent); ok && callee.Name == "$derived" {
-						positions[IdentName(d.Id)] = d.Id.NodePos()
+				if call, ok := d.Init.(*jsast.JsCallExpr); ok {
+					if callee, ok := call.Callee.(*jsast.JsIdent); ok && callee.Name == "$derived" {
+						positions[analyzer.IdentName(d.Id)] = d.Id.NodePos()
 					}
 				}
 			}
@@ -71,23 +76,23 @@ func validateDerivedCycles(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
 	}
 }
 
-func validateDerivedPurity(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
+func ValidateDerivedPurity(prog *jsast.JsProgram, analysis *analyzer.Analysis, ds *diag.DiagSet) {
 	if prog == nil {
 		return
 	}
 	stateSet := analysis.StateSet()
 
-	WalkNode(prog, func(n JsNode) bool {
-		decl, ok := n.(*JsVarDecl)
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
+		decl, ok := n.(*jsast.JsVarDecl)
 		if !ok || len(decl.Decls) == 0 {
 			return true
 		}
 		for _, d := range decl.Decls {
-			call, ok := d.Init.(*JsCallExpr)
+			call, ok := d.Init.(*jsast.JsCallExpr)
 			if !ok {
 				continue
 			}
-			callee, ok := call.Callee.(*JsIdent)
+			callee, ok := call.Callee.(*jsast.JsIdent)
 			if !ok || callee.Name != "$derived" {
 				continue
 			}
@@ -103,17 +108,17 @@ func validateDerivedPurity(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
 // scanDerivedExpr walks the argument expression to $derived(...) and
 // flags any assignment, update expression, or impurity-producing
 // operation it finds.
-func scanDerivedExpr(expr JsExpr, stateSet map[string]bool, ds *DiagSet) {
-	WalkNode(expr, func(n JsNode) bool {
+func scanDerivedExpr(expr jsast.JsExpr, stateSet map[string]bool, ds *diag.DiagSet) {
+	jsast.WalkNode(expr, func(n jsast.JsNode) bool {
 		switch e := n.(type) {
 
-		case *JsAssignExpr:
+		case *jsast.JsAssignExpr:
 			// LHS could be an identifier or a member.  Both are bad
 			// inside a derived: assigning to a state var causes an
 			// infinite loop; assigning to anything else is at best
 			// surprising (the derived re-runs whenever its deps
 			// change, so the assignment happens repeatedly).
-			if id, ok := e.L.(*JsIdent); ok {
+			if id, ok := e.L.(*jsast.JsIdent); ok {
 				if stateSet[id.Name] {
 					ds.Error(id.Pos,
 						"$derived expression writes to $state variable %q — "+
@@ -134,10 +139,10 @@ func scanDerivedExpr(expr JsExpr, stateSet map[string]bool, ds *DiagSet) {
 						"values should be pure functions of their dependencies")
 			}
 
-		case *JsUnaryExpr:
+		case *jsast.JsUnaryExpr:
 			// ++x / x-- / delete — all write/mutate.
 			if (e.Op == "++" || e.Op == "--") && e.X != nil {
-				if id, ok := e.X.(*JsIdent); ok {
+				if id, ok := e.X.(*jsast.JsIdent); ok {
 					if stateSet[id.Name] {
 						ds.Error(id.Pos,
 							"$derived expression mutates $state variable %q via %s — "+
@@ -152,12 +157,12 @@ func scanDerivedExpr(expr JsExpr, stateSet map[string]bool, ds *DiagSet) {
 				}
 			}
 
-		case *JsAwaitExpr:
+		case *jsast.JsAwaitExpr:
 			ds.Warn(e.NodePos(),
 				"$derived expression uses await — derived values run "+
 					"synchronously; consider $effect with a state var")
 
-		case *JsCallExpr:
+		case *jsast.JsCallExpr:
 			// Calling a function might mutate state, but we can't
 			// know without inlining.  Stay quiet here to avoid noise.
 			// Future work: flag calls to known-impure builtins
@@ -168,10 +173,10 @@ func scanDerivedExpr(expr JsExpr, stateSet map[string]bool, ds *DiagSet) {
 	})
 }
 
-// validateScriptForms retains the historical helper signature for focused
+// ValidateScriptForms retains the historical helper signature for focused
 // validation tests. The compiler pipeline supplies Analysis through the
 // analysis-aware variant below so imported lifecycle aliases can be checked.
-func validateScriptForms(prog *JsProgram, ds *DiagSet) {
+func ValidateScriptForms(prog *jsast.JsProgram, ds *diag.DiagSet) {
 	validateScriptFormsWithAnalysis(prog, nil, ds)
 }
 
@@ -179,20 +184,20 @@ func validateScriptForms(prog *JsProgram, ds *DiagSet) {
 // can prove are invalid. It intentionally performs no inference for
 // variables, members, or user-function arity: those may be callable at
 // runtime.
-func validateScriptFormsWithAnalysis(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
+func validateScriptFormsWithAnalysis(prog *jsast.JsProgram, analysis *analyzer.Analysis, ds *diag.DiagSet) {
 	if prog == nil {
 		return
 	}
 	for _, stmt := range prog.Body {
-		if exp, ok := stmt.(*JsExportDecl); ok && !isPropExport(exp) {
+		if exp, ok := stmt.(*jsast.JsExportDecl); ok && !isPropExport(exp) {
 			ds.ErrorWith(exp.Pos, "VELA-SCRIPT-EXPORT", "Declare a prop with `export let name = value`; move other exports to a .js module.", "a component script can only export props (`export let name`)")
 		}
 	}
-	WalkNode(prog, func(n JsNode) bool {
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
 		switch x := n.(type) {
-		case *JsCallExpr:
+		case *jsast.JsCallExpr:
 			validateCallForm(x, analysis, ds)
-		case *JsImportDecl:
+		case *jsast.JsImportDecl:
 			if x.Source == "vela" || x.Source == "vela/store" {
 				for _, spec := range x.Specifiers {
 					if spec.Imported == "$$dispatch" || spec.Local == "$$dispatch" {
@@ -213,10 +218,10 @@ func validateScriptFormsWithAnalysis(prog *JsProgram, analysis *Analysis, ds *Di
 // 'vela/store': the compiler intrinsics and the public exports of the runtime.
 func velaModuleExports() map[string]bool {
 	names := map[string]bool{}
-	for name := range VelaCompilerIntrinsics {
+	for name := range analyzer.VelaCompilerIntrinsics {
 		names[name] = true
 	}
-	for name := range RuntimeExportNames(runtime.Core) {
+	for name := range codegen.RuntimeExportNames(runtime.Core) {
 		if !strings.HasPrefix(name, "$") {
 			names[name] = true
 		}
@@ -236,20 +241,20 @@ func sortedVelaModuleExports() []string {
 // isPropExport reports `export let name = …`, the only export form of a
 // component script. Other forms would land inside the component factory,
 // where an export is a syntax error (task 055).
-func isPropExport(exp *JsExportDecl) bool {
-	vd, ok := exp.Declaration.(*JsVarDecl)
+func isPropExport(exp *jsast.JsExportDecl) bool {
+	vd, ok := exp.Declaration.(*jsast.JsVarDecl)
 	if !ok || exp.Default || vd.Kind != "let" {
 		return false
 	}
 	for _, decl := range vd.Decls {
-		if _, ok := decl.Id.(*JsIdent); !ok {
+		if _, ok := decl.Id.(*jsast.JsIdent); !ok {
 			return false
 		}
 	}
 	return true
 }
 
-func validateCallForm(call *JsCallExpr, analysis *Analysis, ds *DiagSet) {
+func validateCallForm(call *jsast.JsCallExpr, analysis *analyzer.Analysis, ds *diag.DiagSet) {
 	if call == nil {
 		return
 	}
@@ -266,7 +271,7 @@ func validateCallForm(call *JsCallExpr, analysis *Analysis, ds *DiagSet) {
 			return
 		}
 		switch call.Args[0].(type) {
-		case *JsArrowFunc, *JsFuncExpr:
+		case *jsast.JsArrowFunc, *jsast.JsFuncExpr:
 			ds.ErrorWith(call.Args[0].NodePos(), "VELA-DERIVED-CALLBACK", "Write $derived(expression), for example: $derived(items.length).", "$derived does not accept a callback; pass the computed expression directly")
 		}
 	case "$state", "$state.deep":
@@ -278,12 +283,12 @@ func validateCallForm(call *JsCallExpr, analysis *Analysis, ds *DiagSet) {
 			ds.ErrorWith(call.Pos, "VELA-EFFECT-ARITY", "Write $effect(() => { ... }).", "$effect expects exactly one callback")
 			return
 		}
-		arrow, ok := call.Args[0].(*JsArrowFunc)
+		arrow, ok := call.Args[0].(*jsast.JsArrowFunc)
 		if !ok {
 			ds.ErrorWith(call.Args[0].NodePos(), "VELA-EFFECT-CALLBACK", "Pass an arrow callback, for example $effect(() => { ... }).", "$effect expects an arrow callback")
 			return
 		}
-		if _, ok := arrow.Body.(*JsBlock); !ok {
+		if _, ok := arrow.Body.(*jsast.JsBlock); !ok {
 			ds.ErrorWith(arrow.NodePos(), "VELA-EFFECT-CALLBACK", "Use a block callback, for example $effect(() => { ... }).", "$effect callback must use a block body")
 		}
 	case "$props":
@@ -293,7 +298,7 @@ func validateCallForm(call *JsCallExpr, analysis *Analysis, ds *DiagSet) {
 	if analysis == nil {
 		return
 	}
-	ident, ok := call.Callee.(*JsIdent)
+	ident, ok := call.Callee.(*jsast.JsIdent)
 	if !ok {
 		return
 	}
@@ -302,39 +307,39 @@ func validateCallForm(call *JsCallExpr, analysis *Analysis, ds *DiagSet) {
 			ds.ErrorWith(call.Pos, "VELA-LIFECYCLE-ARITY", "Pass one block-bodied arrow callback.", "%s expects exactly one callback", lifecycle)
 			return
 		}
-		arrow, ok := call.Args[0].(*JsArrowFunc)
+		arrow, ok := call.Args[0].(*jsast.JsArrowFunc)
 		if !ok {
 			ds.ErrorWith(call.Args[0].NodePos(), "VELA-LIFECYCLE-CALLBACK", "Pass a block-bodied arrow callback.", "%s expects an arrow callback", lifecycle)
 			return
 		}
-		if _, ok := arrow.Body.(*JsBlock); !ok {
+		if _, ok := arrow.Body.(*jsast.JsBlock); !ok {
 			ds.ErrorWith(arrow.NodePos(), "VELA-LIFECYCLE-CALLBACK", "Use a block-bodied arrow callback.", "%s callback must use a block body", lifecycle)
 		}
 	}
 }
 
-func intrinsicCallName(callee JsExpr) string {
-	if ident, ok := callee.(*JsIdent); ok {
+func intrinsicCallName(callee jsast.JsExpr) string {
+	if ident, ok := callee.(*jsast.JsIdent); ok {
 		return ident.Name
 	}
-	member, ok := callee.(*JsMemberExpr)
+	member, ok := callee.(*jsast.JsMemberExpr)
 	if !ok || member.Computed {
 		return ""
 	}
-	obj, ok := member.Obj.(*JsIdent)
+	obj, ok := member.Obj.(*jsast.JsIdent)
 	if !ok || obj.Name != "$state" {
 		return ""
 	}
-	prop, ok := member.Prop.(*JsIdent)
+	prop, ok := member.Prop.(*jsast.JsIdent)
 	if !ok || prop.Name != "deep" {
 		return ""
 	}
 	return "$state.deep"
 }
 
-func isProvenNonCallable(expr JsExpr) bool {
+func isProvenNonCallable(expr jsast.JsExpr) bool {
 	switch expr.(type) {
-	case *JsLiteral, *JsTemplateLit, *JsArrayExpr, *JsObjectExpr, *JsUnaryExpr, *JsBinaryExpr, *JsLogicalExpr:
+	case *jsast.JsLiteral, *jsast.JsTemplateLit, *jsast.JsArrayExpr, *jsast.JsObjectExpr, *jsast.JsUnaryExpr, *jsast.JsBinaryExpr, *jsast.JsLogicalExpr:
 		return true
 	default:
 		return false
@@ -345,7 +350,7 @@ func isProvenNonCallable(expr JsExpr) bool {
 //  Validate $effect bodies
 // ─────────────────────────────────────────────
 
-// validateEffectBody walks every `$effect(...)` call and emits a
+// ValidateEffectBody walks every `$effect(...)` call and emits a
 // warning if its argument references no reactive variable.  The
 // analyzer already populated Effect.Deps; we reuse that and only
 // re-walk to recover the source position.
@@ -356,22 +361,22 @@ func isProvenNonCallable(expr JsExpr) bool {
 // the offset machinery.  We do this here properly with real
 // positions; the old version is harmless duplication and could be
 // retired in a future cleanup.
-func validateEffectBody(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
+func ValidateEffectBody(prog *jsast.JsProgram, analysis *analyzer.Analysis, ds *diag.DiagSet) {
 	if prog == nil {
 		return
 	}
 	depsByPos := make(map[int][]string)
 	idx := 0
-	WalkNode(prog, func(n JsNode) bool {
-		stmt, ok := n.(*JsExprStmt)
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
+		stmt, ok := n.(*jsast.JsExprStmt)
 		if !ok {
 			return true
 		}
-		call, ok := stmt.X.(*JsCallExpr)
+		call, ok := stmt.X.(*jsast.JsCallExpr)
 		if !ok {
 			return true
 		}
-		callee, ok := call.Callee.(*JsIdent)
+		callee, ok := call.Callee.(*jsast.JsIdent)
 		if !ok || callee.Name != "$effect" {
 			return true
 		}
@@ -386,16 +391,16 @@ func validateEffectBody(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
 	// Emit warnings.  Walk again so positions are visited in source
 	// order (better diagnostic UX).
 	idx = 0
-	WalkNode(prog, func(n JsNode) bool {
-		stmt, ok := n.(*JsExprStmt)
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
+		stmt, ok := n.(*jsast.JsExprStmt)
 		if !ok {
 			return true
 		}
-		call, ok := stmt.X.(*JsCallExpr)
+		call, ok := stmt.X.(*jsast.JsCallExpr)
 		if !ok {
 			return true
 		}
-		callee, ok := call.Callee.(*JsIdent)
+		callee, ok := call.Callee.(*jsast.JsIdent)
 		if !ok || callee.Name != "$effect" {
 			return true
 		}
@@ -418,7 +423,7 @@ func validateEffectBody(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
 //  Validate template expression references
 // ─────────────────────────────────────────────
 
-// validateTemplateRefs walks the template AST and checks that every
+// ValidateTemplateRefs walks the template AST and checks that every
 // identifier appearing in an expression context (text interpolation,
 // event handlers, bindings, control-flow expressions) refers to a
 // name that exists in script scope.
@@ -436,7 +441,7 @@ func validateEffectBody(prog *JsProgram, analysis *Analysis, ds *DiagSet) {
 // substring-locate within the template text.  Passed in by the
 // caller; if zero, all template diagnostics land at the section
 // start.
-func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, templateText string, ds *DiagSet) {
+func ValidateTemplateRefs(nodes []sfcast.Node, analysis *analyzer.Analysis, scriptScope *analyzer.Scope, templateText string, ds *diag.DiagSet) {
 	if scriptScope == nil {
 		return
 	}
@@ -460,29 +465,29 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 		known[name] = true
 	}
 
-	var walkNodes func([]Node)
-	walkNodes = func(ns []Node) {
+	var walkNodes func([]sfcast.Node)
+	walkNodes = func(ns []sfcast.Node) {
 		for _, node := range ns {
 			switch n := node.(type) {
-			case *TextNode:
+			case *sfcast.TextNode:
 				for _, p := range n.Parts {
 					if !p.Static {
 						checkCachedExprRefs(p.Expr, known, templateText, ds)
 					}
 				}
-			case *ElementNode:
+			case *sfcast.ElementNode:
 				for _, a := range n.Attrs {
 					checkAttrRefs(a, known, templateText, ds)
 				}
 				walkNodes(n.Children)
-			case *ComponentNode:
+			case *sfcast.ComponentNode:
 				for _, a := range n.Attrs {
 					checkAttrRefs(a, known, templateText, ds)
 				}
 				for _, slotNodes := range n.Slots {
 					walkNodes(slotNodes)
 				}
-			case *IfChainNode:
+			case *sfcast.IfChainNode:
 				if n.HasKey() {
 					if n.KeyAST != nil {
 						checkCachedExprRefs(n.KeyAST, known, templateText, ds)
@@ -500,7 +505,7 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 					}
 					walkNodes(branch.Children)
 				}
-			case *EachBlockNode:
+			case *sfcast.EachBlockNode:
 				checkCachedExprRefs(n.IterExpr, known, templateText, ds)
 				names := []string{n.ItemName}
 				if n.IndexName != "" {
@@ -519,7 +524,7 @@ func validateTemplateRefs(nodes []Node, analysis *Analysis, scriptScope *Scope, 
 					delete(known, nm)
 				}
 				walkNodes(n.ElseChildren)
-			case *AwaitBlockNode:
+			case *sfcast.AwaitBlockNode:
 				checkCachedExprRefs(n.Expr, known, templateText, ds)
 				walkNodes(n.PendingChildren)
 				thenAdded := addEachBindings(known, []string{n.ValueName})
@@ -589,7 +594,7 @@ func identsIn(s string) []string {
 	}
 	return filtered
 }
-func checkAttrRefs(a *Attr, known map[string]bool, templateText string, ds *DiagSet) {
+func checkAttrRefs(a *sfcast.Attr, known map[string]bool, templateText string, ds *diag.DiagSet) {
 	if a == nil {
 		return
 	}
@@ -600,7 +605,7 @@ func checkAttrRefs(a *Attr, known map[string]bool, templateText string, ds *Diag
 	}
 }
 
-// checkExprRefs parses a small JS expression and resolves every
+// CheckExprRefs parses a small JS expression and resolves every
 // identifier it contains against `known`.  Unknown identifiers are
 // reported as warnings.
 //
@@ -608,15 +613,15 @@ func checkAttrRefs(a *Attr, known map[string]bool, templateText string, ds *Diag
 // substring-search for the unknown name to produce a usable position
 // (relative to the template section's offset, which the caller has
 // pushed onto DiagSet).
-func checkExprRefs(exprText string, known map[string]bool, templateText string, ds *DiagSet) {
+func CheckExprRefs(exprText string, known map[string]bool, templateText string, ds *diag.DiagSet) {
 	checkExprRefsAt(exprText, known, templateText, -1, ds)
 }
 
-func checkExprRefsAt(exprText string, known map[string]bool, templateText string, pos int, ds *DiagSet) {
-	checkCachedExprRefs(NewTemplateExpr(exprText, pos), known, templateText, ds)
+func checkExprRefsAt(exprText string, known map[string]bool, templateText string, pos int, ds *diag.DiagSet) {
+	checkCachedExprRefs(sfcast.NewTemplateExpr(exprText, pos), known, templateText, ds)
 }
 
-func checkCachedExprRefs(expr *TemplateExpr, known map[string]bool, templateText string, ds *DiagSet) {
+func checkCachedExprRefs(expr *sfcast.TemplateExpr, known map[string]bool, templateText string, ds *diag.DiagSet) {
 	if expr == nil {
 		return
 	}
@@ -638,39 +643,39 @@ func checkCachedExprRefs(expr *TemplateExpr, known map[string]bool, templateText
 	}
 
 	seen := make(map[string]bool)
-	WalkNode(prog, func(n JsNode) bool {
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
 		// Don't descend into function/arrow bodies — they introduce
 		// their own scopes, and parameters / locals would falsely
 		// register as unknown.  The common case in templates is a
 		// short expression; entering closures is rare and would
 		// require running the full scope analyzer per expression.
 		switch n.(type) {
-		case *JsFuncExpr, *JsArrowFunc, *JsFuncDecl:
+		case *jsast.JsFuncExpr, *jsast.JsArrowFunc, *jsast.JsFuncDecl:
 			return false
 		}
 		// Member expressions: only the object is a reference, not
 		// the property name.
-		if me, ok := n.(*JsMemberExpr); ok {
+		if me, ok := n.(*jsast.JsMemberExpr); ok {
 			// Walk the object as a reference, but stop here so the
 			// non-computed property name isn't visited.
-			WalkNode(me.Obj, func(inner JsNode) bool {
-				if id, ok := inner.(*JsIdent); ok {
+			jsast.WalkNode(me.Obj, func(inner jsast.JsNode) bool {
+				if id, ok := inner.(*jsast.JsIdent); ok {
 					checkIdentRef(id, known, seen, templateText, pos, ds)
 				}
-				if me, ok := inner.(*JsMemberExpr); ok {
+				if me, ok := inner.(*jsast.JsMemberExpr); ok {
 					_ = me
 					return true
 				}
 				switch inner.(type) {
-				case *JsFuncExpr, *JsArrowFunc, *JsFuncDecl:
+				case *jsast.JsFuncExpr, *jsast.JsArrowFunc, *jsast.JsFuncDecl:
 					return false
 				}
 				return true
 			})
 			if me.Computed {
 				// Property is an expression — recurse normally.
-				WalkNode(me.Prop, func(inner JsNode) bool {
-					if id, ok := inner.(*JsIdent); ok {
+				jsast.WalkNode(me.Prop, func(inner jsast.JsNode) bool {
+					if id, ok := inner.(*jsast.JsIdent); ok {
 						checkIdentRef(id, known, seen, templateText, pos, ds)
 					}
 					return true
@@ -682,29 +687,29 @@ func checkCachedExprRefs(expr *TemplateExpr, known map[string]bool, templateText
 		// only walk values.  Shorthand `{ x }` makes x a reference,
 		// which the parser already represents by having Key == Value
 		// as the same JsIdent; that lands here normally.
-		if obj, ok := n.(*JsObjectExpr); ok {
+		if obj, ok := n.(*jsast.JsObjectExpr); ok {
 			for _, prop := range obj.Props {
 				if prop.Shorthand {
-					if id, ok := prop.Key.(*JsIdent); ok {
+					if id, ok := prop.Key.(*jsast.JsIdent); ok {
 						checkIdentRef(id, known, seen, templateText, pos, ds)
 					}
 					continue
 				}
 				if prop.Computed && prop.Key != nil {
-					WalkNode(prop.Key, func(inner JsNode) bool {
-						if id, ok := inner.(*JsIdent); ok {
+					jsast.WalkNode(prop.Key, func(inner jsast.JsNode) bool {
+						if id, ok := inner.(*jsast.JsIdent); ok {
 							checkIdentRef(id, known, seen, templateText, pos, ds)
 						}
 						return true
 					})
 				}
 				if prop.Value != nil {
-					WalkNode(prop.Value, func(inner JsNode) bool {
-						if id, ok := inner.(*JsIdent); ok {
+					jsast.WalkNode(prop.Value, func(inner jsast.JsNode) bool {
+						if id, ok := inner.(*jsast.JsIdent); ok {
 							checkIdentRef(id, known, seen, templateText, pos, ds)
 						}
 						switch inner.(type) {
-						case *JsFuncExpr, *JsArrowFunc, *JsFuncDecl:
+						case *jsast.JsFuncExpr, *jsast.JsArrowFunc, *jsast.JsFuncDecl:
 							return false
 						}
 						return true
@@ -713,7 +718,7 @@ func checkCachedExprRefs(expr *TemplateExpr, known map[string]bool, templateText
 			}
 			return false
 		}
-		if id, ok := n.(*JsIdent); ok {
+		if id, ok := n.(*jsast.JsIdent); ok {
 			checkIdentRef(id, known, seen, templateText, pos, ds)
 		}
 		return true
@@ -723,7 +728,7 @@ func checkCachedExprRefs(expr *TemplateExpr, known map[string]bool, templateText
 // checkIdentRef resolves one identifier against the known-names set
 // and emits a warning if missing.  `seen` deduplicates so the same
 // unknown name in one expression only warns once.
-func checkIdentRef(id *JsIdent, known, seen map[string]bool, templateText string, basePos int, ds *DiagSet) {
+func checkIdentRef(id *jsast.JsIdent, known, seen map[string]bool, templateText string, basePos int, ds *diag.DiagSet) {
 	if known[id.Name] || seen[id.Name] {
 		return
 	}
@@ -757,12 +762,12 @@ func findTemplatePos(templateText, name string) int {
 	return 0
 }
 
-// validateTemplateForms catches Vela-specific directive forms before codegen.
+// ValidateTemplateForms catches Vela-specific directive forms before codegen.
 // These are errors: code generation must never be the first stage to discover
 // that it cannot lower a user attribute.
-func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
-	var walk func([]Node)
-	attrPos := func(a *Attr) int {
+func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.DiagSet) {
+	var walk func([]sfcast.Node)
+	attrPos := func(a *sfcast.Attr) int {
 		if a == nil {
 			return 0
 		}
@@ -788,7 +793,7 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 			reported[key] = true
 		}
 	}
-	checkAttrs := func(attrs []*Attr) {
+	checkAttrs := func(attrs []*sfcast.Attr) {
 		seen := map[string]bool{}
 		for _, a := range attrs {
 			if a == nil {
@@ -820,8 +825,8 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 				report(attrPos(a), "VELA-DYNAMIC-CLASS", "Use class:name={condition}.", "%q is not a dynamic attribute; use class:%s={condition}", a.Name, strings.TrimPrefix(a.Name, "class:"))
 			}
 			if !a.IsClassDir && a.Name == "class" {
-				_, isObject := TemplateExprRoot(a.Expr).(*JsObjectExpr)
-				if a.ValueKind == AttrValueQuotedObjectCompat {
+				_, isObject := codegen.TemplateExprRoot(a.Expr).(*jsast.JsObjectExpr)
+				if a.ValueKind == sfcast.AttrValueQuotedObjectCompat {
 					isObject = true
 				}
 				if isObject {
@@ -829,31 +834,31 @@ func validateTemplateForms(nodes []Node, templateText string, ds *DiagSet) {
 				}
 			}
 			if a.IsTwoWay && a.Name != "this" {
-				_, isIdent := TemplateExprIdent(a.Expr)
+				_, isIdent := codegen.TemplateExprIdent(a.Expr)
 				if !isIdent {
 					report(attrPos(a), "VELA-BIND-MEMBER", "Use a one-way binding plus an explicit event handler for member expressions.", "bind:%s requires a plain $state or $bindable prop name; use a one-way :%s binding and an event handler for member expressions", a.Name, a.Name)
 				}
 			}
 		}
 	}
-	walk = func(ns []Node) {
+	walk = func(ns []sfcast.Node) {
 		for _, node := range ns {
 			switch n := node.(type) {
-			case *ElementNode:
+			case *sfcast.ElementNode:
 				checkAttrs(n.Attrs)
 				walk(n.Children)
-			case *ComponentNode:
+			case *sfcast.ComponentNode:
 				checkAttrs(n.Attrs)
 				for _, slot := range n.Slots {
 					walk(slot)
 				}
-			case *IfChainNode:
+			case *sfcast.IfChainNode:
 				for _, branch := range n.Branches {
 					walk(branch.Children)
 				}
-			case *EachBlockNode:
+			case *sfcast.EachBlockNode:
 				walk(n.Children)
-			case *AwaitBlockNode:
+			case *sfcast.AwaitBlockNode:
 				walk(n.PendingChildren)
 				walk(n.ThenChildren)
 				walk(n.CatchChildren)

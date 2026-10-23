@@ -33,13 +33,13 @@ func TestCompilerTraceRecordsStableSuccessfulPipeline(t *testing.T) {
 	}
 
 	plainDest := filepath.Join(dir, "plain.js")
-	if diags, err := compileFile(src, plainDest, CompileOptions{}); err != nil {
+	if diags, err := CompileFile(src, plainDest, CompileOptions{}); err != nil {
 		t.Fatalf("plain compile failed: %v; diagnostics: %+v", err, diags)
 	}
 
 	sink := &memoryTraceSink{}
 	tracedDest := filepath.Join(dir, "traced.js")
-	if diags, err := compileFile(src, tracedDest, CompileOptions{TraceSink: sink}); err != nil {
+	if diags, err := CompileFile(src, tracedDest, CompileOptions{TraceSink: sink}); err != nil {
 		t.Fatalf("traced compile failed: %v; diagnostics: %+v", err, diags)
 	}
 	plain, err := os.ReadFile(plainDest)
@@ -71,17 +71,17 @@ func TestCompilerTraceRecordsStableSuccessfulPipeline(t *testing.T) {
 	}
 
 	wantStages := []struct{ name, status string }{
-		{"read-source", traceComplete},
-		{"parse-sfc", traceComplete},
-		{"parse-template", traceComplete},
-		{"parse-script-and-analyze", traceComplete},
-		{"validate-input", traceComplete},
-		{"optimize", traceSkipped},
-		{"build-target-ast", traceComplete},
-		{"validate-target-ast", traceComplete},
-		{"print-target", traceComplete},
-		{"build-source-map", traceSkipped},
-		{"write-output", traceComplete},
+		{"read-source", TraceComplete},
+		{"parse-sfc", TraceComplete},
+		{"parse-template", TraceComplete},
+		{"parse-script-and-analyze", TraceComplete},
+		{"validate-input", TraceComplete},
+		{"optimize", TraceSkipped},
+		{"build-target-ast", TraceComplete},
+		{"validate-target-ast", TraceComplete},
+		{"print-target", TraceComplete},
+		{"build-source-map", TraceSkipped},
+		{"write-output", TraceComplete},
 	}
 	if len(trace.Stages) != len(wantStages) {
 		t.Fatalf("stage count = %d, want %d: %+v", len(trace.Stages), len(wantStages), trace.Stages)
@@ -111,7 +111,7 @@ func TestCompilerTraceStopsAtFailingStageWithoutSource(t *testing.T) {
 	}
 
 	sink := &memoryTraceSink{}
-	_, err := compileFile(src, filepath.Join(dir, "Broken.js"), CompileOptions{TraceSink: sink})
+	_, err := CompileFile(src, filepath.Join(dir, "Broken.js"), CompileOptions{TraceSink: sink})
 	if err == nil {
 		t.Fatal("compile unexpectedly succeeded")
 	}
@@ -122,8 +122,8 @@ func TestCompilerTraceStopsAtFailingStageWithoutSource(t *testing.T) {
 	if trace.Outcome != "failed" || trace.Diagnostics.Errors == 0 {
 		t.Fatalf("failed trace lost outcome or diagnostics: %+v", trace)
 	}
-	if len(trace.Stages) != 2 || trace.Stages[0].Name != "read-source" || trace.Stages[0].Status != traceComplete ||
-		trace.Stages[1].Name != "parse-sfc" || trace.Stages[1].Status != traceFailed {
+	if len(trace.Stages) != 2 || trace.Stages[0].Name != "read-source" || trace.Stages[0].Status != TraceComplete ||
+		trace.Stages[1].Name != "parse-sfc" || trace.Stages[1].Status != TraceFailed {
 		t.Fatalf("failure did not stop at parse-sfc: %+v", trace.Stages)
 	}
 	encoded, marshalErr := json.Marshal(trace)
@@ -143,7 +143,7 @@ func TestCompileFileReportsScriptASTSyntaxDiagnostic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	diags, err := compileFile(src, filepath.Join(dir, "BrokenScript.js"), CompileOptions{})
+	diags, err := CompileFile(src, filepath.Join(dir, "BrokenScript.js"), CompileOptions{})
 	if err == nil {
 		t.Fatal("compile unexpectedly succeeded")
 	}
@@ -169,7 +169,7 @@ func TestSharedScriptASTDoesNotLeakLoweredSetterIntoValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	diags, err := compileFile(src, filepath.Join(dir, "Lifecycle.js"), CompileOptions{})
+	diags, err := CompileFile(src, filepath.Join(dir, "Lifecycle.js"), CompileOptions{})
 	if err != nil {
 		t.Fatalf("compile failed: %v; diagnostics: %+v", err, diags)
 	}
@@ -194,7 +194,7 @@ func TestMinifyEliminatesFromOwnedScriptAST(t *testing.T) {
 	}
 	sink := &memoryTraceSink{}
 	out := filepath.Join(dir, "Minify.js")
-	if diags, err := compileFile(src, out, CompileOptions{Minify: true, TraceSink: sink}); err != nil {
+	if diags, err := CompileFile(src, out, CompileOptions{Minify: true, TraceSink: sink}); err != nil {
 		t.Fatalf("minify compile failed: %v; diagnostics: %+v", err, diags)
 	}
 	code, err := os.ReadFile(out)
@@ -222,7 +222,7 @@ func TestEmitASTUsesParsedComponentPipeline(t *testing.T) {
 
 	sink := &memoryTraceSink{}
 	dest := filepath.Join(dir, "Debug.js")
-	if diags, err := compileFile(src, dest, CompileOptions{EmitAST: true, TraceSink: sink}); err != nil {
+	if diags, err := CompileFile(src, dest, CompileOptions{EmitAST: true, TraceSink: sink}); err != nil {
 		t.Fatalf("--ast compile failed: %v; diagnostics: %+v", err, diags)
 	}
 	astPath := filepath.Join(dir, "Debug.ast.json")
@@ -284,7 +284,7 @@ func TestCompileFileReportsTemplateASTSyntaxDiagnostic(t *testing.T) {
 	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	diags, err := compileFile(src, filepath.Join(dir, "BrokenTemplate.js"), CompileOptions{})
+	diags, err := CompileFile(src, filepath.Join(dir, "BrokenTemplate.js"), CompileOptions{})
 	if err == nil {
 		t.Fatal("compile unexpectedly succeeded")
 	}
@@ -311,7 +311,7 @@ func TestCompileFileRejectsEmptyStructuredKeyExpressions(t *testing.T) {
 			if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			diags, err := compileFile(src, filepath.Join(dir, "BrokenKey.js"), CompileOptions{})
+			diags, err := CompileFile(src, filepath.Join(dir, "BrokenKey.js"), CompileOptions{})
 			if err == nil || len(diags) == 0 {
 				t.Fatalf("diagnostics = %+v, err = %v; want template AST failure", diags, err)
 			}
@@ -432,7 +432,7 @@ func TestCompileFileReportsCSSSyntaxDiagnostic(t *testing.T) {
 	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	diags, err := compileFile(src, filepath.Join(dir, "BrokenStyle.js"), CompileOptions{})
+	diags, err := CompileFile(src, filepath.Join(dir, "BrokenStyle.js"), CompileOptions{})
 	if err == nil {
 		t.Fatal("compile unexpectedly succeeded")
 	}
@@ -459,7 +459,7 @@ func TestCompileFileReportsCSSSyntaxPositions(t *testing.T) {
 			if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			diags, err := compileFile(src, filepath.Join(dir, "BrokenStyle.js"), CompileOptions{})
+			diags, err := CompileFile(src, filepath.Join(dir, "BrokenStyle.js"), CompileOptions{})
 			if err == nil || len(diags) != 1 {
 				t.Fatalf("diagnostics = %+v, err = %v", diags, err)
 			}

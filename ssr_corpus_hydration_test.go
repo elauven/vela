@@ -39,7 +39,7 @@ func TestBlocksCorpusHydrates(t *testing.T) {
 		files := CollectVela(srcRoot)
 
 		opts := CompileOptions{StatusWriter: io.Discard, SSRModule: module + "/server"}
-		_ = captureStderr(t, func() { buildSSRProject(files, srcRoot, outRoot, opts, false) })
+		_ = captureStderr(t, func() { BuildSSRProject(files, srcRoot, outRoot, opts, false) })
 
 		manifestData, err := os.ReadFile(filepath.Join(layout.ClientDir, "vela.manifest.json"))
 		if err != nil {

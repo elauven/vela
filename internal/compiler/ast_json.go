@@ -1,6 +1,10 @@
-package main
+package compiler
 
 import (
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfcast"
+
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -62,29 +66,29 @@ type LifecycleJSON struct {
 //  Node → map[string]interface{}
 // ─────────────────────────────────────────────────────────────────────────────
 
-func nodeToJSON(node Node) interface{} {
+func nodeToJSON(node sfcast.Node) interface{} {
 	if node == nil {
 		return nil
 	}
 	switch n := node.(type) {
-	case *TextNode:
+	case *sfcast.TextNode:
 		return textNodeJSON(n)
-	case *ElementNode:
+	case *sfcast.ElementNode:
 		return elementNodeJSON(n)
-	case *IfChainNode:
+	case *sfcast.IfChainNode:
 		return ifChainNodeJSON(n)
-	case *EachBlockNode:
+	case *sfcast.EachBlockNode:
 		return eachBlockNodeJSON(n)
-	case *ComponentNode:
+	case *sfcast.ComponentNode:
 		return componentNodeJSON(n)
-	case *SlotNode:
+	case *sfcast.SlotNode:
 		return slotNodeJSON(n)
 	default:
 		return map[string]interface{}{"type": "unknown"}
 	}
 }
 
-func nodesToJSON(nodes []Node) []interface{} {
+func nodesToJSON(nodes []sfcast.Node) []interface{} {
 	out := make([]interface{}, 0, len(nodes))
 	for _, n := range nodes {
 		out = append(out, nodeToJSON(n))
@@ -92,7 +96,7 @@ func nodesToJSON(nodes []Node) []interface{} {
 	return out
 }
 
-func textNodeJSON(n *TextNode) interface{} {
+func textNodeJSON(n *sfcast.TextNode) interface{} {
 	var parts []interface{}
 	for _, p := range n.Parts {
 		if p.Static {
@@ -107,7 +111,7 @@ func textNodeJSON(n *TextNode) interface{} {
 	}
 }
 
-func attrJSON(attrs []*Attr) []interface{} {
+func attrJSON(attrs []*sfcast.Attr) []interface{} {
 	out := make([]interface{}, 0, len(attrs))
 	for _, a := range attrs {
 		m := map[string]interface{}{"name": a.Name, "value": a.Value, "valueKind": a.ValueKind.String()}
@@ -123,7 +127,7 @@ func attrJSON(attrs []*Attr) []interface{} {
 	return out
 }
 
-func elementNodeJSON(n *ElementNode) interface{} {
+func elementNodeJSON(n *sfcast.ElementNode) interface{} {
 	m := map[string]interface{}{
 		"type":  "Element",
 		"tag":   n.Tag,
@@ -135,7 +139,7 @@ func elementNodeJSON(n *ElementNode) interface{} {
 	return m
 }
 
-func ifChainNodeJSON(n *IfChainNode) interface{} {
+func ifChainNodeJSON(n *sfcast.IfChainNode) interface{} {
 	branches := make([]interface{}, 0, len(n.Branches))
 	for _, b := range n.Branches {
 		bm := map[string]interface{}{
@@ -150,7 +154,7 @@ func ifChainNodeJSON(n *IfChainNode) interface{} {
 	}
 }
 
-func eachBlockNodeJSON(n *EachBlockNode) interface{} {
+func eachBlockNodeJSON(n *sfcast.EachBlockNode) interface{} {
 	m := map[string]interface{}{
 		"type":      "EachBlock",
 		"eachExpr":  n.EachExpr,
@@ -167,7 +171,7 @@ func eachBlockNodeJSON(n *EachBlockNode) interface{} {
 	return m
 }
 
-func componentNodeJSON(n *ComponentNode) interface{} {
+func componentNodeJSON(n *sfcast.ComponentNode) interface{} {
 	m := map[string]interface{}{
 		"type":  "Component",
 		"name":  n.Name,
@@ -183,7 +187,7 @@ func componentNodeJSON(n *ComponentNode) interface{} {
 	return m
 }
 
-func slotNodeJSON(n *SlotNode) interface{} {
+func slotNodeJSON(n *sfcast.SlotNode) interface{} {
 	m := map[string]interface{}{
 		"type": "Slot",
 		"name": n.Name,
@@ -198,53 +202,53 @@ func slotNodeJSON(n *SlotNode) interface{} {
 //  Analysis → JSON
 // ─────────────────────────────────────────────────────────────────────────────
 
-func sourceExpr(expr JsExpr) string {
+func SourceExpr(expr jsast.JsExpr) string {
 	if expr == nil {
 		return ""
 	}
-	return strings.TrimSpace(PrintNode(expr))
+	return strings.TrimSpace(analyzer.PrintNode(expr))
 }
 
-func sourceBlock(block *JsBlock) string {
+func SourceBlock(block *jsast.JsBlock) string {
 	if block == nil {
 		return ""
 	}
-	return strings.TrimSpace(PrintNode(block))
+	return strings.TrimSpace(analyzer.PrintNode(block))
 }
 
-func analysisToJSON(a *Analysis) ScriptJSON {
+func analysisToJSON(a *analyzer.Analysis) ScriptJSON {
 	out := ScriptJSON{}
 
 	for _, sv := range a.StateVars {
 		out.StateVars = append(out.StateVars, StateVarJSON{
 			Name:    sv.Name,
-			Initial: sourceExpr(sv.InitialAST),
+			Initial: SourceExpr(sv.InitialAST),
 		})
 	}
 	for _, p := range a.Props {
 		out.Props = append(out.Props, PropJSON{
 			Name:     p.Name,
 			Bindable: p.Bindable,
-			Default:  sourceExpr(p.DefaultAST),
+			Default:  SourceExpr(p.DefaultAST),
 		})
 	}
 	for _, dv := range a.DerivedVars {
 		out.DerivedVars = append(out.DerivedVars, DerivedVarJSON{
 			Name: dv.Name,
-			Expr: sourceExpr(dv.ExprAST),
+			Expr: SourceExpr(dv.ExprAST),
 			Deps: dv.Deps,
 		})
 	}
 	for _, eff := range a.Effects {
 		out.Effects = append(out.Effects, EffectJSON{
-			Body: sourceBlock(eff.BodyAST),
+			Body: SourceBlock(eff.BodyAST),
 			Deps: eff.Deps,
 		})
 	}
 	for _, lc := range a.Lifecycles {
 		out.Lifecycles = append(out.Lifecycles, LifecycleJSON{
 			Kind: lc.Kind,
-			Body: sourceBlock(lc.BodyAST),
+			Body: SourceBlock(lc.BodyAST),
 		})
 	}
 	out.CleanScript = strings.TrimSpace(a.CleanScript())
@@ -259,7 +263,7 @@ func analysisToJSON(a *Analysis) ScriptJSON {
 // has source text. Compilation itself must use DumpParsedAST so --ast does not
 // parse the component a second time.
 func DumpAST(filename, src string) (string, error) {
-	sfc, err := ParseSFC(src)
+	sfc, err := sfcast.ParseSFC(src)
 	if err != nil {
 		return "", fmt.Errorf("parseSFC: %w", err)
 	}
@@ -271,14 +275,14 @@ func DumpAST(filename, src string) (string, error) {
 		return "", fmt.Errorf("parseTemplate: %s", sfc.TemplateAST.Diagnostics[0].Message)
 	}
 
-	analysis := AnalyzeScriptAST(sfc.ScriptAST)
+	analysis := analyzer.AnalyzeScriptAST(sfc.ScriptAST)
 	return DumpParsedAST(filename, sfc, sfc.TemplateAST.Nodes, analysis)
 }
 
 // DumpParsedAST serializes an already parsed and analyzed component. Keeping
 // this boundary typed is important: diagnostic/debug output must not silently
 // introduce a second script parse into the normal compiler pipeline.
-func DumpParsedAST(filename string, sfc *SFC, templateNodes []Node, analysis *Analysis) (string, error) {
+func DumpParsedAST(filename string, sfc *sfcast.SFC, templateNodes []sfcast.Node, analysis *analyzer.Analysis) (string, error) {
 	if sfc == nil || sfc.ScriptAST == nil {
 		return "", fmt.Errorf("missing parsed component AST")
 	}

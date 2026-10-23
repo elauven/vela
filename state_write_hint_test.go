@@ -16,7 +16,7 @@ func stateWriteHints(t *testing.T, source string) map[string]bool {
 	if err := os.WriteFile(src, []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	diags, err := compileFile(src, filepath.Join(dir, "App.js"), CompileOptions{})
+	diags, err := CompileFile(src, filepath.Join(dir, "App.js"), CompileOptions{})
 	if err != nil {
 		t.Fatalf("compile failed: %v\n%v", err, diags)
 	}

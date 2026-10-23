@@ -119,9 +119,9 @@ func TestCheckReportsTheDiagnosticsOfABuild(t *testing.T) {
 		files := CollectVela(p.root)
 		out := t.TempDir()
 		if p.ssr {
-			buildSSRProject(files, p.root, out, opts, false)
+			BuildSSRProject(files, p.root, out, opts, false)
 		} else {
-			buildProject(files, p.root, out, opts, false)
+			BuildProject(files, p.root, out, opts, false)
 		}
 		build := buildErr.String() + buildStatus.String()
 

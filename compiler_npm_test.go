@@ -75,7 +75,7 @@ func TestCompilerNpmPackage(t *testing.T) {
 	if got := strings.TrimSpace(run(app, "npx", "--no-install", "vela", "--version")); got != "vela "+runtime.Version {
 		t.Fatalf("npx vela --version = %q", got)
 	}
-	var result compileResult
+	var result CompileResult
 	if err := json.Unmarshal([]byte(run(app, "npx", "--no-install", "vela", "compile", "--path", "src/App.vela")), &result); err != nil || !result.OK {
 		t.Fatalf("npx vela compile: %v %+v", err, result)
 	}

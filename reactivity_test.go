@@ -17,7 +17,7 @@ func runDerivedPurity(t *testing.T, script string) *DiagSet {
 	}
 	a := AnalyzeScript(script)
 	ds := NewDiagSet("test.vela", script)
-	validateDerivedPurity(prog, a, ds)
+	ValidateDerivedPurity(prog, a, ds)
 	return ds
 }
 
@@ -29,7 +29,7 @@ func runEffectBody(t *testing.T, script string) *DiagSet {
 	}
 	a := AnalyzeScript(script)
 	ds := NewDiagSet("test.vela", script)
-	validateEffectBody(prog, a, ds)
+	ValidateEffectBody(prog, a, ds)
 	return ds
 }
 
@@ -46,7 +46,7 @@ func runTemplateRefs(t *testing.T, script, template string) *DiagSet {
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}
-	validateTemplateRefs(nodes, a, scope, template, ds)
+	ValidateTemplateRefs(nodes, a, scope, template, ds)
 	return ds
 }
 
@@ -157,7 +157,7 @@ func TestTemplateRefsUseExactExpressionPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}
-	validateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
+	ValidateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
 	if len(ds.All()) != 1 {
 		t.Fatalf("diagnostics = %v, want one", ds.All())
 	}
@@ -176,7 +176,7 @@ func TestTemplateRefsUseExactDynamicAttributeExpressionPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}
-	validateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
+	ValidateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
 	if len(ds.All()) != 1 {
 		t.Fatalf("diagnostics = %v, want one", ds.All())
 	}
@@ -238,7 +238,7 @@ func TestTemplateRefsUseExactBlockConditionPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}
-	validateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
+	ValidateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
 	if len(ds.All()) != 1 {
 		t.Fatalf("diagnostics = %v, want one", ds.All())
 	}
@@ -257,7 +257,7 @@ func TestTemplateRefsUseExactElseIfConditionPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}
-	validateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
+	ValidateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
 	if len(ds.All()) != 1 {
 		t.Fatalf("diagnostics = %v, want one", ds.All())
 	}
@@ -289,7 +289,7 @@ func TestTemplateRefsEachKeyUsesExactExpressionPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("template parse failed: %v", err)
 	}
-	validateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
+	ValidateTemplateRefs(nodes, analysis, BuildScopes(prog, NewDiagSet("", "")), template, ds)
 	if len(ds.All()) != 1 {
 		t.Fatalf("diagnostics = %v, want one", ds.All())
 	}

@@ -181,7 +181,7 @@ func TestSSRProjectRendersSamePackageChildComponent(t *testing.T) {
 	if err := os.WriteFile(child, []byte(`<script>export let title="";</script><template><p>{title}</p></template>`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if errors := buildSSRProject([]string{parent, child}, srcRoot, filepath.Join(root, "out"), CompileOptions{StatusWriter: io.Discard}, false); errors != 0 {
+	if errors := BuildSSRProject([]string{parent, child}, srcRoot, filepath.Join(root, "out"), CompileOptions{StatusWriter: io.Discard}, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 	server, err := os.ReadFile(NewSSRProjectLayout(filepath.Join(root, "out")).ServerPath(parent, srcRoot))
@@ -209,7 +209,7 @@ func TestSSRProjectInternalChildCallRetainsOmittedPropDefault(t *testing.T) {
 	}
 	outRoot := filepath.Join(root, "out")
 	projectModule := "example.com/ssrchilddefault"
-	if errors := buildSSRProject([]string{parent, child}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
+	if errors := BuildSSRProject([]string{parent, child}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 	parentSource, err := os.ReadFile(NewSSRProjectLayoutWithModule(outRoot, projectModule+"/server").ServerPath(parent, srcRoot))
@@ -264,7 +264,7 @@ func TestSSRProjectInternalChildCallPreservesExplicitZeroValues(t *testing.T) {
 	}
 	outRoot := filepath.Join(root, "out")
 	projectModule := "example.com/ssrchildzeros"
-	if errors := buildSSRProject([]string{parent, child}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
+	if errors := BuildSSRProject([]string{parent, child}, srcRoot, outRoot, CompileOptions{StatusWriter: io.Discard, SSRModule: projectModule + "/server"}, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 	parentSource, err := os.ReadFile(NewSSRProjectLayoutWithModule(outRoot, projectModule+"/server").ServerPath(parent, srcRoot))
@@ -324,7 +324,7 @@ func TestSSRProjectRendersSamePackageDefaultAndNamedSlots(t *testing.T) {
 	if err := os.WriteFile(child, []byte(`<template><main><slot>fallback</slot><footer><slot name="actions" /></footer></main></template>`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if errors := buildSSRProject([]string{parent, child}, srcRoot, filepath.Join(root, "out"), CompileOptions{StatusWriter: io.Discard}, false); errors != 0 {
+	if errors := BuildSSRProject([]string{parent, child}, srcRoot, filepath.Join(root, "out"), CompileOptions{StatusWriter: io.Discard}, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 	layout := NewSSRProjectLayout(filepath.Join(root, "out"))
@@ -369,7 +369,7 @@ func TestSSRProjectRendersCrossPackageChildComponent(t *testing.T) {
 	}
 	outRoot := filepath.Join(root, "out")
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/site/generated"}
-	if errors := buildSSRProject([]string{parent, child}, srcRoot, outRoot, opts, false); errors != 0 {
+	if errors := BuildSSRProject([]string{parent, child}, srcRoot, outRoot, opts, false); errors != 0 {
 		t.Fatalf("SSR project errors=%d", errors)
 	}
 	layout := NewSSRProjectLayoutWithModule(outRoot, opts.SSRModule)

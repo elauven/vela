@@ -63,20 +63,19 @@ itself does not import the runtime and builds without the workspace
 
 ### Main files
 
-Package main (repository root) holds the CLI and the build drivers; the
-compiler layers are packages under `internal/`. Package main reaches them
-through generated aliases (`*_compat.go`, `go generate .`) while call sites
-move; new code imports the packages directly.
+Package main (repository root) holds the `vela` command: the CLI, watch
+modes, the output of `vela check`, the service transport and the npm package
+generators. The compile pipeline is `internal/compiler`, which other
+executables of the module (the language server, task 065) share; the
+compiler layers are the other packages under `internal/`. Package main
+reaches them through generated aliases (`*_compat.go`, `go generate .`)
+while call sites move; new code imports the packages directly.
 
 | File | Role |
 | --- | --- |
-| `main.go` | CLI, file and project builds, runtime staging, watch mode |
-| `cli.go`, `service.go` | Shared file flags, `vela.config.json`; `vela compile` and `vela serve` ([TOOLING_PROTOCOL.md](TOOLING_PROTOCOL.md)) |
-| `check.go` | `vela check`: diagnostics of a build without output, text, JSON and SARIF |
-| `reactivity.go`, `unreachable.go`, `diagnostics.go`, `dce.go` | Diagnostic checks over the analysis, dead-binding elimination |
-| `minifier.go`, `compiler_trace.go`, `ast_json.go`, `astjson.go` | Minification, compiler trace, AST debug output |
-| `package_imports.go`, `package_resolve.go` | Package imports, `vela.manifest.json`, `--check-deps` |
-| `ssr_project.go`, `ssr_roots.go` | SSR project build, manifest |
+| `main.go` | CLI, project build and watch drivers |
+| `service.go` | `vela compile` and `vela serve` ([TOOLING_PROTOCOL.md](TOOLING_PROTOCOL.md)) |
+| `check.go` | `vela check`: text, JSON and SARIF output |
 | `ssr_watch.go` | `--ssr --watch`: rebuild on change, the `.vela-ready` stamp |
 | `runtime_package.go` | `@govela/runtime` generator |
 | `compiler_package.go` | Manifests of `@govela/compiler` and its platform packages |
@@ -84,6 +83,7 @@ move; new code imports the packages directly.
 
 | Package | Role |
 | --- | --- |
+| `internal/compiler` | `compile.go`: one component from source to module, project builds, runtime staging; `cli.go`: file flags, `vela.config.json`; `service.go`: compilation of a buffer with the project options; `check.go`: the diagnostics of a build; `reactivity.go`, `unreachable.go`, `diagnostics.go`, `dce.go`: diagnostic checks, dead-binding elimination; `minifier.go`, `compiler_trace.go`, `ast_json.go`, `astjson.go`; `package_imports.go`, `package_resolve.go`: package imports, `vela.manifest.json`, `--check-deps`; `ssr_project.go`, `ssr_roots.go`: SSR project build, manifest |
 | `internal/analyzer` | `analyzer.go`, `rewriter.go`, `scope.go`, `target_profile.go`: script analysis, reactive rewrites, scope graph |
 | `internal/codegen` | `astgen.go`, `blocks_codegen.go`, `template_codegen_helpers.go`: client code generation; `imports.go`: `.vela`/runtime specifiers; `html_nesting.go`: HTML parse stability; `sourcemap.go` |
 | `internal/ssr` | `ssr_plan.go`, `ssr_region.go`, `ssr_expr.go`, `ssr_ir.go`, `ssr_func.go`, `ssr_module.go`, `ssr_init.go`: render plan and translation; `ssr_go_*.go`: Go renderer generation; `ssr_host.go`: hosts (`//vela:host`); `ssr_builtins.go`, `ssr_catalogue.go`: built-in catalogue (matrix §2); `ssr_rootmodes.go`, `ssr_layout.go`, `ssr_compile.go`: root modes, output layout, per-component build |

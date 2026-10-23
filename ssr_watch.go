@@ -57,17 +57,17 @@ func ssrBuildOnce(srcRoot, outRoot string, opts CompileOptions, parallel bool) (
 	start := time.Now()
 	files = CollectVela(srcRoot)
 	if len(files) == 0 {
-		fmt.Fprintln(compilerStatusWriter(opts), "  no .vela files found")
+		fmt.Fprintln(CompilerStatusWriter(opts), "  no .vela files found")
 		return nil, 0
 	}
-	errors = buildSSRProject(files, srcRoot, outRoot, opts, parallel)
-	status := compilerStatusWriter(opts)
+	errors = BuildSSRProject(files, srcRoot, outRoot, opts, parallel)
+	status := CompilerStatusWriter(opts)
 	if errors > 0 {
 		fmt.Fprintf(status, "\n  %d error(s); the server keeps the previous build\n", errors)
 		return files, errors
 	}
 	if err := os.WriteFile(filepath.Join(outRoot, SSRReadyStamp), []byte(start.UTC().Format(time.RFC3339Nano)+"\n"), 0o644); err != nil {
-		fmt.Fprintf(errorWriter(opts), "  x  %s: %v\n", SSRReadyStamp, err)
+		fmt.Fprintf(ErrorWriter(opts), "  x  %s: %v\n", SSRReadyStamp, err)
 		return files, 1
 	}
 	fmt.Fprintf(status, "\n  %d SSR component(s) ready in %s ✓\n", len(files), time.Since(start).Round(time.Millisecond))
@@ -83,7 +83,7 @@ func removeSSROutputs(src, srcRoot, outRoot string, opts CompileOptions) {
 	for _, file := range []string{client, client + ".map", strings.TrimSuffix(client, ".js") + ".css", layout.ServerPath(src, srcRoot), layout.StylePath(src, srcRoot)} {
 		_ = os.Remove(file)
 	}
-	status := compilerStatusWriter(opts)
+	status := CompilerStatusWriter(opts)
 	props := layout.PropsPath(src, srcRoot)
 	if data, err := os.ReadFile(props); err == nil {
 		if !SSRPropsGenerated(data) {
@@ -98,7 +98,7 @@ func removeSSROutputs(src, srcRoot, outRoot string, opts CompileOptions) {
 // watchSSRProject rebuilds after every change of the inputs, polling every
 // interval, until done is closed.
 func watchSSRProject(srcRoot, outRoot string, opts CompileOptions, parallel bool, interval time.Duration, done <-chan struct{}) {
-	status := compilerStatusWriter(opts)
+	status := CompilerStatusWriter(opts)
 	inputs := ssrWatchInputs(srcRoot)
 	built, _ := ssrBuildOnce(srcRoot, outRoot, opts, parallel)
 	fmt.Fprintln(status, "\nWatching for changes… (Ctrl-C to stop)")

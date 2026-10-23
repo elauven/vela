@@ -10,11 +10,11 @@ import (
 
 // The compiler never writes a module it cannot parse back (task 055).
 func TestCheckEmittedJSRejectsUnparsableModules(t *testing.T) {
-	if err := checkEmittedJS("export function A() { return 1; }"); err != nil {
+	if err := CheckEmittedJS("export function A() { return 1; }"); err != nil {
 		t.Fatalf("valid module rejected: %v", err)
 	}
 	for _, code := range []string{"const B = class;", "let c=a++b;", "for (await const; x; of[]]) {}"} {
-		err := checkEmittedJS(code)
+		err := CheckEmittedJS(code)
 		if err == nil || !strings.Contains(err.Error(), EmitCheckDiagnosticCode) {
 			t.Errorf("%q: err = %v, want %s", code, err, EmitCheckDiagnosticCode)
 		}
@@ -60,7 +60,7 @@ func TestFormerlySilentSyntaxCompiles(t *testing.T) {
 		}
 		out := filepath.Join(dir, "App.js")
 		for _, minify := range []bool{false, true} {
-			if _, err := compileFile(src, out, CompileOptions{Minify: minify}); err != nil {
+			if _, err := CompileFile(src, out, CompileOptions{Minify: minify}); err != nil {
 				t.Errorf("%s (minify=%v): %v", name, minify, err)
 				continue
 			}
@@ -72,7 +72,7 @@ func TestFormerlySilentSyntaxCompiles(t *testing.T) {
 }
 
 func TestCheckEmittedJSRejectsNestedModuleDeclarations(t *testing.T) {
-	if err := checkEmittedJS("function A() { export const k = 1; }"); err == nil || !strings.Contains(err.Error(), "top level") {
+	if err := CheckEmittedJS("function A() { export const k = 1; }"); err == nil || !strings.Contains(err.Error(), "top level") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -96,7 +96,7 @@ func TestComponentScriptRejectsNonPropExports(t *testing.T) {
 		if err := os.WriteFile(src, []byte("<script>\nlet a = 1;\n"+line+"\n</script><template><p>{a}</p></template>"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		diags, err := compileFile(src, filepath.Join(dir, "App.js"), CompileOptions{})
+		diags, err := CompileFile(src, filepath.Join(dir, "App.js"), CompileOptions{})
 		found := false
 		for _, d := range diags {
 			if d.Code == "VELA-SCRIPT-EXPORT" && d.Line == 3 {
@@ -112,7 +112,7 @@ func TestComponentScriptRejectsNonPropExports(t *testing.T) {
 	if err := os.WriteFile(src, []byte("<script>\nexport let title = 'x';\nexport let value = $bindable(1), other = 2;\n</script><template><p>{title}{value}{other}</p></template>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := compileFile(src, filepath.Join(dir, "App.js"), CompileOptions{}); err != nil {
+	if _, err := CompileFile(src, filepath.Join(dir, "App.js"), CompileOptions{}); err != nil {
 		t.Fatalf("prop exports rejected: %v", err)
 	}
 }
@@ -137,7 +137,7 @@ func TestComponentScriptReportsEarlyErrors(t *testing.T) {
 		if err := os.WriteFile(src, []byte("<script>\nlet a = 1;\n"+line+"\n</script><template><p>{a}</p></template>"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		diags, err := compileFile(src, filepath.Join(dir, "App.js"), CompileOptions{})
+		diags, err := CompileFile(src, filepath.Join(dir, "App.js"), CompileOptions{})
 		found := false
 		for _, d := range diags {
 			if d.Code == "VELA-JS-SYNTAX" && d.Line == 3 {
@@ -152,11 +152,11 @@ func TestComponentScriptReportsEarlyErrors(t *testing.T) {
 
 func TestCheckEmittedJSRejectsEarlyErrors(t *testing.T) {
 	for _, code := range []string{"function f() { break; }", "export function A() { const v = await x; }"} {
-		if err := checkEmittedJS(code); err == nil {
+		if err := CheckEmittedJS(code); err == nil {
 			t.Errorf("%q accepted", code)
 		}
 	}
-	if err := checkEmittedJS("const m = await import('./m.js');"); err != nil {
+	if err := CheckEmittedJS("const m = await import('./m.js');"); err != nil {
 		t.Errorf("top-level await of a module rejected: %v", err)
 	}
 }

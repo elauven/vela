@@ -23,13 +23,13 @@ func diagCodes(ds *DiagSet) map[string]int {
 func TestVelaUnknownImportIsRejected(t *testing.T) {
 	script := `import { auth, onMount, writable } from 'vela';`
 	ds := NewDiagSet("test.vela", script)
-	validateScriptForms(ParseJS(script), ds)
+	ValidateScriptForms(ParseJS(script), ds)
 	if codes := diagCodes(ds); codes["VELA-UNKNOWN-IMPORT"] != 1 {
 		t.Fatalf("want one VELA-UNKNOWN-IMPORT for auth, got %v", ds.All())
 	}
 	builtin := `import { $$dispatch } from 'vela';`
 	ds = NewDiagSet("test.vela", builtin)
-	validateScriptForms(ParseJS(builtin), ds)
+	ValidateScriptForms(ParseJS(builtin), ds)
 	if codes := diagCodes(ds); codes["VELA-BUILTIN-IMPORT"] != 1 || codes["VELA-UNKNOWN-IMPORT"] != 0 {
 		t.Fatalf("$$dispatch must stay VELA-BUILTIN-IMPORT, got %v", ds.All())
 	}
@@ -42,7 +42,7 @@ func runTemplateForms(t *testing.T, template string) *DiagSet {
 		t.Fatal(err)
 	}
 	ds := NewDiagSet("test.vela", template)
-	validateTemplateForms(nodes, template, ds)
+	ValidateTemplateForms(nodes, template, ds)
 	return ds
 }
 
@@ -145,7 +145,7 @@ func TestSSRChildFailurePropagates(t *testing.T) {
 	report := filepath.Join(root, "report.json")
 	outRoot := filepath.Join(root, "out")
 	opts := CompileOptions{StatusWriter: io.Discard, SSRModule: "example.com/child/out/server", SSRReport: report}
-	if errors := buildSSRProject(CollectVela(srcRoot), srcRoot, outRoot, opts, false); errors == 0 {
+	if errors := BuildSSRProject(CollectVela(srcRoot), srcRoot, outRoot, opts, false); errors == 0 {
 		t.Fatal("the build must fail")
 	}
 	data, err := os.ReadFile(report)

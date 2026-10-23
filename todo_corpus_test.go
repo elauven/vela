@@ -19,7 +19,7 @@ func TestTodoCorpusCompilation(t *testing.T) {
 	}
 	for _, src := range good {
 		t.Run("positive/"+src, func(t *testing.T) {
-			_, err := compileFile(src, filepath.Join(t.TempDir(), "out.js"), CompileOptions{})
+			_, err := CompileFile(src, filepath.Join(t.TempDir(), "out.js"), CompileOptions{})
 			if err != nil {
 				t.Fatalf("positive fixture did not compile: %v", err)
 			}
@@ -57,7 +57,7 @@ func TestTodoCorpusCompilation(t *testing.T) {
 	}
 	for _, fixture := range bad {
 		t.Run("negative/"+fixture.src, func(t *testing.T) {
-			diags, err := compileFile(fixture.src, filepath.Join(t.TempDir(), "out.js"), CompileOptions{})
+			diags, err := CompileFile(fixture.src, filepath.Join(t.TempDir(), "out.js"), CompileOptions{})
 			if err == nil {
 				t.Fatal("negative fixture compiled; expected actionable diagnostics")
 			}
@@ -95,7 +95,7 @@ func TestPositiveCorpusProjectsBuildAsProjects(t *testing.T) {
 			if len(files) == 0 {
 				t.Fatal("fixture has no .vela files")
 			}
-			if errors := buildProject(files, srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
+			if errors := BuildProject(files, srcRoot, outRoot, CompileOptions{}, false); errors != 0 {
 				t.Fatalf("project build failed with %d error(s)", errors)
 			}
 			for _, src := range files {

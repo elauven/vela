@@ -10,133 +10,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
-	"sync"
 	"time"
 )
-
-// diagReport collects the diagnostics of a build for vela check. Components
-// compile in parallel, so it is safe for concurrent use; a nil report
-// ignores adds.
-type diagReport struct {
-	mu    sync.Mutex
-	diags []*Diagnostic
-}
-
-func (r *diagReport) add(diags ...*Diagnostic) {
-	if r == nil {
-		return
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, d := range diags {
-		if d != nil {
-			r.diags = append(r.diags, d)
-		}
-	}
-}
-
-// sorted returns the diagnostics by file and position; diagnostics of one
-// position keep the order they were reported in.
-func (r *diagReport) sorted() []*Diagnostic {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	out := append([]*Diagnostic(nil), r.diags...)
-	sort.SliceStable(out, func(i, j int) bool {
-		a, b := out[i], out[j]
-		if a.File != b.File {
-			return a.File < b.File
-		}
-		if a.Line != b.Line {
-			return a.Line < b.Line
-		}
-		return a.Col < b.Col
-	})
-	return out
-}
-
-func errorWriter(opts CompileOptions) io.Writer {
-	if opts.ErrWriter != nil {
-		return opts.ErrWriter
-	}
-	return os.Stderr
-}
-
-// buildIssue is a build error of file without a source position.
-func buildIssue(file, format string, args ...any) *Diagnostic {
-	return &Diagnostic{Sev: SevError, File: filepath.ToSlash(file), Line: 1, Col: 1, Message: fmt.Sprintf(format, args...)}
-}
-
-// reportBuildIssue prints and records a build error that belongs to no
-// component.
-func reportBuildIssue(opts CompileOptions, format string, args ...any) {
-	fmt.Fprintf(errorWriter(opts), format+"\n", args...)
-	opts.Report.add(&Diagnostic{Sev: SevError, Message: fmt.Sprintf(format, args...)})
-}
-
-// cwdRelative is path relative to the working directory when it is inside
-// it, as the paths of component diagnostics are.
-func cwdRelative(path string) string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return filepath.ToSlash(path)
-	}
-	rel, err := filepath.Rel(cwd, path)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return filepath.ToSlash(path)
-	}
-	return filepath.ToSlash(rel)
-}
-
-// checkTarget is what vela check builds: a project, or listed files.
-type checkTarget struct {
-	srcRoot string
-	files   []string // listed files, when srcRoot is empty
-	ssr     bool
-	opts    CompileOptions
-}
-
-// run builds the target into a temporary directory, discarding the output
-// and the build's own messages, and returns the diagnostics and the number
-// of components checked.
-func (c checkTarget) run() ([]*Diagnostic, int, error) {
-	out, err := os.MkdirTemp("", "vela-check-")
-	if err != nil {
-		return nil, 0, err
-	}
-	defer os.RemoveAll(out)
-	opts := c.opts
-	opts.StatusWriter, opts.ErrWriter = io.Discard, io.Discard
-	opts.Report = &diagReport{}
-	files := c.files
-	failed := 0
-	switch {
-	case c.srcRoot != "":
-		files = CollectVela(c.srcRoot)
-		if len(files) == 0 {
-			break
-		}
-		if c.ssr {
-			failed = buildSSRProject(files, c.srcRoot, out, opts, true)
-		} else {
-			failed = buildProject(files, c.srcRoot, out, opts, true)
-		}
-	default:
-		for _, src := range files {
-			if !compilePrint(src, filepath.Join(out, ComponentName(src)+".js"), opts) {
-				failed++
-			}
-		}
-	}
-	diags := opts.Report.sorted()
-	if failed > 0 && !hasErrorDiagnostic(diags) {
-		// Every failure reports a diagnostic; keep the result failing if one
-		// does not.
-		diags = append(diags, &Diagnostic{Sev: SevError, Message: fmt.Sprintf("the build failed with %d error(s)", failed)})
-	}
-	return diags, len(files), nil
-}
 
 // checkCounts counts diagnostics by severity.
 type checkCounts struct {
@@ -330,7 +206,7 @@ func runCheckCommand(args []string, stdout, stderr io.Writer) int {
 	failOn := fs.String("fail-on", "error", "exit with 1 on diagnostics of this severity or above: 'error' or 'warning'")
 	watch := fs.Bool("watch", false, "check again whenever a file changes")
 	configPath := fs.String("config", "", "configuration file (default: "+ConfigFileName+" in the working directory, if present)")
-	file := addFileFlags(fs, buildFlagDefaults)
+	file := AddFileFlags(fs, BuildFlagDefaults)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -338,9 +214,9 @@ func runCheckCommand(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "vela check: "+format+"\n", args...)
 		return 2
 	}
-	config, err := loadConfig(*configPath)
+	config, err := LoadConfig(*configPath)
 	if err == nil && config != nil {
-		err = applyFlagValues(fs, ConfigFileName, config.flagValues())
+		err = ApplyFlagValues(fs, ConfigFileName, config.FlagValues())
 	}
 	if err != nil {
 		return usage("%v", err)
@@ -355,29 +231,29 @@ func runCheckCommand(args []string, stdout, stderr io.Writer) int {
 	default:
 		return usage("invalid --fail-on value %q (want 'error' or 'warning')", *failOn)
 	}
-	opts, err := file.options()
+	opts, err := file.Options()
 	if err != nil {
 		return usage("%v", err)
 	}
 	opts.SSRModule = *ssrModule
-	target := checkTarget{srcRoot: *projectDir, files: fs.Args(), ssr: *ssr, opts: opts}
+	target := CheckTarget{SrcRoot: *projectDir, Files: fs.Args(), SSR: *ssr, Opts: opts}
 	switch {
-	case target.srcRoot != "" && len(target.files) > 0:
+	case target.SrcRoot != "" && len(target.Files) > 0:
 		return usage("give --project or files, not both")
-	case target.srcRoot == "" && len(target.files) == 0:
+	case target.SrcRoot == "" && len(target.Files) == 0:
 		return usage("usage: vela check --project <dir> [flags] | vela check [flags] <file.vela>...")
-	case target.ssr && target.srcRoot == "":
+	case target.SSR && target.SrcRoot == "":
 		return usage("--ssr requires --project")
 	}
-	if target.srcRoot != "" {
-		target.srcRoot = filepath.Clean(target.srcRoot)
-		if info, err := os.Stat(target.srcRoot); err != nil || !info.IsDir() {
-			return usage("project directory %s not found", target.srcRoot)
+	if target.SrcRoot != "" {
+		target.SrcRoot = filepath.Clean(target.SrcRoot)
+		if info, err := os.Stat(target.SrcRoot); err != nil || !info.IsDir() {
+			return usage("project directory %s not found", target.SrcRoot)
 		}
 	}
 
 	check := func() int {
-		diags, components, err := target.run()
+		diags, components, err := target.Run()
 		if err != nil {
 			fmt.Fprintf(stderr, "vela check: %v\n", err)
 			return 2
@@ -404,11 +280,11 @@ func runCheckCommand(args []string, stdout, stderr io.Writer) int {
 	if !*watch {
 		return code
 	}
-	roots := target.files
-	if target.srcRoot != "" {
-		roots = []string{target.srcRoot}
-		if target.ssr {
-			if project, err := LoadSSRProject(target.srcRoot); err == nil && project.HostDir != "" {
+	roots := target.Files
+	if target.SrcRoot != "" {
+		roots = []string{target.SrcRoot}
+		if target.SSR {
+			if project, err := LoadSSRProject(target.SrcRoot); err == nil && project.HostDir != "" {
 				roots = append(roots, project.HostDir)
 			}
 		}

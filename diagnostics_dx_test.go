@@ -12,7 +12,7 @@ func TestTemplateFormDiagnosticUsesRepeatedAttributePosition(t *testing.T) {
 		t.Fatal(err)
 	}
 	ds := NewDiagSet("App.vela", template)
-	validateTemplateForms(nodes, template, ds)
+	ValidateTemplateForms(nodes, template, ds)
 
 	if got, want := len(ds.Errors()), 2; got != want {
 		t.Fatalf("error count = %d, want %d: %#v", got, want, ds.All())

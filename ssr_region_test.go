@@ -31,7 +31,7 @@ func TestSSRReportWritesSiteRecords(t *testing.T) {
 	stderr := os.Stderr
 	devNull, _ := os.Open(os.DevNull)
 	os.Stderr = devNull
-	errorsCount := buildSSRProject(CollectVela(srcRoot), srcRoot, filepath.Join(root, "out"), opts, false)
+	errorsCount := BuildSSRProject(CollectVela(srcRoot), srcRoot, filepath.Join(root, "out"), opts, false)
 	os.Stderr = stderr
 	if errorsCount != 1 {
 		t.Fatalf("errors = %d, want 1 (Bad.vela)", errorsCount)

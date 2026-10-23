@@ -1,4 +1,14 @@
-package main
+package compiler
+
+import (
+	"github.com/elauven/vela/internal/analyzer"
+	"github.com/elauven/vela/internal/diag"
+	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/sfcast"
+
+	"sort"
+	"strings"
+)
 
 // dce.go — dead-binding elimination for the Vela compiler.
 //
@@ -31,11 +41,6 @@ package main
 //   one extra parse round per pass.  Existing examples in this
 //   compiler (RewriteScriptImports) use the same pattern.
 
-import (
-	"sort"
-	"strings"
-)
-
 // ─────────────────────────────────────────────
 //  Public API
 // ─────────────────────────────────────────────
@@ -52,18 +57,18 @@ import (
 // the raw <template> block — scanned for identifier-token references
 // so a binding the template uses (event handlers, helper functions,
 // constants in expressions) isn't dropped.
-func EliminateDeadCode(script string, analysis *Analysis, templateText string) (string, bool) {
+func EliminateDeadCode(script string, analysis *analyzer.Analysis, templateText string) (string, bool) {
 	if script == "" {
 		return script, false
 	}
-	prog := ParseJS(script)
+	prog := jsast.ParseJS(script)
 	if prog == nil {
 		return script, false
 	}
 	// Use a throwaway DiagSet — we want the scope graph, not the
 	// diagnostics, which were already emitted during validation.
-	silent := NewDiagSet("", script)
-	root := BuildScopes(prog, silent)
+	silent := diag.NewDiagSet("", script)
+	root := analyzer.BuildScopes(prog, silent)
 	if root == nil {
 		return script, false
 	}
@@ -73,19 +78,19 @@ func EliminateDeadCode(script string, analysis *Analysis, templateText string) (
 	exported := exportedNamesIn(prog)
 
 	var spans []dceSpan
-	WalkNode(prog, func(n JsNode) bool {
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
 		switch decl := n.(type) {
-		case *JsExportDecl:
+		case *jsast.JsExportDecl:
 			// Don't recurse into exports — never touch anything inside.
 			return false
 
-		case *JsVarDecl:
+		case *jsast.JsVarDecl:
 			if span, ok := varDeclEliminable(decl, posIdx, reactive, exported, templateText); ok {
 				spans = append(spans, span)
 			}
 			return true
 
-		case *JsFuncDecl:
+		case *jsast.JsFuncDecl:
 			if span, ok := funcDeclEliminable(decl, posIdx, reactive, exported, templateText); ok {
 				spans = append(spans, span)
 				return false // body is being removed; no point descending
@@ -107,7 +112,7 @@ func EliminateDeadCode(script string, analysis *Analysis, templateText string) (
 //
 // The returned Analysis is freshly computed against the final script,
 // so the caller doesn't have to re-run analyzeScript afterward.
-func EliminateDeadCodeFixedPoint(script string, analysis *Analysis, templateText string) (string, *Analysis) {
+func EliminateDeadCodeFixedPoint(script string, analysis *analyzer.Analysis, templateText string) (string, *analyzer.Analysis) {
 	cur := script
 	curA := analysis
 	for i := 0; i < 8; i++ {
@@ -119,7 +124,7 @@ func EliminateDeadCodeFixedPoint(script string, analysis *Analysis, templateText
 		// Re-analyze so the next iteration sees the updated reactive
 		// set.  Removing a binding can change which names look reactive
 		// (in pathological cases — usually it's a no-op).
-		curA = AnalyzeScript(cur)
+		curA = analyzer.AnalyzeScript(cur)
 	}
 	return cur, curA
 }
@@ -128,7 +133,7 @@ func EliminateDeadCodeFixedPoint(script string, analysis *Analysis, templateText
 // string API above. It removes eligible statements directly from the owned
 // ScriptAST and re-runs analysis over that same tree, never reparsing script
 // source. The public string API remains for compatibility tests/tools.
-func EliminateDeadCodeAST(script *ScriptAST, analysis *Analysis, templateText string) *Analysis {
+func EliminateDeadCodeAST(script *sfcast.ScriptAST, analysis *analyzer.Analysis, templateText string) *analyzer.Analysis {
 	if script == nil || script.Program == nil {
 		return analysis
 	}
@@ -139,29 +144,29 @@ func EliminateDeadCodeAST(script *ScriptAST, analysis *Analysis, templateText st
 			break
 		}
 		filterDeadProgram(script.Program, drops)
-		current = AnalyzeScriptAST(script)
+		current = analyzer.AnalyzeScriptAST(script)
 	}
 	return current
 }
 
-func deadStatementPositions(prog *JsProgram, analysis *Analysis, templateText string) map[int]bool {
-	silent := NewDiagSet("", "")
-	root := BuildScopes(prog, silent)
+func deadStatementPositions(prog *jsast.JsProgram, analysis *analyzer.Analysis, templateText string) map[int]bool {
+	silent := diag.NewDiagSet("", "")
+	root := analyzer.BuildScopes(prog, silent)
 	if root == nil {
 		return nil
 	}
 	idx := indexBindingsByPos(root)
 	reactive, exported := reactiveNameSet(analysis), exportedNamesIn(prog)
 	drops := map[int]bool{}
-	WalkNode(prog, func(n JsNode) bool {
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
 		switch stmt := n.(type) {
-		case *JsExportDecl:
+		case *jsast.JsExportDecl:
 			return false
-		case *JsVarDecl:
+		case *jsast.JsVarDecl:
 			if span, ok := varDeclEliminable(stmt, idx, reactive, exported, templateText); ok {
 				drops[span.start] = true
 			}
-		case *JsFuncDecl:
+		case *jsast.JsFuncDecl:
 			if span, ok := funcDeclEliminable(stmt, idx, reactive, exported, templateText); ok {
 				drops[span.start] = true
 				return false
@@ -172,35 +177,35 @@ func deadStatementPositions(prog *JsProgram, analysis *Analysis, templateText st
 	return drops
 }
 
-func filterDeadProgram(prog *JsProgram, drops map[int]bool) {
+func filterDeadProgram(prog *jsast.JsProgram, drops map[int]bool) {
 	prog.Body = filterDeadStmts(prog.Body, drops)
 }
 
-func filterDeadStmts(stmts []JsStmt, drops map[int]bool) []JsStmt {
-	out := make([]JsStmt, 0, len(stmts))
+func filterDeadStmts(stmts []jsast.JsStmt, drops map[int]bool) []jsast.JsStmt {
+	out := make([]jsast.JsStmt, 0, len(stmts))
 	for _, stmt := range stmts {
 		if stmt == nil || drops[stmt.NodePos()] {
 			continue
 		}
 		switch s := stmt.(type) {
-		case *JsBlock:
+		case *jsast.JsBlock:
 			s.Body = filterDeadStmts(s.Body, drops)
-		case *JsFuncDecl:
+		case *jsast.JsFuncDecl:
 			s.Body.Body = filterDeadStmts(s.Body.Body, drops)
-		case *JsIfStmt:
+		case *jsast.JsIfStmt:
 			s.Then = filterDeadNestedStmt(s.Then, drops)
 			if s.Else != nil {
 				s.Else = filterDeadNestedStmt(s.Else, drops)
 			}
-		case *JsForStmt:
+		case *jsast.JsForStmt:
 			s.Body = filterDeadNestedStmt(s.Body, drops)
-		case *JsForInStmt:
+		case *jsast.JsForInStmt:
 			s.Body = filterDeadNestedStmt(s.Body, drops)
-		case *JsWhileStmt:
+		case *jsast.JsWhileStmt:
 			s.Body = filterDeadNestedStmt(s.Body, drops)
-		case *JsDoWhileStmt:
+		case *jsast.JsDoWhileStmt:
 			s.Body = filterDeadNestedStmt(s.Body, drops)
-		case *JsTryStmt:
+		case *jsast.JsTryStmt:
 			if s.Block != nil {
 				s.Block.Body = filterDeadStmts(s.Block.Body, drops)
 			}
@@ -210,7 +215,7 @@ func filterDeadStmts(stmts []JsStmt, drops map[int]bool) []JsStmt {
 			if s.Finalizer != nil {
 				s.Finalizer.Body = filterDeadStmts(s.Finalizer.Body, drops)
 			}
-		case *JsSwitchStmt:
+		case *jsast.JsSwitchStmt:
 			for _, c := range s.Cases {
 				c.Body = filterDeadStmts(c.Body, drops)
 			}
@@ -220,12 +225,12 @@ func filterDeadStmts(stmts []JsStmt, drops map[int]bool) []JsStmt {
 	return out
 }
 
-func filterDeadNestedStmt(stmt JsStmt, drops map[int]bool) JsStmt {
-	filtered := filterDeadStmts([]JsStmt{stmt}, drops)
+func filterDeadNestedStmt(stmt jsast.JsStmt, drops map[int]bool) jsast.JsStmt {
+	filtered := filterDeadStmts([]jsast.JsStmt{stmt}, drops)
 	if len(filtered) > 0 {
 		return filtered[0]
 	}
-	return &JsEmptyStmt{BaseStmt: BaseStmt{BaseNode: GenNode()}}
+	return &jsast.JsEmptyStmt{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}}
 }
 
 // ─────────────────────────────────────────────
@@ -258,7 +263,7 @@ func applyDCESpans(s string, spans []dceSpan) string {
 //  Eligibility predicates
 // ─────────────────────────────────────────────
 
-func varDeclEliminable(d *JsVarDecl, idx map[int]*Binding, reactive, exported map[string]bool, templateText string) (dceSpan, bool) {
+func varDeclEliminable(d *jsast.JsVarDecl, idx map[int]*analyzer.Binding, reactive, exported map[string]bool, templateText string) (dceSpan, bool) {
 	// Only single-declarator let/const.  var is excluded because
 	// hoisting means a `var` inside a conditional can be referenced
 	// from anywhere in the enclosing function, and the scope graph's
@@ -268,7 +273,7 @@ func varDeclEliminable(d *JsVarDecl, idx map[int]*Binding, reactive, exported ma
 		return dceSpan{}, false
 	}
 	dec := d.Decls[0]
-	id, ok := dec.Id.(*JsIdent)
+	id, ok := dec.Id.(*jsast.JsIdent)
 	if !ok {
 		return dceSpan{}, false // destructuring — skip
 	}
@@ -279,13 +284,13 @@ func varDeclEliminable(d *JsVarDecl, idx map[int]*Binding, reactive, exported ma
 	if !shouldEliminate(bind, reactive, exported, templateText) {
 		return dceSpan{}, false
 	}
-	if dec.Init != nil && !isPureExpr(dec.Init) {
+	if dec.Init != nil && !IsPureExpr(dec.Init) {
 		return dceSpan{}, false
 	}
 	return dceSpan{start: d.NodePos(), end: d.NodeEnd()}, true
 }
 
-func funcDeclEliminable(d *JsFuncDecl, idx map[int]*Binding, reactive, exported map[string]bool, templateText string) (dceSpan, bool) {
+func funcDeclEliminable(d *jsast.JsFuncDecl, idx map[int]*analyzer.Binding, reactive, exported map[string]bool, templateText string) (dceSpan, bool) {
 	// Function bindings have Pos == start of the declaration, not the
 	// name's position — see scope.go's hoisting pass.
 	bind := idx[d.NodePos()]
@@ -300,7 +305,7 @@ func funcDeclEliminable(d *JsFuncDecl, idx map[int]*Binding, reactive, exported 
 	return dceSpan{start: d.NodePos(), end: d.NodeEnd()}, true
 }
 
-func shouldEliminate(b *Binding, reactive, exported map[string]bool, templateText string) bool {
+func shouldEliminate(b *analyzer.Binding, reactive, exported map[string]bool, templateText string) bool {
 	if len(b.Refs) > 0 {
 		return false
 	}
@@ -317,7 +322,7 @@ func shouldEliminate(b *Binding, reactive, exported map[string]bool, templateTex
 	// Top-level bindings may be reached from the template.  Nested
 	// bindings (anything inside a block, function, etc.) cannot —
 	// they're invisible outside their scope.
-	if b.Scope != nil && b.Scope.Kind == ScopeProgram && referencedInTemplate(b.Name, templateText) {
+	if b.Scope != nil && b.Scope.Kind == analyzer.ScopeProgram && referencedInTemplate(b.Name, templateText) {
 		return false
 	}
 	return true
@@ -330,12 +335,12 @@ func shouldEliminate(b *Binding, reactive, exported map[string]bool, templateTex
 // indexBindingsByPos walks the scope tree and maps every user
 // binding's Pos → *Binding.  Builtins are excluded — their Pos is 0
 // and they'd collide with each other in the map.
-func indexBindingsByPos(s *Scope) map[int]*Binding {
-	out := map[int]*Binding{}
-	var visit func(*Scope)
-	visit = func(s *Scope) {
+func indexBindingsByPos(s *analyzer.Scope) map[int]*analyzer.Binding {
+	out := map[int]*analyzer.Binding{}
+	var visit func(*analyzer.Scope)
+	visit = func(s *analyzer.Scope) {
 		for _, b := range s.Bindings {
-			if b.Kind == BindBuiltin {
+			if b.Kind == analyzer.BindBuiltin {
 				continue
 			}
 			out[b.Pos] = b
@@ -351,7 +356,7 @@ func indexBindingsByPos(s *Scope) map[int]*Binding {
 // reactiveNameSet returns a set view of analysis.reactiveNames() so we
 // can do O(1) lookups while eliminating.  The underlying slice method
 // lives on *Analysis and is shared with codegen.
-func reactiveNameSet(a *Analysis) map[string]bool {
+func reactiveNameSet(a *analyzer.Analysis) map[string]bool {
 	m := map[string]bool{}
 	if a == nil {
 		return m
@@ -368,15 +373,15 @@ func reactiveNameSet(a *Analysis) map[string]bool {
 // names themselves.  Over-collection only causes us to *keep* a few
 // extra bindings, which is safe; under-collection would risk dropping
 // something the module's consumers depend on.
-func exportedNamesIn(prog *JsProgram) map[string]bool {
+func exportedNamesIn(prog *jsast.JsProgram) map[string]bool {
 	out := map[string]bool{}
-	WalkNode(prog, func(n JsNode) bool {
-		ed, ok := n.(*JsExportDecl)
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
+		ed, ok := n.(*jsast.JsExportDecl)
 		if !ok {
 			return true
 		}
-		WalkNode(ed, func(inner JsNode) bool {
-			if id, ok := inner.(*JsIdent); ok {
+		jsast.WalkNode(ed, func(inner jsast.JsNode) bool {
+			if id, ok := inner.(*jsast.JsIdent); ok {
 				out[id.Name] = true
 			}
 			return true
@@ -413,7 +418,7 @@ func referencedInTemplate(name, templateText string) bool {
 //  Purity check
 // ─────────────────────────────────────────────
 
-// isPureExpr reports whether evaluating e could be safely dropped.
+// IsPureExpr reports whether evaluating e could be safely dropped.
 // "Pure" is conservative: we err toward false whenever there's any
 // chance of an observable side effect (a getter triggering, a function
 // call, an iterator running for a spread, etc.).
@@ -426,68 +431,68 @@ func referencedInTemplate(name, templateText string) bool {
 //
 // Impure: any call (function or constructor), member access (getters),
 // assignment, spread, await, yield, delete, void.
-func isPureExpr(e JsExpr) bool {
+func IsPureExpr(e jsast.JsExpr) bool {
 	switch n := e.(type) {
 	case nil:
 		return true
-	case *JsLiteral:
+	case *jsast.JsLiteral:
 		return true
-	case *JsTemplateLit:
+	case *jsast.JsTemplateLit:
 		// Pure only if every interpolation is pure — a template can
 		// embed arbitrary expressions, including side-effecting calls.
 		for _, e := range n.Exprs {
-			if !isPureExpr(e) {
+			if !IsPureExpr(e) {
 				return false
 			}
 		}
 		return true
-	case *JsIdent:
+	case *jsast.JsIdent:
 		return true
-	case *JsThisExpr, *JsSuperExpr:
+	case *jsast.JsThisExpr, *jsast.JsSuperExpr:
 		return true
-	case *JsArrayExpr:
+	case *jsast.JsArrayExpr:
 		for _, el := range n.Elems {
-			if el != nil && !isPureExpr(el) {
+			if el != nil && !IsPureExpr(el) {
 				return false
 			}
 		}
 		return true
-	case *JsObjectExpr:
+	case *jsast.JsObjectExpr:
 		for _, p := range n.Props {
 			if p.Spread {
 				// ...x triggers iteration / Symbol.iterator
 				return false
 			}
-			if p.Computed && !isPureExpr(p.Key) {
+			if p.Computed && !IsPureExpr(p.Key) {
 				return false
 			}
-			if p.Value != nil && !isPureExpr(p.Value) {
+			if p.Value != nil && !IsPureExpr(p.Value) {
 				return false
 			}
 		}
 		return true
-	case *JsFuncExpr, *JsArrowFunc:
+	case *jsast.JsFuncExpr, *jsast.JsArrowFunc:
 		return true
-	case *JsUnaryExpr:
+	case *jsast.JsUnaryExpr:
 		if n.Op == "delete" || n.Op == "void" {
 			return false
 		}
-		return isPureExpr(n.X)
-	case *JsBinaryExpr:
-		return isPureExpr(n.L) && isPureExpr(n.R)
-	case *JsLogicalExpr:
-		return isPureExpr(n.L) && isPureExpr(n.R)
-	case *JsConditionalExpr:
-		return isPureExpr(n.Test) && isPureExpr(n.Then) && isPureExpr(n.Else)
-	case *JsSeqExpr:
+		return IsPureExpr(n.X)
+	case *jsast.JsBinaryExpr:
+		return IsPureExpr(n.L) && IsPureExpr(n.R)
+	case *jsast.JsLogicalExpr:
+		return IsPureExpr(n.L) && IsPureExpr(n.R)
+	case *jsast.JsConditionalExpr:
+		return IsPureExpr(n.Test) && IsPureExpr(n.Then) && IsPureExpr(n.Else)
+	case *jsast.JsSeqExpr:
 		for _, x := range n.Exprs {
-			if !isPureExpr(x) {
+			if !IsPureExpr(x) {
 				return false
 			}
 		}
 		return true
-	case *JsMemberExpr, *JsCallExpr, *JsNewExpr,
-		*JsAssignExpr, *JsSpreadExpr, *JsAwaitExpr, *JsYieldExpr:
+	case *jsast.JsMemberExpr, *jsast.JsCallExpr, *jsast.JsNewExpr,
+		*jsast.JsAssignExpr, *jsast.JsSpreadExpr, *jsast.JsAwaitExpr, *jsast.JsYieldExpr:
 		return false
 	}
 	return false
