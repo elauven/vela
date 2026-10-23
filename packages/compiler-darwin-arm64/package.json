@@ -1,6 +1,6 @@
 {
   "name": "@govela/compiler-darwin-arm64",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "The Vela compiler binary for darwin-arm64. Installed by @govela/compiler; do not depend on it directly.",
   "license": "MIT",
   "repository": {
