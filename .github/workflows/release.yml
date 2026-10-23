@@ -48,6 +48,7 @@ jobs:
             os=${target%/*}; arch=${target#*/}; ext=""
             [ "$os" = windows ] && ext=.exe
             GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "dist/vela-$os-$arch$ext" .
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "dist/vela-lsp-$os-$arch$ext" ./cmd/vela-lsp
           done
           (cd dist && sha256sum vela-* > SHA256SUMS)
 
@@ -74,7 +75,8 @@ jobs:
             [ "$os" = windows ] && ext=.exe
             mkdir -p "packages/compiler-$npm/bin"
             cp "dist/vela-$os-$arch$ext" "packages/compiler-$npm/bin/vela$ext"
-            chmod +x "packages/compiler-$npm/bin/vela$ext"
+            cp "dist/vela-lsp-$os-$arch$ext" "packages/compiler-$npm/bin/vela-lsp$ext"
+            chmod +x "packages/compiler-$npm/bin/vela$ext" "packages/compiler-$npm/bin/vela-lsp$ext"
           done
 
       - name: Publish the release

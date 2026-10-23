@@ -1,0 +1,12 @@
+<script>
+  export let title = 'Untitled';
+  export let value = $bindable(false);
+
+  function done() {
+    $$dispatch('close', { title });
+  }
+</script>
+
+<template>
+  <button @click={done}>{title} {value}</button>
+</template>

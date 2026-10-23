@@ -10,7 +10,8 @@
   },
   "type": "module",
   "bin": {
-    "vela": "bin/vela.js"
+    "vela": "bin/vela.js",
+    "vela-lsp": "bin/vela-lsp.js"
   },
   "exports": {
     ".": {
@@ -22,6 +23,7 @@
   "types": "index.d.ts",
   "files": [
     "bin/vela.js",
+    "bin/vela-lsp.js",
     "index.js",
     "index.d.ts",
     "LICENSE"

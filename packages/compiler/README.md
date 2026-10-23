@@ -1,9 +1,9 @@
 # @govela/compiler
 
 The Vela compiler for JavaScript toolchains: `npm i -D @govela/compiler` installs
-the `vela` command with a prebuilt binary for this platform, no Go
-toolchain needed. Install `@govela/runtime` of the same version for
-bundled applications.
+the `vela` command and the `vela-lsp` language server with prebuilt
+binaries for this platform, no Go toolchain needed. Install
+`@govela/runtime` of the same version for bundled applications.
 
 ```sh
 npx vela --project src --out build --runtime-import=bare
@@ -27,7 +27,11 @@ Requests, results and options are those of the compiler service protocol
 (`docs/TOOLING_PROTOCOL.md` in the compiler repository). `startService`
 rejects a binary that speaks another protocol or has another version.
 
+Editors start the language server with `vela-lsp --stdio`;
+`languageServerPath()` is the path of the binary, for editor extensions.
+
 Supported platforms: linux x64/arm64, macOS x64/arm64, Windows x64. Set
-`VELA_BINARY` to the path of a `vela` binary to use another build.
+`VELA_BINARY` (and `VELA_LSP_BINARY`) to the path of a `vela`
+(`vela-lsp`) binary to use another build.
 
 License: MIT.

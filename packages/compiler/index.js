@@ -15,13 +15,7 @@ export const version = manifest.version;
 /** The service protocol version this package speaks. */
 export const protocol = 1;
 
-const platforms = {
-  'linux-x64': 'bin/vela',
-  'linux-arm64': 'bin/vela',
-  'darwin-x64': 'bin/vela',
-  'darwin-arm64': 'bin/vela',
-  'win32-x64': 'bin/vela.exe',
-};
+const platforms = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'win32-x64'];
 
 function velaError(code, message) {
   const error = new Error(message);
@@ -29,25 +23,40 @@ function velaError(code, message) {
   return error;
 }
 
+// The binary `command` of the installed platform package, or the path in
+// the environment variable `env`.
+function platformBinary(command, env, module) {
+  if (process.env[env]) {
+    return process.env[env];
+  }
+  const platform = `${process.platform}-${process.arch}`;
+  const name = `${manifest.name}-${platform}`;
+  if (!platforms.includes(platform)) {
+    throw velaError('VELA_PLATFORM', `${command}: no prebuilt binary for ${platform}; supported: ${platforms.join(', ')}. Install it with \`go install ${module}@v${version}\` and set ${env} to it.`);
+  }
+  const file = `bin/${command}${process.platform === 'win32' ? '.exe' : ''}`;
+  try {
+    return require.resolve(`${name}/${file}`);
+  } catch {
+    throw velaError('VELA_BINARY', `${command}: the package ${name} is not installed. It is an optional dependency of ${manifest.name}; reinstall without --no-optional / --omit=optional, or set ${env} to a ${command} binary.`);
+  }
+}
+
 /**
  * The path of the vela binary: VELA_BINARY when it is set, else the binary
  * of the installed platform package.
  */
 export function binaryPath() {
-  if (process.env.VELA_BINARY) {
-    return process.env.VELA_BINARY;
-  }
-  const platform = `${process.platform}-${process.arch}`;
-  const file = platforms[platform];
-  const name = `${manifest.name}-${platform}`;
-  if (!file) {
-    throw velaError('VELA_PLATFORM', `vela: no prebuilt binary for ${platform}; supported: ${Object.keys(platforms).join(', ')}. Install the compiler with \`go install github.com/elauven/vela@v${version}\` and set VELA_BINARY to it.`);
-  }
-  try {
-    return require.resolve(`${name}/${file}`);
-  } catch {
-    throw velaError('VELA_BINARY', `vela: the package ${name} is not installed. It is an optional dependency of ${manifest.name}; reinstall without --no-optional / --omit=optional, or set VELA_BINARY to a vela binary.`);
-  }
+  return platformBinary('vela', 'VELA_BINARY', 'github.com/elauven/vela');
+}
+
+/**
+ * The path of the vela-lsp language server: VELA_LSP_BINARY when it is set,
+ * else the binary of the installed platform package. Editors start it with
+ * `--stdio`.
+ */
+export function languageServerPath() {
+  return platformBinary('vela-lsp', 'VELA_LSP_BINARY', 'github.com/elauven/vela/cmd/vela-lsp');
 }
 
 /**

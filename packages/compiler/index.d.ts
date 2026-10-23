@@ -84,6 +84,9 @@ export interface Service {
 /** The vela binary: VELA_BINARY, else the binary of the platform package. */
 export declare function binaryPath(): string;
 
+/** The vela-lsp language server: VELA_LSP_BINARY, else the binary of the platform package. */
+export declare function languageServerPath(): string;
+
 /** Starts `vela serve --stdio`; rejects a binary of another protocol or version. */
 export declare function startService(options?: ServiceOptions): Promise<Service>;
 

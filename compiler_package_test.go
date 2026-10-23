@@ -99,6 +99,12 @@ func TestReleaseWorkflowCoversCompilerPlatforms(t *testing.T) {
 			t.Errorf("release.yml does not put the %s binary into %s (%s)", build, p.Dir(), stage)
 		}
 	}
+	// The language server ships beside the compiler (task 065).
+	for _, want := range []string{`-o "dist/vela-lsp-$os-$arch$ext" ./cmd/vela-lsp`, `"packages/compiler-$npm/bin/vela-lsp$ext"`} {
+		if !strings.Contains(workflow, want) {
+			t.Errorf("release.yml does not build and stage vela-lsp: %s", want)
+		}
+	}
 	if !strings.Contains(workflow, "packages/compiler "+unpluginPackageDir+"; do") {
 		t.Errorf("release.yml does not publish %s after the compiler", unpluginPackageDir)
 	}

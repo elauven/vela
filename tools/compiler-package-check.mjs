@@ -31,6 +31,11 @@ await check('binaryPath', async () => {
   assert(path.includes(`compiler-${process.platform}-${process.arch}`), `binary ${path}`);
 });
 
+await check('languageServerPath', async () => {
+  const path = api.languageServerPath();
+  assert(path.includes(`compiler-${process.platform}-${process.arch}`) && /vela-lsp(\.exe)?$/.test(path), `language server ${path}`);
+});
+
 await check('compile', async () => {
   const result = await api.compile({ path: 'src/App.vela' }, { cwd: app });
   assert(result.ok && result.js.includes('@govela/runtime') && result.css.includes('color'), JSON.stringify(result));

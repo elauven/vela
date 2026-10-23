@@ -183,6 +183,7 @@ snippets, a dev server with HMR, and streaming SSR.
 | [GUIDE.md](docs/GUIDE.md) | Writing components and building applications |
 | [FEATURES.md](docs/FEATURES.md) | What is implemented, and its limits |
 | [AGENTS.md](AGENTS.md) | Authoring rules for people and AI agents |
+| [EDITORS.md](docs/EDITORS.md) | The language server `vela-lsp` and editor setup |
 | [SSR.md](docs/SSR.md) | Server rendering and hydration |
 | [SSR_TRANSLATION_CONTRACT.md](docs/SSR_TRANSLATION_CONTRACT.md) | JavaScript-to-Go rules and Go hosts ([ru](docs/SSR_TRANSLATION_CONTRACT.ru.md)) |
 | [SSR_TRANSLATION_MATRIX.md](docs/SSR_TRANSLATION_MATRIX.md) | Translation status per construct and built-in |

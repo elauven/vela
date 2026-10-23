@@ -1,0 +1,7 @@
+<script>
+  let now = $state(Date.now());
+</script>
+
+<template>
+  <p>{now}</p>
+</template>

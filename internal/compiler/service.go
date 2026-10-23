@@ -4,6 +4,7 @@ import (
 	"github.com/elauven/vela/internal/codegen"
 	"github.com/elauven/vela/internal/diag"
 	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/ssr"
 
 	"encoding/json"
 	"flag"
@@ -205,4 +206,32 @@ func (s *CompilerService) Compile(req ServiceRequest) CompileResult {
 		res.Map = json.RawMessage(module.Map)
 	}
 	return res
+}
+
+// Analyze analyzes the component at path with source under the options a
+// compile request of it gets (the language server, task 065).
+func (s *CompilerService) Analyze(path, source string) (*ComponentAnalysis, error) {
+	opts, err := s.requestOptions(ServiceRequest{Path: path})
+	if err != nil {
+		return nil, err
+	}
+	return AnalyzeComponent(s.SourcePath(path), source, opts), nil
+}
+
+// ProjectCheck is the vela check of the configured project, with the SSR
+// checks when the configuration enables SSR; ok is false without a
+// configured project.
+func (s *CompilerService) ProjectCheck() (target CheckTarget, ok bool, err error) {
+	if s.config == nil || s.config.Project == nil {
+		return CheckTarget{}, false, nil
+	}
+	opts, err := s.requestOptions(ServiceRequest{})
+	if err != nil {
+		return CheckTarget{}, false, err
+	}
+	opts.SSRModule = ssr.SSRDefaultModule
+	if s.config.SSRModule != nil {
+		opts.SSRModule = *s.config.SSRModule
+	}
+	return CheckTarget{SrcRoot: *s.config.Project, SSR: s.config.SSR != nil && *s.config.SSR, Opts: opts}, true, nil
 }

@@ -51,12 +51,13 @@ func TestCompilerNpmPackage(t *testing.T) {
 	compilerDir, platformDir, tgz := filepath.Join(root, "compiler"), filepath.Join(root, "platform"), filepath.Join(root, "tgz")
 	copyTree(t, filepath.FromSlash(compilerPackageDir), compilerDir)
 	copyTree(t, filepath.FromSlash(platform.Dir()), platformDir)
-	binary := filepath.Join(platformDir, filepath.FromSlash(platform.Binary()))
-	// As the release workflow builds it, outside the workspace.
-	build := exec.Command("go", "build", "-o", binary, ".")
-	build.Env = append(os.Environ(), "GOWORK=off")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build: %v\n%s", err, out)
+	// As the release workflow builds them, outside the workspace.
+	for binary, pkg := range map[string]string{platform.Binary(): ".", platform.ServerBinary(): "./cmd/vela-lsp"} {
+		build := exec.Command("go", "build", "-o", filepath.Join(platformDir, filepath.FromSlash(binary)), pkg)
+		build.Env = append(os.Environ(), "GOWORK=off")
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("go build %s: %v\n%s", pkg, err, out)
+		}
 	}
 	if err := os.MkdirAll(tgz, 0o755); err != nil {
 		t.Fatal(err)
@@ -74,6 +75,9 @@ func TestCompilerNpmPackage(t *testing.T) {
 
 	if got := strings.TrimSpace(run(app, "npx", "--no-install", "vela", "--version")); got != "vela "+runtime.Version {
 		t.Fatalf("npx vela --version = %q", got)
+	}
+	if got := strings.TrimSpace(run(app, "npx", "--no-install", "vela-lsp", "--version")); got != "vela-lsp "+runtime.Version {
+		t.Fatalf("npx vela-lsp --version = %q", got)
 	}
 	var result CompileResult
 	if err := json.Unmarshal([]byte(run(app, "npx", "--no-install", "vela", "compile", "--path", "src/App.vela")), &result); err != nil || !result.OK {
@@ -105,7 +109,7 @@ func TestCompilerNpmPackage(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &checks); err != nil || len(checks.Checks) == 0 {
 		t.Fatalf("API checks: %v\n%s", err, out)
 	}
-	want := []string{"binaryPath", "compile", "service", "missing binary"}
+	want := []string{"binaryPath", "languageServerPath", "compile", "service", "missing binary"}
 	if goruntime.GOOS != "windows" {
 		want = append(want, "version mismatch", "protocol mismatch")
 	}
