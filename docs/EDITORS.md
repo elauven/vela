@@ -95,6 +95,30 @@ and tag names are not JavaScript; the server refuses rather than leave them
 behind), and navigation from a `.js` file into a component, which belongs
 to the editor's own TypeScript server.
 
+## VS Code
+
+The extension in `packages/vscode-vela` registers the `vela` language: a
+TextMate grammar (`<script>` as JavaScript, `<style>` as CSS, the template
+with its tags, components, directives, blocks and expressions), the
+language configuration (comments, brackets, folding of blocks), and the
+client of `vela-lsp`. It ships TypeScript 6 for the JavaScript features.
+
+It starts the `vela.server.path` setting, else the `vela-lsp` of
+`@govela/compiler` in the workspace's `node_modules`, else `vela-lsp` on
+`PATH`. The other settings: `vela.typescript.enable`, `vela.typescript.tsdk`,
+`vela.diagnosticsDelay`, `vela.trace.server`; the command *Vela: Restart
+Language Server*.
+
+The extension is not on the Marketplace yet. CI builds it (the
+`vscode-vela` artifact of the *VS Code extension* job), or locally:
+
+```sh
+cd packages/vscode-vela
+npm ci
+npx vsce package          # vela-0.1.0.vsix
+code --install-extension vela-0.1.0.vsix
+```
+
 ## Neovim
 
 ```lua
@@ -123,8 +147,46 @@ roots = ["vela.config.json", "package.json"]
 language-servers = ["vela-lsp"]
 ```
 
+Neovim and Helix highlight with tree-sitter grammars; there is none for
+Vela yet, so `.vela` files get the language server's features without
+highlighting (`vim.treesitter.language.register('html', 'vela')` gives an
+approximation in Neovim).
+
+## Sublime Text
+
+With the [LSP](https://packagecontrol.io/packages/LSP) package, in
+*Preferences: LSP Settings*:
+
+```json
+{
+  "clients": {
+    "vela": {
+      "enabled": true,
+      "command": ["vela-lsp"],
+      "selector": "source.vela"
+    }
+  }
+}
+```
+
+The selector needs the grammar: Sublime Text reads TextMate grammars as
+property lists, so convert the extension's into your `Packages/User`
+directory:
+
+```sh
+python3 -c 'import json, plistlib, sys; plistlib.dump(json.load(open(sys.argv[1])), open(sys.argv[2], "wb"))' \
+  packages/vscode-vela/syntaxes/vela.tmLanguage.json "Packages/User/Vela.tmLanguage"
+```
+
+The embedded scopes are `source.js` and `source.css`, which Sublime's own
+JavaScript and CSS syntaxes provide. This setup is not tested in CI.
+
+## Zed
+
+Zed adds languages through extensions with a tree-sitter grammar; Vela has
+neither yet, so Zed is not supported.
+
 ## Other editors
 
-Any LSP client works with the command `vela-lsp` for `*.vela` files and
-the workspace root as the root URI. The VS Code extension and the setup of
-Zed and Sublime Text are task 065d.
+Any LSP client works with the command `vela-lsp` for `*.vela` files and the
+workspace root as the root URI.

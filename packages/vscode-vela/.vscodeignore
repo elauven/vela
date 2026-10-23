@@ -1,0 +1,16 @@
+# The .vsix holds the extension, the grammar and the production
+# dependencies (vscode-languageclient, typescript).
+.vscodeignore
+package-lock.json
+*.vsix
+node_modules/typescript/lib/*/diagnosticMessages.generated.json
+# The server's helper loads lib/typescript.js and the lib .d.ts files only.
+node_modules/typescript/bin/**
+node_modules/typescript/lib/_*.js
+node_modules/typescript/lib/tsc.js
+node_modules/typescript/lib/tsserver.js
+node_modules/typescript/lib/tsserverlibrary.*
+node_modules/typescript/lib/typingsInstaller.js
+node_modules/typescript/lib/watchGuard.js
+test/**
+.vscode-test/**

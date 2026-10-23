@@ -1,0 +1,105 @@
+{
+  "name": "vela",
+  "displayName": "Vela",
+  "description": "Vela single-file components: syntax highlighting and the vela-lsp language server (diagnostics, navigation, completion, JavaScript through TypeScript).",
+  "version": "0.1.0",
+  "publisher": "govela",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elauven/vela.git",
+    "directory": "packages/vscode-vela"
+  },
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "vela",
+    "components",
+    "lsp"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "vela",
+        "aliases": [
+          "Vela",
+          "vela"
+        ],
+        "extensions": [
+          ".vela"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "vela",
+        "scopeName": "source.vela",
+        "path": "./syntaxes/vela.tmLanguage.json",
+        "embeddedLanguages": {
+          "source.js": "javascript",
+          "source.css": "css",
+          "meta.embedded.expression.vela": "javascript"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "Vela",
+      "properties": {
+        "vela.server.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path of the `vela-lsp` binary. Empty: the one of `@govela/compiler` in the workspace's `node_modules`, else `vela-lsp` on `PATH`."
+        },
+        "vela.typescript.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "JavaScript language features inside components through TypeScript."
+        },
+        "vela.typescript.tsdk": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "A TypeScript 5.x or 6.x for the JavaScript features: its `lib` directory. Empty: the TypeScript of this extension."
+        },
+        "vela.diagnosticsDelay": {
+          "type": "number",
+          "default": 150,
+          "description": "Milliseconds between the last change and the diagnostics."
+        },
+        "vela.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the messages between VS Code and vela-lsp in the output channel."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "vela.restartServer",
+        "title": "Vela: Restart Language Server"
+      }
+    ]
+  },
+  "scripts": {
+    "package": "vsce package",
+    "test": "node test/run.mjs"
+  },
+  "dependencies": {
+    "typescript": "^6.0.3",
+    "vscode-languageclient": "10.1.2"
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.0.0"
+  }
+}

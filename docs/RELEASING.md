@@ -11,6 +11,7 @@ version `vX.Y.Z` while the contract is in `v0` (docs/SSR_TRANSLATION_CONTRACT.md
 | JavaScript runtime | `runtime/`, generated into `packages/runtime` | npm package `@govela/runtime` of the same version (R-12.2g), published by the release workflow |
 | Compiler for npm | `packages/compiler` (launchers `bin/vela.js` and `bin/vela-lsp.js`, JavaScript API `index.js`) and `packages/compiler-<os>-<cpu>` (`vela` and `vela-lsp` each) | npm packages `@govela/compiler` and `@govela/compiler-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64` of the same version, published by the release workflow |
 | Bundler plugin | `packages/unplugin` (plugin `index.js`, entry points generated) | npm package `@govela/unplugin` of the same version, published by the release workflow after `@govela/compiler` |
+| VS Code extension | `packages/vscode-vela` | its own version (`package.json`), not checked against the tag; CI builds the `.vsix` as an artifact; publishing to the Marketplace or Open VSX is not set up |
 
 All three are released under the MIT license (`LICENSE`). The Go runtime
 module carries a copy in `ssr_runtime/LICENSE` (`TestLicenseCopiesMatch`), and

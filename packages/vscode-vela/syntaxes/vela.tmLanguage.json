@@ -1,0 +1,429 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Vela",
+  "scopeName": "source.vela",
+  "fileTypes": [
+    "vela"
+  ],
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#script"
+    },
+    {
+      "include": "#style"
+    },
+    {
+      "include": "#template"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "begin": "<!--",
+      "end": "-->",
+      "name": "comment.block.html",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.comment.html"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.comment.html"
+        }
+      }
+    },
+    "script": {
+      "begin": "(<)(script)\\b(?=[^>]*>)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "entity.name.tag.script.html"
+        }
+      },
+      "end": "(</)(script)\\s*(>)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "entity.name.tag.script.html"
+        },
+        "3": {
+          "name": "punctuation.definition.tag.end.html"
+        }
+      },
+      "name": "meta.section.script.vela",
+      "patterns": [
+        {
+          "begin": "\\G",
+          "end": "(>)",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.end.html"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#static-attribute"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=>)",
+          "end": "(?=</script\\s*>)",
+          "contentName": "source.js",
+          "patterns": [
+            {
+              "include": "source.js"
+            }
+          ]
+        }
+      ]
+    },
+    "style": {
+      "begin": "(<)(style)\\b(?=[^>]*>)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "entity.name.tag.style.html"
+        }
+      },
+      "end": "(</)(style)\\s*(>)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "entity.name.tag.style.html"
+        },
+        "3": {
+          "name": "punctuation.definition.tag.end.html"
+        }
+      },
+      "name": "meta.section.style.vela",
+      "patterns": [
+        {
+          "begin": "\\G",
+          "end": "(>)",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.end.html"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#static-attribute"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=>)",
+          "end": "(?=</style\\s*>)",
+          "contentName": "source.css",
+          "patterns": [
+            {
+              "include": "source.css"
+            }
+          ]
+        }
+      ]
+    },
+    "template": {
+      "begin": "(<)(template)\\b(?=[^>]*>)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "entity.name.tag.template.html"
+        }
+      },
+      "end": "(</)(template)\\s*(>)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "entity.name.tag.template.html"
+        },
+        "3": {
+          "name": "punctuation.definition.tag.end.html"
+        }
+      },
+      "name": "meta.section.template.vela",
+      "patterns": [
+        {
+          "begin": "\\G",
+          "end": "(>)",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.end.html"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#static-attribute"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=>)",
+          "end": "(?=</template\\s*>)",
+          "contentName": "meta.template.vela",
+          "patterns": [
+            {
+              "include": "#markup"
+            }
+          ]
+        }
+      ]
+    },
+    "markup": {
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#block"
+        },
+        {
+          "include": "#expression"
+        },
+        {
+          "include": "#closing-tag"
+        },
+        {
+          "include": "#component-tag"
+        },
+        {
+          "include": "#element-tag"
+        },
+        {
+          "match": "&(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#x[0-9a-fA-F]+);",
+          "name": "constant.character.entity.html"
+        }
+      ]
+    },
+    "block": {
+      "begin": "(\\{)\\s*([#:/])\\s*(else\\s+if|if|else|each|await|then|catch|key|client)\\b",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.section.embedded.begin.vela"
+        },
+        "2": {
+          "name": "keyword.control.vela"
+        },
+        "3": {
+          "name": "keyword.control.vela"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.end.vela"
+        }
+      },
+      "name": "meta.block.vela",
+      "contentName": "meta.embedded.expression.vela source.js",
+      "patterns": [
+        {
+          "match": "\\b(as|then|catch)\\b",
+          "name": "keyword.control.vela"
+        },
+        {
+          "include": "source.js"
+        }
+      ]
+    },
+    "expression": {
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.begin.vela"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.end.vela"
+        }
+      },
+      "name": "meta.interpolation.vela",
+      "contentName": "meta.embedded.expression.vela source.js",
+      "patterns": [
+        {
+          "include": "source.js"
+        }
+      ]
+    },
+    "closing-tag": {
+      "match": "(</)(?:([A-Z][\\w.]*)|([A-Za-z][\\w:.-]*))\\s*(>)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "support.class.component.vela"
+        },
+        "3": {
+          "name": "entity.name.tag.html"
+        },
+        "4": {
+          "name": "punctuation.definition.tag.end.html"
+        }
+      }
+    },
+    "component-tag": {
+      "begin": "(<)([A-Z][\\w.]*)(?=[\\s/>])",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "support.class.component.vela"
+        }
+      },
+      "end": "(/?>)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.end.html"
+        }
+      },
+      "name": "meta.tag.component.vela",
+      "patterns": [
+        {
+          "include": "#attributes"
+        }
+      ]
+    },
+    "element-tag": {
+      "begin": "(<)([a-z][\\w:.-]*)(?=[\\s/>])",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "entity.name.tag.html"
+        }
+      },
+      "end": "(/?>)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.end.html"
+        }
+      },
+      "name": "meta.tag.html",
+      "patterns": [
+        {
+          "include": "#attributes"
+        }
+      ]
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "include": "#braced-attribute"
+        },
+        {
+          "include": "#quoted-directive"
+        },
+        {
+          "include": "#bare-directive"
+        },
+        {
+          "include": "#static-attribute"
+        }
+      ]
+    },
+    "braced-attribute": {
+      "begin": "(?:(@|:|bind:|class:|style:|let:))?([A-Za-z_$][\\w:.$-]*)\\s*(=)\\s*(\\{)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.other.directive.vela"
+        },
+        "2": {
+          "name": "entity.other.attribute-name.html"
+        },
+        "3": {
+          "name": "punctuation.separator.key-value.html"
+        },
+        "4": {
+          "name": "punctuation.section.embedded.begin.vela"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.end.vela"
+        }
+      },
+      "contentName": "meta.embedded.expression.vela source.js",
+      "patterns": [
+        {
+          "include": "source.js"
+        }
+      ]
+    },
+    "quoted-directive": {
+      "begin": "(?:(@|:|bind:|class:|style:|let:))([A-Za-z_$][\\w:.$-]*)\\s*(=)\\s*([\\\"'])",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.other.directive.vela"
+        },
+        "2": {
+          "name": "entity.other.attribute-name.html"
+        },
+        "3": {
+          "name": "punctuation.separator.key-value.html"
+        },
+        "4": {
+          "name": "punctuation.definition.string.begin.html"
+        }
+      },
+      "end": "\\4",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.html"
+        }
+      },
+      "contentName": "meta.embedded.expression.vela source.js",
+      "patterns": [
+        {
+          "include": "source.js"
+        }
+      ]
+    },
+    "bare-directive": {
+      "match": "(?:(@|:|bind:|class:|style:|let:))([A-Za-z_$][\\w:.$-]*)(?=[\\s/>])",
+      "captures": {
+        "1": {
+          "name": "keyword.other.directive.vela"
+        },
+        "2": {
+          "name": "entity.other.attribute-name.html"
+        }
+      }
+    },
+    "static-attribute": {
+      "match": "([^\\s\\\"'<>/={}]+)(?:\\s*(=)\\s*(\\\"[^\\\"]*\\\"|'[^']*'|[^\\s\\\"'>{}]+))?",
+      "captures": {
+        "1": {
+          "name": "entity.other.attribute-name.html"
+        },
+        "2": {
+          "name": "punctuation.separator.key-value.html"
+        },
+        "3": {
+          "name": "string.quoted.html"
+        }
+      }
+    }
+  }
+}

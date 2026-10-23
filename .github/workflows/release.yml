@@ -57,7 +57,9 @@ jobs:
       - name: Check the npm package versions
         run: |
           want="${GITHUB_REF_NAME#v}"
+          # The VS Code extension has its own version (task 065d).
           for manifest in packages/*/package.json; do
+            [ "$manifest" = packages/vscode-vela/package.json ] && continue
             node -e '
               const [file, want] = process.argv.slice(1);
               const m = JSON.parse(require("fs").readFileSync(file, "utf8"));

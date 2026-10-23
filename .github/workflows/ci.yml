@@ -114,10 +114,63 @@ jobs:
           VELA_REQUIRE_BUNDLERS: '1'
         run: go test -count=1 -v -run 'TestTypeScript' ./internal/lsp/
 
+  # The extension in packages/vscode-vela: its grammar, its .vsix and a
+  # session in VS Code (task 065d).
+  vscode:
+    name: VS Code extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            packages/vscode-vela/package-lock.json
+
+      - name: Install the grammar engines and the extension's dependencies
+        run: |
+          npm ci
+          npm ci --prefix packages/vscode-vela
+
+      - name: Grammar, .vsix and the server it starts
+        env:
+          VELA_REQUIRE_BUNDLERS: '1'
+        run: go test -count=1 -v -run 'TestVelaGrammar|TestVSCodeExtension' .
+
+      - name: Package
+        working-directory: packages/vscode-vela
+        run: npx vsce package --out vela.vsix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vscode-vela
+          path: packages/vscode-vela/vela.vsix
+
+      - uses: actions/cache@v4
+        with:
+          path: packages/vscode-vela/.vscode-test
+          key: vscode-test-${{ runner.os }}
+
+      - name: Run in VS Code
+        env:
+          GOWORK: 'off'
+        run: |
+          go build -o "$RUNNER_TEMP/vela-lsp" ./cmd/vela-lsp
+          cd packages/vscode-vela
+          VELA_VSCODE_USER_DIR="$RUNNER_TEMP/vu" xvfb-run -a npm test -- "$RUNNER_TEMP/vela-lsp"
+
   build:
     name: Build binaries
     runs-on: ubuntu-latest
-    needs: [test, ssr-browser, bundlers]
+    needs: [test, ssr-browser, bundlers, vscode]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
