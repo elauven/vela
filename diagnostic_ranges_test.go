@@ -71,13 +71,20 @@ func TestDiagnosticRanges(t *testing.T) {
 		t.Errorf("no %s diagnostic in %+v", code, res.Diagnostics)
 	}
 
-	// Parse errors cover the token they stop at.
+	// Parse errors cover the token they stop at; the first diagnostic of
+	// each source is checked.
 	for _, c := range []struct{ source, code, text string }{
 		{"<script>\n  let a = $state(;\n</script>\n<template><p>{a}</p></template>\n", "VELA-JS-SYNTAX", ";"},
 		{"<template><p>x</p></template>\n<style>\n  p { color: red;\n</style>\n", "VELA-CSS-SYNTAX", ""},
+		// A section without its closing tag is an error, not a component
+		// without that section.
+		{"<script>\n  let a = $state(0);\n<template><p>{a}</p></template>\n", "VELA-SFC-UNCLOSED", "<script>"},
+		{"<template><p>x</p></template>\n<style>\n  p { color: red; }\n", "VELA-SFC-UNCLOSED", "<style>"},
+		// An unterminated string in a directive was an internal error.
+		{"<template><p style:x={'in></p></template>\n", "VELA-TEMPLATE-AST", "<p"},
 	} {
 		res := svc.Compile(ServiceRequest{Path: "App.vela", Source: &c.source})
-		if len(res.Diagnostics) != 1 || res.Diagnostics[0].Code != c.code {
+		if len(res.Diagnostics) == 0 || res.Diagnostics[0].Code != c.code {
 			t.Fatalf("%q: diagnostics %+v", c.source, res.Diagnostics)
 		}
 		if got := rangeText(c.source, res.Diagnostics[0]); got != c.text {

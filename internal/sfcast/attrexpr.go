@@ -66,6 +66,8 @@ func AttrExprToJS(value string) string {
 					j++
 				}
 			}
+			// An unterminated string or brace runs to the end of the value.
+			j = min(j, len(value))
 			b.WriteString("${")
 			b.WriteString(value[i+1 : j])
 			b.WriteByte('}')

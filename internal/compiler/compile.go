@@ -16,6 +16,7 @@ import (
 	"github.com/elauven/vela/runtime"
 
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -360,7 +361,12 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		sfc, parseErr = sfcast.ParseSFC(raw)
 		return parseErr
 	}); err != nil {
-		ds.Error(0, "%v", err)
+		var section *sfcast.SectionError
+		if errors.As(err, &section) {
+			ds.Report(diag.SevError, section.Pos, section.Pos+len("<"+section.Section+">"), "VELA-SFC-UNCLOSED", "Close the section with </"+section.Section+">.", "%s", section.Message)
+		} else {
+			ds.Error(0, "%v", err)
+		}
 		return ds.All(), fmt.Errorf("parse: %w", err)
 	}
 	if !opts.Minify {

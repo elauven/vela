@@ -16,7 +16,8 @@ type EarlyOptions struct {
 // report itself: break/continue targets, labels, duplicate constructors,
 // super() outside a constructor, undeclared private names, regex flags and
 // grouping, await/yield outside async functions and generators, and
-// new.target outside functions. A program with such an error does not load,
+// new.target outside functions, import and export declarations below the top
+// level. A program with such an error does not load,
 // so the compiler must not accept it silently (task 055).
 func EarlyErrors(prog *JsProgram, opts EarlyOptions) []JSParseDiagnostic {
 	if prog == nil {
@@ -24,9 +25,26 @@ func EarlyErrors(prog *JsProgram, opts EarlyOptions) []JSParseDiagnostic {
 	}
 	c := &earlyChecker{}
 	top := earlyCtx{inFunc: opts.TopLevelIsFunction, async: opts.TopLevelAwait && !opts.TopLevelIsFunction}
+	topLevel := map[JsNode]bool{}
 	for _, s := range prog.Body {
+		topLevel[s] = true
 		c.node(s, top)
 	}
+	// The parser accepts import and export declarations in any statement
+	// position (`label: import …`); they belong to the top level.
+	WalkNode(prog, func(n JsNode) bool {
+		switch n.(type) {
+		case *JsImportDecl:
+			if !topLevel[n] {
+				c.report(n.NodePos(), "an import declaration may only appear at the top level")
+			}
+		case *JsExportDecl:
+			if !topLevel[n] {
+				c.report(n.NodePos(), "an export declaration may only appear at the top level")
+			}
+		}
+		return true
+	})
 	return c.diags
 }
 

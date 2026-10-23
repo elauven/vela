@@ -7,6 +7,7 @@ import (
 	"github.com/elauven/vela/internal/jsast"
 	"github.com/elauven/vela/internal/srcspan"
 
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -31,6 +32,9 @@ type SFC struct {
 	Script   string
 	Style    string
 	Template string
+
+	// Unclosed lists the sections without their closing tag (SectionError).
+	Unclosed []string
 
 	// ClientOnly is set by <script context="client">: the component is
 	// rendered only by the client (contract §9.2).
@@ -115,6 +119,8 @@ func NewScriptAST(source string, offset int) *ScriptAST {
 // ParseSFC splits a .vela source file into its three sections by scanning for
 // <script>, <style>, and <template> open/close tags without using regexp.
 // The scanner is case-insensitive and tolerates arbitrary tag attributes.
+// Without a <template>, or with a section that is not closed
+// (SectionError), the error comes with the SFC that could be read.
 //
 // Each section's absolute byte offset is also recorded so positions
 // within a section can be translated back to file-relative locations
@@ -130,8 +136,11 @@ func ParseSFC(src string) (*SFC, error) {
 	// extractBlock finds the first occurrence of <tag …>…</tag>
 	// (case-insensitive), returns the trimmed inner text plus the
 	// absolute byte offset of where that trimmed text starts in src.
+	// A section without its closing tag ends at the next section or at
+	// the end of the file, and is reported.
+	var unclosed *SectionError
+	low := asciiLower(src)
 	extractBlock := func(tag string) (string, int) {
-		low := asciiLower(src)
 		openTag := "<" + tag
 		closeTag := "</" + tag + ">"
 
@@ -145,11 +154,20 @@ func ParseSFC(src string) (*SFC, error) {
 		}
 		bodyStart := start + gt + 1
 
-		closeIdx := strings.Index(asciiLower(src[bodyStart:]), closeTag)
-		if closeIdx < 0 {
-			return "", 0
+		bodyEnd := bodyStart + strings.Index(low[bodyStart:], closeTag)
+		if bodyEnd < bodyStart {
+			bodyEnd = len(src)
+			for _, next := range []string{"<script", "<style", "<template"} {
+				if i := strings.Index(low[bodyStart:], next); i >= 0 && bodyStart+i < bodyEnd {
+					bodyEnd = bodyStart + i
+				}
+			}
+			sfc.Unclosed = append(sfc.Unclosed, tag)
+			if unclosed == nil || start < unclosed.Pos {
+				unclosed = &SectionError{Section: tag, Pos: start, Message: fmt.Sprintf("<%s> is not closed; add %s", tag, closeTag)}
+			}
 		}
-		raw := src[bodyStart : bodyStart+closeIdx]
+		raw := src[bodyStart:bodyEnd]
 		trimmed := strings.TrimSpace(raw)
 		if trimmed == "" {
 			return "", 0
@@ -167,20 +185,36 @@ func ParseSFC(src string) (*SFC, error) {
 	sfc.Style, sfc.StyleOffset = extractBlock("style")
 	sfc.Template, sfc.TemplateOffset = extractBlock("template")
 
-	if sfc.Template == "" {
-		return nil, fmt.Errorf("missing <template> section")
-	}
 	sfc.ScriptAST = NewScriptAST(sfc.Script, sfc.ScriptOffset)
-	sfc.TemplateAST = newTemplateAST(sfc.Template, sfc.TemplateOffset)
 	sfc.StyleAST = css.NewCssStylesheet(sfc.Style, sfc.StyleOffset)
+	if sfc.Template == "" {
+		// The script and style of a component being written are still
+		// analyzable (the language server, task 065).
+		return sfc, fmt.Errorf("missing <template> section")
+	}
+	sfc.TemplateAST = newTemplateAST(sfc.Template, sfc.TemplateOffset)
 	sfc.AST = &ComponentAST{
 		Source:   src,
 		Script:   sfc.ScriptAST,
 		Template: sfc.TemplateAST,
 		Style:    sfc.StyleAST,
 	}
+	if unclosed != nil {
+		return sfc, unclosed
+	}
 	return sfc, nil
 }
+
+// SectionError is a section of a component without its closing tag.
+// ParseSFC returns it with the SFC it read, the section ending at the next
+// section or at the end of the file.
+type SectionError struct {
+	Section string // script, style or template
+	Pos     int    // the opening tag
+	Message string
+}
+
+func (e *SectionError) Error() string { return e.Message }
 
 // asciiLower only folds ASCII bytes. SFC section tags are ASCII by grammar,
 // and preserving byte length is essential because their indices address src.
@@ -221,7 +255,12 @@ func newTemplateAST(source string, offset int) *TemplateAST {
 		Nodes:  nodes,
 	}
 	if err != nil {
-		ast.Diagnostics = append(ast.Diagnostics, TemplateParseDiagnostic{Pos: 0, Message: err.Error()})
+		pos := 0
+		var positioned *TemplateSyntaxError
+		if errors.As(err, &positioned) {
+			pos = min(max(positioned.Pos, 0), len(source))
+		}
+		ast.Diagnostics = append(ast.Diagnostics, TemplateParseDiagnostic{Pos: pos, Message: err.Error()})
 	}
 	return ast
 }
@@ -733,10 +772,25 @@ func parseTemplateAt(html string, base int) ([]Node, error) {
 	p := &parser{src: html, base: base}
 	nodes, err := p.parseNodes(nil)
 	if err != nil {
+		// An error without its own position is where parsing stopped.
+		var positioned *TemplateSyntaxError
+		if !errors.As(err, &positioned) {
+			err = &TemplateSyntaxError{Pos: p.pos, Err: err}
+		}
 		return nil, err
 	}
 	return nodes, nil
 }
+
+// TemplateSyntaxError is a template parse error at the byte offset Pos of
+// the template source.
+type TemplateSyntaxError struct {
+	Pos int
+	Err error
+}
+
+func (e *TemplateSyntaxError) Error() string { return e.Err.Error() }
+func (e *TemplateSyntaxError) Unwrap() error { return e.Err }
 
 func (p *parser) ch() byte {
 	if p.pos >= len(p.src) {
@@ -1123,7 +1177,7 @@ func (p *parser) parseElement() (Node, error) {
 // parseSlotNode parses a <slot name="header">fallback</slot> element.
 func (p *parser) parseSlotNode(elementStart int) (Node, error) {
 	slot := &SlotNode{Span: srcspan.SectionSpan{Start: p.base + elementStart}}
-	scratch := &ElementNode{}
+	scratch := &ElementNode{Tag: "slot"}
 	if err := p.parseAttrs(scratch); err != nil {
 		return nil, err
 	}
@@ -1166,7 +1220,7 @@ func (p *parser) parseSlotNode(elementStart int) (Node, error) {
 }
 func (p *parser) parseComponentNode(name string, elementStart int) (Node, error) {
 	comp := &ComponentNode{Span: srcspan.SectionSpan{Start: p.base + elementStart}, Name: name, Slots: map[string][]Node{}}
-	scratch := &ElementNode{}
+	scratch := &ElementNode{Tag: name}
 	if err := p.parseAttrs(scratch); err != nil {
 		return nil, err
 	}
@@ -1266,6 +1320,11 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 		name := p.src[start:p.pos]
 		if name == "" {
 			break
+		}
+		// A tag being written runs into the next tag or block: an attribute
+		// name never holds these, and as a prop name it would not compile.
+		if i := strings.IndexAny(name, "<{}\"'"); i >= 0 {
+			return &TemplateSyntaxError{Pos: start + i, Err: fmt.Errorf("unexpected %q in the attributes of <%s>; close the tag with > first", name[i:i+1], elem.Tag)}
 		}
 
 		p.skipWS()
