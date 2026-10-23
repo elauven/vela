@@ -106,7 +106,7 @@ The CLI prints the same objects with `--diagnostics=json`: one per line on
 stderr, also for a component that cannot be read.
 
 ```json
-{"severity":"error","code":"VELA-EVENT-MODIFIER","file":"src/App.vela","line":3,"column":12,"endLine":3,"endColumn":12,"message":"…","suggestion":"…"}
+{"severity":"error","code":"VELA-EVENT-MODIFIER","file":"src/App.vela","line":3,"column":12,"endLine":3,"endColumn":32,"message":"…","suggestion":"…"}
 ```
 
 - `severity`: `error`, `warning` or `hint`.
@@ -114,8 +114,12 @@ stderr, also for a component that cannot be read.
 - `file`: the component, with `/` separators on every platform.
 - `line`, `column`: one-based; columns count UTF-16 code units, as editors
   and source maps do.
-- `endLine`, `endColumn`: the end of the range. Diagnostics mark positions
-  today, so the end equals the start.
+- `endLine`, `endColumn`: the end of the range, exclusive, in the same
+  coordinates. A diagnostic covers the node it is about when the compiler
+  knows its extent (a statement, a call, an import, an attribute, a template
+  expression), otherwise the token at its start: an identifier, a tag name,
+  a `{…}` block or a string. A diagnostic without a source position (an
+  unreadable file) has an empty range at 1:1.
 - `suggestion`: the canonical correction, when there is one.
 
 ## vela.config.json

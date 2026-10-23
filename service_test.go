@@ -216,7 +216,7 @@ func TestServiceDiagnosticsMatchTextDiagnostics(t *testing.T) {
 			if !strings.HasPrefix(text, fmt.Sprintf("%s:%d:%d: [%s]", filepath.FromSlash(m.File), m.Line, m.Column, m.Severity)) {
 				t.Errorf("%s: JSON %+v does not locate text %q", name, m, text)
 			}
-			if m.Code != d.Code || m.Message != d.Message || m.EndLine != m.Line || m.EndColumn != m.Column {
+			if endLine, endCol := d.End(); m.Code != d.Code || m.Message != d.Message || m.EndLine != endLine || m.EndColumn != endCol {
 				t.Errorf("%s: JSON %+v, text %q", name, m, text)
 			}
 		}

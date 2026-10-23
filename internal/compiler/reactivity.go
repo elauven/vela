@@ -190,7 +190,7 @@ func validateScriptFormsWithAnalysis(prog *jsast.JsProgram, analysis *analyzer.A
 	}
 	for _, stmt := range prog.Body {
 		if exp, ok := stmt.(*jsast.JsExportDecl); ok && !isPropExport(exp) {
-			ds.ErrorWith(exp.Pos, "VELA-SCRIPT-EXPORT", "Declare a prop with `export let name = value`; move other exports to a .js module.", "a component script can only export props (`export let name`)")
+			errorOver(ds, exp, "VELA-SCRIPT-EXPORT", "Declare a prop with `export let name = value`; move other exports to a .js module.", "a component script can only export props (`export let name`)")
 		}
 	}
 	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
@@ -201,11 +201,11 @@ func validateScriptFormsWithAnalysis(prog *jsast.JsProgram, analysis *analyzer.A
 			if x.Source == "vela" || x.Source == "vela/store" {
 				for _, spec := range x.Specifiers {
 					if spec.Imported == "$$dispatch" || spec.Local == "$$dispatch" {
-						ds.ErrorWith(x.Pos, "VELA-BUILTIN-IMPORT", "Remove the import and call $$dispatch(name, detail) directly.", "$$dispatch is a Vela builtin; call it directly instead of importing it")
+						errorOver(ds, x, "VELA-BUILTIN-IMPORT", "Remove the import and call $$dispatch(name, detail) directly.", "$$dispatch is a Vela builtin; call it directly instead of importing it")
 					} else if !velaModuleExports()[spec.Imported] {
 						// The import would point to a runtime export that does not
 						// exist, and the module would fail to load (task 031).
-						ds.ErrorWith(x.Pos, "VELA-UNKNOWN-IMPORT", "Import one of: "+strings.Join(sortedVelaModuleExports(), ", ")+".", "%q is not exported by %q", spec.Imported, x.Source)
+						errorOver(ds, x, "VELA-UNKNOWN-IMPORT", "Import one of: "+strings.Join(sortedVelaModuleExports(), ", ")+".", "%q is not exported by %q", spec.Imported, x.Source)
 					}
 				}
 			}
@@ -254,12 +254,17 @@ func isPropExport(exp *jsast.JsExportDecl) bool {
 	return true
 }
 
+// errorOver reports an error over the source range of node n.
+func errorOver(ds *diag.DiagSet, n jsast.JsNode, code, suggestion, msg string, args ...interface{}) {
+	ds.Report(diag.SevError, n.NodePos(), n.NodeEnd(), code, suggestion, msg, args...)
+}
+
 func validateCallForm(call *jsast.JsCallExpr, analysis *analyzer.Analysis, ds *diag.DiagSet) {
 	if call == nil {
 		return
 	}
 	if isProvenNonCallable(call.Callee) {
-		ds.ErrorWith(call.Callee.NodePos(), "VELA-NONCALLABLE", "Call a function value instead of a literal.", "this literal value is not callable")
+		errorOver(ds, call.Callee, "VELA-NONCALLABLE", "Call a function value instead of a literal.", "this literal value is not callable")
 		return
 	}
 
@@ -267,32 +272,32 @@ func validateCallForm(call *jsast.JsCallExpr, analysis *analyzer.Analysis, ds *d
 	switch name {
 	case "$derived":
 		if len(call.Args) != 1 {
-			ds.ErrorWith(call.Pos, "VELA-DERIVED-ARITY", "Write $derived(expression).", "$derived expects exactly one pure expression")
+			errorOver(ds, call, "VELA-DERIVED-ARITY", "Write $derived(expression).", "$derived expects exactly one pure expression")
 			return
 		}
 		switch call.Args[0].(type) {
 		case *jsast.JsArrowFunc, *jsast.JsFuncExpr:
-			ds.ErrorWith(call.Args[0].NodePos(), "VELA-DERIVED-CALLBACK", "Write $derived(expression), for example: $derived(items.length).", "$derived does not accept a callback; pass the computed expression directly")
+			errorOver(ds, call.Args[0], "VELA-DERIVED-CALLBACK", "Write $derived(expression), for example: $derived(items.length).", "$derived does not accept a callback; pass the computed expression directly")
 		}
 	case "$state", "$state.deep":
 		if len(call.Args) != 1 {
-			ds.ErrorWith(call.Pos, "VELA-STATE-ARITY", "Pass exactly one initial value to $state(...).", "%s expects exactly one initial value", name)
+			errorOver(ds, call, "VELA-STATE-ARITY", "Pass exactly one initial value to $state(...).", "%s expects exactly one initial value", name)
 		}
 	case "$effect":
 		if len(call.Args) != 1 {
-			ds.ErrorWith(call.Pos, "VELA-EFFECT-ARITY", "Write $effect(() => { ... }).", "$effect expects exactly one callback")
+			errorOver(ds, call, "VELA-EFFECT-ARITY", "Write $effect(() => { ... }).", "$effect expects exactly one callback")
 			return
 		}
 		arrow, ok := call.Args[0].(*jsast.JsArrowFunc)
 		if !ok {
-			ds.ErrorWith(call.Args[0].NodePos(), "VELA-EFFECT-CALLBACK", "Pass an arrow callback, for example $effect(() => { ... }).", "$effect expects an arrow callback")
+			errorOver(ds, call.Args[0], "VELA-EFFECT-CALLBACK", "Pass an arrow callback, for example $effect(() => { ... }).", "$effect expects an arrow callback")
 			return
 		}
 		if _, ok := arrow.Body.(*jsast.JsBlock); !ok {
-			ds.ErrorWith(arrow.NodePos(), "VELA-EFFECT-CALLBACK", "Use a block callback, for example $effect(() => { ... }).", "$effect callback must use a block body")
+			errorOver(ds, arrow, "VELA-EFFECT-CALLBACK", "Use a block callback, for example $effect(() => { ... }).", "$effect callback must use a block body")
 		}
 	case "$props":
-		ds.ErrorWith(call.Pos, "VELA-INTRINSIC-UNSUPPORTED", "Declare component inputs with export let instead.", "$props() is not supported by Vela")
+		errorOver(ds, call, "VELA-INTRINSIC-UNSUPPORTED", "Declare component inputs with export let instead.", "$props() is not supported by Vela")
 	}
 
 	if analysis == nil {
@@ -304,16 +309,16 @@ func validateCallForm(call *jsast.JsCallExpr, analysis *analyzer.Analysis, ds *d
 	}
 	if lifecycle, found := analysis.IntrinsicAliases[ident.Name]; found {
 		if len(call.Args) != 1 {
-			ds.ErrorWith(call.Pos, "VELA-LIFECYCLE-ARITY", "Pass one block-bodied arrow callback.", "%s expects exactly one callback", lifecycle)
+			errorOver(ds, call, "VELA-LIFECYCLE-ARITY", "Pass one block-bodied arrow callback.", "%s expects exactly one callback", lifecycle)
 			return
 		}
 		arrow, ok := call.Args[0].(*jsast.JsArrowFunc)
 		if !ok {
-			ds.ErrorWith(call.Args[0].NodePos(), "VELA-LIFECYCLE-CALLBACK", "Pass a block-bodied arrow callback.", "%s expects an arrow callback", lifecycle)
+			errorOver(ds, call.Args[0], "VELA-LIFECYCLE-CALLBACK", "Pass a block-bodied arrow callback.", "%s expects an arrow callback", lifecycle)
 			return
 		}
 		if _, ok := arrow.Body.(*jsast.JsBlock); !ok {
-			ds.ErrorWith(arrow.NodePos(), "VELA-LIFECYCLE-CALLBACK", "Use a block-bodied arrow callback.", "%s callback must use a block body", lifecycle)
+			errorOver(ds, arrow, "VELA-LIFECYCLE-CALLBACK", "Use a block-bodied arrow callback.", "%s callback must use a block body", lifecycle)
 		}
 	}
 }
@@ -638,7 +643,11 @@ func checkCachedExprRefs(expr *sfcast.TemplateExpr, known map[string]bool, templ
 				pos = 0
 			}
 		}
-		ds.Error(pos, "invalid template expression %q: %s", exprText, parseErrors[0])
+		end := -1
+		if expr.Pos >= 0 {
+			end = pos + len(expr.Source)
+		}
+		ds.Report(diag.SevError, pos, end, "", "", "invalid template expression %q: %s", exprText, parseErrors[0])
 		return
 	}
 
@@ -784,12 +793,21 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 		}
 		return findTemplatePos(templateText, a.Name)
 	}
+	// attrEnd ends the range of a diagnostic over the attribute, or is -1
+	// (the token at its position) without a recorded extent.
+	attrEnd := func(a *sfcast.Attr) int {
+		if a == nil || a.Pos < 0 || a.Span.End <= a.Span.Start {
+			return -1
+		}
+		return a.Pos + a.Span.End - a.Span.Start
+	}
 	reported := map[string]bool{}
-	report := func(pos int, code, suggestion, msg string, args ...interface{}) {
+	report := func(a *sfcast.Attr, code, suggestion, msg string, args ...interface{}) {
 		text := fmt.Sprintf(msg, args...)
+		pos := attrPos(a)
 		key := fmt.Sprintf("%d:%s", pos, text)
 		if !reported[key] {
-			ds.ErrorWith(pos, code, suggestion, "%s", text)
+			ds.Report(diag.SevError, pos, attrEnd(a), code, suggestion, "%s", text)
 			reported[key] = true
 		}
 	}
@@ -808,21 +826,21 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 					if a.Name == "class" {
 						help = "Use one class attribute with class:name={condition} directives, or one :class={`static ${value}`}."
 					}
-					report(attrPos(a), "VELA-DUPLICATE-ATTR", help, "attribute %q is given more than once on the same element", a.Name)
+					report(a, "VELA-DUPLICATE-ATTR", help, "attribute %q is given more than once on the same element", a.Name)
 				}
 				seen[a.Name] = true
 			}
 			// Static attribute values are not interpolated.
 			if !a.IsEvent && !a.IsBind && !a.IsTwoWay && !a.IsClassDir && !a.IsStyleDir && a.Expr == nil {
 				if open := strings.Index(a.Value, "{"); open >= 0 && strings.Contains(a.Value[open:], "}") {
-					ds.WarnWith(attrPos(a), "VELA-ATTR-BRACES", "Write :"+a.Name+"={`...${value}...`} for a computed value.", "braces in the static value of %q are not interpolated; the attribute is the literal text %q", a.Name, a.Value)
+					ds.Report(diag.SevWarning, attrPos(a), attrEnd(a), "VELA-ATTR-BRACES", "Write :"+a.Name+"={`...${value}...`} for a computed value.", "braces in the static value of %q are not interpolated; the attribute is the literal text %q", a.Name, a.Value)
 				}
 			}
 			if a.IsEvent && strings.Contains(a.Name, ".") {
-				ds.ErrorWith(attrPos(a), "VELA-EVENT-MODIFIER", "Use @event with an explicit event.key check.", "event modifiers are not supported; use @%s with an explicit event.key check", strings.Split(a.Name, ".")[0])
+				ds.Report(diag.SevError, attrPos(a), attrEnd(a), "VELA-EVENT-MODIFIER", "Use @event with an explicit event.key check.", "event modifiers are not supported; use @%s with an explicit event.key check", strings.Split(a.Name, ".")[0])
 			}
 			if a.IsBind && strings.HasPrefix(a.Name, "class:") {
-				report(attrPos(a), "VELA-DYNAMIC-CLASS", "Use class:name={condition}.", "%q is not a dynamic attribute; use class:%s={condition}", a.Name, strings.TrimPrefix(a.Name, "class:"))
+				report(a, "VELA-DYNAMIC-CLASS", "Use class:name={condition}.", "%q is not a dynamic attribute; use class:%s={condition}", a.Name, strings.TrimPrefix(a.Name, "class:"))
 			}
 			if !a.IsClassDir && a.Name == "class" {
 				_, isObject := codegen.TemplateExprRoot(a.Expr).(*jsast.JsObjectExpr)
@@ -830,13 +848,13 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 					isObject = true
 				}
 				if isObject {
-					report(attrPos(a), "VELA-CLASS-OBJECT", "Use one class:name={condition} directive per class.", "object-valued :class is not supported; use one class:name={condition} directive per class")
+					report(a, "VELA-CLASS-OBJECT", "Use one class:name={condition} directive per class.", "object-valued :class is not supported; use one class:name={condition} directive per class")
 				}
 			}
 			if a.IsTwoWay && a.Name != "this" {
 				_, isIdent := codegen.TemplateExprIdent(a.Expr)
 				if !isIdent {
-					report(attrPos(a), "VELA-BIND-MEMBER", "Use a one-way binding plus an explicit event handler for member expressions.", "bind:%s requires a plain $state or $bindable prop name; use a one-way :%s binding and an event handler for member expressions", a.Name, a.Name)
+					report(a, "VELA-BIND-MEMBER", "Use a one-way binding plus an explicit event handler for member expressions.", "bind:%s requires a plain $state or $bindable prop name; use a one-way :%s binding and an event handler for member expressions", a.Name, a.Name)
 				}
 			}
 		}

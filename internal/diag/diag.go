@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode"
 	"unicode/utf16"
 )
 
@@ -36,8 +37,8 @@ func (s DiagSeverity) String() string {
 }
 
 // MachineDiagnostic is the JSON form of a Diagnostic (docs/TOOLING_PROTOCOL.md).
-// A diagnostic marks a position; EndLine and EndColumn equal Line and Column
-// until diagnostics carry ranges. File uses forward slashes on every platform.
+// EndLine and EndColumn end the range exclusively (Diagnostic.End). File uses
+// forward slashes on every platform.
 type MachineDiagnostic struct {
 	Severity   string
 	Code       string
@@ -67,9 +68,10 @@ func (d MachineDiagnostic) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out)
 }
 func (d *Diagnostic) Machine() MachineDiagnostic {
+	endLine, endCol := d.End()
 	return MachineDiagnostic{
 		Severity: d.Sev.String(), Code: d.Code, File: filepath.ToSlash(d.File), Line: d.Line,
-		Column: d.Col, EndLine: d.Line, EndColumn: d.Col, Message: d.Message,
+		Column: d.Col, EndLine: endLine, EndColumn: endCol, Message: d.Message,
 		Suggestion: d.Suggestion,
 	}
 }
@@ -88,14 +90,75 @@ func DiagnosticsJSON(diags []*Diagnostic) ([]byte, error) {
 }
 
 type Diagnostic struct {
-	Sev        DiagSeverity
-	File       string
-	Line       int
-	Col        int
+	Sev  DiagSeverity
+	File string
+	Line int
+	Col  int
+	// EndLine and EndCol end the range exclusively, in the coordinates of
+	// Line and Col; zero means the token at the start (End).
+	EndLine    int
+	EndCol     int
 	Code       string // stable machine-readable category, e.g. VELA-EVENT-MODIFIER
 	Message    string
 	Suggestion string // optional canonical correction
 	Source     string // the offending source line (for display)
+}
+
+// End is the exclusive end of the range: EndLine and EndCol when they are
+// set, else the end of the token at the start on the Source line, else the
+// start (a diagnostic of the file without a position).
+func (d *Diagnostic) End() (line, col int) {
+	if d.EndLine > 0 {
+		return d.EndLine, d.EndCol
+	}
+	return d.Line, d.Col + tokenLength(d.Source, d.Col)
+}
+
+// tokenLength is the UTF-16 length of the token at the one-based UTF-16
+// column col of line: an identifier, a tag name with its <, a balanced
+// {…} or (…) or a quoted string on the line, else one character; zero at
+// the end of the line.
+func tokenLength(line string, col int) int {
+	text := utf16.Encode([]rune(line))
+	start := col - 1
+	if start < 0 || start >= len(text) {
+		return 0
+	}
+	runes := []rune(string(utf16.Decode(text[start:])))
+	isIdent := func(r rune) bool { return r == '_' || r == '$' || unicode.IsLetter(r) || unicode.IsDigit(r) }
+	n := 1
+	switch first := runes[0]; {
+	case isIdent(first):
+		for n < len(runes) && isIdent(runes[n]) {
+			n++
+		}
+	case first == '<' && len(runes) > 1 && (unicode.IsLetter(runes[1]) || runes[1] == '/'):
+		n = 2
+		for n < len(runes) && (isIdent(runes[n]) || runes[n] == '-' || runes[n] == ':' || runes[n] == '.') {
+			n++
+		}
+	case first == '{' || first == '(':
+		closing := map[rune]rune{'{': '}', '(': ')'}[first]
+		depth := 0
+		for i, r := range runes {
+			if r == first {
+				depth++
+			} else if r == closing {
+				if depth--; depth == 0 {
+					n = i + 1
+					break
+				}
+			}
+		}
+	case first == '"' || first == '\'' || first == '`':
+		for i := 1; i < len(runes); i++ {
+			if runes[i] == first {
+				n = i + 1
+				break
+			}
+		}
+	}
+	return len(utf16.Encode(runes[:n]))
 }
 
 func (d *Diagnostic) String() string {
@@ -177,9 +240,11 @@ func (ds *DiagSet) currentOffset() int {
 	return 0
 }
 
-func (ds *DiagSet) add(sev DiagSeverity, pos int, code, suggestion, msg string) {
+// add records a diagnostic at pos; with end > pos it covers [pos, end),
+// otherwise the token at pos.
+func (ds *DiagSet) add(sev DiagSeverity, pos, end int, code, suggestion, msg string) {
 	line, col, srcLine := ds.resolve(pos + ds.currentOffset())
-	ds.diags = append(ds.diags, &Diagnostic{
+	d := &Diagnostic{
 		Sev:        sev,
 		File:       ds.file,
 		Line:       line,
@@ -188,35 +253,46 @@ func (ds *DiagSet) add(sev DiagSeverity, pos int, code, suggestion, msg string) 
 		Message:    msg,
 		Suggestion: suggestion,
 		Source:     srcLine,
-	})
+	}
+	if end > pos && pos+ds.currentOffset() >= 0 && end+ds.currentOffset() <= len(ds.src) {
+		d.EndLine, d.EndCol, _ = ds.resolve(end + ds.currentOffset())
+	}
+	ds.diags = append(ds.diags, d)
 }
 
 func (ds *DiagSet) Error(pos int, msg string, args ...interface{}) {
-	ds.add(SevError, pos, "", "", fmt.Sprintf(msg, args...))
+	ds.add(SevError, pos, -1, "", "", fmt.Sprintf(msg, args...))
 }
 
 // ErrorWith records a stable diagnostic category and canonical correction while
 // retaining Message for existing API callers and human-readable output.
 func (ds *DiagSet) ErrorWith(pos int, code, suggestion, msg string, args ...interface{}) {
-	ds.add(SevError, pos, code, suggestion, fmt.Sprintf(msg, args...))
+	ds.add(SevError, pos, -1, code, suggestion, fmt.Sprintf(msg, args...))
 }
 
 func (ds *DiagSet) Warn(pos int, msg string, args ...interface{}) {
-	ds.add(SevWarning, pos, "", "", fmt.Sprintf(msg, args...))
+	ds.add(SevWarning, pos, -1, "", "", fmt.Sprintf(msg, args...))
 }
 
 // WarnWith records a warning with a stable machine-readable code.
 func (ds *DiagSet) WarnWith(pos int, code, suggestion, msg string, args ...interface{}) {
-	ds.add(SevWarning, pos, code, suggestion, fmt.Sprintf(msg, args...))
+	ds.add(SevWarning, pos, -1, code, suggestion, fmt.Sprintf(msg, args...))
 }
 
 func (ds *DiagSet) Hint(pos int, msg string, args ...interface{}) {
-	ds.add(SevHint, pos, "", "", fmt.Sprintf(msg, args...))
+	ds.add(SevHint, pos, -1, "", "", fmt.Sprintf(msg, args...))
 }
 
 // HintWith records an informational diagnostic with a stable code.
 func (ds *DiagSet) HintWith(pos int, code, suggestion, msg string, args ...interface{}) {
-	ds.add(SevHint, pos, code, suggestion, fmt.Sprintf(msg, args...))
+	ds.add(SevHint, pos, -1, code, suggestion, fmt.Sprintf(msg, args...))
+}
+
+// Report records a diagnostic of severity sev over the source range
+// [start, end), for a node whose extent is known; the other methods cover
+// the token at their position.
+func (ds *DiagSet) Report(sev DiagSeverity, start, end int, code, suggestion, msg string, args ...interface{}) {
+	ds.add(sev, start, end, code, suggestion, fmt.Sprintf(msg, args...))
 }
 
 // HasErrors returns true if any error-severity diagnostic was recorded.

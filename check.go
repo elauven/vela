@@ -124,7 +124,13 @@ func sarifLog(diags []*Diagnostic) map[string]any {
 		if d.File != "" {
 			location := map[string]any{"artifactLocation": map[string]any{"uri": sarifURI(d.File)}}
 			if d.Line > 0 {
-				location["region"] = map[string]any{"startLine": d.Line, "startColumn": max(d.Col, 1)}
+				region := map[string]any{"startLine": d.Line, "startColumn": max(d.Col, 1)}
+				// SARIF's endColumn is exclusive like Diagnostic.End; an
+				// empty range is the start alone.
+				if endLine, endCol := d.End(); endLine > d.Line || endCol > d.Col {
+					region["endLine"], region["endColumn"] = endLine, endCol
+				}
+				location["region"] = region
 			}
 			result["locations"] = []map[string]any{{"physicalLocation": location}}
 		}

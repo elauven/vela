@@ -936,7 +936,8 @@ vela check --project src --watch         # check again on every change
 - `--format`: `text` (default), `json` (one document with the counts and
   the diagnostics in the form of
   [TOOLING_PROTOCOL.md](TOOLING_PROTOCOL.md#diagnostics)) or `sarif`
-  (SARIF 2.1.0, one rule per `VELA-*` code).
+  (SARIF 2.1.0, one rule per `VELA-*` code). Both carry the range each
+  diagnostic covers.
 - `--fail-on=error` (default) or `warning`.
 - Exit codes: 0 no diagnostics at or above `--fail-on`, 1 some, 2 a usage
   or I/O error.

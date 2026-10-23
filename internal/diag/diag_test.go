@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf16"
 )
 
 func TestDiagnosticStringRendersCodeAndSuggestion(t *testing.T) {
@@ -46,5 +47,47 @@ func TestDiagnosticsJSONIsCompactAndMachineReadable(t *testing.T) {
 	if len(got) != 1 || got[0]["severity"] != "error" || got[0]["code"] != "VELA-EVENT-MODIFIER" ||
 		got[0]["column"] != float64(1) || got[0]["suggestion"] == "" {
 		t.Fatalf("machine diagnostics = %s", data)
+	}
+}
+
+func TestDiagnosticRangeCoversTheToken(t *testing.T) {
+	src := "<p>🙂 {#each items as item}<Card.Body x='a b' :y={f({z: 1})}/>\n"
+	for _, c := range []struct{ at, want string }{
+		{"items", "items"},
+		{"{#each", "{#each items as item}"},
+		{"<Card", "<Card.Body"},
+		{"'a b'", "'a b'"},
+		{"{f(", "{f({z: 1})}"},
+		{"/>", "/"},
+		{"\n", ""},
+	} {
+		ds := NewDiagSet("App.vela", src)
+		ds.Error(strings.Index(src, c.at), "x")
+		d := ds.All()[0]
+		line, col := d.End()
+		units := utf16.Encode([]rune(d.Source))
+		if line != d.Line || col < d.Col || col-1 > len(units) {
+			t.Fatalf("%q: end %d:%d of %d:%d", c.at, line, col, d.Line, d.Col)
+		}
+		if got := string(utf16.Decode(units[d.Col-1 : col-1])); got != c.want {
+			t.Errorf("%q covers %q, want %q", c.at, got, c.want)
+		}
+	}
+}
+
+func TestReportCoversTheRange(t *testing.T) {
+	src := "<script>\nlet a = f(\n  1);\n</script>"
+	ds := NewDiagSet("App.vela", src)
+	ds.PushOffset(len("<script>"))
+	ds.Report(SevWarning, len("\nlet a = "), len("\nlet a = f(\n  1)"), "VELA-X", "", "call %d", 1)
+	ds.PopOffset()
+	m := ds.All()[0].Machine()
+	if m.Severity != "warning" || m.Message != "call 1" || m.Line != 2 || m.Column != 9 || m.EndLine != 3 || m.EndColumn != 5 {
+		t.Errorf("range %+v", m)
+	}
+	// Without a position the range is empty.
+	d := &Diagnostic{File: "App.vela", Line: 1, Col: 1}
+	if line, col := d.End(); line != 1 || col != 1 {
+		t.Errorf("end %d:%d", line, col)
 	}
 }

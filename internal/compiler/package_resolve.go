@@ -118,7 +118,7 @@ func checkScriptPackageImports(src string, script *sfcast.ScriptAST, ds *diag.Di
 			continue
 		}
 		if problem := CheckPackageSpecifier(filepath.Dir(src), spec); problem != "" {
-			ds.WarnWith(stmt.NodePos(), DepsCheckDiagnosticCode, "install the package, or provide it through the import map or bundler of the application", "%s", problem)
+			ds.Report(diag.SevWarning, stmt.NodePos(), stmt.NodeEnd(), DepsCheckDiagnosticCode, "install the package, or provide it through the import map or bundler of the application", "%s", problem)
 		}
 	}
 }
