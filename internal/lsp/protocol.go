@@ -1,5 +1,7 @@
 package lsp
 
+import "encoding/json"
+
 // The subset of the Language Server Protocol 3.17 types the server uses.
 // Positions are zero-based; characters count UTF-16 code units, the
 // default position encoding and the one of Vela diagnostics.
@@ -46,6 +48,13 @@ type InitializeParams struct {
 		// DiagnosticsDelay is the debounce of diagnostics after a change, in
 		// milliseconds (default 150).
 		DiagnosticsDelay *int `json:"diagnosticsDelay"`
+		TypeScript       struct {
+			// TSDK is a TypeScript with the language service API (5.x or
+			// 6.x): its lib directory or package directory.
+			TSDK string `json:"tsdk"`
+			// Enable false turns the JavaScript features off.
+			Enable *bool `json:"enable"`
+		} `json:"typescript"`
 	} `json:"initializationOptions"`
 }
 
@@ -109,10 +118,12 @@ type CompletionItemKind int
 
 const (
 	KindText      CompletionItemKind = 1
+	KindMethod    CompletionItemKind = 2
 	KindFunction  CompletionItemKind = 3
 	KindField     CompletionItemKind = 5
 	KindVariable  CompletionItemKind = 6
 	KindClass     CompletionItemKind = 7
+	KindInterface CompletionItemKind = 8
 	KindModule    CompletionItemKind = 9
 	KindProperty  CompletionItemKind = 10
 	KindKeyword   CompletionItemKind = 14
@@ -138,6 +149,7 @@ type CompletionItem struct {
 	FilterText       string             `json:"filterText,omitempty"`
 	InsertTextFormat int                `json:"insertTextFormat,omitempty"`
 	TextEdit         *TextEdit          `json:"textEdit,omitempty"`
+	Data             json.RawMessage    `json:"data,omitempty"`
 }
 
 type CompletionList struct {
@@ -148,4 +160,13 @@ type CompletionList struct {
 type LogMessageParams struct {
 	Type    int    `json:"type"`
 	Message string `json:"message"`
+}
+
+type ReferenceParams struct {
+	TextDocumentPositionParams
+}
+
+type RenameParams struct {
+	TextDocumentPositionParams
+	NewName string `json:"newName"`
 }

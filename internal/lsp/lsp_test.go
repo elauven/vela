@@ -138,12 +138,19 @@ func mustJSON(v any) json.RawMessage {
 	return data
 }
 
+// initialize initializes the server without TypeScript: the Vela features
+// alone (initializeTS adds it).
 func (c *client) initialize(root string) {
+	c.t.Helper()
+	c.initializeWith(root, map[string]any{"enable": false})
+}
+
+func (c *client) initializeWith(root string, typescript map[string]any) {
 	c.t.Helper()
 	var res struct {
 		Capabilities map[string]any `json:"capabilities"`
 	}
-	c.result("initialize", map[string]any{"processId": nil, "rootUri": pathToURI(root), "initializationOptions": map[string]any{"diagnosticsDelay": 0}}, &res)
+	c.result("initialize", map[string]any{"processId": nil, "rootUri": pathToURI(root), "initializationOptions": map[string]any{"diagnosticsDelay": 0, "typescript": typescript}}, &res)
 	if res.Capabilities["definitionProvider"] != true {
 		c.t.Fatalf("capabilities %v", res.Capabilities)
 	}
@@ -272,12 +279,25 @@ func TestSSRChecksOnSave(t *testing.T) {
 
 func location(t *testing.T, c *client, uri string, p Position) Location {
 	t.Helper()
-	var loc *Location
-	c.result("textDocument/definition", params(uri, p), &loc)
-	if loc == nil {
+	// A Location, or a list of them (TypeScript's).
+	var raw json.RawMessage
+	c.result("textDocument/definition", params(uri, p), &raw)
+	var locs []Location
+	if strings.HasPrefix(string(raw), "[") {
+		if err := json.Unmarshal(raw, &locs); err != nil {
+			t.Fatal(err)
+		}
+	} else if string(raw) != "null" {
+		var loc Location
+		if err := json.Unmarshal(raw, &loc); err != nil {
+			t.Fatal(err)
+		}
+		locs = append(locs, loc)
+	}
+	if len(locs) == 0 {
 		t.Fatalf("no definition at %+v", p)
 	}
-	return *loc
+	return locs[0]
 }
 
 func TestDefinition(t *testing.T) {

@@ -13,17 +13,23 @@ import (
 
 // scriptOf is the analysis that knows the script names: the current one,
 // else the last one whose script parsed.
-func scriptOf(doc *document, c *component) *component {
-	if c.analysis.Scope == nil && doc.lastScript != nil {
-		return doc.lastScript
+func (s *server) scriptOf(doc *document, c *component) *component {
+	s.mu.Lock()
+	last := doc.lastScript
+	s.mu.Unlock()
+	if c.analysis.Scope == nil && last != nil {
+		return last
 	}
 	return c
 }
 
 // templateOf is the template nodes: the current ones, else the last parsed.
-func templateOf(doc *document, c *component) []sfcast.Node {
-	if c.analysis.Template == nil && doc.lastTemplate != nil {
-		return doc.lastTemplate.analysis.Template
+func (s *server) templateOf(doc *document, c *component) []sfcast.Node {
+	s.mu.Lock()
+	last := doc.lastTemplate
+	s.mu.Unlock()
+	if c.analysis.Template == nil && last != nil {
+		return last.analysis.Template
 	}
 	return c.analysis.Template
 }
@@ -68,6 +74,9 @@ func (s *server) definition(doc *document, off int) any {
 		if file := importAt(c, off); file != "" {
 			return Location{URI: pathToURI(file)}
 		}
+		if locs := s.tsDefinition(c, off); len(locs) > 0 {
+			return locs
+		}
 		b := c.bindingAt(off)
 		if b == nil {
 			return nil
@@ -81,11 +90,11 @@ func (s *server) definition(doc *document, off int) any {
 		return s.locationIn(doc.path, c, start, end)
 	case inTagName:
 		name := strings.TrimPrefix(tagName(src, ctx.wordStart-1), "/")
-		if file := scriptOf(doc, c).componentFile(name); file != "" {
+		if file := s.scriptOf(doc, c).componentFile(name); file != "" {
 			return Location{URI: pathToURI(file)}
 		}
 	case inAttrName:
-		file := scriptOf(doc, c).componentFile(ctx.tag)
+		file := s.scriptOf(doc, c).componentFile(ctx.tag)
 		child := s.openComponent(file)
 		if file == "" || child == nil {
 			return nil
@@ -105,12 +114,15 @@ func (s *server) definition(doc *document, off int) any {
 			}
 		}
 	case inExpr:
+		if locs := s.tsDefinition(c, off); len(locs) > 0 {
+			return locs
+		}
 		start, end := wordAt(src, off)
 		if start == end || (start > 0 && src[start-1] == '.') {
 			return nil
 		}
 		name := src[start:end]
-		for _, l := range c.templateLocals(templateOf(doc, c), off) {
+		for _, l := range c.templateLocals(s.templateOf(doc, c), off) {
 			if l.name == name {
 				if l.end > l.pos {
 					return s.locationIn(doc.path, c, l.pos, l.end)
@@ -184,6 +196,17 @@ func markdown(code, note string) *Hover {
 	return &Hover{Contents: MarkupContent{Kind: "markdown", Value: value}}
 }
 
+// tsMarkdown is a TypeScript hover with the Vela kind of the name.
+func tsMarkdown(info *tsQuickInfo, note string) *Hover {
+	value := "```ts\n" + info.Display + "\n```"
+	for _, part := range []string{info.Documentation, note} {
+		if part != "" {
+			value += "\n\n" + part
+		}
+	}
+	return &Hover{Contents: MarkupContent{Kind: "markdown", Value: value}}
+}
+
 // describe is the hover of a top-level name of the component.
 func describe(c *component, name string) *Hover {
 	var decl string
@@ -236,24 +259,31 @@ func (s *server) hover(doc *document, off int) any {
 	}
 	switch ctx.kind {
 	case inScript:
+		start, end := wordAt(src, off)
 		b := c.bindingAt(off)
+		note := ""
+		if b != nil && b.Scope != nil && b.Scope.Parent != nil && b.Scope.Parent.Parent == nil {
+			note = c.stateKind(b.Name)
+		}
+		if info := s.tsHover(c, off); info != nil {
+			return withRange(tsMarkdown(info, note), start, end)
+		}
 		if b == nil {
 			return nil
 		}
-		start, end := wordAt(src, off)
-		if b.Scope != nil && b.Scope.Parent != nil && b.Scope.Parent.Parent == nil {
+		if note != "" {
 			return withRange(describe(c, b.Name), start, end)
 		}
 		// A local of a function or block.
 		return withRange(markdown(c.declaration(b), ""), start, end)
 	case inTagName:
 		name := strings.TrimPrefix(tagName(src, ctx.wordStart-1), "/")
-		file := scriptOf(doc, c).componentFile(name)
+		file := s.scriptOf(doc, c).componentFile(name)
 		if child := s.openComponent(file); file != "" && child != nil {
 			return withRange(componentSummary(name, file, child), ctx.wordStart, ctx.wordStart+len(tagName(src, ctx.wordStart-1)))
 		}
 	case inAttrName:
-		file := scriptOf(doc, c).componentFile(ctx.tag)
+		file := s.scriptOf(doc, c).componentFile(ctx.tag)
 		child := s.openComponent(file)
 		if file == "" || child == nil {
 			return nil
@@ -275,16 +305,30 @@ func (s *server) hover(doc *document, off int) any {
 		}
 	case inExpr:
 		start, end := wordAt(src, off)
-		if start == end || (start > 0 && src[start-1] == '.') {
-			return nil
-		}
+		member := start > 0 && src[start-1] == '.'
 		name := src[start:end]
-		for _, l := range c.templateLocals(templateOf(doc, c), off) {
-			if l.name == name {
-				return withRange(markdown("", l.detail), start, end)
+		note := ""
+		local := false
+		if !member {
+			for _, l := range c.templateLocals(s.templateOf(doc, c), off) {
+				if l.name == name {
+					note, local = l.detail, true
+				}
+			}
+			if !local {
+				note = s.scriptOf(doc, c).stateKind(name)
 			}
 		}
-		return withRange(describe(scriptOf(doc, c), name), start, end)
+		if info := s.tsHover(c, off); info != nil {
+			return withRange(tsMarkdown(info, note), start, end)
+		}
+		if start == end || member {
+			return nil
+		}
+		if local {
+			return withRange(markdown("", note), start, end)
+		}
+		return withRange(describe(s.scriptOf(doc, c), name), start, end)
 	}
 	return nil
 }
@@ -342,7 +386,7 @@ func (s *server) completion(doc *document, off int) any {
 	edit := func(start, end int, label, snippet string, kind CompletionItemKind, detail string) CompletionItem {
 		return CompletionItem{Label: label, Kind: kind, Detail: detail, InsertTextFormat: insertSnippet, TextEdit: &TextEdit{Range: c.text.rangeOf(start, end), NewText: snippet}}
 	}
-	script := scriptOf(doc, c)
+	script := s.scriptOf(doc, c)
 	names := func(start int) {
 		if script.analysis.Scope == nil {
 			return
@@ -368,8 +412,40 @@ func (s *server) completion(doc *document, off int) any {
 			items = append(items, edit(start, off, name, escapeSnippet(name), kind, detail))
 		}
 	}
+	// TypeScript knows the script's names, the template's block names and
+	// the globals; the Vela names are the fallback without it.
+	withTS := func() bool {
+		tsItems, member, ok := s.tsCompletion(c, off, ctx.wordStart)
+		if !ok {
+			return false
+		}
+		if member {
+			items = tsItems
+			return true
+		}
+		runeNames := map[string]bool{}
+		if ctx.kind == inScript {
+			for _, r := range runes {
+				runeNames[r.name] = true
+				items = append(items, edit(ctx.wordStart, off, r.name, r.snippet, KindKeyword, r.detail))
+			}
+		}
+		for _, item := range tsItems {
+			if runeNames[item.Label] || (ctx.kind == inExpr && strings.HasPrefix(item.Label, "$")) {
+				continue
+			}
+			if detail := script.stateKind(item.Label); detail != "" {
+				item.Detail = detail
+			}
+			items = append(items, item)
+		}
+		return true
+	}
 	switch ctx.kind {
 	case inScript:
+		if withTS() {
+			break
+		}
 		for _, r := range runes {
 			items = append(items, edit(ctx.wordStart, off, r.name, r.snippet, KindKeyword, r.detail))
 		}
@@ -409,15 +485,21 @@ func (s *server) completion(doc *document, off int) any {
 			items = append(items, item)
 		}
 	case inExpr:
-		if ctx.wordStart > 0 && src[ctx.wordStart-1] == '.' {
-			return CompletionList{Items: []CompletionItem{}}
+		member := ctx.wordStart > 0 && src[ctx.wordStart-1] == '.'
+		if !withTS() {
+			if member {
+				return CompletionList{Items: []CompletionItem{}}
+			}
+			for i, l := range c.templateLocals(s.templateOf(doc, c), off) {
+				item := edit(ctx.wordStart, off, l.name, escapeSnippet(l.name), KindVariable, l.detail)
+				item.SortText = fmt.Sprintf("0%03d", i)
+				items = append(items, item)
+			}
+			names(ctx.wordStart)
 		}
-		for i, l := range c.templateLocals(templateOf(doc, c), off) {
-			item := edit(ctx.wordStart, off, l.name, escapeSnippet(l.name), KindVariable, l.detail)
-			item.SortText = fmt.Sprintf("0%03d", i)
-			items = append(items, item)
+		if member {
+			break
 		}
-		names(ctx.wordStart)
 		// Right after the opening brace of a text expression, the blocks.
 		if ctx.tag == "" && ctx.wordStart == off && off > 0 && src[off-1] == '{' {
 			end := off

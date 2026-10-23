@@ -47,6 +47,10 @@ type server struct {
 	ready     bool                    // initialize answered
 	shutdown  bool
 	checkDone func() // test hook: a project check finished
+
+	ts       *tsClient     // the TypeScript helper, nil without one
+	tsReady  chan struct{} // closed when the helper started or failed
+	virtuals map[string]*virtualDoc
 }
 
 // Serve runs the language server on in and out until exit or the end of
@@ -54,7 +58,13 @@ type server struct {
 // initialize: the compiler resolves vela.config.json, scope classes and
 // diagnostic paths from it, as `vela` run in the root does.
 func Serve(in io.Reader, out io.Writer) error {
-	s := &server{conn: newConn(in, out), delay: 150 * time.Millisecond, docs: map[string]*document{}, ssr: map[string][]Diagnostic{}}
+	s := &server{conn: newConn(in, out), delay: 150 * time.Millisecond, docs: map[string]*document{}, ssr: map[string][]Diagnostic{}, virtuals: map[string]*virtualDoc{}}
+	defer func() {
+		if s.tsReady != nil {
+			<-s.tsReady
+			s.ts.close()
+		}
+	}()
 	return s.run()
 }
 
@@ -113,12 +123,18 @@ func (s *server) request(m *message) (any, error) {
 	case "shutdown":
 		s.shutdown = true
 		return nil, nil
-	case "textDocument/definition", "textDocument/hover", "textDocument/completion":
-		var p TextDocumentPositionParams
+	case "completionItem/resolve":
+		var item CompletionItem
+		if err := decode(m.Params, &item); err != nil {
+			return nil, err
+		}
+		return s.resolveCompletion(item), nil
+	case "textDocument/definition", "textDocument/hover", "textDocument/completion", "textDocument/references", "textDocument/rename", "textDocument/signatureHelp":
+		var p RenameParams
 		if err := decode(m.Params, &p); err != nil {
 			return nil, err
 		}
-		doc, off := s.at(p)
+		doc, off := s.at(p.TextDocumentPositionParams)
 		if doc == nil {
 			return nil, nil
 		}
@@ -127,6 +143,12 @@ func (s *server) request(m *message) (any, error) {
 			return s.definition(doc, off), nil
 		case "textDocument/hover":
 			return s.hover(doc, off), nil
+		case "textDocument/references":
+			return s.references(doc, off), nil
+		case "textDocument/rename":
+			return s.rename(doc, off, p.NewName)
+		case "textDocument/signatureHelp":
+			return s.signatureHelp(doc, off), nil
 		default:
 			return s.completion(doc, off), nil
 		}
@@ -166,14 +188,20 @@ func (s *server) initialize(params json.RawMessage) (any, error) {
 		service = &compiler.CompilerService{Cwd: cwd}
 	}
 	s.project = &project{service: service, disk: map[string]diskEntry{}}
+	if enable := p.InitializationOptions.TypeScript.Enable; enable == nil || *enable {
+		s.startTypeScript(service.Cwd, p.InitializationOptions.TypeScript.TSDK)
+	}
 	s.ready = true
 	return map[string]any{
 		"capabilities": map[string]any{
-			"positionEncoding":   "utf-16",
-			"textDocumentSync":   map[string]any{"openClose": true, "change": 2, "save": map[string]any{"includeText": false}},
-			"definitionProvider": true,
-			"hoverProvider":      true,
-			"completionProvider": map[string]any{"triggerCharacters": []string{"<", ":", "@", "{", "#", "/"}},
+			"positionEncoding":      "utf-16",
+			"textDocumentSync":      map[string]any{"openClose": true, "change": 2, "save": map[string]any{"includeText": false}},
+			"definitionProvider":    true,
+			"hoverProvider":         true,
+			"referencesProvider":    true,
+			"renameProvider":        true,
+			"signatureHelpProvider": map[string]any{"triggerCharacters": []string{"(", ","}},
+			"completionProvider":    map[string]any{"triggerCharacters": []string{"<", ":", "@", "{", "#", "/", "."}, "resolveProvider": true},
 		},
 		"serverInfo": map[string]any{"name": "vela-lsp", "version": runtime.Version},
 	}, nil
@@ -333,6 +361,9 @@ func (s *server) publish(uri string, version int) {
 	}
 	if len(diags) == 0 && res.Error != "" && !res.OK {
 		diags = append(diags, Diagnostic{Severity: SeverityError, Source: "vela", Message: res.Error})
+	}
+	if c := s.componentOf(doc); c.text.src == source {
+		diags = append(diags, s.tsDiagnostics(c)...)
 	}
 
 	s.mu.Lock()

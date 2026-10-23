@@ -31,7 +31,8 @@ accepted. `vela-lsp --version` prints the version.
 - **Hover**: the declaration and kind of a name — prop, bindable prop,
   `$state`, `$state.deep`, `$derived`, function, import; the props and
   events of a component tag.
-- **Completion**: the props, bindable props and events of the child on a
+- **Completion** (with the JavaScript names of TypeScript, below): the
+  props, bindable props and events of the child on a
   component tag; directives (`:`, `@event`, `bind:`, `class:`, `style:`)
   on an element; imported components after `<`; block tags after `{#`,
   `{:` and `{/`; the script's names and the enclosing `{#each}` names in
@@ -50,11 +51,49 @@ milliseconds.
 
 ## JavaScript inside components
 
-The language features of JavaScript itself (types of browser and package
-APIs, members, signatures, rename) come from TypeScript's language service
-over a virtual document of each component; that part is task 065c. Until
-then `vela-lsp` knows the names a component declares and the runes, and the
-editor's grammar highlights the script.
+The language features of JavaScript itself come from TypeScript's language
+service, the way the Svelte and Vue language servers provide them. For each
+component `vela-lsp` builds a virtual JavaScript document: the `<script>`
+as written, then the template's expressions inside a render function whose
+blocks declare the `{#each}` and `{#await}` names, with declarations of the
+runes and of `vela` / `vela/store`. A small helper run with `node`
+(embedded in `vela-lsp`) gives it to TypeScript, and the answers are mapped
+back to the component:
+
+- completion of members, globals, browser and package APIs, in the script
+  and in template expressions (`{item.` lists the fields of the `{#each}`
+  item), with signatures and documentation;
+- hover with the type, merged with the Vela kind (`let count: number` —
+  derived); an event handler's parameter has its event type
+  (`@click={(e) => …}` gives `e: PointerEvent`);
+- go to definition into JavaScript modules and packages, references,
+  rename, signature help;
+- type errors with `// @ts-check` at the top of the script or `checkJs` in
+  `jsconfig.json`; without them the script is not type checked, and syntax
+  errors come from the compiler.
+
+TypeScript is not bundled. The server uses, in order:
+
+1. `initializationOptions.typescript.tsdk`: a TypeScript the editor
+   provides (its `lib` directory or package directory; the VS Code
+   extension passes its own);
+2. `typescript` in the workspace's `node_modules`;
+3. the global `typescript` (`npm root -g`).
+
+It needs the language service API of TypeScript 5.x or 6.x: TypeScript 7,
+the native compiler, has none yet. Install `npm i -D typescript@6` when the
+workspace has none or has 7. Without node or a usable TypeScript the server
+logs why once and keeps the Vela features. `typescript.enable: false` in
+`initializationOptions` turns the JavaScript features off.
+
+`jsconfig.json` or `tsconfig.json` in the workspace root sets the compiler
+options; without one the project is JavaScript (ES modules, the DOM, not
+strict).
+
+Not supported yet: renaming a prop or a component import (their attribute
+and tag names are not JavaScript; the server refuses rather than leave them
+behind), and navigation from a `.js` file into a component, which belongs
+to the editor's own TypeScript server.
 
 ## Neovim
 

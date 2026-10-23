@@ -80,7 +80,7 @@ jobs:
   # The tests that bundle and run in Chromium skip without node_modules,
   # which the test job does not install.
   bundlers:
-    name: Bundler plugin, recipes and SSR with Vite
+    name: Bundler plugin, recipes, SSR with Vite, TypeScript in the language server
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -96,7 +96,8 @@ jobs:
           cache: npm
 
       - name: Install the bundlers
-        # Pinned by package-lock.json: vite, rolldown, esbuild, unplugin.
+        # Pinned by package-lock.json: vite, rolldown, esbuild, unplugin,
+        # typescript.
         run: npm ci
 
       - name: Install Playwright Chromium
@@ -106,6 +107,12 @@ jobs:
         env:
           VELA_REQUIRE_BUNDLERS: '1'
         run: go test -count=1 -v -run 'TestBundler|TestSSRWithVite|TestCompilerNpmPackage' .
+
+      - name: Language server with TypeScript
+        # typescript@6 of package-lock.json (task 065c).
+        env:
+          VELA_REQUIRE_BUNDLERS: '1'
+        run: go test -count=1 -v -run 'TestTypeScript' ./internal/lsp/
 
   build:
     name: Build binaries

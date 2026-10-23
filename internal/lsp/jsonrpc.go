@@ -25,6 +25,7 @@ const (
 	codeInternalError        = -32603
 	codeServerNotInitialized = -32002
 	codeRequestCancelled     = -32800
+	codeRequestFailed        = -32803
 )
 
 type rpcError struct {
