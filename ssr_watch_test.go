@@ -9,9 +9,28 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+// watchLog is the status output of a watcher goroutine, read by the test.
+type watchLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *watchLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *watchLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
+}
 
 // readTree returns the files under root by slash path, without skip.
 func readTree(t *testing.T, root string, skip map[string]bool) map[string]string {
@@ -36,7 +55,7 @@ func readTree(t *testing.T, root string, skip map[string]bool) map[string]string
 }
 
 // waitForBuild waits until the stamp names a build that started after since.
-func waitForBuild(t *testing.T, stamp string, since time.Time, log *bytes.Buffer) {
+func waitForBuild(t *testing.T, stamp string, since time.Time, log *watchLog) {
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
@@ -59,7 +78,7 @@ func TestSSRWatchRebuildsLikeACleanBuild(t *testing.T) {
 	src, out := filepath.Join(root, "src"), filepath.Join(root, "out")
 	writeTestFile(t, filepath.Join(src, "Gone.vela"), "<template><p class=\"gone\">gone</p></template>\n")
 
-	var log bytes.Buffer
+	var log watchLog
 	opts := CompileOptions{StatusWriter: &log, ErrWriter: &log, SSRModule: SSRDefaultModule}
 	done := make(chan struct{})
 	stopped := make(chan struct{})
@@ -68,17 +87,20 @@ func TestSSRWatchRebuildsLikeACleanBuild(t *testing.T) {
 		watchSSRProject(src, out, opts, false, 20*time.Millisecond, done)
 		close(stopped)
 	}()
-	defer func() {
-		close(done)
-		<-stopped
-	}()
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			close(done)
+			<-stopped
+		})
+	}
+	defer stop()
 	stamp := filepath.Join(out, SSRReadyStamp)
 	waitForBuild(t, stamp, start, &log)
 	if _, err := os.Stat(filepath.Join(out, "server", "components", "gone.go")); err != nil {
 		t.Fatalf("initial build: %v\n%s", err, log.String())
 	}
 
-	edited := time.Now()
 	badge := filepath.Join(src, "widgets", "Badge.vela")
 	data, err := os.ReadFile(badge)
 	if err != nil {
@@ -90,12 +112,18 @@ func TestSSRWatchRebuildsLikeACleanBuild(t *testing.T) {
 	if err := os.Remove(filepath.Join(src, "Gone.vela")); err != nil {
 		t.Fatal(err)
 	}
+	// The watcher may see the edits half done; a build that starts after
+	// the last of them reads them all.
+	edited := time.Now()
 	// Filesystems with coarse timestamps: the edit must look newer.
 	later := time.Now().Add(2 * time.Second)
 	if err := os.Chtimes(badge, later, later); err != nil {
 		t.Fatal(err)
 	}
 	waitForBuild(t, stamp, edited, &log)
+	// The watcher removes the outputs of removed components after the stamp
+	// and may still rebuild for the touched time; stop it before comparing.
+	stop()
 
 	clean := filepath.Join(t.TempDir(), "out")
 	if errors := BuildSSRProject(CollectVela(src), src, clean, CompileOptions{StatusWriter: io.Discard, ErrWriter: io.Discard, SSRModule: SSRDefaultModule}, false); errors != 0 {
