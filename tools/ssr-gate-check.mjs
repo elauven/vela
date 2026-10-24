@@ -14,6 +14,10 @@
 //     every button, checkbox and radio input in both, in the same order;
 //   - destroying both instances returns the runtime's owner, listener and
 //     queue counters to their values before hydration.
+// Fetches outside the gate server get no answer while the page is checked:
+// some corpus projects fetch public APIs, and the SSR and CSR instances fetch
+// independently, so a response that reached one of them only would count as
+// a difference. Other outside requests (images, frames) fail at once.
 // It prints one JSON array of results; "result" is "pass" or the first
 // failure.
 import { chromium } from 'playwright';
@@ -38,6 +42,10 @@ async function check({ id, mode }) {
   const pageErrors = [];
   page.on('pageerror', (e) => pageErrors.push(String(e.message)));
   const fail = (result, extra = {}) => ({ id, result, pageErrors, ...extra });
+  const origin = new URL(base).origin;
+  await page.route((url) => url.origin !== origin, (route) => {
+    if (route.request().resourceType() !== 'fetch' && route.request().resourceType() !== 'xhr') route.abort();
+  });
   try {
     const response = await page.goto(base + '/c/' + encodeURIComponent(id));
     if (!response || response.status() !== 200) {
