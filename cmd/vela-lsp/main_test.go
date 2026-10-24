@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,6 +21,9 @@ import (
 // and exit with status 0.
 func TestBinaryOverStdio(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "vela-lsp")
+	if goruntime.GOOS == "windows" {
+		binary += ".exe"
+	}
 	if out, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
