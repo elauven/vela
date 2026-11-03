@@ -448,10 +448,16 @@ func matchingParen(src string, start, closeAt int) int {
 }
 
 // writeAttr writes the expression of a dynamic attribute: an element event
-// handler gets its event type from $$on, a component's from $$handler.
+// handler gets its event type from $$on, a component's from $$handler, and
+// the :this of <vela:component> is checked by $$dynamic.
 func writeAttr(w *virtualWriter, r templateRegion) {
-	component := r.tag != "" && r.tag[0] >= 'A' && r.tag[0] <= 'Z'
+	dynamic := r.tag == "vela:component"
+	component := dynamic || r.tag != "" && r.tag[0] >= 'A' && r.tag[0] <= 'Z'
 	switch {
+	case dynamic && (r.attr == ":this" || r.attr == "this"):
+		w.gen("$$dynamic(")
+		w.copyTrimmed(r.start, r.end)
+		w.gen(");\n")
 	case strings.HasPrefix(r.attr, "@") && !component:
 		event := strings.SplitN(r.attr[1:], ".", 2)[0]
 		w.gen("$$on(\"" + event + "\", ")

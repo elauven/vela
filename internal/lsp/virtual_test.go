@@ -21,6 +21,7 @@ func TestVirtualDocument(t *testing.T) {
   {#if items.length > 0}
     {#each items as { id, title }, i (id)}
       <Card :title={title} @on:close={(event) => event.detail} />
+      <vela:component :this={i ? Card : null} :title={title} @on:pick={(event) => event.detail.id} />
       <button @click={(e) => e.preventDefault()} :class="i ? 'a' : 'b'">{i}</button>
     {:else}
       <p>none</p>
@@ -46,6 +47,8 @@ func TestVirtualDocument(t *testing.T) {
 		"for (const { id, title } of $$each(items)) {\nlet i = 0;\n(id);",
 		"(title);",
 		"$$handler((event) => event.detail);",
+		"$$dynamic(i ? Card : null);",
+		"$$handler((event) => event.detail.id);",
 		`$$on("click", (e) => e.preventDefault());`,
 		"(i ? 'a' : 'b');",
 		"} else if (promise) {",

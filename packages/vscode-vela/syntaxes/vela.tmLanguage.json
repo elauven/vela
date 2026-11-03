@@ -264,7 +264,7 @@
       ]
     },
     "closing-tag": {
-      "match": "(</)(?:([A-Z][\\w.]*)|([A-Za-z][\\w:.-]*))\\s*(>)",
+      "match": "(</)(?:([A-Z][\\w.]*|vela:[\\w-]+)|([A-Za-z][\\w:.-]*))\\s*(>)",
       "captures": {
         "1": {
           "name": "punctuation.definition.tag.begin.html"
@@ -281,7 +281,7 @@
       }
     },
     "component-tag": {
-      "begin": "(<)([A-Z][\\w.]*)(?=[\\s/>])",
+      "begin": "(<)([A-Z][\\w.]*|vela:[\\w-]+)(?=[\\s/>])",
       "beginCaptures": {
         "1": {
           "name": "punctuation.definition.tag.begin.html"

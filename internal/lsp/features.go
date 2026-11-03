@@ -245,6 +245,9 @@ func componentSummary(name, file string, child *component) *Hover {
 	return markdown("", note)
 }
 
+// dynamicComponentNote is the hover of <vela:component>.
+const dynamicComponentNote = "Renders the component chosen by `:this`. The same component after an update keeps its state; another one replaces it. Props the current component does not declare are ignored; events and slots work as for a component tag."
+
 func (s *server) hover(doc *document, off int) any {
 	c := s.componentOf(doc)
 	src := c.text.src
@@ -278,11 +281,21 @@ func (s *server) hover(doc *document, off int) any {
 		return withRange(markdown(c.declaration(b), ""), start, end)
 	case inTagName:
 		name := strings.TrimPrefix(tagName(src, ctx.wordStart-1), "/")
+		if name == "vela:component" {
+			return withRange(markdown("<vela:component :this={component} …props>", dynamicComponentNote), ctx.wordStart, ctx.wordStart+len(tagName(src, ctx.wordStart-1)))
+		}
 		file := s.scriptOf(doc, c).componentFile(name)
 		if child := s.openComponent(file); file != "" && child != nil {
 			return withRange(componentSummary(name, file, child), ctx.wordStart, ctx.wordStart+len(tagName(src, ctx.wordStart-1)))
 		}
 	case inAttrName:
+		if ctx.tag == "vela:component" {
+			word := attrWord(src, ctx.wordStart, off)
+			if name, _ := attrTarget(word); name == "this" {
+				return withRange(markdown("", "the component `<vela:component>` renders: an imported component or a value holding one; `null`, `undefined` and `false` render nothing"), ctx.wordStart, ctx.wordStart+len(word))
+			}
+			return nil
+		}
 		file := s.scriptOf(doc, c).componentFile(ctx.tag)
 		child := s.openComponent(file)
 		if file == "" || child == nil {
@@ -455,7 +468,16 @@ func (s *server) completion(doc *document, off int) any {
 			items = append(items, edit(ctx.wordStart, off, name, name, KindClass, "component"))
 		}
 		items = append(items, edit(ctx.wordStart, off, "svelte:fragment", "svelte:fragment slot=\"${1:name}\">$0</svelte:fragment", KindKeyword, "several nodes in a named slot"))
+		items = append(items, edit(ctx.wordStart, off, "vela:component", "vela:component :this={${1}}>$0</vela:component>", KindKeyword, "a component chosen by a value"))
 	case inAttrName:
+		if ctx.tag == "vela:component" {
+			// The child is chosen at run time: its props are not known here.
+			items = append(items,
+				edit(ctx.wordStart, off, ":this", ":this={${1}}", KindProperty, "the component to render: an imported component, or null, undefined or false for nothing"),
+				edit(ctx.wordStart, off, "bind:this", "bind:this={${1}}", KindProperty, "the component"),
+			)
+			break
+		}
 		if file := script.componentFile(ctx.tag); file != "" {
 			if child := s.openComponent(file); child != nil {
 				for _, p := range child.props() {

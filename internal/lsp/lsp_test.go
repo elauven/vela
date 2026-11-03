@@ -436,7 +436,7 @@ func TestCompletion(t *testing.T) {
 		return labels(t, c, uri, p), edited
 	}
 	items, _ := complete(2, "    <p>{count}</p>", "    <|")
-	check("tag name", items, []string{"Card", "svelte:fragment"}, nil)
+	check("tag name", items, []string{"Card", "svelte:fragment", "vela:component"}, nil)
 
 	items, _ = complete(3, "<p>{count}</p>", "<p |>{count}</p>")
 	check("element attributes", items, []string{"@click", ":", "bind:value", "class:", "style:"}, []string{":title"})
@@ -461,6 +461,26 @@ func TestCompletion(t *testing.T) {
 	if items := labels(t, c, uri, p); items["count"].Label == "" || items["open"].Label == "" {
 		t.Errorf("broken script: %v", keys(items))
 	}
+
+	// <vela:component> (task 070).
+	items, _ = complete(8, "    <p>{count}</p>", "    <|")
+	if item := items["vela:component"]; item.TextEdit == nil || !strings.HasPrefix(item.TextEdit.NewText, "vela:component :this={") {
+		t.Errorf("vela:component edit %+v", item.TextEdit)
+	}
+
+	items, _ = complete(9, "    <p>{count}</p>", "    <vela:component |></vela:component>")
+	check("vela:component attributes", items, []string{":this", "bind:this"}, []string{"@click", ":title"})
+
+	// Hover over <vela:component> and its :this.
+	dynamic := strings.Replace(src, "    <p>{count}</p>", "    <vela:component :this={Card}></vela:component>", 1)
+	c.edit(uri, 10, dynamic)
+	if got := hoverText(t, c, uri, at(t, dynamic, "<vela:component", 0, 3)); !strings.Contains(got, "Renders the component chosen by `:this`") {
+		t.Errorf("hover of vela:component: %q", got)
+	}
+	if got := hoverText(t, c, uri, at(t, dynamic, ":this", 0, 2)); !strings.Contains(got, "`null`, `undefined` and `false` render nothing") {
+		t.Errorf("hover of :this: %q", got)
+	}
+	c.edit(uri, 11, src)
 }
 
 func keys(m map[string]CompletionItem) []string {
