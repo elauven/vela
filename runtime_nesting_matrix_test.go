@@ -1102,3 +1102,133 @@ func TestRuntimeNestingMatrix_AwaitInlineCatch(t *testing.T) {
 		{"assertCount": "span.pending", "equals": 0},
 	})
 }
+
+// ── <vela:component> (task 070) ─────────────────────────────────
+
+// nestingDynamicChildren are two children with state, for the dynamic
+// nestings below: a click on .n increments their own counter.
+func nestingDynamicChildren(components map[string]string) map[string]string {
+	components["A"] = `<script>export let label = ''; let n = $state(0);</script>
+<template><button class="n a" @click={() => n++}>A{label}:{n}</button></template>`
+	components["B"] = `<script>export let label = ''; let n = $state(0);</script>
+<template><button class="n b" @click={() => n++}>B{label}:{n}</button></template>`
+	return components
+}
+
+// dynamic-in-key — {#key} recreates the dynamic child and its state.
+func TestRuntimeNestingMatrix_DynamicInKey(t *testing.T) {
+	app := `<script>
+  import { A } from './A.vela';
+  let key = $state(1);
+</script>
+<template><div>
+  <button class="k" @click={() => key++}>k</button>
+  {#key key}<vela:component :this={A} :label={key} />{/key}
+</div></template>`
+	assertRuntimeSet(t, "App", nestingDynamicChildren(map[string]string{"App": app}), []rtStep{
+		{"assertText": ".n", "equals": "A1:0"},
+		{"click": ".n"},
+		{"assertText": ".n", "equals": "A1:1"},
+		{"click": "button.k"},
+		{"assertText": ".n", "equals": "A2:0"},
+		{"assertCount": ".n", "equals": 1},
+	})
+}
+
+// dynamic-in-await — the component comes from a promise, as with a
+// lazily loaded module.
+func TestRuntimeNestingMatrix_DynamicInAwait(t *testing.T) {
+	app := `<script>
+  import { A } from './A.vela';
+  import { B } from './B.vela';
+  let request = $state(Promise.resolve(A));
+</script>
+<template><div>
+  <button class="b" @click={() => request = Promise.resolve(B)}>b</button>
+  {#await request}<i>loading</i>{:then view}<vela:component :this={view} label="x" />{/await}
+</div></template>`
+	assertRuntimeSet(t, "App", nestingDynamicChildren(map[string]string{"App": app}), []rtStep{
+		{"tick": true},
+		{"assertText": ".n", "equals": "Ax:0"},
+		{"click": "button.b"},
+		{"tick": true},
+		{"assertText": ".n", "equals": "Bx:0"},
+		{"assertCount": "i", "equals": 0},
+	})
+}
+
+// dynamic-in-slot and blocks-in-dynamic-slot — a dynamic child in the slot
+// of a static child, whose own slot holds {#if} and {#each}; switching the
+// dynamic child keeps the parent's slot blocks alive.
+func TestRuntimeNestingMatrix_DynamicAndSlots(t *testing.T) {
+	box := `<template><section class="box"><slot /></section></template>`
+	frame := `<script>export let label = '';</script>
+<template><div class="frame">{label}<slot /></div></template>`
+	plain := `<script>export let label = '';</script>
+<template><p class="plain">{label}<slot /></p></template>`
+	app := `<script>
+  import { Box } from './Box.vela';
+  import { Frame } from './Frame.vela';
+  import { Plain } from './Plain.vela';
+  let framed = $state(true);
+  let open = $state(true);
+  let items = $state(['x', 'y']);
+</script>
+<template><div>
+  <button class="f" @click={() => framed = !framed}>f</button>
+  <button class="o" @click={() => open = !open}>o</button>
+  <button class="i" @click={() => items = [...items, 'z']}>i</button>
+  <Box>
+    <vela:component :this={framed ? Frame : Plain} label="L">
+      {#if open}<b class="open">open</b>{/if}
+      {#each items as item}<u class="item">{item}</u>{/each}
+    </vela:component>
+  </Box>
+</div></template>`
+	components := map[string]string{"App": app, "Box": box, "Frame": frame, "Plain": plain}
+	assertRuntimeSet(t, "App", components, []rtStep{
+		{"assertText": ".box .frame", "equals": "Lopen xy"},
+		{"click": "button.f"},
+		{"assertCount": ".frame", "equals": 0},
+		{"assertText": ".box .plain", "equals": "Lopen xy"},
+		{"click": "button.o"},
+		{"click": "button.i"},
+		{"assertText": ".box .plain", "equals": "L xyz"},
+		{"click": "button.f"},
+		{"assertText": ".box .frame", "equals": "L xyz"},
+		{"click": "button.o"},
+		{"assertText": ".box .frame", "equals": "Lopen xyz"},
+		{"assertCount": ".item", "equals": 3},
+	})
+}
+
+// dynamic-in-dynamic — a dynamic child inside the slot of another dynamic
+// child; both switch independently.
+func TestRuntimeNestingMatrix_DynamicInDynamic(t *testing.T) {
+	frame := `<template><div class="frame"><slot /></div></template>`
+	app := `<script>
+  import { Frame } from './Frame.vela';
+  import { A } from './A.vela';
+  import { B } from './B.vela';
+  let outer = $state(true);
+  let inner = $state(A);
+</script>
+<template><div>
+  <button class="outer" @click={() => outer = !outer}>outer</button>
+  <button class="inner" @click={() => inner = inner === A ? B : A}>inner</button>
+  <vela:component :this={outer && Frame}><vela:component :this={inner} label="i" /></vela:component>
+</div></template>`
+	assertRuntimeSet(t, "App", nestingDynamicChildren(map[string]string{"App": app, "Frame": frame}), []rtStep{
+		{"assertText": ".frame", "equals": "Ai:0"},
+		{"click": ".n"},
+		{"click": "button.inner"},
+		{"assertText": ".frame", "equals": "Bi:0"},
+		{"click": "button.outer"},
+		{"assertCount": ".frame", "equals": 0},
+		{"assertCount": ".n", "equals": 0},
+		{"click": "button.outer"},
+		{"assertText": ".frame", "equals": "Bi:0"},
+		{"click": "button.inner"},
+		{"assertText": ".frame", "equals": "Ai:0"},
+	})
+}

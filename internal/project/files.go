@@ -22,6 +22,21 @@ func MirrorPath(src, srcRoot, outRoot, ext string) string {
 	return filepath.Join(outRoot, noExt+ext)
 }
 
+// ComponentID is the $$id of the component in src: its path relative to
+// srcRoot without the extension, with forward slashes (routes/users/Page).
+// Without a project root, or for a file outside it, it is the file name
+// without the extension. The JavaScript factory and the Go renderer of a
+// component carry the same ID.
+func ComponentID(src, srcRoot string) string {
+	if srcRoot != "" {
+		if rel, err := filepath.Rel(srcRoot, src); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
+			return filepath.ToSlash(strings.TrimSuffix(rel, filepath.Ext(rel)))
+		}
+	}
+	base := filepath.Base(src)
+	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
 // CollectVela recursively finds all .vela files under root,
 // skipping hidden directories, node_modules, and common output dirs.
 func CollectVela(root string) []string {

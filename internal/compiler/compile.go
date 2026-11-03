@@ -70,6 +70,9 @@ type CompileOptions struct {
 	// builds (V-11.3b); Hosts resolves host symbols for that table.
 	SitePath  string
 	Hosts     *ssr.SSRHosts
+	// ComponentID is the component's $$id (project.ComponentID); empty
+	// derives it from the file name.
+	ComponentID string
 	TraceSink TraceSink // optional source-free compiler trace observer
 	// TraceComponentID is an internal source-free override used for project
 	// traces. File mode derives a safe basename automatically.
@@ -194,6 +197,7 @@ func CompileProjectFile(src, srcRoot, outRoot string, opts CompileOptions) bool 
 	if rel, err := filepath.Rel(filepath.Dir(filepath.Clean(srcRoot)), src); err == nil {
 		opts.SitePath = filepath.ToSlash(rel)
 	}
+	opts.ComponentID = project.ComponentID(src, srcRoot)
 	return CompilePrint(src, dest, opts)
 }
 
@@ -369,6 +373,10 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		}
 		return ds.All(), fmt.Errorf("parse: %w", err)
 	}
+	sfc.ComponentID = opts.ComponentID
+	if sfc.ComponentID == "" {
+		sfc.ComponentID = project.ComponentID(src, "")
+	}
 	if !opts.Minify {
 		sfc.SitePath = opts.SitePath
 		if sfc.SitePath == "" {
@@ -479,6 +487,7 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		ds.PushOffset(sfc.TemplateOffset)
 		ValidateTemplate(tmpl, analysis, ds)
 		ValidateTemplateForms(tmpl, sfc.Template, ds)
+		ValidateSpecialElements(tmpl, sfc.TemplateOffset, ds)
 		ValidateTemplateRefs(tmpl, analysis, scriptScope, sfc.Template, ds)
 		ds.PopOffset()
 		if ds.HasErrors() {

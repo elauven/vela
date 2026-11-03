@@ -46,6 +46,11 @@ type SFC struct {
 	Source    string
 	SitePath  string
 	SiteHosts func(local string) (string, bool)
+	// ComponentID is the component's $$id: its path relative to the project
+	// directory without the extension (routes/users/Page), or the file name
+	// without the extension outside a project. <vela:component> hydration
+	// and the app layer identify components by it.
+	ComponentID string
 
 	AST         *ComponentAST
 	TemplateAST *TemplateAST
@@ -357,6 +362,12 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 						}
 					}
 				}
+				if n.This != nil {
+					checkSpan(n.This.Span, "component attribute")
+					if n.This.Expr != nil {
+						validateExpr(n.This.Expr, n.This.Pos, "<vela:component> this")
+					}
+				}
 				for _, children := range n.Slots {
 					walkNodes(children)
 				}
@@ -533,11 +544,36 @@ const (
 )
 
 // ComponentNode represents a child component invocation: <MyComp :prop="val" />
+//
+// <vela:component :this={expr}> is a dynamic component: Name is
+// DynamicComponentTag and This holds the :this attribute, which chooses the
+// component at run time. Attrs never contain that attribute.
 type ComponentNode struct {
 	Span  srcspan.SectionSpan
 	Name  string            // component name, e.g. "MyComp"
 	Attrs []*Attr           // :prop bindings and @event handlers
 	Slots map[string][]Node // slot name → children (default slot keyed as "default")
+	// This is the this attribute of <vela:component>, nil when it is
+	// missing. A valid one is dynamic (:this={expr}) and has an Expr.
+	This *Attr
+}
+
+// DynamicComponentTag is the tag of a dynamic component.
+const DynamicComponentTag = "vela:component"
+
+// SpecialElementPrefix starts the tags of Vela's own special elements.
+const SpecialElementPrefix = "vela:"
+
+// IsDynamic reports whether the node is a <vela:component>.
+func (c *ComponentNode) IsDynamic() bool { return c != nil && c.Name == DynamicComponentTag }
+
+// ThisExpr returns the expression that chooses the component of a valid
+// <vela:component>, or nil.
+func (c *ComponentNode) ThisExpr() *TemplateExpr {
+	if !c.IsDynamic() || c.This == nil || !c.This.IsBind {
+		return nil
+	}
+	return c.This.Expr
 }
 
 // HasKey reports whether this structured #key chain owns an expression AST.
@@ -1124,8 +1160,10 @@ func (p *parser) parseElement() (Node, error) {
 	}
 
 	// ── Component detection ───────────────────────────────────────────────
-	// Tags starting with an uppercase letter are treated as child components.
-	if len(tag) > 0 && tag[0] >= 'A' && tag[0] <= 'Z' {
+	// Tags starting with an uppercase letter are treated as child components;
+	// <vela:component> is a component chosen by its :this value. Other vela:
+	// tags parse as elements and are rejected by the template validator.
+	if tag == DynamicComponentTag || len(tag) > 0 && tag[0] >= 'A' && tag[0] <= 'Z' {
 		return p.parseComponentNode(tag, elementStart)
 	}
 
@@ -1225,6 +1263,17 @@ func (p *parser) parseComponentNode(name string, elementStart int) (Node, error)
 		return nil, err
 	}
 	comp.Attrs = scratch.Attrs
+	if comp.IsDynamic() {
+		// The first this attribute (:this={…} or a static this="…") selects
+		// the component; bind:this keeps its meaning.
+		for i, a := range comp.Attrs {
+			if a.Name == "this" && !a.IsBindThis && !a.IsEvent && !a.IsTwoWay && !a.IsClassDir && !a.IsStyleDir {
+				comp.This = a
+				comp.Attrs = append(comp.Attrs[:i:i], comp.Attrs[i+1:]...)
+				break
+			}
+		}
+	}
 
 	if p.has("/>") {
 		p.pos += 2

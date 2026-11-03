@@ -1055,6 +1055,23 @@ func (g *ASTGen) buildModule(nodes []sfcast.Node) *jsast.JsProgram {
 		BaseStmt:    jsast.BaseStmt{BaseNode: jsast.GenNode()},
 		Declaration: fn,
 	})
+	// Every factory carries its component ID and declared props, so a
+	// <vela:component> can pass a child only the props it declares and
+	// hydration can compare the child with the server's (H-5.1).
+	if g.sfc != nil && g.sfc.ComponentID != "" {
+		prog.Body = append(prog.Body, jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent(g.name), "$$id"), jsast.GenStrLit(g.sfc.ComponentID)))
+	}
+	declared := &jsast.JsObjectExpr{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}}
+	if g.analysis != nil {
+		for _, prop := range g.analysis.Props {
+			bindable := 0
+			if prop.Bindable {
+				bindable = 1
+			}
+			declared.Props = append(declared.Props, &jsast.JsProp{BaseNode: jsast.GenNode(), Key: jsast.GenIdent(prop.Name), Value: jsast.GenNumLit(bindable)})
+		}
+	}
+	prog.Body = append(prog.Body, jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent(g.name), "$$props"), declared))
 	if g.sfc != nil && g.sfc.ClientOnly {
 		// A client-only component (contract §9.2): $$component mounts it
 		// after the root commits instead of adopting server DOM.

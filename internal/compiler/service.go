@@ -4,6 +4,7 @@ import (
 	"github.com/elauven/vela/internal/codegen"
 	"github.com/elauven/vela/internal/diag"
 	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/project"
 	"github.com/elauven/vela/internal/ssr"
 
 	"encoding/json"
@@ -182,6 +183,7 @@ func (s *CompilerService) Compile(req ServiceRequest) CompileResult {
 		if rel, err := filepath.Rel(filepath.Dir(filepath.Clean(*s.config.Project)), src); err == nil {
 			opts.SitePath = filepath.ToSlash(rel)
 		}
+		opts.ComponentID = project.ComponentID(src, *s.config.Project)
 	}
 	read := func() ([]byte, error) { return os.ReadFile(src) }
 	if req.Source != nil {
