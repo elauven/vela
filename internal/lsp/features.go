@@ -472,10 +472,7 @@ func (s *server) completion(doc *document, off int) any {
 	case inAttrName:
 		if ctx.tag == "vela:component" {
 			// The child is chosen at run time: its props are not known here.
-			items = append(items,
-				edit(ctx.wordStart, off, ":this", ":this={${1}}", KindProperty, "the component to render: an imported component, or null, undefined or false for nothing"),
-				edit(ctx.wordStart, off, "bind:this", "bind:this={${1}}", KindProperty, "the component"),
-			)
+			items = append(items, edit(ctx.wordStart, off, ":this", ":this={${1}}", KindProperty, "the component to render: an imported component, or null, undefined or false for nothing"))
 			break
 		}
 		if file := script.componentFile(ctx.tag); file != "" {

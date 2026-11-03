@@ -469,7 +469,7 @@ func TestCompletion(t *testing.T) {
 	}
 
 	items, _ = complete(9, "    <p>{count}</p>", "    <vela:component |></vela:component>")
-	check("vela:component attributes", items, []string{":this", "bind:this"}, []string{"@click", ":title"})
+	check("vela:component attributes", items, []string{":this"}, []string{"@click", ":title", "bind:this"})
 
 	// Hover over <vela:component> and its :this.
 	dynamic := strings.Replace(src, "    <p>{count}</p>", "    <vela:component :this={Card}></vela:component>", 1)

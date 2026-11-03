@@ -74,6 +74,7 @@ err := components.RenderPageContext(r.Context(), w, props, components.PageSlots{
 | `RenderPageWithOptions(w, props, slots, options)` | The same with settled `{#await}` snapshots |
 | `RenderPageStatic(w, props, slots)` | Plain HTML, no markers and no payload |
 | `Page(props, slots)` | A `vela.Renderer` value, for composition |
+| `PageComponent` | The component as a `vela.Component` value: `ComponentID()` and `RenderDynamic(ctx, w, props, slots, options)` with props by name; what `<vela:component>` renders |
 
 **Props.** `Set` lists the props you supply. With
 `Set: map[string]bool{}`, omitted props take their `export let` defaults; a
