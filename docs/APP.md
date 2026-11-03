@@ -12,9 +12,10 @@ the part SvelteKit and Nuxt play for their compilers, but the server is
 - for each navigation the server sends either data (JSON) for components the
   client already has, or the server HTML of the changed part (a fragment).
 
-Status: **planned**. This page is the contract (task 073). The
-implementation follows in tasks 074–078, and until then the `app/` module
-and `@govela/app` contain only their skeleton and the protocol types. The
+Status: **planned**. This page is the contract (task 073), approved on
+2026-11-03. The implementation follows in tasks 074–078, and until then the
+`app/` module and `@govela/app` contain only their skeleton and the protocol
+types. The
 rules are numbered so that code, tests and reviews can cite them: `B-`
 boundary, `P-` paths and routes, `L-` loaders, `R-` rendering, `N-`
 navigation.
@@ -393,7 +394,7 @@ server/routes/**                  internal/appgen/routes_gen.go
 
 ## Decisions on the open questions of 073
 
-These need review together with the rest of this page before 074 starts:
+Approved together with the rest of this page on 2026-11-03:
 
 1. `route` carries the route id (`route.id`, P-12). It is cheap, and it lets
    a layout highlight the active section without parsing paths. It does
