@@ -55,8 +55,10 @@ func TestLicenseCopiesMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module, err := os.ReadFile(filepath.Join("ssr_runtime", "LICENSE"))
-	if err != nil || string(module) != string(root) {
-		t.Fatal("ssr_runtime/LICENSE differs from LICENSE; copy it")
+	for _, copy := range []string{"ssr_runtime/LICENSE", "app/LICENSE", "packages/app/LICENSE"} {
+		module, err := os.ReadFile(filepath.FromSlash(copy))
+		if err != nil || string(module) != string(root) {
+			t.Errorf("%s differs from LICENSE; copy it", copy)
+		}
 	}
 }

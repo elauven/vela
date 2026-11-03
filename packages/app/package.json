@@ -1,0 +1,25 @@
+{
+  "name": "@govela/app",
+  "version": "0.1.0-dev",
+  "private": true,
+  "description": "Client router of Vela App (docs/APP.md). Skeleton of task 073; the router follows in task 076.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elauven/vela.git",
+    "directory": "packages/app"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./client": "./client.js"
+  },
+  "files": [
+    "client.js",
+    "LICENSE"
+  ],
+  "govela": {
+    "runtimeContract": 4,
+    "protocol": 1
+  }
+}

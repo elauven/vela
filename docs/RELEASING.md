@@ -11,10 +11,13 @@ version `vX.Y.Z` while the contract is in `v0` (docs/SSR_TRANSLATION_CONTRACT.md
 | JavaScript runtime | `runtime/`, generated into `packages/runtime` | npm package `@govela/runtime` of the same version (R-12.2g), published by the release workflow |
 | Compiler for npm | `packages/compiler` (launchers `bin/vela.js` and `bin/vela-lsp.js`, JavaScript API `index.js`) and `packages/compiler-<os>-<cpu>` (`vela` and `vela-lsp` each) | npm packages `@govela/compiler` and `@govela/compiler-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64` of the same version, published by the release workflow |
 | Bundler plugin | `packages/unplugin` (plugin `index.js`, entry points generated) | npm package `@govela/unplugin` of the same version, published by the release workflow after `@govela/compiler` |
+| App layer (Go) | `app/` (nested module `github.com/elauven/vela/app`, generator `app/cmd/vela-app`) | tag `app/vX.Y.Z`, independent of the compiler version (docs/APP.md B-6); no tag yet |
+| App layer (npm) | `packages/app` | npm package `@govela/app` with its own version, not checked against the tag; `"private": true` and not published until the router exists (task 076) |
 | VS Code extension | `packages/vscode-vela` | its own version (`package.json`), not checked against the tag; CI builds the `.vsix` as an artifact; publishing to the Marketplace or Open VSX is not set up |
 
-All three are released under the MIT license (`LICENSE`). The Go runtime
-module carries a copy in `ssr_runtime/LICENSE` (`TestLicenseCopiesMatch`), and
+All of them are released under the MIT license (`LICENSE`). The nested Go
+modules and `packages/app` carry copies in `ssr_runtime/LICENSE`,
+`app/LICENSE` and `packages/app/LICENSE` (`TestLicenseCopiesMatch`), and
 the npm packages get `LICENSE` and `"license": "MIT"` from the generators.
 
 The manifests of the npm packages are generated with `Version`
@@ -69,9 +72,26 @@ the affected `go.mod` and `npm deprecate` on the npm version.
 `v0.1.0` and `v0.2.0` mark earlier stages of the history; they have no Go
 runtime tag, no npm package and no release binaries.
 
+## The app layer
+
+The app layer (docs/APP.md) is versioned on its own: the compiler's lockstep
+does not apply to it. A release of the app layer:
+
+1. `cd app && go test ./...` and the app CI job pass.
+2. Set `Version` in `app/app.go` and `version` in `packages/app/package.json`
+   to `X.Y.Z`; they always match.
+3. `git tag app/vX.Y.Z` and `git push origin app/vX.Y.Z`.
+4. `npm publish ./packages/app --access public` (once the package is no
+   longer `private`).
+
+`RuntimeContract` in `app/app.go` and `govela.runtimeContract` in
+`packages/app/package.json` name the runtime contract the release needs; the
+release notes state the minimum `ssr_runtime` and `@govela/runtime`
+versions.
+
 ## Development
 
-The committed `go.work` joins the compiler and the runtime module, so tests
-of the compiler use the runtime from the working tree. The compiler itself
+The committed `go.work` joins the compiler, the runtime module and the app
+module, so tests use the runtime from the working tree. The compiler itself
 does not import the runtime and builds without the workspace
 (`GOWORK=off go build .`, checked in CI), which is how `go install` builds it.
