@@ -2,15 +2,14 @@ package gen
 
 import (
 	"context"
-	"io/fs"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
+
+	"github.com/elauven/vela/app/internal/testkit"
 )
 
 const goldenProject = "../../testdata/golden"
@@ -51,7 +50,7 @@ func TestGoldenOutputs(t *testing.T) {
 }
 
 func TestGenerateWritesOnlyChangedFilesAndRemovesStaleOnes(t *testing.T) {
-	root := copyProject(t, goldenProject)
+	root := testkit.CopyProject(t, goldenProject)
 	result, diags := Generate(root)
 	if len(diags) > 0 {
 		t.Fatal(Error(diags))
@@ -105,7 +104,7 @@ func TestGenerateWritesOnlyChangedFilesAndRemovesStaleOnes(t *testing.T) {
 }
 
 func TestScaffold(t *testing.T) {
-	root := copyProject(t, goldenProject)
+	root := testkit.CopyProject(t, goldenProject)
 	created, diags := Scaffold(root, "")
 	if len(diags) > 0 {
 		t.Fatal(Error(diags))
@@ -148,7 +147,7 @@ func TestScaffold(t *testing.T) {
 }
 
 func TestWatchRegenerates(t *testing.T) {
-	root := copyProject(t, goldenProject)
+	root := testkit.CopyProject(t, goldenProject)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	events := make(chan Result, 10)
@@ -196,110 +195,6 @@ func TestWatchRegenerates(t *testing.T) {
 	}
 }
 
-// --- running the compiler and go -----------------------------------------
-
-var (
-	velaOnce sync.Once
-	velaBin  string
-	velaErr  error
-)
-
-// velaBinary builds the compiler from the repository: app tests run it as a
-// program, never as a Go package (docs/APP.md B-4).
-func velaBinary(t *testing.T) string {
-	t.Helper()
-	velaOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "vela-app-test-")
-		if err != nil {
-			velaErr = err
-			return
-		}
-		velaBin = filepath.Join(dir, "vela")
-		if filepath.Separator == '\\' {
-			velaBin += ".exe"
-		}
-		build := exec.Command("go", "build", "-o", velaBin, ".")
-		build.Dir = repoRoot(t)
-		build.Env = append(os.Environ(), "GOFLAGS=")
-		if out, err := build.CombinedOutput(); err != nil {
-			velaErr = &exec.ExitError{}
-			t.Logf("go build vela: %s", out)
-			velaErr = err
-		}
-	})
-	if velaErr != nil {
-		t.Fatalf("build vela: %v", velaErr)
-	}
-	return velaBin
-}
-
-func repoRoot(t *testing.T) string {
-	root, err := filepath.Abs("../../..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return root
-}
-
-// copyProject copies a project into a temporary directory without the
-// outputs of vela-app and vela.
-func copyProject(t *testing.T, src string) string {
-	t.Helper()
-	dst := t.TempDir()
-	err := filepath.WalkDir(src, func(file string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(src, file)
-		slash := filepath.ToSlash(rel)
-		if entry.IsDir() {
-			switch slash {
-			case "out", "want", "src/_app", "internal/appgen":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return err
-		}
-		writeFile(t, filepath.Join(dst, rel), string(data))
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return dst
-}
-
-// useLocalModules points go.mod of a copied project at the app and runtime
-// modules of this repository.
-func useLocalModules(t *testing.T, root string) {
-	t.Helper()
-	repo := repoRoot(t)
-	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	module := strings.SplitN(string(data), "\n", 2)[0]
-	app := filepath.ToSlash(filepath.Join(repo, "app"))
-	runtime := filepath.ToSlash(filepath.Join(repo, "ssr_runtime"))
-	writeFile(t, filepath.Join(root, "go.mod"), module+"\n\ngo 1.25.0\n\nrequire (\n\tgithub.com/elauven/vela/app v0.0.0\n\tgithub.com/elauven/vela/ssr_runtime v0.0.0\n)\n\nreplace (\n\tgithub.com/elauven/vela/app => "+app+"\n\tgithub.com/elauven/vela/ssr_runtime => "+runtime+"\n)\n")
-	os.Remove(filepath.Join(root, "go.sum"))
-}
-
-func run(t *testing.T, dir, name string, args ...string) string {
-	t.Helper()
-	command := exec.Command(name, args...)
-	command.Dir = dir
-	command.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
-	out, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("%s %s: %v\n%s", name, strings.Join(args, " "), err, out)
-	}
-	return string(out)
-}
-
 // buildApp runs the whole chain of docs/APP.md on a project: vela-app gen,
 // vela --ssr, go build and go vet.
 func buildApp(t *testing.T, root string) {
@@ -307,40 +202,20 @@ func buildApp(t *testing.T, root string) {
 	if _, diags := Generate(root); len(diags) > 0 {
 		t.Fatal(Error(diags))
 	}
-	out := run(t, root, velaBinary(t))
-	for _, line := range strings.Split(out, "\n") {
-		if strings.Contains(line, " x ") || strings.Contains(line, "✗") || strings.Contains(line, "error") || strings.Contains(line, "warn") {
-			t.Errorf("vela: %s", line)
-		}
-	}
-	if !strings.Contains(out, "SSR components emitted") {
-		t.Fatalf("vela:\n%s", out)
-	}
-	useLocalModules(t, root)
-	run(t, root, "go", "build", "./...")
-	run(t, root, "go", "vet", "./...")
-}
-
-func requireGo(t *testing.T) {
-	t.Helper()
-	if testing.Short() {
-		t.Skip("builds the compiler and the generated Go code")
-	}
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go tool not available")
-	}
+	testkit.CompileApp(t, root)
 }
 
 // TestGeneratedAppCompiles compiles the generated VelaApp.vela with the vela
 // binary under --ssr without diagnostics, and builds the Go route table
 // against the generated renderer and the loaders.
 func TestGeneratedAppCompiles(t *testing.T) {
-	requireGo(t)
-	root := copyProject(t, goldenProject)
+	testkit.RequireGo(t)
+	root := testkit.CopyProject(t, goldenProject)
 	// A main package keeps the route table and the renderer in the build.
 	writeFile(t, filepath.Join(root, "cmd/check/main.go"), `package main
 
 import (
+	"context"
 	"os"
 
 	"example.com/golden/internal/appgen"
@@ -359,13 +234,13 @@ func main() {
 		map[string]any{"id": "routes/users/[id=int]/Page", "data": map[string]any{"name": "Ada"}},
 	}
 	route := map[string]any{"path": "/users/2", "params": map[string]any{"id": "2"}}
-	if err := routes.Root.Render(os.Stdout, app.RootProps{Route: route, Chain: chain}); err != nil {
+	if err := routes.Root.Render(context.Background(), os.Stdout, app.RootProps{Route: route, Chain: chain}); err != nil {
 		panic(err)
 	}
 }
 `)
 	buildApp(t, root)
-	html := run(t, root, "go", "run", "./cmd/check")
+	html := testkit.Run(t, root, "go", "run", "./cmd/check")
 	for _, want := range []string{
 		"<nav>Golden /users/2</nav>",
 		`<div class="users"><p>2</p>`,
@@ -376,24 +251,5 @@ func main() {
 		if !strings.Contains(html, want) {
 			t.Errorf("server HTML misses %q:\n%s", want, html)
 		}
-	}
-}
-
-// TestExampleApp is the acceptance check of task 074: vela-app gen, vela
-// --ssr, go build and go vet succeed on examples/app.
-func TestExampleApp(t *testing.T) {
-	requireGo(t)
-	root := copyProject(t, filepath.Join(repoRoot(t), "examples", "app"))
-	buildApp(t, root)
-	out := run(t, root, "go", "run", "./cmd/routes", "/", "/users/2", "/users/x", "/de/about", "/settings", "/colors/00ff00", "/nope")
-	want := "/\t/\tmap[]\n" +
-		"/users/2\t/users/[id=int]\tmap[id:2]\n" +
-		"/users/x\t404\n" +
-		"/de/about\t/[[lang]]/about\tmap[lang:de]\n" +
-		"/settings\t/(admin)/settings\tmap[]\n" +
-		"/colors/00ff00\t/colors/[hex=color]\tmap[hex:00ff00]\n" +
-		"/nope\t404\n"
-	if out != want {
-		t.Errorf("routes:\n%s\nwant\n%s", out, want)
 	}
 }

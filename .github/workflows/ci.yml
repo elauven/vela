@@ -120,6 +120,13 @@ jobs:
       - name: Verify SSR browser gate failure accounting
         run: node tools/run-ssr-browser-baseline-self-test.mjs
 
+      # examples/app with vite build, the Go server and Chromium (task 075).
+      - name: Vela App in the browser
+        working-directory: app
+        env:
+          VELA_REQUIRE_APP_E2E: "1"
+        run: go test -count=1 -run TestExampleAppHydrates ./internal/e2e
+
   # The tests that bundle and run in Chromium skip without node_modules,
   # which the test job does not install.
   bundlers:

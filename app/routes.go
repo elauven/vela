@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"io"
-	"net/http"
 	"net/url"
 	"strings"
 	"unicode/utf8"
@@ -12,20 +11,6 @@ import (
 // RootID is the id of the element that holds the VelaApp root in the
 // document. The generated client entry passes the same id to start().
 const RootID = "vela-app"
-
-// Request is what a loader receives (docs/APP.md L-3). Task 075 adds the
-// head and the response headers.
-type Request struct {
-	// Params are the decoded parameters of the route (P-6). An absent
-	// optional parameter has no entry.
-	Params map[string]string
-	// Query is the query of the URL.
-	Query url.Values
-	// HTTP is the request being served.
-	HTTP *http.Request
-	// Route is the route id (P-12), for example "/users/[id=int]".
-	Route string
-}
 
 // Deps declares the dependencies of the loaders of one directory beyond the
 // parameters of its path (L-6): `var Deps = app.Deps{Query: []string{"q"}}`
@@ -123,7 +108,7 @@ type RootProps struct {
 type Root struct {
 	// ID is the component id of VelaApp ("_app/VelaApp").
 	ID     string
-	Render func(w io.Writer, props RootProps) error
+	Render func(ctx context.Context, w io.Writer, props RootProps) error
 }
 
 // Routes is the route table that vela-app generates (appgen.Routes()).
@@ -136,9 +121,17 @@ type Routes struct {
 	// Error is the segment id of the root Error.vela, used when no route
 	// matches ("" for none).
 	Error string
+	// NotFound is the chain of a URL no route matches: the layouts of the
+	// routes directory itself, which render around the root Error.vela.
+	NotFound Route
 	// Depth is the maximum chain length.
 	Depth int
 	Root  Root
+	// Source is the project directory relative to the Vite root ("src"):
+	// a segment id plus ".vela" under it is the module of a component.
+	Source string
+	// Entry is the client entry, "src/_app/client.js".
+	Entry string
 }
 
 // Match is the outcome of matching a path.

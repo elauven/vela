@@ -4,6 +4,7 @@
 package appgen
 
 import (
+	"context"
 	"io"
 
 	"github.com/elauven/vela/app"
@@ -58,11 +59,16 @@ func Routes() app.Routes {
 		},
 		Matchers: map[string]func(string) bool{"int": app.MatchInt, "slug": app.MatchSlug, "uuid": app.MatchUUID, "hex": server_params_hex.Match},
 		Error:    "routes/Error",
-		Depth:    3,
-		Root:     app.Root{ID: "_app/VelaApp", Render: renderRoot},
+		NotFound: app.Route{Chain: []app.Level{
+			{ID: "routes/Layout", Error: "routes/Error", Loader: app.LoaderOf(server_routes.Layout)},
+		}},
+		Depth:  3,
+		Root:   app.Root{ID: "_app/VelaApp", Render: renderRoot},
+		Source: "src",
+		Entry:  "src/_app/client.js",
 	}
 }
 
-func renderRoot(w io.Writer, props app.RootProps) error {
-	return velaapp.RenderVelaApp(w, velaapp.VelaAppProps{Route: props.Route, Chain: props.Chain, Start: float64(props.Start)}, velaapp.VelaAppSlots{})
+func renderRoot(ctx context.Context, w io.Writer, props app.RootProps) error {
+	return velaapp.RenderVelaAppContext(ctx, w, velaapp.VelaAppProps{Route: props.Route, Chain: props.Chain, Start: float64(props.Start)}, velaapp.VelaAppSlots{})
 }

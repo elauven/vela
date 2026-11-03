@@ -252,9 +252,8 @@ func (m *Model) routesGo() ([]byte, error) {
 	}
 	var body bytes.Buffer
 	body.WriteString("// Routes returns the route table for app.New.\nfunc Routes() app.Routes {\n\treturn app.Routes{\n\t\tRoutes: []app.Route{\n")
-	for _, r := range m.Routes {
-		fmt.Fprintf(&body, "\t\t\t{ID: %s, Chain: []app.Level{\n", strconv.Quote(r.ID))
-		for _, l := range r.Chain {
+	levels := func(chain []*Level) {
+		for _, l := range chain {
 			fields := []string{"ID: " + strconv.Quote(l.ID)}
 			if l.Error != "" {
 				fields = append(fields, "Error: "+strconv.Quote(l.Error))
@@ -274,6 +273,10 @@ func (m *Model) routesGo() ([]byte, error) {
 			}
 			fmt.Fprintf(&body, "\t\t\t\t{%s},\n", strings.Join(fields, ", "))
 		}
+	}
+	for _, r := range m.Routes {
+		fmt.Fprintf(&body, "\t\t\t{ID: %s, Chain: []app.Level{\n", strconv.Quote(r.ID))
+		levels(r.Chain)
 		render := "app.RenderAuto"
 		if r.RenderPkg != "" {
 			render = alias(r.RenderPkg) + ".Render"
@@ -302,16 +305,21 @@ func (m *Model) routesGo() ([]byte, error) {
 		fmt.Fprintf(&body, ", %s: %s.Match", strconv.Quote(c.Name), alias(c.GoDir))
 	}
 	body.WriteString("},\n")
-	fmt.Fprintf(&body, "\t\tError: %s,\n\t\tDepth: %d,\n", strconv.Quote(m.Error), m.Depth)
+	fmt.Fprintf(&body, "\t\tError: %s,\n", strconv.Quote(m.Error))
+	body.WriteString("\t\tNotFound: app.Route{Chain: []app.Level{\n")
+	levels(m.NotFound)
+	body.WriteString("\t\t}},\n")
+	fmt.Fprintf(&body, "\t\tDepth: %d,\n", m.Depth)
 	rootID := m.Config.componentID(path.Join(m.Config.Out, "VelaApp.vela"))
-	fmt.Fprintf(&body, "\t\tRoot: app.Root{ID: %s, Render: renderRoot},\n\t}\n}\n\n", strconv.Quote(rootID))
-	body.WriteString("func renderRoot(w io.Writer, props app.RootProps) error {\n")
-	body.WriteString("\treturn velaapp.RenderVelaApp(w, velaapp.VelaAppProps{Route: props.Route, Chain: props.Chain, Start: float64(props.Start)}, velaapp.VelaAppSlots{})\n}\n")
+	fmt.Fprintf(&body, "\t\tRoot:   app.Root{ID: %s, Render: renderRoot},\n", strconv.Quote(rootID))
+	fmt.Fprintf(&body, "\t\tSource: %s,\n\t\tEntry:  %s,\n\t}\n}\n\n", strconv.Quote(m.Config.Project), strconv.Quote(path.Join(m.Config.Out, "client.js")))
+	body.WriteString("func renderRoot(ctx context.Context, w io.Writer, props app.RootProps) error {\n")
+	body.WriteString("\treturn velaapp.RenderVelaAppContext(ctx, w, velaapp.VelaAppProps{Route: props.Route, Chain: props.Chain, Start: float64(props.Start)}, velaapp.VelaAppSlots{})\n}\n")
 
 	var b bytes.Buffer
 	b.WriteString("// " + Marker + "\n\n")
 	fmt.Fprintf(&b, "// Package %s is the route table of %s (docs/APP.md).\n", goPackageName(m.Config.GoPackage), m.Config.Routes)
-	fmt.Fprintf(&b, "package %s\n\nimport (\n\t\"io\"\n\n\t%q\n\n\tvelaapp %q\n", goPackageName(m.Config.GoPackage), AppImportPath, root)
+	fmt.Fprintf(&b, "package %s\n\nimport (\n\t\"context\"\n\t\"io\"\n\n\t%q\n\n\tvelaapp %q\n", goPackageName(m.Config.GoPackage), AppImportPath, root)
 	for _, dir := range sortedKeys(aliases) {
 		fmt.Fprintf(&b, "\t%s %q\n", aliases[dir], m.Config.importPath(dir))
 	}

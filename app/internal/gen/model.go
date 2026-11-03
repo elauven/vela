@@ -21,6 +21,9 @@ type Model struct {
 	Matchers []*CustomMatcher
 	// Error is the segment id of the root Error.vela, "" without one.
 	Error string
+	// NotFound are the levels of a URL no route matches: the layout of the
+	// routes directory itself, around the root Error.vela.
+	NotFound []*Level
 	// Depth is the maximum chain length.
 	Depth int
 }
@@ -116,6 +119,21 @@ func Build(t *Tree) (*Model, []Diagnostic) {
 		return m, nil
 	}
 	m.Error = nearestError(t.Root)
+	newLevel := func(dir *Dir, kind ComponentKind, file string, loader bool, params []string) *Level {
+		l := &Level{ID: component(file, kind), Kind: kind, Dir: dir, Error: nearestError(dir), Params: append([]string{}, params...)}
+		if dir.Load != nil {
+			if loader {
+				l.LoaderPkg = dir.Load.Dir
+			}
+			if dir.Load.Deps {
+				l.DepsPkg = dir.Load.Dir
+			}
+		}
+		return l
+	}
+	if t.Root.Layout != "" {
+		m.NotFound = []*Level{newLevel(t.Root, KindLayout, t.Root.Layout, t.Root.Load != nil && t.Root.Load.Layout, nil)}
+	}
 	for _, d := range t.Dirs {
 		if d.Error != "" {
 			component(d.Error, KindError)
@@ -134,16 +152,7 @@ func Build(t *Tree) (*Model, []Diagnostic) {
 				params = append(params, dir.Segment.Name)
 			}
 			level := func(kind ComponentKind, file string, loader bool) *Level {
-				l := &Level{ID: component(file, kind), Kind: kind, Dir: dir, Error: nearestError(dir), Params: append([]string{}, params...)}
-				if dir.Load != nil {
-					if loader {
-						l.LoaderPkg = dir.Load.Dir
-					}
-					if dir.Load.Deps {
-						l.DepsPkg = dir.Load.Dir
-					}
-				}
-				return l
+				return newLevel(dir, kind, file, loader, params)
 			}
 			if dir.Layout != "" {
 				r.Chain = append(r.Chain, level(KindLayout, dir.Layout, dir.Load != nil && dir.Load.Layout))
