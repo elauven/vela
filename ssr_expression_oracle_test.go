@@ -15,10 +15,10 @@ import (
 )
 
 type ssrExpressionOracleRow struct {
-	Group      string                     `json:"group"`
-	Name       string                     `json:"name"`
-	Expression string                     `json:"expression"`
-	Functions  string                     `json:"functions"`
+	Group      string `json:"group"`
+	Name       string `json:"name"`
+	Expression string `json:"expression"`
+	Functions  string `json:"functions"`
 	// Components names the components the expression can use: imported
 	// .vela components in Go, plain functions in JavaScript (task 070).
 	Components []string                   `json:"components"`
