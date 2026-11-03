@@ -724,7 +724,7 @@ export function $$component(cursor, factory, props, slots, events, changed, scop
 // $bindable prop; the binding is inert for that child. where is the source
 // position for errors. The range state is "" with a child and "x" without
 // one; hydration compares the factory's $$id with the "d" payload entry the
-// server wrote (H-5.1).
+// server wrote (S-6.12).
 
 function dynamicFactory(value, where) {
   if (value === null || value === undefined || value === false) return null;

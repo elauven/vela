@@ -543,6 +543,50 @@ A component sends events to its parent with the built-in `$$dispatch`
 The listener receives a `CustomEvent`; the payload is in `event.detail`.
 `@close` without `on:` also works on components.
 
+### Dynamic components
+
+`<vela:component>` renders the component chosen by a value instead of a
+tag name: tabs, wizards, plugin areas, CMS blocks.
+
+```vela
+<script>
+  import { Chart } from './Chart.vela';
+  import { Table } from './Table.vela';
+
+  export let mode = 'chart';
+  export let rows = [];
+  const views = { chart: Chart, table: Table };
+
+  function pick(event) {
+    console.log(event.detail);
+  }
+</script>
+
+<template>
+  <vela:component :this={views[mode]} :rows={rows} @on:select={pick}>
+    <p>Shown in the default slot of the current view.</p>
+  </vela:component>
+</template>
+```
+
+- `:this` is required and dynamic. Its value is an imported component or
+  anything holding one: a `$state`, a prop, an object or array lookup, a
+  conditional. `null`, `undefined` and `false` render nothing; any other
+  value is an error that names the position of `:this`.
+- When the value changes to another component, the old one is destroyed and
+  the new one mounted. When it stays the same, a prop change only updates
+  the child, which keeps its state. Use `{#key}` around it to recreate the
+  same component.
+- The child is not known when compiling, so props are passed by name: a prop
+  the current child does not declare is ignored. `bind:value` needs the
+  current child to declare `export let value = $bindable(…)`; otherwise
+  development builds warn and the binding does nothing for that child.
+- Events (`@on:name`) and slots work as on a component tag. Slot content
+  belongs to the parent and moves to the next child.
+- With server rendering, the server renders the same component and the
+  browser hydrates it. A component stored in `$state` is computed by the
+  client, never sent in the payload.
+
 ---
 
 ## 9. Scoped styles
@@ -640,6 +684,7 @@ Scoping is identical either way.
 | `{#key expr}` `{/key}` | keyed re-creation |
 | `{#await p}` `{:then v}` `{:catch e}` `{/await}` | promise states, including `{#await p then v}` and `{#await p catch e}` shortcuts |
 | `<slot>` | child-content placeholder |
+| `<vela:component :this={C} />` | the component chosen by a value |
 | `$$dispatch(name, detail)` | emit a custom event (`@on:name` in the parent) |
 | `{#client}` `{:else}` `{/client}` | browser-only content, fallback on the server |
 | `onMount` / `onDestroy` | lifecycle (import from `vela`) |

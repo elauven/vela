@@ -97,7 +97,7 @@ func goComponentValueDecls(plan *SSRRenderPlan, component, propsName, slotsName 
 	}
 }
 
-// dynamicComponent renders <vela:component :this={…}> (H-5.1): :this is
+// dynamicComponent renders <vela:component :this={…}> (S-6.12): :this is
 // evaluated first; the props only when it is a component, as on the client;
 // vela.RenderDynamicComponent writes the range, the "d" entry and the child.
 //

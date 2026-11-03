@@ -64,7 +64,8 @@ needed.
 | | Svelte 5 | Vela |
 | --- | --- | --- |
 | `<svelte:fragment>` | ✓ (legacy) | ✓ |
-| `<svelte:component>`, `<svelte:element>`, `<svelte:self>` | ✓ | — |
+| `<svelte:component this={C}>` | ✓ (legacy) | `<vela:component :this={C}>`; props are matched by name to the current component |
+| `<svelte:element>`, `<svelte:self>` | ✓ | — |
 | `<svelte:head>`, `<svelte:window>`, `<svelte:document>`, `<svelte:body>` | ✓ | — |
 | `use:` actions | ✓ | — (use `bind:this` with `onMount` or `$effect`) |
 | `transition:`, `in:`, `out:`, `animate:` | ✓ | — |

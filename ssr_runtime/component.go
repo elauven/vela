@@ -41,7 +41,7 @@ func DynamicWriter(w io.Writer, ctx context.Context, options DynamicOptions) io.
 	return w
 }
 
-// RenderDynamicComponent renders a <vela:component> site (H-5.1): nothing
+// RenderDynamicComponent renders a <vela:component> site (S-6.12): nothing
 // for null, undefined or false (an empty range with the state token "x"),
 // or the component value in a range with the token "" after its "d" payload
 // entry. Any other value is a render error naming where, the site's source

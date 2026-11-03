@@ -149,6 +149,7 @@ through the given cursor.
 | `$$key(value, body)` | `{#key}` | Recreates the body when the value changes, using current CSR change semantics. |
 | `$$await(operand, pending, then, catch)` | `{#await}` and its shortcut forms | Tracks the current operand; settlement of a stale operand is ignored. Hydration follows §6.4. |
 | `$$component(factory, props, slots, events, bindings)` | a child component tag | Creates a child instance with its own owner. Parent updates are forwarded through the child's `set`. Component events and `bind:` to a `$bindable` prop keep their current semantics. |
+| `$$dynamic(select, props, slots, events, bindings)` | `<vela:component :this={…}>` | `select()` returns the component factory or `null`, `undefined`, `false` for nothing; any other value throws a `TypeError` naming the source position. The same factory after an update calls the child's `set`; another one destroys the child with its range and mounts the next one with a create cursor (B-3.11). |
 | `$$slot(name, fallback)` | `<slot>` in a child | Mounts the parent-provided slot fragment, or `fallback` when none is provided. |
 | `$$client(main, fallback)` | `{#client}` and client-only components | Contract `SSR_TRANSLATION_CONTRACT.md` §9. In hydrate mode it adopts the fallback range and mounts `main` with a create cursor after the root commits. In CSR it mounts `main` directly. |
 
@@ -157,6 +158,16 @@ through the given cursor.
   destroys it, and it receives the parent's dirty updates through a
   subscription that the `$$slot` block registers on the parent instance and
   removes on destroy.
+- **B-3.11 Dynamic components.** `$$dynamic` owns a range like `$$key`;
+  the current child is a `$$component` inside it. The child receives only
+  the props its factory declares (`$$props`, generated on every factory,
+  with the `$bindable` ones marked); `bind:` to a prop the current child does
+  not declare `$bindable` warns in development and is inert for that child.
+  Slot content stays owned by the parent (B-3.7): when the child changes,
+  the old child's `$$slot` parks it and the next child reopens it. Every
+  factory also carries `$$id`, its source path relative to the project
+  without the extension (`routes/users/Page`), the same as the Go
+  `ComponentID()`.
 - **B-3.8 Multiple roots.** In the first delivery, components keep their
   current CSR DOM shape, including the `display: contents` wrapper for
   multi-root templates. Whether to drop the wrapper is open (§12).
@@ -225,6 +236,7 @@ the node sequence of the server HTML equals the cursor sequence.
 range      = "<!--[" state "-->" content "<!--]-->"
 state      = ""            ; #each, #key, component, slot, row
            | branch        ; #if: active branch index, decimal; "x" when none
+           | "x"           ; <vela:component>: nothing is rendered ("" when a component is)
            | "e"           ; #each: the {:else} fallback is rendered
            | "p" | "t" | "c"   ; #await: pending / then / catch
            | "f"           ; $$client: fallback is rendered
@@ -290,7 +302,7 @@ One script per interactive root, immediately after the root range:
 
 ```html
 <script type="application/json" data-vela-root>
-{"v":3,
+{"v":4,
  "props":{"title":"Team","users":[{"id":1,"name":"Ann"},{"id":2,"name":"Bob"}]},
  "entries":[
    ["s","Page",{"stats":{"active":2}}],
@@ -325,6 +337,11 @@ components write no entry.
     element `{"omitted": [names]}`; the client evaluates its initializer.
   - `["a", site, snapshot]` — written when a server-evaluated `{#await}`
     renders (T-7.4f). `site` is the compile-time await site identifier.
+  - `["d", site, componentID]` — written when a `<vela:component>` renders
+    a component, before the component's own entries (payload version 4,
+    task 070). `site` is the compile-time site identifier; `componentID` is
+    the `ComponentID()` of the rendered component. A site that renders
+    nothing writes no entry; its range token `x` says so (§5.1).
 - **S-6.5 Nothing for client-only code.** The main branch of `{#client}` and
   client-only components produce no entries.
 - **S-6.6 Encoding.** Values follow the JSON view rule (T-5.1). The script
@@ -353,6 +370,22 @@ components write no entry.
   so the client value is the server value. Calls, other bindings and every
   other expression keep their value in the payload.
 - **S-6.9 Removal.** The payload script is removed after the root commits.
+
+### 6.2a Dynamic components
+
+- **S-6.12** A hydrating `$$dynamic` evaluates `select()` from the restored
+  state, as every block does (S-6.3), and compares the result with the
+  server: the range token `""` or `x` must agree with whether `select()`
+  returned a component, and the `d` entry must name the factory's `$$id`.
+  A disagreement is a structural mismatch handled by the policy (§7.3); the
+  report names both component IDs and the site.
+- **S-6.13** State whose value is or holds a component is computed by the
+  client: an initializer that references an imported component is
+  reproducible (S-6.8a), and the Go runtime leaves a component value out of
+  the `s` entry (`omitted`), because the client's value is a factory
+  function that JSON cannot carry.
+- **A-8.2a** A tree with a `<vela:component>` is `interactive` (§8.1),
+  because the client must be able to switch the child.
 
 ### 6.3 Keyed lists
 

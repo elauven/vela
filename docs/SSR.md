@@ -56,7 +56,7 @@ Set the import path of the generated packages with `--ssr-module` or in
 ```
 
 A runtime of another contract version fails `go build` with
-`undefined: vela.ContractV3` instead of misbehaving.
+`undefined: vela.ContractV4` instead of misbehaving.
 
 ## Render
 

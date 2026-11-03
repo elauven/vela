@@ -187,6 +187,11 @@ each optional section, in any order:
   built-in `$$dispatch('close', detail)` (never imported), the parent listens
   with `@on:close={handler}` and reads `event.detail`. Keep event names and
   payloads small and explicit.
+- Use `<vela:component :this={views[mode]} :rows={rows} />` when the
+  component is chosen by a value. `:this` must be dynamic; `null`,
+  `undefined` and `false` render nothing. Props the current component does
+  not declare are ignored, so keep the props every candidate needs on the
+  tag and use `bind:` only for a `$bindable` prop they all declare.
 - Import from `vela` only `onMount`, `onDestroy` and runtime exports such as
   `tick`; import stores from `vela/store`. Other names are
   `VELA-UNKNOWN-IMPORT`.
@@ -220,8 +225,9 @@ Do not generate or rely on the following in Vela applications:
 - TypeScript or `<script lang="ts">`.
 - Svelte 5 `$props()`, snippets, or `{@render}`.
 - `use:` actions, `transition:`, `in:`, or `out:` directives.
-- `<svelte:component>`, `<svelte:element>`, `<svelte:self>`,
-  `<svelte:head>`, `<svelte:window>`, `<svelte:document>`, or `<svelte:body>`.
+- `<svelte:component>` (use `<vela:component :this={…}>`), `<svelte:element>`,
+  `<svelte:self>`, `<svelte:head>`, `<svelte:window>`, `<svelte:document>`, or
+  `<svelte:body>`.
 - `bind:group`, `bind:files`, dimension bindings, or `bind:innerHTML`.
 - `{@html}`, `{@const}`, `{@debug}`, or event modifiers such as
   `@click.prevent` (call `event.preventDefault()` in the handler).

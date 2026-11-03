@@ -1057,7 +1057,7 @@ func (g *ASTGen) buildModule(nodes []sfcast.Node) *jsast.JsProgram {
 	})
 	// Every factory carries its component ID and declared props, so a
 	// <vela:component> can pass a child only the props it declares and
-	// hydration can compare the child with the server's (H-5.1).
+	// hydration can compare the child with the server's (S-6.12).
 	if g.sfc != nil && g.sfc.ComponentID != "" {
 		prog.Body = append(prog.Body, jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent(g.name), "$$id"), jsast.GenStrLit(g.sfc.ComponentID)))
 	}
