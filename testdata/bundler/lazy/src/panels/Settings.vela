@@ -1,0 +1,7 @@
+<script>
+  export let title = 'Settings';
+</script>
+
+<template>
+  <section class="settings"><h2>{title}</h2><p>lazy-settings-panel</p></section>
+</template>

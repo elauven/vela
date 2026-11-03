@@ -95,7 +95,11 @@ type pluginRun struct {
 		Runtimes   int  `json:"runtimes"`
 		ProcessEnv bool `json:"processEnv"`
 	}
-	Entries    map[string]string
+	Entries map[string]string
+	Lazy    *struct {
+		Chunks, PanelChunks, Before, After int
+		Panel                              string
+	}
 	BuildError string `json:"buildError"`
 	Error      string
 }
@@ -193,5 +197,16 @@ func TestBundlerPluginReportsDiagnostics(t *testing.T) {
 		if !strings.Contains(r.BuildError, want) {
 			t.Errorf("the build error misses %q:\n%s", want, r.BuildError)
 		}
+	}
+}
+
+// TestBundlerPluginSplitsLazyComponents: the target of lazy() is its own
+// chunk in a Vite build, loaded when the panel opens (task 071).
+func TestBundlerPluginSplitsLazyComponents(t *testing.T) {
+	a := newBundlerApp(t, "lazy")
+	r := a.run("vite-lazy", "production")
+	l := r.Lazy
+	if l == nil || l.Chunks < 2 || l.PanelChunks != 1 || l.Before != 0 || l.After != 1 || l.Panel != "Settings" || len(r.Logs) != 0 {
+		t.Errorf("lazy build: %+v, logs %v", l, r.Logs)
 	}
 }

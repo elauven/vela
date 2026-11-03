@@ -175,7 +175,14 @@ type SSRComponentLink struct {
 	// ClientOnly is set when the child declares <script context="client">
 	// (contract §9.2): it has no Go renderer.
 	ClientOnly bool
+	// Lazy is the local name of lazy() for the target of a
+	// lazy(() => import('./X.vela')) call (task 071); its link is keyed by
+	// ssrLazyLinkKey.
+	Lazy string
 }
+
+// ssrLazyLinkKey keys the link of a lazy() target by its literal path.
+func ssrLazyLinkKey(specifier string) string { return "lazy:" + specifier }
 
 // SSRPlanClient is a {#client} block or a client-only component (contract
 // §9): the server renders only the fallback, in a range with the state
@@ -589,6 +596,39 @@ func ResolveSSRLocalComponentLinks(src, srcRoot string, analysis *analyzer.Analy
 		}
 		for _, local := range imp.Names {
 			links[local] = SSRComponentLink{LocalName: local, SourcePath: resolved}
+		}
+	}
+	// The targets of lazy() calls are children too: the server renders
+	// them like any component (task 071).
+	if local := analyzer.LazyLocalName(analysis.ScriptProgram()); local != "" {
+		var walkErr error
+		jsast.WalkNode(analysis.ScriptProgram(), func(n jsast.JsNode) bool {
+			call, ok := n.(*jsast.JsCallExpr)
+			if !ok || walkErr != nil {
+				return walkErr == nil
+			}
+			callee, ok := call.Callee.(*jsast.JsIdent)
+			if !ok || callee.Name != local || len(call.Args) == 0 {
+				return true
+			}
+			specifier, ok := analyzer.LazyImportSpecifier(call.Args[0])
+			if !ok {
+				return true
+			}
+			resolved, err := filepath.Abs(filepath.Join(filepath.Dir(src), specifier))
+			if err != nil {
+				walkErr = err
+				return false
+			}
+			if rel, err := filepath.Rel(root, resolved); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				walkErr = fmt.Errorf("ssr lazy component import %q escapes project source root", specifier)
+				return false
+			}
+			links[ssrLazyLinkKey(specifier)] = SSRComponentLink{LocalName: specifier, SourcePath: resolved, Lazy: local}
+			return true
+		})
+		if walkErr != nil {
+			return nil, walkErr
 		}
 	}
 	return links, nil

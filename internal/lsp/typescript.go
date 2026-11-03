@@ -51,6 +51,7 @@ declare module 'vela' {
   export function onMount(fn: () => void | (() => void) | Promise<void>): void;
   export function onDestroy(fn: () => void): void;
   export function tick(): Promise<void>;
+  export function lazy(load: () => Promise<any>): any;
   export function mount(component: any, options: { target: Element; props?: Record<string, any>; slots?: Record<string, any> }): any;
   export function warn(message: string): void;
   export { writable, readable, derived } from 'vela/store';

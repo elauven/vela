@@ -332,6 +332,55 @@ export function mount(Component, { target, props = {}, slots = {} } = {}) {
  * tick() — returns a Promise that resolves after the current microtask queue
  * drains. Useful in tests or after imperative state changes.
  */
+// ── Lazy components (task 071) ─────────────────────────────────
+// lazy(() => import('./X.vela')) is a component value for <vela:component>
+// whose module loads on demand. The compiler adds the component ID as the
+// second argument and also registers every lazy component of a module when
+// the module is evaluated, so that preloadHydration() finds them by the IDs
+// of the payload's "d" entries. One ID has one lazy value: it is the
+// identity <vela:component> compares, before and after loading.
+const $$lazyRegistry = new Map();
+
+export function lazy(loader, id) {
+  if (id && $$lazyRegistry.has(id)) return $$lazyRegistry.get(id);
+  let pending = null;
+  const value = {
+    $$lazy: true,
+    id: id || '',
+    loaded: false,
+    component: null,
+    load() {
+      if (value.loaded) return Promise.resolve(value.component);
+      if (!pending) {
+        pending = Promise.resolve()
+          .then(loader)
+          .then((module) => {
+            const component = typeof module === 'function' ? module : module && module.default;
+            if (typeof component !== 'function') {
+              throw new TypeError(`vela: lazy component ${value.id || '(unnamed)'}: the module exports no component`);
+            }
+            value.component = component;
+            value.loaded = true;
+            return component;
+          })
+          .catch((error) => {
+            // A later load() tries again.
+            pending = null;
+            throw error;
+          });
+      }
+      return pending;
+    },
+  };
+  if (id) $$lazyRegistry.set(id, value);
+  return value;
+}
+
+// $$lazyById returns the registered lazy value of a component ID.
+export function $$lazyById(id) {
+  return $$lazyRegistry.get(id) || null;
+}
+
 export function tick() {
   return Promise.resolve();
 }

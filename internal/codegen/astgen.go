@@ -918,6 +918,7 @@ func (g *ASTGen) buildModule(nodes []sfcast.Node) *jsast.JsProgram {
 	for _, imp := range g.buildImportDecls() {
 		prog.Body = append(prog.Body, imp)
 	}
+	prog.Body = append(prog.Body, g.buildLazyComponents()...)
 
 	fnBody := &jsast.JsBlock{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}}
 
@@ -1237,6 +1238,34 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *jsast.JsProgram, fnBody *jsast.JsB
 		})
 		fnBody.Body = append([]jsast.JsStmt{bind}, fnBody.Body...)
 	}
+}
+
+// buildLazyComponents completes the lazy() calls of the script (task 071):
+// the import path points to the compiled module like a static import, and
+// the component ID is the second argument. Every lazy component is also
+// registered when the module is evaluated, so that preloadHydration() finds
+// it by the ID of a "d" payload entry before the component runs.
+func (g *ASTGen) buildLazyComponents() []jsast.JsStmt {
+	if g.sfc == nil {
+		return nil
+	}
+	var out []jsast.JsStmt
+	seen := map[string]bool{}
+	for _, l := range g.sfc.LazyComponents {
+		specifier := l.Specifier
+		if !g.sourceComponentImports {
+			specifier = RewriteImportPath(specifier)
+		}
+		loader := func() jsast.JsExpr {
+			return &jsast.JsArrowFunc{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}, Body: jsast.GenCall(jsast.GenIdent("import"), jsast.GenStrLit(specifier))}
+		}
+		l.Call.Args = []jsast.JsExpr{loader(), jsast.GenStrLit(l.ID)}
+		if !seen[l.ID] {
+			seen[l.ID] = true
+			out = append(out, jsast.GenExprStmt(jsast.GenCall(jsast.GenIdent(l.Local), loader(), jsast.GenStrLit(l.ID))))
+		}
+	}
+	return out
 }
 
 // buildImportDecls reconstructs user imports from the typed shape captured by

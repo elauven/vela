@@ -14,7 +14,7 @@
  * with one console.error and no value verification.
  */
 
-import { $$isDev } from './runtime.js';
+import { $$isDev, $$lazyById, warn } from './runtime.js';
 import { $$owner, $$setHydration, $$createCursor, $$listen } from './runtime-blocks.js';
 
 export const MISMATCH = 'VELA-HYDRATION-MISMATCH';
@@ -346,6 +346,49 @@ function createSession(entries, options, container) {
     session.observer.observe(container, { subtree: true, attributes: true, attributeOldValue: true });
   }
   return session;
+}
+
+// payloadOf returns the payload of the root in container without
+// consuming it, or null.
+function payloadOf(container) {
+  for (const node of container.childNodes) {
+    if (node.nodeType === 1 && node.localName === 'script' && node.hasAttribute('data-vela-root')) {
+      try {
+        return JSON.parse(node.textContent);
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+// preloadHydration loads the lazy components (lazy(), task 071) that the
+// server rendered in container, named by the "d" entries of its payload,
+// so that hydrate() can adopt them synchronously (S-6.14). A lazy module
+// can register further lazy components when it loads; the entries are
+// read again until nothing new loads. A failed load is reported with warn;
+// hydrate() then reports lazy-not-loaded and repairs.
+export async function preloadHydration(container) {
+  const payload = payloadOf(container);
+  if (!payload || !Array.isArray(payload.entries)) return;
+  const ids = [...new Set(payload.entries.filter((entry) => entry[0] === 'd').map((entry) => entry[2]))];
+  const done = new Set();
+  for (let progress = true; progress;) {
+    progress = false;
+    const pending = [];
+    for (const id of ids) {
+      const value = done.has(id) ? null : $$lazyById(id);
+      if (!value) continue;
+      done.add(id);
+      if (value.loaded) continue;
+      progress = true;
+      pending.push(value.load().catch((error) => {
+        warn(`preloadHydration: the lazy component ${id} failed to load: ${error && error.message ? error.message : error}`);
+      }));
+    }
+    await Promise.all(pending);
+  }
 }
 
 // hydrate adopts the root range and payload script that a Go renderer

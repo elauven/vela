@@ -726,15 +726,23 @@ export function $$component(cursor, factory, props, slots, events, changed, scop
 // one; hydration compares the factory's $$id with the "d" payload entry the
 // server wrote (S-6.12).
 
-function dynamicFactory(value, where) {
+// dynamicValue checks the value of :this: a factory, a lazy value
+// (lazy(), task 071), or null for nothing.
+function dynamicValue(value, where) {
   if (value === null || value === undefined || value === false) return null;
-  if (typeof value !== 'function') {
-    throw new TypeError(`vela: <vela:component> at ${where}: :this is ${value === '' ? 'an empty string' : typeof value}, not a component`);
-  }
-  return value;
+  if (typeof value === 'function' || (typeof value === 'object' && value.$$lazy === true)) return value;
+  throw new TypeError(`vela: <vela:component> at ${where}: :this is ${value === '' ? 'an empty string' : typeof value}, not a component`);
 }
 
-function dynamicProps(factory, props, bindings, where) {
+// factoryOf is the component of a selected value; null for a lazy value
+// that is not loaded yet.
+function factoryOf(value) {
+  if (!value) return null;
+  if (typeof value === 'function') return value;
+  return value.loaded ? value.component : null;
+}
+
+function dynamicProps(factory, props) {
   const all = props();
   const declared = factory.$$props;
   if (!declared) return all;
@@ -761,17 +769,65 @@ function warnBindings(factory, bindings, where) {
 
 export function $$dynamic(cursor, select, props, slots, events, bindings, changed, scope, where) {
   let anchor;
-  let factory = dynamicFactory(select(), where);
+  // selected is the value of :this, the identity compared after updates; a
+  // lazy value keeps its identity while it loads.
+  let selected = dynamicValue(select(), where);
   let current = null;
   const fragmentFor = (component) => {
     warnBindings(component, bindings, where);
     return (inner) => {
-      const child = inner.block($$component, component, () => dynamicProps(component, props, bindings, where), slots, events, null, scope);
+      const child = inner.block($$component, component, () => dynamicProps(component, props), slots, events, null, scope);
       return { p: (dirty) => child.p(dirty) };
     };
   };
+  // show mounts the selected component, or for a lazy value that is not
+  // loaded yet starts the load and mounts when it arrives, unless :this
+  // changed or the block was destroyed meanwhile (B-3.5).
+  const show = () => {
+    const factory = factoryOf(selected);
+    if (factory) {
+      current = mountFragment(fragmentFor(factory), undefined, anchor);
+      return;
+    }
+    if (!selected) return;
+    const lazyValue = selected;
+    lazyValue.load().then(
+      (component) => {
+        if (block.isDone() || selected !== lazyValue || current) return;
+        current = mountFragment(fragmentFor(component), undefined, anchor);
+      },
+      (error) => {
+        if (block.isDone() || selected !== lazyValue) return;
+        warn(`<vela:component> at ${where}: the lazy component ${lazyValue.id || '(unnamed)'} failed to load: ${error && error.message ? error.message : error}`);
+      },
+    );
+  };
+  const block = {
+    p(dirty) {
+      if (block.isDone()) return;
+      if (changed && !changed(dirty)) return;
+      const next = dynamicValue(select(), where);
+      if (next !== selected) {
+        unmount(current);
+        current = null;
+        selected = next;
+        show();
+        return;
+      }
+      updateMounted(current, dirty, false);
+    },
+    move(before) {
+      if (current) moveRange(current.range, before);
+      before.parentNode.insertBefore(anchor, before);
+    },
+  };
   if (cursor.hydrating) {
     const token = cursor.open();
+    const factory = factoryOf(selected);
+    if (selected && !factory) {
+      // The server rendered the component; its module is not here yet.
+      cursor.expect(false, `lazy-not-loaded: <vela:component> renders the lazy component ${selected.id || '(unnamed)'}, which is not loaded; await preloadHydration(container) before hydrate()`);
+    }
     const id = factory ? factory.$$id || factory.name : null;
     cursor.expect(token === (factory ? '' : 'x'),
       factory ? `<vela:component> renders ${id}, the server rendered nothing` : `<vela:component> renders nothing, the server rendered a component`);
@@ -783,31 +839,14 @@ export function $$dynamic(cursor, select, props, slots, events, bindings, change
     anchor = cursor.close();
   } else {
     anchor = cursor.comment();
-    if (factory) current = mountFragment(fragmentFor(factory), undefined, anchor);
   }
-  const block = {
-    p(dirty) {
-      if (block.isDone()) return;
-      if (changed && !changed(dirty)) return;
-      const next = dynamicFactory(select(), where);
-      if (next !== factory) {
-        unmount(current);
-        factory = next;
-        current = next ? mountFragment(fragmentFor(next), undefined, anchor) : null;
-        return;
-      }
-      updateMounted(current, dirty, false);
-    },
-    move(before) {
-      if (current) moveRange(current.range, before);
-      before.parentNode.insertBefore(anchor, before);
-    },
-  };
-  return registerBlock(cursor, block, anchor, (removeDom) => {
+  registerBlock(cursor, block, anchor, (removeDom) => {
     if (!current) return;
     if (removeDom) unmount(current);
     else current.owner.release();
   });
+  if (!cursor.hydrating) show();
+  return block;
 }
 
 // ── Slots ────────────────────────────────────────────────────────────────

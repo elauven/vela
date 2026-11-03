@@ -752,6 +752,25 @@ func (b *ssrIRBuilder) componentValue(link SSRComponentLink, pos int) (SSRIRExpr
 	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{Component: true}), Expr: value}, nil
 }
 
+// lazyCall translates lazy(() => import('./X.vela')) to the XComponent of
+// X: the server has every renderer (task 071).
+func (b *ssrIRBuilder) lazyCall(call *jsast.JsCallExpr, pos int) (SSRIRExpr, bool, error) {
+	callee, ok := call.Callee.(*jsast.JsIdent)
+	if !ok || len(call.Args) == 0 {
+		return nil, false, nil
+	}
+	specifier, ok := analyzer.LazyImportSpecifier(call.Args[0])
+	if !ok {
+		return nil, false, nil
+	}
+	link, ok := b.ctx.Components[ssrLazyLinkKey(specifier)]
+	if !ok || link.Lazy != callee.Name || b.shadowed(callee.Name) {
+		return nil, false, nil
+	}
+	value, err := b.componentValue(link, pos)
+	return value, true, err
+}
+
 // ssrComponentImportAlias names the import of a component package used for
 // component values, unique per import path.
 func ssrComponentImportAlias(importPath string) string {
@@ -1403,6 +1422,9 @@ func (b *ssrIRBuilder) call(call *jsast.JsCallExpr, pos int) (SSRIRExpr, error) 
 		}
 	}
 	if value, handled, err := b.builtinCall(call, pos); handled {
+		return value, err
+	}
+	if value, handled, err := b.lazyCall(call, pos); handled {
 		return value, err
 	}
 	callee, ok := call.Callee.(*jsast.JsIdent)

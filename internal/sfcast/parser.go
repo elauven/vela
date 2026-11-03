@@ -46,6 +46,9 @@ type SFC struct {
 	Source    string
 	SitePath  string
 	SiteHosts func(local string) (string, bool)
+	// LazyComponents are the validated lazy(() => import('./X.vela')) calls
+	// of the script (task 071), set by the compiler before code generation.
+	LazyComponents []LazyComponent
 	// ComponentID is the component's $$id: its path relative to the project
 	// directory without the extension (routes/users/Page), or the file name
 	// without the extension outside a project. <vela:component> hydration
@@ -556,6 +559,15 @@ type ComponentNode struct {
 	// This is the this attribute of <vela:component>, nil when it is
 	// missing. A valid one is dynamic (:this={expr}) and has an Expr.
 	This *Attr
+}
+
+// LazyComponent is one lazy(() => import('./X.vela')) call of a component
+// script (task 071).
+type LazyComponent struct {
+	Local     string // the local name of lazy imported from 'vela'
+	Call      *jsast.JsCallExpr
+	Specifier string // the literal path, './X.vela'
+	ID        string // the $$id of the target component
 }
 
 // DynamicComponentTag is the tag of a dynamic component.

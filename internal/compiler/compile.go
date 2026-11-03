@@ -482,12 +482,14 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		ValidateDerivedPurity(scriptProg, analysis, ds)
 		validateScriptFormsWithAnalysis(scriptProg, analysis, ds)
 		ValidateEffectBody(scriptProg, analysis, ds)
+		sfc.LazyComponents = ResolveLazyComponents(scriptProg, sfc.ComponentID, ds)
 		ds.PopOffset()
 
 		ds.PushOffset(sfc.TemplateOffset)
 		ValidateTemplate(tmpl, analysis, ds)
 		ValidateTemplateForms(tmpl, sfc.Template, ds)
 		ValidateSpecialElements(tmpl, sfc.TemplateOffset, ds)
+		ValidateLazyTags(tmpl, lazyBindings(scriptProg, sfc.LazyComponents), sfc.TemplateOffset, ds)
 		ValidateTemplateRefs(tmpl, analysis, scriptScope, sfc.Template, ds)
 		ds.PopOffset()
 		if ds.HasErrors() {
