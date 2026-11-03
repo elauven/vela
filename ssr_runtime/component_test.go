@@ -95,3 +95,14 @@ func TestComponentValues(t *testing.T) {
 		t.Errorf("typeof a component is %q", TypeOf(a))
 	}
 }
+
+func TestComponentStateIsComputedByTheClient(t *testing.T) {
+	state := NewObject().Set("view", testComponent{"routes/A"}).Set("list", []any{testComponent{"routes/B"}}).Set("n", 1.0)
+	kept, omitted := clientOnlyState(state, nil)
+	if strings.Join(omitted, ",") != "view,list" {
+		t.Errorf("omitted %v, want view and list", omitted)
+	}
+	if b, err := MarshalHydrationPayload(kept); err != nil || string(b) != `{"n":1}` {
+		t.Errorf("kept state %s, %v", b, err)
+	}
+}

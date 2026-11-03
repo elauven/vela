@@ -12,5 +12,8 @@
  {"group":"objects-order","name":"spread-keeps-first-position","props":{},"decls":[["state","o","{ z: 1, ...{ a: 2, z: 3 } }"]],"expression":"o.z","expected":"3","state":"{\"o\":{\"z\":3,\"a\":2}}"},
  {"group":"objects-order","name":"spread-string","props":{},"decls":[["state","o","{ ...'hi' }"]],"expression":"o[1]","expected":"i","state":"{\"o\":{\"0\":\"h\",\"1\":\"i\"}}"},
  {"group":"objects-order","name":"spread-prop-object","props":{"src":{"y":1,"x":2}},"decls":[["prop","src","{}"],["state","o","{ x: 0, ...src, w: 9 }"]],"expression":"o.x","expected":"2","state":"{\"o\":{\"x\":2,\"y\":1,\"w\":9}}"},
- {"group":"objects-order","name":"duplicate-key","props":{},"decls":[["state","o","{ a: 1, b: 2, a: 3 }"]],"expression":"o.a","expected":"3","state":"{\"o\":{\"a\":3,\"b\":2}}"}
+ {"group":"objects-order","name":"duplicate-key","props":{},"decls":[["state","o","{ a: 1, b: 2, a: 3 }"]],"expression":"o.a","expected":"3","state":"{\"o\":{\"a\":3,\"b\":2}}"},
+ {"group":"component-state","name":"component-state-from-prop","props":{"first":"b"},"decls":[["component","OracleA",""],["component","OracleB",""],["prop","first","'a'"],["state","view","first === 'b' ? OracleB : OracleA"],["derived","index","[OracleA, OracleB].indexOf(view)"]],"expression":"index","expected":"1","state":"{}"},
+ {"group":"component-state","name":"component-state-default","props":{},"decls":[["component","OracleA",""],["component","OracleB",""],["prop","first","'a'"],["state","view","first === 'b' ? OracleB : OracleA"],["state","n","[1, 2].length"],["derived","same","view === OracleA"]],"expression":"same + ':' + n","expected":"true:2","state":"{\"n\":2}"},
+ {"group":"component-state","name":"component-list-state","props":{},"decls":[["component","OracleA",""],["component","OracleB",""],["state","views","[OracleA, OracleB]"],["const","picked","views[1]"]],"expression":"(picked === OracleB) + ',' + views.length","expected":"true,2","state":"{\"views\":[null,null]}"}
 ]

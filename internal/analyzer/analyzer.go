@@ -308,10 +308,19 @@ func AnalyzeScriptAST(script *sfcast.ScriptAST) *Analysis {
 }
 
 // markReproducibleState classifies the $state initializers (task 059).
+// Imported components count as props here: the client module imports the
+// same factories, so a reference to one is computed there (task 070).
 func (a *Analysis) markReproducibleState() {
 	props := map[string]bool{}
 	for _, p := range a.Props {
 		props[p.Name] = true
+	}
+	for _, imp := range a.Imports {
+		if imp != nil && strings.HasSuffix(imp.Source, ".vela") {
+			for _, name := range imp.Names {
+				props[name] = true
+			}
+		}
 	}
 	for _, sv := range a.StateVars {
 		sv.Reproducible = reproducibleInit(sv.InitialAST, props)

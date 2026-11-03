@@ -41,7 +41,7 @@ func TestSSRExpressionDifferentialFuzz(t *testing.T) {
 	}
 	rows := make([]ssrExpressionOracleRow, count)
 	for i := range rows {
-		rows[i] = ssrExpressionOracleRow{Group: "fuzz", Name: fmt.Sprintf("fuzz-%d-%d", seed, i), Expression: g.top(), Functions: ssrFuzzFunctions, Values: values}
+		rows[i] = ssrExpressionOracleRow{Group: "fuzz", Name: fmt.Sprintf("fuzz-%d-%d", seed, i), Expression: g.top(), Functions: ssrFuzzFunctions, Components: ssrFuzzComponents, Values: values}
 	}
 	// Node computes the expected text or exception of every row.
 	script := `
@@ -49,7 +49,8 @@ const rows = JSON.parse(require('fs').readFileSync(0, 'utf8'));
 for (const row of rows) {
   const names = Object.keys(row.values);
   try {
-    row.expected = String(Function(...names, '"use strict"; ' + row.functions + '; return (' + row.expression + ');')(...names.map((n) => row.values[n])));
+    const components = (row.components || []).map((name) => 'function ' + name + '() {}').join(' ');
+    row.expected = String(Function(...names, '"use strict"; ' + components + ' ' + row.functions + '; return (' + row.expression + ');')(...names.map((n) => row.values[n])));
   } catch (e) {
     row.throws = e.constructor.name;
   }
@@ -83,6 +84,10 @@ var ssrFuzzValues = map[string]string{
 	"o":   `{"a": 1, "b": "two", "c": [1, 2], "d": null}`,
 	"yes": `true`, "no": `false`, "z": `null`,
 }
+
+// ssrFuzzComponents are imported components the expressions use as values
+// (task 070): functions in JavaScript, vela.Component values in Go.
+var ssrFuzzComponents = []string{"OracleA", "OracleB"}
 
 // ssrFuzzFunctions are called by generated expressions with generated
 // arguments, so that statements are fuzzed too: rest elements and
@@ -257,7 +262,11 @@ func (g *ssrFuzzGenerator) bool(depth int) string {
 		return g.pick("yes", "no", "true", "false")
 	}
 	d := depth - 1
-	switch g.rand.Intn(11) {
+	switch g.rand.Intn(13) {
+	case 11:
+		return "(" + g.component(d) + " " + g.pick("===", "!==") + " " + g.component(d) + ")"
+	case 12:
+		return "[OracleA, " + g.component(d) + "]." + g.pick("includes", "indexOf") + "(" + g.component(d) + ")"
 	case 0:
 		return "(" + g.num(d) + " " + g.pick("<", "<=", ">", ">=", "===", "!==") + " " + g.num(d) + ")"
 	case 1:
@@ -280,6 +289,23 @@ func (g *ssrFuzzGenerator) bool(depth int) string {
 		return "(" + g.pick(g.str(0), g.smallInt(), "'length'", "'map'", "'toString'") + " in " + g.pick("o", "xs", "ns", "[1, , 3]", "o.c", g.arr(d)) + ")"
 	}
 	return "Object.hasOwn(o, " + g.str(0) + ")"
+}
+
+// component is an expression whose value is a component or nothing.
+func (g *ssrFuzzGenerator) component(depth int) string {
+	if depth == 0 || g.rand.Intn(3) == 0 {
+		return g.pick("OracleA", "OracleB")
+	}
+	d := depth - 1
+	switch g.rand.Intn(4) {
+	case 0:
+		return "(" + g.bool(d) + " ? " + g.component(d) + " : " + g.pick("OracleB", "null") + ")"
+	case 1:
+		return "[OracleA, OracleB][" + g.smallInt() + "]"
+	case 2:
+		return "(" + g.pick("z", "no", "yes && OracleB") + " || " + g.component(d) + ")"
+	}
+	return "({ a: OracleA, b: OracleB })[" + g.pick("'a'", "'b'", "'c'") + "]"
 }
 
 func (g *ssrFuzzGenerator) arr(depth int) string {

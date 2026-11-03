@@ -67,6 +67,13 @@ func TestSSRInitOracle(t *testing.T) {
 				fmt.Fprintf(&script, "let %s = $derived(%s);\n", name, init)
 			case "const":
 				fmt.Fprintf(&script, "const %s = %s;\n", name, init)
+			case "component":
+				// An imported component (task 070); a function in JavaScript.
+				fmt.Fprintf(&script, "import { %s } from './%s.vela';\n", name, name)
+				child := "<template><b>" + name + "</b></template>\n"
+				if err := os.WriteFile(filepath.Join(srcRoot, name+".vela"), []byte(child), 0o644); err != nil {
+					t.Fatal(err)
+				}
 			default:
 				t.Fatalf("%s: unknown declaration kind %q", row.Name, kind)
 			}

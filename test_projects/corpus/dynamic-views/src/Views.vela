@@ -1,0 +1,34 @@
+<script>
+  import { ChartView } from './ChartView.vela';
+  import { TableView } from './TableView.vela';
+
+  export let mode = 'chart';
+  let rows = $state([3, 1, 2]);
+  let current = $state(mode);
+  const views = { chart: ChartView, table: TableView };
+
+  function next() {
+    current = current === 'chart' ? 'table' : current === 'table' ? 'none' : 'chart';
+  }
+
+  function add() {
+    rows = [...rows, rows.length + 1];
+  }
+</script>
+
+<template>
+  <section class="views">
+    <header>
+      <button class="next" @click={next}>Next view</button>
+      <button class="add" @click={add}>Add row</button>
+      <span class="current">{current}</span>
+    </header>
+    <vela:component :this={views[current]} :rows={rows} title="Sales">
+      <p class="note">{rows.length} rows</p>
+    </vela:component>
+  </section>
+</template>
+
+<style>
+  .views { display: grid; gap: 0.5rem; }
+</style>

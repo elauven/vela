@@ -1,0 +1,22 @@
+<script>
+  export let rows = [];
+  export let title = '';
+  let highlighted = $state(false);
+  let max = $derived(Math.max(1, ...rows));
+</script>
+
+<template>
+  <figure class="chart" class:highlighted={highlighted}>
+    <figcaption>{title}</figcaption>
+    <button class="toggle" @click={() => highlighted = !highlighted}>Highlight</button>
+    {#each rows as row, index}
+      <div class="bar" style:width={`${(row / max) * 100}%`}>{index}: {row}</div>
+    {/each}
+    <slot />
+  </figure>
+</template>
+
+<style>
+  .bar { background: steelblue; color: white; }
+  .highlighted .bar { background: orange; }
+</style>

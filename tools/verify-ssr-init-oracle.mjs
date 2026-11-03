@@ -18,7 +18,10 @@ function evaluate(row) {
   const lines = ['"use strict";'];
   const states = [];
   for (const [kind, name, init] of row.decls) {
-    if (kind === 'prop' || kind === 'bindable') {
+    if (kind === 'component') {
+      // An imported component is a factory function on the client (task 070).
+      lines.push(`function ${name}() {}`);
+    } else if (kind === 'prop' || kind === 'bindable') {
       lines.push(`let ${name} = Object.prototype.hasOwnProperty.call(props, ${JSON.stringify(name)}) ? props[${JSON.stringify(name)}] : (${init});`);
     } else {
       lines.push(`${kind === 'const' ? 'const' : 'let'} ${name} = (${init});`);

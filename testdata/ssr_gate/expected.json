@@ -1454,6 +1454,64 @@
       }
     },
     {
+      "id": "dynamic-views",
+      "role": "positive",
+      "root": "test_projects/corpus/dynamic-views",
+      "src": "src",
+      "components": {
+        "ChartView.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "class#1": "server-native",
+            "derived#1": "server-native",
+            "each#1": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "state#1": "server-native",
+            "style#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native"
+          }
+        },
+        "TableView.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "derived#1": "server-native",
+            "each#1": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "state#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native"
+          }
+        },
+        "Views.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "binding#1": "server-native",
+            "component-prop#1": "server-native",
+            "dynamic-component#1": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native"
+          }
+        }
+      }
+    },
+    {
       "id": "deepseek-todo",
       "role": "negative",
       "root": "test_projects/deepseek-todo-vela",
