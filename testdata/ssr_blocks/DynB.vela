@@ -1,0 +1,13 @@
+<script>
+  export let rows = [];
+  export let label = '';
+</script>
+
+<template>
+  <p class="b">{label} {rows.length}<slot /></p>
+  <ul>{#each rows as row (row.id)}<li>{row.id}</li>{/each}</ul>
+</template>
+
+<style>
+  .b { color: blue; }
+</style>

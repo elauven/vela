@@ -14,7 +14,7 @@
  * with one console.error and no value verification.
  */
 
-import { $$isDev } from './runtime.js';
+import { $$isDev, $$lazyById, warn } from './runtime.js';
 import { $$owner, $$setHydration, $$createCursor, $$listen } from './runtime-blocks.js';
 
 export const MISMATCH = 'VELA-HYDRATION-MISMATCH';
@@ -348,6 +348,49 @@ function createSession(entries, options, container) {
   return session;
 }
 
+// payloadOf returns the payload of the root in container without
+// consuming it, or null.
+function payloadOf(container) {
+  for (const node of container.childNodes) {
+    if (node.nodeType === 1 && node.localName === 'script' && node.hasAttribute('data-vela-root')) {
+      try {
+        return JSON.parse(node.textContent);
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+// preloadHydration loads the lazy components (lazy(), task 071) that the
+// server rendered in container, named by the "d" entries of its payload,
+// so that hydrate() can adopt them synchronously (S-6.14). A lazy module
+// can register further lazy components when it loads; the entries are
+// read again until nothing new loads. A failed load is reported with warn;
+// hydrate() then reports lazy-not-loaded and repairs.
+export async function preloadHydration(container) {
+  const payload = payloadOf(container);
+  if (!payload || !Array.isArray(payload.entries)) return;
+  const ids = [...new Set(payload.entries.filter((entry) => entry[0] === 'd').map((entry) => entry[2]))];
+  const done = new Set();
+  for (let progress = true; progress;) {
+    progress = false;
+    const pending = [];
+    for (const id of ids) {
+      const value = done.has(id) ? null : $$lazyById(id);
+      if (!value) continue;
+      done.add(id);
+      if (value.loaded) continue;
+      progress = true;
+      pending.push(value.load().catch((error) => {
+        warn(`preloadHydration: the lazy component ${id} failed to load: ${error && error.message ? error.message : error}`);
+      }));
+    }
+    await Promise.all(pending);
+  }
+}
+
 // hydrate adopts the root range and payload script that a Go renderer
 // wrote into container (A-8.7) and returns the component instance, which
 // then behaves exactly like one created by the factory.
@@ -361,7 +404,7 @@ export function hydrate(Component, container, options = {}) {
   }
   if (!script) throw mismatch('the container has no payload script (data-vela-root)');
   const payload = JSON.parse(script.textContent);
-  if (payload.v !== 3) throw mismatch(`unsupported payload version ${payload.v}`);
+  if (payload.v !== 4) throw mismatch(`unsupported payload version ${payload.v}`);
   const props = payload.props || {};
 
   let first = container.firstChild;

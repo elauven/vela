@@ -1,0 +1,9 @@
+<script>
+  export let rows = [];
+  export let count = 0;
+  let clicks = $state(0);
+</script>
+
+<template>
+  <div class="a"><button class="hit" @click={() => clicks++}>{clicks}</button> {rows.length}:{count}<slot /></div>
+</template>

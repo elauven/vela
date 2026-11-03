@@ -64,6 +64,8 @@ disagree, the contract wins and the row is a bug.
 | top-level `const` / unchanged `let` | native | Go local | same | T-2.1 | init-order | implemented | As above; recorded as `binding` sites in `--ssr-report`. |
 | `#each` / `#await` binding | native | lexical Go variable | same | — | value-text | implemented | |
 | symbol imported from local `.js` | native or host | generated module package `server/modules/<path>`: `New(ssrJS, ctx)` per render, a `Module` field per export | same | T-7.3a, T-7.3b | `TestSSRModulesMatchNode`, `TestSSRModuleDiagnostics` | implemented | Named imports only. Top-level code may only declare functions and `const` bindings; `let`, other statements, and circular imports make the module's symbols unsupported (host fix suggested). Module values are created per render, never shared. |
+| component imported from local `.vela`, used as a value | native | `XComponent` of the generated package (`vela.Component`) | same | T-5.5a | component-value, component-state | implemented | Bare in the same package, otherwise imported (`ssrc_<path>`). A client-only component has no server value (T-9.2). |
+| `lazy(() => import('./X.vela'))` | native | `XComponent` of X, as an imported component value | same | T-5.5f | go-tests | implemented | `TestLazyComponents`. Other arguments are `VELA-LAZY-ARGUMENT` before the server sees them. |
 | symbol imported from npm | host or client | — | — | T-7.3c | — | never | |
 | browser global (`window`, `document`, …) | client | — | — | §3 | — | never | |
 
@@ -88,7 +90,7 @@ disagree, the contract wins and the row is a bug.
 | `!` | native | `!vela.Truthy(x)` | same | §6.2 | ops-unary, value-text | implemented | |
 | `typeof` | native | `vela.TypeOf` | `vela.TypeOf` | §6.2 | ops-typeof | implemented | Go values follow the JSON view (`time.Time` is `"string"`). |
 | `<`, `<=`, `>`, `>=` | native | `float64` compare; `vela.StringLess` (UTF-16) | `vela.Less` … | §6.2, T-6.3a | ops-relational | implemented | |
-| `===`, `!==` | native | `vela.StrictEqual` | same | §6.2 | ops-strict-eq | implemented | |
+| `===`, `!==` | native | `vela.StrictEqual` | same | §6.2 | ops-strict-eq, component-value | implemented | Component values are equal only to the same component (T-5.5b). |
 | `x == null`, `x != null` | native | nil-or-undefined check | `vela.LooseNull` | §6.2 | ops-loose-null | implemented | Also `== undefined`. |
 | other `==`, `!=` | rejected | — | — | §6.2 | neg-loose-eq | never | Diagnostic suggests `===`. Current behaviour already matches. |
 | `&&`, `\|\|` | native | `vela.AndLazy` / `vela.OrLazy` | same | T-6.1b (R1) | ops-logical | implemented | |
@@ -174,6 +176,7 @@ dynamic one (T-7.2a, see "monomorphised variants" above). Status:
 | --- | --- | --- | --- | --- |
 | event handlers, `$effect`, `onMount`, `onDestroy`, binding write-back | excluded | T-2.2 | implemented | Never translated and never block SSR; hydration attaches them. |
 | `{#client}` main branch | excluded | T-9.1c | implemented | The server renders the fallback (or nothing) in a range with the state token `f`; the client adopts it and mounts the main branch after the root commits (`$$client`), per owner instance inside rows; destroying the owner or rolling its hydration back cancels the pending mount. CSR mounts the main branch directly. Fixtures: `Boundary`, `Gate`. |
+| `<vela:component :this={…}>` | native | `vela.RenderDynamicComponent`: `:this` first, props only for a component, the `d` entry | T-5.5d | implemented | `null`, `undefined`, `false` render an empty `x` range; another non-component is `VELA-SSR-DYNAMIC` at render time. Covered by the SSR blocks corpus (`Dynamic *` cases, mismatches included) and the gate project `dynamic-views`. |
 | client-only component (`<script context="client">`) | excluded | T-9.2 | implemented | No Go renderer (`--ssr-report` status `client-only`); a usage renders an empty `f` range and the module flag `$$clientOnly` makes `$$component` mount it after the commit. CSR treats it as an ordinary component. |
 
 ---

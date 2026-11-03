@@ -215,3 +215,34 @@ console.log('OK');
 		t.Fatalf("unexpected runtime store contract output: %q", got)
 	}
 }
+
+// TestRuntimeContractAndPayloadVersionsAgree checks that the compiler, the
+// Go runtime and the hydration runtime name the same contract and payload
+// version: <vela:component> (task 070) introduced ContractV4 and payload
+// version 4 with the "d" entry.
+func TestRuntimeContractAndPayloadVersionsAgree(t *testing.T) {
+	contract, err := os.ReadFile(filepath.Join("ssr_runtime", "contract.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "const " + SSRRuntimeContract + " = true"; !strings.Contains(string(contract), want) {
+		t.Errorf("ssr_runtime/contract.go does not declare %q", want)
+	}
+	if SSRRuntimeContract != "ContractV4" {
+		t.Errorf("SSRRuntimeContract = %s, want ContractV4", SSRRuntimeContract)
+	}
+	goRuntime, err := os.ReadFile(filepath.Join("ssr_runtime", "runtime.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(goRuntime), "const RootPayloadVersion = 4") {
+		t.Error("the Go runtime does not write payload version 4")
+	}
+	hydrate, err := os.ReadFile(filepath.Join("runtime", "runtime-hydrate.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(hydrate), "payload.v !== 4") {
+		t.Error("hydrate() does not require payload version 4")
+	}
+}

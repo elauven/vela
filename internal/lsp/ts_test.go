@@ -272,3 +272,22 @@ func TestTypeScriptMissing(t *testing.T) {
 		t.Errorf("Vela completion without TypeScript: %v", keys(items))
 	}
 }
+
+// TestTypeScriptDynamicComponent: the :this of <vela:component> is checked
+// as a component or nothing (task 070), and an imported component is one.
+func TestTypeScriptDynamicComponent(t *testing.T) {
+	src := strings.Replace(appSource(t), "<script>\n", "<script>\n  // @ts-check\n", 1)
+	src = strings.Replace(src, "<p>{count}</p>", "<p>{count}</p><vela:component :this={open ? Card : null} /><vela:component :this={count} />", 1)
+	c, _, uri := startTS(t, src)
+	d := c.diagnostics(uri, func(p PublishDiagnosticsParams) bool { return len(p.Diagnostics) > 0 })
+	var got []string
+	tx := newText(src)
+	for _, diag := range d.Diagnostics {
+		if diag.Source == "ts" {
+			got = append(got, src[tx.offset(diag.Range.Start):tx.offset(diag.Range.End)]+": "+diag.Message)
+		}
+	}
+	if len(got) != 1 || !strings.HasPrefix(got[0], "count: Argument of type 'number' is not assignable") {
+		t.Errorf("TypeScript diagnostics:\n%s", strings.Join(got, "\n"))
+	}
+}

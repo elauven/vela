@@ -104,6 +104,7 @@ func CompileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, hos
 	if err != nil {
 		return err
 	}
+	plan.ComponentID = project.ComponentID(src, srcRoot)
 	bindSSRHosts(plan, hosts, src, analysis)
 	if plan.PropsWithoutPresence, err = ssrPropsWithoutPresence(layout.PropsPath(src, srcRoot), plan.ComponentName+"Props"); err != nil {
 		return err

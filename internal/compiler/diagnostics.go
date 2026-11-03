@@ -306,8 +306,9 @@ func ValidateTemplate(nodes []sfcast.Node, a *analyzer.Analysis, ds *diag.DiagSe
 			case *sfcast.ElementNode:
 				walkNodes(n.Children)
 			case *sfcast.ComponentNode:
-				// Component must be imported
-				if !importedNames[n.Name] {
+				// Component must be imported; <vela:component> takes its
+				// component from :this.
+				if !n.IsDynamic() && !importedNames[n.Name] {
 					ds.Warn(0,
 						"component <%s> is used but not imported; "+
 							"add: import { %s } from './%s.js'",

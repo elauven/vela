@@ -6,6 +6,7 @@ import (
 	"github.com/elauven/vela/internal/diag"
 	"github.com/elauven/vela/internal/jsast"
 	"github.com/elauven/vela/internal/sfcast"
+	"github.com/elauven/vela/internal/srcspan"
 	"github.com/elauven/vela/runtime"
 
 	"fmt"
@@ -489,6 +490,9 @@ func ValidateTemplateRefs(nodes []sfcast.Node, analysis *analyzer.Analysis, scri
 				for _, a := range n.Attrs {
 					checkAttrRefs(a, known, templateText, ds)
 				}
+				if n.This != nil {
+					checkAttrRefs(n.This, known, templateText, ds)
+				}
 				for _, slotNodes := range n.Slots {
 					walkNodes(slotNodes)
 				}
@@ -769,6 +773,65 @@ func findTemplatePos(templateText, name string) int {
 		}
 	}
 	return 0
+}
+
+// ValidateSpecialElements checks the vela: special elements and points
+// <svelte:component> to <vela:component>. Positions are relative to the
+// template; templateOffset is the template's offset in the file, which the
+// node spans are relative to.
+func ValidateSpecialElements(nodes []sfcast.Node, templateOffset int, ds *diag.DiagSet) {
+	tagRange := func(span srcspan.SectionSpan, tag string) (int, int) {
+		pos := span.Start - templateOffset + 1 // after '<'
+		return pos, pos + len(tag)
+	}
+	var walk func([]sfcast.Node)
+	walk = func(ns []sfcast.Node) {
+		for _, node := range ns {
+			switch n := node.(type) {
+			case *sfcast.ElementNode:
+				switch {
+				case n.Tag == "svelte:component":
+					pos, end := tagRange(n.Span, n.Tag)
+					ds.Report(diag.SevError, pos, end, "VELA-SVELTE-COMPONENT", "Write <vela:component :this={component}>.", "<svelte:component> is not supported; use <vela:component :this={…}>")
+				case strings.HasPrefix(n.Tag, sfcast.SpecialElementPrefix):
+					pos, end := tagRange(n.Span, n.Tag)
+					ds.Report(diag.SevError, pos, end, "VELA-UNKNOWN-SPECIAL-ELEMENT", "The only vela: element is <vela:component>.", "<%s> is not a Vela special element", n.Tag)
+				}
+				walk(n.Children)
+			case *sfcast.ComponentNode:
+				if n.IsDynamic() {
+					switch {
+					case n.This == nil:
+						pos, end := tagRange(n.Span, n.Name)
+						ds.Report(diag.SevError, pos, end, "VELA-DYNAMIC-THIS-MISSING", "Add :this={component}.", "<vela:component> needs :this={…}, the component to render")
+					case !n.This.IsBind || n.This.Expr == nil:
+						end := -1
+						if n.This.Span.End > n.This.Span.Start {
+							end = n.This.Pos + n.This.Span.End - n.This.Span.Start
+						}
+						ds.Report(diag.SevError, n.This.Pos, end, "VELA-DYNAMIC-THIS-STATIC", "Write :this={Component} with an imported component or a value holding one.", "this of <vela:component> must be dynamic: :this={…}, not the text %q", n.This.Value)
+					}
+				}
+				for _, slot := range n.Slots {
+					walk(slot)
+				}
+			case *sfcast.IfChainNode:
+				for _, branch := range n.Branches {
+					walk(branch.Children)
+				}
+			case *sfcast.EachBlockNode:
+				walk(n.Children)
+				walk(n.ElseChildren)
+			case *sfcast.AwaitBlockNode:
+				walk(n.PendingChildren)
+				walk(n.ThenChildren)
+				walk(n.CatchChildren)
+			case *sfcast.SlotNode:
+				walk(n.Fallback)
+			}
+		}
+	}
+	walk(nodes)
 }
 
 // ValidateTemplateForms catches Vela-specific directive forms before codegen.

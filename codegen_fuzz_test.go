@@ -116,7 +116,17 @@ func (g *fuzzGen) genComponent() string {
 	defer func() { g.depth-- }()
 	g.usesComponent = true
 	var b strings.Builder
-	b.WriteString("<Box")
+	// A third of the invocations are dynamic: <vela:component> choosing Box
+	// or nothing by state (task 070).
+	tag := "Box"
+	if g.choice(3) == 0 {
+		tag = "vela:component"
+		sv := fuzzStateNames[g.choice(len(fuzzStateNames))]
+		g.holes++
+		b.WriteString("<vela:component :this={" + sv + ".length ? Box : null}")
+	} else {
+		b.WriteString("<Box")
+	}
 	if g.choice(2) == 0 {
 		b.WriteString(` label="x"`)
 	}
@@ -139,7 +149,7 @@ func (g *fuzzGen) genComponent() string {
 		b.WriteString(g.genNode())
 		b.WriteString("</div>")
 	}
-	b.WriteString("</Box>")
+	b.WriteString("</" + tag + ">")
 	return b.String()
 }
 
@@ -267,6 +277,7 @@ func FuzzCodegen(f *testing.F) {
 	f.Add([]byte{3, 0, 4, 1, 2, 0, 6}) // {#if} > {#each} > directive
 	f.Add([]byte{6, 1, 3, 0, 5, 2})    // directive > {#if}, event
 	f.Add([]byte{2, 2, 3, 1, 6, 0, 4}) // deep nest
+	f.Add([]byte{7, 0, 1, 1, 1, 3, 0}) // <vela:component> with slot content
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		g := &fuzzGen{data: data}

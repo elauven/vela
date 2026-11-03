@@ -156,7 +156,7 @@ The IR uses JavaScript-level semantic types:
 
 `undefined`, `null`, `boolean`, `number`, `string`, `Array<T>`,
 `Object{field: T…}` (closed shape), `Record<T>` (open string-keyed),
-`Function(sig)`, unions of these, and `unknown`.
+`Function(sig)`, `component` (§5.5), unions of these, and `unknown`.
 
 Sources, in priority order: developer prop types in `*_props.go` and host
 signatures (Go is authoritative), JSDoc `@type` / `@param` / `@returns`,
@@ -175,6 +175,7 @@ types of admitted built-ins.
 | `Array<T>` | `[]T` when `T` is precise, else `[]any` |
 | `Object{…}` from Go | the developer struct (read through the JSON view) |
 | `Object{…}` / `Record` created by translated code | `*vela.Object` (insertion-ordered); never `map[string]any` |
+| `component` | `vela.Component`: the generated `XComponent` of the imported component (§5.5) |
 | union / `unknown` | `any` holding a value of the JSON value domain |
 
 **T-5.3a** A `number` stays `float64` inside translated code even when it is
@@ -200,6 +201,48 @@ numbers" are replaced by dynamic-tier lowering.
 **T-5.4c** Every dynamic helper is total over the JSON value domain plus
 `undefined`: it returns a value or a JavaScript exception (§6.5), and never
 panics.
+
+### 5.5 Component values
+
+Components are values (task 070): an imported `.vela` component can be
+stored in a binding, an object or an array, passed as a prop, compared and
+chosen by a conditional, and `<vela:component :this={…}>` renders it.
+
+- **T-5.5a** An identifier that names a local `.vela` import translates to
+  the generated `XComponent` of that component (`views.TableComponent`, a
+  `vela.Component`), in either tier. Objects, arrays, conditionals, function
+  results and props hold it like any other value; no other rule is needed,
+  so `views[mode]` translates. A client-only component (§9.2) has no Go
+  renderer: using it as a value is unsupported, and the diagnostic names
+  `{#client}`.
+- **T-5.5b** A component value is equal (`===`) only to the same
+  component, `typeof` is `"function"`, and other operations on it (text
+  conversion, member reads) follow the dynamic tier, where it is an object.
+  On the client it is the factory function; results that depend on the
+  function's text or properties are not portable and are not admitted by
+  the oracles.
+- **T-5.5c** Every generated renderer exports `XComponent`, whose
+  `ComponentID()` is the component's `$$id` (its source path relative to the
+  project without the extension) and whose `RenderDynamic(ctx, w, props,
+  slots, options)` renders with props by name: each declared prop present
+  in the map is converted with `vela.AssignProp` and marked in `Set`;
+  undeclared keys are ignored. `DynamicOptions{Static: true}` renders plain
+  HTML (A-8.3).
+- **T-5.5d** A `<vela:component>` site evaluates `:this` first and its
+  props only when the value is a component, as the client does. `null`,
+  `undefined` and `false` render an empty range with the token `x`; a
+  component renders in a range with the token `""` after its `d` payload
+  entry (HYDRATION_ARCHITECTURE S-6.4, S-6.12); any other value is a render
+  error `VELA-SSR-DYNAMIC` naming the source position.
+- **T-5.5f** `lazy(() => import('./X.vela'))`, with `lazy` imported from
+  `vela`, translates to the `XComponent` of X: the server has every
+  renderer, so the output is that of a static component value and the `d`
+  entry carries X's ID (task 071).
+- **T-5.5e** State whose value is or holds a component is not serialised:
+  an initializer that references an imported component is reproducible
+  (HYDRATION_ARCHITECTURE S-6.8a, S-6.13), and a component value in a
+  non-reproducible initializer's result is left out of the `s` entry
+  (`omitted`), so the client evaluates the initializer.
 
 ---
 
@@ -815,9 +858,9 @@ regression.
   committed `go.work`, so `go install` of the compiler needs no runtime
   version and no `replace`. Implemented in task 049 (2026-10-09).
 - **R-12.1d Contract check.** The runtime exports a contract marker
-  (currently `ContractV3`, `ssr_runtime/contract.go`; the compiler names it in
+  (currently `ContractV4`, `ssr_runtime/contract.go`; the compiler names it in
   `SSRRuntimeContract`), and every generated file references the marker it
-  was generated for (`var _ = vela.ContractV3`). A compiler/runtime mismatch
+  was generated for (`var _ = vela.ContractV4`). A compiler/runtime mismatch
   then fails `go build` with an undefined-identifier error instead of
   misbehaving at runtime. The marker changes whenever generated code starts
   to depend on a new or changed runtime API.

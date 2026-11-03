@@ -12,7 +12,9 @@ for (const row of rows) {
   const names = Object.keys(row.values || {});
   let actual;
   try {
-    actual = { expected: String(Function(...names, `"use strict"; ${row.functions || ''}; return (${row.expression});`)(...names.map((n) => decode(row.values[n])))) };
+    // A component is a factory function on the client (task 070).
+    const components = (row.components || []).map((name) => `function ${name}() {}`).join(' ');
+    actual = { expected: String(Function(...names, `"use strict"; ${components} ${row.functions || ''}; return (${row.expression});`)(...names.map((n) => decode(row.values[n])))) };
   } catch (error) {
     actual = { throws: error.constructor.name };
   }

@@ -680,7 +680,43 @@ func (g *ASTGen) buildBlocksComponent(comp *sfcast.ComponentNode) {
 		eventsArg = events
 	}
 	props := blocksArrow(nil, g.componentPropsExpr(comp.Attrs))
+	if comp.IsDynamic() {
+		g.buildBlocksDynamic(comp, props, slots, eventsArg, exprs)
+		return
+	}
 	g.blocksBlockCall("$$component", jsast.GenIdent(comp.Name), props, slots, eventsArg, blocksChanged(g.blocksGuard(exprs...)), jsast.GenStrLit(g.elementScope))
+}
+
+// buildBlocksDynamic lowers <vela:component :this={…}> to the $$dynamic
+// block: select() evaluates :this, and the block re-evaluates it whenever
+// :this or a prop changes.
+func (g *ASTGen) buildBlocksDynamic(comp *sfcast.ComponentNode, props, slots, events jsast.JsExpr, exprs []*sfcast.TemplateExpr) {
+	this := comp.ThisExpr()
+	if this == nil {
+		panic("vela: <vela:component> without a valid :this reached code generation")
+	}
+	var bindings []jsast.JsExpr
+	for _, attr := range comp.Attrs {
+		if attr.IsTwoWay {
+			bindings = append(bindings, jsast.GenStrLit(attr.Name))
+		}
+	}
+	bindingsArg := jsast.JsExpr(jsast.GenNull())
+	if len(bindings) > 0 {
+		bindingsArg = jsast.GenArray(bindings...)
+	}
+	where := ""
+	if g.sfc != nil {
+		line, column := SourceLineColumn(g.sfc.Source, g.sfc.TemplateOffset+this.Pos)
+		id := g.sfc.ComponentID
+		if id == "" {
+			id = g.name
+		}
+		where = fmt.Sprintf("%s.vela:%d:%d", id, line+1, column+1)
+	}
+	g.blocksSite(this)
+	g.blocksBlockCall("$$dynamic", blocksArrow(nil, g.templateExpr(this)), props, slots, events, bindingsArg,
+		blocksChanged(g.blocksGuard(append([]*sfcast.TemplateExpr{this}, exprs...)...)), jsast.GenStrLit(g.elementScope), jsast.GenStrLit(where))
 }
 
 // blocksComponentEventHandler forwards only CustomEvents dispatched by the

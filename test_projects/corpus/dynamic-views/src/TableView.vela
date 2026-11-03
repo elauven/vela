@@ -1,0 +1,21 @@
+<script>
+  export let rows = [];
+  export let title = '';
+  let ascending = $state(true);
+  let sorted = $derived([...rows].sort((a, b) => ascending ? a - b : b - a));
+</script>
+
+<template>
+  <div class="table">
+    <button class="sort" @click={() => ascending = !ascending}>Sort {ascending ? 'down' : 'up'}</button>
+    <table>
+      <caption>{title}</caption>
+      <tbody>
+        {#each sorted as row}
+          <tr><td>{row}</td></tr>
+        {/each}
+      </tbody>
+    </table>
+    <slot />
+  </div>
+</template>

@@ -25,7 +25,16 @@ import (
 // this same node/event order; neither is allowed to reparse template strings.
 type SSRRenderPlan struct {
 	ComponentName string
-	ScopeID       string
+	// ComponentID is the component's $$id (project.ComponentID), returned by
+	// the generated XComponent's ComponentID (task 070).
+	ComponentID string
+	// Links are the component imports by local name: tags link statically,
+	// and an imported component used as a value translates to its
+	// XComponent.
+	Links map[string]SSRComponentLink
+	// Package is the Go package the renderer is generated into.
+	Package string
+	ScopeID string
 	// ElementScope is the scope attribute of elements: ScopeID when the
 	// component has styles, "" otherwise (as the client, task 059).
 	ElementScope string
@@ -144,6 +153,13 @@ type SSRPlanComponent struct {
 	Link  *SSRComponentLink
 	Attrs []SSRPlanAttr
 	Slots map[string][]SSRPlanNode
+	// This chooses the component of a <vela:component>; nil for a static
+	// child. DynamicID is its site.
+	This      *sfcast.TemplateExpr
+	DynamicID int
+	// ThisLine and ThisColumn are the 1-based source position of This, for
+	// render errors.
+	ThisLine, ThisColumn int
 }
 
 // SSRComponentLink is project-level import metadata retained by the typed
@@ -159,7 +175,14 @@ type SSRComponentLink struct {
 	// ClientOnly is set when the child declares <script context="client">
 	// (contract §9.2): it has no Go renderer.
 	ClientOnly bool
+	// Lazy is the local name of lazy() for the target of a
+	// lazy(() => import('./X.vela')) call (task 071); its link is keyed by
+	// ssrLazyLinkKey.
+	Lazy string
 }
+
+// ssrLazyLinkKey keys the link of a lazy() target by its literal path.
+func ssrLazyLinkKey(specifier string) string { return "lazy:" + specifier }
 
 // SSRPlanClient is a {#client} block or a client-only component (contract
 // §9): the server renders only the fallback, in a range with the state
@@ -266,6 +289,7 @@ const (
 	SSRDynamicEachKey
 	SSRDynamicKey
 	SSRDynamicAwait
+	SSRDynamicComponent
 )
 
 // SSRDynamicSite records stable dynamic order for the future paired hydration
@@ -280,6 +304,7 @@ type SSRDynamicSite struct {
 
 type ssrPlanBuilder struct {
 	plan        *SSRRenderPlan
+	source      string // the .vela source, for positions
 	links       map[string]SSRComponentLink
 	dynamicNext int
 	slotNames   map[string]bool
@@ -319,8 +344,10 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *sfcast.SF
 	if err != nil {
 		return nil, err
 	}
-	b := &ssrPlanBuilder{links: links, slotNames: map[string]bool{}, plan: &SSRRenderPlan{
+	b := &ssrPlanBuilder{links: links, source: sfc.Source, slotNames: map[string]bool{}, plan: &SSRRenderPlan{
 		ComponentName:       componentName,
+		ComponentID:         componentName,
+		Links:               links,
 		ScopeID:             scopeID,
 		Props:               props,
 		ReactiveNames:       analysis.ReactiveNames(),
@@ -511,6 +538,11 @@ func (b *ssrPlanBuilder) element(node *sfcast.ElementNode) *SSRPlanElement {
 }
 
 func (b *ssrPlanBuilder) component(node *sfcast.ComponentNode) *SSRPlanComponent {
+	// The :this site comes first, in source order.
+	dynamicID := -1
+	if node.IsDynamic() {
+		dynamicID = b.dynamic(SSRDynamicComponent, node.ThisExpr(), node.Span)
+	}
 	attrs := b.attrs(node.Attrs)
 	slots := make(map[string][]SSRPlanNode, len(node.Slots))
 	names := make([]string, 0, len(node.Slots))
@@ -521,7 +553,15 @@ func (b *ssrPlanBuilder) component(node *sfcast.ComponentNode) *SSRPlanComponent
 	for _, name := range names {
 		slots[name] = b.nodes(node.Slots[name])
 	}
-	component := &SSRPlanComponent{Span: node.Span, Name: node.Name, Attrs: attrs, Slots: slots}
+	component := &SSRPlanComponent{Span: node.Span, Name: node.Name, Attrs: attrs, Slots: slots, DynamicID: dynamicID}
+	if node.IsDynamic() {
+		component.This = node.ThisExpr()
+		if component.This != nil && b.source != "" {
+			line, column := codegen.SourceLineColumn(b.source, b.plan.TemplateOffset+component.This.Pos)
+			component.ThisLine, component.ThisColumn = line+1, column+1
+		}
+		return component
+	}
 	if link, ok := b.links[node.Name]; ok {
 		copy := link
 		component.Link = &copy
@@ -556,6 +596,39 @@ func ResolveSSRLocalComponentLinks(src, srcRoot string, analysis *analyzer.Analy
 		}
 		for _, local := range imp.Names {
 			links[local] = SSRComponentLink{LocalName: local, SourcePath: resolved}
+		}
+	}
+	// The targets of lazy() calls are children too: the server renders
+	// them like any component (task 071).
+	if local := analyzer.LazyLocalName(analysis.ScriptProgram()); local != "" {
+		var walkErr error
+		jsast.WalkNode(analysis.ScriptProgram(), func(n jsast.JsNode) bool {
+			call, ok := n.(*jsast.JsCallExpr)
+			if !ok || walkErr != nil {
+				return walkErr == nil
+			}
+			callee, ok := call.Callee.(*jsast.JsIdent)
+			if !ok || callee.Name != local || len(call.Args) == 0 {
+				return true
+			}
+			specifier, ok := analyzer.LazyImportSpecifier(call.Args[0])
+			if !ok {
+				return true
+			}
+			resolved, err := filepath.Abs(filepath.Join(filepath.Dir(src), specifier))
+			if err != nil {
+				walkErr = err
+				return false
+			}
+			if rel, err := filepath.Rel(root, resolved); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				walkErr = fmt.Errorf("ssr lazy component import %q escapes project source root", specifier)
+				return false
+			}
+			links[ssrLazyLinkKey(specifier)] = SSRComponentLink{LocalName: specifier, SourcePath: resolved, Lazy: local}
+			return true
+		})
+		if walkErr != nil {
+			return nil, walkErr
 		}
 	}
 	return links, nil

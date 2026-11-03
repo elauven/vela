@@ -90,6 +90,7 @@ type ssrGoEmitter struct {
 	scopeID              string
 	elementScope         string
 	awaitOptions         goast.Expr
+	componentID          string // the plan's ComponentID, for <vela:component> errors
 	needsEscaping        bool
 	eachNext             int
 	imports              map[string]string
@@ -151,6 +152,9 @@ func (e *ssrGoEmitter) node(node SSRPlanNode) ([]goast.Stmt, error) {
 }
 
 func (e *ssrGoEmitter) component(node *SSRPlanComponent) ([]goast.Stmt, error) {
+	if node.This != nil {
+		return e.dynamicComponent(node)
+	}
 	if node.Link == nil {
 		return nil, ssrExprUnsupported(node.Span.Start, "component %q is not linked to a local .vela import", node.Name)
 	}

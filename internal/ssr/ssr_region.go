@@ -125,6 +125,8 @@ func ssrSiteRoot(kind, name string) string {
 	case "component-prop":
 		component, prop, _ := strings.Cut(name, ".")
 		return fmt.Sprintf("prop %q of <%s>", prop, component)
+	case "dynamic-component":
+		return ":this of <vela:component>"
 	case "prop-default":
 		return fmt.Sprintf("default of prop %q", name)
 	case "state":

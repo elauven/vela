@@ -55,6 +55,7 @@ func TestVelaGrammar(t *testing.T) {
   <!-- {not an expression} -->
   {#each items as item (item.id)}
     <Card :title={item.title} @on:close={() => count++} bind:value={count} />
+    <vela:component :this={item.view} :n={count}></vela:component>
   {:else}
     <p class:empty={true} :data-n="count + 1" title="a {b}">&amp; {count}</p>
   {/each}
@@ -90,6 +91,8 @@ func TestVelaGrammar(t *testing.T) {
 		{"as", "keyword.control.vela"},
 		{"item", "meta.block.vela meta.embedded.expression.vela source.js"},
 		{"Card", "support.class.component.vela"},
+		{"vela:component", "support.class.component.vela"},
+		{"view", "meta.tag.component.vela"},
 		{":", "keyword.other.directive.vela"},
 		{"title", "entity.other.attribute-name.html"},
 		{"on:close", "entity.other.attribute-name.html"},

@@ -109,6 +109,11 @@ type SSRExprContext struct {
 	HostDecls           map[string]*jsast.JsFuncDecl
 	HostSymbols         map[string]SSRHostSymbol
 	ModuleRefs          map[string]ssrModuleRef
+	// Components are the component imports by local name; one used as a
+	// value translates to its XComponent (task 070). Package is the Go
+	// package being generated, whose components need no import.
+	Components map[string]SSRComponentLink
+	Package    string
 	// localIndex is the declaration position of each local binding.
 	localIndex map[string]int
 	// funcs compiles multi-statement component functions (task 045).
@@ -158,6 +163,8 @@ func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
 	ctx.HostSymbols = plan.HostSymbols
 	ctx.HostDecls = plan.HostDecls
 	ctx.ModuleRefs = plan.ModuleRefs
+	ctx.Components = plan.Links
+	ctx.Package = plan.Package
 	ctx.localIndex = map[string]int{}
 	for index, name := range plan.LocalOrder {
 		ctx.localIndex[name] = index

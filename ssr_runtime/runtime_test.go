@@ -349,7 +349,7 @@ func TestStreamWritesRangesAndOrderedRootPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := `<!--[--><!--[--><!--]--><!--[x--><!--]--><!--]-->` +
-		`<script type="application/json" data-vela-root>{"v":3,"props":{"title":"LTscriptGT"},"entries":[["s","Page",{"open":true}],["s","Child",{},{"omitted":["now"]}],["a","Child#3",{"state":"t","value":"LTdoneGT"}],["a","Page#4",{"state":"p"}]]}</script>`
+		`<script type="application/json" data-vela-root>{"v":4,"props":{"title":"LTscriptGT"},"entries":[["s","Page",{"open":true}],["s","Child",{},{"omitted":["now"]}],["a","Child#3",{"state":"t","value":"LTdoneGT"}],["a","Page#4",{"state":"p"}]]}</script>`
 	lt, gt := "\\"+"u003c", "\\"+"u003e"
 	want = strings.NewReplacer("LT", lt+"/", "GT", gt).Replace(want)
 	want = strings.Replace(want, lt+"/done", lt+"done", 1)
@@ -415,7 +415,7 @@ func TestBeginComponentWithoutStateWritesNoEntry(t *testing.T) {
 	if err := EndComponent(w, root, []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
-	if want := `{"v":3,"props":{},"entries":[["s","Child",{"now":1}]]}`; !strings.Contains(out.String(), want) {
+	if want := `{"v":4,"props":{},"entries":[["s","Child",{"now":1}]]}`; !strings.Contains(out.String(), want) {
 		t.Fatalf("payload %s, want %s", out.String(), want)
 	}
 }

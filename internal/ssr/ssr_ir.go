@@ -46,6 +46,8 @@ type ssrIRFacts struct {
 	// no JavaScript fact is recorded (an await snapshot value). It only
 	// lets a typed child prop take the value directly.
 	GoString bool
+	// Component means a component value, a vela.Component (task 070).
+	Component bool
 }
 
 // SemanticType names the type the facts prove (§5.2), or "unknown".
@@ -61,6 +63,8 @@ func (f ssrIRFacts) SemanticType() string {
 		return "array"
 	case f.Object:
 		return "object"
+	case f.Component:
+		return "component"
 	}
 	return "unknown"
 }
@@ -700,6 +704,9 @@ func (b *ssrIRBuilder) ident(node *jsast.JsIdent, pos int) (SSRIRExpr, error) {
 	if ref, ok := b.ctx.ModuleRefs[node.Name]; ok && b.js {
 		return b.moduleIdent(ref, node.Name, pos)
 	}
+	if link, ok := b.ctx.Components[node.Name]; ok {
+		return b.componentValue(link, pos)
+	}
 	if function := b.ctx.Functions[node.Name]; function != nil && b.ctx.funcs != nil && b.js {
 		// A component function used as a value (a callback prop): compiled
 		// here as a closure, like an arrow, with writes deferred to run time.
@@ -719,6 +726,64 @@ func (b *ssrIRBuilder) ident(node *jsast.JsIdent, pos int) (SSRIRExpr, error) {
 		return nil, ssrExprUnsupported(pos, "local reactive binding %q has no server value; pass it as an exported prop or wait for hydration", node.Name)
 	}
 	return nil, ssrExprUnsupported(pos, "identifier %q is not an exported prop or server binding", node.Name)
+}
+
+// componentValue is an imported component used as a value: its generated
+// XComponent, a vela.Component (task 070).
+func (b *ssrIRBuilder) componentValue(link SSRComponentLink, pos int) (SSRIRExpr, error) {
+	if link.ClientOnly {
+		return nil, ssrExprUnsupported(pos, "component %q is client-only and has no server renderer; render it inside {#client}", link.LocalName)
+	}
+	if link.GoName == "" {
+		return nil, ssrExprUnsupported(pos, "component %q is not linked to a generated Go renderer", link.LocalName)
+	}
+	value := goast.Expr(goast.NewIdent(link.GoName + "Component"))
+	if link.PackageName != b.ctx.Package {
+		if link.ImportPath == "" {
+			return nil, ssrExprUnsupported(pos, "component %q has no generated Go import path", link.LocalName)
+		}
+		alias := ssrComponentImportAlias(link.ImportPath)
+		if b.hostImports == nil {
+			b.hostImports = map[string]string{}
+		}
+		b.hostImports[link.ImportPath] = alias
+		value = goSelector(alias, link.GoName+"Component")
+	}
+	return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{Component: true}), Expr: value}, nil
+}
+
+// lazyCall translates lazy(() => import('./X.vela')) to the XComponent of
+// X: the server has every renderer (task 071).
+func (b *ssrIRBuilder) lazyCall(call *jsast.JsCallExpr, pos int) (SSRIRExpr, bool, error) {
+	callee, ok := call.Callee.(*jsast.JsIdent)
+	if !ok || len(call.Args) == 0 {
+		return nil, false, nil
+	}
+	specifier, ok := analyzer.LazyImportSpecifier(call.Args[0])
+	if !ok {
+		return nil, false, nil
+	}
+	link, ok := b.ctx.Components[ssrLazyLinkKey(specifier)]
+	if !ok || link.Lazy != callee.Name || b.shadowed(callee.Name) {
+		return nil, false, nil
+	}
+	value, err := b.componentValue(link, pos)
+	return value, true, err
+}
+
+// ssrComponentImportAlias names the import of a component package used for
+// component values, unique per import path.
+func ssrComponentImportAlias(importPath string) string {
+	var alias strings.Builder
+	alias.WriteString("ssrc_")
+	for _, r := range importPath {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			alias.WriteRune(r)
+		} else {
+			alias.WriteByte('_')
+		}
+	}
+	return alias.String()
 }
 
 // local inlines a $state, $derived, or plain binding initializer.
@@ -1357,6 +1422,9 @@ func (b *ssrIRBuilder) call(call *jsast.JsCallExpr, pos int) (SSRIRExpr, error) 
 		}
 	}
 	if value, handled, err := b.builtinCall(call, pos); handled {
+		return value, err
+	}
+	if value, handled, err := b.lazyCall(call, pos); handled {
 		return value, err
 	}
 	callee, ok := call.Callee.(*jsast.JsIdent)

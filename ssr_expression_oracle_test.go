@@ -15,10 +15,13 @@ import (
 )
 
 type ssrExpressionOracleRow struct {
-	Group      string                     `json:"group"`
-	Name       string                     `json:"name"`
-	Expression string                     `json:"expression"`
-	Functions  string                     `json:"functions"`
+	Group      string `json:"group"`
+	Name       string `json:"name"`
+	Expression string `json:"expression"`
+	Functions  string `json:"functions"`
+	// Components names the components the expression can use: imported
+	// .vela components in Go, plain functions in JavaScript (task 070).
+	Components []string                   `json:"components"`
 	Values     map[string]json.RawMessage `json:"values"`
 	Expected   *string                    `json:"expected"`
 	Throws     string                     `json:"throws"`
@@ -59,6 +62,19 @@ func runSSRExpressionRows(t *testing.T, rows []ssrExpressionOracleRow) []string 
 		t.Fatal(err)
 	}
 	var calls strings.Builder
+	written := map[string]bool{}
+	for _, row := range rows {
+		for _, name := range row.Components {
+			if written[name] {
+				continue
+			}
+			written[name] = true
+			source := "<template><b>" + name + "</b></template>\n"
+			if err := os.WriteFile(filepath.Join(srcRoot, name+".vela"), []byte(source), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	for i, row := range rows {
 		names := make([]string, 0, len(row.Values))
 		for name := range row.Values {
@@ -66,6 +82,10 @@ func runSSRExpressionRows(t *testing.T, rows []ssrExpressionOracleRow) []string 
 		}
 		sort.Strings(names)
 		var typed, dynamic strings.Builder
+		for _, name := range row.Components {
+			fmt.Fprintf(&typed, "import { %s } from './%s.vela';\n", name, name)
+			fmt.Fprintf(&dynamic, "import { %s } from './%s.vela';\n", name, name)
+		}
 		for _, name := range names {
 			literal := string(row.Values[name])
 			if literal == `"__undefined__"` {

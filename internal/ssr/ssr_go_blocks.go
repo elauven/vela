@@ -24,6 +24,9 @@ import (
 // writer through their ordinary w parameter.
 
 func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps bool, region *SSRRegion) (*goast.File, error) {
+	if plan != nil {
+		plan.Package = packageName
+	}
 	file, err := buildSSRGoBlocksSkeleton(plan, packageName, includeProps)
 	if err != nil {
 		return nil, err
@@ -39,6 +42,7 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 	if len(plan.Nodes) == 1 {
 		emitter.rootElement, _ = plan.Nodes[0].(*SSRPlanElement)
 	}
+	emitter.componentID = plan.ComponentID
 	emitter.ctx.funcs = newSSRFuncTable(plan, emitter.region)
 	emitter.ctx.funcs.base = emitter.ctx
 	if emitter.region != nil {
@@ -286,6 +290,7 @@ func buildSSRGoBlocksSkeleton(plan *SSRRenderPlan, packageName string, includePr
 			}}}}},
 		},
 	)
+	decls = append(decls, goComponentValueDecls(plan, component, propsName, slotsName)...)
 	return &goast.File{Name: goast.NewIdent(packageName), Decls: decls}, nil
 }
 

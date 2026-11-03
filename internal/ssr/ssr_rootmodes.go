@@ -31,6 +31,10 @@ func ssrTemplateInteractive(nodes []sfcast.Node) bool {
 		case *sfcast.ElementNode:
 			attrs = n.Attrs
 		case *sfcast.ComponentNode:
+			// A <vela:component> needs the client to switch (A-8.2).
+			if n.IsDynamic() {
+				return true
+			}
 			attrs = n.Attrs
 		}
 		for _, attr := range attrs {

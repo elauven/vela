@@ -96,7 +96,7 @@ function checkCase(testCase) {
     errors.push(`payload is not JSON: ${error.message}`);
     return errors;
   }
-  if (payload.v !== 3) errors.push(`payload version ${payload.v}`);
+  if (payload.v !== 4) errors.push(`payload version ${payload.v}`);
   for (const [name, value] of Object.entries(testCase.props)) {
     if (JSON.stringify(payload.props?.[name]) !== JSON.stringify(value)) {
       errors.push(`payload prop ${name} = ${JSON.stringify(payload.props?.[name])}`);

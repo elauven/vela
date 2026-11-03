@@ -280,6 +280,7 @@ func ssrGateBootstrap() ssrGateManifest {
 		{"deepseek-fixed", "test_projects/corpus/deepseek-fixed", "src"},
 		{"gpt-fixed", "test_projects/corpus/gpt-fixed", "src"},
 		{"qwen-fixed", "test_projects/corpus/qwen-fixed", "src"},
+		{"dynamic-views", "test_projects/corpus/dynamic-views", "src"},
 	}
 	manifest := ssrGateManifest{Version: 1}
 	for _, p := range positive {

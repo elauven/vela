@@ -1,0 +1,18 @@
+<script>
+  import { DynA } from './DynA.vela';
+  import { DynB } from './DynB.vela';
+
+  export let first = 'a';
+  let view = $state(first === 'b' ? DynB : DynA);
+  let views = $state([DynA, DynB]);
+  let other = $derived(view === DynA ? DynB : DynA);
+</script>
+
+<template>
+  <div class="state">
+    <button class="swap" @click={() => view = other}>swap</button>
+    <span class="index">{views.indexOf(view)}</span>
+    <vela:component :this={view} label="v" />
+    <vela:component :this={other} label="o" />
+  </div>
+</template>

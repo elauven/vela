@@ -918,6 +918,7 @@ func (g *ASTGen) buildModule(nodes []sfcast.Node) *jsast.JsProgram {
 	for _, imp := range g.buildImportDecls() {
 		prog.Body = append(prog.Body, imp)
 	}
+	prog.Body = append(prog.Body, g.buildLazyComponents()...)
 
 	fnBody := &jsast.JsBlock{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}}
 
@@ -1055,6 +1056,23 @@ func (g *ASTGen) buildModule(nodes []sfcast.Node) *jsast.JsProgram {
 		BaseStmt:    jsast.BaseStmt{BaseNode: jsast.GenNode()},
 		Declaration: fn,
 	})
+	// Every factory carries its component ID and declared props, so a
+	// <vela:component> can pass a child only the props it declares and
+	// hydration can compare the child with the server's (S-6.12).
+	if g.sfc != nil && g.sfc.ComponentID != "" {
+		prog.Body = append(prog.Body, jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent(g.name), "$$id"), jsast.GenStrLit(g.sfc.ComponentID)))
+	}
+	declared := &jsast.JsObjectExpr{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}}
+	if g.analysis != nil {
+		for _, prop := range g.analysis.Props {
+			bindable := 0
+			if prop.Bindable {
+				bindable = 1
+			}
+			declared.Props = append(declared.Props, &jsast.JsProp{BaseNode: jsast.GenNode(), Key: jsast.GenIdent(prop.Name), Value: jsast.GenNumLit(bindable)})
+		}
+	}
+	prog.Body = append(prog.Body, jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent(g.name), "$$props"), declared))
 	if g.sfc != nil && g.sfc.ClientOnly {
 		// A client-only component (contract §9.2): $$component mounts it
 		// after the root commits instead of adopting server DOM.
@@ -1220,6 +1238,34 @@ func (g *ASTGen) finalizeRuntimeHelpers(prog *jsast.JsProgram, fnBody *jsast.JsB
 		})
 		fnBody.Body = append([]jsast.JsStmt{bind}, fnBody.Body...)
 	}
+}
+
+// buildLazyComponents completes the lazy() calls of the script (task 071):
+// the import path points to the compiled module like a static import, and
+// the component ID is the second argument. Every lazy component is also
+// registered when the module is evaluated, so that preloadHydration() finds
+// it by the ID of a "d" payload entry before the component runs.
+func (g *ASTGen) buildLazyComponents() []jsast.JsStmt {
+	if g.sfc == nil {
+		return nil
+	}
+	var out []jsast.JsStmt
+	seen := map[string]bool{}
+	for _, l := range g.sfc.LazyComponents {
+		specifier := l.Specifier
+		if !g.sourceComponentImports {
+			specifier = RewriteImportPath(specifier)
+		}
+		loader := func() jsast.JsExpr {
+			return &jsast.JsArrowFunc{BaseExpr: jsast.BaseExpr{BaseNode: jsast.GenNode()}, Body: jsast.GenCall(jsast.GenIdent("import"), jsast.GenStrLit(specifier))}
+		}
+		l.Call.Args = []jsast.JsExpr{loader(), jsast.GenStrLit(l.ID)}
+		if !seen[l.ID] {
+			seen[l.ID] = true
+			out = append(out, jsast.GenExprStmt(jsast.GenCall(jsast.GenIdent(l.Local), loader(), jsast.GenStrLit(l.ID))))
+		}
+	}
+	return out
 }
 
 // buildImportDecls reconstructs user imports from the typed shape captured by

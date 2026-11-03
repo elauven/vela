@@ -1,0 +1,12 @@
+<script>
+  import { lazy } from 'vela';
+  const Settings = lazy(() => import('./panels/Settings.vela'));
+  let open = $state(false);
+</script>
+
+<template>
+  <button class="open" @click={() => (open = true)}>Settings</button>
+  {#if open}
+    <vela:component :this={Settings} />
+  {/if}
+</template>

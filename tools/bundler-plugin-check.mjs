@@ -1,7 +1,7 @@
 // Builds or serves the bundler plugin fixture and runs it in Chromium for
 // TestBundlerPlugin (task 063).
 //
-// Usage: node tools/bundler-plugin-check.mjs <vite-dev|vite-build|esbuild|rolldown|vite-error|entries> <app> [development|production]
+// Usage: node tools/bundler-plugin-check.mjs <vite-dev|vite-build|vite-lazy|esbuild|rolldown|vite-error|entries> <app> [development|production]
 //
 // The app directory has node_modules with @govela/unplugin, @govela/compiler
 // (VELA_BINARY names the binary), @govela/runtime and tiny-fmt. Prints
@@ -104,6 +104,41 @@ async function viteBuild() {
   }
 }
 
+// viteLazy builds the lazy() fixture (task 071): the panel must be its own
+// chunk, requested only when the button opens it.
+async function viteLazy() {
+  const { build } = await import('vite');
+  process.env.NODE_ENV = buildMode;
+  const outDir = join(app, 'dist-vite-lazy');
+  await build({ root: app, configFile: false, logLevel: 'silent', plugins: [(await plugin('vite'))()], build: { outDir } });
+  const chunks = {};
+  for (const entry of readdirSync(join(outDir, 'assets'))) {
+    if (entry.endsWith('.js')) chunks[entry] = readFileSync(join(outDir, 'assets', entry), 'utf8').includes('lazy-settings-panel');
+  }
+  const server = await serveDir(outDir);
+  const browser = await chromium.launch();
+  const logs = [];
+  try {
+    const page = await browser.newPage();
+    const requested = [];
+    page.on('request', (r) => requested.push(r.url().split('/').pop()));
+    page.on('console', (m) => { if (m.type() !== 'debug') logs.push(`${m.type()}: ${m.text()}`); });
+    page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
+    await page.goto(server.url);
+    await page.waitForSelector('button.open', { timeout: 10000 });
+    const panelChunks = Object.keys(chunks).filter((name) => chunks[name]);
+    const before = requested.filter((name) => panelChunks.includes(name)).length;
+    await page.click('button.open');
+    await page.waitForSelector('.settings h2', { timeout: 10000 });
+    const after = requested.filter((name) => panelChunks.includes(name)).length;
+    const panel = await page.evaluate(() => document.querySelector('.settings h2').textContent);
+    return { lazy: { chunks: Object.keys(chunks).length, panelChunks: panelChunks.length, before, after, panel }, logs };
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+}
+
 async function viteDev() {
   const { createServer: createViteServer } = await import('vite');
   const server = await createViteServer({ root: app, configFile: false, logLevel: 'silent', plugins: [(await plugin('vite'))()], server: { port: 0, host: '127.0.0.1' } });
@@ -193,7 +228,7 @@ async function entries() {
   return { entries: names };
 }
 
-const run = { 'vite-dev': viteDev, 'vite-build': viteBuild, esbuild: esbuildBuild, rolldown: rolldownBuild, 'vite-error': viteError, entries }[mode];
+const run = { 'vite-dev': viteDev, 'vite-build': viteBuild, 'vite-lazy': viteLazy, esbuild: esbuildBuild, rolldown: rolldownBuild, 'vite-error': viteError, entries }[mode];
 try {
   if (!run) throw new Error(`unknown mode ${mode}`);
   console.log(JSON.stringify(await run()));

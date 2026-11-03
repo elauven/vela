@@ -1,0 +1,23 @@
+<script>
+  import { DynA } from './DynA.vela';
+  import { DynB } from './DynB.vela';
+
+  export let mode = 'a';
+  export let rows = [];
+  let count = $state(0);
+  const views = { a: DynA, b: DynB, none: null };
+</script>
+
+<template>
+  <section class="views">
+    <button class="inc" @click={() => count++}>{count}</button>
+    <vela:component :this={views[mode]} :rows={rows} :count={count} label="L">
+      <em class="slot">slot {count}</em>
+    </vela:component>
+    <i class="after">{mode === 'b' ? 'is b' : 'not b'}</i>
+  </section>
+</template>
+
+<style>
+  .views { color: red; }
+</style>

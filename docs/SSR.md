@@ -56,7 +56,7 @@ Set the import path of the generated packages with `--ssr-module` or in
 ```
 
 A runtime of another contract version fails `go build` with
-`undefined: vela.ContractV3` instead of misbehaving.
+`undefined: vela.ContractV4` instead of misbehaving.
 
 ### Directory names
 
@@ -106,6 +106,7 @@ err := components.RenderPageContext(r.Context(), w, props, components.PageSlots{
 | `RenderPageWithOptions(w, props, slots, options)` | The same with settled `{#await}` snapshots |
 | `RenderPageStatic(w, props, slots)` | Plain HTML, no markers and no payload |
 | `Page(props, slots)` | A `vela.Renderer` value, for composition |
+| `PageComponent` | The component as a `vela.Component` value: `ComponentID()` and `RenderDynamic(ctx, w, props, slots, options)` with props by name; what `<vela:component>` renders |
 
 **Props.** `Set` lists the props you supply. With
 `Set: map[string]bool{}`, omitted props take their `export let` defaults; a
@@ -144,6 +145,19 @@ hydrate(Page, document.getElementById('app'), {
 - **Form controls.** If the user edits an input before hydration, the live
   value is written into state through the normal setter. `bind:this` is
   assigned after the element is adopted.
+- **Lazy components.** A page that renders `lazy()` components loads their
+  modules before it hydrates; otherwise hydration reports
+  `lazy-not-loaded` and repairs the range when the module arrives:
+
+  ```js
+  import { hydrate, preloadHydration } from '@govela/runtime/hydrate';
+
+  const target = document.getElementById('app');
+  await preloadHydration(target);
+  hydrate(Page, target);
+  ```
+
+  The server renders a lazy component like any other (contract §5.5).
 
 ## Development and production with Vite
 
