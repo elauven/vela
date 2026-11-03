@@ -68,12 +68,12 @@ type CompileOptions struct {
 	SourceMap   bool // emit a v3 .js.map alongside generated JS
 	// SitePath names the component in the hydration site table of development
 	// builds (V-11.3b); Hosts resolves host symbols for that table.
-	SitePath  string
-	Hosts     *ssr.SSRHosts
+	SitePath string
+	Hosts    *ssr.SSRHosts
 	// ComponentID is the component's $$id (project.ComponentID); empty
 	// derives it from the file name.
 	ComponentID string
-	TraceSink TraceSink // optional source-free compiler trace observer
+	TraceSink   TraceSink // optional source-free compiler trace observer
 	// TraceComponentID is an internal source-free override used for project
 	// traces. File mode derives a safe basename automatically.
 	TraceComponentID string
