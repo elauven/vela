@@ -1,0 +1,4 @@
+<script>
+  export let data = null;
+</script>
+<template><div class="users"><p>{data.count}</p><slot /></div></template>

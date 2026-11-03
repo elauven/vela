@@ -1,0 +1,7 @@
+<script>
+  export let route = null;
+</script>
+
+<template>
+  <div class="swatch" style:background={'#' + route.params.hex}>#{route.params.hex}</div>
+</template>

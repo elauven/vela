@@ -1,0 +1,5 @@
+<script>
+  export let data = null;
+  export let route = null;
+</script>
+<template><h1>{data.name} {route.params.id}</h1></template>

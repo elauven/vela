@@ -12,10 +12,12 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    "./client": "./client.js"
+    "./client": "./client.js",
+    "./match": "./match.js"
   },
   "files": [
     "client.js",
+    "match.js",
     "LICENSE"
   ],
   "govela": {

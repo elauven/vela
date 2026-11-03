@@ -338,8 +338,8 @@ func writeSSRGateManifest(t *testing.T, observed ssrGateManifest, regressions []
 	}
 }
 
-// copySSRGateProject copies a project into dir without build outputs and
-// dependencies.
+// copySSRGateProject copies a project into dir without build outputs,
+// dependencies and nested projects.
 func copySSRGateProject(t *testing.T, from, to string) {
 	t.Helper()
 	skip := map[string]bool{"node_modules": true, "out": true, "dist": true, ".git": true}
@@ -354,6 +354,14 @@ func copySSRGateProject(t *testing.T, from, to string) {
 		if d.IsDir() {
 			if rel != "." && skip[d.Name()] {
 				return filepath.SkipDir
+			}
+			if rel != "." {
+				// A nested directory with its own vela.config.json is a
+				// project of its own, built with its own configuration
+				// (examples/app also needs vela-app gen first).
+				if _, err := os.Stat(filepath.Join(p, "vela.config.json")); err == nil {
+					return filepath.SkipDir
+				}
 			}
 			return os.MkdirAll(filepath.Join(to, rel), 0o755)
 		}

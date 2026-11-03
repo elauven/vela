@@ -1,0 +1,12 @@
+<script>
+  export let data = null;
+</script>
+
+<template>
+  <div class="users">
+    <aside>
+      <p>{data.count} users</p>
+    </aside>
+    <slot />
+  </div>
+</template>

@@ -1,0 +1,7 @@
+<script>
+  export let data = null;
+  export let route = null;
+</script>
+<template>
+  <div class="site"><nav>{data.title} {route.path}</nav><slot /></div>
+</template>
