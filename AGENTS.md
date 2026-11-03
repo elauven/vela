@@ -192,6 +192,10 @@ each optional section, in any order:
   `undefined` and `false` render nothing. Props the current component does
   not declare are ignored, so keep the props every candidate needs on the
   tag and use `bind:` only for a `$bindable` prop they all declare.
+- Load a rarely shown component on demand with
+  `const Panel = lazy(() => import('./Panel.vela'))` (literal path, `lazy`
+  from `vela`) and render it with `<vela:component :this={Panel} />`. With
+  SSR, call `await preloadHydration(target)` before `hydrate()`.
 - Import from `vela` only `onMount`, `onDestroy` and runtime exports such as
   `tick`; import stores from `vela/store`. Other names are
   `VELA-UNKNOWN-IMPORT`.

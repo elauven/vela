@@ -234,6 +234,10 @@ chosen by a conditional, and `<vela:component :this={…}>` renders it.
   component renders in a range with the token `""` after its `d` payload
   entry (HYDRATION_ARCHITECTURE S-6.4, S-6.12); any other value is a render
   error `VELA-SSR-DYNAMIC` naming the source position.
+- **T-5.5f** `lazy(() => import('./X.vela'))`, with `lazy` imported from
+  `vela`, translates to the `XComponent` of X: the server has every
+  renderer, so the output is that of a static component value and the `d`
+  entry carries X's ID (task 071).
 - **T-5.5e** State whose value is or holds a component is not serialised:
   an initializer that references an imported component is reproducible
   (HYDRATION_ARCHITECTURE S-6.8a, S-6.13), and a component value in a

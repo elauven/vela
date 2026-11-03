@@ -587,6 +587,42 @@ tag name: tabs, wizards, plugin areas, CMS blocks.
   browser hydrates it. A component stored in `$state` is computed by the
   client, never sent in the payload.
 
+### Code splitting with `lazy()`
+
+`lazy()` makes a component load on demand, as a separate chunk of the
+bundle:
+
+```vela
+<script>
+  import { lazy } from 'vela';
+  const Settings = lazy(() => import('./Settings.vela'));
+  let open = $state(false);
+</script>
+
+<template>
+  <button @click={() => (open = true)}>Settings</button>
+  {#if open}
+    <vela:component :this={Settings} />
+  {/if}
+</template>
+```
+
+- The argument is always `() => import('<relative .vela path>')` with a
+  literal path (`VELA-LAZY-ARGUMENT`). A lazy value renders only through
+  `<vela:component>`; `<Settings />` is `VELA-LAZY-TAG`.
+- The first time it is shown, the range stays empty until the module
+  arrives, then the component mounts. If `:this` changed meanwhile, the
+  late module is not mounted. A failed load is a development warning and
+  leaves the range empty. `Settings.load()` starts loading earlier (for
+  example on hover); `Settings.loaded` says whether it is done.
+- Vite, Rollup and other bundlers split the chunk themselves; project builds
+  without a bundler load the compiled `.js` module.
+- With server rendering, the server renders the component directly. Before
+  hydrating, load the lazy components of the page:
+  `await preloadHydration(container); hydrate(App, container);`.
+  Without it, hydration reports `lazy-not-loaded` and repairs the range
+  once the module arrives.
+
 ---
 
 ## 9. Scoped styles
@@ -685,6 +721,7 @@ Scoping is identical either way.
 | `{#await p}` `{:then v}` `{:catch e}` `{/await}` | promise states, including `{#await p then v}` and `{#await p catch e}` shortcuts |
 | `<slot>` | child-content placeholder |
 | `<vela:component :this={C} />` | the component chosen by a value |
+| `lazy(() => import('./C.vela'))` | a component loaded on demand (import from `vela`) |
 | `$$dispatch(name, detail)` | emit a custom event (`@on:name` in the parent) |
 | `{#client}` `{:else}` `{/client}` | browser-only content, fallback on the server |
 | `onMount` / `onDestroy` | lifecycle (import from `vela`) |

@@ -384,6 +384,15 @@ components write no entry.
   reproducible (S-6.8a), and the Go runtime leaves a component value out of
   the `s` entry (`omitted`), because the client's value is a factory
   function that JSON cannot carry.
+- **S-6.14 Lazy components.** A `lazy(() => import('./X.vela'))` value
+  (task 071) is selected by its identity. A hydrating `$$dynamic` that
+  meets a lazy value whose module is not loaded cannot adopt the server
+  range synchronously: that is a structural mismatch with the reason
+  `lazy-not-loaded`, and repair mounts the component when it loads.
+  `preloadHydration(container)` avoids it: it reads the payload without
+  consuming it and loads the registered lazy values named by its `d`
+  entries (the compiler registers every lazy component of a module when the
+  module is evaluated), repeating while loaded modules register more.
 - **A-8.2a** A tree with a `<vela:component>` is `interactive` (§8.1),
   because the client must be able to switch the child.
 

@@ -65,6 +65,7 @@ disagree, the contract wins and the row is a bug.
 | `#each` / `#await` binding | native | lexical Go variable | same | — | value-text | implemented | |
 | symbol imported from local `.js` | native or host | generated module package `server/modules/<path>`: `New(ssrJS, ctx)` per render, a `Module` field per export | same | T-7.3a, T-7.3b | `TestSSRModulesMatchNode`, `TestSSRModuleDiagnostics` | implemented | Named imports only. Top-level code may only declare functions and `const` bindings; `let`, other statements, and circular imports make the module's symbols unsupported (host fix suggested). Module values are created per render, never shared. |
 | component imported from local `.vela`, used as a value | native | `XComponent` of the generated package (`vela.Component`) | same | T-5.5a | component-value, component-state | implemented | Bare in the same package, otherwise imported (`ssrc_<path>`). A client-only component has no server value (T-9.2). |
+| `lazy(() => import('./X.vela'))` | native | `XComponent` of X, as an imported component value | same | T-5.5f | go-tests | implemented | `TestLazyComponents`. Other arguments are `VELA-LAZY-ARGUMENT` before the server sees them. |
 | symbol imported from npm | host or client | — | — | T-7.3c | — | never | |
 | browser global (`window`, `document`, …) | client | — | — | §3 | — | never | |
 

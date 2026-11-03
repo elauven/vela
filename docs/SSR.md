@@ -113,6 +113,19 @@ hydrate(Page, document.getElementById('app'), {
 - **Form controls.** If the user edits an input before hydration, the live
   value is written into state through the normal setter. `bind:this` is
   assigned after the element is adopted.
+- **Lazy components.** A page that renders `lazy()` components loads their
+  modules before it hydrates; otherwise hydration reports
+  `lazy-not-loaded` and repairs the range when the module arrives:
+
+  ```js
+  import { hydrate, preloadHydration } from '@govela/runtime/hydrate';
+
+  const target = document.getElementById('app');
+  await preloadHydration(target);
+  hydrate(Page, target);
+  ```
+
+  The server renders a lazy component like any other (contract §5.5).
 
 ## Development and production with Vite
 
