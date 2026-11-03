@@ -1,6 +1,8 @@
 package ssr
 
 import (
+	"github.com/elauven/vela/internal/pkgpath"
+
 	"github.com/elauven/vela/internal/analyzer"
 	"github.com/elauven/vela/internal/jsast"
 	"github.com/elauven/vela/internal/project"
@@ -119,6 +121,12 @@ func (p *SSRProject) mirrorDir(source string) string {
 		name = strings.ToLower(name)
 	}
 	hostRel, _ := filepath.Rel(p.Root, p.HostDir)
+	// Route-style directories are encoded as in the generated packages
+	// (task 069): src/routes/[id]/Page.vela → ssrhost/src/routes/id.param/page.
+	dir = ssrGoRelDir(strings.TrimSuffix(dir, "/"))
+	if encoded, err := pkgpath.Encode(name); err == nil {
+		name = encoded
+	}
 	return path.Join(filepath.ToSlash(hostRel), dir, name)
 }
 

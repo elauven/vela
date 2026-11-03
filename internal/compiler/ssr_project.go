@@ -45,8 +45,11 @@ func BuildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	}
 	hosts.Children = map[string][]string{}
 	regions := map[string]*ssr.SSRRegion{}
-	results := map[string]error{}
+	results := ssr.CheckSSRPackagePaths(files, srcRoot)
 	for _, src := range files {
+		if results[src] != nil {
+			continue
+		}
 		var region *ssr.SSRRegion
 		results[src] = ssr.CompileSSRProjectFileInto(src, srcRoot, layout, hosts, &region)
 		regions[src] = region

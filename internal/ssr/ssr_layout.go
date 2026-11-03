@@ -79,19 +79,26 @@ func (layout SSRProjectLayout) PropsPath(src, srcRoot string) string {
 }
 
 func (layout SSRProjectLayout) PackageName(src, srcRoot string) string {
-	rel := componentPackageDir(src, srcRoot)
+	rel := componentGoDir(src, srcRoot)
 	if rel == "." {
 		return "components"
 	}
-	return goFileStem(filepath.Base(rel))
+	return ssrGoPackageName(path.Base(rel))
 }
 
 func (layout SSRProjectLayout) ImportPath(src, srcRoot string) string {
-	rel := componentPackageDir(src, srcRoot)
+	rel := componentGoDir(src, srcRoot)
 	if rel == "." {
 		return path.Join(layout.ModulePath, "components")
 	}
-	return path.Join(layout.ModulePath, "components", filepath.ToSlash(rel))
+	return path.Join(layout.ModulePath, "components", rel)
+}
+
+// componentGoDir is the Go directory of the package of src, relative to the
+// components directory, with slashes: the source directory with every
+// element encoded (task 069).
+func componentGoDir(src, srcRoot string) string {
+	return ssrGoRelDir(filepath.ToSlash(componentPackageDir(src, srcRoot)))
 }
 
 // componentPackageDir is the directory of src relative to srcRoot. Both are
@@ -263,7 +270,7 @@ func mirrorGoPathWithSuffix(src, srcRoot, outRoot, suffix string) string {
 	if err != nil {
 		rel = filepath.Base(src)
 	}
-	dir := filepath.Dir(rel)
+	dir := filepath.FromSlash(ssrGoRelDir(filepath.ToSlash(filepath.Dir(rel))))
 	stem := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
 	name := goFileStem(stem) + suffix
 	if dir == "." {
