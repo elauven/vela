@@ -1,6 +1,8 @@
 package ssr
 
 import (
+	"github.com/elauven/vela/internal/pkgpath"
+
 	"github.com/elauven/vela/internal/analyzer"
 	"github.com/elauven/vela/internal/jsast"
 
@@ -104,7 +106,11 @@ func (m *SSRModules) module(file string) *ssrModule {
 		module.problem = ssrExprUnsupported(0, "module %s is outside the source root", source)
 		return module
 	}
-	stem := strings.TrimSuffix(filepath.ToSlash(rel), ".js")
+	stem, err := pkgpath.EncodePath(strings.TrimSuffix(filepath.ToSlash(rel), ".js"))
+	if err != nil {
+		module.problem = &SSRExpressionError{Code: SSRPackagePathDiagnosticCode, Message: fmt.Sprintf("module %s has no Go package path: %v", source, err)}
+		return module
+	}
 	module.ImportPath = path.Join(m.layout.ModulePath, "modules", stem)
 	module.Package = ssrModulePackageName(path.Base(stem))
 	slug := goFileStem(strings.ReplaceAll(stem, "/", "_"))

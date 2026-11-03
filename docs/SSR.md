@@ -58,6 +58,38 @@ Set the import path of the generated packages with `--ssr-module` or in
 A runtime of another contract version fails `go build` with
 `undefined: vela.ContractV3` instead of misbehaving.
 
+### Directory names
+
+The source tree may use the directory names of file-based routers. They are
+not valid in Go import paths, so the Go side encodes them (the client output
+and `vela.manifest.json` keep the source paths):
+
+| Source directory | Go directory | Go package |
+| --- | --- | --- |
+| `[id]` | `id.param` | `id_param` |
+| `[[lang]]` | `lang.opt` | `lang_opt` |
+| `[...rest]` | `rest.rest` | `rest_rest` |
+| `[id=int]` | `id.int.param` | `id_int_param` |
+| `(admin)` | `admin.group` | `admin_group` |
+| `user-list`, `sitemap.xml` | unchanged | `user_list`, `sitemap_xml` |
+
+- The names inside brackets and parentheses match `[A-Za-z][A-Za-z0-9_]*`.
+- Other names keep letters, digits, `_`, `.` and `-`; they cannot start with
+  `-` or `~` or end with `.`. The suffixes `.param`, `.opt`, `.rest` and
+  `.group` are reserved, so the encoding is reversible.
+- Mixed names (`[a]-[b]`, `file.[ext]`), other characters (`$`, `@`, `{`,
+  `!` …), reserved suffixes, and two directories that become the same Go
+  directory (compared without case) fail with `VELA-SSR-PACKAGE-PATH`,
+  which names the directory and suggests a valid name. Without this check
+  one such directory would break `go build ./...` of your whole module.
+- Directories starting with `_` or `.` are valid, but `go build ./...` skips
+  them.
+- A package name gets `_` for `.` and `-`, a `p` before a leading digit and a
+  `_` after a Go keyword.
+- Go tools read the same table from
+  `github.com/elauven/vela/ssr_runtime/pkgpath` (`Encode`, `Decode`,
+  `EncodePath`, `DecodePath`, `PackageName`).
+
 ## Render
 
 ```go
@@ -222,7 +254,9 @@ func FormatPrice(ctx context.Context, value float64, currency string) (string, e
 ```
 
 - The host package mirrors the JavaScript file (`src/format.js` →
-  `ssrhost/src/format/`); configure the tree in `vela.ssr.json`
+  `ssrhost/src/format/`), with directory names encoded as in "Directory
+  names" (`src/routes/[id]/util.js` → `ssrhost/src/routes/id.param/util/`);
+  configure the tree in `vela.ssr.json`
   (`"host": {"dir": "ssrhost", "module": "example.com/site/ssrhost"}`).
 - The compiler prints the expected file and signature;
   `--ssr-scaffold-hosts` creates stubs and never changes existing files.
@@ -278,6 +312,7 @@ Server text follows the client's conversion in each context:
 | `VELA-SSR-PROPS` | A prop value that cannot be sent to the client in the payload |
 | `VELA-SSR-IMPURE` | A write to props, state or module values during the render |
 | `VELA-SSR-CHILD` | A child component has no server renderer |
+| `VELA-SSR-PACKAGE-PATH` | A source directory name that cannot become a Go package directory ("Directory names") |
 | `VELA-HTML-NESTING` | Markup the HTML parser would rearrange (for example `<div>` in `<p>`) |
 | `VELA-HYDRATION-MISMATCH` | Runtime: server and client disagree during hydration |
 

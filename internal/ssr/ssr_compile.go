@@ -65,6 +65,11 @@ func CompileSSRProjectFile(src, srcRoot string, layout SSRProjectLayout) error {
 // CompileSSRProjectFileInto also stores the region site records of the
 // component in regionOut when the render plan exists, whatever the result.
 func CompileSSRProjectFileInto(src, srcRoot string, layout SSRProjectLayout, hosts *SSRHosts, regionOut **SSRRegion) error {
+	// A directory without a Go package path would produce Go that breaks
+	// the user's module (task 069).
+	if err := CheckSSRPackagePaths([]string{src}, srcRoot)[src]; err != nil {
+		return err
+	}
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
