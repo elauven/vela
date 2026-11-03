@@ -75,49 +75,102 @@ func (a *Assets) Tags(entries ...string) (string, error) {
 		}
 		return b.String(), nil
 	}
-	var css, preload, scripts []string
-	seen := map[string]bool{}
-	add := func(list *[]string, file string) {
-		if !seen[file] {
-			seen[file] = true
-			*list = append(*list, file)
-		}
-	}
-	visited := map[string]bool{}
-	var imported func(key string)
-	imported = func(key string) {
-		if visited[key] {
-			return
-		}
-		visited[key] = true
-		c := a.manifest[key]
-		for _, file := range c.CSS {
-			add(&css, file)
-		}
-		for _, imp := range c.Imports {
-			imported(imp)
-			add(&preload, a.manifest[imp].File)
-		}
-	}
+	w := newWalk(a)
+	var scripts []string
 	for _, entry := range entries {
 		entry = strings.TrimPrefix(entry, "/")
 		c, ok := a.manifest[entry]
 		if !ok || !c.IsEntry {
 			return "", fmt.Errorf("vite: %q is not an entry of the manifest; entries: %s", entry, strings.Join(a.entries(), ", "))
 		}
-		imported(entry)
-		add(&scripts, c.File)
+		w.imported(entry)
+		if !w.seen[c.File] {
+			w.seen[c.File] = true
+			scripts = append(scripts, c.File)
+		}
 	}
-	for _, file := range css {
-		fmt.Fprintf(&b, `<link rel="stylesheet" href="%s">`, html.EscapeString(a.base+file))
-	}
-	for _, file := range preload {
-		fmt.Fprintf(&b, `<link rel="modulepreload" href="%s">`, html.EscapeString(a.base+file))
-	}
+	w.write(&b, a.base)
 	for _, file := range scripts {
 		writeScript(&b, a.base+file)
 	}
 	return b.String(), nil
+}
+
+// Preload returns the tags that load the modules a page imports
+// dynamically, such as the lazy components it renders, before the client
+// asks for them: the stylesheets of each module and of the chunks it
+// imports, and a modulepreload link per chunk. A module is a path relative
+// to the Vite root, such as "src/routes/Page.vela". Files the entries load
+// (the ones passed to Tags) are left out. In development it returns
+// nothing: the dev server serves modules on request.
+func (a *Assets) Preload(entries []string, modules ...string) (string, error) {
+	if a.dev != "" || len(modules) == 0 {
+		return "", nil
+	}
+	loaded := newWalk(a)
+	for _, entry := range entries {
+		entry = strings.TrimPrefix(entry, "/")
+		loaded.imported(entry)
+		loaded.seen[a.manifest[entry].File] = true
+	}
+	w := newWalk(a)
+	w.seen = loaded.seen
+	for _, module := range modules {
+		module = strings.TrimPrefix(module, "/")
+		c, ok := a.manifest[module]
+		if !ok {
+			return "", fmt.Errorf("vite: %q is not in the manifest", module)
+		}
+		w.imported(module)
+		w.add(&w.preload, c.File)
+	}
+	var b strings.Builder
+	w.write(&b, a.base)
+	return b.String(), nil
+}
+
+// walk collects the stylesheets and the imported chunks of manifest keys,
+// each file once.
+type walk struct {
+	a            *Assets
+	css, preload []string
+	seen         map[string]bool
+	visited      map[string]bool
+}
+
+func newWalk(a *Assets) *walk {
+	return &walk{a: a, seen: map[string]bool{}, visited: map[string]bool{}}
+}
+
+func (w *walk) add(list *[]string, file string) {
+	if file != "" && !w.seen[file] {
+		w.seen[file] = true
+		*list = append(*list, file)
+	}
+}
+
+func (w *walk) imported(key string) {
+	if w.visited[key] {
+		return
+	}
+	w.visited[key] = true
+	c := w.a.manifest[key]
+	for _, file := range c.CSS {
+		w.add(&w.css, file)
+	}
+	for _, imp := range c.Imports {
+		w.imported(imp)
+		w.add(&w.preload, w.a.manifest[imp].File)
+	}
+}
+
+func (w *walk) write(b *strings.Builder, base string) {
+	for _, file := range w.css {
+		fmt.Fprintf(b, `<link rel="stylesheet" href="%s">`, html.EscapeString(base+file))
+	}
+	for _, file := range w.preload {
+		fmt.Fprintf(b, `<link rel="modulepreload" href="%s">`, html.EscapeString(base+file))
+	}
 }
 
 func (a *Assets) entries() []string {
