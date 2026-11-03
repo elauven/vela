@@ -183,6 +183,9 @@ func (b *ssrIRBuilder) shadowedGlobal(name string) bool {
 	if _, ok := ctx.ModuleRefs[name]; ok {
 		return true
 	}
+	if _, ok := ctx.Components[name]; ok {
+		return true
+	}
 	if _, ok := ctx.HostSymbols[name]; ok {
 		return true
 	}

@@ -231,6 +231,9 @@ export async function mismatchCheck(env, testCase, injected) {
         if (globalThis.process?.env?.VELA_PRINT_REPORTS) console.error(JSON.stringify(reports));
       }
       if (verified && !reports.some((report) => report.kind === injected.kind)) errors.push(`${label(policy)}: onMismatch got ${JSON.stringify(reports.map((r) => r.kind))}, want a ${injected.kind} report`);
+      if (injected.message && policy === 'repair' && !reports.some((report) => report.message.includes(injected.message))) {
+        errors.push(`${label(policy)}: no report says ${JSON.stringify(injected.message)}, got ${JSON.stringify(reports.map((r) => r.message))}`);
+      }
       if (!verified && reports.length) errors.push(`${label(policy)}: production verified a value`);
       if (policy === 'repair' && counts.warn === 0) errors.push(`${label(policy)}: no console warning`);
       if (policy === 'production' && verified && counts.error !== 1) errors.push(`${label(policy)}: console.error was called ${counts.error} times, want 1`);

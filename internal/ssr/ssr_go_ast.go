@@ -28,7 +28,7 @@ func SSRRuntimeImport() string { return ssrRuntimePath }
 
 // SSRRuntimeContract is the contract marker every generated file references
 // (R-12.1d); it must match a constant the runtime exports.
-const SSRRuntimeContract = "ContractV3"
+const SSRRuntimeContract = "ContractV4"
 
 // BuildSSRGoSkeleton creates the declarations of a server renderer file,
 // including its Props type, entirely through the standard Go AST. The
@@ -86,7 +86,7 @@ func goImportDecl(path string) *goast.GenDecl {
 }
 
 // goRuntimeContractDecl references the runtime contract marker
-// (`var _ = vela.ContractV3`), so a runtime of another version fails go build
+// (`var _ = vela.ContractV4`), so a runtime of another version fails go build
 // with an undefined identifier (R-12.1d).
 func goRuntimeContractDecl() *goast.GenDecl {
 	return &goast.GenDecl{Tok: token.VAR, Specs: []goast.Spec{&goast.ValueSpec{
@@ -566,6 +566,40 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	), types.NewTuple(types.NewVar(token.NoPos, pkg, "", errorType)), false)))
 	ssrRuntimeAddFunc(pkg, "SetHostScope", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "scope", stringType)}, nil)
 	ssrRuntimeAddFunc(pkg, "WriteHostScope", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
+	// Components as values (ssr_runtime/component.go, task 070).
+	dynamicOptionsName := types.NewTypeName(token.NoPos, pkg, "DynamicOptions", nil)
+	dynamicOptions := types.NewNamed(dynamicOptionsName, types.NewStruct([]*types.Var{types.NewField(token.NoPos, pkg, "Static", boolType, false)}, nil), nil)
+	pkg.Scope().Insert(dynamicOptionsName)
+	slotFunc := types.NewSignatureType(nil, nil, nil, types.NewTuple(types.NewVar(token.NoPos, pkg, "", writer)), types.NewTuple(types.NewVar(token.NoPos, pkg, "", errorType)), false)
+	propsMap := types.NewMap(stringType, anyType)
+	slotsMap := types.NewMap(stringType, slotFunc)
+	componentInterface := types.NewInterfaceType([]*types.Func{
+		types.NewFunc(token.NoPos, pkg, "ComponentID", types.NewSignatureType(nil, nil, nil, nil, types.NewTuple(types.NewVar(token.NoPos, pkg, "", stringType)), false)),
+		types.NewFunc(token.NoPos, pkg, "RenderDynamic", types.NewSignatureType(nil, nil, nil, types.NewTuple(
+			types.NewVar(token.NoPos, pkg, "ctx", contextT),
+			types.NewVar(token.NoPos, pkg, "w", writer),
+			types.NewVar(token.NoPos, pkg, "props", propsMap),
+			types.NewVar(token.NoPos, pkg, "slots", slotsMap),
+			types.NewVar(token.NoPos, pkg, "options", dynamicOptions),
+		), types.NewTuple(types.NewVar(token.NoPos, pkg, "", errorType)), false)),
+	}, nil)
+	componentInterface.Complete()
+	componentName := types.NewTypeName(token.NoPos, pkg, "Component", nil)
+	types.NewNamed(componentName, componentInterface, nil)
+	pkg.Scope().Insert(componentName)
+	ssrRuntimeAddFunc(pkg, "DynamicWriter", []*types.Var{
+		types.NewVar(token.NoPos, pkg, "w", writer),
+		types.NewVar(token.NoPos, pkg, "ctx", contextT),
+		types.NewVar(token.NoPos, pkg, "options", dynamicOptions),
+	}, []*types.Var{types.NewVar(token.NoPos, pkg, "", writer)})
+	ssrRuntimeAddFunc(pkg, "RenderDynamicComponent", []*types.Var{
+		types.NewVar(token.NoPos, pkg, "w", writer),
+		types.NewVar(token.NoPos, pkg, "site", stringType),
+		types.NewVar(token.NoPos, pkg, "where", stringType),
+		types.NewVar(token.NoPos, pkg, "value", anyType),
+		types.NewVar(token.NoPos, pkg, "props", propsMap),
+		types.NewVar(token.NoPos, pkg, "slots", slotsMap),
+	}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "AwaitEntry", []*types.Var{
 		types.NewVar(token.NoPos, pkg, "w", writer),
 		types.NewVar(token.NoPos, pkg, "site", stringType),

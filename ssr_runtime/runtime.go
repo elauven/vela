@@ -60,6 +60,12 @@ func StrictEqual(left, right any) bool {
 	if leftUndefined || rightUndefined {
 		return leftUndefined && rightUndefined
 	}
+	// A component value is one factory on the client: equal to itself only.
+	leftComponent, leftIsComponent := left.(Component)
+	rightComponent, rightIsComponent := right.(Component)
+	if leftIsComponent || rightIsComponent {
+		return leftIsComponent && rightIsComponent && leftComponent.ComponentID() == rightComponent.ComponentID()
+	}
 
 	leftValue, leftNull := strictEqualityValue(left)
 	rightValue, rightNull := strictEqualityValue(right)
@@ -603,7 +609,7 @@ func EscapeString(value string) string {
 
 // RootPayloadVersion is the schema version of the payload stream written by
 // block-engine renderers (docs/HYDRATION_ARCHITECTURE.md §6).
-const RootPayloadVersion = 3
+const RootPayloadVersion = 4
 
 // Stream collects the ordered payload entries of one root render (S-6.1).
 // Component instances and server-rendered await blocks append entries in

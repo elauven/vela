@@ -958,6 +958,10 @@ func TypeOf(value any) string {
 	if _, ok := value.(Func); ok {
 		return "function"
 	}
+	if _, ok := value.(Component); ok {
+		// A component is its factory function on the client.
+		return "function"
+	}
 	switch jsValue(value).(type) {
 	case UndefinedValue:
 		return "undefined"

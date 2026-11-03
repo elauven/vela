@@ -25,7 +25,16 @@ import (
 // this same node/event order; neither is allowed to reparse template strings.
 type SSRRenderPlan struct {
 	ComponentName string
-	ScopeID       string
+	// ComponentID is the component's $$id (project.ComponentID), returned by
+	// the generated XComponent's ComponentID (task 070).
+	ComponentID string
+	// Links are the component imports by local name: tags link statically,
+	// and an imported component used as a value translates to its
+	// XComponent.
+	Links map[string]SSRComponentLink
+	// Package is the Go package the renderer is generated into.
+	Package string
+	ScopeID string
 	// ElementScope is the scope attribute of elements: ScopeID when the
 	// component has styles, "" otherwise (as the client, task 059).
 	ElementScope string
@@ -144,6 +153,13 @@ type SSRPlanComponent struct {
 	Link  *SSRComponentLink
 	Attrs []SSRPlanAttr
 	Slots map[string][]SSRPlanNode
+	// This chooses the component of a <vela:component>; nil for a static
+	// child. DynamicID is its site.
+	This      *sfcast.TemplateExpr
+	DynamicID int
+	// ThisLine and ThisColumn are the 1-based source position of This, for
+	// render errors.
+	ThisLine, ThisColumn int
 }
 
 // SSRComponentLink is project-level import metadata retained by the typed
@@ -266,6 +282,7 @@ const (
 	SSRDynamicEachKey
 	SSRDynamicKey
 	SSRDynamicAwait
+	SSRDynamicComponent
 )
 
 // SSRDynamicSite records stable dynamic order for the future paired hydration
@@ -280,6 +297,7 @@ type SSRDynamicSite struct {
 
 type ssrPlanBuilder struct {
 	plan        *SSRRenderPlan
+	source      string // the .vela source, for positions
 	links       map[string]SSRComponentLink
 	dynamicNext int
 	slotNames   map[string]bool
@@ -319,8 +337,10 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *sfcast.SF
 	if err != nil {
 		return nil, err
 	}
-	b := &ssrPlanBuilder{links: links, slotNames: map[string]bool{}, plan: &SSRRenderPlan{
+	b := &ssrPlanBuilder{links: links, source: sfc.Source, slotNames: map[string]bool{}, plan: &SSRRenderPlan{
 		ComponentName:       componentName,
+		ComponentID:         componentName,
+		Links:               links,
 		ScopeID:             scopeID,
 		Props:               props,
 		ReactiveNames:       analysis.ReactiveNames(),
@@ -511,6 +531,11 @@ func (b *ssrPlanBuilder) element(node *sfcast.ElementNode) *SSRPlanElement {
 }
 
 func (b *ssrPlanBuilder) component(node *sfcast.ComponentNode) *SSRPlanComponent {
+	// The :this site comes first, in source order.
+	dynamicID := -1
+	if node.IsDynamic() {
+		dynamicID = b.dynamic(SSRDynamicComponent, node.ThisExpr(), node.Span)
+	}
 	attrs := b.attrs(node.Attrs)
 	slots := make(map[string][]SSRPlanNode, len(node.Slots))
 	names := make([]string, 0, len(node.Slots))
@@ -521,7 +546,15 @@ func (b *ssrPlanBuilder) component(node *sfcast.ComponentNode) *SSRPlanComponent
 	for _, name := range names {
 		slots[name] = b.nodes(node.Slots[name])
 	}
-	component := &SSRPlanComponent{Span: node.Span, Name: node.Name, Attrs: attrs, Slots: slots}
+	component := &SSRPlanComponent{Span: node.Span, Name: node.Name, Attrs: attrs, Slots: slots, DynamicID: dynamicID}
+	if node.IsDynamic() {
+		component.This = node.ThisExpr()
+		if component.This != nil && b.source != "" {
+			line, column := codegen.SourceLineColumn(b.source, b.plan.TemplateOffset+component.This.Pos)
+			component.ThisLine, component.ThisColumn = line+1, column+1
+		}
+		return component
+	}
 	if link, ok := b.links[node.Name]; ok {
 		copy := link
 		component.Link = &copy
