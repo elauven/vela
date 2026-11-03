@@ -67,6 +67,9 @@ func TestSSRInitOracle(t *testing.T) {
 				fmt.Fprintf(&script, "let %s = $derived(%s);\n", name, init)
 			case "const":
 				fmt.Fprintf(&script, "const %s = %s;\n", name, init)
+			case "function":
+				// init is the parameters and the body.
+				fmt.Fprintf(&script, "function %s%s\n", name, init)
 			case "component":
 				// An imported component (task 070); a function in JavaScript.
 				fmt.Fprintf(&script, "import { %s } from './%s.vela';\n", name, name)
