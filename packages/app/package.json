@@ -2,7 +2,7 @@
   "name": "@govela/app",
   "version": "0.1.0-dev",
   "private": true,
-  "description": "Client router of Vela App (docs/APP.md). Skeleton of task 073; the router follows in task 076.",
+  "description": "Client router of Vela App (docs/APP.md): hydration, data navigation and route matching.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -12,16 +12,27 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    "./client": "./client.js",
-    "./match": "./match.js"
+    "./client": {
+      "types": "./client.d.ts",
+      "default": "./client.js"
+    },
+    "./match": {
+      "types": "./match.d.ts",
+      "default": "./match.js"
+    }
   },
   "files": [
     "client.js",
+    "client.d.ts",
     "match.js",
+    "match.d.ts",
     "LICENSE"
   ],
   "govela": {
     "runtimeContract": 4,
     "protocol": 1
+  },
+  "peerDependencies": {
+    "@govela/runtime": ">=0.4.7"
   }
 }
