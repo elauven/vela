@@ -3,7 +3,22 @@
 The client router of Vela App, the application layer above the Vela compiler
 with a Go server. The contract is [docs/APP.md](../../docs/APP.md).
 
-This package is not published yet. `@govela/app/match` has the built-in
+It also installs the `vela-app` command, which generates the app sources,
+runs the development loop and makes production builds:
+
+```sh
+npm install @govela/app @govela/runtime
+npx vela-app dev
+npx vela-app build
+```
+
+`bin/vela-app.js` runs the binary of the optional dependency
+`@govela/app-<os>-<cpu>` for this platform (linux x64/arm64, macOS
+x64/arm64, Windows x64), or `$VELA_APP_BINARY`. Do not install with
+`--omit=optional`. The guide is
+[docs/VELA_APP.md](../../docs/VELA_APP.md).
+
+`@govela/app/match` has the built-in
 matchers (`int`, `uuid`, `slug`) and `matchPath`, which the route table that
 `vela-app gen` writes (`src/_app/routes.js`) uses; the Go package
 `github.com/elauven/vela/app` matches with the same rules.

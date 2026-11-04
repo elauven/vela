@@ -11,8 +11,8 @@ version `vX.Y.Z` while the contract is in `v0` (docs/SSR_TRANSLATION_CONTRACT.md
 | JavaScript runtime | `runtime/`, generated into `packages/runtime` | npm package `@govela/runtime` of the same version (R-12.2g), published by the release workflow |
 | Compiler for npm | `packages/compiler` (launchers `bin/vela.js` and `bin/vela-lsp.js`, JavaScript API `index.js`) and `packages/compiler-<os>-<cpu>` (`vela` and `vela-lsp` each) | npm packages `@govela/compiler` and `@govela/compiler-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64` of the same version, published by the release workflow |
 | Bundler plugin | `packages/unplugin` (plugin `index.js`, entry points generated) | npm package `@govela/unplugin` of the same version, published by the release workflow after `@govela/compiler` |
-| App layer (Go) | `app/` (nested module `github.com/elauven/vela/app`, generator `app/cmd/vela-app`) | tag `app/vX.Y.Z`, independent of the compiler version (docs/APP.md B-6); no tag yet |
-| App layer (npm) | `packages/app` | npm package `@govela/app` with its own version, not checked against the tag; `"private": true` until the first release of the app layer |
+| App layer (Go) and `vela-app` | `app/` (nested module `github.com/elauven/vela/app`, command `app/cmd/vela-app`) | tag `app/vX.Y.Z`, independent of the compiler version (docs/APP.md B-6); `.github/workflows/release-app.yml` builds `vela-app` for the five platforms and publishes the GitHub release `app/vX.Y.Z` |
+| App layer (npm) | `packages/app` (client router, launcher `bin/vela-app.js`) and `packages/app-<os>-<cpu>` (`vela-app`) | npm packages `@govela/app` and `@govela/app-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64` of the layer's version, published by the app release workflow |
 | VS Code extension | `packages/vscode-vela` | its own version (`package.json`), not checked against the tag; CI builds the `.vsix` as an artifact; publishing to the Marketplace or Open VSX is not set up |
 
 All of them are released under the MIT license (`LICENSE`). The nested Go
@@ -75,24 +75,55 @@ runtime tag, no npm package and no release binaries.
 ## The app layer
 
 The app layer (docs/APP.md) is versioned on its own: the compiler's lockstep
-does not apply to it. A release of the app layer:
+does not apply to it. Its Go module, `Version` in `app/app.go`, the npm
+packages and the `vela-app` binaries always carry the same version.
+
+`@govela/app` runs `vela-app` the way `@govela/compiler` runs `vela`: its
+launcher `bin/vela-app.js` runs the binary of the installed platform
+package, an optional dependency of exactly its version, or
+`$VELA_APP_BINARY`. The platform manifests are generated with `Version`
+(`app/npm_package_test.go`); the binaries are not committed, the release
+workflow builds them into `packages/app-*/bin/`.
+
+A release of the app layer:
 
 1. `cd app && go test ./...` and the app CI job pass. `app/go.mod` requires
    a tagged `ssr_runtime` with everything the layer imports, and has no
-   `replace` line: `go install …@vX.Y.Z` refuses a module with one. While
-   the layer needs runtime code that is not tagged yet (`ssr_runtime/pkgpath`
-   of task 069, `vite.Assets.Preload` of task 075), `app/go.mod` replaces the runtime with `../ssr_runtime`;
-   tag the runtime first, then require it and drop the line.
+   `replace` line: `go install …@vX.Y.Z` refuses a module with one. When the
+   layer needs runtime code that is not tagged yet, `app/go.mod` replaces the
+   runtime with `../ssr_runtime` during development; release the runtime
+   (the compiler steps above) first, then require it and drop the line.
 2. Set `Version` in `app/app.go` and `version` in `packages/app/package.json`
-   to `X.Y.Z`; they always match.
-3. `git tag app/vX.Y.Z` and `git push origin app/vX.Y.Z`.
-4. `npm publish ./packages/app --access public` (once the package is no
-   longer `private`).
+   to `X.Y.Z`, and the versions of its `optionalDependencies`
+   `@govela/app-*` too; regenerate the platform packages:
+   `cd app && VELA_UPDATE_APP_PACKAGES=1 go test -run TestAppPackagesAreGenerated .`.
+   `TestAppPackageRunsVelaApp` checks that they all agree.
+3. If the layer needs a newer runtime, raise `peerDependencies` of
+   `packages/app/package.json` and the `require` of `app/go.mod`; the
+   release notes state the minimum `vela`, `ssr_runtime` and
+   `@govela/runtime` versions.
+4. `git tag app/vX.Y.Z` and `git push origin app/vX.Y.Z`. The workflow
+   `.github/workflows/release-app.yml` checks that the tag matches
+   `Version` and every manifest, tests the module outside the workspace
+   (as `go install` builds it), builds `vela-app` for linux, darwin
+   (amd64, arm64) and windows (amd64) with `SHA256SUMS`, publishes the
+   GitHub release `app/vX.Y.Z`, puts the binaries into the platform
+   packages and publishes them, then `@govela/app`, with provenance and the
+   same `NPM_TOKEN`. A version already on npm is skipped, so a failed run
+   can be repeated.
+
+The tag pattern of the compiler's workflow, `v*`, does not match
+`app/v*`, and each workflow checks only its own packages.
 
 `RuntimeContract` in `app/app.go` and `govela.runtimeContract` in
-`packages/app/package.json` name the runtime contract the release needs; the
-release notes state the minimum `ssr_runtime` and `@govela/runtime`
-versions.
+`packages/app/package.json` name the runtime contract the release needs.
+
+### History of the app layer
+
+| Tag | What it is |
+| --- | --- |
+| `app/v0.1.0`, `app/v0.1.1` | The first app layer (tasks 073–078) and `@govela/app@0.1.1`, the client router only; `vela-app` only through `go install` / `go run` |
+| `app/v0.1.2` | `vela-app` in the GitHub release and in npm (`@govela/app` with the platform packages); `vela-app build` |
 
 ## Development
 

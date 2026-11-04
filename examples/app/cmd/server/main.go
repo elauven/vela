@@ -4,6 +4,7 @@
 //	vite build && go run ./cmd/server  # production: dist/ from vite build
 //	go run ./cmd/server -dev http://localhost:5173   # with vite (dev server)
 //	npm run dev                        # vela-app dev: all of it, restarted on changes
+//	npm run build && cd build && ./server   # vela-app build: the directory to deploy
 //
 // It prints its URL on the first line of the standard output.
 package main

@@ -57,11 +57,11 @@ jobs:
       - name: Check the npm package versions
         run: |
           want="${GITHUB_REF_NAME#v}"
-          # The VS Code extension (task 065d) and @govela/app (docs/APP.md
-          # B-6) have their own versions.
+          # The VS Code extension (task 065d), @govela/app and its platform
+          # packages (docs/APP.md B-6, release-app.yml) have their own versions.
           for manifest in packages/*/package.json; do
             [ "$manifest" = packages/vscode-vela/package.json ] && continue
-            [ "$manifest" = packages/app/package.json ] && continue
+            case "$manifest" in packages/app/package.json|packages/app-*/package.json) continue;; esac
             node -e '
               const [file, want] = process.argv.slice(1);
               const m = JSON.parse(require("fs").readFileSync(file, "utf8"));

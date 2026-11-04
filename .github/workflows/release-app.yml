@@ -1,0 +1,110 @@
+name: Release Vela App
+
+# A tag app/vX.Y.Z (docs/RELEASING.md, the app layer) builds vela-app for
+# every platform, publishes a GitHub release with the binaries and their
+# checksums, and publishes the npm packages of that version: the platform
+# packages @govela/app-<os>-<cpu> with the binaries, then @govela/app,
+# whose bin/vela-app.js runs the binary of its platform. The Go module
+# github.com/elauven/vela/app needs no build: the tag itself releases it.
+
+on:
+  push:
+    tags: ['app/v*']
+
+permissions:
+  contents: write
+  id-token: write # npm provenance
+
+jobs:
+  release:
+    name: Build and publish ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # The tag, Version in app/app.go and every npm manifest of the layer
+      # agree (TestAppPackagesAreGenerated, TestAppPackageRunsVelaApp).
+      - name: Check the version
+        working-directory: app
+        env:
+          GOWORK: 'off'
+        run: |
+          want="${GITHUB_REF_NAME#app/v}"
+          got=$(go run ./cmd/vela-app version | cut -d' ' -f2)
+          if [ "$got" != "$want" ]; then
+            echo "tag $GITHUB_REF_NAME, but Version in app/app.go is $got" >&2
+            exit 1
+          fi
+          for manifest in ../packages/app/package.json ../packages/app-*/package.json; do
+            node -e '
+              const [file, want] = process.argv.slice(1);
+              const m = JSON.parse(require("fs").readFileSync(file, "utf8"));
+              const own = Object.entries(m.optionalDependencies ?? {}).filter(([n]) => n.startsWith("@govela/app-")).map(([, v]) => v);
+              const wrong = [m.version, ...own].filter((v) => v !== want);
+              if (wrong.length) { console.error(`${file}: ${wrong.join(", ")}, want ${want}`); process.exit(1); }
+            ' "$manifest" "$want"
+          done
+
+      # Outside the workspace, as go install builds it: app/go.mod must
+      # require a tagged ssr_runtime and have no replace line.
+      - name: Test
+        working-directory: app
+        env:
+          GOWORK: 'off'
+        run: |
+          if grep -q '^replace\|^\s*github.com/elauven/vela/ssr_runtime =>' go.mod; then
+            echo "app/go.mod has a replace directive; go install refuses it" >&2
+            exit 1
+          fi
+          go vet ./...
+          go test ./...
+
+      - name: Build all platforms
+        working-directory: app
+        env:
+          GOWORK: 'off'
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p ../dist
+          for target in linux/amd64:linux-x64 linux/arm64:linux-arm64 darwin/amd64:darwin-x64 darwin/arm64:darwin-arm64 windows/amd64:win32-x64; do
+            go=${target%%:*}; npm=${target#*:}
+            os=${go%/*}; arch=${go#*/}; ext=""
+            [ "$os" = windows ] && ext=.exe
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "../dist/vela-app-$os-$arch$ext" ./cmd/vela-app
+            mkdir -p "../packages/app-$npm/bin"
+            cp "../dist/vela-app-$os-$arch$ext" "../packages/app-$npm/bin/vela-app$ext"
+            chmod +x "../packages/app-$npm/bin/vela-app$ext"
+          done
+          (cd ../dist && sha256sum vela-app-* > SHA256SUMS)
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Vela App ${GITHUB_REF_NAME#app/}" --generate-notes --verify-tag
+
+      # The platform packages before @govela/app. A version that is already
+      # on npm is skipped, so a failed run can be repeated.
+      - name: Publish the npm packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#app/v}"
+          for dir in packages/app-* packages/app; do
+            name=$(node -p "require('./$dir/package.json').name")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is already published"
+              continue
+            fi
+            # "./": npm reads a bare "a/b" as the GitHub repository a/b.
+            npm publish "./$dir" --access public --provenance
+          done

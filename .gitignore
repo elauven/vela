@@ -16,6 +16,7 @@ test_projects/*/public/dist
 
 # Binaries of the compiler platform packages, built by the release workflow.
 /packages/compiler-*/bin/
+/packages/app-*/bin/
 
 # VS Code extension: the downloaded VS Code of its tests and packages
 packages/vscode-vela/.vscode-test/

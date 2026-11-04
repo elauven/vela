@@ -1,7 +1,7 @@
 {
   "name": "@govela/app",
-  "version": "0.1.1",
-  "description": "Client router of Vela App (docs/APP.md): hydration, data navigation and route matching.",
+  "version": "0.1.2",
+  "description": "Vela App (docs/APP.md): the client router (hydration, data navigation, route matching) and the vela-app command.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -9,6 +9,9 @@
     "directory": "packages/app"
   },
   "type": "module",
+  "bin": {
+    "vela-app": "bin/vela-app.js"
+  },
   "sideEffects": false,
   "exports": {
     "./client": {
@@ -21,6 +24,7 @@
     }
   },
   "files": [
+    "bin/vela-app.js",
     "client.js",
     "client.d.ts",
     "match.js",
@@ -33,5 +37,15 @@
   },
   "peerDependencies": {
     "@govela/runtime": ">=0.4.8"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@govela/app-darwin-arm64": "0.1.2",
+    "@govela/app-darwin-x64": "0.1.2",
+    "@govela/app-linux-arm64": "0.1.2",
+    "@govela/app-linux-x64": "0.1.2",
+    "@govela/app-win32-x64": "0.1.2"
   }
 }

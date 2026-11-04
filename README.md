@@ -90,6 +90,11 @@ import vela from '@govela/unplugin/vite';
 export default { plugins: [vela()] };
 ```
 
+For a multi-page application with a Go server, routes and loaders
+(Vela App), `npm i @govela/app` also installs the `vela-app` command:
+`npx vela-app dev` for development, `npx vela-app build` for a directory to
+deploy ([VELA_APP.md](docs/VELA_APP.md)).
+
 Mount a component from any page:
 
 ```html
@@ -185,7 +190,8 @@ snippets, a dev server with HMR, and streaming SSR.
 | [AGENTS.md](AGENTS.md) | Authoring rules for people and AI agents |
 | [EDITORS.md](docs/EDITORS.md) | The language server `vela-lsp` and editor setup |
 | [SSR.md](docs/SSR.md) | Server rendering and hydration |
-| [APP.md](docs/APP.md) | Vela App: routes, Go loaders and partial navigation (in progress: the contract, the `vela-app` generator, server documents, data and fragment navigation, form actions and `vela-app dev`) |
+| [APP.md](docs/APP.md) | Vela App: routes, Go loaders and partial navigation (experimental: the contract, the `vela-app` generator, server documents, data and fragment navigation, form actions, `vela-app dev` and `vela-app build`) |
+| [VELA_APP.md](docs/VELA_APP.md) | Working with `vela-app`: install, a new project, development, production build and deploy |
 | [SSR_TRANSLATION_CONTRACT.md](docs/SSR_TRANSLATION_CONTRACT.md) | JavaScript-to-Go rules and Go hosts ([ru](docs/SSR_TRANSLATION_CONTRACT.ru.md)) |
 | [SSR_TRANSLATION_MATRIX.md](docs/SSR_TRANSLATION_MATRIX.md) | Translation status per construct and built-in |
 | [HYDRATION_ARCHITECTURE.md](docs/HYDRATION_ARCHITECTURE.md) | Block runtime and hydration ([ru](docs/HYDRATION_ARCHITECTURE.ru.md)) |

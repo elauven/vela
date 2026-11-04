@@ -8,7 +8,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -131,4 +133,89 @@ func edit(t *testing.T, file, from, to string) {
 	if err := os.WriteFile(file, bytes.Replace(data, []byte(from), []byte(to), 1), 0o644); err != nil {
 		t.Fatal(fmt.Errorf("edit: %w", err))
 	}
+}
+
+// TestBuild is the acceptance check of vela-app build without Vite: the
+// build directory holds the server and the vela manifest, and the server
+// started in that directory, away from the project, serves the app.
+func TestBuild(t *testing.T) {
+	testkit.RequireGo(t)
+	root := testkit.CopyProject(t, filepath.Join(testkit.RepoRoot(t), "examples", "app"))
+	testkit.UseLocalModules(t, root)
+	t.Setenv("GOWORK", "off")
+	t.Setenv("GOFLAGS", "-mod=mod")
+
+	var out syncBuffer
+	output := filepath.Join(t.TempDir(), "site")
+	opts := dev.BuildDefaults()
+	opts.Dir, opts.Stdout, opts.Output = root, &out, output
+	opts.Vela, opts.Vite = []string{testkit.VelaBinary(t)}, nil
+	if err := dev.Build(context.Background(), opts); err != nil {
+		t.Fatalf("build: %v\n%s", err, out.String())
+	}
+	server := filepath.Join(output, "server")
+	if _, err := os.Stat(server + exeSuffix()); err != nil {
+		t.Fatalf("no server binary: %v\n%s", err, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(output, "out", "client", "vela.manifest.json")); err != nil {
+		t.Fatalf("no vela manifest in the build: %v", err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := listener.Addr().String()
+	listener.Close()
+	cmd := exec.Command(server+exeSuffix(), "-addr", addr, "-dist", "none")
+	cmd.Dir = output
+	var logs syncBuffer
+	cmd.Stdout, cmd.Stderr = &logs, &logs
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	}()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		resp, err := http.Get("http://" + addr + "/docs/intro")
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if !strings.Contains(string(body), "<h1>Introduction</h1>") {
+				t.Fatalf("the built server serves:\n%s", body)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the built server does not answer: %v\n%s", err, logs.String())
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// A second build replaces the directory; a directory of the developer
+	// is never replaced.
+	if err := dev.Build(context.Background(), opts); err != nil {
+		t.Fatalf("second build: %v", err)
+	}
+	foreign := t.TempDir()
+	if err := os.WriteFile(filepath.Join(foreign, "keep.txt"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts.Output = foreign
+	if err := dev.Build(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "not written by vela-app build") {
+		t.Fatalf("build into a foreign directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(foreign, "keep.txt")); err != nil {
+		t.Fatalf("the foreign directory lost its file: %v", err)
+	}
+}
+
+func exeSuffix() string {
+	if runtime.GOOS == "windows" {
+		return ".exe"
+	}
+	return ""
 }

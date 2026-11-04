@@ -12,7 +12,9 @@ the part SvelteKit and Nuxt play for their compilers, but the server is
 - for each navigation the server sends either data (JSON) for components the
   client already has, or the server HTML of the changed part (a fragment).
 
-Status: **experimental**: implemented by tasks 073–078, not released yet (the `app/` module has no tag). This page is the contract (task 073), approved on
+Status: **experimental**: implemented by tasks 073–078 and released as
+`app/vX.Y.Z` with `@govela/app` and the `vela-app` binaries; installing,
+building and deploying are in [VELA_APP.md](VELA_APP.md). This page is the contract (task 073), approved on
 2026-11-03. The route scanner and the `vela-app` generator exist (task 074,
 see [Generator](#generator)), `app.New` serves documents that the
 browser hydrates (task 075, see [Server](#server)), and the client router
@@ -56,10 +58,11 @@ server/routes/**                  internal/appgen/routes_gen.go
   | Path | Contents |
   | --- | --- |
   | `app/` | Go module `github.com/elauven/vela/app` (its own `go.mod`, listed in `go.work`). Package `app`: `Handler`, `Request`, loaders, responses |
-  | `app/cmd/vela-app/` | The generator CLI (`go run github.com/elauven/vela/app/cmd/vela-app`) |
+  | `app/cmd/vela-app/` | The `vela-app` command: generator, `dev` and `build` ([VELA_APP.md](VELA_APP.md)) |
   | `app/internal/gen/` | Route scanner and code generation |
   | `app/internal/protocol/` | Navigation protocol types, shared by the server and the tests |
-  | `packages/app/` | npm `@govela/app`: the client router (`@govela/app/client`) |
+  | `packages/app/` | npm `@govela/app`: the client router (`@govela/app/client`) and the `vela-app` launcher (`bin/vela-app.js`) |
+  | `packages/app-<os>-<cpu>/` | npm `@govela/app-linux-x64` and the other platforms: the `vela-app` binary, built by the release workflow |
   | `examples/app/` | A runnable example (from task 074) |
 
 - **B-4** `TestAppLayerIsSeparable` (root module) enforces B-1 and B-2:
@@ -68,12 +71,16 @@ server/routes/**                  internal/appgen/routes_gen.go
      `ssr_runtime` and the app's own packages are imported directly;
   2. no package of the root module imports `github.com/elauven/vela/app`;
   3. the sources of `packages/app` import only the public `@govela/runtime`
-     entry points (B-1), no `$$` names, and their own files;
+     entry points (B-1), no `$$` names, and their own files; the launcher
+     in `bin/` may also import Node's own modules (`node:*`);
   4. app tests run the compiler as a subprocess (the `vela` binary), never
      as a Go package. Rule 1 enforces this, because it also covers the test
      dependencies.
-- **B-5** The generator is written in Go and run with `go run` or
-  `go install`. App users have Go anyway, so the npm side ships no binary.
+- **B-5** `vela-app` is written in Go. It is installed with `go install`,
+  from the binaries of the GitHub release `app/vX.Y.Z`, or with npm:
+  `@govela/app` runs the binary of its optional platform package, as
+  `@govela/compiler` runs `vela`, so npm scripts need no Go toolchain for
+  the generator (the server is still built with Go).
 - **B-6** Versions. The Go module is tagged `app/vX.Y.Z`. `@govela/app` has
   its own version and is not part of the lockstep version check of the
   compiler packages, just like `vscode-vela`. Both declare the runtime
@@ -438,11 +445,12 @@ server/routes/**                  internal/appgen/routes_gen.go
 
 `vela-app` (task 074) turns the routes tree into sources that `vela --ssr`
 and `go build` compile. Run it in the project directory, the one with
-`vela.config.json` and `go.mod`:
+`vela.config.json` and `go.mod` ([VELA_APP.md](VELA_APP.md) has the
+installation):
 
 ```sh
-go run github.com/elauven/vela/app/cmd/vela-app gen   # once, or before vela
-go run github.com/elauven/vela/app/cmd/vela-app watch # next to vela --watch
+vela-app gen     # once, or before vela
+vela-app watch   # next to vela --watch
 vela && go build ./...
 ```
 
@@ -790,6 +798,24 @@ Vite (`-vite ""` runs none). The output of each process has its prefix
 (`[gen]`, `[vela]`, `[server]`, `[vite]`, `[dev]`). Ctrl-C stops every
 process; when vela or Vite exits, `dev` stops too; when the server exits,
 the next change starts it again.
+
+### `vela-app build`
+
+```sh
+vela-app build                       # in the project directory
+vela-app build -o /srv/site -vite "npx vite build" -server ./cmd/server
+```
+
+The production build: `gen`, `vela` (`$VELA_BINARY` or `vela`; `-vela`
+overrides), `npx vite build` (`-vite ""` runs none) and
+`go build -trimpath` of `-server` (`./cmd/server`; `""` builds none). It
+writes the directory `-o` (`build`) with the layout of the project, so the
+server runs there as in the project directory: `server` (`server.exe` for
+`GOOS=windows`), `dist/` and `out/client/vela.manifest.json` (the `out` of
+`vela.config.json`). The directory is replaced on each build, but only when
+it is empty or has the marker `.vela-app-build` that the build writes; a
+directory of the developer is refused. Deploying it is described in
+[VELA_APP.md](VELA_APP.md#deploy).
 
 ## Decisions on the open questions of 073
 
