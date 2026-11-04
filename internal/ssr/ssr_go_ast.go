@@ -6,7 +6,6 @@ import (
 	goast "go/ast"
 	"go/constant"
 	"go/format"
-	"go/importer"
 	goparser "go/parser"
 	"go/token"
 	"go/types"
@@ -170,7 +169,7 @@ func ValidateGeneratedSSRGoGraph(packages map[string]map[string][]byte) error {
 func validateGeneratedSSRGoGraph(packages map[string]map[string][]byte, hosts map[string]*types.Package) error {
 	loader := &ssrGeneratedGraphImporter{
 		hosts:    hosts,
-		fallback: importer.Default(),
+		fallback: goImporter(),
 		packages: packages,
 		cache:    map[string]*types.Package{},
 		checking: map[string]bool{},
@@ -182,7 +181,7 @@ func validateGeneratedSSRGoGraph(packages map[string]map[string][]byte, hosts ma
 	sort.Strings(paths)
 	for _, importPath := range paths {
 		if _, err := loader.Import(importPath); err != nil {
-			return fmt.Errorf("ssr go AST: type-check generated Go package %s: %w", importPath, err)
+			return fmt.Errorf("ssr go AST: type-check generated Go package %s: %w%s", importPath, err, goToolchainHint())
 		}
 	}
 	return nil
