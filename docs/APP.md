@@ -12,7 +12,7 @@ the part SvelteKit and Nuxt play for their compilers, but the server is
 - for each navigation the server sends either data (JSON) for components the
   client already has, or the server HTML of the changed part (a fragment).
 
-Status: **in progress**. This page is the contract (task 073), approved on
+Status: **experimental**: implemented by tasks 073–078, not released yet (the `app/` module has no tag). This page is the contract (task 073), approved on
 2026-11-03. The route scanner and the `vela-app` generator exist (task 074,
 see [Generator](#generator)), `app.New` serves documents that the
 browser hydrates (task 075, see [Server](#server)), and the client router
