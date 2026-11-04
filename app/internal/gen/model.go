@@ -37,6 +37,8 @@ type Route struct {
 	RenderPkg string
 	// RenderMode is the mode Render names, "" when unknown (LoadFile).
 	RenderMode string
+	// ActionsPkg is the package that declares Actions, "" for none.
+	ActionsPkg string
 }
 
 // Level is one level of a chain (P-10).
@@ -164,6 +166,9 @@ func Build(t *Tree) (*Model, []Diagnostic) {
 			}
 			if dir == d {
 				r.Chain = append(r.Chain, level(KindPage, dir.Page, dir.Load != nil && dir.Load.Page))
+				if dir.Load != nil && dir.Load.Actions {
+					r.ActionsPkg = dir.Load.Dir
+				}
 				if dir.Load != nil && dir.Load.Render {
 					r.RenderPkg = dir.Load.Dir
 					r.RenderMode = dir.Load.RenderMode

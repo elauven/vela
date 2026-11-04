@@ -24,7 +24,8 @@ const scrollKey = 'vela:scroll';
 const navigatingStore = writable(null);
 
 // navigating is a store: null, or { from, to, type } while a navigation
-// loads. from and to are { url, route } with route the route id.
+// loads, type 'form' while a form action runs. from and to are { url,
+// route } with route the route id.
 export const navigating = { subscribe: navigatingStore.subscribe };
 
 const beforeHooks = new Set();
@@ -69,14 +70,16 @@ export function invalidate() {
   return router.navigate(new URL(location.href), { type: 'invalidate', replace: true, invalidate: true, keep: true });
 }
 
-// start({ VelaApp, routes, root, onMismatch }) hydrates the app root of a
-// server document (R-8) and installs the router: it loads the lazy
-// components the payload names, adopts the server DOM, and from then on
-// navigates inside the app without loading documents (N-2). root is the
-// element or its id ('vela-app'). It resolves with { app, routes } and
-// dispatches 'vela:hydrated' on root; every navigation of the router then
-// dispatches 'vela:navigated'.
-export async function start({ VelaApp, routes, root = 'vela-app', onMismatch } = {}) {
+// start({ VelaApp, routes, root, onMismatch, preload }) hydrates the app
+// root of a server document (R-8) and installs the router: it loads the
+// lazy components the payload names, adopts the server DOM, and from then
+// on navigates inside the app without loading documents (N-2) and posts
+// forms with fetch. root is the element or its id ('vela-app'); preload is
+// the default prefetch mode of links ('hover', 'viewport' or 'off'). It
+// resolves with { app, routes } and dispatches 'vela:hydrated' on root;
+// every navigation of the router then dispatches 'vela:navigated', and a
+// failed form action 'vela:form'.
+export async function start({ VelaApp, routes, root = 'vela-app', onMismatch, preload = 'hover' } = {}) {
   if (typeof VelaApp !== 'function') throw new TypeError('@govela/app/client: start() needs VelaApp');
   const target = typeof root === 'string' ? document.getElementById(root) : root;
   if (!target) throw new Error(`@govela/app/client: no element #${root} in the document`);
@@ -86,7 +89,7 @@ export async function start({ VelaApp, routes, root = 'vela-app', onMismatch } =
   const options = onMismatch ? { onMismatch } : {};
   const app = hydrate(VelaApp, target, options);
   if (routes && props && Array.isArray(props.chain)) {
-    router = createRouter({ VelaApp, app, routes, target, route: props.route, chain: props.chain });
+    router = createRouter({ VelaApp, app, routes, target, route: props.route, chain: props.chain, preload });
   }
   target.dispatchEvent(new CustomEvent('vela:hydrated', { bubbles: true, detail: { app } }));
   return { app, routes };
@@ -105,7 +108,7 @@ function payloadProps(target) {
   return null;
 }
 
-function createRouter({ VelaApp, app, routes, target, route, chain }) {
+function createRouter({ VelaApp, app, routes, target, route, chain, preload }) {
   const build = document.querySelector('meta[name="vela-build"]')?.getAttribute('content') || '';
   const scroll = readScroll();
   let index = typeof history.state?.[indexKey] === 'number' ? history.state[indexKey] : 0;
@@ -163,6 +166,7 @@ function createRouter({ VelaApp, app, routes, target, route, chain }) {
     if (controller) controller.abort();
     const own = new AbortController();
     controller = own;
+    if (opts.invalidate) clearPrefetched();
     navigatingStore.set({ from, to, type: opts.type });
     // The modules of a data route load while the server answers; another
     // route may get a fragment that needs none of them.
@@ -172,30 +176,24 @@ function createRouter({ VelaApp, app, routes, target, route, chain }) {
 
     let body;
     let at = url;
+    const have = opts.invalidate ? '' : haveKeys().join(',');
     for (let redirects = 0; ; redirects++) {
-      let response;
+      let result;
       try {
-        response = await fetch(at.href, {
-          credentials: 'same-origin',
-          signal: own.signal,
-          headers: {
-            [headers.navigate]: `auto;v=${protocolVersion}`,
-            [headers.have]: opts.invalidate ? '' : haveKeys().join(','),
-            [headers.build]: build,
-          },
-        });
-        if (response.redirected) {
-          // Not the app's answer, such as a proxy's redirect.
-          if (controller === own) fullLoad(new URL(response.url), how);
-          return;
-        }
-        body = await response.json();
-      } catch (error) {
+        // A prefetched answer serves one navigation (task 078).
+        const cached = redirects === 0 && !opts.invalidate ? takePrefetched(at, have) : null;
+        result = await (cached ? cached.catch(() => fetchNavigation(at, have, own.signal)) : fetchNavigation(at, have, own.signal));
+      } catch {
         if (own.signal.aborted) return;
         // A network error or an answer that is not the protocol (N-1).
         return fullLoad(at, how);
       }
       if (controller !== own) return;
+      if (result && result.redirected) {
+        // Not the app's answer, such as a proxy's redirect.
+        return fullLoad(new URL(result.redirected), how);
+      }
+      body = result;
       if (!body || body.v !== protocolVersion) return fullLoad(at, how);
       if (body.type !== 'redirect') break;
       const next = new URL(body.location, at);
@@ -206,26 +204,36 @@ function createRouter({ VelaApp, app, routes, target, route, chain }) {
       to.url = next;
       to.route = routes.match(next.pathname).route.id;
     }
+    await show(body, { at, how, opts, own, from, to, fallback: () => fullLoad(at, how) });
+  }
+
+  // fetchNavigation asks the server for the navigation to url (N-2). It
+  // resolves with the JSON body, or { redirected } when something other
+  // than the app redirected the request.
+  async function fetchNavigation(url, have, signal) {
+    const response = await fetch(url.href, {
+      credentials: 'same-origin',
+      signal,
+      headers: { [headers.navigate]: `auto;v=${protocolVersion}`, [headers.have]: have, [headers.build]: build },
+    });
+    if (response.redirected) return { redirected: response.url };
+    return response.json();
+  }
+
+  // show puts a data or fragment response on the page: it loads what the
+  // response needs, updates the history, the app root and the head, then
+  // scroll and focus, and reports the navigation. fallback is the full
+  // load of a response the router cannot show.
+  async function show(body, { at, how, opts, own, from, to, fallback, form = false }) {
     const fragment = body.type === 'fragment' ? body.fragment : null;
     if ((body.type !== 'data' && !(fragment && typeof fragment.html === 'string')) || !Array.isArray(body.segments) || !(body.start >= 0 && body.start <= chain.length)) {
-      return fullLoad(at, how);
+      return fallback();
     }
     let view = null;
     try {
-      if (!fragment) {
-        await Promise.all(body.segments.map((segment) => components(routes, segment.id)?.load()));
-      } else if (fragment.static) {
-        view = staticHTML(fragment.html);
-        statics.add(view);
-      } else {
-        // The lazy pages inside the fragment load before it hydrates.
-        const parsed = document.createElement('template');
-        parsed.innerHTML = fragment.html;
-        await preloadHydration(parsed.content);
-        view = adoptFragment(fragment.html, body.start);
-      }
+      view = await prepare(body);
     } catch {
-      if (controller === own) fullLoad(at, how);
+      if (controller === own) fallback();
       return;
     }
     if (controller !== own) return;
@@ -257,16 +265,226 @@ function createRouter({ VelaApp, app, routes, target, route, chain }) {
       if (how === 'popstate') {
         const saved = scroll[index];
         scrollTo(saved ? saved.x : 0, saved ? saved.y : 0);
-      } else {
+      } else if (!form) {
         scrollToHash(at);
       }
-      moveFocus(target, autofocus);
+      if (!form) moveFocus(target, autofocus);
       announcer.textContent = document.title || at.pathname;
     }
+    observeViewport();
     navigatingStore.set(null);
     const done = { from, to, type: opts.type };
     for (const fn of [...afterHooks]) fn(done);
     target.dispatchEvent(new CustomEvent('vela:navigated', { bubbles: true, detail: done }));
+  }
+
+  // prepare loads the modules a data response needs, or makes the
+  // component value of a fragment (R-8): staticHTML, or serverComponent
+  // after the lazy pages inside it loaded.
+  async function prepare(body) {
+    const fragment = body.type === 'fragment' ? body.fragment : null;
+    if (!fragment) {
+      await Promise.all(body.segments.map((segment) => components(routes, segment.id)?.load()));
+      return null;
+    }
+    if (fragment.static) {
+      const view = staticHTML(fragment.html);
+      statics.add(view);
+      return view;
+    }
+    const parsed = document.createElement('template');
+    parsed.innerHTML = fragment.html;
+    await preloadHydration(parsed.content);
+    return adoptFragment(fragment.html, body.start);
+  }
+
+  // ── Prefetch (task 078) ────────────────────────────────────────────────
+  // A link prefetches its navigation on hover (after 50 ms), on touchstart,
+  // or when it enters the viewport, as data-vela-preload on it or an
+  // ancestor says ("hover", "viewport" or "off"; start({ preload }) is the
+  // default). The answer serves one navigation within 30 s, for the same
+  // URL and X-Vela-Have.
+  const prefetched = new Map();
+  const prefetchTTL = 30000;
+
+  function prefetchKey(url, have) {
+    return `${withoutHash(url.href)}\n${have}`;
+  }
+
+  function takePrefetched(url, have) {
+    const key = prefetchKey(url, have);
+    const entry = prefetched.get(key);
+    prefetched.delete(key);
+    return entry && Date.now() - entry.at < prefetchTTL ? entry.body : null;
+  }
+
+  function clearPrefetched() {
+    prefetched.clear();
+  }
+
+  function prefetch(url) {
+    if (url.origin !== location.origin || withoutHash(url.href) === withoutHash(location.href)) return;
+    const match = routes.match(url.pathname);
+    if (!match) return;
+    const have = haveKeys().join(',');
+    const key = prefetchKey(url, have);
+    const now = Date.now();
+    for (const [k, entry] of prefetched) if (now - entry.at >= prefetchTTL) prefetched.delete(k);
+    if (prefetched.has(key)) return;
+    if (match.route.render === 'data') {
+      for (const level of match.route.chain) components(routes, level.id)?.load().catch(() => {});
+    }
+    const body = fetchNavigation(url, have, undefined);
+    prefetched.set(key, { at: now, body });
+    // What the answer needs loads too; a failure only drops the entry.
+    body.then((answer) => (answer && answer.v === protocolVersion && (answer.type === 'data' || answer.type === 'fragment') ? prepareModules(answer) : null))
+      .catch(() => prefetched.delete(key));
+  }
+
+  // prepareModules loads the modules of a prefetched answer without making
+  // its component value.
+  function prepareModules(body) {
+    if (body.type === 'data') return Promise.all(body.segments.map((segment) => components(routes, segment.id)?.load()));
+    if (body.fragment && !body.fragment.static) {
+      const parsed = document.createElement('template');
+      parsed.innerHTML = body.fragment.html;
+      return preloadHydration(parsed.content);
+    }
+    return null;
+  }
+
+  function preloadMode(link) {
+    const holder = link.closest('[data-vela-preload]');
+    return holder ? holder.getAttribute('data-vela-preload') : preload;
+  }
+
+  let hoverTimer = null;
+  function onPointerOver(event) {
+    const link = routableLink(event.target);
+    if (!link || preloadMode(link) === 'off') return;
+    clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(() => prefetch(new URL(link.href)), 50);
+  }
+
+  function onPointerOut(event) {
+    const link = routableLink(event.target);
+    if (link && !link.contains(event.relatedTarget)) clearTimeout(hoverTimer);
+  }
+
+  function onTouchStart(event) {
+    const link = routableLink(event.target);
+    if (link && preloadMode(link) !== 'off') prefetch(new URL(link.href));
+  }
+
+  const viewport = typeof IntersectionObserver === 'function'
+    ? new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        viewport.unobserve(entry.target);
+        prefetch(new URL(entry.target.href));
+      }
+    })
+    : null;
+
+  // observeViewport watches the links whose mode is viewport; it runs at
+  // start and after each navigation.
+  function observeViewport() {
+    if (!viewport) return;
+    viewport.disconnect();
+    for (const link of document.querySelectorAll('a[href]')) {
+      if (routableLink(link) === link && preloadMode(link) === 'viewport') viewport.observe(link);
+    }
+  }
+
+  // ── Form actions (task 078) ────────────────────────────────────────────
+  // A POST <form> inside the app root posts with fetch. A failure sets the
+  // page's form prop; a success shows the data of the page with every
+  // loader run again. data-vela-reload on the form or its submitter leaves
+  // it to the browser.
+  function onSubmit(event) {
+    if (event.defaultPrevented) return;
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !target.contains(form)) return;
+    const submitter = event.submitter || null;
+    const attr = (name, formName) => (submitter && submitter.hasAttribute(formName) ? submitter.getAttribute(formName) : form.getAttribute(name));
+    if ((attr('method', 'formmethod') || 'get').toLowerCase() !== 'post') return;
+    if (form.hasAttribute('data-vela-reload') || (submitter && submitter.hasAttribute('data-vela-reload'))) return;
+    const formTarget = attr('target', 'formtarget');
+    if (formTarget && formTarget !== '_self') return;
+    const action = new URL(submitter && submitter.hasAttribute('formaction') ? submitter.formAction : form.action, location.href);
+    if (action.origin !== location.origin) return;
+    event.preventDefault();
+    submit(form, submitter, action, attr('enctype', 'formenctype'));
+  }
+
+  async function submit(form, submitter, action, enctype) {
+    let data;
+    try {
+      data = new FormData(form, submitter || undefined);
+    } catch {
+      data = new FormData(form);
+    }
+    // The browser posts again by itself when the router cannot answer.
+    const native = () => {
+      navigatingStore.set(null);
+      form.setAttribute('data-vela-reload', '');
+      if (submitter && submitter.form === form) form.requestSubmit(submitter);
+      else form.requestSubmit();
+    };
+    if (controller) controller.abort();
+    const own = new AbortController();
+    controller = own;
+    clearPrefetched();
+    const from = current();
+    // The page the action belongs to: the URL without ?/name.
+    const page = new URL(action.href);
+    page.search = page.search.slice(1).split('&').filter((part) => part && !part.startsWith('/')).join('&');
+    page.hash = '';
+    const to = describe(page, routes.match(page.pathname));
+    navigatingStore.set({ from, to, type: 'form' });
+    let body;
+    try {
+      const response = await fetch(action.href, {
+        method: 'POST',
+        credentials: 'same-origin',
+        signal: own.signal,
+        body: (enctype || '').toLowerCase() === 'multipart/form-data' ? data : new URLSearchParams(data),
+        headers: { [headers.navigate]: `auto;v=${protocolVersion}`, [headers.have]: '', [headers.build]: build },
+      });
+      if (response.redirected) {
+        if (controller === own) fullLoad(new URL(response.url), 'push');
+        return;
+      }
+      body = await response.json();
+    } catch {
+      if (own.signal.aborted) return;
+      return native();
+    }
+    if (controller !== own) return;
+    if (!body || body.v !== protocolVersion) return native();
+    if (body.type === 'form') {
+      controller = null;
+      applyForm(body.form);
+      await tick();
+      navigatingStore.set(null);
+      target.dispatchEvent(new CustomEvent('vela:form', { bubbles: true, detail: { status: body.status, form: body.form } }));
+      return;
+    }
+    if (body.type === 'redirect') {
+      controller = null;
+      navigatingStore.set(null);
+      return navigate(new URL(body.location, action), { type: 'goto' });
+    }
+    if (body.type !== 'data' && body.type !== 'fragment') return native();
+    const how = withoutHash(page.href) === shown ? 'replace' : 'push';
+    await show(body, { at: page, how, opts: { type: 'form', keep: how === 'replace' }, own, from, to, fallback: native, form: true });
+  }
+
+  // applyForm sets the form prop of the page level after a failed action.
+  function applyForm(value) {
+    const j = chain.length - 1;
+    if (j < 0) return;
+    apply({ start: j, segments: [{ ...chain[j], form: value }], route }, null, true);
   }
 
   // haveKeys are the keys of X-Vela-Have: the chain up to the first level
@@ -302,7 +520,7 @@ function createRouter({ VelaApp, app, routes, target, route, chain }) {
   // fragment at j goes into the views of the innermost instance that holds
   // level j below its own first level (the root holds every level). The
   // instances below the target go with the levels they rendered.
-  function apply(body, view) {
+  function apply(body, view, keepForm = false) {
     const j = body.start;
     let t = stack.length - 1;
     while (t > 0 && (view ? stack[t].start >= j : stack[t].start > j)) t--;
@@ -314,20 +532,28 @@ function createRouter({ VelaApp, app, routes, target, route, chain }) {
     }
     if (view) views[j] = view;
     owner.views = views;
-    chain = chain.slice(0, j).concat(body.segments);
+    // A form prop lasts until the next navigation.
+    const kept = chain.slice(0, j).map((segment) => (keepForm || !('form' in segment) ? segment : withoutForm(segment)));
+    chain = kept.concat(body.segments);
     route = body.route;
     for (const entry of stack.slice()) entry.instance.set({ route, chain, start: entry.start, views: entry.views });
   }
 
+  // routableLink is the <a> at node that the router navigates, or null.
+  // An SVG <a> is left to the browser.
+  function routableLink(node) {
+    const link = node instanceof Element ? node.closest('a[href]') : null;
+    if (!(link instanceof HTMLAnchorElement)) return null;
+    if ((link.target && link.target !== '_self') || link.hasAttribute('download') || link.hasAttribute('data-vela-reload')) return null;
+    if (/(^|\s)external(\s|$)/i.test(link.getAttribute('rel') || '')) return null;
+    return new URL(link.href).origin === location.origin ? link : null;
+  }
+
   function onClick(event) {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
-    // An SVG <a> is left to the browser.
-    if (!(link instanceof HTMLAnchorElement)) return;
-    if ((link.target && link.target !== '_self') || link.hasAttribute('download') || link.hasAttribute('data-vela-reload')) return;
-    if (/(^|\s)external(\s|$)/i.test(link.getAttribute('rel') || '')) return;
+    const link = routableLink(event.target);
+    if (!link) return;
     const url = new URL(link.href);
-    if (url.origin !== location.origin) return;
     // A #hash on the same page scrolls; the browser does that.
     if (url.hash && withoutHash(url.href) === withoutHash(location.href)) return;
     event.preventDefault();
@@ -360,12 +586,22 @@ function createRouter({ VelaApp, app, routes, target, route, chain }) {
   }
 
   document.addEventListener('click', onClick);
+  document.addEventListener('submit', onSubmit);
+  document.addEventListener('mouseover', onPointerOver);
+  document.addEventListener('mouseout', onPointerOut);
+  document.addEventListener('touchstart', onTouchStart, { passive: true });
+  observeViewport();
   addEventListener('popstate', onPopState);
   addEventListener('pagehide', () => {
     saveScroll();
     writeScroll(scroll);
   });
   return { navigate };
+}
+
+function withoutForm(segment) {
+  const { form, ...rest } = segment;
+  return rest;
 }
 
 function components(routes, id) {

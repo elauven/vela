@@ -346,7 +346,7 @@ Streaming, partial hydration and islands, an HTTP framework or router, hot
 module replacement, and a dev server of its own: Vite serves the client
 ("Development and production with Vite"). Routing, loaders and navigation
 are the job of a separate layer above the compiler, Vela App
-([APP.md](APP.md), planned). Vela does not bundle: the client
+([APP.md](APP.md)), which also has form actions and `vela-app dev`. Vela does not bundle: the client
 entry is built by your own tools ([GUIDE.md](GUIDE.md), "Building an
 application").
 

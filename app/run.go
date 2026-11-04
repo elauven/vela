@@ -74,6 +74,18 @@ func (c *chainRun) start(i int) {
 	})
 }
 
+// preset gives a level its error without running its loader, as if the
+// loader had failed, and cancels the levels below it.
+func (c *chainRun) preset(i int, err error) {
+	l := c.levels[i]
+	l.once.Do(func() {
+		l.started.Store(true)
+		l.err = err
+		close(l.done)
+	})
+	c.fail(i)
+}
+
 // wait starts a level if needed and returns its result.
 func (c *chainRun) wait(i int) (any, error) {
 	c.start(i)

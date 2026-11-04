@@ -36,11 +36,20 @@ type pageCase struct {
 	// page shows afterwards, proving that the page is interactive.
 	Click string `json:"click,omitempty"`
 	Then  string `json:"then,omitempty"`
+	// Method, Form and Origin make a POST case; only the HTTP test runs it.
+	Method string `json:"method,omitempty"`
+	Form   string `json:"form,omitempty"`
+	Origin string `json:"origin,omitempty"`
 }
 
 var exampleCases = []pageCase{
 	{Path: "/", Status: 200, Title: "Home · Vela App", Contains: "Welcome to Vela App.", Preload: "src/routes/Page.vela"},
 	{Path: "/users", Status: 200, Title: "Users", Contains: "Grace</a>", Preload: "src/routes/users/Page.vela"},
+	{Path: "/users", Method: "POST", Form: "name=", Status: 422, Contains: "A name is required."},
+	{Path: "/users", Method: "POST", Form: "name=Linus", Status: 303, Location: "/users"},
+	{Path: "/users?/delete", Method: "POST", Form: "id=3", Status: 303, Location: "/users"},
+	{Path: "/users?/delete", Method: "POST", Form: "id=3", Status: 404, Contains: "<h1>404</h1>"},
+	{Path: "/users", Method: "POST", Form: "name=Eve", Origin: "https://evil.example", Status: 403},
 	{Path: "/users/2", Status: 200, Title: "Grace · Users", Contains: "User #2, joined 2026-03-17", Preload: "src/routes/users/[id=int]/Page.vela"},
 	{Path: "/about", Status: 200, Title: "Vela App", Contains: "About</h1>"},
 	{Path: "/de/about", Status: 200, Title: "Vela App", Contains: "Über uns</h1>"},
@@ -117,7 +126,15 @@ func TestExampleAppServes(t *testing.T) {
 	url := startServer(t, root, server, "-dist", "none")
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	for _, c := range exampleCases {
-		resp, err := client.Get(url + c.Path)
+		req, _ := http.NewRequest(http.MethodGet, url+c.Path, nil)
+		if c.Method == http.MethodPost {
+			req, _ = http.NewRequest(http.MethodPost, url+c.Path, strings.NewReader(c.Form))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		if c.Origin != "" {
+			req.Header.Set("Origin", c.Origin)
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -190,7 +207,13 @@ func TestExampleAppHydrates(t *testing.T) {
 	}
 	root, server := buildExample(t)
 	installPackages(t, repo, root)
-	cases, _ := json.Marshal(exampleCases)
+	var gets []pageCase
+	for _, c := range exampleCases {
+		if c.Method == "" {
+			gets = append(gets, c)
+		}
+	}
+	cases, _ := json.Marshal(gets)
 	script := filepath.Join(repo, "app", "testdata", "e2e.mjs")
 	cmd := exec.Command(node, script, root, server, string(cases))
 	cmd.Env = append(os.Environ(), "VELA_BINARY="+testkit.VelaBinary(t))
@@ -207,11 +230,11 @@ func TestExampleAppHydrates(t *testing.T) {
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
-	if len(result.Pages) != len(exampleCases) {
-		t.Fatalf("%d pages checked, want %d", len(result.Pages), len(exampleCases))
+	if len(result.Pages) != len(gets) {
+		t.Fatalf("%d pages checked, want %d", len(result.Pages), len(gets))
 	}
 	for i, p := range result.Pages {
-		c := exampleCases[i]
+		c := gets[i]
 		if p.Status != c.Status || (c.Location != "" && p.Location != c.Location) {
 			t.Errorf("%s: %d %q, want %d %q", c.Path, p.Status, p.Location, c.Status, c.Location)
 		}

@@ -12,10 +12,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
 	"github.com/elauven/vela/app/internal/protocol"
+	"github.com/elauven/vela/app/internal/value"
 	"github.com/elauven/vela/ssr_runtime/vite"
 )
 
@@ -44,6 +46,10 @@ type Config struct {
 	Dev bool
 	// MaxBytes limits the size of a rendered response; 8 MiB when 0.
 	MaxBytes int
+	// CrossOrigin rejects cross-origin POSTs to actions (CSRF); nil uses
+	// http.NewCrossOriginProtection(). Add trusted origins or bypass
+	// patterns to it to allow other sites.
+	CrossOrigin *http.CrossOriginProtection
 }
 
 // Handler serves a Vela App (docs/APP.md): it matches the URL, runs the
@@ -58,6 +64,7 @@ type Handler struct {
 	logger   *slog.Logger
 	dev      bool
 	maxBytes int
+	csrf     *http.CrossOriginProtection
 	// static holds the segment ids whose root mode is static in
 	// vela.manifest.json (R-9); nil without a manifest.
 	static map[string]bool
@@ -65,7 +72,10 @@ type Handler struct {
 
 // New checks the configuration and returns the handler.
 func New(cfg Config) (*Handler, error) {
-	h := &Handler{routes: cfg.Routes, assets: cfg.Assets, defaults: cfg.Head, logger: cfg.Logger, dev: cfg.Dev, maxBytes: cfg.MaxBytes, build: cfg.BuildID}
+	h := &Handler{routes: cfg.Routes, assets: cfg.Assets, defaults: cfg.Head, logger: cfg.Logger, dev: cfg.Dev, maxBytes: cfg.MaxBytes, build: cfg.BuildID, csrf: cfg.CrossOrigin}
+	if h.csrf == nil {
+		h.csrf = http.NewCrossOriginProtection()
+	}
 	if h.logger == nil {
 		h.logger = slog.Default()
 	}
@@ -104,6 +114,9 @@ func New(cfg Config) (*Handler, error) {
 			return nil, fmt.Errorf("app: Assets: %w", err)
 		}
 	}
+	if h.build == "" && cfg.Assets != nil {
+		h.build = cfg.Assets.BuildID()
+	}
 	if h.build == "" {
 		sum := sha256.Sum256([]byte(h.tags))
 		h.build = base64.RawURLEncoding.EncodeToString(sum[:9])
@@ -136,9 +149,8 @@ func (h *Handler) BuildID() string { return h.build }
 // client router (R-8, N-2), which gets JSON (N-5).
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Vary", protocol.Vary)
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodPost {
+		methodNotAllowed(w)
 		return
 	}
 	nav, isNav, err := protocol.ParseRequest(r.Header)
@@ -172,11 +184,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if match, ok := h.routes.Match(path); ok {
 		route, params, notFound = match.Route, match.Params, false
 	}
+	if r.Method == http.MethodPost && (notFound || len(route.Actions) == 0) {
+		methodNotAllowed(w)
+		return
+	}
 	if isNav && route.Render == RenderDocument {
 		h.writeJSON(w, r, nil, protocol.Response{Type: protocol.TypeReload, Reason: protocol.ReasonDocument})
 		return
 	}
-	o := h.load(r, route, params, notFound, isNav, nav.Have)
+	if r.Method == http.MethodPost {
+		h.serveAction(w, r, route, params, isNav, nav.Mode)
+		return
+	}
+	o := h.load(r, route, params, notFound, loadOptions{nav: isNav, have: nav.Have})
 	defer o.run.close()
 	if isNav {
 		h.writeData(w, r, o, nav.Mode)
@@ -203,12 +223,27 @@ type outcome struct {
 	// when there is no Error.vela.
 	segError *protocol.SegmentError
 	errorID  string
+	// form is the form prop of the page after a failed action, and status
+	// the status of that failure (app.Fail).
+	form   any
+	status int
+}
+
+// loadOptions say how load runs a chain.
+type loadOptions struct {
+	nav  bool     // a data navigation: the levels from start
+	have []string // X-Vela-Have
+	// failure is the error of the page's action, which the page level
+	// renders instead of running its loader.
+	failure error
+	form    any
+	status  int
 }
 
 // load runs the loaders of a chain: all of them for a document, the levels
 // from start for a data navigation (N-4). A URL no route matches renders
 // the root error page below the root layouts.
-func (h *Handler) load(r *http.Request, route *Route, params map[string]string, notFound, nav bool, have []string) *outcome {
+func (h *Handler) load(r *http.Request, route *Route, params map[string]string, notFound bool, opts loadOptions) *outcome {
 	if params == nil {
 		params = map[string]string{}
 	}
@@ -218,9 +253,14 @@ func (h *Handler) load(r *http.Request, route *Route, params map[string]string, 
 		o.keys[i] = segmentKey(&route.Chain[i], params, o.query)
 	}
 	o.run = newChainRun(r.Context(), route.Chain, Request{Params: params, Query: o.query, HTTP: r, Route: route.ID})
+	if opts.failure != nil {
+		// The action of the page failed: its level renders the error.
+		o.run.preset(len(route.Chain)-1, opts.failure)
+	}
+	o.form, o.status = opts.form, opts.status
 	var failed int
-	if nav {
-		o.start = protocol.Start(have, o.keys)
+	if opts.nav {
+		o.start = protocol.Start(opts.have, o.keys)
 		failed = o.run.runFrom(o.start)
 	} else {
 		failed = o.run.runAll()
@@ -282,7 +322,14 @@ func (h *Handler) writeDocument(w http.ResponseWriter, r *http.Request, o *outco
 	chain := make([]any, 0, o.rendered+1)
 	var preload []string
 	for i, l := range o.run.levels[:o.rendered] {
-		chain = append(chain, map[string]any{"id": l.level.ID, "key": o.keys[i], "data": l.view})
+		entry := map[string]any{"id": l.level.ID, "key": o.keys[i], "data": l.view}
+		if o.form != nil && i == len(o.run.levels)-1 {
+			entry["form"] = o.form
+		}
+		chain = append(chain, entry)
+	}
+	if o.status != 0 && o.segError == nil {
+		status = o.status
 	}
 	if o.segError == nil && o.rendered > 0 {
 		preload = append(preload, o.run.levels[o.rendered-1].level.ID)
@@ -524,4 +571,103 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 
 func (b *limitedBuffer) WriteString(s string) (int, error) {
 	return b.Write([]byte(s))
+}
+
+func methodNotAllowed(w http.ResponseWriter) {
+	w.Header().Set("Allow", "GET, HEAD")
+	http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+}
+
+// serveAction runs the action of a POST to a page (task 078) and answers
+// it. Without JavaScript: a success redirects with 303 to the page
+// (post/redirect/get), app.Fail renders the page with its form prop and
+// the status, another error renders the error page. With JavaScript
+// (X-Vela-Navigate): a success is a data response with every level run
+// again, a failure is {type: "form"}, a redirect is {type: "redirect"}.
+func (h *Handler) serveAction(w http.ResponseWriter, r *http.Request, route *Route, params map[string]string, isNav bool, mode protocol.Mode) {
+	w.Header().Set("Cache-Control", "no-store")
+	if err := h.csrf.Check(r); err != nil {
+		http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+		return
+	}
+	name := actionName(r.URL.RawQuery)
+	// The page without the action: what the response shows.
+	page := r.Clone(r.Context())
+	page.URL.RawQuery = withoutAction(r.URL.RawQuery)
+	page.Method = http.MethodGet
+	var err error
+	if action := route.Actions[name]; action == nil {
+		err = Error(http.StatusNotFound, fmt.Sprintf("the page has no action %q", name))
+	} else {
+		err = h.runAction(r, route, params, action)
+	}
+	var redirect *RedirectError
+	var fail *FailError
+	switch {
+	case errors.As(err, &redirect):
+		if isNav {
+			h.writeJSON(w, r, nil, protocol.Response{Type: protocol.TypeRedirect, Location: redirect.Location, Status: redirect.Status})
+			return
+		}
+		w.Header().Set("Location", redirect.Location)
+		w.WriteHeader(redirect.Status)
+	case errors.As(err, &fail):
+		view, raw, verr := value.FromGo(fail.Value)
+		if verr != nil {
+			h.answerAction(w, page, route, params, isNav, mode, loadOptions{failure: fmt.Errorf("app: the value of Fail: %w", verr)})
+			return
+		}
+		if isNav {
+			h.writeJSON(w, r, nil, protocol.Response{Type: protocol.TypeForm, Status: fail.Status, Form: raw})
+			return
+		}
+		if view == nil {
+			// A failure without a value still sets the form prop.
+			view = map[string]any{}
+		}
+		h.answerAction(w, page, route, params, false, mode, loadOptions{form: view, status: fail.Status})
+	case err != nil:
+		h.answerAction(w, page, route, params, isNav, mode, loadOptions{failure: err})
+	case isNav:
+		h.answerAction(w, page, route, params, true, mode, loadOptions{})
+	default:
+		target := page.URL.EscapedPath()
+		if page.URL.RawQuery != "" {
+			target += "?" + page.URL.RawQuery
+		}
+		w.Header().Set("Location", target)
+		w.WriteHeader(http.StatusSeeOther)
+	}
+}
+
+// answerAction renders the page after its action: the document, or a data
+// response from level 0 (every loader runs again).
+func (h *Handler) answerAction(w http.ResponseWriter, page *http.Request, route *Route, params map[string]string, isNav bool, mode protocol.Mode, opts loadOptions) {
+	opts.nav = isNav
+	o := h.load(page, route, params, false, opts)
+	defer o.run.close()
+	if isNav {
+		h.writeData(w, page, o, mode)
+		return
+	}
+	h.writeDocument(w, page, o)
+}
+
+// runAction runs an action with the page's request; Parent runs the
+// layouts above it on demand. A panic is an error.
+func (h *Handler) runAction(r *http.Request, route *Route, params map[string]string, action Action) (err error) {
+	if params == nil {
+		params = map[string]string{}
+	}
+	query, _ := url.ParseQuery(withoutAction(r.URL.RawQuery))
+	run := newChainRun(r.Context(), route.Chain, Request{Params: params, Query: query, HTTP: r, Route: route.ID})
+	defer run.close()
+	page := run.levels[len(run.levels)-1]
+	defer func() {
+		if v := recover(); v != nil {
+			err = &PanicError{Value: v, Stack: debug.Stack()}
+		}
+	}()
+	_, err = action(page.ctx, page.req)
+	return err
 }

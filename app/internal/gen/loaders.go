@@ -40,6 +40,9 @@ type LoadFile struct {
 	// its level (N-4).
 	PageHead   bool
 	LayoutHead bool
+	// Actions reports `func Actions() app.Actions`, the form actions of the
+	// page (task 078), usually in actions.go.
+	Actions bool
 }
 
 // Signatures printed by the loader diagnostics (L-1).
@@ -85,6 +88,18 @@ func (t *Tree) readLoad(d *Dir, dir string, files []string, report func(Diagnost
 					continue
 				}
 				name := decl.Name.Name
+				if name == "Actions" {
+					line, col := at(decl.Name)
+					switch {
+					case d.Page == "":
+						report(Diagnostic{File: rel, Line: line, Col: col, Code: CodeLoader, Message: fmt.Sprintf("Actions has no Page.vela in %s; actions belong to a page", t.projectRel(d.Rel)), Help: fmt.Sprintf("create %s/Page.vela, or move the actions to the directory of a page", t.projectRel(d.Rel))})
+					case !actionsSignature(decl, imports):
+						report(Diagnostic{File: rel, Line: line, Col: col, Code: CodeLoader, Message: "Actions has the wrong signature", Help: "declare it as " + actionsSignatureText})
+					default:
+						load.Actions = true
+					}
+					continue
+				}
 				var component, signature string
 				switch name {
 				case "Page":
@@ -178,6 +193,19 @@ func loaderSignature(decl *ast.FuncDecl, imports map[string]string) bool {
 	}
 	errType, ok := results[1].(*ast.Ident)
 	return ok && errType.Name == "error"
+}
+
+// actionsSignatureText is printed by the Actions diagnostic.
+const actionsSignatureText = "func Actions() app.Actions"
+
+// actionsSignature checks func Actions() app.Actions.
+func actionsSignature(decl *ast.FuncDecl, imports map[string]string) bool {
+	typ := decl.Type
+	if typ.TypeParams != nil && len(typ.TypeParams.List) > 0 {
+		return false
+	}
+	results := fieldTypes(typ.Results)
+	return len(fieldTypes(typ.Params)) == 0 && len(results) == 1 && selector(results[0], imports, AppImportPath, "Actions")
 }
 
 // fieldTypes lists one type per parameter or result.

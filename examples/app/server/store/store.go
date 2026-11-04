@@ -9,17 +9,42 @@ type User struct {
 	Joined string `json:"joined"`
 }
 
+var (
+	mu     sync.Mutex
+	loads  = map[string]int{}
+	users  = []User{{ID: 1, Name: "Ada", Joined: "2026-01-04"}, {ID: 2, Name: "Grace", Joined: "2026-03-17"}}
+	nextID = 3
+)
+
+// Users returns the users.
 func Users() []User {
-	return []User{
-		{ID: 1, Name: "Ada", Joined: "2026-01-04"},
-		{ID: 2, Name: "Grace", Joined: "2026-03-17"},
-	}
+	mu.Lock()
+	defer mu.Unlock()
+	return append([]User(nil), users...)
 }
 
-var (
-	mu    sync.Mutex
-	loads = map[string]int{}
-)
+// AddUser adds a user and returns it.
+func AddUser(name string) User {
+	mu.Lock()
+	defer mu.Unlock()
+	user := User{ID: nextID, Name: name, Joined: "2026-11-04"}
+	nextID++
+	users = append(users, user)
+	return user
+}
+
+// DeleteUser removes a user; it reports whether there was one.
+func DeleteUser(id int) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	for i, user := range users {
+		if user.ID == id {
+			users = append(users[:i], users[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
 
 // CountLoad counts a run of the loader name. The example's own /api/loads
 // handler reports the counts, so a test can see which loaders a navigation

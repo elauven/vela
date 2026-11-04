@@ -8,6 +8,8 @@
 package vite
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -22,6 +24,7 @@ type Assets struct {
 	dev      string
 	base     string
 	manifest map[string]chunk
+	build    string
 }
 
 type chunk struct {
@@ -50,7 +53,8 @@ func Load(manifestPath, base string) (*Assets, error) {
 
 // Parse is Load for the manifest's content.
 func Parse(manifest []byte, base string) (*Assets, error) {
-	a := &Assets{base: base}
+	sum := sha256.Sum256(manifest)
+	a := &Assets{base: base, build: base64.RawURLEncoding.EncodeToString(sum[:9])}
 	if err := json.Unmarshal(manifest, &a.manifest); err != nil {
 		return nil, fmt.Errorf("vite: manifest: %w", err)
 	}
@@ -58,6 +62,16 @@ func Parse(manifest []byte, base string) (*Assets, error) {
 		a.base += "/"
 	}
 	return a, nil
+}
+
+// BuildID identifies the build: "dev" for the dev server, otherwise a hash
+// of the manifest, which names every hashed file of the build. Clients of
+// another build reload (docs/APP.md, task 078).
+func (a *Assets) BuildID() string {
+	if a.dev != "" {
+		return "dev"
+	}
+	return a.build
 }
 
 // Tags returns the tags of the entries for the document head:

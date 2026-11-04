@@ -38,9 +38,9 @@
 </script>
 
 <template>
-  <vela:component :this={views[start] || components[chain[start]?.id]} :data={chain[start]?.data} :error={chain[start]?.error} :route={route}>
-    <vela:component :this={views[start + 1] || components[chain[start + 1]?.id]} :data={chain[start + 1]?.data} :error={chain[start + 1]?.error} :route={route}>
-      <vela:component :this={views[start + 2] || components[chain[start + 2]?.id]} :data={chain[start + 2]?.data} :error={chain[start + 2]?.error} :route={route} />
+  <vela:component :this={views[start] || components[chain[start]?.id]} :data={chain[start]?.data} :error={chain[start]?.error} :form={chain[start]?.form || null} :route={route}>
+    <vela:component :this={views[start + 1] || components[chain[start + 1]?.id]} :data={chain[start + 1]?.data} :error={chain[start + 1]?.error} :form={chain[start + 1]?.form || null} :route={route}>
+      <vela:component :this={views[start + 2] || components[chain[start + 2]?.id]} :data={chain[start + 2]?.data} :error={chain[start + 2]?.error} :form={chain[start + 2]?.form || null} :route={route} />
     </vela:component>
   </vela:component>
 </template>

@@ -22,7 +22,7 @@ export interface NavigationTarget {
   route: string | null;
 }
 
-export type NavigationType = 'link' | 'goto' | 'popstate' | 'invalidate';
+export type NavigationType = 'link' | 'goto' | 'popstate' | 'invalidate' | 'form';
 
 export interface Navigation {
   from: NavigationTarget;
@@ -44,6 +44,8 @@ export interface StartOptions {
   root?: string | Element;
   /** Receives hydration mismatch reports. */
   onMismatch?: (report: unknown) => void;
+  /** The default prefetch of links; data-vela-preload on a link or an ancestor overrides it. */
+  preload?: 'hover' | 'viewport' | 'off';
 }
 
 /** Hydrates the server document and installs the router. */

@@ -107,7 +107,7 @@ func (m *Model) velaApp() []byte {
 		if i == depth-1 {
 			close = " />"
 		}
-		fmt.Fprintf(&b, "%s<vela:component :this={views[%s] || components[chain[%s]?.id]} :data={chain[%s]?.data} :error={chain[%s]?.error} :route={route}%s\n", indent, at, at, at, at, close)
+		fmt.Fprintf(&b, "%s<vela:component :this={views[%s] || components[chain[%s]?.id]} :data={chain[%s]?.data} :error={chain[%s]?.error} :form={chain[%s]?.form || null} :route={route}%s\n", indent, at, at, at, at, at, close)
 	}
 	for i := depth - 2; i >= 0; i-- {
 		fmt.Fprintf(&b, "%s</vela:component>\n", strings.Repeat("  ", i+1))
@@ -288,7 +288,11 @@ func (m *Model) routesGo() ([]byte, error) {
 		if r.RenderPkg != "" {
 			render = alias(r.RenderPkg) + ".Render"
 		}
-		fmt.Fprintf(&body, "\t\t\t}, Render: %s},\n", render)
+		actions := ""
+		if r.ActionsPkg != "" {
+			actions = ", Actions: " + alias(r.ActionsPkg) + ".Actions()"
+		}
+		fmt.Fprintf(&body, "\t\t\t}, Render: %s%s},\n", render, actions)
 	}
 	body.WriteString("\t\t},\n\t\t// In ranking order: the first full match wins.\n\t\tPatterns: []app.Pattern{\n")
 	kinds := map[app.SegmentKind]string{app.Static: "app.Static", app.Param: "app.Param", app.Rest: "app.Rest"}

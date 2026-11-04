@@ -19,7 +19,10 @@ matchers (`int`, `uuid`, `slug`) and `matchPath`, which the route table that
 - `goto(url, { replace, state, invalidate })` and `invalidate()`;
 - the `navigating` store;
 - `beforeNavigate(fn)` and `afterNavigate(fn)`, which return a remover for
-  `onMount`.
+  `onMount`;
+- POST forms inside the app root are posted with `fetch` to the page's Go
+  action; links prefetch on hover (`data-vela-preload`, `start({ preload
+  })`).
 
 The rules for links, history, scroll, focus and the head are in the
 [Navigation](../../docs/APP.md#navigation) section of APP.md. Types for
