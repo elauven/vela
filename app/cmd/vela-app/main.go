@@ -10,9 +10,11 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/elauven/vela/app"
+	"github.com/elauven/vela/app/internal/dev"
 	"github.com/elauven/vela/app/internal/gen"
 )
 
@@ -24,6 +26,11 @@ commands:
                     and the matchers
   scaffold [route]  create the missing load.go files in the mirrored Go tree,
                     for one route (its id, such as /users/[id=int]) or all
+  dev [flags]       the development loop: watch, vela --watch, the Go server
+                    restarted after each good build, and Vite
+      -server cmd   the server command (go run ./cmd/server -dev http://localhost:5173)
+      -vite cmd     the Vite command (npx vite); "" runs no Vite
+      -vela cmd     the compiler in watch mode ($VELA_BINARY or vela, --watch)
   version           print the version
 `
 
@@ -67,6 +74,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			report(result, diags, stdout, stderr)
 		})
 		return 0
+	case "dev":
+		return runDev(ctx, *dir, rest, stdout, stderr)
 	case "scaffold":
 		if len(rest) > 1 {
 			break
@@ -126,4 +135,25 @@ func printDiagnostics(diags []gen.Diagnostic, stderr io.Writer) {
 		fmt.Fprintln(stderr, d.String())
 	}
 	fmt.Fprintf(stderr, "vela-app: %d error(s)\n", len(diags))
+}
+
+// runDev runs `vela-app dev`. A command flag is split at spaces.
+func runDev(ctx context.Context, dir string, args []string, stdout, stderr io.Writer) int {
+	opts := dev.Defaults()
+	flags := flag.NewFlagSet("vela-app dev", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	server := flags.String("server", strings.Join(opts.Server, " "), "")
+	vite := flags.String("vite", strings.Join(opts.Vite, " "), "")
+	vela := flags.String("vela", strings.Join(opts.Vela, " "), "")
+	if err := flags.Parse(args); err != nil || flags.NArg() > 0 {
+		fmt.Fprintf(stderr, "vela-app dev: bad arguments %q\n\n%s", args, usage)
+		return 2
+	}
+	opts.Dir, opts.Stdout = dir, stdout
+	opts.Server, opts.Vite, opts.Vela = strings.Fields(*server), strings.Fields(*vite), strings.Fields(*vela)
+	if err := dev.Run(ctx, opts); err != nil {
+		fmt.Fprintf(stderr, "vela-app dev: %v\n", err)
+		return 1
+	}
+	return 0
 }
