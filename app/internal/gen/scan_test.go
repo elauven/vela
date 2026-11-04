@@ -173,6 +173,17 @@ func TestScanErrors(t *testing.T) {
 			"server/routes/users/load.go:11:6: [error] [VELA-APP-LOADER] loader Page has no Page.vela in src/routes/users",
 			"server/routes/users/load.go:13:7: [error] [VELA-APP-LOADER] Render is declared without a Page.vela",
 		}},
+		{"actions", map[string]string{
+			"src/routes/users/Layout.vela":    page,
+			"src/routes/users/[id]/Page.vela": page,
+			"server/routes/users/actions.go":  loaderImports + "func Actions() app.Actions { return nil }\n",
+			"server/routes/users/id.param/actions.go": loaderImports +
+				"func Actions(ctx context.Context) map[string]any { return nil }\n",
+		}, []string{
+			"server/routes/users/actions.go:9:6: [error] [VELA-APP-LOADER] Actions has no Page.vela in src/routes/users; actions belong to a page",
+			"server/routes/users/id.param/actions.go:9:6: [error] [VELA-APP-LOADER] Actions has the wrong signature",
+			"help: declare it as func Actions() app.Actions",
+		}},
 		{"Go syntax error", map[string]string{
 			"src/routes/Page.vela":  page,
 			"server/routes/load.go": "package routes\n\nfunc Page( {\n",
