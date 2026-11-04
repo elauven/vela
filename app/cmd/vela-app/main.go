@@ -31,6 +31,12 @@ commands:
       -server cmd   the server command (go run ./cmd/server -dev http://localhost:5173)
       -vite cmd     the Vite command (npx vite); "" runs no Vite
       -vela cmd     the compiler in watch mode ($VELA_BINARY or vela, --watch)
+  build [flags]     the production build: gen, vela, vite build and go build
+                    of the server, into a directory to deploy
+      -o dir        the build directory (build): server, dist/, the vela manifest
+      -server pkg   the Go package of the server (./cmd/server); "" builds none
+      -vite cmd     the Vite build (npx vite build); "" runs no Vite
+      -vela cmd     the compiler ($VELA_BINARY or vela)
   version           print the version
 `
 
@@ -76,6 +82,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "dev":
 		return runDev(ctx, *dir, rest, stdout, stderr)
+	case "build":
+		return runBuild(ctx, *dir, rest, stdout, stderr)
 	case "scaffold":
 		if len(rest) > 1 {
 			break
@@ -153,6 +161,28 @@ func runDev(ctx context.Context, dir string, args []string, stdout, stderr io.Wr
 	opts.Server, opts.Vite, opts.Vela = strings.Fields(*server), strings.Fields(*vite), strings.Fields(*vela)
 	if err := dev.Run(ctx, opts); err != nil {
 		fmt.Fprintf(stderr, "vela-app dev: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// runBuild runs `vela-app build`. A command flag is split at spaces.
+func runBuild(ctx context.Context, dir string, args []string, stdout, stderr io.Writer) int {
+	opts := dev.BuildDefaults()
+	flags := flag.NewFlagSet("vela-app build", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.StringVar(&opts.Output, "o", opts.Output, "")
+	flags.StringVar(&opts.Server, "server", opts.Server, "")
+	vite := flags.String("vite", strings.Join(opts.Vite, " "), "")
+	vela := flags.String("vela", strings.Join(opts.Vela, " "), "")
+	if err := flags.Parse(args); err != nil || flags.NArg() > 0 {
+		fmt.Fprintf(stderr, "vela-app build: bad arguments %q\n\n%s", args, usage)
+		return 2
+	}
+	opts.Dir, opts.Stdout = dir, stdout
+	opts.Vite, opts.Vela = strings.Fields(*vite), strings.Fields(*vela)
+	if err := dev.Build(ctx, opts); err != nil {
+		fmt.Fprintf(stderr, "vela-app build: %v\n", err)
 		return 1
 	}
 	return 0

@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "gen": "go run github.com/elauven/vela/app/cmd/vela-app gen",
-    "build": "go run github.com/elauven/vela/app/cmd/vela-app gen && vela && vite build",
+    "build": "go run github.com/elauven/vela/app/cmd/vela-app build",
     "dev": "go run github.com/elauven/vela/app/cmd/vela-app dev"
   },
   "dependencies": {

@@ -3,5 +3,6 @@
 /internal/appgen/
 /out/
 /dist/
+/build/
 /node_modules/
 /package-lock.json

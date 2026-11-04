@@ -91,6 +91,19 @@ jobs:
           GOWORK: "off"
         run: go build ./...
 
+      # The platforms of release-app.yml.
+      - name: Cross-build vela-app
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        working-directory: app
+        env:
+          GOWORK: "off"
+          CGO_ENABLED: "0"
+        run: |
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            GOOS=${target%/*} GOARCH=${target#*/} go build -o /dev/null ./cmd/vela-app
+          done
+
   ssr-browser:
     name: SSR public browser baseline
     runs-on: ubuntu-latest

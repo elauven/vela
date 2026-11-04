@@ -1,0 +1,22 @@
+{
+  "name": "@govela/app-win32-x64",
+  "version": "0.1.2",
+  "description": "The vela-app binary of Vela App for win32-x64. Installed by @govela/app; do not depend on it directly.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elauven/vela.git",
+    "directory": "packages/app-win32-x64"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/vela-app.exe",
+    "LICENSE"
+  ],
+  "preferUnplugged": true
+}

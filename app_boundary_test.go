@@ -208,6 +208,8 @@ func jsImportViolations(dir string, runtime map[string]bool) ([]string, error) {
 					out = append(out, fmt.Sprintf("%s imports %q outside the package", rel, spec))
 				}
 			case runtime[spec]:
+			case strings.HasPrefix(spec, "node:") && strings.HasPrefix(rel, "bin/"):
+				// The vela-app launcher runs in Node, not in the browser.
 			default:
 				out = append(out, fmt.Sprintf("%s imports %q; only the public entry points of @govela/runtime and the package's own files are allowed", rel, spec))
 			}
@@ -345,7 +347,10 @@ func TestAppLayerBoundaryDetectsViolations(t *testing.T) {
 			`export { y } from "lodash";`,
 			`const m = await import('@govela/runtime/internal');`,
 			`const n = await import(name);`,
+			`import { readFileSync } from 'node:fs';`,
 		}, "\n"))
+		// The launcher in bin/ may use Node's own modules; nothing else may.
+		writeFile(t, filepath.Join(dir, "bin", "probe.js"), "import { spawnSync } from 'node:child_process';\n")
 		violations, err := jsImportViolations(dir, runtimeEntryPoints(t))
 		if err != nil {
 			t.Fatal(err)
@@ -357,6 +362,7 @@ func TestAppLayerBoundaryDetectsViolations(t *testing.T) {
 			`probe.js imports "@govela/runtime/internal"`,
 			`probe.js has a dynamic import of name`,
 			`probe.js uses the internal runtime name $$p`,
+			`probe.js imports "node:fs"`,
 		}
 		for _, w := range want {
 			if !containsPrefix(violations, w) {

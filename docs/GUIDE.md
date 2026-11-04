@@ -1075,8 +1075,12 @@ The commands:
 ```sh
 vela-app scaffold     # the missing load.go files
 vela-app dev          # development: generator, vela --watch, the Go server, Vite
-vela-app gen && vela && vite build && go build ./cmd/server   # production
+vela-app build        # production: gen, vela, vite build, go build into build/
 ```
+
+`npm install @govela/app` installs `vela-app` with the client router.
+Installing it, setting up a project, building and deploying are in
+[VELA_APP.md](VELA_APP.md).
 
 Links inside the app navigate without loading documents and are
 prefetched on hover; layouts above the changed level keep their state. Use

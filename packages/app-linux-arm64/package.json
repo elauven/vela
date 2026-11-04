@@ -1,0 +1,22 @@
+{
+  "name": "@govela/app-linux-arm64",
+  "version": "0.1.2",
+  "description": "The vela-app binary of Vela App for linux-arm64. Installed by @govela/app; do not depend on it directly.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elauven/vela.git",
+    "directory": "packages/app-linux-arm64"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/vela-app",
+    "LICENSE"
+  ],
+  "preferUnplugged": true
+}
