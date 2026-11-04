@@ -21,6 +21,9 @@ function evaluate(row) {
     if (kind === 'component') {
       // An imported component is a factory function on the client (task 070).
       lines.push(`function ${name}() {}`);
+    } else if (kind === 'function') {
+      // A function declaration; init is its parameters and body.
+      lines.push(`function ${name}${init}`);
     } else if (kind === 'prop' || kind === 'bindable') {
       lines.push(`let ${name} = Object.prototype.hasOwnProperty.call(props, ${JSON.stringify(name)}) ? props[${JSON.stringify(name)}] : (${init});`);
     } else {

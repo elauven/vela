@@ -1,0 +1,12 @@
+<script>
+  export let error = null;
+  export let route = null;
+</script>
+
+<template>
+  <section class="error">
+    <h1>{error.status}</h1>
+    <p>{error.message}</p>
+    <p><a href="/">Home</a></p>
+  </section>
+</template>

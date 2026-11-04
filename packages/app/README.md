@@ -3,7 +3,10 @@
 The client router of Vela App, the application layer above the Vela compiler
 with a Go server. The contract is [docs/APP.md](../../docs/APP.md).
 
-This package is a skeleton (task 073) and is not published yet. The router
+This package is not published yet. `@govela/app/match` has the built-in
+matchers (`int`, `uuid`, `slug`) and `matchPath`, which the route table that
+`vela-app gen` writes (`src/_app/routes.js`) uses; the Go package
+`github.com/elauven/vela/app` matches with the same rules. The router
 (`start`, `goto`, `navigating`, `beforeNavigate`, `afterNavigate`,
 `invalidate`) follows in task 076.
 

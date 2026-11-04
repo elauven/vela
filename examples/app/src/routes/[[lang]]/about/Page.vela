@@ -1,0 +1,7 @@
+<script>
+  export let route = null;
+</script>
+
+<template>
+  <h1>{route.params.lang === 'de' ? 'Über uns' : 'About'}</h1>
+</template>

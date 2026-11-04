@@ -276,6 +276,14 @@ func TestAppLayerBoundaryDetectsViolations(t *testing.T) {
 	t.Run("Go import of the compiler", func(t *testing.T) {
 		work := t.TempDir()
 		copyTree(t, filepath.Join(root, "app"), filepath.Join(work, "app"))
+		// app/go.mod may replace the runtime with ../ssr_runtime, which is
+		// not next to the copy.
+		goMod := filepath.Join(work, "app", "go.mod")
+		data, err := os.ReadFile(goMod)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, goMod, strings.ReplaceAll(string(data), "=> ../ssr_runtime", "=> "+filepath.ToSlash(filepath.Join(root, "ssr_runtime"))))
 		writeFile(t, filepath.Join(work, "app", "internal", "probe", "probe.go"),
 			"package probe\n\nimport \"github.com/elauven/vela/runtime\"\n\nvar _ = runtime.Version\n")
 		writeFile(t, filepath.Join(work, "go.work"), fmt.Sprintf("go 1.25.0\n\nuse (\n\t%q\n\t%q\n\t./app\n)\n",

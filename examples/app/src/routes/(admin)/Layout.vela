@@ -1,0 +1,10 @@
+<script>
+  export let route = null;
+</script>
+
+<template>
+  <div class="admin">
+    <p class="badge">Admin</p>
+    <slot />
+  </div>
+</template>

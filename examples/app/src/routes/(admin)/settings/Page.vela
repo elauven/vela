@@ -1,0 +1,8 @@
+<script>
+  let saved = $state(false);
+</script>
+
+<template>
+  <h1>Settings</h1>
+  <button @click={() => (saved = true)}>{saved ? 'Saved' : 'Save'}</button>
+</template>

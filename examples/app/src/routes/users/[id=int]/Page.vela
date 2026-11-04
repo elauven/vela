@@ -1,0 +1,11 @@
+<script>
+  export let data = null;
+  export let route = null;
+</script>
+
+<template>
+  <article>
+    <h1>{data.name}</h1>
+    <p>User #{route.params.id}, joined {data.joined}</p>
+  </article>
+</template>

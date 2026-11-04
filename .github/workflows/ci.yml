@@ -65,14 +65,22 @@ jobs:
           go-version: ${{ matrix.go }}
           cache: true
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
       - name: Vet
         shell: bash
         working-directory: app
         run: go vet ./...
 
+      # The tests also run the shared routing fixtures with node, build the
+      # vela compiler and compile the generated sources of examples/app.
       - name: Test
         shell: bash
         working-directory: app
+        env:
+          VELA_REQUIRE_NODE: "1"
         run: go test -race -count=1 ./...
 
       # go install of vela-app builds without the workspace.

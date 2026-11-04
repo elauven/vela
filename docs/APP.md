@@ -12,10 +12,10 @@ the part SvelteKit and Nuxt play for their compilers, but the server is
 - for each navigation the server sends either data (JSON) for components the
   client already has, or the server HTML of the changed part (a fragment).
 
-Status: **planned**. This page is the contract (task 073), approved on
-2026-11-03. The implementation follows in tasks 074–078, and until then the
-`app/` module and `@govela/app` contain only their skeleton and the protocol
-types. The
+Status: **in progress**. This page is the contract (task 073), approved on
+2026-11-03. The route scanner and the `vela-app` generator exist (task 074,
+see [Generator](#generator)); the server, the client router and the forms
+follow in tasks 075–078. The
 rules are numbered so that code, tests and reviews can cite them: `B-`
 boundary, `P-` paths and routes, `L-` loaders, `R-` rendering, `N-`
 navigation.
@@ -118,7 +118,9 @@ server/routes/**                  internal/appgen/routes_gen.go
   then rest. The first full match wins. Two candidates of the same rank at
   one level (`[id]` and `[slug]`, or `[a=int]` and `[b=int]`) are a
   generator error. An optional segment is tried first with a value and
-  then without one. Groups add no segment.
+  then without one. Groups add no segment. Parameters with different
+  matchers at one level are allowed and tried in the order of the matcher
+  names.
 - **P-9** Two routes that produce the same URL pattern are a generator
   error. This includes patterns produced by groups (`(a)/x` and `(b)/x`)
   and by an optional segment (`[[lang]]/about` and `about`).
@@ -147,13 +149,16 @@ server/routes/**                  internal/appgen/routes_gen.go
   | `slug` | `[a-z0-9]+` groups joined by single `-` |
 
 - **P-14** A custom matcher `name` needs both halves:
-  - Go: `server/params/name.go`, with `func Match(segment string) bool`;
+  - Go: the package `server/params/name/` (for example
+    `server/params/name/match.go`), with `func Match(segment string) bool`.
+    Each matcher is a package of its own, so that every one can declare
+    `Match`; a `.go` file directly in `server/params/` is an error;
   - JavaScript: `src/params/name.js`, with `export function match(segment)`
     returning a boolean.
 
   A missing half or an unknown matcher name is a generator error. The two
   roots are configurable (`"serverParams"`, `"params"`). A custom matcher
-  cannot shadow a built-in one.
+  cannot shadow a built-in one. Matcher names are identifiers.
 - **P-15** The server is authoritative. The client uses matchers only to
   choose the chain and preload modules before the response arrives. When
   the two disagree, the `route` of the server response wins. One shared
@@ -240,7 +245,9 @@ server/routes/**                  internal/appgen/routes_gen.go
   var Deps = app.Deps{Query: []string{"q"}}
   ```
 
-  Keys are computed only on the server and are opaque to the client (N-3).
+  `Deps` applies to every loader of its `load.go` package (`Page` and
+  `Layout` of one directory). Keys are computed only on the server and are
+  opaque to the client (N-3).
   A level whose key changes runs again, and so does every level below it
   (N-4). A layout's data may therefore depend on its parent's data through
   `Parent` without declaring it.
@@ -391,6 +398,84 @@ server/routes/**                  internal/appgen/routes_gen.go
 - **N-8** `internal/protocol` holds the Go types, the header encoding and
   parsing, and the version check. The JSON field names on this page are
   normative. The Go names may change.
+
+## Generator
+
+`vela-app` (task 074) turns the routes tree into sources that `vela --ssr`
+and `go build` compile. Run it in the project directory, the one with
+`vela.config.json` and `go.mod`:
+
+```sh
+go run github.com/elauven/vela/app/cmd/vela-app gen   # once, or before vela
+go run github.com/elauven/vela/app/cmd/vela-app watch # next to vela --watch
+vela && go build ./...
+```
+
+| Command | Effect |
+| --- | --- |
+| `gen` | Scans the routes tree, the mirrored Go tree and the matchers, and writes the four files below. It writes only files whose content changed, removes stale files it owns, and writes nothing when there are errors (exit status 1) |
+| `watch` | Runs `gen` whenever the routes tree, the mirrored Go tree, the matchers or the configuration change. The compiler's own watcher picks up the regenerated `.vela` file |
+| `scaffold [route]` | Creates `load.go` with the `Page`/`Layout` signatures of L-1 for one route (its route id, such as `/users/[id=int]`) or for every route directory without Go files (P-18). It never overwrites a file |
+
+`-C dir` runs a command in another directory.
+
+### Configuration
+
+`vela.app.json` is optional. Its fields and their defaults:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `project` | `"project"` of `vela.config.json`, else `src` | the directory `vela` compiles; component and segment ids are relative to it |
+| `routes` | `<project>/routes` | the routes tree |
+| `out` | `<project>/_app` | `VelaApp.vela`, `routes.js`, `client.js` |
+| `params` | `<project>/params` | JavaScript matchers |
+| `server` | `server/routes` | the mirrored Go tree |
+| `serverParams` | `server/params` | Go matchers |
+| `goPackage` | `internal/appgen` | `routes_gen.go` |
+| `goModule` | the module of `go.mod` | import root of the mirrored tree and the matchers |
+| `ssrModule` | `"ssrModule"` of `vela.config.json` (required) | import root of the generated renderers |
+
+### Generated files
+
+Every generated file starts with `Code generated by vela-app. DO NOT EDIT.`.
+A file without that line is never overwritten or removed.
+
+| File | Contents |
+| --- | --- |
+| `src/_app/VelaApp.vela` | The app root of R-2: layouts imported statically, pages and error pages with `lazy()`, a table from segment id to component, and one `<vela:component>` per level up to the maximum chain depth, each with `data`, `error` and `route` |
+| `src/_app/routes.js` | The client table: the routes with their chains, the patterns in ranking order, the matchers (`@govela/app/match` and the project's own), the lazy components by segment id (`lazy()` returns the value `VelaApp` registered under the same id) and `match(path)` |
+| `src/_app/client.js` | The client entry: `start({ VelaApp, routes, root: 'vela-app' })` from `@govela/app/client` (task 076) |
+| `internal/appgen/routes_gen.go` | `appgen.Routes() app.Routes`: the same patterns, the chains with their loaders (`app.LoaderOf`), `Deps` and `Render` of the mirrored packages, the matchers, and the `VelaApp` renderer. It compiles against the `app` package only, without reflection |
+
+The patterns are expanded and ranked by the generator: a route with
+optional segments has one pattern per combination, and both matchers,
+`app.Routes.Match` in Go and `matchPath` of `@govela/app/match`, take the
+first pattern that matches the whole path. `app/testdata/routing` (a routes
+tree and `cases.json`) and `app/testdata/matchers.json` test the two
+matchers against the same cases.
+
+### Diagnostics
+
+Errors are printed as the compiler prints its own:
+`file:line:col: [error] [CODE] message`, then `help: …`. An error about a
+directory names the directory or the `Page.vela` of the route.
+
+| Code | Rules |
+| --- | --- |
+| `VELA-APP-CONFIG` | `vela.app.json`, `vela.config.json`, `go.mod`; a missing routes directory; a generated path held by a file of the developer |
+| `VELA-APP-DIRECTORY` | a name `pkgpath` cannot encode (P-3) |
+| `VELA-APP-FILE` | another `.vela` file (P-1), a `.go` file in the routes tree (P-17) |
+| `VELA-APP-REST` | a directory below `[...rest]` (P-4) |
+| `VELA-APP-PARAM` | a parameter name repeated along a path (P-5) |
+| `VELA-APP-RANK` | two candidates of the same rank at one level (P-8) |
+| `VELA-APP-DUPLICATE` | two routes with one URL pattern, also through a group or an optional segment (P-9) |
+| `VELA-APP-MATCHER` | an unknown matcher, a missing half, a wrong `Match`, shadowing a built-in (P-13, P-14) |
+| `VELA-APP-STALE` | a mirrored Go directory without a route directory (P-17) |
+| `VELA-APP-LOADER` | a loader without its component, a wrong signature, `Deps` or `Render` of the wrong kind, `Render` outside a page (L-1, L-6, L-7) |
+
+`examples/app` is a small application: a home page, an `(admin)` group
+with a layout, `users` and `users/[id=int]` with layouts and loaders,
+`[[lang]]/about`, a custom matcher and an error page.
 
 ## Decisions on the open questions of 073
 

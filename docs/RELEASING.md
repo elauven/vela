@@ -77,7 +77,12 @@ runtime tag, no npm package and no release binaries.
 The app layer (docs/APP.md) is versioned on its own: the compiler's lockstep
 does not apply to it. A release of the app layer:
 
-1. `cd app && go test ./...` and the app CI job pass.
+1. `cd app && go test ./...` and the app CI job pass. `app/go.mod` requires
+   a tagged `ssr_runtime` with everything the layer imports, and has no
+   `replace` line: `go install …@vX.Y.Z` refuses a module with one. While
+   the layer needs runtime code that is not tagged yet (`ssr_runtime/pkgpath`
+   of task 069), `app/go.mod` replaces the runtime with `../ssr_runtime`;
+   tag the runtime first, then require it and drop the line.
 2. Set `Version` in `app/app.go` and `version` in `packages/app/package.json`
    to `X.Y.Z`; they always match.
 3. `git tag app/vX.Y.Z` and `git push origin app/vX.Y.Z`.

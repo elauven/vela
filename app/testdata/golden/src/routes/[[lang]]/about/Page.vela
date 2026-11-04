@@ -1,0 +1,4 @@
+<script>
+  export let route = null;
+</script>
+<template><h1>About {route.params.lang}</h1></template>

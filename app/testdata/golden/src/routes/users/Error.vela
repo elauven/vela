@@ -1,0 +1,4 @@
+<script>
+  export let error = null;
+</script>
+<template><p class="users-error">{error.message}</p></template>

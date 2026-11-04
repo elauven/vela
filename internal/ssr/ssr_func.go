@@ -493,6 +493,13 @@ func (c *ssrFuncCompiler) absorb(b *ssrIRBuilder) {
 	for name := range b.reads {
 		t.reads[name] = true
 	}
+	// The bindings the initializers of those reads read in turn: the
+	// prologue evaluates them before the function runs. Without them a
+	// binding read only through a compiled function, whose initializer reads
+	// another binding, was left without a value.
+	for name := range b.inlined {
+		t.reads[name] = true
+	}
 }
 
 // function compiles a declaration to func(ssrThis any, ssrArgs ...any) any.

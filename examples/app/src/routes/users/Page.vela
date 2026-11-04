@@ -1,0 +1,11 @@
+<script>
+  export let data = null;
+</script>
+
+<template>
+  <ul>
+    {#each data.users as user (user.id)}
+      <li><a :href={'/users/' + user.id}>{user.name}</a></li>
+    {/each}
+  </ul>
+</template>
