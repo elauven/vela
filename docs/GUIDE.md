@@ -1002,6 +1002,88 @@ When the build reports a site it cannot translate, choose one of:
 - `vela check --project src --ssr` reports the same diagnostics without
   writing the output ([Checking a project](#checking-a-project)).
 
+## Multi-page applications (Vela App)
+
+Vela App ([APP.md](APP.md)) is the layer above the compiler for sites with
+many pages and a Go server: routes from files, Go loaders, server HTML that
+the browser hydrates, and navigation that replaces only the changed part of
+the page. `examples/app` is a complete app.
+
+A route is a directory of `src/routes` with a `Page.vela`; a `Layout.vela`
+wraps the routes below it, and an `Error.vela` renders their errors:
+
+```
+src/routes/Layout.vela          /  and everything below
+src/routes/Page.vela            /
+src/routes/users/Page.vela      /users
+src/routes/users/[id=int]/Page.vela   /users/42
+```
+
+The data comes from Go, in the mirrored tree under `server/routes`
+(`users/id.int.param` for `users/[id=int]`):
+
+```go
+// server/routes/users/id.int.param/load.go
+func Page(ctx context.Context, r *app.Request) (store.User, error) {
+    user, ok := store.Find(r.Params["id"])
+    if !ok {
+        return store.User{}, app.NotFound()
+    }
+    r.Head().Title = user.Name
+    return user, nil
+}
+```
+
+The component gets it as `data`, and the current route as `route`:
+
+```vela
+<script>
+  export let data = null;
+  export let route = null;
+</script>
+
+<template>
+  <h1>{data.name}</h1>
+  <p>User #{route.params.id}</p>
+</template>
+```
+
+A form posts to the page's Go action (`server/routes/users/actions.go`,
+`func Actions() app.Actions`). The same form works without JavaScript
+(post/redirect/get) and with it (the router posts it and updates the
+page); a validation failure (`app.Fail(422, value)`) comes back as the
+page's `form` prop:
+
+```vela
+<script>
+  export let form = null;
+</script>
+
+<template>
+  <form method="post">
+    <input name="name" :value={form ? form.name : ''} />
+    <button>Add</button>
+    {#if form}
+      <p class="error">{form.error}</p>
+    {/if}
+  </form>
+</template>
+```
+
+The commands:
+
+```sh
+vela-app scaffold     # the missing load.go files
+vela-app dev          # development: generator, vela --watch, the Go server, Vite
+vela-app gen && vela && vite build && go build ./cmd/server   # production
+```
+
+Links inside the app navigate without loading documents and are
+prefetched on hover; layouts above the changed level keep their state. Use
+`goto`, `invalidate`, `navigating`, `beforeNavigate` and `afterNavigate`
+from `@govela/app/client` for navigation in code
+([APP.md](APP.md#navigation)).
+
 ## Checking a project
 
 `vela check` runs every check of a build and writes nothing: it builds into

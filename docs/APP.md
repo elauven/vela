@@ -17,8 +17,10 @@ Status: **in progress**. This page is the contract (task 073), approved on
 see [Generator](#generator)), `app.New` serves documents that the
 browser hydrates (task 075, see [Server](#server)), and the client router
 navigates with data responses (task 076, see [Navigation](#navigation))
-and with server HTML fragments (task 077); forms and prefetch follow in
-task 078. The
+and with server HTML fragments (task 077); form actions, prefetching,
+build ids and `vela-app dev` complete it (task 078, see
+[Forms, prefetching, deploys and development](#forms-prefetching-deploys-and-development)).
+The
 rules are numbered so that code, tests and reviews can cite them: `B-`
 boundary, `P-` paths and routes, `L-` loaders, `R-` rendering, `N-`
 navigation.
@@ -269,7 +271,8 @@ server/routes/**                  internal/appgen/routes_gen.go
     its query, `params` maps parameter names to strings, and `query` maps
     each query name to its first value. The full query is in `url`.
 
-  The page also gets `form` (task 078). `Error.vela` gets `error`
+  The page also gets `form`: `null`, or the value of `app.Fail` after a
+  failed form action (see [Form actions](#form-actions)). `Error.vela` gets `error`
   (`{ status, message }`) and `route`. No store or context API is needed,
   and the props also work on the server.
 - **R-2** The generator writes the app root `src/_app/VelaApp.vela`, which
@@ -416,8 +419,9 @@ server/routes/**                  internal/appgen/routes_gen.go
     the client handles every value the same way.
   - A response with an unknown `type` or another `v` is handled as
     `reload`.
-  - Task 078 adds `{ "type": "form", "status": 422, "form": … }` for action
-    failures.
+  - `{ "v": 1, "type": "form", "build": "…", "status": 422, "form": … }`
+    answers a POST whose action failed with `app.Fail`: the client sets
+    `form` on the page level and changes nothing else.
 - **N-6** Inside the protocol, redirects and errors are JSON with status
   200, so that `fetch` follows them under the router's control. For a
   document request, they are real 3xx and 4xx/5xx responses.
@@ -535,7 +539,8 @@ mux.Handle("/", h)
 | `Assets` | the client tags of `ssr_runtime/vite`; without them pages are not hydrated |
 | `Document` | the shell of R-4; the built-in one when empty |
 | `Head` | the default title and meta tags of R-6 |
-| `BuildID` | the build id (`<meta name="vela-build">`, task 078); a hash of the client tags by default |
+| `BuildID` | the build id (`<meta name="vela-build">`, `build` of every JSON response); by default `Assets.BuildID()`: `dev` with `vite.Dev`, a hash of the Vite manifest with `vite.Load` |
+| `CrossOrigin` | the CSRF protection of form actions; `http.NewCrossOriginProtection()` when nil, which rejects cross-origin POSTs (`Sec-Fetch-Site`, `Origin`). Add trusted origins to it to allow other sites |
 | `Manifest` | the path of `vela.manifest.json` (`out/client/vela.manifest.json`); its static roots choose static fragments (R-9). Without it `auto` navigations get data |
 | `Logger` | receives loader and render errors (`slog.Default()` when nil) |
 | `Dev` | the error page shows the message of an internal error; otherwise "Internal Error" |
@@ -694,6 +699,97 @@ The router:
   once a `data` response names them, so a static fragment loads none.
 - Each navigation dispatches `vela:navigated` on the root element, with
   `{ from, to, type }` as its detail.
+
+## Forms, prefetching, deploys and development
+
+### Form actions
+
+A page takes POSTs through `actions.go` next to its `load.go` in the
+mirrored Go tree (`server/routes/users/actions.go` for
+`src/routes/users/Page.vela`). The generator finds `func Actions()
+app.Actions` like the loaders and rejects it without a `Page.vela` or with
+another signature (`VELA-APP-LOADER`).
+
+```go
+func Actions() app.Actions {
+    return app.Actions{"default": add, "delete": remove}
+}
+
+func add(ctx context.Context, r *app.Request) (any, error) {
+    var in struct{ Name string `form:"name"` }
+    if err := r.Decode(&in); err != nil {
+        return nil, err
+    }
+    if in.Name == "" {
+        return nil, app.Fail(422, map[string]string{"error": "A name is required."})
+    }
+    store.Add(in.Name)
+    return nil, nil
+}
+```
+
+- `POST <page url>` runs `default`; `POST <page url>?/delete` runs
+  `delete` (in a form: `action="?/delete"`). An unknown name is 404. Only
+  a page with actions takes POST; anything else is 405.
+- `r.Form()` parses the body (urlencoded or multipart); `r.Decode(&v)`
+  fills a struct from it (the `form` tag, else the `json` tag, else the
+  lowercased field name; strings, booleans, numbers and slices), or from a
+  JSON body. `app.Parent` works in an action.
+- The answer, with the page URL without `?/name`:
+
+  | Action result | Without JavaScript | With JavaScript (router) |
+  | --- | --- | --- |
+  | success | 303 to the page (post/redirect/get) | data response from level 0: every loader runs again |
+  | `app.Fail(status, value)` | the page with `form` = value and that status (400–499) | `{ "type": "form" }`: only the page's `form` changes |
+  | `app.Redirect` | that redirect | `{ "type": "redirect" }` |
+  | another error | the error page (L-5) | a data response with the error segment |
+
+- POST responses send `Cache-Control: no-store`. Cross-origin POSTs are
+  rejected with 403 before the action runs (`Config.CrossOrigin`).
+- The router takes `submit` of `<form method="post">` inside the app root,
+  of the same origin, without `target` and without `data-vela-reload` (on
+  the form or the submit button), and posts the form (`FormData`, with the
+  submitter; multipart when `enctype` says so) with `X-Vela-Navigate`.
+  `navigating` is `{ type: 'form' }` meanwhile. A success replaces the
+  history entry when the page is the current one and pushes it otherwise;
+  a failure dispatches `vela:form` on the root. A `form` prop lasts until
+  the next navigation. When the router cannot answer (reload, another
+  protocol, a network error), the browser posts the form itself.
+
+### Prefetching
+
+`<a data-vela-preload="hover|viewport|off">` (on the link or an ancestor;
+`start({ preload })` is the default, `hover`). On hover after 50 ms, on
+`touchstart`, or when the link enters the viewport, the router asks for the
+navigation's answer and loads the modules it needs. The answer serves one
+navigation to the same URL with the same `X-Vela-Have` within 30 s.
+`invalidate()` and form actions clear it.
+
+### Deploys
+
+Every document has `<meta name="vela-build">` and every JSON response
+`build`. The router sends its build in `X-Vela-Build`; a server of another
+build answers `reload`, and the router loads the document. A lazy module
+that fails to load during a navigation (a chunk the new build removed) also
+loads the document. So a page that stays open across a deploy gets the new
+build on its next navigation, not a broken page.
+
+### `vela-app dev`
+
+```sh
+vela-app dev                         # in the project directory
+vela-app dev -server "go run ./cmd/server -addr :8080 -dev http://localhost:5173" -vite "npx vite"
+```
+
+One command runs the loop of [SSR.md](SSR.md) ("Development loop"): it
+regenerates the app sources (`watch`, in process), runs `vela --watch`
+(`$VELA_BINARY` or `vela`; `-vela` overrides), starts the Go server once
+vela has built and restarts it after every good build (`out/.vela-ready`)
+and every change of a Go file outside the generated directories, and runs
+Vite (`-vite ""` runs none). The output of each process has its prefix
+(`[gen]`, `[vela]`, `[server]`, `[vite]`, `[dev]`). Ctrl-C stops every
+process; when vela or Vite exits, `dev` stops too; when the server exits,
+the next change starts it again.
 
 ## Decisions on the open questions of 073
 

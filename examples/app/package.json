@@ -4,7 +4,7 @@
   "scripts": {
     "gen": "go run github.com/elauven/vela/app/cmd/vela-app gen",
     "build": "go run github.com/elauven/vela/app/cmd/vela-app gen && vela && vite build",
-    "dev": "vite"
+    "dev": "go run github.com/elauven/vela/app/cmd/vela-app dev"
   },
   "dependencies": {
     "@govela/app": "file:../../packages/app",

@@ -185,7 +185,7 @@ snippets, a dev server with HMR, and streaming SSR.
 | [AGENTS.md](AGENTS.md) | Authoring rules for people and AI agents |
 | [EDITORS.md](docs/EDITORS.md) | The language server `vela-lsp` and editor setup |
 | [SSR.md](docs/SSR.md) | Server rendering and hydration |
-| [APP.md](docs/APP.md) | Vela App: routes, Go loaders and partial navigation (in progress: the contract, the `vela-app` generator, server documents, data and fragment navigation) |
+| [APP.md](docs/APP.md) | Vela App: routes, Go loaders and partial navigation (in progress: the contract, the `vela-app` generator, server documents, data and fragment navigation, form actions and `vela-app dev`) |
 | [SSR_TRANSLATION_CONTRACT.md](docs/SSR_TRANSLATION_CONTRACT.md) | JavaScript-to-Go rules and Go hosts ([ru](docs/SSR_TRANSLATION_CONTRACT.ru.md)) |
 | [SSR_TRANSLATION_MATRIX.md](docs/SSR_TRANSLATION_MATRIX.md) | Translation status per construct and built-in |
 | [HYDRATION_ARCHITECTURE.md](docs/HYDRATION_ARCHITECTURE.md) | Block runtime and hydration ([ru](docs/HYDRATION_ARCHITECTURE.ru.md)) |
