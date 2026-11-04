@@ -112,3 +112,15 @@ func TestPreload(t *testing.T) {
 		t.Errorf("dev: %q %v", got, err)
 	}
 }
+
+func TestBuildID(t *testing.T) {
+	if id := Dev("http://localhost:5173").BuildID(); id != "dev" {
+		t.Errorf("dev build id %q", id)
+	}
+	a, _ := Parse([]byte(`{"src/a.js": {"file": "assets/a-1.js", "isEntry": true}}`), "/")
+	b, _ := Parse([]byte(`{"src/a.js": {"file": "assets/a-2.js", "isEntry": true}}`), "/")
+	a2, _ := Parse([]byte(`{"src/a.js": {"file": "assets/a-1.js", "isEntry": true}}`), "/")
+	if a.BuildID() == "" || a.BuildID() == b.BuildID() || a.BuildID() != a2.BuildID() {
+		t.Errorf("build ids %q %q %q", a.BuildID(), b.BuildID(), a2.BuildID())
+	}
+}
