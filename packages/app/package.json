@@ -1,7 +1,6 @@
 {
   "name": "@govela/app",
-  "version": "0.1.0-dev",
-  "private": true,
+  "version": "0.1.1",
   "description": "Client router of Vela App (docs/APP.md): hydration, data navigation and route matching.",
   "license": "MIT",
   "repository": {
@@ -33,6 +32,6 @@
     "protocol": 1
   },
   "peerDependencies": {
-    "@govela/runtime": ">=0.4.7"
+    "@govela/runtime": ">=0.4.8"
   }
 }
