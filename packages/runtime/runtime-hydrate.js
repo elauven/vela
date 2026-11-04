@@ -391,26 +391,25 @@ export async function preloadHydration(container) {
   }
 }
 
-// hydrate adopts the root range and payload script that a Go renderer
-// wrote into container (A-8.7) and returns the component instance, which
-// then behaves exactly like one created by the factory.
-//
-// options: policy ('repair' | 'fail' | 'off'; production builds use their
-// own policy), onMismatch(report) (X-7.5), slots.
-export function hydrate(Component, container, options = {}) {
-  let script = null;
-  for (const node of container.childNodes) {
-    if (node.nodeType === 1 && node.localName === 'script' && node.hasAttribute('data-vela-root')) script = node;
-  }
-  if (!script) throw mismatch('the container has no payload script (data-vela-root)');
+// readPayload parses a payload script (S-6.9) and checks its version.
+function readPayload(script) {
   const payload = JSON.parse(script.textContent);
   if (payload.v !== 4) throw mismatch(`unsupported payload version ${payload.v}`);
-  const props = payload.props || {};
+  return payload;
+}
 
-  let first = container.firstChild;
-  while (first && first.nodeType === 3 && first.data.trim() === '') first = first.nextSibling;
-  const pos = { parent: container, next: first, stack: [], owners: [] };
-  const session = createSession(payload.entries || [], options, container);
+// adoptRoot runs a hydration session for Component over the root range
+// that starts at first (whitespace before it is skipped) and ends before
+// script, its payload, under parent: a container element for hydrate(), the
+// range a <vela:component> block mounts into for serverComponent().
+// observed is the node whose attribute writes the session verifies. It
+// returns { instance, failure, session } and the two ways to finish:
+// commit() removes the payload and runs the after-commit callbacks;
+// rollback() releases everything adopted without touching the DOM (X-7.4).
+function adoptRoot(Component, parent, first, script, payload, options, observed, target) {
+  while (first && first !== script && first.nodeType === 3 && first.data.trim() === '') first = first.nextSibling;
+  const pos = { parent, next: first, stack: [], owners: [] };
+  const session = createSession(payload.entries || [], options, observed);
   const owner = $$owner(null);
   pos.owners.push(owner);
   const cursor = hydrateCursor(pos, owner, session);
@@ -421,7 +420,7 @@ export function hydrate(Component, container, options = {}) {
     cursor.open();
     session.cursors.push(cursor);
     try {
-      instance = Component(container, props, options.slots || {});
+      instance = Component(target, payload.props || {}, options.slots || {});
     } finally {
       session.cursors.pop();
     }
@@ -434,25 +433,167 @@ export function hydrate(Component, container, options = {}) {
     $$setHydration(previous);
     if (session.observer) session.observer.disconnect();
   }
-  if (failure) {
-    // Rollback (X-7.4): release everything adopted without touching the
-    // DOM; the server DOM and payload stay for a retry.
-    if (instance && instance.abandon) instance.abandon();
-    for (let i = pos.owners.length - 1; i >= 0; i--) pos.owners[i].release();
-    if (!isMismatch(failure) || session.policy === 'fail') throw failure;
+  return {
+    instance,
+    failure,
+    session,
+    rollback() {
+      if (instance && instance.abandon) instance.abandon();
+      for (let i = pos.owners.length - 1; i >= 0; i--) pos.owners[i].release();
+    },
+    commit() {
+      script.remove();
+      for (const callback of session.after) callback();
+      // The root owner holds what the root cursor adopted; it goes with the
+      // instance (Q-10.2 item 5).
+      const destroy = instance.destroy;
+      instance.destroy = function () {
+        destroy.call(this);
+        owner.release();
+      };
+      // A parent block releases a child without removing its DOM through
+      // abandon (B-3.4), as <vela:component> does when its value changes.
+      const abandon = instance.abandon;
+      if (abandon) {
+        instance.abandon = function () {
+          abandon.call(this);
+          owner.release();
+        };
+      }
+      return instance;
+    },
+  };
+}
+
+// hydrate adopts the root range and payload script that a Go renderer
+// wrote into container (A-8.7) and returns the component instance, which
+// then behaves exactly like one created by the factory.
+//
+// options: policy ('repair' | 'fail' | 'off'; production builds use their
+// own policy), onMismatch(report) (X-7.5), slots.
+export function hydrate(Component, container, options = {}) {
+  let script = null;
+  for (const node of container.childNodes) {
+    if (node.nodeType === 1 && node.localName === 'script' && node.hasAttribute('data-vela-root')) script = node;
+  }
+  if (!script) throw mismatch('the container has no payload script (data-vela-root)');
+  const payload = readPayload(script);
+  const props = payload.props || {};
+  const result = adoptRoot(Component, container, container.firstChild, script, payload, options, container, container);
+  if (result.failure) {
+    result.rollback();
+    if (!isMismatch(result.failure) || result.session.policy === 'fail') throw result.failure;
     // A mismatch at the root range remounts the root (X-7.3).
-    session.report(failure);
+    result.session.report(result.failure);
     while (container.firstChild) container.firstChild.remove();
     return Component(container, props, options.slots || {});
   }
-  script.remove();
-  for (const callback of session.after) callback();
-  // The root owner holds what the root cursor adopted; it goes with the
-  // instance (Q-10.2 item 5).
-  const destroy = instance.destroy;
-  instance.destroy = function () {
-    destroy.call(this);
-    owner.release();
-  };
-  return instance;
+  return result.commit();
+}
+
+// ── Server-rendered fragments (task 072) ─────────────────────────────────
+// serverComponent and staticHTML turn HTML that arrives after the page
+// loaded into component values for <vela:component> (§8.3). The HTML is
+// parsed with a <template>, so its scripts never run; the payload script is
+// read as JSON only. HTML from the server is trusted like the document:
+// never pass HTML from another origin.
+
+function parseHTML(html) {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  return template.content;
+}
+
+// The target of a component factory: a comment anchor the nodes go before
+// (how <vela:component> mounts a child), or an element they are appended to.
+function placeOf(target, what) {
+  if (target && target.nodeType === 8 && target.parentNode) return [target.parentNode, target];
+  if (target && (target.nodeType === 1 || target.nodeType === 11)) return [target, null];
+  throw new TypeError(`vela: ${what} mounts only after the page hydrated, into <vela:component> or an element`);
+}
+
+// serverComponent(Component, html, options) is a component value whose
+// first mount adopts html: the root range and payload script that
+// RenderXContext of Component wrote. The nodes are inserted where the value
+// mounts and hydrated like hydrate() does, with the same options (policy,
+// onMismatch). Under repair a mismatch removes them and creates Component
+// with the props of the payload; under fail it throws. Props come from the
+// payload; the props the parent passes are applied with set() after the
+// commit. A later mount of the same value adopts a fresh copy of html.
+export function serverComponent(Component, html, options = {}) {
+  if (typeof Component !== 'function') throw new TypeError('vela: serverComponent() needs a component factory');
+  if (typeof html !== 'string') throw new TypeError('vela: serverComponent() needs the HTML as a string');
+  function Adopted(target, props, slots) {
+    const [parent, before] = placeOf(target, 'serverComponent()');
+    const content = parseHTML(html);
+    let script = null;
+    for (const node of content.childNodes) {
+      if (node.nodeType === 1 && node.localName === 'script' && node.hasAttribute('data-vela-root')) script = node;
+    }
+    if (!script) throw mismatch('serverComponent(): the HTML has no payload script (data-vela-root)');
+    const payload = readPayload(script);
+    const nodes = [...content.childNodes];
+    parent.insertBefore(content, before);
+    const own = Object.assign({}, options, slots && Object.keys(slots).length ? { slots } : {});
+    const result = adoptRoot(Component, parent, nodes[0], script, payload, own, parent, target);
+    if (result.failure) {
+      result.rollback();
+      for (const node of nodes) node.remove();
+      if (!isMismatch(result.failure) || result.session.policy === 'fail') throw result.failure;
+      result.session.report(result.failure);
+      const created = Component(target, payload.props || {}, slots || {});
+      if (props && created.set && Object.keys(props).length) created.set(props);
+      return created;
+    }
+    const instance = result.commit();
+    const destroy = instance.destroy;
+    instance.destroy = function () {
+      destroy.call(this);
+      // The root range markers and whitespace around it.
+      for (const node of nodes) if (node.parentNode) node.remove();
+    };
+    if (props && instance.set && Object.keys(props).length) instance.set(props);
+    return instance;
+  }
+  Adopted.$$props = Component.$$props;
+  Adopted.$$adopted = Component;
+  return Adopted;
+}
+
+// hasMarkers reports range markers or a payload script: the HTML of an
+// interactive root.
+function hasMarkers(content) {
+  const walker = document.createTreeWalker(content, 0x80 | 0x1);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.nodeType === 8 && (node.data.startsWith('[') || node.data === ']')) return true;
+    if (node.nodeType === 1 && node.localName === 'script' && node.hasAttribute('data-vela-root')) return true;
+  }
+  return false;
+}
+
+// staticHTML(html) is a component value that inserts html and creates no
+// instance: it has no state, set() and updates do nothing, and destroy
+// removes the nodes. HTML with range markers or a payload script is an
+// interactive root; development builds reject it.
+export function staticHTML(html) {
+  if (typeof html !== 'string') throw new TypeError('vela: staticHTML() needs the HTML as a string');
+  function Static(target) {
+    const [parent, before] = placeOf(target, 'staticHTML()');
+    const content = parseHTML(html);
+    if ($$isDev() && hasMarkers(content)) {
+      throw new TypeError('vela: staticHTML() got an interactive root (range markers or a payload script); use serverComponent()');
+    }
+    const nodes = [...content.childNodes];
+    parent.insertBefore(content, before);
+    const single = nodes.length === 1 && nodes[0].nodeType === 1 ? nodes[0] : null;
+    return {
+      el: single,
+      destroy() {
+        for (const node of nodes) if (node.parentNode) node.remove();
+      },
+      abandon() {},
+    };
+  }
+  Static.$$props = {};
+  return Static;
 }

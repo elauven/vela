@@ -263,3 +263,137 @@ export async function mismatchCheck(env, testCase, injected) {
   }
   return errors;
 }
+
+// ── Fragments (task 072) ─────────────────────────────────────────────────
+// The server HTML of a case is mounted into <vela:component> of Adopt.vela
+// with serverComponent(): it must adopt without a mismatch report, leave
+// the client DOM, stay interactive, and switch to staticHTML(), to an
+// ordinary component and to nothing. Injected mismatches repair to the
+// client DOM or, under fail, throw. Nothing may stay behind after destroy.
+const quiet = (run) => {
+  const saved = { warn: console.warn, error: console.error };
+  console.warn = () => {};
+  console.error = () => {};
+  try {
+    return run();
+  } finally {
+    Object.assign(console, saved);
+  }
+};
+
+export async function fragmentCheck(env, testCase) {
+  const errors = [];
+  const { $$debugStats } = await env.load('runtime-blocks.js');
+  const { serverComponent, staticHTML } = await env.load('runtime-hydrate.js');
+  const module = await env.load(testCase.module);
+  const factory = module[testCase.export] || module.default;
+  const { Adopt } = await env.load('Adopt.js');
+  const { DynA } = await env.load('DynA.js');
+  const before = $$debugStats();
+  const place = () => {
+    const element = document.createElement('div');
+    document.body.appendChild(element);
+    return element;
+  };
+  const reference = place();
+  const created = factory(reference, structuredClone(testCase.props));
+  await settle();
+  const host = place();
+  const reports = [];
+  let adopt;
+  try {
+    adopt = Adopt(host, { view: serverComponent(factory, testCase.html, { onMismatch: (report) => reports.push(report) }) });
+  } catch (error) {
+    created.destroy();
+    host.remove();
+    reference.remove();
+    return [`serverComponent: ${error.message}`];
+  }
+  await settle();
+  const box = host.querySelector('.adopt');
+  if (reports.length) errors.push(`serverComponent reported ${JSON.stringify(reports.map((r) => r.message))}`);
+  if (box.querySelector('script')) errors.push('serverComponent left the payload script');
+  if (serialize(box) !== serialize(reference)) {
+    errors.push(`adopted DOM differs from the client DOM:\n  adopted: ${serialize(box)}\n  client:  ${serialize(reference)}`);
+  } else {
+    // Events and updates work after the adoption; set steps go to the
+    // root instance, which the adopted value hides, so they are skipped.
+    for (const [index, step] of (testCase.steps || []).entries()) {
+      if (step.set) continue;
+      applyStep(box, null, step);
+      applyStep(reference, created, step);
+      await settle();
+      if (serialize(box) !== serialize(reference)) {
+        errors.push(`adopted, after step ${index} ${JSON.stringify(step)}:\n  adopted: ${serialize(box)}\n  client:  ${serialize(reference)}`);
+        break;
+      }
+    }
+  }
+  const staticReference = document.createElement('div');
+  staticReference.innerHTML = testCase.static;
+  adopt.set({ view: staticHTML(testCase.static) });
+  await settle();
+  if (serialize(box) !== serialize(staticReference)) errors.push(`staticHTML DOM differs:\n  mounted: ${serialize(box)}\n  static:  ${serialize(staticReference)}`);
+  adopt.set({ view: DynA });
+  await settle();
+  if (!box.querySelector('.a') || box.children.length !== 1) errors.push(`switching to a component: ${serialize(box)}`);
+  adopt.set({ view: null });
+  await settle();
+  if (box.childNodes.length && [...box.childNodes].some((node) => node.nodeType !== 8)) errors.push(`switching to nothing left ${serialize(box)}`);
+  try {
+    staticHTML(testCase.html)(place());
+    errors.push('staticHTML accepted an interactive root');
+  } catch (error) {
+    if (!/interactive root/.test(error.message)) errors.push(`staticHTML: ${error.message}`);
+  }
+  document.body.lastChild.remove();
+  adopt.destroy();
+  created.destroy();
+  host.remove();
+  reference.remove();
+
+  for (const injected of testCase.mismatches || []) {
+    const html = injected.regex ? testCase.html.replace(new RegExp(injected.from), injected.to) : testCase.html.replace(injected.from, injected.to);
+    for (const policy of ['repair', 'fail']) {
+      const label = `fragment ${injected.name} (${policy})`;
+      const expected = place();
+      const fresh = factory(expected, structuredClone(testCase.props));
+      await settle();
+      const target = place();
+      const got = [];
+      let mounted = null;
+      let thrown = null;
+      quiet(() => {
+        try {
+          const view = serverComponent(factory, html, { policy, onMismatch: (report) => got.push(report) });
+          // Under fail the value throws while it mounts; it is mounted
+          // directly, since a host component cannot release a child that
+          // threw in its constructor.
+          mounted = policy === 'fail' ? view(target) : Adopt(target, { view });
+        } catch (error) {
+          thrown = error;
+        }
+      });
+      await settle();
+      if (policy === 'fail') {
+        if (!thrown || thrown.code !== 'VELA-HYDRATION-MISMATCH') errors.push(`${label}: expected VELA-HYDRATION-MISMATCH, got ${thrown ? thrown.message : 'no error'}`);
+      } else if (thrown) {
+        errors.push(`${label}: threw ${thrown.message}`);
+      } else {
+        if (!got.some((report) => report.kind === injected.kind)) errors.push(`${label}: onMismatch got ${JSON.stringify(got.map((r) => r.kind))}, want a ${injected.kind} report`);
+        const box = target.querySelector('.adopt');
+        if (serialize(box) !== serialize(expected)) errors.push(`${label}: DOM differs from the client:\n  adopted: ${serialize(box)}\n  client:  ${serialize(expected)}`);
+      }
+      if (mounted) mounted.destroy();
+      fresh.destroy();
+      target.remove();
+      expected.remove();
+    }
+  }
+  await settle();
+  const after = $$debugStats();
+  if (after.owners !== before.owners || after.listeners !== before.listeners || after.queued !== 0) {
+    errors.push(`fragments left ${after.owners - before.owners} owners, ${after.listeners - before.listeners} listeners, and ${after.queued} queued updates`);
+  }
+  return errors;
+}

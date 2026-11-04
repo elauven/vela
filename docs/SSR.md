@@ -158,6 +158,12 @@ hydrate(Page, document.getElementById('app'), {
   ```
 
   The server renders a lazy component like any other (contract §5.5).
+- **HTML after the page loaded.** HTML a Go renderer wrote for a later
+  request, such as the changed part of a page, mounts into
+  `<vela:component>`: `serverComponent(Page, html)` hydrates a root range
+  with its payload, and `staticHTML(html)` inserts the HTML of a static
+  root without any instance (HYDRATION_ARCHITECTURE A-8.7a). Pass only
+  HTML from your own server.
 
 ## Development and production with Vite
 
