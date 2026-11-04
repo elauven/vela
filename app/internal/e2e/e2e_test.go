@@ -153,13 +153,20 @@ type browserResult struct {
 		Logs      []string `json:"logs"`
 		Diff      string   `json:"diff"`
 	} `json:"pages"`
+	Navigation []struct {
+		Name  string `json:"name"`
+		Error string `json:"error"`
+	} `json:"navigation"`
 	Error string `json:"error"`
 }
 
-// TestExampleAppHydrates is the browser check of task 075: vite build of
-// examples/app, the Go server with the build's tags, and Chromium. Every
-// document hydrates without a mismatch report and without changing the
-// server DOM, preloads the chunk of its lazy page, and is interactive.
+// TestExampleAppHydrates is the browser check of tasks 075 and 076: vite
+// build of examples/app, the Go server with the build's tags, and Chromium.
+// Every document hydrates without a mismatch report and without changing
+// the server DOM, preloads the chunk of its lazy page, and is interactive.
+// Then the router navigates: kept layouts keep their DOM and state and
+// their loaders do not run, back and forward restore scroll, redirects and
+// 404s stay inside the app, and without JavaScript links load documents.
 // It needs the repository's node_modules (npm ci and playwright install);
 // VELA_REQUIRE_APP_E2E=1 turns the skip into a failure.
 func TestExampleAppHydrates(t *testing.T) {
@@ -220,6 +227,14 @@ func TestExampleAppHydrates(t *testing.T) {
 		}
 		if c.Click != "" && p.After != c.Then {
 			t.Errorf("%s: after clicking %s the page shows %q, want %q", c.Path, c.Click, p.After, c.Then)
+		}
+	}
+	if len(result.Navigation) == 0 {
+		t.Error("no navigation scenario ran")
+	}
+	for _, n := range result.Navigation {
+		if n.Error != "" {
+			t.Errorf("navigation: %s: %s", n.Name, n.Error)
 		}
 	}
 }
