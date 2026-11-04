@@ -64,7 +64,9 @@ func goListDeps(t *testing.T, dir string, env ...string) []listedPackage {
 	cmd.Dir = dir
 	// The package's tests set GOFLAGS=-mod=mod (ssr_gomod_env_test.go),
 	// which workspace mode rejects.
-	cmd.Env = append(append(os.Environ(), "GOFLAGS="), env...)
+	// PWD of this process is not dir; go would ignore it and take the
+	// real path of the working directory.
+	cmd.Env = append(append(os.Environ(), "GOFLAGS=", "PWD="+dir), env...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -274,7 +276,13 @@ func TestAppLayerBoundaryDetectsViolations(t *testing.T) {
 	}
 
 	t.Run("Go import of the compiler", func(t *testing.T) {
-		work := t.TempDir()
+		// On macOS the temporary directory is behind a symlink
+		// (/var -> /private/var): go resolves the working directory to the
+		// real path, and ./app of the go.work must name the same one.
+		work, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
 		copyTree(t, filepath.Join(root, "app"), filepath.Join(work, "app"))
 		// app/go.mod may replace the runtime with ../ssr_runtime, which is
 		// not next to the copy.
