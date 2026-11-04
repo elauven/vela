@@ -7,7 +7,8 @@
 // @govela/runtime. TestAppLayerIsSeparable in the root module enforces it.
 //
 // The route table comes from vela-app gen (task 074); New serves documents
-// (task 075). Navigation, fragments and forms follow in tasks 076–078.
+// (task 075) and the data responses of the client router (task 076).
+// Fragments and forms follow in tasks 077–078.
 package app
 
 import vela "github.com/elauven/vela/ssr_runtime"

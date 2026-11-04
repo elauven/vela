@@ -44,7 +44,7 @@ func Routes() app.Routes {
 			{ID: "/users/[id=int]", Chain: []app.Level{
 				{ID: "routes/Layout", Error: "routes/Error", Loader: app.LoaderOf(server_routes.Layout)},
 				{ID: "routes/users/Layout", Error: "routes/users/Error", Loader: app.LoaderOf(server_routes_users.Layout), Deps: server_routes_users.Deps},
-				{ID: "routes/users/[id=int]/Page", Error: "routes/users/Error", Loader: app.LoaderOf(server_routes_users_id_int_param.Page), Params: []string{"id"}},
+				{ID: "routes/users/[id=int]/Page", Error: "routes/users/Error", Loader: app.LoaderOf(server_routes_users_id_int_param.Page), Params: []string{"id"}, Head: true},
 			}, Render: server_routes_users_id_int_param.Render},
 		},
 		// In ranking order: the first full match wins.
