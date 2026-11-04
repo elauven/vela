@@ -106,7 +106,8 @@ func Build(ctx context.Context, opts BuildOptions) error {
 	}
 
 	if err := os.RemoveAll(output); err != nil {
-		return err
+		// Windows cannot remove the binary of a running process.
+		return fmt.Errorf("cannot replace the build directory (is its server still running?): %w", err)
 	}
 	if err := os.MkdirAll(output, 0o755); err != nil {
 		return err
