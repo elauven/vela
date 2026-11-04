@@ -174,10 +174,15 @@ func TestBuild(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		cmd.Process.Kill()
-		cmd.Wait()
-	}()
+	stopped := false
+	stop := func() {
+		if !stopped {
+			stopped = true
+			cmd.Process.Kill()
+			cmd.Wait()
+		}
+	}
+	defer stop()
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		resp, err := http.Get("http://" + addr + "/docs/intro")
@@ -194,6 +199,8 @@ func TestBuild(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	// Windows cannot remove the binary of a running process.
+	stop()
 
 	// A second build replaces the directory; a directory of the developer
 	// is never replaced.
