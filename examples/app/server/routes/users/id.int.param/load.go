@@ -9,23 +9,18 @@ import (
 	"github.com/elauven/vela/app"
 )
 
-// Page loads one user.
+// Page loads one user; an unknown id is 404.
 func Page(ctx context.Context, r *app.Request) (store.User, error) {
 	id, _ := strconv.Atoi(r.Params["id"])
 	for _, user := range store.Users() {
 		if user.ID == id {
+			r.Head().Title = user.Name + " · Users"
+			r.Head().SetMeta(app.Meta{Name: "description", Content: "The profile of " + user.Name})
 			return user, nil
 		}
 	}
-	return store.User{}, errNotFound
+	return store.User{}, app.NotFound()
 }
-
-// errNotFound becomes app.NotFound() in task 075.
-var errNotFound = errorString("user not found")
-
-type errorString string
-
-func (e errorString) Error() string { return string(e) }
 
 // Render keeps user pages as data navigations (docs/APP.md L-7).
 const Render = app.RenderData

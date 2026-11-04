@@ -28,5 +28,6 @@ func Layout(ctx context.Context, r *app.Request) (Menu, error) {
 
 // Page loads the home page.
 func Page(ctx context.Context, r *app.Request) (map[string]string, error) {
+	r.Head().Title = "Home · Vela App"
 	return map[string]string{"greeting": "Welcome to Vela App."}, nil
 }

@@ -23,5 +23,6 @@ type List struct {
 
 // Page lists the users.
 func Page(ctx context.Context, r *app.Request) (List, error) {
+	r.Head().Title = "Users"
 	return List{Users: store.Users()}, nil
 }

@@ -14,8 +14,9 @@ the part SvelteKit and Nuxt play for their compilers, but the server is
 
 Status: **in progress**. This page is the contract (task 073), approved on
 2026-11-03. The route scanner and the `vela-app` generator exist (task 074,
-see [Generator](#generator)); the server, the client router and the forms
-follow in tasks 075–078. The
+see [Generator](#generator)), and `app.New` serves documents that the
+browser hydrates (task 075, see [Server](#server)); partial navigation,
+fragments and forms follow in tasks 076–078. The
 rules are numbered so that code, tests and reviews can cite them: `B-`
 boundary, `P-` paths and routes, `L-` loaders, `R-` rendering, `N-`
 navigation.
@@ -475,7 +476,82 @@ directory names the directory or the `Page.vela` of the route.
 
 `examples/app` is a small application: a home page, an `(admin)` group
 with a layout, `users` and `users/[id=int]` with layouts and loaders,
-`[[lang]]/about`, a custom matcher and an error page.
+`[[lang]]/about`, a custom matcher, a redirect (`/me`), a failing loader
+(`/crash`) and an error page. `cmd/server` serves it with the build of
+`vite build` or the Vite dev server (`-dev`). `TestExampleAppServes`
+checks every route's status and title, and `TestExampleAppHydrates` builds
+it with Vite and checks in Chromium that every document hydrates without
+a mismatch and preloads its lazy page.
+
+## Server
+
+`app.New` (task 075) serves full documents: with it alone an app is a
+multi-page site whose pages are hydrated.
+
+```go
+assets, err := vite.Load("dist/.vite/manifest.json", "/") // or vite.Dev(url)
+h, err := app.New(app.Config{
+    Routes: appgen.Routes(),
+    Assets: assets,
+    Head:   app.Head{Title: "Site", Meta: []app.Meta{{Name: "description", Content: "…"}}},
+})
+mux.Handle("/assets/", http.FileServer(http.Dir("dist")))
+mux.Handle("/", h)
+```
+
+| `Config` field | Meaning |
+| --- | --- |
+| `Routes` | `appgen.Routes()` |
+| `Assets` | the client tags of `ssr_runtime/vite`; without them pages are not hydrated |
+| `Document` | the shell of R-4; the built-in one when empty |
+| `Head` | the default title and meta tags of R-6 |
+| `BuildID` | the build id (`<meta name="vela-build">`, task 078); a hash of the client tags by default |
+| `Manifest` | `vela.manifest.json`, checked now and used by task 077 |
+| `Logger` | receives loader and render errors (`slog.Default()` when nil) |
+| `Dev` | the error page shows the message of an internal error; otherwise "Internal Error" |
+| `MaxBytes` | the size limit of a buffered response (R-7), 8 MiB by default |
+
+A request:
+
+1. Only GET and HEAD are served; other methods get 405 with `Allow`. A path
+   with a trailing slash redirects with 308 (P-7); leading slashes collapse,
+   so `//host/` cannot redirect to another host.
+2. The URL is matched (P-6, P-8). A URL no route matches renders the
+   layouts of the routes directory with the root `Error.vela` and 404.
+3. The loaders of the chain run concurrently under the request context,
+   each with its own `*app.Request`. `app.Parent[T](r)` waits for the
+   nearest layout above with a loader. An error at a level cancels the
+   levels below it; the levels above it keep running, since they render
+   around the error page.
+4. The first level (from the top) that failed decides the answer (L-5):
+   `app.Redirect` answers with its status and `Location`; `app.NotFound` and
+   `app.Error` with their status and message; another error, a panic or a
+   result that does not marshal with 500, logged with the route and the
+   level (and the stack of a panic). The `Error.vela` of that level
+   (`Level.Error`, the nearest at or above it) replaces it and the levels
+   below it, as the last chain segment with `error: { status, message }`.
+   Without an `Error.vela` the built-in error page answers.
+5. Loader results become props through `encoding/json` (L-2), and each
+   level gets its key (L-6). The `VelaApp` root is rendered with `route`,
+   `chain` and `start: 0` into the shell: the merged head (R-6), the client
+   tags, `<link rel="modulepreload">` and stylesheets of the lazy page or
+   error page (`vite.Assets.Preload`), and `<meta name="vela-build">`.
+6. The response is buffered. It sends `Content-Type`, `Content-Length`,
+   `Vary` (R-7) and `Cache-Control`, `private` unless a loader set it.
+
+A loader sets its segment's head and headers through its request:
+
+```go
+r.Head().Title = user.Name
+r.Head().SetMeta(app.Meta{Name: "description", Content: "…"})
+r.CacheControl("public, max-age=60") // r.Header() for other headers
+```
+
+A deeper segment replaces a header set above it. On the client,
+`start({ VelaApp, routes })` of `@govela/app/client`, which the generated
+`client.js` calls, loads the lazy components the payload names
+(`preloadHydration`), hydrates the root and dispatches `vela:hydrated` on
+the root element. Links load documents until task 076.
 
 ## Decisions on the open questions of 073
 

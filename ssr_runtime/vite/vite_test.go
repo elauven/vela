@@ -77,3 +77,38 @@ func TestLoad(t *testing.T) {
 		t.Errorf("Load: %v", err)
 	}
 }
+
+// A lazy page: its own chunk, the chunks and stylesheets it imports, but
+// not the files the entry already loads.
+const lazyManifest = `{
+  "src/client.js": {"file": "assets/client-A1.js", "isEntry": true, "imports": ["_runtime-R1.js"], "css": ["assets/client-C1.css"], "dynamicImports": ["src/routes/users/[id=int]/Page.vela"]},
+  "_runtime-R1.js": {"file": "assets/runtime-R1.js"},
+  "_card-K1.js": {"file": "assets/card-K1.js", "imports": ["_runtime-R1.js"], "css": ["assets/card-K1.css"]},
+  "src/routes/users/[id=int]/Page.vela": {"file": "assets/Page-P1.js", "src": "src/routes/users/[id=int]/Page.vela", "isDynamicEntry": true, "imports": ["_card-K1.js", "_runtime-R1.js"], "css": ["assets/Page-P1.css"]},
+  "src/routes/Page.vela": {"file": "assets/Page-H1.js", "isDynamicEntry": true, "imports": ["_runtime-R1.js"]}
+}`
+
+func TestPreload(t *testing.T) {
+	assets, err := Parse([]byte(lazyManifest), "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := assets.Preload([]string{"src/client.js"}, "src/routes/users/[id=int]/Page.vela", "/src/routes/Page.vela")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `<link rel="stylesheet" href="/assets/Page-P1.css">` +
+		`<link rel="stylesheet" href="/assets/card-K1.css">` +
+		`<link rel="modulepreload" href="/assets/card-K1.js">` +
+		`<link rel="modulepreload" href="/assets/Page-P1.js">` +
+		`<link rel="modulepreload" href="/assets/Page-H1.js">`
+	if got != want {
+		t.Errorf("Preload =\n%s\nwant\n%s", got, want)
+	}
+	if _, err := assets.Preload(nil, "src/nope.vela"); err == nil || !strings.Contains(err.Error(), `"src/nope.vela" is not in the manifest`) {
+		t.Errorf("unknown module: %v", err)
+	}
+	if got, err := Dev("http://localhost:5173").Preload([]string{"src/client.js"}, "src/routes/Page.vela"); got != "" || err != nil {
+		t.Errorf("dev: %q %v", got, err)
+	}
+}

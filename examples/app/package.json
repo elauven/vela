@@ -1,0 +1,18 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen": "go run github.com/elauven/vela/app/cmd/vela-app gen",
+    "build": "go run github.com/elauven/vela/app/cmd/vela-app gen && vela && vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@govela/app": "file:../../packages/app",
+    "@govela/runtime": "file:../../packages/runtime"
+  },
+  "devDependencies": {
+    "@govela/compiler": "file:../../packages/compiler",
+    "@govela/unplugin": "file:../../packages/unplugin",
+    "vite": "^8.3.5"
+  }
+}

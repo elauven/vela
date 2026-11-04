@@ -208,7 +208,11 @@ tags, err := assets.Tags("src/client.js")                    // into <head>
   modules, so the page is unstyled until the client has loaded.
 - `Load` reads the manifest of `vite build` and `Tags` gives, per entry,
   the stylesheets, `<link rel="modulepreload">` for the imported chunks and
-  the module script, with the hashed file names. Serve `dist/assets/` at
+  the module script, with the hashed file names. `Preload(entries, modules…)` gives the
+  stylesheets and modulepreload links of modules the page imports
+  dynamically, such as the `lazy()` components it renders
+  (`"src/Panel.vela"`), without the files the entries already load; in
+  development it gives nothing. Serve `dist/assets/` at
   the `base` you pass (Vite's `base`, `/` by default).
 
 **Development loop.** Three processes:

@@ -81,7 +81,7 @@ does not apply to it. A release of the app layer:
    a tagged `ssr_runtime` with everything the layer imports, and has no
    `replace` line: `go install …@vX.Y.Z` refuses a module with one. While
    the layer needs runtime code that is not tagged yet (`ssr_runtime/pkgpath`
-   of task 069), `app/go.mod` replaces the runtime with `../ssr_runtime`;
+   of task 069, `vite.Assets.Preload` of task 075), `app/go.mod` replaces the runtime with `../ssr_runtime`;
    tag the runtime first, then require it and drop the line.
 2. Set `Version` in `app/app.go` and `version` in `packages/app/package.json`
    to `X.Y.Z`; they always match.
