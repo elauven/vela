@@ -1,0 +1,10 @@
+<script>
+  // The host of the fragment checks (task 072): it renders the component
+  // value it gets, such as serverComponent() or staticHTML().
+  export let view = null;
+  export let label = 'adopted';
+</script>
+
+<template>
+  <div class="adopt"><vela:component :this={view} :label={label} /></div>
+</template>

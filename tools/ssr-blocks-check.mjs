@@ -18,7 +18,7 @@
 import { pathToFileURL } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { serialize, clientHTML, hydrateCheck, mismatchCheck } from './ssr-hydration-checks.mjs';
+import { serialize, clientHTML, hydrateCheck, mismatchCheck, fragmentCheck } from './ssr-hydration-checks.mjs';
 
 const [jsdomPath, clientDir, renderedPath] = process.argv.slice(2);
 const { JSDOM } = await import(pathToFileURL(jsdomPath).href);
@@ -151,6 +151,7 @@ for (const testCase of cases) {
       } else if (serverHTML !== client) errors.push(`server and client DOM differ:\n  server: ${serverHTML}\n  client: ${client}`);
       errors.push(...(await hydrateCheck(env, testCase)));
       for (const injected of testCase.mismatches || []) errors.push(...(await mismatchCheck(env, testCase, injected)));
+      errors.push(...(await fragmentCheck(env, testCase)));
     }
     if (errors.length) failures.push(`${testCase.name}:\n  ${errors.join('\n  ')}`);
   } catch (error) {
@@ -212,6 +213,7 @@ if (process.argv.includes('--chromium')) {
           try {
             errors.push(...(await checks.hydrateCheck(env, testCase)));
             for (const injected of testCase.mismatches || []) errors.push(...(await checks.mismatchCheck(env, testCase, injected)));
+            errors.push(...(await checks.fragmentCheck(env, testCase)));
           } catch (error) {
             errors.push(String(error && error.stack || error));
           }
