@@ -247,6 +247,9 @@ func runProcess(ctx context.Context, dir string, command []string, w io.Writer) 
 	cmd.Dir = dir
 	cmd.Stdout = w
 	cmd.Stderr = w
+	// A child that outlives the process, and still holds the output pipe,
+	// must not keep Wait from returning.
+	cmd.WaitDelay = 2 * time.Second
 	setProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
