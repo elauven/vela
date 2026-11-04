@@ -22,6 +22,8 @@ func Layout(ctx context.Context, r *app.Request) (Menu, error) {
 		{Href: "/", Label: "Home"},
 		{Href: "/users", Label: "Users"},
 		{Href: "/about", Label: "About"},
+		{Href: "/docs/intro", Label: "Docs"},
+		{Href: "/reports", Label: "Reports"},
 		{Href: "/settings", Label: "Settings"},
 		{Href: "/me", Label: "Me"},
 	}}, nil

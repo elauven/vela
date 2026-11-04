@@ -1,0 +1,17 @@
+<script>
+  // A static root (no state, no handlers): navigations inside the docs get
+  // its HTML from the server and load no JavaScript (docs/APP.md R-9).
+  export let data = null;
+  export let route = null;
+</script>
+
+<template>
+  <div class="docs">
+    <ul class="toc">
+      {#each data.pages as page (page.href)}
+        <li><a :href={page.href} class:active={route.path === page.href}>{page.title}</a></li>
+      {/each}
+    </ul>
+    <slot />
+  </div>
+</template>

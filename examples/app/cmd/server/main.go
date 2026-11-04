@@ -49,8 +49,11 @@ func main() {
 	handler, err := app.New(app.Config{
 		Routes: appgen.Routes(),
 		Assets: assets,
-		Head:   app.Head{Title: "Vela App", Meta: []app.Meta{{Name: "description", Content: "An example of Vela App"}}},
-		Dev:    *dev != "",
+		// The root modes of vela: auto navigations into static sections
+		// get HTML fragments (docs/APP.md R-9).
+		Manifest: filepath.Join("out", "client", "vela.manifest.json"),
+		Head:     app.Head{Title: "Vela App", Meta: []app.Meta{{Name: "description", Content: "An example of Vela App"}}},
+		Dev:      *dev != "",
 	})
 	if err != nil {
 		log.Fatal(err)

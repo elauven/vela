@@ -179,6 +179,92 @@ const scenarios = [
     await t.follow('nav a[href="/users"]');
     t.equal(await t.page.evaluate(() => location.pathname), '/users', 'path');
   }],
+  ['a static section navigates with HTML fragments and loads no JavaScript', async (t) => {
+    await t.open('/');
+    const scripts = t.scripts();
+    await t.follow('nav a[href="/docs/intro"]');
+    t.equal(t.last().type, 'fragment', 'response type');
+    t.equal(t.last().fragment.static, true, 'static fragment');
+    t.equal(t.last().start, 1, 'start');
+    t.equal(await t.text('article.doc h1'), 'Introduction', 'page');
+    t.equal(await t.page.title(), 'Introduction · Docs', 'title');
+    await t.follow('.toc a[href="/docs/routing"]');
+    t.equal(t.last().type, 'fragment', 'second response type');
+    // The static levels hold no data: the client asks from their first level.
+    t.equal(t.last().start, 1, 'second start');
+    t.equal(await t.text('article.doc h1'), 'Routing', 'second page');
+    t.equal(await t.text('.toc a.active'), 'Routing', 'the fragment has the new route');
+    t.equal(scripts().length, 0, `scripts loaded (${scripts().join(', ')})`);
+    // Leaving the docs: a data level replaces the static ones.
+    await t.follow('nav a[href="/users"]');
+    t.equal(t.last().type, 'data', 'leaving type');
+    t.equal(await t.text('main ul a[href="/users/1"]'), 'Ada', 'users page');
+  }],
+  ['an interactive fragment hydrates, and data after it updates its instance', async (t) => {
+    await t.open('/');
+    await t.follow('nav a[href="/reports"]');
+    t.equal(t.last().type, 'data', '/reports is a data route');
+    await t.follow('.report-list a[href="/reports/1"]');
+    t.equal(t.last().type, 'fragment', 'response type');
+    t.equal(t.last().fragment.static, false, 'interactive fragment');
+    t.equal(t.last().start, 2, 'start');
+    t.equal(await t.text('.report h1'), 'Sales', 'report');
+    t.equal(await t.text('.report li'), 'South: 10', 'first row ascending');
+    await t.page.click('button.sort');
+    await t.page.waitForTimeout(50);
+    t.equal(await t.text('.report li'), 'North: 30', 'first row after sort');
+    t.equal(await t.text('button.sort'), 'Descending', 'button after sort');
+  }],
+  ['navigations inside and below a fragment root update the right instance', async (t) => {
+    await t.open('/');
+    // The reports layout and the report come as one fragment from level 1.
+    await t.follow('nav a[href="/reports"]');
+    await t.page.evaluate(() => document.querySelector('#test-link')?.remove());
+    await t.addLink('/reports/1');
+    await t.follow('#test-link');
+    t.equal(t.last().type, 'fragment', 'from / to /reports/1');
+    t.equal(t.last().start, 2, 'start from /reports');
+    // Load the report straight under the root layout instead.
+    await t.open('/');
+    await t.addLink('/reports/1');
+    await t.follow('#test-link');
+    t.equal(t.last().start, 1, 'start from /');
+    t.equal(t.last().type, 'fragment', 'fragment from /');
+    await t.page.click('button.pin');
+    await t.page.evaluate(() => { window.__header = document.querySelector('.reports header'); });
+    // Data at level 2 goes to the fragment's instance, which keeps the
+    // layout and its state.
+    await t.follow('.reports header a[href="/reports"]');
+    t.equal(t.last().type, 'data', 'to /reports');
+    t.equal(await t.text('.report-list a[href="/reports/2"]'), 'Visits', 'the list');
+    t.equal(await t.text('button.pin'), 'Pinned 1', 'layout state after data');
+    t.equal(await t.page.evaluate(() => document.querySelector('.reports header') === window.__header), true, 'layout DOM after data');
+    // A fragment at level 2 nests inside the fragment's instance.
+    await t.follow('.report-list a[href="/reports/2"]');
+    t.equal(t.last().type, 'fragment', 'to /reports/2');
+    t.equal(t.last().start, 2, 'start of the nested fragment');
+    t.equal(await t.text('.report h1'), 'Visits', 'nested report');
+    t.equal(await t.text('button.pin'), 'Pinned 1', 'layout state after a nested fragment');
+    await t.page.click('button.sort');
+    await t.page.waitForTimeout(50);
+    t.equal(await t.text('button.sort'), 'Descending', 'the nested fragment is interactive');
+    // Back across data and fragment levels.
+    await t.navigation(() => t.page.goBack());
+    t.equal(await t.text('.report-list a[href="/reports/1"]'), 'Sales', 'back to the list');
+    t.equal(await t.text('button.pin'), 'Pinned 1', 'layout state after back');
+    await t.navigation(() => t.page.goBack());
+    t.equal(await t.text('.report h1'), 'Sales', 'back to the first report');
+    await t.navigation(() => t.page.goBack());
+    t.equal(await t.text('main h1'), 'Home', 'back home');
+    t.equal(await t.page.evaluate(() => !!document.querySelector('.reports')), false, 'the fragment is gone');
+    await t.navigation(() => t.page.goForward());
+    t.equal(await t.text('.report h1'), 'Sales', 'forward to the report');
+    t.equal(await t.text('button.pin'), 'Pinned 0', 'a new fragment');
+    await t.navigation(() => t.page.goForward());
+    t.equal(await t.text('.report-list a[href="/reports/2"]'), 'Visits', 'forward to the list');
+    await t.follow('nav a[href="/users"]');
+    t.equal(await t.text('main ul a[href="/users/1"]'), 'Ada', 'out of the reports');
+  }],
 ];
 
 // runScenarios runs the scenarios against the server at url.
@@ -229,6 +315,14 @@ async function runScenarios(browser, url) {
           a.textContent = 'test';
           document.body.prepend(a);
         }, href);
+      },
+      // scripts returns a function that lists the scripts requested since.
+      scripts() {
+        const list = [];
+        page.on('request', (r) => {
+          if (r.resourceType() === 'script') list.push(new URL(r.url()).pathname);
+        });
+        return () => list;
       },
       text(selector) {
         return page.textContent(selector).then((s) => s && s.trim());
