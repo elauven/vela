@@ -13,7 +13,9 @@ matchers (`int`, `uuid`, `slug`) and `matchPath`, which the route table that
 - `start({ VelaApp, routes })`, which the generated `client.js` calls,
   hydrates the server document and installs the router: links of the same
   origin navigate inside the app, the server sends the data of the changed
-  segments only, and layouts above them keep their DOM and state;
+  segments only, and layouts above them keep their DOM and state; a static
+  section arrives as server HTML, and a `RenderFragment` page as a server
+  rendered root that the router hydrates;
 - `goto(url, { replace, state, invalidate })` and `invalidate()`;
 - the `navigating` store;
 - `beforeNavigate(fn)` and `afterNavigate(fn)`, which return a remover for
