@@ -131,7 +131,18 @@ func main() {
 func TestSSRRejectsDirectoriesWithoutGoPackagePath(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
-	for _, dir := range []string{"[a]-[b]", "$id", "id.param", "Users", "users", "ok"} {
+	// Users and users are one directory on a case-insensitive file system
+	// (Windows, macOS by default); the collision exists only elsewhere.
+	dirs := []string{"[a]-[b]", "$id", "id.param", "ok"}
+	caseSensitive := fileSystemIsCaseSensitive(t, root)
+	if caseSensitive {
+		dirs = append(dirs, "Users", "users")
+	}
+	want := 3
+	if caseSensitive {
+		want = 5
+	}
+	for _, dir := range dirs {
 		file := filepath.Join(srcRoot, dir, "Page.vela")
 		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 			t.Fatal(err)
@@ -144,18 +155,23 @@ func TestSSRRejectsDirectoriesWithoutGoPackagePath(t *testing.T) {
 	stderr := captureStderr(t, func() {
 		errors = BuildSSRProject(CollectVela(srcRoot), srcRoot, filepath.Join(root, "out"), CompileOptions{StatusWriter: io.Discard, SSRModule: SSRDefaultModule}, false)
 	})
-	if errors != 5 {
-		t.Errorf("%d errors, want 5\n%s", errors, stderr)
+	if errors != want {
+		t.Errorf("%d errors, want %d\n%s", errors, want, stderr)
 	}
-	for _, want := range []string{
+	// File names in the output use the separator of the system.
+	stderr = filepath.ToSlash(stderr)
+	messages := []string{
 		`[a]-[b]/Page.vela: SSR: VELA-SSR-PACKAGE-PATH: directory "[a]-[b]": mixed segments are not supported`,
 		`$id/Page.vela: SSR: VELA-SSR-PACKAGE-PATH: directory "$id": invalid character in a Go import path ("$")`,
 		`id.param/Page.vela: SSR: VELA-SSR-PACKAGE-PATH: directory "id.param": reserved suffix of the encoding (".param")`,
 		`for example "id"`,
-		`VELA-SSR-PACKAGE-PATH: source directories Users and users both become the Go package directory users`,
-	} {
-		if !strings.Contains(stderr, want) {
-			t.Errorf("stderr misses %q:\n%s", want, stderr)
+	}
+	if caseSensitive {
+		messages = append(messages, `VELA-SSR-PACKAGE-PATH: source directories Users and users both become the Go package directory users`)
+	}
+	for _, message := range messages {
+		if !strings.Contains(stderr, message) {
+			t.Errorf("stderr misses %q:\n%s", message, stderr)
 		}
 	}
 	// vela check (SSR) reports the same diagnostics, at the first line of
@@ -170,16 +186,28 @@ func TestSSRRejectsDirectoriesWithoutGoPackagePath(t *testing.T) {
 			coded++
 		}
 	}
-	if coded != 5 {
-		t.Errorf("%d VELA-SSR-PACKAGE-PATH diagnostics at 1:1, want 5", coded)
+	if coded != want {
+		t.Errorf("%d VELA-SSR-PACKAGE-PATH diagnostics at 1:1, want %d", coded, want)
 	}
 	// Nothing was generated for the rejected directories.
 	entries, _ := os.ReadDir(filepath.Join(root, "out", "server", "components"))
-	var dirs []string
+	var generated []string
 	for _, e := range entries {
-		dirs = append(dirs, e.Name())
+		generated = append(generated, e.Name())
 	}
-	if strings.Join(dirs, ",") != "ok" {
-		t.Errorf("generated package directories %v, want [ok]", dirs)
+	if strings.Join(generated, ",") != "ok" {
+		t.Errorf("generated package directories %v, want [ok]", generated)
 	}
+}
+
+// fileSystemIsCaseSensitive reports whether dir tells A from a.
+func fileSystemIsCaseSensitive(t *testing.T, dir string) bool {
+	t.Helper()
+	probe := filepath.Join(dir, "CaseProbe")
+	if err := os.WriteFile(probe, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(probe)
+	_, err := os.Stat(filepath.Join(dir, "caseprobe"))
+	return err != nil
 }

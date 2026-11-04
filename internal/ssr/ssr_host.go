@@ -143,7 +143,7 @@ func (p *SSRProject) hostImportPath(mirror string) string {
 // ssrHostPackageName is the Go package name of a mirrored directory.
 func ssrHostPackageName(dir string) string {
 	var out strings.Builder
-	for _, r := range strings.ToLower(path.Base(dir)) {
+	for _, r := range strings.ToLower(filepath.Base(dir)) {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
 			out.WriteRune(r)
 		} else {
