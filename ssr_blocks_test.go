@@ -92,6 +92,18 @@ func runSSRBlocksSuite(t *testing.T, files map[string]string, cases []ssrBlocksC
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go tool not available")
 	}
+	// The fragment checks (task 072) mount every case into Adopt.vela and
+	// switch to DynA.vela; suites with their own components get both.
+	for _, name := range []string{"Adopt.vela", "DynA.vela"} {
+		if _, ok := files[name]; ok {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join("testdata", "ssr_blocks", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = string(data)
+	}
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	if err := os.MkdirAll(srcRoot, 0o755); err != nil {

@@ -1,10 +1,10 @@
 <script>
   // The host of the fragment checks (task 072): it renders the component
-  // value it gets, such as serverComponent() or staticHTML().
+  // value it gets, such as serverComponent() or staticHTML(), and passes no
+  // other props, so an adopted root keeps the props of its payload.
   export let view = null;
-  export let label = 'adopted';
 </script>
 
 <template>
-  <div class="adopt"><vela:component :this={view} :label={label} /></div>
+  <div class="adopt"><vela:component :this={view} /></div>
 </template>
