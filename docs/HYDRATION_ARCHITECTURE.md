@@ -509,6 +509,30 @@ hydrate(Page, document.getElementById('app'), { onMismatch: report => … });
 - **A-8.7** `hydrate(Component, container, options)` expects exactly one root
   range and its payload script inside `container`. Several roots on a page
   use several containers.
+- **A-8.7a** HTML that arrives after the page loaded (task 072) becomes a
+  component value for `<vela:component>`:
+
+  ```js
+  import { serverComponent, staticHTML, preloadHydration } from '@govela/runtime/hydrate';
+
+  view = serverComponent(Page, html, { onMismatch }); // a root range + payload script
+  view = staticHTML(html);                             // plain HTML, no instance
+  ```
+
+  `serverComponent` parses `html` with a `<template>` (scripts do not run;
+  the payload is read as JSON) when the value mounts, inserts the nodes in
+  the block's range and runs the same session as `hydrate()` over them:
+  same policies and reports. Under `repair` a mismatch removes the nodes
+  and creates `Page` with the payload's props; under `fail` the mount
+  throws after a rollback. Props come from the payload; the props of the
+  `<vela:component>` tag are applied with `set()` after the commit. The
+  value is its own identity, so an update with the same value keeps the
+  adopted subtree. Lazy components inside the HTML load first with
+  `preloadHydration` on the parsed content. `staticHTML` inserts the nodes
+  and creates no instance: updates do nothing, destroy removes the nodes;
+  development builds reject HTML with range markers or a payload script.
+  The HTML is trusted like the document: never pass HTML from another
+  origin.
 - **A-8.8** Each component compiles to one client module. The separate
   `X.hydrate.js`, `X.hydrate_client.js`, and per-component `X.ssr.json` files
   are removed. One `vela.manifest.json` lists, for every component, its root
@@ -551,6 +575,10 @@ hydrate(Page, document.getElementById('app'), { onMismatch: report => … });
   5. after `destroy()` no listeners, payload scripts, or pending callbacks
      remain.
   Seeds are recorded; every failure becomes a fixed regression case.
+  The same cases are also mounted with `serverComponent` (A-8.7a): they
+  adopt without a report, equal the client DOM, stay interactive, switch to
+  `staticHTML`, another component and nothing, and leave no owners or
+  listeners; their injected mismatches repair or throw.
 - **Q-10.3 Mismatch suite.** Injected mismatches of each kind in X-7.1 under
   `repair`, `fail`, and production builds produce the behaviour in §7.3,
   including rollback and retry.
