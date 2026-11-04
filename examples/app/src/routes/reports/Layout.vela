@@ -1,0 +1,17 @@
+<script>
+  export let data = null;
+
+  // State of the layout: navigations inside the reports keep it, also when
+  // the layout came from an interactive fragment of the server.
+  let pins = $state(0);
+</script>
+
+<template>
+  <div class="reports">
+    <header>
+      <a href="/reports">All {data.count} reports</a>
+      <button class="pin" @click={() => pins++}>Pinned {pins}</button>
+    </header>
+    <slot />
+  </div>
+</template>

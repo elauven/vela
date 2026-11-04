@@ -46,6 +46,8 @@ var exampleCases = []pageCase{
 	{Path: "/de/about", Status: 200, Title: "Vela App", Contains: "Über uns</h1>"},
 	{Path: "/colors/00ff00", Status: 200, Title: "Vela App", Contains: "#00ff00"},
 	{Path: "/settings", Status: 200, Title: "Vela App", Contains: "Admin</p>", Preload: "src/routes/(admin)/settings/Page.vela", Click: "main button", Then: "Saved"},
+	{Path: "/docs/intro", Status: 200, Title: "Introduction · Docs", Contains: "<h1>Introduction</h1>", Preload: "src/routes/docs/[...path]/Page.vela"},
+	{Path: "/reports/1", Status: 200, Title: "Sales · Reports", Contains: "<h1>Sales</h1>", Preload: "src/routes/reports/[id=int]/Page.vela", Click: "button.sort", Then: "Descending"},
 	{Path: "/users/9", Status: 404, Title: "Vela App", Contains: "<h1>404</h1>", Preload: "src/routes/Error.vela"},
 	{Path: "/nope", Status: 404, Title: "Vela App", Contains: "<h1>404</h1>"},
 	{Path: "/crash", Status: 500, Title: "Vela App", Contains: "Internal Error"},

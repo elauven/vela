@@ -8,8 +8,17 @@ import (
 	"io"
 
 	"github.com/elauven/vela/app"
+	vela "github.com/elauven/vela/ssr_runtime"
 
 	velaapp "example.com/golden/out/server/components/_app"
+	c_routes "example.com/golden/out/server/components/routes"
+	c_routes_admin_group "example.com/golden/out/server/components/routes/admin.group"
+	c_routes_admin_group_settings "example.com/golden/out/server/components/routes/admin.group/settings"
+	c_routes_colors_c_hex_param "example.com/golden/out/server/components/routes/colors/c.hex.param"
+	c_routes_files_path_rest "example.com/golden/out/server/components/routes/files/path.rest"
+	c_routes_lang_opt_about "example.com/golden/out/server/components/routes/lang.opt/about"
+	c_routes_users "example.com/golden/out/server/components/routes/users"
+	c_routes_users_id_int_param "example.com/golden/out/server/components/routes/users/id.int.param"
 	server_params_hex "example.com/golden/server/params/hex"
 	server_routes "example.com/golden/server/routes"
 	server_routes_users "example.com/golden/server/routes/users"
@@ -62,6 +71,19 @@ func Routes() app.Routes {
 		NotFound: app.Route{Chain: []app.Level{
 			{ID: "routes/Layout", Error: "routes/Error", Loader: app.LoaderOf(server_routes.Layout)},
 		}},
+		Components: map[string]vela.Component{
+			"routes/(admin)/Layout":        c_routes_admin_group.LayoutComponent,
+			"routes/(admin)/settings/Page": c_routes_admin_group_settings.PageComponent,
+			"routes/Error":                 c_routes.ErrorComponent,
+			"routes/Layout":                c_routes.LayoutComponent,
+			"routes/Page":                  c_routes.PageComponent,
+			"routes/[[lang]]/about/Page":   c_routes_lang_opt_about.PageComponent,
+			"routes/colors/[c=hex]/Page":   c_routes_colors_c_hex_param.PageComponent,
+			"routes/files/[...path]/Page":  c_routes_files_path_rest.PageComponent,
+			"routes/users/Error":           c_routes_users.ErrorComponent,
+			"routes/users/Layout":          c_routes_users.LayoutComponent,
+			"routes/users/[id=int]/Page":   c_routes_users_id_int_param.PageComponent,
+		},
 		Depth:  3,
 		Root:   app.Root{ID: "_app/VelaApp", Render: renderRoot},
 		Source: "src",
@@ -70,5 +92,5 @@ func Routes() app.Routes {
 }
 
 func renderRoot(ctx context.Context, w io.Writer, props app.RootProps) error {
-	return velaapp.RenderVelaAppContext(ctx, w, velaapp.VelaAppProps{Route: props.Route, Chain: props.Chain, Start: float64(props.Start)}, velaapp.VelaAppSlots{})
+	return velaapp.RenderVelaAppContext(ctx, w, velaapp.VelaAppProps{Route: props.Route, Chain: props.Chain, Start: float64(props.Start), Views: map[string]any{}}, velaapp.VelaAppSlots{})
 }

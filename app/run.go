@@ -137,9 +137,16 @@ func (c *chainRun) ran(i int) bool {
 	return c.levels[i].started.Load()
 }
 
-// close releases the contexts of the levels.
+// close cancels the levels and waits for the loaders that started, so no
+// loader outlives its request (it may use r.HTTP, which net/http reuses
+// once ServeHTTP returns).
 func (c *chainRun) close() {
 	for _, l := range c.levels {
 		l.cancel()
+	}
+	for _, l := range c.levels {
+		if l.started.Load() {
+			<-l.done
+		}
 	}
 }

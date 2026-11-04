@@ -312,7 +312,7 @@ func TestNavigateAnswers(t *testing.T) {
 		{name: "other build", target: "/s/1", headers: map[string]string{protocol.HeaderNavigate: data, protocol.HeaderBuild: "b0"}, want: protocol.TypeReload, reason: protocol.ReasonBuild},
 		{name: "same build", target: "/s/1", headers: map[string]string{protocol.HeaderNavigate: data, protocol.HeaderBuild: "b1"}, want: protocol.TypeData},
 		{name: "auto", target: "/s/1", headers: map[string]string{protocol.HeaderNavigate: protocol.FormatNavigate(protocol.ModeAuto)}, want: protocol.TypeData},
-		{name: "fragment until 077", target: "/s/1", headers: map[string]string{protocol.HeaderNavigate: protocol.FormatNavigate(protocol.ModeFragment)}, want: protocol.TypeData},
+		{name: "explicit fragment", target: "/s/1", headers: map[string]string{protocol.HeaderNavigate: protocol.FormatNavigate(protocol.ModeFragment)}, want: protocol.TypeFragment},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -16,8 +16,9 @@ Status: **in progress**. This page is the contract (task 073), approved on
 2026-11-03. The route scanner and the `vela-app` generator exist (task 074,
 see [Generator](#generator)), `app.New` serves documents that the
 browser hydrates (task 075, see [Server](#server)), and the client router
-navigates with data responses (task 076, see [Navigation](#navigation));
-fragments and forms follow in tasks 077–078. The
+navigates with data responses (task 076, see [Navigation](#navigation))
+and with server HTML fragments (task 077); forms and prefetch follow in
+task 078. The
 rules are numbered so that code, tests and reviews can cite them: `B-`
 boundary, `P-` paths and routes, `L-` loaders, `R-` rendering, `N-`
 navigation.
@@ -275,11 +276,14 @@ server/routes/**                  internal/appgen/routes_gen.go
   `vela` compiles like any other component:
   - it imports the layouts statically and the pages and error pages with
     `lazy()` (071), and keeps a table from segment id to component;
-  - its props are `route`, `chain` (`[{ id, key, data, error? }]`, N-5) and
-    `start`; task 077 adds the client-only `views`;
+  - its props are `route`, `chain` (`[{ id, key, data, error? }]`, N-5),
+    `start`, and the client-only `views`: component values by level number
+    (a fragment of R-8) that replace the table's component of that level.
+    The server never sets `views`;
   - its template nests `<vela:component>` to the maximum chain depth of the
-    project. Level `i` renders `chain[start + i]` with its `data` and
-    `route`, and the next level is its default slot.
+    project. Level `i` renders `views[start + i]`, or else the component of
+    `chain[start + i]`, with its `data` and `route`, and the next level is
+    its default slot.
 
   A level whose component is unchanged gets `set`, so it keeps its state. A
   changed level is replaced. That is all partial navigation needs: there is
@@ -323,9 +327,25 @@ server/routes/**                  internal/appgen/routes_gen.go
   3. otherwise `data`.
 
   An explicit `X-Vela-Navigate: data` or `fragment` is honoured, unless the
-  route says `RenderDocument`, in which case the answer is `reload`.
-  Until fragments exist (task 077), `auto` and `fragment` are answered
-  with `data`.
+  route says `RenderDocument`, in which case the answer is `reload`. A
+  fragment (from `RenderFragment` or an explicit request) is static when
+  every component sent is a static root, and interactive otherwise. "Every
+  component sent" includes the error page of an error segment. Without a
+  manifest (`Config.Manifest`), `auto` is always `data`.
+- **R-10** Fragments render the levels from `start` (task 077):
+  - **static**: the server nests the static renderings of the components
+    (`vela.Component.RenderDynamic` with `Static: true`; the generated
+    `Routes.Components` lists them by segment id), each level the default
+    slot of the one above, with `data`, `error` and `route` as props. No
+    markers, no payload. The segments carry no `data`: a static level
+    holds no data on the client;
+  - **interactive**: the server renders the `VelaApp` root with `start`.
+    Its `chain` has the levels above `start` without `data`, so the root
+    has its own payload and is a complete root for `serverComponent`. The
+    segments carry their `data`, so later data navigations know the chain.
+
+  The head, the headers and the error handling are those of `data`. A
+  fragment that fails to render answers `reload` (`document`).
 
 ## N. Navigation protocol
 
@@ -371,7 +391,8 @@ server/routes/**                  internal/appgen/routes_gen.go
     "segments": [ { "id": "routes/users/[id=int]/Page", "key": "…", "data": { … } } ],
     "head": { "title": "User 2", "meta": [ { "name": "description", "content": "…" } ] } }
 
-  // fragment: the data fields, plus
+  // fragment: the data fields, plus the HTML of the levels from start
+  // (R-10); the segments of a static fragment have no data
   { …, "type": "fragment", "fragment": { "html": "…", "static": true } }
 
   // redirect: the client navigates again, at most 10 times in a row
@@ -515,7 +536,7 @@ mux.Handle("/", h)
 | `Document` | the shell of R-4; the built-in one when empty |
 | `Head` | the default title and meta tags of R-6 |
 | `BuildID` | the build id (`<meta name="vela-build">`, task 078); a hash of the client tags by default |
-| `Manifest` | `vela.manifest.json`, checked now and used by task 077 |
+| `Manifest` | the path of `vela.manifest.json` (`out/client/vela.manifest.json`); its static roots choose static fragments (R-9). Without it `auto` navigations get data |
 | `Logger` | receives loader and render errors (`slog.Default()` when nil) |
 | `Dev` | the error page shows the message of an internal error; otherwise "Internal Error" |
 | `MaxBytes` | the size limit of a buffered response (R-7), 8 MiB by default |
@@ -531,7 +552,8 @@ A request:
    each with its own `*app.Request`. `app.Parent[T](r)` waits for the
    nearest layout above with a loader. An error at a level cancels the
    levels below it; the levels above it keep running, since they render
-   around the error page.
+   around the error page. The handler returns only after every loader it
+   started has returned, so a loader never sees its request reused.
 4. The first level (from the top) that failed decides the answer (L-5):
    `app.Redirect` answers with its status and `Location`; `app.NotFound` and
    `app.Error` with their status and message; another error, a panic or a
@@ -650,6 +672,26 @@ The router:
 - **Focus.** After a navigation, focus moves to the first `[autofocus]`
   element the navigation added, or to `<body>`, and a polite live region
   (`#vela-announcer`, outside the app root) announces the new title.
+- **Fragments** (R-8, R-10). A static fragment becomes `staticHTML(html)`
+  and loads no module. For an interactive fragment the router loads the
+  lazy pages inside it (`preloadHydration` on the parsed HTML) and mounts
+  `serverComponent(VelaApp, html)`. Either value goes into the `views` of
+  level `start` of the instance that owns that level.
+- **Nested roots.** An interactive fragment is a `VelaApp` instance that
+  renders the levels from its `start`. The router keeps a stack of
+  instances: the hydrated root, then one per interactive fragment inside
+  the one above. Data from level `j` goes to the innermost instance whose
+  `start <= j`; a fragment at level `j` goes into the views of the
+  innermost instance whose `start < j` (the root holds every level). The
+  instances below the target go with the levels they rendered. Every
+  instance that stays gets `set({ route, chain, start, views })`.
+- **Static levels.** `X-Vela-Have` stops at the first level of a static
+  fragment: those levels hold no data and render as one piece, so the
+  server sends them again when anything in them changes.
+- **Modules.** `routes.js` gives each route the `render` mode the generator
+  read from `const Render = app.RenderX`. The router loads the modules of
+  a `data` route while the server answers; for other routes it loads them
+  once a `data` response names them, so a static fragment loads none.
 - Each navigation dispatches `vela:navigated` on the root element, with
   `{ from, to, type }` as its detail.
 

@@ -1,0 +1,11 @@
+<script>
+  export let data = null;
+</script>
+
+<template>
+  <ul class="report-list">
+    {#each data.reports as report (report.id)}
+      <li><a :href={'/reports/' + report.id}>{report.name}</a></li>
+    {/each}
+  </ul>
+</template>

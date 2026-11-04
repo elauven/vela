@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -27,8 +26,8 @@ type Config struct {
 	// Assets gives the client tags: vite.Dev in development, vite.Load of
 	// the build manifest in production. Without it pages are not hydrated.
 	Assets *vite.Assets
-	// Manifest is the path of vela.manifest.json (the root modes of task
-	// 077). It is checked when set.
+	// Manifest is the path of vela.manifest.json. Its static roots choose
+	// static fragments for auto navigations (R-9); without it they get data.
 	Manifest string
 	// Document is the path of a document shell with %vela.head% and
 	// %vela.body% (R-4); the built-in shell is used when it is empty.
@@ -59,7 +58,9 @@ type Handler struct {
 	logger   *slog.Logger
 	dev      bool
 	maxBytes int
-	manifest json.RawMessage
+	// static holds the segment ids whose root mode is static in
+	// vela.manifest.json (R-9); nil without a manifest.
+	static map[string]bool
 }
 
 // New checks the configuration and returns the handler.
@@ -91,10 +92,9 @@ func New(cfg Config) (*Handler, error) {
 		if err != nil {
 			return nil, fmt.Errorf("app: Manifest: %w", err)
 		}
-		if !json.Valid(data) {
-			return nil, fmt.Errorf("app: Manifest: %s is not JSON", cfg.Manifest)
+		if h.static, err = staticRoots(data); err != nil {
+			return nil, fmt.Errorf("app: Manifest: %s: %w", cfg.Manifest, err)
 		}
-		h.manifest = data
 	}
 	if cfg.Assets != nil {
 		if cfg.Routes.Entry == "" {
@@ -176,12 +176,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeJSON(w, r, nil, protocol.Response{Type: protocol.TypeReload, Reason: protocol.ReasonDocument})
 		return
 	}
-	// An explicit fragment request is answered with data until fragments
-	// exist (task 077); the response type says what the client got.
 	o := h.load(r, route, params, notFound, isNav, nav.Have)
 	defer o.run.close()
 	if isNav {
-		h.writeData(w, r, o)
+		h.writeData(w, r, o, nav.Mode)
 		return
 	}
 	h.writeDocument(w, r, o)
@@ -298,7 +296,7 @@ func (h *Handler) writeDocument(w http.ResponseWriter, r *http.Request, o *outco
 		chain = append(chain, map[string]any{
 			"id":    o.errorID,
 			"key":   o.errorKey(),
-			"error": map[string]any{"status": float64(o.segError.Status), "message": o.segError.Message},
+			"error": errorProp(o.segError),
 		})
 		preload = append(preload, o.errorID)
 	}
@@ -317,7 +315,7 @@ func (h *Handler) writeDocument(w http.ResponseWriter, r *http.Request, o *outco
 
 // writeData writes the data response of a navigation (N-5, N-6): the
 // levels from start, an error as the last segment, a redirect as JSON.
-func (h *Handler) writeData(w http.ResponseWriter, r *http.Request, o *outcome) {
+func (h *Handler) writeData(w http.ResponseWriter, r *http.Request, o *outcome, mode protocol.Mode) {
 	if o.redirect != nil {
 		h.writeJSON(w, r, nil, protocol.Response{Type: protocol.TypeRedirect, Location: o.redirect.Location, Status: o.redirect.Status})
 		return
@@ -343,7 +341,23 @@ func (h *Handler) writeData(w http.ResponseWriter, r *http.Request, o *outcome) 
 		head.Meta = append(head.Meta, protocol.Meta{Name: m.Name, Property: m.Property, Content: m.Content})
 	}
 	route := routeInfo(r, o)
-	h.writeJSON(w, r, header, protocol.Response{Type: protocol.TypeData, Route: &route, Start: o.start, Segments: segments, Head: head})
+	resp := protocol.Response{Type: protocol.TypeData, Route: &route, Start: o.start, Segments: segments, Head: head}
+	if fragment, static := h.policy(o, mode); fragment {
+		html, err := h.fragment(r.Context(), o, route, static)
+		if err != nil {
+			h.logger.Error("vela app: fragment render failed", "path", r.URL.Path, "route", o.route.ID, "err", err)
+			h.writeJSON(w, r, nil, protocol.Response{Type: protocol.TypeReload, Reason: protocol.ReasonDocument})
+			return
+		}
+		resp.Type, resp.Fragment = protocol.TypeFragment, &protocol.Fragment{HTML: html, Static: static}
+		if static {
+			// A static level holds no data on the client.
+			for i := range resp.Segments {
+				resp.Segments[i].Data = nil
+			}
+		}
+	}
+	h.writeJSON(w, r, header, resp)
 }
 
 // writeJSON writes a navigation response: status 200 (N-6).

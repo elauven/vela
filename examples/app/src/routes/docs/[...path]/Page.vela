@@ -1,0 +1,12 @@
+<script>
+  export let data = null;
+</script>
+
+<template>
+  <article class="doc">
+    <h1>{data.title}</h1>
+    {#each data.paragraphs as text, i (i)}
+      <p>{text}</p>
+    {/each}
+  </article>
+</template>

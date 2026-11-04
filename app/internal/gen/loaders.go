@@ -14,6 +14,10 @@ import (
 // AppImportPath is the import path of the app package that loaders use.
 const AppImportPath = "github.com/elauven/vela/app"
 
+// RuntimeImportPath is the import path of the SSR runtime, whose Component
+// the route table lists.
+const RuntimeImportPath = "github.com/elauven/vela/ssr_runtime"
+
 // LoadFile is what the Go package of a mirrored directory declares
 // (docs/APP.md L-1, L-6, L-7). Only the syntax is read: the result type of
 // a loader is not resolved, since it reaches the client as JSON.
@@ -24,6 +28,11 @@ type LoadFile struct {
 	Layout bool
 	Deps   bool
 	Render bool
+	// RenderMode is the value of Render when it is written as
+	// app.RenderData, app.RenderFragment, app.RenderDocument or
+	// app.RenderAuto: "data", "fragment", "document" or "auto"; "" otherwise.
+	// routes.js gives it to the client router (task 077).
+	RenderMode string
 	// PageHead and LayoutHead report that a loader may set the head: its
 	// body, or a declaration of the package other than the two loaders,
 	// calls a method Head with no arguments, such as r.Head(). A data
@@ -108,6 +117,7 @@ func (t *Tree) readLoad(d *Dir, dir string, files []string, report func(Diagnost
 							report(Diagnostic{File: rel, Line: line, Col: col, Code: CodeLoader, Message: "Deps must be a variable of type app.Deps (L-6)", Help: "declare it as var Deps = app.Deps{Query: []string{\"q\"}}"})
 						case ident.Name == "Render" && decl.Tok == token.CONST:
 							load.Render = true
+							load.RenderMode = renderMode(value, ident, imports)
 							if d.Page == "" {
 								report(Diagnostic{File: rel, Line: line, Col: col, Code: CodeLoader, Message: fmt.Sprintf("Render is declared without a Page.vela in %s; only the page's load.go declares the response mode (L-7)", t.projectRel(d.Rel)), Help: "move it to the load.go of the page"})
 							}
@@ -206,4 +216,19 @@ func callsHead(decl ast.Decl) bool {
 		return !found
 	})
 	return found
+}
+
+// renderMode reads `const Render = app.RenderX` (L-7).
+func renderMode(spec *ast.ValueSpec, ident *ast.Ident, imports map[string]string) string {
+	for i, name := range spec.Names {
+		if name != ident || i >= len(spec.Values) {
+			continue
+		}
+		for value, mode := range map[string]string{"RenderAuto": "auto", "RenderData": "data", "RenderFragment": "fragment", "RenderDocument": "document"} {
+			if selector(spec.Values[i], imports, AppImportPath, value) {
+				return mode
+			}
+		}
+	}
+	return ""
 }

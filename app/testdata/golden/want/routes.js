@@ -24,7 +24,7 @@ export const routes = {
     {"id":"/[[lang]]/about","chain":[{"id":"routes/Layout","error":"routes/Error"},{"id":"routes/[[lang]]/about/Page","error":"routes/Error"}]},
     {"id":"/colors/[c=hex]","chain":[{"id":"routes/Layout","error":"routes/Error"},{"id":"routes/colors/[c=hex]/Page","error":"routes/Error"}]},
     {"id":"/files/[...path]","chain":[{"id":"routes/Layout","error":"routes/Error"},{"id":"routes/files/[...path]/Page","error":"routes/Error"}]},
-    {"id":"/users/[id=int]","chain":[{"id":"routes/Layout","error":"routes/Error"},{"id":"routes/users/Layout","error":"routes/users/Error"},{"id":"routes/users/[id=int]/Page","error":"routes/users/Error"}]},
+    {"id":"/users/[id=int]","chain":[{"id":"routes/Layout","error":"routes/Error"},{"id":"routes/users/Layout","error":"routes/users/Error"},{"id":"routes/users/[id=int]/Page","error":"routes/users/Error"}],"render":"fragment"},
   ],
   // In ranking order: the first full match wins.
   patterns: [

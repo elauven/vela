@@ -89,7 +89,8 @@ func (m *Model) velaApp() []byte {
 	if lazy {
 		b.WriteString("\n")
 	}
-	b.WriteString("  export let route = null;\n  export let chain = [];\n  export let start = 0;\n\n")
+	b.WriteString("  export let route = null;\n  export let chain = [];\n  export let start = 0;\n")
+	b.WriteString("  // Client only (task 077): component values by level, such as a\n  // fragment of the server, which replace the table's component.\n  export let views = {};\n\n")
 	b.WriteString("  const components = {\n")
 	for _, c := range m.Components {
 		fmt.Fprintf(&b, "    %s: %s,\n", jsString(c.ID), c.Local)
@@ -106,7 +107,7 @@ func (m *Model) velaApp() []byte {
 		if i == depth-1 {
 			close = " />"
 		}
-		fmt.Fprintf(&b, "%s<vela:component :this={components[chain[%s]?.id]} :data={chain[%s]?.data} :error={chain[%s]?.error} :route={route}%s\n", indent, at, at, at, close)
+		fmt.Fprintf(&b, "%s<vela:component :this={views[%s] || components[chain[%s]?.id]} :data={chain[%s]?.data} :error={chain[%s]?.error} :route={route}%s\n", indent, at, at, at, at, close)
 	}
 	for i := depth - 2; i >= 0; i-- {
 		fmt.Fprintf(&b, "%s</vela:component>\n", strings.Repeat("  ", i+1))
@@ -125,6 +126,9 @@ type jsLevel struct {
 type jsRoute struct {
 	ID    string    `json:"id"`
 	Chain []jsLevel `json:"chain"`
+	// Render is the route's Render mode when the generator can read it
+	// (L-7); the router loads the modules of a data route early.
+	Render string `json:"render,omitempty"`
 }
 
 type jsSegment struct {
@@ -143,7 +147,7 @@ var segmentKinds = map[app.SegmentKind]string{app.Static: "static", app.Param: "
 // JSTable is the data of routes.js: the routes and the ranked patterns.
 func (m *Model) JSTable() (routes []jsRoute, patterns []jsPattern) {
 	for _, r := range m.Routes {
-		route := jsRoute{ID: r.ID, Chain: []jsLevel{}}
+		route := jsRoute{ID: r.ID, Chain: []jsLevel{}, Render: r.RenderMode}
 		for _, l := range r.Chain {
 			route.Chain = append(route.Chain, jsLevel{ID: l.ID, Error: l.Error})
 		}
@@ -236,7 +240,7 @@ func (m *Model) routesGo() ([]byte, error) {
 		return nil, err
 	}
 	aliases := map[string]string{}
-	used := map[string]bool{"app": true, "io": true, "velaapp": true}
+	used := map[string]bool{"app": true, "io": true, "velaapp": true, "vela": true}
 	alias := func(dir string) string {
 		if a, ok := aliases[dir]; ok {
 			return a
@@ -312,19 +316,45 @@ func (m *Model) routesGo() ([]byte, error) {
 	body.WriteString("\t\tNotFound: app.Route{Chain: []app.Level{\n")
 	levels(m.NotFound)
 	body.WriteString("\t\t}},\n")
+	// The Go values of the route components, for static fragments (task
+	// 077): the renderers vela --ssr writes under components/.
+	componentAliases := map[string]string{}
+	body.WriteString("\t\tComponents: map[string]vela.Component{\n")
+	for _, c := range m.Components {
+		dir, err := pkgpath.EncodePath(path.Dir(c.ID))
+		if err != nil {
+			return nil, err
+		}
+		importPath := m.Config.SSRModule + "/components/" + dir
+		a, ok := componentAliases[importPath]
+		if !ok {
+			base := "c_" + pkgpath.PackageName(strings.NewReplacer("/", "_", ".", "_").Replace(dir))
+			a = base
+			for n := 2; used[a]; n++ {
+				a = fmt.Sprintf("%s%d", base, n)
+			}
+			used[a] = true
+			componentAliases[importPath] = a
+		}
+		fmt.Fprintf(&body, "\t\t\t%s: %s.%sComponent,\n", strconv.Quote(c.ID), a, path.Base(c.ID))
+	}
+	body.WriteString("\t\t},\n")
 	fmt.Fprintf(&body, "\t\tDepth: %d,\n", m.Depth)
 	rootID := m.Config.componentID(path.Join(m.Config.Out, "VelaApp.vela"))
 	fmt.Fprintf(&body, "\t\tRoot:   app.Root{ID: %s, Render: renderRoot},\n", strconv.Quote(rootID))
 	fmt.Fprintf(&body, "\t\tSource: %s,\n\t\tEntry:  %s,\n\t}\n}\n\n", strconv.Quote(m.Config.Project), strconv.Quote(path.Join(m.Config.Out, "client.js")))
 	body.WriteString("func renderRoot(ctx context.Context, w io.Writer, props app.RootProps) error {\n")
-	body.WriteString("\treturn velaapp.RenderVelaAppContext(ctx, w, velaapp.VelaAppProps{Route: props.Route, Chain: props.Chain, Start: float64(props.Start)}, velaapp.VelaAppSlots{})\n}\n")
+	body.WriteString("\treturn velaapp.RenderVelaAppContext(ctx, w, velaapp.VelaAppProps{Route: props.Route, Chain: props.Chain, Start: float64(props.Start), Views: map[string]any{}}, velaapp.VelaAppSlots{})\n}\n")
 
 	var b bytes.Buffer
 	b.WriteString("// " + Marker + "\n\n")
 	fmt.Fprintf(&b, "// Package %s is the route table of %s (docs/APP.md).\n", goPackageName(m.Config.GoPackage), m.Config.Routes)
-	fmt.Fprintf(&b, "package %s\n\nimport (\n\t\"context\"\n\t\"io\"\n\n\t%q\n\n\tvelaapp %q\n", goPackageName(m.Config.GoPackage), AppImportPath, root)
+	fmt.Fprintf(&b, "package %s\n\nimport (\n\t\"context\"\n\t\"io\"\n\n\t%q\n\tvela %q\n\n\tvelaapp %q\n", goPackageName(m.Config.GoPackage), AppImportPath, RuntimeImportPath, root)
 	for _, dir := range sortedKeys(aliases) {
 		fmt.Fprintf(&b, "\t%s %q\n", aliases[dir], m.Config.importPath(dir))
+	}
+	for _, importPath := range sortedKeys(componentAliases) {
+		fmt.Fprintf(&b, "\t%s %q\n", componentAliases[importPath], importPath)
 	}
 	b.WriteString(")\n\n")
 	b.Write(body.Bytes())

@@ -2,7 +2,7 @@
 // public entry points of @govela/runtime and its own files (docs/APP.md B-4,
 // TestAppLayerIsSeparable).
 import { tick, writable } from '@govela/runtime';
-import { hydrate, preloadHydration } from '@govela/runtime/hydrate';
+import { hydrate, preloadHydration, serverComponent, staticHTML } from '@govela/runtime/hydrate';
 
 // The navigation protocol version (docs/APP.md N-1).
 export const protocolVersion = 1;
@@ -86,7 +86,7 @@ export async function start({ VelaApp, routes, root = 'vela-app', onMismatch } =
   const options = onMismatch ? { onMismatch } : {};
   const app = hydrate(VelaApp, target, options);
   if (routes && props && Array.isArray(props.chain)) {
-    router = createRouter({ app, routes, target, route: props.route, chain: props.chain });
+    router = createRouter({ VelaApp, app, routes, target, route: props.route, chain: props.chain });
   }
   target.dispatchEvent(new CustomEvent('vela:hydrated', { bubbles: true, detail: { app } }));
   return { app, routes };
@@ -105,12 +105,18 @@ function payloadProps(target) {
   return null;
 }
 
-function createRouter({ app, routes, target, route, chain }) {
+function createRouter({ VelaApp, app, routes, target, route, chain }) {
   const build = document.querySelector('meta[name="vela-build"]')?.getAttribute('content') || '';
   const scroll = readScroll();
   let index = typeof history.state?.[indexKey] === 'number' ? history.state[indexKey] : 0;
   let controller = null;
   let ignorePop = false;
+  // The VelaApp instances that render the chain (task 077): the hydrated
+  // root, then one per interactive fragment, which renders the levels from
+  // its start. views are the values that replace a level's component: an
+  // interactive fragment (the next instance) or a static one.
+  const stack = [{ instance: app, start: 0, views: {} }];
+  const statics = new WeakSet();
   // The URL the page shows, without its hash.
   let shown = withoutHash(location.href);
 
@@ -158,8 +164,11 @@ function createRouter({ app, routes, target, route, chain }) {
     const own = new AbortController();
     controller = own;
     navigatingStore.set({ from, to, type: opts.type });
-    // The modules of the new chain load while the server answers.
-    for (const level of match.route.chain) components(routes, level.id)?.load().catch(() => {});
+    // The modules of a data route load while the server answers; another
+    // route may get a fragment that needs none of them.
+    if (match.route.render === 'data') {
+      for (const level of match.route.chain) components(routes, level.id)?.load().catch(() => {});
+    }
 
     let body;
     let at = url;
@@ -171,7 +180,7 @@ function createRouter({ app, routes, target, route, chain }) {
           signal: own.signal,
           headers: {
             [headers.navigate]: `auto;v=${protocolVersion}`,
-            [headers.have]: opts.invalidate ? '' : chain.map((segment) => segment.key).join(','),
+            [headers.have]: opts.invalidate ? '' : haveKeys().join(','),
             [headers.build]: build,
           },
         });
@@ -197,11 +206,24 @@ function createRouter({ app, routes, target, route, chain }) {
       to.url = next;
       to.route = routes.match(next.pathname).route.id;
     }
-    if (body.type !== 'data' || !Array.isArray(body.segments) || !(body.start >= 0 && body.start <= chain.length)) {
+    const fragment = body.type === 'fragment' ? body.fragment : null;
+    if ((body.type !== 'data' && !(fragment && typeof fragment.html === 'string')) || !Array.isArray(body.segments) || !(body.start >= 0 && body.start <= chain.length)) {
       return fullLoad(at, how);
     }
+    let view = null;
     try {
-      await Promise.all(body.segments.map((segment) => components(routes, segment.id)?.load()));
+      if (!fragment) {
+        await Promise.all(body.segments.map((segment) => components(routes, segment.id)?.load()));
+      } else if (fragment.static) {
+        view = staticHTML(fragment.html);
+        statics.add(view);
+      } else {
+        // The lazy pages inside the fragment load before it hydrates.
+        const parsed = document.createElement('template');
+        parsed.innerHTML = fragment.html;
+        await preloadHydration(parsed.content);
+        view = adoptFragment(fragment.html, body.start);
+      }
     } catch {
       if (controller === own) fullLoad(at, how);
       return;
@@ -227,9 +249,7 @@ function createRouter({ app, routes, target, route, chain }) {
     shown = withoutHash(at.href);
 
     const autofocus = new Set(target.querySelectorAll('[autofocus]'));
-    chain = chain.slice(0, body.start).concat(body.segments);
-    route = body.route;
-    app.set({ route, chain, start: 0 });
+    apply(body, view);
     applyHead(body.head);
     await tick();
 
@@ -247,6 +267,56 @@ function createRouter({ app, routes, target, route, chain }) {
     const done = { from, to, type: opts.type };
     for (const fn of [...afterHooks]) fn(done);
     target.dispatchEvent(new CustomEvent('vela:navigated', { bubbles: true, detail: done }));
+  }
+
+  // haveKeys are the keys of X-Vela-Have: the chain up to the first level
+  // of a static fragment, whose levels hold no data and render as one
+  // piece, so the server sends them again when anything in them changes.
+  function haveKeys() {
+    let limit = chain.length;
+    for (const entry of stack) {
+      for (const [level, value] of Object.entries(entry.views)) {
+        if (statics.has(value)) limit = Math.min(limit, Number(level));
+      }
+    }
+    return chain.slice(0, limit).map((segment) => segment.key);
+  }
+
+  // adoptFragment is the component value of an interactive fragment: a
+  // VelaApp root rendered from level start. The instance it creates joins
+  // the stack when it mounts.
+  function adoptFragment(html, level) {
+    const adopted = serverComponent(VelaApp, html);
+    const view = function (mountTarget, props, slots) {
+      const instance = adopted(mountTarget, props, slots);
+      stack.push({ instance, start: level, views: {} });
+      return instance;
+    };
+    // The wrapper keeps what the runtime reads from the factory, such as
+    // its declared props.
+    return Object.assign(view, adopted);
+  }
+
+  // apply puts a data or fragment response on the page (N-7, R-8). Data
+  // from level j goes to the innermost instance that renders level j; a
+  // fragment at j goes into the views of the innermost instance that holds
+  // level j below its own first level (the root holds every level). The
+  // instances below the target go with the levels they rendered.
+  function apply(body, view) {
+    const j = body.start;
+    let t = stack.length - 1;
+    while (t > 0 && (view ? stack[t].start >= j : stack[t].start > j)) t--;
+    stack.length = t + 1;
+    const owner = stack[t];
+    const views = {};
+    for (const [level, value] of Object.entries(owner.views)) {
+      if (Number(level) < j) views[level] = value;
+    }
+    if (view) views[j] = view;
+    owner.views = views;
+    chain = chain.slice(0, j).concat(body.segments);
+    route = body.route;
+    for (const entry of stack.slice()) entry.instance.set({ route, chain, start: entry.start, views: entry.views });
   }
 
   function onClick(event) {

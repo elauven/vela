@@ -1,0 +1,24 @@
+<script>
+  export let data = null;
+
+  // A heavy interactive page: its route says RenderFragment, so the server
+  // renders it and the client hydrates the fragment.
+  let ascending = $state(true);
+  let rows = $derived([...data.rows].sort((a, b) => (ascending ? a.value - b.value : b.value - a.value)));
+
+  function toggle() {
+    ascending = !ascending;
+  }
+</script>
+
+<template>
+  <section class="report">
+    <h1>{data.name}</h1>
+    <button class="sort" @click={toggle}>{ascending ? 'Ascending' : 'Descending'}</button>
+    <ol>
+      {#each rows as row (row.label)}
+        <li>{row.label}: {row.value}</li>
+      {/each}
+    </ol>
+  </section>
+</template>

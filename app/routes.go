@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+
+	vela "github.com/elauven/vela/ssr_runtime"
 	"io"
 	"net/url"
 	"strings"
@@ -128,6 +130,9 @@ type Routes struct {
 	// NotFound is the chain of a URL no route matches: the layouts of the
 	// routes directory itself, which render around the root Error.vela.
 	NotFound Route
+	// Components are the server values of the route components by segment
+	// id, which static fragments render (task 077).
+	Components map[string]vela.Component
 	// Depth is the maximum chain length.
 	Depth int
 	Root  Root

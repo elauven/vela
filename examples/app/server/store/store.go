@@ -40,3 +40,48 @@ func Loads() map[string]int {
 	}
 	return out
 }
+
+type DocLink struct {
+	Href  string `json:"href"`
+	Title string `json:"title"`
+}
+
+type Doc struct {
+	Title      string   `json:"title"`
+	Paragraphs []string `json:"paragraphs"`
+}
+
+var docs = map[string]Doc{
+	"intro":   {Title: "Introduction", Paragraphs: []string{"Vela App renders pages on a Go server.", "The docs are static: they need no JavaScript."}},
+	"routing": {Title: "Routing", Paragraphs: []string{"Routes come from the files of src/routes."}},
+}
+
+// DocLinks is the table of contents of the docs.
+func DocLinks() []DocLink {
+	return []DocLink{{Href: "/docs/intro", Title: "Introduction"}, {Href: "/docs/routing", Title: "Routing"}}
+}
+
+// FindDoc returns the page of the docs at path.
+func FindDoc(path string) (Doc, bool) {
+	doc, ok := docs[path]
+	return doc, ok
+}
+
+type Row struct {
+	Label string  `json:"label"`
+	Value float64 `json:"value"`
+}
+
+type Report struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	Rows []Row  `json:"rows"`
+}
+
+// Reports are the reports of the example.
+func Reports() []Report {
+	return []Report{
+		{ID: 1, Name: "Sales", Rows: []Row{{"North", 30}, {"South", 10}, {"East", 20}}},
+		{ID: 2, Name: "Visits", Rows: []Row{{"Mon", 5}, {"Tue", 9}, {"Wed", 7}}},
+	}
+}
