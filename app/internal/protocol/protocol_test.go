@@ -193,6 +193,10 @@ func TestEncodeShapes(t *testing.T) {
 			`{"v":1,"type":"redirect","build":"b","location":"/login","status":303}`},
 		{"reload", Response{Type: TypeReload, Build: "b", Reason: ReasonBuild},
 			`{"v":1,"type":"reload","build":"b","reason":"build"}`},
+		{"form", Response{Type: TypeForm, Build: "b", Status: 422, Form: json.RawMessage(`{"name":"required"}`), Route: route()},
+			`{"v":1,"type":"form","build":"b","status":422,"form":{"name":"required"}}`},
+		{"form without value", Response{Type: TypeForm, Build: "b", Status: 400},
+			`{"v":1,"type":"form","build":"b","status":400,"form":null}`},
 	} {
 		b, err := Encode(tc.r)
 		if err != nil {
@@ -212,7 +216,8 @@ func TestEncodeRejectsInvalidResponses(t *testing.T) {
 		msg  string
 	}{
 		{"no build", Response{Type: TypeReload, Reason: ReasonBuild}, "no build id"},
-		{"unknown type", Response{Type: "form", Build: "b"}, "unknown response type"},
+		{"unknown type", Response{Type: "html", Build: "b"}, "unknown response type"},
+		{"form status", Response{Type: TypeForm, Build: "b", Status: 200}, "not an error"},
 		{"no route", Response{Type: TypeData, Build: "b"}, "no route"},
 		{"negative start", Response{Type: TypeData, Build: "b", Route: route(), Start: -1}, "no start"},
 		{"segment without id", Response{Type: TypeData, Build: "b", Route: route(), Segments: []Segment{{Key: "k"}}}, "no id"},
@@ -240,6 +245,7 @@ func TestDecodeRoundTrip(t *testing.T) {
 		{Type: TypeFragment, Build: "b", Route: route(), Start: 2, Segments: []Segment{}, Fragment: &Fragment{HTML: "<b>", Static: false}},
 		{Type: TypeRedirect, Build: "b", Location: "/x", Status: 307},
 		{Type: TypeReload, Build: "b", Reason: ReasonProtocol},
+		{Type: TypeForm, Build: "b", Status: 422, Form: json.RawMessage(`[1]`)},
 	} {
 		b, err := Encode(r)
 		if err != nil {
@@ -266,7 +272,7 @@ func TestDecodeRejects(t *testing.T) {
 	}{
 		{`{"v":2,"type":"reload","build":"b","reason":"build"}`, true, "version 2"},
 		{`{"type":"reload","build":"b","reason":"build"}`, true, "version 0"},
-		{`{"v":1,"type":"form","build":"b"}`, false, "unknown response type"},
+		{`{"v":1,"type":"html","build":"b"}`, false, "unknown response type"},
 		{`{"v":1,"type":"data","build":"b","route":{"id":"/","url":"/","path":"/","params":{},"query":{}},"segments":[]}`, false, "no start"},
 		{`not json`, false, "invalid character"},
 	} {

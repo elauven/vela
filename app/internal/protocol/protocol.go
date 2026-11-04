@@ -182,6 +182,9 @@ const (
 	TypeFragment Type = "fragment"
 	TypeRedirect Type = "redirect"
 	TypeReload   Type = "reload"
+	// TypeForm is the failure of a form action (app.Fail, task 078): the
+	// page level gets Form as its form prop.
+	TypeForm Type = "form"
 )
 
 // Reasons of a reload response (N-5).
@@ -278,26 +281,30 @@ type Response struct {
 	Head     *Head     // nil: the client keeps its head
 	Fragment *Fragment // fragment only
 
-	// redirect
+	// redirect, and the status of a form failure
 	Location string
 	Status   int
+
+	// form
+	Form json.RawMessage
 
 	// reload
 	Reason string
 }
 
 type wireResponse struct {
-	V        int        `json:"v"`
-	Type     Type       `json:"type"`
-	Build    string     `json:"build"`
-	Route    *Route     `json:"route,omitempty"`
-	Start    *int       `json:"start,omitempty"`
-	Segments *[]Segment `json:"segments,omitempty"`
-	Head     *Head      `json:"head,omitempty"`
-	Fragment *Fragment  `json:"fragment,omitempty"`
-	Location string     `json:"location,omitempty"`
-	Status   int        `json:"status,omitempty"`
-	Reason   string     `json:"reason,omitempty"`
+	V        int             `json:"v"`
+	Type     Type            `json:"type"`
+	Build    string          `json:"build"`
+	Route    *Route          `json:"route,omitempty"`
+	Start    *int            `json:"start,omitempty"`
+	Segments *[]Segment      `json:"segments,omitempty"`
+	Head     *Head           `json:"head,omitempty"`
+	Fragment *Fragment       `json:"fragment,omitempty"`
+	Location string          `json:"location,omitempty"`
+	Status   int             `json:"status,omitempty"`
+	Form     json.RawMessage `json:"form,omitempty"`
+	Reason   string          `json:"reason,omitempty"`
 }
 
 // Encode validates r and returns its JSON.
@@ -327,6 +334,11 @@ func Encode(r Response) ([]byte, error) {
 		w.Location, w.Status = r.Location, r.Status
 	case TypeReload:
 		w.Reason = r.Reason
+	case TypeForm:
+		w.Status, w.Form = r.Status, r.Form
+		if w.Form == nil {
+			w.Form = json.RawMessage("null")
+		}
 	}
 	return json.Marshal(w)
 }
@@ -344,7 +356,7 @@ func Decode(b []byte) (Response, error) {
 	}
 	r := Response{
 		Type: w.Type, Build: w.Build, Route: w.Route, Head: w.Head, Fragment: w.Fragment,
-		Location: w.Location, Status: w.Status, Reason: w.Reason,
+		Location: w.Location, Status: w.Status, Reason: w.Reason, Form: w.Form,
 	}
 	if w.Start != nil {
 		r.Start = *w.Start
@@ -401,6 +413,10 @@ func (r Response) Validate() error {
 		case 301, 302, 303, 307, 308:
 		default:
 			return fail("status %d is not a redirect", r.Status)
+		}
+	case TypeForm:
+		if r.Status < 400 || r.Status > 599 {
+			return fail("status %d is not an error", r.Status)
 		}
 	case TypeReload:
 		switch r.Reason {

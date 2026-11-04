@@ -101,6 +101,8 @@ type Route struct {
 	ID     string
 	Chain  []Level
 	Render RenderMode
+	// Actions are the form actions of the page (task 078); nil for none.
+	Actions Actions
 }
 
 // RootProps are the props of the generated VelaApp root (R-2).
