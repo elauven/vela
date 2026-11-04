@@ -9,12 +9,16 @@ import (
 )
 
 type Summary struct {
-	Count int `json:"count"`
+	Count int          `json:"count"`
+	Users []store.User `json:"users"`
 }
 
-// Layout loads the user count shown next to every users page.
+// Layout loads the sidebar of every users page. A navigation between users
+// keeps the sidebar, so this loader does not run again (docs/APP.md N-4).
 func Layout(ctx context.Context, r *app.Request) (Summary, error) {
-	return Summary{Count: len(store.Users())}, nil
+	store.CountLoad("users/Layout")
+	users := store.Users()
+	return Summary{Count: len(users), Users: users}, nil
 }
 
 type List struct {

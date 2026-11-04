@@ -1,8 +1,33 @@
 <script>
+  import { onMount } from 'vela';
+  import { beforeNavigate } from '@govela/app/client';
+
+  let name = $state('');
   let saved = $state(false);
+  let dirty = $state(false);
+
+  function edit() {
+    dirty = true;
+    saved = false;
+  }
+
+  function save() {
+    saved = true;
+    dirty = false;
+  }
+
+  // Unsaved changes: ask before leaving the page.
+  function confirmLeave(navigation) {
+    if (dirty && !confirm('Leave without saving?')) navigation.cancel();
+  }
+
+  onMount(() => {
+    return beforeNavigate(confirmLeave);
+  });
 </script>
 
 <template>
   <h1>Settings</h1>
-  <button @click={() => (saved = true)}>{saved ? 'Saved' : 'Save'}</button>
+  <input class="name" aria-label="Name" bind:value={name} @input={edit} />
+  <button @click={save}>{saved ? 'Saved' : 'Save'}</button>
 </template>

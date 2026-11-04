@@ -271,6 +271,9 @@ func (m *Model) routesGo() ([]byte, error) {
 			if l.DepsPkg != "" {
 				fields = append(fields, "Deps: "+alias(l.DepsPkg)+".Deps")
 			}
+			if l.Head {
+				fields = append(fields, "Head: true")
+			}
 			fmt.Fprintf(&body, "\t\t\t\t{%s},\n", strings.Join(fields, ", "))
 		}
 	}

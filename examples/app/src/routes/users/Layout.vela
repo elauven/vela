@@ -1,12 +1,29 @@
 <script>
   export let data = null;
+  export let route = null;
+
+  // The filter is state of the layout: a navigation between users keeps
+  // the layout, so the filter keeps its value.
+  let filter = $state('');
+  let shown = $derived(data.users.filter((user) => user.name.toLowerCase().includes(filter.toLowerCase())));
 </script>
 
 <template>
   <div class="users">
     <aside>
       <p>{data.count} users</p>
+      <input class="filter" placeholder="Filter" aria-label="Filter users" bind:value={filter} />
+      <ul>
+        {#each shown as user (user.id)}
+          <li><a :href={'/users/' + user.id} class:active={route.path === '/users/' + user.id}>{user.name}</a></li>
+        {/each}
+      </ul>
     </aside>
     <slot />
   </div>
 </template>
+
+<style>
+  .users { display: flex; gap: 2rem; }
+  .active { font-weight: bold; }
+</style>

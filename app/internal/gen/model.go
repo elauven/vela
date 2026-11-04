@@ -48,6 +48,8 @@ type Level struct {
 	// DepsPkg is the package that declares Deps, "" for none.
 	DepsPkg string
 	Params  []string // parameters of the level's own path (L-6)
+	// Head: the loader may set the head (LoadFile.PageHead, LayoutHead).
+	Head bool
 }
 
 // Pattern is one URL pattern of a route; a route with optional segments has
@@ -124,6 +126,7 @@ func Build(t *Tree) (*Model, []Diagnostic) {
 		if dir.Load != nil {
 			if loader {
 				l.LoaderPkg = dir.Load.Dir
+				l.Head = kind == KindPage && dir.Load.PageHead || kind == KindLayout && dir.Load.LayoutHead
 			}
 			if dir.Load.Deps {
 				l.DepsPkg = dir.Load.Dir

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 
 	"github.com/elauven/vela/app/internal/value"
 )
@@ -18,16 +19,17 @@ type chainRun struct {
 }
 
 type levelRun struct {
-	level  *Level
-	req    *Request
-	ctx    context.Context
-	cancel context.CancelFunc
-	once   sync.Once
-	done   chan struct{}
-	result any             // the loader's result
-	view   any             // its JSON view (L-2)
-	data   json.RawMessage // its JSON
-	err    error
+	level   *Level
+	req     *Request
+	ctx     context.Context
+	cancel  context.CancelFunc
+	once    sync.Once
+	started atomic.Bool
+	done    chan struct{}
+	result  any             // the loader's result
+	view    any             // its JSON view (L-2)
+	data    json.RawMessage // its JSON
+	err     error
 }
 
 func newChainRun(ctx context.Context, chain []Level, base Request) *chainRun {
@@ -46,6 +48,7 @@ func newChainRun(ctx context.Context, chain []Level, base Request) *chainRun {
 func (c *chainRun) start(i int) {
 	l := c.levels[i]
 	l.once.Do(func() {
+		l.started.Store(true)
 		if l.level.Loader == nil {
 			close(l.done)
 			return
@@ -99,6 +102,39 @@ func (c *chainRun) runAll() int {
 		}
 	}
 	return -1
+}
+
+// runFrom runs a data navigation that sends the levels from start (N-4):
+// it starts those levels and the levels above start whose loaders may set
+// the head (Level.Head), and waits for them. A level above start that no
+// one needs never runs; Parent starts one on demand. It returns the first
+// level, in level order, of the levels that ran and failed, or -1.
+func (c *chainRun) runFrom(start int) int {
+	for i, l := range c.levels {
+		if i >= start || l.level.Head && l.level.Loader != nil {
+			c.start(i)
+		}
+	}
+	for i, l := range c.levels {
+		if l.started.Load() {
+			c.wait(i)
+		}
+	}
+	// Every level that started is done; a Parent call started any level
+	// above start that ran without being listed above, and waited for it.
+	for i, l := range c.levels {
+		if l.started.Load() {
+			if _, err := c.wait(i); err != nil {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// ran reports whether a level's loader ran.
+func (c *chainRun) ran(i int) bool {
+	return c.levels[i].started.Load()
 }
 
 // close releases the contexts of the levels.

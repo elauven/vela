@@ -1,11 +1,13 @@
-// Browser check of examples/app for TestExampleAppHydrates (task 075).
+// Browser check of examples/app for TestExampleAppHydrates (tasks 075,
+// 076).
 //
 // Usage: node app/testdata/e2e.mjs <project> <server binary> <cases JSON>
 //
 // Builds the client with vite build (the project's vite.config.js), starts
-// the Go server with the build, and opens every case in Chromium. Prints
-// {"pages": [{path, status, title, location, hydrated, sameDOM, removed,
-// preloaded, after, logs, diff}]} or {"error": "..."}.
+// the Go server with the build, opens every case in Chromium, then runs the
+// navigation scenarios of task 076. Prints {"pages": [{path, status, title,
+// location, hydrated, sameDOM, removed, preloaded, after, logs, diff}],
+// "navigation": [{name, error}]} or {"error": "..."}.
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -85,6 +87,198 @@ async function check(browser, url, c, files) {
   return result;
 }
 
+// The navigation scenarios of task 076 run in one page each, in order;
+// each returns nothing or throws. They use the links of the example where
+// it has them and add a link to the body otherwise.
+const scenarios = [
+  ['a navigation between users keeps the users layout', async (t) => {
+    await t.open('/users/1');
+    await t.page.fill('.filter', 'a');
+    await t.page.evaluate(() => { window.__filter = document.querySelector('.filter'); });
+    const before = await t.loads();
+    await t.follow('aside a[href="/users/2"]');
+    t.equal(await t.text('article h1'), 'Grace', 'page');
+    t.equal(await t.page.title(), 'Grace · Users', 'title');
+    t.equal(await t.page.getAttribute('meta[name=description]', 'content'), 'The profile of Grace', 'description');
+    t.equal(await t.page.inputValue('.filter'), 'a', 'the filter of the layout');
+    t.equal(await t.page.evaluate(() => document.querySelector('.filter') === window.__filter), true, 'the layout keeps its DOM');
+    t.equal(await t.text('aside a.active'), 'Grace', 'the layout gets the new route');
+    t.equal((await t.loads())['users/Layout'], before['users/Layout'], 'runs of the users layout loader');
+    t.equal(t.last().start, 2, 'start');
+    t.equal(t.last().segments.map((s) => s.id).join(), 'routes/users/[id=int]/Page', 'segments');
+  }],
+  ['a navigation below the root layout replaces the level below it', async (t) => {
+    await t.open('/');
+    await t.page.evaluate(() => { window.__site = document.querySelector('.site'); });
+    await t.follow('nav a[href="/users"]');
+    t.equal(await t.page.evaluate(() => document.querySelector('.site') === window.__site), true, 'the root layout keeps its DOM');
+    t.equal(await t.text('nav a.active'), 'Users', 'the root layout gets the new route');
+    t.equal(await t.page.title(), 'Users', 'title');
+    t.equal(await t.page.evaluate(() => !!document.querySelector('.users aside')), true, 'the users layout');
+    t.equal(t.last().start, 1, 'start');
+    await t.follow('main ul a[href="/users/1"]');
+    t.equal(await t.text('article h1'), 'Ada', 'page');
+    t.equal(t.last().start, 2, 'start from /users to /users/1');
+  }],
+  ['back and forward restore the scroll position', async (t) => {
+    await t.open('/users');
+    await t.page.evaluate(() => {
+      document.body.style.minHeight = '5000px';
+      scrollTo(0, 1500);
+    });
+    // A click that does not scroll the link into view.
+    await t.navigation(() => t.page.evaluate(() => document.querySelector('main ul a[href="/users/2"]').click()));
+    t.equal(await t.page.evaluate(() => scrollY), 0, 'scroll after a link');
+    await t.page.evaluate(() => scrollTo(0, 700));
+    await t.navigation(() => t.page.goBack());
+    t.equal(await t.page.evaluate(() => location.pathname), '/users', 'path after back');
+    t.equal(await t.page.evaluate(() => scrollY), 1500, 'scroll after back');
+    await t.navigation(() => t.page.goForward());
+    t.equal(await t.page.evaluate(() => location.pathname), '/users/2', 'path after forward');
+    t.equal(await t.page.evaluate(() => scrollY), 700, 'scroll after forward');
+    t.equal(await t.text('article h1'), 'Grace', 'page after forward');
+  }],
+  ['a loader redirect navigates to its location', async (t) => {
+    await t.open('/');
+    await t.follow('nav a[href="/me"]');
+    t.equal(await t.page.evaluate(() => location.pathname), '/users/1', 'path');
+    t.equal(await t.text('article h1'), 'Ada', 'page');
+  }],
+  ['a 404 during a navigation renders Error.vela', async (t) => {
+    await t.open('/users/1');
+    await t.addLink('/users/9');
+    await t.follow('#test-link');
+    t.equal(await t.text('main h1'), '404', 'error page');
+    t.equal(await t.page.title(), 'Vela App', 'title');
+    t.equal(await t.page.evaluate(() => !!document.querySelector('.users aside')), true, 'the users layout stays');
+    t.equal(t.last().segments.at(-1).id, 'routes/Error', 'error segment');
+    await t.follow('aside a[href="/users/2"]');
+    t.equal(await t.text('article h1'), 'Grace', 'page after the error');
+  }],
+  ['a URL without a client route loads the document', async (t) => {
+    await t.open('/');
+    await t.addLink('/nope');
+    await Promise.all([t.page.waitForURL('**/nope'), t.page.click('#test-link')]);
+    await t.page.waitForFunction(() => window.__hydrated === true);
+    t.equal(await t.page.evaluate(() => window.__marker), undefined, 'a new document');
+    t.equal(await t.text('main h1'), '404', 'error page');
+  }],
+  ['beforeNavigate keeps a page with unsaved changes', async (t) => {
+    await t.open('/');
+    await t.follow('nav a[href="/settings"]');
+    await t.page.fill('.name', 'Ada');
+    t.page.once('dialog', (dialog) => dialog.dismiss());
+    await t.page.click('nav a[href="/"]');
+    await t.page.waitForTimeout(300);
+    t.equal(await t.page.evaluate(() => location.pathname), '/settings', 'path after cancel');
+    t.equal(await t.page.inputValue('.name'), 'Ada', 'the form keeps its value');
+    t.page.once('dialog', (dialog) => dialog.accept());
+    await t.follow('nav a[href="/"]');
+    t.equal(await t.text('main h1'), 'Home', 'page after confirm');
+    // The page is gone, and so is its hook: no dialog.
+    await t.follow('nav a[href="/users"]');
+    t.equal(await t.page.evaluate(() => location.pathname), '/users', 'path');
+  }],
+];
+
+// runScenarios runs the scenarios against the server at url.
+async function runScenarios(browser, url) {
+  const results = [];
+  for (const [name, run] of scenarios) {
+    const page = await browser.newPage();
+    const logs = [];
+    const responses = [];
+    page.on('console', (m) => {
+      if (m.type() !== 'error' && m.type() !== 'warning') return;
+      if (m.text().startsWith('Failed to load resource') && m.location().url.endsWith('/nope')) return;
+      logs.push(`${m.type()}: ${m.text()}`);
+    });
+    page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
+    page.on('response', (r) => {
+      if (r.request().headers()['x-vela-navigate']) responses.push(r.json().catch(() => null));
+    });
+    await page.addInitScript(() => {
+      document.addEventListener('vela:hydrated', () => { window.__hydrated = true; });
+    });
+    const t = {
+      page,
+      async open(path) {
+        await page.goto(url + path);
+        await page.waitForFunction(() => window.__hydrated === true, null, { timeout: 15000 });
+        // Lost on a document load: navigations of the router keep it.
+        await page.evaluate(() => { window.__marker = 1; });
+      },
+      // navigation runs action and waits for the router to finish.
+      async navigation(action) {
+        await page.evaluate(() => {
+          window.__navigated = new Promise((resolve) => document.addEventListener('vela:navigated', () => resolve(true), { once: true }));
+        });
+        await action();
+        await page.waitForFunction(() => window.__navigated, null, { timeout: 15000 });
+        await page.evaluate(() => window.__navigated);
+        t.equal(await page.evaluate(() => window.__marker), 1, 'no document load');
+      },
+      follow(selector) {
+        return t.navigation(() => page.click(selector));
+      },
+      addLink(href) {
+        return page.evaluate((href) => {
+          const a = document.createElement('a');
+          a.id = 'test-link';
+          a.href = href;
+          a.textContent = 'test';
+          document.body.prepend(a);
+        }, href);
+      },
+      text(selector) {
+        return page.textContent(selector).then((s) => s && s.trim());
+      },
+      async loads() {
+        return (await fetch(url + '/api/loads')).json();
+      },
+      // last is the JSON of the last navigation response.
+      last() {
+        return t.lastBody;
+      },
+      equal(got, want, what) {
+        if (got !== want) throw new Error(`${what}: ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+      },
+    };
+    const originalNavigation = t.navigation;
+    t.navigation = async (action) => {
+      await originalNavigation(action);
+      t.lastBody = await responses.at(-1);
+    };
+    let error = '';
+    try {
+      await run(t);
+      if (logs.length) error = `console: ${logs.join('; ')}`;
+    } catch (e) {
+      error = String(e?.message ?? e) + (logs.length ? ` (console: ${logs.join('; ')})` : '');
+    } finally {
+      await page.close();
+    }
+    results.push({ name, error });
+  }
+  // Without JavaScript every link is a document request.
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  let error = '';
+  try {
+    await page.goto(url + '/');
+    await Promise.all([page.waitForURL('**/users'), page.click('nav a[href="/users"]')]);
+    await Promise.all([page.waitForURL('**/users/2'), page.click('main ul a[href="/users/2"]')]);
+    const h1 = (await page.textContent('article h1')).trim();
+    if (h1 !== 'Grace') error = `page ${h1}, want Grace`;
+  } catch (e) {
+    error = String(e?.message ?? e);
+  } finally {
+    await context.close();
+  }
+  results.push({ name: 'without JavaScript links load documents', error });
+  return results;
+}
+
 async function main() {
   await build({ root: project, configFile: join(project, 'vite.config.js'), logLevel: 'silent', build: { outDir: join(project, 'dist') } });
   // The source of each built file, to name the preloaded lazy pages.
@@ -95,7 +289,7 @@ async function main() {
   try {
     const pages = [];
     for (const c of cases) pages.push(await check(browser, server.url, c, files));
-    return { pages };
+    return { pages, navigation: await runScenarios(browser, server.url) };
   } finally {
     await browser.close();
     server.stop();

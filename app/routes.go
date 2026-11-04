@@ -87,6 +87,10 @@ type Level struct {
 	Params []string
 	// Deps are the declared extra dependencies.
 	Deps Deps
+	// Head reports that the loader may set the head: it, or a helper of its
+	// package, calls Head(). A data navigation runs it for the head even
+	// when the client keeps the level (N-4); other kept levels do not run.
+	Head bool
 }
 
 // Route is one route of the table.

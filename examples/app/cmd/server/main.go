@@ -8,6 +8,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -17,6 +18,7 @@ import (
 	"path/filepath"
 
 	"example.com/site/internal/appgen"
+	"example.com/site/server/store"
 	"github.com/elauven/vela/app"
 	"github.com/elauven/vela/ssr_runtime/vite"
 )
@@ -28,6 +30,11 @@ func main() {
 	flag.Parse()
 
 	mux := http.NewServeMux()
+	// The app's own API handlers live next to it.
+	mux.HandleFunc("GET /api/loads", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(store.Loads())
+	})
 	var assets *vite.Assets
 	switch {
 	case *dev != "":

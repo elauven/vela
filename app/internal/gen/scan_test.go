@@ -214,3 +214,36 @@ func countPrefixed(wants []string) int {
 	}
 	return n
 }
+
+// TestLoaderHead: a loader that calls Head(), or whose package has a helper
+// that does, runs for the head of a data navigation that keeps its level
+// (N-4); the other loader of the same package does not.
+func TestLoaderHead(t *testing.T) {
+	sig := "(ctx context.Context, r *app.Request) (any, error)"
+	for _, tc := range []struct {
+		name               string
+		load               string
+		layoutHead, pgHead bool
+	}{
+		{"page only", "func Layout" + sig + " { return nil, nil }\nfunc Page" + sig + " { r.Head().Title = \"x\"; return nil, nil }\n", false, true},
+		{"layout only", "func Layout" + sig + " { r.Head().SetMeta(app.Meta{}); return nil, nil }\nfunc Page" + sig + " { return nil, nil }\n", true, false},
+		{"helper", "func Layout" + sig + " { return nil, title(r) }\nfunc Page" + sig + " { return nil, nil }\nfunc title(r *app.Request) error { r.Head().Title = \"x\"; return nil }\n", true, true},
+		{"none", "func Layout" + sig + " { return nil, nil }\nfunc Page" + sig + " { _ = r.Header(); return nil, nil }\n", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := writeProject(t, map[string]string{
+				"src/routes/Layout.vela": page,
+				"src/routes/Page.vela":   page,
+				"server/routes/load.go":  loaderImports + tc.load,
+			})
+			m, diags := Load(root)
+			if len(diags) > 0 {
+				t.Fatal(Error(diags))
+			}
+			chain := m.Routes[0].Chain
+			if chain[0].Head != tc.layoutHead || chain[1].Head != tc.pgHead {
+				t.Errorf("Head: layout %v page %v, want %v %v", chain[0].Head, chain[1].Head, tc.layoutHead, tc.pgHead)
+			}
+		})
+	}
+}

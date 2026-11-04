@@ -24,6 +24,13 @@ type LoadFile struct {
 	Layout bool
 	Deps   bool
 	Render bool
+	// PageHead and LayoutHead report that a loader may set the head: its
+	// body, or a declaration of the package other than the two loaders,
+	// calls a method Head with no arguments, such as r.Head(). A data
+	// navigation runs such a loader for the head even when the client keeps
+	// its level (N-4).
+	PageHead   bool
+	LayoutHead bool
 }
 
 // Signatures printed by the loader diagnostics (L-1).
@@ -44,6 +51,20 @@ func (t *Tree) readLoad(d *Dir, dir string, files []string, report func(Diagnost
 			continue
 		}
 		imports := fileImports(file)
+		for _, decl := range file.Decls {
+			if !callsHead(decl) {
+				continue
+			}
+			switch fn, _ := decl.(*ast.FuncDecl); {
+			case fn != nil && fn.Recv == nil && fn.Name.Name == "Page":
+				load.PageHead = true
+			case fn != nil && fn.Recv == nil && fn.Name.Name == "Layout":
+				load.LayoutHead = true
+			default:
+				// A helper may be called by either loader.
+				load.PageHead, load.LayoutHead = true, true
+			}
+		}
 		at := func(node ast.Node) (int, int) {
 			p := fset.Position(node.Pos())
 			return p.Line, p.Column
@@ -171,4 +192,18 @@ func selector(expr ast.Expr, imports map[string]string, importPath, name string)
 	}
 	pkg, ok := sel.X.(*ast.Ident)
 	return ok && imports[pkg.Name] == importPath
+}
+
+// callsHead reports a call x.Head() anywhere in a declaration.
+func callsHead(decl ast.Decl) bool {
+	found := false
+	ast.Inspect(decl, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok && len(call.Args) == 0 {
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Head" {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
 }
