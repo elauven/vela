@@ -18,12 +18,18 @@ import { build } from 'vite';
 const [project, serverBinary, casesJSON] = process.argv.slice(2);
 const cases = JSON.parse(casesJSON);
 
-function startServer() {
-  const child = spawn(serverBinary, ['-addr', '127.0.0.1:0', '-dist', 'dist'], { cwd: project, stdio: ['ignore', 'pipe', 'pipe'] });
+function startServer(addr = '127.0.0.1:0', extra = []) {
+  const child = spawn(serverBinary, ['-addr', addr, '-dist', 'dist', ...extra], { cwd: project, stdio: ['ignore', 'pipe', 'pipe'] });
   let stderr = '';
   child.stderr.on('data', (chunk) => { stderr += chunk; });
   return new Promise((resolve, reject) => {
-    createInterface({ input: child.stdout }).once('line', (url) => resolve({ url, stop: () => child.kill() }));
+    createInterface({ input: child.stdout }).once('line', (url) => resolve({
+      url,
+      stop: () => new Promise((done) => {
+        child.once('exit', done);
+        child.kill();
+      }),
+    }));
     child.on('exit', (code) => reject(new Error(`server exited (${code}): ${stderr}`)));
   });
 }
@@ -163,6 +169,40 @@ const scenarios = [
     t.equal(await t.page.evaluate(() => window.__marker), undefined, 'a new document');
     t.equal(await t.text('main h1'), '404', 'error page');
   }],
+  ['a form adds and deletes a user with the same Go action', async (t) => {
+    await t.open('/users');
+    // A failure sets the form prop of the page; nothing else changes.
+    await t.formResult(() => t.page.click('form.add button'));
+    t.equal(await t.text('form.add .error'), 'A name is required.', 'error');
+    t.equal(await t.page.evaluate(() => window.__marker), 1, 'no document load');
+    await t.page.fill('form.add input', 'Linus');
+    await t.navigation(() => t.page.click('form.add button'));
+    t.equal(t.last().type, 'data', 'success is data');
+    t.equal(t.last().start, 0, 'every loader runs again');
+    t.equal(await t.text('.user-list li:last-child a'), 'Linus', 'added');
+    t.equal(await t.text('aside p'), '3 users', 'the layout ran again');
+    t.equal(await t.page.evaluate(() => document.querySelector('form.add .error')), null, 'the form prop is gone');
+    t.equal(await t.page.evaluate(() => location.pathname + location.search), '/users', 'URL');
+    await t.navigation(() => t.page.click('button[aria-label="Delete Linus"]'));
+    t.equal(await t.page.evaluate(() => [...document.querySelectorAll('.user-list li a')].map((a) => a.textContent).join()), 'Ada,Grace', 'deleted');
+    t.equal(await t.text('aside p'), '2 users', 'the layout after delete');
+    t.equal(await t.page.evaluate(() => location.pathname + location.search), '/users', 'URL after delete');
+  }],
+  ['a hovered link is prefetched, and its navigation makes no request', async (t) => {
+    await t.open('/users');
+    await t.page.hover('main ul a[href="/users/2"]');
+    await t.page.waitForTimeout(400);
+    const before = t.requests();
+    t.equal(before > 0, true, 'hover prefetched');
+    await t.follow('main ul a[href="/users/2"]');
+    t.equal(t.requests(), before, 'navigation requests after the click');
+    t.equal(await t.text('article h1'), 'Grace', 'page');
+    // Off: no prefetch.
+    await t.page.evaluate(() => document.querySelector('aside a[href="/users/1"]').setAttribute('data-vela-preload', 'off'));
+    await t.page.hover('aside a[href="/users/1"]');
+    await t.page.waitForTimeout(300);
+    t.equal(t.requests(), before, 'no prefetch with data-vela-preload="off"');
+  }],
   ['beforeNavigate keeps a page with unsaved changes', async (t) => {
     await t.open('/');
     await t.follow('nav a[href="/settings"]');
@@ -268,7 +308,7 @@ const scenarios = [
 ];
 
 // runScenarios runs the scenarios against the server at url.
-async function runScenarios(browser, url) {
+async function runScenarios(browser, url, restart) {
   const results = [];
   for (const [name, run] of scenarios) {
     const page = await browser.newPage();
@@ -280,6 +320,10 @@ async function runScenarios(browser, url) {
       logs.push(`${m.type()}: ${m.text()}`);
     });
     page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
+    let navRequests = 0;
+    page.on('request', (r) => {
+      if (r.headers()['x-vela-navigate']) navRequests++;
+    });
     page.on('response', (r) => {
       if (r.request().headers()['x-vela-navigate']) responses.push(r.json().catch(() => null));
     });
@@ -304,6 +348,19 @@ async function runScenarios(browser, url) {
         await page.evaluate(() => window.__navigated);
         t.equal(await page.evaluate(() => window.__marker), 1, 'no document load');
       },
+      requests() {
+        return navRequests;
+      },
+      // formResult runs action and waits for a failed form action.
+      async formResult(action) {
+        await page.evaluate(() => {
+          window.__form = new Promise((resolve) => document.addEventListener('vela:form', () => resolve(true), { once: true }));
+        });
+        await action();
+        await page.waitForFunction(() => window.__form, null, { timeout: 15000 });
+        await page.evaluate(() => window.__form);
+      },
+      restart,
       follow(selector) {
         return t.navigation(() => page.click(selector));
       },
@@ -370,6 +427,50 @@ async function runScenarios(browser, url) {
     await context.close();
   }
   results.push({ name: 'without JavaScript links load documents', error });
+
+  // Without JavaScript the same form posts documents (post/redirect/get).
+  const noScript = await browser.newContext({ javaScriptEnabled: false });
+  const formPage = await noScript.newPage();
+  error = '';
+  try {
+    await formPage.goto(url + '/users');
+    const [failed] = await Promise.all([formPage.waitForNavigation(), formPage.click('form.add button')]);
+    if (failed.status() !== 422 || (await formPage.textContent('form.add .error')).trim() !== 'A name is required.') error = `failure: ${failed.status()}`;
+    await formPage.fill('form.add input', 'Ada Two');
+    const [added] = await Promise.all([formPage.waitForNavigation(), formPage.click('form.add button')]);
+    const names = () => formPage.evaluate(() => [...document.querySelectorAll('.user-list li a')].map((a) => a.textContent).join());
+    if (added.status() !== 200 || new URL(formPage.url()).pathname !== '/users' || (await names()) !== 'Ada,Grace,Ada Two') error ||= `add: ${added.status()} ${formPage.url()} ${await names()}`;
+    await Promise.all([formPage.waitForNavigation(), formPage.click('button[aria-label="Delete Ada Two"]')]);
+    if ((await names()) !== 'Ada,Grace') error ||= `delete: ${await names()}`;
+  } catch (e) {
+    error = String(e?.message ?? e);
+  } finally {
+    await noScript.close();
+  }
+  results.push({ name: 'without JavaScript the form posts documents', error });
+
+  // A deploy: the server restarts with another build while a page is open.
+  const deployed = await browser.newPage();
+  const logs = [];
+  deployed.on('pageerror', (e) => logs.push(e.message));
+  error = '';
+  try {
+    await deployed.addInitScript(() => document.addEventListener('vela:hydrated', () => { window.__hydrated = true; }));
+    await deployed.goto(url + '/');
+    await deployed.waitForFunction(() => window.__hydrated === true);
+    await deployed.evaluate(() => { window.__marker = 1; });
+    await restart(['-build', 'next']);
+    await Promise.all([deployed.waitForURL('**/users'), deployed.click('nav a[href="/users"]')]);
+    await deployed.waitForFunction(() => window.__hydrated === true);
+    const state = await deployed.evaluate(() => [window.__marker, document.querySelector('meta[name=vela-build]').content, document.querySelector('main ul a')?.textContent]);
+    if (state[0] !== undefined || state[1] !== 'next' || state[2] !== 'Ada') error = `after the deploy: ${JSON.stringify(state)}`;
+    if (logs.length) error ||= `errors: ${logs.join('; ')}`;
+  } catch (e) {
+    error = String(e?.message ?? e);
+  } finally {
+    await deployed.close();
+  }
+  results.push({ name: 'a new build id loads the document on the next navigation', error });
   return results;
 }
 
@@ -378,15 +479,21 @@ async function main() {
   // The source of each built file, to name the preloaded lazy pages.
   const manifest = JSON.parse(readFileSync(join(project, 'dist', '.vite', 'manifest.json'), 'utf8'));
   const files = Object.fromEntries(Object.entries(manifest).map(([key, chunk]) => [chunk.file, key]));
-  const server = await startServer();
+  let server = await startServer();
+  const url = server.url;
+  // restart starts the server again on the same address, with extra flags.
+  const restart = async (extra) => {
+    await server.stop();
+    server = await startServer(new URL(url).host, extra);
+  };
   const browser = await chromium.launch();
   try {
     const pages = [];
-    for (const c of cases) pages.push(await check(browser, server.url, c, files));
-    return { pages, navigation: await runScenarios(browser, server.url) };
+    for (const c of cases) pages.push(await check(browser, url, c, files));
+    return { pages, navigation: await runScenarios(browser, url, restart) };
   } finally {
     await browser.close();
-    server.stop();
+    await server.stop();
   }
 }
 

@@ -27,6 +27,7 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "listen address")
 	dev := flag.String("dev", "", "URL of the Vite dev server; serve the build in dist/ when empty")
 	dist := flag.String("dist", "dist", "directory of vite build; \"none\" serves pages without client")
+	build := flag.String("build", "", "build id; the default comes from the Vite manifest")
 	flag.Parse()
 
 	mux := http.NewServeMux()
@@ -54,6 +55,7 @@ func main() {
 		Manifest: filepath.Join("out", "client", "vela.manifest.json"),
 		Head:     app.Head{Title: "Vela App", Meta: []app.Meta{{Name: "description", Content: "An example of Vela App"}}},
 		Dev:      *dev != "",
+		BuildID:  *build,
 	})
 	if err != nil {
 		log.Fatal(err)

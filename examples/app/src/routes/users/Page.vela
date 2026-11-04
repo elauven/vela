@@ -1,11 +1,26 @@
 <script>
   export let data = null;
+  // The add form after a failed action (app.Fail): its name and error.
+  export let form = null;
 </script>
 
 <template>
-  <ul>
+  <ul class="user-list">
     {#each data.users as user (user.id)}
-      <li><a :href={'/users/' + user.id}>{user.name}</a></li>
+      <li>
+        <a :href={'/users/' + user.id}>{user.name}</a>
+        <form method="post" action="?/delete" class="delete">
+          <input type="hidden" name="id" :value={user.id} />
+          <button :aria-label={'Delete ' + user.name}>Delete</button>
+        </form>
+      </li>
     {/each}
   </ul>
+  <form method="post" class="add">
+    <input name="name" aria-label="New user" :value={form ? form.name : ''} />
+    <button>Add</button>
+    {#if form}
+      <p class="error">{form.error}</p>
+    {/if}
+  </form>
 </template>
