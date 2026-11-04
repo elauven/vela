@@ -331,7 +331,7 @@ func analyzeSSRHosts(project *SSRProject, sources map[string]ssrSourceSymbols) *
 		dirNames = append(dirNames, dir)
 	}
 	sort.Strings(dirNames)
-	loader := &ssrHostImporter{fallback: goImporter(), packages: map[string]*types.Package{}}
+	loader := &ssrHostImporter{fallback: hostGoImporter(), packages: map[string]*types.Package{}}
 	for _, dir := range dirNames {
 		hosts.analyzePackage(dir, dirs[dir], sources, loader)
 	}
