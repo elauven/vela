@@ -14,9 +14,10 @@ the part SvelteKit and Nuxt play for their compilers, but the server is
 
 Status: **in progress**. This page is the contract (task 073), approved on
 2026-11-03. The route scanner and the `vela-app` generator exist (task 074,
-see [Generator](#generator)), and `app.New` serves documents that the
-browser hydrates (task 075, see [Server](#server)); partial navigation,
-fragments and forms follow in tasks 076–078. The
+see [Generator](#generator)), `app.New` serves documents that the
+browser hydrates (task 075, see [Server](#server)), and the client router
+navigates with data responses (task 076, see [Navigation](#navigation));
+fragments and forms follow in tasks 077–078. The
 rules are numbered so that code, tests and reviews can cite them: `B-`
 boundary, `P-` paths and routes, `L-` loaders, `R-` rendering, `N-`
 navigation.
@@ -323,6 +324,8 @@ server/routes/**                  internal/appgen/routes_gen.go
 
   An explicit `X-Vela-Navigate: data` or `fragment` is honoured, unless the
   route says `RenderDocument`, in which case the answer is `reload`.
+  Until fragments exist (task 077), `auto` and `fragment` are answered
+  with `data`.
 
 ## N. Navigation protocol
 
@@ -350,7 +353,12 @@ server/routes/**                  internal/appgen/routes_gen.go
   client holds at that level, or the end of the shorter of the two chains
   if all their common levels match. The server runs the loaders of
   levels `>= start`. It runs loaders above `start` only on demand: for
-  `Parent` (L-4), or for a head when that segment sets one (R-6).
+  `Parent` (L-4), or for a head when that segment sets one (R-6). The
+  generator decides the latter from the source: a loader sets the head
+  when its body, or a function of its package other than the two loaders,
+  calls a method `Head()` (`Level.Head`). A loader that sets the head
+  through a function of another package is not detected; its title then
+  stays out of the navigation's head.
 - **N-5** Response: status 200, `Content-Type: application/json`, and a
   `type` field that says what happened. `build` is always present.
 
@@ -380,8 +388,9 @@ server/routes/**                  internal/appgen/routes_gen.go
     `Error.vela` of R-3. It is always the last one, and its `id` is the id
     of that error component. Errors are therefore ordinary data responses,
     not a separate type.
-  - `head` is absent when no segment at or after `start` set one. The
-    client then keeps its current head.
+  - `head` is the merged head of the new chain (R-6): the defaults and the
+    heads of the levels that set one, kept or not (N-4). The server always
+    sends it; a client keeps its current head when it is absent.
   - `reason` is `build`, `protocol` or `document`. It is informative, and
     the client handles every value the same way.
   - A response with an unknown `type` or another `v` is handled as
@@ -550,8 +559,99 @@ r.CacheControl("public, max-age=60") // r.Header() for other headers
 A deeper segment replaces a header set above it. On the client,
 `start({ VelaApp, routes })` of `@govela/app/client`, which the generated
 `client.js` calls, loads the lazy components the payload names
-(`preloadHydration`), hydrates the root and dispatches `vela:hydrated` on
-the root element. Links load documents until task 076.
+(`preloadHydration`), hydrates the root, dispatches `vela:hydrated` on the
+root element and installs the router ([Navigation](#navigation)).
+
+A request with `X-Vela-Navigate` (N-2) is a navigation of the router and
+gets JSON with status 200 (N-5, N-6):
+
+1. Another protocol version or an unknown mode answers `reload`
+   (`protocol`), and an `X-Vela-Build` other than `Handler.BuildID()`
+   answers `reload` (`build`). A route with `RenderDocument` answers
+   `reload` (`document`) without running loaders.
+2. The keys of the new chain are computed, and `start` is the first level
+   whose key differs from `X-Vela-Have` (N-4). A malformed `X-Vela-Have` is
+   empty, so every level is sent.
+3. The loaders of the levels from `start` run, and so do the loaders above
+   it that set the head (`Level.Head`). `Parent` runs any other kept level
+   on demand. Kept levels are not sent.
+4. A redirect is `{ "type": "redirect" }`, a trailing slash too (308). An
+   error is the last segment, with the `Error.vela` id and `error` (R-3);
+   when a kept level fails (for `Parent` or its head), `start` moves up to
+   it. An error with no `Error.vela` answers `reload` (`document`), so the
+   built-in error page loads as a document.
+5. `head` is the merged head (N-5). `Cache-Control` and other headers come
+   from the loaders that ran; kept levels that did not run add none.
+
+## Navigation
+
+`@govela/app/client` is the client router. The generated `client.js` starts
+it; an app imports the rest:
+
+```js
+import { goto, invalidate, navigating, beforeNavigate, afterNavigate } from '@govela/app/client';
+```
+
+| Export | Meaning |
+| --- | --- |
+| `goto(url, { replace, state, invalidate })` | navigates like a link; `state` is kept in `history.state.state`; `invalidate` runs every loader again. Resolves when the navigation ends |
+| `invalidate()` | loads the current URL again with every loader (empty `X-Vela-Have`), keeping the history entry, the scroll position and the focus |
+| `navigating` | a store: `null`, or `{ from, to, type }` while a navigation loads, for loading indicators (`$navigating`) |
+| `beforeNavigate(fn)` | `fn({ from, to, type, cancel })` before each navigation; `cancel()` keeps the page. Returns a function that removes `fn` |
+| `afterNavigate(fn)` | `fn({ from, to, type })` once the new page shows. Returns a function that removes `fn` |
+
+`from` and `to` are `{ url, route }`, with `url` a `URL` and `route` the route
+id; `type` is `link`, `goto`, `popstate` or `invalidate`. Register hooks in
+`onMount` and return the remover, so they go away with the component:
+
+```vela
+<script>
+  import { onMount } from 'vela';
+  import { beforeNavigate } from '@govela/app/client';
+
+  let dirty = $state(false);
+
+  function confirmLeave(navigation) {
+    if (dirty && !confirm('Leave without saving?')) navigation.cancel();
+  }
+
+  onMount(() => {
+    return beforeNavigate(confirmLeave);
+  });
+</script>
+```
+
+The router:
+
+- **Links.** One `click` listener on `document` takes a click on an `<a>` of
+  the same origin with the primary button and no modifier key, unless the
+  link has a `target` other than `_self`, `download`, `rel="external"` or
+  `data-vela-reload`, or only changes the `#hash` of the page (the browser
+  scrolls). An SVG `<a>` is left to the browser. Without JavaScript every
+  link is a document request.
+- **Navigation.** A new navigation aborts the one in flight. A URL that no
+  client route matches (`routes.js`) loads as a document. Otherwise the
+  router sends `X-Vela-Navigate: auto;v=1`, the keys it holds and the build
+  id (N-2), and loads the modules of the new chain's lazy pages meanwhile.
+  On `data` it loads the modules of the received segments, keeps the levels
+  before `start`, calls `set({ route, chain, start: 0 })` on the app root
+  (N-7) and replaces the title and the `<meta data-vela-head>` tags. Levels
+  whose component is unchanged keep their DOM and state (R-2).
+- **Redirects** navigate again, at most 10 times; a redirect to another
+  origin or to a URL without a client route loads the document. `reload`,
+  another protocol version, a network error and a response that is not the
+  protocol load the document (`location.assign`, or `location.reload` for
+  back and forward).
+- **History.** Each entry has an index in `history.state`. A link or
+  `goto` pushes an entry (a link to the current URL replaces it), back and
+  forward navigate without pushing. Scroll positions are kept per index
+  (also across reloads, in `sessionStorage`), and restored after back and
+  forward; other navigations scroll to the top or to the `#hash`.
+- **Focus.** After a navigation, focus moves to the first `[autofocus]`
+  element the navigation added, or to `<body>`, and a polite live region
+  (`#vela-announcer`, outside the app root) announces the new title.
+- Each navigation dispatches `vela:navigated` on the root element, with
+  `{ from, to, type }` as its detail.
 
 ## Decisions on the open questions of 073
 

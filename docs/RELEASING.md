@@ -12,7 +12,7 @@ version `vX.Y.Z` while the contract is in `v0` (docs/SSR_TRANSLATION_CONTRACT.md
 | Compiler for npm | `packages/compiler` (launchers `bin/vela.js` and `bin/vela-lsp.js`, JavaScript API `index.js`) and `packages/compiler-<os>-<cpu>` (`vela` and `vela-lsp` each) | npm packages `@govela/compiler` and `@govela/compiler-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64` of the same version, published by the release workflow |
 | Bundler plugin | `packages/unplugin` (plugin `index.js`, entry points generated) | npm package `@govela/unplugin` of the same version, published by the release workflow after `@govela/compiler` |
 | App layer (Go) | `app/` (nested module `github.com/elauven/vela/app`, generator `app/cmd/vela-app`) | tag `app/vX.Y.Z`, independent of the compiler version (docs/APP.md B-6); no tag yet |
-| App layer (npm) | `packages/app` | npm package `@govela/app` with its own version, not checked against the tag; `"private": true` and not published until the router exists (task 076) |
+| App layer (npm) | `packages/app` | npm package `@govela/app` with its own version, not checked against the tag; `"private": true` until the first release of the app layer |
 | VS Code extension | `packages/vscode-vela` | its own version (`package.json`), not checked against the tag; CI builds the `.vsix` as an artifact; publishing to the Marketplace or Open VSX is not set up |
 
 All of them are released under the MIT license (`LICENSE`). The nested Go
