@@ -51,6 +51,7 @@ type JSParser struct {
 	erased        map[JsStmt]bool  // statements that exist only in TypeScript
 	firstTS       int              // offset of the first TypeScript-only syntax, -1 if none
 	typeSpecs     []JsImportSpec   // `type` specifiers of the import being parsed
+	inType        int              // depth of type parsing (typeEntry)
 	lastSig       *TSSignature     // signature of the last body-less function
 	failed        map[failKey]bool // speculative attempts known to fail
 }
@@ -496,6 +497,7 @@ func (p *JSParser) parseImportNamespace(d *JsImportDecl) {
 func (p *JSParser) parseImportNamed(d *JsImportDecl) {
 	p.expect(TokLBrace)
 	for p.cur.Kind != TokRBrace && p.cur.Kind != TokEOF {
+		specPos := p.cur.Pos
 		imported, local, typeOnly := p.parseSpecifier(true)
 		if typeOnly {
 			// Erased (TS-3.2); recordTypeSpecifiers lists it once the
@@ -505,7 +507,13 @@ func (p *JSParser) parseImportNamed(d *JsImportDecl) {
 			d.Specifiers = append(d.Specifiers, JsImportSpec{imported, local})
 		}
 		if !p.eat(TokComma) {
+			if typeOnly {
+				p.blankFrom(specPos, TSErasedSyntax)
+			}
 			break
+		}
+		if typeOnly {
+			p.blankFrom(specPos, TSErasedSyntax) // `type A,`
 		}
 	}
 	p.expect(TokRBrace)
@@ -586,13 +594,18 @@ func (p *JSParser) parseExport() JsStmt {
 		p.advance()
 		var typeNames []TSExportSpec
 		for p.cur.Kind != TokRBrace && p.cur.Kind != TokEOF {
+			specPos := p.cur.Pos
 			local, exported, typeOnly := p.parseSpecifier(false)
 			if typeOnly { // erased (TS-3.2)
 				typeNames = append(typeNames, TSExportSpec{Local: local, Exported: exported})
 			} else {
 				d.Specifiers = append(d.Specifiers, JsExportSpec{Local: local, Exported: exported})
 			}
-			if !p.eat(TokComma) {
+			comma := p.eat(TokComma)
+			if typeOnly {
+				p.blankFrom(specPos, TSErasedSyntax) // `type A` and its comma
+			}
+			if !comma {
 				break
 			}
 		}
@@ -813,10 +826,11 @@ func (p *JSParser) parseVarDecl(consumeSemi, inFor bool) *JsVarDecl {
 		if p.ts {
 			if p.cur.Kind == TokBang && !p.cur.NL {
 				p.markTS(p.cur.Pos)
+				p.blankCur()
 				p.advance()
 				definite = true
 			}
-			if p.eat(TokColon) {
+			if p.eatTypeColon() {
 				typ = p.parseType()
 			}
 		}
@@ -989,10 +1003,13 @@ func (p *JSParser) parseParams() ([]JsExpr, *TSSignature) {
 				p.advance()
 				p.advance()
 				sig.This = p.parseType()
-				if !p.eat(TokComma) {
-					break
+				if p.cur.Kind == TokComma {
+					p.advance()
+					p.blankFrom(ppos, TSErasedSyntax) // `this: T,`
+					continue
 				}
-				continue
+				p.blankFrom(ppos, TSErasedSyntax)
+				break
 			}
 		}
 		if p.cur.Kind == TokEllipsis {
@@ -1000,7 +1017,7 @@ func (p *JSParser) parseParams() ([]JsExpr, *TSSignature) {
 			p.advance()
 			arg := p.parseBindingPattern()
 			var t *TSType
-			if p.ts && p.eat(TokColon) {
+			if p.ts && p.eatTypeColon() {
 				t = p.parseType()
 			}
 			params = append(params, &JsSpreadExpr{BaseExpr: BaseExpr{BaseNode{Pos: ep, End: p.endAt(ep)}}, X: arg})
@@ -1015,10 +1032,11 @@ func (p *JSParser) parseParams() ([]JsExpr, *TSSignature) {
 		if p.ts {
 			if p.cur.Kind == TokQuestion {
 				p.markTS(p.cur.Pos)
+				p.blankCur()
 				p.advance()
 				optional = true
 			}
-			if p.eat(TokColon) {
+			if p.eatTypeColon() {
 				t = p.parseType()
 			}
 		}
@@ -1201,7 +1219,7 @@ func (p *JSParser) parseTry() *JsTryStmt {
 	if p.eat(TokCatch) {
 		if p.eat(TokLParen) {
 			st.CatchParam = p.parseBindingPattern()
-			if p.ts && p.eat(TokColon) {
+			if p.ts && p.eatTypeColon() {
 				st.CatchType = p.parseType()
 			}
 			p.expect(TokRParen)
@@ -1560,6 +1578,7 @@ func (p *JSParser) parseBinary(minPrec int) JsExpr {
 		if p.ts && !p.cur.NL && (p.cur.Kind == TokAs || p.isWord("satisfies")) && relationalPrec > minPrec {
 			// `x as T`, `x as const`, `x satisfies T`: erased, x stays.
 			p.markTS(p.cur.Pos)
+			asPos := p.cur.Pos
 			isAs := p.cur.Kind == TokAs
 			p.advance()
 			if isAs && p.cur.Kind == TokConst {
@@ -1567,6 +1586,7 @@ func (p *JSParser) parseBinary(minPrec int) JsExpr {
 			} else {
 				p.parseType()
 			}
+			p.blankFrom(asPos, TSErasedSyntax)
 			p.rescanRegexAsDivision()
 			continue
 		}
@@ -1753,6 +1773,7 @@ func (p *JSParser) parseLeftHandSide() JsExpr {
 				return expr
 			}
 			p.markTS(p.cur.Pos) // non-null assertion `x!`: erased
+			p.blankCur()
 			p.advance()
 			p.rescanRegexAsDivision()
 		case TokLt, TokLShift:

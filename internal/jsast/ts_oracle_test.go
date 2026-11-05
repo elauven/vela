@@ -188,6 +188,9 @@ func TestTSOracleTranspileModule(t *testing.T) {
 		if g != w {
 			t.Errorf("%s: erasure differs from transpileModule\n  ours:   %.600s\n  theirs: %.600s\n  output: %.400q", in.name, g, w, r.Out)
 		}
+		if p := blankingProblem(in.src, ours.prog); p != "" {
+			t.Errorf("%s: blanking: %s", in.name, p)
+		}
 		compared++
 	}
 	t.Logf("oracle: %d sources compared, %d non-erasable (rejected on purpose), %d rejected by TypeScript", compared, nonErasable, tsRejected)

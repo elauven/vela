@@ -254,6 +254,12 @@ func tsParse(src string) ctParsed {
 			done <- r
 		}()
 		r.prog, r.diags = ParseWithOptions(src, ParseOptions{TypeScript: true})
+		if r.prog != nil {
+			// Blanking must hold up on any input too (task 081).
+			if js := BlankTypeScript(src, r.prog.TS); len(js) != len(src) {
+				panic("BlankTypeScript changed the length")
+			}
+		}
 	}()
 	return <-done
 }

@@ -51,6 +51,34 @@ type TSInfo struct {
 	// program: the first name of every type reference (`A` of `A.B<C>`) and
 	// of every `typeof` query, except the names of type parameters in scope.
 	Refs []TSRef
+	// Erased are the source ranges that hold TypeScript syntax, in the
+	// order they were parsed (nested ranges are possible). BlankTypeScript
+	// turns them into JavaScript of the same length.
+	Erased []TSErased
+}
+
+// TSErasedKind is the kind of a TSErased range.
+type TSErasedKind uint8
+
+const (
+	// TSErasedSyntax is replaced by spaces: annotations, type arguments and
+	// parameters, `as T`, `!`, modifiers, `type` specifiers.
+	TSErasedSyntax TSErasedKind = iota
+	// TSErasedStatement is a statement or class member with no JavaScript:
+	// replaced by spaces, with a `;` first where the lines around it would
+	// otherwise join (TS-2.3).
+	TSErasedStatement
+	// TSErasedMove moves the byte at Pos to the offset End: the `)` of an
+	// arrow whose return type spans lines, the `(` of a generic arrow whose
+	// type parameters do (TS-2.3: `=>` and the operand of `return` stay on
+	// their line).
+	TSErasedMove
+)
+
+// TSErased is one range of TypeScript syntax.
+type TSErased struct {
+	Pos, End int
+	Kind     TSErasedKind
 }
 
 // TSTypeImport is one binding of a type-only import.

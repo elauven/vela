@@ -1,6 +1,9 @@
 package jsast
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // TypeScript parsing (task 080). The JavaScript parser calls into this file
 // only when p.ts is set, so JavaScript parsing is unchanged. See tsast.go for
@@ -70,6 +73,7 @@ type parseState struct {
 	prevEnd                   int
 	noIn, condThen, noCond    bool
 	decls, imports, refs, tps int
+	erased                    int
 	firstTS                   int
 }
 
@@ -82,6 +86,7 @@ func (p *JSParser) save() parseState {
 	}
 	if p.tsInfo != nil {
 		s.decls, s.imports, s.refs = len(p.tsInfo.Decls), len(p.tsInfo.Imports), len(p.tsInfo.Refs)
+		s.erased = len(p.tsInfo.Erased)
 	}
 	return s
 }
@@ -97,6 +102,7 @@ func (p *JSParser) restore(s parseState) {
 		p.tsInfo.Decls = p.tsInfo.Decls[:s.decls]
 		p.tsInfo.Imports = p.tsInfo.Imports[:s.imports]
 		p.tsInfo.Refs = p.tsInfo.Refs[:s.refs]
+		p.tsInfo.Erased = p.tsInfo.Erased[:s.erased]
 	}
 }
 
@@ -260,6 +266,58 @@ func (p *JSParser) markTS(pos int) {
 	}
 }
 
+// blank records [pos, end) as TypeScript syntax (TSInfo.Erased).
+func (p *JSParser) blank(pos, end int, kind TSErasedKind) {
+	if p.tsInfo != nil && end > pos {
+		p.tsInfo.Erased = append(p.tsInfo.Erased, TSErased{Pos: pos, End: end, Kind: kind})
+	}
+}
+
+// blankFrom records the syntax from pos to the end of the last token.
+func (p *JSParser) blankFrom(pos int, kind TSErasedKind) { p.blank(pos, p.prevEnd, kind) }
+
+// blankCur records the current token, unless it is inside a type, whose
+// range is recorded whole.
+func (p *JSParser) blankCur() {
+	if p.inType == 0 {
+		p.blank(p.cur.Pos, p.cur.End, TSErasedSyntax)
+	}
+}
+
+// blankMove records that the byte at from moves to to (TSErasedMove).
+func (p *JSParser) blankMove(from, to int) {
+	if p.tsInfo != nil && from != to {
+		p.tsInfo.Erased = append(p.tsInfo.Erased, TSErased{Pos: from, End: to, Kind: TSErasedMove})
+	}
+}
+
+// eatTypeColon consumes the `:` of an annotation.
+func (p *JSParser) eatTypeColon() bool {
+	if p.cur.Kind != TokColon {
+		return false
+	}
+	p.blankCur()
+	p.advance()
+	return true
+}
+
+// typeEntry starts a type, a type argument or a type parameter list; the
+// function it returns ends it and records its range when it is outermost:
+//
+//	defer p.typeEntry()()
+func (p *JSParser) typeEntry() func() {
+	start := p.cur.Pos
+	p.inType++
+	return func() {
+		p.inType--
+		if p.inType == 0 {
+			p.blankFrom(start, TSErasedSyntax)
+		}
+	}
+}
+
+func hasLineBreak(s string) bool { return strings.ContainsAny(s, "\n\r\u2028\u2029") }
+
 // splitPunct maps the remainder of a split `<…` / `>…` token.
 var splitPunct = map[string]TokKind{
 	"<": TokLt, "<=": TokLtEq, "=": TokAssign,
@@ -354,6 +412,7 @@ func (p *JSParser) erase(s JsStmt) JsStmt {
 func (p *JSParser) isErased(s JsStmt) bool { return s != nil && p.erased[s] }
 
 func (p *JSParser) erasedStmt(pos int) JsStmt {
+	p.blankFrom(pos, TSErasedStatement)
 	return p.erase(&JsEmptyStmt{BaseStmt: BaseStmt{BaseNode{Pos: pos, End: p.endAt(pos)}}})
 }
 
@@ -421,6 +480,7 @@ func (p *JSParser) typeNode(pos int, kind TSTypeKind) *TSType {
 // parseType parses a type, including function, constructor and
 // conditional types.
 func (p *JSParser) parseType() *TSType {
+	defer p.typeEntry()()
 	pos := p.curPos()
 	p.markTS(pos)
 	switch {
@@ -755,6 +815,7 @@ func (p *JSParser) parseTypeArgs() []*TSType {
 		return nil
 	}
 	defer p.rememberFailure(failTypeArgs, pos, len(p.specDiags))
+	defer p.typeEntry()()
 	p.markTS(pos)
 	p.expectLt()
 	restore := p.nestedTypes()
@@ -776,6 +837,7 @@ func (p *JSParser) parseTypeArgs() []*TSType {
 // parseTypeParams parses `<const T extends C = D, in out U>` and puts the
 // names in scope; the caller pops them (popTypeParams) where the scope ends.
 func (p *JSParser) parseTypeParams() []*TSTypeParam {
+	defer p.typeEntry()()
 	p.markTS(p.cur.Pos)
 	p.expectLt()
 	restore := p.nestedTypes()
@@ -1198,6 +1260,7 @@ func (p *JSParser) skipParamModifiers(report bool) {
 			reported = true
 		}
 		p.markTS(p.cur.Pos)
+		p.blankCur()
 		p.advance()
 	}
 }
@@ -1205,6 +1268,7 @@ func (p *JSParser) skipParamModifiers(report bool) {
 // parseReturnType parses a return type, which may be a type predicate
 // (`x is T`, `asserts x is T`, `asserts this`).
 func (p *JSParser) parseReturnType() *TSType {
+	defer p.typeEntry()()
 	pos := p.curPos()
 	p.markTS(pos)
 	// A return type may be a conditional type even inside the `extends`
@@ -1299,15 +1363,25 @@ func (p *JSParser) tryTypedArrow(start int, async, generic bool) JsExpr {
 	if !p.try(func() bool {
 		var tps []*TSTypeParam
 		if generic {
+			tpStart := p.cur.Pos
 			tps = p.parseTypeParams()
+			if p.cur.Kind == TokLParen && hasLineBreak(p.src[tpStart:p.cur.Pos]) {
+				// `return <T>\n(x: T) => x`: the `(` takes the place of `<`.
+				p.blankMove(p.cur.Pos, tpStart)
+			}
 		}
 		if p.cur.Kind != TokLParen {
 			return false
 		}
 		params, sig = p.parseParams()
 		sig.TypeParams = tps
-		if p.eat(TokColon) {
+		closeParen := p.prevEnd - 1
+		if p.eatTypeColon() {
 			sig.Return = p.parseReturnType()
+			if p.cur.Kind == TokArrow && hasLineBreak(p.src[closeParen:p.cur.Pos]) {
+				// `(a):\n T => a`: the `)` moves after the type, next to `=>`.
+				p.blankMove(closeParen, p.prevEnd-1)
+			}
 		} else if !generic {
 			return false
 		}
@@ -1357,6 +1431,7 @@ func (p *JSParser) parseTSStmt() (JsStmt, bool) {
 		return p.parseDeclare(pos), true
 	case p.isWord("abstract") && p.peek.Kind == TokClass && !p.peek.NL:
 		p.markTS(pos)
+		p.blankCur()
 		p.advance()
 		p.abstractClass = true
 		c := p.parseClassDecl(true)
@@ -1786,7 +1861,8 @@ func (p *JSParser) parseClassHeritageTS(info *TSClass, hasSuper bool) {
 		info.SuperTypeArgs = p.parseTypeArgs()
 	}
 	if p.isWord("implements") {
-		p.markTS(p.cur.Pos)
+		start := p.cur.Pos
+		p.markTS(start)
 		p.advance()
 		for {
 			info.Implements = append(info.Implements, p.parseTypeRef())
@@ -1794,6 +1870,7 @@ func (p *JSParser) parseClassHeritageTS(info *TSClass, hasSuper bool) {
 				break
 			}
 		}
+		p.blankFrom(start, TSErasedSyntax)
 	}
 }
 
@@ -1845,6 +1922,7 @@ func (p *JSParser) parseClassMemberTS() *JsClassMember {
 				goto member
 			}
 			p.markTS(p.cur.Pos)
+			p.blankCur()
 			p.advance()
 			continue
 		}
@@ -1855,6 +1933,7 @@ member:
 		p.markTS(pos)
 		p.parseIndexSignature(pos)
 		p.eatSemi()
+		p.blankFrom(pos, TSErasedStatement)
 		return nil
 	}
 
@@ -1889,10 +1968,12 @@ member:
 	}
 	if p.cur.Kind == TokQuestion {
 		p.markTS(p.cur.Pos)
+		p.blankCur()
 		p.advance()
 		info.Optional = true
 	} else if p.cur.Kind == TokBang && !p.cur.NL {
 		p.markTS(p.cur.Pos)
+		p.blankCur()
 		p.advance()
 		info.Definite = true
 	}
@@ -1904,6 +1985,7 @@ member:
 			// An overload, an abstract method or a method of a declared
 			// class: no JavaScript.
 			p.eatSemi()
+			p.blankFrom(pos, TSErasedStatement)
 			return nil
 		}
 		if abstract {
@@ -1915,7 +1997,7 @@ member:
 			p.report(p.cur.Pos, fmt.Sprintf("'(' expected after method name but found %s", tokDesc(p.cur)))
 		}
 		m.Kind = "field"
-		if p.eat(TokColon) {
+		if p.eatTypeColon() {
 			info.Type = p.parseType()
 		}
 		if p.eat(TokAssign) {
@@ -1924,6 +2006,7 @@ member:
 		p.eatSemi()
 		if declare || abstract {
 			// `declare x: T` and abstract properties declare no field.
+			p.blankFrom(pos, TSErasedStatement)
 			return nil
 		}
 	}
@@ -1945,7 +2028,7 @@ func (p *JSParser) parseFunctionRest(fpos int, async, gen, noBody bool) (*JsFunc
 	params, sig := p.parseParams()
 	if p.ts {
 		sig.TypeParams = tps
-		if p.eat(TokColon) {
+		if p.eatTypeColon() {
 			sig.Return = p.parseReturnType()
 		}
 		if noBody && p.cur.Kind != TokLBrace {
@@ -1973,6 +2056,7 @@ func (p *JSParser) parseFuncDeclTS(pos int, name string, async, gen bool) *JsFun
 		fd := &JsFuncDecl{BaseStmt: BaseStmt{BaseNode{Pos: pos, End: p.endAt(pos)}}, Name: name, Async: async, Generator: gen,
 			Body: &JsBlock{BaseStmt: BaseStmt{BaseNode{Pos: pos, End: p.endAt(pos)}}}}
 		p.markTS(pos)
+		p.blankFrom(pos, TSErasedStatement)
 		p.addDecl(&TSDecl{Pos: pos, End: p.endAt(pos), Kind: TSDeclFunction, Name: name, Declare: p.ambient > 0, Sig: p.lastSig})
 		p.erase(fd)
 		return fd
