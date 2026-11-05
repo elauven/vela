@@ -186,6 +186,20 @@ func TestBundlerPlugin(t *testing.T) {
 	}
 }
 
+// TestBundlerPluginTypeScript is TestBundlerPlugin on the TypeScript twin of
+// the fixture (task 081): components with lang="ts" go through the compiler
+// service, the .ts store module through the bundler (TS-5.4).
+func TestBundlerPluginTypeScript(t *testing.T) {
+	a := newBundlerApp(t, "plugin-ts")
+	for _, mode := range []string{"development", "production"} {
+		for _, bundler := range []string{"vite-build", "esbuild", "rolldown"} {
+			r := a.run(bundler, mode)
+			a.checkPage("TypeScript "+bundler+" "+mode, map[string]string{"development": "true", "production": "false"}[mode], r)
+		}
+	}
+	a.checkPage("TypeScript vite dev", "true", a.run("vite-dev"))
+}
+
 // TestBundlerPluginReportsDiagnostics: a compile error fails the Vite build
 // with the file, the line and the code of the diagnostic. Vite ids use
 // forward slashes on every platform.

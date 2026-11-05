@@ -182,6 +182,19 @@ func TestBundlerRecipeEsbuild(t *testing.T) {
 		}
 	}
 
+	// The TypeScript twin of the application (task 081): .ts modules and
+	// a TypeScript component compile to the same page.
+	f.compile("app-ts", "build-ts", true)
+	if main := f.read("build-ts/main.js"); !strings.Contains(main, "from './App.js'") || strings.Contains(main, "HTMLElement") {
+		t.Fatalf("main.ts did not compile:\n%s", main)
+	}
+	if out, err := f.bundle("build-ts/main.js", "dist-ts/app.js"); err != nil {
+		t.Fatalf("TypeScript bundle: %v\n%s", err, out)
+	}
+	if result := f.run("dist-ts", "app.js"); len(result.Before) != 1 || result.Before[0] != "COUNT! 07" || result.After[0] != "COUNT! 08" || len(result.Logs) != 0 {
+		t.Errorf("TypeScript page: %+v", result)
+	}
+
 	// Two compiled directories bundled together share one runtime instance.
 	f.compile("second", "build2", true)
 	entry := "import App from './build/App.js';\nimport Other from './build2/Other.js';\nApp(document.getElementById('app'), {});\nOther(document.getElementById('other'), {});\n"

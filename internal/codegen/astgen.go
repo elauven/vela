@@ -1294,7 +1294,9 @@ func (g *ASTGen) buildImportDecls() []jsast.JsStmt {
 				continue
 			}
 		} else {
-			if src == imp.Source && !(g.sourceComponentImports && strings.HasSuffix(src, ".vela")) {
+			// With the bundler plugin, .vela and .ts modules are the
+			// bundler's and keep their specifiers (TS-5.4).
+			if src == imp.Source && !(g.sourceComponentImports && (strings.HasSuffix(src, ".vela") || IsTypeScriptModuleSpecifier(src))) {
 				src = RewriteImportPath(src)
 			}
 		}

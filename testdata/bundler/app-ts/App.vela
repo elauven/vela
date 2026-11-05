@@ -1,0 +1,9 @@
+<script lang="ts">
+  import { pad2 } from 'tiny-fmt';
+  import { label, type Label } from './label.ts';
+  const name: Label = 'count';
+  let count = $state<number>(7);
+</script>
+<template>
+  <button class="inc" @click={(): void => { count++ }}>{label(name)} {pad2(count as number)}</button>
+</template>

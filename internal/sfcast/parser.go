@@ -149,8 +149,41 @@ func NewScriptASTLang(source string, offset int, ts bool) *ScriptAST {
 	}
 	if ts && program != nil {
 		script.JavaScript = jsast.BlankTypeScript(source, program.TS)
+		if len(diagnostics) == 0 {
+			defaultStateInitializers(program)
+		}
 	}
 	return script
+}
+
+// defaultStateInitializers gives `$state<T>()` and `$state.deep<T>()` of a
+// TypeScript script the initial value `undefined` (TS-4.5): the type
+// argument says the state may be undefined until it is assigned.
+func defaultStateInitializers(program *jsast.JsProgram) {
+	jsast.WalkNode(program, func(n jsast.JsNode) bool {
+		call, ok := n.(*jsast.JsCallExpr)
+		if !ok || len(call.Args) != 0 {
+			return true
+		}
+		switch callee := call.Callee.(type) {
+		case *jsast.JsIdent:
+			if callee.Name != "$state" {
+				return true
+			}
+		case *jsast.JsMemberExpr:
+			obj, isIdent := callee.Obj.(*jsast.JsIdent)
+			prop, isProp := callee.Prop.(*jsast.JsIdent)
+			if callee.Computed || !isIdent || !isProp || obj.Name != "$state" || prop.Name != "deep" {
+				return true
+			}
+		default:
+			return true
+		}
+		undef := jsast.GenIdent("undefined")
+		undef.Pos, undef.End = call.End-1, call.End-1
+		call.Args = []jsast.JsExpr{undef}
+		return true
+	})
 }
 
 // ScriptDiagnosticCode is the diagnostic code of a script parse problem:
@@ -388,7 +421,7 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 			add(expr.Pos, "%s has no parsed expression program", label)
 		} else if strings.TrimSpace(expr.Source) == "" {
 			add(expr.Pos, "%s must not be empty", label)
-		} else if expr.Root() == nil {
+		} else if expr.Root() == nil && len(expr.Errors) == 0 {
 			add(expr.Pos, "%s must contain exactly one JavaScript expression", label)
 		}
 		for _, message := range expr.Errors {
@@ -744,6 +777,12 @@ func newTemplateExprLang(source string, pos, absolutePos int, lang *exprLang, re
 		}
 	} else {
 		prog, errs = ParseTemplateExpression(source)
+		if len(errs) > 0 && lang != nil {
+			if _, ok := jsast.DetectTypeScript("(" + source + ");"); ok {
+				// TS-2.5: say what it is rather than how JavaScript fails.
+				errs = []string{`TypeScript syntax in a JavaScript component: add lang="ts" to <script>`}
+			}
+		}
 	}
 	start := absolutePos + leading
 	return &TemplateExpr{
@@ -1656,6 +1695,11 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 					a.Expr = p.templateExpr(a.Value, exprPos)
 				} else {
 					a.Expr = p.templateExpr(UnwrapBraces(a.Value), exprPos)
+				}
+				if (a.IsTwoWay || a.IsBindThis) && a.Expr != nil && a.Expr.HasTS {
+					// TS-4.3: `bind:value={x as string}` is not an
+					// assignable reference.
+					return &TemplateSyntaxError{Pos: exprPos, Err: fmt.Errorf("bind:%s target must be a variable or a member, without TypeScript syntax such as 'as' or '!'", a.Name)}
 				}
 			}
 		}

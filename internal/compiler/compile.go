@@ -706,7 +706,20 @@ func runtimeSpecifier(opts CompileOptions, dir, outRoot string) string {
 // the project.
 func copyProjectJSModules(srcRoot, outRoot string, opts CompileOptions) int {
 	errors := reportUnsupportedModules(srcRoot, opts)
+	writers := map[string]string{} // output → the module written to it
 	for _, src := range project.CollectJSModules(srcRoot) {
+		dest, err := ProjectModuleOutput(src, srcRoot, outRoot)
+		if err == nil {
+			if first, taken := writers[dest]; taken {
+				// util.js and util.ts, or util.ts and util.mts.
+				printModuleDiagnostics(opts, []*diag.Diagnostic{{Sev: diag.SevError, File: cwdRelative(src), Line: 1, Col: 1, Code: ModuleDiagnosticCode,
+					Message:    fmt.Sprintf("%s and %s both compile to %s", filepath.Base(first), filepath.Base(src), filepath.Base(dest)),
+					Suggestion: "rename or remove one of the two modules"}})
+				errors++
+				continue
+			}
+			writers[dest] = src
+		}
 		if !CopyProjectModule(src, srcRoot, outRoot, opts) {
 			errors++
 		}
