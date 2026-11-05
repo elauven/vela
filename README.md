@@ -178,7 +178,7 @@ Vela is in **beta**. The client compiler is stable for the features marked
 so in [FEATURES.md](docs/FEATURES.md). Server rendering and hydration are
 experimental: their contract may change before `v1`, and every change is
 checked against a corpus of real applications in Chromium
-([SSR_GATE.md](docs/SSR_GATE.md)). Not included: TypeScript, transitions,
+([SSR_GATE.md](docs/SSR_GATE.md)). Not included: TypeScript (planned, [TYPESCRIPT.md](docs/TYPESCRIPT.md)), transitions,
 snippets, a dev server with HMR, and streaming SSR.
 
 ## Documentation
@@ -197,6 +197,7 @@ snippets, a dev server with HMR, and streaming SSR.
 | [HYDRATION_ARCHITECTURE.md](docs/HYDRATION_ARCHITECTURE.md) | Block runtime and hydration ([ru](docs/HYDRATION_ARCHITECTURE.ru.md)) |
 | [VELA.md](docs/VELA.md) | Compiler internals, CLI, tests |
 | [ES_COMPLIANCE.md](docs/ES_COMPLIANCE.md) | JavaScript syntax coverage |
+| [TYPESCRIPT.md](docs/TYPESCRIPT.md) | TypeScript support: the contract of the planned implementation |
 | [RELEASING.md](docs/RELEASING.md) | Versions and the release procedure |
 
 ## Contributing
