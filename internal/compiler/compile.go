@@ -760,6 +760,11 @@ func CopyProjectModule(src, srcRoot, outRoot string, opts CompileOptions) bool {
 			return false
 		}
 		data = []byte(js)
+	} else if err == nil {
+		if d := typeScriptInJSModule(src, string(data)); d != nil {
+			printModuleDiagnostics(opts, []*diag.Diagnostic{d})
+			return false
+		}
 	}
 	if err == nil {
 		err = os.MkdirAll(filepath.Dir(dest), 0755)

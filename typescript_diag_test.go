@@ -255,6 +255,8 @@ func TestTypeScriptModuleDiagnostics(t *testing.T) {
 		"jsx/Comp.jsx":  "export const j = 1;\n",
 		"twice.js":      "export const t = 1;\n",
 		"twice.ts":      "export const t: number = 1;\n",
+		"typed.js":      "export const n = 1;\nexport function f(a: number) { return a }\n",
+		"loose.js":      "export const broken = ;\n",
 	})
 	errors, diags := buildTSProject(t, srcRoot, outRoot, CompileOptions{})
 	want := map[string]string{ // file → code@line:col
@@ -266,6 +268,7 @@ func TestTypeScriptModuleDiagnostics(t *testing.T) {
 		"Comp.jsx":      "VELA-TS-MODULE@1:1",
 		"broken.ts":     "VELA-JS-SYNTAX@1:17",
 		"twice.ts":      "VELA-TS-MODULE@1:1",
+		"typed.js":      "VELA-TS-IN-JS@2:20",
 	}
 	got := map[string]string{}
 	for _, d := range diags {
@@ -279,8 +282,10 @@ func TestTypeScriptModuleDiagnostics(t *testing.T) {
 	if len(got) != len(want) {
 		t.Errorf("diagnostics for %v, want only %v", got, want)
 	}
-	if errors != 7 { // the warning of typeimport.ts is no error
-		t.Errorf("%d errors, want 7", errors)
+	// The warning of typeimport.ts is no error; loose.js is copied as
+	// JavaScript modules always were.
+	if errors != 8 {
+		t.Errorf("%d errors, want 8", errors)
 	}
 	for _, name := range []string{"enum.js", "reexport.js", "broken.js"} {
 		if _, err := os.Stat(filepath.Join(outRoot, name)); err == nil {

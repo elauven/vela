@@ -7,11 +7,13 @@ rendering and Vela App. Tasks 080–089 implement it; the table
 
 Status: **planned**, contract of task 079, approved on 2026-11-05. The
 parser accepts and erases the syntax of TS-2 and TS-3.2 (task 080, see
-[ES_COMPLIANCE.md](ES_COMPLIANCE.md#typescript)), but the compiler does
-not use it yet: today `lang="ts"` is ignored and the first type
-annotation is `VELA-JS-SYNTAX`. Until task 089 marks TypeScript as
-experimental in [FEATURES.md](FEATURES.md), write JavaScript (with JSDoc
-where types help).
+[ES_COMPLIANCE.md](ES_COMPLIANCE.md#typescript)), and the compiler builds
+`<script lang="ts">` components and `.ts` modules with it (task 081, see
+[Decisions of 081](#decisions-of-081)). Types are not checked yet (084),
+editors treat a TypeScript script as JavaScript (085), and server
+rendering does not read `.ts` modules (086). Until task 089 marks
+TypeScript as experimental in [FEATURES.md](FEATURES.md), write
+JavaScript (with JSDoc where types help).
 
 The rules are numbered so that code, tests and reviews can cite them:
 
@@ -109,10 +111,15 @@ rewrite in the message:
   emits them; only `import type …` and `export type …` declarations
   disappear entirely.
 - **TS-3.3** A name imported without `type` and used only in type
-  positions is `VELA-TS-TYPE-IMPORT`, with the fix `import type` / `type
-  X`. Kept, it would be a missing export in the browser.
+  positions (and not in the template) is the warning
+  `VELA-TS-TYPE-IMPORT`, with the fix `import type` / `type X`. Kept, it
+  would be a missing export in the browser when it names an interface or
+  a type alias; a class used only as a type does exist at run time, and
+  the compiler cannot tell them apart (TS-3.1), so `vela check --types`
+  reports the real error (TS1484).
 - **TS-3.4** A local type re-exported from a module must be exported
-  with `export type`.
+  with `export type`; `export { T }` of a local interface or type alias
+  is `VELA-TS-TYPE-EXPORT`.
 
 ## TS-4 Components
 
@@ -170,8 +177,9 @@ rewrite in the message:
   - without an annotation, the type is inferred from the default, as
     TypeScript does.
 - **TS-4.5** Runes take type arguments: `$state<T>(initial)`,
-  `$state<T>()` (type `T | undefined`), `$state.deep<T>(initial)`,
-  `$derived<T>(expression)`, `$bindable<T>(fallback)`.
+  `$state<T>()` (type `T | undefined`, compiled as `$state(undefined)`),
+  `$state.deep<T>(initial)`, `$derived<T>(expression)`,
+  `$bindable<T>(fallback)`.
 - **TS-4.6** Events: an interface `$$Events` declared in the script maps
   event names to `detail` types. With it, `$$dispatch(name, detail)` is
   checked against it and the parent's `@on:name` handler receives
@@ -197,16 +205,20 @@ rewrite in the message:
 
 ## TS-5 `.ts` modules
 
-- **TS-5.1** Project mode compiles local `.ts` and `.mts` modules to
-  `.js` beside the mirrored output, through the same erasure. `.d.ts`
-  files are read by the checker and never emitted.
+- **TS-5.1** Project mode (and `--watch`) compiles local `.ts` and
+  `.mts` modules to `.js` beside the mirrored output, through the same
+  erasure; lines and columns of the output are those of the source.
+  `.d.ts` files are read by the checker and never emitted. Two modules
+  with one output (`util.js` and `util.ts`, `util.ts` and `util.mts`) are
+  `VELA-TS-MODULE`.
 - **TS-5.2** `.tsx`, `.jsx` and `.cts` are `VELA-TS-MODULE`.
 - **TS-5.3** Specifiers: `./util.ts` (recommended) is rewritten to
   `./util.js` in the output, like `./Card.vela`; this also applies to
   dynamic `import()`. A `./util.js` specifier whose file is `util.ts` is
   accepted and kept. Package specifiers are never rewritten.
 - **TS-5.4** With the bundler plugin, `.ts` modules are the bundler's
-  (Vite and esbuild strip them); only `.vela` files go through Vela.
+  (Vite, esbuild and Rolldown strip them); only `.vela` files go through
+  Vela, and generated components keep their `.ts` specifiers.
   Both strippers must agree, which TS-10.2 guarantees by
   `erasableSyntaxOnly`.
 
@@ -334,12 +346,15 @@ rewrite in the message:
 | `VELA-TS-LANG` | error | `lang` other than `ts`, `typescript`, `js` | TS-4.1 |
 | `VELA-TS-IN-JS` | error | TypeScript syntax in a JavaScript component or module | TS-2.5 |
 | `VELA-TS-NON-ERASABLE` | error | `enum`, value namespace, parameter property, … | TS-2.4 |
-| `VELA-TS-TYPE-IMPORT` | error | value import used only as a type | TS-3.3 |
-| `VELA-TS-MODULE` | error | `.tsx`, `.jsx`, `.cts` module | TS-5.2 |
+| `VELA-TS-TYPE-IMPORT` | warning | value import used only as a type | TS-3.3 |
+| `VELA-TS-TYPE-EXPORT` | error | local type exported without `type` | TS-3.4 |
+| `VELA-TS-MODULE` | error | `.tsx`, `.jsx`, `.cts` module; two modules with one output | TS-5.1, TS-5.2 |
 | `VELA-TS-GENERICS` | error | invalid `generics` attribute | TS-4.8 |
 | `TS<number>` | from TypeScript | type errors of `vela check --types` and `vela-lsp`, mapped to the `.vela` source | TS-1.2 |
 
-Syntax errors of TypeScript sources stay `VELA-JS-SYNTAX`.
+Syntax errors of TypeScript sources stay `VELA-JS-SYNTAX`. TypeScript in
+a template expression of a JavaScript component is reported with the
+template's code (`VELA-TEMPLATE-AST`) and the `lang="ts"` hint.
 
 ## Rule ownership
 
@@ -383,3 +398,30 @@ Approved together with the rest of this page on 2026-11-05:
    build that trusts annotations only after `vela check --types` passed.
 3. **The ambient entry** is named by 082 (`@govela/runtime/ambient` is the
    working name).
+
+## Decisions of 081
+
+Taken while implementing the compiler on 2026-11-05:
+
+1. **Erasure by blanking.** The parser records the ranges of TypeScript
+   syntax, and the compiler replaces them with spaces: the JavaScript
+   has the length and the lines of the source, so diagnostics, source
+   maps and the text-based passes (event handlers, copied modules) need
+   no position mapping. TS-2.3 is kept by a `;` where an erased
+   statement stood between lines that could join, and by moving the `)`
+   of an arrow whose return type spans lines (and the `(` of a generic
+   arrow whose type parameters do) next to `=>`. Every source of the
+   transpileModule oracle is checked to blank to its erased tree.
+2. **`VELA-TS-TYPE-IMPORT` is a warning** (TS-3.3), as proposed when 080
+   ended: the compiler cannot tell a class from an interface.
+3. **`VELA-TS-TYPE-EXPORT`** is the code of TS-3.4, which the first
+   table did not name.
+4. **`.mts` compiles to `.js`** like `.ts` (TS-5.1), not to `.mjs`;
+   `./util.mts` specifiers become `./util.js`.
+5. **A `bind:` target with TypeScript** (`bind:value={x as string}`) is a
+   template syntax error, as TS-4.3 says, although erasure would make it
+   assignable.
+6. **The language server** does not run TypeScript's JavaScript checks
+   (`// @ts-check`, `checkJs`) on a `lang="ts"` script, which would
+   report its annotations; typed virtual documents are 085's.
+

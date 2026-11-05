@@ -282,3 +282,20 @@ func genericsProblem(generics string) (pos int, msg string, ok bool) {
 	}
 	return 0, "", true
 }
+
+// typeScriptInJSModule reports a .js module that is TypeScript (TS-2.5):
+// it does not parse as JavaScript and does as TypeScript. Other JavaScript
+// modules are copied as they are, as before.
+func typeScriptInJSModule(file, source string) *diag.Diagnostic {
+	if _, diags := jsast.ParseJSWithDiagnostics(source); len(diags) == 0 {
+		return nil
+	}
+	at, ok := jsast.DetectTypeScript(source)
+	if !ok {
+		return nil
+	}
+	ds := diag.NewDiagSet(cwdRelative(file), source)
+	ds.ErrorWith(at, "VELA-TS-IN-JS", "this is TypeScript: rename the module to .ts",
+		"TypeScript syntax in a JavaScript module")
+	return ds.All()[0]
+}
