@@ -5,10 +5,13 @@ accepts, how types are checked, and how TypeScript reaches server
 rendering and Vela App. Tasks 080–089 implement it; the table
 [Rule ownership](#rule-ownership) names the task of each rule.
 
-Status: **planned**, contract of task 079, approved on 2026-11-05. Nothing on this page is implemented yet: today `lang="ts"` is
-ignored and the first type annotation is `VELA-JS-SYNTAX`. Until task 089
-marks TypeScript as experimental in [FEATURES.md](FEATURES.md), write
-JavaScript (with JSDoc where types help).
+Status: **planned**, contract of task 079, approved on 2026-11-05. The
+parser accepts and erases the syntax of TS-2 and TS-3.2 (task 080, see
+[ES_COMPLIANCE.md](ES_COMPLIANCE.md#typescript)), but the compiler does
+not use it yet: today `lang="ts"` is ignored and the first type
+annotation is `VELA-JS-SYNTAX`. Until task 089 marks TypeScript as
+experimental in [FEATURES.md](FEATURES.md), write JavaScript (with JSDoc
+where types help).
 
 The rules are numbered so that code, tests and reviews can cite them:
 
@@ -58,7 +61,7 @@ generates code at run time is rejected.
 | Area | Syntax |
 | --- | --- |
 | Annotations | variables, parameters (including `this: T`), return types, class fields, optional parameters `x?: T`, catch clause `unknown`/`any` |
-| Declarations | `interface`, `type`, overload signatures, `declare` (variables, functions, classes, `module`, `global`), namespaces that contain only types |
+| Declarations | `interface`, `type`, overload signatures, `declare` (variables, functions, classes, enums, `module`, `global`), namespaces that contain only types; in an ambient context (`declare module 'm' { … }`) also `export =` and `import x = require(…)`, which generate nothing there |
 | Type language | keywords, references with arguments, unions, intersections, arrays, tuples (named, optional, rest elements), function and constructor types, object types with index signatures, mapped types (with `as` and modifiers), conditional types with `infer`, indexed access, `keyof`, `typeof`, `unique symbol`, template literal types, type predicates, `asserts`, `import('m').T` |
 | Generics | on functions, arrows, classes, interfaces, aliases and methods; constraints, defaults, `in`/`out` variance, `const` type parameters |
 | Expressions | `x as T`, `x as const`, `x satisfies T`, non-null `x!`, type arguments on calls, `new` and tagged templates (`f<T>(x)`, `new Map<K, V>()`), generic arrows (`<T,>(x: T) => x`) |
@@ -79,7 +82,7 @@ rewrite in the message:
 
 | Construct | Rewrite |
 | --- | --- |
-| `enum`, `const enum`, `declare enum` | an object `as const` and `type E = (typeof E)[keyof typeof E]` |
+| `enum`, `const enum` | an object `as const` and `type E = (typeof E)[keyof typeof E]` |
 | `namespace N { … }` with values | a module |
 | parameter properties `constructor(private x: number)` | a field and `this.x = x` |
 | `import x = require('m')`, `import x = N.y` | `import` / `const` |
@@ -100,8 +103,11 @@ rewrite in the message:
   across files (`isolatedModules`).
 - **TS-3.2** `import type`, `export type` and `type` specifiers are
   erased. An import or export without `type` is kept as written
-  (`verbatimModuleSyntax`). An import declaration left empty by erasing
-  its `type` specifiers is removed entirely.
+  (`verbatimModuleSyntax`). An import whose specifiers are all `type`
+  stays as a side-effect import (`import { type A } from './a'` →
+  `import './a'`) and such an export list as `export {}`, as TypeScript
+  emits them; only `import type …` and `export type …` declarations
+  disappear entirely.
 - **TS-3.3** A name imported without `type` and used only in type
   positions is `VELA-TS-TYPE-IMPORT`, with the fix `import type` / `type
   X`. Kept, it would be a missing export in the browser.
@@ -349,6 +355,18 @@ Syntax errors of TypeScript sources stay `VELA-JS-SYNTAX`.
 | [087](../tasks/087-app-route-types.md) Vela App | TS-8 |
 | [088](../tasks/088-typescript-starter-testing-eslint.md) starter, testing, ESLint | TS-1.3, TS-10.2 |
 | [089](../tasks/089-typescript-docs-and-release.md) docs and release | TS-9, status |
+
+## Corrections found by the oracle of 080
+
+Checking the contract against TypeScript 6.0.3 (`erasableSyntaxOnly`,
+`verbatimModuleSyntax`) changed two details on 2026-11-05, so that the
+compiler and `tsc` agree as TS-10.2 promises:
+
+1. `declare enum` is ambient and generates nothing; `tsc` accepts it, so
+   it is accepted (TS-2.1), not rejected.
+2. An import left without specifiers by erasing its `type` specifiers is
+   kept as a side-effect import, as `tsc` and the bundlers emit it
+   (TS-3.2); the first version said it was removed.
 
 ## Decisions on the open questions of 079
 

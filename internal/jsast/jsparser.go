@@ -32,8 +32,27 @@ type JSParser struct {
 
 	// arrow caches arrowAhead results by the offset of the opening "(" so that
 	// deeply nested parentheses are resolved by a single scan (linear, not
-	// quadratic).
-	arrow map[int]bool
+	// quadratic).  afterParen records, for the same offsets, the kind of the
+	// token after the matching ")" (TypeScript: `(a): T => a`).
+	arrow      map[int]bool
+	afterParen map[int]TokKind
+
+	// TypeScript (tsparser.go).
+	ts            bool             // parsing TypeScript
+	tsInfo        *TSInfo          // what was erased; nil for JavaScript
+	spec          int              // depth of speculative parsing (try)
+	specDiags     []specDiag       // diagnostics collected while speculating
+	condThen      bool             // parsing the `then` branch of a conditional
+	noCondType    bool             // in the `extends` clause of a conditional type
+	ambient       int              // inside `declare …`
+	depth         int              // nesting below the top level (TSInfo.Decls are top-level)
+	abstractClass bool             // the class being parsed was declared `abstract`
+	typeParams    []string         // type parameter names in scope
+	erased        map[JsStmt]bool  // statements that exist only in TypeScript
+	firstTS       int              // offset of the first TypeScript-only syntax, -1 if none
+	typeSpecs     []JsImportSpec   // `type` specifiers of the import being parsed
+	lastSig       *TSSignature     // signature of the last body-less function
+	failed        map[failKey]bool // speculative attempts known to fail
 }
 
 // JSParseDiagnostic records one recoverable parser failure with a byte offset
@@ -43,6 +62,9 @@ type JSParser struct {
 type JSParseDiagnostic struct {
 	Pos     int
 	Message string
+	// Code is empty for a syntax error; DiagTSNonErasable marks the
+	// TypeScript constructs of TS-2.4 (tsast.go).
+	Code DiagCode
 }
 
 func ParseJS(src string) *JsProgram {
@@ -51,13 +73,7 @@ func ParseJS(src string) *JsProgram {
 }
 
 // newJSParser creates a parser over src and primes the two-token window.
-func newJSParser(src string) *JSParser {
-	p := &JSParser{lex: NewLexer(src), src: src}
-	p.lex.onErr = p.report
-	p.cur = p.lex.Next()
-	p.peek = p.lex.Next()
-	return p
-}
+func newJSParser(src string) *JSParser { return newJSParserOpts(src, ParseOptions{}) }
 
 // ParseJSWithDiagnostics parses JavaScript once and returns both its AST and
 // structured recoverable parser diagnostics (sorted by position).
@@ -120,7 +136,15 @@ func (p *JSParser) report(pos int, msg string) {
 	p.addDiag(JSParseDiagnostic{Pos: pos, Message: fmt.Sprintf("line %d: %s", p.lineAt(pos), msg)})
 }
 
-func (p *JSParser) addDiag(d JSParseDiagnostic) {
+func (p *JSParser) addDiag(d JSParseDiagnostic) { p.addDiagKind(d, false) }
+
+// addDiagKind records d; lexical marks the lexer's errors. While parsing
+// speculatively (try) diagnostics are collected, not reported.
+func (p *JSParser) addDiagKind(d JSParseDiagnostic, lexical bool) {
+	if p.spec > 0 {
+		p.specDiags = append(p.specDiags, specDiag{d: d, lexical: lexical})
+		return
+	}
 	if p.seen == nil {
 		p.seen = map[int]struct{}{}
 	}
@@ -245,9 +269,9 @@ func (p *JSParser) guard(start Token) {
 // allowIn re-enables the `in` operator (inside parentheses, brackets, blocks…)
 // and returns a function restoring the previous state.
 func (p *JSParser) allowIn() func() {
-	old := p.noIn
-	p.noIn = false
-	return func() { p.noIn = old }
+	old, oldCond := p.noIn, p.condThen
+	p.noIn, p.condThen = false, false
+	return func() { p.noIn, p.condThen = old, oldCond }
 }
 
 // curIdent returns the current token's value when it's an identifier or
@@ -278,13 +302,10 @@ func (p *JSParser) endAt(pos int) int {
 // ──────────────────────────────────────────────
 
 func (p *JSParser) parseProgram() *JsProgram {
-	prog := &JsProgram{BaseNode: BaseNode{Pos: 0}}
+	prog := &JsProgram{BaseNode: BaseNode{Pos: 0}, TS: p.tsInfo}
 	for p.cur.Kind != TokEOF {
 		start := p.cur
-		s := p.parseStmt()
-		if s != nil {
-			prog.Body = append(prog.Body, s)
-		}
+		prog.Body = p.stmtListAppend(prog.Body, p.parseStmt())
 		p.guard(start)
 	}
 	prog.End = p.prevEnd
@@ -297,6 +318,11 @@ func (p *JSParser) parseProgram() *JsProgram {
 
 func (p *JSParser) parseStmt() JsStmt {
 	pos := p.curPos()
+	if p.ts && (p.cur.Kind == TokIdent || p.cur.Kind == TokConst) {
+		if s, ok := p.parseTSStmt(); ok {
+			return s
+		}
+	}
 	switch p.cur.Kind {
 	case TokImport:
 		// import(…) and import.meta are expressions, not declarations.
@@ -412,39 +438,53 @@ func (p *JSParser) bindingName() string {
 	return ""
 }
 
-func (p *JSParser) parseImport() *JsImportDecl {
+func (p *JSParser) parseImport() JsStmt {
 	pos := p.curPos()
 	p.advance() // import
+	if p.ts {
+		if s, ok := p.parseImportTS(pos); ok {
+			return s
+		}
+	}
 	d := &JsImportDecl{}
 
 	if p.cur.Kind != TokString { // import 'mod' has no clause
-		switch {
-		case p.cur.Kind == TokStar:
-			p.parseImportNamespace(d)
-		case p.cur.Kind == TokLBrace:
-			p.parseImportNamed(d)
-		case isBindingKind(p.cur.Kind):
-			d.DefaultName = p.advance().Val
-			if p.eat(TokComma) {
-				switch p.cur.Kind {
-				case TokStar:
-					p.parseImportNamespace(d)
-				case TokLBrace:
-					p.parseImportNamed(d)
-				default:
-					p.report(p.cur.Pos, fmt.Sprintf("'*' or '{' expected after ',' but found %s", tokDesc(p.cur)))
-				}
-			}
-		default:
-			p.report(p.cur.Pos, fmt.Sprintf("import binding expected but found %s", tokDesc(p.cur)))
-		}
+		p.parseImportClause(d)
 		p.expect(TokFrom)
 	}
 	d.Source = unquoteStr(p.expect(TokString).Val)
 	d.Attributes = p.parseImportAttributes()
 	p.eatSemi()
 	d.Pos, d.End = pos, p.end()
+	if p.ts {
+		p.recordTypeSpecifiers(d, pos)
+	}
 	return d
+}
+
+// parseImportClause parses the bindings of an import declaration, before
+// `from`.
+func (p *JSParser) parseImportClause(d *JsImportDecl) {
+	switch {
+	case p.cur.Kind == TokStar:
+		p.parseImportNamespace(d)
+	case p.cur.Kind == TokLBrace:
+		p.parseImportNamed(d)
+	case isBindingKind(p.cur.Kind):
+		d.DefaultName = p.advance().Val
+		if p.eat(TokComma) {
+			switch p.cur.Kind {
+			case TokStar:
+				p.parseImportNamespace(d)
+			case TokLBrace:
+				p.parseImportNamed(d)
+			default:
+				p.report(p.cur.Pos, fmt.Sprintf("'*' or '{' expected after ',' but found %s", tokDesc(p.cur)))
+			}
+		}
+	default:
+		p.report(p.cur.Pos, fmt.Sprintf("import binding expected but found %s", tokDesc(p.cur)))
+	}
 }
 
 func (p *JSParser) parseImportNamespace(d *JsImportDecl) {
@@ -456,12 +496,14 @@ func (p *JSParser) parseImportNamespace(d *JsImportDecl) {
 func (p *JSParser) parseImportNamed(d *JsImportDecl) {
 	p.expect(TokLBrace)
 	for p.cur.Kind != TokRBrace && p.cur.Kind != TokEOF {
-		imported := p.moduleExportName()
-		local := imported
-		if p.eat(TokAs) {
-			local = p.bindingName()
+		imported, local, typeOnly := p.parseSpecifier(true)
+		if typeOnly {
+			// Erased (TS-3.2); recordTypeSpecifiers lists it once the
+			// source is known.
+			p.typeSpecs = append(p.typeSpecs, JsImportSpec{imported, local})
+		} else {
+			d.Specifiers = append(d.Specifiers, JsImportSpec{imported, local})
 		}
-		d.Specifiers = append(d.Specifiers, JsImportSpec{imported, local})
 		if !p.eat(TokComma) {
 			break
 		}
@@ -492,9 +534,14 @@ func (p *JSParser) parseImportAttributes() []JsImportAttr {
 	return attrs
 }
 
-func (p *JSParser) parseExport() *JsExportDecl {
+func (p *JSParser) parseExport() JsStmt {
 	pos := p.curPos()
 	p.advance() // export
+	if p.ts {
+		if s, ok := p.parseExportTS(pos); ok {
+			return s
+		}
+	}
 	d := &JsExportDecl{}
 
 	switch {
@@ -504,8 +551,14 @@ func (p *JSParser) parseExport() *JsExportDecl {
 		switch {
 		case p.cur.Kind == TokFunction:
 			d.Declaration = p.parseFuncDecl(false, false)
+			if p.isErased(d.Declaration) { // an overload of the default export
+				return p.erasedStmt(pos)
+			}
 		case p.cur.Kind == TokAsync && p.peek.Kind == TokFunction && !p.peek.NL:
 			d.Declaration = p.parseAsyncFuncDecl(false)
+			if p.isErased(d.Declaration) {
+				return p.erasedStmt(pos)
+			}
 		case p.cur.Kind == TokClass:
 			d.Declaration = p.parseClassDecl(false)
 		default:
@@ -531,16 +584,20 @@ func (p *JSParser) parseExport() *JsExportDecl {
 
 	case p.cur.Kind == TokLBrace: // export { a, b as c } [from 'm']
 		p.advance()
+		var typeNames []TSExportSpec
 		for p.cur.Kind != TokRBrace && p.cur.Kind != TokEOF {
-			local := p.moduleExportName()
-			exported := local
-			if p.eat(TokAs) {
-				exported = p.moduleExportName()
+			local, exported, typeOnly := p.parseSpecifier(false)
+			if typeOnly { // erased (TS-3.2)
+				typeNames = append(typeNames, TSExportSpec{Local: local, Exported: exported})
+			} else {
+				d.Specifiers = append(d.Specifiers, JsExportSpec{Local: local, Exported: exported})
 			}
-			d.Specifiers = append(d.Specifiers, JsExportSpec{Local: local, Exported: exported})
 			if !p.eat(TokComma) {
 				break
 			}
+		}
+		if len(typeNames) > 0 {
+			p.addDecl(&TSDecl{Pos: pos, End: p.endAt(pos), Kind: TSDeclExport, Exported: true, Names: typeNames})
 		}
 		p.expect(TokRBrace)
 		if p.eat(TokFrom) {
@@ -554,6 +611,12 @@ func (p *JSParser) parseExport() *JsExportDecl {
 		p.cur.Kind == TokFunction || p.cur.Kind == TokClass ||
 		(p.cur.Kind == TokAsync && p.peek.Kind == TokFunction):
 		d.Declaration = p.parseStmt()
+		if p.isErased(d.Declaration) { // an overload, `export declare …`
+			if decl := p.lastDecl(); decl != nil && decl.Pos >= pos {
+				decl.Exported, decl.Pos = true, pos
+			}
+			return p.erasedStmt(pos)
+		}
 
 	default:
 		p.report(p.cur.Pos, fmt.Sprintf("declaration, '{', '*' or 'default' expected after 'export' but found %s", tokDesc(p.cur)))
@@ -592,7 +655,10 @@ func (p *JSParser) parseFuncDecl(async, requireName bool) *JsFuncDecl {
 			name = p.advance().Val
 		}
 	}
-	params := p.parseParams()
+	if p.ts {
+		return p.parseFuncDeclTS(pos, name, async, gen)
+	}
+	params, _ := p.parseParams()
 	body := p.parseBlock()
 	return &JsFuncDecl{
 		BaseStmt: BaseStmt{BaseNode{Pos: pos, End: p.endAt(pos)}},
@@ -602,7 +668,11 @@ func (p *JSParser) parseFuncDecl(async, requireName bool) *JsFuncDecl {
 }
 
 // parseClassTail parses everything after the `class` keyword.
-func (p *JSParser) parseClassTail(requireName bool) (name string, super JsExpr, members []*JsClassMember) {
+func (p *JSParser) parseClassTail(requireName bool) (name string, super JsExpr, members []*JsClassMember, info *TSClass) {
+	if p.ts {
+		info = &TSClass{Abstract: p.abstractClass}
+		p.abstractClass = false
+	}
 	p.advance() // class
 	if n, ok := p.curIdent(); ok {
 		name = n
@@ -613,8 +683,16 @@ func (p *JSParser) parseClassTail(requireName bool) (name string, super JsExpr, 
 			name = p.advance().Val
 		}
 	}
+	n := len(p.typeParams)
+	defer p.popTypeParams(n)
+	if p.ts && (p.cur.Kind == TokLt || p.cur.Kind == TokLShift) {
+		info.TypeParams = p.parseTypeParams()
+	}
 	if p.eat(TokExtends) {
 		super = p.parseLeftHandSide()
+	}
+	if p.ts {
+		p.parseClassHeritageTS(info, super != nil)
 	}
 	p.expect(TokLBrace)
 	defer p.allowIn()()
@@ -626,19 +704,22 @@ func (p *JSParser) parseClassTail(requireName bool) (name string, super JsExpr, 
 		p.guard(start)
 	}
 	p.expect(TokRBrace)
-	return name, super, members
+	return name, super, members, info
 }
 
 func (p *JSParser) parseClassDecl(requireName bool) *JsClassDecl {
 	pos := p.curPos()
-	name, super, members := p.parseClassTail(requireName)
+	name, super, members, info := p.parseClassTail(requireName)
 	return &JsClassDecl{
 		BaseStmt: BaseStmt{BaseNode{Pos: pos, End: p.endAt(pos)}},
-		Name:     name, SuperClass: super, Members: members,
+		Name:     name, SuperClass: super, Members: members, TS: info,
 	}
 }
 
 func (p *JSParser) parseClassMember() *JsClassMember {
+	if p.ts {
+		return p.parseClassMemberTS()
+	}
 	pos := p.curPos()
 	if p.eat(TokSemi) { // stray ';' between members
 		return nil
@@ -698,7 +779,7 @@ func (p *JSParser) parseClassMember() *JsClassMember {
 
 	if p.cur.Kind == TokLParen {
 		fpos := p.curPos()
-		params := p.parseParams()
+		params, _ := p.parseParams()
 		body := p.parseBlock()
 		m.Value = &JsFuncExpr{
 			BaseExpr: BaseExpr{BaseNode{Pos: fpos, End: p.endAt(fpos)}},
@@ -727,10 +808,22 @@ func (p *JSParser) parseVarDecl(consumeSemi, inFor bool) *JsVarDecl {
 	for {
 		dp := p.curPos()
 		id := p.parseBindingPattern()
+		var typ *TSType
+		definite := false
+		if p.ts {
+			if p.cur.Kind == TokBang && !p.cur.NL {
+				p.markTS(p.cur.Pos)
+				p.advance()
+				definite = true
+			}
+			if p.eat(TokColon) {
+				typ = p.parseType()
+			}
+		}
 		var init JsExpr
 		if p.eat(TokAssign) {
 			init = p.parseAssignExpr()
-		} else if !inFor {
+		} else if !inFor && p.ambient == 0 && !definite {
 			if kind == "const" {
 				p.report(dp, "missing initializer in const declaration")
 			} else if _, isIdent := id.(*JsIdent); !isIdent {
@@ -739,7 +832,7 @@ func (p *JSParser) parseVarDecl(consumeSemi, inFor bool) *JsVarDecl {
 		}
 		d.Decls = append(d.Decls, &JsVarDeclarator{
 			BaseNode: BaseNode{Pos: dp, End: p.endAt(dp)},
-			Id:       id, Init: init,
+			Id:       id, Init: init, Type: typ, Definite: definite,
 		})
 		if !p.eat(TokComma) {
 			break
@@ -876,23 +969,69 @@ func (p *JSParser) parseObjectPattern() JsExpr {
 	return &JsObjectExpr{BaseExpr: BaseExpr{BaseNode{Pos: pos, End: p.endAt(pos)}}, Props: props}
 }
 
-func (p *JSParser) parseParams() []JsExpr {
+// parseParams parses a parameter list. For TypeScript it also returns the
+// signature (parameter annotations aligned with the parameters, `this`);
+// the caller adds type parameters and the return type.
+func (p *JSParser) parseParams() ([]JsExpr, *TSSignature) {
 	p.expect(TokLParen)
 	defer p.allowIn()()
 	var params []JsExpr
+	var sig *TSSignature
+	if p.ts {
+		sig = &TSSignature{}
+	}
 	for p.cur.Kind != TokRParen && p.cur.Kind != TokEOF {
+		ppos := p.curPos()
+		if p.ts {
+			p.skipParamModifiers(true)
+			if p.cur.Kind == TokThis && p.peek.Kind == TokColon && len(params) == 0 && sig.This == nil {
+				p.markTS(ppos)
+				p.advance()
+				p.advance()
+				sig.This = p.parseType()
+				if !p.eat(TokComma) {
+					break
+				}
+				continue
+			}
+		}
 		if p.cur.Kind == TokEllipsis {
 			ep := p.curPos()
 			p.advance()
 			arg := p.parseBindingPattern()
+			var t *TSType
+			if p.ts && p.eat(TokColon) {
+				t = p.parseType()
+			}
 			params = append(params, &JsSpreadExpr{BaseExpr: BaseExpr{BaseNode{Pos: ep, End: p.endAt(ep)}}, X: arg})
+			if sig != nil {
+				sig.Params = append(sig.Params, &TSParam{Pos: ep, End: p.endAt(ep), Name: patternName(arg), Type: t, Rest: true})
+			}
 			break
 		}
 		param := p.parseBindingPattern()
+		var t *TSType
+		optional := false
+		if p.ts {
+			if p.cur.Kind == TokQuestion {
+				p.markTS(p.cur.Pos)
+				p.advance()
+				optional = true
+			}
+			if p.eat(TokColon) {
+				t = p.parseType()
+			}
+		}
+		if sig != nil {
+			sig.Params = append(sig.Params, &TSParam{Pos: ppos, Name: patternName(param), Type: t, Optional: optional})
+		}
 		if p.eat(TokAssign) {
 			def := p.parseAssignExpr()
 			param = &JsAssignExpr{BaseExpr: BaseExpr{BaseNode{Pos: param.NodePos(), End: p.endAt(param.NodePos())}},
 				Op: "=", L: param, R: def}
+		}
+		if sig != nil {
+			sig.Params[len(sig.Params)-1].End = p.endAt(ppos)
 		}
 		params = append(params, param)
 		if !p.eat(TokComma) {
@@ -900,7 +1039,15 @@ func (p *JSParser) parseParams() []JsExpr {
 		}
 	}
 	p.expect(TokRParen)
-	return params
+	return params, sig
+}
+
+// patternName is the name of an identifier pattern, "" for destructuring.
+func patternName(e JsExpr) string {
+	if id, ok := e.(*JsIdent); ok {
+		return id.Name
+	}
+	return ""
 }
 
 func (p *JSParser) parseBlock() *JsBlock {
@@ -908,14 +1055,13 @@ func (p *JSParser) parseBlock() *JsBlock {
 	p.expect(TokLBrace)
 	defer p.allowIn()()
 	b := &JsBlock{}
+	p.depth++
 	for p.cur.Kind != TokRBrace && p.cur.Kind != TokEOF {
 		start := p.cur
-		s := p.parseStmt()
-		if s != nil {
-			b.Body = append(b.Body, s)
-		}
+		b.Body = p.stmtListAppend(b.Body, p.parseStmt())
 		p.guard(start)
 	}
+	p.depth--
 	p.expect(TokRBrace)
 	b.Pos, b.End = pos, p.endAt(pos)
 	return b
@@ -1055,6 +1201,9 @@ func (p *JSParser) parseTry() *JsTryStmt {
 	if p.eat(TokCatch) {
 		if p.eat(TokLParen) {
 			st.CatchParam = p.parseBindingPattern()
+			if p.ts && p.eat(TokColon) {
+				st.CatchType = p.parseType()
+			}
 			p.expect(TokRParen)
 		}
 		st.Handler = p.parseBlock()
@@ -1098,9 +1247,7 @@ func (p *JSParser) parseSwitch() *JsSwitchStmt {
 		for p.cur.Kind != TokCase && p.cur.Kind != TokDefault &&
 			p.cur.Kind != TokRBrace && p.cur.Kind != TokEOF {
 			start := p.cur
-			if s := p.parseStmt(); s != nil {
-				c.Body = append(c.Body, s)
-			}
+			c.Body = p.stmtListAppend(c.Body, p.parseStmt())
 			p.guard(start)
 		}
 		c.Pos, c.End = cp, p.endAt(cp)
@@ -1207,6 +1354,27 @@ func (p *JSParser) parseAssignExpr() JsExpr {
 			p.advance() // async
 			return p.parseParenArrow(start, true)
 		}
+		if p.ts && (p.peek.Kind == TokLt || (p.peek.Kind == TokLParen && p.afterParen[p.peek.Pos] == TokColon)) {
+			st := p.save()
+			generic := p.peek.Kind == TokLt
+			p.advance() // async
+			if e := p.tryTypedArrow(start, true, generic); e != nil {
+				return e
+			}
+			p.restore(st)
+		}
+	}
+	if p.ts {
+		if p.cur.Kind == TokLt {
+			if e := p.tryTypedArrow(start, false, true); e != nil {
+				return e
+			}
+		}
+		if p.cur.Kind == TokLParen && !p.arrowAhead(start, true) && p.afterParen[start] == TokColon {
+			if e := p.tryTypedArrow(start, false, false); e != nil {
+				return e
+			}
+		}
 	}
 
 	// `(params) => …` — decided by scanning ahead for the matching `)`.  An
@@ -1273,6 +1441,12 @@ func (p *JSParser) arrowAhead(openPos int, parenIsCur bool) bool {
 	for {
 		if pending >= 0 {
 			p.arrow[pending] = tok.Kind == TokArrow && !tok.NL
+			if p.ts {
+				if p.afterParen == nil {
+					p.afterParen = map[int]TokKind{}
+				}
+				p.afterParen[pending] = tok.Kind
+			}
 			pending = -1
 			if len(stack) == 0 {
 				return p.arrow[openPos]
@@ -1304,12 +1478,12 @@ func (p *JSParser) arrowAhead(openPos int, parenIsCur bool) bool {
 
 // parseParenArrow parses `(params) => body` with the cursor on `(`.
 func (p *JSParser) parseParenArrow(pos int, async bool) JsExpr {
-	params := p.parseParams()
+	params, sig := p.parseParams()
 	p.expect(TokArrow)
 	body := p.parseArrowBody()
 	return &JsArrowFunc{
 		BaseExpr: BaseExpr{BaseNode{Pos: pos, End: p.endAt(pos)}},
-		Params:   params, Body: body, Async: async,
+		Params:   params, Body: body, Async: async, TS: sig,
 	}
 }
 
@@ -1327,6 +1501,7 @@ func (p *JSParser) parseTernary() JsExpr {
 	if p.cur.Kind == TokQuestion {
 		p.advance()
 		restore := p.allowIn()
+		p.condThen = p.ts
 		then := p.parseAssignExpr()
 		restore()
 		p.expect(TokColon)
@@ -1345,6 +1520,10 @@ type opRow struct {
 	right bool
 	op    string
 }
+
+// relationalPrec is the precedence of `<` in binOpTable, which TypeScript
+// gives `as` and `satisfies`.
+const relationalPrec = 8
 
 var binOpTable = map[TokKind]opRow{
 	TokOr:         {1, false, "||"},
@@ -1378,6 +1557,19 @@ func (p *JSParser) parseBinary(minPrec int) JsExpr {
 	start := p.curPos()
 	left := p.parseUnary()
 	for {
+		if p.ts && !p.cur.NL && (p.cur.Kind == TokAs || p.isWord("satisfies")) && relationalPrec > minPrec {
+			// `x as T`, `x as const`, `x satisfies T`: erased, x stays.
+			p.markTS(p.cur.Pos)
+			isAs := p.cur.Kind == TokAs
+			p.advance()
+			if isAs && p.cur.Kind == TokConst {
+				p.advance()
+			} else {
+				p.parseType()
+			}
+			p.rescanRegexAsDivision()
+			continue
+		}
 		row, ok := binOpTable[p.cur.Kind]
 		if !ok || row.prec <= minPrec || (p.noIn && p.cur.Kind == TokIn) {
 			break
@@ -1463,6 +1655,15 @@ func (p *JSParser) parseUnary() JsExpr {
 		p.advance()
 		x := p.parseUnary()
 		return &JsAwaitExpr{BaseExpr: BaseExpr{BaseNode{Pos: pos, End: p.endAt(pos)}}, X: x}
+	case TokLt:
+		if p.ts { // <T>x
+			p.markTS(pos)
+			p.reportCode(pos, DiagTSNonErasable, "'<T>x' type assertions are not supported: write 'x as T'")
+			p.advance()
+			p.parseType()
+			p.expectGt()
+			return p.parseUnary()
+		}
 	}
 	return p.parsePostfix()
 }
@@ -1547,8 +1748,27 @@ func (p *JSParser) parseLeftHandSide() JsExpr {
 			}
 		case TokTemplate:
 			expr = p.parseTaggedTemplate(start, expr)
+		case TokBang:
+			if !p.ts || p.cur.NL {
+				return expr
+			}
+			p.markTS(p.cur.Pos) // non-null assertion `x!`: erased
+			p.advance()
+			p.rescanRegexAsDivision()
+		case TokLt, TokLShift:
+			if !p.ts {
+				return expr
+			}
+			e, ok := p.tryTypeArgsInExpr(start, expr)
+			if !ok {
+				return expr
+			}
+			expr = e
 		case TokOptChain:
 			p.advance()
+			if p.ts && (p.cur.Kind == TokLt || p.cur.Kind == TokLShift) { // a?.<T>()
+				p.parseTypeArgs()
+			}
 			if p.cur.Kind == TokLParen {
 				args := p.parseArgs()
 				expr = &JsCallExpr{
@@ -1603,6 +1823,9 @@ func (p *JSParser) parseNewOrPrimary() JsExpr {
 		}
 	}
 	callee := p.parseNewCallee()
+	if p.ts && (p.cur.Kind == TokLt || p.cur.Kind == TokLShift) {
+		p.try(func() bool { p.parseTypeArgs(); p.rescanRegexAsDivision(); return p.canFollowTypeArgs() })
+	}
 	var args []JsExpr
 	if p.cur.Kind == TokLParen {
 		args = p.parseArgs()
@@ -1742,10 +1965,10 @@ func (p *JSParser) parsePrimary() JsExpr {
 		return p.parseFuncExpr(pos, false)
 
 	case TokClass:
-		name, super, members := p.parseClassTail(false)
+		name, super, members, info := p.parseClassTail(false)
 		return &JsClassExpr{
 			BaseExpr: BaseExpr{BaseNode{Pos: pos, End: p.endAt(pos)}},
-			Name:     name, SuperClass: super, Members: members,
+			Name:     name, SuperClass: super, Members: members, TS: info,
 		}
 
 	case TokAsync:
@@ -1844,12 +2067,9 @@ func (p *JSParser) parseFuncExpr(pos int, async bool) JsExpr {
 		name = n
 		p.advance()
 	}
-	params := p.parseParams()
-	body := p.parseBlock()
-	return &JsFuncExpr{
-		BaseExpr: BaseExpr{BaseNode{Pos: pos, End: p.endAt(pos)}},
-		Name:     name, Params: params, Body: body, Async: async, Generator: gen,
-	}
+	fn, _ := p.parseFunctionRest(pos, async, gen, false)
+	fn.Name = name
+	return fn
 }
 
 func (p *JSParser) parseArrayLit() *JsArrayExpr {
@@ -1946,14 +2166,9 @@ func (p *JSParser) parseObjectProp() *JsProp {
 	shorthand, isMethod := false, false
 	var val JsExpr
 	switch {
-	case p.cur.Kind == TokLParen:
+	case p.cur.Kind == TokLParen || (p.ts && (p.cur.Kind == TokLt || p.cur.Kind == TokLShift)):
 		fpos := p.curPos()
-		params := p.parseParams()
-		body := p.parseBlock()
-		val = &JsFuncExpr{
-			BaseExpr: BaseExpr{BaseNode{Pos: fpos, End: p.endAt(fpos)}},
-			Params:   params, Body: body, Async: isAsync, Generator: isGen,
-		}
+		val, _ = p.parseFunctionRest(fpos, isAsync, isGen, false)
 		// get/set carry their own Kind; only plain methods get the Method flag.
 		isMethod = kind == "init"
 	case !hasModifier && p.eat(TokColon):
@@ -2090,18 +2305,12 @@ func (p *JSParser) parseTemplateHole(start, end int) JsExpr {
 		// Degrade: empty interpolation → empty-string literal.
 		return &JsLiteral{BaseExpr: BaseExpr{BaseNode{Pos: start, End: start}}, Raw: "''", Kind: "string"}
 	}
-	src := p.src[:end]
-	p.lineAt(0) // make sure the shared line index exists
-	sub := &JSParser{lex: &Lexer{src: src, pos: start, line: p.lineAt(start)}, src: src, lines: p.lines}
-	sub.cur = sub.lex.Next()
-	sub.peek = sub.lex.Next()
+	sub := p.subParser(start, end)
 	expr := sub.parseExpr()
 	if sub.cur.Kind != TokEOF {
 		sub.report(sub.cur.Pos, fmt.Sprintf("unexpected %s in template expression", tokDesc(sub.cur)))
 	}
-	for _, d := range sub.Diagnostics {
-		p.addDiag(d)
-	}
+	p.mergeSub(sub)
 	return expr
 }
 

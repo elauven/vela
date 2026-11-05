@@ -63,6 +63,43 @@ is reported by another compiler pass.
 | HTML-like comments (Annex B) | Not recognised; component scripts are modules. |
 | `await` / `yield` as identifiers | Always operators; component scripts are modules. |
 
+## TypeScript
+
+With `ParseOptions{TypeScript: true}` (task 080, docs/TYPESCRIPT.md TS-2,
+TS-3) the parser accepts the erasable TypeScript syntax and erases it
+while it parses: the tree is ordinary JavaScript, and what the types said
+is kept beside it (`JsProgram.TS`, the `TS` fields of functions, classes and
+members, `JsVarDeclarator.Type`). JavaScript parsing is unchanged: every
+TypeScript rule runs only in that mode, and the JavaScript corpus parses
+to the same trees with it on.
+
+| Check | Size | Test |
+| --- | ---: | --- |
+| TypeScript corpus: valid sources erase to the tree of their JavaScript twin, print, and reparse as JavaScript | 182 | `TestTSCorpusValid` |
+| Rejected constructs (TS-2.4) and syntax errors are positioned diagnostics | 20 | `TestTSCorpusInvalid` |
+| The JavaScript corpus reads the same with TypeScript on | all | `TestTSAcceptsJavaScriptCorpus` |
+| Oracle: `ts.transpileModule` (TypeScript 6.0.3, `verbatimModuleSyntax`) erases to the same tree | 1700 sources | `TestTSOracleTranspileModule` |
+| The type grammar over declaration files (`lib.dom.d.ts`, `typescript.d.ts`, …) | 11 323 files | `TestTSDeclarationFilesParse` |
+| Mutated and truncated sources, pathological shapes, `FuzzTSParse` | 8 000 mutations | `TestTSMutatedInputNeverCrashes`, `TestTSPathologicalShapes` |
+
+The oracle compares the corpus and every `.ts` file under `node_modules`
+and `packages/*/node_modules`; `VELA_TS_ORACLE_DIR` adds directories (a
+path list). The 1700 sources and 11 323 declaration files above are the
+repository plus the third-party packages of another project on the
+development machine (tiptap, TanStack Query, inlang, MSAL, kysely). The
+oracle needs node and `node_modules/typescript` and is skipped without
+them. 74 of those sources use `enum` or other TS-2.4 constructs and are
+rejected on purpose.
+
+Speculative parsing (`f<T>(x)` against `a < b > (c)`, `(a): T => a`,
+generic arrows) keeps what succeeds and remembers by position what fails,
+so `a < a < a …` stays linear (20 000 comparisons in milliseconds).
+
+Re-run with:
+
+    go test ./internal/jsast -run 'TestTS' -v
+    VELA_TS_ORACLE_DIR=/path/to/projects go test ./internal/jsast -run TestTSOracle -v
+
 ## Component scripts
 
 A component script is checked as the body of its component factory:

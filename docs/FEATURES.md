@@ -127,7 +127,7 @@ Overview and usage: [SSR.md](SSR.md). Normative rules:
 | Feature | Status | Notes |
 | --- | --- | --- |
 | Dev server / HMR | **Planned** | Watch mode recompiles only. |
-| TypeScript | **Planned** | Contract in [TYPESCRIPT.md](TYPESCRIPT.md) (tasks 080–089): types are erased by the compiler and checked by `vela check --types`. Today `lang="ts"` is ignored and the first annotation is `VELA-JS-SYNTAX`. |
+| TypeScript | **Planned** | Contract in [TYPESCRIPT.md](TYPESCRIPT.md) (tasks 080–089): types are erased by the compiler and checked by `vela check --types`. The parser accepts and erases TypeScript (task 080, ES_COMPLIANCE.md); the compiler does not use it yet: `lang="ts"` is ignored and the first annotation is `VELA-JS-SYNTAX`. |
 | Snippets / render props | **Unsupported** | Use current default/named slots instead. |
 | Actions | **Unsupported** | No `use:action` directive. |
 | Transitions and animations | **Unsupported** | No `transition:`, `in:`, or `out:` directives. |
