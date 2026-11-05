@@ -394,6 +394,14 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 			"<script lang=%q> is not a supported language", sfc.Lang)
 		return ds.All(), fmt.Errorf("unsupported script language %q", sfc.Lang)
 	}
+	if sfc.TypeScript && sfc.GenericsPos > 0 {
+		if at, msg, ok := genericsProblem(sfc.Generics); !ok {
+			ds.Report(diag.SevError, sfc.GenericsPos+at, sfc.GenericsPos+len(sfc.Generics), GenericsDiagnosticCode,
+				`Write type parameters as inside <…> of a generic function: generics="T extends { id: string }, K".`,
+				"invalid generics attribute: %s", msg)
+			return ds.All(), fmt.Errorf("invalid generics attribute")
+		}
+	}
 
 	var tmpl []sfcast.Node
 	if err = trace.stage("parse-template", func() error {
@@ -551,6 +559,9 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 	}
 
 	codegen.FinalizeRuntimeImports(target, opts.RuntimeImport)
+	if !opts.SourceComponentImports {
+		codegen.RewriteDynamicImportSpecifiers(target)
+	}
 	opts.PackageImports.add(dest, programPackageImports(target))
 
 	if opts.GenAST {
@@ -689,35 +700,70 @@ func runtimeSpecifier(opts CompileOptions, dir, outRoot string) string {
 
 // copyProjectJSModules mirrors local JavaScript modules into project output,
 // with `.vela`, `vela` and `vela/store` specifiers rewritten
-// (rewriteJSModuleSpecifiers). It deliberately uses the same directory exclusions as collectVela so build
-// output and dependencies cannot be copied back into the project.
+// (rewriteJSModuleSpecifiers), and compiles local TypeScript modules to
+// `.js` (TS-5.1). It deliberately uses the same directory exclusions as
+// collectVela so build output and dependencies cannot be copied back into
+// the project.
 func copyProjectJSModules(srcRoot, outRoot string, opts CompileOptions) int {
-	errors := 0
+	errors := reportUnsupportedModules(srcRoot, opts)
 	for _, src := range project.CollectJSModules(srcRoot) {
-		rel, err := filepath.Rel(srcRoot, src)
-		if err != nil {
-			errors++
-			continue
-		}
-		dest := filepath.Join(outRoot, rel)
-		data, err := os.ReadFile(src)
-		if err == nil {
-			err = os.MkdirAll(filepath.Dir(dest), 0755)
-		}
-		if err == nil {
-			err = os.WriteFile(dest, []byte(codegen.RewriteJSModuleSpecifiersWith(string(data), runtimeSpecifier(opts, filepath.Dir(dest), outRoot), opts.SourceComponentImports)), 0644)
-			opts.PackageImports.add(dest, sourcePackageImports(string(data)))
-			if opts.CheckDeps {
-				checkModulePackageImports(src, string(data), opts)
-			}
-		}
-		if err != nil {
-			fmt.Fprintf(ErrorWriter(opts), "  ✗ %s: copy local module: %v\n", rel, err)
-			opts.Report.add(buildIssue(src, "copy local module: %v", err))
+		if !CopyProjectModule(src, srcRoot, outRoot, opts) {
 			errors++
 		}
 	}
 	return errors
+}
+
+// ProjectModuleOutput is the output path of a local module of a project:
+// the mirrored path, with .ts and .mts modules ending in .js.
+func ProjectModuleOutput(src, srcRoot, outRoot string) (string, error) {
+	rel, err := filepath.Rel(srcRoot, src)
+	if err != nil {
+		return "", err
+	}
+	dest := filepath.Join(outRoot, rel)
+	if project.IsTypeScriptModule(src) {
+		dest = strings.TrimSuffix(dest, filepath.Ext(dest)) + ".js"
+	}
+	return dest, nil
+}
+
+// CopyProjectModule writes the output of one local module (copyProjectJSModules)
+// and reports whether it succeeded.
+func CopyProjectModule(src, srcRoot, outRoot string, opts CompileOptions) bool {
+	rel, err := filepath.Rel(srcRoot, src)
+	if err != nil {
+		return false
+	}
+	dest, _ := ProjectModuleOutput(src, srcRoot, outRoot)
+	data, err := os.ReadFile(src)
+	if err == nil && project.IsTypeScriptModule(src) {
+		js, diags, ok := compileTypeScriptModule(src, string(data))
+		printModuleDiagnostics(opts, diags)
+		if !ok {
+			if !opts.DiagnosticsJSON {
+				fmt.Fprintf(ErrorWriter(opts), "  ✗  %-40s  TypeScript module does not compile\n", rel)
+			}
+			return false
+		}
+		data = []byte(js)
+	}
+	if err == nil {
+		err = os.MkdirAll(filepath.Dir(dest), 0755)
+	}
+	if err == nil {
+		err = os.WriteFile(dest, []byte(codegen.RewriteJSModuleSpecifiersWith(string(data), runtimeSpecifier(opts, filepath.Dir(dest), outRoot), opts.SourceComponentImports)), 0644)
+		opts.PackageImports.add(dest, sourcePackageImports(string(data)))
+		if opts.CheckDeps {
+			checkModulePackageImports(src, string(data), opts)
+		}
+	}
+	if err != nil {
+		fmt.Fprintf(ErrorWriter(opts), "  ✗  %s: copy local module: %v\n", rel, err)
+		opts.Report.add(buildIssue(src, "copy local module: %v", err))
+		return false
+	}
+	return true
 }
 
 // hydrateRuntimeSource returns runtime-hydrate.js with the default

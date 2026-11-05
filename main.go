@@ -285,8 +285,10 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 	status := CompilerStatusWriter(opts)
 	fmt.Fprintln(status, "\nWatching for changes… (Ctrl-C to stop)")
 
+	// Components and local modules (.js, .ts) are watched.
+	sources := func() []string { return append(CollectVela(srcRoot), CollectJSModules(srcRoot)...) }
 	mtimes := map[string]time.Time{}
-	for _, f := range CollectVela(srcRoot) {
+	for _, f := range sources() {
 		if info, err := os.Stat(f); err == nil {
 			mtimes[f] = info.ModTime()
 		}
@@ -295,7 +297,7 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 	for {
 		time.Sleep(150 * time.Millisecond)
 
-		current := CollectVela(srcRoot)
+		current := sources()
 		currentSet := map[string]bool{}
 		for _, f := range current {
 			currentSet[f] = true
@@ -323,6 +325,9 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 			if !currentSet[f] {
 				delete(mtimes, f)
 				dest := MirrorPath(f, srcRoot, outRoot, ".js")
+				if !strings.EqualFold(filepath.Ext(f), ".vela") {
+					dest, _ = ProjectModuleOutput(f, srcRoot, outRoot)
+				}
 				_ = os.Remove(dest)
 				if opts.EmitAST {
 					_ = os.Remove(strings.TrimSuffix(dest, ".js") + ".ast.json")
@@ -334,7 +339,11 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 		if len(changed) > 0 {
 			fmt.Fprintf(status, "\n  ↻  %d file(s) changed\n", len(changed))
 			for _, src := range changed {
-				CompileProjectFile(src, srcRoot, outRoot, opts)
+				if strings.EqualFold(filepath.Ext(src), ".vela") {
+					CompileProjectFile(src, srcRoot, outRoot, opts)
+				} else {
+					CopyProjectModule(src, srcRoot, outRoot, opts)
+				}
 			}
 		}
 	}

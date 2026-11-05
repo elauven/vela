@@ -1,10 +1,14 @@
 package compiler
 
 import (
+	"encoding/json"
+	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/elauven/vela/internal/diag"
 	"github.com/elauven/vela/internal/jsast"
+	"github.com/elauven/vela/internal/project"
 )
 
 // TypeScript checks of the compiler (task 081, docs/TYPESCRIPT.md).
@@ -112,4 +116,169 @@ func indexWord(s, name string) int {
 		from = i + 1
 	}
 	return -1
+}
+
+// TypeExportDiagnosticCode reports a local type exported without `type`
+// (TS-3.4): `export { Props }` of an interface exports nothing at run time,
+// and the module fails to load.
+const TypeExportDiagnosticCode = "VELA-TS-TYPE-EXPORT"
+
+// ModuleDiagnosticCode reports a .tsx, .jsx or .cts module (TS-5.2).
+const ModuleDiagnosticCode = "VELA-TS-MODULE"
+
+// reportTypeOnlyExports adds a VELA-TS-TYPE-EXPORT error for each name of a
+// local export list (no `from`) that the module declares only as a type.
+func reportTypeOnlyExports(ds *diag.DiagSet, src string, prog *jsast.JsProgram) {
+	if prog == nil || prog.TS == nil {
+		return
+	}
+	types := map[string]bool{}
+	for _, d := range prog.TS.Decls {
+		switch d.Kind {
+		case jsast.TSDeclInterface, jsast.TSDeclTypeAlias:
+			types[d.Name] = true
+		}
+	}
+	if len(types) == 0 {
+		return
+	}
+	values := map[string]bool{}
+	for _, stmt := range prog.Body {
+		if exp, ok := stmt.(*jsast.JsExportDecl); ok && exp.Declaration != nil {
+			stmt = exp.Declaration
+		}
+		switch d := stmt.(type) {
+		case *jsast.JsVarDecl:
+			for _, decl := range d.Decls {
+				jsast.WalkNode(decl.Id, func(n jsast.JsNode) bool {
+					if id, ok := n.(*jsast.JsIdent); ok {
+						values[id.Name] = true // over-approximates: keys too
+					}
+					return true
+				})
+			}
+		case *jsast.JsFuncDecl:
+			values[d.Name] = true
+		case *jsast.JsClassDecl:
+			values[d.Name] = true
+		case *jsast.JsImportDecl:
+			values[d.DefaultName], values[d.Namespace] = true, true
+			for _, s := range d.Specifiers {
+				values[s.Local] = true
+			}
+		}
+	}
+	for _, stmt := range prog.Body {
+		exp, ok := stmt.(*jsast.JsExportDecl)
+		if !ok || exp.HasSource || exp.Declaration != nil {
+			continue
+		}
+		for _, spec := range exp.Specifiers {
+			if !types[spec.Local] || values[spec.Local] {
+				continue
+			}
+			pos, end := exp.Pos, exp.End
+			if exp.End <= len(src) {
+				if i := indexWord(src[exp.Pos:exp.End], spec.Local); i >= 0 {
+					pos, end = exp.Pos+i, exp.Pos+i+len(spec.Local)
+				}
+			}
+			ds.Report(diag.SevError, pos, end, TypeExportDiagnosticCode,
+				"Export it with `export type { "+spec.Local+" }` or `{ type "+spec.Local+" }`.",
+				"%q is a type: exported without `type`, the module would export a value that does not exist", spec.Local)
+		}
+	}
+}
+
+// compileTypeScriptModule turns a local .ts module of a project into
+// JavaScript (TS-5.1): the source with its types blanked out, so lines and
+// columns stay those of the source. ok is false with error diagnostics.
+func compileTypeScriptModule(file, source string) (js string, diags []*diag.Diagnostic, ok bool) {
+	ds := diag.NewDiagSet(cwdRelative(file), source)
+	text, prog, parseDiags := jsast.EraseTypeScript(source)
+	if len(parseDiags) == 0 {
+		parseDiags = jsast.EarlyErrors(prog, jsast.EarlyOptions{TopLevelAwait: true})
+	}
+	for _, d := range parseDiags {
+		code, hint := "VELA-JS-SYNTAX", "fix the TypeScript syntax"
+		if d.Code == jsast.DiagTSNonErasable {
+			code, hint = "VELA-TS-NON-ERASABLE", scriptDiagnosticHint("VELA-TS-NON-ERASABLE")
+		}
+		ds.ErrorWith(d.Pos, code, hint, "%s", d.Message)
+	}
+	if len(parseDiags) == 0 {
+		reportTypeOnlyExports(ds, source, prog)
+		reportTypeOnlyImports(ds, source, prog, "")
+	}
+	return trimTrailingSpaces(text), ds.All(), !ds.HasErrors()
+}
+
+// trimTrailingSpaces drops the spaces blanking leaves at the end of lines;
+// every line and every column of code keeps its place.
+func trimTrailingSpaces(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		cr := strings.HasSuffix(line, "\r")
+		line = strings.TrimRight(strings.TrimSuffix(line, "\r"), " \t")
+		if cr {
+			line += "\r"
+		}
+		lines[i] = line
+	}
+	return strings.Join(lines, "\n")
+}
+
+// printModuleDiagnostics prints and records the diagnostics of a module the
+// way CompilePrint does for a component.
+func printModuleDiagnostics(opts CompileOptions, diags []*diag.Diagnostic) {
+	opts.Report.add(diags...)
+	for _, d := range diags {
+		switch {
+		case opts.DiagnosticsJSON:
+			line, _ := json.Marshal(d.Machine())
+			fmt.Fprintf(ErrorWriter(opts), "%s\n", line)
+		case d.Sev == diag.SevError:
+			fmt.Fprintf(ErrorWriter(opts), "       %s\n", d)
+		default:
+			fmt.Fprintf(CompilerStatusWriter(opts), "       %s\n", d)
+		}
+	}
+}
+
+// reportUnsupportedModules reports the .tsx, .jsx and .cts modules of a
+// project (TS-5.2) and returns their number.
+func reportUnsupportedModules(srcRoot string, opts CompileOptions) int {
+	files := project.CollectUnsupportedModules(srcRoot)
+	for _, file := range files {
+		d := &diag.Diagnostic{Sev: diag.SevError, File: cwdRelative(file), Line: 1, Col: 1, Code: ModuleDiagnosticCode,
+			Message:    fmt.Sprintf("%s modules are not supported: write a .ts module (JSX is not part of Vela)", filepath.Ext(file)),
+			Suggestion: "rename it to .ts and remove JSX, or move it out of the project directory"}
+		printModuleDiagnostics(opts, []*diag.Diagnostic{d})
+	}
+	return len(files)
+}
+
+// GenericsDiagnosticCode reports an invalid `generics` attribute (TS-4.8).
+const GenericsDiagnosticCode = "VELA-TS-GENERICS"
+
+// genericsProblem checks the `generics` attribute of a TypeScript script: a
+// list of type parameters as written inside `<…>`. It returns the offset of
+// the problem in the attribute value and a message, or ok.
+func genericsProblem(generics string) (pos int, msg string, ok bool) {
+	if strings.TrimSpace(generics) == "" {
+		return 0, "the generics attribute is empty", false
+	}
+	const prefix = "function f<"
+	prog, diags := jsast.ParseWithOptions(prefix+generics+">() {}", jsast.ParseOptions{TypeScript: true})
+	if len(diags) > 0 {
+		at := min(max(diags[0].Pos-len(prefix), 0), len(generics))
+		return at, diags[0].Message, false
+	}
+	if prog == nil || len(prog.Body) != 1 {
+		return 0, "the generics attribute must be a list of type parameters", false
+	}
+	if fn, isFn := prog.Body[0].(*jsast.JsFuncDecl); !isFn || fn.TS == nil || len(fn.TS.TypeParams) == 0 {
+		return 0, "the generics attribute must be a list of type parameters", false
+	}
+	return 0, "", true
 }

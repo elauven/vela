@@ -19,14 +19,17 @@ type (
 	IfChainNode             = sfcast.IfChainNode
 	JSDocComment            = sfcast.JSDocComment
 	JSDocTypeKind           = sfcast.JSDocTypeKind
+	LazyComponent           = sfcast.LazyComponent
 	Node                    = sfcast.Node
 	Part                    = sfcast.Part
 	SFC                     = sfcast.SFC
 	ScriptAST               = sfcast.ScriptAST
+	SectionError            = sfcast.SectionError
 	SlotNode                = sfcast.SlotNode
 	TemplateAST             = sfcast.TemplateAST
 	TemplateExpr            = sfcast.TemplateExpr
 	TemplateParseDiagnostic = sfcast.TemplateParseDiagnostic
+	TemplateSyntaxError     = sfcast.TemplateSyntaxError
 	TextNode                = sfcast.TextNode
 )
 
@@ -37,6 +40,7 @@ const (
 	AttrValueQuoted             = sfcast.AttrValueQuoted
 	AttrValueQuotedObjectCompat = sfcast.AttrValueQuotedObjectCompat
 	AttrValueSynthetic          = sfcast.AttrValueSynthetic
+	DynamicComponentTag         = sfcast.DynamicComponentTag
 	JSDocTypeAny                = sfcast.JSDocTypeAny
 	JSDocTypeBool               = sfcast.JSDocTypeBool
 	JSDocTypeInteger            = sfcast.JSDocTypeInteger
@@ -45,21 +49,25 @@ const (
 	JSDocTypeSlice              = sfcast.JSDocTypeSlice
 	JSDocTypeString             = sfcast.JSDocTypeString
 	JSDocTypeUnknown            = sfcast.JSDocTypeUnknown
+	SpecialElementPrefix        = sfcast.SpecialElementPrefix
 )
 
 var (
-	AttrExprToJS            = sfcast.AttrExprToJS
-	EachTerminalKeyStart    = sfcast.EachTerminalKeyStart
-	IsVoidElement           = sfcast.IsVoidElement
-	NewScriptAST            = sfcast.NewScriptAST
-	NewTemplateExpr         = sfcast.NewTemplateExpr
-	ParseInterpolations     = sfcast.ParseInterpolations
-	ParseInterpolationsAt   = sfcast.ParseInterpolationsAt
-	ParseSFC                = sfcast.ParseSFC
-	ParseTemplate           = sfcast.ParseTemplate
-	ParseTemplateExpression = sfcast.ParseTemplateExpression
-	ScriptContextClient     = sfcast.ScriptContextClient
-	TemplateExprDeps        = sfcast.TemplateExprDeps
-	UnwrapBraces            = sfcast.UnwrapBraces
-	ValidateTemplateAST     = sfcast.ValidateTemplateAST
+	AttrExprToJS              = sfcast.AttrExprToJS
+	EachTerminalKeyStart      = sfcast.EachTerminalKeyStart
+	IsVoidElement             = sfcast.IsVoidElement
+	NewScriptAST              = sfcast.NewScriptAST
+	NewScriptASTLang          = sfcast.NewScriptASTLang
+	NewTemplateExpr           = sfcast.NewTemplateExpr
+	ParseInterpolations       = sfcast.ParseInterpolations
+	ParseInterpolationsAt     = sfcast.ParseInterpolationsAt
+	ParseSFC                  = sfcast.ParseSFC
+	ParseTemplate             = sfcast.ParseTemplate
+	ParseTemplateExpression   = sfcast.ParseTemplateExpression
+	ParseTemplateExpressionTS = sfcast.ParseTemplateExpressionTS
+	ScriptContextClient       = sfcast.ScriptContextClient
+	ScriptLang                = sfcast.ScriptLang
+	TemplateExprDeps          = sfcast.TemplateExprDeps
+	UnwrapBraces              = sfcast.UnwrapBraces
+	ValidateTemplateAST       = sfcast.ValidateTemplateAST
 )

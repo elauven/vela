@@ -113,9 +113,14 @@ func RewriteImportPath(importPath string) string {
 		return strings.TrimSuffix(importPath, ".vela") + ".js"
 	}
 
+	// A local TypeScript module is compiled to .js (TS-5.3).
+	if IsTypeScriptModuleSpecifier(importPath) {
+		return TypeScriptModuleOutput(importPath)
+	}
+
 	// Already has a JS-compatible extension
 	ext := strings.ToLower(filepath.Ext(importPath))
-	if ext == ".js" || ext == ".mjs" || ext == ".cjs" || ext == ".ts" || ext == ".jsx" || ext == ".tsx" {
+	if ext == ".js" || ext == ".mjs" || ext == ".cjs" || ext == ".jsx" || ext == ".tsx" {
 		return importPath
 	}
 
@@ -431,6 +436,8 @@ func RewriteJSModuleSpecifiersWith(src, runtimeSpecifier string, sourceComponent
 		switch {
 		case !sourceComponentImports && strings.HasSuffix(spec.Value, ".vela") && (strings.HasPrefix(spec.Value, ".") || strings.HasPrefix(spec.Value, "/")):
 			replacement = strings.TrimSuffix(spec.Value, ".vela") + ".js"
+		case !sourceComponentImports && IsTypeScriptModuleSpecifier(spec.Value):
+			replacement = TypeScriptModuleOutput(spec.Value)
 		case spec.Value == "vela" || spec.Value == "vela/store":
 			replacement = runtimeSpecifier
 		default:
@@ -445,4 +452,53 @@ func RewriteJSModuleSpecifiersWith(src, runtimeSpecifier string, sourceComponent
 	}
 	out.WriteString(src[last:])
 	return out.String()
+}
+
+// IsTypeScriptModuleSpecifier reports a relative or absolute specifier of a
+// local .ts or .mts module (not a .d.ts), which project mode compiles to .js
+// (TS-5.1, TS-5.3). Package specifiers are never rewritten.
+func IsTypeScriptModuleSpecifier(spec string) bool {
+	if !strings.HasPrefix(spec, ".") && !strings.HasPrefix(spec, "/") {
+		return false
+	}
+	lower := strings.ToLower(spec)
+	if strings.HasSuffix(lower, ".d.ts") || strings.HasSuffix(lower, ".d.mts") {
+		return false
+	}
+	return strings.HasSuffix(lower, ".ts") || strings.HasSuffix(lower, ".mts")
+}
+
+// TypeScriptModuleOutput is the specifier of the compiled module of a .ts or
+// .mts specifier: the same path ending in .js.
+func TypeScriptModuleOutput(spec string) string {
+	return spec[:strings.LastIndexByte(spec, '.')] + ".js"
+}
+
+// RewriteDynamicImportSpecifiers rewrites the literal specifiers of import()
+// calls in a generated module that name a local TypeScript module (TS-5.3).
+func RewriteDynamicImportSpecifiers(prog *jsast.JsProgram) {
+	jsast.WalkNode(prog, func(n jsast.JsNode) bool {
+		call, ok := n.(*jsast.JsCallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		if id, ok := call.Callee.(*jsast.JsIdent); !ok || id.Name != "import" {
+			return true
+		}
+		lit, ok := call.Args[0].(*jsast.JsLiteral)
+		if !ok || lit.Kind != "string" {
+			return true
+		}
+		value := lit.Value
+		if !lit.Decoded {
+			if len(lit.Raw) < 2 || strings.Contains(lit.Raw, "\\") {
+				return true
+			}
+			value = lit.Raw[1 : len(lit.Raw)-1]
+		}
+		if IsTypeScriptModuleSpecifier(value) {
+			call.Args[0] = jsast.GenStrLit(TypeScriptModuleOutput(value))
+		}
+		return true
+	})
 }

@@ -8,10 +8,14 @@ package main
 import project "github.com/elauven/vela/internal/project"
 
 var (
-	CollectJSModules = project.CollectJSModules
-	CollectVela      = project.CollectVela
-	ComponentName    = project.ComponentName
-	MirrorPath       = project.MirrorPath
-	RelOrBase        = project.RelOrBase
-	ScopeID          = project.ScopeID
+	CollectJSModules            = project.CollectJSModules
+	CollectUnsupportedModules   = project.CollectUnsupportedModules
+	CollectVela                 = project.CollectVela
+	ComponentID                 = project.ComponentID
+	ComponentName               = project.ComponentName
+	IsTypeScriptModule          = project.IsTypeScriptModule
+	MirrorPath                  = project.MirrorPath
+	RelOrBase                   = project.RelOrBase
+	ScopeID                     = project.ScopeID
+	UnsupportedTypeScriptModule = project.UnsupportedTypeScriptModule
 )
