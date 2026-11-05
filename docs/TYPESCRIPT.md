@@ -5,8 +5,7 @@ accepts, how types are checked, and how TypeScript reaches server
 rendering and Vela App. Tasks 080–089 implement it; the table
 [Rule ownership](#rule-ownership) names the task of each rule.
 
-Status: **planned**, contract of task 079, written 2026-11-05, pending
-approval. Nothing on this page is implemented yet: today `lang="ts"` is
+Status: **planned**, contract of task 079, approved on 2026-11-05. Nothing on this page is implemented yet: today `lang="ts"` is
 ignored and the first type annotation is `VELA-JS-SYNTAX`. Until task 089
 marks TypeScript as experimental in [FEATURES.md](FEATURES.md), write
 JavaScript (with JSDoc where types help).
@@ -246,7 +245,8 @@ rewrite in the message:
   the typed tier produce a result the dynamic tier would not, breaking
   T-5.4a of [SSR_TRANSLATION_CONTRACT.md](SSR_TRANSLATION_CONTRACT.md).
   The existing inference (literals, flow, built-ins, Go types) decides
-  the tier as before. Open question 2 discusses widening this.
+  the tier as before. Decision 2 at the end of this page records how
+  this may widen.
 - **TS-7.4** `--ssr-scaffold-hosts` takes Go signatures from TypeScript
   parameter and return types where they map (`number` → `float64`,
   `string`, `boolean` → `bool`, `T[]` → `[]T`, known object shapes →
@@ -350,16 +350,18 @@ Syntax errors of TypeScript sources stay `VELA-JS-SYNTAX`.
 | [088](../tasks/088-typescript-starter-testing-eslint.md) starter, testing, ESLint | TS-1.3, TS-10.2 |
 | [089](../tasks/089-typescript-docs-and-release.md) docs and release | TS-9, status |
 
-## Open questions
+## Decisions on the open questions of 079
 
-1. **`enum` and parameter properties.** Proposed: rejected in v1
-   (TS-2.4). They need generated code, a runtime meaning and an SSR
-   translation; `const enum` cannot be inlined across files under
-   TS-3.1 anyway. Revisit after 089 if projects ask for them.
-2. **Trusting annotations in SSR.** Proposed: only prop annotations
-   affect Go types (TS-7.2), because Go checks them at the boundary.
-   Widening TS-7.3 would need either a checked conversion where an
-   annotated value enters typed code, or `vela --ssr` refusing to trust
-   annotations unless `vela check --types` passed for that build.
-3. **Name of the ambient entry** (`@govela/runtime/ambient` above):
-   fixed by 082.
+Approved together with the rest of this page on 2026-11-05:
+
+1. **`enum` and parameter properties** are rejected in v1 (TS-2.4). They
+   need generated code, a run-time meaning and an SSR translation, and
+   `const enum` cannot be inlined across files under TS-3.1 anyway. They
+   may be revisited after 089 if projects ask for them.
+2. **Annotations in SSR**: only prop annotations affect Go types (TS-7.2),
+   because Go checks the value at the boundary; other annotations do not
+   choose the typed tier (TS-7.3). Widening this later needs either a
+   checked conversion where an annotated value enters typed code, or a
+   build that trusts annotations only after `vela check --types` passed.
+3. **The ambient entry** is named by 082 (`@govela/runtime/ambient` is the
+   working name).
