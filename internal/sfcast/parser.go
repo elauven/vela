@@ -40,6 +40,19 @@ type SFC struct {
 	// rendered only by the client (contract §9.2).
 	ClientOnly bool
 
+	// Lang is the `lang` attribute of <script> as written and LangPos the
+	// offset of its value (0 without the attribute). TypeScript is set for
+	// `ts` and `typescript` (TS-4.1); LangInvalid for any value but those
+	// and `js`, which is VELA-TS-LANG (the script is then JavaScript).
+	Lang        string
+	LangPos     int
+	TypeScript  bool
+	LangInvalid bool
+	// Generics is the `generics` attribute of a TypeScript <script> (TS-4.8)
+	// and GenericsPos the offset of its value.
+	Generics    string
+	GenericsPos int
+
 	// Source is the whole file. SitePath, when set, names the file in the
 	// hydration site table of development builds (V-11.3b), and SiteHosts
 	// resolves the host symbol of a site.
@@ -106,22 +119,58 @@ type ScriptAST struct {
 	Program     *jsast.JsProgram
 	Diagnostics []jsast.JSParseDiagnostic
 	DocComments []JSDocComment
+	// TypeScript is set for `<script lang="ts">` (TS-4.1). Program is then
+	// the erased tree and Program.TS what the types said; JavaScript is
+	// the script with its TypeScript blanked out (same length, same lines).
+	TypeScript bool
+	JavaScript string
 }
 
 func NewScriptAST(source string, offset int) *ScriptAST {
-	program, diagnostics := jsast.ParseJSWithDiagnostics(source)
+	return NewScriptASTLang(source, offset, false)
+}
+
+// NewScriptASTLang parses a script as TypeScript when ts is set.
+func NewScriptASTLang(source string, offset int, ts bool) *ScriptAST {
+	program, diagnostics := jsast.ParseWithOptions(source, jsast.ParseOptions{TypeScript: ts})
 	if len(diagnostics) == 0 {
 		// Early errors would make the generated module fail to load. The
 		// script runs inside the component factory, a plain function.
 		diagnostics = jsast.EarlyErrors(program, jsast.EarlyOptions{TopLevelIsFunction: true})
 	}
-	return &ScriptAST{
+	script := &ScriptAST{
 		Source:      source,
 		Span:        srcspan.SectionSpan{Start: offset, End: offset + len(source)},
 		Program:     program,
 		Diagnostics: diagnostics,
 		DocComments: scanJSDocComments(source),
+		TypeScript:  ts,
+		JavaScript:  source,
 	}
+	if ts && program != nil {
+		script.JavaScript = jsast.BlankTypeScript(source, program.TS)
+	}
+	return script
+}
+
+// ScriptDiagnosticCode is the diagnostic code of a script parse problem:
+// VELA-TS-NON-ERASABLE for TypeScript that generates code (TS-2.4), else
+// VELA-JS-SYNTAX (TypeScript syntax errors included).
+func (s *ScriptAST) ScriptDiagnosticCode(d jsast.JSParseDiagnostic) string {
+	if d.Code == jsast.DiagTSNonErasable {
+		return "VELA-TS-NON-ERASABLE"
+	}
+	return "VELA-JS-SYNTAX"
+}
+
+// TypeScriptInJS reports a JavaScript script that does not parse as
+// JavaScript but does as TypeScript (TS-2.5, VELA-TS-IN-JS), with the
+// offset of its first TypeScript syntax.
+func (s *ScriptAST) TypeScriptInJS() (int, bool) {
+	if s.TypeScript || len(s.Diagnostics) == 0 {
+		return 0, false
+	}
+	return jsast.DetectTypeScript(s.Source)
 }
 
 // ParseSFC splits a .vela source file into its three sections by scanning for
@@ -190,17 +239,32 @@ func ParseSFC(src string) (*SFC, error) {
 
 	sfc.Script, sfc.ScriptOffset = extractBlock("script")
 	sfc.ClientOnly = ScriptContextClient(src)
+	sfc.Lang, sfc.LangPos = ScriptLang(src)
+	switch strings.ToLower(sfc.Lang) {
+	case "ts", "typescript":
+		sfc.TypeScript = true
+		if g, pos, ok := scriptAttr(src, "generics"); ok {
+			sfc.Generics, sfc.GenericsPos = g, pos
+		}
+	case "", "js":
+	default:
+		sfc.LangInvalid = true
+	}
 	sfc.Style, sfc.StyleOffset = extractBlock("style")
 	sfc.Template, sfc.TemplateOffset = extractBlock("template")
 
-	sfc.ScriptAST = NewScriptAST(sfc.Script, sfc.ScriptOffset)
+	sfc.ScriptAST = NewScriptASTLang(sfc.Script, sfc.ScriptOffset, sfc.TypeScript)
 	sfc.StyleAST = css.NewCssStylesheet(sfc.Style, sfc.StyleOffset)
 	if sfc.Template == "" {
 		// The script and style of a component being written are still
 		// analyzable (the language server, task 065).
 		return sfc, fmt.Errorf("missing <template> section")
 	}
-	sfc.TemplateAST = newTemplateAST(sfc.Template, sfc.TemplateOffset)
+	sfc.TemplateAST = newTemplateASTLang(sfc.Template, sfc.TemplateOffset, sfc.TypeScript)
+	// Template expressions of a TypeScript component are blanked to
+	// JavaScript of the same length (TS-4.3); later passes read the
+	// template text too.
+	sfc.Template = sfc.TemplateAST.Source
 	sfc.AST = &ComponentAST{
 		Source:   src,
 		Script:   sfc.ScriptAST,
@@ -256,7 +320,24 @@ type TemplateParseDiagnostic struct {
 }
 
 func newTemplateAST(source string, offset int) *TemplateAST {
-	nodes, err := parseTemplateAt(source, offset)
+	return newTemplateASTLang(source, offset, false)
+}
+
+// newTemplateASTLang parses a template whose expressions are TypeScript when
+// ts is set (TS-4.3). Every expression with TypeScript in it is blanked to
+// JavaScript of the same length and written back into the source, which is
+// then parsed again: the nodes, their raw expression strings and the
+// template text later passes scan are all JavaScript, at the offsets of the
+// TypeScript source.
+func newTemplateASTLang(source string, offset int, ts bool) *TemplateAST {
+	nodes, err, blanks := parseTemplateLang(source, offset, ts)
+	if len(blanks) > 0 && err == nil {
+		if blanked, changed := applyTemplateBlanks(source, blanks); changed {
+			if again, err2, _ := parseTemplateLang(blanked, offset, ts); err2 == nil {
+				source, nodes = blanked, again
+			}
+		}
+	}
 	ast := &TemplateAST{
 		Source: source,
 		Span:   srcspan.SectionSpan{Start: offset, End: offset + len(source)},
@@ -617,6 +698,9 @@ type TemplateExpr struct {
 	Pos     int
 	Program *jsast.JsProgram
 	Errors  []string
+	// HasTS is set when TypeScript syntax was blanked out of Source (a
+	// TypeScript component, TS-4.3).
+	HasTS bool
 }
 
 // Root returns the single JavaScript expression owned by a template
@@ -638,9 +722,29 @@ func NewTemplateExpr(source string, pos int) *TemplateExpr {
 }
 
 func newTemplateExprAt(source string, pos, absolutePos int) *TemplateExpr {
+	return newTemplateExprLang(source, pos, absolutePos, nil, 0)
+}
+
+// newTemplateExprLang is newTemplateExprAt for the expression language of
+// lang; a TypeScript expression is recorded in lang.blanks with the template
+// offset of its raw text, rel.
+func newTemplateExprLang(source string, pos, absolutePos int, lang *exprLang, rel int) *TemplateExpr {
 	leading := len(source) - len(strings.TrimLeftFunc(source, unicode.IsSpace))
 	source = strings.TrimSpace(source)
-	prog, errs := ParseTemplateExpression(source)
+	var prog *jsast.JsProgram
+	var errs []string
+	hasTS := false
+	if lang != nil && lang.ts {
+		var js string
+		prog, errs, js = ParseTemplateExpressionTS(source)
+		if js != source {
+			hasTS = true
+			lang.blanks = append(lang.blanks, exprBlank{pos: rel, from: source, to: js})
+			source = js
+		}
+	} else {
+		prog, errs = ParseTemplateExpression(source)
+	}
 	start := absolutePos + leading
 	return &TemplateExpr{
 		Span:    srcspan.SectionSpan{Start: start, End: start + len(source)},
@@ -648,11 +752,12 @@ func newTemplateExprAt(source string, pos, absolutePos int) *TemplateExpr {
 		Pos:     pos + leading,
 		Program: prog,
 		Errors:  errs,
+		HasTS:   hasTS,
 	}
 }
 
 func (p *parser) templateExpr(source string, pos int) *TemplateExpr {
-	return newTemplateExprAt(source, pos, p.base+pos)
+	return newTemplateExprLang(source, pos, p.base+pos, p.lang, pos)
 }
 
 // newAttributeTemplateExpr parses a dynamic attribute value through the same
@@ -666,7 +771,7 @@ func newAttributeTemplateExpr(value string, pos int) *TemplateExpr {
 }
 
 func (p *parser) attributeTemplateExpr(value string, pos int) *TemplateExpr {
-	return newTemplateExprAt(AttrExprToJS(value), pos, p.base+pos)
+	return newTemplateExprLang(AttrExprToJS(value), pos, p.base+pos, p.lang, pos)
 }
 
 func TemplateExprDeps(expr *TemplateExpr, vars []string) []string {
@@ -750,6 +855,7 @@ type parser struct {
 	// newline the HTML parser drops.
 	preformatted int
 	afterStart   int
+	lang         *exprLang
 }
 
 // templateJSSyntax tracks the lexical forms that make punctuation inert while
@@ -817,7 +923,12 @@ func ParseTemplate(html string) ([]Node, error) {
 }
 
 func parseTemplateAt(html string, base int) ([]Node, error) {
-	p := &parser{src: html, base: base}
+	nodes, err, _ := parseTemplateLang(html, base, false)
+	return nodes, err
+}
+
+func parseTemplateLang(html string, base int, ts bool) ([]Node, error, []exprBlank) {
+	p := &parser{src: html, base: base, lang: &exprLang{ts: ts}}
 	nodes, err := p.parseNodes(nil)
 	if err != nil {
 		// An error without its own position is where parsing stopped.
@@ -825,9 +936,43 @@ func parseTemplateAt(html string, base int) ([]Node, error) {
 		if !errors.As(err, &positioned) {
 			err = &TemplateSyntaxError{Pos: p.pos, Err: err}
 		}
-		return nil, err
+		return nil, err, nil
 	}
-	return nodes, nil
+	return nodes, nil, p.lang.blanks
+}
+
+// exprLang is the language of the expressions of one template parse.
+type exprLang struct {
+	ts bool
+	// blanks are the TypeScript expressions found, with their JavaScript.
+	blanks []exprBlank
+}
+
+// exprBlank is one TypeScript expression: its source near the template
+// offset pos, and the blanked JavaScript of the same length.
+type exprBlank struct {
+	pos      int
+	from, to string
+}
+
+// applyTemplateBlanks writes the JavaScript of each expression over its
+// source. pos is where the expression's raw text starts (before trimming),
+// so the source is looked for from there.
+func applyTemplateBlanks(src string, blanks []exprBlank) (string, bool) {
+	out := []byte(src)
+	changed := false
+	for _, b := range blanks {
+		if b.pos < 0 || b.pos > len(src) || len(b.from) != len(b.to) {
+			continue
+		}
+		i := strings.Index(src[b.pos:], b.from)
+		if i < 0 || strings.TrimSpace(src[b.pos:b.pos+i]) != "" {
+			continue
+		}
+		copy(out[b.pos+i:], b.to)
+		changed = true
+	}
+	return string(out), changed
 }
 
 // TemplateSyntaxError is a template parse error at the byte offset Pos of
@@ -1019,7 +1164,7 @@ func (p *parser) parseText() (*TextNode, error) {
 	if p.preformatted > 0 {
 		return p.preformattedText(raw, start)
 	}
-	parts := ParseInterpolationsAt(raw, p.pos-len(raw))
+	parts := parseInterpolationsLang(raw, p.pos-len(raw), false, p.lang)
 	if len(parts) == 0 {
 		return nil, nil
 	}
@@ -1056,6 +1201,10 @@ func ParseInterpolationsAt(s string, base int) []*Part {
 }
 
 func parseInterpolationsMode(s string, base int, verbatim bool) []*Part {
+	return parseInterpolationsLang(s, base, verbatim, nil)
+}
+
+func parseInterpolationsLang(s string, base int, verbatim bool, lang *exprLang) []*Part {
 	var parts []*Part
 	var buf strings.Builder
 
@@ -1133,7 +1282,8 @@ func parseInterpolationsMode(s string, base int, verbatim bool) []*Part {
 			}
 			expr := strings.TrimSpace(s[start:i])
 			if expr != "" {
-				parts = append(parts, &Part{Static: false, Value: expr, Pos: base + start, Expr: NewTemplateExpr(expr, base+start)})
+				te := newTemplateExprLang(expr, base+start, base+start, lang, base+start)
+				parts = append(parts, &Part{Static: false, Value: te.Source, Pos: base + start, Expr: te})
 			}
 			if i < len(s) {
 				i++ // skip the matched '}'
@@ -2464,7 +2614,7 @@ func (p *parser) preformattedText(raw string, start int) (*TextNode, error) {
 			raw, offset = raw[1:], offset+1
 		}
 	}
-	parts := parseVerbatimInterpolationsAt(raw, offset)
+	parts := parseInterpolationsLang(raw, offset, true, p.lang)
 	if len(parts) == 0 {
 		return nil, nil
 	}
@@ -2516,6 +2666,77 @@ func (p *parser) parseSvelteClientBlock(branchStart int) (Node, error) {
 		return nil, fmt.Errorf("{#client} block must end with {/client} after an optional {:else}, found {%s}", term)
 	}
 	return chain, nil
+}
+
+// scriptAttr returns the value of attribute name on the first <script>
+// tag of src and the offset of the value; ok is false without it.
+func scriptAttr(src, name string) (value string, pos int, ok bool) {
+	low := asciiLower(src)
+	start := strings.Index(low, "<script")
+	if start < 0 {
+		return "", 0, false
+	}
+	end := strings.Index(src[start:], ">")
+	if end < 0 {
+		return "", 0, false
+	}
+	tag := src[start : start+end]
+	ltag := low[start : start+end]
+	for i := len("<script"); i < len(tag); {
+		// Skip to the next attribute name.
+		for i < len(tag) && (isHTMLSpace(tag[i]) || tag[i] == '/') {
+			i++
+		}
+		nameStart := i
+		for i < len(tag) && !isHTMLSpace(tag[i]) && tag[i] != '=' && tag[i] != '/' {
+			i++
+		}
+		attr := ltag[nameStart:i]
+		for i < len(tag) && isHTMLSpace(tag[i]) {
+			i++
+		}
+		if i >= len(tag) || tag[i] != '=' {
+			if attr == name {
+				return "", start + nameStart, true
+			}
+			if i == nameStart {
+				i++
+			}
+			continue
+		}
+		i++ // =
+		for i < len(tag) && isHTMLSpace(tag[i]) {
+			i++
+		}
+		valStart, valEnd := i, i
+		if i < len(tag) && (tag[i] == '"' || tag[i] == '\'') {
+			q := tag[i]
+			valStart = i + 1
+			valEnd = strings.IndexByte(tag[valStart:], q)
+			if valEnd < 0 {
+				valEnd = len(tag)
+			} else {
+				valEnd += valStart
+			}
+			i = valEnd + 1
+		} else {
+			for i < len(tag) && !isHTMLSpace(tag[i]) {
+				i++
+			}
+			valEnd = i
+		}
+		if attr == name {
+			return tag[valStart:valEnd], start + valStart, true
+		}
+	}
+	return "", 0, false
+}
+
+// ScriptLang returns the `lang` attribute of the first <script> tag and the
+// offset of its value.
+func ScriptLang(src string) (string, int) {
+	v, pos, _ := scriptAttr(src, "lang")
+	return strings.TrimSpace(v), pos
 }
 
 var scriptContextPattern = regexp.MustCompile(`(?i)^<script\b[^>]*\scontext\s*=\s*["']?client["']?[\s/>]`)

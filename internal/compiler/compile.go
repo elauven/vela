@@ -388,6 +388,13 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		}
 	}
 
+	if sfc.LangInvalid {
+		ds.Report(diag.SevError, sfc.LangPos, sfc.LangPos+len(sfc.Lang), "VELA-TS-LANG",
+			`Use lang="ts" for TypeScript, or remove the attribute for JavaScript.`,
+			"<script lang=%q> is not a supported language", sfc.Lang)
+		return ds.All(), fmt.Errorf("unsupported script language %q", sfc.Lang)
+	}
+
 	var tmpl []sfcast.Node
 	if err = trace.stage("parse-template", func() error {
 		if sfc.TemplateAST == nil {
@@ -426,13 +433,25 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 	if err = trace.stage("parse-script-and-analyze", func() error {
 		if len(sfc.ScriptAST.Diagnostics) > 0 {
 			ds.PushOffset(sfc.ScriptAST.Span.Start)
+			if at, ok := sfc.ScriptAST.TypeScriptInJS(); ok {
+				ds.ErrorWith(at, "VELA-TS-IN-JS", scriptDiagnosticHint("VELA-TS-IN-JS"),
+					"TypeScript syntax in a JavaScript component")
+				ds.PopOffset()
+				return fmt.Errorf("script syntax validation failed")
+			}
 			for _, issue := range sfc.ScriptAST.Diagnostics {
-				ds.ErrorWith(issue.Pos, "VELA-JS-SYNTAX", "fix the JavaScript syntax in <script>", "%s", issue.Message)
+				code := sfc.ScriptAST.ScriptDiagnosticCode(issue)
+				ds.ErrorWith(issue.Pos, code, scriptDiagnosticHint(code), "%s", issue.Message)
 			}
 			ds.PopOffset()
 			return fmt.Errorf("script syntax validation failed")
 		}
 		analysis = analyzer.AnalyzeScriptAST(sfc.ScriptAST)
+		if sfc.ScriptAST.TypeScript {
+			ds.PushOffset(sfc.ScriptAST.Span.Start)
+			reportTypeOnlyImports(ds, sfc.ScriptAST.Source, sfc.ScriptAST.Program, sfc.Template)
+			ds.PopOffset()
+		}
 		if opts.CheckDeps {
 			checkScriptPackageImports(src, sfc.ScriptAST, ds)
 		}
@@ -602,6 +621,20 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 	}
 
 	return ds.All(), nil
+}
+
+// scriptDiagnosticHint is the suggestion of a script parse diagnostic
+// (sfcast.ScriptAST.ScriptDiagnosticCode).
+func scriptDiagnosticHint(code string) string {
+	switch code {
+	case "VELA-TS-NON-ERASABLE":
+		return "rewrite it with erasable TypeScript, as the message says (docs/TYPESCRIPT.md TS-2.4)"
+	case "VELA-TS-IN-JS":
+		return `this is TypeScript: add lang="ts" to <script>`
+	case "VELA-JS-SYNTAX":
+		return "fix the JavaScript syntax in <script>"
+	}
+	return "fix the syntax in <script>"
 }
 
 // CheckEmittedJS reparses a generated module. A printer or minifier defect

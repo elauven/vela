@@ -296,6 +296,7 @@ func (p *JSParser) eatTypeColon() bool {
 	if p.cur.Kind != TokColon {
 		return false
 	}
+	p.markTS(p.cur.Pos)
 	p.blankCur()
 	p.advance()
 	return true
