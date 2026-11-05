@@ -22,40 +22,19 @@ import (
 //go:embed ts_helper.mjs
 var tsHelperSource []byte
 
-// velaEnv declares the runes and the compiler's modules for TypeScript, and
-// the helpers of the render function of a virtual document.
-const velaEnv = `declare function $state<T>(initial: T): T;
-declare function $state<T = undefined>(): T | undefined;
-declare namespace $state {
-  function deep<T>(initial: T): T;
-}
-declare function $derived<T>(expression: T): T;
-declare function $effect(fn: () => void | (() => void)): void;
-declare function $bindable<T>(fallback?: T): T;
-declare function $$dispatch(name: string, detail?: any): void;
+// velaEnv declares the runes and the compiler's modules for TypeScript, as
+// the ambient types of the runtime package do (runtime/types, task 082),
+// and the helpers of the render function of a virtual document.
+var velaEnv = runtime.AmbientDeclarations() + velaRenderHelpers
+
+const velaRenderHelpers = `
 declare function $$each<T>(items: Iterable<T> | ArrayLike<T> | null | undefined): Iterable<T>;
 declare function $$awaited<T>(promise: T): Awaited<T>;
 declare const $$error: any;
 declare function $$on<K extends keyof HTMLElementEventMap>(event: K, handler: (event: HTMLElementEventMap[K]) => any): void;
 declare function $$on(event: string, handler: (event: Event) => any): void;
 declare function $$handler(handler: (event: CustomEvent) => any): void;
-declare function $$dynamic(component: ((...args: any[]) => any) | null | undefined | false): void;
-declare module 'vela/store' {
-  export interface Readable<T> { subscribe(run: (value: T) => void): () => void }
-  export interface Writable<T> extends Readable<T> { set(value: T): void; update(fn: (value: T) => T): void }
-  export function writable<T>(value: T): Writable<T>;
-  export function readable<T>(value: T, start?: (set: (value: T) => void) => void | (() => void)): Readable<T>;
-  export function derived<T>(stores: Readable<any> | Readable<any>[], fn: (values: any, set: (value: T) => void) => T | void, initial?: T): Readable<T>;
-}
-declare module 'vela' {
-  export function onMount(fn: () => void | (() => void) | Promise<void>): void;
-  export function onDestroy(fn: () => void): void;
-  export function tick(): Promise<void>;
-  export function lazy(load: () => Promise<any>): any;
-  export function mount(component: any, options: { target: Element; props?: Record<string, any>; slots?: Record<string, any> }): any;
-  export function warn(message: string): void;
-  export { writable, readable, derived } from 'vela/store';
-}
+declare function $$dynamic(component: import('vela').Component<any, any, any> | import('vela').Lazy<any> | ((...args: any[]) => any) | null | undefined | false): void;
 `
 
 // tsClient runs the TypeScript helper: one node process, requests in

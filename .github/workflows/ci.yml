@@ -160,7 +160,7 @@ jobs:
 
       - name: Install the bundlers
         # Pinned by package-lock.json: vite, rolldown, esbuild, unplugin,
-        # typescript.
+        # typescript 6 and typescript-5.8 (the type tests of task 082).
         run: npm ci
 
       - name: Install Playwright Chromium
@@ -169,7 +169,7 @@ jobs:
       - name: Bundle and run in Chromium
         env:
           VELA_REQUIRE_BUNDLERS: '1'
-        run: go test -count=1 -v -run 'TestBundler|TestSSRWithVite|TestCompilerNpmPackage' .
+        run: go test -count=1 -v -run 'TestBundler|TestSSRWithVite|TestCompilerNpmPackage|TestPackageTypes' .
 
       - name: Language server with TypeScript
         # typescript@6 of package-lock.json (task 065c).

@@ -9,7 +9,9 @@ Status: **planned**, contract of task 079, approved on 2026-11-05. The
 parser accepts and erases the syntax of TS-2 and TS-3.2 (task 080, see
 [ES_COMPLIANCE.md](ES_COMPLIANCE.md#typescript)), and the compiler builds
 `<script lang="ts">` components and `.ts` modules with it (task 081, see
-[Decisions of 081](#decisions-of-081)). Types are not checked yet (084),
+[Decisions of 081](#decisions-of-081)). The npm packages ship their
+declarations and the ambient types (task 082, see
+[Decisions of 082](#decisions-of-082)). Types are not checked yet (084),
 editors treat a TypeScript script as JavaScript (085), and server
 rendering does not read `.ts` modules (086). Until task 089 marks
 TypeScript as experimental in [FEATURES.md](FEATURES.md), write
@@ -234,8 +236,10 @@ rewrite in the message:
   includes it through `types` in tsconfig (TS-10.2). The language
   server's built-in declarations are generated from the same file.
 - **TS-6.3** `vela` exports `Component<Props, Events, Slots>`, the type
-  of a component value, and `Lazy<C>`, the type of `lazy()`. `mount`,
-  `hydrate` and `<vela:component :this>` accept both and check props.
+  of a component value, and `Lazy<C>`, the type of `lazy()`.
+  `<vela:component :this>` accepts both; `mount` and `hydrate` take a
+  `Component` (a `Lazy` must load first: `await panel.load()`) and check
+  props.
 - **TS-6.4** Component types in a project come from the checker, not
   from files on disk: `vela check --types`, `vela-lsp` and the TypeScript
   server plugin (085) present `Card.vela` to TypeScript as the virtual
@@ -337,7 +341,7 @@ rewrite in the message:
 
   `erasableSyntaxOnly` makes `tsc` reject what TS-2.4 rejects, and
   `verbatimModuleSyntax` what TS-3.3 rejects, so the editor and the
-  compiler agree. The ambient entry name is fixed by 082.
+  compiler agree. The ambient entry is `@govela/runtime/ambient` (082).
 
 ## Diagnostics
 
@@ -396,8 +400,7 @@ Approved together with the rest of this page on 2026-11-05:
    choose the typed tier (TS-7.3). Widening this later needs either a
    checked conversion where an annotated value enters typed code, or a
    build that trusts annotations only after `vela check --types` passed.
-3. **The ambient entry** is named by 082 (`@govela/runtime/ambient` is the
-   working name).
+3. **The ambient entry** is `@govela/runtime/ambient` (decided by 082).
 
 ## Decisions of 081
 
@@ -425,3 +428,32 @@ Taken while implementing the compiler on 2026-11-05:
    (`// @ts-check`, `checkJs`) on a `lang="ts"` script, which would
    report its annotations; typed virtual documents are 085's.
 
+## Decisions of 082
+
+Taken while writing the declarations on 2026-11-05:
+
+1. **One source.** `runtime/types/` holds the declarations once; the
+   generator of `packages/runtime` assembles `runtime.d.ts`,
+   `runtime-hydrate.d.ts` and `ambient.d.ts` from it, and `vela-lsp`
+   declares the text of `ambient.d.ts` (plus the helpers of its virtual
+   documents). A test compares the declared names with the runtime's
+   exports and with the names the compiler accepts from `vela`.
+2. **`mount` and `hydrate` take a `Component`** (TS-6.3 corrected): the
+   runtime calls the component, which a `Lazy` is not.
+3. **`onMount` and `onDestroy`** are declared in the module `vela` of the
+   ambient types only: the compiler wires them in, and `@govela/runtime`
+   does not export them.
+4. **`$$dispatch`** takes any name and detail until 083 types it by
+   `$$Events` (TS-4.6).
+5. **`@govela/runtime/blocks`** stays undeclared: only generated code
+   imports it (TS-6.1).
+6. **`@govela/app/client`** types `VelaApp` as a `Component`, mismatch
+   reports as `MismatchReport`, and the DOM events `vela:hydrated`,
+   `vela:navigated` and `vela:form`. Its declarations import the types of
+   `@govela/runtime`; a runtime release without declarations leaves
+   those types unresolved.
+7. **Type tests** (`testdata/types`, `TestPackageTypes`) run with
+   TypeScript 5.8 and 6.x in the strict configuration of TS-10.2 plus
+   `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, without
+   `skipLibCheck` except for `@govela/unplugin`, whose declarations import
+   the types of every bundler.

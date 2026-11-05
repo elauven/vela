@@ -1,4 +1,7 @@
-// Types of @govela/app/client for editors (docs/APP.md).
+// Types of @govela/app/client (docs/APP.md).
+
+import type { Component, ComponentInstance } from '@govela/runtime';
+import type { MismatchReport } from '@govela/runtime/hydrate';
 
 /** The route table of src/_app/routes.js, which vela-app generates. */
 export interface RouteTable {
@@ -37,19 +40,19 @@ export interface BeforeNavigation extends Navigation {
 
 export interface StartOptions {
   /** The generated app root, src/_app/VelaApp.vela. */
-  VelaApp: Function;
+  VelaApp: Component<any, any, any>;
   /** The generated route table, src/_app/routes.js. Without it links load documents. */
   routes?: RouteTable;
   /** The element that holds the app root, or its id. */
   root?: string | Element;
   /** Receives hydration mismatch reports. */
-  onMismatch?: (report: unknown) => void;
+  onMismatch?: (report: MismatchReport) => void;
   /** The default prefetch of links; data-vela-preload on a link or an ancestor overrides it. */
   preload?: 'hover' | 'viewport' | 'off';
 }
 
 /** Hydrates the server document and installs the router. */
-export function start(options: StartOptions): Promise<{ app: unknown; routes?: RouteTable }>;
+export function start(options: StartOptions): Promise<{ app: ComponentInstance; routes?: RouteTable }>;
 
 export interface GotoOptions {
   /** Replace the current history entry instead of adding one. */
@@ -82,3 +85,22 @@ export const protocolVersion: 1;
 
 /** The request headers of a navigation (N-2). */
 export const headers: Readonly<{ navigate: string; have: string; build: string }>;
+
+/** The detail of `vela:form`: a failed form action (`app.Fail`). */
+export interface FormFailure {
+  /** The HTTP status of the failure, 400–499. */
+  status: number;
+  /** The value the action failed with: the page's `form` prop. */
+  form: unknown;
+}
+
+declare global {
+  interface HTMLElementEventMap {
+    /** The app root hydrated (start()). */
+    'vela:hydrated': CustomEvent<{ app: ComponentInstance }>;
+    /** A navigation of the router ended. */
+    'vela:navigated': CustomEvent<Navigation>;
+    /** A form action failed; the page's `form` prop changed. */
+    'vela:form': CustomEvent<FormFailure>;
+  }
+}
