@@ -73,6 +73,15 @@ JavaScript engine.
 
 ## Quick start
 
+A new application, with Vite, a component test and a CI workflow:
+
+```sh
+npm create @govela my-app             # add -- --ssr for a Go server, -- --app for a Vela App
+cd my-app && npm install && npm run dev
+```
+
+The compiler alone:
+
 ```sh
 go install github.com/elauven/vela@latest   # or, in a JavaScript project:
 npm i -D @govela/compiler                   # then npx vela …

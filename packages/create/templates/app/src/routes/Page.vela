@@ -1,0 +1,10 @@
+<script>
+  export let data = null;
+
+  let count = $state(0);
+</script>
+
+<template>
+  <h1>{data.greeting}</h1>
+  <button @click={() => count++}>Clicked {count} times</button>
+</template>

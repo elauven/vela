@@ -1350,6 +1350,68 @@ prefetched on hover; layouts above the changed level keep their state. Use
 from `@govela/app/client` for navigation in code
 ([APP.md](APP.md#navigation)).
 
+## Testing components
+
+`@govela/testing` mounts components in a test DOM: Vitest with happy-dom or
+jsdom, with the components compiled by `@govela/unplugin` as in the
+application. `npm create @govela` sets it up.
+
+```sh
+npm i -D @govela/testing @govela/unplugin vitest happy-dom
+```
+
+```js
+// vite.config.js
+import vela from '@govela/unplugin/vite';
+
+export default {
+  plugins: [vela()],
+  test: { environment: 'happy-dom', setupFiles: ['./vitest.setup.js'] },
+};
+```
+
+```js
+// vitest.setup.js
+import { afterEach } from 'vitest';
+import { cleanup } from '@govela/testing';
+
+afterEach(cleanup);
+```
+
+```js
+// src/Counter.test.js
+import { expect, test } from 'vitest';
+import { fireEvent, render } from '@govela/testing';
+import Counter from './Counter.vela';
+
+test('counts by its step', async () => {
+  const counts = [];
+  const { container } = render(Counter, {
+    props: { step: 2 },
+    slots: { default: 'Clicks' },
+    events: { change: (event) => counts.push(event.detail) },
+  });
+  await fireEvent.click(container.querySelector('button'));
+  expect(container.textContent).toBe('Clicks: 2');
+  expect(counts).toEqual([2]);
+});
+```
+
+- `render(Component, { props, slots, events, target })` mounts into a new
+  `<div>` of `document.body` and returns `{ container, component,
+  rerender(props), unmount() }`. A slot is an HTML string, a node or a
+  function returning one. `events` listens to the component's
+  `$$dispatch` events, which bubble from its DOM.
+- `fireEvent(element, event)` and its helpers (`click`, `dblClick`,
+  `input(element, value)`, `change(element, value)`, `keyDown`, `submit`,
+  `focus`, `blur`, …) dispatch the event and wait until the component has
+  updated; `await` them. `rerender(props)` waits the same way.
+- `cleanup()` unmounts every rendered component; `tick()` waits for pending
+  updates after a change made outside `fireEvent`.
+- Server rendering is not part of these tests: `vela check --ssr` checks
+  that the components translate, and the Go renderers can be tested with
+  `go test`.
+
 ## Checking a project
 
 `vela check` runs every check of a build and writes nothing: it builds into
