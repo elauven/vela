@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -39,7 +40,9 @@ func ssrTypeScriptTwin(src string) string {
 }
 
 func TestSSRTypeScriptTwins(t *testing.T) {
-	requireJsdom(t)
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go tool not available")
+	}
 	files := map[string]string{}
 	for _, pattern := range []string{"testdata/engine_diff/*.vela", "testdata/ssr_blocks/*.vela", "testdata/ssr_blocks/*.js"} {
 		matches, err := filepath.Glob(pattern)

@@ -118,6 +118,25 @@ import path of the generated renderers, `<module>/<out>/server`:
 }
 ```
 
+For a TypeScript project, `vela.app.json` says so, and `tsconfig.json`
+extends the configuration `vela-app gen` writes, which maps `./$types` of
+each route directory to the types generated from its Go loaders
+([APP.md](APP.md), Route types):
+
+```json
+// vela.app.json
+{ "typescript": true }
+```
+
+```json
+// tsconfig.json
+{ "extends": "./src/_app/tsconfig.json", "include": ["src"] }
+```
+
+Install `typescript` (5.8 or 6.x) and check with
+`npx vela check --project src --types`; the route types need the app layer
+of this release or later (`github.com/elauven/vela/app/typegen`).
+
 `vite.config.js` builds the generated client entry with a manifest, which
 the server reads:
 

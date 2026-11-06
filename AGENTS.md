@@ -222,11 +222,78 @@ computed on the server:
 - Treat every `VELA-SSR-*` diagnostic as a build error to fix, not to
   work around. `--ssr-report` lists the outcome of every site.
 
+## TypeScript
+
+TypeScript is experimental (`docs/TYPESCRIPT.md`). JavaScript stays
+first-class; use TypeScript when the project is TypeScript (it has a
+`tsconfig.json` with `"types": ["@govela/runtime/ambient"]`, or
+`"typescript": true` in `vela.app.json`).
+
+```vela
+<script lang="ts" generics="T extends { id: string }">
+  import { onMount } from 'vela';
+  import type { Filter } from './filter.ts';
+
+  interface $$Events {
+    select: { item: T };
+  }
+
+  export let items: T[];
+  export let filter: Filter | null = null;
+  export let query: string = $bindable('');
+
+  let selected = $state<T | null>(null);
+  let visible = $derived(items.filter((item) => item.id.includes(query)));
+
+  function choose(item: T): void {
+    selected = item;
+    $$dispatch('select', { item });
+  }
+</script>
+
+<template>
+  {#each visible as item (item.id)}
+    <button @click={(event: MouseEvent) => choose(item)}>{item.id}</button>
+  {/each}
+</template>
+```
+
+- Write `<script lang="ts">`. Import local modules as `./util.ts` and
+  components as `./Card.vela`.
+- Use only erasable TypeScript: annotations, `interface`, `type`,
+  `as`, `satisfies`, `!`, generics, `import type`. Do not write `enum`
+  (use an object `as const` and `type E = (typeof E)[keyof typeof E]`),
+  namespaces with values, parameter properties, `import x = require()` or
+  `<T>x` casts: they are `VELA-TS-NON-ERASABLE`.
+- Import types with `import type { X }` or `{ type X }`; export them with
+  `export type`. A value import used only as a type is
+  `VELA-TS-TYPE-IMPORT`.
+- Annotate props: `export let title: string = ''` (optional for the
+  parent), `export let id: number` (required),
+  `export let value: string = $bindable('')`. Give runes type arguments
+  when the initial value does not say the type: `$state<User | null>(null)`.
+- Declare component events in `interface $$Events` (names to `detail`
+  types) and named slots in `interface $$Slots`; `$$dispatch` is then
+  checked.
+- A generic component declares its type parameters with
+  `generics="T extends …"` on `<script>`.
+- Template expressions may use `as`, `!` and annotated arrow parameters;
+  `{#each}` and `{#await}` names take no annotations, and `bind:` targets
+  stay plain names.
+- In a TypeScript Vela App, type route components with their generated
+  `./$types`: `import type { PageProps } from './$types'`, then
+  `export let data: PageProps['data']`, `export let route: PageProps['route']`.
+  Change the Go loader, not the types, when the data changes.
+- Run `vela check --project src --types` (it needs TypeScript 5.8 or 6.x
+  in `node_modules`). The build never checks types: a type error does not
+  fail `vela`, so the check must pass separately.
+
 ## Unsupported syntax and assumptions
 
 Do not generate or rely on the following in Vela applications:
 
-- TypeScript or `<script lang="ts">`.
+- TypeScript that generates code (`enum`, value namespaces, parameter
+  properties), `.tsx`/`.jsx` modules, or JSX.
 - Svelte 5 `$props()`, snippets, or `{@render}`.
 - `use:` actions, `transition:`, `in:`, or `out:` directives.
 - `<svelte:component>` (use `<vela:component :this={…}>`), `<svelte:element>`,
@@ -256,5 +323,6 @@ Before handing off a Vela component or application:
 6. For server-rendered applications, `vela --ssr` builds without `VELA-SSR-*`
    errors, and browser-only code is in handlers, effects, lifecycle hooks or
    `{#client}`.
-7. Run `go test ./...` after changing compiler sources, runtime fixtures, or
+7. In a TypeScript project, `vela check --project src --types` passes.
+8. Run `go test ./...` after changing compiler sources, runtime fixtures, or
    examples that exercise compiler behaviour.

@@ -35,6 +35,15 @@ compiler the runtime path appears only in `SSRRuntimeImportPath`.
 
 1. All suites pass, including the strict browser baseline:
    `go test ./... ./ssr_runtime/...` and `node tools/run-ssr-browser-baseline.mjs`.
+   The TypeScript gate is part of it: the *TypeScript* job of CI on Linux,
+   macOS and Windows (the type tests of the packages on TypeScript 5.8 and
+   6, `vela check --types` on its fixtures, `examples/` and the examples of
+   AGENTS.md and the guide, the TypeScript server plugin) and the twin
+   suites of the test job (`TestTypeScriptTwinsCompileAlike`,
+   `TestSSRTypeScriptTwins`); the parser's oracle
+   (`internal/jsast/ts_oracle_test.go`, with `VELA_TS_ORACLE_DIR` naming
+   more real projects) runs before a release that changes
+   `internal/jsast`.
 2. Set `Version` in `runtime/embed.go` to `X.Y.Z` and regenerate the npm
    packages: `VELA_UPDATE_RUNTIME_PACKAGE=1 go test -run 'TestRuntimePackageIsGenerated|TestCompilerPackagesAreGenerated' .`.
 3. If generated code started to depend on a new or changed runtime API since
