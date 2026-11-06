@@ -65,6 +65,8 @@ export const unplugin = createUnplugin((options = {}, meta) => {
         sourcemap: true,
         runtimeImport: 'bare',
         componentImports: 'vela',
+        // Declarations are for component libraries (vela --dts); a bundle has none.
+        dts: false,
       },
     });
     if (result.ok && result.css !== undefined) styles.set(file, result.css);

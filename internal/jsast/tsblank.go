@@ -100,7 +100,9 @@ func needsSemicolon(out []byte, pos, end int) bool {
 	return true
 }
 
-func isBlankByte(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v' }
+func isBlankByte(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'
+}
 
 // EraseTypeScript parses a TypeScript module and returns its JavaScript as
 // text (BlankTypeScript), with the tree and diagnostics of ParseWithOptions.

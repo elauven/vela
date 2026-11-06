@@ -23,9 +23,9 @@ export interface Options {
   /**
    * File options of the compiler (`target`, `strict`, …). The plugin always
    * compiles with source maps, bare runtime imports and `.vela` component
-   * imports.
+   * imports, and without declarations (`vela --dts` builds a library).
    */
-  compilerOptions?: Omit<CompileOptions, 'css' | 'sourcemap' | 'runtimeImport' | 'componentImports'>;
+  compilerOptions?: Omit<CompileOptions, 'css' | 'sourcemap' | 'runtimeImport' | 'componentImports' | 'dts'>;
 }
 
 export declare const unplugin: UnpluginInstance<Options | undefined, false>;

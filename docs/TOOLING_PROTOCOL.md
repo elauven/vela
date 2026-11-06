@@ -34,7 +34,7 @@ vela compile --path src/App.vela [--stdin] [--config file] [file flags]
 *File flags* are the flags of the build command that shape one component:
 `--minify`, `--css`, `--sourcemap`, `--target`,
 `--unavailable-capabilities`, `--strict`, `--hydration-verify`, `--mode`,
-`--runtime-import`, `--check-deps`, `--component-imports`. Two defaults differ from the build
+`--runtime-import`, `--check-deps`, `--component-imports`, `--dts`. Two defaults differ from the build
 command, because the clients bundle the output: `--css=external` (CSS is a
 separate result) and `--runtime-import=bare` (imports `@govela/runtime`).
 
@@ -86,6 +86,7 @@ Unknown request fields are an error.
 | `js` | The module: the build's `.js` file without the `sourceMappingURL` comment. |
 | `css` | The scoped CSS with `css: external`, absent when the component has none or CSS is injected. |
 | `map` | The v3 source map (a JSON object) with `sourcemap: true`. |
+| `dts` | The declaration file of the component (`Card.d.ts`, TS-6.5) with `dts: true`. |
 | `diagnostics` | Every diagnostic, also warnings of a compiled component. |
 | `imports` | The imports of `<script>` as written: static imports, re-exports, literal `import()`. |
 | `error` | Why the component did not compile, or why the request was rejected. |
@@ -146,6 +147,7 @@ override it. Unknown keys are an error. Paths are relative to the file.
 | `unavailableCapabilities` | `--unavailable-capabilities` (an array) |
 | `hydrationVerify`, `runtimeImport`, `checkDeps` | `--hydration-verify`, `--runtime-import`, `--check-deps` |
 | `componentImports` | `--component-imports` (`js` or `vela`) |
+| `dts` | `--dts` |
 | `$schema` | ignored, for editors |
 
 The file options (all keys except `project`, `out`, `ssr`, `ssrModule`)

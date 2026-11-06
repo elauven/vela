@@ -137,6 +137,7 @@ vela --project <dir> [flags]    compile a source tree
 | `--runtime-import` | `relative` | `relative` (runtime copied) or `bare` (`@govela/runtime`) |
 | `--check-deps` | off | Warn about package imports missing from `node_modules` |
 | `--component-imports` | `js` | `js` (compiled modules) or `vela` (component imports kept, for bundler plugins) |
+| `--dts` | off | Write `Card.d.ts` beside each compiled component, for component libraries (docs/TYPESCRIPT.md TS-6.5) |
 | `--target` | `permissive` | Host globals profile: `permissive`, `browser`, `worker`, `node`, `ssr` |
 | `--strict` | off | Proven unresolved reads are errors |
 | `--unavailable-capabilities` | | Reject direct host capabilities, e.g. `fetch,indexedDB` |

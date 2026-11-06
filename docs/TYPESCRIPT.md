@@ -11,7 +11,9 @@ parser accepts and erases the syntax of TS-2 and TS-3.2 (task 080, see
 `<script lang="ts">` components and `.ts` modules with it (task 081, see
 [Decisions of 081](#decisions-of-081)). The npm packages ship their
 declarations and the ambient types (task 082, see
-[Decisions of 082](#decisions-of-082)). Types are not checked yet (084),
+[Decisions of 082](#decisions-of-082)), and `vela --dts` writes the
+declarations of components (task 083, see
+[Decisions of 083](#decisions-of-083)). Types are not checked yet (084),
 editors treat a TypeScript script as JavaScript (085), and server
 rendering does not read `.ts` modules (086). Until task 089 marks
 TypeScript as experimental in [FEATURES.md](FEATURES.md), write
@@ -249,6 +251,9 @@ rewrite in the message:
   checker for projects that import them from TypeScript.
 - **TS-6.5** `vela --dts` writes declarations for compiled output:
   `Card.d.ts` beside `Card.js`, for component libraries published to npm.
+  The compiler service answers them with the option `dts`; the bundler
+  plugin writes none. `.ts` modules of a library are declared by `tsc
+  --emitDeclarationOnly` (docs/GUIDE.md, Component libraries).
 
 ## TS-7 Server rendering
 
@@ -367,8 +372,8 @@ template's code (`VELA-TEMPLATE-AST`) and the `lang="ts"` hint.
 | [080](../tasks/080-jsast-typescript-syntax-and-erasure.md) parser and erasure | TS-2, TS-3.2 |
 | [081](../tasks/081-compiler-typescript-components-and-modules.md) compiler | TS-1.1, TS-1.4, TS-3.3, TS-3.4, TS-4.1–TS-4.5, TS-4.9, TS-5 |
 | [082](../tasks/082-published-type-declarations.md) package declarations | TS-6.1–TS-6.3 |
-| [083](../tasks/083-component-type-model-and-dts.md) component types | TS-4.4, TS-4.6–TS-4.8, TS-4.10, TS-6.5 |
-| [084](../tasks/084-type-checking-vela-check-types.md) `vela check --types` | TS-1.2, TS-1.3, TS-1.5, TS-6.4, TS-10 |
+| [083](../tasks/083-component-type-model-and-dts.md) component types | TS-4.4, TS-4.6–TS-4.8 (the model), TS-6.5 |
+| [084](../tasks/084-type-checking-vela-check-types.md) `vela check --types` | TS-1.2, TS-1.3, TS-1.5, TS-4.6 and TS-4.10 (checking), TS-6.4, TS-10 |
 | [085](../tasks/085-lsp-and-editor-typescript.md) editors | TS-1.2, TS-6.4 |
 | [086](../tasks/086-ssr-typescript.md) SSR | TS-7 |
 | [087](../tasks/087-app-route-types.md) Vela App | TS-8 |
@@ -443,8 +448,8 @@ Taken while writing the declarations on 2026-11-05:
 3. **`onMount` and `onDestroy`** are declared in the module `vela` of the
    ambient types only: the compiler wires them in, and `@govela/runtime`
    does not export them.
-4. **`$$dispatch`** takes any name and detail until 083 types it by
-   `$$Events` (TS-4.6).
+4. **`$$dispatch`** takes any name and detail in the ambient types; the
+   checker types it by `$$Events` (TS-4.6, 084; see Decisions of 083).
 5. **`@govela/runtime/blocks`** stays undeclared: only generated code
    imports it (TS-6.1).
 6. **`@govela/app/client`** types `VelaApp` as a `Component`, mismatch
@@ -457,3 +462,39 @@ Taken while writing the declarations on 2026-11-05:
    `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, without
    `skipLibCheck` except for `@govela/unplugin`, whose declarations import
    the types of every bundler.
+
+## Decisions of 083
+
+Taken while implementing the component types on 2026-11-06:
+
+1. **One type model** (`analyzer.ComponentTypesOf`) for `--dts`, the
+   checker (084) and the editors (085). Types are source text with the
+   names they reference: the compiler resolves none (TS-3.1). Local
+   interfaces and type aliases a public type needs are copied into the
+   declaration file, imported ones imported again with `import type`
+   (`vela` and `vela/store` as `@govela/runtime`, `.vela` and `.ts`
+   specifiers as `.js`), and a class or value of the script a type
+   names becomes `any`.
+2. **Bindable props** are a fourth type argument of `Component`
+   (`Component<P, E, S, B>`, the phantom `$$bindings_def`), with
+   `ComponentBindings<C>` and `ComponentSlots<C>` beside
+   `ComponentProps` and `ComponentEvents`. The default `string` keeps
+   every `Component` of 082 assignable.
+3. **Without annotations** a prop has the type of its literal default,
+   widened (`'a'` is `string`, `[]` is `any[]`), else `any`; a JSDoc type
+   that is not TypeScript (`?string`, `function(string)`) counts as none.
+   A prop without a default is required.
+4. **Events without `$$Events`** are the literal names of `$$dispatch`
+   with `any` detail; a computed name makes them `Record<string, any>`.
+   In JavaScript, `/** @typedef {…} $$Events */` and `$$Slots` declare
+   them (TS-4.9).
+5. **Generic components** are declared with a generic call signature.
+   `mount()` checks their props against the constraints of the type
+   parameters: TypeScript infers from a generic signature by
+   instantiating it with them. A parent's template infers the type
+   arguments (084).
+6. **Checking inside the component** — `$$dispatch` against `$$Events`
+   (TS-4.6) and the props of `<vela:component>` against its candidates
+   (TS-4.10) — belongs to the checker, so it moves to 084, which builds
+   on this model.
+

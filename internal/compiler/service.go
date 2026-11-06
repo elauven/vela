@@ -37,6 +37,7 @@ type CompileResult struct {
 	OK          bool                     `json:"ok"`
 	JS          string                   `json:"js,omitempty"`
 	CSS         string                   `json:"css,omitempty"`
+	DTS         string                   `json:"dts,omitempty"`
 	Map         json.RawMessage          `json:"map,omitempty"`
 	Diagnostics []diag.MachineDiagnostic `json:"diagnostics"`
 	Imports     []ModuleImport           `json:"imports"`
@@ -203,7 +204,7 @@ func (s *CompilerService) Compile(req ServiceRequest) CompileResult {
 		return res
 	}
 	res.OK = true
-	res.JS, res.CSS, res.Imports = module.JS, module.CSS, module.Imports
+	res.JS, res.CSS, res.DTS, res.Imports = module.JS, module.CSS, module.DTS, module.Imports
 	if len(module.Map) > 0 {
 		res.Map = json.RawMessage(module.Map)
 	}

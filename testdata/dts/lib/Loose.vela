@@ -1,0 +1,13 @@
+<script>
+  export let value;
+  export let items = [];
+  export let open = $bindable(false);
+
+  function ping(name) {
+    $$dispatch(name);
+  }
+</script>
+
+<template>
+  <p @click={() => ping('x')}>{value} {items.length} {open}<slot name="footer" /></p>
+</template>

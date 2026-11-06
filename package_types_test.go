@@ -1,11 +1,14 @@
 package main
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/elauven/vela/runtime"
 )
 
 // TestPackageTypes runs the type tests of testdata/types (task 082,
@@ -17,6 +20,7 @@ import (
 func TestPackageTypes(t *testing.T) {
 	compilers := typeTestCompilers(t)
 	app := typeTestApp(t)
+	buildTypeTestLibrary(t, compilers[len(compilers)-1], app)
 	for _, tsc := range compilers {
 		for _, config := range []string{"tsconfig.json", "tsconfig.unplugin.json"} {
 			if out, err := runTSC(tsc, app, config); err != nil {
@@ -94,4 +98,30 @@ func runTSC(tsc typeTestCompiler, dir, config string) (string, error) {
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// buildTypeTestLibrary builds testdata/dts/lib into node_modules/ui-lib of
+// app as a component library is published (task 083): `vela --dts` for the
+// components, `tsc --declaration --emitDeclarationOnly` for its .ts module.
+func buildTypeTestLibrary(t *testing.T, tsc typeTestCompiler, app string) {
+	t.Helper()
+	srcRoot := filepath.Join("testdata", "dts", "lib")
+	out := filepath.Join(app, "node_modules", "ui-lib")
+	opts := CompileOptions{StatusWriter: io.Discard, BareRuntimeImports: true, RuntimeImport: runtime.PackageName, DTS: true}
+	if errors := BuildProject(CollectVela(srcRoot), srcRoot, out, opts, false); errors != 0 {
+		t.Fatalf("build of %s failed with %d error(s)", srcRoot, errors)
+	}
+	pkg := `{"name": "ui-lib", "type": "module", "exports": {"./*": "./*"}, "peerDependencies": {"@govela/runtime": "*"}}`
+	if err := os.WriteFile(filepath.Join(out, "package.json"), []byte(pkg+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	module, err := filepath.Abs(filepath.Join(srcRoot, "format.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("node", tsc.script, "--declaration", "--emitDeclarationOnly", "--strict",
+		"--target", "ES2022", "--module", "ESNext", "--moduleResolution", "bundler", "--outDir", out, module)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("tsc --emitDeclarationOnly %s: %v\n%s", module, err, b)
+	}
 }

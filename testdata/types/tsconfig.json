@@ -16,5 +16,5 @@
     "types": ["@govela/runtime/ambient"],
     "skipLibCheck": false
   },
-  "include": ["src/expect.ts", "src/runtime.test-d.ts", "src/ambient.test-d.ts", "src/hydrate.test-d.ts", "src/compiler.test-d.ts", "src/app.test-d.ts"]
+  "include": ["src/expect.ts", "src/runtime.test-d.ts", "src/ambient.test-d.ts", "src/hydrate.test-d.ts", "src/compiler.test-d.ts", "src/app.test-d.ts", "src/dts.test-d.ts"]
 }
