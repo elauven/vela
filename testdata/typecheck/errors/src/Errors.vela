@@ -1,0 +1,45 @@
+<script lang="ts">
+  import { Button } from './Button.vela';
+  import { List } from './List.vela';
+  import { Panel } from './Panel.vela';
+  import { lazy } from 'vela';
+
+  interface $$Events {
+    done: { count: number };
+  }
+
+  const LazyPanel = lazy(() => import('./Panel.vela'));
+  let count: number = $state(0);
+  let name = $state('');
+  let label: string = 42;
+  let open = $state(true);
+
+  function finish() {
+    $$dispatch('done', { count: 'many' });
+    $$dispatch('missing');
+  }
+</script>
+
+<template>
+  <p>{count.toFixed(2)} {name.nope}</p>
+  <input @input={(e) => (name = e.target.value)} />
+  <Button />
+  <Button label={count} />
+  <Button label="ok" size="big" />
+  <Button label="ok" kind="loud" />
+  <Button label="ok" @on:pres={finish} />
+  <Button label="ok" @on:press={(e) => e.detail.when} />
+  <Button label="ok" bind:label={name} />
+  <Button label="ok"><span slot="iconz">x</span></Button>
+  <List :items={[{ name: 'a' }]} />
+  <List :items={[{ id: 'a' }]} @on:select={(e) => e.detail.item.name} />
+  <vela:component :this={open ? Panel : LazyPanel} title="t" :color={1} />
+  <vela:component :this={open ? Panel : Button} title="t" label="l" bind:open={open} />
+  {#each [1, 2] as n}
+    <p>{n.length}</p>
+  {/each}
+  {#await Promise.resolve('s') then text}
+    <p>{text.toFixed()}</p>
+  {/await}
+  <button @click={finish}>{label}</button>
+</template>

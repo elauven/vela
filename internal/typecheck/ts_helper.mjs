@@ -1,9 +1,10 @@
-// The TypeScript helper of vela-lsp (task 065c, docs/EDITORS.md). vela-lsp
-// embeds this file and runs it with node: one JSON request per line on
-// stdin, one response per line on stdout. It knows nothing about Vela: it
-// runs TypeScript's language service over the virtual documents vela-lsp
-// sends (`App.vela.js` for `App.vela`) and resolves `./X.vela` imports to
-// them. Positions are UTF-16 offsets of a file's text.
+// The TypeScript helper of vela-lsp and `vela check --types` (tasks 065c,
+// 084; docs/EDITORS.md, docs/TYPESCRIPT.md). internal/typecheck embeds this
+// file and runs it with node: one JSON request per line on stdin, one
+// response per line on stdout. It knows nothing about Vela: it runs
+// TypeScript's language service over the virtual documents it is sent
+// (`App.vela.ts` or `App.vela.js` for `App.vela`) and resolves `./X.vela`
+// imports to them. Positions are UTF-16 offsets of a file's text.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -52,9 +53,43 @@ let root;
 let envPath;
 let envText;
 let options;
+let configFile = '';
+let projectFiles = [];
 const files = new Map(); // virtual path → { text, version }
 
-function compilerOptions() {
+// The configuration of TS-10.2, for a check without a tsconfig.json.
+function contractOptions() {
+  return {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler ?? ts.ModuleResolutionKind.NodeJs,
+    strict: true,
+    noEmit: true,
+    isolatedModules: true,
+    verbatimModuleSyntax: true,
+    erasableSyntaxOnly: true,
+    allowImportingTsExtensions: true,
+    useDefineForClassFields: true,
+    skipLibCheck: true,
+    lib: ['lib.es2022.d.ts', 'lib.dom.d.ts', 'lib.dom.iterable.d.ts'],
+  };
+}
+
+// The settings of a tsconfig that contradict TS-10.2.
+function configWarnings(opts) {
+  const out = [];
+  const want = (name, ok, value) => { if (!ok) out.push({ option: name, want: value }); };
+  want('strict', opts.strict === true, 'true');
+  want('verbatimModuleSyntax', opts.verbatimModuleSyntax === true, 'true');
+  if (Number(ts.versionMajorMinor.split('.')[0]) > 5 || Number(ts.versionMajorMinor.split('.')[1]) >= 8) want('erasableSyntaxOnly', opts.erasableSyntaxOnly === true, 'true');
+  want('isolatedModules', opts.isolatedModules === true || opts.verbatimModuleSyntax === true, 'true');
+  want('useDefineForClassFields', opts.useDefineForClassFields !== false, 'true');
+  const bundler = ts.ModuleResolutionKind.Bundler;
+  want('moduleResolution', bundler === undefined || opts.moduleResolution === bundler, '"bundler"');
+  return out;
+}
+
+function compilerOptions(project) {
   const defaults = {
     allowJs: true,
     checkJs: false,
@@ -68,14 +103,23 @@ function compilerOptions() {
     moduleResolution: ts.ModuleResolutionKind.Bundler ?? ts.ModuleResolutionKind.NodeJs,
     lib: ['lib.esnext.d.ts', 'lib.dom.d.ts', 'lib.dom.iterable.d.ts'],
   };
-  for (const name of ['jsconfig.json', 'tsconfig.json']) {
+  for (const name of ['tsconfig.json', 'jsconfig.json']) {
     const file = path.join(root, name);
     if (!fs.existsSync(file)) continue;
     const { config } = ts.readConfigFile(file, ts.sys.readFile);
     const parsed = ts.parseJsonConfigFileContent(config ?? {}, ts.sys, root);
+    configFile = file;
+    projectFiles = project ? parsed.fileNames.filter((f) => !f.endsWith('.vela')) : [];
     return { ...defaults, ...parsed.options, allowJs: true, noEmit: true };
   }
-  return defaults;
+  return project ? { ...contractOptions(), allowJs: true } : defaults;
+}
+
+// The ambient types of the runtime package are declared by the helper
+// unless the project lists them in `types` and they resolve (TS-10.2).
+function projectHasAmbient(specifier) {
+  if (!(options.types ?? []).includes(specifier)) return false;
+  return Boolean(ts.resolveTypeReferenceDirective?.(specifier, path.join(root, 'tsconfig.json'), options, ts.sys)?.resolvedTypeReferenceDirective);
 }
 
 const textOf = (file) => (file === envPath ? envText : files.get(file)?.text);
@@ -83,9 +127,13 @@ const textOf = (file) => (file === envPath ? envText : files.get(file)?.text);
 function resolveModule(name, containing, opts) {
   if (name.startsWith('./') || name.startsWith('../')) {
     let target = path.resolve(path.dirname(containing), name);
-    if (name.endsWith('.vela')) target += '.js';
-    else if (name.endsWith('.js') && !files.has(target) && !ts.sys.fileExists(target) && files.has(target.slice(0, -3) + '.vela.js')) target = target.slice(0, -3) + '.vela.js';
-    if (files.has(target)) return { resolvedFileName: target, extension: ts.Extension.Js, isExternalLibraryImport: false };
+    const virtual = (component) => (files.has(component + '.ts') ? component + '.ts' : component + '.js');
+    if (name.endsWith('.vela')) target = virtual(target);
+    else if (name.endsWith('.js') && !files.has(target) && !ts.sys.fileExists(target) && !ts.sys.fileExists(target.slice(0, -3) + '.ts')) {
+      const component = target.slice(0, -3) + '.vela';
+      if (files.has(component + '.ts') || files.has(component + '.js')) target = virtual(component);
+    }
+    if (files.has(target)) return { resolvedFileName: target, extension: target.endsWith('.ts') ? ts.Extension.Ts : ts.Extension.Js, isExternalLibraryImport: false };
   }
   return ts.resolveModuleName(name, containing, opts, ts.sys).resolvedModule;
 }
@@ -96,11 +144,11 @@ function start(params) {
   if (!loaded.ts) return { error: `no TypeScript with a language service API (5.x or 6.x): ${loaded.tried.join('; ')}` };
   ts = loaded.ts;
   envPath = path.join(root, '__vela_env__.d.ts');
-  envText = params.env;
-  options = compilerOptions();
+  options = compilerOptions(Boolean(params.project));
+  envText = (projectHasAmbient(params.ambientSpecifier) ? '' : params.ambient) + params.helpers;
   const host = {
     getCompilationSettings: () => options,
-    getScriptFileNames: () => [envPath, ...files.keys()],
+    getScriptFileNames: () => [envPath, ...projectFiles, ...files.keys()],
     getScriptVersion: (file) => {
       if (file === envPath) return '0';
       const open = files.get(file);
@@ -123,7 +171,19 @@ function start(params) {
     resolveModuleNameLiterals: (literals, containing, _redirected, opts) => literals.map((literal) => ({ resolvedModule: resolveModule(literal.text, containing, opts) })),
   };
   service = ts.createLanguageService(host, ts.createDocumentRegistry());
-  return { typescript: ts.version, checkJs: Boolean(options.checkJs) };
+  return { typescript: ts.version, checkJs: Boolean(options.checkJs), config: configFile, warnings: configFile ? configWarnings(options) : [] };
+}
+
+function diagnostic(d) {
+  const out = {
+    start: d.start ?? 0,
+    length: d.length ?? 0,
+    message: ts.flattenDiagnosticMessageText(d.messageText, '\n'),
+    category: d.category === ts.DiagnosticCategory.Error ? 'error' : d.category === ts.DiagnosticCategory.Warning ? 'warning' : 'hint',
+    code: d.code,
+  };
+  if (d.file) Object.assign(out, span(d.file.fileName, out.start, out.length));
+  return out;
 }
 
 // span is a text span of file with its line and character positions.
@@ -206,6 +266,18 @@ const methods = {
         };
       }),
     };
+  },
+  // The diagnostics of the whole program but the libraries and the
+  // declarations of the helper: what `vela check --types` reports.
+  check() {
+    const program = service.getProgram();
+    const out = program.getOptionsDiagnostics().map(diagnostic);
+    for (const sf of program.getSourceFiles()) {
+      const file = sf.fileName;
+      if (file === envPath || program.isSourceFileDefaultLibrary(sf) || program.isSourceFileFromExternalLibrary(sf) || file.includes('/node_modules/')) continue;
+      for (const d of [...service.getSyntacticDiagnostics(file), ...service.getSemanticDiagnostics(file)]) out.push(diagnostic(d));
+    }
+    return { diagnostics: out };
   },
   diagnostics({ path: file }) {
     return service.getSemanticDiagnostics(file).map((d) => ({

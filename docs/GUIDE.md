@@ -1176,6 +1176,38 @@ vela check --project src --watch         # check again on every change
 - The file flags of the build (`--target`, `--strict`, `--check-deps`, …)
   and `vela.config.json` apply as they do to `vela`.
 
+### Type checking
+
+`--types` adds TypeScript's diagnostics of the components, their templates
+and the `.ts` modules (docs/TYPESCRIPT.md TS-1.2, TS-1.5), reported at
+their range of the `.vela` or `.ts` file with codes `TS<number>`:
+
+```sh
+vela check --project src --types
+vela check --project src --types --watch          # keeps TypeScript's program
+vela check --project src --types --tsdk ./node_modules/typescript
+```
+
+- It needs node and TypeScript 5.8 or 6.x: the project's
+  `node_modules/typescript`, or `--tsdk`. Without them `--types` fails
+  with exit code 2 and the reason; `vela check` without it does not need
+  them.
+- The program is the `tsconfig.json` of the working directory plus every
+  component of `--project`. Without a tsconfig the check uses the
+  configuration of TS-10.2 and warns; a setting that contradicts TS-10.2
+  is the warning `VELA-TS-CONFIG`.
+- A component with `<script lang="ts">` is checked as TypeScript; a
+  JavaScript component as TypeScript checks JavaScript (`checkJs`, or
+  `// @ts-check` in the script).
+- In the template: expressions in their `{#each}` and `{#await}` scopes,
+  element event handlers with their event type, and each child
+  component tag against the component: required, unknown and mistyped
+  props, `@on:name` names and `event.detail`, `bind:` only of `$bindable`
+  props, `slot="…"` names, and type arguments of generic components
+  inferred from their props. `<vela:component>` reports a prop no
+  candidate declares, and a `bind:` some candidate cannot take.
+- In the script: `$$dispatch(name, detail)` against `$$Events`.
+
 GitHub Actions, with the results as code scanning alerts on the pull
 request:
 

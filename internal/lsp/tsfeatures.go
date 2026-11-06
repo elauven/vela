@@ -3,6 +3,7 @@ package lsp
 import (
 	velaproject "github.com/elauven/vela/internal/project"
 	"github.com/elauven/vela/internal/sfcast"
+	"github.com/elauven/vela/internal/typecheck"
 
 	"encoding/json"
 	"os"
@@ -35,13 +36,13 @@ func (s *server) startTypeScript(root, tsdk string) {
 	s.tsReady = make(chan struct{})
 	go func() {
 		defer close(s.tsReady)
-		c, err := startTypeScript(root, tsdk)
+		c, err := typecheck.Start(root, typecheck.Options{Tsdk: tsdk})
 		if err != nil {
 			s.log(3, "vela-lsp: JavaScript language features are off: "+err.Error()+". Install typescript@6 in the workspace or pass initializationOptions.typescript.tsdk.")
 			return
 		}
 		s.ts = c
-		s.log(3, "vela-lsp: TypeScript "+c.version)
+		s.log(3, "vela-lsp: TypeScript "+c.Version)
 	}()
 }
 
@@ -54,7 +55,7 @@ func (s *server) virtualOf(path, src string) *virtualDoc {
 	if v != nil && v.source.src == src {
 		return v
 	}
-	v = buildVirtual(path, src)
+	v = newVirtualDoc(path, src)
 	s.mu.Lock()
 	s.virtuals[key] = v
 	s.mu.Unlock()
@@ -63,12 +64,13 @@ func (s *server) virtualOf(path, src string) *virtualDoc {
 
 // virtualByFile is the virtual document a helper file name names.
 func (s *server) virtualByFile(file string) *virtualDoc {
-	if !strings.HasSuffix(file, ".vela"+virtualSuffix) {
+	component, ok := typecheck.IsVirtualPath(file)
+	if !ok {
 		return nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.virtuals[pathKey(strings.TrimSuffix(file, virtualSuffix))]
+	return s.virtuals[pathKey(component)]
 }
 
 // syncTS sends the virtual documents of c and of the components it imports;
@@ -98,7 +100,7 @@ func (s *server) syncTS(ts *tsClient, c *component, all bool) *virtualDoc {
 			}
 		}
 	}
-	if err := ts.update(docs); err != nil {
+	if err := ts.Update(typecheckDocs(docs)); err != nil {
 		s.log(1, "vela-lsp: "+err.Error())
 	}
 	return v
@@ -157,7 +159,7 @@ func (s *server) tsDefinition(c *component, off int) []Location {
 		return nil
 	}
 	var spans []tsSpan
-	if ts.call("definition", map[string]any{"path": virtualPath(v.path), "position": pos}, &spans) != nil {
+	if ts.Call("definition", map[string]any{"path": v.VirtualPath(), "position": pos}, &spans) != nil {
 		return nil
 	}
 	return s.tsLocations(spans)
@@ -174,7 +176,7 @@ func (s *server) tsHover(c *component, off int) *tsQuickInfo {
 		return nil
 	}
 	var info tsQuickInfo
-	if ts.call("quickInfo", map[string]any{"path": virtualPath(v.path), "position": pos}, &info) != nil || info.Display == "" {
+	if ts.Call("quickInfo", map[string]any{"path": v.VirtualPath(), "position": pos}, &info) != nil || info.Display == "" {
 		return nil
 	}
 	return &info
@@ -211,7 +213,7 @@ func (s *server) tsCompletion(c *component, off, wordStart int) (items []Complet
 		IsMember bool      `json:"isMember"`
 		Entries  []tsEntry `json:"entries"`
 	}
-	if ts.call("completion", map[string]any{"path": virtualPath(v.path), "position": pos}, &res) != nil {
+	if ts.Call("completion", map[string]any{"path": v.VirtualPath(), "position": pos}, &res) != nil {
 		return nil, false, false
 	}
 	for _, e := range res.Entries {
@@ -233,7 +235,7 @@ func (s *server) tsCompletion(c *component, off, wordStart int) (items []Complet
 				start, end = rs, re
 			}
 		}
-		data, _ := json.Marshal(completionData{Path: virtualPath(v.path), Position: pos, Name: e.Name, Source: e.Source})
+		data, _ := json.Marshal(completionData{Path: v.VirtualPath(), Position: pos, Name: e.Name, Source: e.Source})
 		items = append(items, CompletionItem{
 			Label:    e.Name,
 			Kind:     tsKind(e.Kind),
@@ -255,7 +257,7 @@ func (s *server) resolveCompletion(item CompletionItem) CompletionItem {
 		Detail        string `json:"detail"`
 		Documentation string `json:"documentation"`
 	}
-	if ts.call("completionDetails", map[string]any{"path": data.Path, "position": data.Position, "name": data.Name, "source": data.Source}, &details) == nil {
+	if ts.Call("completionDetails", map[string]any{"path": data.Path, "position": data.Position, "name": data.Name, "source": data.Source}, &details) == nil {
 		item.Detail = details.Detail
 		if details.Documentation != "" {
 			item.Documentation = &MarkupContent{Kind: "markdown", Value: details.Documentation}
@@ -298,7 +300,7 @@ func (s *server) references(doc *document, off int) any {
 		return []Location{}
 	}
 	var spans []tsSpan
-	if ts.call("references", map[string]any{"path": virtualPath(v.path), "position": pos}, &spans) != nil {
+	if ts.Call("references", map[string]any{"path": v.VirtualPath(), "position": pos}, &spans) != nil {
 		return []Location{}
 	}
 	return s.tsLocations(spans)
@@ -325,7 +327,7 @@ func (s *server) rename(doc *document, off int, newName string) (any, error) {
 		Error     string   `json:"error"`
 		Locations []tsSpan `json:"locations"`
 	}
-	if err := ts.call("rename", map[string]any{"path": virtualPath(v.path), "position": pos}, &res); err != nil {
+	if err := ts.Call("rename", map[string]any{"path": v.VirtualPath(), "position": pos}, &res); err != nil {
 		return nil, err
 	}
 	if res.Error != "" {
@@ -360,7 +362,7 @@ func (s *server) signatureHelp(doc *document, off int) any {
 			} `json:"parameters"`
 		} `json:"signatures"`
 	}
-	if ts.call("signatureHelp", map[string]any{"path": virtualPath(v.path), "position": pos}, &help) != nil || len(help.Signatures) == 0 {
+	if ts.Call("signatureHelp", map[string]any{"path": v.VirtualPath(), "position": pos}, &help) != nil || len(help.Signatures) == 0 {
 		return nil
 	}
 	return help
@@ -374,7 +376,7 @@ func (s *server) tsDiagnostics(c *component) []Diagnostic {
 	if ts == nil {
 		return nil
 	}
-	if !ts.checkJs && !strings.Contains(c.text.src, "@ts-check") {
+	if !ts.CheckJs && !strings.Contains(c.text.src, "@ts-check") {
 		return nil
 	}
 	if lang, _ := sfcast.ScriptLang(c.text.src); strings.EqualFold(lang, "ts") || strings.EqualFold(lang, "typescript") {
@@ -384,7 +386,6 @@ func (s *server) tsDiagnostics(c *component) []Diagnostic {
 		return nil
 	}
 	v := s.syncTS(ts, c, false)
-	path := c.path
 	var found []struct {
 		Start    int    `json:"start"`
 		Length   int    `json:"length"`
@@ -392,7 +393,7 @@ func (s *server) tsDiagnostics(c *component) []Diagnostic {
 		Category string `json:"category"`
 		Code     int    `json:"code"`
 	}
-	if ts.call("diagnostics", map[string]any{"path": virtualPath(path)}, &found) != nil {
+	if ts.Call("diagnostics", map[string]any{"path": v.VirtualPath()}, &found) != nil {
 		return nil
 	}
 	var out []Diagnostic
@@ -402,6 +403,14 @@ func (s *server) tsDiagnostics(c *component) []Diagnostic {
 			continue
 		}
 		out = append(out, Diagnostic{Range: v.source.rangeOf(start, end), Severity: severity(d.Category), Code: "TS" + strconv.Itoa(d.Code), Source: "ts", Message: d.Message})
+	}
+	return out
+}
+
+func typecheckDocs(docs []*virtualDoc) []*typecheck.Document {
+	out := make([]*typecheck.Document, len(docs))
+	for i, v := range docs {
+		out[i] = v.Document
 	}
 	return out
 }

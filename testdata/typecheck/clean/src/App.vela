@@ -1,0 +1,45 @@
+<script lang="ts">
+  import { Button } from './Button.vela';
+  import { List } from './List.vela';
+  import { Panel } from './Panel.vela';
+  import { Card } from './Card.vela';
+  import { total } from './util.ts';
+  import { lazy } from 'vela';
+
+  interface Row {
+    id: string;
+    label: string;
+  }
+
+  interface $$Events {
+    picked: Row;
+  }
+
+  const LazyPanel = lazy(() => import('./Panel.vela'));
+  let rows: Row[] = $state([{ id: 'a', label: 'A' }]);
+  let pressed = $state(false);
+  let open = $state(true);
+  let query = $state('');
+  let sum = $derived(total(rows.map((row) => row.label.length)));
+
+  function pick(row: Row) {
+    $$dispatch('picked', row);
+  }
+</script>
+
+<template>
+  <p>{sum.toFixed(1)} {query.toUpperCase()}</p>
+  <input bind:value={query} @input={(e) => console.log((e.target as HTMLInputElement).value)} />
+  <Button label="Go" kind="primary" bind:pressed={pressed} @on:press={(e) => console.log(e.detail.at.toFixed())}>
+    <span slot="icon">*</span>
+  </Button>
+  <List :items={rows} @on:select={(e) => pick(e.detail.item as Row)} />
+  <Card heading="Hello" :count={rows.length} @on:close={(e) => console.log(e.detail.reason)} />
+  <vela:component :this={open ? Panel : LazyPanel} title="Panel" bind:open={open} />
+  {#each rows as row, i (row.id)}
+    <p>{i + 1}. {row.label.toUpperCase()}</p>
+  {/each}
+  {#await Promise.resolve(rows) then loaded}
+    <p>{loaded.length}</p>
+  {/await}
+</template>

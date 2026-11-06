@@ -13,8 +13,10 @@ parser accepts and erases the syntax of TS-2 and TS-3.2 (task 080, see
 declarations and the ambient types (task 082, see
 [Decisions of 082](#decisions-of-082)), and `vela --dts` writes the
 declarations of components (task 083, see
-[Decisions of 083](#decisions-of-083)). Types are not checked yet (084),
-editors treat a TypeScript script as JavaScript (085), and server
+[Decisions of 083](#decisions-of-083)), and `vela check --types` checks
+scripts, templates and `.ts` modules (task 084, see
+[Decisions of 084](#decisions-of-084)). Editors do not report type errors
+of a TypeScript script yet (085), and server
 rendering does not read `.ts` modules (086). Until task 089 marks
 TypeScript as experimental in [FEATURES.md](FEATURES.md), write
 JavaScript (with JSDoc where types help).
@@ -359,6 +361,7 @@ rewrite in the message:
 | `VELA-TS-TYPE-EXPORT` | error | local type exported without `type` | TS-3.4 |
 | `VELA-TS-MODULE` | error | `.tsx`, `.jsx`, `.cts` module; two modules with one output | TS-5.1, TS-5.2 |
 | `VELA-TS-GENERICS` | error | invalid `generics` attribute | TS-4.8 |
+| `VELA-TS-CONFIG` | warning | no `tsconfig.json`, or a setting that contradicts TS-10.2 (`vela check --types`) | TS-10.2 |
 | `TS<number>` | from TypeScript | type errors of `vela check --types` and `vela-lsp`, mapped to the `.vela` source | TS-1.2 |
 
 Syntax errors of TypeScript sources stay `VELA-JS-SYNTAX`. TypeScript in
@@ -497,4 +500,45 @@ Taken while implementing the component types on 2026-11-06:
    (TS-4.6) and the props of `<vela:component>` against its candidates
    (TS-4.10) — belongs to the checker, so it moves to 084, which builds
    on this model.
+
+## Decisions of 084
+
+Taken while implementing the type check on 2026-11-06:
+
+1. **One virtual document** for `vela check --types` and `vela-lsp`:
+   `internal/typecheck` builds it, runs the helper and maps diagnostics;
+   the language server uses the package. A TypeScript component is
+   `Card.vela.ts` to the helper, a JavaScript one `Card.vela.js`; the
+   `Card.d.vela.ts` naming of TS-6.4 is the TypeScript server plugin's
+   (085).
+2. **Child component tags** are checked by calling the component's call
+   signature with the props of the tag (`Card($$target, { title: … })`):
+   required, unknown and mistyped props are TypeScript's own errors, and
+   a generic component infers its type arguments from them (TS-4.8).
+   Events, `bind:` and slot names are checked through the type arguments
+   of `Component` (083). A diagnostic of generated text is reported at
+   the range it belongs to (a missing prop at the tag name); none is lost.
+3. **Inside a generic component** its type parameters are their
+   constraints (`type T = { id: string }`); its export is generic.
+4. **Prop types** are the declared types of the `export let` variables:
+   the virtual document reads them in a function, where the assignments
+   of the script do not narrow them (`kind: Kind = 'plain'` is `Kind`).
+5. **Not checked yet**: the value types of DOM attributes (`:href`,
+   `:disabled`; the runtime converts values), `bind:` targets of
+   elements against the element's property, and content of a default
+   slot. They can be added to the render function without changing the
+   command.
+6. **The ambient types** are declared by the helper unless the project's
+   `types` lists `@govela/runtime/ambient` and it resolves, so that they
+   are never declared twice.
+7. **Lifecycle hooks without an import** stay undeclared: the compiler
+   warns about them (`VELA-SCOPE-UNDECLARED`), the check reports TS2304;
+   `lazy()` takes the optional `id` that generated route tables pass.
+8. **Performance**: one helper per `vela check --types --watch`, whose
+   language service reuses the program; 300 components check in 1.8 s and
+   again in 1 s after a change (`BenchmarkCheckTypes`, i7-8550U).
+9. **TypeScript 7**: the helper needs the language service API, which the
+   native compiler does not have yet (TS-10.1). When it does, the helper
+   loads it as it loads `typescript` today; the virtual documents and the
+   Go side stay as they are.
 
