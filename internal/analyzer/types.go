@@ -29,9 +29,10 @@ type ComponentTypes struct {
 	Props []PropType
 
 	// Events is the declaration of `$$Events` (an interface or a type alias
-	// in TypeScript, a JSDoc @typedef in JavaScript), nil without one; then
-	// EventNames are the literal names of the `$$dispatch` calls, and
-	// AnyEvents is set when a call has a computed name (TS-4.6).
+	// in TypeScript, a JSDoc @typedef in JavaScript), nil without one.
+	// EventNames are its member names, or without it the literal names of
+	// the `$$dispatch` calls; AnyEvents is set when there is no `$$Events`
+	// and a call has a computed name (TS-4.6).
 	Events     *TypeDecl
 	EventNames []string
 	AnyEvents  bool
@@ -211,6 +212,7 @@ func (t *ComponentTypes) readScript(script *sfcast.ScriptAST) {
 			switch d.Name {
 			case "$$Events":
 				t.Events = td
+				t.declaredEvents(objectMembers(d.Type))
 			case "$$Slots":
 				t.Slots = td
 			default:
@@ -223,6 +225,9 @@ func (t *ComponentTypes) readScript(script *sfcast.ScriptAST) {
 			switch td.Name {
 			case "$$Events":
 				t.Events = td
+				if prog, diags := jsast.ParseWithOptions("type $$T = "+td.Text+";", jsast.ParseOptions{TypeScript: true}); len(diags) == 0 && prog.TS != nil && len(prog.TS.Decls) == 1 {
+					t.declaredEvents(objectMembers(prog.TS.Decls[0].Type))
+				}
 			case "$$Slots":
 				t.Slots = td
 			default:
@@ -560,4 +565,27 @@ func dedent(s string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// declaredEvents sets the event names to the members of $$Events.
+func (t *ComponentTypes) declaredEvents(names []string) {
+	t.EventNames, t.AnyEvents = names, false
+	sort.Strings(t.EventNames)
+}
+
+// objectMembers are the property names of an object type.
+func objectMembers(typ *jsast.TSType) []string {
+	for typ != nil && typ.Kind == jsast.TSParen && len(typ.Args) == 1 {
+		typ = typ.Args[0]
+	}
+	if typ == nil || typ.Kind != jsast.TSObject {
+		return nil
+	}
+	var out []string
+	for _, m := range typ.Members {
+		if (m.Kind == jsast.TSPropertySig || m.Kind == jsast.TSMethodSig) && !m.Computed {
+			out = append(out, m.Name)
+		}
+	}
+	return out
 }

@@ -193,5 +193,12 @@ func compilerPackageFiles() (map[string][]byte, error) {
 	for name, data := range plugin {
 		files[name] = data
 	}
+	tsPlugin, err := typescriptPluginPackageFiles()
+	if err != nil {
+		return nil, err
+	}
+	for name, data := range tsPlugin {
+		files[name] = data
+	}
 	return files, nil
 }

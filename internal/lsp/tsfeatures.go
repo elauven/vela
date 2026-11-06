@@ -2,7 +2,6 @@ package lsp
 
 import (
 	velaproject "github.com/elauven/vela/internal/project"
-	"github.com/elauven/vela/internal/sfcast"
 	"github.com/elauven/vela/internal/typecheck"
 
 	"encoding/json"
@@ -295,6 +294,9 @@ func tsKind(kind string) CompletionItemKind {
 
 func (s *server) references(doc *document, off int) any {
 	c := s.componentOf(doc)
+	if p, ok := s.propAt(c, off); ok {
+		return s.propReferences(p)
+	}
 	ts, v, pos, ok := s.tsAt(c, off, true)
 	if !ok {
 		return []Location{}
@@ -308,16 +310,17 @@ func (s *server) references(doc *document, off int) any {
 
 func (s *server) rename(doc *document, off int, newName string) (any, error) {
 	c := s.componentOf(doc)
-	// Names the template uses outside expressions are not in the virtual
-	// documents: a prop is an attribute name of its parents, a component a
-	// tag name. Renaming them would leave those behind.
+	// A component is a tag name in the template, whose closing tags are
+	// not in the virtual documents: renaming it would leave them behind. A
+	// prop is renamed with its parents' attributes (renameProp).
 	if b := c.bindingAt(off); b != nil && b.Scope != nil && b.Scope.Parent != nil && b.Scope.Parent.Parent == nil {
 		switch kind := c.stateKind(b.Name); {
-		case strings.HasSuffix(kind, "prop"):
-			return nil, &rpcError{Code: codeRequestFailed, Message: "renaming a prop is not supported: the attributes of its parents would keep the old name"}
 		case strings.HasPrefix(kind, "import") && c.componentFile(b.Name) != "":
 			return nil, &rpcError{Code: codeRequestFailed, Message: "renaming a component import is not supported: its tags would keep the old name"}
 		}
+	}
+	if p, ok := s.propAt(c, off); ok {
+		return s.renameProp(p, newName)
 	}
 	ts, v, pos, ok := s.tsAt(c, off, true)
 	if !ok {
@@ -368,24 +371,19 @@ func (s *server) signatureHelp(doc *document, off int) any {
 	return help
 }
 
-// tsDiagnostics are TypeScript's semantic diagnostics of the component:
-// none unless the project enables checkJs or the script starts with
-// // @ts-check. Diagnostics in generated text are dropped.
+// tsDiagnostics are TypeScript's semantic diagnostics of the component, as
+// `vela check --types` reports them (internal/typecheck): always for a
+// TypeScript component, for a JavaScript one when the project enables
+// checkJs or the script has // @ts-check.
 func (s *server) tsDiagnostics(c *component) []Diagnostic {
 	ts := s.typescript()
 	if ts == nil {
 		return nil
 	}
-	if !ts.CheckJs && !strings.Contains(c.text.src, "@ts-check") {
-		return nil
-	}
-	if lang, _ := sfcast.ScriptLang(c.text.src); strings.EqualFold(lang, "ts") || strings.EqualFold(lang, "typescript") {
-		// The virtual document is JavaScript: TypeScript would report the
-		// annotations of a lang="ts" script themselves (TS8010). Typed
-		// virtual documents come with task 085.
-		return nil
-	}
 	v := s.syncTS(ts, c, false)
+	if !v.TypeScript && !ts.CheckJs && !strings.Contains(c.text.src, "@ts-check") {
+		return nil
+	}
 	var found []struct {
 		Start    int    `json:"start"`
 		Length   int    `json:"length"`
@@ -398,7 +396,7 @@ func (s *server) tsDiagnostics(c *component) []Diagnostic {
 	}
 	var out []Diagnostic
 	for _, d := range found {
-		start, end, ok := v.toSourceRange(byteOffset(v.text, d.Start), byteOffset(v.text, d.Start+d.Length))
+		start, end, ok := v.Locate(byteOffset(v.text, d.Start), byteOffset(v.text, d.Start+d.Length))
 		if !ok {
 			continue
 		}

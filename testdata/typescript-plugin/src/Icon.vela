@@ -1,0 +1,7 @@
+<script lang="ts">
+  export let name: 'star' | 'heart';
+</script>
+
+<template>
+  <i :class={name}></i>
+</template>

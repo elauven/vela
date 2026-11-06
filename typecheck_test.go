@@ -312,3 +312,50 @@ func BenchmarkCheckTypes(b *testing.B) {
 		b.ReportMetric(warm.Seconds(), "s/recheck")
 	}
 }
+
+// TestTypeScriptPlugin: in TypeScript's language service with
+// @govela/typescript-plugin, a .ts module sees the types of the components
+// it imports (task 085, TS-6.4): a wrong prop is an error, the props
+// complete, the events have their detail.
+func TestTypeScriptPlugin(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "vela")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	build.Env = append(os.Environ(), "GOWORK=off")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+	for _, ts := range []string{"typescript-5.8", "typescript"} {
+		t.Run(ts, func(t *testing.T) {
+			app := typeCheckApp(t, "../typescript-plugin", ts)
+			out, err := exec.Command("node", "tools/typescript-plugin-check.mjs", filepath.Join(app, "node_modules", "typescript"), app, binary).Output()
+			if err != nil {
+				t.Fatalf("plugin check: %v\n%s", err, out)
+			}
+			var res struct {
+				Diagnostics []struct {
+					Code    int    `json:"code"`
+					At      string `json:"at"`
+					Message string `json:"message"`
+				} `json:"diagnostics"`
+				QuickInfo  string   `json:"quickInfo"`
+				Completion []string `json:"completion"`
+				Definition []string `json:"definition"`
+			}
+			if err := json.Unmarshal(out, &res); err != nil {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			if len(res.Diagnostics) != 1 || res.Diagnostics[0].Code != 2322 || res.Diagnostics[0].At != "label" {
+				t.Errorf("diagnostics: %+v", res.Diagnostics)
+			}
+			if !strings.Contains(res.QuickInfo, "Button") || !strings.Contains(res.QuickInfo, "ButtonProps") {
+				t.Errorf("quick info: %q", res.QuickInfo)
+			}
+			if c := strings.Join(res.Completion, " "); !strings.Contains(c, "label") || !strings.Contains(c, "kind") || !strings.Contains(c, "icon") {
+				t.Errorf("completion: %v", res.Completion)
+			}
+			if len(res.Definition) != 1 || filepath.Base(res.Definition[0]) != "Button.vela" {
+				t.Errorf("definition: %v", res.Definition)
+			}
+		})
+	}
+}

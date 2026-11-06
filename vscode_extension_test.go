@@ -65,7 +65,10 @@ func TestVelaGrammar(t *testing.T) {
   p { color: red; }
 </style>
 `)
-	files := []string{sample}
+	// A TypeScript component embeds source.ts (task 085).
+	typed := filepath.Join(filepath.Dir(sample), "Typed.vela")
+	writeTestFile(t, typed, "<script lang=\"ts\">\n  let count: number = $state(0);\n</script>\n\n<template>\n  <p>{count}</p>\n</template>\n")
+	files := []string{sample, typed}
 	examples, err := filepath.Glob(filepath.Join("examples", "*.vela"))
 	if err != nil {
 		t.Fatal(err)
@@ -109,6 +112,13 @@ func TestVelaGrammar(t *testing.T) {
 		if !has(want[0], want[1]) {
 			t.Errorf("no %q with %s in\n%v", want[0], want[1], tokens[sample])
 		}
+	}
+	var tsScript bool
+	for _, tok := range tokens[typed] {
+		tsScript = tsScript || strings.TrimSpace(tok[0]) == "let" && strings.Contains(tok[1], "meta.section.script.ts.vela source.ts")
+	}
+	if !tsScript {
+		t.Errorf("<script lang=\"ts\"> is not source.ts: %v", tokens[typed])
 	}
 	for _, file := range files[1:] {
 		toks := tokens[file]
@@ -180,7 +190,7 @@ func TestVSCodeExtension(t *testing.T) {
 		writeTestFile(t, dest, string(data))
 	}
 	archive.Close()
-	for _, want := range []string{"package.json", "extension.js", "server.js", "language-configuration.json", "syntaxes/vela.tmLanguage.json", "readme.md", "LICENSE.txt", "changelog.md", "node_modules/vscode-languageclient/package.json", "node_modules/typescript/lib/typescript.js", "node_modules/typescript/lib/lib.dom.d.ts"} {
+	for _, want := range []string{"package.json", "extension.js", "server.js", "language-configuration.json", "syntaxes/vela.tmLanguage.json", "readme.md", "LICENSE.txt", "changelog.md", "node_modules/vscode-languageclient/package.json", "node_modules/typescript/lib/typescript.js", "node_modules/typescript/lib/lib.dom.d.ts", "node_modules/@govela/typescript-plugin/index.js"} {
 		if !names["extension/"+want] {
 			t.Errorf("the .vsix misses %s", want)
 		}

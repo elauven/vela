@@ -1,6 +1,6 @@
 // Tokenizes components with the TextMate grammar of the VS Code extension
 // (packages/vscode-vela), with the engines VS Code uses: vscode-textmate and
-// vscode-oniguruma. The JavaScript and CSS grammars of VS Code are stubs: the
+// vscode-oniguruma. The JavaScript, TypeScript and CSS grammars of VS Code are stubs: the
 // check is that the grammar hands the right regions to them.
 //
 // Usage: node tools/vela-grammar-check.mjs <component.vela>...
@@ -28,7 +28,7 @@ async function main(files) {
     }),
     loadGrammar: async (scopeName) => {
       if (scopeName === 'source.vela') return textmate.parseRawGrammar(fs.readFileSync(grammarFile, 'utf8'), grammarFile);
-      if (scopeName === 'source.js' || scopeName === 'source.css') return stub(scopeName);
+      if (scopeName === 'source.js' || scopeName === 'source.ts' || scopeName === 'source.css') return stub(scopeName);
       return null;
     },
   });
