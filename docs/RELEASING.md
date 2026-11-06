@@ -73,6 +73,7 @@ compiler the runtime path appears only in `SSRRuntimeImportPath`.
 | `v0.3.0` | | Server rendering to Go and hydration; first release with `ssr_runtime/v0.3.0` and `@govela/runtime` |
 | `v0.3.1` | | Fixes of v0.3.0: the Go runtime on arm64 and other fused multiply-add architectures matches JavaScript, JSON of invalid UTF-8 matches every Go version; `ssr_runtime/v0.3.0` is retracted and `@govela/runtime@0.3.0` deprecated |
 | `v0.4.0` | | Exact server translation of more JavaScript: rest elements and parameters, computed keys, optional calls, comma and `void`, `in`, `for…in`, labels, a fresh `let` binding per loop iteration, array `entries`/`keys`/`values`, `String.fromCharCode`/`fromCodePoint`/`raw`, `with`, `toSpliced`, `structuredClone`; error objects convert to text as in JavaScript and keep their kind through the `{#await}` payload. Runtime contract `ContractV2`: `ssr_runtime/v0.4.0` and `@govela/runtime@0.4.0` are required together |
+| `v0.5.0` | | TypeScript, experimental (docs/TYPESCRIPT.md): `<script lang="ts">` and `.ts` modules compiled by erasure, also with `--ssr`; `vela check --types`, `vela --dts`, declarations in every npm package, TypeScript in `vela-lsp` and the new `@govela/typescript-plugin`. The runtime contract is unchanged |
 
 A published tag is never moved: the Go module proxy and checksum database
 keep the first content of a version, and npm never reuses a version number.
@@ -134,6 +135,7 @@ The tag pattern of the compiler's workflow, `v*`, does not match
 | --- | --- |
 | `app/v0.1.0`, `app/v0.1.1` | The first app layer (tasks 073–078) and `@govela/app@0.1.1`, the client router only; `vela-app` only through `go install` / `go run` |
 | `app/v0.1.2` | `vela-app` in the GitHub release and in npm (`@govela/app` with the platform packages); `vela-app build` |
+| `app/v0.2.0` | TypeScript Vela Apps: `"typescript": true`, `./$types` of every route from the Go loaders (`app/typegen`); `@govela/app` declarations need `@govela/runtime` `0.5.0` |
 
 ## Development
 

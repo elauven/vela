@@ -24,7 +24,8 @@ deploying. The rules it implements are in [APP.md](APP.md).
 compiler. Use the same version for the Go module
 `github.com/elauven/vela/app`, the npm package `@govela/app` and the
 command. Each release states the minimum compiler and runtime it needs;
-`0.1.2` needs `vela`, `ssr_runtime` and `@govela/runtime` `0.4.8` or later.
+`0.2.0` needs `vela` and `@govela/runtime` `0.5.0` or later and
+`ssr_runtime` `0.4.8` or later.
 
 ### With npm (recommended for projects that use Vite)
 
@@ -54,7 +55,7 @@ To pin the version in the project, add it as a tool of the module
 (Go 1.24 and later) and run it with `go tool`:
 
 ```sh
-go get -tool github.com/elauven/vela/app/cmd/vela-app@v0.1.2
+go get -tool github.com/elauven/vela/app/cmd/vela-app@v0.2.0
 go tool vela-app gen
 ```
 
@@ -66,8 +67,8 @@ Every release `app/vX.Y.Z` on
 and `SHA256SUMS`:
 
 ```sh
-curl -LO https://github.com/elauven/vela/releases/download/app%2Fv0.1.2/vela-app-linux-amd64
-curl -LO https://github.com/elauven/vela/releases/download/app%2Fv0.1.2/SHA256SUMS
+curl -LO https://github.com/elauven/vela/releases/download/app%2Fv0.2.0/vela-app-linux-amd64
+curl -LO https://github.com/elauven/vela/releases/download/app%2Fv0.2.0/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 install -m 755 vela-app-linux-amd64 /usr/local/bin/vela-app
 ```
@@ -103,7 +104,7 @@ site/
 
 ```sh
 go mod init example.com/site
-go get github.com/elauven/vela/app@v0.1.2 github.com/elauven/vela/ssr_runtime@v0.4.8
+go get github.com/elauven/vela/app@v0.2.0 github.com/elauven/vela/ssr_runtime@v0.5.0
 ```
 
 `vela.config.json` compiles `src` with server rendering; `ssrModule` is the
@@ -162,12 +163,12 @@ export default {
     "build": "vela-app build"
   },
   "dependencies": {
-    "@govela/app": "0.1.2",
-    "@govela/runtime": "0.4.8"
+    "@govela/app": "0.2.0",
+    "@govela/runtime": "0.5.0"
   },
   "devDependencies": {
-    "@govela/compiler": "0.4.8",
-    "@govela/unplugin": "0.4.8",
+    "@govela/compiler": "0.5.0",
+    "@govela/unplugin": "0.5.0",
     "vite": "^8.3.5"
   }
 }
