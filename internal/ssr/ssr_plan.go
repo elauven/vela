@@ -132,6 +132,8 @@ type SSRPlanProp struct {
 	SourceName string
 	GoName     string
 	Type       SSRValueType
+	// TypeSource is where Type comes from: ts, jsdoc or inferred (TS-7.5).
+	TypeSource string
 	Default    jsast.JsExpr
 	Bindable   bool
 }
@@ -712,10 +714,12 @@ func buildSSRPlanProps(analysis *analyzer.Analysis, script *sfcast.ScriptAST) ([
 			return nil, fmt.Errorf("ssr render plan: props %q and %q both map to Go field %q", previous, prop.Name, goName)
 		}
 		seenGoNames[goName] = prop.Name
+		typ, source := ssrPropType(script, prop.Name, prop.DefaultAST)
 		out = append(out, SSRPlanProp{
 			SourceName: prop.Name,
 			GoName:     goName,
-			Type:       inferSSRPropType(script, prop.Name, prop.DefaultAST),
+			Type:       typ,
+			TypeSource: source,
 			Default:    prop.DefaultAST,
 			Bindable:   prop.Bindable,
 		})
@@ -774,30 +778,8 @@ func inferSSRValueType(expr jsast.JsExpr) SSRValueType {
 }
 
 func inferSSRPropType(script *sfcast.ScriptAST, name string, fallback jsast.JsExpr) SSRValueType {
-	if script != nil {
-		for _, comment := range script.DocComments {
-			if comment.TargetName != name {
-				continue
-			}
-			switch comment.Type {
-			case sfcast.JSDocTypeString:
-				return SSRTypeString
-			case sfcast.JSDocTypeBool:
-				return SSRTypeBool
-			case sfcast.JSDocTypeNumber:
-				return SSRTypeFloat
-			case sfcast.JSDocTypeInteger:
-				return SSRTypeInt
-			case sfcast.JSDocTypeSlice:
-				return SSRTypeSlice
-			case sfcast.JSDocTypeObject:
-				return SSRTypeObject
-			case sfcast.JSDocTypeAny:
-				return SSRTypeAny
-			}
-		}
-	}
-	return inferSSRValueType(fallback)
+	t, _ := ssrPropType(script, name, fallback)
+	return t
 }
 
 func ssrDeepInitializers(analysis *analyzer.Analysis) map[string]jsast.JsExpr {

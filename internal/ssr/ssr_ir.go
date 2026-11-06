@@ -1556,8 +1556,23 @@ func (b *ssrIRBuilder) hostMissing(cause error, symbol SSRHostSymbol, call *jsas
 		if value, err := b.build(argument, 0); err == nil {
 			facts = value.irBase().Facts
 		}
+		goType := ssrGoTypeForFacts(facts)
+		if function != nil && function.TS != nil && i < len(function.TS.Params) && function.TS.Params[i] != nil {
+			// The TypeScript annotation names the type (TS-7.4).
+			if t := ssrTSGoType(function.TS.Params[i].Type, 0); t != "" {
+				goType = t
+				if function.TS.Params[i].Optional && t != "any" && t[0] != '*' {
+					goType = "*" + t
+				}
+			}
+		}
 		suggestion.ParamNames = append(suggestion.ParamNames, name)
-		suggestion.ParamTypes = append(suggestion.ParamTypes, ssrGoTypeForFacts(facts))
+		suggestion.ParamTypes = append(suggestion.ParamTypes, goType)
+	}
+	if function != nil && function.TS != nil {
+		if t := ssrTSGoType(function.TS.Return, 0); t != "" && t[0] != '*' {
+			suggestion.Result = t
+		}
 	}
 	b.called(symbol.Name, SSROutcomeUnsupported, "")
 	wrapped := ssrWithReason(cause, cause, reason).(*SSRExpressionError)

@@ -37,7 +37,7 @@ vela --ssr --project src --out out
 | --- | --- |
 | `out/client/` | Client modules (the same as a CSR build), the runtime, and `vela.manifest.json` (components, root modes, package imports) |
 | `out/server/components/…` | One Go package per source directory: `page.go` (renderer) and `page_props.go` (props struct: regenerated when the props change until you edit it, then yours and never overwritten) |
-| `out/server/modules/…` | One Go package per local `.js` module that components import |
+| `out/server/modules/…` | One Go package per local `.js` or `.ts` module that components import |
 | `out/styles/` | Scoped CSS per component |
 
 The Go packages import the runtime module
@@ -246,8 +246,15 @@ mismatches. `TestSSRWatchRebuildsLikeACleanBuild` covers the watch mode.
 
 The server evaluates what the first render needs: props and their defaults,
 `$state` and `$derived` initializers, template expressions, and the
-functions and local `.js` modules they call. Event handlers, `$effect`,
-`onMount` and `onDestroy` never run on the server and never block SSR.
+functions and local `.js` and `.ts` modules they call. Event handlers,
+`$effect`, `onMount` and `onDestroy` never run on the server and never block
+SSR.
+
+TypeScript components and `.ts` modules render exactly as their JavaScript
+twins (docs/TYPESCRIPT.md TS-7). The annotation of a prop chooses the Go
+type of its field, as JSDoc `@type` does (`export let total: number` is
+`Total float64` in `PageProps`); other annotations do not change the
+translation.
 
 Each such place is a **site** with one outcome:
 
@@ -262,7 +269,8 @@ The admitted language (statements, closures, `async`/`await` with a
 synchronous model, built-ins) is in the contract and the matrix.
 
 `vela --ssr --ssr-report=report.json` writes one record per site with its
-outcome, tier and type, for review or CI.
+outcome, tier and type, for review or CI, and the Go type of each prop with
+where it comes from (`ts`, `jsdoc`, `inferred`).
 
 ### Hosts
 
@@ -283,7 +291,12 @@ func FormatPrice(ctx context.Context, value float64, currency string) (string, e
   configure the tree in `vela.ssr.json`
   (`"host": {"dir": "ssrhost", "module": "example.com/site/ssrhost"}`).
 - The compiler prints the expected file and signature;
-  `--ssr-scaffold-hosts` creates stubs and never changes existing files.
+  `--ssr-scaffold-hosts` creates stubs and never changes existing files. For
+  a function of a `.ts` module or a `lang="ts"` component the signature
+  comes from its annotations (`function formatPrice(value: number,
+  currency?: string): string` gives `value float64, currency *string)
+  (string, error)`), and a host that contradicts them is
+  `VELA-SSR-HOST-SIG`.
 - The server calls the host; the browser keeps the JavaScript function, and
   development hydration reports a host that disagrees with it.
 

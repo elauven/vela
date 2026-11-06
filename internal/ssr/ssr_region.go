@@ -44,6 +44,9 @@ type SSRSiteRecord struct {
 	Outcome string `json:"outcome"`
 	Tier    string `json:"tier,omitempty"`
 	Type    string `json:"type,omitempty"`
+	// TypeSource is where Type comes from: go for the result of a Go host,
+	// inferred for what the translation proves (TS-7.5).
+	TypeSource string `json:"typeSource,omitempty"`
 	// Required is set for sites the server render evaluates. Declaration
 	// sites ($state, $derived) are recorded with their own outcome; the
 	// render needs them only where another site reads them (Reads).
@@ -95,10 +98,16 @@ type SSRRegion struct {
 	// import names.
 	modules map[string]string
 	calls   map[string]ssrCallOutcome
+	// Props are the component's props with their Go types (TS-7.5).
+	Props []SSRPropRecord
 }
 
 func newSSRRegion(plan *SSRRenderPlan) *SSRRegion {
-	return &SSRRegion{Component: plan.ComponentName, TemplateOffset: plan.TemplateOffset, ScriptOffset: plan.ScriptOffset, counters: map[string]int{}, project: plan.HostProject, hostImports: map[string]string{}, calls: map[string]ssrCallOutcome{}}
+	r := &SSRRegion{Component: plan.ComponentName, TemplateOffset: plan.TemplateOffset, ScriptOffset: plan.ScriptOffset, counters: map[string]int{}, project: plan.HostProject, hostImports: map[string]string{}, calls: map[string]ssrCallOutcome{}}
+	for _, p := range plan.Props {
+		r.Props = append(r.Props, SSRPropRecord{Name: p.SourceName, Type: p.Type.goName(), TypeSource: p.TypeSource})
+	}
+	return r
 }
 
 // ssrSiteRoot describes a region root for the first reason of a chain.
@@ -156,6 +165,9 @@ func (r *SSRRegion) add(kind, name string, pos int, required bool, ir SSRIRExpr,
 		record.Outcome = SSROutcomeNative
 		facts := ir.irBase().Facts
 		record.Tier, record.Type = facts.Tier(), facts.SemanticType()
+		if record.Type != "unknown" {
+			record.TypeSource = SSRTypeSourceInferred
+		}
 	}
 	r.Records = append(r.Records, record)
 }
@@ -314,6 +326,7 @@ type SSRComponentReport struct {
 	Source    string          `json:"source"`
 	Status    string          `json:"status"`
 	Error     string          `json:"error,omitempty"`
+	Props     []SSRPropRecord `json:"props,omitempty"`
 	Sites     []SSRSiteRecord `json:"sites"`
 }
 
@@ -345,6 +358,7 @@ func (c *SSRReportCollector) Add(src, srcRoot string, region *SSRRegion, err err
 	component := SSRComponentReport{Component: project.ComponentName(src), Source: filepath.ToSlash(rel), Status: "ok", Sites: []SSRSiteRecord{}}
 	if region != nil {
 		component.Sites = region.Records
+		component.Props = region.Props
 	}
 	if err != nil {
 		component.Status = "error"
@@ -513,7 +527,11 @@ func (r *SSRRegion) finish(plan *SSRRenderPlan) error {
 		if function, ok := plan.Functions[name]; ok && function != nil {
 			pos = r.ScriptOffset + function.NodePos()
 		}
-		r.Records = append(r.Records, SSRSiteRecord{ID: fmt.Sprintf("function#%d", r.counters["function"]), Kind: "function", Name: name, Pos: pos, Outcome: call.Outcome, Host: call.Host})
+		record := SSRSiteRecord{ID: fmt.Sprintf("function#%d", r.counters["function"]), Kind: "function", Name: name, Pos: pos, Outcome: call.Outcome, Host: call.Host}
+		if call.Host != "" {
+			record.TypeSource = SSRTypeSourceGo // the Go host's result type
+		}
+		r.Records = append(r.Records, record)
 	}
 	if failures := r.Failures(); len(failures) > 0 {
 		return &SSRRegionError{Region: r, Failures: failures}

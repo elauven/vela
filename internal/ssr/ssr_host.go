@@ -263,8 +263,8 @@ func ssrSourceFunctions(project *SSRProject, files []string) map[string]ssrSourc
 		rel := project.Relative(file)
 		symbols := ssrSourceSymbols{Source: rel, Functions: map[string]*jsast.JsFuncDecl{}}
 		switch filepath.Ext(file) {
-		case ".js":
-			if program := jsast.ParseJS(string(data)); program != nil {
+		case ".js", ".ts", ".mts":
+			if program, _ := ssrParseModule(file, string(data)); program != nil {
 				ssrCollectFunctions(program, true, symbols.Functions)
 			}
 		case ".vela":
@@ -401,6 +401,9 @@ func (hosts *SSRHosts) analyzePackage(dir string, filenames []string, sources ma
 				binding.Problem = ssrHostSignature(binding, pkg, function)
 				if function.Recv != nil {
 					binding.Problem = "a host is a function, not a method"
+				}
+				if binding.Problem == "" {
+					binding.Problem = ssrTSHostSignatureProblem(source.Functions[name], binding)
 				}
 				if binding.Problem != "" {
 					problem(SSRHostSignatureCode, "//vela:host %s: %s: %s", name, binding.GoName, binding.Problem)
@@ -575,10 +578,14 @@ func bindSSRHosts(plan *SSRRenderPlan, hosts *SSRHosts, src string, analysis *an
 			plan.HostSymbols[name] = SSRHostSymbol{Source: own, Name: name}
 		}
 		for _, imp := range analysis.Imports {
-			if imp == nil || !strings.HasPrefix(imp.Source, ".") || path.Ext(imp.Source) != ".js" {
+			if imp == nil {
 				continue
 			}
-			source := project.Relative(filepath.Join(filepath.Dir(src), filepath.FromSlash(imp.Source)))
+			target, ok := ssrLocalModule(filepath.Dir(src), imp.Source)
+			if !ok {
+				continue
+			}
+			source := project.Relative(target)
 			for _, spec := range imp.Specifiers {
 				if spec.Local != "" && spec.Imported != "" && spec.Imported != "default" {
 					plan.HostSymbols[spec.Local] = SSRHostSymbol{Source: source, Name: spec.Imported}
@@ -622,6 +629,9 @@ type ssrHostSuggestion struct {
 	Symbol     SSRHostSymbol
 	ParamNames []string
 	ParamTypes []string
+	// Result is the Go result type, "any" unless the JavaScript function
+	// declares a return type that maps (TS-7.4).
+	Result string
 }
 
 // suggestion describes the stub for symbol in project.
@@ -634,8 +644,12 @@ func (s *ssrHostSuggestion) describe(project *SSRProject) (file, directive, sign
 	for i, name := range s.ParamNames {
 		params = append(params, name+" "+s.ParamTypes[i])
 	}
+	result := s.Result
+	if result == "" {
+		result = "any"
+	}
 	return path.Join(mirror, ssrHostFileName(s.Symbol.Name)), "//vela:host " + s.Symbol.Name,
-		fmt.Sprintf("func %s(%s) (any, error)", ssrHostGoName(s.Symbol.Name), strings.Join(params, ", "))
+		fmt.Sprintf("func %s(%s) (%s, error)", ssrHostGoName(s.Symbol.Name), strings.Join(params, ", "), result)
 }
 
 // ssrGoTypeForFacts is the Go parameter type suggested for an argument.
@@ -709,7 +723,7 @@ import (
 //
 ` + fix.Directive + `
 ` + fix.Signature + ` {
-	return nil, vela.ErrHostNotImplemented
+	return ` + ssrZeroOfResult(fix.Signature) + `, vela.ErrHostNotImplemented
 }
 `
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -735,12 +749,16 @@ func (hosts *SSRHosts) BoundName(src string, sfc *sfcast.SFC, local string) (str
 	symbol := SSRHostSymbol{Source: project.Relative(src), Name: local}
 	if analysis := analyzer.AnalyzeScriptAST(sfc.ScriptAST); analysis != nil {
 		for _, imp := range analysis.Imports {
-			if imp == nil || !strings.HasPrefix(imp.Source, ".") || path.Ext(imp.Source) != ".js" {
+			if imp == nil {
+				continue
+			}
+			target, ok := ssrLocalModule(filepath.Dir(src), imp.Source)
+			if !ok {
 				continue
 			}
 			for _, spec := range imp.Specifiers {
 				if spec.Local == local && spec.Imported != "" && spec.Imported != "default" {
-					symbol = SSRHostSymbol{Source: project.Relative(filepath.Join(filepath.Dir(src), filepath.FromSlash(imp.Source))), Name: spec.Imported}
+					symbol = SSRHostSymbol{Source: project.Relative(target), Name: spec.Imported}
 				}
 			}
 		}
@@ -749,4 +767,20 @@ func (hosts *SSRHosts) BoundName(src string, sfc *sfcast.SFC, local string) (str
 		return symbol.Name, true
 	}
 	return "", false
+}
+
+// ssrZeroOfResult is the zero value of the result of a host signature
+// "func F(…) (T, error)".
+func ssrZeroOfResult(signature string) string {
+	open := strings.LastIndex(signature, "(")
+	result := strings.TrimSuffix(strings.TrimSuffix(signature[open+1:], ")"), ", error")
+	switch result {
+	case "string":
+		return `""`
+	case "float64":
+		return "0"
+	case "bool":
+		return "false"
+	}
+	return "nil"
 }
