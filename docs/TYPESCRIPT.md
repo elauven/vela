@@ -588,8 +588,8 @@ Taken while implementing server rendering on 2026-11-06:
    `inferred`) and of sites (`go` for a host function, `inferred`
    otherwise); the IR does not track how a proven site type was proven.
 5. **Twins**: `TestSSRTypeScriptTwins` renders the block corpus and its
-   TypeScript twins (annotated props, `loader.ts` imported as
-   `./loader.js`) and compares the HTML, the payload and the client
+   TypeScript twins (annotated props, `load_item.ts` imported as
+   `./load_item.js`) and compares the HTML, the payload and the client
    modules byte for byte; the JavaScript corpus checks hydration in
    Chromium, which the identical output inherits.
 
