@@ -46,13 +46,33 @@ func BlankTypeScript(src string, info *TSInfo) string {
 		}
 		return stmts[i].End > stmts[j].End
 	})
+	// The statements come in source order, so the code before each one and
+	// after it is found by scans that only move forward: a source of many
+	// erased declarations stays linear.
 	end := -1
+	prevAt, scanned := -1, 0   // the last byte that is not blank before scanned
+	nextFrom, nextAt := -1, -1 // a forward scan from nextFrom found nextAt
 	for _, s := range stmts {
 		if s.Pos < end || s.Pos >= len(out) {
 			continue // inside an erased statement already handled
 		}
 		end = s.End
-		if needsSemicolon(out, s.Pos, s.End) {
+		for ; scanned < s.Pos; scanned++ {
+			if !isBlankByte(out[scanned]) {
+				prevAt = scanned
+			}
+		}
+		prev := byte(0)
+		if prevAt >= 0 {
+			prev = out[prevAt]
+		}
+		if prev == '}' && (nextFrom < 0 || s.End < nextFrom || s.End > nextAt) {
+			nextFrom, nextAt = s.End, s.End
+			for nextAt < len(out) && isBlankByte(out[nextAt]) {
+				nextAt++
+			}
+		}
+		if needsSemicolon(prev, out, nextAt) {
 			out[s.Pos] = ';'
 		}
 	}
@@ -65,35 +85,27 @@ func BlankTypeScript(src string, info *TSInfo) string {
 	return string(out)
 }
 
-// needsSemicolon reports whether the erased statement [pos, end) must leave
-// a `;`: unless the code before it already ended a statement (start of the
+// needsSemicolon reports whether an erased statement must leave a `;`,
+// given prev, the last byte before it that is not blank: unless the code before it already ended a statement (start of the
 // source, `;`, `{`), the lines around it could join, as in
 //
 //	let x = a
 //	interface I {}
 //	(b)
-func needsSemicolon(out []byte, pos, end int) bool {
-	prev := byte(0)
-	for i := pos - 1; i >= 0; i-- {
-		if c := out[i]; !isBlankByte(c) {
-			prev = c
-			break
-		}
-	}
+func needsSemicolon(prev byte, out []byte, next int) bool {
 	switch prev {
 	case 0, ';', '{':
 		return false
 	case '}':
 		// After a block, only a following `(`, `[`, … could continue an
-		// expression (a function expression called).
-		for i := end; i < len(out); i++ {
-			if c := out[i]; !isBlankByte(c) {
-				switch c {
-				case '(', '[', '`', '+', '-', '/', '.', ',', '?', '=', '<', '>', '*', '%', '&', '|', '^', '!':
-					return true
-				}
-				return false
-			}
+		// expression (a function expression called). next is the first
+		// byte after the statement that is not blank.
+		if next < 0 || next >= len(out) {
+			return false
+		}
+		switch out[next] {
+		case '(', '[', '`', '+', '-', '/', '.', ',', '?', '=', '<', '>', '*', '%', '&', '|', '^', '!':
+			return true
 		}
 		return false
 	}

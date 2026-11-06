@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -324,6 +325,9 @@ func BenchmarkCheckTypes(b *testing.B) {
 // complete, the events have their detail.
 func TestTypeScriptPlugin(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "vela")
+	if goruntime.GOOS == "windows" {
+		binary += ".exe"
+	}
 	build := exec.Command("go", "build", "-o", binary, ".")
 	build.Env = append(os.Environ(), "GOWORK=off")
 	if out, err := build.CombinedOutput(); err != nil {

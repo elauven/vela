@@ -139,7 +139,7 @@ function init(modules) {
         if (!name.endsWith('.vela') || !(name.startsWith('./') || name.startsWith('../'))) return r;
         const component = path.resolve(path.dirname(containing), name);
         if (!fs.existsSync(component)) return r;
-        return { resolvedModule: { resolvedFileName: component.slice(0, -'.vela'.length) + VIRTUAL, extension: ts.Extension.Dts, isExternalLibraryImport: false } };
+        return { resolvedModule: { resolvedFileName: (component.slice(0, -'.vela'.length) + VIRTUAL).replace(/\\/g, '/'), extension: ts.Extension.Dts, isExternalLibraryImport: false } };
       });
     });
     log(`components through ${binary}`);
