@@ -1,0 +1,24 @@
+<script>
+  export let data = null;
+  export let route = null;
+</script>
+
+<template>
+  <div class="site">
+    <nav>
+      <a href="/" class:active={route.path === '/'}>{data.site}</a>
+    </nav>
+    <main><slot /></main>
+  </div>
+</template>
+
+<style>
+  .site {
+    font-family: system-ui, sans-serif;
+    max-width: 40rem;
+    margin: 2rem auto;
+  }
+  .active {
+    font-weight: bold;
+  }
+</style>

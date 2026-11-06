@@ -104,7 +104,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           version="${GITHUB_REF_NAME#v}"
-          for dir in packages/compiler-* packages/runtime packages/compiler packages/unplugin packages/typescript-plugin; do
+          for dir in packages/compiler-* packages/runtime packages/compiler packages/unplugin packages/typescript-plugin packages/testing packages/create; do
             name=$(node -p "require('./$dir/package.json').name")
             if npm view "$name@$version" version >/dev/null 2>&1; then
               echo "$name@$version is already published"

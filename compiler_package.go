@@ -200,5 +200,12 @@ func compilerPackageFiles() (map[string][]byte, error) {
 	for name, data := range tsPlugin {
 		files[name] = data
 	}
+	starters, err := starterPackageFiles()
+	if err != nil {
+		return nil, err
+	}
+	for name, data := range starters {
+		files[name] = data
+	}
 	return files, nil
 }

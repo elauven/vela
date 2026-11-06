@@ -1,0 +1,5 @@
+module __MODULE__
+
+go 1.25
+
+require github.com/elauven/vela/ssr_runtime v__VERSION__
