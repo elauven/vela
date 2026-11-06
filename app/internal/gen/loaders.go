@@ -43,6 +43,9 @@ type LoadFile struct {
 	// Actions reports `func Actions() app.Actions`, the form actions of the
 	// page (task 078), usually in actions.go.
 	Actions bool
+	// Form reports `type Form …`: the value the page's actions pass to
+	// app.Fail, which types the form prop of a TypeScript page (TS-8.2).
+	Form bool
 }
 
 // Signatures printed by the loader diagnostics (L-1).
@@ -119,6 +122,9 @@ func (t *Tree) readLoad(d *Dir, dir string, files []string, report func(Diagnost
 				}
 			case *ast.GenDecl:
 				for _, spec := range decl.Specs {
+					if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.Name == "Form" && ts.TypeParams == nil {
+						load.Form = true
+					}
 					value, ok := spec.(*ast.ValueSpec)
 					if !ok {
 						continue

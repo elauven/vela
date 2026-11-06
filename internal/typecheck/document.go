@@ -233,14 +233,25 @@ func quote(s string) string {
 func Build(path, src string) *Document {
 	w := &writer{src: src}
 	ts, generics := scriptLang(src)
-	model := componentModel(src)
+	model, scriptStart := componentModel(src)
 	if ts && generics != "" {
 		// The type parameters of a generic component are their constraints
 		// inside it (TS-4.8); its export is generic.
 		w.gen(genericAliases(generics))
 	}
 	if start, end, ok := sectionBody(src, "script"); ok {
-		w.copy(start, end)
+		// A required prop (`export let title: string;`) is assigned by the
+		// parent: `!` keeps TypeScript from reporting its uses as before
+		// assignment (TS2454).
+		at := start
+		for _, pos := range requiredPropEnds(model, ts, scriptStart) {
+			if pos > at && pos <= end {
+				w.copy(at, pos)
+				w.gen("!")
+				at = pos
+			}
+		}
+		w.copy(at, end)
 	}
 	w.gen("\n;\n")
 	if model != nil && model.Events != nil {
@@ -308,13 +319,14 @@ func attrValue(tag, name string) string {
 	}
 }
 
-// componentModel is the type model of a component that parses, else nil.
-func componentModel(src string) *analyzer.ComponentTypes {
+// componentModel is the type model of a component that parses, else nil,
+// and the offset of its script.
+func componentModel(src string) (*analyzer.ComponentTypes, int) {
 	sfc, err := sfcast.ParseSFC(src)
 	if err != nil || sfc == nil || sfc.ScriptAST == nil || len(sfc.ScriptAST.Diagnostics) > 0 {
-		return nil
+		return nil, 0
 	}
-	return analyzer.ComponentTypesOf(sfc)
+	return analyzer.ComponentTypesOf(sfc), sfc.ScriptAST.Span.Start
 }
 
 // genericAliases declares the type parameters of `generics` as aliases of
@@ -478,4 +490,21 @@ func sectionBody(src, tag string) (start, end int, ok bool) {
 		}
 	}
 	return start, end, true
+}
+
+// requiredPropEnds are the component offsets after the names of the
+// annotated props without a default of a TypeScript script at offset
+// scriptStart.
+func requiredPropEnds(model *analyzer.ComponentTypes, ts bool, scriptStart int) []int {
+	if model == nil || !ts {
+		return nil
+	}
+	var out []int
+	for _, p := range model.Props {
+		if !p.Optional && !p.Inferred && p.Type != "" {
+			out = append(out, scriptStart+p.Pos+len(p.Name))
+		}
+	}
+	sort.Ints(out)
+	return out
 }

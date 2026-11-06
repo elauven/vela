@@ -1,0 +1,9 @@
+<script lang="ts">
+  import type { PageProps } from './$types';
+
+  export let data: PageProps['data'] = null;
+</script>
+
+<template>
+  <p>Home {data === null ? '' : 'never'}</p>
+</template>

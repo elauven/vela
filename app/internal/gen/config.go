@@ -35,6 +35,10 @@ type Config struct {
 	// SSRModule is the import root of the generated renderers
 	// (vela.config.json "ssrModule").
 	SSRModule string `json:"ssrModule"`
+	// TypeScript makes the project a TypeScript project (docs/TYPESCRIPT.md
+	// TS-8.1): VelaApp.vela is lang="ts", and the types of every route are
+	// generated from its Go loaders (TS-8.2).
+	TypeScript bool `json:"typescript"`
 }
 
 // LoadConfig reads vela.app.json, vela.config.json and go.mod in root and

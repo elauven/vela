@@ -1,8 +1,10 @@
 <script lang="ts">
   export let title: string;
   export let open: boolean = $bindable(true);
+  // A required prop is assigned by the parent, not before its first use.
+  let upper: string = title.toUpperCase();
 </script>
 
 <template>
-  <section>{title} {open}</section>
+  <section>{title} {upper} {open}</section>
 </template>

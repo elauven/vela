@@ -1,0 +1,11 @@
+<script lang="ts">
+  import type { LayoutProps } from './$types';
+
+  export let data: LayoutProps['data'];
+  export let route: LayoutProps['route'];
+</script>
+
+<template>
+  <header>{data.site} · {route.path}</header>
+  <main><slot /></main>
+</template>

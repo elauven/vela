@@ -1,5 +1,5 @@
 // @govela/app/client and @govela/app/match (docs/APP.md).
-import { start, goto, invalidate, navigating, beforeNavigate, afterNavigate, headers, protocolVersion, type Navigation, type FormFailure } from '@govela/app/client';
+import { start, goto, invalidate, navigating, beforeNavigate, afterNavigate, headers, protocolVersion, type Navigation, type FormFailure, type Route } from '@govela/app/client';
 import { matchPath, int, uuid, slug, builtinMatchers, type MatchTable } from '@govela/app/match';
 import { type Component, type ComponentInstance } from '@govela/runtime';
 import { expectTrue, expectType, type Equal } from './expect.ts';
@@ -38,3 +38,12 @@ const table: MatchTable<{ id: string }> = { routes: [{ id: 'a' }], patterns: [],
 const found = matchPath(table, '/a');
 if (found) expectType<{ id: string }>(found.route);
 expectType<boolean>(int('1') && uuid('x') && slug('y'));
+
+// The route prop is typed by the parameters of the route's $types (task 087).
+declare const route: Route<{ id: string; lang?: string }>;
+expectType<string>(route.params.id);
+expectType<string | undefined>(route.params.lang);
+// @ts-expect-error not a parameter of the route
+route.params.slug;
+declare const anyRoute: Route;
+expectType<string>(anyRoute.params['anything']!);

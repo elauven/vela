@@ -10,12 +10,15 @@ export interface RouteTable {
   match(path: string): { route: { id: string }; params: Record<string, string> } | null;
 }
 
-/** The route prop of route components (R-1). */
-export interface Route {
+/**
+ * The route prop of route components (R-1). P are the parameters of the
+ * path: `Route<Params>` of the route's `$types` (docs/TYPESCRIPT.md TS-8.2).
+ */
+export interface Route<P extends Record<string, string | undefined> = Record<string, string>> {
   id: string;
   url: string;
   path: string;
-  params: Record<string, string>;
+  params: P;
   query: Record<string, string>;
 }
 
