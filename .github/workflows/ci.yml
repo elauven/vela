@@ -161,7 +161,8 @@ jobs:
       - name: Install the bundlers
         # Pinned by package-lock.json: vite, rolldown, esbuild, unplugin,
         # typescript 6 and typescript-5.8 (the type tests of task 082),
-        # vitest and happy-dom (the starter templates of task 066).
+        # vitest and happy-dom (the starter templates of task 066), eslint
+        # (the processor of task 067).
         run: npm ci
 
       - name: Install Playwright Chromium
@@ -170,7 +171,7 @@ jobs:
       - name: Bundle and run in Chromium
         env:
           VELA_REQUIRE_BUNDLERS: '1'
-        run: go test -count=1 -v -run 'TestBundler|TestSSRWithVite|TestCompilerNpmPackage|TestPackageTypes|TestCheckTypes|TestTypeScriptPlugin|TestStarterTemplates' .
+        run: go test -count=1 -v -run 'TestBundler|TestSSRWithVite|TestCompilerNpmPackage|TestPackageTypes|TestCheckTypes|TestTypeScriptPlugin|TestStarterTemplates|TestESLintPlugin' .
 
       - name: Language server with TypeScript
         # typescript@6 of package-lock.json (task 065c).

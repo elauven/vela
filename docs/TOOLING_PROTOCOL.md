@@ -18,6 +18,7 @@ bundler plugin `@govela/unplugin` is a client of the protocol.
 ```sh
 vela serve --stdio [--config file] [--protocol 1] [file flags]
 vela compile --path src/App.vela [--stdin] [--config file] [file flags]
+vela document --path src/App.vela [--stdin]
 ```
 
 - `vela serve --stdio` is a long-lived process: newline-delimited JSON on
@@ -30,6 +31,15 @@ vela compile --path src/App.vela [--stdin] [--config file] [file flags]
   without an `id`). The source comes from `--path`, or from stdin with
   `--stdin`; `--path` still names the component. Exit codes: 0 compiled,
   1 not compiled (see `diagnostics`), 2 usage or configuration error.
+
+- `vela document` prints the virtual document of a component, what
+  TypeScript and ESLint see of it: `{"path": "src/App.vela.js",
+  "typescript": false, "text": "…", "segments": [[src, virt, len], …]}`.
+  The script is copied as written and the template expressions follow in
+  generated code; a segment is `len` UTF-16 units copied from offset `src`
+  of the component to offset `virt` of `text`. The rest of `text` is
+  generated and may change between versions. Exit code 0, or 2 for a usage
+  error or an unreadable file.
 
 *File flags* are the flags of the build command that shape one component:
 `--minify`, `--css`, `--sourcemap`, `--target`,

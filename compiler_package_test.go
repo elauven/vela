@@ -60,6 +60,9 @@ func TestCompilerPackagesAreGenerated(t *testing.T) {
 	for _, name := range testingPackageSources {
 		allowed[filepath.Join(filepath.FromSlash(testingPackageDir), name)] = true
 	}
+	for _, name := range eslintPluginPackageSources {
+		allowed[filepath.Join(filepath.FromSlash(eslintPluginPackageDir), name)] = true
+	}
 	createSources, err := createPackageSources()
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +73,7 @@ func TestCompilerPackagesAreGenerated(t *testing.T) {
 	for _, p := range compilerPlatforms {
 		allowed[filepath.Join(filepath.FromSlash(p.Dir()), filepath.FromSlash(p.Binary()))] = true
 	}
-	dirs := []string{compilerPackageDir, unpluginPackageDir, typescriptPluginPackageDir, testingPackageDir, createPackageDir}
+	dirs := []string{compilerPackageDir, unpluginPackageDir, typescriptPluginPackageDir, testingPackageDir, createPackageDir, eslintPluginPackageDir}
 	for _, p := range compilerPlatforms {
 		dirs = append(dirs, p.Dir())
 	}
@@ -118,8 +121,8 @@ func TestReleaseWorkflowCoversCompilerPlatforms(t *testing.T) {
 			t.Errorf("release.yml does not build and stage vela-lsp: %s", want)
 		}
 	}
-	if !strings.Contains(workflow, "packages/compiler "+unpluginPackageDir+" "+typescriptPluginPackageDir+" "+testingPackageDir+" "+createPackageDir+"; do") {
-		t.Errorf("release.yml does not publish %s, %s, %s and %s after the compiler", unpluginPackageDir, typescriptPluginPackageDir, testingPackageDir, createPackageDir)
+	if !strings.Contains(workflow, "packages/compiler "+unpluginPackageDir+" "+typescriptPluginPackageDir+" "+testingPackageDir+" "+createPackageDir+" "+eslintPluginPackageDir+"; do") {
+		t.Errorf("release.yml does not publish %s, %s, %s, %s and %s after the compiler", unpluginPackageDir, typescriptPluginPackageDir, testingPackageDir, createPackageDir, eslintPluginPackageDir)
 	}
 	// npm publish takes a bare "packages/x" for the GitHub repository packages/x.
 	if !strings.Contains(workflow, `npm publish "./$dir"`) {

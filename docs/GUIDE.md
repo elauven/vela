@@ -1412,6 +1412,43 @@ test('counts by its step', async () => {
   that the components translate, and the Go renderers can be tested with
   `go test`.
 
+## Linting
+
+`@govela/eslint-plugin` lints the code of components with ESLint. Its
+processor hands ESLint the virtual document of a component (`vela
+document`): the `<script>` as written, then the template expressions, with
+the names of `{#each}` and `{#await}` declared. A variable used only in the
+template counts as used, an undefined name in `{expression}` or an event
+handler is reported at its place in the `.vela` file, and messages about
+the text the processor generates are dropped. Fixes inside the component's
+own text apply with `--fix`.
+
+```sh
+npm i -D @govela/eslint-plugin eslint @eslint/js globals
+```
+
+```js
+// eslint.config.js
+import js from '@eslint/js';
+import globals from 'globals';
+import vela from '@govela/eslint-plugin';
+
+export default [
+  js.configs.recommended,
+  ...vela.configs.recommended,
+  { files: ['**/*.vela/*.js'], languageOptions: { globals: globals.browser } },
+];
+```
+
+- The rules of a component's code are configured for `**/*.vela/*.js`, the
+  name of its virtual file (`**/*.vela/*.ts` for `lang="ts"`).
+- `configs.recommended` declares `$state`, `$derived`, `$effect`,
+  `$bindable` and `$$dispatch`. `onMount` and the other runtime functions
+  are imported from `vela`; without the import ESLint reports them as the
+  compiler does (`VELA-SCOPE-UNDECLARED`).
+- The markup of the template (elements, attributes, block syntax) is not
+  linted, and there is no Prettier plugin.
+
 ## Checking a project
 
 `vela check` runs every check of a build and writes nothing: it builds into

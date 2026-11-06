@@ -33,6 +33,8 @@ func main() {
 			os.Exit(runServeCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 		case "check":
 			os.Exit(runCheckCommand(os.Args[2:], os.Stdout, os.Stderr))
+		case "document":
+			os.Exit(runDocumentCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 		}
 	}
 

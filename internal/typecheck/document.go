@@ -508,3 +508,39 @@ func requiredPropEnds(model *analyzer.ComponentTypes, ts bool, scriptStart int) 
 	sort.Ints(out)
 	return out
 }
+
+// Segment is text copied from the component into the virtual document, in
+// UTF-16 units as JavaScript counts: Len units at Src in the component and
+// at Virt in the document.
+type Segment struct{ Src, Virt, Len int }
+
+// Segments lists the copied text of the document in document order, for
+// tools that map positions themselves (the ESLint processor, task 067).
+func (d *Document) Segments() []Segment {
+	src, virt := utf16Offsets(d.Source), utf16Offsets(d.Text)
+	out := make([]Segment, 0, len(d.byVirt))
+	for _, s := range d.byVirt {
+		if s.src+s.n > len(d.Source) || s.virt+s.n > len(d.Text) {
+			continue
+		}
+		out = append(out, Segment{Src: src[s.src], Virt: virt[s.virt], Len: src[s.src+s.n] - src[s.src]})
+	}
+	return out
+}
+
+// utf16Offsets maps every byte offset of s (and len(s)) to its UTF-16
+// index; a byte inside a character maps to the index of the character.
+func utf16Offsets(s string) []int {
+	out := make([]int, len(s)+1)
+	units := 0
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		for k := 0; k < size; k++ {
+			out[i+k] = units
+		}
+		units += utf16.RuneLen(r)
+		i += size
+	}
+	out[len(s)] = units
+	return out
+}
