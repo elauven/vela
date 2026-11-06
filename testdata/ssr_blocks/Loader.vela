@@ -1,5 +1,5 @@
 <script>
-  import { load } from './loader.js';
+  import { load } from './load_item.js';
   export let id = 2;
   let shift = $state(0);
 </script>

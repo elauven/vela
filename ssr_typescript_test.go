@@ -14,7 +14,7 @@ import (
 // TypeScript twins of the SSR corpus (task 086, docs/TYPESCRIPT.md TS-7.1,
 // TS-7.2): every component of the block corpus as a lang="ts" component,
 // with the props whose default is a literal annotated, and its .js module
-// as a .ts one (still imported as ./loader.js, TS-5.3). Both projects are
+// as a .ts one (still imported as ./load_item.js, TS-5.3). Both projects are
 // built with --ssr, rendered by their Go renderers with the cases of the
 // corpus, and compared: the HTML with its payload, the static HTML, and the
 // client modules (but for the site table, which holds source columns) are
@@ -72,7 +72,7 @@ func TestSSRTypeScriptTwins(t *testing.T) {
 			twins[name] = twin
 		}
 	}
-	if annotated < 20 || !strings.Contains(twins["loader.ts"], "id: number") {
+	if annotated < 20 || !strings.Contains(twins["load_item.ts"], "id: number") {
 		t.Fatalf("the twins annotate %d props", annotated)
 	}
 	var cases []ssrBlocksCase
@@ -132,7 +132,7 @@ func TestSSRTypeScriptTwins(t *testing.T) {
 			t.Errorf("the TypeScript build has no %s", filepath.Base(file))
 			continue
 		}
-		if a, b := sites.ReplaceAllString(string(js), ""), sites.ReplaceAllString(string(ts), ""); a != b && filepath.Base(file) != "loader.js" {
+		if a, b := sites.ReplaceAllString(string(js), ""), sites.ReplaceAllString(string(ts), ""); a != b && filepath.Base(file) != "load_item.js" {
 			t.Errorf("%s differs:\n%s", filepath.Base(file), ts)
 		}
 	}
