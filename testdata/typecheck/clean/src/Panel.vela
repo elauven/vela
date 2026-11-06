@@ -1,0 +1,8 @@
+<script lang="ts">
+  export let title: string;
+  export let open: boolean = $bindable(true);
+</script>
+
+<template>
+  <section>{title} {open}</section>
+</template>

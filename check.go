@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/elauven/vela/internal/typecheck"
 	"github.com/elauven/vela/runtime"
 
 	"encoding/json"
@@ -212,6 +213,8 @@ func runCheckCommand(args []string, stdout, stderr io.Writer) int {
 	failOn := fs.String("fail-on", "error", "exit with 1 on diagnostics of this severity or above: 'error' or 'warning'")
 	watch := fs.Bool("watch", false, "check again whenever a file changes")
 	configPath := fs.String("config", "", "configuration file (default: "+ConfigFileName+" in the working directory, if present)")
+	types := fs.Bool("types", false, "also type-check components, templates and .ts modules with the project's TypeScript (requires --project; tsconfig.json of the working directory)")
+	tsdk := fs.String("tsdk", "", "with --types: a TypeScript directory (typescript/lib or the package) instead of the project's")
 	file := AddFileFlags(fs, BuildFlagDefaults)
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -250,6 +253,10 @@ func runCheckCommand(args []string, stdout, stderr io.Writer) int {
 		return usage("usage: vela check --project <dir> [flags] | vela check [flags] <file.vela>...")
 	case target.SSR && target.SrcRoot == "":
 		return usage("--ssr requires --project")
+	case *types && target.SrcRoot == "":
+		return usage("--types requires --project")
+	case *tsdk != "" && !*types:
+		return usage("--tsdk requires --types")
 	}
 	if target.SrcRoot != "" {
 		target.SrcRoot = filepath.Clean(target.SrcRoot)
@@ -258,11 +265,28 @@ func runCheckCommand(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	var checker *typecheck.Checker
+	if *types {
+		var err error
+		if checker, err = typecheck.NewChecker(".", target.SrcRoot, typecheck.Options{Tsdk: *tsdk}); err != nil {
+			fmt.Fprintf(stderr, "vela check --types: %v\n", err)
+			return 2
+		}
+		defer checker.Close()
+	}
 	check := func() int {
 		diags, components, err := target.Run()
 		if err != nil {
 			fmt.Fprintf(stderr, "vela check: %v\n", err)
 			return 2
+		}
+		if checker != nil {
+			typeDiags, err := checker.Check()
+			if err != nil {
+				fmt.Fprintf(stderr, "vela check --types: %v\n", err)
+				return 2
+			}
+			diags = append(diags, typeDiags...)
 		}
 		switch *format {
 		case "json":
@@ -297,6 +321,11 @@ func runCheckCommand(args []string, stdout, stderr io.Writer) int {
 	}
 	if config != nil {
 		roots = append(roots, ConfigFileName)
+	}
+	if checker != nil {
+		// The program follows tsconfig.json; its .ts modules are under the
+		// project directory.
+		roots = append(roots, "tsconfig.json")
 	}
 	last := watchSnapshot(roots)
 	for {

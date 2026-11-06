@@ -1,0 +1,16 @@
+<script>
+  // A JavaScript component: checked only with checkJs or // @ts-check.
+  /** @typedef {{ close: { reason: string } }} $$Events */
+
+  /** @type {string} */
+  export let heading;
+  export let count = 0;
+
+  function close() {
+    $$dispatch('close', { reason: 'user' });
+  }
+</script>
+
+<template>
+  <article @click={close}>{heading} {count}<slot /></article>
+</template>

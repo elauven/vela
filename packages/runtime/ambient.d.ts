@@ -154,8 +154,9 @@ declare module 'vela' {
   /**
    * A component whose module loads when it is first shown, for
    * `<vela:component :this>`. The loader must be `() => import('<literal .vela path>')`.
+   * id is the component's `$$id`, which the compiler and `vela-app` pass.
    */
-  export function lazy<C extends Component<any, any, any>>(loader: () => Promise<C | { default: C }>): Lazy<C>;
+  export function lazy<C extends Component<any, any, any>>(loader: () => Promise<C | { default: C }>, id?: string): Lazy<C>;
 
   /** Resolves after pending updates were applied to the DOM. */
   export function tick(): Promise<void>;

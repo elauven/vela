@@ -1,0 +1,20 @@
+<script lang="ts">
+  type Kind = 'primary' | 'plain';
+
+  interface $$Events {
+    press: { at: number };
+  }
+
+  export let label: string;
+  export let kind: Kind = 'plain';
+  export let pressed: boolean = $bindable(false);
+
+  function press() {
+    pressed = !pressed;
+    $$dispatch('press', { at: Date.now() });
+  }
+</script>
+
+<template>
+  <button :class={kind} @click={press}>{label}<slot /><slot name="icon" /></button>
+</template>

@@ -1,0 +1,17 @@
+<script lang="ts" generics="T extends { id: string }">
+  interface $$Events {
+    select: { item: T };
+  }
+
+  export let items: T[];
+
+  function choose(item: T) {
+    $$dispatch('select', { item });
+  }
+</script>
+
+<template>
+  {#each items as item (item.id)}
+    <button @click={() => choose(item)}>{item.id}</button>
+  {/each}
+</template>

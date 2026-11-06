@@ -1,0 +1,13 @@
+<script>
+  // @ts-check
+  /** @type {number} */
+  export let amount = 0;
+
+  function reset() {
+    amount = 'none';
+  }
+</script>
+
+<template>
+  <p @click={reset}>{amount.toFixed()} {amount.nope}</p>
+</template>

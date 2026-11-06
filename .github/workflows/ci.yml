@@ -169,7 +169,7 @@ jobs:
       - name: Bundle and run in Chromium
         env:
           VELA_REQUIRE_BUNDLERS: '1'
-        run: go test -count=1 -v -run 'TestBundler|TestSSRWithVite|TestCompilerNpmPackage|TestPackageTypes' .
+        run: go test -count=1 -v -run 'TestBundler|TestSSRWithVite|TestCompilerNpmPackage|TestPackageTypes|TestCheckTypes' .
 
       - name: Language server with TypeScript
         # typescript@6 of package-lock.json (task 065c).

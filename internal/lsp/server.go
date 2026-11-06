@@ -62,7 +62,7 @@ func Serve(in io.Reader, out io.Writer) error {
 	defer func() {
 		if s.tsReady != nil {
 			<-s.tsReady
-			s.ts.close()
+			s.ts.Close()
 		}
 	}()
 	return s.run()
