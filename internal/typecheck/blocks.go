@@ -76,9 +76,10 @@ func writeEach(w *writer, start, end int) {
 	w.copyTrimmed(start, iterEnd)
 	w.gen(")) {\n")
 	if index >= 0 {
-		w.gen("let ")
+		// A number the template cannot assign (linters see a constant).
+		w.gen("const ")
 		w.copyTrimmed(index, end)
-		w.gen(" = 0;\n")
+		w.gen(" = Number();\n")
 	}
 	if keyStart >= 0 {
 		w.gen("(")

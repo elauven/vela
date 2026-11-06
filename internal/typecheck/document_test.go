@@ -44,7 +44,7 @@ func TestVirtualDocument(t *testing.T) {
 	for _, want := range []string{
 		"import { Card } from './Card.vela';",
 		"if (items.length > 0) {",
-		"for (const { id, title } of $$each(items)) {\nlet i = 0;\n(id);",
+		"for (const { id, title } of $$each(items)) {\nconst i = Number();\n(id);",
 		"const $$c1 = Card;\n$$c1($$target, { title: (title), });\n$$event($$c1, \"close\", (event) => event.detail);",
 		"const $$c2 = $$dynamicValue(i ? Card : null);\n$$dynamic($$c2, { title: (title), });\n$$event($$c2, \"pick\", (event) => event.detail.id);",
 		`$$on("click", (e) => e.preventDefault());`,
