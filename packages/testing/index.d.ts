@@ -1,4 +1,5 @@
-// Types of @govela/testing.
+// Types of @govela/testing. render() checks the props, events and slots of
+// a test against the component's types (Component<P, E, S, B>).
 import type { Component, ComponentInstance, Props } from '@govela/runtime';
 
 export { tick } from '@govela/runtime';
@@ -6,16 +7,29 @@ export { tick } from '@govela/runtime';
 /** Content of a slot: an HTML string, a node, or a function returning one. */
 export type SlotContent = string | Node | (() => string | Node);
 
-export interface RenderOptions<P extends Props = Props> {
-  /** The props of the component. */
-  props?: P;
-  /** Slot contents by name; `default` is the default slot. */
-  slots?: Record<string, SlotContent>;
+/** Listeners of a component's events, by name, with their `detail` types. */
+export type EventListeners<E extends Record<string, any>> = {
+  [K in keyof E & string]?: (event: CustomEvent<E[K]>) => void;
+};
+
+/** The slots of a component by name; `default` is the default slot. */
+export type SlotContents<S extends Record<string, any>> = string extends keyof S
+  ? Record<string, SlotContent>
+  : { [K in keyof S]?: SlotContent };
+
+/** The options of render(): props are required when the component has required props. */
+export type RenderOptions<
+  P extends Props = Props,
+  E extends Record<string, any> = Record<string, any>,
+  S extends Record<string, any> = Record<string, any>,
+> = {
+  /** Slot contents by name. */
+  slots?: SlotContents<S>;
   /** Listeners of the component's events (`$$dispatch`), by name. */
-  events?: Record<string, (event: CustomEvent) => void>;
+  events?: EventListeners<E>;
   /** The element to mount into; by default a new div in document.body. */
   target?: Element;
-}
+} & ({} extends P ? { props?: P } : { props: P });
 
 export interface RenderResult<P extends Props = Props> {
   /** The element the component is mounted into. */
@@ -29,7 +43,10 @@ export interface RenderResult<P extends Props = Props> {
 }
 
 /** Mounts a component for a test. */
-export function render<P extends Props>(component: Component<P, any, any, any>, options?: RenderOptions<P>): RenderResult<P>;
+export function render<P extends Props, E extends Record<string, any>, S extends Record<string, any>>(
+  component: Component<P, E, S, any>,
+  ...options: {} extends P ? [options?: RenderOptions<NoInfer<P>, NoInfer<E>, NoInfer<S>>] : [options: RenderOptions<NoInfer<P>, NoInfer<E>, NoInfer<S>>]
+): RenderResult<P>;
 
 /** Unmounts every component render() mounted; call it after each test. */
 export function cleanup(): void;

@@ -12,6 +12,7 @@
     "@eslint/js": "^10.0.1",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
+    "globals": "^17.14.0",
     "happy-dom": "^21.0.4",
     "playwright": "^1.62.1",
     "rolldown": "^1.2.15",

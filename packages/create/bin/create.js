@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// npm create @govela [directory] -- [--ssr | --app] [--module path]
+// npm create @govela [directory] -- [--ssr | --app] [--js] [--module path]
 //
 // Creates a Vela application from one of the templates of this package
-// (task 066): default (Vite), ssr (a Go server renders, Vite builds the
-// client) or app (a Vela App with routes and Go loaders).
+// (tasks 066, 088): default (Vite), ssr (a Go server renders, Vite builds
+// the client) or app (a Vela App with routes and Go loaders), in TypeScript
+// or, with --js, JavaScript. A template is templates/<name>/base, the files
+// of both languages, and templates/<name>/ts or /js on top of it.
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +18,8 @@ const usage = `usage: npm create @govela [directory] -- [options]
 options:
   --ssr            server rendering: a Go server renders, Vite builds the client
   --app            a Vela App: file-based routes with Go loaders
+  --js             JavaScript instead of TypeScript
+  --ts             TypeScript (the default)
   --module path    the Go module path of --ssr and --app (example.com/<name>)
   --help           this text
 `;
@@ -26,7 +30,7 @@ function fail(message) {
 }
 
 export function parseArgs(argv) {
-  const options = { template: 'default', directory: null, module: null };
+  const options = { template: 'default', directory: null, module: null, language: 'ts' };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     switch (arg) {
@@ -37,6 +41,10 @@ export function parseArgs(argv) {
         options.template = template;
         break;
       }
+      case '--js':
+      case '--ts':
+        options.language = arg.slice(2);
+        break;
       case '--module':
         if (!argv[i + 1]) throw new Error('--module needs a Go module path');
         options.module = argv[++i];
@@ -68,18 +76,21 @@ function outputName(name) {
   return name;
 }
 
+function substitute(text, values) {
+  for (const [key, value] of Object.entries(values)) text = text.split(key).join(value);
+  return text;
+}
+
 function copyTemplate(from, to, values) {
   mkdirSync(to, { recursive: true });
   for (const name of readdirSync(from)) {
     const source = join(from, name);
-    const target = join(to, outputName(name));
+    const target = join(to, substitute(outputName(name), values));
     if (statSync(source).isDirectory()) {
       copyTemplate(source, target, values);
       continue;
     }
-    let text = readFileSync(source, 'utf8');
-    for (const [key, value] of Object.entries(values)) text = text.split(key).join(value);
-    writeFileSync(target, text);
+    writeFileSync(target, substitute(readFileSync(source, 'utf8'), values));
   }
 }
 
@@ -91,13 +102,17 @@ export function create(options) {
   const name = packageName(directory);
   const module = options.module || `example.com/${name}`;
   if (!/^[A-Za-z0-9._~\/-]+$/.test(module)) throw new Error(`${module} is not a Go module path`);
-  copyTemplate(join(root, 'templates', options.template), directory, {
+  const values = {
     __NAME__: name,
     __MODULE__: module,
     __VERSION__: manifest.version,
     __APP_VERSION__: manifest.govela.app,
-  });
-  return { directory, name, template: options.template };
+    __EXT__: options.language,
+  };
+  const template = join(root, 'templates', options.template);
+  copyTemplate(join(template, 'base'), directory, values);
+  copyTemplate(join(template, options.language), directory, values);
+  return { directory, name, template: options.template, language: options.language };
 }
 
 function main() {
@@ -123,7 +138,8 @@ function main() {
   if (result.template === 'ssr') steps.push('npx vela', 'go mod tidy', 'npm run dev:vela & npm run dev & npm run dev:server');
   else if (result.template === 'app') steps.push('npx vela-app gen && npx vela', 'go mod tidy', 'npm run dev');
   else steps.push('npm run dev');
-  process.stdout.write(`Created ${result.name} (${result.template}) in ${result.directory}\n\nNext:\n${steps.map((s) => `  ${s}\n`).join('')}`);
+  const language = result.language === 'ts' ? 'TypeScript' : 'JavaScript';
+  process.stdout.write(`Created ${result.name} (${result.template}, ${language}) in ${result.directory}\n\nNext:\n${steps.map((s) => `  ${s}\n`).join('')}`);
 }
 
 // npm runs the command through a link in node_modules/.bin.

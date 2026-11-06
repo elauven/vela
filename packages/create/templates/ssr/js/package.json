@@ -1,0 +1,30 @@
+{
+  "name": "__NAME__",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:vela": "vela --watch",
+    "dev:server": "go run ./cmd/server -dev http://localhost:5173",
+    "check": "vela check --project src --ssr",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "build": "vela && vite build && go build -o build/server ./cmd/server",
+    "start": "./build/server"
+  },
+  "dependencies": {
+    "@govela/runtime": "__VERSION__"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@govela/compiler": "__VERSION__",
+    "@govela/eslint-plugin": "__VERSION__",
+    "@govela/testing": "__VERSION__",
+    "@govela/unplugin": "__VERSION__",
+    "eslint": "^10.14.0",
+    "globals": "^17.0.0",
+    "happy-dom": "^21.0.4",
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0"
+  }
+}

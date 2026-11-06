@@ -1,0 +1,31 @@
+{
+  "name": "__NAME__",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen": "vela-app gen",
+    "dev": "vela-app dev",
+    "check": "vela-app gen && vela check --project src --types --ssr",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "build": "vela-app build"
+  },
+  "dependencies": {
+    "@govela/app": "__APP_VERSION__",
+    "@govela/runtime": "__VERSION__"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@govela/compiler": "__VERSION__",
+    "@govela/eslint-plugin": "__VERSION__",
+    "@govela/testing": "__VERSION__",
+    "@govela/unplugin": "__VERSION__",
+    "eslint": "^10.14.0",
+    "globals": "^17.0.0",
+    "happy-dom": "^21.0.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0"
+  }
+}

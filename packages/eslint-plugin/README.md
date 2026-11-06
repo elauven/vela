@@ -25,6 +25,10 @@ export default [
 ];
 ```
 
+In TypeScript, typescript-eslint parses the virtual file of a `lang="ts"`
+component (`**/*.vela/*.ts`). Type-aware rules cannot run on components:
+turn them off there with `tseslint.configs.disableTypeChecked`.
+
 `configs.recommended` sets the processor for `**/*.vela` and declares
 `$state`, `$derived`, `$effect`, `$bindable` and `$$dispatch`. The
 template markup is not linted. The compiler binary is the one of

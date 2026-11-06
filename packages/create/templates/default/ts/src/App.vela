@@ -1,0 +1,25 @@
+<script lang="ts">
+  import Counter from './Counter.vela';
+
+  let total = $state(0);
+
+  function changed(event: CustomEvent<number>): void {
+    total = event.detail;
+  }
+</script>
+
+<template>
+  <main>
+    <h1>Vela</h1>
+    <Counter :step={1} @on:change={changed}>Clicks</Counter>
+    <p class="total">Total: {total}</p>
+  </main>
+</template>
+
+<style>
+  main {
+    font-family: system-ui, sans-serif;
+    max-width: 32rem;
+    margin: 4rem auto;
+  }
+</style>
