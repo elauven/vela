@@ -92,6 +92,8 @@ func (e *BaseExpr) NodeEnd() int { return e.End }
 type JsProgram struct {
 	BaseNode
 	Body []JsStmt
+	// TS is set when the program was parsed as TypeScript (tsast.go).
+	TS *TSInfo
 }
 
 // ──────────────────────────────────────────────
@@ -166,6 +168,11 @@ type JsVarDeclarator struct {
 	BaseNode
 	Id   JsExpr // Identifier or destructuring pattern
 	Init JsExpr // may be nil
+
+	// TypeScript (tsast.go): the annotation of `let x: T`, nil without
+	// one; Definite for `let x!: T`.
+	Type     *TSType
+	Definite bool
 }
 
 type JsFuncDecl struct {
@@ -175,6 +182,7 @@ type JsFuncDecl struct {
 	Body      *JsBlock
 	Async     bool
 	Generator bool
+	TS        *TSSignature // TypeScript only (tsast.go)
 }
 
 type JsClassDecl struct {
@@ -182,6 +190,7 @@ type JsClassDecl struct {
 	Name       string
 	SuperClass JsExpr
 	Members    []*JsClassMember
+	TS         *TSClass // TypeScript only (tsast.go)
 }
 
 // JsClassExpr: a class in expression position (`const A = class B {}`,
@@ -191,6 +200,7 @@ type JsClassExpr struct {
 	Name       string
 	SuperClass JsExpr
 	Members    []*JsClassMember
+	TS         *TSClass // TypeScript only (tsast.go)
 }
 
 // JsClassMember is one element of a class body.
@@ -207,7 +217,8 @@ type JsClassMember struct {
 	Kind     string // "method" | "get" | "set" | "field" | "static-block"
 	Static   bool
 	Computed bool
-	Body     *JsBlock // static blocks only
+	Body     *JsBlock       // static blocks only
+	TS       *TSClassMember // TypeScript only (tsast.go)
 }
 
 type JsBlock struct {
@@ -272,6 +283,7 @@ type JsTryStmt struct {
 	CatchParam JsExpr   // may be nil (optional catch binding)
 	Handler    *JsBlock // may be nil
 	Finalizer  *JsBlock // may be nil
+	CatchType  *TSType  // TypeScript only: `catch (e: unknown)`
 }
 
 type JsSwitchStmt struct {
@@ -405,6 +417,7 @@ type JsFuncExpr struct {
 	Body      *JsBlock
 	Async     bool
 	Generator bool
+	TS        *TSSignature // TypeScript only (tsast.go)
 }
 
 // JsArrowFunc: (params) => body  or  param => body.
@@ -414,6 +427,7 @@ type JsArrowFunc struct {
 	Params []JsExpr
 	Body   JsNode // *JsBlock or JsExpr
 	Async  bool
+	TS     *TSSignature // TypeScript only (tsast.go)
 }
 
 type JsUnaryExpr struct {
