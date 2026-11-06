@@ -388,6 +388,21 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		}
 	}
 
+	if sfc.LangInvalid {
+		ds.Report(diag.SevError, sfc.LangPos, sfc.LangPos+len(sfc.Lang), "VELA-TS-LANG",
+			`Use lang="ts" for TypeScript, or remove the attribute for JavaScript.`,
+			"<script lang=%q> is not a supported language", sfc.Lang)
+		return ds.All(), fmt.Errorf("unsupported script language %q", sfc.Lang)
+	}
+	if sfc.TypeScript && sfc.GenericsPos > 0 {
+		if at, msg, ok := genericsProblem(sfc.Generics); !ok {
+			ds.Report(diag.SevError, sfc.GenericsPos+at, sfc.GenericsPos+len(sfc.Generics), GenericsDiagnosticCode,
+				`Write type parameters as inside <…> of a generic function: generics="T extends { id: string }, K".`,
+				"invalid generics attribute: %s", msg)
+			return ds.All(), fmt.Errorf("invalid generics attribute")
+		}
+	}
+
 	var tmpl []sfcast.Node
 	if err = trace.stage("parse-template", func() error {
 		if sfc.TemplateAST == nil {
@@ -426,13 +441,25 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 	if err = trace.stage("parse-script-and-analyze", func() error {
 		if len(sfc.ScriptAST.Diagnostics) > 0 {
 			ds.PushOffset(sfc.ScriptAST.Span.Start)
+			if at, ok := sfc.ScriptAST.TypeScriptInJS(); ok {
+				ds.ErrorWith(at, "VELA-TS-IN-JS", scriptDiagnosticHint("VELA-TS-IN-JS"),
+					"TypeScript syntax in a JavaScript component")
+				ds.PopOffset()
+				return fmt.Errorf("script syntax validation failed")
+			}
 			for _, issue := range sfc.ScriptAST.Diagnostics {
-				ds.ErrorWith(issue.Pos, "VELA-JS-SYNTAX", "fix the JavaScript syntax in <script>", "%s", issue.Message)
+				code := sfc.ScriptAST.ScriptDiagnosticCode(issue)
+				ds.ErrorWith(issue.Pos, code, scriptDiagnosticHint(code), "%s", issue.Message)
 			}
 			ds.PopOffset()
 			return fmt.Errorf("script syntax validation failed")
 		}
 		analysis = analyzer.AnalyzeScriptAST(sfc.ScriptAST)
+		if sfc.ScriptAST.TypeScript {
+			ds.PushOffset(sfc.ScriptAST.Span.Start)
+			reportTypeOnlyImports(ds, sfc.ScriptAST.Source, sfc.ScriptAST.Program, sfc.Template)
+			ds.PopOffset()
+		}
 		if opts.CheckDeps {
 			checkScriptPackageImports(src, sfc.ScriptAST, ds)
 		}
@@ -532,6 +559,9 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 	}
 
 	codegen.FinalizeRuntimeImports(target, opts.RuntimeImport)
+	if !opts.SourceComponentImports {
+		codegen.RewriteDynamicImportSpecifiers(target)
+	}
 	opts.PackageImports.add(dest, programPackageImports(target))
 
 	if opts.GenAST {
@@ -604,6 +634,20 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 	return ds.All(), nil
 }
 
+// scriptDiagnosticHint is the suggestion of a script parse diagnostic
+// (sfcast.ScriptAST.ScriptDiagnosticCode).
+func scriptDiagnosticHint(code string) string {
+	switch code {
+	case "VELA-TS-NON-ERASABLE":
+		return "rewrite it with erasable TypeScript, as the message says (docs/TYPESCRIPT.md TS-2.4)"
+	case "VELA-TS-IN-JS":
+		return `this is TypeScript: add lang="ts" to <script>`
+	case "VELA-JS-SYNTAX":
+		return "fix the JavaScript syntax in <script>"
+	}
+	return "fix the syntax in <script>"
+}
+
 // CheckEmittedJS reparses a generated module. A printer or minifier defect
 // would otherwise reach the browser as a module that fails to load, or as
 // different code; it becomes an internal compiler error instead.
@@ -656,35 +700,88 @@ func runtimeSpecifier(opts CompileOptions, dir, outRoot string) string {
 
 // copyProjectJSModules mirrors local JavaScript modules into project output,
 // with `.vela`, `vela` and `vela/store` specifiers rewritten
-// (rewriteJSModuleSpecifiers). It deliberately uses the same directory exclusions as collectVela so build
-// output and dependencies cannot be copied back into the project.
+// (rewriteJSModuleSpecifiers), and compiles local TypeScript modules to
+// `.js` (TS-5.1). It deliberately uses the same directory exclusions as
+// collectVela so build output and dependencies cannot be copied back into
+// the project.
 func copyProjectJSModules(srcRoot, outRoot string, opts CompileOptions) int {
-	errors := 0
+	errors := reportUnsupportedModules(srcRoot, opts)
+	writers := map[string]string{} // output → the module written to it
 	for _, src := range project.CollectJSModules(srcRoot) {
-		rel, err := filepath.Rel(srcRoot, src)
-		if err != nil {
-			errors++
-			continue
-		}
-		dest := filepath.Join(outRoot, rel)
-		data, err := os.ReadFile(src)
+		dest, err := ProjectModuleOutput(src, srcRoot, outRoot)
 		if err == nil {
-			err = os.MkdirAll(filepath.Dir(dest), 0755)
-		}
-		if err == nil {
-			err = os.WriteFile(dest, []byte(codegen.RewriteJSModuleSpecifiersWith(string(data), runtimeSpecifier(opts, filepath.Dir(dest), outRoot), opts.SourceComponentImports)), 0644)
-			opts.PackageImports.add(dest, sourcePackageImports(string(data)))
-			if opts.CheckDeps {
-				checkModulePackageImports(src, string(data), opts)
+			if first, taken := writers[dest]; taken {
+				// util.js and util.ts, or util.ts and util.mts.
+				printModuleDiagnostics(opts, []*diag.Diagnostic{{Sev: diag.SevError, File: cwdRelative(src), Line: 1, Col: 1, Code: ModuleDiagnosticCode,
+					Message:    fmt.Sprintf("%s and %s both compile to %s", filepath.Base(first), filepath.Base(src), filepath.Base(dest)),
+					Suggestion: "rename or remove one of the two modules"}})
+				errors++
+				continue
 			}
+			writers[dest] = src
 		}
-		if err != nil {
-			fmt.Fprintf(ErrorWriter(opts), "  ✗ %s: copy local module: %v\n", rel, err)
-			opts.Report.add(buildIssue(src, "copy local module: %v", err))
+		if !CopyProjectModule(src, srcRoot, outRoot, opts) {
 			errors++
 		}
 	}
 	return errors
+}
+
+// ProjectModuleOutput is the output path of a local module of a project:
+// the mirrored path, with .ts and .mts modules ending in .js.
+func ProjectModuleOutput(src, srcRoot, outRoot string) (string, error) {
+	rel, err := filepath.Rel(srcRoot, src)
+	if err != nil {
+		return "", err
+	}
+	dest := filepath.Join(outRoot, rel)
+	if project.IsTypeScriptModule(src) {
+		dest = strings.TrimSuffix(dest, filepath.Ext(dest)) + ".js"
+	}
+	return dest, nil
+}
+
+// CopyProjectModule writes the output of one local module (copyProjectJSModules)
+// and reports whether it succeeded.
+func CopyProjectModule(src, srcRoot, outRoot string, opts CompileOptions) bool {
+	rel, err := filepath.Rel(srcRoot, src)
+	if err != nil {
+		return false
+	}
+	dest, _ := ProjectModuleOutput(src, srcRoot, outRoot)
+	data, err := os.ReadFile(src)
+	if err == nil && project.IsTypeScriptModule(src) {
+		js, diags, ok := compileTypeScriptModule(src, string(data))
+		printModuleDiagnostics(opts, diags)
+		if !ok {
+			if !opts.DiagnosticsJSON {
+				fmt.Fprintf(ErrorWriter(opts), "  ✗  %-40s  TypeScript module does not compile\n", rel)
+			}
+			return false
+		}
+		data = []byte(js)
+	} else if err == nil {
+		if d := typeScriptInJSModule(src, string(data)); d != nil {
+			printModuleDiagnostics(opts, []*diag.Diagnostic{d})
+			return false
+		}
+	}
+	if err == nil {
+		err = os.MkdirAll(filepath.Dir(dest), 0755)
+	}
+	if err == nil {
+		err = os.WriteFile(dest, []byte(codegen.RewriteJSModuleSpecifiersWith(string(data), runtimeSpecifier(opts, filepath.Dir(dest), outRoot), opts.SourceComponentImports)), 0644)
+		opts.PackageImports.add(dest, sourcePackageImports(string(data)))
+		if opts.CheckDeps {
+			checkModulePackageImports(src, string(data), opts)
+		}
+	}
+	if err != nil {
+		fmt.Fprintf(ErrorWriter(opts), "  ✗  %s: copy local module: %v\n", rel, err)
+		opts.Report.add(buildIssue(src, "copy local module: %v", err))
+		return false
+	}
+	return true
 }
 
 // hydrateRuntimeSource returns runtime-hydrate.js with the default

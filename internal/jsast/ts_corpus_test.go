@@ -254,6 +254,12 @@ func tsParse(src string) ctParsed {
 			done <- r
 		}()
 		r.prog, r.diags = ParseWithOptions(src, ParseOptions{TypeScript: true})
+		if r.prog != nil {
+			// Blanking must hold up on any input too (task 081).
+			if js := BlankTypeScript(src, r.prog.TS); len(js) != len(src) {
+				panic("BlankTypeScript changed the length")
+			}
+		}
 	}()
 	return <-done
 }
@@ -430,7 +436,7 @@ func TestDetectTypeScript(t *testing.T) {
 		t.Fatal("JavaScript accepted a type annotation")
 	}
 	pos, ok := DetectTypeScript(src)
-	if !ok || src[pos:pos+6] != "string" {
+	if !ok || src[pos:pos+8] != ": string" {
 		t.Errorf("DetectTypeScript = %d, %v", pos, ok)
 	}
 	if _, ok := DetectTypeScript("let a = ;"); ok {

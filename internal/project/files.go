@@ -87,7 +87,50 @@ func CollectJSModules(root string) []string {
 			}
 			return nil
 		}
-		if strings.EqualFold(filepath.Ext(path), ".js") {
+		if strings.EqualFold(filepath.Ext(path), ".js") || IsTypeScriptModule(path) {
+			files = append(files, path)
+		}
+		return nil
+	})
+	return files
+}
+
+// IsTypeScriptModule reports a local .ts or .mts module that project mode
+// compiles to .js (TS-5.1); declaration files (.d.ts) are not modules.
+func IsTypeScriptModule(path string) bool {
+	lower := strings.ToLower(path)
+	if strings.HasSuffix(lower, ".d.ts") || strings.HasSuffix(lower, ".d.mts") {
+		return false
+	}
+	return strings.HasSuffix(lower, ".ts") || strings.HasSuffix(lower, ".mts")
+}
+
+// UnsupportedTypeScriptModule reports .tsx, .jsx and .cts modules, which are
+// VELA-TS-MODULE (TS-5.2).
+func UnsupportedTypeScriptModule(path string) bool {
+	lower := strings.ToLower(path)
+	if strings.HasSuffix(lower, ".d.cts") {
+		return false
+	}
+	return strings.HasSuffix(lower, ".tsx") || strings.HasSuffix(lower, ".jsx") || strings.HasSuffix(lower, ".cts")
+}
+
+// CollectUnsupportedModules lists the .tsx, .jsx and .cts modules of a
+// project, with the exclusions of CollectJSModules.
+func CollectUnsupportedModules(root string) []string {
+	var files []string
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			name := d.Name()
+			if path != root && (strings.HasPrefix(name, ".") || name == "node_modules" || name == "dist" || name == ".git" || name == ".svn") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if UnsupportedTypeScriptModule(path) {
 			files = append(files, path)
 		}
 		return nil

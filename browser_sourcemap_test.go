@@ -159,3 +159,23 @@ func TestBrowserSourceMapMapsAwaitHandler(t *testing.T) {
   {/await}
 </template>`, "button.explode", "() => { throw new Error")
 }
+
+// TypeScript (task 081): erasure keeps every offset, so the map points into
+// the TypeScript source, after the erased annotations.
+func TestBrowserSourceMapMapsTypeScriptScript(t *testing.T) {
+	assertBrowserSourceMap(t, `<script lang="ts">
+  interface Boom { message: string }
+  type Mode = 'a' | 'b';
+  function explode(this: void, mode?: Mode): never { const b: Boom = { message: "ts boom" }; throw new Error(b.message as string); }
+</script>
+<template><button class="explode" @click={(): void => explode()}>Boom</button></template>`, "button.explode", "new Error")
+}
+
+func TestBrowserSourceMapMapsTypeScriptTemplateHandler(t *testing.T) {
+	assertBrowserSourceMap(t, `<script lang="ts">
+  let count = $state<number>(0);
+</script>
+<template>
+  <button class="explode" @click={(e: MouseEvent): void => { throw new Error(String(e.type as string)); }}>Boom</button>
+</template>`, "button.explode", "(e: MouseEvent): void => { throw")
+}

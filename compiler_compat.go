@@ -13,6 +13,7 @@ type (
 	CompileOptions        = compiler.CompileOptions
 	CompileResult         = compiler.CompileResult
 	CompilerService       = compiler.CompilerService
+	ComponentAnalysis     = compiler.ComponentAnalysis
 	DerivedVarJSON        = compiler.DerivedVarJSON
 	EffectJSON            = compiler.EffectJSON
 	FileOptions           = compiler.FileOptions
@@ -38,17 +39,21 @@ type (
 )
 
 const (
-	ConfigFileName          = compiler.ConfigFileName
-	DepsCheckDiagnosticCode = compiler.DepsCheckDiagnosticCode
-	EmitCheckDiagnosticCode = compiler.EmitCheckDiagnosticCode
-	TraceComplete           = compiler.TraceComplete
-	TraceFailed             = compiler.TraceFailed
-	TraceSkipped            = compiler.TraceSkipped
+	ConfigFileName           = compiler.ConfigFileName
+	DepsCheckDiagnosticCode  = compiler.DepsCheckDiagnosticCode
+	EmitCheckDiagnosticCode  = compiler.EmitCheckDiagnosticCode
+	ModuleDiagnosticCode     = compiler.ModuleDiagnosticCode
+	TraceComplete            = compiler.TraceComplete
+	TraceFailed              = compiler.TraceFailed
+	TraceSkipped             = compiler.TraceSkipped
+	TypeExportDiagnosticCode = compiler.TypeExportDiagnosticCode
+	TypeImportDiagnosticCode = compiler.TypeImportDiagnosticCode
 )
 
 var (
 	ASTToJSON                   = compiler.ASTToJSON
 	AddFileFlags                = compiler.AddFileFlags
+	AnalyzeComponent            = compiler.AnalyzeComponent
 	ApplyFlagValues             = compiler.ApplyFlagValues
 	BuildProject                = compiler.BuildProject
 	BuildSSRProject             = compiler.BuildSSRProject
@@ -59,6 +64,7 @@ var (
 	CompilePrint                = compiler.CompilePrint
 	CompileProjectFile          = compiler.CompileProjectFile
 	CompilerStatusWriter        = compiler.CompilerStatusWriter
+	CopyProjectModule           = compiler.CopyProjectModule
 	DecodeStrict                = compiler.DecodeStrict
 	DetectUnreachable           = compiler.DetectUnreachable
 	DumpAST                     = compiler.DumpAST
@@ -74,6 +80,8 @@ var (
 	NewJSONLTraceSink           = compiler.NewJSONLTraceSink
 	OpenJSONLTraceSink          = compiler.OpenJSONLTraceSink
 	PackageOfSpecifier          = compiler.PackageOfSpecifier
+	ProjectModuleOutput         = compiler.ProjectModuleOutput
+	ResolveLazyComponents       = compiler.ResolveLazyComponents
 	RuntimeSource               = compiler.RuntimeSource
 	SourceBlock                 = compiler.SourceBlock
 	SourceExpr                  = compiler.SourceExpr
@@ -82,8 +90,10 @@ var (
 	ValidateDerivedCycles       = compiler.ValidateDerivedCycles
 	ValidateDerivedPurity       = compiler.ValidateDerivedPurity
 	ValidateEffectBody          = compiler.ValidateEffectBody
+	ValidateLazyTags            = compiler.ValidateLazyTags
 	ValidateScript              = compiler.ValidateScript
 	ValidateScriptForms         = compiler.ValidateScriptForms
+	ValidateSpecialElements     = compiler.ValidateSpecialElements
 	ValidateTemplate            = compiler.ValidateTemplate
 	ValidateTemplateForms       = compiler.ValidateTemplateForms
 	ValidateTemplateRefs        = compiler.ValidateTemplateRefs

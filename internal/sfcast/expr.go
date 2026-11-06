@@ -23,6 +23,33 @@ func ParseTemplateExpression(exprText string) (*jsast.JsProgram, []string) {
 	return prog, errs
 }
 
+// ParseTemplateExpressionTS parses a template expression of a TypeScript
+// component (TS-4.3) and returns its JavaScript as well: the expression with
+// its TypeScript blanked out, of the same length (the source itself when it
+// has none or does not parse).
+func ParseTemplateExpressionTS(exprText string) (*jsast.JsProgram, []string, string) {
+	if errs := templateExpressionDelimiterErrors(exprText); len(errs) > 0 {
+		return nil, errs, exprText
+	}
+	wrapped := "(" + exprText + ");"
+	prog, diagnostics := jsast.ParseWithOptions(wrapped, jsast.ParseOptions{TypeScript: true})
+	if len(diagnostics) == 0 {
+		diagnostics = jsast.EarlyErrors(prog, jsast.EarlyOptions{TopLevelIsFunction: true})
+	}
+	var errs []string
+	for _, diagnostic := range diagnostics {
+		errs = append(errs, diagnostic.Message)
+	}
+	for _, issue := range jsast.CheckEmptyNodes(prog) {
+		errs = append(errs, issue.Msg)
+	}
+	js := exprText
+	if len(errs) == 0 && prog != nil && prog.TS != nil && len(prog.TS.Erased) > 0 {
+		js = jsast.BlankTypeScript(wrapped, prog.TS)[1 : 1+len(exprText)]
+	}
+	return prog, errs, js
+}
+
 func templateExpressionDelimiterErrors(src string) []string {
 	var stack []byte
 	var quote byte

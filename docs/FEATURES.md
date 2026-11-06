@@ -21,7 +21,7 @@ disagrees with it, this matrix and the compiler diagnostics win.
 | Feature | Status | Example / API | Notes |
 | --- | --- | --- | --- |
 | Single-file components | **Stable** | `<script>`, `<style>`, `<template>` | Sections may appear in any order. |
-| JavaScript parsing | **Stable** | ES2025 modules: classes with fields, private members and static blocks, tagged templates, `for await`, dynamic `import()`, `import.meta`, import attributes, numeric separators, Unicode identifiers | The compiler ships its own parser and performs static analysis. Every generated module is reparsed before it is written, and early errors (`break` outside a loop, `await` outside an async function, undeclared private names, …) are positioned diagnostics, so unsupported syntax never compiles to broken output. A component script exports props only (`export let`); other exports are `VELA-SCRIPT-EXPORT`. Decorators and `using` are not supported. Coverage: docs/ES_COMPLIANCE.md. TypeScript is not supported. |
+| JavaScript parsing | **Stable** | ES2025 modules: classes with fields, private members and static blocks, tagged templates, `for await`, dynamic `import()`, `import.meta`, import attributes, numeric separators, Unicode identifiers | The compiler ships its own parser and performs static analysis. Every generated module is reparsed before it is written, and early errors (`break` outside a loop, `await` outside an async function, undeclared private names, …) are positioned diagnostics, so unsupported syntax never compiles to broken output. A component script exports props only (`export let`); other exports are `VELA-SCRIPT-EXPORT`. Decorators and `using` are not supported. Coverage: docs/ES_COMPLIANCE.md. TypeScript: see the TypeScript row. |
 | Shallow reactive state | **Stable** | `let count = $state(0)` | Assignments and updates to the binding schedule direct DOM updates. |
 | Deep reactive state | **Stable** | `let todos = $state.deep([])` | A runtime `Proxy` observes nested object and array mutations. |
 | Derived values | **Stable** | `let doubled = $derived(count * 2)` | Expression form; no `$derived.by(...)` callback form. |
@@ -127,7 +127,7 @@ Overview and usage: [SSR.md](SSR.md). Normative rules:
 | Feature | Status | Notes |
 | --- | --- | --- |
 | Dev server / HMR | **Planned** | Watch mode recompiles only. |
-| TypeScript | **Planned** | Contract in [TYPESCRIPT.md](TYPESCRIPT.md) (tasks 080–089): types are erased by the compiler and checked by `vela check --types`. The parser accepts and erases TypeScript (task 080, ES_COMPLIANCE.md); the compiler does not use it yet: `lang="ts"` is ignored and the first annotation is `VELA-JS-SYNTAX`. |
+| TypeScript | **Planned** | Contract in [TYPESCRIPT.md](TYPESCRIPT.md) (tasks 080–089): types are erased by the compiler and checked by `vela check --types`. The parser accepts and erases TypeScript (task 080, ES_COMPLIANCE.md), and the compiler builds `<script lang="ts">` components and `.ts`/`.mts` modules in project mode, `--watch` and the bundler plugin (task 081). Not yet: type checking (`vela check --types`), typed editor features, `.ts` modules in server rendering; until task 089 the feature stays planned. |
 | Snippets / render props | **Unsupported** | Use current default/named slots instead. |
 | Actions | **Unsupported** | No `use:action` directive. |
 | Transitions and animations | **Unsupported** | No `transition:`, `in:`, or `out:` directives. |

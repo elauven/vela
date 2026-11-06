@@ -2,6 +2,7 @@ package lsp
 
 import (
 	velaproject "github.com/elauven/vela/internal/project"
+	"github.com/elauven/vela/internal/sfcast"
 
 	"encoding/json"
 	"os"
@@ -374,6 +375,12 @@ func (s *server) tsDiagnostics(c *component) []Diagnostic {
 		return nil
 	}
 	if !ts.checkJs && !strings.Contains(c.text.src, "@ts-check") {
+		return nil
+	}
+	if lang, _ := sfcast.ScriptLang(c.text.src); strings.EqualFold(lang, "ts") || strings.EqualFold(lang, "typescript") {
+		// The virtual document is JavaScript: TypeScript would report the
+		// annotations of a lang="ts" script themselves (TS8010). Typed
+		// virtual documents come with task 085.
 		return nil
 	}
 	v := s.syncTS(ts, c, false)

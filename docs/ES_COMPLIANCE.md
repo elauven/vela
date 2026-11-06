@@ -81,6 +81,7 @@ to the same trees with it on.
 | Oracle: `ts.transpileModule` (TypeScript 6.0.3, `verbatimModuleSyntax`) erases to the same tree | 1700 sources | `TestTSOracleTranspileModule` |
 | The type grammar over declaration files (`lib.dom.d.ts`, `typescript.d.ts`, …) | 11 323 files | `TestTSDeclarationFilesParse` |
 | Mutated and truncated sources, pathological shapes, `FuzzTSParse` | 8 000 mutations | `TestTSMutatedInputNeverCrashes`, `TestTSPathologicalShapes` |
+| Blanking (task 081): the JavaScript text of a source, of the same length and lines, parses to the erased tree | corpus and 1700 oracle sources | `TestTSBlankingCorpus`, `TestTSBlankingLineBreaks`, `TestTSOracleTranspileModule` |
 
 The oracle compares the corpus and every `.ts` file under `node_modules`
 and `packages/*/node_modules`; `VELA_TS_ORACLE_DIR` adds directories (a
