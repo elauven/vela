@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // unplugin's declarations import the types of every bundler it
+    // supports (webpack, rspack, farm, bun, …) and Vite needs @types/node:
+    // the application's, not Vela's, so they are not checked here.
+    "skipLibCheck": true,
+    "types": ["@govela/runtime/ambient"]
+  },
+  "include": ["src/expect.ts", "src/unplugin.test-d.ts"]
+}

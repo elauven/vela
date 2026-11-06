@@ -60,7 +60,8 @@ func runtimePackageFiles() (map[string][]byte, error) {
 		Repository  packageRepository `json:"repository"`
 		Type        string            `json:"type"`
 		SideEffects []string          `json:"sideEffects"`
-		Exports     map[string]string `json:"exports"`
+		Exports     map[string]any    `json:"exports"`
+		Types       string            `json:"types"`
 		Files       []string          `json:"files"`
 	}{
 		Name:        runtime.PackageName,
@@ -70,12 +71,16 @@ func runtimePackageFiles() (map[string][]byte, error) {
 		Repository:  repositoryOf(runtimePackageDir),
 		Type:        "module",
 		SideEffects: []string{"./runtime.js"},
-		Exports: map[string]string{
-			".":         "./runtime.js",
+		// Declarations (TS-6.1): the public API only; the blocks module is
+		// generated code's and stays undeclared, like the $$ helpers.
+		Exports: map[string]any{
+			".":         typedExport{Types: "./runtime.d.ts", Default: "./runtime.js"},
 			"./blocks":  "./runtime-blocks.js",
-			"./hydrate": "./runtime-hydrate.js",
+			"./hydrate": typedExport{Types: "./runtime-hydrate.d.ts", Default: "./runtime-hydrate.js"},
+			"./ambient": typesOnlyExport{Types: "./ambient.d.ts"},
 		},
-		Files: []string{"runtime.js", "runtime-blocks.js", "runtime-hydrate.js", "LICENSE"},
+		Types: "runtime.d.ts",
+		Files: []string{"runtime.js", "runtime.d.ts", "runtime-blocks.js", "runtime-hydrate.js", "runtime-hydrate.d.ts", "ambient.d.ts", "LICENSE"},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -92,14 +97,32 @@ func runtimePackageFiles() (map[string][]byte, error) {
 		"Development checks are removed when the bundler replaces\n" +
 		"`process.env.NODE_ENV` with `\"production\"` (esbuild and Vite do this for\n" +
 		"production builds; Rollup needs `@rollup/plugin-replace`).\n\n" +
+		"TypeScript: the package is typed. Component scripts get the runes and the\n" +
+		"`vela` and `vela/store` modules from `" + runtime.AmbientTypesSpecifier + "`; list it in\n" +
+		"`compilerOptions.types` of tsconfig.json.\n\n" +
 		"Generated from `runtime/` of the compiler repository; do not edit.\n\n" +
 		"License: MIT.\n"
 	return map[string][]byte{
-		"package.json":       append(encoded, '\n'),
-		"README.md":          []byte(readme),
-		"LICENSE":            licenseText,
-		"runtime.js":         []byte(core),
-		"runtime-blocks.js":  runtime.Blocks,
-		"runtime-hydrate.js": runtime.Hydrate,
+		"package.json":         append(encoded, '\n'),
+		"README.md":            []byte(readme),
+		"LICENSE":              licenseText,
+		"runtime.js":           []byte(core),
+		"runtime-blocks.js":    runtime.Blocks,
+		"runtime-hydrate.js":   runtime.Hydrate,
+		"runtime.d.ts":         []byte(runtime.RuntimeDeclarations()),
+		"runtime-hydrate.d.ts": []byte(runtime.HydrateDeclarations()),
+		"ambient.d.ts":         []byte(runtime.AmbientDeclarations()),
 	}, nil
+}
+
+// typedExport is an export with its declarations: the `types` condition
+// comes first, as TypeScript requires.
+type typedExport struct {
+	Types   string `json:"types"`
+	Default string `json:"default"`
+}
+
+// typesOnlyExport has declarations and no JavaScript (the ambient types).
+type typesOnlyExport struct {
+	Types string `json:"types"`
 }

@@ -1,6 +1,8 @@
 package lsp
 
 import (
+	"github.com/elauven/vela/runtime"
+
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -289,5 +291,20 @@ func TestTypeScriptDynamicComponent(t *testing.T) {
 	}
 	if len(got) != 1 || !strings.HasPrefix(got[0], "count: Argument of type 'number' is not assignable") {
 		t.Errorf("TypeScript diagnostics:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+// TestVelaEnvIsTheAmbientTypes: the language server declares the runes and
+// the `vela` modules with the ambient types of the runtime package (task
+// 082), so the editor and `tsc` with @govela/runtime/ambient agree.
+func TestVelaEnvIsTheAmbientTypes(t *testing.T) {
+	ambient := runtime.AmbientDeclarations()
+	if !strings.HasPrefix(velaEnv, ambient) {
+		t.Fatal("velaEnv does not start with runtime.AmbientDeclarations()")
+	}
+	for _, name := range []string{"declare function $state", "declare module 'vela'", "declare module 'vela/store'", "export function onMount", "export interface Component<"} {
+		if !strings.Contains(ambient, name) {
+			t.Errorf("the ambient types lack %q", name)
+		}
 	}
 }

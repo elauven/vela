@@ -13,14 +13,27 @@
     "./runtime.js"
   ],
   "exports": {
-    ".": "./runtime.js",
+    ".": {
+      "types": "./runtime.d.ts",
+      "default": "./runtime.js"
+    },
+    "./ambient": {
+      "types": "./ambient.d.ts"
+    },
     "./blocks": "./runtime-blocks.js",
-    "./hydrate": "./runtime-hydrate.js"
+    "./hydrate": {
+      "types": "./runtime-hydrate.d.ts",
+      "default": "./runtime-hydrate.js"
+    }
   },
+  "types": "runtime.d.ts",
   "files": [
     "runtime.js",
+    "runtime.d.ts",
     "runtime-blocks.js",
     "runtime-hydrate.js",
+    "runtime-hydrate.d.ts",
+    "ambient.d.ts",
     "LICENSE"
   ]
 }

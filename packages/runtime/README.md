@@ -13,6 +13,10 @@ Development checks are removed when the bundler replaces
 `process.env.NODE_ENV` with `"production"` (esbuild and Vite do this for
 production builds; Rollup needs `@rollup/plugin-replace`).
 
+TypeScript: the package is typed. Component scripts get the runes and the
+`vela` and `vela/store` modules from `@govela/runtime/ambient`; list it in
+`compilerOptions.types` of tsconfig.json.
+
 Generated from `runtime/` of the compiler repository; do not edit.
 
 License: MIT.

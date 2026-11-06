@@ -111,7 +111,9 @@ func buildVirtual(path, src string) *virtualDoc {
 	w.gen("}\n")
 	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	if isIdentifier(name) {
-		w.gen("export function " + name + "($$target, $$props) {}\nexport default " + name + ";\n")
+		// @returns {any}: a component factory returns its instance, so the
+		// export is a Component for lazy() and mount() (task 082).
+		w.gen("/** @returns {any} */\nexport function " + name + "($$target, $$props) {}\nexport default " + name + ";\n")
 	}
 	v := &virtualDoc{path: path, source: newText(src), text: w.b.String(), byVirt: w.segs}
 	v.bySrc = append([]segment(nil), w.segs...)
