@@ -24,8 +24,10 @@ func TestOutputCollisionsFailTheBuild(t *testing.T) {
 	})
 	errors, diags := buildTSProject(t, srcRoot, outRoot, CompileOptions{})
 	got := map[string]string{}
+	// Keys without case: on a file system that ignores case, pages/a.ts is
+	// written into the directory Pages that Pages/A.vela created.
 	for _, d := range diags {
-		got[filepath.ToSlash(d.File[strings.Index(filepath.ToSlash(d.File), "src/")+4:])] = d.Code
+		got[strings.ToLower(filepath.ToSlash(d.File[strings.Index(filepath.ToSlash(d.File), "src/")+4:]))] = d.Code
 	}
 	want := map[string]string{
 		"card.js":    "VELA-OUTPUT-COLLISION",
