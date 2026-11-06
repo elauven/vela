@@ -13,6 +13,11 @@ import { createInterface } from 'node:readline';
 
 const send = (message) => process.stdout.write(JSON.stringify(message) + '\n');
 
+// TypeScript spells every file name with forward slashes, on Windows too
+// (C:/Users/…): the paths this helper keeps and compares are spelled the
+// same way, whatever the request sent.
+const slashes = (file) => file.replace(/\\/g, '/');
+
 // The TypeScript that has the language service API (5.x and 6.x; 7.x has
 // none yet): the editor's, the workspace's, then the global one.
 function loadTypeScript(root, tsdk) {
@@ -109,7 +114,7 @@ function compilerOptions(project) {
     const { config } = ts.readConfigFile(file, ts.sys.readFile);
     const parsed = ts.parseJsonConfigFileContent(config ?? {}, ts.sys, root);
     configFile = file;
-    projectFiles = project ? parsed.fileNames.filter((f) => !f.endsWith('.vela')) : [];
+    projectFiles = project ? parsed.fileNames.filter((f) => !f.endsWith('.vela')).map(slashes) : [];
     return { ...defaults, ...parsed.options, allowJs: true, noEmit: true };
   }
   return project ? { ...contractOptions(), allowJs: true } : defaults;
@@ -126,7 +131,7 @@ const textOf = (file) => (file === envPath ? envText : files.get(file)?.text);
 
 function resolveModule(name, containing, opts) {
   if (name.startsWith('./') || name.startsWith('../')) {
-    let target = path.resolve(path.dirname(containing), name);
+    let target = slashes(path.resolve(path.dirname(containing), name));
     const virtual = (component) => (files.has(component + '.ts') ? component + '.ts' : component + '.js');
     if (name.endsWith('.vela')) target = virtual(target);
     else if (name.endsWith('.js') && !files.has(target) && !ts.sys.fileExists(target) && !ts.sys.fileExists(target.slice(0, -3) + '.ts')) {
@@ -139,11 +144,11 @@ function resolveModule(name, containing, opts) {
 }
 
 function start(params) {
-  root = params.root;
+  root = slashes(params.root);
   const loaded = loadTypeScript(root, params.tsdk);
   if (!loaded.ts) return { error: `no TypeScript with a language service API (5.x or 6.x): ${loaded.tried.join('; ')}` };
   ts = loaded.ts;
-  envPath = path.join(root, '__vela_env__.d.ts');
+  envPath = slashes(path.join(root, '__vela_env__.d.ts'));
   options = compilerOptions(Boolean(params.project));
   envText = (projectHasAmbient(params.ambientSpecifier) ? '' : params.ambient) + params.helpers;
   const host = {
@@ -210,9 +215,10 @@ const methods = {
   start,
   update({ files: changed = [], remove = [] }) {
     for (const { path: file, text: content } of changed) {
-      files.set(file, { text: content, version: (files.get(file)?.version ?? 0) + 1 });
+      const key = slashes(file);
+      files.set(key, { text: content, version: (files.get(key)?.version ?? 0) + 1 });
     }
-    for (const file of remove) files.delete(file);
+    for (const file of remove) files.delete(slashes(file));
     return {};
   },
   completion({ path: file, position }) {
@@ -303,7 +309,9 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     const method_ = methods[method];
     if (!method_) throw new Error(`unknown method ${method}`);
     if (method !== 'start' && !service) throw new Error('not started');
-    const result = method_(params ?? {});
+    const args = params ?? {};
+    if (typeof args.path === 'string') args.path = slashes(args.path);
+    const result = method_(args);
     send(result?.error && method === 'start' ? { id, error: result.error } : { id, result });
   } catch (error) {
     send({ id, error: String(error?.stack ?? error) });

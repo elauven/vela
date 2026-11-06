@@ -128,7 +128,10 @@ func TestTSPathologicalShapes(t *testing.T) {
 		{"nested object types", "let x: " + rep("{ a: ", 3000) + "X" + rep(" }", 3000)},
 		{"nested tuples", "let x: " + rep("[", 5000) + "X" + rep("]", 5000)},
 		{"long union", "let x: A" + rep(" | A", 30000)},
+		// BlankTypeScript once scanned back over every erased declaration
+		// before each one: quadratic in their number (task 089).
 		{"many interfaces", rep("interface I { a: number; b(): void }\n", 5000)},
+		{"many interfaces after a block", "function f() {}\n" + rep("interface I { a: number }\n", 5000) + "(f)()"},
 		{"many annotated lets", rep("let a: Array<Map<string, number>> = x as any;\n", 5000)},
 		{"non-null chain", "a" + rep("!", 20000)},
 		{"as chain", "a" + rep(" as T", 20000)},
