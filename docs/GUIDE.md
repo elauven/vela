@@ -1498,5 +1498,6 @@ compile` or `vela serve --stdio`
 | VELA-DUPLICATE-ATTR | An attribute is given twice on one element. | Keep one; a static `class` with `:class` is joined automatically. |
 | VELA-ATTR-BRACES (warning) | Braces in a quoted static attribute value. | Use `:name={`…${value}`}`. |
 | VELA-SCRIPT-EXPORT | A component script exports something other than `export let`. | Move the export to a `.js` module. |
+| VELA-OUTPUT-COLLISION | Two files of a project compile to one output: `Card.vela` and `Card.js`, or names that differ only in case (`Card.vela` and `card.js`), which are one file on macOS and Windows. The second is not written. | Rename one of them so the names differ in more than case. |
 
 Server-rendering diagnostics (`VELA-SSR-*`) are listed in [SSR.md](SSR.md#diagnostics).

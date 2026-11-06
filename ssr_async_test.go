@@ -59,7 +59,7 @@ export async function rejectWith(v) {
 `
 
 const ssrAsyncComponent = `<script>
-  import { load, total, guarded, safe, settled, both, rejectWith } from './async.js';
+  import { load, total, guarded, safe, settled, both, rejectWith } from './load_async.js';
   export let id = 3;
   export let ids = [1, 2, 3];
   export let other = -1;
@@ -71,10 +71,10 @@ const ssrAsyncComponent = `<script>
 // code on the server and compares the settled branches with Node.
 func TestSSRAsyncMatchesNode(t *testing.T) {
 	node, _ := requireJsdom(t)
-	src := writeSSRModuleFixture(t, map[string]string{"async.js": ssrAsyncModule, "Async.vela": ssrAsyncComponent})
+	src := writeSSRModuleFixture(t, map[string]string{"load_async.js": ssrAsyncModule, "Async.vela": ssrAsyncComponent})
 	cases := []string{`{}`, `{"id":-2}`, `{"ids":[4,-1],"other":5}`}
 	script := `
-import { load, total, guarded, safe, settled, both, rejectWith } from './async.js';
+import { load, total, guarded, safe, settled, both, rejectWith } from './load_async.js';
 const defaults = { id: 3, ids: [1, 2, 3], other: -1 };
 const branch = async (promise, then, katch) => {
   try { return 'b:' + then(await promise); } catch (e) { return katch ? 's:' + katch(e) : 'uncaught'; }

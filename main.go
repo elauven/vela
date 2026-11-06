@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/elauven/vela/internal/project"
 	"github.com/elauven/vela/runtime"
 
 	"flag"
@@ -10,6 +11,18 @@ import (
 	"strings"
 	"time"
 )
+
+// outputOwner is the source of current, other than src, whose output is
+// the output of src compared without case, or "".
+func outputOwner(src string, current []string, srcRoot string) string {
+	output := strings.ToLower(project.OutputPath(src, srcRoot))
+	for _, other := range current {
+		if other != src && strings.ToLower(project.OutputPath(other, srcRoot)) == output {
+			return other
+		}
+	}
+	return ""
+}
 
 func main() {
 	if len(os.Args) > 1 {
@@ -328,7 +341,14 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 				if !strings.EqualFold(filepath.Ext(f), ".vela") {
 					dest, _ = ProjectModuleOutput(f, srcRoot, outRoot)
 				}
-				_ = os.Remove(dest)
+				// Another source with this output, compared without case,
+				// keeps it and is written again: after Card.vela became
+				// card.vela, card.js is Card.js on macOS and Windows.
+				if owner := outputOwner(f, current, srcRoot); owner != "" && SameFile(dest, filepath.Join(outRoot, filepath.FromSlash(project.OutputPath(owner, srcRoot)))) {
+					changed = append(changed, owner)
+				} else {
+					_ = os.Remove(dest)
+				}
 				if opts.EmitAST {
 					_ = os.Remove(strings.TrimSuffix(dest, ".js") + ".ast.json")
 				}
@@ -338,7 +358,20 @@ func runWatchProject(srcRoot, outRoot string, opts CompileOptions) {
 
 		if len(changed) > 0 {
 			fmt.Fprintf(status, "\n  ↻  %d file(s) changed\n", len(changed))
+			// A new file whose output is another's is reported, not written.
+			collides := map[string]bool{}
+			for _, c := range project.OutputCollisions(current, srcRoot) {
+				collides[c.Second] = true
+			}
+			reportOnce := true
 			for _, src := range changed {
+				if collides[src] {
+					if reportOnce {
+						ReportOutputCollisions(current, srcRoot, opts)
+						reportOnce = false
+					}
+					continue
+				}
 				if strings.EqualFold(filepath.Ext(src), ".vela") {
 					CompileProjectFile(src, srcRoot, outRoot, opts)
 				} else {

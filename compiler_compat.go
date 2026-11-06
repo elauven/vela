@@ -81,6 +81,7 @@ var (
 	OpenJSONLTraceSink          = compiler.OpenJSONLTraceSink
 	PackageOfSpecifier          = compiler.PackageOfSpecifier
 	ProjectModuleOutput         = compiler.ProjectModuleOutput
+	ReportOutputCollisions      = compiler.ReportOutputCollisions
 	ResolveLazyComponents       = compiler.ResolveLazyComponents
 	RuntimeSource               = compiler.RuntimeSource
 	SourceBlock                 = compiler.SourceBlock

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/elauven/vela/internal/pkgpath"
+	"github.com/elauven/vela/internal/project"
 )
 
 // SSRPackagePathDiagnosticCode reports a source directory whose name cannot
@@ -77,6 +78,35 @@ func CheckSSRPackagePaths(files []string, srcRoot string) map[string]error {
 			continue
 		}
 		byEncoded[key] = rel
+	}
+	return out
+}
+
+// CheckSSRFileNames checks the Go files of every component: X.vela writes
+// x.go and x_props.go into its package, in snake_case, so UserCard.vela and
+// User-Card.vela, or Card.vela and CardProps.vela, would write one file.
+// Names are compared without case. It returns the error of every component
+// whose file is already another's, in path order.
+func CheckSSRFileNames(files []string, srcRoot string, layout SSRProjectLayout) map[string]error {
+	sorted := append([]string(nil), files...)
+	sort.Strings(sorted)
+	out := map[string]error{}
+	owners := map[string]string{} // lower-cased Go file → its component
+	for _, src := range sorted {
+		paths := []string{layout.ServerPath(src, srcRoot), layout.PropsPath(src, srcRoot)}
+		for _, file := range paths {
+			if other, taken := owners[strings.ToLower(file)]; taken && other != src {
+				out[src] = fmt.Errorf("%s: %s and %s both write the Go file %s; rename one of them", project.OutputCollisionCode,
+					filepath.Base(other), filepath.Base(src), filepath.Base(file))
+				break
+			}
+		}
+		if out[src] != nil {
+			continue
+		}
+		for _, file := range paths {
+			owners[strings.ToLower(file)] = src
+		}
 	}
 	return out
 }

@@ -141,15 +141,29 @@ func SplitCapabilityList(raw string) []string {
 // BuildProject compiles all files, optionally in parallel.
 // Returns the number of files that failed.
 func BuildProject(files []string, srcRoot, outRoot string, opts CompileOptions, parallel bool) int {
+	errors, _ := buildProject(files, srcRoot, outRoot, opts, parallel)
+	return errors
+}
+
+// buildProject is BuildProject, also returning the sources it did not
+// write because their output collides with another's.
+func buildProject(files []string, srcRoot, outRoot string, opts CompileOptions, parallel bool) (int, map[string]bool) {
 	if opts.PackageImports == nil {
 		opts.PackageImports = newPackageImports()
 	}
+	// Two sources with one output: the second is reported and not written,
+	// so the first is not silently overwritten.
+	modules := project.CollectJSModules(srcRoot)
+	skip := ReportOutputCollisions(append(append([]string(nil), files...), modules...), srcRoot, opts)
 	type result struct{ ok bool }
 	results := make([]result, len(files))
 
 	if parallel {
 		var wg sync.WaitGroup
 		for i, src := range files {
+			if skip[src] {
+				continue
+			}
 			wg.Add(1)
 			go func(i int, src string) {
 				defer wg.Done()
@@ -159,21 +173,23 @@ func BuildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 		wg.Wait()
 	} else {
 		for i, src := range files {
-			results[i] = result{CompileProjectFile(src, srcRoot, outRoot, opts)}
+			if !skip[src] {
+				results[i] = result{CompileProjectFile(src, srcRoot, outRoot, opts)}
+			}
 		}
 	}
 
 	errors := 0
 	for _, r := range results {
 		if !r.ok {
-			errors++
+			errors++ // a skipped component too
 		}
 	}
 
 	// Local JavaScript modules are part of a Vela project contract: generated
 	// components retain imports such as ./format.js, so mirror these files next
 	// to the compiled modules instead of leaving dangling imports in dist.
-	errors += copyProjectJSModules(srcRoot, outRoot, opts)
+	errors += copyProjectJSModules(srcRoot, outRoot, modules, skip, opts)
 	// An SSR build rewrites the manifest with root modes (writeSSRManifest).
 	if err := writeProjectManifest(files, srcRoot, outRoot, nil, opts.PackageImports); err != nil {
 		reportBuildIssue(opts, "cannot write vela.manifest.json: %v", err)
@@ -181,13 +197,13 @@ func BuildProject(files []string, srcRoot, outRoot string, opts CompileOptions, 
 	}
 	if opts.BareRuntimeImports {
 		// The application installs the runtime package (R-12.2f).
-		return errors
+		return errors, skip
 	}
 	if err := StageRuntime(outRoot, opts); err != nil {
 		reportBuildIssue(opts, "cannot stage runtime: %v", err)
 		errors++
 	}
-	return errors
+	return errors, skip
 }
 
 func CompileProjectFile(src, srcRoot, outRoot string, opts CompileOptions) bool {
@@ -716,27 +732,55 @@ func runtimeSpecifier(opts CompileOptions, dir, outRoot string) string {
 // `.js` (TS-5.1). It deliberately uses the same directory exclusions as
 // collectVela so build output and dependencies cannot be copied back into
 // the project.
-func copyProjectJSModules(srcRoot, outRoot string, opts CompileOptions) int {
+func copyProjectJSModules(srcRoot, outRoot string, modules []string, skip map[string]bool, opts CompileOptions) int {
 	errors := reportUnsupportedModules(srcRoot, opts)
-	writers := map[string]string{} // output → the module written to it
-	for _, src := range project.CollectJSModules(srcRoot) {
-		dest, err := ProjectModuleOutput(src, srcRoot, outRoot)
-		if err == nil {
-			if first, taken := writers[dest]; taken {
-				// util.js and util.ts, or util.ts and util.mts.
-				printModuleDiagnostics(opts, []*diag.Diagnostic{{Sev: diag.SevError, File: cwdRelative(src), Line: 1, Col: 1, Code: ModuleDiagnosticCode,
-					Message:    fmt.Sprintf("%s and %s both compile to %s", filepath.Base(first), filepath.Base(src), filepath.Base(dest)),
-					Suggestion: "rename or remove one of the two modules"}})
-				errors++
-				continue
-			}
-			writers[dest] = src
+	for _, src := range modules {
+		if skip[src] {
+			errors++ // reported by ReportOutputCollisions
+			continue
 		}
 		if !CopyProjectModule(src, srcRoot, outRoot, opts) {
 			errors++
 		}
 	}
 	return errors
+}
+
+// ReportOutputCollisions reports every source whose output is already the
+// output of another source, compared without case (VELA-OUTPUT-COLLISION;
+// two modules with one exact output keep VELA-TS-MODULE, TS-5.2), and
+// returns them: the build writes only the first of each pair.
+func ReportOutputCollisions(sources []string, srcRoot string, opts CompileOptions) map[string]bool {
+	skip := map[string]bool{}
+	for _, c := range project.OutputCollisions(sources, srcRoot) {
+		skip[c.Second] = true
+		first, second := filepath.Base(c.First), filepath.Base(c.Second)
+		if filepath.Dir(c.First) != filepath.Dir(c.Second) {
+			first, second = OutputRelative(c.First, srcRoot), OutputRelative(c.Second, srcRoot)
+		}
+		d := &diag.Diagnostic{Sev: diag.SevError, File: cwdRelative(c.Second), Line: 1, Col: 1, Code: project.OutputCollisionCode,
+			Message:    fmt.Sprintf("%s and %s both compile to %s", first, second, c.Output),
+			Suggestion: "rename one of the two files"}
+		if !c.Exact {
+			d.Message = fmt.Sprintf("%s and %s compile to %s and %s, one file on file systems that ignore case (macOS, Windows)",
+				first, second, project.OutputPath(c.First, srcRoot), c.Output)
+			d.Suggestion = "rename one of the two files so that their names differ in more than case"
+		} else if !strings.EqualFold(filepath.Ext(c.First), ".vela") && !strings.EqualFold(filepath.Ext(c.Second), ".vela") {
+			// util.js and util.ts, or util.ts and util.mts (TS-5.2).
+			d.Code = ModuleDiagnosticCode
+			d.Suggestion = "rename or remove one of the two modules"
+		}
+		printModuleDiagnostics(opts, []*diag.Diagnostic{d})
+	}
+	return skip
+}
+
+// OutputRelative is src relative to srcRoot, slash-separated.
+func OutputRelative(src, srcRoot string) string {
+	if rel, err := filepath.Rel(srcRoot, src); err == nil {
+		return filepath.ToSlash(rel)
+	}
+	return filepath.Base(src)
 }
 
 // ProjectModuleOutput is the output path of a local module of a project:

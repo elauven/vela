@@ -350,6 +350,7 @@ Server text follows the client's conversion in each context:
 | `VELA-SSR-IMPURE` | A write to props, state or module values during the render |
 | `VELA-SSR-CHILD` | A child component has no server renderer |
 | `VELA-SSR-PACKAGE-PATH` | A source directory name that cannot become a Go package directory ("Directory names") |
+| `VELA-OUTPUT-COLLISION` | Two components write one Go file: names become snake_case, so `UserCard.vela` and `User_Card.vela` both write `user_card.go`, and `CardProps.vela` writes the `card_props.go` of `Card.vela` (also reported for client outputs, docs/GUIDE.md) |
 | `VELA-HTML-NESTING` | Markup the HTML parser would rearrange (for example `<div>` in `<p>`) |
 | `VELA-HYDRATION-MISMATCH` | Runtime: server and client disagree during hydration |
 
