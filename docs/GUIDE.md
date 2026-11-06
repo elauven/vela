@@ -744,6 +744,9 @@ stays first-class, and both languages mix in one project.
 
 ### A TypeScript project
 
+`npm create @govela my-app` writes a TypeScript project with this
+configuration (`-- --js` for JavaScript). By hand:
+
 ```sh
 npm i -D typescript@6
 ```
@@ -1408,6 +1411,9 @@ test('counts by its step', async () => {
   updated; `await` them. `rerender(props)` waits the same way.
 - `cleanup()` unmounts every rendered component; `tick()` waits for pending
   updates after a change made outside `fireEvent`.
+- In TypeScript (`Counter.test.ts`), `render` checks the props against
+  the component's types, requires the required ones, and types the
+  `detail` of each listener of `events`.
 - Server rendering is not part of these tests: `vela check --ssr` checks
   that the components translate, and the Go renderers can be tested with
   `go test`.
@@ -1448,6 +1454,31 @@ export default [
   compiler does (`VELA-SCOPE-UNDECLARED`).
 - The markup of the template (elements, attributes, block syntax) is not
   linted, and there is no Prettier plugin.
+
+In TypeScript, typescript-eslint parses the virtual files of `lang="ts"`
+components. Type-aware rules cannot run on them (the files are not on
+disk); turn them off there and keep them for the `.ts` modules:
+
+```js
+// eslint.config.js
+import { defineConfig } from 'eslint/config';
+import js from '@eslint/js';
+import globals from 'globals';
+import tseslint from 'typescript-eslint';
+import vela from '@govela/eslint-plugin';
+
+export default defineConfig(
+  js.configs.recommended,
+  tseslint.configs.recommendedTypeChecked,
+  { languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } } },
+  vela.configs.recommended,
+  { files: ['**/*.vela/*.ts'], languageOptions: { globals: globals.browser } },
+  { files: ['**/*.vela/*.ts', '**/*.vela/*.js', '*.config.js'], extends: [tseslint.configs.disableTypeChecked] },
+);
+```
+
+`tseslint.configs.recommended` (without type information) needs no such
+override; `npm create @govela` uses it.
 
 ## Checking a project
 

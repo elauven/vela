@@ -406,6 +406,15 @@ func componentExport(name string, t *analyzer.ComponentTypes, ts bool, generics 
 	// A prop's type is the declared type of its variable: `typeof x` in a
 	// function, where the assignments of the script do not narrow it.
 	var out strings.Builder
+	if len(t.Props) > 0 {
+		// The parent assigns the props: linters (prefer-const,
+		// no-unassigned-vars) see the assignments here, in generated text.
+		out.WriteString("function $$setProps() {")
+		for _, p := range t.Props {
+			out.WriteString(" " + p.Name + " = " + p.Name + ";")
+		}
+		out.WriteString(" }\n")
+	}
 	if generics == "" {
 		if ts {
 			out.WriteString("function $$propsOf() { return null as unknown as " + propsType + "; }\n")

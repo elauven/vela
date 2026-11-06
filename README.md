@@ -73,10 +73,11 @@ JavaScript engine.
 
 ## Quick start
 
-A new application, with Vite, a component test and a CI workflow:
+A new application in TypeScript, with Vite, a component test, ESLint and
+a CI workflow:
 
 ```sh
-npm create @govela my-app             # add -- --ssr for a Go server, -- --app for a Vela App
+npm create @govela my-app             # -- --ssr: a Go server, -- --app: a Vela App, -- --js: JavaScript
 cd my-app && npm install && npm run dev
 ```
 

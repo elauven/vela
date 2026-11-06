@@ -134,7 +134,10 @@ func starterPackageFiles() (map[string][]byte, error) {
 		"  `fireEvent.input(element, value)` and the others dispatch the event\n" +
 		"  and wait until the component has updated.\n" +
 		"- `cleanup()` unmounts every rendered component; `tick()` waits for\n" +
-		"  pending updates.\n\n" +
+		"  pending updates.\n" +
+		"- In TypeScript, `render` checks the props (and requires the required\n" +
+		"  ones), the `detail` of each listener and the slot names against the\n" +
+		"  component's type.\n\n" +
 		"License: MIT.\n")
 
 	app, err := appVersion()
@@ -186,10 +189,12 @@ func starterPackageFiles() (map[string][]byte, error) {
 		"npm create @govela my-app -- --ssr    # a Go server renders, Vite builds the client\n" +
 		"npm create @govela my-app -- --app    # a Vela App: routes with Go loaders\n" +
 		"```\n\n" +
-		"`--module example.com/my-app` sets the Go module path of `--ssr` and\n" +
-		"`--app`. Every project has a component test, `npm run check`\n" +
-		"(`vela check`), a GitHub Actions workflow running the check, the tests\n" +
-		"and the build, and an `AGENTS.md` pointing to the Vela authoring guide.\n\n" +
+		"The projects are TypeScript (`vela check --types`, typed tests); `--js`\n" +
+		"writes JavaScript. `--module example.com/my-app` sets the Go module path\n" +
+		"of `--ssr` and `--app`. Every project has a component test, ESLint with\n" +
+		"`" + ESLintPluginPackageName + "`, `npm run check` (`vela check`), a GitHub Actions\n" +
+		"workflow running the check, the linter, the tests and the build, and an\n" +
+		"`AGENTS.md` pointing to the Vela authoring guide.\n\n" +
 		"License: MIT.\n")
 	return files, nil
 }
@@ -259,6 +264,9 @@ func eslintPluginPackageFiles() (map[string][]byte, error) {
 		"  { files: ['**/*.vela/*.js'], languageOptions: { globals: globals.browser } },\n" +
 		"];\n" +
 		"```\n\n" +
+		"In TypeScript, typescript-eslint parses the virtual file of a `lang=\"ts\"`\n" +
+		"component (`**/*.vela/*.ts`). Type-aware rules cannot run on components:\n" +
+		"turn them off there with `tseslint.configs.disableTypeChecked`.\n\n" +
 		"`configs.recommended` sets the processor for `**/*.vela` and declares\n" +
 		"`$state`, `$derived`, `$effect`, `$bindable` and `$$dispatch`. The\n" +
 		"template markup is not linted. The compiler binary is the one of\n" +

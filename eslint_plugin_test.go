@@ -250,3 +250,77 @@ func TestDocumentCommand(t *testing.T) {
 		t.Errorf("segments %v of\n%s", doc.Segments, doc.Text)
 	}
 }
+
+const eslintTypeScriptConfig = `import { defineConfig } from 'eslint/config';
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+import vela from '@govela/eslint-plugin';
+
+export default defineConfig(
+  js.configs.recommended,
+  tseslint.configs.recommendedTypeChecked,
+  { languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } } },
+  vela.configs.recommended,
+  // The virtual files of components are not on disk: no type information.
+  { files: ['**/*.vela/*.ts', '**/*.vela/*.js', '*.config.js'], extends: [tseslint.configs.disableTypeChecked] },
+);
+`
+
+// TestESLintPluginTypeScript (task 088): a TypeScript component is linted
+// by typescript-eslint as a .ts virtual file, its template expressions
+// included; type-aware rules run on the .ts modules, and are disabled for
+// the components.
+func TestESLintPluginTypeScript(t *testing.T) {
+	if _, err := os.Stat(filepath.Join("node_modules", "typescript-eslint", "package.json")); err != nil {
+		skipBundlers(t, "typescript-eslint not installed; run npm ci")
+	}
+	root, vela := newESLintProject(t, eslintTypeScriptConfig)
+	component := `<script lang="ts">
+  interface Item { id: string; label: string }
+
+  export let items: Item[] = [];
+  let unused: number = $state(0);
+  let selected = $state<Item | null>(null);
+
+  function pick(item: Item): void {
+    selected = item;
+  }
+</script>
+
+<template>
+  {#each items as item (item.id)}
+    <button @click={() => pick(item as any)}>{item.label}</button>
+  {/each}
+  <p>{selected?.label}</p>
+</template>
+`
+	writeTestFile(t, filepath.Join(root, "src", "List.vela"), component)
+	// A floating promise: a type-aware rule, reported in the .ts module.
+	writeTestFile(t, filepath.Join(root, "src", "util.ts"), "export async function load(): Promise<number> {\n  return 1;\n}\n\nload();\n")
+	writeTestFile(t, filepath.Join(root, "tsconfig.json"), `{"compilerOptions": {"strict": true, "module": "ESNext", "moduleResolution": "bundler", "target": "ES2022", "noEmit": true}, "include": ["src"]}`)
+
+	results := runESLint(t, root, vela, "src")
+	var got []string
+	for _, name := range []string{"src/List.vela", "src/util.ts"} {
+		for _, m := range results[name].Messages {
+			if m.Fatal {
+				t.Errorf("%s:%d:%d: parse error %s", name, m.Line, m.Column, m.Message)
+			}
+			got = append(got, name+" "+m.RuleID+" "+strconv.Itoa(m.Line)+":"+strconv.Itoa(m.Column))
+		}
+	}
+	sort.Strings(got)
+	want := []string{
+		"src/List.vela @typescript-eslint/no-explicit-any 15:40",
+		"src/List.vela @typescript-eslint/no-unused-vars 5:7",
+		"src/List.vela prefer-const 5:7",
+		"src/util.ts @typescript-eslint/no-floating-promises 5:1",
+		"src/util.ts @typescript-eslint/require-await 1:8",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("messages:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if !strings.HasPrefix(sourceAt(component, 15, 40), "any") {
+		t.Errorf("15:40 is %q", sourceAt(component, 15, 40))
+	}
+}

@@ -39,5 +39,8 @@ test('counts', async () => {
   and wait until the component has updated.
 - `cleanup()` unmounts every rendered component; `tick()` waits for
   pending updates.
+- In TypeScript, `render` checks the props (and requires the required
+  ones), the `detail` of each listener and the slot names against the
+  component's type.
 
 License: MIT.

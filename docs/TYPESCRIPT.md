@@ -634,9 +634,9 @@ Taken while implementing the route types on 2026-11-06:
 Taken while releasing TypeScript as experimental on 2026-11-06:
 
 1. **Experimental without 088**: the starter, the testing helpers and the
-   ESLint processor of tasks 066 and 067 do not exist yet, so their
-   TypeScript (088) waits for them; everything else of the contract is
-   implemented.
+   ESLint processor of tasks 066 and 067 did not exist yet, so their
+   TypeScript (088) waited for them; everything else of the contract was
+   implemented. 088 is done (Decisions of 088).
 2. **The guide** has a TypeScript chapter with the TypeScript versions of
    its components, server rendering, Vela App and migration notes, rather
    than a second version of every example; `TestTypeScriptDocsExamples`
@@ -645,3 +645,31 @@ Taken while releasing TypeScript as experimental on 2026-11-06:
 3. **The release gate** is the *TypeScript* job of CI on Linux, macOS and
    Windows and the twin suites of the test job (docs/RELEASING.md).
 
+## Decisions of 088
+
+Taken on 2026-11-06:
+
+1. **The starter is TypeScript by default**: `npm create @govela` writes
+   the tsconfig of TS-10.2 (with `skipLibCheck`), `lang="ts"` components
+   and `.ts` tests, and `npm run check` is `vela check --types`; `--js`
+   writes the JavaScript project. The app template sets
+   `{"typescript": true}` in `vela.app.json` and its routes use
+   `./$types`. `src/_app/client.js`, which `vela-app gen` writes, stays
+   JavaScript.
+2. **render() is typed** by the component's `Component<P, E, S, B>`: the
+   props (required when the component has required props), the `detail`
+   of each listener in `events`, and the slot names when the component
+   declares or uses named slots. `TestStarterTemplates` checks that a
+   wrong prop, a wrong use of a `detail` and a missing required prop fail
+   `npm run check`.
+3. **ESLint**: a TypeScript component is a `.ts` virtual file
+   (`App.vela/0_App.vela.ts`) that typescript-eslint parses, template
+   expressions included. **Type-aware rules are not supported on
+   components**: the virtual files are not on disk, so typescript-eslint's
+   project service cannot type them, and their `.vela` imports would need
+   the program of `vela check --types`. Configurations turn them off for
+   `**/*.vela/*.ts` with `tseslint.configs.disableTypeChecked`; they run
+   on the `.ts` modules (`TestESLintPluginTypeScript`).
+4. The virtual document assigns every prop in a generated
+   `$$setProps()`, so `prefer-const` and `no-unassigned-vars` do not
+   report the `export let` of props.

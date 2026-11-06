@@ -1,0 +1,27 @@
+<script lang="ts">
+  interface $$Events {
+    change: number;
+  }
+
+  export let step: number = 1;
+
+  let count = $state(0);
+
+  function increment(): void {
+    count += step;
+    $$dispatch('change', count);
+  }
+</script>
+
+<template>
+  <button @click={increment}>
+    <slot>Count</slot>: {count}
+  </button>
+</template>
+
+<style>
+  button {
+    font: inherit;
+    padding: 0.5rem 1rem;
+  }
+</style>
