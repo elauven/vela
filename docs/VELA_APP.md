@@ -104,7 +104,7 @@ site/
 
 ```sh
 go mod init example.com/site
-go get github.com/elauven/vela/app@v0.2.0 github.com/elauven/vela/ssr_runtime@v0.5.0
+go get github.com/elauven/vela/app@v0.2.0 github.com/elauven/vela/ssr_runtime@v0.6.0
 ```
 
 `vela.config.json` compiles `src` with server rendering; `ssrModule` is the
@@ -164,11 +164,11 @@ export default {
   },
   "dependencies": {
     "@govela/app": "0.2.0",
-    "@govela/runtime": "0.5.0"
+    "@govela/runtime": "0.6.0"
   },
   "devDependencies": {
-    "@govela/compiler": "0.5.0",
-    "@govela/unplugin": "0.5.0",
+    "@govela/compiler": "0.6.0",
+    "@govela/unplugin": "0.6.0",
     "vite": "^8.3.5"
   }
 }
