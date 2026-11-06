@@ -101,7 +101,7 @@ func TestSSROutputCollisions(t *testing.T) {
 // The SSR watcher removes the files of a removed component, but not a file
 // that is also a kept component's: after Card.vela became card.vela on a
 // file system that ignores case, Card.js is card.js. A hard link stands in
-// for such a file system.
+// for such a file system where the real one keeps case.
 func TestSSRWatchKeepsFilesOfKeptComponents(t *testing.T) {
 	srcRoot, outRoot := t.TempDir(), t.TempDir()
 	layout := NewSSRProjectLayoutWithModule(outRoot, SSRDefaultModule)
@@ -117,6 +117,16 @@ func TestSSRWatchKeepsFilesOfKeptComponents(t *testing.T) {
 	keptClient := MirrorPath(kept, srcRoot, layout.ClientDir, ".js")
 	removedClient := MirrorPath(removed, srcRoot, layout.ClientDir, ".js")
 	write(keptClient)
+
+	// A file system that ignores case (macOS, Windows): Card.js is card.js,
+	// and it stays.
+	if SameFile(keptClient, removedClient) {
+		removeSSROutputs(removed, srcRoot, outRoot, []string{kept}, CompileOptions{StatusWriter: io.Discard})
+		if _, err := os.Stat(keptClient); err != nil {
+			t.Errorf("card.js of the kept component was removed: %v", err)
+		}
+		return
+	}
 
 	// Two distinct files (a file system that keeps case): the old one goes.
 	write(removedClient)
