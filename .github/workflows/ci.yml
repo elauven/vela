@@ -177,6 +177,44 @@ jobs:
           VELA_REQUIRE_BUNDLERS: '1'
         run: go test -count=1 -v -run 'TestTypeScript' ./internal/lsp/
 
+  # TypeScript (docs/TYPESCRIPT.md, the release gate of docs/RELEASING.md):
+  # the type tests of the packages on TypeScript 5.8 and 6, vela check
+  # --types, the TypeScript server plugin and the examples of the docs on the
+  # three systems. The twin suites run in the test job.
+  typescript:
+    name: TypeScript · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install TypeScript 5.8 and 6
+        run: npm ci
+
+      - name: Type tests, vela check --types and the TypeScript plugin
+        shell: bash
+        env:
+          VELA_REQUIRE_BUNDLERS: '1'
+        run: go test -count=1 -v -run 'TestPackageTypes|TestCheckTypes|TestTypeScript' .
+
+      - name: The language server with TypeScript
+        shell: bash
+        env:
+          VELA_REQUIRE_BUNDLERS: '1'
+        run: go test -count=1 -v -run 'TestTypeScript|TestCodeActions' ./internal/lsp/ ./internal/typecheck/
+
   # The extension in packages/vscode-vela: its grammar, its .vsix and a
   # session in VS Code (task 065d).
   vscode:
@@ -234,7 +272,7 @@ jobs:
   build:
     name: Build binaries
     runs-on: ubuntu-latest
-    needs: [test, app, ssr-browser, bundlers, vscode]
+    needs: [test, app, ssr-browser, bundlers, typescript, vscode]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6

@@ -41,13 +41,18 @@ func typeCheckApp(t *testing.T, fixture, ts string) string {
 	if err := os.MkdirAll(filepath.Join(app, "node_modules", "@govela"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(tsDir, filepath.Join(app, "node_modules", "typescript")); err != nil {
-		skipBundlers(t, "symlink: %v", err)
-	}
-	if err := os.Symlink(runtimeDir, filepath.Join(app, "node_modules", "@govela", "runtime")); err != nil {
-		t.Fatal(err)
-	}
+	linkOrCopy(t, tsDir, filepath.Join(app, "node_modules", "typescript"))
+	linkOrCopy(t, runtimeDir, filepath.Join(app, "node_modules", "@govela", "runtime"))
 	return app
+}
+
+// linkOrCopy links target at link, or copies it where symlinks need
+// privileges (Windows).
+func linkOrCopy(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		copyTree(t, target, link)
+	}
 }
 
 type typeCheckReport struct {
@@ -355,6 +360,30 @@ func TestTypeScriptPlugin(t *testing.T) {
 			}
 			if len(res.Definition) != 1 || filepath.Base(res.Definition[0]) != "Button.vela" {
 				t.Errorf("definition: %v", res.Definition)
+			}
+		})
+	}
+}
+
+// TestCheckTypesExamples: the JavaScript examples pass `vela check --types`
+// (TS-9.1): their virtual documents are valid, and JavaScript is checked
+// only where the project asks for it.
+func TestCheckTypesExamples(t *testing.T) {
+	for _, example := range []string{"dashboard", "ssr-host/src"} {
+		t.Run(example, func(t *testing.T) {
+			app := typeCheckApp(t, "clean", "typescript")
+			if err := os.RemoveAll(filepath.Join(app, "src")); err != nil {
+				t.Fatal(err)
+			}
+			copyTree(t, filepath.Join("examples", filepath.FromSlash(example)), filepath.Join(app, "src"))
+			report, _, stderr := runTypeCheck(t, app)
+			for _, d := range report.Diagnostics {
+				if strings.HasPrefix(d.Code, "TS") || strings.HasPrefix(d.Code, "VELA-TS") {
+					t.Errorf("%s %s:%d:%d %s", d.Code, d.File, d.Line, d.Column, d.Message)
+				}
+			}
+			if stderr != "" {
+				t.Errorf("stderr: %s", stderr)
 			}
 		})
 	}

@@ -75,7 +75,7 @@ needed.
 | | Svelte 5 | Vela |
 | --- | --- | --- |
 | Compiler | JavaScript (Node) | Go, single binary |
-| Language | JavaScript, TypeScript | JavaScript (ES2025 modules); no TypeScript |
+| Language | JavaScript, TypeScript | JavaScript (ES2025 modules) and TypeScript (experimental; erasable syntax only, checked by `vela check --types` as `svelte-check` does) |
 | Bundling | Vite plugin | none: plain ES modules for any bundler or an import map |
 | SSR | Node, SvelteKit | Go renderers generated from the same components; JavaScript translated to Go or supplied as Go hosts |
 | Hydration | ✓ | ✓, with mismatch reports that name the source position |

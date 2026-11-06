@@ -5,26 +5,18 @@ accepts, how types are checked, and how TypeScript reaches server
 rendering and Vela App. Tasks 080–089 implement it; the table
 [Rule ownership](#rule-ownership) names the task of each rule.
 
-Status: **planned**, contract of task 079, approved on 2026-11-05. The
-parser accepts and erases the syntax of TS-2 and TS-3.2 (task 080, see
-[ES_COMPLIANCE.md](ES_COMPLIANCE.md#typescript)), and the compiler builds
-`<script lang="ts">` components and `.ts` modules with it (task 081, see
-[Decisions of 081](#decisions-of-081)). The npm packages ship their
-declarations and the ambient types (task 082, see
-[Decisions of 082](#decisions-of-082)), and `vela --dts` writes the
-declarations of components (task 083, see
-[Decisions of 083](#decisions-of-083)), and `vela check --types` checks
-scripts, templates and `.ts` modules (task 084, see
-[Decisions of 084](#decisions-of-084)). Editors type-check TypeScript
-components while typing and `.ts` modules through
-`@govela/typescript-plugin` (task 085, see
-[Decisions of 085](#decisions-of-085)), and server rendering translates
-TypeScript like its JavaScript twins (task 086, see
-[Decisions of 086](#decisions-of-086)), and `vela-app gen` writes the
-types of the routes of a TypeScript Vela App from its Go loaders (task
-087, see [Decisions of 087](#decisions-of-087)). Until task 089 marks
-TypeScript as experimental in [FEATURES.md](FEATURES.md), write
-JavaScript (with JSDoc where types help).
+Status: **experimental** (task 089, 2026-11-06): the contract of task 079,
+approved on 2026-11-05, is implemented by tasks 080–087; the decisions taken
+on the way are recorded at the end of this page. The parser and erasure
+(080, [ES_COMPLIANCE.md](ES_COMPLIANCE.md#typescript)), the compiler (081),
+the declarations of the packages (082), component declarations and
+`vela --dts` (083), `vela check --types` (084), editors and
+`@govela/typescript-plugin` (085), server rendering (086) and the route
+types of Vela App (087) are done. Task 088 (TypeScript in `npm create
+vela`, the testing helpers and the ESLint processor) waits for those tools
+(tasks 066 and 067). Experimental means the rules may still change before
+they are stable; JavaScript stays first-class (TS-9). [AGENTS.md](../AGENTS.md)
+and the TypeScript chapter of [GUIDE.md](GUIDE.md) are the authoring guides.
 
 The rules are numbered so that code, tests and reviews can cite them:
 
@@ -636,4 +628,20 @@ Taken while implementing the route types on 2026-11-06:
 8. **Required props**: the type check marks an annotated prop without a
    default as definitely assigned (`export let route: T;`), since the
    parent assigns it (084's virtual documents).
+
+## Decisions of 089
+
+Taken while releasing TypeScript as experimental on 2026-11-06:
+
+1. **Experimental without 088**: the starter, the testing helpers and the
+   ESLint processor of tasks 066 and 067 do not exist yet, so their
+   TypeScript (088) waits for them; everything else of the contract is
+   implemented.
+2. **The guide** has a TypeScript chapter with the TypeScript versions of
+   its components, server rendering, Vela App and migration notes, rather
+   than a second version of every example; `TestTypeScriptDocsExamples`
+   builds the examples of the chapter and of AGENTS.md with `--ssr` and
+   checks them with `vela check --types`.
+3. **The release gate** is the *TypeScript* job of CI on Linux, macOS and
+   Windows and the twin suites of the test job (docs/RELEASING.md).
 

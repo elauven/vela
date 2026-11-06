@@ -736,6 +736,204 @@ Scoping is identical either way.
 | `{#client}` `{:else}` `{/client}` | browser-only content, fallback on the server |
 | `onMount` / `onDestroy` | lifecycle (import from `vela`) |
 
+## 12. TypeScript
+
+TypeScript is experimental. The rules are in [TYPESCRIPT.md](TYPESCRIPT.md);
+this chapter shows the components of this guide in TypeScript. JavaScript
+stays first-class, and both languages mix in one project.
+
+### A TypeScript project
+
+```sh
+npm i -D typescript@6
+```
+
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["@govela/runtime/ambient"]
+  },
+  "include": ["src"]
+}
+```
+
+`vela` erases the types and never checks them; `vela check --project src
+--types` checks them, in CI and before a commit (see *Type checking*
+below). A build with type errors still succeeds.
+
+### Props, state and events
+
+```vela
+<!-- Counter.vela -->
+<script lang="ts">
+  interface $$Events {
+    change: { value: number };
+  }
+
+  export let label: string;                    // required
+  export let step: number = 1;                 // optional for the parent
+  export let value: number = $bindable(0);     // bind:value in the parent
+
+  let history = $state<number[]>([]);
+  let total = $derived<number>(history.reduce((a, b) => a + b, 0));
+
+  function add(): void {
+    value += step;
+    history = [...history, step];
+    $$dispatch('change', { value });
+  }
+</script>
+
+<template>
+  <button @click={add}>{label}: {value} ({total})</button>
+</template>
+```
+
+```vela
+<!-- parent -->
+<script lang="ts">
+  import { Counter } from './Counter.vela';
+
+  let count = $state(0);
+</script>
+
+<template>
+  <Counter label="Clicks" bind:value={count} @on:change={(e) => console.log(e.detail.value)} />
+</template>
+```
+
+`vela check --types` reports `<Counter />` without `label`, a `label` that
+is not a string, `@on:chnage`, `e.detail.valeu` and `bind:step` (not
+`$bindable`) at their place in the parent.
+
+### Slots and generic components
+
+```vela
+<!-- List.vela -->
+<script lang="ts" generics="T extends { id: string }">
+  interface $$Events {
+    select: { item: T };
+  }
+  interface $$Slots {
+    default: {};
+    empty: {};
+  }
+
+  export let items: T[];
+</script>
+
+<template>
+  {#each items as item (item.id)}
+    <button @click={() => $$dispatch('select', { item })}>{item.id}</button>
+  {:else}
+    <slot name="empty" />
+  {/each}
+</template>
+```
+
+`<List :items={users} @on:select={(e) => open(e.detail.item)} />` infers
+`T` from `users`, so `e.detail.item` is a user.
+
+### Template expressions
+
+```vela
+<template>
+  <input @input={(e: Event) => (query = (e.target as HTMLInputElement).value)} />
+  <p>{selected!.name}</p>
+  {#each rows as row (row.id)}<Row :row={row satisfies RowData} />{/each}
+</template>
+```
+
+`{#each}` and `{#await}` names take their types from the collection and the
+promise; a `bind:` target stays a plain name.
+
+### Modules
+
+```ts
+// src/format.ts
+export interface Money {
+  amount: number;
+  currency: string;
+}
+
+export function format(money: Money): string {
+  return `${money.amount.toFixed(2)} ${money.currency}`;
+}
+```
+
+```vela
+<script lang="ts">
+  import { format, type Money } from './format.ts';
+
+  export let price: Money;
+</script>
+
+<template><p>{format(price)}</p></template>
+```
+
+Project mode compiles `format.ts` to `format.js`; `./format.ts` becomes
+`./format.js` in the output. A `.ts` module that imports `./Card.vela` is
+typed in `vela check --types`, and in the editor with
+`@govela/typescript-plugin` ([EDITORS.md](EDITORS.md)).
+
+### Erasable syntax only
+
+| Instead of | Write |
+| --- | --- |
+| `enum Size { Small, Large }` | `const Size = { Small: 0, Large: 1 } as const; type Size = (typeof Size)[keyof typeof Size];` |
+| `constructor(private name: string) {}` | a field `name: string;` and `this.name = name` |
+| `namespace Util { export const x = 1 }` | a module |
+| `<Item>value` | `value as Item` |
+| `import { Props } from './types.ts'` (a type) | `import type { Props } from './types.ts'` |
+
+The language server offers the first and the last as quick fixes.
+
+### Server rendering and Vela App
+
+`vela --ssr` renders TypeScript components as their JavaScript twins. The
+annotation of a prop chooses the Go type of its field
+(`export let total: number` is `Total float64`), and a host stub for a
+function of a `.ts` module takes its Go signature from the TypeScript one
+([SSR.md](SSR.md)). In a Vela App with `"typescript": true` a route
+component types its props with the generated `./$types` ([APP.md](APP.md)):
+
+```vela
+<script lang="ts">
+  import type { PageProps } from './$types';
+
+  export let data: PageProps['data'];     // the Go loader's result
+  export let route: PageProps['route'];   // route.params.id: string
+</script>
+```
+
+### Moving a JavaScript project to TypeScript
+
+1. Install TypeScript and write the `tsconfig.json` above (with
+   `"allowJs": true` while JavaScript remains).
+2. Rename modules `util.js` → `util.ts` one at a time; importers may keep
+   `./util.js`, which still resolves, or switch to `./util.ts`.
+3. Add `lang="ts"` to a component. Its script and template are valid
+   TypeScript already; annotate what TypeScript infers too loosely.
+4. Turn JSDoc into annotations: `/** @type {string} */ export let title`
+   becomes `export let title: string`; `@typedef {…} $$Events` becomes
+   `interface $$Events`. For server rendering both choose the same Go
+   type.
+5. Replace what TypeScript calls non-erasable (the table above).
+6. Run `vela check --project src --types` and fix what it reports; until
+   then, `vela` builds the project as before.
+
 ## Building an application
 
 Vela is a compiler: `vela --project src --out build` turns components into
