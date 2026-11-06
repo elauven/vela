@@ -195,12 +195,49 @@ func TestTypeScriptReferencesAndRename(t *testing.T) {
 		t.Errorf("rename of count: %+v", edit.Changes)
 	}
 
-	// A prop is also an attribute name of its parents.
+	// A prop is also an attribute name of its parents (task 085): renaming
+	// it from the child or from a parent's attribute renames both.
 	card := filepath.Join(root, "src", "Card.vela")
 	cardURI, cardSrc := c.open(card)
-	m := c.call("textDocument/rename", RenameParams{params(cardURI, at(t, cardSrc, "let title", 0, 4)), "heading"})
-	if m.Error == nil || !strings.Contains(m.Error.Message, "prop") {
-		t.Errorf("rename of a prop: %+v", m)
+	for _, from := range []struct {
+		uri string
+		pos Position
+	}{{cardURI, at(t, cardSrc, "let title", 0, 4)}, {uri, at(t, src, ":title", 0, 2)}} {
+		edit.Changes = nil
+		c.result("textDocument/rename", RenameParams{params(from.uri, from.pos), "heading"}, &edit)
+		var got []string
+		for file, edits := range edit.Changes {
+			text := cardSrc
+			if file == uri {
+				text = src
+			}
+			ft := newText(text)
+			for _, e := range edits {
+				got = append(got, filepath.Base(file)+":"+text[ft.offset(e.Range.Start):ft.offset(e.Range.End)]+"→"+e.NewText)
+			}
+		}
+		joined := strings.Join(got, " ")
+		// The declaration, {title} of the template, the shorthand of the
+		// $$dispatch detail, and :title of App.
+		for _, want := range []string{"Card.vela:title→heading", "Card.vela:title→title: heading", "App.vela:title→heading"} {
+			if !strings.Contains(joined, want) {
+				t.Errorf("rename of the prop from %s misses %s: %s", from.uri, want, joined)
+			}
+		}
+		if len(got) != 4 {
+			t.Errorf("rename of the prop: %s", joined)
+		}
+	}
+
+	// References of the prop: in Card and in App's tag.
+	refs = nil
+	c.result("textDocument/references", ReferenceParams{params(cardURI, at(t, cardSrc, "let title", 0, 4))}, &refs)
+	files := map[string]int{}
+	for _, r := range refs {
+		files[filepath.Base(r.URI)]++
+	}
+	if files["Card.vela"] != 3 || files["App.vela"] != 1 {
+		t.Errorf("references of the prop: %v", files)
 	}
 }
 
@@ -306,5 +343,54 @@ func TestVelaEnvIsTheAmbientTypes(t *testing.T) {
 		if !strings.Contains(ambient, name) {
 			t.Errorf("the ambient types lack %q", name)
 		}
+	}
+}
+
+// TestTypeScriptComponent: a lang="ts" component is a TypeScript document
+// (task 085): its type errors are reported while typing, in the script and
+// the template, and hover shows the annotated types.
+func TestTypeScriptComponent(t *testing.T) {
+	src := `<script lang="ts">
+  import { Card } from './Card.vela';
+
+  interface Row { id: number; title: string }
+
+  let rows: Row[] = $state([]);
+  let total: number = 'none';
+</script>
+
+<template>
+  {#each rows as row (row.id)}
+    <Card :title={row.id} @on:closed={() => {}} />
+  {/each}
+</template>
+`
+	c, root, _ := startTS(t, appSource(t))
+	uri := pathToURI(filepath.Join(root, "src", "Typed.vela"))
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": TextDocumentItem{URI: uri, LanguageID: "vela", Version: 1, Text: src}})
+	d := c.diagnostics(uri, func(p PublishDiagnosticsParams) bool {
+		n := 0
+		for _, d := range p.Diagnostics {
+			if d.Source == "ts" {
+				n++
+			}
+		}
+		return n >= 3
+	})
+	tx := newText(src)
+	var got []string
+	for _, diag := range d.Diagnostics {
+		if diag.Source == "ts" {
+			got = append(got, src[tx.offset(diag.Range.Start):tx.offset(diag.Range.End)]+" "+diag.Code)
+		}
+	}
+	joined := strings.Join(got, ", ")
+	for _, want := range []string{"total TS2322", "title TS2322", `closed TS2345`} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("diagnostics %s miss %s", joined, want)
+		}
+	}
+	if h := hoverText(t, c, uri, at(t, src, "row.id}", 0, 1)); !strings.Contains(h, "row: Row") {
+		t.Errorf("hover of row: %q", h)
 	}
 }

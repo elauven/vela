@@ -54,10 +54,13 @@ func TestCompilerPackagesAreGenerated(t *testing.T) {
 	for _, name := range unpluginPackageSources {
 		allowed[filepath.Join(filepath.FromSlash(unpluginPackageDir), name)] = true
 	}
+	for _, name := range typescriptPluginPackageSources {
+		allowed[filepath.Join(filepath.FromSlash(typescriptPluginPackageDir), name)] = true
+	}
 	for _, p := range compilerPlatforms {
 		allowed[filepath.Join(filepath.FromSlash(p.Dir()), filepath.FromSlash(p.Binary()))] = true
 	}
-	dirs := []string{compilerPackageDir, unpluginPackageDir}
+	dirs := []string{compilerPackageDir, unpluginPackageDir, typescriptPluginPackageDir}
 	for _, p := range compilerPlatforms {
 		dirs = append(dirs, p.Dir())
 	}
@@ -105,8 +108,8 @@ func TestReleaseWorkflowCoversCompilerPlatforms(t *testing.T) {
 			t.Errorf("release.yml does not build and stage vela-lsp: %s", want)
 		}
 	}
-	if !strings.Contains(workflow, "packages/compiler "+unpluginPackageDir+"; do") {
-		t.Errorf("release.yml does not publish %s after the compiler", unpluginPackageDir)
+	if !strings.Contains(workflow, "packages/compiler "+unpluginPackageDir+" "+typescriptPluginPackageDir+"; do") {
+		t.Errorf("release.yml does not publish %s and %s after the compiler", unpluginPackageDir, typescriptPluginPackageDir)
 	}
 	// npm publish takes a bare "packages/x" for the GitHub repository packages/x.
 	if !strings.Contains(workflow, `npm publish "./$dir"`) {

@@ -477,14 +477,19 @@ func (s *server) completion(doc *document, off int) any {
 		}
 		if file := script.componentFile(ctx.tag); file != "" {
 			if child := s.openComponent(file); child != nil {
+				types := child.types()
 				for _, p := range child.props() {
-					items = append(items, edit(ctx.wordStart, off, ":"+p.name, ":"+p.name+"={${1}}", KindProperty, p.decl))
+					detail := p.decl
+					if t := types.prop(p.name); t != "" {
+						detail = t
+					}
+					items = append(items, edit(ctx.wordStart, off, ":"+p.name, ":"+p.name+"={${1}}", KindProperty, detail))
 					if p.bindable {
-						items = append(items, edit(ctx.wordStart, off, "bind:"+p.name, "bind:"+p.name+"={${1}}", KindProperty, "two-way binding of "+p.decl))
+						items = append(items, edit(ctx.wordStart, off, "bind:"+p.name, "bind:"+p.name+"={${1}}", KindProperty, "two-way binding of "+detail))
 					}
 				}
-				for _, e := range child.events() {
-					items = append(items, edit(ctx.wordStart, off, "@on:"+e.name, "@on:"+e.name+"={${1}}", KindEvent, "component event"))
+				for _, name := range types.events(child) {
+					items = append(items, edit(ctx.wordStart, off, "@on:"+name, "@on:"+name+"={${1}}", KindEvent, "component event"))
 				}
 			}
 			items = append(items, edit(ctx.wordStart, off, "bind:this", "bind:this={${1}}", KindProperty, "the component"))

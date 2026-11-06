@@ -11,6 +11,10 @@ single-file components (`.vela`), through the Vela language server
 - JavaScript inside `<script>` and template expressions through TypeScript:
   members, types, references, rename, signature help, type errors with
   `// @ts-check`. The extension ships TypeScript 6 for it.
+- TypeScript components (`<script lang="ts">`): type errors of the script and
+  the template while typing, props renamed with their parents' attributes,
+  quick fixes; `.ts` modules that import components see their types through
+  `@govela/typescript-plugin`, which the extension registers.
 
 ## Requirements
 

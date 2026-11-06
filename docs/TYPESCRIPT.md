@@ -15,8 +15,10 @@ declarations and the ambient types (task 082, see
 declarations of components (task 083, see
 [Decisions of 083](#decisions-of-083)), and `vela check --types` checks
 scripts, templates and `.ts` modules (task 084, see
-[Decisions of 084](#decisions-of-084)). Editors do not report type errors
-of a TypeScript script yet (085), and server
+[Decisions of 084](#decisions-of-084)). Editors type-check TypeScript
+components while typing and `.ts` modules through
+`@govela/typescript-plugin` (task 085, see
+[Decisions of 085](#decisions-of-085)), and server
 rendering does not read `.ts` modules (086). Until task 089 marks
 TypeScript as experimental in [FEATURES.md](FEATURES.md), write
 JavaScript (with JSDoc where types help).
@@ -541,4 +543,30 @@ Taken while implementing the type check on 2026-11-06:
    native compiler does not have yet (TS-10.1). When it does, the helper
    loads it as it loads `typescript` today; the virtual documents and the
    Go side stay as they are.
+
+## Decisions of 085
+
+Taken while implementing the editor support on 2026-11-06:
+
+1. **`vela-lsp`** reports TypeScript's diagnostics of a `lang="ts"`
+   component always (of a JavaScript one with `checkJs` or `// @ts-check`),
+   from the virtual documents of 084; a diagnostic of generated text is
+   shown at its anchor.
+2. **The TypeScript server plugin** `@govela/typescript-plugin` resolves
+   `./Card.vela` to `Card.d.vela.ts` (TS-6.4), whose text is the output
+   of `vela compile --dts`: the declarations of `vela --dts`, so a prop
+   without an annotation has its literal type (Decisions of 083, 3). It
+   is synchronous, as tsserver requires, and compiles a component once
+   per change of its file; go to definition opens the `.vela` file.
+   Its peer dependencies are optional, so that the VS Code extension
+   bundles it alone; projects install `@govela/compiler` for the binary.
+3. **Props across components**: references and rename of a prop include
+   the attributes of the parents' tags, read lexically from every
+   component of the workspace. A component import is still not renamed.
+4. **Quick fixes** for `VELA-TS-TYPE-IMPORT` and the `enum` case of
+   `VELA-TS-NON-ERASABLE`; other non-erasable constructs keep their
+   message.
+5. **Highlighting**: `<script lang="ts">` embeds `source.ts`; template
+   expressions keep `source.js`, which a TextMate grammar cannot switch by
+   the script's `lang`, and which colours their TypeScript well enough.
 

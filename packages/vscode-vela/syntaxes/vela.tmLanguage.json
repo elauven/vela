@@ -10,6 +10,9 @@
       "include": "#comment"
     },
     {
+      "include": "#script-ts"
+    },
+    {
       "include": "#script"
     },
     {
@@ -34,6 +37,56 @@
           "name": "punctuation.definition.comment.html"
         }
       }
+    },
+    "script-ts": {
+      "begin": "(<)(script)\\b(?=[^>]*\\blang\\s*=\\s*([\"'])(?:ts|typescript)\\3)(?=[^>]*>)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "entity.name.tag.script.html"
+        }
+      },
+      "end": "(</)(script)\\s*(>)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "entity.name.tag.script.html"
+        },
+        "3": {
+          "name": "punctuation.definition.tag.end.html"
+        }
+      },
+      "name": "meta.section.script.ts.vela",
+      "patterns": [
+        {
+          "begin": "\\G",
+          "end": "(>)",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.end.html"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#static-attribute"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=>)",
+          "end": "(?=</script\\s*>)",
+          "contentName": "source.ts",
+          "patterns": [
+            {
+              "include": "source.ts"
+            }
+          ]
+        }
+      ]
     },
     "script": {
       "begin": "(<)(script)\\b(?=[^>]*>)",

@@ -90,10 +90,46 @@ logs why once and keeps the Vela features. `typescript.enable: false` in
 options; without one the project is JavaScript (ES modules, the DOM, not
 strict).
 
-Not supported yet: renaming a prop or a component import (their attribute
-and tag names are not JavaScript; the server refuses rather than leave them
-behind), and navigation from a `.js` file into a component, which belongs
-to the editor's own TypeScript server.
+Not supported yet: renaming a component import (its closing tags are not in
+the virtual document; the server refuses rather than leave them behind).
+
+## TypeScript
+
+A component with `<script lang="ts">` is a TypeScript document (task 085,
+docs/TYPESCRIPT.md): its type errors are reported while typing, in the
+script and the template — child props, `@on:` events and their
+`event.detail`, `bind:` of `$bindable` props, slot names, `<vela:component>`
+— as `vela check --types` reports them. Hover, completion, definition,
+references and rename work as in JavaScript, with the annotated types.
+
+- **Props across components**: references of a prop list its uses in the
+  component and the attributes of its parents' tags; renaming it from the
+  `export let` or from a parent's attribute renames both (`{title}`
+  becomes `heading={title}`).
+- **Completion** of a child tag's attributes shows the prop types
+  (`title?: string`) and the events of its `$$Events`.
+- **Quick fixes**: `type` for an import used only as a type
+  (`VELA-TS-TYPE-IMPORT`), an object `as const` for an `enum`
+  (`VELA-TS-NON-ERASABLE`).
+
+`.ts` modules belong to the editor's TypeScript server. The TypeScript
+server plugin `@govela/typescript-plugin` gives it the components: a `.ts`
+module that imports `./Card.vela` sees its props, events, slots and
+bindable props (the declarations of `vela --dts`), and go to definition
+opens the component. The VS Code extension loads it; in other editors add
+it to the project:
+
+```sh
+npm i -D @govela/typescript-plugin @govela/compiler
+```
+
+```json
+{ "compilerOptions": { "plugins": [{ "name": "@govela/typescript-plugin" }] } }
+```
+
+The plugin runs `vela compile --dts` of `@govela/compiler` (option
+`binary`, or `VELA_BINARY`). `tsc` does not load plugins: check a project
+with `vela check --types`.
 
 ## VS Code
 
@@ -101,7 +137,10 @@ The extension in `packages/vscode-vela` registers the `vela` language: a
 TextMate grammar (`<script>` as JavaScript, `<style>` as CSS, the template
 with its tags, components, directives, blocks and expressions), the
 language configuration (comments, brackets, folding of blocks), and the
-client of `vela-lsp`. It ships TypeScript 6 for the JavaScript features.
+client of `vela-lsp`. It ships TypeScript 6 for the JavaScript features and
+registers `@govela/typescript-plugin` with VS Code's TypeScript, for `.ts`
+modules that import components. `<script lang="ts">` is highlighted as
+TypeScript; template expressions keep the JavaScript grammar.
 
 It starts the `vela.server.path` setting, else the `vela-lsp` of
 `@govela/compiler` in the workspace's `node_modules`, else `vela-lsp` on
@@ -131,6 +170,10 @@ vim.lsp.config('vela', {
 vim.lsp.enable('vela')
 ```
 
+For `.ts` modules that import components, add `@govela/typescript-plugin`
+to `compilerOptions.plugins` of `tsconfig.json`: `ts_ls` (typescript-language-server)
+loads the plugins of the project's TypeScript.
+
 ## Helix
 
 `languages.toml`:
@@ -146,6 +189,10 @@ file-types = ["vela"]
 roots = ["vela.config.json", "package.json"]
 language-servers = ["vela-lsp"]
 ```
+
+Helix runs `typescript-language-server` for `.ts` files, which loads the
+plugins of `tsconfig.json`: add `@govela/typescript-plugin` there as for
+Neovim.
 
 Neovim and Helix highlight with tree-sitter grammars; there is none for
 Vela yet, so `.vela` files get the language server's features without

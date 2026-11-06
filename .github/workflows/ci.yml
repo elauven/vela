@@ -169,7 +169,7 @@ jobs:
       - name: Bundle and run in Chromium
         env:
           VELA_REQUIRE_BUNDLERS: '1'
-        run: go test -count=1 -v -run 'TestBundler|TestSSRWithVite|TestCompilerNpmPackage|TestPackageTypes|TestCheckTypes' .
+        run: go test -count=1 -v -run 'TestBundler|TestSSRWithVite|TestCompilerNpmPackage|TestPackageTypes|TestCheckTypes|TestTypeScriptPlugin' .
 
       - name: Language server with TypeScript
         # typescript@6 of package-lock.json (task 065c).
@@ -227,8 +227,9 @@ jobs:
           GOWORK: 'off'
         run: |
           go build -o "$RUNNER_TEMP/vela-lsp" ./cmd/vela-lsp
+          go build -o "$RUNNER_TEMP/vela" .
           cd packages/vscode-vela
-          VELA_VSCODE_USER_DIR="$RUNNER_TEMP/vu" xvfb-run -a npm test -- "$RUNNER_TEMP/vela-lsp"
+          VELA_VSCODE_USER_DIR="$RUNNER_TEMP/vu" xvfb-run -a npm test -- "$RUNNER_TEMP/vela-lsp" "$RUNNER_TEMP/vela"
 
   build:
     name: Build binaries

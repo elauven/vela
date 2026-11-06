@@ -1,0 +1,15 @@
+<script lang="ts">
+  import { Icon } from './Icon.vela';
+
+  interface $$Events {
+    press: { at: number };
+  }
+
+  export let label: string;
+  export let kind: 'primary' | 'plain' = 'plain';
+  export let icon: typeof Icon | null = null;
+</script>
+
+<template>
+  <button :class={kind}>{label}</button>
+</template>

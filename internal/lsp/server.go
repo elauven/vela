@@ -129,6 +129,12 @@ func (s *server) request(m *message) (any, error) {
 			return nil, err
 		}
 		return s.resolveCompletion(item), nil
+	case "textDocument/codeAction":
+		var p CodeActionParams
+		if err := decode(m.Params, &p); err != nil {
+			return nil, err
+		}
+		return s.codeActions(p), nil
 	case "textDocument/definition", "textDocument/hover", "textDocument/completion", "textDocument/references", "textDocument/rename", "textDocument/signatureHelp":
 		var p RenameParams
 		if err := decode(m.Params, &p); err != nil {
@@ -200,6 +206,7 @@ func (s *server) initialize(params json.RawMessage) (any, error) {
 			"hoverProvider":         true,
 			"referencesProvider":    true,
 			"renameProvider":        true,
+			"codeActionProvider":    map[string]any{"codeActionKinds": []string{"quickfix"}},
 			"signatureHelpProvider": map[string]any{"triggerCharacters": []string{"(", ","}},
 			"completionProvider":    map[string]any{"triggerCharacters": []string{"<", ":", "@", "{", "#", "/", "."}, "resolveProvider": true},
 		},

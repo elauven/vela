@@ -486,3 +486,51 @@ func propOf(a tagAttr) (string, int, int) {
 	}
 	return n, a.nameStart, a.nameEnd
 }
+
+// Tag is a component tag of a template, read lexically: the language
+// server finds the parents' attributes of a prop with it.
+type Tag struct {
+	Name      string
+	NameStart int
+	Attrs     []TagAttr
+}
+
+// TagAttr is an attribute of a component tag that sets a prop: Prop and its
+// range in the source; a shorthand {title} spans [Start, End) with its
+// braces.
+type TagAttr struct {
+	Prop               string
+	PropStart, PropEnd int
+	Shorthand          bool
+	Start, End         int
+}
+
+// ComponentTags are the component tags of the template of a component
+// source (not <vela:component>).
+func ComponentTags(src string) []Tag {
+	start, end, ok := sectionBody(src, "template")
+	if !ok {
+		return nil
+	}
+	var out []Tag
+	for _, item := range scanTemplate(src, start, end) {
+		t := item.component
+		if t == nil || t.name == "vela:component" {
+			continue
+		}
+		tag := Tag{Name: t.name, NameStart: t.nameStart}
+		for _, a := range t.attrs {
+			prop, ps, pe := propOf(a)
+			if prop == "" {
+				continue
+			}
+			ta := TagAttr{Prop: prop, PropStart: ps, PropEnd: pe, Shorthand: a.shorthand}
+			if a.shorthand {
+				ta.Start, ta.End = a.valStart-1, min(a.valEnd+1, len(src))
+			}
+			tag.Attrs = append(tag.Attrs, ta)
+		}
+		out = append(out, tag)
+	}
+	return out
+}

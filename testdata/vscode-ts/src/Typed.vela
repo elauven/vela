@@ -1,0 +1,16 @@
+<script lang="ts">
+  import { Card } from './Card.vela';
+
+  interface Row { id: number; title: string }
+
+  export let heading: string;
+  let rows: Row[] = $state([]);
+  let total: number = 'none';
+</script>
+
+<template>
+  <h1>{heading}</h1>
+  {#each rows as row (row.id)}
+    <Card :title={row.title} />
+  {/each}
+</template>
