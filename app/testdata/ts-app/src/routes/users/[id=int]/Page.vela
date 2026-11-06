@@ -1,0 +1,15 @@
+<script lang="ts">
+  import type { PageProps } from './$types';
+
+  export let data: PageProps['data'];
+  export let form: PageProps['form'] = null;
+  export let route: PageProps['route'];
+</script>
+
+<template>
+  <h2>{data.user.name} #{route.params.id}</h2>
+  <p>{data.user.joined.slice(0, 10)} {data.tags.join(', ')} {data.manager?.name ?? 'none'}</p>
+  {#if form}
+    <p class="error">{form.message} ({form.field})</p>
+  {/if}
+</template>

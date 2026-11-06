@@ -477,6 +477,7 @@ vela && go build ./...
 | `goPackage` | `internal/appgen` | `routes_gen.go` |
 | `goModule` | the module of `go.mod` | import root of the mirrored tree and the matchers |
 | `ssrModule` | `"ssrModule"` of `vela.config.json` (required) | import root of the generated renderers |
+| `typescript` | `false` | a TypeScript project (docs/TYPESCRIPT.md TS-8): `VelaApp.vela` is `lang="ts"`, and the route types below are generated |
 
 ### Generated files
 
@@ -489,6 +490,50 @@ A file without that line is never overwritten or removed.
 | `src/_app/routes.js` | The client table: the routes with their chains, the patterns in ranking order, the matchers (`@govela/app/match` and the project's own), the lazy components by segment id (`lazy()` returns the value `VelaApp` registered under the same id) and `match(path)` |
 | `src/_app/client.js` | The client entry: `start({ VelaApp, routes, root: 'vela-app' })` from `@govela/app/client` (task 076) |
 | `internal/appgen/routes_gen.go` | `appgen.Routes() app.Routes`: the same patterns, the chains with their loaders (`app.LoaderOf`), `Deps` and `Render` of the mirrored packages, the matchers, and the `VelaApp` renderer. It compiles against the `app` package only, without reflection |
+
+### Route types
+
+In a TypeScript project (`"typescript": true`) `gen` also writes the types
+of every route directory from its Go loaders (docs/TYPESCRIPT.md TS-8.2),
+so the loader stays the single source of truth:
+
+| File | Contents |
+| --- | --- |
+| `src/_app/types/<routes dir>/$types.d.ts` | `Params` of the path (`[id]` and `[...rest]` a `string`, `[[lang]]` optional), `PageData` and `LayoutData` (the loaders' results as JSON, `null` without a loader), `Form`, and `PageProps` / `LayoutProps` with `data`, `form` and `route: Route<Params>` |
+| `src/_app/types/$data.d.ts` | The named Go types of the results as interfaces |
+| `src/_app/tsconfig.json` | The configuration of TS-10.2 with `rootDirs`, which makes `./$types` of a route directory its generated file |
+
+```json
+// tsconfig.json
+{ "extends": "./src/_app/tsconfig.json", "include": ["src"] }
+```
+
+```vela
+<script lang="ts">
+  import type { PageProps } from './$types';
+
+  export let data: PageProps['data'];
+  export let route: PageProps['route'];
+</script>
+
+<template>
+  <h1>{data.user.name} #{route.params.id}</h1>
+</template>
+```
+
+The Go types are read from the compiled loaders (`gen` runs a small
+program of the module with `go run`, through `github.com/elauven/vela/app/typegen`),
+with the rules of `encoding/json`: `json` tags (`-` absent, `omitempty`
+optional, the `string` option a string), embedded structs flattened,
+pointers `T | null`, `[]byte` and `time.Time` strings, maps with string or
+integer keys `Record<string, T>`, `any` and types with their own
+`MarshalJSON` `unknown`. The `form` prop is `Form | null` when the page's
+package declares `type Form` (the value its actions pass to `app.Fail`),
+`unknown` for other actions and `null` without actions. Loaders that do not
+compile are a `VELA-APP-LOADER` error of `gen`. `watch` regenerates the
+types when any Go file of the module changes, and `vela check --types`
+reports a page that uses a renamed or removed field
+(`app/testdata/ts-app`, `TestRouteTypes`).
 
 The patterns are expanded and ranked by the generator: a route with
 optional segments has one pattern per combination, and both matchers,

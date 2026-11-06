@@ -20,7 +20,9 @@ components while typing and `.ts` modules through
 `@govela/typescript-plugin` (task 085, see
 [Decisions of 085](#decisions-of-085)), and server rendering translates
 TypeScript like its JavaScript twins (task 086, see
-[Decisions of 086](#decisions-of-086)). Until task 089 marks
+[Decisions of 086](#decisions-of-086)), and `vela-app gen` writes the
+types of the routes of a TypeScript Vela App from its Go loaders (task
+087, see [Decisions of 087](#decisions-of-087)). Until task 089 marks
 TypeScript as experimental in [FEATURES.md](FEATURES.md), write
 JavaScript (with JSDoc where types help).
 
@@ -291,7 +293,8 @@ rewrite in the message:
 
 - **TS-8.1** A project is a TypeScript project when `vela.app.json` says
   `"typescript": true`. `vela-app gen` then writes `VelaApp.vela` with
-  `lang="ts"` and `vela-app scaffold` writes TypeScript pages.
+  `lang="ts"` and the route types of TS-8.2. (`vela-app scaffold` writes
+  Go loaders only, in both kinds of projects; see Decisions of 087.)
 - **TS-8.2** `vela-app gen` writes the types of each route from the Go
   side, so the Go loader is the single source of truth:
   - `PageData` / `LayoutData` from the loader's result type, through the
@@ -597,4 +600,40 @@ Taken while implementing server rendering on 2026-11-06:
    `./loader.js`) and compares the HTML, the payload and the client
    modules byte for byte; the JavaScript corpus checks hydration in
    Chromium, which the identical output inherits.
+
+## Decisions of 087
+
+Taken while implementing the route types on 2026-11-06:
+
+1. **The import**: a route component writes `import type { PageProps }
+   from './$types'`. `vela-app gen` writes the file under
+   `src/_app/types/`, mirroring the route directory, and
+   `src/_app/tsconfig.json` (which the project's tsconfig extends) maps
+   it with `rootDirs`, as SvelteKit does; no path alias is needed and the
+   import is erased (TS-3.2).
+2. **Reading the Go types**: `gen` runs a program of the project's module
+   that passes the loaders to `github.com/elauven/vela/app/typegen`, which
+   converts the result types by reflection with the rules of
+   `encoding/json`. The compiled types are exactly what reaches the
+   client; `go/packages` would add a dependency and re-implement the JSON
+   rules on syntax. A project whose loaders do not compile gets a
+   `VELA-APP-LOADER` error with the compiler's output.
+3. **Typed forms**: a page package declares `type Form …`, the value its
+   actions pass to `app.Fail`; `form` is `Form | null`. No new API: an
+   action returning another value is not detected, and `form` is then
+   `unknown`.
+4. **Nil slices** are `T[]`, not `T[] | null`, although `encoding/json`
+   writes a nil slice as `null`; loaders that return nil slices should
+   initialise them.
+5. **`vela-app scaffold`** writes `load.go` only, as before: pages are
+   the developer's, in either language. TS-8.1 is corrected.
+6. **`Route<P>`** of `@govela/app/client` is generic over the parameters,
+   defaulting to `Record<string, string>`.
+7. **`examples/app` stays JavaScript**, the reference of the JavaScript
+   tests; `app/testdata/ts-app` is the TypeScript app, and
+   `TestRouteTypesOfTheExample` generates and type-checks the route types
+   of `examples/app`.
+8. **Required props**: the type check marks an annotated prop without a
+   default as definitely assigned (`export let route: T;`), since the
+   parent assigns it (084's virtual documents).
 

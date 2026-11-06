@@ -47,6 +47,23 @@ func fingerprint(root string) string {
 			return nil
 		})
 	}
+	if cfg.TypeScript {
+		// The route types follow the Go types of the loaders' results,
+		// which other packages of the module may declare (TS-8.3).
+		_ = filepath.WalkDir(root, func(file string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			name := entry.Name()
+			if entry.IsDir() && file != root && (name[0] == '.' || name == "node_modules" || name == "vendor") {
+				return filepath.SkipDir
+			}
+			if !entry.IsDir() && filepath.Ext(name) == ".go" {
+				stamp(h, file)
+			}
+			return nil
+		})
+	}
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 

@@ -1,0 +1,10 @@
+<script lang="ts">
+  import type { PageProps } from './$types';
+
+  export let route: PageProps['route'];
+  let lang: string = route.params.lang ?? 'en';
+</script>
+
+<template>
+  <h1>About ({lang})</h1>
+</template>

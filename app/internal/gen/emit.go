@@ -65,7 +65,11 @@ func jsString(s string) string {
 // error pages with lazy(), and one <vela:component> per level.
 func (m *Model) velaApp() []byte {
 	var b bytes.Buffer
-	b.WriteString("<script>\n")
+	if m.Config.TypeScript {
+		b.WriteString("<script lang=\"ts\">\n")
+	} else {
+		b.WriteString("<script>\n")
+	}
 	b.WriteString("  // " + Marker + "\n")
 	fmt.Fprintf(&b, "  // The app root of %s (docs/APP.md R-2).\n", m.Config.Routes)
 	lazy := false
@@ -89,9 +93,17 @@ func (m *Model) velaApp() []byte {
 	if lazy {
 		b.WriteString("\n")
 	}
-	b.WriteString("  export let route = null;\n  export let chain = [];\n  export let start = 0;\n")
-	b.WriteString("  // Client only (task 077): component values by level, such as a\n  // fragment of the server, which replace the table's component.\n  export let views = {};\n\n")
-	b.WriteString("  const components = {\n")
+	if m.Config.TypeScript {
+		// The props of the router (R-1); the levels' own types are in
+		// their $types (TS-8.2).
+		b.WriteString("  export let route: any = null;\n  export let chain: { id: string; data?: unknown; error?: unknown; form?: unknown }[] = [];\n  export let start: number = 0;\n")
+		b.WriteString("  // Client only (task 077): component values by level, such as a\n  // fragment of the server, which replace the table's component.\n  export let views: Record<number, any> = {};\n\n")
+		b.WriteString("  const components: Record<string, any> = {\n")
+	} else {
+		b.WriteString("  export let route = null;\n  export let chain = [];\n  export let start = 0;\n")
+		b.WriteString("  // Client only (task 077): component values by level, such as a\n  // fragment of the server, which replace the table's component.\n  export let views = {};\n\n")
+		b.WriteString("  const components = {\n")
+	}
 	for _, c := range m.Components {
 		fmt.Fprintf(&b, "    %s: %s,\n", jsString(c.ID), c.Local)
 	}
