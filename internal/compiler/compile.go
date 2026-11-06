@@ -104,6 +104,8 @@ type CompileOptions struct {
 	// SourceComponentImports (--component-imports=vela) keeps `.vela`
 	// specifiers in generated and copied modules, for bundler plugins.
 	SourceComponentImports bool
+	// DTS writes the declaration file of each component (--dts, TS-6.5).
+	DTS bool
 	// DiagnosticsJSON prints diagnostics as JSON lines (--diagnostics=json).
 	DiagnosticsJSON bool
 	// ErrWriter receives build errors; it defaults to stderr.
@@ -276,6 +278,7 @@ type compiledModule struct {
 	JS      string // the module, without a sourceMappingURL comment
 	Map     []byte // v3 source map with SourceMap
 	CSS     string // scoped CSS with CSSExternal
+	DTS     string // the declaration file with DTS
 	Imports []ModuleImport
 }
 
@@ -294,6 +297,12 @@ func writeCompiledModule(dest string, m *compiledModule) error {
 	}
 	if writeErr := os.WriteFile(dest, []byte(m.JS), 0644); writeErr != nil {
 		return writeErr
+	}
+	if m.DTS != "" {
+		dtsPath := strings.TrimSuffix(dest, ".js") + ".d.ts"
+		if writeErr := os.WriteFile(dtsPath, []byte(m.DTS), 0644); writeErr != nil {
+			return fmt.Errorf("write %s: %w", dtsPath, writeErr)
+		}
 	}
 	if m.CSS != "" {
 		cssPath := strings.TrimSuffix(dest, ".js") + ".css"
@@ -618,6 +627,9 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		module.JS, module.Map = code, mapBytes
 		if opts.CSSExternal {
 			module.CSS = codegen.ExtractScopedCSS(sfc, scope)
+		}
+		if opts.DTS {
+			module.DTS = ComponentDeclarations(name, filepath.Base(src), analyzer.ComponentTypesOf(sfc))
 		}
 		if writeErr := emit(module); writeErr != nil {
 			return writeErr

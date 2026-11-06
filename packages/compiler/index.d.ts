@@ -17,6 +17,8 @@ export interface CompileOptions {
   checkDeps?: boolean;
   /** 'vela' keeps `.vela` specifiers of component imports, for bundler plugins. */
   componentImports?: 'js' | 'vela';
+  /** Also answer the component's declaration file (`--dts`, `dts` of the result). */
+  dts?: boolean;
 }
 
 export interface CompileRequest {
@@ -51,6 +53,8 @@ export interface CompileResult {
   css?: string;
   /** A v3 source map with options.sourcemap. */
   map?: object;
+  /** The declaration file (Card.d.ts) with options.dts. */
+  dts?: string;
   diagnostics: Diagnostic[];
   imports: ModuleImport[];
   error?: string;

@@ -103,14 +103,17 @@ declare module 'vela' {
   /**
    * A component: the export of a compiled `.vela` module, or a value made by
    * `serverComponent()` or `staticHTML()`. P are its props, E maps the names
-   * of the events it dispatches to their `detail`, S names its slots.
+   * of the events it dispatches to their `detail`, S names its slots, B are
+   * the names of its `$bindable` props.
    */
-  export interface Component<P extends Props = Props, E extends Record<string, any> = Record<string, any>, S extends Record<string, any> = Record<string, any>> {
+  export interface Component<P extends Props = Props, E extends Record<string, any> = Record<string, any>, S extends Record<string, any> = Record<string, any>, B extends string = string> {
     (target: Element | DocumentFragment | Comment, props?: P, slots?: Slots): ComponentInstance<P>;
     /** Type-level only: the events of the component; absent at run time. */
     readonly $$events_def?: E;
     /** Type-level only: the slots of the component; absent at run time. */
     readonly $$slot_def?: S;
+    /** Type-level only: the props a parent may bind; absent at run time. */
+    readonly $$bindings_def?: B;
   }
 
   /** The props of a component type. */
@@ -118,6 +121,12 @@ declare module 'vela' {
 
   /** The events of a component type: event names to their `detail`. */
   export type ComponentEvents<C> = C extends Component<any, infer E, any> ? E : never;
+
+  /** The slots of a component type. */
+  export type ComponentSlots<C> = C extends Component<any, any, infer S> ? S : never;
+
+  /** The names of the props of a component type that a parent may bind. */
+  export type ComponentBindings<C> = C extends Component<any, any, any, infer B> ? B : never;
 
   /**
    * A component that loads on demand: `lazy(() => import('./Panel.vela'))`.

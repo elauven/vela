@@ -1,0 +1,17 @@
+<script>
+  /** @typedef {{ dismiss: { text: string } }} $$Events */
+
+  /** @type {string} */
+  export let text;
+  /** @type {'info' | 'warn'} */
+  export let tone = 'info';
+  export let count = 0;
+
+  function dismiss() {
+    $$dispatch('dismiss', { text });
+  }
+</script>
+
+<template>
+  <span :class={tone} @click={dismiss}>{text} {count}</span>
+</template>

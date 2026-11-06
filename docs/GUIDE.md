@@ -543,6 +543,16 @@ A component sends events to its parent with the built-in `$$dispatch`
 The listener receives a `CustomEvent`; the payload is in `event.detail`.
 `@close` without `on:` also works on components.
 
+To declare the events with their payloads for TypeScript (and for
+`vela --dts`), write the interface `$$Events` in a `lang="ts"` script, or
+a JSDoc typedef in JavaScript:
+
+```
+<script>
+  /** @typedef {{ close: { reason: string } }} $$Events */
+</script>
+```
+
 ### Dynamic components
 
 `<vela:component>` renders the component chosen by a value instead of a
@@ -896,6 +906,60 @@ paths under `node_modules` for packages published as ES modules):
 
 Packages published only as CommonJS need a bundler or a CDN that converts
 them.
+
+### Component libraries
+
+A library of components is published to npm as compiled modules with
+bare runtime imports, so that the application's bundler resolves one
+`@govela/runtime`. `--dts` writes a declaration file beside each
+component (`Button.d.ts` beside `Button.js`), so TypeScript applications
+see its props, events, slots and bindable props:
+
+```sh
+vela --project src --out dist --runtime-import=bare --dts
+# declarations of the library's own .ts modules, if it has any
+tsc --declaration --emitDeclarationOnly --outDir dist src/format.ts
+```
+
+```json
+{
+  "name": "ui-lib",
+  "type": "module",
+  "exports": { "./*": "./dist/*" },
+  "files": ["dist"],
+  "peerDependencies": { "@govela/runtime": "*" }
+}
+```
+
+Narrow the peer range to the runtime versions the library supports; the
+declarations need a runtime release that ships its own (TS-6.1).
+
+```ts
+import { mount } from '@govela/runtime';
+import { Button } from 'ui-lib/Button.js';
+
+mount(Button, { target: document.body, props: { label: 'Save' } });
+// error: Property 'label' is missing
+mount(Button, { target: document.body, props: {} });
+```
+
+The types come from the component (docs/TYPESCRIPT.md TS-4):
+
+- a prop is `export let`, optional when it has a default; its type is the
+  annotation of a `lang="ts"` script, the JSDoc `@type` of a JavaScript
+  one, else what a literal default says (`'a'` is `string`) or `any`;
+- events are the interface `$$Events` (`@typedef {…} $$Events` in
+  JavaScript), else the names of the `$$dispatch` calls with `any` detail;
+- slots are the interface `$$Slots`, else the `<slot>` names of the
+  template;
+- `$bindable` props are the fourth type argument of `Component`
+  (`ComponentBindings<typeof Button>`).
+
+Local types the props use are copied into the declaration file, imported
+ones are imported again (`./format.ts` as `./format.js`, `vela` as
+`@govela/runtime`); a class or a value of the script that a type names
+becomes `any`. `testdata/dts/lib` is such a library; `TestPackageTypes`
+builds it and type-checks an application that uses it.
 
 ### Server-rendered pages
 
