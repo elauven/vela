@@ -329,3 +329,101 @@ func main() {
 		}
 	}
 }
+
+// TestSSRHostTypeScript (task 086, TS-7.1, TS-7.4): a .ts module is a host
+// source like a .js one (ssrhost/src/format serves format.ts), the
+// diagnostic and the stub take the Go signature from the TypeScript one,
+// and a host whose parameters contradict the annotations is
+// VELA-SSR-HOST-SIG.
+func TestSSRHostTypeScript(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go tool not available")
+	}
+	p := newSSRHostProject(t)
+	if err := os.Remove(filepath.Join(p.root, "src", "format.js")); err != nil {
+		t.Fatal(err)
+	}
+	p.write("src/format.ts", `export function formatCurrency(value: number, currency?: string): string {
+  return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: currency ?? 'RUB', maximumFractionDigits: 0 }).format(value);
+}
+`)
+	p.write("src/App.vela", `<script lang="ts">
+  import { formatCurrency } from './format.ts';
+  export let total: number = 0;
+  let label: string = $derived(formatCurrency(total));
+</script>
+<template>
+  <div class="app"><p class="total">{formatCurrency(total, 'RUB')}</p><p class="label">{label}</p></div>
+</template>
+`)
+	errors, stderr := p.build(false)
+	if errors == 0 {
+		t.Fatal("a call without native translation or host built")
+	}
+	for _, want := range []string{
+		"VELA-SSR-HOST-MISSING",
+		"ssrhost/src/format/format_currency_host.go",
+		"func FormatCurrency(ctx context.Context, value float64, currency *string) (string, error)",
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("diagnostic misses %q:\n%s", want, stderr)
+		}
+	}
+	p.build(true)
+	stub, err := os.ReadFile(filepath.Join(p.root, "ssrhost", "src", "format", "format_currency_host.go"))
+	if err != nil || !strings.Contains(string(stub), `return "", vela.ErrHostNotImplemented`) {
+		t.Fatalf("stub: %v\n%s", err, stub)
+	}
+	if errors, stderr := p.build(false); errors != 0 {
+		t.Fatalf("build with the stub: %d errors\n%s", errors, stderr)
+	}
+
+	// A host that takes a string where TypeScript says number.
+	p.write("ssrhost/src/format/format_currency_host.go", `package format
+
+import "context"
+
+//vela:host formatCurrency
+func FormatCurrency(ctx context.Context, value string, currency *string) (string, error) {
+	return value, nil
+}
+`)
+	if errors, stderr := p.build(false); errors == 0 || !strings.Contains(stderr, "VELA-SSR-HOST-SIG") || !strings.Contains(stderr, "parameter value is number in TypeScript but string") {
+		t.Errorf("a host contradicting the annotations: %d errors\n%s", errors, stderr)
+	}
+	p.write("ssrhost/src/format/format_currency_host.go", `package format
+
+import (
+	"context"
+	"fmt"
+)
+
+//vela:host formatCurrency
+func FormatCurrency(ctx context.Context, value float64, currency *string) (string, error) {
+	return fmt.Sprintf("%.0f RUB", value), nil
+}
+`)
+	if errors, stderr := p.build(false); errors != 0 {
+		t.Fatalf("build with the host: %d errors\n%s", errors, stderr)
+	}
+	p.write("cmd/render/main.go", `package main
+
+import (
+	"fmt"
+	"os"
+
+	c "example.com/dash/out/server/components"
+)
+
+func main() {
+	err := c.RenderApp(os.Stdout, c.AppProps{Total: 1234, Set: map[string]bool{"total": true}}, c.AppSlots{})
+	fmt.Printf("\nERR=%v\n", err)
+}
+`)
+	command := exec.Command("go", "run", "./cmd/render")
+	command.Dir = p.root
+	out, err := command.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), ">1234 RUB</p>") || !strings.Contains(string(out), "ERR=<nil>") {
+		t.Errorf("render: %v\n%s", err, out)
+	}
+}

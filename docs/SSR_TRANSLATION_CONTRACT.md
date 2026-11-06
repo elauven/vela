@@ -161,7 +161,10 @@ The IR uses JavaScript-level semantic types:
 Sources, in priority order: developer prop types in `*_props.go` and host
 signatures (Go is authoritative), JSDoc `@type` / `@param` / `@returns`,
 literal initializers, flow through declarations and returns, and the result
-types of admitted built-ins.
+types of admitted built-ins. In a TypeScript component the annotation of a
+prop (`export let title: string`) takes the place of its JSDoc `@type`; no
+other TypeScript annotation is a source, because the build does not check
+them (docs/TYPESCRIPT.md TS-7.2, TS-7.3).
 
 ### 5.3 Go representation
 
@@ -436,10 +439,12 @@ Not admitted in v1: generators and async generators, `for await`, classes,
 
 ### 7.3 Modules
 
-- **T-7.3a** Local `.js` modules imported by region code are translated under
-  the same rules. Each module maps to one generated Go package that mirrors
-  its path under `server/modules/`. A function used by several components is
-  translated once.
+- **T-7.3a** Local `.js`, `.ts` and `.mts` modules imported by region code
+  are translated under the same rules; a TypeScript module from its erased
+  tree, exactly as its JavaScript twin, and a `./util.js` specifier names
+  `util.ts` when only that exists (TS-7.1). Each module maps to one
+  generated Go package that mirrors its path under `server/modules/`. A
+  function used by several components is translated once.
 - **T-7.3b** Module top-level code runs on the server only to initialise
   `const` bindings with admitted, deterministic initializers. Any other
   top-level side effect makes the module's region symbols `unsupported`
@@ -543,6 +548,7 @@ package that mirrors that file's path:
 | JS symbol | Host package directory |
 | --- | --- |
 | export `formatCurrency` of `src/lib/format.js` | `ssrhost/src/lib/format/` |
+| export `formatCurrency` of `src/lib/format.ts` | `ssrhost/src/lib/format/` |
 | function `embedUrl` inside `src/blocks/VideoBlock.vela` | `ssrhost/src/blocks/videoblock/` |
 
 **H-8.2b Explicit directive.** A Go function becomes a host implementation
@@ -600,6 +606,13 @@ func Name([ctx context.Context,] p1 T1, …, pn Tn) (R, error)
   generated at compile time. When it is not (dynamic tier), the generated
   code calls a typed runtime converter that returns a `*vela.RenderError`
   (`TypeError`) on mismatch; it never panics.
+- **H-8.3f** A host of a TypeScript function: the diagnostic and
+  `--ssr-scaffold-hosts` take the Go parameter and result types from its
+  annotations (`number` `float64`, `string`, `boolean` `bool`, `T[]` `[]T`,
+  `Record<string, T>` `map[string]T`, object types `map[string]any`, an
+  optional parameter a pointer), and a binding whose Go parameter takes
+  another kind of value than the annotation says is `VELA-SSR-HOST-SIG`
+  (TS-7.4).
 
 ### 8.4 Conversion rules
 
@@ -768,7 +781,9 @@ src/blocks/BarChart.vela:12:9: [error] VELA-SSR-HOST-MISSING
 
 `vela --ssr --ssr-report=<file.json>` writes the T-2.3 records for all
 components: outcome, tier, type, and host binding per site, and artifact mode
-per component. CI uses this report to track the compatibility corpus; a site
+per component. A component's `props` list the Go type of each prop and its
+`typeSource` (`ts`, `jsdoc`, `inferred`); a site's `typeSource` is `go` for a
+host function and `inferred` for a type the translation proves (TS-7.5). CI uses this report to track the compatibility corpus; a site
 that moves from `server-native` or `server-host` to `unsupported` is a
 regression.
 

@@ -67,18 +67,64 @@ func NewSSRModules(layout SSRProjectLayout, srcRoot string, hosts *SSRHosts) *SS
 	return &SSRModules{layout: layout, srcRoot: srcRoot, hosts: hosts, modules: map[string]*ssrModule{}}
 }
 
-// refs resolves the named imports of local .js modules of a program in
-// file (absolute) to their modules, compiling them on first use.
+// ssrLocalModule is the file of a relative import of a local module: a
+// .js, .ts or .mts specifier, and a .js specifier whose module is a .ts
+// one (TS-5.3, TS-7.1). ok is false for other imports.
+func ssrLocalModule(dir, spec string) (string, bool) {
+	if !strings.HasPrefix(spec, ".") {
+		return "", false
+	}
+	switch path.Ext(spec) {
+	case ".js", ".ts", ".mts":
+	default:
+		return "", false
+	}
+	file := filepath.Join(dir, filepath.FromSlash(spec))
+	if path.Ext(spec) == ".js" {
+		if _, err := os.Stat(file); err != nil {
+			for _, ext := range []string{".ts", ".mts"} {
+				if alt := strings.TrimSuffix(file, ".js") + ext; ssrFileExists(alt) {
+					return alt, true
+				}
+			}
+		}
+	}
+	return file, true
+}
+
+func ssrFileExists(file string) bool {
+	info, err := os.Stat(file)
+	return err == nil && !info.IsDir()
+}
+
+// ssrIsTypeScriptModule reports a .ts or .mts module, which parses as
+// TypeScript: the SSR translation reads its erased tree (TS-7.1).
+func ssrIsTypeScriptModule(file string) bool {
+	ext := filepath.Ext(file)
+	return ext == ".ts" || ext == ".mts"
+}
+
+// ssrParseModule parses a local module, a TypeScript one as TypeScript.
+func ssrParseModule(file, src string) (*jsast.JsProgram, []jsast.JSParseDiagnostic) {
+	return jsast.ParseWithOptions(src, jsast.ParseOptions{TypeScript: ssrIsTypeScriptModule(file)})
+}
+
+// refs resolves the named imports of local modules of a program in file
+// (absolute) to their modules, compiling them on first use.
 func (m *SSRModules) refs(file string, imports []*analyzer.Import) map[string]ssrModuleRef {
 	out := map[string]ssrModuleRef{}
 	if m == nil {
 		return out
 	}
 	for _, imp := range imports {
-		if imp == nil || !strings.HasPrefix(imp.Source, ".") || path.Ext(imp.Source) != ".js" {
+		if imp == nil {
 			continue
 		}
-		module := m.module(filepath.Join(filepath.Dir(file), filepath.FromSlash(imp.Source)))
+		target, ok := ssrLocalModule(filepath.Dir(file), imp.Source)
+		if !ok {
+			continue
+		}
+		module := m.module(target)
 		for _, spec := range imp.Specifiers {
 			if spec.Local != "" && spec.Imported != "" && spec.Imported != "default" {
 				out[spec.Local] = ssrModuleRef{Module: module, Export: spec.Imported}
@@ -106,7 +152,7 @@ func (m *SSRModules) module(file string) *ssrModule {
 		module.problem = ssrExprUnsupported(0, "module %s is outside the source root", source)
 		return module
 	}
-	stem, err := pkgpath.EncodePath(strings.TrimSuffix(filepath.ToSlash(rel), ".js"))
+	stem, err := pkgpath.EncodePath(strings.TrimSuffix(filepath.ToSlash(rel), filepath.Ext(rel)))
 	if err != nil {
 		module.problem = &SSRExpressionError{Code: SSRPackagePathDiagnosticCode, Message: fmt.Sprintf("module %s has no Go package path: %v", source, err)}
 		return module
@@ -152,7 +198,7 @@ func (m *SSRModules) compile(module *ssrModule) {
 		module.problem = err
 		return
 	}
-	program, diagnostics := jsast.ParseJSWithDiagnostics(string(data))
+	program, diagnostics := ssrParseModule(module.abs, string(data))
 	if program == nil || len(diagnostics) > 0 {
 		module.problem = ssrExprUnsupported(0, "%s does not parse", module.Source)
 		return

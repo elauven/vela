@@ -18,8 +18,9 @@ scripts, templates and `.ts` modules (task 084, see
 [Decisions of 084](#decisions-of-084)). Editors type-check TypeScript
 components while typing and `.ts` modules through
 `@govela/typescript-plugin` (task 085, see
-[Decisions of 085](#decisions-of-085)), and server
-rendering does not read `.ts` modules (086). Until task 089 marks
+[Decisions of 085](#decisions-of-085)), and server rendering translates
+TypeScript like its JavaScript twins (task 086, see
+[Decisions of 086](#decisions-of-086)). Until task 089 marks
 TypeScript as experimental in [FEATURES.md](FEATURES.md), write
 JavaScript (with JSDoc where types help).
 
@@ -569,4 +570,31 @@ Taken while implementing the editor support on 2026-11-06:
 5. **Highlighting**: `<script lang="ts">` embeds `source.ts`; template
    expressions keep `source.js`, which a TextMate grammar cannot switch by
    the script's `lang`, and which colours their TypeScript well enough.
+
+## Decisions of 086
+
+Taken while implementing server rendering on 2026-11-06:
+
+1. **The trust rule stays TS-7.2/TS-7.3**: prop annotations choose Go
+   field types, nothing else selects the typed tier. A lying annotation
+   elsewhere (`as any`, a wrong parameter type) changes nothing in the
+   translation, so the dynamic tier and the typed tier agree as T-5.4a
+   requires; no oracle row needs a TypeScript variant.
+2. **Prop types**: `string`, `number` (`float64`, like JSDoc `number`),
+   `boolean`, arrays and tuples, object types, interfaces and `Record`
+   map as TS-7.2 says; literal types widen, a union of one kind is that
+   kind, aliases and interfaces of the script resolve. A union with
+   `null` or `undefined`, `any`, generics and imported types are `any`.
+3. **Host signatures** (TS-7.4): object types are `map[string]any`, not
+   structs, so that a stub compiles without declaring types; a `Promise`
+   result stays `any`. The signature check compares the boundary kind of
+   each annotated parameter with the Go one.
+4. **`--ssr-report`** records the type source of props (`ts`, `jsdoc`,
+   `inferred`) and of sites (`go` for a host function, `inferred`
+   otherwise); the IR does not track how a proven site type was proven.
+5. **Twins**: `TestSSRTypeScriptTwins` renders the block corpus and its
+   TypeScript twins (annotated props, `loader.ts` imported as
+   `./loader.js`) and compares the HTML, the payload and the client
+   modules byte for byte; the JavaScript corpus checks hydration in
+   Chromium, which the identical output inherits.
 
