@@ -180,14 +180,25 @@ func TestSSRRejectsDirectoriesWithoutGoPackagePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	coded := 0
+	coded, collisions := 0, 0
 	for _, d := range diags {
-		if d.Code == "VELA-SSR-PACKAGE-PATH" && d.Line == 1 && d.Col == 1 {
-			coded++
+		if d.Line == 1 && d.Col == 1 {
+			switch d.Code {
+			case "VELA-SSR-PACKAGE-PATH":
+				coded++
+			case "VELA-OUTPUT-COLLISION":
+				collisions++
+			}
 		}
 	}
-	if coded != want {
-		t.Errorf("%d VELA-SSR-PACKAGE-PATH diagnostics at 1:1, want %d", coded, want)
+	// users/Page.js is Users/Page.js where case is ignored: the second
+	// page is VELA-OUTPUT-COLLISION and not built further.
+	wantCoded, wantCollisions := want, 0
+	if caseSensitive {
+		wantCoded, wantCollisions = want-1, 1
+	}
+	if coded != wantCoded || collisions != wantCollisions {
+		t.Errorf("%d VELA-SSR-PACKAGE-PATH and %d VELA-OUTPUT-COLLISION diagnostics at 1:1, want %d and %d", coded, collisions, wantCoded, wantCollisions)
 	}
 	// Nothing was generated for the rejected directories.
 	entries, _ := os.ReadDir(filepath.Join(root, "out", "server", "components"))

@@ -31,7 +31,7 @@ func BuildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	// The client module is the ordinary CSR module; hydrate() adopts server
 	// HTML with it (C-4.1).
 	clientOpts.PackageImports = newPackageImports()
-	errors := BuildProject(files, srcRoot, layout.ClientDir, clientOpts, parallel)
+	errors, skipped := buildProject(files, srcRoot, layout.ClientDir, clientOpts, parallel)
 	hosts.RootModes = ssr.SSRRootModes(files, srcRoot)
 	for _, problem := range hosts.Problems {
 		fmt.Fprintf(ErrorWriter(opts), "  x  %s\n", problem.Error())
@@ -46,7 +46,18 @@ func BuildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 	hosts.Children = map[string][]string{}
 	regions := map[string]*ssr.SSRRegion{}
 	results := ssr.CheckSSRPackagePaths(files, srcRoot)
+	for src, err := range ssr.CheckSSRFileNames(files, srcRoot, layout) {
+		if results[src] == nil {
+			results[src] = err
+		}
+	}
 	for _, src := range files {
+		if skipped[src] {
+			// Its output collides with another's (VELA-OUTPUT-COLLISION),
+			// already reported and counted; its parents fail with it.
+			results[src] = fmt.Errorf("%s: %s is not built", project.OutputCollisionCode, project.RelOrBase(src, srcRoot))
+			continue
+		}
 		if results[src] != nil {
 			continue
 		}
@@ -61,6 +72,9 @@ func BuildSSRProject(files []string, srcRoot, outRoot string, opts CompileOption
 		_ = os.Remove(layout.StylePath(src, srcRoot))
 	}
 	for _, src := range files {
+		if skipped[src] {
+			continue
+		}
 		region, err := regions[src], results[src]
 		if ssr.IsSSRClientOnly(err) {
 			report.AddClientOnly(src, srcRoot)

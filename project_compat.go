@@ -15,6 +15,7 @@ var (
 	ComponentName               = project.ComponentName
 	IsTypeScriptModule          = project.IsTypeScriptModule
 	MirrorPath                  = project.MirrorPath
+	SameFile                    = project.SameFile
 	RelOrBase                   = project.RelOrBase
 	ScopeID                     = project.ScopeID
 	UnsupportedTypeScriptModule = project.UnsupportedTypeScriptModule

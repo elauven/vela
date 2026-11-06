@@ -77,14 +77,31 @@ func ssrBuildOnce(srcRoot, outRoot string, opts CompileOptions, parallel bool) (
 // removeSSROutputs deletes what the build wrote for a removed component:
 // its client module, renderer, styles and props sidecar, unless the
 // developer has edited the sidecar.
-func removeSSROutputs(src, srcRoot, outRoot string, opts CompileOptions) {
+func removeSSROutputs(src, srcRoot, outRoot string, kept []string, opts CompileOptions) {
 	layout := NewSSRProjectLayoutWithModule(outRoot, SSRDefaultModule)
-	client := MirrorPath(src, srcRoot, layout.ClientDir, ".js")
-	for _, file := range []string{client, client + ".map", strings.TrimSuffix(client, ".js") + ".css", layout.ServerPath(src, srcRoot), layout.StylePath(src, srcRoot)} {
-		_ = os.Remove(file)
+	// A file of a kept component is not removed: after Card.vela became
+	// card.vela, card.js is Card.js on a file system that ignores case.
+	owned := map[string]string{} // lower-cased path → a kept component's file
+	for _, file := range kept {
+		for _, out := range append(ssrOutputs(file, srcRoot, layout), layout.PropsPath(file, srcRoot)) {
+			owned[strings.ToLower(out)] = out
+		}
+	}
+	keeps := func(file string) bool {
+		other, ok := owned[strings.ToLower(file)]
+		return ok && SameFile(file, other)
+	}
+	for _, file := range ssrOutputs(src, srcRoot, layout) {
+		if !keeps(file) {
+			_ = os.Remove(file)
+		}
 	}
 	status := CompilerStatusWriter(opts)
 	props := layout.PropsPath(src, srcRoot)
+	if keeps(props) {
+		fmt.Fprintf(status, "  −  %s (removed)\n", RelOrBase(src, srcRoot))
+		return
+	}
 	if data, err := os.ReadFile(props); err == nil {
 		if !SSRPropsGenerated(data) {
 			fmt.Fprintf(status, "  −  %s (removed; the edited %s is yours to delete)\n", RelOrBase(src, srcRoot), props)
@@ -93,6 +110,13 @@ func removeSSROutputs(src, srcRoot, outRoot string, opts CompileOptions) {
 		_ = os.Remove(props)
 	}
 	fmt.Fprintf(status, "  −  %s (removed)\n", RelOrBase(src, srcRoot))
+}
+
+// ssrOutputs are the files the build writes for a component but its props
+// sidecar.
+func ssrOutputs(src, srcRoot string, layout SSRProjectLayout) []string {
+	client := MirrorPath(src, srcRoot, layout.ClientDir, ".js")
+	return []string{client, client + ".map", strings.TrimSuffix(client, ".js") + ".css", layout.ServerPath(src, srcRoot), layout.StylePath(src, srcRoot)}
 }
 
 // watchSSRProject rebuilds after every change of the inputs, polling every
@@ -133,7 +157,7 @@ func watchSSRProject(srcRoot, outRoot string, opts CompileOptions, parallel bool
 		}
 		for _, file := range built {
 			if !kept[file] {
-				removeSSROutputs(file, srcRoot, outRoot, opts)
+				removeSSROutputs(file, srcRoot, outRoot, files, opts)
 			}
 		}
 		built = files
