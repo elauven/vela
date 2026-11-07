@@ -129,6 +129,8 @@ const scenarios = [
     t.equal(await t.text('nav a.active'), 'Users', 'the nested NavLink follows getPage() below the section');
   }],
   ['a component deep in the root layout follows getPage() on navigation', async (t) => {
+    // /settings is behind the (admin) guard.
+    await t.signIn();
     await t.open('/');
     t.equal(await t.text('nav a.active'), 'Home', 'the section after hydration');
     await t.follow('nav a[href="/about"]');
