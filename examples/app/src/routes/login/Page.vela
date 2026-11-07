@@ -1,0 +1,21 @@
+<script>
+  export let data = null;
+  export let form = null;
+</script>
+
+<template>
+  <h1>Account</h1>
+  {#if data.user}
+    <p class="signed-in">Signed in as {data.user}</p>
+    <form method="post" action="/login?/logout">
+      <button class="logout">Sign out</button>
+    </form>
+  {:else}
+    <form class="login" method="post">
+      <input type="hidden" name="next" :value={data.next} />
+      <input name="name" aria-label="Name" autocomplete="username" />
+      <button>Sign in</button>
+      {#if form}<p class="error">{form.error}</p>{/if}
+    </form>
+  {/if}
+</template>

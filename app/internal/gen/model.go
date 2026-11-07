@@ -54,6 +54,10 @@ type Level struct {
 	Params  []string // parameters of the level's own path (L-6)
 	// Head: the loader may set the head (LoadFile.PageHead, LayoutHead).
 	Head bool
+	// GuardPkg is the package of the directory's guard (G-1), "" for none.
+	// Only the first level of a directory carries it: a layout, or the
+	// page of a directory without one.
+	GuardPkg string
 }
 
 // Pattern is one URL pattern of a route; a route with optional segments has
@@ -134,6 +138,9 @@ func Build(t *Tree) (*Model, []Diagnostic) {
 			}
 			if dir.Load.Deps {
 				l.DepsPkg = dir.Load.Dir
+			}
+			if dir.Load.Guard && (kind == KindLayout || dir.Layout == "") {
+				l.GuardPkg = dir.Load.Dir
 			}
 		}
 		return l

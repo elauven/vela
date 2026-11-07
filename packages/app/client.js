@@ -12,6 +12,8 @@ export const headers = Object.freeze({
   navigate: 'X-Vela-Navigate',
   have: 'X-Vela-Have',
   build: 'X-Vela-Build',
+  // "prefetch" on a prefetch (G-4): the answer sets no cookies.
+  purpose: 'X-Vela-Purpose',
 });
 
 // A chain of redirects longer than this loads the document (N-5).
@@ -210,11 +212,13 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload }) {
   // fetchNavigation asks the server for the navigation to url (N-2). It
   // resolves with the JSON body, or { redirected } when something other
   // than the app redirected the request.
-  async function fetchNavigation(url, have, signal) {
+  async function fetchNavigation(url, have, signal, purpose) {
+    const requestHeaders = { [headers.navigate]: `auto;v=${protocolVersion}`, [headers.have]: have, [headers.build]: build };
+    if (purpose) requestHeaders[headers.purpose] = purpose;
     const response = await fetch(url.href, {
       credentials: 'same-origin',
       signal,
-      headers: { [headers.navigate]: `auto;v=${protocolVersion}`, [headers.have]: have, [headers.build]: build },
+      headers: requestHeaders,
     });
     if (response.redirected) return { redirected: response.url };
     return response.json();
@@ -303,7 +307,10 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload }) {
   // or when it enters the viewport, as data-vela-preload on it or an
   // ancestor says ("hover", "viewport" or "off"; start({ preload }) is the
   // default). The answer serves one navigation within 30 s, for the same
-  // URL and X-Vela-Have.
+  // URL and X-Vela-Have; an answer marked cache: "once" (a user-dependent
+  // one, G-4) never serves more. The request says X-Vela-Purpose: prefetch,
+  // so the server sets no cookies on it. Every action and invalidate()
+  // clear the cache: an answer prefetched before a logout is not shown.
   const prefetched = new Map();
   const prefetchTTL = 30000;
 
@@ -334,7 +341,7 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload }) {
     if (match.route.render === 'data') {
       for (const level of match.route.chain) components(routes, level.id)?.load().catch(() => {});
     }
-    const body = fetchNavigation(url, have, undefined);
+    const body = fetchNavigation(url, have, undefined, 'prefetch');
     prefetched.set(key, { at: now, body });
     // What the answer needs loads too; a failure only drops the entry.
     body.then((answer) => (answer && answer.v === protocolVersion && (answer.type === 'data' || answer.type === 'fragment') ? prepareModules(answer) : null))

@@ -20,16 +20,31 @@ import (
 	"path/filepath"
 
 	"example.com/site/internal/appgen"
+	"example.com/site/internal/auth"
 	"example.com/site/server/store"
 	"github.com/elauven/vela/app"
 	"github.com/elauven/vela/ssr_runtime/vite"
 )
+
+// legacyLinks redirects old URLs in front of the app. app.WriteRedirect
+// answers a navigation of the router with JSON, so the router follows it
+// without loading a document (docs/APP.md G-6).
+func legacyLinks(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/users/0" {
+			app.WriteRedirect(w, r, http.StatusMovedPermanently, "/users")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "listen address")
 	dev := flag.String("dev", "", "URL of the Vite dev server; serve the build in dist/ when empty")
 	dist := flag.String("dist", "dist", "directory of vite build; \"none\" serves pages without client")
 	build := flag.String("build", "", "build id; the default comes from the Vite manifest")
+	insecure := flag.Bool("insecure-cookies", false, "session cookies without Secure, for plain HTTP outside -dev")
 	flag.Parse()
 
 	mux := http.NewServeMux()
@@ -56,13 +71,17 @@ func main() {
 		// get HTML fragments (docs/APP.md R-9).
 		Manifest: filepath.Join("out", "client", "vela.manifest.json"),
 		Head:     app.Head{Title: "Vela App", Meta: []app.Meta{{Name: "description", Content: "An example of Vela App"}}},
-		Dev:      *dev != "",
+		// Dev shows error messages and makes session cookies work over
+		// plain HTTP; -insecure-cookies only the latter.
+		Dev:      *dev != "" || *insecure,
 		BuildID:  *build,
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	mux.Handle("/", handler)
+	// The session middleware puts the signed-in user into the requests
+	// that guards and loaders read (docs/APP.md G-3).
+	mux.Handle("/", auth.Middleware(legacyLinks(handler)))
 
 	listener, err := net.Listen("tcp", *addr)
 	if err != nil {

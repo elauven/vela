@@ -19,6 +19,10 @@ When a compiler diagnostic disagrees with an example, trust the diagnostic.
   loaders in `server/routes` (the same tree) return each component's
   `data` prop; `npx vela-app scaffold` adds the missing ones.
 - `src/_app`, `internal/appgen` and `out/` are generated; never edit them.
+- Permission checks go in `guard.go` (`func Guard(ctx, r) error`, `npx
+  vela-app scaffold -guard /route`), never in a layout loader: a guard runs
+  before every loader and action below its directory. Read the user from
+  an `app.Local` set by middleware.
 - Code that runs during the first render is translated to Go: keep it free
   of browser APIs. Treat every `VELA-SSR-*` diagnostic as an error to fix.
 - Tests are `*.test.__EXT__` files next to the components, run by Vitest with

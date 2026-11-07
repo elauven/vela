@@ -19,7 +19,8 @@ const [project, serverBinary, casesJSON] = process.argv.slice(2);
 const cases = JSON.parse(casesJSON);
 
 function startServer(addr = '127.0.0.1:0', extra = []) {
-  const child = spawn(serverBinary, ['-addr', addr, '-dist', 'dist', ...extra], { cwd: project, stdio: ['ignore', 'pipe', 'pipe'] });
+  // Plain HTTP: session cookies without Secure (docs/APP.md G-4).
+  const child = spawn(serverBinary, ['-addr', addr, '-dist', 'dist', '-insecure-cookies', ...extra], { cwd: project, stdio: ['ignore', 'pipe', 'pipe'] });
   let stderr = '';
   child.stderr.on('data', (chunk) => { stderr += chunk; });
   return new Promise((resolve, reject) => {
@@ -203,7 +204,40 @@ const scenarios = [
     await t.page.waitForTimeout(300);
     t.equal(t.requests(), before, 'no prefetch with data-vela-preload="off"');
   }],
+  ['the (admin) guard sends to the sign-in page and back', async (t) => {
+    await t.open('/');
+    await t.follow('nav a[href="/settings"]');
+    t.equal(await t.page.evaluate(() => location.pathname + location.search), '/login?next=%2Fsettings', 'the guard redirected the navigation');
+    await t.page.fill('form.login input[name=name]', 'Ada');
+    await t.navigation(() => t.page.click('form.login button'));
+    t.equal(await t.text('main h1'), 'Settings', 'after signing in');
+    t.equal(await t.text('.badge'), 'Admin', 'the admin layout');
+  }],
+  ['a prefetch before signing out is not shown after it', async (t) => {
+    await t.signIn();
+    await t.open('/');
+    const before = t.requests();
+    await t.page.hover('nav a[href="/settings"]');
+    await t.page.waitForTimeout(400);
+    t.equal(t.requests() > before, true, 'hover prefetched /settings');
+    await t.follow('nav a[href="/login"]');
+    await t.navigation(() => t.page.click('button.logout'));
+    t.equal(await t.page.evaluate(() => location.pathname), '/', 'signed out, back home');
+    const cookies = await t.page.context().cookies();
+    t.equal(cookies.some((c) => c.name === 'session'), false, 'the session cookie is gone');
+    await t.follow('nav a[href="/settings"]');
+    t.equal(await t.page.evaluate(() => location.pathname), '/login', 'the click asked the server and got the guard\'s redirect');
+  }],
+  ['a redirect of middleware keeps the root layout', async (t) => {
+    await t.open('/');
+    await t.page.evaluate(() => { window.__site = document.querySelector('.site'); });
+    await t.addLink('/users/0');
+    await t.follow('#test-link');
+    t.equal(await t.page.evaluate(() => location.pathname), '/users', 'followed app.WriteRedirect');
+    t.equal(await t.page.evaluate(() => document.querySelector('.site') === window.__site), true, 'the root layout keeps its DOM');
+  }],
   ['beforeNavigate keeps a page with unsaved changes', async (t) => {
+    await t.signIn();
     await t.open('/');
     await t.follow('nav a[href="/settings"]');
     await t.page.fill('.name', 'Ada');
@@ -361,6 +395,12 @@ async function runScenarios(browser, url, restart) {
         await page.evaluate(() => window.__form);
       },
       restart,
+      // signIn posts the sign-in form through the page's request context,
+      // which shares its cookies with the page.
+      async signIn(name = 'Ada') {
+        const response = await page.request.post(url + '/login', { form: { name } });
+        if (!response.ok()) throw new Error(`sign-in: ${response.status()}`);
+      },
       follow(selector) {
         return t.navigation(() => page.click(selector));
       },

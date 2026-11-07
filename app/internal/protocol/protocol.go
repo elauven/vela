@@ -26,10 +26,22 @@ const (
 	HeaderNavigate = "X-Vela-Navigate"
 	HeaderHave     = "X-Vela-Have"
 	HeaderBuild    = "X-Vela-Build"
+	// HeaderPurpose is "prefetch" on a prefetch of the router (G-4): its
+	// answer sets no cookies.
+	HeaderPurpose = "X-Vela-Purpose"
 )
 
 // Vary is the value of the Vary header of every app response (R-7).
-const Vary = HeaderNavigate + ", " + HeaderHave + ", " + HeaderBuild
+const Vary = HeaderNavigate + ", " + HeaderHave + ", " + HeaderBuild + ", " + HeaderPurpose
+
+// IsPrefetch reports a prefetch request of the router.
+func IsPrefetch(h http.Header) bool {
+	return h.Get(HeaderPurpose) == "prefetch"
+}
+
+// CacheOnce is the value of the cache field of a user-dependent response
+// (G-4): the router's prefetch cache serves it to one navigation.
+const CacheOnce = "once"
 
 // Limits of X-Vela-Have and keys (N-3).
 const (
@@ -290,6 +302,11 @@ type Response struct {
 
 	// reload
 	Reason string
+
+	// Cache is CacheOnce for a user-dependent data or fragment response,
+	// "" otherwise. Optional (N-5): clients ignore fields they do not know,
+	// and an optional field does not change the version.
+	Cache string
 }
 
 type wireResponse struct {
@@ -305,6 +322,7 @@ type wireResponse struct {
 	Status   int             `json:"status,omitempty"`
 	Form     json.RawMessage `json:"form,omitempty"`
 	Reason   string          `json:"reason,omitempty"`
+	Cache    string          `json:"cache,omitempty"`
 }
 
 // Encode validates r and returns its JSON.
@@ -326,7 +344,7 @@ func Encode(r Response) ([]byte, error) {
 		if segments == nil {
 			segments = []Segment{}
 		}
-		w.Route, w.Start, w.Segments, w.Head = &route, &r.Start, &segments, r.Head
+		w.Route, w.Start, w.Segments, w.Head, w.Cache = &route, &r.Start, &segments, r.Head, r.Cache
 		if r.Type == TypeFragment {
 			w.Fragment = r.Fragment
 		}
@@ -356,7 +374,7 @@ func Decode(b []byte) (Response, error) {
 	}
 	r := Response{
 		Type: w.Type, Build: w.Build, Route: w.Route, Head: w.Head, Fragment: w.Fragment,
-		Location: w.Location, Status: w.Status, Reason: w.Reason, Form: w.Form,
+		Location: w.Location, Status: w.Status, Reason: w.Reason, Form: w.Form, Cache: w.Cache,
 	}
 	if w.Start != nil {
 		r.Start = *w.Start

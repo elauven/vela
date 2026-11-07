@@ -57,6 +57,8 @@ func Error(status int, message string) error {
 type PanicError struct {
 	Value any
 	Stack []byte
+	// logged: the handler logged it with its stack (G-5).
+	logged bool
 }
 
 func (e *PanicError) Error() string {

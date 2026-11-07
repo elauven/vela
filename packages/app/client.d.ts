@@ -87,7 +87,7 @@ export function afterNavigate(fn: (navigation: Navigation) => void): () => void;
 export const protocolVersion: 1;
 
 /** The request headers of a navigation (N-2). */
-export const headers: Readonly<{ navigate: string; have: string; build: string }>;
+export const headers: Readonly<{ navigate: string; have: string; build: string; purpose: string }>;
 
 /** The detail of `vela:form`: a failed form action (`app.Fail`). */
 export interface FormFailure {

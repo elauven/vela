@@ -54,7 +54,12 @@ var exampleCases = []pageCase{
 	{Path: "/about", Status: 200, Title: "Vela App", Contains: "About</h1>"},
 	{Path: "/de/about", Status: 200, Title: "Vela App", Contains: "Über uns</h1>"},
 	{Path: "/colors/00ff00", Status: 200, Title: "Vela App", Contains: "#00ff00"},
-	{Path: "/settings", Status: 200, Title: "Vela App", Contains: "Admin</p>", Preload: "src/routes/(admin)/settings/Page.vela", Click: "main button", Then: "Saved"},
+	// The guard of (admin) sends anonymous visitors to the sign-in page
+	// (docs/APP.md G-1); the browser scenarios sign in.
+	{Path: "/settings", Status: 303, Location: "/login?next=%2Fsettings"},
+	{Path: "/login", Status: 200, Title: "Account", Contains: "Sign in</button>", Preload: "src/routes/login/Page.vela"},
+	{Path: "/login", Method: "POST", Form: "name=", Status: 422, Contains: "Enter a name."},
+	{Path: "/login", Method: "POST", Form: "name=Ada&next=%2Fsettings", Status: 303, Location: "/settings"},
 	{Path: "/docs/intro", Status: 200, Title: "Introduction · Docs", Contains: "<h1>Introduction</h1>", Preload: "src/routes/docs/[...path]/Page.vela"},
 	{Path: "/reports/1", Status: 200, Title: "Sales · Reports", Contains: "<h1>Sales</h1>", Preload: "src/routes/reports/[id=int]/Page.vela", Click: "button.sort", Then: "Descending"},
 	{Path: "/users/9", Status: 404, Title: "Vela App", Contains: "<h1>404</h1>", Preload: "src/routes/Error.vela"},
@@ -62,6 +67,7 @@ var exampleCases = []pageCase{
 	{Path: "/crash", Status: 500, Title: "Vela App", Contains: "Internal Error"},
 	{Path: "/me", Status: 303, Location: "/users/1"},
 	{Path: "/users/", Status: 308, Location: "/users"},
+	{Path: "/users/0", Status: 301, Location: "/users"},
 }
 
 // buildExample generates, compiles and builds examples/app and its server.

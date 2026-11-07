@@ -184,6 +184,19 @@ func TestScanErrors(t *testing.T) {
 			"server/routes/users/id.param/actions.go:9:6: [error] [VELA-APP-LOADER] Actions has the wrong signature",
 			"help: declare it as func Actions() app.Actions",
 		}},
+		{"guards (G-1)", map[string]string{
+			"src/routes/users/Layout.vela":    page,
+			"src/routes/users/[id]/Page.vela": page,
+			"src/routes/(g)/x/Page.vela":      page,
+			"server/routes/users/guard.go":    loaderImports + "func Guard(ctx context.Context, r *app.Request) error { return nil }\n",
+			"server/routes/users/id.param/guard.go": loaderImports +
+				"func Guard(ctx context.Context, r *app.Request) (any, error) { return nil, nil }\n",
+			"server/routes/g.group/guard.go": loaderImports + "func Guard(ctx context.Context, r *app.Request) error { return nil }\n",
+		}, []string{
+			"server/routes/g.group/guard.go:9:6: [error] [VELA-APP-GUARD] Guard has no Layout.vela or Page.vela in src/routes/(g)",
+			"server/routes/users/id.param/guard.go:9:6: [error] [VELA-APP-GUARD] Guard has the wrong signature",
+			"help: declare it as func Guard(ctx context.Context, r *app.Request) error",
+		}},
 		{"Go syntax error", map[string]string{
 			"src/routes/Page.vela":  page,
 			"server/routes/load.go": "package routes\n\nfunc Page( {\n",
