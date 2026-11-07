@@ -129,6 +129,14 @@ A release of the app layer:
 The tag pattern of the compiler's workflow, `v*`, does not match
 `app/v*`, and each workflow checks only its own packages.
 
+`@govela/create` (released with the compiler) installs the app layer of
+`govela.app` in its manifest, the version of `app/app.go` when it was
+generated. When a compiler release raises it to an app version that is not
+published yet, `npm create @govela -- --app` makes projects whose
+`npm install` fails (`ETARGET @govela/app`) until the app release is done:
+release the app layer right after the compiler, or keep `govela.app` at a
+published version.
+
 `RuntimeContract` in `app/app.go` and `govela.runtimeContract` in
 `packages/app/package.json` name the runtime contract the release needs.
 

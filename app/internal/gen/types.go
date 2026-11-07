@@ -149,7 +149,10 @@ func (m *Model) runTypegen(loaders, forms []typeKey) (typegen.Result, error) {
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), b.Bytes(), 0o644); err != nil {
 		return result, err
 	}
-	cmd := exec.Command("go", "run", "./"+filepath.Base(dir))
+	// -mod=mod: a new project runs vela-app gen before go mod tidy (the
+	// generated packages do not exist before it), so go.mod and go.sum may
+	// still miss what the loaders import; go adds it instead of failing.
+	cmd := exec.Command("go", "run", "-mod=mod", "./"+filepath.Base(dir))
 	cmd.Dir = m.Config.Root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

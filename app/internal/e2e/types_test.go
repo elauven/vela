@@ -167,3 +167,22 @@ func TestRouteTypesOfTheExample(t *testing.T) {
 		t.Errorf("$data.d.ts: %v\n%s", err, data)
 	}
 }
+
+// TestRouteTypesBeforeGoModTidy: in a new TypeScript project, vela-app gen
+// runs before go mod tidy (the starter's steps: npm install, vela-app gen,
+// vela, go mod tidy), so go.sum has no entries yet. The program that reads
+// the loader types adds them itself instead of failing with "missing
+// go.sum entry".
+func TestRouteTypesBeforeGoModTidy(t *testing.T) {
+	testkit.RequireGo(t)
+	t.Setenv("GOFLAGS", "")
+	t.Setenv("GOWORK", "off")
+	root := testkit.CopyProject(t, filepath.Join(testkit.RepoRoot(t), "app", "testdata", "ts-app"))
+	testkit.UseLocalModules(t, root) // and no go.sum
+	if _, diags := gen.Generate(root); len(diags) > 0 {
+		t.Fatal(gen.Error(diags))
+	}
+	if _, err := os.Stat(filepath.Join(root, "src", "_app", "types", "$data.d.ts")); err != nil {
+		t.Fatal(err)
+	}
+}

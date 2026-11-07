@@ -116,7 +116,22 @@ func TestStarterTemplates(t *testing.T) {
 				useLocalGoModules(t, dir, compilerRoot)
 			}
 
-			env := append(os.Environ(), "VELA_BINARY="+vela, "VELA_APP_BINARY="+velaApp, "GOWORK=off", "GOFLAGS=-mod=mod")
+			// The steps the starter prints, in its order, with go.sum empty
+			// and no GOFLAGS, as on a new machine: vela-app gen runs before
+			// go mod tidy.
+			env := append(os.Environ(), "VELA_BINARY="+vela, "VELA_APP_BINARY="+velaApp, "GOWORK=off", "GOFLAGS=")
+			steps := map[string][][]string{
+				"ssr": {{"npx", "--no-install", "vela"}, {"go", "mod", "tidy"}},
+				"app": {{"npx", "--no-install", "vela-app", "gen"}, {"npx", "--no-install", "vela"}, {"go", "mod", "tidy"}},
+			}[template]
+			for _, step := range steps {
+				cmd := exec.Command(step[0], step[1:]...)
+				cmd.Dir = dir
+				cmd.Env = env
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("%s: %v\n%s", strings.Join(step, " "), err, out)
+				}
+			}
 			for _, script := range []string{"check", "lint", "test", "build"} {
 				cmd := exec.Command("npm", "run", "--silent", script)
 				cmd.Dir = dir
@@ -229,9 +244,6 @@ func useLocalGoModules(t *testing.T, dir, compilerRoot string) {
 	replace := "\nreplace github.com/elauven/vela/ssr_runtime => " + filepath.ToSlash(filepath.Join(compilerRoot, "ssr_runtime")) + "\n" +
 		"\nreplace github.com/elauven/vela/app => " + filepath.ToSlash(filepath.Join(compilerRoot, "app")) + "\n"
 	writeTestFile(t, path, string(mod)+replace)
-	sums, err := os.ReadFile(filepath.Join(compilerRoot, "app", "go.sum"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeTestFile(t, filepath.Join(dir, "go.sum"), string(sums))
+	// No go.sum: the steps of the starter create it (go mod tidy).
+	os.Remove(filepath.Join(dir, "go.sum"))
 }
