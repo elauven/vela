@@ -906,9 +906,9 @@ regression.
   committed `go.work`, so `go install` of the compiler needs no runtime
   version and no `replace`. Implemented in task 049 (2026-10-09).
 - **R-12.1d Contract check.** The runtime exports a contract marker
-  (currently `ContractV4`, `ssr_runtime/contract.go`; the compiler names it in
+  (currently `ContractV5`, `ssr_runtime/contract.go`; the compiler names it in
   `SSRRuntimeContract`), and every generated file references the marker it
-  was generated for (`var _ = vela.ContractV4`). A compiler/runtime mismatch
+  was generated for (`var _ = vela.ContractV5`). A compiler/runtime mismatch
   then fails `go build` with an undefined-identifier error instead of
   misbehaving at runtime. The marker changes whenever generated code starts
   to depend on a new or changed runtime API.

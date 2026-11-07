@@ -84,7 +84,7 @@ server/routes/**                  internal/appgen/routes_gen.go
 - **B-6** Versions. The Go module is tagged `app/vX.Y.Z`. `@govela/app` has
   its own version and is not part of the lockstep version check of the
   compiler packages, just like `vscode-vela`. Both declare the runtime
-  contract they support (`ContractV4` from task 070) and the navigation
+  contract they support (`ContractV5` from task 090) and the navigation
   protocol version (N-1). See [RELEASING.md](RELEASING.md).
 
 ## P. Paths and routes
