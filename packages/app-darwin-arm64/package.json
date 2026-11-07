@@ -1,6 +1,6 @@
 {
   "name": "@govela/app-darwin-arm64",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "The vela-app binary of Vela App for darwin-arm64. Installed by @govela/app; do not depend on it directly.",
   "license": "MIT",
   "repository": {

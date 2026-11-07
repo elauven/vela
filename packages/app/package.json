@@ -1,6 +1,6 @@
 {
   "name": "@govela/app",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Vela App (docs/APP.md): the client router (hydration, data navigation, route matching) and the vela-app command.",
   "license": "MIT",
   "repository": {
@@ -42,10 +42,10 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@govela/app-darwin-arm64": "0.3.0",
-    "@govela/app-darwin-x64": "0.3.0",
-    "@govela/app-linux-arm64": "0.3.0",
-    "@govela/app-linux-x64": "0.3.0",
-    "@govela/app-win32-x64": "0.3.0"
+    "@govela/app-darwin-arm64": "0.3.1",
+    "@govela/app-darwin-x64": "0.3.1",
+    "@govela/app-linux-arm64": "0.3.1",
+    "@govela/app-linux-x64": "0.3.1",
+    "@govela/app-win32-x64": "0.3.1"
   }
 }
