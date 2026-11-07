@@ -199,6 +199,20 @@ each optional section, in any order:
 - Import from `vela` only `onMount`, `onDestroy` and runtime exports such as
   `tick`; import stores from `vela/store`. Other names are
   `VELA-UNKNOWN-IMPORT`.
+- Pass values that many levels need (theme, current user, services) through
+  context: `setContext('key', value)` in an ancestor's script,
+  `getContext('key')` in a descendant's script, with string-literal keys.
+  Call them only while the component starts — never in handlers, `$effect`,
+  `onMount`, `$derived` or the template (`VELA-CONTEXT-OUTSIDE-INIT`).
+  Context is not reactive: put a `$state.deep` object in it and read it as
+  `let theme = $state.deep(getContext('theme'))` to follow changes.
+- In a Vela App, read the route, form and data of the page below the route
+  components with `let page = $state.deep(getPage())`, importing
+  `getPage` from `'#app/page.js'`, instead of passing `route` and `data`
+  down as props.
+- Import deep modules through `package.json` `"imports"` (`#lib/*`) only
+  with string targets inside the package; components keep relative
+  `.vela` imports (`VELA-SUBPATH-IMPORT`).
 
 ## Server rendering
 

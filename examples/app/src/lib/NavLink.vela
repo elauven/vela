@@ -1,0 +1,31 @@
+<script>
+  // A link of the menu that marks the section of the current route. It
+  // reads the page state through getPage() instead of a route prop passed
+  // down from the layout (docs/APP.md R-11): $state.deep shares the object
+  // VelaApp changes on every navigation.
+  import { getPage } from '#app/page.js';
+
+  export let href = '/';
+  export let label = '';
+
+  let page = $state.deep(getPage());
+  let active = $derived(section(page.route.id) === section(href));
+
+  // section is the first segment of a path or route id, without route
+  // groups such as (admin) and optional parameters such as [[lang]].
+  function section(path) {
+    for (const segment of path.split('/')) {
+      if (segment === '' || segment.startsWith('(') || segment.startsWith('[[')) continue;
+      return segment;
+    }
+    return '';
+  }
+</script>
+
+<template>
+  <a :href={href} class:active={active}>{label}</a>
+</template>
+
+<style>
+  .active { font-weight: bold; }
+</style>

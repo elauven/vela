@@ -2,6 +2,7 @@ package ssr
 
 import (
 	"github.com/elauven/vela/internal/pkgpath"
+	"github.com/elauven/vela/internal/project"
 
 	"github.com/elauven/vela/internal/analyzer"
 	"github.com/elauven/vela/internal/jsast"
@@ -71,16 +72,27 @@ func NewSSRModules(layout SSRProjectLayout, srcRoot string, hosts *SSRHosts) *SS
 // .js, .ts or .mts specifier, and a .js specifier whose module is a .ts
 // one (TS-5.3, TS-7.1). ok is false for other imports.
 func ssrLocalModule(dir, spec string) (string, bool) {
-	if !strings.HasPrefix(spec, ".") {
+	var file string
+	switch {
+	case project.IsSubpathImport(spec):
+		// A # import of a module of the package (task 090); the build
+		// reports one that does not resolve.
+		resolved, err := project.ResolveSubpathImport(dir, spec)
+		if err != nil {
+			return "", false
+		}
+		file = resolved.File
+	case strings.HasPrefix(spec, "."):
+		file = filepath.Join(dir, filepath.FromSlash(spec))
+	default:
 		return "", false
 	}
-	switch path.Ext(spec) {
+	switch filepath.Ext(file) {
 	case ".js", ".ts", ".mts":
 	default:
 		return "", false
 	}
-	file := filepath.Join(dir, filepath.FromSlash(spec))
-	if path.Ext(spec) == ".js" {
+	if filepath.Ext(file) == ".js" {
 		if _, err := os.Stat(file); err != nil {
 			for _, ext := range []string{".ts", ".mts"} {
 				if alt := strings.TrimSuffix(file, ".js") + ext; ssrFileExists(alt) {
@@ -195,7 +207,13 @@ func ssrModuleFieldName(name string, taken map[string]bool) string {
 func (m *SSRModules) compile(module *ssrModule) {
 	data, err := os.ReadFile(module.abs)
 	if err != nil {
-		module.problem = err
+		// A positioned diagnostic, not a panic: the module may be missing,
+		// for example #app/page.js before vela-app gen ran (task 090).
+		if os.IsNotExist(err) {
+			module.problem = ssrExprUnsupported(0, "%s does not exist", module.Source)
+		} else {
+			module.problem = ssrExprUnsupported(0, "%s cannot be read: %v", module.Source, err)
+		}
 		return
 	}
 	program, diagnostics := ssrParseModule(module.abs, string(data))
@@ -262,6 +280,7 @@ func (m *SSRModules) compile(module *ssrModule) {
 		plan.HostSymbols[name] = SSRHostSymbol{Source: module.Source, Name: name}
 	}
 	plan.ModuleRefs = m.refs(module.abs, imports)
+	plan.ContextFuncs = ssrContextFuncs(imports)
 	for local, ref := range plan.ModuleRefs {
 		plan.HostSymbols[local] = SSRHostSymbol{Source: ref.Module.Source, Name: ref.Export}
 		if decl := m.hosts.Sources[ref.Module.Source][ref.Export]; decl != nil {

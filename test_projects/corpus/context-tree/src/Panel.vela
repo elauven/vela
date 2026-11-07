@@ -1,0 +1,6 @@
+<script>
+  import { setContext } from 'vela';
+  setContext('label', 'panel');
+</script>
+
+<template><div class="panel"><slot /></div></template>

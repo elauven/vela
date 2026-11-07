@@ -1,6 +1,6 @@
 // @govela/runtime/ambient: the runes and the modules `vela` and `vela/store`
 // of component scripts (TS-6.2), as they appear in a `.vela` script.
-import { onMount, onDestroy, tick, lazy, mount, writable, type Component, type Lazy } from 'vela';
+import { onMount, onDestroy, tick, lazy, mount, writable, getContext, type Component, type Lazy } from 'vela';
 import { writable as storeWritable, derived, type Writable } from 'vela/store';
 import { expectTrue, expectType, type Equal } from './expect.ts';
 
@@ -52,3 +52,6 @@ const b = storeWritable(1);
 expectTrue<Equal<typeof b, Writable<number>>>();
 const sum = derived([a, b] as const, ([x, y]) => x + y);
 expectType<number>(sum.get());
+
+// The context API of 'vela' (task 090).
+expectType<string>(getContext<string>('label'));

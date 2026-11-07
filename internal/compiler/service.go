@@ -68,6 +68,12 @@ func sourceModuleImports(src string, prog *jsast.JsProgram) []ModuleImport {
 			imp.Kind = "runtime"
 		case codegen.IsPackageSpecifier(spec):
 			imp.Kind = "package"
+		case project.IsSubpathImport(spec):
+			// A module of the package through "imports" (task 090).
+			imp.Kind = "module"
+			if resolved, err := project.ResolveSubpathImport(filepath.Dir(src), spec); err == nil {
+				imp.Resolved = resolved.File
+			}
 		case strings.HasPrefix(spec, "./") || strings.HasPrefix(spec, "../") || strings.HasPrefix(spec, "/"):
 			imp.Kind = "module"
 			if strings.HasSuffix(spec, ".vela") {

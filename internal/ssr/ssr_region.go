@@ -514,6 +514,15 @@ func (r *SSRRegion) finish(plan *SSRRenderPlan) error {
 			}
 		}
 	}
+	// A statement that sets context must run on the server: the context of
+	// the children depends on it (task 090).
+	for _, statement := range plan.ContextStatements {
+		builder := newSSRIRBuilder(ctx)
+		builder.locals, builder.js = true, true
+		builder.site = r.siteLabel(r.ScriptOffset + statement.NodePos())
+		ir, err := builder.build(statement, 0)
+		r.add("context", "setContext", r.ScriptOffset+statement.NodePos(), true, ir, builder.reads, err)
+	}
 	// One record per called function, at its definition (T-2.1 root 6).
 	names := make([]string, 0, len(r.calls))
 	for name := range r.calls {
@@ -688,7 +697,8 @@ func ssrJSPrologue(region *SSRRegion) []goast.Stmt {
 		return nil
 	}
 	out := []goast.Stmt{
-		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("ssrJS")}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "NewJS")}}},
+		// Bound to the render of w, whose context getContext reads (task 090).
+		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("ssrJS")}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "NewJSFor"), Args: []goast.Expr{goast.NewIdent("w")}}}},
 		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []goast.Expr{goast.NewIdent("ssrJS")}},
 	}
 	return out

@@ -1,0 +1,16 @@
+<script>
+  import { NavLink } from './NavLink.vela';
+  export let items = [];
+</script>
+
+<template>
+  <nav>
+    {#each items as item (item.href)}
+      <NavLink :href={item.href} :label={item.label} />
+    {/each}
+  </nav>
+</template>
+
+<style>
+  nav { display: flex; gap: 1rem; }
+</style>

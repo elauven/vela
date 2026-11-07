@@ -14,7 +14,7 @@ import (
 
 const goldenProject = "../../testdata/golden"
 
-// TestGoldenOutputs compares the four generated files with
+// TestGoldenOutputs compares the generated files with
 // testdata/golden/want. VELA_APP_UPDATE=1 rewrites them.
 func TestGoldenOutputs(t *testing.T) {
 	model, diags := Load(goldenProject)
@@ -55,11 +55,11 @@ func TestGenerateWritesOnlyChangedFilesAndRemovesStaleOnes(t *testing.T) {
 	if len(diags) > 0 {
 		t.Fatal(Error(diags))
 	}
-	if len(result.Written) != 4 {
+	if len(result.Written) != 5 {
 		t.Fatalf("written %v", result.Written)
 	}
 	result, _ = Generate(root)
-	if len(result.Written) != 0 || len(result.Unchanged) != 4 {
+	if len(result.Written) != 0 || len(result.Unchanged) != 5 {
 		t.Fatalf("second run: %+v", result)
 	}
 	// A stale file it owns is removed; a file of the developer is kept.
@@ -171,7 +171,7 @@ func TestWatchRegenerates(t *testing.T) {
 		}
 		return Result{}
 	}
-	if r := wait("first run"); len(r.Written) != 4 {
+	if r := wait("first run"); len(r.Written) != 5 {
 		t.Fatalf("first run wrote %v", r.Written)
 	}
 	writeFile(t, filepath.Join(root, "src/routes/news/Page.vela"), page)

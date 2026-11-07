@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"reflect"
 	"sort"
@@ -46,10 +47,23 @@ func (e *RenderError) Error() string {
 // output that depends on a failed site.
 type JS struct {
 	err error
+	// render is the output of the render w belongs to, whose context
+	// frames getContext reads (task 090); nil outside a render.
+	render *out
 }
 
 // NewJS starts the evaluation state of a render function.
 func NewJS() *JS { return &JS{} }
+
+// NewJSFor starts the evaluation state of a render function writing to w:
+// setContext, getContext and hasContext reach the context of that render.
+func NewJSFor(w io.Writer) *JS {
+	js := &JS{}
+	if sw, ok := w.(*streamWriter); ok {
+		js.render = sw.out
+	}
+	return js
+}
 
 // Err returns the first exception, or nil.
 func (js *JS) Err() error {

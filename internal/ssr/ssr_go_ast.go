@@ -388,6 +388,13 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	jsMethod("OptionalMethod", []*types.Var{v("site", stringType), v("receiver", anyType), v("name", stringType), v("call", restFunc)}, anyType)
 	jsMethod("Err", nil, errorType)
 	ssrRuntimeAddFunc(pkg, "NewJS", nil, []*types.Var{v("", types.NewPointer(jsType))})
+	// Context (ssr_runtime/context.go, task 090).
+	ssrRuntimeAddFunc(pkg, "NewJSFor", []*types.Var{v("w", writer)}, []*types.Var{v("", types.NewPointer(jsType))})
+	ssrRuntimeAddFunc(pkg, "EnterContext", []*types.Var{v("w", writer)}, []*types.Var{v("", writer)})
+	ssrRuntimeAddFunc(pkg, "LeaveContext", []*types.Var{v("w", writer)}, nil)
+	jsMethod("SetContext", []*types.Var{v("key", stringType), v("value", anyType)}, anyType)
+	jsMethod("GetContext", []*types.Var{v("key", stringType)}, anyType)
+	jsMethod("HasContext", []*types.Var{v("key", stringType)}, types.Typ[types.Bool])
 	objectName := types.NewTypeName(token.NoPos, pkg, "Object", nil)
 	objectType := types.NewNamed(objectName, types.NewStruct(nil, nil), nil)
 	pkg.Scope().Insert(objectName)

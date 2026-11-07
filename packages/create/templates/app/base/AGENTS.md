@@ -19,6 +19,10 @@ When a compiler diagnostic disagrees with an example, trust the diagnostic.
   loaders in `server/routes` (the same tree) return each component's
   `data` prop; `npx vela-app scaffold` adds the missing ones.
 - `src/_app`, `internal/appgen` and `out/` are generated; never edit them.
+- A component at any depth reads the route, the form and the data of the
+  page with `getPage()` from `#app/page.js` (call it in the script; keep it
+  as `$state.deep(getPage())` to follow navigation) instead of passing
+  `route` and `data` down as props.
 - Code that runs during the first render is translated to Go: keep it free
   of browser APIs. Treat every `VELA-SSR-*` diagnostic as an error to fix.
 - Tests are `*.test.__EXT__` files next to the components, run by Vitest with

@@ -1512,6 +1512,54 @@
       }
     },
     {
+      "id": "context-tree",
+      "role": "positive",
+      "root": "test_projects/corpus/context-tree",
+      "src": "src",
+      "components": {
+        "Panel.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "context#1": "server-native"
+          }
+        },
+        "Swatch.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "attribute#1": "server-native",
+            "binding#1": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native"
+          }
+        },
+        "ThemeRoot.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "component-prop#1": "server-native",
+            "context#1": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native"
+          }
+        }
+      }
+    },
+    {
       "id": "deepseek-todo",
       "role": "negative",
       "root": "test_projects/deepseek-todo-vela",

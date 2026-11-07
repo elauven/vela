@@ -1,7 +1,7 @@
 <script>
   import { pad2 } from 'tiny-fmt';
   import { Badge } from './widgets/Badge.vela';
-  import { clicks } from './store.js';
+  import { clicks } from '#app/store.js';
 
   let count = $state(7);
 

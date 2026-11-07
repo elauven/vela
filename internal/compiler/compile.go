@@ -488,6 +488,7 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		if opts.CheckDeps {
 			checkScriptPackageImports(src, sfc.ScriptAST, ds)
 		}
+		checkScriptSubpathImports(src, sfc.ScriptAST, ds)
 		scriptProg = sfc.ScriptAST.Program
 		module.Imports = sourceModuleImports(src, scriptProg)
 		return nil
@@ -533,6 +534,7 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		ValidateDerivedCycles(scriptProg, analysis, ds)
 		ValidateDerivedPurity(scriptProg, analysis, ds)
 		validateScriptFormsWithAnalysis(scriptProg, analysis, ds)
+		ValidateContextCalls(scriptProg, analysis, ds)
 		ValidateEffectBody(scriptProg, analysis, ds)
 		sfc.LazyComponents = ResolveLazyComponents(scriptProg, sfc.ComponentID, ds)
 		ds.PopOffset()
@@ -543,6 +545,7 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		ValidateSpecialElements(tmpl, sfc.TemplateOffset, ds)
 		ValidateLazyTags(tmpl, lazyBindings(scriptProg, sfc.LazyComponents), sfc.TemplateOffset, ds)
 		ValidateTemplateRefs(tmpl, analysis, scriptScope, sfc.Template, ds)
+		ValidateTemplateContextCalls(tmpl, scriptProg, ds)
 		ds.PopOffset()
 		if ds.HasErrors() {
 			return fmt.Errorf("input validation failed")
@@ -821,6 +824,9 @@ func CopyProjectModule(src, srcRoot, outRoot string, opts CompileOptions) bool {
 			printModuleDiagnostics(opts, []*diag.Diagnostic{d})
 			return false
 		}
+	}
+	if err == nil && !checkModuleSubpathImports(src, string(data), opts) {
+		return false
 	}
 	if err == nil {
 		err = os.MkdirAll(filepath.Dir(dest), 0755)

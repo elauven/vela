@@ -280,8 +280,9 @@ server/routes/**                  internal/appgen/routes_gen.go
 
   The page also gets `form`: `null`, or the value of `app.Fail` after a
   failed form action (see [Form actions](#form-actions)). `Error.vela` gets `error`
-  (`{ status, message }`) and `route`. No store or context API is needed,
-  and the props also work on the server.
+  (`{ status, message }`) and `route`. The props also work on the server.
+  A component below the route components reads the same values through
+  `getPage()` (R-11).
 - **R-2** The generator writes the app root `src/_app/VelaApp.vela`, which
   `vela` compiles like any other component:
   - it imports the layouts statically and the pages and error pages with
@@ -356,6 +357,36 @@ server/routes/**                  internal/appgen/routes_gen.go
 
   The head, the headers and the error handling are those of `data`. A
   fragment that fails to render answers `reload` (`document`).
+- **R-11** Page state (task 090). `VelaApp` puts one object under the
+  context key `vela:page` (`setContext`, [GUIDE](GUIDE.md#context)): a
+  `$state.deep` object `{ route, form, data(level?) }`, where `route` is
+  the `route` prop of R-1, `form` the `form` prop of the page level, and
+  `data(level)` the `data` of a level of the chain (`0` is the root
+  layout, the page by default). When the router sets new props (R-2), the
+  object changes in place. The generated module `src/_app/page.js` exports
+  `getPage()`, which reads that context:
+
+  ```vela
+  <script>
+    import { getPage } from '#app/page.js';
+    let page = $state.deep(getPage());
+  </script>
+
+  <template><a href="/users" class:active={page.route.id.startsWith('/users')}>Users</a></template>
+  ```
+
+  Call `getPage()` while the component starts. A component that keeps the
+  object as its `$state.deep` shares it with `VelaApp` and updates on every
+  navigation; a plain `const page = getPage()` reads the values of the
+  first render only. The server renders the same values: `page.js` is a
+  local module, translated to Go like any other (contract §7.5), and the
+  object does not travel in the payload. `#app/*` is a subpath import of
+  `package.json` (`"imports": { "#app/*": "./src/_app/*" }`), resolved by
+  the compiler, Vite, esbuild and TypeScript without alias configuration.
+  `vela-app scaffold` adds the entry; `vela-app gen` never edits
+  `package.json` and prints the entry when it is missing. The props of R-1
+  stay: `getPage()` is for components the route components do not reach
+  with props.
 
 ## N. Navigation protocol
 
@@ -489,6 +520,7 @@ A file without that line is never overwritten or removed.
 | `src/_app/VelaApp.vela` | The app root of R-2: layouts imported statically, pages and error pages with `lazy()`, a table from segment id to component, and one `<vela:component>` per level up to the maximum chain depth, each with `data`, `error` and `route` |
 | `src/_app/routes.js` | The client table: the routes with their chains, the patterns in ranking order, the matchers (`@govela/app/match` and the project's own), the lazy components by segment id (`lazy()` returns the value `VelaApp` registered under the same id) and `match(path)` |
 | `src/_app/client.js` | The client entry: `start({ VelaApp, routes, root: 'vela-app' })` from `@govela/app/client` (task 076) |
+| `src/_app/page.js` | `getPage()`, the page state of R-11, imported as `#app/page.js`; in a TypeScript project with `page.d.ts`, which types it with `Route` of `@govela/app/client` |
 | `internal/appgen/routes_gen.go` | `appgen.Routes() app.Routes`: the same patterns, the chains with their loaders (`app.LoaderOf`), `Deps` and `Render` of the mirrored packages, the matchers, and the `VelaApp` renderer. It compiles against the `app` package only, without reflection |
 
 ### Route types

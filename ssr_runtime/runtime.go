@@ -663,6 +663,9 @@ type out struct {
 	// depth counts the components being rendered; at 0 nothing is buffered.
 	depth int
 	err   error
+	// frames are the context frames of the components being rendered, the
+	// innermost last (task 090).
+	frames []*contextFrame
 }
 
 const outChunk = 32 << 10
@@ -761,6 +764,7 @@ func BeginComponent(w io.Writer, component string, state any, omitted ...string)
 		state = NewObject()
 	}
 	state, omitted = clientOnlyState(state, omitted)
+	state, omitted = inheritedState(sw.out, state, omitted)
 	entry := []any{"s", component, state}
 	if len(omitted) > 0 {
 		entry = append(entry, map[string][]string{"omitted": omitted})

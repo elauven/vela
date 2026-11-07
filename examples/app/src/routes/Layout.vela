@@ -1,20 +1,12 @@
 <script>
+  import { NavBar } from '../lib/NavBar.vela';
+
   export let data = null;
-  export let route = null;
 </script>
 
 <template>
   <div class="site">
-    <nav>
-      {#each data.menu as item (item.href)}
-        <a :href={item.href} class:active={route.path === item.href}>{item.label}</a>
-      {/each}
-    </nav>
+    <NavBar :items={data.menu} />
     <main><slot /></main>
   </div>
 </template>
-
-<style>
-  nav { display: flex; gap: 1rem; }
-  .active { font-weight: bold; }
-</style>

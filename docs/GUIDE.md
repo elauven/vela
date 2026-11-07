@@ -633,6 +633,61 @@ bundle:
   Without it, hydration reports `lazy-not-loaded` and repairs the range
   once the module arrives.
 
+### Context
+
+Context passes values down the component tree without props on every level:
+a theme, the current user, translations, a service. A component sets a value
+with `setContext(key, value)`; its descendants read it with
+`getContext(key)`, or check it with `hasContext(key)`:
+
+```vela
+<!-- ThemeProvider.vela -->
+<script>
+  import { setContext } from 'vela';
+  export let name = 'dark';
+  let theme = $state.deep({ name });
+  setContext('theme', theme);
+</script>
+
+<template>
+  <button @click={() => (theme.name = theme.name === 'dark' ? 'light' : 'dark')}>Switch</button>
+  <slot />
+</template>
+```
+
+```vela
+<!-- Swatch.vela, anywhere below ThemeProvider -->
+<script>
+  import { getContext } from 'vela';
+  let theme = $state.deep(getContext('theme'));
+</script>
+
+<template><span :class={theme.name}>{theme.name}</span></template>
+```
+
+- Call them while the component starts: in its script, or in a function the
+  script calls, also a function of a `.js` module. A call in a handler,
+  `$effect`, `onMount`, a `$derived` expression or the template is
+  `VELA-CONTEXT-OUTSIDE-INIT`; the runtime throws for such a call the
+  compiler cannot see.
+- Keys are strings (on the server, string literals). A descendant gets the
+  value the nearest ancestor set; a component sees its own values too.
+- Context follows the rendered tree: components in `{#if}`, `{#each}`,
+  `{#key}`, `{#await}`, `<vela:component>` and `lazy()` get the context of
+  their place, also when they mount later. Slot content gets the context of
+  the component that renders the slot, so `<ThemeProvider><Swatch /></ThemeProvider>`
+  works.
+- Context itself is not reactive: a reader gets the value once. For data
+  that changes, put a `$state.deep` object (or a store) in it. A component
+  that declares the value as its own `$state.deep`, as `Swatch` does, shares
+  the object: a change by any holder updates all of them. A plain
+  `const theme = getContext('theme')` reads it once.
+- With server rendering the server runs the same calls in the same order,
+  and the browser computes the values again when it hydrates: context values
+  are never sent in the payload.
+- Mount a root that sets context with `mount()`, `hydrate()` or a direct
+  factory call; all three give it a context of its own.
+
 ---
 
 ## 9. Scoped styles
@@ -890,6 +945,30 @@ Project mode compiles `format.ts` to `format.js`; `./format.ts` becomes
 `./format.js` in the output. A `.ts` module that imports `./Card.vela` is
 typed in `vela check --types`, and in the editor with
 `@govela/typescript-plugin` ([EDITORS.md](EDITORS.md)).
+
+#### `#` imports
+
+A module deep in the tree can be imported by a stable name instead of
+`../../..`, through the `"imports"` field of `package.json` (Node subpath
+imports):
+
+```json
+{ "imports": { "#lib/*": "./src/lib/*" } }
+```
+
+```js
+import { format } from '#lib/format.js';
+```
+
+The compiler resolves the nearest `package.json` (an exact key, or a
+pattern with one `*`) and treats the module as a local one: it is copied,
+translated for server rendering, and not listed as a package in
+`vela.manifest.json`. The generated JavaScript keeps `#lib/format.js` as
+written; Vite, esbuild, Rollup and TypeScript (`moduleResolution: bundler`)
+resolve it themselves. A conditional entry (`{ "browser": … }`), an array,
+a package target and a target outside the package are
+`VELA-SUBPATH-IMPORT`, as is a `#` import of a `.vela` component (import
+components by their relative path).
 
 ### Erasable syntax only
 
@@ -1352,6 +1431,23 @@ prefetched on hover; layouts above the changed level keep their state. Use
 `goto`, `invalidate`, `navigating`, `beforeNavigate` and `afterNavigate`
 from `@govela/app/client` for navigation in code
 ([APP.md](APP.md#navigation)).
+
+A component deeper than the route components reads the route, the form and
+the data of the page with `getPage()` from the generated `#app/page.js`
+([context](#context), [APP.md](APP.md) R-11):
+
+```vela
+<script>
+  import { getPage } from '#app/page.js';
+  let page = $state.deep(getPage());
+</script>
+
+<template><span class="section">{page.route.id}</span></template>
+```
+
+`$state.deep` keeps it current after every navigation. `#app/*` is a
+subpath import of `package.json`, which `vela-app scaffold` and
+`npm create @govela -- --app` add.
 
 ## Testing components
 

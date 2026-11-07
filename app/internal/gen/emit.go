@@ -24,19 +24,69 @@ type Output struct {
 	Data []byte
 }
 
-// Outputs renders the four generated files (docs/APP.md R-2, P-15).
+// Outputs renders the generated files (docs/APP.md R-2, R-11, P-15).
 func (m *Model) Outputs() ([]Output, error) {
 	goFile, err := m.routesGo()
 	if err != nil {
 		return nil, err
 	}
-	return []Output{
+	outputs := []Output{
 		{path.Join(m.Config.Out, "VelaApp.vela"), m.velaApp()},
 		{path.Join(m.Config.Out, "routes.js"), m.routesJS()},
 		{path.Join(m.Config.Out, "client.js"), m.clientJS()},
+		{path.Join(m.Config.Out, PageModule), pageJS()},
 		{path.Join(m.Config.GoPackage, "routes_gen.go"), goFile},
-	}, nil
+	}
+	if m.Config.TypeScript {
+		outputs = append(outputs, Output{path.Join(m.Config.Out, "page.d.ts"), []byte(pageDTS)})
+	}
+	return outputs, nil
 }
+
+// PageModule is the module of getPage() in the out directory (task 090),
+// which components import as #app/page.js.
+const PageModule = "page.js"
+
+// PageContextKey is the context key of the page state.
+const PageContextKey = "vela:page"
+
+// pageJS is the module of getPage(): the page state VelaApp puts in the
+// context, read while a component starts.
+func pageJS() []byte {
+	return []byte(`// ` + Marker + `
+// getPage() returns the page state of the Vela App (docs/APP.md R-11): the
+// route, the form of the page level and data(level) of every level of the
+// route chain. Call it while a component starts; the object changes in
+// place on navigation, so a component that keeps it as
+// $state.deep(getPage()) follows the navigation.
+import { getContext } from 'vela';
+
+export function getPage() {
+  return getContext(` + jsString(PageContextKey) + `);
+}
+`)
+}
+
+// pageDTS types page.js in a TypeScript project.
+const pageDTS = `// ` + Marker + `
+import type { Route } from '@govela/app/client';
+
+/**
+ * The page state of the Vela App (docs/APP.md R-11). It changes in place on
+ * navigation: keep it as $state.deep(getPage()) to follow it.
+ */
+export interface Page {
+  /** The current route. */
+  readonly route: Route;
+  /** The form value of the page level after a failed action, else null. */
+  readonly form: unknown;
+  /** The data of a level of the route chain: 0 is the root layout, the page by default. */
+  data<T = unknown>(level?: number): T;
+}
+
+/** Returns the page state. Call it while the component starts. */
+export declare function getPage(): Page;
+`
 
 // relImport is the import specifier of a project file from the out
 // directory.
@@ -77,7 +127,9 @@ func (m *Model) velaApp() []byte {
 		lazy = lazy || c.Kind != KindLayout
 	}
 	if lazy {
-		b.WriteString("  import { lazy } from 'vela';\n")
+		b.WriteString("  import { lazy, setContext } from 'vela';\n")
+	} else {
+		b.WriteString("  import { setContext } from 'vela';\n")
 	}
 	for _, c := range m.Components {
 		if c.Kind == KindLayout {
@@ -107,7 +159,20 @@ func (m *Model) velaApp() []byte {
 	for _, c := range m.Components {
 		fmt.Fprintf(&b, "    %s: %s,\n", jsString(c.ID), c.Local)
 	}
-	b.WriteString("  };\n</script>\n\n<template>\n")
+	b.WriteString("  };\n\n")
+	// The page state of getPage() (R-11, task 090): one object per root,
+	// changed in place when the router sets new props.
+	level := "level"
+	if m.Config.TypeScript {
+		level = "level?: number"
+	}
+	b.WriteString("  // The page state of getPage() in " + PageModule + " (docs/APP.md R-11).\n")
+	b.WriteString("  let page = $state.deep({\n    route,\n    chain,\n")
+	b.WriteString("    get form() {\n      const last = this.chain[this.chain.length - 1];\n      return last && last.form !== undefined ? last.form : null;\n    },\n")
+	b.WriteString("    data(" + level + ") {\n      const entry = this.chain[level === undefined ? this.chain.length - 1 : level];\n      return entry ? entry.data : undefined;\n    },\n  });\n")
+	fmt.Fprintf(&b, "  setContext(%s, page);\n", jsString(PageContextKey))
+	b.WriteString("  $effect(() => {\n    page.route = route;\n    page.chain = chain;\n  });\n")
+	b.WriteString("</script>\n\n<template>\n")
 	depth := max(m.Depth, 1)
 	for i := range depth {
 		at := "start"

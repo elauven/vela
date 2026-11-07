@@ -28,12 +28,13 @@ type inputStamp struct {
 }
 
 // ssrWatchInputs are the files an SSR build reads: the components and local
-// modules under srcRoot, vela.ssr.json in srcRoot or its parent, and the Go
-// files of the host tree.
+// modules under srcRoot, vela.ssr.json and package.json (its "imports" map #
+// specifiers, task 090) in srcRoot or its parent, and the Go files of the
+// host tree.
 func ssrWatchInputs(srcRoot string) map[string]inputStamp {
 	files := append(CollectVela(srcRoot), CollectJSModules(srcRoot)...)
 	for _, dir := range []string{srcRoot, filepath.Dir(filepath.Clean(srcRoot))} {
-		files = append(files, filepath.Join(dir, SSRConfigFile))
+		files = append(files, filepath.Join(dir, SSRConfigFile), filepath.Join(dir, "package.json"))
 	}
 	if project, err := LoadSSRProject(srcRoot); err == nil {
 		_ = filepath.WalkDir(project.HostDir, func(path string, entry fs.DirEntry, err error) error {

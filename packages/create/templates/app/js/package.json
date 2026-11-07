@@ -2,6 +2,9 @@
   "name": "__NAME__",
   "private": true,
   "type": "module",
+  "imports": {
+    "#app/*": "./src/_app/*"
+  },
   "scripts": {
     "gen": "vela-app gen",
     "dev": "vela-app dev",

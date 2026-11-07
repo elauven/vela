@@ -1,6 +1,6 @@
 // @govela/runtime: components, mount, lazy and the stores (TS-6.1, TS-6.3).
 import {
-  mount, lazy, tick, warn, writable, readable, derived,
+  mount, lazy, tick, warn, writable, readable, derived, setContext, getContext, hasContext,
   type Component, type ComponentInstance, type ComponentProps, type ComponentEvents, type Lazy,
   type Readable, type Writable, type Derived, type MountOptions,
 } from '@govela/runtime';
@@ -85,3 +85,13 @@ derived(count, (n: string) => n);
 const asValue: Component<{ title: string; count?: number }, any, any> = Card;
 expectType<Component>(Optional);
 export { asValue };
+
+// Context (task 090): string keys, a typed getContext.
+expectType<{ name: string }>(setContext('theme', { name: 'dark' }));
+expectTrue<Equal<ReturnType<typeof getContext<{ name: string }>>, { name: string }>>();
+expectType<unknown>(getContext('theme'));
+expectType<boolean>(hasContext('theme'));
+// @ts-expect-error keys are strings
+setContext(Symbol('theme'), 1);
+// @ts-expect-error keys are strings
+getContext(1);
