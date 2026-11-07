@@ -26,7 +26,8 @@ outcomes fails CI; a regression can only be recorded with a decision in
 | gpt-fixed | 1 | 1 | 1 | 0 | 0 |  |
 | qwen-fixed | 2 | 1 | 0 | 1 | 0 | VELA-SSR-HOST-MISSING ×1 |
 | dynamic-views | 3 | 3 | 3 | 0 | 0 |  |
-| **total** | 70 | 44 | 43 | 1 | 0 | VELA-SSR-CHILD ×2, VELA-SSR-EXPR ×12, VELA-SSR-HOST-MISSING ×12 |
+| context-tree | 3 | 3 | 3 | 0 | 0 |  |
+| **total** | 73 | 47 | 46 | 1 | 0 | VELA-SSR-CHILD ×2, VELA-SSR-EXPR ×12, VELA-SSR-HOST-MISSING ×12 |
 
 A component is not checked in the browser when its default props make
 the render throw (as the client would), or when its Go package cannot
@@ -37,7 +38,7 @@ the site and the host or `{#client}` route that would fix it.
 
 | Outcome | Sites |
 | --- | ---: |
-| server-native | 814 |
+| server-native | 830 |
 | server-host | 2 |
 | unsupported | 111 |
 
@@ -57,4 +58,4 @@ as positive coverage.
 | qwen-todo | TodoItem.vela | VELA-BUILTIN-IMPORT |
 | qwen-todo | TodoItem.vela | VELA-DYNAMIC-CLASS |
 
-Totals: 70 positive components in 10 projects (43 checked in the browser); 2 negative projects with 7 required diagnostics.
+Totals: 73 positive components in 11 projects (46 checked in the browser); 2 negative projects with 7 required diagnostics.

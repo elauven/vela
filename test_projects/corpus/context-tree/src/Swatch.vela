@@ -1,0 +1,12 @@
+<script>
+  import { getContext, hasContext } from 'vela';
+
+  export let name = 'swatch';
+
+  let theme = $state.deep(hasContext('theme') ? getContext('theme') : { name: 'none' });
+  const label = hasContext('label') ? getContext('label') : 'no label';
+</script>
+
+<template>
+  <span class="swatch" :data-theme={theme.name}>{name}: {theme.name} ({label})</span>
+</template>

@@ -1427,6 +1427,9 @@ func (b *ssrIRBuilder) call(call *jsast.JsCallExpr, pos int) (SSRIRExpr, error) 
 	if value, handled, err := b.lazyCall(call, pos); handled {
 		return value, err
 	}
+	if value, handled, err := b.contextCall(call, pos); handled {
+		return value, err
+	}
 	callee, ok := call.Callee.(*jsast.JsIdent)
 	if !ok {
 		if member, isMember := call.Callee.(*jsast.JsMemberExpr); isMember && !member.Computed {

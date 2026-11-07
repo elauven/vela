@@ -1232,3 +1232,50 @@ func TestRuntimeNestingMatrix_DynamicInDynamic(t *testing.T) {
 		{"assertText": ".frame", "equals": "Ai:0"},
 	})
 }
+
+// context-through-every-block — setContext in a root mounted by a direct
+// factory call reaches readers in {#if}, {#each}, {#key}, {#await}, a slot
+// and <vela:component>, also when they mount after a toggle (task 090).
+func TestRuntimeNestingMatrix_ContextThroughBlocks(t *testing.T) {
+	reader := `<script>
+  import { getContext } from 'vela';
+  export let name = '';
+  const value = getContext('ctx');
+</script>
+<template><b :class={name}>{value}</b></template>`
+	box := `<template><i><slot /></i></template>`
+	root := `<script>
+  import { setContext } from 'vela';
+  import { Reader } from './Reader.vela';
+  import { Box } from './Box.vela';
+  setContext('ctx', 'v');
+  let on = $state(true);
+  let rows = $state(['r1']);
+  let k = $state(0);
+  const p = Promise.resolve(1);
+</script>
+<template><div>
+  <button class="t" @click={() => { on = !on; k = k + 1; rows = [...rows, 'r2']; }}>t</button>
+  {#if on}<Reader name="if" />{/if}
+  {#each rows as row (row)}<Reader :name={row} />{/each}
+  {#key k}<Reader name="key" />{/key}
+  {#await p}<s>…</s>{:then v}<Reader name="await" />{/await}
+  <Box><Reader name="slot" /></Box>
+  <vela:component :this={Reader} name="dyn" />
+</div></template>`
+	assertRuntimeSet(t, "Root", map[string]string{"Root": root, "Reader": reader, "Box": box}, []rtStep{
+		{"tick": true},
+		{"assertText": "b.if", "equals": "v"},
+		{"assertText": "b.r1", "equals": "v"},
+		{"assertText": "b.key", "equals": "v"},
+		{"assertText": "b.await", "equals": "v"},
+		{"assertText": "b.slot", "equals": "v"},
+		{"assertText": "b.dyn", "equals": "v"},
+		{"click": "button.t"},
+		{"assertCount": "b.if", "equals": 0},
+		{"assertText": "b.r2", "equals": "v"},
+		{"assertText": "b.key", "equals": "v"},
+		{"click": "button.t"},
+		{"assertText": "b.if", "equals": "v"},
+	})
+}

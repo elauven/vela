@@ -14,7 +14,7 @@
  * with one console.error and no value verification.
  */
 
-import { $$isDev, $$lazyById, warn } from './runtime.js';
+import { $$contextParent, $$contextRun, $$isDev, $$lazyById, warn } from './runtime.js';
 import { $$owner, $$setHydration, $$createCursor, $$listen } from './runtime-blocks.js';
 
 export const MISMATCH = 'VELA-HYDRATION-MISMATCH';
@@ -75,13 +75,15 @@ function sameAttribute(name, before, after) {
 
 // hydrateCursor walks server DOM from position pos ({ parent, next, stack,
 // owners }), which every cursor of one root shares.
-function hydrateCursor(pos, owner, session) {
+// ctx is the context of the position (task 090).
+function hydrateCursor(pos, owner, session, ctx) {
   const cursor = {
     owner,
     hydrating: true,
-    sub(childOwner) {
+    ctx: ctx || null,
+    sub(childOwner, childCtx) {
       pos.owners.push(childOwner);
-      return hydrateCursor(pos, childOwner, session);
+      return hydrateCursor(pos, childOwner, session, childCtx);
     },
     expect(ok, message) {
       if (!ok) {
@@ -213,7 +215,7 @@ function hydrateCursor(pos, owner, session) {
           node = next;
         }
         pos.next = after;
-        return kind($$createCursor(pos.parent, after, owner), ...args);
+        return kind($$createCursor(pos.parent, after, owner, cursor.ctx), ...args);
       }
     },
     // open consumes a range start marker and returns its state token.
@@ -236,7 +238,7 @@ function hydrateCursor(pos, owner, session) {
       const mountOwner = fragmentOwner || $$owner(null);
       pos.owners.push(mountOwner);
       const before = pos.next ? pos.next.previousSibling : pos.parent.lastChild;
-      const handle = fragmentFn(hydrateCursor(pos, mountOwner, session), scope);
+      const handle = fragmentFn(hydrateCursor(pos, mountOwner, session, cursor.ctx), scope);
       const start = before ? before.nextSibling : pos.parent.firstChild;
       const range = start && start !== pos.next
         ? { start, end: pos.next ? pos.next.previousSibling : pos.parent.lastChild }
@@ -406,13 +408,13 @@ function readPayload(script) {
 // returns { instance, failure, session } and the two ways to finish:
 // commit() removes the payload and runs the after-commit callbacks;
 // rollback() releases everything adopted without touching the DOM (X-7.4).
-function adoptRoot(Component, parent, first, script, payload, options, observed, target) {
+function adoptRoot(Component, parent, first, script, payload, options, observed, target, ctx) {
   while (first && first !== script && first.nodeType === 3 && first.data.trim() === '') first = first.nextSibling;
   const pos = { parent, next: first, stack: [], owners: [] };
   const session = createSession(payload.entries || [], options, observed);
   const owner = $$owner(null);
   pos.owners.push(owner);
-  const cursor = hydrateCursor(pos, owner, session);
+  const cursor = hydrateCursor(pos, owner, session, ctx);
   const previous = $$setHydration(session);
   let instance = null;
   let failure = null;
@@ -420,7 +422,8 @@ function adoptRoot(Component, parent, first, script, payload, options, observed,
     cursor.open();
     session.cursors.push(cursor);
     try {
-      instance = Component(target, payload.props || {}, options.slots || {});
+      // The root's script runs in a context frame under ctx (task 090).
+      instance = $$contextRun(ctx, () => Component(target, payload.props || {}, options.slots || {}));
     } finally {
       session.cursors.pop();
     }
@@ -479,14 +482,14 @@ export function hydrate(Component, container, options = {}) {
   if (!script) throw mismatch('the container has no payload script (data-vela-root)');
   const payload = readPayload(script);
   const props = payload.props || {};
-  const result = adoptRoot(Component, container, container.firstChild, script, payload, options, container, container);
+  const result = adoptRoot(Component, container, container.firstChild, script, payload, options, container, container, null);
   if (result.failure) {
     result.rollback();
     if (!isMismatch(result.failure) || result.session.policy === 'fail') throw result.failure;
     // A mismatch at the root range remounts the root (X-7.3).
     result.session.report(result.failure);
     while (container.firstChild) container.firstChild.remove();
-    return Component(container, props, options.slots || {});
+    return $$contextRun(null, () => Component(container, props, options.slots || {}));
   }
   return result.commit();
 }
@@ -524,6 +527,9 @@ export function serverComponent(Component, html, options = {}) {
   if (typeof Component !== 'function') throw new TypeError('vela: serverComponent() needs a component factory');
   if (typeof html !== 'string') throw new TypeError('vela: serverComponent() needs the HTML as a string');
   function Adopted(target, props, slots) {
+    // Adopted runs as the factory of its mount position; Component inherits
+    // the context of that position (task 090).
+    const ctx = $$contextParent();
     const [parent, before] = placeOf(target, 'serverComponent()');
     const content = parseHTML(html);
     let script = null;
@@ -535,13 +541,13 @@ export function serverComponent(Component, html, options = {}) {
     const nodes = [...content.childNodes];
     parent.insertBefore(content, before);
     const own = Object.assign({}, options, slots && Object.keys(slots).length ? { slots } : {});
-    const result = adoptRoot(Component, parent, nodes[0], script, payload, own, parent, target);
+    const result = adoptRoot(Component, parent, nodes[0], script, payload, own, parent, target, ctx);
     if (result.failure) {
       result.rollback();
       for (const node of nodes) node.remove();
       if (!isMismatch(result.failure) || result.session.policy === 'fail') throw result.failure;
       result.session.report(result.failure);
-      const created = Component(target, payload.props || {}, slots || {});
+      const created = $$contextRun(ctx, () => Component(target, payload.props || {}, slots || {}));
       if (props && created.set && Object.keys(props).length) created.set(props);
       return created;
     }

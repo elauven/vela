@@ -28,6 +28,7 @@ type ssrInitPlan struct {
 // possible (payload state).
 func (e *ssrGoEmitter) localsPrologue(plan *SSRRenderPlan, extra []string) ssrInitPlan {
 	needed := map[string]bool{}
+	var contextReads []string
 	if e.region != nil {
 		for _, record := range e.region.Records {
 			if !record.Required {
@@ -35,6 +36,25 @@ func (e *ssrGoEmitter) localsPrologue(plan *SSRRenderPlan, extra []string) ssrIn
 			}
 			for _, name := range record.Reads {
 				needed[name] = true
+				if record.Kind == "context" {
+					contextReads = append(contextReads, name)
+				}
+			}
+		}
+	}
+	// What a context statement reads is evaluated with every binding its
+	// initializer needs (task 090).
+	for len(contextReads) > 0 {
+		name := contextReads[len(contextReads)-1]
+		contextReads = contextReads[:len(contextReads)-1]
+		for _, initializers := range []map[string]jsast.JsExpr{plan.StateInitializers, plan.DeepInitializers, plan.DerivedInitializers, plan.PlainInitializers} {
+			if init, ok := initializers[name]; ok {
+				ssrWalkIdents(init, func(ident string) {
+					if !needed[ident] && ssrPlanHasLocal(plan, ident) {
+						needed[ident] = true
+						contextReads = append(contextReads, ident)
+					}
+				})
 			}
 		}
 	}
@@ -57,7 +77,36 @@ func (e *ssrGoEmitter) localsPrologue(plan *SSRRenderPlan, extra []string) ssrIn
 	}
 	out := ssrInitPlan{evaluated: map[string]bool{}}
 	throws := false
+	// Context statements run in source order between the bindings.
+	statements := plan.ContextStatements
+	runStatements := func(before int) {
+		for len(statements) > 0 && (before < 0 || statements[0].NodePos() < before) {
+			statement := statements[0]
+			statements = statements[1:]
+			builder := newSSRIRBuilder(base)
+			builder.locals, builder.js = true, true
+			if e.region != nil {
+				builder.site = e.region.siteLabel(e.region.ScriptOffset + statement.NodePos())
+			}
+			ir, err := builder.build(statement, 0)
+			if e.region != nil {
+				e.region.absorb(builder)
+			}
+			if err != nil {
+				// The region reports the failure (SSRRegion.finish).
+				continue
+			}
+			if builder.usedJS && e.region != nil {
+				e.region.usesJS = true
+			}
+			throws = throws || builder.throws
+			out.statements = append(out.statements, &goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []goast.Expr{lowerSSRIR(ir)}})
+		}
+	}
 	for _, name := range plan.LocalOrder {
+		if init := initializer(name); init != nil {
+			runStatements(init.NodePos())
+		}
 		if !needed[name] && !optional[name] {
 			continue
 		}
@@ -116,8 +165,19 @@ func (e *ssrGoEmitter) localsPrologue(plan *SSRRenderPlan, extra []string) ssrIn
 		)
 		out.evaluated[name] = true
 	}
+	runStatements(-1)
 	if throws {
 		out.statements = append(out.statements, ssrJSCheck())
 	}
 	return out
+}
+
+// ssrPlanHasLocal reports a local binding of the script.
+func ssrPlanHasLocal(plan *SSRRenderPlan, name string) bool {
+	for _, initializers := range []map[string]jsast.JsExpr{plan.StateInitializers, plan.DeepInitializers, plan.DerivedInitializers, plan.PlainInitializers} {
+		if _, ok := initializers[name]; ok {
+			return true
+		}
+	}
+	return false
 }

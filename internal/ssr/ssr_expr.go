@@ -109,6 +109,8 @@ type SSRExprContext struct {
 	HostDecls           map[string]*jsast.JsFuncDecl
 	HostSymbols         map[string]SSRHostSymbol
 	ModuleRefs          map[string]ssrModuleRef
+	// ContextFuncs are the context functions imported from 'vela' (task 090).
+	ContextFuncs map[string]string
 	// Components are the component imports by local name; one used as a
 	// value translates to its XComponent (task 070). Package is the Go
 	// package being generated, whose components need no import.
@@ -163,6 +165,7 @@ func NewSSRExprContext(plan *SSRRenderPlan) SSRExprContext {
 	ctx.HostSymbols = plan.HostSymbols
 	ctx.HostDecls = plan.HostDecls
 	ctx.ModuleRefs = plan.ModuleRefs
+	ctx.ContextFuncs = plan.ContextFuncs
 	ctx.Components = plan.Links
 	ctx.Package = plan.Package
 	ctx.localIndex = map[string]int{}

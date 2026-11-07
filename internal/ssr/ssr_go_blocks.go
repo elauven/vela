@@ -86,6 +86,10 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 		// A static root writes plain HTML (A-8.1).
 		body = append([]goast.Stmt{&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent("w")}, Tok: token.ASSIGN, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "StaticRoot"), Args: []goast.Expr{goast.NewIdent("w")}}}}}, body...)
 	}
+	if plan.SetsContext {
+		// The component's context frame (task 090).
+		body = append(ssrContextFrame(), body...)
+	}
 	body = append(body, emitter.openRange(""))
 	body = append(body, templateBody...)
 	body = append(body, emitter.closeRange())

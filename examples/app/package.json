@@ -1,6 +1,9 @@
 {
   "private": true,
   "type": "module",
+  "imports": {
+    "#app/*": "./src/_app/*"
+  },
   "scripts": {
     "gen": "go run github.com/elauven/vela/app/cmd/vela-app gen",
     "build": "go run github.com/elauven/vela/app/cmd/vela-app build",

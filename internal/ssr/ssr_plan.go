@@ -79,6 +79,15 @@ type SSRRenderPlan struct {
 	// ModuleRefs maps names imported from local .js modules to their
 	// translated exports (ssr_module.go).
 	ModuleRefs map[string]ssrModuleRef
+	// ContextFuncs maps the local names of setContext, getContext and
+	// hasContext imported from 'vela' to the imported name (task 090).
+	// ContextStatements are the top-level expression statements of the
+	// script that set context, run in the prologue in source order;
+	// SetsContext marks a script that calls setContext, whose renderer opens
+	// a context frame.
+	ContextFuncs      map[string]string
+	ContextStatements []jsast.JsExpr
+	SetsContext       bool
 	// RootStatic marks a component that renders plain HTML as a root (A-8.1).
 	RootStatic bool
 	// DeepInitializers holds $state.deep initializers: their initial value is
@@ -364,6 +373,7 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *sfcast.SF
 		ScriptOffset:        sfc.ScriptOffset,
 	}}
 	b.plan.StateNames, b.plan.LocalOrder = ssrDeclarationOrder(b.plan, analysis)
+	b.plan.ContextFuncs, b.plan.ContextStatements, b.plan.SetsContext = ssrContextPlan(analysis.Imports, analysis.ScriptProgram(), b.plan.Functions)
 	if analysis != nil {
 		serialized := map[string]bool{}
 		for _, sv := range analysis.SerializedState() {

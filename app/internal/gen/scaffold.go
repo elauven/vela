@@ -14,11 +14,23 @@ import (
 // Scaffold creates the mirrored directory and a load.go with the loader
 // signatures of L-1 for the route given by its id (P-12) or its directory
 // relative to the routes directory, or for every route directory without
-// Go files when route is "". It never overwrites a file (P-18).
+// Go files when route is "". It never overwrites a file (P-18). It also
+// adds the #app/* entry to the "imports" of package.json (R-11), which it
+// reports as "package.json" among the created files.
 func Scaffold(root, route string) ([]string, []Diagnostic) {
 	cfg, diags := LoadConfig(root)
 	if len(diags) > 0 {
 		return nil, diags
+	}
+	var created []string
+	if _, err := os.Stat(filepath.Join(cfg.Root, "package.json")); err == nil {
+		changed, err := AddAppImport(cfg)
+		if err != nil {
+			return nil, []Diagnostic{{File: "package.json", Code: CodeConfig, Message: err.Error(), Help: "add " + AppImportEntry(cfg)}}
+		}
+		if changed {
+			created = append(created, "package.json")
+		}
 	}
 	tree, diags := Scan(cfg)
 	if tree.Root == nil {
@@ -39,7 +51,6 @@ func Scaffold(root, route string) ([]string, []Diagnostic) {
 			}
 		}
 	}
-	var created []string
 	for _, d := range dirs {
 		rel := path.Join(cfg.Server, d.GoRel, "load.go")
 		file := cfg.abs(rel)

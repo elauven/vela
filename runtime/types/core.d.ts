@@ -84,3 +84,21 @@ export function tick(): Promise<void>;
 
 /** Logs a warning in development builds; nothing in production. */
 export function warn(message: string): void;
+
+/**
+ * Makes value visible to the descendants of the component under key: to
+ * components in its template, its slots and those mounted later. Call it
+ * while the component starts (its script, or a function the script calls),
+ * not in a handler, `$effect` or `onMount`. Returns value. Context is not
+ * reactive: put a `$state.deep` object or a store in it for data that changes.
+ */
+export function setContext<T>(key: string, value: T): T;
+
+/**
+ * Returns the value the nearest ancestor set for key with `setContext`, or
+ * undefined. Call it while the component starts.
+ */
+export function getContext<T = unknown>(key: string): T;
+
+/** Reports whether an ancestor set a value for key. Call it while the component starts. */
+export function hasContext(key: string): boolean;

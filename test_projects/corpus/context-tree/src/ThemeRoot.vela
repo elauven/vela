@@ -1,0 +1,31 @@
+<script>
+  // Context (task 090): the root puts a $state.deep theme in context; the
+  // swatches below it, in a slot of Panel, a list and an {#if}, read it
+  // and follow its changes.
+  import { setContext } from 'vela';
+  import { Panel } from './Panel.vela';
+  import { Swatch } from './Swatch.vela';
+
+  export let names = ['primary', 'accent'];
+
+  let theme = $state.deep({ name: 'dark' });
+  setContext('theme', theme);
+  let extra = $state(false);
+
+  function toggle() {
+    theme.name = theme.name === 'dark' ? 'light' : 'dark';
+  }
+</script>
+
+<template>
+  <section class="theme-root">
+    <button class="toggle" @click={toggle}>Theme</button>
+    <button class="extra" @click={() => (extra = !extra)}>Extra</button>
+    <Panel>
+      {#each names as name (name)}
+        <Swatch :name={name} />
+      {/each}
+      {#if extra}<Swatch name="extra" />{/if}
+    </Panel>
+  </section>
+</template>

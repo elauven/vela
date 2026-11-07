@@ -94,6 +94,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		created, diags := gen.Scaffold(*dir, route)
 		for _, file := range created {
+			if file == "package.json" {
+				fmt.Fprintln(stdout, "updated package.json: \"imports\" maps "+gen.AppImportKey+" for '#app/"+gen.PageModule+"'")
+				continue
+			}
 			fmt.Fprintln(stdout, "created "+file)
 		}
 		if len(diags) > 0 {
@@ -134,6 +138,9 @@ func report(result gen.Result, diags []gen.Diagnostic, stdout, stderr io.Writer)
 	}
 	if len(result.Written) == 0 && len(result.Removed) == 0 {
 		fmt.Fprintln(stdout, "up to date")
+	}
+	for _, note := range result.Notes {
+		fmt.Fprintln(stdout, "note: "+note)
 	}
 	return true
 }

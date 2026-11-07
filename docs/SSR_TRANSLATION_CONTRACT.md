@@ -515,6 +515,39 @@ in one synchronous pass.
   must not leak by default. An uncaught host error still fails the render with
   the full error, which stays on the server.
 
+### 7.5 Component context (task 090)
+
+- **T-7.5a** `setContext(key, value)`, `getContext(key)` and
+  `hasContext(key)` imported from `vela` are native in the script of a
+  component and in functions of local modules. Keys are string literals;
+  another key is `unsupported`.
+- **T-7.5b** The renderer of a script that calls `setContext` opens a
+  context frame before its prologue (`vela.EnterContext`, closed by a
+  deferred `vela.LeaveContext`). The top-level statements that set context —
+  a `setContext(…)` call, or a call of a script function that calls it —
+  run in the prologue in source order between the binding initializers
+  (T-6.6d); a statement that cannot be translated is a required site and
+  fails the build.
+- **T-7.5c** The calls are methods of the evaluation state, which belongs
+  to the render of `w` (`vela.NewJSFor(w)`). `getContext` reads the
+  innermost frame that holds the key: the component's own, then those of
+  its ancestors in the render tree, the chain the browser builds. Slot
+  content is rendered by the component that opens the slot, so it sees that
+  component's context. A missing key is `undefined`. Module functions use
+  the evaluation state of the component that created the module, so
+  `getContext` in a module function called by the script reads that
+  component's context.
+- **T-7.5d** Frames belong to one render: concurrent renders never share
+  them. Context values are not sent in the payload. A state value of a
+  component that is (by identity) an object or array an ancestor put in its
+  context is omitted from the component's state entry (S-6.8), so the client
+  evaluates its initializer and gets the same object from its own context:
+  `$state.deep(getContext(key))` keeps sharing it after hydration.
+- **T-7.5e** v1 has no root context from Go: request data reaches
+  components through props and loader data. A top-level statement that
+  calls a module function which sets context is not run by the server; call
+  `setContext` in the script, or in a function of the script.
+
 ---
 
 ## 8. Developer host implementations

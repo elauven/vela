@@ -21,6 +21,9 @@ type Result struct {
 	Written   []string
 	Unchanged []string
 	Removed   []string
+	// Notes are advice that is not an error, such as the missing #app/*
+	// entry of package.json (task 090).
+	Notes []string
 }
 
 // Load scans the project at root and builds its model.
@@ -118,6 +121,9 @@ func Generate(root string) (Result, []Diagnostic) {
 		return nil
 	})
 	sort.Strings(result.Removed)
+	if appImportMissing(model.Config) {
+		result.Notes = append(result.Notes, fmt.Sprintf("package.json has no %q entry for import { getPage } from '#app/%s'; add %s or run vela-app scaffold", AppImportKey, PageModule, AppImportEntry(model.Config)))
+	}
 	return result, nil
 }
 

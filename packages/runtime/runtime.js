@@ -325,7 +325,118 @@ export function derived(stores, fn, initial) {
  */
 export function mount(Component, { target, props = {}, slots = {} } = {}) {
   if (!target) throw new Error('[Vela] mount() requires a target element');
-  return Component(target, props, slots);
+  return $$contextRun(null, () => Component(target, props, slots));
+}
+
+// ─────────────────────────────────────────────
+//  Context (task 090)
+//
+//  A context frame belongs to one component instance: { parent, map, open }.
+//  The runtime opens a frame around every component factory call
+//  ($$contextRun: $$component, mount(), hydrate()); the component's script
+//  runs inside it, so setContext and getContext during initialisation find
+//  it on top of the stack. $$mountComponent closes the frame before the
+//  template renders ($$contextClaim) and hands the context on to the root
+//  cursor, which passes it to every block, slot and child component of the
+//  template, also those mounted later. A call while the frame on top is
+//  closed (the template, onMount, a child's props) throws.
+//
+//  A root factory called directly (`App(target, props)`) has no frame: its
+//  setContext creates a root frame that its $$mountComponent claims. With
+//  no frame, getContext finds only that root frame's values. Development
+//  builds warn about a root frame nobody claimed: setContext called in a
+//  handler or an effect.
+//  Context values are not reactive; keys are strings.
+// ─────────────────────────────────────────────
+
+const $$contextStack = [];
+let $$contextRoot = null;
+
+// $$contextRun runs fn (a component factory call) in a new frame whose
+// parent is the context ctx of the mount position (null at a root).
+export function $$contextRun(ctx, fn) {
+  $$contextStack.push({ parent: ctx || null, map: null, open: true });
+  try {
+    return fn();
+  } finally {
+    $$contextStack.pop();
+  }
+}
+
+// $$contextClaim closes the frame of the component that is mounting its
+// template and returns the context its template passes on: the frame when
+// the component set a value, else its parent.
+export function $$contextClaim() {
+  const frame = $$contextStack[$$contextStack.length - 1];
+  if (!frame) {
+    const root = $$contextRoot;
+    $$contextRoot = null;
+    if (root) root.open = false;
+    return root;
+  }
+  if (!frame.open) return null;
+  frame.open = false;
+  return frame.map ? frame : frame.parent;
+}
+
+// $$contextParent is the context of the current mount position: the parent
+// of the frame on top, for a factory that calls another factory in place.
+export function $$contextParent() {
+  const frame = $$contextStack[$$contextStack.length - 1];
+  return frame ? frame.parent : null;
+}
+
+// initFrame returns the frame of the initialising component, or null for a
+// directly called root that has set nothing (create: make its root frame).
+function initFrame(name, key, create) {
+  if (typeof key !== 'string') {
+    throw new TypeError(`vela: ${name}() needs a string key, got ${key === null ? 'null' : typeof key}`);
+  }
+  const frame = $$contextStack[$$contextStack.length - 1];
+  if (frame) {
+    if (!frame.open) {
+      throw new Error(`vela: ${name}() is called outside component initialisation; call it in the component script, or in a function the script calls while the component starts (VELA-CONTEXT-OUTSIDE-INIT)`);
+    }
+    return frame;
+  }
+  if (!$$contextRoot && create) {
+    const root = { parent: null, map: null, open: true };
+    $$contextRoot = root;
+    if (DEV) {
+      _scheduleFlush(() => {
+        if ($$contextRoot !== root) return;
+        $$contextRoot = null;
+        warn(`${name}() was called outside component initialisation (VELA-CONTEXT-OUTSIDE-INIT); the value reaches no component`);
+      });
+    }
+  }
+  return $$contextRoot;
+}
+
+function lookup(frame, key) {
+  for (let ctx = frame; ctx; ctx = ctx.parent) {
+    if (ctx.map && ctx.map.has(key)) return ctx;
+  }
+  return null;
+}
+
+/** setContext(key, value) makes value visible to the component's descendants. */
+export function setContext(key, value) {
+  const frame = initFrame('setContext', key, true);
+  if (!frame.map) frame.map = new Map();
+  frame.map.set(key, value);
+  return value;
+}
+
+/** getContext(key) returns the value the nearest ancestor set for key. */
+export function getContext(key) {
+  const owner = lookup(initFrame('getContext', key, false), key);
+  return owner ? owner.map.get(key) : undefined;
+}
+
+/** hasContext(key) reports whether an ancestor set a value for key. */
+export function hasContext(key) {
+  return lookup(initFrame('hasContext', key, false), key) !== null;
 }
 
 /**
@@ -467,9 +578,36 @@ export function $$insertHTML($$t, $$h) {
 // a missing key is a no-op. Native mutating Array methods use one
 // local transaction, so their several Proxy traps publish at most
 // one component invalidation.
+//
+// A value that already is a deep-state proxy (a $state.deep object of
+// another component, typically read from context, task 090) is shared, not
+// wrapped again: notify joins its subscribers, so a change by any holder
+// updates every component that declared it as its $state.deep. Shared
+// subscribers get no mutation record (their keyed lists diff in full) and
+// are held weakly, so destroyed components do not accumulate.
 export function $$proxy(val, notify) {
   if (val === null || typeof val !== 'object') return val;
+  const share = val[$$PROXY_SHARE];
+  if (typeof share === 'function') {
+    share(notify);
+    return val;
+  }
   const cache = new WeakMap();
+  // Subscribers that share this state ($$proxy of an existing proxy).
+  const shared = new Set();
+  const subscribe = (listener) => {
+    if (listener === notify) return;
+    shared.add(typeof WeakRef === 'function' ? new WeakRef(listener) : { deref: () => listener });
+  };
+  const publish = (mutation) => {
+    notify(mutation);
+    if (shared.size === 0) return;
+    for (const ref of [...shared]) {
+      const listener = ref.deref();
+      if (listener) listener();
+      else shared.delete(ref);
+    }
+  };
   const rawByProxy = new WeakMap();
   const arrayMethods = new WeakMap();
   let mutationDepth = 0;
@@ -486,7 +624,7 @@ export function $$proxy(val, notify) {
       mutationPending = true;
       return;
     }
-    notify(mutation);
+    publish(mutation);
   };
   const runArrayMutation = (target, key, receiver, method, path) => {
     let methods = arrayMethods.get(target);
@@ -508,7 +646,7 @@ export function $$proxy(val, notify) {
         mutationDepth--;
         if (mutationDepth === 0 && mutationPending) {
           mutationPending = false;
-          notify({ kind: 'array', path: path.slice(), method: key });
+          publish({ kind: 'array', path: path.slice(), method: key });
         }
       }
     };
@@ -544,6 +682,7 @@ export function $$proxy(val, notify) {
         // in-place mutation (the reference is unchanged but the
         // contents are not).
         if (k === $$PROXY_BRAND) return true;
+        if (k === $$PROXY_SHARE) return subscribe;
         const value = Reflect.get(t, k, receiver);
         if (Array.isArray(t) && typeof k === 'string' &&
             mutatingArrayMethods.has(k) && typeof value === 'function') {
@@ -577,6 +716,8 @@ export function $$proxy(val, notify) {
 // $$PROXY_BRAND is a cross-realm symbol read by $$isProxy.  Using
 // Symbol.for keeps it stable across module instances.
 const $$PROXY_BRAND = Symbol.for('vela.proxy');
+// $$PROXY_SHARE reads the subscribe function of a deep-state proxy.
+const $$PROXY_SHARE = Symbol.for('vela.proxy.share');
 
 // $$isProxy reports whether v is a deep-reactive proxy produced by
 // $$proxy.  A component prop setter uses this to decide whether an

@@ -404,10 +404,11 @@ func ModuleSpecifiers(src string) []moduleSpecifier {
 }
 
 // IsPackageSpecifier reports a bare specifier of an npm package: not a
-// relative or absolute path, not a URL or node: built-in, and not one of the
-// compiler's own modules (vela, vela/store).
+// relative or absolute path, not a # subpath import of the project (task
+// 090), not a URL or node: built-in, and not one of the compiler's own
+// modules (vela, vela/store).
 func IsPackageSpecifier(spec string) bool {
-	if spec == "" || strings.HasPrefix(spec, ".") || strings.HasPrefix(spec, "/") || strings.Contains(spec, ":") {
+	if spec == "" || strings.HasPrefix(spec, ".") || strings.HasPrefix(spec, "/") || strings.HasPrefix(spec, "#") || strings.Contains(spec, ":") {
 		return false
 	}
 	return spec != "vela" && spec != "vela/store"

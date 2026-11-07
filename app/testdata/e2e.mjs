@@ -125,6 +125,17 @@ const scenarios = [
     await t.follow('main ul a[href="/users/1"]');
     t.equal(await t.text('article h1'), 'Ada', 'page');
     t.equal(t.last().start, 2, 'start from /users to /users/1');
+    t.equal(await t.text('nav a.active'), 'Users', 'the nested NavLink follows getPage() below the section');
+  }],
+  ['a component deep in the root layout follows getPage() on navigation', async (t) => {
+    await t.open('/');
+    t.equal(await t.text('nav a.active'), 'Home', 'the section after hydration');
+    await t.follow('nav a[href="/about"]');
+    t.equal(await t.text('nav a.active'), 'About', 'a route id with an optional parameter');
+    await t.follow('nav a[href="/settings"]');
+    t.equal(await t.text('nav a.active'), 'Settings', 'a route id with a group');
+    await t.navigation(() => t.page.goBack());
+    t.equal(await t.text('nav a.active'), 'About', 'back');
   }],
   ['back and forward restore the scroll position', async (t) => {
     await t.open('/users');
