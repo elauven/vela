@@ -253,3 +253,32 @@ func main() {
 		}
 	}
 }
+
+func TestScaffoldGuard(t *testing.T) {
+	root := testkit.CopyProject(t, goldenProject)
+	file, diags := ScaffoldGuard(root, "/users")
+	if len(diags) > 0 {
+		t.Fatal(Error(diags))
+	}
+	if file != "server/routes/users/guard.go" {
+		t.Fatalf("created %s", file)
+	}
+	data, _ := os.ReadFile(filepath.Join(root, file))
+	if !strings.Contains(string(data), "package users") || !strings.Contains(string(data), "func Guard(ctx context.Context, r *app.Request) error") {
+		t.Fatalf("guard.go:\n%s", data)
+	}
+	if _, diags := ScaffoldGuard(root, "/users"); len(diags) != 1 || !strings.Contains(diags[0].Message, "never overwritten") {
+		t.Fatalf("second run: %v", diags)
+	}
+	if _, diags := ScaffoldGuard(root, "/nope"); len(diags) != 1 || diags[0].Code != CodeGuard {
+		t.Fatalf("unknown route: %v", diags)
+	}
+	model, diags := Load(root)
+	if len(diags) > 0 {
+		t.Fatal(Error(diags))
+	}
+	go_, err := model.routesGo()
+	if err != nil || !strings.Contains(string(go_), "{ID: \"routes/users/Layout\", Error: \"routes/users/Error\", Loader: app.LoaderOf(server_routes_users.Layout), Deps: server_routes_users.Deps, Guard: server_routes_users.Guard}") {
+		t.Fatalf("routes_gen.go: %v\n%s", err, go_)
+	}
+}

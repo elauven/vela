@@ -46,10 +46,15 @@ type LoadFile struct {
 	// Form reports `type Form …`: the value the page's actions pass to
 	// app.Fail, which types the form prop of a TypeScript page (TS-8.2).
 	Form bool
+	// Guard reports `func Guard(ctx context.Context, r *app.Request)
+	// error`, usually in guard.go (G-1): it runs before the loaders and
+	// actions of the directory and everything below it.
+	Guard bool
 }
 
-// Signatures printed by the loader diagnostics (L-1).
+// Signatures printed by the loader diagnostics (L-1, G-1).
 const (
+	guardSignature  = "func Guard(ctx context.Context, r *app.Request) error"
 	pageSignature   = "func Page(ctx context.Context, r *app.Request) (T, error)"
 	layoutSignature = "func Layout(ctx context.Context, r *app.Request) (T, error)"
 )
@@ -91,6 +96,18 @@ func (t *Tree) readLoad(d *Dir, dir string, files []string, report func(Diagnost
 					continue
 				}
 				name := decl.Name.Name
+				if name == "Guard" {
+					line, col := at(decl.Name)
+					switch {
+					case d.Page == "" && d.Layout == "":
+						report(Diagnostic{File: rel, Line: line, Col: col, Code: CodeGuard, Message: fmt.Sprintf("Guard has no Layout.vela or Page.vela in %s; a guard protects the components of its directory and below (G-1)", t.projectRel(d.Rel)), Help: fmt.Sprintf("create %s/Layout.vela, or move the guard to the directory of a layout or page above", t.projectRel(d.Rel))})
+					case !guardSignatureOK(decl, imports):
+						report(Diagnostic{File: rel, Line: line, Col: col, Code: CodeGuard, Message: "Guard has the wrong signature (G-1)", Help: "declare it as " + guardSignature})
+					default:
+						load.Guard = true
+					}
+					continue
+				}
 				if name == "Actions" {
 					line, col := at(decl.Name)
 					switch {
@@ -198,6 +215,28 @@ func loaderSignature(decl *ast.FuncDecl, imports map[string]string) bool {
 		return false
 	}
 	errType, ok := results[1].(*ast.Ident)
+	return ok && errType.Name == "error"
+}
+
+// guardSignatureOK checks func(context.Context, *app.Request) error.
+func guardSignatureOK(decl *ast.FuncDecl, imports map[string]string) bool {
+	typ := decl.Type
+	if typ.TypeParams != nil && len(typ.TypeParams.List) > 0 {
+		return false
+	}
+	params := fieldTypes(typ.Params)
+	results := fieldTypes(typ.Results)
+	if len(params) != 2 || len(results) != 1 {
+		return false
+	}
+	if !selector(params[0], imports, "context", "Context") {
+		return false
+	}
+	star, ok := params[1].(*ast.StarExpr)
+	if !ok || !selector(star.X, imports, AppImportPath, "Request") {
+		return false
+	}
+	errType, ok := results[0].(*ast.Ident)
 	return ok && errType.Name == "error"
 }
 

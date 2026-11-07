@@ -159,7 +159,7 @@ func TestDocument(t *testing.T) {
 	}
 	for k, want := range map[string]string{
 		"Content-Type":   "text/html; charset=utf-8",
-		"Vary":           "X-Vela-Navigate, X-Vela-Have, X-Vela-Build",
+		"Vary":           "X-Vela-Navigate, X-Vela-Have, X-Vela-Build, X-Vela-Purpose",
 		"Cache-Control":  "public, max-age=60",
 		"Content-Length": strconv.Itoa(len(p.body)),
 	} {

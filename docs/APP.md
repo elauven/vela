@@ -191,15 +191,16 @@ server/routes/**                  internal/appgen/routes_gen.go
   src/routes/users/[id]/             server/routes/users/id.param/actions.go   (078)
   ```
 
-- **P-17** In the mirrored tree, `load.go` and `actions.go` are expected
-  only in a directory that matches a route directory. A mirrored directory
+- **P-17** In the mirrored tree, `load.go`, `actions.go` and `guard.go`
+  (G-1) are expected only in a directory that matches a route directory. A mirrored directory
   without a route directory is an error (a stale loader), as stale hosts
   are. A `.go` file under the routes directory is an error that names the
   mirrored path to move it to.
 - **P-18** `vela-app scaffold [route]` creates the mirrored directory and a
   `load.go` with the `Page`/`Layout` signatures of L-1. It does this for the
-  given route, or for every route that has none. It never overwrites a
-  file.
+  given route, or for every route whose Go files declare no loader. It
+  never overwrites a file. `vela-app scaffold -guard route` creates
+  `guard.go` (G-1).
 
 ## L. Loaders
 
@@ -248,6 +249,7 @@ server/routes/**                  internal/appgen/routes_gen.go
     message.
 
   The first error cancels the context of the other loaders of the chain.
+  `Config.OnError` may turn an error into another one first (G-5).
 - **L-6** Segment keys decide which loaders run again on a navigation. A
   segment's key is derived from its id and the values of its dependencies.
   By default those are the parameters of the segment's own path. A loader
@@ -316,7 +318,7 @@ server/routes/**                  internal/appgen/routes_gen.go
   the app carry `data-vela-head`, so the client can replace them.
 - **R-7** The response is buffered rather than streamed, so an error can
   still change the status. A size limit is configurable. Every response
-  sends `Vary: X-Vela-Navigate, X-Vela-Have, X-Vela-Build`.
+  sends `Vary: X-Vela-Navigate, X-Vela-Have, X-Vela-Build, X-Vela-Purpose`.
 - **R-8** Response modes for one URL:
 
   | Mode | Response | Client |
@@ -388,12 +390,92 @@ server/routes/**                  internal/appgen/routes_gen.go
   stay: `getPage()` is for components the route components do not reach
   with props.
 
+## G. Guards, locals, cookies and errors
+
+Task 094. Protecting a section is written once, in `guard.go`, and runs
+before every loader and action of the subtree. Request data comes from
+`net/http` middleware through a typed `context.Context`.
+
+- **G-1** A guard is `func Guard(ctx context.Context, r *app.Request)
+  error` in the mirrored package of a route directory, by convention in
+  `guard.go`. One guard per directory, shared by its `Layout.vela` and
+  `Page.vela` like `Deps`; the directory needs one of them, a `load.go` is
+  not required. The generator records it as `Level.Guard` of the first
+  level of the directory (its layout, or its page without one). A guard in
+  a directory without a component, or with another signature, is
+  `VELA-APP-GUARD`, whose message prints the signature.
+
+  ```go
+  // server/routes/admin.group/guard.go — applies to (admin)/**
+  func Guard(ctx context.Context, r *app.Request) error {
+      u, ok := auth.User.Get(ctx) // an app.Local set by middleware (G-3)
+      if !ok {
+          return app.Redirect(303, "/login?next="+url.QueryEscape(r.HTTP.URL.RequestURI()))
+      }
+      if !u.Admin {
+          return app.Error(403, "Forbidden")
+      }
+      return nil
+  }
+  ```
+
+- **G-2** Execution. For documents, data and fragment navigations,
+  prefetches and POSTs, the guards of the chain run one after another
+  from the top, before any loader and before the action, at every level —
+  also at levels the client keeps in `X-Vela-Have`. A URL no route matches
+  runs the guards of the root layouts before the 404, because those
+  layouts render around the error page; their guard sees an empty
+  `r.Route` and may return `app.NotFound()` instead of a redirect. The
+  first error stops the request and follows L-5: `Redirect` answers 303 or
+  307 (a navigation gets `{type: "redirect"}`); `NotFound`, `Error` and
+  other errors render the `Error.vela` at the guard's level or above, the
+  levels above render with their loaders, and nothing below runs. A POST
+  stopped by a guard never calls the action. A guard gets the same
+  `r.Params`, `r.Query`, `r.HTTP` and `r.Route` as a loader; its `Head()`
+  and `Header()` are not used.
+- **G-3** Locals. `app.NewLocal[T](name)` makes a context key of an
+  unexported type: `With(r *http.Request, v T) *http.Request`,
+  `WithContext(ctx, v)` and `Get(ctx) (T, bool)`. Middleware sets the
+  value; guards, loaders and actions read it from their `ctx`. Nothing is
+  stored in `app.Request`, and concurrent requests never share a value.
+- **G-4** Cookies and user-dependent responses. `r.Cookie(name)` reads a
+  cookie; `r.SetCookie(c)` adds `Set-Cookie` to the response, also to a
+  JSON navigation response, with `Path=/` and `SameSite=Lax` when unset,
+  always `HttpOnly`, and `Secure` outside `Config.Dev`. Reading a cookie
+  or a local, or setting a cookie, makes the response user-dependent: it
+  stays `Cache-Control: private` even when a loader says `public` (a log
+  warning in `Dev`), and its JSON carries `"cache": "once"`, so the
+  router's prefetch cache serves it to one navigation. The router marks
+  prefetches with `X-Vela-Purpose: prefetch`; their answers set no
+  cookies. The router clears its whole prefetch cache after every action
+  and `invalidate()`: an answer prefetched before a logout is never shown
+  after it.
+- **G-5** `Config.OnError func(ctx context.Context, r *app.Request, err
+  error) error` sees the errors of guards, loaders, actions and rendering,
+  and panics after `recover`, but not `Redirect` and `Fail`. The error it
+  returns replaces the original (`sql.ErrNoRows` → `app.NotFound()`);
+  `nil` keeps the original. It may run concurrently for the loaders of one
+  request. A panic is logged with its stack through `Config.Logger` before
+  `OnError` sees it.
+- **G-6** Middleware helpers: `app.IsNavigation(r)`, `app.WriteRedirect(w,
+  r, code, url)` and `app.WriteError(w, r, status, message)`. On a
+  navigation request `WriteRedirect` answers `{type: "redirect"}`, which
+  the router follows without a document load, and `WriteError` answers
+  `reload`: middleware has no chain for `Error.vela`, so an error page with
+  the layouts is the job of a guard. Middleware keeps technical answers
+  (429, 503); on a document request both write an ordinary response.
+  Global work is middleware, the root guard and `OnError`; there is no
+  `Config.Handle`.
+
 ## N. Navigation protocol
 
 - **N-1** The protocol is versioned. This page describes version **1**.
   Requests carry the version in `X-Vela-Navigate`, and responses carry it
   in `"v"`. On a version mismatch, the server answers `reload`, and the
-  client falls back to `location.assign(url)`.
+  client falls back to `location.assign(url)`. Clients ignore response
+  fields they do not know, and a new optional field does not change the
+  version: a client and a server of different builds never exchange data,
+  they get `reload` (`build`).
 - **N-2** A navigation request is a GET of the target URL with these
   headers:
 
@@ -402,6 +484,7 @@ server/routes/**                  internal/appgen/routes_gen.go
   | `X-Vela-Navigate` | `auto;v=1`, `data;v=1` or `fragment;v=1`. Without this header, the request is a document request |
   | `X-Vela-Have` | the keys of the chain the client holds, in level order, separated by `,`; empty after `invalidate()` |
   | `X-Vela-Build` | the build id the client runs |
+  | `X-Vela-Purpose` | `prefetch` on a prefetch (G-4); absent otherwise |
 
 - **N-3** A key is an opaque token of at most 64 characters from
   `[A-Za-z0-9_-]`. The server computes it from the segment id and the
@@ -460,6 +543,8 @@ server/routes/**                  internal/appgen/routes_gen.go
   - `{ "v": 1, "type": "form", "build": "…", "status": 422, "form": … }`
     answers a POST whose action failed with `app.Fail`: the client sets
     `form` on the page level and changes nothing else.
+  - `"cache": "once"`, optional on `data` and `fragment`, marks a
+    user-dependent response (G-4): a prefetched one serves one navigation.
 - **N-6** Inside the protocol, redirects and errors are JSON with status
   200, so that `fetch` follows them under the router's control. For a
   document request, they are real 3xx and 4xx/5xx responses.
@@ -489,7 +574,8 @@ vela && go build ./...
 | --- | --- |
 | `gen` | Scans the routes tree, the mirrored Go tree and the matchers, and writes the four files below. It writes only files whose content changed, removes stale files it owns, and writes nothing when there are errors (exit status 1) |
 | `watch` | Runs `gen` whenever the routes tree, the mirrored Go tree, the matchers or the configuration change. The compiler's own watcher picks up the regenerated `.vela` file |
-| `scaffold [route]` | Creates `load.go` with the `Page`/`Layout` signatures of L-1 for one route (its route id, such as `/users/[id=int]`) or for every route directory without Go files (P-18). It never overwrites a file |
+| `scaffold [route]` | Creates `load.go` with the `Page`/`Layout` signatures of L-1 for one route (its route id, such as `/users/[id=int]`) or for every route directory whose Go files declare no loader (P-18). It never overwrites a file |
+| `scaffold -guard route` | Creates `guard.go` with the signature of G-1 for a route directory with a layout or page, such as `/(admin)` |
 
 `-C dir` runs a command in another directory.
 
@@ -592,6 +678,7 @@ directory names the directory or the `Page.vela` of the route.
 | `VELA-APP-MATCHER` | an unknown matcher, a missing half, a wrong `Match`, shadowing a built-in (P-13, P-14) |
 | `VELA-APP-STALE` | a mirrored Go directory without a route directory (P-17) |
 | `VELA-APP-LOADER` | a loader without its component, a wrong signature, `Deps` or `Render` of the wrong kind, `Render` outside a page (L-1, L-6, L-7) |
+| `VELA-APP-GUARD` | a guard in a directory without `Layout.vela` or `Page.vela`, a wrong signature (G-1) |
 
 `examples/app` is a small application: a home page, an `(admin)` group
 with a layout, `users` and `users/[id=int]` with layouts and loaders,

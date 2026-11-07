@@ -21,6 +21,7 @@ import (
 	c_routes_users_id_int_param "example.com/golden/out/server/components/routes/users/id.int.param"
 	server_params_hex "example.com/golden/server/params/hex"
 	server_routes "example.com/golden/server/routes"
+	server_routes_admin_group "example.com/golden/server/routes/admin.group"
 	server_routes_users "example.com/golden/server/routes/users"
 	server_routes_users_id_int_param "example.com/golden/server/routes/users/id.int.param"
 )
@@ -35,7 +36,7 @@ func Routes() app.Routes {
 			}, Render: app.RenderAuto},
 			{ID: "/(admin)/settings", Chain: []app.Level{
 				{ID: "routes/Layout", Error: "routes/Error", Loader: app.LoaderOf(server_routes.Layout)},
-				{ID: "routes/(admin)/Layout", Error: "routes/Error"},
+				{ID: "routes/(admin)/Layout", Error: "routes/Error", Guard: server_routes_admin_group.Guard},
 				{ID: "routes/(admin)/settings/Page", Error: "routes/Error"},
 			}, Render: app.RenderAuto},
 			{ID: "/[[lang]]/about", Chain: []app.Level{

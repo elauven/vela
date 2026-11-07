@@ -16,6 +16,8 @@ import (
 // replaces; the levels above it keep running, since they still render.
 type chainRun struct {
 	levels []*levelRun
+	// mapErr passes a loader's error through Config.OnError (G-5).
+	mapErr func(ctx context.Context, r *Request, err error) error
 }
 
 type levelRun struct {
@@ -25,6 +27,8 @@ type levelRun struct {
 	cancel  context.CancelFunc
 	once    sync.Once
 	started atomic.Bool
+	// blocked: a level below a stopped one (a guard, G-2); it never runs.
+	blocked bool
 	done    chan struct{}
 	result  any             // the loader's result
 	view    any             // its JSON view (L-2)
@@ -47,6 +51,10 @@ func newChainRun(ctx context.Context, chain []Level, base Request) *chainRun {
 // start runs a level's loader once, in its own goroutine.
 func (c *chainRun) start(i int) {
 	l := c.levels[i]
+	if l.blocked {
+		l.once.Do(func() { close(l.done) })
+		return
+	}
 	l.once.Do(func() {
 		l.started.Store(true)
 		if l.level.Loader == nil {
@@ -58,6 +66,9 @@ func (c *chainRun) start(i int) {
 			defer func() {
 				if v := recover(); v != nil {
 					l.err = &PanicError{Value: v, Stack: debug.Stack()}
+				}
+				if l.err != nil && c.mapErr != nil {
+					l.err = c.mapErr(l.ctx, l.req, l.err)
 				}
 				if l.err != nil {
 					c.fail(i)
@@ -75,8 +86,11 @@ func (c *chainRun) start(i int) {
 }
 
 // preset gives a level its error without running its loader, as if the
-// loader had failed, and cancels the levels below it.
+// loader had failed, and cancels the levels below it, which never run.
 func (c *chainRun) preset(i int, err error) {
+	for _, below := range c.levels[i+1:] {
+		below.blocked = true
+	}
 	l := c.levels[i]
 	l.once.Do(func() {
 		l.started.Store(true)

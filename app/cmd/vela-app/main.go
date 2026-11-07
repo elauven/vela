@@ -26,6 +26,8 @@ commands:
                     and the matchers
   scaffold [route]  create the missing load.go files in the mirrored Go tree,
                     for one route (its id, such as /users/[id=int]) or all
+  scaffold -guard route
+                    create guard.go for a route directory, such as /(admin)
   dev [flags]       the development loop: watch, vela --watch, the Go server
                     restarted after each good build, and Vite
       -server cmd   the server command (go run ./cmd/server -dev http://localhost:5173)
@@ -85,6 +87,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	case "build":
 		return runBuild(ctx, *dir, rest, stdout, stderr)
 	case "scaffold":
+		if len(rest) == 2 && rest[0] == "-guard" {
+			file, diags := gen.ScaffoldGuard(*dir, rest[1])
+			if len(diags) > 0 {
+				printDiagnostics(diags, stderr)
+				return 1
+			}
+			fmt.Fprintln(stdout, "created "+file)
+			return 0
+		}
 		if len(rest) > 1 {
 			break
 		}

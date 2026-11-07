@@ -1,4 +1,6 @@
 <script>
+  // The guard in server/routes/admin.group/guard.go runs before this
+  // layout and every page below it (docs/APP.md G-1).
   export let route = null;
 </script>
 

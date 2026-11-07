@@ -50,6 +50,11 @@ type Config struct {
 	// http.NewCrossOriginProtection(). Add trusted origins or bypass
 	// patterns to it to allow other sites.
 	CrossOrigin *http.CrossOriginProtection
+	// OnError sees the errors of guards, loaders, actions and rendering,
+	// and panics after recover, but not Redirect and Fail (G-5). The error
+	// it returns replaces the original (sql.ErrNoRows → app.NotFound());
+	// nil keeps it. It may run concurrently for the loaders of one request.
+	OnError func(ctx context.Context, r *Request, err error) error
 }
 
 // Handler serves a Vela App (docs/APP.md): it matches the URL, runs the
@@ -65,6 +70,7 @@ type Handler struct {
 	dev      bool
 	maxBytes int
 	csrf     *http.CrossOriginProtection
+	onError  func(ctx context.Context, r *Request, err error) error
 	// static holds the segment ids whose root mode is static in
 	// vela.manifest.json (R-9); nil without a manifest.
 	static map[string]bool
@@ -72,7 +78,7 @@ type Handler struct {
 
 // New checks the configuration and returns the handler.
 func New(cfg Config) (*Handler, error) {
-	h := &Handler{routes: cfg.Routes, assets: cfg.Assets, defaults: cfg.Head, logger: cfg.Logger, dev: cfg.Dev, maxBytes: cfg.MaxBytes, build: cfg.BuildID, csrf: cfg.CrossOrigin}
+	h := &Handler{routes: cfg.Routes, assets: cfg.Assets, defaults: cfg.Head, logger: cfg.Logger, dev: cfg.Dev, maxBytes: cfg.MaxBytes, build: cfg.BuildID, csrf: cfg.CrossOrigin, onError: cfg.OnError}
 	if h.csrf == nil {
 		h.csrf = http.NewCrossOriginProtection()
 	}
@@ -153,6 +159,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
+	r, _ = h.withState(r)
 	nav, isNav, err := protocol.ParseRequest(r.Header)
 	if isNav {
 		switch {
@@ -196,7 +203,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveAction(w, r, route, params, isNav, nav.Mode)
 		return
 	}
-	o := h.load(r, route, params, notFound, loadOptions{nav: isNav, have: nav.Have})
+	// The guards of the chain, before any loader (G-2).
+	stop := h.runGuards(r, route, params)
+	var redirect *RedirectError
+	if stop != nil && errors.As(stop.err, &redirect) {
+		h.writeRedirect(w, r, isNav, redirect)
+		return
+	}
+	o := h.load(r, route, params, notFound, loadOptions{nav: isNav, have: nav.Have, stop: stop})
 	defer o.run.close()
 	if isNav {
 		h.writeData(w, r, o, nav.Mode)
@@ -236,8 +250,11 @@ type loadOptions struct {
 	// failure is the error of the page's action, which the page level
 	// renders instead of running its loader.
 	failure error
-	form    any
-	status  int
+	// stop is the guard that stopped the request: its level renders the
+	// error and the levels below it do not run (G-2).
+	stop   *guardStop
+	form   any
+	status int
 }
 
 // load runs the loaders of a chain: all of them for a document, the levels
@@ -253,7 +270,11 @@ func (h *Handler) load(r *http.Request, route *Route, params map[string]string, 
 		o.keys[i] = segmentKey(&route.Chain[i], params, o.query)
 	}
 	o.run = newChainRun(r.Context(), route.Chain, Request{Params: params, Query: o.query, HTTP: r, Route: route.ID})
-	if opts.failure != nil {
+	o.run.mapErr = h.mapError
+	switch {
+	case opts.stop != nil:
+		o.run.preset(opts.stop.level, opts.stop.err)
+	case opts.failure != nil:
 		// The action of the page failed: its level renders the error.
 		o.run.preset(len(route.Chain)-1, opts.failure)
 	}
@@ -269,7 +290,7 @@ func (h *Handler) load(r *http.Request, route *Route, params map[string]string, 
 	switch {
 	case failed >= 0:
 		failure = o.run.levels[failed].err
-	case notFound:
+	case notFound && opts.stop == nil:
 		failed, failure = len(o.run.levels), NotFound()
 	}
 	o.rendered = len(o.run.levels)
@@ -312,9 +333,7 @@ func (o *outcome) errorKey() string {
 // writeDocument writes the document of a chain (R-5).
 func (h *Handler) writeDocument(w http.ResponseWriter, r *http.Request, o *outcome) {
 	if o.redirect != nil {
-		w.Header().Set("Location", o.redirect.Location)
-		w.Header().Set("Cache-Control", "private")
-		w.WriteHeader(o.redirect.Status)
+		h.writeRedirect(w, r, false, o.redirect)
 		return
 	}
 	heads, header := o.collect()
@@ -349,12 +368,22 @@ func (h *Handler) writeDocument(w http.ResponseWriter, r *http.Request, o *outco
 	}
 	body, err := h.document(r.Context(), routeProp(routeInfo(r, o)), chain, mergeHead(h.defaults, heads), preload)
 	if err != nil {
-		h.logger.Error("vela app: render failed", "path", r.URL.Path, "route", o.route.ID, "err", err)
-		message := "Internal Error"
-		if h.dev {
-			message = err.Error()
+		err = h.mapError(r.Context(), &Request{Params: o.params, Query: o.query, HTTP: r, Route: o.route.ID}, err)
+		var redirect *RedirectError
+		var mapped *StatusError
+		switch {
+		case errors.As(err, &redirect):
+			h.writeRedirect(w, r, false, redirect)
+		case errors.As(err, &mapped):
+			h.writePage(w, r, mapped.Status, nil, []byte(builtinErrorPage(mapped.Status, mapped.Message)))
+		default:
+			h.logger.Error("vela app: render failed", "path", r.URL.Path, "route", o.route.ID, "err", err)
+			message := "Internal Error"
+			if h.dev {
+				message = err.Error()
+			}
+			h.writePage(w, r, http.StatusInternalServerError, nil, []byte(builtinErrorPage(http.StatusInternalServerError, message)))
 		}
-		h.writePage(w, r, http.StatusInternalServerError, nil, []byte(builtinErrorPage(http.StatusInternalServerError, message)))
 		return
 	}
 	h.writePage(w, r, status, header, body)
@@ -410,17 +439,25 @@ func (h *Handler) writeData(w http.ResponseWriter, r *http.Request, o *outcome, 
 // writeJSON writes a navigation response: status 200 (N-6).
 func (h *Handler) writeJSON(w http.ResponseWriter, r *http.Request, header http.Header, resp protocol.Response) {
 	resp.Build = h.build
+	for k, v := range header {
+		w.Header()[k] = v
+	}
+	if h.finish(w, r) && (resp.Type == protocol.TypeData || resp.Type == protocol.TypeFragment) {
+		// A user-dependent answer serves one navigation (G-4).
+		resp.Cache = protocol.CacheOnce
+	}
 	body, err := protocol.Encode(resp)
 	if err == nil && len(body) > h.maxBytes {
 		err = fmt.Errorf("app: the response is larger than MaxBytes (%d)", h.maxBytes)
 	}
 	if err != nil {
 		h.logger.Error("vela app: navigation response failed", "path", r.URL.Path, "err", err)
-		header = nil
+		for k := range header {
+			if k != "Set-Cookie" {
+				w.Header().Del(k)
+			}
+		}
 		body, _ = protocol.Encode(protocol.Response{Type: protocol.TypeReload, Build: h.build, Reason: protocol.ReasonDocument})
-	}
-	for k, v := range header {
-		w.Header()[k] = v
 	}
 	if w.Header().Get("Cache-Control") == "" {
 		w.Header().Set("Cache-Control", "private")
@@ -446,7 +483,7 @@ func (h *Handler) describe(r *http.Request, route *Route, failed int, err error)
 	}
 	attrs := []any{"path", r.URL.Path, "route", route.ID, "level", level, "err", err}
 	var panicked *PanicError
-	if errors.As(err, &panicked) {
+	if errors.As(err, &panicked) && !panicked.logged {
 		attrs = append(attrs, "stack", string(panicked.Stack))
 	}
 	h.logger.Error("vela app: loader failed", attrs...)
@@ -539,6 +576,7 @@ func (h *Handler) writePage(w http.ResponseWriter, r *http.Request, status int, 
 	for k, v := range header {
 		w.Header()[k] = v
 	}
+	h.finish(w, r)
 	if w.Header().Get("Cache-Control") == "" {
 		w.Header().Set("Cache-Control", "private")
 	}
@@ -595,6 +633,17 @@ func (h *Handler) serveAction(w http.ResponseWriter, r *http.Request, route *Rou
 	page := r.Clone(r.Context())
 	page.URL.RawQuery = withoutAction(r.URL.RawQuery)
 	page.Method = http.MethodGet
+	// The guards run before the action, which never runs when one stops
+	// the request (G-2).
+	if stop := h.runGuards(page, route, params); stop != nil {
+		var redirect *RedirectError
+		if errors.As(stop.err, &redirect) {
+			h.writeRedirect(w, r, isNav, redirect)
+			return
+		}
+		h.answerAction(w, page, route, params, isNav, mode, loadOptions{stop: stop})
+		return
+	}
 	var err error
 	if action := route.Actions[name]; action == nil {
 		err = Error(http.StatusNotFound, fmt.Sprintf("the page has no action %q", name))
@@ -605,12 +654,7 @@ func (h *Handler) serveAction(w http.ResponseWriter, r *http.Request, route *Rou
 	var fail *FailError
 	switch {
 	case errors.As(err, &redirect):
-		if isNav {
-			h.writeJSON(w, r, nil, protocol.Response{Type: protocol.TypeRedirect, Location: redirect.Location, Status: redirect.Status})
-			return
-		}
-		w.Header().Set("Location", redirect.Location)
-		w.WriteHeader(redirect.Status)
+		h.writeRedirect(w, r, isNav, redirect)
 	case errors.As(err, &fail):
 		view, raw, verr := value.FromGo(fail.Value)
 		if verr != nil {
@@ -636,8 +680,24 @@ func (h *Handler) serveAction(w http.ResponseWriter, r *http.Request, route *Rou
 			target += "?" + page.URL.RawQuery
 		}
 		w.Header().Set("Location", target)
+		h.finish(w, r)
 		w.WriteHeader(http.StatusSeeOther)
 	}
+}
+
+// writeRedirect answers a redirect of a guard, loader or action (L-5): a
+// navigation gets {type: "redirect"}, a document the status and Location.
+func (h *Handler) writeRedirect(w http.ResponseWriter, r *http.Request, isNav bool, redirect *RedirectError) {
+	if isNav {
+		h.writeJSON(w, r, nil, protocol.Response{Type: protocol.TypeRedirect, Location: redirect.Location, Status: redirect.Status})
+		return
+	}
+	w.Header().Set("Location", redirect.Location)
+	if w.Header().Get("Cache-Control") == "" {
+		w.Header().Set("Cache-Control", "private")
+	}
+	h.finish(w, r)
+	w.WriteHeader(redirect.Status)
 }
 
 // answerAction renders the page after its action: the document, or a data
@@ -667,6 +727,7 @@ func (h *Handler) runAction(r *http.Request, route *Route, params map[string]str
 		if v := recover(); v != nil {
 			err = &PanicError{Value: v, Stack: debug.Stack()}
 		}
+		err = h.mapError(page.ctx, page.req, err)
 	}()
 	_, err = action(page.ctx, page.req)
 	return err

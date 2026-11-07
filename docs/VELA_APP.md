@@ -251,6 +251,107 @@ The paths `dist` and `out/client/vela.manifest.json` are relative to the
 working directory. That is why `vela-app build` copies them into the build
 directory, next to the binary, and why the server runs in that directory.
 
+### Authentication
+
+Vela App has no session store of its own. Sign-in is three parts
+([APP.md](APP.md) G-1 to G-6):
+
+1. **Middleware** finds the user of a request and puts it into the
+   context as an `app.Local`.
+2. **A guard** (`guard.go`) protects a section: it runs before every
+   loader and action below its directory.
+3. **Actions** sign in and out and set the session.
+
+A recipe with [scs](https://github.com/alexedwards/scs):
+
+```go
+// internal/auth/auth.go
+package auth
+
+var (
+    Sessions = scs.New()                 // scs.New() keeps sessions in memory
+    User     = app.NewLocal[*User]("user")
+)
+
+// Middleware loads the session and the user of the request.
+func Middleware(next http.Handler) http.Handler {
+    return Sessions.LoadAndSave(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if id := Sessions.GetInt(r.Context(), "userID"); id != 0 {
+            if u, err := store.FindUser(r.Context(), id); err == nil {
+                r = User.With(r, u)
+            }
+        }
+        next.ServeHTTP(w, r)
+    }))
+}
+```
+
+```go
+// server/routes/admin.group/guard.go — protects src/routes/(admin)
+func Guard(ctx context.Context, r *app.Request) error {
+    u, ok := auth.User.Get(ctx)
+    if !ok {
+        return app.Redirect(303, "/login?next="+url.QueryEscape(r.HTTP.URL.RequestURI()))
+    }
+    if !u.Admin {
+        return app.Error(403, "Forbidden")
+    }
+    return nil
+}
+```
+
+```go
+// server/routes/login/actions.go
+func Actions() app.Actions {
+    return app.Actions{
+        "default": func(ctx context.Context, r *app.Request) (any, error) {
+            u, err := store.CheckPassword(ctx, r.HTTP.PostFormValue("email"), r.HTTP.PostFormValue("password"))
+            if err != nil {
+                return nil, app.Fail(422, map[string]string{"error": "Wrong email or password."})
+            }
+            if err := auth.Sessions.RenewToken(ctx); err != nil {
+                return nil, err
+            }
+            auth.Sessions.Put(ctx, "userID", u.ID)
+            return nil, app.Redirect(303, "/")
+        },
+        "logout": func(ctx context.Context, r *app.Request) (any, error) {
+            if err := auth.Sessions.Destroy(ctx); err != nil {
+                return nil, err
+            }
+            return nil, app.Redirect(303, "/")
+        },
+    }
+}
+```
+
+```go
+// cmd/server/main.go
+mux.Handle("/", auth.Middleware(handler))
+```
+
+scs writes its cookie itself, also on JSON navigation responses. Without
+scs, `r.SetCookie` sets a cookie from a loader or action with safe
+defaults (`HttpOnly`, `SameSite=Lax`, `Secure` outside `Config.Dev`), and
+`r.Cookie` reads one. A page that read the user, a cookie or another
+`app.Local` is private: the handler keeps `Cache-Control: private` and the
+router uses its prefetched answer for one navigation only. `examples/app`
+signs in with an HMAC-signed cookie in `internal/auth`.
+
+What goes where:
+
+| Work | Where | Why |
+| --- | --- | --- |
+| Find the session and the user, request ids, logging, compression | net/http middleware | Runs for every request, also for your own handlers and assets |
+| Rate limits, maintenance mode (429, 503) | middleware with `app.WriteError` | A technical answer without the app's layouts; a navigation gets `reload` |
+| Old URLs | middleware with `app.WriteRedirect` | The router follows it without loading a document |
+| Who may see a section | `guard.go` | Runs before loaders and actions, also for kept layouts and for POSTs; renders `Error.vela` with the layouts above |
+| Mapping errors (`sql.ErrNoRows` → 404), reporting | `Config.OnError` | Sees the errors of guards, loaders, actions and rendering, and panics |
+
+A check in a layout loader does not protect a page: loaders run
+concurrently, a kept layout does not run again on a navigation, and an
+action runs without them. Put permission checks in `guard.go`.
+
 ### The first route
 
 `src/routes/Layout.vela` wraps every page, `src/routes/Page.vela` is `/`:

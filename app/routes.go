@@ -93,7 +93,15 @@ type Level struct {
 	// package, calls Head(). A data navigation runs it for the head even
 	// when the client keeps the level (N-4); other kept levels do not run.
 	Head bool
+	// Guard protects the level and the levels below it (G-1): it runs
+	// before their loaders and before the page's action. The generated
+	// table sets it from guard.go on the first level of a directory.
+	Guard Guard
 }
+
+// Guard decides whether a request may reach the levels below it (G-2): nil
+// lets it through; Redirect, NotFound, Error or another error stop it.
+type Guard func(ctx context.Context, r *Request) error
 
 // Route is one route of the table.
 type Route struct {
