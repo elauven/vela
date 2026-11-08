@@ -436,7 +436,7 @@ func TestCompletion(t *testing.T) {
 		return labels(t, c, uri, p), edited
 	}
 	items, _ := complete(2, "    <p>{count}</p>", "    <|")
-	check("tag name", items, []string{"Card", "svelte:fragment", "vela:component"}, nil)
+	check("tag name", items, []string{"Card", "svelte:fragment", "vela:component", "vela:head"}, nil)
 
 	items, _ = complete(3, "<p>{count}</p>", "<p |>{count}</p>")
 	check("element attributes", items, []string{"@click", ":", "bind:value", "class:", "style:"}, []string{":title"})

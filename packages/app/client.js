@@ -2,7 +2,7 @@
 // public entry points of @govela/runtime and its own files (docs/APP.md B-4,
 // TestAppLayerIsSeparable).
 import { tick, writable } from '@govela/runtime';
-import { hydrate, preloadHydration, serverComponent, staticHTML } from '@govela/runtime/hydrate';
+import { hydrate, preloadHydration, replaceAppHead, serverComponent, staticHTML } from '@govela/runtime/hydrate';
 
 // The navigation protocol version (docs/APP.md N-1).
 export const protocolVersion = 1;
@@ -680,18 +680,23 @@ function createAnnouncer() {
   return region;
 }
 
-// applyHead replaces the title and the <meta data-vela-head> tags (R-6).
-// Without a head the page keeps its head (N-5).
+// applyHead replaces the app's title and meta tags (R-6). The tags of the
+// components' <vela:head> stay: replaceAppHead lets the deeper value win
+// (task 091). Without a head the page keeps its head (N-5).
 function applyHead(head) {
   if (!head) return;
-  document.title = head.title || '';
-  for (const meta of document.head.querySelectorAll('meta[data-vela-head]')) meta.remove();
+  const tags = [];
+  if (head.title) {
+    const title = document.createElement('title');
+    title.textContent = head.title;
+    tags.push({ node: title, depth: head.titleDepth || 0 });
+  }
   for (const m of head.meta || []) {
     const meta = document.createElement('meta');
     if (m.property) meta.setAttribute('property', m.property);
     else meta.setAttribute('name', m.name || '');
     meta.setAttribute('content', m.content || '');
-    meta.setAttribute('data-vela-head', '');
-    document.head.appendChild(meta);
+    tags.push({ node: meta, depth: m.depth || 0 });
   }
+  replaceAppHead(tags);
 }

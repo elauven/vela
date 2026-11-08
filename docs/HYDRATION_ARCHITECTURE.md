@@ -153,6 +153,7 @@ through the given cursor.
 | `$$slot(name, fallback)` | `<slot>` in a child | Mounts the parent-provided slot fragment, or `fallback` when none is provided. |
 | `$$client(main, fallback)` | `{#client}` and client-only components | Contract `SSR_TRANSLATION_CONTRACT.md` §9. In hydrate mode it adopts the fallback range and mounts `main` with a create cursor after the root commits. In CSR it mounts `main` directly. |
 | `$$boundary(body, catch, where)` | `{#boundary}…{:catch error, retry}…{/boundary}` | Mounts `body`; an error replaces it with `catch`, which receives `{ error, retry }` (B-3.12). Hydration follows §6.5. |
+| `$$head(entries, changed)` | `<vela:head>` at the top level of a template | Keeps the component's tags in the registry of `document.head` (B-3.13); hydration adopts the server's tags (§6.4a). |
 
 - **B-3.7 Slot ownership.** A slot fragment is defined by the parent and
   mounted inside the child. It is owned by the child's `$$slot` block, which
@@ -183,6 +184,16 @@ through the given cursor.
   of the `catch` branch go to the enclosing boundary. Event handlers and
   other asynchronous code are not caught. A component factory that throws
   leaves no live view (`createInstance`).
+- **B-3.13 Document head.** `$$head(entries, changed)` (task 091) lowers
+  the `<vela:head>` of a component: one entry per tag, flattened from its
+  `{#if}` blocks into a condition. The entries join one registry of
+  `document.head`; a key (`title`, `meta name=…`, `meta property=…`,
+  `link canonical`, from static attributes) is shown for the entry of the
+  deepest component (the depth of `$$component` nesting while the
+  component starts), at the same depth the later one, and the others wait
+  outside the document. The app's tags (`data-vela-head="app:<depth>"`)
+  are entries too, losing a tie. The block has no DOM in place; releasing
+  it removes its tags. A component with a head is `interactive` (§8.1).
 - **B-3.8 Multiple roots.** In the first delivery, components keep their
   current CSR DOM shape, including the `display: contents` wrapper for
   multi-root templates. Whether to drop the wrapper is open (§12).
@@ -435,6 +446,15 @@ components write no entry.
   view `{}`, so a `c` entry writes it as `{"kind", "message", "props"}` with
   `"errorObject": true`, and the client revives an error of that kind with
   the same own message and own enumerable properties.
+
+### 6.4a Document head
+
+- **S-6.17** The Go renderer passes each `<vela:head>` tag, with
+  `data-vela-head="<component ID>#<n>"` (n in source order), to the head
+  collector of the render context (`vela.WithHead`) with its key and the
+  component depth; nothing goes into the root range or the payload. A
+  hydrating `$$head` adopts the tag with its site attribute from
+  `document.head` and creates the ones the server did not keep.
 
 ### 6.5 Error boundaries
 

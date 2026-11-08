@@ -1422,3 +1422,41 @@ func TestRuntimeNestingMatrix_BoundaryAndKey(t *testing.T) {
 		{"assertText": "i", "equals": "bad bad"},
 	})
 }
+
+// head-in-each (task 091): every row component has a title; at the same
+// depth the one mounted last wins, and removing it brings the previous
+// one back; the page's own title is shallower and loses meanwhile.
+func TestRuntimeNestingMatrix_HeadInEach(t *testing.T) {
+	row := `<script>
+  export let name = '';
+</script>
+<template>
+  <vela:head><title>{name}</title><meta name="description" :content={name} /></vela:head>
+  <li>{name}</li>
+</template>`
+	src := `<script>
+  import { Row } from './Row.vela';
+  let rows = $state(['a', 'b']);
+</script>
+<template>
+  <vela:head><title>list</title></vela:head>
+  <div>
+    <button class="add" @click={() => rows = [...rows, 'c']}>add</button>
+    <button class="pop" @click={() => rows = rows.slice(0, -1)}>pop</button>
+    <button class="clear" @click={() => rows = []}>clear</button>
+    <ul>{#each rows as r (r)}<Row :name={r} />{/each}</ul>
+  </div>
+</template>`
+	assertRuntimeSet(t, "HeadInEach", map[string]string{"HeadInEach": src, "Row": row}, []rtStep{
+		{"assertText": "head title", "equals": "b"},
+		{"assertCount": "head title", "equals": 1},
+		{"click": "button.add"},
+		{"assertText": "head title", "equals": "c"},
+		{"assertCount": `head meta[name="description"]`, "equals": 1},
+		{"click": "button.pop"},
+		{"assertText": "head title", "equals": "b"},
+		{"click": "button.clear"},
+		{"assertText": "head title", "equals": "list"},
+		{"assertCount": `head meta[name="description"]`, "equals": 0},
+	})
+}

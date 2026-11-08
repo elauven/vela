@@ -88,6 +88,8 @@ type SSRRenderPlan struct {
 	ContextFuncs      map[string]string
 	ContextStatements []jsast.JsExpr
 	SetsContext       bool
+	// Head is the component's <vela:head>, nil without one (task 091).
+	Head *SSRPlanHead
 	// RootStatic marks a component that renders plain HTML as a root (A-8.1).
 	RootStatic bool
 	// DeepInitializers holds $state.deep initializers: their initial value is
@@ -259,6 +261,29 @@ type SSRPlanAwait struct {
 	DynamicID       int // paired marker around the rendered branch range
 }
 
+// SSRPlanHead is the <vela:head> of a component (task 091): head tags and
+// {#if} blocks over them, which the renderer passes to the head collector
+// of the render context instead of writing them in place.
+type SSRPlanHead struct {
+	Span     srcspan.SectionSpan
+	Children []SSRPlanNode // *SSRPlanHeadTag and *SSRPlanIf of them
+}
+
+// SSRPlanHeadTag is one tag of a <vela:head>: Key names the tags that
+// replace each other (codegen.HeadKey); Index is n of its data-vela-head
+// value "<component ID>#<n>". Script is the content of a JSON-LD script,
+// written raw.
+type SSRPlanHeadTag struct {
+	Span    srcspan.SectionSpan
+	Element *SSRPlanElement
+	Key     string
+	Index   int
+	Script  []SSRPlanTextPart
+}
+
+func (*SSRPlanHead) ssrPlanNode()    {}
+func (*SSRPlanHeadTag) ssrPlanNode() {}
+
 // SSRPlanBoundary is a {#boundary} block (task 091): the body renders in a
 // range with the state token ""; when it fails, the catch branch renders
 // instead with the token "c". Line and Column are the 1-based position of
@@ -400,7 +425,13 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *sfcast.SF
 			}
 		}
 	}
-	b.plan.Nodes = b.nodes(sfc.TemplateAST.Nodes)
+	head, nodes := sfcast.SplitHead(sfc.TemplateAST.Nodes)
+	b.plan.Nodes = b.nodes(nodes)
+	if head != nil {
+		// After the body, so that the body's dynamic IDs do not depend on
+		// the head.
+		b.plan.Head = b.head(head)
+	}
 	for name := range b.slotNames {
 		b.plan.SlotNames = append(b.plan.SlotNames, name)
 	}
@@ -565,6 +596,43 @@ func (b *ssrPlanBuilder) nodes(nodes []sfcast.Node) []SSRPlanNode {
 		}
 	}
 	return out
+}
+
+// head builds the plan of a <vela:head>; tags are numbered in source
+// order, as codegen.FlattenHead numbers them for the client.
+func (b *ssrPlanBuilder) head(head *sfcast.HeadNode) *SSRPlanHead {
+	next := 0
+	var walk func(nodes []sfcast.Node) []SSRPlanNode
+	walk = func(nodes []sfcast.Node) []SSRPlanNode {
+		var out []SSRPlanNode
+		for _, node := range nodes {
+			switch n := node.(type) {
+			case *sfcast.ElementNode:
+				tag := &SSRPlanHeadTag{Span: n.Span, Key: codegen.HeadKey(n), Index: next}
+				next++
+				element := &SSRPlanElement{Span: n.Span, Tag: n.Tag, Attrs: b.attrs(n.Attrs)}
+				if n.Tag == "script" {
+					for _, child := range n.Children {
+						if text, ok := child.(*sfcast.TextNode); ok {
+							tag.Script = append(tag.Script, b.text(text).Parts...)
+						}
+					}
+				} else {
+					element.Children = b.nodes(n.Children)
+				}
+				tag.Element = element
+				out = append(out, tag)
+			case *sfcast.IfChainNode:
+				branches := make([]SSRPlanIfBranch, 0, len(n.Branches))
+				for _, branch := range n.Branches {
+					branches = append(branches, SSRPlanIfBranch{Span: branch.Span, Condition: branch.Expr, Children: walk(branch.Children)})
+				}
+				out = append(out, &SSRPlanIf{Span: n.Span, Branches: branches, DynamicID: -1})
+			}
+		}
+		return out
+	}
+	return &SSRPlanHead{Span: head.Span, Children: walk(head.Children)}
 }
 
 func (b *ssrPlanBuilder) element(node *sfcast.ElementNode) *SSRPlanElement {

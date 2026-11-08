@@ -51,8 +51,8 @@ var exampleCases = []pageCase{
 	{Path: "/users?/delete", Method: "POST", Form: "id=3", Status: 404, Contains: "<h1>404</h1>"},
 	{Path: "/users", Method: "POST", Form: "name=Eve", Origin: "https://evil.example", Status: 403},
 	{Path: "/users/2", Status: 200, Title: "Grace · Users", Contains: "User #2, joined 2026-03-17", Preload: "src/routes/users/[id=int]/Page.vela"},
-	{Path: "/about", Status: 200, Title: "Vela App", Contains: "About</h1>"},
-	{Path: "/de/about", Status: 200, Title: "Vela App", Contains: "Über uns</h1>"},
+	{Path: "/about", Status: 200, Title: "About · Vela App", Contains: "About</h1>"},
+	{Path: "/de/about", Status: 200, Title: "Über uns · Vela App", Contains: `<link rel="canonical" href="https://vela.example/de/about" data-vela-head="routes/[[lang]]/about/Page#2">`},
 	{Path: "/colors/00ff00", Status: 200, Title: "Vela App", Contains: "#00ff00"},
 	// The guard of (admin) sends anonymous visitors to the sign-in page
 	// (docs/APP.md G-1); the browser scenarios sign in.
@@ -122,7 +122,7 @@ func startServer(t *testing.T, root, server string, args ...string) string {
 	return ""
 }
 
-var titleTag = regexp.MustCompile(`<title>([^<]*)</title>`)
+var titleTag = regexp.MustCompile(`<title[^>]*>([^<]*)</title>`)
 
 // TestExampleAppServes is the acceptance check of tasks 074 and 075 without
 // a browser: every route of examples/app answers with its status, title

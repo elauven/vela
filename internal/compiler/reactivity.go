@@ -546,6 +546,8 @@ func ValidateTemplateRefs(nodes []sfcast.Node, analysis *analyzer.Analysis, scri
 				for _, name := range catchAdded {
 					delete(known, name)
 				}
+			case *sfcast.HeadNode:
+				walkNodes(n.Children)
 			case *sfcast.BoundaryBlockNode:
 				walkNodes(n.Children)
 				added := addEachBindings(known, []string{n.ErrorName, n.RetryName})
@@ -791,18 +793,36 @@ func ValidateSpecialElements(nodes []sfcast.Node, templateOffset int, ds *diag.D
 		pos := span.Start - templateOffset + 1 // after '<'
 		return pos, pos + len(tag)
 	}
+	heads := 0
 	var walk func([]sfcast.Node)
 	walk = func(ns []sfcast.Node) {
+		top := len(ns) > 0 && sameNodes(ns, nodes)
 		for _, node := range ns {
 			switch n := node.(type) {
+			case *sfcast.HeadNode:
+				pos, end := tagRange(n.Span, sfcast.HeadTag)
+				heads++
+				switch {
+				case !top:
+					ds.Report(diag.SevError, pos, end, "VELA-HEAD-PLACEMENT", "Move <vela:head> to the top level of the template.", "<vela:head> is allowed only at the top level of a template, not inside an element, block, slot or component")
+				case heads > 1:
+					ds.Report(diag.SevError, pos, end, "VELA-HEAD-PLACEMENT", "Put all head tags into one <vela:head>.", "a component has at most one <vela:head>")
+				}
+				for _, attr := range n.Attrs {
+					ds.Report(diag.SevError, attr.Span.Start-templateOffset, attr.Span.End-templateOffset, "VELA-HEAD-CONTENT", "Remove the attribute.", "<vela:head> takes no attributes")
+				}
+				validateHeadContent(n.Children, templateOffset, ds)
 			case *sfcast.ElementNode:
 				switch {
 				case n.Tag == "svelte:component":
 					pos, end := tagRange(n.Span, n.Tag)
 					ds.Report(diag.SevError, pos, end, "VELA-SVELTE-COMPONENT", "Write <vela:component :this={component}>.", "<svelte:component> is not supported; use <vela:component :this={…}>")
+				case n.Tag == "svelte:head":
+					pos, end := tagRange(n.Span, n.Tag)
+					ds.Report(diag.SevError, pos, end, "VELA-SVELTE-HEAD", "Write <vela:head> at the top level of the template.", "<svelte:head> is not supported; use <vela:head>")
 				case strings.HasPrefix(n.Tag, sfcast.SpecialElementPrefix):
 					pos, end := tagRange(n.Span, n.Tag)
-					ds.Report(diag.SevError, pos, end, "VELA-UNKNOWN-SPECIAL-ELEMENT", "The only vela: element is <vela:component>.", "<%s> is not a Vela special element", n.Tag)
+					ds.Report(diag.SevError, pos, end, "VELA-UNKNOWN-SPECIAL-ELEMENT", "The vela: elements are <vela:component> and <vela:head>.", "<%s> is not a Vela special element", n.Tag)
 				}
 				walk(n.Children)
 			case *sfcast.ComponentNode:
@@ -842,6 +862,133 @@ func ValidateSpecialElements(nodes []sfcast.Node, templateOffset int, ds *diag.D
 		}
 	}
 	walk(nodes)
+}
+
+// sameNodes reports whether a and b are the same node list.
+func sameNodes(a, b []sfcast.Node) bool {
+	return len(a) == len(b) && len(a) > 0 && &a[0] == &b[0]
+}
+
+// validateHeadContent checks the content of <vela:head> (task 091):
+// <title>, <meta>, <link> and <script type="application/ld+json"> with
+// static and :dynamic attributes, text only in <title> and the script, and
+// {#if} around them.
+func validateHeadContent(nodes []sfcast.Node, templateOffset int, ds *diag.DiagSet) {
+	const fix = "Inside <vela:head> use <title>, <meta>, <link>, <script type=\"application/ld+json\"> and {#if}."
+	at := func(span srcspan.SectionSpan) (int, int) {
+		return span.Start - templateOffset, span.End - templateOffset
+	}
+	for _, node := range nodes {
+		switch n := node.(type) {
+		case *sfcast.TextNode:
+			if !headWhitespace(n) {
+				pos, end := at(n.Span)
+				ds.Report(diag.SevError, pos, end, "VELA-HEAD-CONTENT", "Put the text into <title>.", "text in <vela:head> belongs in <title>")
+			}
+		case *sfcast.IfChainNode:
+			if n.Client || n.HasKey() {
+				pos, end := at(n.Span)
+				ds.Report(diag.SevError, pos, end, "VELA-HEAD-CONTENT", fix, "<vela:head> allows {#if} but not {#key} or {#client}")
+				continue
+			}
+			for _, branch := range n.Branches {
+				validateHeadContent(branch.Children, templateOffset, ds)
+			}
+		case *sfcast.ElementNode:
+			pos := n.Span.Start - templateOffset + 1
+			end := pos + len(n.Tag)
+			switch n.Tag {
+			case "title", "meta", "link":
+			case "script":
+				if !headLDJSON(n) {
+					ds.Report(diag.SevError, pos, end, "VELA-HEAD-CONTENT", "Write <script type=\"application/ld+json\">.", "a <script> in <vela:head> must be type=\"application/ld+json\"")
+				}
+			default:
+				ds.Report(diag.SevError, pos, end, "VELA-HEAD-CONTENT", fix, "<%s> is not allowed in <vela:head>", n.Tag)
+				continue
+			}
+			for _, attr := range n.Attrs {
+				if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+					apos, aend := at(attr.Span)
+					ds.Report(diag.SevError, apos, aend, "VELA-HEAD-CONTENT", "Use static or :dynamic attributes.", "events, bindings and class:/style: directives are not allowed in <vela:head>")
+				}
+			}
+			for _, child := range n.Children {
+				text, ok := child.(*sfcast.TextNode)
+				if (n.Tag == "title" || n.Tag == "script") && ok {
+					continue
+				}
+				if ok && headWhitespace(text) {
+					continue
+				}
+				cpos, cend := at(headNodeSpan(child))
+				ds.Report(diag.SevError, cpos, cend, "VELA-HEAD-CONTENT", fix, "<%s> in <vela:head> holds only text", n.Tag)
+			}
+		default:
+			pos, end := at(headNodeSpan(node))
+			ds.Report(diag.SevError, pos, end, "VELA-HEAD-CONTENT", fix, "%s is not allowed in <vela:head>", headNodeName(node))
+		}
+	}
+}
+
+func headWhitespace(text *sfcast.TextNode) bool {
+	for _, part := range text.Parts {
+		if !part.Static || strings.TrimSpace(part.Value) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func headLDJSON(script *sfcast.ElementNode) bool {
+	for _, attr := range script.Attrs {
+		if attr.Name == "type" && !attr.IsBind && !attr.IsEvent && !attr.IsTwoWay && strings.EqualFold(strings.TrimSpace(attr.Value), "application/ld+json") {
+			return true
+		}
+	}
+	return false
+}
+
+func headNodeSpan(node sfcast.Node) srcspan.SectionSpan {
+	switch n := node.(type) {
+	case *sfcast.ElementNode:
+		return n.Span
+	case *sfcast.TextNode:
+		return n.Span
+	case *sfcast.IfChainNode:
+		return n.Span
+	case *sfcast.EachBlockNode:
+		return n.Span
+	case *sfcast.AwaitBlockNode:
+		return n.Span
+	case *sfcast.BoundaryBlockNode:
+		return n.Span
+	case *sfcast.ComponentNode:
+		return n.Span
+	case *sfcast.SlotNode:
+		return n.Span
+	case *sfcast.HeadNode:
+		return n.Span
+	}
+	return srcspan.SectionSpan{}
+}
+
+func headNodeName(node sfcast.Node) string {
+	switch n := node.(type) {
+	case *sfcast.ComponentNode:
+		return "<" + n.Name + ">"
+	case *sfcast.EachBlockNode:
+		return "{#each}"
+	case *sfcast.AwaitBlockNode:
+		return "{#await}"
+	case *sfcast.BoundaryBlockNode:
+		return "{#boundary}"
+	case *sfcast.SlotNode:
+		return "<slot>"
+	case *sfcast.HeadNode:
+		return "<vela:head>"
+	}
+	return node.NodeKind()
 }
 
 // ValidateTemplateForms catches Vela-specific directive forms before codegen.
@@ -953,6 +1100,8 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 				walk(n.PendingChildren)
 				walk(n.ThenChildren)
 				walk(n.CatchChildren)
+			case *sfcast.HeadNode:
+				walk(n.Children)
 			case *sfcast.BoundaryBlockNode:
 				walk(n.Children)
 				walk(n.CatchChildren)

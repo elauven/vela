@@ -375,6 +375,8 @@ func (c *component) templateLocals(nodes []sfcast.Node, off int) []templateLocal
 				walk(n.PendingChildren)
 				walk(n.ThenChildren)
 				walk(n.CatchChildren)
+			case *sfcast.HeadNode:
+				walk(n.Children)
 			case *sfcast.BoundaryBlockNode:
 				if inside(n.CatchPos, n.Span.End) {
 					if n.ErrorName != "" {

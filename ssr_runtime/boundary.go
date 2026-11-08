@@ -25,6 +25,7 @@ type Boundary struct {
 	entries   int
 	frames    int
 	hostScope string
+	head      int
 }
 
 // BoundaryError is a render error a boundary caught: Source is the
@@ -50,7 +51,7 @@ func BeginBoundary(w io.Writer) Boundary {
 	}
 	o := sw.out
 	o.hold++
-	mark := Boundary{out: o, buf: len(o.buf), frames: len(o.frames), hostScope: sw.hostScope}
+	mark := Boundary{out: o, buf: len(o.buf), frames: len(o.frames), hostScope: sw.hostScope, head: headOf(w).len()}
 	if o.direct != nil {
 		mark.direct = o.direct.Len()
 	}
@@ -104,6 +105,8 @@ func CatchBoundary(w io.Writer, mark Boundary, err error, js *JS, source string)
 			o.frames = o.frames[:mark.frames]
 		}
 		sw.hostScope = mark.hostScope
+		// The head tags of the failed body go too (task 091).
+		headOf(w).truncate(mark.head)
 		if sw.stream != nil && len(sw.stream.entries) >= mark.entries {
 			sw.stream.entries = sw.stream.entries[:mark.entries]
 		}

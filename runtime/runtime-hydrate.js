@@ -15,7 +15,7 @@
  */
 
 import { $$contextParent, $$contextRun, $$isDev, $$lazyById, warn } from './runtime.js';
-import { $$owner, $$setHydration, $$createCursor, $$listen } from './runtime-blocks.js';
+import { $$owner, $$setHydration, $$createCursor, $$listen, $$appHead } from './runtime-blocks.js';
 
 export const MISMATCH = 'VELA-HYDRATION-MISMATCH';
 
@@ -632,4 +632,14 @@ export function staticHTML(html) {
   }
   Static.$$props = {};
   return Static;
+}
+
+// replaceAppHead replaces the head tags of the application (Vela App: the
+// title and meta tags of r.Head() and Config.Head) with tags, a list of
+// { node, depth }: depth is the depth of the component the value belongs
+// to, 0 for the root. A tag of a component's <vela:head> with the same
+// title, meta name or property, or canonical link wins when its component
+// is deeper or as deep (task 091); the components' tags are not touched.
+export function replaceAppHead(tags) {
+  $$appHead(tags.map((tag) => ({ node: tag.node, depth: tag.depth || 0 })));
 }

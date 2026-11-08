@@ -231,10 +231,9 @@ func ParseSFC(src string) (*SFC, error) {
 	var unclosed *SectionError
 	low := asciiLower(src)
 	extractBlock := func(tag string) (string, int) {
-		openTag := "<" + tag
 		closeTag := "</" + tag + ">"
 
-		start := strings.Index(low, openTag)
+		start := SectionStart(low, tag)
 		if start < 0 {
 			return "", 0
 		}
@@ -516,6 +515,9 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				walkNodes(n.PendingChildren)
 				walkNodes(n.ThenChildren)
 				walkNodes(n.CatchChildren)
+			case *HeadNode:
+				checkSpan(n.Span, "head")
+				walkNodes(n.Children)
 			case *BoundaryBlockNode:
 				checkSpan(n.Span, "boundary block")
 				walkNodes(n.Children)
@@ -711,6 +713,68 @@ type LazyComponent struct {
 	Call      *jsast.JsCallExpr
 	Specifier string // the literal path, './X.vela'
 	ID        string // the $$id of the target component
+}
+
+// HeadNode is <vela:head>…</vela:head> (task 091): the <title>, <meta>,
+// <link> and <script type="application/ld+json"> tags a component puts in
+// the document head, optionally under {#if}. It is allowed only at the top
+// level of a template; the validator checks its content (VELA-HEAD-CONTENT).
+type HeadNode struct {
+	Span     srcspan.SectionSpan
+	Attrs    []*Attr
+	Children []Node
+}
+
+func (h *HeadNode) NodeKind() string { return "head" }
+
+// HeadTag is the tag of the document head element.
+const HeadTag = "vela:head"
+
+// SplitHead separates the top-level <vela:head> of a template from the
+// nodes that render in place. The head takes no part in the component's DOM
+// shape: the whitespace it leaves is normalised as if it were not there
+// (no space at the edges, one between two nodes). Without a head the nodes
+// are returned unchanged.
+func SplitHead(nodes []Node) (*HeadNode, []Node) {
+	index := -1
+	for i, node := range nodes {
+		if _, ok := node.(*HeadNode); ok {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return nil, nodes
+	}
+	head := nodes[index].(*HeadNode)
+	rest := make([]Node, 0, len(nodes)-1)
+	rest = append(rest, nodes[:index]...)
+	if index > 0 && index+1 < len(nodes) && isSpaceText(nodes[index-1]) && isSpaceText(nodes[index+1]) {
+		// Two spaces around the head are one.
+		rest = append(rest, nodes[index+2:]...)
+	} else {
+		rest = append(rest, nodes[index+1:]...)
+	}
+	for len(rest) > 0 && isSpaceText(rest[0]) {
+		rest = rest[1:]
+	}
+	for len(rest) > 0 && isSpaceText(rest[len(rest)-1]) {
+		rest = rest[:len(rest)-1]
+	}
+	return head, rest
+}
+
+func isSpaceText(node Node) bool {
+	text, ok := node.(*TextNode)
+	if !ok || text.Preformatted {
+		return false
+	}
+	for _, part := range text.Parts {
+		if !part.Static || strings.TrimSpace(part.Value) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // DynamicComponentTag is the tag of a dynamic component.
@@ -1389,6 +1453,11 @@ func (p *parser) parseElement() (Node, error) {
 		return p.parseSvelteFragment(elementStart)
 	}
 
+	// ── <vela:head> — tags for the document head (task 091) ───────────────
+	if tag == HeadTag {
+		return p.parseHeadNode(elementStart)
+	}
+
 	// ── Component detection ───────────────────────────────────────────────
 	// Tags starting with an uppercase letter are treated as child components;
 	// <vela:component> is a component chosen by its :this value. Other vela:
@@ -1440,6 +1509,40 @@ func (p *parser) parseElement() (Node, error) {
 
 	elem.Span.End = p.base + p.pos
 	return elem, nil
+}
+
+// parseHeadNode parses <vela:head>…</vela:head>. Its attributes are kept
+// for the validator, which rejects them.
+func (p *parser) parseHeadNode(elementStart int) (Node, error) {
+	scratch := &ElementNode{Tag: HeadTag}
+	if err := p.parseAttrs(scratch); err != nil {
+		return nil, err
+	}
+	head := &HeadNode{Span: srcspan.SectionSpan{Start: p.base + elementStart}, Attrs: scratch.Attrs}
+	if p.has("/>") {
+		p.pos += 2
+		head.Span.End = p.base + p.pos
+		return head, nil
+	}
+	if !p.eof() && p.ch() == '>' {
+		p.pos++
+	}
+	children, err := p.parseNodes([]string{HeadTag})
+	if err != nil {
+		return nil, err
+	}
+	head.Children = children
+	if p.has("</") {
+		p.pos += 2
+		for !p.eof() && p.ch() != '>' {
+			p.pos++
+		}
+		if !p.eof() {
+			p.pos++
+		}
+	}
+	head.Span.End = p.base + p.pos
+	return head, nil
 }
 
 // parseSlotNode parses a <slot name="header">fallback</slot> element.
@@ -2752,6 +2855,37 @@ func (p *parser) parseSvelteClientBlock(branchStart int) (Node, error) {
 	return chain, nil
 }
 
+// SectionStart returns the offset in low, a lower-cased component source, of
+// the opening tag of the component's section tag ("script", "style" or
+// "template"). A <script> or <style> inside the <template> section, such as
+// the JSON-LD script of <vela:head>, is not a section.
+func SectionStart(low, tag string) int {
+	open := "<" + tag
+	if tag == "template" {
+		return strings.Index(low, open)
+	}
+	templateStart := strings.Index(low, "<template")
+	templateEnd := -1
+	if templateStart >= 0 {
+		if i := strings.Index(low[templateStart:], "</template>"); i >= 0 {
+			templateEnd = templateStart + i
+		}
+	}
+	for from := 0; from < len(low); {
+		i := strings.Index(low[from:], open)
+		if i < 0 {
+			return -1
+		}
+		i += from
+		if templateStart >= 0 && i > templateStart && (templateEnd < 0 || i < templateEnd) {
+			from = i + len(open)
+			continue
+		}
+		return i
+	}
+	return -1
+}
+
 // parseSvelteBoundaryBlock parses {#boundary}…{:catch error, retry}…{/boundary}
 // (task 091).
 func (p *parser) parseSvelteBoundaryBlock(start int) (Node, error) {
@@ -2805,7 +2939,7 @@ func (p *parser) parseSvelteBoundaryBlock(start int) (Node, error) {
 // tag of src and the offset of the value; ok is false without it.
 func scriptAttr(src, name string) (value string, pos int, ok bool) {
 	low := asciiLower(src)
-	start := strings.Index(low, "<script")
+	start := SectionStart(low, "script")
 	if start < 0 {
 		return "", 0, false
 	}
@@ -2877,7 +3011,7 @@ var scriptContextPattern = regexp.MustCompile(`(?i)^<script\b[^>]*\scontext\s*=\
 // ScriptContextClient reports <script context="client"> on the first
 // script tag.
 func ScriptContextClient(src string) bool {
-	start := strings.Index(asciiLower(src), "<script")
+	start := SectionStart(asciiLower(src), "script")
 	if start < 0 {
 		return false
 	}

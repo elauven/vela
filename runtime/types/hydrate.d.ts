@@ -51,3 +51,16 @@ export function serverComponent<P extends Props, E extends Record<string, any>, 
 
 /** A component value that inserts html and has no state. Only trusted HTML. */
 export function staticHTML(html: string): Component<Props, {}, {}>;
+
+/** A head tag of the application and the depth of the component it belongs to (0 for the root). */
+export interface AppHeadTag {
+  node: Element;
+  depth?: number;
+}
+
+/**
+ * Replaces the application's head tags (a router's title and meta tags)
+ * with tags. A tag of a component's `<vela:head>` with the same key wins
+ * when its component is as deep or deeper; the components' tags stay.
+ */
+export function replaceAppHead(tags: AppHeadTag[]): void;

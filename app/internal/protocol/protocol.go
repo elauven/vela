@@ -264,7 +264,11 @@ func (s *Segment) UnmarshalJSON(b []byte) error {
 // Head is the merged head of a response (R-6).
 type Head struct {
 	Title string `json:"title,omitempty"`
-	Meta  []Meta `json:"meta,omitempty"`
+	// TitleDepth is the depth of the component the title belongs to: 0
+	// for Config.Head, i+1 for chain level i (task 091). The client
+	// registers the tag with it, so that a deeper <vela:head> wins.
+	TitleDepth int    `json:"titleDepth,omitempty"`
+	Meta       []Meta `json:"meta,omitempty"`
 }
 
 // Meta is one <meta> tag set by a loader.
@@ -272,6 +276,8 @@ type Meta struct {
 	Name     string `json:"name,omitempty"`
 	Property string `json:"property,omitempty"`
 	Content  string `json:"content"`
+	// Depth is as Head.TitleDepth.
+	Depth int `json:"depth,omitempty"`
 }
 
 // Fragment is the HTML of a fragment response (R-8).

@@ -140,6 +140,22 @@ const scenarios = [
     await t.navigation(() => t.page.goBack());
     t.equal(await t.text('nav a.active'), 'About', 'back');
   }],
+  ['<vela:head> of a page follows the navigation (task 091)', async (t) => {
+    await t.open('/about');
+    const tags = () => t.page.evaluate(() => [
+      document.title,
+      document.querySelectorAll('title').length,
+      [...document.querySelectorAll('meta[name=description]')].map((m) => m.content).join('+'),
+      [...document.querySelectorAll('link[rel=canonical]')].map((l) => l.getAttribute('href')).join('+'),
+    ].join('|'));
+    t.equal(await tags(), 'About · Vela App|1|Who we are|https://vela.example/about', 'after hydration');
+    await t.follow('nav a[href="/users"]');
+    t.equal(await tags(), 'Users|1|An example of Vela App|', 'the tags of the departed page are gone');
+    await t.follow('nav a[href="/about"]');
+    t.equal(await tags(), 'About · Vela App|1|Who we are|https://vela.example/about', 'a data navigation to the page');
+    await t.navigation(() => t.page.goBack());
+    t.equal(await tags(), 'Users|1|An example of Vela App|', 'back');
+  }],
   ['back and forward restore the scroll position', async (t) => {
     await t.open('/users');
     await t.page.evaluate(() => {

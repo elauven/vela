@@ -392,6 +392,10 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	ssrRuntimeAddFunc(pkg, "NewJSFor", []*types.Var{v("w", writer)}, []*types.Var{v("", types.NewPointer(jsType))})
 	ssrRuntimeAddFunc(pkg, "EnterContext", []*types.Var{v("w", writer)}, []*types.Var{v("", writer)})
 	ssrRuntimeAddFunc(pkg, "LeaveContext", []*types.Var{v("w", writer)}, nil)
+	// Document head (ssr_runtime/head.go, task 091).
+	tagRender := types.NewSignatureType(nil, nil, nil, types.NewTuple(v("w", writer)), types.NewTuple(v("", errorType)), false)
+	ssrRuntimeAddFunc(pkg, "WriteHeadTag", []*types.Var{v("w", writer), v("key", stringType), v("render", tagRender)}, []*types.Var{v("", errorType)})
+	ssrRuntimeAddFunc(pkg, "WriteScriptText", []*types.Var{v("w", writer), v("text", stringType)}, []*types.Var{v("", errorType)})
 	// Error boundaries (ssr_runtime/boundary.go, task 091).
 	boundaryName := types.NewTypeName(token.NoPos, pkg, "Boundary", nil)
 	boundaryType := types.NewNamed(boundaryName, types.NewStruct(nil, nil), nil)

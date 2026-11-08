@@ -167,10 +167,12 @@ func TestDocument(t *testing.T) {
 			t.Errorf("%s = %q, want %q", k, got, want)
 		}
 	}
-	// The deepest title, deeper meta tags replacing the same name.
+	// The deepest title, deeper meta tags replacing the same name; every
+	// tag names the depth of its level (task 091): 0 for the defaults,
+	// i+1 for level i.
 	for _, want := range []string{
 		"<!doctype html>",
-		`<title>User 2</title><meta name="description" content="one user" data-vela-head><meta name="theme-color" content="#fff" data-vela-head><meta property="og:type" content="website" data-vela-head>`,
+		`<title data-vela-head="app:3">User 2</title><meta name="description" content="one user" data-vela-head="app:3"><meta name="theme-color" content="#fff" data-vela-head="app:0"><meta property="og:type" content="website" data-vela-head="app:1">`,
 		`<meta name="vela-build" content="` + h.BuildID() + `">`,
 		`<div id="vela-app"><main data-props=`,
 	} {
@@ -359,7 +361,7 @@ func TestDocumentShellAndAssets(t *testing.T) {
 	p := serve(t, h, "GET", "/users/2")
 	want := `<link rel="stylesheet" href="/assets/client-C1.css"><link rel="modulepreload" href="/assets/runtime-R1.js"><script type="module" src="/assets/client-A1.js"></script>` +
 		`<link rel="stylesheet" href="/assets/Page-P1.css"><link rel="modulepreload" href="/assets/Page-P1.js"><link rel=icon href=/i.png></head><body class=x><div id="vela-app">`
-	if !strings.Contains(p.body, want) || !strings.HasPrefix(p.body, "<!doctype html><html><head><title>User 2</title>") {
+	if !strings.Contains(p.body, want) || !strings.HasPrefix(p.body, `<!doctype html><html><head><title data-vela-head="app:3">User 2</title>`) {
 		t.Errorf("document:\n%s\nwant\n%s", p.body, want)
 	}
 	// The error page of a failed level is preloaded instead of the page.

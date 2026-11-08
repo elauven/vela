@@ -4,7 +4,7 @@
  * Structural template behaviour lives here once instead of being generated
  * into every component: compiled fragments build DOM through a cursor, and
  * blocks ($$if, $$each, $$key, $$await, $$component, $$dynamic, $$slot,
- * $$client, $$boundary) own
+ * $$client, $$boundary, $$head) own
  * their DOM ranges and child resources.
  *
  * Fragment contract (F-2.x): a fragment is `(cursor, scope) => handle`, where
@@ -362,15 +362,22 @@ function rootView(owner, handle, ctx) {
 function createInstance(create) {
   const previous = viewSink;
   const sink = (viewSink = []);
+  componentDepth++;
   try {
     return create();
   } catch (error) {
     for (const view of sink) view.release();
     throw error;
   } finally {
+    componentDepth--;
     viewSink = previous;
   }
 }
+
+// componentDepth is the depth of the component whose factory runs: 0 for a
+// root, one more per $$component. <vela:head> reads it while its component
+// starts (it is at the top level of a template).
+let componentDepth = 0;
 // ── $$if ─────────────────────────────────────────────────────────────────
 // select() returns the active branch index or -1.
 
@@ -1228,6 +1235,156 @@ export function $$boundary(cursor, body, catcher, where) {
   });
   if (!cursor.hydrating) showBody();
   return block;
+}
+
+// ── $$head ───────────────────────────────────────────────────────────────
+// <vela:head> (task 091). Every tag is an entry of one registry of the
+// document head. Entries with the same key ("title", "meta name=…", "meta
+// property=…", "link canonical") replace each other: the one of the
+// deepest component is in the document, at the same depth the later one;
+// the others wait outside it and come back when it goes. Tags without a key
+// are all in the document. The router registers the tags of the app
+// (r.Head(), Config.Head) with $$appHead; at the same depth a component
+// wins over them. Every tag carries data-vela-head: "<component ID>#<n>"
+// for a component's, "app:<depth>" for the app's. Hydration adopts the
+// server's tags by that attribute.
+
+const headRegistry = { entries: new Set(), order: 0, scanned: false };
+
+function headKeyOf(node) {
+  const tag = node.localName;
+  if (tag === 'title') return 'title';
+  if (tag === 'meta') {
+    const property = node.getAttribute('property');
+    if (property) return `meta property=${property}`;
+    const name = node.getAttribute('name');
+    if (name) return `meta name=${name}`;
+  }
+  if (tag === 'link' && (node.getAttribute('rel') || '').trim().toLowerCase() === 'canonical') return 'link canonical';
+  return null;
+}
+
+// scanHead registers the app's tags the server wrote, once.
+function scanHead() {
+  if (headRegistry.scanned || typeof document === 'undefined') return;
+  headRegistry.scanned = true;
+  for (const node of document.head.querySelectorAll('[data-vela-head^="app:"]')) {
+    headRegistry.entries.add({ key: headKeyOf(node), depth: Number(node.getAttribute('data-vela-head').slice(4)) || 0, order: -1, node, on: true, app: true });
+  }
+}
+
+// syncHead puts the winning entries into document.head and takes the
+// others out. A keyed tag goes before a tag of the same key that the page
+// has itself (a <title> of index.html), so that the browser uses it.
+function syncHead() {
+  const winners = new Map();
+  for (const entry of headRegistry.entries) {
+    if (!entry.key || !entry.on) continue;
+    const best = winners.get(entry.key);
+    if (!best || entry.depth > best.depth || (entry.depth === best.depth && entry.order > best.order)) winners.set(entry.key, entry);
+  }
+  for (const entry of headRegistry.entries) {
+    const show = entry.on && (!entry.key || winners.get(entry.key) === entry);
+    const node = entry.node;
+    if (show && node.parentNode !== document.head) {
+      document.head.insertBefore(node, entry.key ? ownHeadTag(entry.key) : null);
+    } else if (!show && node.parentNode) {
+      node.remove();
+    }
+  }
+}
+
+function ownHeadTag(key) {
+  for (const node of document.head.children) {
+    if (!node.hasAttribute('data-vela-head') && headKeyOf(node) === key) return node;
+  }
+  return null;
+}
+
+function writeHeadAttrs(node, list) {
+  const seen = new Set(['data-vela-head']);
+  for (let i = 0; i < list.length; i += 2) {
+    const name = list[i];
+    const value = list[i + 1];
+    seen.add(name);
+    if (value === null || value === undefined || value === false) {
+      if (node.hasAttribute(name)) node.removeAttribute(name);
+    } else {
+      const text = value === true ? '' : String(value);
+      if (node.getAttribute(name) !== text) node.setAttribute(name, text);
+    }
+  }
+  for (const attr of [...node.attributes]) if (!seen.has(attr.name)) node.removeAttribute(attr.name);
+}
+
+export function $$head(cursor, specs, changed) {
+  scanHead();
+  const depth = componentDepth;
+  const entries = specs.map(([tag, key, site, attrs, text, when]) => {
+    let node = null;
+    if (cursor.hydrating) {
+      // The server's tag of this site, when it rendered one.
+      for (const candidate of document.head.querySelectorAll(`[data-vela-head="${site}"]`)) {
+        if (!headAdopted.has(candidate) && candidate.localName === tag) {
+          node = candidate;
+          break;
+        }
+      }
+    }
+    if (!node) {
+      node = document.createElement(tag);
+      node.setAttribute('data-vela-head', site);
+    }
+    headAdopted.add(node);
+    return { key, depth, order: headRegistry.order++, node, on: false, attrs, text, when };
+  });
+  const render = () => {
+    for (const entry of entries) {
+      entry.on = !entry.when || entry.when();
+      if (!entry.on) continue;
+      writeHeadAttrs(entry.node, entry.attrs());
+      if (entry.text) {
+        const value = entry.text();
+        if (entry.node.textContent !== value) entry.node.textContent = value;
+      }
+    }
+    syncHead();
+  };
+  for (const entry of entries) headRegistry.entries.add(entry);
+  render();
+  const block = {
+    p(dirty) {
+      if (!block.isDone() && (!changed || changed(dirty))) render();
+    },
+    move() {},
+  };
+  // The block has no DOM in place; its tags leave the head with it.
+  return registerBlock(cursor, block, { remove() {} }, () => {
+    for (const entry of entries) {
+      headRegistry.entries.delete(entry);
+      headAdopted.delete(entry.node);
+      entry.node.remove();
+    }
+    syncHead();
+  });
+}
+
+const headAdopted = new WeakSet();
+
+// $$appHead replaces the app's tags (the router, after a navigation):
+// tags is a list of { key, depth, node }. Tags of components stay.
+export function $$appHead(tags) {
+  scanHead();
+  for (const entry of [...headRegistry.entries]) {
+    if (!entry.app) continue;
+    headRegistry.entries.delete(entry);
+    entry.node.remove();
+  }
+  for (const tag of tags) {
+    tag.node.setAttribute('data-vela-head', `app:${tag.depth}`);
+    headRegistry.entries.add({ key: tag.key === undefined ? headKeyOf(tag.node) : tag.key, depth: tag.depth, order: -1, node: tag.node, on: true, app: true });
+  }
+  syncHead();
 }
 
 // $$createCursor exposes the create cursor to the hydration runtime, which

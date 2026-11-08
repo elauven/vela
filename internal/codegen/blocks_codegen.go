@@ -169,6 +169,8 @@ func (g *ASTGen) buildBlocksView(nodes []sfcast.Node) {
 	// The server renders the same normalised template (M-5.7).
 	NormalizeTableRows(nodes)
 	g.blocks.deps = map[string]bool{}
+	// <vela:head> renders into document.head, not in place (task 091).
+	head, nodes := sfcast.SplitHead(nodes)
 	rootIsElement := len(nodes) == 1
 	if rootIsElement {
 		_, rootIsElement = nodes[0].(*sfcast.ElementNode)
@@ -179,6 +181,9 @@ func (g *ASTGen) buildBlocksView(nodes []sfcast.Node) {
 	g.body = append(g.body, jsast.GenLet("$$root", jsast.GenNull()))
 	// A single root element is assigned to $$root by the root fragment.
 	g.blocks.assignRoot = rootIsElement
+	if head != nil {
+		nodes = append(append([]sfcast.Node{}, nodes...), head)
+	}
 	root := g.buildBlocksFragment(nodes, nil)
 	g.body = append(g.body, root)
 
@@ -364,6 +369,8 @@ func (g *ASTGen) buildBlocksNode(node sfcast.Node, isRoot bool) {
 		g.buildBlocksAwait(n)
 	case *sfcast.BoundaryBlockNode:
 		g.buildBlocksBoundary(n)
+	case *sfcast.HeadNode:
+		g.buildBlocksHead(n)
 	case *sfcast.ComponentNode:
 		g.buildBlocksComponent(n)
 	case *sfcast.SlotNode:
@@ -806,6 +813,145 @@ func (g *ASTGen) buildBlocksBoundary(boundary *sfcast.BoundaryBlockNode) {
 		where = fmt.Sprintf("%s:%d:%d", g.sfc.SitePath, line+1, column+1)
 	}
 	g.blocksBlockCall("$$boundary", jsast.GenIdent(body), jsast.GenIdent(catcher), jsast.GenStrLit(where))
+}
+
+// buildBlocksHead lowers <vela:head> to the $$head block (task 091): one
+// entry per tag, [tag, key, site, attrs, text, when], where key names the
+// tags that replace each other ("title", "meta name=…", "meta
+// property=…", "link canonical"; null for the others), site is the
+// data-vela-head value "<component ID>#<n>", attrs() returns the attribute
+// list [name, value, …], text() the content of <title> and of the script,
+// and when() the {#if} conditions around the tag (null without one).
+func (g *ASTGen) buildBlocksHead(head *sfcast.HeadNode) {
+	id := g.name
+	if g.sfc != nil && g.sfc.ComponentID != "" {
+		id = g.sfc.ComponentID
+	}
+	var entries []jsast.JsExpr
+	var exprs []*sfcast.TemplateExpr
+	for i, tag := range FlattenHead(head) {
+		attrs := jsast.GenArray()
+		for _, attr := range tag.Element.Attrs {
+			if attr.IsBind && attr.Expr != nil {
+				attrs.Elems = append(attrs.Elems, jsast.GenStrLit(attr.Name), g.templateExpr(attr.Expr))
+				exprs = append(exprs, attr.Expr)
+				continue
+			}
+			attrs.Elems = append(attrs.Elems, jsast.GenStrLit(attr.Name), jsast.GenStrLit(attr.Value))
+		}
+		text := jsast.JsExpr(jsast.GenNull())
+		if tag.Element.Tag == "title" || tag.Element.Tag == "script" {
+			var value jsast.JsExpr = jsast.GenStrLit("")
+			for _, child := range tag.Element.Children {
+				if t, ok := child.(*sfcast.TextNode); ok {
+					value = jsast.GenBinary("+", value, g.textValueExpr(t.Parts))
+					for _, part := range t.Parts {
+						if !part.Static {
+							exprs = append(exprs, part.Expr)
+						}
+					}
+				}
+			}
+			text = blocksArrow(nil, value)
+		}
+		when := jsast.JsExpr(jsast.GenNull())
+		if len(tag.When) > 0 {
+			var cond jsast.JsExpr
+			for _, c := range tag.When {
+				var term jsast.JsExpr = jsast.GenUnary("!", jsast.GenUnary("!", g.templateExpr(c.Expr)))
+				if c.Negated {
+					term = jsast.GenUnary("!", g.templateExpr(c.Expr))
+				}
+				exprs = append(exprs, c.Expr)
+				if cond == nil {
+					cond = term
+				} else {
+					cond = jsast.GenLogical("&&", cond, term)
+				}
+			}
+			when = blocksArrow(nil, cond)
+		}
+		key := jsast.JsExpr(jsast.GenNull())
+		if tag.Key != "" {
+			key = jsast.GenStrLit(tag.Key)
+		}
+		entries = append(entries, jsast.GenArray(jsast.GenStrLit(tag.Element.Tag), key, jsast.GenStrLit(id+"#"+strconv.Itoa(i)), blocksArrow(nil, attrs), text, when))
+	}
+	g.blocksBlockCall("$$head", jsast.GenArray(entries...), blocksChanged(g.blocksGuard(exprs...)))
+}
+
+// HeadTagEntry is one tag of a <vela:head>, flattened from its {#if}
+// blocks: it renders when every condition of When holds.
+type HeadTagEntry struct {
+	Element *sfcast.ElementNode
+	Key     string
+	When    []HeadCondition
+}
+
+// HeadCondition is one {#if} condition of a head tag; Negated for a branch
+// after it.
+type HeadCondition struct {
+	Expr    *sfcast.TemplateExpr
+	Negated bool
+}
+
+// FlattenHead lists the tags of a <vela:head> in source order, with the
+// conditions under which each renders. Client and server number the tags
+// alike, so the n of a site "<id>#<n>" is the index in this list.
+func FlattenHead(head *sfcast.HeadNode) []HeadTagEntry {
+	var out []HeadTagEntry
+	var walk func(nodes []sfcast.Node, when []HeadCondition)
+	walk = func(nodes []sfcast.Node, when []HeadCondition) {
+		for _, node := range nodes {
+			switch n := node.(type) {
+			case *sfcast.ElementNode:
+				out = append(out, HeadTagEntry{Element: n, Key: HeadKey(n), When: when})
+			case *sfcast.IfChainNode:
+				var before []HeadCondition
+				for _, branch := range n.Branches {
+					conds := append(append([]HeadCondition{}, when...), before...)
+					if branch.Expr != nil {
+						conds = append(conds, HeadCondition{Expr: branch.Expr})
+						before = append(before, HeadCondition{Expr: branch.Expr, Negated: true})
+					}
+					walk(branch.Children, conds)
+				}
+			}
+		}
+	}
+	if head != nil {
+		walk(head.Children, nil)
+	}
+	return out
+}
+
+// HeadKey is the key under which head tags replace each other: the
+// deepest component wins (task 091). Only static attributes make a key.
+func HeadKey(el *sfcast.ElementNode) string {
+	static := func(name string) (string, bool) {
+		for _, attr := range el.Attrs {
+			if attr.Name == name && !attr.IsBind {
+				return attr.Value, true
+			}
+		}
+		return "", false
+	}
+	switch el.Tag {
+	case "title":
+		return "title"
+	case "meta":
+		if property, ok := static("property"); ok && property != "" {
+			return "meta property=" + property
+		}
+		if name, ok := static("name"); ok && name != "" {
+			return "meta name=" + name
+		}
+	case "link":
+		if rel, ok := static("rel"); ok && strings.EqualFold(strings.TrimSpace(rel), "canonical") {
+			return "link canonical"
+		}
+	}
+	return ""
 }
 
 // blocksSite emits $$c.at(site) before an adopted site in development

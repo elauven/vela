@@ -31,7 +31,7 @@ func TestBoundaryErrorsAreLogged(t *testing.T) {
 	if p.status != 200 {
 		t.Fatalf("status %d\n%s", p.status, p.body)
 	}
-	for _, want := range []string{`msg="vela app: render error caught"`, "path=/users/2", `route="/users/[id=int]"`, `err="{#boundary} at src/routes/Page.vela:12:3 caught: chart service down"`} {
+	for _, want := range []string{`msg="vela app: {#boundary} caught a render error"`, "path=/users/2", `route="/users/[id=int]"`, "source=src/routes/Page.vela:12:3", `err="chart service down"`} {
 		if !strings.Contains(logs.String(), want) {
 			t.Errorf("log misses %s:\n%s", want, logs.String())
 		}

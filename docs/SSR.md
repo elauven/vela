@@ -326,6 +326,26 @@ without re-running the promise. `RenderPageWithOptions` can pass a settled
 snapshot instead. An operand only the browser can compute belongs in
 `{#client}`.
 
+### `<vela:head>`
+
+The tags of `<vela:head>` do not go into the HTML of the root: the
+renderer passes them to the head collector of the render context. Put
+them into your document's `<head>`:
+
+```go
+var head vela.Head
+var body bytes.Buffer
+err := components.RenderPageContext(vela.WithHead(r.Context(), &head), &body, props, components.PageSlots{})
+fmt.Fprintf(w, `<!doctype html><html><head>%s</head><body><div id="app">%s</div></body></html>`, head.HTML(), body.String())
+```
+
+`head.Tags()` lists them with their key, depth and HTML: where several
+components set a title, a meta `name` or `property` or a canonical link,
+the deepest one is kept. The browser adopts the tags by their
+`data-vela-head` attribute when it hydrates; without a collector the
+server renders none and the browser creates them. A Vela App does this
+for you and merges the tags with `Config.Head` and `r.Head()`.
+
 ### `{#boundary}`
 
 A render error inside `{#boundary}` — a JavaScript exception, a host

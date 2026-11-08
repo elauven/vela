@@ -71,6 +71,15 @@ func buildSSRGoBlocksFile(plan *SSRRenderPlan, packageName string, includeProps 
 		wrapped = append(wrapped, templateBody...)
 		templateBody = append(wrapped, goWriteSSRValue(&goast.BasicLit{Kind: token.STRING, Value: strconv.Quote("</div>")}))
 	}
+	if plan.Head != nil {
+		// The head is written to the head collector before the body: a
+		// failure of either fails the render alike.
+		head, err := emitter.head(plan.Head)
+		if err != nil {
+			return nil, emitter.region.abort(err)
+		}
+		templateBody = append(head, templateBody...)
+	}
 	init := emitter.localsPrologue(plan, plan.StateNames)
 	functions := emitter.ctx.funcs.declarations()
 	body := ssrJSPrologue(emitter.region)
@@ -554,6 +563,108 @@ func (e *ssrGoEmitter) clientBlock(node *SSRPlanClient) ([]goast.Stmt, error) {
 		return nil, err
 	}
 	return e.ranged("f", fallback), nil
+}
+
+// head renders a <vela:head> (task 091). Every tag goes to the head
+// collector of the render context, rendered by a closure:
+//
+//	if err := vela.WriteHeadTag(w, "title", func(w io.Writer) error {
+//		<the element with data-vela-head="<component ID>#<n>">
+//		return nil
+//	}); err != nil {
+//		return err
+//	}
+//
+// {#if} blocks become Go conditions without ranges: head tags have no
+// place in the body. Without a collector nothing is rendered.
+func (e *ssrGoEmitter) head(head *SSRPlanHead) ([]goast.Stmt, error) {
+	componentID := e.componentID
+	if componentID == "" {
+		componentID = e.componentName
+	}
+	scope := e.elementScope
+	e.elementScope = ""
+	defer func() { e.elementScope = scope }()
+	// The skeleton imports io.
+	var walk func(nodes []SSRPlanNode) ([]goast.Stmt, error)
+	walk = func(nodes []SSRPlanNode) ([]goast.Stmt, error) {
+		var out []goast.Stmt
+		for _, node := range nodes {
+			switch n := node.(type) {
+			case *SSRPlanHeadTag:
+				element := *n.Element
+				element.Attrs = append(append([]SSRPlanAttr{}, n.Element.Attrs...), SSRPlanAttr{Name: "data-vela-head", Value: componentID + "#" + strconv.Itoa(n.Index), ValueKind: sfcast.AttrValueSynthetic, Role: SSRAttrStatic})
+				throwing := e.throwing()
+				body, err := e.element(&element)
+				if err != nil {
+					return nil, err
+				}
+				if n.Element.Tag == "script" {
+					// The JSON-LD text goes between the tags, unescaped
+					// except for "<" (vela.WriteScriptText).
+					var text []goast.Stmt
+					for _, part := range n.Script {
+						if part.Static {
+							text = append(text, goWriteSSRErr(&goast.CallExpr{Fun: goSelector("vela", "WriteScriptText"), Args: []goast.Expr{goast.NewIdent("w"), ssrGoString(part.Value)}}))
+							continue
+						}
+						value, err := e.translate("text", "", part.Expr, e.ctx)
+						if err != nil {
+							return nil, err
+						}
+						e.convertsOutput(part.Expr)
+						text = append(text, goWriteSSRErr(&goast.CallExpr{Fun: goSelector("vela", "WriteScriptText"), Args: []goast.Expr{goast.NewIdent("w"), &goast.CallExpr{Fun: goSelector("vela", "String"), Args: []goast.Expr{value}}}}))
+					}
+					// The element's last statement writes "</script>".
+					body = append(append(body[:len(body)-1:len(body)-1], text...), body[len(body)-1])
+				}
+				if e.throwing() > throwing {
+					body = append(body, ssrJSCheck())
+				}
+				closure := &goast.FuncLit{
+					Type: &goast.FuncType{
+						Params:  &goast.FieldList{List: []*goast.Field{{Names: []*goast.Ident{goast.NewIdent("w")}, Type: goSelector("io", "Writer")}}},
+						Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("error")}}},
+					},
+					Body: &goast.BlockStmt{List: append(body, &goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}})},
+				}
+				out = append(out, goWriteSSRErr(&goast.CallExpr{Fun: goSelector("vela", "WriteHeadTag"), Args: []goast.Expr{goast.NewIdent("w"), ssrGoString(n.Key), closure}}))
+			case *SSRPlanIf:
+				var first, previous *goast.IfStmt
+				for _, branch := range n.Branches {
+					children, err := walk(branch.Children)
+					if err != nil {
+						return nil, err
+					}
+					if branch.Condition == nil {
+						if previous != nil {
+							previous.Else = &goast.BlockStmt{List: children}
+						}
+						continue
+					}
+					condition, err := e.translate("if", "", branch.Condition, e.ctx)
+					if err != nil {
+						return nil, err
+					}
+					current := &goast.IfStmt{Cond: e.condition(branch.Condition, condition), Body: &goast.BlockStmt{List: children}}
+					if first == nil {
+						first = current
+					} else {
+						previous.Else = current
+					}
+					previous = current
+				}
+				if first != nil {
+					out = append(out, first)
+					if e.throwing() > 0 {
+						out = append(out, ssrJSCheck())
+					}
+				}
+			}
+		}
+		return out, nil
+	}
+	return walk(head.Children)
 }
 
 // boundaryBlock renders a {#boundary} block (task 091):
