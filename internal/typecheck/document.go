@@ -275,7 +275,7 @@ func Build(path, src string) *Document {
 // scriptLang reads the lang and generics attributes of <script>.
 func scriptLang(src string) (ts bool, generics string) {
 	low := strings.ToLower(src)
-	open := strings.Index(low, "<script")
+	open := sfcast.SectionStart(low, "script")
 	if open < 0 {
 		return false, ""
 	}
@@ -479,7 +479,7 @@ func ByteOffset(s string, i int) int {
 // an unclosed section).
 func sectionBody(src, tag string) (start, end int, ok bool) {
 	low := strings.ToLower(src)
-	open := strings.Index(low, "<"+tag)
+	open := sfcast.SectionStart(low, tag)
 	if open < 0 {
 		return 0, 0, false
 	}

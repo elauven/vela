@@ -113,6 +113,11 @@ func walkTemplateComponents(nodes []sfcast.Node, visit func(*sfcast.ComponentNod
 			walkTemplateComponents(n.PendingChildren, visit)
 			walkTemplateComponents(n.ThenChildren, visit)
 			walkTemplateComponents(n.CatchChildren, visit)
+		case *sfcast.HeadNode:
+			walkTemplateComponents(n.Children, visit)
+		case *sfcast.BoundaryBlockNode:
+			walkTemplateComponents(n.Children, visit)
+			walkTemplateComponents(n.CatchChildren, visit)
 		case *sfcast.SlotNode:
 			walkTemplateComponents(n.Fallback, visit)
 		}

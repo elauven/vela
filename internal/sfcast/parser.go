@@ -231,10 +231,9 @@ func ParseSFC(src string) (*SFC, error) {
 	var unclosed *SectionError
 	low := asciiLower(src)
 	extractBlock := func(tag string) (string, int) {
-		openTag := "<" + tag
 		closeTag := "</" + tag + ">"
 
-		start := strings.Index(low, openTag)
+		start := SectionStart(low, tag)
 		if start < 0 {
 			return "", 0
 		}
@@ -516,6 +515,13 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				walkNodes(n.PendingChildren)
 				walkNodes(n.ThenChildren)
 				walkNodes(n.CatchChildren)
+			case *HeadNode:
+				checkSpan(n.Span, "head")
+				walkNodes(n.Children)
+			case *BoundaryBlockNode:
+				checkSpan(n.Span, "boundary block")
+				walkNodes(n.Children)
+				walkNodes(n.CatchChildren)
 			case *IfChainNode:
 				checkSpan(n.Span, "if/key block")
 				if len(n.Branches) == 0 {
@@ -649,6 +655,31 @@ type AwaitBlockNode struct {
 
 func (a *AwaitBlockNode) NodeKind() string { return "awaitblock" }
 
+// BoundaryBlockNode is an error boundary (task 091):
+//
+//	{#boundary}
+//	  <Chart :rows={rows} />
+//	{:catch error, retry}
+//	  <p>{error.message}</p>
+//	  <button @click={retry}>Retry</button>
+//	{/boundary}
+//
+// An error while the children render, initialise or update replaces them
+// with the catch branch; retry recreates the children. The catch branch is
+// required; both names are optional.
+type BoundaryBlockNode struct {
+	Span          srcspan.SectionSpan
+	Children      []Node
+	CatchChildren []Node
+	ErrorName     string // the error binding of {:catch error}, or ""
+	RetryName     string // the retry binding of {:catch error, retry}, or ""
+	// CatchPos is the byte offset of the {:catch} tag in the component, like
+	// Span.
+	CatchPos int
+}
+
+func (b *BoundaryBlockNode) NodeKind() string { return "boundaryblock" }
+
 // awaitMode records whether an await block used the normal multi-branch form
 // or one of Svelte's single-branch opening-tag shortcuts. It is parser-only:
 // both code generators consume the normalized children and bindings above.
@@ -682,6 +713,68 @@ type LazyComponent struct {
 	Call      *jsast.JsCallExpr
 	Specifier string // the literal path, './X.vela'
 	ID        string // the $$id of the target component
+}
+
+// HeadNode is <vela:head>…</vela:head> (task 091): the <title>, <meta>,
+// <link> and <script type="application/ld+json"> tags a component puts in
+// the document head, optionally under {#if}. It is allowed only at the top
+// level of a template; the validator checks its content (VELA-HEAD-CONTENT).
+type HeadNode struct {
+	Span     srcspan.SectionSpan
+	Attrs    []*Attr
+	Children []Node
+}
+
+func (h *HeadNode) NodeKind() string { return "head" }
+
+// HeadTag is the tag of the document head element.
+const HeadTag = "vela:head"
+
+// SplitHead separates the top-level <vela:head> of a template from the
+// nodes that render in place. The head takes no part in the component's DOM
+// shape: the whitespace it leaves is normalised as if it were not there
+// (no space at the edges, one between two nodes). Without a head the nodes
+// are returned unchanged.
+func SplitHead(nodes []Node) (*HeadNode, []Node) {
+	index := -1
+	for i, node := range nodes {
+		if _, ok := node.(*HeadNode); ok {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return nil, nodes
+	}
+	head := nodes[index].(*HeadNode)
+	rest := make([]Node, 0, len(nodes)-1)
+	rest = append(rest, nodes[:index]...)
+	if index > 0 && index+1 < len(nodes) && isSpaceText(nodes[index-1]) && isSpaceText(nodes[index+1]) {
+		// Two spaces around the head are one.
+		rest = append(rest, nodes[index+2:]...)
+	} else {
+		rest = append(rest, nodes[index+1:]...)
+	}
+	for len(rest) > 0 && isSpaceText(rest[0]) {
+		rest = rest[1:]
+	}
+	for len(rest) > 0 && isSpaceText(rest[len(rest)-1]) {
+		rest = rest[:len(rest)-1]
+	}
+	return head, rest
+}
+
+func isSpaceText(node Node) bool {
+	text, ok := node.(*TextNode)
+	if !ok || text.Preformatted {
+		return false
+	}
+	for _, part := range text.Parts {
+		if !part.Static || strings.TrimSpace(part.Value) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // DynamicComponentTag is the tag of a dynamic component.
@@ -1360,6 +1453,11 @@ func (p *parser) parseElement() (Node, error) {
 		return p.parseSvelteFragment(elementStart)
 	}
 
+	// ── <vela:head> — tags for the document head (task 091) ───────────────
+	if tag == HeadTag {
+		return p.parseHeadNode(elementStart)
+	}
+
 	// ── Component detection ───────────────────────────────────────────────
 	// Tags starting with an uppercase letter are treated as child components;
 	// <vela:component> is a component chosen by its :this value. Other vela:
@@ -1411,6 +1509,40 @@ func (p *parser) parseElement() (Node, error) {
 
 	elem.Span.End = p.base + p.pos
 	return elem, nil
+}
+
+// parseHeadNode parses <vela:head>…</vela:head>. Its attributes are kept
+// for the validator, which rejects them.
+func (p *parser) parseHeadNode(elementStart int) (Node, error) {
+	scratch := &ElementNode{Tag: HeadTag}
+	if err := p.parseAttrs(scratch); err != nil {
+		return nil, err
+	}
+	head := &HeadNode{Span: srcspan.SectionSpan{Start: p.base + elementStart}, Attrs: scratch.Attrs}
+	if p.has("/>") {
+		p.pos += 2
+		head.Span.End = p.base + p.pos
+		return head, nil
+	}
+	if !p.eof() && p.ch() == '>' {
+		p.pos++
+	}
+	children, err := p.parseNodes([]string{HeadTag})
+	if err != nil {
+		return nil, err
+	}
+	head.Children = children
+	if p.has("</") {
+		p.pos += 2
+		for !p.eof() && p.ch() != '>' {
+			p.pos++
+		}
+		if !p.eof() {
+			p.pos++
+		}
+	}
+	head.Span.End = p.base + p.pos
+	return head, nil
 }
 
 // parseSlotNode parses a <slot name="header">fallback</slot> element.
@@ -1777,7 +1909,8 @@ func (p *parser) isSvelteBlockStart() bool {
 		strings.HasPrefix(rest, "#each ") || strings.HasPrefix(rest, "#each\t") ||
 		strings.HasPrefix(rest, "#key ") || strings.HasPrefix(rest, "#key\t") ||
 		strings.HasPrefix(rest, "#await ") || strings.HasPrefix(rest, "#await\t") ||
-		strings.HasPrefix(rest, "#client}")
+		strings.HasPrefix(rest, "#client}") ||
+		strings.HasPrefix(rest, "#boundary}")
 }
 
 // isSvelteBlockTerm reports whether the parser is at {:else}, {:else if}, {:then}, {:catch}, {/if}, {/each}, {/key}, {/await}.
@@ -1793,7 +1926,8 @@ func (p *parser) isSvelteBlockTerm() bool {
 		strings.HasPrefix(rest, "/each") ||
 		strings.HasPrefix(rest, "/key") ||
 		strings.HasPrefix(rest, "/await") ||
-		strings.HasPrefix(rest, "/client")
+		strings.HasPrefix(rest, "/client") ||
+		strings.HasPrefix(rest, "/boundary")
 }
 
 // readSvelteTag reads from current '{' to the closing '}', returning the inner text.
@@ -1859,6 +1993,13 @@ func (p *parser) parseSvelteBlock() (Node, string, error) {
 
 	case tag == "#client":
 		node, err := p.parseSvelteClientBlock(tagStart)
+		if node != nil {
+			setTemplateNodeSpan(node, p.base+tagStart, p.base+p.pos)
+		}
+		return node, "", err
+
+	case tag == "#boundary":
+		node, err := p.parseSvelteBoundaryBlock(tagStart)
 		if node != nil {
 			setTemplateNodeSpan(node, p.base+tagStart, p.base+p.pos)
 		}
@@ -2495,6 +2636,8 @@ func setTemplateNodeSpan(node Node, start, end int) {
 		n.Span = span
 	case *AwaitBlockNode:
 		n.Span = span
+	case *BoundaryBlockNode:
+		n.Span = span
 	}
 }
 
@@ -2712,11 +2855,91 @@ func (p *parser) parseSvelteClientBlock(branchStart int) (Node, error) {
 	return chain, nil
 }
 
+// SectionStart returns the offset in low, a lower-cased component source, of
+// the opening tag of the component's section tag ("script", "style" or
+// "template"). A <script> or <style> inside the <template> section, such as
+// the JSON-LD script of <vela:head>, is not a section.
+func SectionStart(low, tag string) int {
+	open := "<" + tag
+	if tag == "template" {
+		return strings.Index(low, open)
+	}
+	templateStart := strings.Index(low, "<template")
+	templateEnd := -1
+	if templateStart >= 0 {
+		if i := strings.Index(low[templateStart:], "</template>"); i >= 0 {
+			templateEnd = templateStart + i
+		}
+	}
+	for from := 0; from < len(low); {
+		i := strings.Index(low[from:], open)
+		if i < 0 {
+			return -1
+		}
+		i += from
+		if templateStart >= 0 && i > templateStart && (templateEnd < 0 || i < templateEnd) {
+			from = i + len(open)
+			continue
+		}
+		return i
+	}
+	return -1
+}
+
+// parseSvelteBoundaryBlock parses {#boundary}…{:catch error, retry}…{/boundary}
+// (task 091).
+func (p *parser) parseSvelteBoundaryBlock(start int) (Node, error) {
+	children, term, err := p.parseSvelteBlockBody()
+	if err != nil {
+		return nil, err
+	}
+	if term != ":catch" && !strings.HasPrefix(term, ":catch ") && !strings.HasPrefix(term, ":catch\t") && !strings.HasPrefix(term, ":catch\n") {
+		if term == "/boundary" {
+			return nil, fmt.Errorf("{#boundary} block needs a {:catch error, retry} branch before {/boundary}")
+		}
+		return nil, fmt.Errorf("{#boundary} block expected {:catch}, found {%s}", term)
+	}
+	node := &BoundaryBlockNode{Children: children, CatchPos: p.base + p.lastTagStart}
+	names := strings.TrimSpace(strings.TrimPrefix(term, ":catch"))
+	if names != "" {
+		parts := strings.Split(names, ",")
+		if len(parts) > 2 {
+			return nil, fmt.Errorf("{:catch} of {#boundary} takes at most two names: {:catch error, retry}")
+		}
+		for i, part := range parts {
+			name := strings.TrimSpace(part)
+			if !isPlainAwaitBinding(name) {
+				return nil, fmt.Errorf("{:catch} binding of {#boundary} must be one plain JavaScript identifier, got %q", name)
+			}
+			if i == 0 {
+				node.ErrorName = name
+			} else {
+				node.RetryName = name
+			}
+		}
+		if node.ErrorName == node.RetryName {
+			return nil, fmt.Errorf("{:catch} of {#boundary} binds %s twice", node.ErrorName)
+		}
+	}
+	catchChildren, end, err := p.parseSvelteBlockBody()
+	if err != nil {
+		return nil, err
+	}
+	if end != "/boundary" {
+		return nil, fmt.Errorf("{#boundary} block must end with {/boundary}, found {%s}", end)
+	}
+	if catchChildren == nil {
+		catchChildren = []Node{}
+	}
+	node.CatchChildren = catchChildren
+	return node, nil
+}
+
 // scriptAttr returns the value of attribute name on the first <script>
 // tag of src and the offset of the value; ok is false without it.
 func scriptAttr(src, name string) (value string, pos int, ok bool) {
 	low := asciiLower(src)
-	start := strings.Index(low, "<script")
+	start := SectionStart(low, "script")
 	if start < 0 {
 		return "", 0, false
 	}
@@ -2788,7 +3011,7 @@ var scriptContextPattern = regexp.MustCompile(`(?i)^<script\b[^>]*\scontext\s*=\
 // ScriptContextClient reports <script context="client"> on the first
 // script tag.
 func ScriptContextClient(src string) bool {
-	start := strings.Index(asciiLower(src), "<script")
+	start := SectionStart(asciiLower(src), "script")
 	if start < 0 {
 		return false
 	}

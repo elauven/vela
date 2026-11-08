@@ -325,6 +325,11 @@ func countTemplateNodes(nodes []sfcast.Node) int {
 				visit(n.PendingChildren)
 				visit(n.ThenChildren)
 				visit(n.CatchChildren)
+			case *sfcast.HeadNode:
+				visit(n.Children)
+			case *sfcast.BoundaryBlockNode:
+				visit(n.Children)
+				visit(n.CatchChildren)
 			}
 		}
 	}

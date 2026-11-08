@@ -453,6 +453,44 @@ states of a promise:
 
 `{:then}` and `{:catch}` are optional.
 
+### `{#boundary}` — error boundaries
+
+A failure in part of a page shows a fallback instead of breaking the whole
+page:
+
+```vela
+{#boundary}
+  <Chart :rows={rows} />
+{:catch error, retry}
+  <p>The chart failed to load: {error.message}</p>
+  <button @click={retry}>Retry</button>
+{/boundary}
+```
+
+The block catches errors while its content renders, while a component in
+it starts or updates, and in the `$derived` values and `$effect`s of that
+content, also when an `{#await}` branch or a `lazy()` component of it
+arrives later. The content is removed and the `{:catch}` branch shows;
+the rest of the page goes on. `retry()` builds the content again — fix
+the cause first, or it fails again. Errors in event handlers and in other
+async code (timers, `fetch` callbacks) are not caught: handle them in the
+handler. An error inside the `{:catch}` branch goes to the enclosing
+boundary. Both names are optional (`{:catch}`, `{:catch error}`); the
+branch is required.
+
+To report errors (Sentry and the like), listen for `vela:error`: the
+event bubbles from the block's parent element with
+`detail: { error, source }`, so one listener on `document` sees every
+boundary.
+
+With server rendering a body that fails on the server renders the catch
+branch there, and the browser adopts it without running the body again.
+The server shows `error.message` as `Internal error` unless the error is
+a `vela.PublicError` (`&vela.PublicError{Message: "No stock", Err: err}`
+from a host), and passes the original error to the observer of
+`vela.WithErrorObserver`; a Vela App logs it to `Config.Logger` with the
+route and the position of the block.
+
 ---
 
 ## 8. Components
@@ -633,6 +671,42 @@ bundle:
   Without it, hydration reports `lazy-not-loaded` and repairs the range
   once the module arrives.
 
+### Document head
+
+A component sets the title, meta tags, the canonical link and JSON-LD of
+the page with one `<vela:head>` at the top level of its template:
+
+```vela
+<script>
+  export let user;
+  let canonicalUrl = $derived(`https://example.com/users/${user.id}`);
+</script>
+
+<template>
+  <vela:head>
+    <title>{user.name} — Site</title>
+    <meta name="description" :content={user.bio} />
+    <link rel="canonical" :href={canonicalUrl} />
+    {#if user.private}<meta name="robots" content="noindex" />{/if}
+    <script type="application/ld+json">{JSON.stringify({ '@type': 'Person', name: user.name })}</script>
+  </vela:head>
+  <h1>{user.name}</h1>
+</template>
+```
+
+The tags go to `document.head`, change with the state and go away with
+the component. When several components set a title, a meta tag with the
+same `name` or `property`, or a canonical link, the deepest component
+wins (at the same depth the one created last), and the value it replaced
+comes back when it goes — a layout sets the site title, a page its own.
+Other tags, such as JSON-LD scripts, are all kept. Inside `<vela:head>`
+only `<title>`, `<meta>`, `<link>`, `<script type="application/ld+json">`
+and `{#if}` are allowed.
+
+With server rendering the tags are in the server's `<head>` (a Vela App
+writes them; with your own server, see [SSR.md](SSR.md)), and the
+browser takes them over without creating them again.
+
 ### Context
 
 Context passes values down the component tree without props on every level:
@@ -789,6 +863,8 @@ Scoping is identical either way.
 | `lazy(() => import('./C.vela'))` | a component loaded on demand (import from `vela`) |
 | `$$dispatch(name, detail)` | emit a custom event (`@on:name` in the parent) |
 | `{#client}` `{:else}` `{/client}` | browser-only content, fallback on the server |
+| `{#boundary}` `{:catch error, retry}` `{/boundary}` | error boundary: fallback when the content fails |
+| `<vela:head>` | title, meta, link and JSON-LD of the document head |
 | `onMount` / `onDestroy` | lifecycle (import from `vela`) |
 
 ## 12. TypeScript
@@ -1391,6 +1467,11 @@ The component gets it as `data`, and the current route as `route`:
   <p>User #{route.params.id}</p>
 </template>
 ```
+
+The title can come from the component too: a `<vela:head>` of a route
+component overrides `r.Head()` of its level and the levels above, and a
+deeper one overrides it (see *Document head*). Keep `r.Head()` for values
+only Go has.
 
 A form posts to the page's Go action (`server/routes/users/actions.go`,
 `func Actions() app.Actions`). The same form works without JavaScript

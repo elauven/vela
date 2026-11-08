@@ -152,6 +152,8 @@ through the given cursor.
 | `$$dynamic(select, props, slots, events, bindings)` | `<vela:component :this={…}>` | `select()` returns the component factory or `null`, `undefined`, `false` for nothing; any other value throws a `TypeError` naming the source position. The same factory after an update calls the child's `set`; another one destroys the child with its range and mounts the next one with a create cursor (B-3.11). |
 | `$$slot(name, fallback)` | `<slot>` in a child | Mounts the parent-provided slot fragment, or `fallback` when none is provided. |
 | `$$client(main, fallback)` | `{#client}` and client-only components | Contract `SSR_TRANSLATION_CONTRACT.md` §9. In hydrate mode it adopts the fallback range and mounts `main` with a create cursor after the root commits. In CSR it mounts `main` directly. |
+| `$$boundary(body, catch, where)` | `{#boundary}…{:catch error, retry}…{/boundary}` | Mounts `body`; an error replaces it with `catch`, which receives `{ error, retry }` (B-3.12). Hydration follows §6.5. |
+| `$$head(entries, changed)` | `<vela:head>` at the top level of a template | Keeps the component's tags in the registry of `document.head` (B-3.13); hydration adopts the server's tags (§6.4a). |
 
 - **B-3.7 Slot ownership.** A slot fragment is defined by the parent and
   mounted inside the child. It is owned by the child's `$$slot` block, which
@@ -168,6 +170,30 @@ through the given cursor.
   factory also carries `$$id`, its source path relative to the project
   without the extension (`routes/users/Page`), the same as the Go
   `ComponentID()`.
+- **B-3.12 Error boundaries.** `$$boundary` (task 091) catches what is
+  thrown while its body mounts or updates: component initialisation,
+  rendering, `$derived`, `$effect`. Its body mounts under a context frame
+  that names the block, so errors that do not travel as exceptions through
+  the block find it too: the update of a component of the body (its
+  `$$flush`, which hands the error to `rootView.fail`), an `{#await}` branch
+  mounted after its promise settled, a `{#client}` main branch mounted after
+  the commit, and a `lazy()` component that fails to load. A failure
+  releases the body with its range, mounts `catch` with `{ error, retry }`
+  and dispatches a bubbling `vela:error` event (`detail: { error, source }`)
+  from the block's parent element; `retry()` mounts the body again. Errors
+  of the `catch` branch go to the enclosing boundary. Event handlers and
+  other asynchronous code are not caught. A component factory that throws
+  leaves no live view (`createInstance`).
+- **B-3.13 Document head.** `$$head(entries, changed)` (task 091) lowers
+  the `<vela:head>` of a component: one entry per tag, flattened from its
+  `{#if}` blocks into a condition. The entries join one registry of
+  `document.head`; a key (`title`, `meta name=…`, `meta property=…`,
+  `link canonical`, from static attributes) is shown for the entry of the
+  deepest component (the depth of `$$component` nesting while the
+  component starts), at the same depth the later one, and the others wait
+  outside the document. The app's tags (`data-vela-head="app:<depth>"`)
+  are entries too, losing a tie. The block has no DOM in place; releasing
+  it removes its tags. A component with a head is `interactive` (§8.1).
 - **B-3.8 Multiple roots.** In the first delivery, components keep their
   current CSR DOM shape, including the `display: contents` wrapper for
   multi-root templates. Whether to drop the wrapper is open (§12).
@@ -240,6 +266,7 @@ state      = ""            ; #each, #key, component, slot, row
            | "e"           ; #each: the {:else} fallback is rendered
            | "p" | "t" | "c"   ; #await: pending / then / catch
            | "f"           ; $$client: fallback is rendered
+           | "c"           ; $$boundary: the catch branch is rendered ("" for the body)
 ```
 
 Example for the template in §2 inside `{#if open}<ul>…</ul>{/if}`:
@@ -342,6 +369,11 @@ components write no entry.
     task 070). `site` is the compile-time site identifier; `componentID` is
     the `ComponentID()` of the rendered component. A site that renders
     nothing writes no entry; its range token `x` says so (§5.1).
+  - `["b", source, {"message": message}]` — written when a `{#boundary}`
+    body failed on the server and the catch branch rendered (task 091).
+    `source` is the block's position (`src/Page.vela:12:3`); `message` is
+    `Internal error`, or the message of a `vela.PublicError` the error
+    wraps. The entries of the failed body are dropped with its HTML.
 - **S-6.5 Nothing for client-only code.** The main branch of `{#client}` and
   client-only components produce no entries.
 - **S-6.6 Encoding.** Values follow the JSON view rule (T-5.1). The script
@@ -414,6 +446,35 @@ components write no entry.
   view `{}`, so a `c` entry writes it as `{"kind", "message", "props"}` with
   `"errorObject": true`, and the client revives an error of that kind with
   the same own message and own enumerable properties.
+
+### 6.4a Document head
+
+- **S-6.17** The Go renderer passes each `<vela:head>` tag, with
+  `data-vela-head="<component ID>#<n>"` (n in source order), to the head
+  collector of the render context (`vela.WithHead`) with its key and the
+  component depth; nothing goes into the root range or the payload. A
+  hydrating `$$head` adopts the tag with its site attribute from
+  `document.head` and creates the ones the server did not keep.
+
+### 6.5 Error boundaries
+
+- **S-6.15** The Go renderer writes a `{#boundary}` body after
+  `vela.BeginBoundary`, which keeps the render's output buffered. When the
+  body returns an error, `vela.CatchBoundary` truncates the output and the
+  payload stream to the mark, clears a pending JavaScript exception, records
+  the `b` entry, passes a `*vela.BoundaryError` (source and original error)
+  to the observer of `vela.WithErrorObserver`, and returns the error value
+  of the catch branch, which renders in a range with the token `c`. A
+  failure of the output writer and a cancelled or expired context are not
+  caught.
+- **S-6.16** A hydrating `$$boundary` with the token `c` reads the `b`
+  entry and adopts the catch branch with `new Error(message)`; the body
+  does not run. With the token `""` it adopts the body; when the body
+  throws while it hydrates (an error only the client has), the cursor
+  releases what it adopted since the range start, removes the server nodes
+  up to the range end, gives up the payload stream as a repair does, and
+  the block creates the catch branch. A mismatch inside the body is not an
+  error of the body: the enclosing block repairs it (§7.3).
 
 ---
 

@@ -18,6 +18,7 @@ import (
 
 	"github.com/elauven/vela/app/internal/protocol"
 	"github.com/elauven/vela/app/internal/value"
+	vela "github.com/elauven/vela/ssr_runtime"
 	"github.com/elauven/vela/ssr_runtime/vite"
 )
 
@@ -310,14 +311,14 @@ func (h *Handler) load(r *http.Request, route *Route, params map[string]string, 
 
 // collect gathers the heads and headers of the rendered levels whose
 // loaders ran, in level order; a deeper level replaces a header.
-func (o *outcome) collect() ([]Head, http.Header) {
-	var heads []Head
+func (o *outcome) collect() ([]levelHead, http.Header) {
+	var heads []levelHead
 	header := http.Header{}
 	for i, l := range o.run.levels[:o.rendered] {
 		if !o.run.ran(i) {
 			continue
 		}
-		heads = append(heads, l.req.head)
+		heads = append(heads, levelHead{level: i, head: l.req.head})
 		for k, v := range l.req.header {
 			header[k] = v
 		}
@@ -366,7 +367,7 @@ func (h *Handler) writeDocument(w http.ResponseWriter, r *http.Request, o *outco
 		})
 		preload = append(preload, o.errorID)
 	}
-	body, err := h.document(r.Context(), routeProp(routeInfo(r, o)), chain, mergeHead(h.defaults, heads), preload)
+	body, err := h.document(h.renderContext(r, o), routeProp(routeInfo(r, o)), chain, mergeHead(h.defaults, heads), preload)
 	if err != nil {
 		err = h.mapError(r.Context(), &Request{Params: o.params, Query: o.query, HTTP: r, Route: o.route.ID}, err)
 		var redirect *RedirectError
@@ -411,15 +412,11 @@ func (h *Handler) writeData(w http.ResponseWriter, r *http.Request, o *outcome, 
 	}
 	// The head is the whole merged head (R-6): the server knows the heads
 	// of every level that may set one, kept or not.
-	merged := mergeHead(h.defaults, heads)
-	head := &protocol.Head{Title: merged.Title}
-	for _, m := range merged.Meta {
-		head.Meta = append(head.Meta, protocol.Meta{Name: m.Name, Property: m.Property, Content: m.Content})
-	}
+	head := mergeHead(h.defaults, heads).protocol()
 	route := routeInfo(r, o)
 	resp := protocol.Response{Type: protocol.TypeData, Route: &route, Start: o.start, Segments: segments, Head: head}
 	if fragment, static := h.policy(o, mode); fragment {
-		html, err := h.fragment(r.Context(), o, route, static)
+		html, err := h.fragment(h.renderContext(r, o), o, route, static)
 		if err != nil {
 			h.logger.Error("vela app: fragment render failed", "path", r.URL.Path, "route", o.route.ID, "err", err)
 			h.writeJSON(w, r, nil, protocol.Response{Type: protocol.TypeReload, Reason: protocol.ReasonDocument})
@@ -540,11 +537,36 @@ func routeProp(route protocol.Route) map[string]any {
 	return map[string]any{"id": route.ID, "url": route.URL, "path": route.Path, "params": params, "query": query}
 }
 
+// renderContext is the context of a page render: errors that a
+// {#boundary} catches, and host errors that JavaScript code catches, go to
+// the logger with the request path and route (task 091).
+func (h *Handler) renderContext(r *http.Request, o *outcome) context.Context {
+	return vela.WithErrorObserver(r.Context(), func(err error) {
+		attrs := []any{"path", r.URL.Path, "route", o.route.ID}
+		var caught *vela.BoundaryError
+		if errors.As(err, &caught) {
+			h.logger.Error("vela app: {#boundary} caught a render error", append(attrs, "source", caught.Source, "err", caught.Err)...)
+			return
+		}
+		h.logger.Error("vela app: a caught host error", append(attrs, "err", err)...)
+	})
+}
+
 // document renders the shell with the head and the app root (R-5).
-func (h *Handler) document(ctx context.Context, route map[string]any, chain []any, head Head, preload []string) ([]byte, error) {
+func (h *Handler) document(ctx context.Context, route map[string]any, chain []any, head mergedHead, preload []string) ([]byte, error) {
+	// The root renders first: the <vela:head> tags of its components join
+	// the head (task 091).
+	root := &limitedBuffer{max: h.maxBytes}
+	var components vela.Head
+	if err := h.routes.Root.Render(vela.WithHead(ctx, &components), root, RootProps{Route: route, Chain: chain}); err != nil {
+		return nil, err
+	}
+	if root.err != nil {
+		return nil, root.err
+	}
 	out := &limitedBuffer{max: h.maxBytes}
 	out.WriteString(h.shell.beforeHead)
-	out.WriteString(head.html())
+	out.WriteString(head.html(components.Tags()))
 	fmt.Fprintf(out, `<meta name="vela-build" content="%s">`, html.EscapeString(h.build))
 	out.WriteString(h.tags)
 	if h.assets != nil && len(preload) > 0 {
@@ -560,9 +582,7 @@ func (h *Handler) document(ctx context.Context, route map[string]any, chain []an
 	}
 	out.WriteString(h.shell.betweenHeadBody)
 	fmt.Fprintf(out, `<div id="%s">`, RootID)
-	if err := h.routes.Root.Render(ctx, out, RootProps{Route: route, Chain: chain}); err != nil {
-		return nil, err
-	}
+	out.Write(root.Bytes())
 	out.WriteString("</div>")
 	out.WriteString(h.shell.afterBody)
 	if out.err != nil {

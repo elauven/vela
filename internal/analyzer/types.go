@@ -532,6 +532,11 @@ func walkSlots(nodes []sfcast.Node, visit func(string)) {
 			walkSlots(n.PendingChildren, visit)
 			walkSlots(n.ThenChildren, visit)
 			walkSlots(n.CatchChildren, visit)
+		case *sfcast.HeadNode:
+			walkSlots(n.Children, visit)
+		case *sfcast.BoundaryBlockNode:
+			walkSlots(n.Children, visit)
+			walkSlots(n.CatchChildren, visit)
 		case *sfcast.SlotNode:
 			visit(n.Name)
 			walkSlots(n.Fallback, visit)

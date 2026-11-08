@@ -102,7 +102,9 @@ type ssrGoEmitter struct {
 	// for callers without a region. speculative counts enclosing branches
 	// whose failure has a fallback. facts holds the IR facts of each
 	// translated expression for conditions.
-	region      *SSRRegion
+	region *SSRRegion
+	// boundaries counts the {#boundary} blocks of the render function.
+	boundaries  int
 	speculative int
 	facts       map[jsast.JsExpr]ssrIRFacts
 	// primitive marks the translated expressions proven primitive
@@ -146,6 +148,8 @@ func (e *ssrGoEmitter) node(node SSRPlanNode) ([]goast.Stmt, error) {
 		return e.eachBlock(n)
 	case *SSRPlanClient:
 		return e.clientBlock(n)
+	case *SSRPlanBoundary:
+		return e.boundaryBlock(n)
 	default:
 		return nil, ssrExprUnsupported(0, "SSR node %T is not lowered yet", node)
 	}

@@ -227,6 +227,11 @@ func templateWrittenNames(nodes []sfcast.Node) map[string]bool {
 				walk(n.PendingChildren)
 				walk(n.ThenChildren)
 				walk(n.CatchChildren)
+			case *sfcast.HeadNode:
+				walk(n.Children)
+			case *sfcast.BoundaryBlockNode:
+				walk(n.Children)
+				walk(n.CatchChildren)
 			case *sfcast.SlotNode:
 				walk(n.Fallback)
 			}

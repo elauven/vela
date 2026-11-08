@@ -116,3 +116,35 @@ func TestVirtualDocumentsParse(t *testing.T) {
 		t.Errorf("unfinished template:\n%s", v.Text)
 	}
 }
+
+// TestVirtualDocumentBoundary: {#boundary} scopes the names of its
+// {:catch error, retry} branch to that branch (task 091).
+func TestVirtualDocumentBoundary(t *testing.T) {
+	src := `<script>
+  let rows = $state([]);
+</script>
+
+<template>
+  {#boundary}
+    <p>{rows.length}</p>
+  {:catch failure, again}
+    <p>{failure.message}</p>
+    <button @click={again}>retry</button>
+  {/boundary}
+  <i>{rows}</i>
+</template>
+`
+	v := Build("/app/src/App.vela", src)
+	for _, want := range []string{"{\n(rows.length);\n} {\nconst failure = $$error;\nconst again = $$retry;\n(failure.message);", "\n}\n(rows);"} {
+		if !strings.Contains(v.Text, want) {
+			t.Errorf("the virtual document misses %q:\n%s", want, v.Text)
+		}
+	}
+	if _, diags := jsast.ParseJSWithDiagnostics(v.Text); len(diags) > 0 {
+		t.Errorf("the virtual document does not parse: %v\n%s", diags, v.Text)
+	}
+	off := strings.Index(src, "again}")
+	if virt, ok := v.ToVirtual(off); !ok || !strings.HasPrefix(v.Text[virt:], "again = $$retry") {
+		t.Errorf("the retry name does not map to its declaration")
+	}
+}

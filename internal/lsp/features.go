@@ -246,6 +246,8 @@ func componentSummary(name, file string, child *component) *Hover {
 }
 
 // dynamicComponentNote is the hover of <vela:component>.
+const headNote = "Puts `<title>`, `<meta>`, `<link>` and `<script type=\"application/ld+json\">` into the document head, optionally under `{#if}`. A title, a meta tag with the same `name` or `property` and the canonical link of a deeper component win; the tags follow state and leave with the component."
+
 const dynamicComponentNote = "Renders the component chosen by `:this`. The same component after an update keeps its state; another one replaces it. Props the current component does not declare are ignored; events and slots work as for a component tag."
 
 func (s *server) hover(doc *document, off int) any {
@@ -283,6 +285,9 @@ func (s *server) hover(doc *document, off int) any {
 		name := strings.TrimPrefix(tagName(src, ctx.wordStart-1), "/")
 		if name == "vela:component" {
 			return withRange(markdown("<vela:component :this={component} …props>", dynamicComponentNote), ctx.wordStart, ctx.wordStart+len(tagName(src, ctx.wordStart-1)))
+		}
+		if name == "vela:head" {
+			return withRange(markdown("<vela:head>…</vela:head>", headNote), ctx.wordStart, ctx.wordStart+len(tagName(src, ctx.wordStart-1)))
 		}
 		file := s.scriptOf(doc, c).componentFile(name)
 		if child := s.openComponent(file); file != "" && child != nil {
@@ -363,6 +368,7 @@ var blocks = []struct{ label, snippet string }{
 	{"#await", "{#await ${1:promise}}\n\t$2\n{:then ${3:value}}\n\t$0\n{:catch error}\n\t<p>{error.message}</p>\n{/await}"},
 	{"#key", "{#key ${1:identity}}\n\t$0\n{/key}"},
 	{"#client", "{#client}\n\t$1\n{:else}\n\t$0\n{/client}"},
+	{"#boundary", "{#boundary}\n\t$1\n{:catch ${2:error}, ${3:retry}}\n\t<p>{$2.message}</p>\n\t<button @click={$3}>Retry</button>$0\n{/boundary}"},
 	{":else", "{:else}"},
 	{":else if", "{:else if ${1:condition}}"},
 	{":then", "{:then ${1:value}}"},
@@ -372,6 +378,7 @@ var blocks = []struct{ label, snippet string }{
 	{"/await", "{/await}"},
 	{"/key", "{/key}"},
 	{"/client", "{/client}"},
+	{"/boundary", "{/boundary}"},
 }
 
 // elementDirectives are the attributes offered on an HTML element.
@@ -469,6 +476,7 @@ func (s *server) completion(doc *document, off int) any {
 		}
 		items = append(items, edit(ctx.wordStart, off, "svelte:fragment", "svelte:fragment slot=\"${1:name}\">$0</svelte:fragment", KindKeyword, "several nodes in a named slot"))
 		items = append(items, edit(ctx.wordStart, off, "vela:component", "vela:component :this={${1}}>$0</vela:component>", KindKeyword, "a component chosen by a value"))
+		items = append(items, edit(ctx.wordStart, off, "vela:head", "vela:head>\n\t<title>${1}</title>$0\n</vela:head>", KindKeyword, "tags of the document head, at the top level of the template"))
 	case inAttrName:
 		if ctx.tag == "vela:component" {
 			// The child is chosen at run time: its props are not known here.

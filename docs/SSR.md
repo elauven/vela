@@ -326,6 +326,47 @@ without re-running the promise. `RenderPageWithOptions` can pass a settled
 snapshot instead. An operand only the browser can compute belongs in
 `{#client}`.
 
+### `<vela:head>`
+
+The tags of `<vela:head>` do not go into the HTML of the root: the
+renderer passes them to the head collector of the render context. Put
+them into your document's `<head>`:
+
+```go
+var head vela.Head
+var body bytes.Buffer
+err := components.RenderPageContext(vela.WithHead(r.Context(), &head), &body, props, components.PageSlots{})
+fmt.Fprintf(w, `<!doctype html><html><head>%s</head><body><div id="app">%s</div></body></html>`, head.HTML(), body.String())
+```
+
+`head.Tags()` lists them with their key, depth and HTML: where several
+components set a title, a meta `name` or `property` or a canonical link,
+the deepest one is kept. The browser adopts the tags by their
+`data-vela-head` attribute when it hydrates; without a collector the
+server renders none and the browser creates them. A Vela App does this
+for you and merges the tags with `Config.Head` and `r.Head()`.
+
+### `{#boundary}`
+
+A render error inside `{#boundary}` — a JavaScript exception, a host
+error, a child that fails — renders the `{:catch}` branch instead of
+failing the page; what the body wrote is dropped. `error.message` is
+`Internal error` unless the error wraps a `vela.PublicError`. The browser
+adopts the catch branch without running the body. To log the original
+error, pass an observer in the render context:
+
+```go
+ctx := vela.WithErrorObserver(r.Context(), func(err error) {
+	var caught *vela.BoundaryError // Source: "src/Page.vela:12:3"
+	if errors.As(err, &caught) {
+		slog.Error("boundary", "source", caught.Source, "err", caught.Err)
+	}
+})
+err := components.RenderPageContext(ctx, w, props, components.PageSlots{})
+```
+
+A failing writer and a cancelled request still fail the render.
+
 ## Text conversion
 
 Server text follows the client's conversion in each context:

@@ -315,7 +315,14 @@ server/routes/**                  internal/appgen/routes_gen.go
 - **R-6** Head: the title of the deepest segment that set one, then
   `Config.Head` defaults. `<meta>` tags from all segments, where a deeper
   segment replaces a tag with the same `name` or `property`. Tags set by
-  the app carry `data-vela-head`, so the client can replace them.
+  the app carry `data-vela-head="app:<depth>"`, so the client can replace
+  them: depth 0 for the defaults, `i+1` for level `i`, the depth of the
+  level's component under `VelaApp`. The `<vela:head>` tags of the
+  rendered components (task 091) join them: for a title, a meta `name` or
+  `property` and `<link rel="canonical">` the deepest value wins, and at
+  the same depth a component's, so a component overrides `r.Head()` of
+  its own level and of the levels above; `r.Head()` stays for values only
+  Go has. The root renders before the head is written.
 - **R-7** The response is buffered rather than streamed, so an error can
   still change the status. A size limit is configurable. Every response
   sends `Vary: X-Vela-Navigate, X-Vela-Have, X-Vela-Build, X-Vela-Purpose`.
@@ -534,8 +541,12 @@ before every loader and action of the subtree. Request data comes from
     of that error component. Errors are therefore ordinary data responses,
     not a separate type.
   - `head` is the merged head of the new chain (R-6): the defaults and the
-    heads of the levels that set one, kept or not (N-4). The server always
-    sends it; a client keeps its current head when it is absent.
+    heads of the levels that set one, kept or not (N-4), with
+    `titleDepth` and the `depth` of each meta tag (R-6). The server always
+    sends it; a client keeps its current head when it is absent. The
+    client replaces only the app's tags (`replaceAppHead` of
+    `@govela/runtime/hydrate`); the `<vela:head>` tags of mounted
+    components stay and win as in R-6.
   - `reason` is `build`, `protocol` or `document`. It is informative, and
     the client handles every value the same way.
   - A response with an unknown `type` or another `v` is handled as

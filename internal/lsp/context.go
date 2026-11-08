@@ -1,6 +1,10 @@
 package lsp
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/elauven/vela/internal/sfcast"
+)
 
 // contextKind is what the cursor is in. The scan is lexical, so it works
 // on a buffer that does not parse.
@@ -33,7 +37,7 @@ type cursorContext struct {
 // unclosed section).
 func sectionBody(src, tag string) (start, end int, ok bool) {
 	low := strings.ToLower(src)
-	open := strings.Index(low, "<"+tag)
+	open := sfcast.SectionStart(low, tag)
 	if open < 0 {
 		return 0, 0, false
 	}

@@ -1,7 +1,14 @@
 <script>
   export let route = null;
+
+  let german = $derived(route.params.lang === 'de');
 </script>
 
 <template>
-  <h1>{route.params.lang === 'de' ? 'Über uns' : 'About'}</h1>
+  <vela:head>
+    <title>{german ? 'Über uns' : 'About'} · Vela App</title>
+    <meta name="description" content="Who we are" />
+    <link rel="canonical" :href={'https://vela.example' + route.path} />
+  </vela:head>
+  <h1>{german ? 'Über uns' : 'About'}</h1>
 </template>

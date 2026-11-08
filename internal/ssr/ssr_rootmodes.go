@@ -21,6 +21,11 @@ func ssrOwnInteractive(nodes []sfcast.Node, analysis *analyzer.Analysis) bool {
 	if analysis != nil && (len(analysis.Effects) > 0 || len(analysis.Lifecycles) > 0) {
 		return true
 	}
+	// The client owns the tags of a <vela:head>: it replaces them on
+	// navigation and removes them with the component (task 091).
+	if head, _ := sfcast.SplitHead(nodes); head != nil {
+		return true
+	}
 	return ssrTemplateInteractive(nodes)
 }
 
@@ -150,6 +155,11 @@ func walkTemplateNodes(nodes []sfcast.Node, visit func(sfcast.Node)) {
 		case *sfcast.AwaitBlockNode:
 			walkTemplateNodes(n.PendingChildren, visit)
 			walkTemplateNodes(n.ThenChildren, visit)
+			walkTemplateNodes(n.CatchChildren, visit)
+		case *sfcast.HeadNode:
+			walkTemplateNodes(n.Children, visit)
+		case *sfcast.BoundaryBlockNode:
+			walkTemplateNodes(n.Children, visit)
 			walkTemplateNodes(n.CatchChildren, visit)
 		case *sfcast.ComponentNode:
 			for _, slot := range n.Slots {

@@ -164,6 +164,23 @@ each optional section, in any order:
     <p>{error.message}</p>
   {/await}
   ```
+- Wrap a part of the page that may fail (a chart, a widget, third-party
+  data) in an error boundary, so a failure shows a fallback instead of
+  breaking the page:
+
+  ```vela
+  {#boundary}
+    <Chart :rows={rows} />
+  {:catch error, retry}
+    <p>{error.message}</p>
+    <button @click={retry}>Retry</button>
+  {/boundary}
+  ```
+
+  It catches rendering, component start and update, `$derived`, `$effect`,
+  late `{#await}` branches and `lazy()` loading — not event handlers or
+  other async code. Report errors from a `vela:error` listener; on the
+  server only a `vela.PublicError` message reaches `error.message`.
 
 ### Components and slots
 
@@ -199,6 +216,23 @@ each optional section, in any order:
 - Import from `vela` only `onMount`, `onDestroy` and runtime exports such as
   `tick`; import stores from `vela/store`. Other names are
   `VELA-UNKNOWN-IMPORT`.
+- Set the page title, meta tags, the canonical link and JSON-LD from the
+  component that knows them with one `<vela:head>` at the top level of its
+  template:
+
+  ```vela
+  <vela:head>
+    <title>{user.name} — Site</title>
+    <meta name="description" :content={user.bio} />
+    <link rel="canonical" :href={canonicalUrl} />
+  </vela:head>
+  ```
+
+  Inside it use only `<title>`, `<meta>`, `<link>`,
+  `<script type="application/ld+json">` and `{#if}`
+  (`VELA-HEAD-CONTENT`). The deepest component wins a title, a meta `name` or
+  `property` and the canonical link; in a Vela App it also overrides
+  `r.Head()` of its own level, so keep `r.Head()` for values only Go has.
 - Pass values that many levels need (theme, current user, services) through
   context: `setContext('key', value)` in an ancestor's script,
   `getContext('key')` in a descendant's script, with string-literal keys.
@@ -310,9 +344,9 @@ Do not generate or rely on the following in Vela applications:
   properties), `.tsx`/`.jsx` modules, or JSX.
 - Svelte 5 `$props()`, snippets, or `{@render}`.
 - `use:` actions, `transition:`, `in:`, or `out:` directives.
-- `<svelte:component>` (use `<vela:component :this={…}>`), `<svelte:element>`,
-  `<svelte:self>`, `<svelte:head>`, `<svelte:window>`, `<svelte:document>`, or
-  `<svelte:body>`.
+- `<svelte:component>` (use `<vela:component :this={…}>`), `<svelte:head>`
+  (use `<vela:head>`), `<svelte:element>`, `<svelte:self>`, `<svelte:window>`,
+  `<svelte:document>`, or `<svelte:body>`.
 - `bind:group`, `bind:files`, dimension bindings, or `bind:innerHTML`.
 - `{@html}`, `{@const}`, `{@debug}`, or event modifiers such as
   `@click.prevent` (call `event.preventDefault()` in the handler).

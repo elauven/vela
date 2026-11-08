@@ -1,0 +1,12 @@
+<script>
+  export let n = 0;
+
+  function check(value) {
+    if (value === 3) throw new Error('three');
+    return value;
+  }
+</script>
+
+<template>
+  <span class="v">{check(n)}</span>
+</template>

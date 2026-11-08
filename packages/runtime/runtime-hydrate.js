@@ -15,7 +15,7 @@
  */
 
 import { $$contextParent, $$contextRun, $$isDev, $$lazyById, warn } from './runtime.js';
-import { $$owner, $$setHydration, $$createCursor, $$listen } from './runtime-blocks.js';
+import { $$owner, $$setHydration, $$createCursor, $$listen, $$appHead } from './runtime-blocks.js';
 
 export const MISMATCH = 'VELA-HYDRATION-MISMATCH';
 
@@ -234,16 +234,46 @@ function hydrateCursor(pos, owner, session, ctx) {
     },
     // mount adopts a fragment at the current position. Its range is the
     // adopted nodes, or null when it has none.
-    mount(fragmentFn, scope, fragmentOwner) {
+    // ctx, when given, is the context of the fragment ({#boundary}).
+    mount(fragmentFn, scope, fragmentOwner, ctx) {
       const mountOwner = fragmentOwner || $$owner(null);
       pos.owners.push(mountOwner);
       const before = pos.next ? pos.next.previousSibling : pos.parent.lastChild;
-      const handle = fragmentFn(hydrateCursor(pos, mountOwner, session, cursor.ctx), scope);
+      const handle = fragmentFn(hydrateCursor(pos, mountOwner, session, ctx === undefined ? cursor.ctx : ctx), scope);
       const start = before ? before.nextSibling : pos.parent.firstChild;
       const range = start && start !== pos.next
         ? { start, end: pos.next ? pos.next.previousSibling : pos.parent.lastChild }
         : null;
       return { owner: mountOwner, handle, range, scope };
+    },
+    // checkpoint marks the position inside an open range ({#boundary},
+    // task 091). The returned restore() undoes a failed adoption from
+    // there: it releases what was adopted since, removes the server nodes
+    // up to the range end, which becomes the next node, and gives up the
+    // payload stream, whose entries can no longer be matched (as a repair
+    // does).
+    checkpoint() {
+      const parent = pos.parent;
+      const depth = pos.stack.length;
+      const mark = pos.owners.length;
+      const first = pos.next;
+      return () => {
+        for (const adopted of pos.owners.splice(mark)) adopted.release();
+        pos.stack.length = depth;
+        pos.parent = parent;
+        let node = first;
+        for (let nested = 0; node;) {
+          if (node.nodeType === 8) {
+            if (node.data.startsWith('[')) nested++;
+            else if (node.data === ']' && nested-- === 0) break;
+          }
+          const next = node.nextSibling;
+          node.remove();
+          node = next;
+        }
+        pos.next = node;
+        session.lost = true;
+      };
     },
     // mountRow adopts an #each row inside its own range (M-5.2).
     mountRow(fragmentFn, scope) {
@@ -602,4 +632,14 @@ export function staticHTML(html) {
   }
   Static.$$props = {};
   return Static;
+}
+
+// replaceAppHead replaces the head tags of the application (Vela App: the
+// title and meta tags of r.Head() and Config.Head) with tags, a list of
+// { node, depth }: depth is the depth of the component the value belongs
+// to, 0 for the root. A tag of a component's <vela:head> with the same
+// title, meta name or property, or canonical link wins when its component
+// is deeper or as deep (task 091); the components' tags are not touched.
+export function replaceAppHead(tags) {
+  $$appHead(tags.map((tag) => ({ node: tag.node, depth: tag.depth || 0 })));
 }

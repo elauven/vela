@@ -44,6 +44,25 @@ func writeAwaitName(w *writer, src, name string, at int, isCatch bool, pStart, p
 	w.gen(" = $$awaited(" + src[pStart:pEnd] + ");\n")
 }
 
+// writeBoundaryNames declares the names of {:catch error, retry} of a
+// {#boundary} block (task 091), whose list is [start, end).
+func writeBoundaryNames(w *writer, start, end int) {
+	offset := start
+	for i, part := range strings.SplitN(w.src[start:end], ",", 2) {
+		if name := strings.TrimSpace(part); name != "" && isIdentifier(name) {
+			at := offset + strings.Index(part, name)
+			w.gen("const ")
+			w.copy(at, at+len(name))
+			if i == 0 {
+				w.gen(" = $$error;\n")
+			} else {
+				w.gen(" = $$retry;\n")
+			}
+		}
+		offset += len(part) + 1
+	}
+}
+
 // writeEach writes the loop of {#each iterable as pattern, index (key)},
 // whose header after #each is [start, end).
 func writeEach(w *writer, start, end int) {
