@@ -19,6 +19,10 @@ import (
 
 // The rendering rules of task 092: the response cache and prerendering.
 
+// newsGate, when set, holds the loader of /news until it is closed, so a
+// test sees a background render while it runs.
+var newsGate atomic.Pointer[chan struct{}]
+
 // rulesRoutes is a table with a cached page (/news), a cached page that
 // reads a cookie (/me), and prerendered docs (/docs/[slug]) whose root
 // layout links to them.
@@ -36,7 +40,12 @@ func rulesRoutes(calls map[string]*atomic.Int64, entries func(context.Context) (
 	cache := &Cache{MaxAge: time.Minute, StaleWhileRevalidate: time.Hour}
 	return Routes{
 		Routes: []Route{
-			{ID: "/news", Chain: []Level{root, {ID: "routes/news/Page", Loader: counted("news", func(r *Request) (any, error) { return "news", nil })}}, Render: RenderAuto, Cache: cache},
+			{ID: "/news", Chain: []Level{root, {ID: "routes/news/Page", Loader: counted("news", func(r *Request) (any, error) {
+				if gate := newsGate.Load(); gate != nil {
+					<-*gate
+				}
+				return "news", nil
+			})}}, Render: RenderAuto, Cache: cache},
 			{ID: "/me", Chain: []Level{root, {ID: "routes/me/Page", Loader: counted("me", func(r *Request) (any, error) {
 				_, _ = r.Cookie("session")
 				return "me", nil
@@ -115,9 +124,15 @@ func TestCacheServesFreshStaleAndRevalidatesOnce(t *testing.T) {
 		t.Fatalf("navigation: %q, %d loads", state(nav), calls["news"].Load())
 	}
 	// Stale: served at once, one background render for many requests.
+	// The background render waits at the gate, so every request meanwhile
+	// gets the stale response and starts no second render.
 	advance(2 * time.Minute)
+	gate := make(chan struct{})
+	newsGate.Store(&gate)
 	for range 5 {
 		if rec := fetch(h, "/news", nil); state(rec) != "stale" {
+			close(gate)
+			newsGate.Store(nil)
 			t.Fatalf("stale: %q", state(rec))
 		}
 	}
@@ -125,7 +140,18 @@ func TestCacheServesFreshStaleAndRevalidatesOnce(t *testing.T) {
 	for calls["news"].Load() < 3 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
-	time.Sleep(50 * time.Millisecond)
+	close(gate)
+	newsGate.Store(nil)
+	// The render that waited stores its response; then a request is a hit.
+	for time.Now().Before(deadline) {
+		h.inflightMu.Lock()
+		busy := len(h.inflight) > 0
+		h.inflightMu.Unlock()
+		if !busy {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	if n := calls["news"].Load(); n != 3 {
 		t.Fatalf("background renders: %d loads, want 3", n)
 	}
