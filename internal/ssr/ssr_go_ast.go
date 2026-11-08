@@ -27,7 +27,7 @@ func SSRRuntimeImport() string { return ssrRuntimePath }
 
 // SSRRuntimeContract is the contract marker every generated file references
 // (R-12.1d); it must match a constant the runtime exports.
-const SSRRuntimeContract = "ContractV6"
+const SSRRuntimeContract = "ContractV7"
 
 // BuildSSRGoSkeleton creates the declarations of a server renderer file,
 // including its Props type, entirely through the standard Go AST. The
@@ -85,7 +85,7 @@ func goImportDecl(path string) *goast.GenDecl {
 }
 
 // goRuntimeContractDecl references the runtime contract marker
-// (`var _ = vela.ContractV6`), so a runtime of another version fails go build
+// (`var _ = vela.ContractV7`), so a runtime of another version fails go build
 // with an undefined identifier (R-12.1d).
 func goRuntimeContractDecl() *goast.GenDecl {
 	return &goast.GenDecl{Tok: token.VAR, Specs: []goast.Spec{&goast.ValueSpec{

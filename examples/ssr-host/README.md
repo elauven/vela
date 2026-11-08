@@ -39,11 +39,11 @@ compiler. The example's `go.mod` requires the released version of the
 compiler it is built with:
 
 ```
-require github.com/elauven/vela/ssr_runtime v0.8.0
+require github.com/elauven/vela/ssr_runtime v0.9.0
 ```
 
-Every generated file references `vela.ContractV6`; a runtime of another
-contract version fails `go build` with `undefined: vela.ContractV6` instead
+Every generated file references `vela.ContractV7`; a runtime of another
+contract version fails `go build` with `undefined: vela.ContractV7` instead
 of misbehaving. A fork or renamed runtime module is set with
 `"runtime": {"module": "…"}` in `vela.ssr.json`.
 
