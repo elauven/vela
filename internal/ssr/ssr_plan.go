@@ -188,6 +188,9 @@ type SSRComponentLink struct {
 	// ClientOnly is set when the child declares <script context="client">
 	// (contract §9.2): it has no Go renderer.
 	ClientOnly bool
+	// ComponentID is the child's $$id, which a client-only component value
+	// names (vela.ClientComponent, task 092).
+	ComponentID string
 	// Lazy is the local name of lazy() for the target of a
 	// lazy(() => import('./X.vela')) call (task 071); its link is keyed by
 	// ssrLazyLinkKey.
@@ -744,6 +747,12 @@ func LinkSSRComponentPackages(links map[string]SSRComponentLink, srcRoot string,
 		link.PackageName = layout.PackageName(link.SourcePath, srcRoot)
 		link.ImportPath = layout.ImportPath(link.SourcePath, srcRoot)
 		link.GoName = project.ComponentName(link.SourcePath)
+		// SourcePath is absolute; so must the root be.
+		root := srcRoot
+		if abs, err := filepath.Abs(srcRoot); err == nil {
+			root = abs
+		}
+		link.ComponentID = project.ComponentID(link.SourcePath, root)
 		if data, err := os.ReadFile(link.SourcePath); err == nil {
 			link.ClientOnly = sfcast.ScriptContextClient(string(data))
 		}

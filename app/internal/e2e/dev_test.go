@@ -150,8 +150,15 @@ func TestBuild(t *testing.T) {
 	opts := dev.BuildDefaults()
 	opts.Dir, opts.Stdout, opts.Output = root, &out, output
 	opts.Vela, opts.Vite = []string{testkit.VelaBinary(t)}, nil
+	// Without vite build the server runs without a client (task 092).
+	opts.PrerenderArgs = []string{"-dist", "none"}
 	if err := dev.Build(context.Background(), opts); err != nil {
 		t.Fatalf("build: %v\n%s", err, out.String())
+	}
+	for _, file := range []string{"about/index.html", "about/index.json", "de/about/index.html", "de/about/index.json"} {
+		if _, err := os.Stat(filepath.Join(output, "prerendered", filepath.FromSlash(file))); err != nil {
+			t.Errorf("prerendered: %v\n%s", err, out.String())
+		}
 	}
 	server := filepath.Join(output, "server")
 	if _, err := os.Stat(server + exeSuffix()); err != nil {

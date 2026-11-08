@@ -443,13 +443,16 @@ npm run build              # vela-app build
 2. compiles the components with `vela` (client modules and Go renderers);
 3. builds the client with `npx vite build` into `dist/`;
 4. builds the server with `go build -trimpath ./cmd/server`;
-5. writes the build directory, `build/` by default:
+5. writes the build directory, `build/` by default;
+6. when a page declares `Prerender`, runs that server there to write
+   `prerendered/` (see *Rendering rules* below):
 
 ```
 build/
   server                         the server binary (server.exe on Windows)
   dist/                          the client: assets/ and .vite/manifest.json
   out/client/vela.manifest.json  the root modes of vela (static sections, R-9)
+  prerendered/                   the prerendered pages, served without loaders
   .vela-app-build                the marker of a directory vela-app build owns
 ```
 
@@ -459,10 +462,44 @@ build/
 | `-server pkg` | `./cmd/server` | the Go package of the server; `""` builds no binary |
 | `-vite cmd` | `npx vite build` | the client build; `""` runs none |
 | `-vela cmd` | `$VELA_BINARY` or `vela` | the compiler |
+| `-prerender-args args` | none | the flags of the server when it prerenders, for example `-dist none` without a client build |
 
 `go build` takes its usual environment, so cross-compilation works the same
 way: `GOOS=linux GOARCH=arm64 CGO_ENABLED=0 vela-app build` builds a Linux
 arm64 binary on any machine (the name gets `.exe` for `GOOS=windows`).
+
+### Rendering rules
+
+A page's `load.go` declares how its responses are made (APP.md L-8, L-9):
+
+```go
+// Rendered by vela-app build; the server serves the files.
+var Prerender = app.Prerender{Entries: func(ctx context.Context) ([]app.Params, error) {
+	return []app.Params{{"slug": "intro"}, {"slug": "routing"}}, nil
+}}
+
+// Kept in the server's response cache: fresh for a minute, then served
+// stale for an hour while one background render replaces it.
+var Cache = app.Cache{MaxAge: time.Minute, StaleWhileRevalidate: time.Hour}
+
+// Rendered only in the browser: for dashboards and editors that need
+// browser APIs while they start. vela-app gen adds context="client".
+const Render = app.RenderClient
+```
+
+Prerendered pages need no loader at run time, but they are as fresh as the
+last build. Cached pages are shared by every visitor: a loader that reads a
+cookie or an `app.Local` keeps its response out of the cache. Purge a cache
+from the webhook of a CMS:
+
+```go
+mux.HandleFunc("POST /hooks/cms", func(w http.ResponseWriter, r *http.Request) {
+	handler.Purge(r.Context(), "/blog/**")
+})
+```
+
+A cache shared by several servers implements `app.CacheStore` (`Get`,
+`Set`, `Delete`, `Purge`) and goes into `app.Config.CacheStore`.
 
 The build id of the documents is a hash of the Vite manifest, so every
 client build gets a new one. Pages that stay open across a deploy load the

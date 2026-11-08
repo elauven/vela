@@ -2,12 +2,13 @@ package app
 
 import (
 	"context"
-
-	vela "github.com/elauven/vela/ssr_runtime"
 	"io"
 	"net/url"
 	"strings"
+	"time"
 	"unicode/utf8"
+
+	vela "github.com/elauven/vela/ssr_runtime"
 )
 
 // RootID is the id of the element that holds the VelaApp root in the
@@ -30,7 +31,39 @@ const (
 	RenderData     RenderMode = "data"
 	RenderFragment RenderMode = "fragment"
 	RenderDocument RenderMode = "document"
+	// RenderClient renders the page only in the browser (task 092): the
+	// document has the layouts above it and an empty page level, with the
+	// page's data in the payload, and the client mounts the page after
+	// hydration. vela-app gen gives the page <script context="client">, so
+	// it needs no Go renderer.
+	RenderClient RenderMode = "client"
 )
+
+// Params are the parameters of one URL of a route, by name.
+type Params map[string]string
+
+// Prerender renders a page when vela-app build runs (task 092):
+// `var Prerender = app.Prerender{}` in the page's load.go. The server
+// serves the files without running the loaders. A route with parameters
+// lists them in Entries; the build also follows the links of prerendered
+// pages to other prerenderable URLs.
+type Prerender struct {
+	// Entries returns the parameters of the URLs to prerender; nil
+	// prerenders only the URLs the crawl finds (and "/" for a route
+	// without parameters).
+	Entries func(ctx context.Context) ([]Params, error)
+}
+
+// Cache keeps the responses of a page in the server's response cache
+// (task 092): `var Cache = app.Cache{MaxAge: time.Minute}` in its
+// load.go. A response is fresh for MaxAge; for StaleWhileRevalidate after
+// that it is served at once while one background render replaces it.
+// Responses that read a cookie or an app.Local are never cached.
+// Cache-Control tells CDNs the same.
+type Cache struct {
+	MaxAge               time.Duration
+	StaleWhileRevalidate time.Duration
+}
 
 // Loader is a loader with its result type erased. The generated route table
 // wraps the typed loaders of load.go with LoaderOf.
@@ -111,6 +144,10 @@ type Route struct {
 	Render RenderMode
 	// Actions are the form actions of the page (task 078); nil for none.
 	Actions Actions
+	// Prerender and Cache are the page's rendering rules (task 092); nil
+	// for none.
+	Prerender *Prerender
+	Cache     *Cache
 }
 
 // RootProps are the props of the generated VelaApp root (R-2).

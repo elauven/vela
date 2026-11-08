@@ -7,10 +7,12 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 
+	"github.com/elauven/vela/app"
 	"github.com/elauven/vela/app/internal/gen"
 )
 
@@ -32,6 +34,10 @@ type BuildOptions struct {
 	Server string
 	// Output is the directory of the build, relative to Dir: "build".
 	Output string
+	// PrerenderArgs are the arguments of the server when it prerenders the
+	// pages that declare Prerender (task 092), as it would run in
+	// production; none by default.
+	PrerenderArgs []string
 	// Stdout receives the output of every step.
 	Stdout io.Writer
 }
@@ -127,6 +133,28 @@ func Build(ctx context.Context, opts BuildOptions) error {
 	manifest := filepath.Join(velaOut(opts.Dir), "client", "vela.manifest.json")
 	if err := copyIfExists(filepath.Join(opts.Dir, manifest), filepath.Join(output, manifest)); err != nil {
 		return err
+	}
+	// Prerendering (task 092): the server, run in the build directory as it
+	// runs in production, renders the pages that declare Prerender into
+	// prerendered/ and exits (app.PrerenderEnv).
+	if model, diags := gen.Load(opts.Dir); len(diags) == 0 && model.Prerenders() && opts.Server != "" {
+		binary, err := filepath.Abs(filepath.Join(output, "server"+exeSuffix()))
+		if err != nil {
+			return err
+		}
+		prerendered := filepath.Join(output, "prerendered")
+		absPrerendered, err := filepath.Abs(prerendered)
+		if err != nil {
+			return err
+		}
+		log("prerender into %s", "prerendered")
+		cmd := exec.CommandContext(ctx, binary, opts.PrerenderArgs...)
+		cmd.Dir = output
+		cmd.Env = append(os.Environ(), app.PrerenderEnv+"="+absPrerendered)
+		cmd.Stdout, cmd.Stderr = opts.Stdout, opts.Stdout
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("prerender: %w", err)
+		}
 	}
 	rel, err := filepath.Rel(opts.Dir, output)
 	if err != nil || strings.HasPrefix(rel, "..") {

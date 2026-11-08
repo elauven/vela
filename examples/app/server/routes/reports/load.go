@@ -3,6 +3,7 @@ package reports
 
 import (
 	"context"
+	"time"
 
 	"example.com/site/server/store"
 	"github.com/elauven/vela/app"
@@ -29,3 +30,8 @@ func Page(ctx context.Context, r *app.Request) (List, error) {
 
 // Render: the list is a data navigation (docs/APP.md L-7).
 const Render = app.RenderData
+
+// Cache: the list is the same for every visitor; the server keeps it for a
+// minute and serves a stale one for an hour while it renders it again
+// (task 092).
+var Cache = app.Cache{MaxAge: time.Minute, StaleWhileRevalidate: time.Hour}

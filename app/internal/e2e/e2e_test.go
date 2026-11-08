@@ -40,6 +40,11 @@ type pageCase struct {
 	Method string `json:"method,omitempty"`
 	Form   string `json:"form,omitempty"`
 	Origin string `json:"origin,omitempty"`
+	// ClientOnly marks a RenderClient page (task 092): the browser mounts
+	// it after hydration, so its DOM grows past the server's.
+	ClientOnly bool `json:"clientOnly,omitempty"`
+	// Header is a response header the page must have, "Name: value".
+	Header string `json:"header,omitempty"`
 }
 
 var exampleCases = []pageCase{
@@ -51,8 +56,9 @@ var exampleCases = []pageCase{
 	{Path: "/users?/delete", Method: "POST", Form: "id=3", Status: 404, Contains: "<h1>404</h1>"},
 	{Path: "/users", Method: "POST", Form: "name=Eve", Origin: "https://evil.example", Status: 403},
 	{Path: "/users/2", Status: 200, Title: "Grace · Users", Contains: "User #2, joined 2026-03-17", Preload: "src/routes/users/[id=int]/Page.vela"},
-	{Path: "/about", Status: 200, Title: "About · Vela App", Contains: "About</h1>"},
-	{Path: "/de/about", Status: 200, Title: "Über uns · Vela App", Contains: `<link rel="canonical" href="https://vela.example/de/about" data-vela-head="routes/[[lang]]/about/Page#2">`},
+	// The about pages are prerendered (task 092).
+	{Path: "/about", Status: 200, Title: "About · Vela App", Contains: "About</h1>", Header: "X-Vela-Prerendered: 1"},
+	{Path: "/de/about", Status: 200, Title: "Über uns · Vela App", Contains: `<link rel="canonical" href="https://vela.example/de/about" data-vela-head="routes/[[lang]]/about/Page#2">`, Header: "X-Vela-Prerendered: 1"},
 	{Path: "/colors/00ff00", Status: 200, Title: "Vela App", Contains: "#00ff00"},
 	// The guard of (admin) sends anonymous visitors to the sign-in page
 	// (docs/APP.md G-1); the browser scenarios sign in.
@@ -61,6 +67,11 @@ var exampleCases = []pageCase{
 	{Path: "/login", Method: "POST", Form: "name=", Status: 422, Contains: "Enter a name."},
 	{Path: "/login", Method: "POST", Form: "name=Ada&next=%2Fsettings", Status: 303, Location: "/settings"},
 	{Path: "/docs/intro", Status: 200, Title: "Introduction · Docs", Contains: "<h1>Introduction</h1>", Preload: "src/routes/docs/[...path]/Page.vela"},
+	// The reports list is cached; the first request renders it.
+	{Path: "/reports", Status: 200, Title: "Reports", Contains: "Sales", Header: "Cache-Control: public, max-age=60, stale-while-revalidate=3600"},
+	// A RenderClient page: the server renders the layouts and an empty
+	// page level; the browser mounts the page.
+	{Path: "/notes", Status: 200, Title: "Notes", Contains: "<main><!--[--><!--[--><!--[f--><!--]-->", ClientOnly: true, Click: "button.add-note", Then: "Add"},
 	{Path: "/reports/1", Status: 200, Title: "Sales · Reports", Contains: "<h1>Sales</h1>", Preload: "src/routes/reports/[id=int]/Page.vela", Click: "button.sort", Then: "Descending"},
 	{Path: "/users/9", Status: 404, Title: "Vela App", Contains: "<h1>404</h1>", Preload: "src/routes/Error.vela"},
 	{Path: "/nope", Status: 404, Title: "Vela App", Contains: "<h1>404</h1>"},
@@ -85,6 +96,19 @@ func buildExample(t *testing.T) (root, server string) {
 	}
 	testkit.Run(t, root, "go", "build", "-o", server, "./cmd/server")
 	return root, server
+}
+
+// prerenderExample prerenders the pages of examples/app as vela-app build
+// does (task 092), with the server flags it will run with.
+func prerenderExample(t *testing.T, root, server string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(server, args...)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "VELA_APP_PRERENDER="+filepath.Join(root, "prerendered"))
+	out, err := cmd.CombinedOutput()
+	if err != nil || string(out) != "prerendered /about\nprerendered /de/about\n" {
+		t.Fatalf("prerender: %v\n%s", err, out)
+	}
 }
 
 // startServer starts the example server and returns its URL.
@@ -129,6 +153,7 @@ var titleTag = regexp.MustCompile(`<title[^>]*>([^<]*)</title>`)
 // and content.
 func TestExampleAppServes(t *testing.T) {
 	root, server := buildExample(t)
+	prerenderExample(t, root, server, "-dist", "none")
 	url := startServer(t, root, server, "-dist", "none")
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	for _, c := range exampleCases {
@@ -159,6 +184,9 @@ func TestExampleAppServes(t *testing.T) {
 		}
 		if c.Contains != "" && !strings.Contains(string(body), c.Contains) {
 			t.Errorf("%s: the body misses %q:\n%s", c.Path, c.Contains, body)
+		}
+		if name, value, ok := strings.Cut(c.Header, ": "); ok && resp.Header.Get(name) != value {
+			t.Errorf("%s: %s is %q, want %q", c.Path, name, resp.Header.Get(name), value)
 		}
 	}
 }
@@ -250,7 +278,7 @@ func TestExampleAppHydrates(t *testing.T) {
 		if p.Title != c.Title {
 			t.Errorf("%s: title %q, want %q", c.Path, p.Title, c.Title)
 		}
-		if !p.Hydrated || !p.SameDOM || len(p.Removed) > 0 || len(p.Logs) > 0 {
+		if !p.Hydrated || !p.SameDOM && !c.ClientOnly || len(p.Removed) > 0 || len(p.Logs) > 0 {
 			t.Errorf("%s: hydrated %v, same DOM %v, removed %v, logs %v\n%s", c.Path, p.Hydrated, p.SameDOM, p.Removed, p.Logs, p.Diff)
 		}
 		if c.Preload != "" && !contains(p.Preloaded, c.Preload) {

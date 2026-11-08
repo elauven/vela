@@ -1,0 +1,24 @@
+<script context="client">
+  export let data = null;
+
+  // A page that only the browser can render (task 092): its initialiser
+  // reads window, which the server does not have.
+  let width = $state(window.innerWidth);
+  let notes = $state(data.notes);
+
+  function add() {
+    notes = [...notes, `Note ${notes.length + 1} at ${width}px`];
+  }
+</script>
+
+<template>
+  <section class="notes">
+    <h1>Notes</h1>
+    <button class="add-note" @click={add}>Add</button>
+    <ul>
+      {#each notes as note (note)}
+        <li>{note}</li>
+      {/each}
+    </ul>
+  </section>
+</template>

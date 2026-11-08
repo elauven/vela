@@ -5,7 +5,7 @@ import type { MismatchReport } from '@govela/runtime/hydrate';
 
 /** The route table of src/_app/routes.js, which vela-app generates. */
 export interface RouteTable {
-  routes: { id: string; chain: { id: string; error?: string }[]; render?: 'auto' | 'data' | 'fragment' | 'document' }[];
+  routes: { id: string; chain: { id: string; error?: string }[]; render?: 'auto' | 'data' | 'fragment' | 'document' | 'client' }[];
   components: Record<string, { load(): Promise<unknown> }>;
   match(path: string): { route: { id: string }; params: Record<string, string> } | null;
 }

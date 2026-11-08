@@ -372,6 +372,12 @@ func (m *Model) routesGo() ([]byte, error) {
 		if r.ActionsPkg != "" {
 			actions = ", Actions: " + alias(r.ActionsPkg) + ".Actions()"
 		}
+		if r.PrerenderPkg != "" {
+			actions += ", Prerender: &" + alias(r.PrerenderPkg) + ".Prerender"
+		}
+		if r.CachePkg != "" {
+			actions += ", Cache: &" + alias(r.CachePkg) + ".Cache"
+		}
 		fmt.Fprintf(&body, "\t\t\t}, Render: %s%s},\n", render, actions)
 	}
 	body.WriteString("\t\t},\n\t\t// In ranking order: the first full match wins.\n\t\tPatterns: []app.Pattern{\n")
@@ -403,8 +409,19 @@ func (m *Model) routesGo() ([]byte, error) {
 	// The Go values of the route components, for static fragments (task
 	// 077): the renderers vela --ssr writes under components/.
 	componentAliases := map[string]string{}
+	clientPages := map[string]bool{}
+	for _, r := range m.Routes {
+		if r.ClientOnly {
+			clientPages[r.Dir.Page] = true
+		}
+	}
 	body.WriteString("\t\tComponents: map[string]vela.Component{\n")
 	for _, c := range m.Components {
+		if clientPages[c.File] {
+			// A client-only page has no Go renderer (task 092).
+			fmt.Fprintf(&body, "\t\t\t%s: vela.ClientComponent(%s),\n", strconv.Quote(c.ID), strconv.Quote(c.ID))
+			continue
+		}
 		dir, err := pkgpath.EncodePath(path.Dir(c.ID))
 		if err != nil {
 			return nil, err

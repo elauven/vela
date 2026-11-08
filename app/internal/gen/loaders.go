@@ -50,6 +50,13 @@ type LoadFile struct {
 	// error`, usually in guard.go (G-1): it runs before the loaders and
 	// actions of the directory and everything below it.
 	Guard bool
+	// Prerender and Cache report `var Prerender = app.Prerender{…}` and
+	// `var Cache = app.Cache{…}` of a page (task 092); PrerenderPos and
+	// CachePos are where, for diagnostics.
+	Prerender, Cache       bool
+	PrerenderPos, CachePos Diagnostic
+	// RenderPos is where Render is declared.
+	RenderPos Diagnostic
 }
 
 // Signatures printed by the loader diagnostics (L-1, G-1).
@@ -153,9 +160,21 @@ func (t *Tree) readLoad(d *Dir, dir string, files []string, report func(Diagnost
 							load.Deps = true
 						case ident.Name == "Deps":
 							report(Diagnostic{File: rel, Line: line, Col: col, Code: CodeLoader, Message: "Deps must be a variable of type app.Deps (L-6)", Help: "declare it as var Deps = app.Deps{Query: []string{\"q\"}}"})
+						case (ident.Name == "Prerender" || ident.Name == "Cache") && decl.Tok == token.VAR:
+							pos := Diagnostic{File: rel, Line: line, Col: col}
+							if d.Page == "" {
+								report(Diagnostic{File: rel, Line: line, Col: col, Code: CodeRender, Message: fmt.Sprintf("%s is declared without a Page.vela in %s; only the page's load.go declares how it renders (task 092)", ident.Name, t.projectRel(d.Rel)), Help: "move it to the load.go of the page"})
+							} else if ident.Name == "Prerender" {
+								load.Prerender, load.PrerenderPos = true, pos
+							} else {
+								load.Cache, load.CachePos = true, pos
+							}
+						case ident.Name == "Prerender" || ident.Name == "Cache":
+							report(Diagnostic{File: rel, Line: line, Col: col, Code: CodeRender, Message: fmt.Sprintf("%s must be a variable of type app.%s", ident.Name, ident.Name), Help: fmt.Sprintf("declare it as var %s = app.%s{…}", ident.Name, ident.Name)})
 						case ident.Name == "Render" && decl.Tok == token.CONST:
 							load.Render = true
 							load.RenderMode = renderMode(value, ident, imports)
+							load.RenderPos = Diagnostic{File: rel, Line: line, Col: col}
 							if d.Page == "" {
 								report(Diagnostic{File: rel, Line: line, Col: col, Code: CodeLoader, Message: fmt.Sprintf("Render is declared without a Page.vela in %s; only the page's load.go declares the response mode (L-7)", t.projectRel(d.Rel)), Help: "move it to the load.go of the page"})
 							}
@@ -297,7 +316,7 @@ func renderMode(spec *ast.ValueSpec, ident *ast.Ident, imports map[string]string
 		if name != ident || i >= len(spec.Values) {
 			continue
 		}
-		for value, mode := range map[string]string{"RenderAuto": "auto", "RenderData": "data", "RenderFragment": "fragment", "RenderDocument": "document"} {
+		for value, mode := range map[string]string{"RenderAuto": "auto", "RenderData": "data", "RenderFragment": "fragment", "RenderDocument": "document", "RenderClient": "client"} {
 			if selector(spec.Values[i], imports, AppImportPath, value) {
 				return mode
 			}

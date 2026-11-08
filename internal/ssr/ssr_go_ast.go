@@ -604,6 +604,8 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	componentName := types.NewTypeName(token.NoPos, pkg, "Component", nil)
 	types.NewNamed(componentName, componentInterface, nil)
 	pkg.Scope().Insert(componentName)
+	// Client-only component values (ssr_runtime/component.go, task 092).
+	ssrRuntimeAddFunc(pkg, "ClientComponent", []*types.Var{types.NewVar(token.NoPos, pkg, "id", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", componentName.Type())})
 	ssrRuntimeAddFunc(pkg, "DynamicWriter", []*types.Var{
 		types.NewVar(token.NoPos, pkg, "w", writer),
 		types.NewVar(token.NoPos, pkg, "ctx", contextT),

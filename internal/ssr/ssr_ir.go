@@ -732,7 +732,13 @@ func (b *ssrIRBuilder) ident(node *jsast.JsIdent, pos int) (SSRIRExpr, error) {
 // XComponent, a vela.Component (task 070).
 func (b *ssrIRBuilder) componentValue(link SSRComponentLink, pos int) (SSRIRExpr, error) {
 	if link.ClientOnly {
-		return nil, ssrExprUnsupported(pos, "component %q is client-only and has no server renderer; render it inside {#client}", link.LocalName)
+		// A client-only component as a value (a <vela:component> or a
+		// lazy() page of a RenderClient route, task 092) renders an empty
+		// client range that the browser fills after hydration (T-9.2b).
+		if link.ComponentID == "" {
+			return nil, ssrExprUnsupported(pos, "component %q is client-only and has no server renderer; render it inside {#client}", link.LocalName)
+		}
+		return &ssrIRGo{ssrIRBase: b.base(pos, ssrIRFacts{}), Expr: &goast.CallExpr{Fun: goSelector("vela", "ClientComponent"), Args: []goast.Expr{ssrGoString(link.ComponentID)}}}, nil
 	}
 	if link.GoName == "" {
 		return nil, ssrExprUnsupported(pos, "component %q is not linked to a generated Go renderer", link.LocalName)

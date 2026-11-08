@@ -1530,6 +1530,19 @@ the data of the page with `getPage()` from the generated `#app/page.js`
 subpath import of `package.json`, which `vela-app scaffold` and
 `npm create @govela -- --app` add.
 
+A page chooses how it is rendered in its `load.go`
+([APP.md](APP.md) L-8, L-9): `var Prerender = app.Prerender{…}` writes it
+at build time and the server serves the file without running loaders,
+`var Cache = app.Cache{MaxAge: time.Minute}` keeps its response in the
+server's cache, and `const Render = app.RenderClient` renders it only in
+the browser, for a page that needs `window` or other browser APIs while
+it starts:
+
+```go
+// server/routes/docs/load.go
+var Prerender = app.Prerender{}
+```
+
 ## Testing components
 
 `@govela/testing` mounts components in a test DOM: Vitest with happy-dom or
