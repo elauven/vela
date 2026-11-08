@@ -127,11 +127,15 @@ func watchSSRProject(srcRoot, outRoot string, opts CompileOptions, parallel bool
 	inputs := ssrWatchInputs(srcRoot)
 	built, _ := ssrBuildOnce(srcRoot, outRoot, opts, parallel)
 	fmt.Fprintln(status, "\nWatching for changes… (Ctrl-C to stop)")
+	// One ticker for the whole watch: a fresh time.After per poll allocates
+	// a timer every interval for the life of the process.
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-done:
 			return
-		case <-time.After(interval):
+		case <-ticker.C:
 		}
 		current := ssrWatchInputs(srcRoot)
 		var changed []string

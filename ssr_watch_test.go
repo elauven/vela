@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -66,7 +67,10 @@ func waitForBuild(t *testing.T, stamp string, since time.Time, log *watchLog) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("no build after %s\n%s", since, log.String())
+	// The goroutines show where the watcher waits.
+	stacks := make([]byte, 1<<20)
+	stacks = stacks[:runtime.Stack(stacks, true)]
+	t.Fatalf("no build after %s\n%s\ngoroutines:\n%s", since, log.String(), stacks)
 }
 
 // TestSSRWatchRebuildsLikeACleanBuild changes (with a new prop), adds and
