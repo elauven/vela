@@ -41,6 +41,25 @@ func DynamicWriter(w io.Writer, ctx context.Context, options DynamicOptions) io.
 	return w
 }
 
+// ClientComponent is the value of a client-only component (<script
+// context="client">, T-9.2a) as <vela:component> renders it (task 092): it
+// has no Go renderer, so it writes the empty client range "f" that the
+// browser fills after hydration, as for a client-only component tag
+// (T-9.2b). A static rendering writes nothing.
+func ClientComponent(id string) Component { return clientComponent(id) }
+
+type clientComponent string
+
+func (c clientComponent) ComponentID() string { return string(c) }
+
+func (c clientComponent) RenderDynamic(ctx context.Context, w io.Writer, props map[string]any, slots map[string]func(io.Writer) error, options DynamicOptions) error {
+	w = DynamicWriter(w, ctx, options)
+	if err := OpenRange(w, "f"); err != nil {
+		return err
+	}
+	return CloseRange(w)
+}
+
 // RenderDynamicComponent renders a <vela:component> site (S-6.12): nothing
 // for null, undefined or false (an empty range with the state token "x"),
 // or the component value in a range with the token "" after its "d" payload

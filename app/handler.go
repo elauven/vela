@@ -15,6 +15,8 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/elauven/vela/app/internal/protocol"
 	"github.com/elauven/vela/app/internal/value"
@@ -56,6 +58,12 @@ type Config struct {
 	// it returns replaces the original (sql.ErrNoRows → app.NotFound());
 	// nil keeps it. It may run concurrently for the loaders of one request.
 	OnError func(ctx context.Context, r *Request, err error) error
+	// CacheStore keeps the responses of pages that declare Cache (task
+	// 092); nil keeps them in memory (NewMemoryCache(0)).
+	CacheStore CacheStore
+	// Prerendered is the directory of the pages vela-app build prerendered
+	// (task 092); "prerendered" when empty. Without it every page renders.
+	Prerendered string
 }
 
 // Handler serves a Vela App (docs/APP.md): it matches the URL, runs the
@@ -75,6 +83,14 @@ type Handler struct {
 	// static holds the segment ids whose root mode is static in
 	// vela.manifest.json (R-9); nil without a manifest.
 	static map[string]bool
+	// cache is the response cache (task 092); inflight the keys being
+	// rendered again in the background.
+	cache      CacheStore
+	inflightMu sync.Mutex
+	inflight   map[string]bool
+	now        func() time.Time
+	// prerendered is the directory of prerendered pages, "" for none.
+	prerendered string
 }
 
 // New checks the configuration and returns the handler.
@@ -88,6 +104,10 @@ func New(cfg Config) (*Handler, error) {
 	}
 	if h.maxBytes <= 0 {
 		h.maxBytes = 8 << 20
+	}
+	h.cache, h.inflight, h.now = cfg.CacheStore, map[string]bool{}, time.Now
+	if h.cache == nil {
+		h.cache = NewMemoryCache(0)
 	}
 	if err := checkRoutes(cfg.Routes); err != nil {
 		return nil, err
@@ -127,6 +147,17 @@ func New(cfg Config) (*Handler, error) {
 	if h.build == "" {
 		sum := sha256.Sum256([]byte(h.tags))
 		h.build = base64.RawURLEncoding.EncodeToString(sum[:9])
+	}
+	if dir := os.Getenv(PrerenderEnv); dir != "" {
+		// vela-app build runs the server to prerender (task 092).
+		h.prerenderFromEnv(dir, os.Stdout)
+	}
+	h.prerendered = cfg.Prerendered
+	if h.prerendered == "" {
+		h.prerendered = "prerendered"
+	}
+	if info, err := os.Stat(h.prerendered); err != nil || !info.IsDir() {
+		h.prerendered = ""
 	}
 	return h, nil
 }
@@ -204,6 +235,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveAction(w, r, route, params, isNav, nav.Mode)
 		return
 	}
+	if !notFound && h.servePrerendered(w, r, route, isNav, nav) {
+		return
+	}
+	render := func(w http.ResponseWriter, r *http.Request) {
+		h.serveRoute(w, r, route, params, notFound, isNav, nav)
+	}
+	if !notFound && route.Cache != nil {
+		h.serveCached(w, r, route, render)
+		return
+	}
+	render(w, r)
+}
+
+// serveRoute runs the guards and loaders of a GET or HEAD and writes the
+// document or the navigation response.
+func (h *Handler) serveRoute(w http.ResponseWriter, r *http.Request, route *Route, params map[string]string, notFound, isNav bool, nav protocol.Request) {
 	// The guards of the chain, before any loader (G-2).
 	stop := h.runGuards(r, route, params)
 	var redirect *RedirectError

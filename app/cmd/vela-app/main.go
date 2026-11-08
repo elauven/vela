@@ -39,6 +39,9 @@ commands:
       -server pkg   the Go package of the server (./cmd/server); "" builds none
       -vite cmd     the Vite build (npx vite build); "" runs no Vite
       -vela cmd     the compiler ($VELA_BINARY or vela)
+      -prerender-args args
+                    the arguments of the server when it prerenders the pages
+                    that declare Prerender into prerendered/ (none)
   version           print the version
 `
 
@@ -147,6 +150,9 @@ func report(result gen.Result, diags []gen.Diagnostic, stdout, stderr io.Writer)
 	for _, file := range result.Removed {
 		fmt.Fprintln(stdout, "removed "+file)
 	}
+	for _, file := range result.Edited {
+		fmt.Fprintln(stdout, "edited "+file+": <script context=\"client\"> for const Render = app.RenderClient")
+	}
 	if len(result.Written) == 0 && len(result.Removed) == 0 {
 		fmt.Fprintln(stdout, "up to date")
 	}
@@ -193,10 +199,12 @@ func runBuild(ctx context.Context, dir string, args []string, stdout, stderr io.
 	flags.StringVar(&opts.Server, "server", opts.Server, "")
 	vite := flags.String("vite", strings.Join(opts.Vite, " "), "")
 	vela := flags.String("vela", strings.Join(opts.Vela, " "), "")
+	prerender := flags.String("prerender-args", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() > 0 {
 		fmt.Fprintf(stderr, "vela-app build: bad arguments %q\n\n%s", args, usage)
 		return 2
 	}
+	opts.PrerenderArgs = strings.Fields(*prerender)
 	opts.Dir, opts.Stdout = dir, stdout
 	opts.Vite, opts.Vela = strings.Fields(*vite), strings.Fields(*vela)
 	if err := dev.Build(ctx, opts); err != nil {

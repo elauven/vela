@@ -39,6 +39,13 @@ type Route struct {
 	RenderMode string
 	// ActionsPkg is the package that declares Actions, "" for none.
 	ActionsPkg string
+	// PrerenderPkg and CachePkg are the packages that declare Prerender
+	// and Cache (task 092), "" for none.
+	PrerenderPkg string
+	CachePkg     string
+	// ClientOnly: the page declares <script context="client"> (T-9.2a),
+	// so it has no Go renderer.
+	ClientOnly bool
 }
 
 // Level is one level of a chain (P-10).
@@ -180,6 +187,12 @@ func Build(t *Tree) (*Model, []Diagnostic) {
 					r.RenderPkg = dir.Load.Dir
 					r.RenderMode = dir.Load.RenderMode
 				}
+				if dir.Load != nil && dir.Load.Prerender {
+					r.PrerenderPkg = dir.Load.Dir
+				}
+				if dir.Load != nil && dir.Load.Cache {
+					r.CachePkg = dir.Load.Dir
+				}
 			}
 		}
 		m.Depth = max(m.Depth, len(r.Chain))
@@ -194,6 +207,9 @@ func Build(t *Tree) (*Model, []Diagnostic) {
 	}
 	sort.SliceStable(m.Patterns, func(i, j int) bool { return lessPattern(m.Patterns[i], m.Patterns[j]) })
 	diags = append(diags, m.checkPatterns(t)...)
+	for _, r := range m.Routes {
+		diags = append(diags, m.checkRender(r)...)
+	}
 	for _, c := range components {
 		m.Components = append(m.Components, c)
 	}

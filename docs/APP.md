@@ -267,8 +267,48 @@ server/routes/**                  internal/appgen/routes_gen.go
   `Parent` without declaring it.
 - **L-7** A loader may declare the response mode of its route with
   `const Render = app.RenderAuto` (the default), `app.RenderData`,
-  `app.RenderFragment` or `app.RenderDocument` (R-8). Only the `Page`'s
-  `load.go` may declare it.
+  `app.RenderFragment`, `app.RenderDocument` (R-8) or `app.RenderClient`
+  (L-9). Only the `Page`'s `load.go` may declare it.
+- **L-8** Rendering rules (task 092). The page's `load.go` may declare
+  how its responses are made:
+  - `var Prerender = app.Prerender{Entries: entries}` renders the page
+    when `vela-app build` runs. `Entries` returns the `app.Params` of the
+    URLs to render (nil: the route's URL when it has no parameters); the
+    build also follows the `href="/…"` links of rendered pages to other
+    URLs of prerendered routes. Each URL is written as
+    `prerendered/<path>/index.html` and `index.json`, the data response of
+    its whole chain (start 0). A status other than 200, an error segment,
+    an entry that fits no pattern of the route, and two paths that differ
+    only in case fail the build. `app.New` serves the files of a GET or
+    HEAD without a query, without running guards or loaders
+    (`X-Vela-Prerendered: 1`); a navigation gets the stored chain trimmed
+    by `X-Vela-Have` (N-4), so the protocol is unchanged. A URL without
+    files renders as usual.
+  - `var Cache = app.Cache{MaxAge: time.Minute, StaleWhileRevalidate:
+    time.Hour}` keeps the responses of the page in `Config.CacheStore`
+    (in memory by default, `app.NewMemoryCache`), keyed by the build id,
+    the request mode with `X-Vela-Have`, and the URL. A fresh response is
+    served at once; a stale one within `StaleWhileRevalidate` at once while
+    one background render per key replaces it; an older one renders now.
+    Only GET responses with status 200 that set no cookie and read neither
+    a cookie nor an `app.Local` (G-4) are stored; they get
+    `Cache-Control: public, max-age=…, stale-while-revalidate=…`, so a CDN
+    applies the same rules. `X-Vela-Cache` says `hit`, `stale` or `miss`.
+    `Handler.Purge(ctx, pattern)` drops the responses whose path matches
+    a `path.Match` pattern (`"/blog/*"`, `"/blog/**"` below a prefix,
+    `"*"` all), for the webhook of a CMS.
+  - `VELA-APP-RENDER`: `Prerender` with `RenderClient`, with actions, with
+    `Cache`, or below a guard (the files would bypass it), and either of
+    them outside a page.
+- **L-9** `const Render = app.RenderClient` renders the page only in the
+  browser: the document has the layouts above it and an empty client range
+  for the page level, whose data is in the payload, and the client mounts
+  the page after hydration, as for `{#client}`. `vela-app gen` gives the
+  page `<script context="client">` (T-9.2a) and reports the edit (`edited
+  …`); the page then has no Go renderer, and the route table names it with
+  `vela.ClientComponent`. `<script context="client">` on a page without
+  `RenderClient` is a `VELA-APP-RENDER` warning; removing `RenderClient`
+  leaves the attribute.
 
 ## R. Rendering
 
@@ -690,6 +730,7 @@ directory names the directory or the `Page.vela` of the route.
 | `VELA-APP-STALE` | a mirrored Go directory without a route directory (P-17) |
 | `VELA-APP-LOADER` | a loader without its component, a wrong signature, `Deps` or `Render` of the wrong kind, `Render` outside a page (L-1, L-6, L-7) |
 | `VELA-APP-GUARD` | a guard in a directory without `Layout.vela` or `Page.vela`, a wrong signature (G-1) |
+| `VELA-APP-RENDER` | `Prerender` and `Cache` of the wrong kind or outside a page; `Prerender` with `RenderClient`, actions, `Cache` or a guard above it; a warning for `<script context="client">` without `RenderClient` (L-8, L-9) |
 
 `examples/app` is a small application: a home page, an `(admin)` group
 with a layout, `users` and `users/[id=int]` with layouts and loaders,
@@ -987,7 +1028,11 @@ overrides), `npx vite build` (`-vite ""` runs none) and
 writes the directory `-o` (`build`) with the layout of the project, so the
 server runs there as in the project directory: `server` (`server.exe` for
 `GOOS=windows`), `dist/` and `out/client/vela.manifest.json` (the `out` of
-`vela.config.json`). The directory is replaced on each build, but only when
+`vela.config.json`). When a page declares `Prerender` (L-8), the build
+then runs the server in the directory with `VELA_APP_PRERENDER` set
+(`app.PrerenderEnv`): `app.New` renders the pages into `prerendered/` and
+exits, and a failure fails the build; `-prerender-args` passes the
+server's flags. The directory is replaced on each build, but only when
 it is empty or has the marker `.vela-app-build` that the build writes; a
 directory of the developer is refused. Deploying it is described in
 [VELA_APP.md](VELA_APP.md#deploy).

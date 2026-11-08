@@ -20,6 +20,7 @@ const (
 	CodeStale     = "VELA-APP-STALE"     // a mirrored directory without a route directory (P-17)
 	CodeLoader    = "VELA-APP-LOADER"    // a loader without a component, a wrong signature (L-1, L-7)
 	CodeGuard     = "VELA-APP-GUARD"     // a guard without a component, a wrong signature (G-1)
+	CodeRender    = "VELA-APP-RENDER"    // Prerender, Cache and Render that do not go together (task 092)
 )
 
 // Diagnostic is one generator error. File is relative to the project root;

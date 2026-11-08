@@ -8,7 +8,7 @@
 // navigation scenarios of task 076. Prints {"pages": [{path, status, title,
 // location, hydrated, sameDOM, removed, preloaded, after, logs, diff}],
 // "navigation": [{name, error}]} or {"error": "..."}.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -155,6 +155,24 @@ const scenarios = [
     t.equal(await tags(), 'About · Vela App|1|Who we are|https://vela.example/about', 'a data navigation to the page');
     await t.navigation(() => t.page.goBack());
     t.equal(await tags(), 'Users|1|An example of Vela App|', 'back');
+  }],
+  ['a prerendered page navigates with its stored data (task 092)', async (t) => {
+    await t.open('/about');
+    await t.follow('nav a[href="/users"]');
+    await t.follow('nav a[href="/about"]');
+    t.equal(await t.text('main h1'), 'About', 'page');
+    t.equal(await t.page.title(), 'About · Vela App', 'title');
+    t.equal(t.last().segments.at(-1).id, 'routes/[[lang]]/about/Page', 'the page segment');
+  }],
+  ['a RenderClient page mounts in the browser (task 092)', async (t) => {
+    await t.open('/');
+    await t.addLink('/notes');
+    await t.follow('#test-link');
+    t.equal(await t.text('.notes h1'), 'Notes', 'after a navigation');
+    await t.open('/notes');
+    await t.page.waitForSelector('.notes li');
+    await t.page.click('button.add-note');
+    t.equal(await t.page.evaluate(() => document.querySelectorAll('.notes li').length), 2, 'notes after a click');
   }],
   ['back and forward restore the scroll position', async (t) => {
     await t.open('/users');
@@ -548,6 +566,9 @@ async function main() {
   // The source of each built file, to name the preloaded lazy pages.
   const manifest = JSON.parse(readFileSync(join(project, 'dist', '.vite', 'manifest.json'), 'utf8'));
   const files = Object.fromEntries(Object.entries(manifest).map(([key, chunk]) => [chunk.file, key]));
+  // Prerendering with the client build, as vela-app build runs it (task 092).
+  const prerender = spawnSync(serverBinary, ['-dist', 'dist'], { cwd: project, env: { ...process.env, VELA_APP_PRERENDER: join(project, 'prerendered') }, encoding: 'utf8' });
+  if (prerender.status !== 0) throw new Error(`prerender: ${prerender.stdout}${prerender.stderr}`);
   let server = await startServer();
   const url = server.url;
   // restart starts the server again on the same address, with extra flags.

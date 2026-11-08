@@ -24,6 +24,9 @@ type Result struct {
 	// Notes are advice that is not an error, such as the missing #app/*
 	// entry of package.json (task 090).
 	Notes []string
+	// Edited are the source files the generator changed: the Page.vela of
+	// a RenderClient route gets <script context="client"> (task 092).
+	Edited []string
 }
 
 // Load scans the project at root and builds its model.
@@ -52,6 +55,7 @@ func Generate(root string) (Result, []Diagnostic) {
 	if len(diags) > 0 {
 		return Result{}, diags
 	}
+	edits, notes := model.planClientPages()
 	outputs, err := model.Outputs()
 	if err != nil {
 		return Result{}, []Diagnostic{{Code: CodeConfig, Message: err.Error()}}
@@ -71,7 +75,11 @@ func Generate(root string) (Result, []Diagnostic) {
 	if len(diags) > 0 {
 		return Result{}, diags
 	}
-	var result Result
+	edited, err := applyClientEdits(edits)
+	if err != nil {
+		return Result{}, []Diagnostic{{Code: CodeRender, Message: err.Error()}}
+	}
+	result := Result{Edited: edited, Notes: notes}
 	keep := map[string]bool{}
 	for _, out := range outputs {
 		keep[out.Path] = true

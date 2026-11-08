@@ -425,6 +425,12 @@ components write no entry.
   consuming it and loads the registered lazy values named by its `d`
   entries (the compiler registers every lazy component of a module when the
   module is evaluated), repeating while loaded modules register more.
+- **S-6.14a Client-only values.** A client-only component (`<script
+  context="client">`) chosen by `<vela:component>` or loaded with `lazy()`
+  is `vela.ClientComponent(id)` on the server (task 092): its range holds
+  the `d` entry and an empty client range `f`, which the client's
+  `$$component` adopts like a client-only tag and fills after the root
+  commits (T-9.2b).
 - **A-8.2a** A tree with a `<vela:component>` is `interactive` (§8.1),
   because the client must be able to switch the child.
 

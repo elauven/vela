@@ -170,9 +170,10 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload }) {
     controller = own;
     if (opts.invalidate) clearPrefetched();
     navigatingStore.set({ from, to, type: opts.type });
-    // The modules of a data route load while the server answers; another
-    // route may get a fragment that needs none of them.
-    if (match.route.render === 'data') {
+    // The modules of a data or client-only route (task 092) load while the
+    // server answers; another route may get a fragment that needs none of
+    // them.
+    if (match.route.render === 'data' || match.route.render === 'client') {
       for (const level of match.route.chain) components(routes, level.id)?.load().catch(() => {});
     }
 
@@ -338,7 +339,7 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload }) {
     const now = Date.now();
     for (const [k, entry] of prefetched) if (now - entry.at >= prefetchTTL) prefetched.delete(k);
     if (prefetched.has(key)) return;
-    if (match.route.render === 'data') {
+    if (match.route.render === 'data' || match.route.render === 'client') {
       for (const level of match.route.chain) components(routes, level.id)?.load().catch(() => {});
     }
     const body = fetchNavigation(url, have, undefined, 'prefetch');
