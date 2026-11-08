@@ -219,7 +219,8 @@ console.log('OK');
 // TestRuntimeContractAndPayloadVersionsAgree checks that the compiler, the
 // Go runtime and the hydration runtime name the same contract and payload
 // version: <vela:component> (task 070) introduced payload version 4 with
-// the "d" entry, and component context (task 090) ContractV5.
+// the "d" entry, component context (task 090) ContractV5, and error
+// boundaries and the document head (task 091) ContractV6.
 func TestRuntimeContractAndPayloadVersionsAgree(t *testing.T) {
 	contract, err := os.ReadFile(filepath.Join("ssr_runtime", "contract.go"))
 	if err != nil {
@@ -228,8 +229,8 @@ func TestRuntimeContractAndPayloadVersionsAgree(t *testing.T) {
 	if want := "const " + SSRRuntimeContract + " = true"; !strings.Contains(string(contract), want) {
 		t.Errorf("ssr_runtime/contract.go does not declare %q", want)
 	}
-	if SSRRuntimeContract != "ContractV5" {
-		t.Errorf("SSRRuntimeContract = %s, want ContractV5", SSRRuntimeContract)
+	if SSRRuntimeContract != "ContractV6" {
+		t.Errorf("SSRRuntimeContract = %s, want ContractV6", SSRRuntimeContract)
 	}
 	goRuntime, err := os.ReadFile(filepath.Join("ssr_runtime", "runtime.go"))
 	if err != nil {

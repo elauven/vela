@@ -15,13 +15,13 @@ import vela "github.com/elauven/vela/ssr_runtime"
 
 // The layer needs the runtime of RuntimeContract: another runtime fails to
 // build here.
-var _ = vela.ContractV5
+var _ = vela.ContractV6
 
 // Version is the version of the app layer. It is tagged app/vX.Y.Z and is
 // independent of the compiler version (docs/APP.md B-6).
-const Version = "0.3.1"
+const Version = "0.4.0"
 
 // RuntimeContract names the runtime contract the layer is written for
 // (docs/APP.md B-6); the package references ssr_runtime's marker of the
 // same name, so a runtime of another contract fails go build.
-const RuntimeContract = "ContractV5"
+const RuntimeContract = "ContractV6"
