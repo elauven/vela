@@ -164,6 +164,23 @@ each optional section, in any order:
     <p>{error.message}</p>
   {/await}
   ```
+- Wrap a part of the page that may fail (a chart, a widget, third-party
+  data) in an error boundary, so a failure shows a fallback instead of
+  breaking the page:
+
+  ```vela
+  {#boundary}
+    <Chart :rows={rows} />
+  {:catch error, retry}
+    <p>{error.message}</p>
+    <button @click={retry}>Retry</button>
+  {/boundary}
+  ```
+
+  It catches rendering, component start and update, `$derived`, `$effect`,
+  late `{#await}` branches and `lazy()` loading — not event handlers or
+  other async code. Report errors from a `vela:error` listener; on the
+  server only a `vela.PublicError` message reaches `error.message`.
 
 ### Components and slots
 

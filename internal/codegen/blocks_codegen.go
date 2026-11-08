@@ -362,6 +362,8 @@ func (g *ASTGen) buildBlocksNode(node sfcast.Node, isRoot bool) {
 		g.buildBlocksEach(n)
 	case *sfcast.AwaitBlockNode:
 		g.buildBlocksAwait(n)
+	case *sfcast.BoundaryBlockNode:
+		g.buildBlocksBoundary(n)
 	case *sfcast.ComponentNode:
 		g.buildBlocksComponent(n)
 	case *sfcast.SlotNode:
@@ -782,6 +784,28 @@ func (g *ASTGen) buildBlocksClient(chain *sfcast.IfChainNode) {
 		fallback = jsast.GenIdent(g.blocksNestedFragment(chain.Branches[1].Children, nil))
 	}
 	g.blocksBlockCall("$$client", jsast.GenIdent(main), fallback)
+}
+
+// buildBlocksBoundary lowers {#boundary}…{:catch error, retry}…{/boundary}
+// to the $$boundary block (task 091). The catch fragment receives the scope
+// { error, retry }; where is the source position the block reports with an
+// error.
+func (g *ASTGen) buildBlocksBoundary(boundary *sfcast.BoundaryBlockNode) {
+	body := g.blocksNestedFragment(boundary.Children, nil)
+	var locals []blocksLocal
+	if boundary.ErrorName != "" {
+		locals = append(locals, blocksLocal{name: boundary.ErrorName, source: "error"})
+	}
+	if boundary.RetryName != "" {
+		locals = append(locals, blocksLocal{name: boundary.RetryName, source: "retry"})
+	}
+	catcher := g.blocksNestedFragment(boundary.CatchChildren, locals)
+	where := ""
+	if g.sfc != nil && g.sfc.SitePath != "" {
+		line, column := SourceLineColumn(g.sfc.Source, boundary.Span.Start)
+		where = fmt.Sprintf("%s:%d:%d", g.sfc.SitePath, line+1, column+1)
+	}
+	g.blocksBlockCall("$$boundary", jsast.GenIdent(body), jsast.GenIdent(catcher), jsast.GenStrLit(where))
 }
 
 // blocksSite emits $$c.at(site) before an adopted site in development

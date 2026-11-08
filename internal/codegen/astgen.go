@@ -482,10 +482,20 @@ func (g *ASTGen) buildReactiveFlushPlan() []jsast.JsStmt {
 			}
 		}
 	}
+	// An error of the component's own update goes to the enclosing
+	// {#boundary}, if any (task 091):
+	//   try { … } catch ($$error) { if (!$$view || !$$view.fail($$error)) throw $$error; }
+	failed := jsast.GenLogical("||", jsast.GenUnary("!", jsast.GenIdent("$$view")),
+		jsast.GenUnary("!", jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$view"), "fail"), jsast.GenIdent("$$error"))))
 	out = append(out, &jsast.JsFuncDecl{
 		BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()},
 		Name:     "$$flush",
-		Body:     jsast.GenBlock(flushBody...),
+		Body: jsast.GenBlock(&jsast.JsTryStmt{
+			BaseStmt:   jsast.BaseStmt{BaseNode: jsast.GenNode()},
+			Block:      jsast.GenBlock(flushBody...),
+			CatchParam: jsast.GenIdent("$$error"),
+			Handler:    jsast.GenBlock(jsast.GenIf(failed, &jsast.JsThrowStmt{BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()}, Arg: jsast.GenIdent("$$error")})),
+		}),
 	})
 	out = append(out, &jsast.JsFuncDecl{
 		BaseStmt: jsast.BaseStmt{BaseNode: jsast.GenNode()},

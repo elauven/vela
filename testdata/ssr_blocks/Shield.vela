@@ -1,0 +1,20 @@
+<script>
+  import { Fallible } from './Fallible.vela';
+
+  export let n = 1;
+  let count = $state(0);
+</script>
+
+<template>
+  <section class="shield">
+    <button class="inc" @click={() => count++}>{count}</button>
+    {#boundary}
+      <Fallible :n={n} />
+      <b class="n">{n}</b>
+    {:catch error, retry}
+      <p class="failed">failed</p>
+      <button class="retry" @click={retry}>retry</button>
+    {/boundary}
+    <i class="after">{count}</i>
+  </section>
+</template>

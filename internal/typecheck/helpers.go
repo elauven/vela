@@ -9,6 +9,7 @@ declare const $$target: Element;
 declare function $$each<T>(items: Iterable<T> | ArrayLike<T> | null | undefined): Iterable<T>;
 declare function $$awaited<T>(promise: T): Awaited<T>;
 declare const $$error: any;
+declare const $$retry: () => void;
 declare function $$on<K extends keyof HTMLElementEventMap>(event: K, handler: (event: HTMLElementEventMap[K]) => any): void;
 declare function $$on(event: string, handler: (event: Event) => any): void;
 

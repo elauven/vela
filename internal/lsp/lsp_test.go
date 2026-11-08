@@ -481,6 +481,14 @@ func TestCompletion(t *testing.T) {
 		t.Errorf("hover of :this: %q", got)
 	}
 	c.edit(uri, 11, src)
+
+	// {#boundary} (task 091): the block and the names of its catch branch.
+	items, _ = complete(12, "<p>{count}</p>", "<p>{#b|}</p>")
+	check("boundary block", items, []string{"#boundary"}, nil)
+	items, _ = complete(13, "<p>{count}</p>", "{#boundary}<b/>{:catch failure, again}<p>{|}</p>{/boundary}")
+	check("boundary catch", items, []string{"failure", "again", "count"}, nil)
+	items, _ = complete(14, "<p>{count}</p>", "{#boundary}<p>{|}</p>{:catch failure, again}<b/>{/boundary}")
+	check("boundary body", items, []string{"count"}, []string{"failure", "again"})
 }
 
 func keys(m map[string]CompletionItem) []string {

@@ -259,6 +259,21 @@ type SSRPlanAwait struct {
 	DynamicID       int // paired marker around the rendered branch range
 }
 
+// SSRPlanBoundary is a {#boundary} block (task 091): the body renders in a
+// range with the state token ""; when it fails, the catch branch renders
+// instead with the token "c". Line and Column are the 1-based position of
+// the block.
+type SSRPlanBoundary struct {
+	Span          srcspan.SectionSpan
+	Children      []SSRPlanNode
+	CatchChildren []SSRPlanNode
+	ErrorName     string
+	RetryName     string
+	Line, Column  int
+}
+
+func (*SSRPlanBoundary) ssrPlanNode() {}
+
 func (*SSRPlanElement) ssrPlanNode()   {}
 func (*SSRPlanComponent) ssrPlanNode() {}
 func (*SSRPlanSlot) ssrPlanNode()      {}
@@ -534,6 +549,13 @@ func (b *ssrPlanBuilder) nodes(nodes []sfcast.Node) []SSRPlanNode {
 				Span: n.Span, Iterable: n.IterExpr, ItemName: n.ItemName, IndexName: n.IndexName,
 				Key: n.KeyAST, Children: b.nodes(n.Children), ElseChildren: b.nodes(n.ElseChildren), DynamicID: markerID,
 			})
+		case *sfcast.BoundaryBlockNode:
+			boundary := &SSRPlanBoundary{Span: n.Span, Children: b.nodes(n.Children), CatchChildren: b.nodes(n.CatchChildren), ErrorName: n.ErrorName, RetryName: n.RetryName}
+			if b.source != "" {
+				line, column := codegen.SourceLineColumn(b.source, n.Span.Start)
+				boundary.Line, boundary.Column = line+1, column+1
+			}
+			out = append(out, boundary)
 		case *sfcast.AwaitBlockNode:
 			markerID := b.dynamic(SSRDynamicAwait, n.Expr, n.Span)
 			out = append(out, &SSRPlanAwait{

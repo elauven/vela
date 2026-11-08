@@ -18,6 +18,7 @@ import (
 
 	"github.com/elauven/vela/app/internal/protocol"
 	"github.com/elauven/vela/app/internal/value"
+	vela "github.com/elauven/vela/ssr_runtime"
 	"github.com/elauven/vela/ssr_runtime/vite"
 )
 
@@ -366,7 +367,7 @@ func (h *Handler) writeDocument(w http.ResponseWriter, r *http.Request, o *outco
 		})
 		preload = append(preload, o.errorID)
 	}
-	body, err := h.document(r.Context(), routeProp(routeInfo(r, o)), chain, mergeHead(h.defaults, heads), preload)
+	body, err := h.document(h.renderContext(r, o), routeProp(routeInfo(r, o)), chain, mergeHead(h.defaults, heads), preload)
 	if err != nil {
 		err = h.mapError(r.Context(), &Request{Params: o.params, Query: o.query, HTTP: r, Route: o.route.ID}, err)
 		var redirect *RedirectError
@@ -419,7 +420,7 @@ func (h *Handler) writeData(w http.ResponseWriter, r *http.Request, o *outcome, 
 	route := routeInfo(r, o)
 	resp := protocol.Response{Type: protocol.TypeData, Route: &route, Start: o.start, Segments: segments, Head: head}
 	if fragment, static := h.policy(o, mode); fragment {
-		html, err := h.fragment(r.Context(), o, route, static)
+		html, err := h.fragment(h.renderContext(r, o), o, route, static)
 		if err != nil {
 			h.logger.Error("vela app: fragment render failed", "path", r.URL.Path, "route", o.route.ID, "err", err)
 			h.writeJSON(w, r, nil, protocol.Response{Type: protocol.TypeReload, Reason: protocol.ReasonDocument})
@@ -538,6 +539,16 @@ func routeProp(route protocol.Route) map[string]any {
 		query[k] = v
 	}
 	return map[string]any{"id": route.ID, "url": route.URL, "path": route.Path, "params": params, "query": query}
+}
+
+// renderContext is the context of a page render: errors that a
+// {#boundary} catches ("{#boundary} at src/routes/Page.vela:12:3 caught:
+// …"), and host errors that JavaScript code catches, go to the logger with
+// the request path and route (task 091).
+func (h *Handler) renderContext(r *http.Request, o *outcome) context.Context {
+	return vela.WithErrorObserver(r.Context(), func(err error) {
+		h.logger.Error("vela app: render error caught", "path", r.URL.Path, "route", o.route.ID, "err", err)
+	})
 }
 
 // document renders the shell with the head and the app root (R-5).

@@ -151,6 +151,9 @@ func walkTemplateNodes(nodes []sfcast.Node, visit func(sfcast.Node)) {
 			walkTemplateNodes(n.PendingChildren, visit)
 			walkTemplateNodes(n.ThenChildren, visit)
 			walkTemplateNodes(n.CatchChildren, visit)
+		case *sfcast.BoundaryBlockNode:
+			walkTemplateNodes(n.Children, visit)
+			walkTemplateNodes(n.CatchChildren, visit)
 		case *sfcast.ComponentNode:
 			for _, slot := range n.Slots {
 				walkTemplateNodes(slot, visit)

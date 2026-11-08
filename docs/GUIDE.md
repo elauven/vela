@@ -453,6 +453,44 @@ states of a promise:
 
 `{:then}` and `{:catch}` are optional.
 
+### `{#boundary}` — error boundaries
+
+A failure in part of a page shows a fallback instead of breaking the whole
+page:
+
+```vela
+{#boundary}
+  <Chart :rows={rows} />
+{:catch error, retry}
+  <p>The chart failed to load: {error.message}</p>
+  <button @click={retry}>Retry</button>
+{/boundary}
+```
+
+The block catches errors while its content renders, while a component in
+it starts or updates, and in the `$derived` values and `$effect`s of that
+content, also when an `{#await}` branch or a `lazy()` component of it
+arrives later. The content is removed and the `{:catch}` branch shows;
+the rest of the page goes on. `retry()` builds the content again — fix
+the cause first, or it fails again. Errors in event handlers and in other
+async code (timers, `fetch` callbacks) are not caught: handle them in the
+handler. An error inside the `{:catch}` branch goes to the enclosing
+boundary. Both names are optional (`{:catch}`, `{:catch error}`); the
+branch is required.
+
+To report errors (Sentry and the like), listen for `vela:error`: the
+event bubbles from the block's parent element with
+`detail: { error, source }`, so one listener on `document` sees every
+boundary.
+
+With server rendering a body that fails on the server renders the catch
+branch there, and the browser adopts it without running the body again.
+The server shows `error.message` as `Internal error` unless the error is
+a `vela.PublicError` (`&vela.PublicError{Message: "No stock", Err: err}`
+from a host), and passes the original error to the observer of
+`vela.WithErrorObserver`; a Vela App logs it to `Config.Logger` with the
+route and the position of the block.
+
 ---
 
 ## 8. Components
@@ -789,6 +827,7 @@ Scoping is identical either way.
 | `lazy(() => import('./C.vela'))` | a component loaded on demand (import from `vela`) |
 | `$$dispatch(name, detail)` | emit a custom event (`@on:name` in the parent) |
 | `{#client}` `{:else}` `{/client}` | browser-only content, fallback on the server |
+| `{#boundary}` `{:catch error, retry}` `{/boundary}` | error boundary: fallback when the content fails |
 | `onMount` / `onDestroy` | lifecycle (import from `vela`) |
 
 ## 12. TypeScript

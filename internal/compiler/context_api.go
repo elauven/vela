@@ -159,6 +159,9 @@ func ValidateTemplateContextCalls(nodes []sfcast.Node, prog *jsast.JsProgram, ds
 				walk(n.PendingChildren)
 				walk(n.ThenChildren)
 				walk(n.CatchChildren)
+			case *sfcast.BoundaryBlockNode:
+				walk(n.Children)
+				walk(n.CatchChildren)
 			}
 		}
 	}

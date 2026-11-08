@@ -546,6 +546,13 @@ func ValidateTemplateRefs(nodes []sfcast.Node, analysis *analyzer.Analysis, scri
 				for _, name := range catchAdded {
 					delete(known, name)
 				}
+			case *sfcast.BoundaryBlockNode:
+				walkNodes(n.Children)
+				added := addEachBindings(known, []string{n.ErrorName, n.RetryName})
+				walkNodes(n.CatchChildren)
+				for _, name := range added {
+					delete(known, name)
+				}
 			}
 		}
 	}
@@ -826,6 +833,9 @@ func ValidateSpecialElements(nodes []sfcast.Node, templateOffset int, ds *diag.D
 				walk(n.PendingChildren)
 				walk(n.ThenChildren)
 				walk(n.CatchChildren)
+			case *sfcast.BoundaryBlockNode:
+				walk(n.Children)
+				walk(n.CatchChildren)
 			case *sfcast.SlotNode:
 				walk(n.Fallback)
 			}
@@ -942,6 +952,9 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 			case *sfcast.AwaitBlockNode:
 				walk(n.PendingChildren)
 				walk(n.ThenChildren)
+				walk(n.CatchChildren)
+			case *sfcast.BoundaryBlockNode:
+				walk(n.Children)
 				walk(n.CatchChildren)
 			}
 		}

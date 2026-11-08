@@ -4,6 +4,8 @@
 
 - `<vela:component>` and other `vela:` tags are highlighted as components.
 - `<script lang="ts">` is highlighted as TypeScript.
+- `{#boundary}…{:catch error, retry}…{/boundary}` is highlighted as a block,
+  and `vela-lsp` completes it.
 - `@govela/typescript-plugin` is registered with VS Code's TypeScript: `.ts`
   modules that import components see their types.
 

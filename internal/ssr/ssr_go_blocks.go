@@ -556,6 +556,90 @@ func (e *ssrGoEmitter) clientBlock(node *SSRPlanClient) ([]goast.Stmt, error) {
 	return e.ranged("f", fallback), nil
 }
 
+// boundaryBlock renders a {#boundary} block (task 091):
+//
+//	ssrBoundaryN := vela.BeginBoundary(w)
+//	errN := func() error {
+//		<range "" with the body>
+//		return nil
+//	}()
+//	vela.EndBoundary(ssrBoundaryN)
+//	if errN != nil {
+//		ssrBoundaryErrorN, errN := vela.CatchBoundary(w, ssrBoundaryN, errN, ssrJS, "X.vela:3:5")
+//		if errN != nil { return errN }
+//		<range "c" with the catch branch>
+//	}
+//
+// The body is a closure, so that its error returns end only the body.
+// CatchBoundary already released the hold, so EndBoundary runs only on
+// success.
+func (e *ssrGoEmitter) boundaryBlock(node *SSRPlanBoundary) ([]goast.Stmt, error) {
+	e.boundaries++
+	id := strconv.Itoa(e.boundaries)
+	mark, errVar, value := "ssrBoundary"+id, "ssrBoundaryErr"+id, "ssrBoundaryError"+id
+	throwing := e.throwing()
+	body, err := e.nodes(node.Children)
+	if err != nil {
+		return nil, err
+	}
+	if e.throwing() > throwing {
+		body = append(body, ssrJSCheck())
+	}
+	previous := e.ctx
+	e.ctx = ssrContextWithBindings(e.ctx)
+	if node.ErrorName != "" {
+		e.ctx.Bindings[node.ErrorName] = goast.NewIdent(value)
+	}
+	if node.RetryName != "" {
+		// retry is a browser function; the server has none.
+		e.ctx.Bindings[node.RetryName] = &goast.CallExpr{Fun: goSelector("vela", "Undefined")}
+	}
+	catchBody, err := e.nodes(node.CatchChildren)
+	e.ctx = previous
+	if err != nil {
+		return nil, err
+	}
+	componentID := e.componentID
+	if componentID == "" {
+		componentID = e.componentName
+	}
+	source := componentID + ".vela"
+	if node.Line > 0 {
+		source += ":" + strconv.Itoa(node.Line) + ":" + strconv.Itoa(node.Column)
+	}
+	js := goast.Expr(goast.NewIdent("nil"))
+	if e.region != nil {
+		// The position as render errors name it.
+		source = e.region.siteLabel(node.Span.Start)
+		e.region.usesJS = true
+		js = goast.NewIdent("ssrJS")
+	}
+	closure := &goast.FuncLit{
+		Type: &goast.FuncType{Params: &goast.FieldList{}, Results: &goast.FieldList{List: []*goast.Field{{Type: goast.NewIdent("error")}}}},
+		Body: &goast.BlockStmt{List: append(e.ranged("", body), &goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent("nil")}})},
+	}
+	catchStmts := []goast.Stmt{
+		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(value), goast.NewIdent(errVar)}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{
+			Fun:  goSelector("vela", "CatchBoundary"),
+			Args: []goast.Expr{goast.NewIdent("w"), goast.NewIdent(mark), goast.NewIdent(errVar), js, ssrGoString(source)},
+		}}},
+		&goast.IfStmt{Cond: &goast.BinaryExpr{X: goast.NewIdent(errVar), Op: token.NEQ, Y: goast.NewIdent("nil")}, Body: &goast.BlockStmt{List: []goast.Stmt{
+			&goast.ReturnStmt{Results: []goast.Expr{goast.NewIdent(errVar)}},
+		}}},
+		ssrUse(value),
+	}
+	catchStmts = append(catchStmts, e.ranged("c", catchBody)...)
+	return []goast.Stmt{
+		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(mark)}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{Fun: goSelector("vela", "BeginBoundary"), Args: []goast.Expr{goast.NewIdent("w")}}}},
+		&goast.AssignStmt{Lhs: []goast.Expr{goast.NewIdent(errVar)}, Tok: token.DEFINE, Rhs: []goast.Expr{&goast.CallExpr{Fun: closure}}},
+		&goast.IfStmt{
+			Cond: &goast.BinaryExpr{X: goast.NewIdent(errVar), Op: token.EQL, Y: goast.NewIdent("nil")},
+			Body: &goast.BlockStmt{List: []goast.Stmt{&goast.ExprStmt{X: &goast.CallExpr{Fun: goSelector("vela", "EndBoundary"), Args: []goast.Expr{goast.NewIdent(mark)}}}}},
+			Else: &goast.BlockStmt{List: catchStmts},
+		},
+	}, nil
+}
+
 // ssrWrapperOpen opens the display:contents wrapper of a multi-root
 // component as the client creates it: with the scope attribute only when the
 // component has styles.

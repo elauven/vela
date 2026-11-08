@@ -334,6 +334,11 @@ func writeTemplate(w *writer, start, end int) {
 					writeAwaitName(w, src, strings.TrimPrefix(name, "catch:"), nameStart, strings.HasPrefix(name, "catch:"), pStart, pEnd)
 				}
 			case ":then", ":catch":
+				if keyword == ":catch" && top() == "boundary" {
+					w.gen("} {\n")
+					writeBoundaryNames(w, rest, r.end)
+					continue
+				}
 				if top() != "await" {
 					continue
 				}
@@ -351,7 +356,10 @@ func writeTemplate(w *writer, start, end int) {
 			case "#client":
 				w.gen("{\n")
 				stack = append(stack, open{kind: "client"})
-			case "/if", "/each", "/await", "/key", "/client":
+			case "#boundary":
+				w.gen("{\n")
+				stack = append(stack, open{kind: "boundary"})
+			case "/if", "/each", "/await", "/key", "/client", "/boundary":
 				closeTo(keyword[1:])
 			}
 		case strings.HasPrefix(trimmed, "@"):

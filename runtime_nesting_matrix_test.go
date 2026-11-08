@@ -1279,3 +1279,146 @@ func TestRuntimeNestingMatrix_ContextThroughBlocks(t *testing.T) {
 		{"assertText": "b.if", "equals": "v"},
 	})
 }
+
+// ── {#boundary} (task 091) ───────────────────────────────────────
+
+// boundaryThrower throws while it renders when its prop is 'bad'.
+const boundaryThrower = `<script>
+  export let v = '';
+  function show(value) {
+    if (value === 'bad') throw new Error('bad ' + value);
+    return value;
+  }
+</script>
+<template><u>{show(v)}</u></template>`
+
+// boundary-in-each: one failing row shows its catch branch, the others
+// stay; reordering moves the failed row; removing it removes the catch.
+func TestRuntimeNestingMatrix_BoundaryInEach(t *testing.T) {
+	src := `<script>
+  import { Thrower } from './Thrower.vela';
+  let rows = $state(['a', 'bad', 'c']);
+</script>
+<template><div>
+  <button class="rev" @click={() => rows = [...rows].reverse()}>rev</button>
+  <button class="drop" @click={() => rows = rows.filter((r) => r !== 'bad')}>drop</button>
+  {#each rows as row (row)}
+    {#boundary}<Thrower :v={row} />{:catch e}<em>{row}!</em>{/boundary}
+  {/each}
+</div></template>`
+	assertRuntimeSet(t, "BoundaryInEach", map[string]string{"BoundaryInEach": src, "Thrower": boundaryThrower}, []rtStep{
+		{"assertCount": "u", "equals": 2},
+		{"assertText": "em", "equals": "bad!"},
+		{"click": "button.rev"},
+		{"assertText": "div", "equals": "rev drop cbad!a"},
+		{"click": "button.drop"},
+		{"assertCount": "em", "equals": 0},
+		{"assertText": "div", "equals": "rev drop ca"},
+	})
+}
+
+// each-in-boundary: a row that fails while the list updates fails the
+// whole boundary; retry after the fix brings the list back.
+func TestRuntimeNestingMatrix_EachInBoundary(t *testing.T) {
+	src := `<script>
+  import { Thrower } from './Thrower.vela';
+  let rows = $state(['a']);
+</script>
+<template><div>
+  <button class="bad" @click={() => rows = [...rows, 'bad']}>bad</button>
+  <button class="fix" @click={() => rows = rows.filter((r) => r !== 'bad')}>fix</button>
+  {#boundary}
+    {#each rows as row (row)}<Thrower :v={row} />{/each}
+  {:catch e, retry}
+    <em>{e.message}</em><button class="retry" @click={retry}>retry</button>
+  {/boundary}
+</div></template>`
+	assertRuntimeSet(t, "EachInBoundary", map[string]string{"EachInBoundary": src, "Thrower": boundaryThrower}, []rtStep{
+		{"assertCount": "u", "equals": 1},
+		{"click": "button.bad"},
+		{"assertText": "em", "equals": "bad bad"},
+		{"assertCount": "u", "equals": 0},
+		{"click": "button.fix"},
+		{"click": "button.retry"},
+		{"assertCount": "em", "equals": 0},
+		{"assertText": "u", "equals": "a"},
+	})
+}
+
+// boundary-in-if: hiding the branch removes a failed boundary and its
+// catch branch; showing it again retries the body from scratch.
+func TestRuntimeNestingMatrix_BoundaryInIf(t *testing.T) {
+	src := `<script>
+  import { Thrower } from './Thrower.vela';
+  let show = $state(true);
+  let v = $state('bad');
+</script>
+<template><div>
+  <button class="t" @click={() => show = !show}>t</button>
+  <button class="ok" @click={() => v = 'ok'}>ok</button>
+  {#if show}
+    {#boundary}<Thrower :v={v} />{:catch e}<em>{e.message}</em>{/boundary}
+  {/if}
+</div></template>`
+	assertRuntimeSet(t, "BoundaryInIf", map[string]string{"BoundaryInIf": src, "Thrower": boundaryThrower}, []rtStep{
+		{"assertText": "em", "equals": "bad bad"},
+		{"click": "button.t"},
+		{"assertCount": "em", "equals": 0},
+		{"click": "button.ok"},
+		{"click": "button.t"},
+		{"assertCount": "em", "equals": 0},
+		{"assertText": "u", "equals": "ok"},
+	})
+}
+
+// await-in-boundary: a then branch that fails when the promise settles
+// reaches the boundary although no update of the page is running.
+func TestRuntimeNestingMatrix_AwaitInBoundary(t *testing.T) {
+	src := `<script>
+  import { Thrower } from './Thrower.vela';
+  let p = $state(Promise.resolve('bad'));
+</script>
+<template><div>
+  <button class="good" @click={() => p = Promise.resolve('fine')}>good</button>
+  {#boundary}
+    {#await p}<s>…</s>{:then v}<Thrower :v={v} />{/await}
+  {:catch e, retry}
+    <em>{e.message}</em><button class="retry" @click={retry}>retry</button>
+  {/boundary}
+</div></template>`
+	assertRuntimeSet(t, "AwaitInBoundary", map[string]string{"AwaitInBoundary": src, "Thrower": boundaryThrower}, []rtStep{
+		{"tick": true},
+		{"assertText": "em", "equals": "bad bad"},
+		{"click": "button.good"},
+		{"click": "button.retry"},
+		{"tick": true},
+		{"assertText": "u", "equals": "fine"},
+	})
+}
+
+// key-in-boundary and boundary-in-key: a new key recreates the content;
+// a boundary inside {#key} starts over with the new identity.
+func TestRuntimeNestingMatrix_BoundaryAndKey(t *testing.T) {
+	src := `<script>
+  import { Thrower } from './Thrower.vela';
+  let k = $state('bad');
+</script>
+<template><div>
+  <button class="next" @click={() => k = k === 'bad' ? 'ok' : 'bad'}>next</button>
+  {#key k}
+    {#boundary}<Thrower :v={k} />{:catch e}<em>{e.message}</em>{/boundary}
+  {/key}
+  {#boundary}
+    {#key k}<Thrower :v={k} />{/key}
+  {:catch e}<i>{e.message}</i>{/boundary}
+</div></template>`
+	assertRuntimeSet(t, "BoundaryAndKey", map[string]string{"BoundaryAndKey": src, "Thrower": boundaryThrower}, []rtStep{
+		{"assertText": "em", "equals": "bad bad"},
+		{"assertText": "i", "equals": "bad bad"},
+		{"click": "button.next"},
+		{"assertCount": "em", "equals": 0},
+		{"assertText": "u", "equals": "ok"},
+		// The outer boundary failed; it stays failed until a retry.
+		{"assertText": "i", "equals": "bad bad"},
+	})
+}

@@ -265,7 +265,7 @@
       ]
     },
     "block": {
-      "begin": "(\\{)\\s*([#:/])\\s*(else\\s+if|if|else|each|await|then|catch|key|client)\\b",
+      "begin": "(\\{)\\s*([#:/])\\s*(else\\s+if|if|else|each|await|then|catch|key|client|boundary)\\b",
       "beginCaptures": {
         "1": {
           "name": "punctuation.section.embedded.begin.vela"

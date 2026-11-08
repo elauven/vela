@@ -4,7 +4,7 @@
  * Structural template behaviour lives here once instead of being generated
  * into every component: compiled fragments build DOM through a cursor, and
  * blocks ($$if, $$each, $$key, $$await, $$component, $$dynamic, $$slot,
- * $$client) own
+ * $$client, $$boundary) own
  * their DOM ranges and child resources.
  *
  * Fragment contract (F-2.x): a fragment is `(cursor, scope) => handle`, where
@@ -194,6 +194,23 @@ function mountFragment(fragmentFn, scope, before, ctx) {
   return { owner, handle, range, scope };
 }
 
+// mountGuarded is mountFragment for content that may throw while it mounts
+// (a {#boundary} body): the owner of the partly built fragment is released
+// and its detached nodes are dropped before the error propagates.
+function mountGuarded(fragmentFn, scope, before, ctx) {
+  const owner = $$owner(null);
+  const container = document.createDocumentFragment();
+  try {
+    const handle = fragmentFn(createCursor(container, null, owner, ctx), scope);
+    const range = rangeOf(container);
+    before.parentNode.insertBefore(container, before);
+    return { owner, handle, range, scope };
+  } catch (error) {
+    owner.release();
+    throw error;
+  }
+}
+
 function updateMounted(mounted, dirty, scopeChanged) {
   if (mounted && mounted.handle && mounted.handle.p) mounted.handle.p(dirty, scopeChanged);
 }
@@ -229,16 +246,11 @@ export function $$mountRoot(target, fragmentFn, scope, ctx) {
   const owner = $$owner(null);
   const before = target.nodeType === 8 ? target : null;
   const parent = before ? before.parentNode : target;
-  const handle = fragmentFn(createCursor(parent, before, owner, ctx), scope);
-  return {
-    owner,
-    p(dirty) {
-      if (handle && handle.p) handle.p(dirty, false);
-    },
-    release() {
-      owner.release();
-    },
-  };
+  // The view exists before the fragment builds, so that a fragment that
+  // throws leaves no live owner (createInstance).
+  const view = rootView(owner, null, ctx);
+  view.handle = fragmentFn(createCursor(parent, before, owner, ctx), scope);
+  return view;
 }
 
 
@@ -288,17 +300,17 @@ export function $$mountComponent(target, fragmentFn, wrapperScope, setRoot, getR
   const outer = $$session ? $$session.cursors[$$session.cursors.length - 1] || null : null;
   if (outer) {
     const owner = $$owner(null);
-    let handle;
+    const view = rootView(owner, null, ctx);
     if (wrapperScope != null) {
       const wrapper = outer.element('div', wrapperScope ? [wrapperScope, '', 'style', 'display: contents;'] : ['style', 'display: contents;']);
       setRoot(wrapper);
       outer.enter(wrapper);
-      handle = fragmentFn(outer.sub(owner, ctx));
+      view.handle = fragmentFn(outer.sub(owner, ctx));
       outer.exit();
     } else {
-      handle = fragmentFn(outer.sub(owner, ctx));
+      view.handle = fragmentFn(outer.sub(owner, ctx));
     }
-    return rootView(owner, handle);
+    return view;
   }
   let view;
   if (wrapperScope != null) {
@@ -316,16 +328,48 @@ export function $$mountComponent(target, fragmentFn, wrapperScope, setRoot, getR
   return view;
 }
 
-function rootView(owner, handle) {
-  return {
+// rootView is the view of a component's template. fail(error) passes an
+// error of the component's own update (its $$flush: template updates and
+// effects) to the nearest enclosing {#boundary} and reports whether one
+// took it; without one the component rethrows (task 091).
+// viewSink collects the views created while a $$component factory runs;
+// when the factory throws (a {#boundary} body), they are released.
+let viewSink = null;
+
+function rootView(owner, handle, ctx) {
+  const view = {
     owner,
+    handle,
     p(dirty) {
-      if (handle && handle.p) handle.p(dirty, false);
+      if (view.handle && view.handle.p) view.handle.p(dirty, false);
     },
     release() {
       owner.release();
     },
+    fail(error) {
+      const boundary = $$boundaryOf(ctx);
+      if (!boundary) return false;
+      boundary.fail(error);
+      return true;
+    },
   };
+  if (viewSink) viewSink.push(view);
+  return view;
+}
+
+// createInstance calls a component factory; a factory that throws leaves
+// no live view behind.
+function createInstance(create) {
+  const previous = viewSink;
+  const sink = (viewSink = []);
+  try {
+    return create();
+  } catch (error) {
+    for (const view of sink) view.release();
+    throw error;
+  } finally {
+    viewSink = previous;
+  }
 }
 // ── $$if ─────────────────────────────────────────────────────────────────
 // select() returns the active branch index or -1.
@@ -602,14 +646,16 @@ export function $$await(cursor, operand, pending, then, catcher, changed) {
     if (next === promise) return false;
     promise = next;
     if (!adopted) show(0, undefined);
+    // A branch that fails to mount after the promise settled goes to the
+    // enclosing {#boundary} (task 091).
     next.then(
       (value) => {
         if (promise !== next || block.isDone()) return;
-        show(1, { value });
+        guarded(cursor.ctx, () => show(1, { value }));
       },
       (error) => {
         if (promise !== next || block.isDone()) return;
-        show(2, { error });
+        guarded(cursor.ctx, () => show(2, { error }));
       },
     );
     return true;
@@ -685,12 +731,12 @@ export function $$component(cursor, factory, props, slots, events, changed, scop
     // The child factory adopts the server DOM inside the component range.
     cursor.open();
     const initial = props();
-    instance = withComponentCursor(cursor, () => $$contextRun(ctx, () => factory(null, initial, slots || {})));
+    instance = withComponentCursor(cursor, () => createInstance(() => $$contextRun(ctx, () => factory(null, initial, slots || {}))));
     anchor = cursor.close();
   } else {
     anchor = cursor.comment();
     const initial = props();
-    const create = () => $$contextRun(ctx, () => factory(anchor, initial, slots || {}));
+    const create = () => createInstance(() => $$contextRun(ctx, () => factory(anchor, initial, slots || {})));
     // A block created while a root hydrates (a repaired range) creates its
     // children too.
     instance = $$session ? withComponentCursor(null, create) : create();
@@ -800,14 +846,19 @@ export function $$dynamic(cursor, select, props, slots, events, bindings, change
     }
     if (!selected) return;
     const lazyValue = selected;
+    // A load or mount failure goes to the enclosing {#boundary} (task 091).
     lazyValue.load().then(
       (component) => {
         if (block.isDone() || selected !== lazyValue || current) return;
-        current = mountFragment(fragmentFor(component), undefined, anchor, cursor.ctx);
+        guarded(cursor.ctx, () => {
+          current = mountFragment(fragmentFor(component), undefined, anchor, cursor.ctx);
+        });
       },
       (error) => {
         if (block.isDone() || selected !== lazyValue) return;
-        warn(`<vela:component> at ${where}: the lazy component ${lazyValue.id || '(unnamed)'} failed to load: ${error && error.message ? error.message : error}`);
+        const boundary = $$boundaryOf(cursor.ctx);
+        if (boundary) boundary.fail(error);
+        else warn(`<vela:component> at ${where}: the lazy component ${lazyValue.id || '(unnamed)'} failed to load: ${error && error.message ? error.message : error}`);
       },
     );
   };
@@ -1014,8 +1065,11 @@ export function $$client(cursor, main, fallback) {
     cursor.afterCommit(() => {
       if (block.isDone()) return;
       unmount(current);
-      current = mountFragment(main, undefined, anchor, cursor.ctx);
-      mounted = true;
+      current = null;
+      guarded(cursor.ctx, () => {
+        current = mountFragment(main, undefined, anchor, cursor.ctx);
+        mounted = true;
+      });
     });
   } else {
     anchor = cursor.comment();
@@ -1029,6 +1083,150 @@ export function $$client(cursor, main, fallback) {
     current = mountFragment(main, undefined, anchor, cursor.ctx);
     mounted = true;
   }
+  return block;
+}
+
+// ── $$boundary ───────────────────────────────────────────────────────────
+// {#boundary}…{:catch error, retry}…{/boundary} (task 091). The body mounts
+// under a context frame that names this block, so errors that do not reach
+// it as exceptions find it too: a component's own update ($$flush through
+// rootView.fail), an {#await} branch mounted after its promise settled, a
+// lazy() component that fails to load. A failure releases the body with its
+// DOM, mounts the catch fragment with { error, retry } and dispatches a
+// bubbling vela:error event ({ error, source }) from the block's parent
+// element; retry() mounts the body again. Errors of the catch branch go to
+// the enclosing boundary. Event handlers and other async code are not
+// caught.
+//
+// Hydration: the state token is "" for an adopted body and "c" when the
+// server rendered the catch branch, whose "b" entry holds the public
+// message; the client adopts that branch without running the body. A body
+// that fails while it hydrates is removed up to the range end and the catch
+// branch is created in its place.
+
+// $$boundaryOf returns the boundary that encloses a context, or null.
+export function $$boundaryOf(ctx) {
+  for (let frame = ctx; frame; frame = frame.parent) {
+    if (frame.boundary) return frame.boundary;
+  }
+  return null;
+}
+
+// guarded runs fn, passing an error to the boundary of ctx; without one it
+// rethrows.
+function guarded(ctx, fn) {
+  try {
+    fn();
+  } catch (error) {
+    const boundary = $$boundaryOf(ctx);
+    if (!boundary) throw error;
+    boundary.fail(error);
+  }
+}
+
+function reportError(anchor, error, where) {
+  const dispatch = () => {
+    const target = anchor.parentNode && anchor.isConnected ? anchor.parentNode : typeof document !== 'undefined' ? document : null;
+    if (target) target.dispatchEvent(new CustomEvent('vela:error', { detail: { error, source: where || undefined }, bubbles: true }));
+  };
+  // A boundary that fails while its fragment is built is not in the
+  // document yet.
+  if (anchor.isConnected) dispatch();
+  else Promise.resolve().then(dispatch);
+}
+
+export function $$boundary(cursor, body, catcher, where) {
+  let anchor;
+  let current = null;
+  let failed = false;
+  const ctx = { parent: cursor.ctx, map: null, open: false, boundary: null };
+  const retry = () => {
+    if (block.isDone() || !failed) return;
+    unmount(current);
+    current = null;
+    failed = false;
+    showBody();
+  };
+  const showCatch = (error) => {
+    failed = true;
+    reportError(anchor, error, where);
+    current = mountFragment(catcher, { error, retry }, anchor, cursor.ctx);
+  };
+  const showBody = () => {
+    try {
+      current = mountGuarded(body, undefined, anchor, ctx);
+    } catch (error) {
+      current = null;
+      showCatch(error);
+    }
+  };
+  const fail = (error) => {
+    if (block.isDone() || failed) return;
+    const previous = current;
+    current = null;
+    failed = true;
+    try {
+      unmount(previous);
+    } catch {
+      // The failed body is gone either way.
+      if (previous) removeRange(previous.range);
+    }
+    showCatch(error);
+  };
+  ctx.boundary = { fail };
+  const block = {
+    p(dirty) {
+      if (block.isDone()) return;
+      if (failed) {
+        updateMounted(current, dirty, false);
+        return;
+      }
+      try {
+        updateMounted(current, dirty, false);
+      } catch (error) {
+        fail(error);
+      }
+    },
+    move(before) {
+      if (current) moveRange(current.range, before);
+      before.parentNode.insertBefore(anchor, before);
+    },
+    state: () => (failed ? 'c' : ''),
+  };
+  if (cursor.hydrating) {
+    const token = cursor.open();
+    if (token === 'c') {
+      // The server rendered the catch branch (its body failed there).
+      const entry = cursor.entry('b') || {};
+      const error = new Error(typeof entry.message === 'string' ? entry.message : 'Internal error');
+      failed = true;
+      current = cursor.mount(catcher, { error, retry });
+      anchor = cursor.close();
+    } else {
+      cursor.expect(token === '', `#boundary range is ${token}, expected "" or c`);
+      const restore = cursor.checkpoint();
+      let failure = null;
+      try {
+        current = cursor.mount(body, undefined, null, ctx);
+      } catch (error) {
+        // A mismatch is repaired by the enclosing block as usual.
+        if (error && error.code === 'VELA-HYDRATION-MISMATCH') throw error;
+        restore();
+        current = null;
+        failure = error;
+      }
+      anchor = cursor.close();
+      if (failure !== null) showCatch(failure);
+    }
+  } else {
+    anchor = cursor.comment();
+  }
+  registerBlock(cursor, block, anchor, (removeDom) => {
+    if (!current) return;
+    if (removeDom) unmount(current);
+    else current.owner.release();
+  });
+  if (!cursor.hydrating) showBody();
   return block;
 }
 

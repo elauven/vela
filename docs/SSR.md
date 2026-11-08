@@ -326,6 +326,27 @@ without re-running the promise. `RenderPageWithOptions` can pass a settled
 snapshot instead. An operand only the browser can compute belongs in
 `{#client}`.
 
+### `{#boundary}`
+
+A render error inside `{#boundary}` — a JavaScript exception, a host
+error, a child that fails — renders the `{:catch}` branch instead of
+failing the page; what the body wrote is dropped. `error.message` is
+`Internal error` unless the error wraps a `vela.PublicError`. The browser
+adopts the catch branch without running the body. To log the original
+error, pass an observer in the render context:
+
+```go
+ctx := vela.WithErrorObserver(r.Context(), func(err error) {
+	var caught *vela.BoundaryError // Source: "src/Page.vela:12:3"
+	if errors.As(err, &caught) {
+		slog.Error("boundary", "source", caught.Source, "err", caught.Err)
+	}
+})
+err := components.RenderPageContext(ctx, w, props, components.PageSlots{})
+```
+
+A failing writer and a cancelled request still fail the render.
+
 ## Text conversion
 
 Server text follows the client's conversion in each context:

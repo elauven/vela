@@ -65,6 +65,7 @@ needed.
 | --- | --- | --- |
 | `<svelte:fragment>` | ✓ (legacy) | ✓ |
 | `<svelte:component this={C}>` | ✓ (legacy) | `<vela:component :this={C}>`; props are matched by name to the current component |
+| `<svelte:boundary>` with a `failed` snippet | ✓ | `{#boundary}…{:catch error, retry}…{/boundary}` (a block, since Vela has no snippets); errors are reported with a `vela:error` event instead of `onerror`; with SSR the server renders the catch branch too |
 | `<svelte:element>`, `<svelte:self>` | ✓ | — |
 | `<svelte:head>`, `<svelte:window>`, `<svelte:document>`, `<svelte:body>` | ✓ | — |
 | `use:` actions | ✓ | — (use `bind:this` with `onMount` or `$effect`) |

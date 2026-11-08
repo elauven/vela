@@ -59,6 +59,11 @@ func TestVelaGrammar(t *testing.T) {
   {:else}
     <p class:empty={true} :data-n="count + 1" title="a {b}">&amp; {count}</p>
   {/each}
+  {#boundary}
+    <Card />
+  {:catch failure, retry}
+    <i>{failure.message}</i>
+  {/boundary}
 </template>
 
 <style>
@@ -91,6 +96,8 @@ func TestVelaGrammar(t *testing.T) {
 		{"context", "entity.other.attribute-name.html"},
 		{"\"client\"", "string.quoted.html"},
 		{"each", "keyword.control.vela"},
+		{"boundary", "keyword.control.vela"},
+		{"failure", "meta.block.vela meta.embedded.expression.vela source.js"},
 		{"as", "keyword.control.vela"},
 		{"item", "meta.block.vela meta.embedded.expression.vela source.js"},
 		{"Card", "support.class.component.vela"},

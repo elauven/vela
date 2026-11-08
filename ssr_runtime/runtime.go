@@ -666,6 +666,9 @@ type out struct {
 	// frames are the context frames of the components being rendered, the
 	// innermost last (task 090).
 	frames []*contextFrame
+	// hold counts the open {#boundary} bodies: while one is open nothing
+	// is flushed, so that a failure can take the body back (task 091).
+	hold int
 }
 
 const outChunk = 32 << 10
@@ -696,7 +699,7 @@ func (o *out) writeString(s string) error {
 		return nil
 	}
 	o.buf = append(o.buf, s...)
-	if len(o.buf) >= outChunk || o.depth == 0 {
+	if o.hold == 0 && (len(o.buf) >= outChunk || o.depth == 0) {
 		return o.flush()
 	}
 	return o.err
@@ -708,7 +711,7 @@ func (o *out) write(p []byte) error {
 		return nil
 	}
 	o.buf = append(o.buf, p...)
-	if len(o.buf) >= outChunk || o.depth == 0 {
+	if o.hold == 0 && (len(o.buf) >= outChunk || o.depth == 0) {
 		return o.flush()
 	}
 	return o.err

@@ -516,6 +516,10 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 				walkNodes(n.PendingChildren)
 				walkNodes(n.ThenChildren)
 				walkNodes(n.CatchChildren)
+			case *BoundaryBlockNode:
+				checkSpan(n.Span, "boundary block")
+				walkNodes(n.Children)
+				walkNodes(n.CatchChildren)
 			case *IfChainNode:
 				checkSpan(n.Span, "if/key block")
 				if len(n.Branches) == 0 {
@@ -648,6 +652,31 @@ type AwaitBlockNode struct {
 }
 
 func (a *AwaitBlockNode) NodeKind() string { return "awaitblock" }
+
+// BoundaryBlockNode is an error boundary (task 091):
+//
+//	{#boundary}
+//	  <Chart :rows={rows} />
+//	{:catch error, retry}
+//	  <p>{error.message}</p>
+//	  <button @click={retry}>Retry</button>
+//	{/boundary}
+//
+// An error while the children render, initialise or update replaces them
+// with the catch branch; retry recreates the children. The catch branch is
+// required; both names are optional.
+type BoundaryBlockNode struct {
+	Span          srcspan.SectionSpan
+	Children      []Node
+	CatchChildren []Node
+	ErrorName     string // the error binding of {:catch error}, or ""
+	RetryName     string // the retry binding of {:catch error, retry}, or ""
+	// CatchPos is the byte offset of the {:catch} tag in the component, like
+	// Span.
+	CatchPos int
+}
+
+func (b *BoundaryBlockNode) NodeKind() string { return "boundaryblock" }
 
 // awaitMode records whether an await block used the normal multi-branch form
 // or one of Svelte's single-branch opening-tag shortcuts. It is parser-only:
@@ -1777,7 +1806,8 @@ func (p *parser) isSvelteBlockStart() bool {
 		strings.HasPrefix(rest, "#each ") || strings.HasPrefix(rest, "#each\t") ||
 		strings.HasPrefix(rest, "#key ") || strings.HasPrefix(rest, "#key\t") ||
 		strings.HasPrefix(rest, "#await ") || strings.HasPrefix(rest, "#await\t") ||
-		strings.HasPrefix(rest, "#client}")
+		strings.HasPrefix(rest, "#client}") ||
+		strings.HasPrefix(rest, "#boundary}")
 }
 
 // isSvelteBlockTerm reports whether the parser is at {:else}, {:else if}, {:then}, {:catch}, {/if}, {/each}, {/key}, {/await}.
@@ -1793,7 +1823,8 @@ func (p *parser) isSvelteBlockTerm() bool {
 		strings.HasPrefix(rest, "/each") ||
 		strings.HasPrefix(rest, "/key") ||
 		strings.HasPrefix(rest, "/await") ||
-		strings.HasPrefix(rest, "/client")
+		strings.HasPrefix(rest, "/client") ||
+		strings.HasPrefix(rest, "/boundary")
 }
 
 // readSvelteTag reads from current '{' to the closing '}', returning the inner text.
@@ -1859,6 +1890,13 @@ func (p *parser) parseSvelteBlock() (Node, string, error) {
 
 	case tag == "#client":
 		node, err := p.parseSvelteClientBlock(tagStart)
+		if node != nil {
+			setTemplateNodeSpan(node, p.base+tagStart, p.base+p.pos)
+		}
+		return node, "", err
+
+	case tag == "#boundary":
+		node, err := p.parseSvelteBoundaryBlock(tagStart)
 		if node != nil {
 			setTemplateNodeSpan(node, p.base+tagStart, p.base+p.pos)
 		}
@@ -2495,6 +2533,8 @@ func setTemplateNodeSpan(node Node, start, end int) {
 		n.Span = span
 	case *AwaitBlockNode:
 		n.Span = span
+	case *BoundaryBlockNode:
+		n.Span = span
 	}
 }
 
@@ -2710,6 +2750,55 @@ func (p *parser) parseSvelteClientBlock(branchStart int) (Node, error) {
 		return nil, fmt.Errorf("{#client} block must end with {/client} after an optional {:else}, found {%s}", term)
 	}
 	return chain, nil
+}
+
+// parseSvelteBoundaryBlock parses {#boundary}…{:catch error, retry}…{/boundary}
+// (task 091).
+func (p *parser) parseSvelteBoundaryBlock(start int) (Node, error) {
+	children, term, err := p.parseSvelteBlockBody()
+	if err != nil {
+		return nil, err
+	}
+	if term != ":catch" && !strings.HasPrefix(term, ":catch ") && !strings.HasPrefix(term, ":catch\t") && !strings.HasPrefix(term, ":catch\n") {
+		if term == "/boundary" {
+			return nil, fmt.Errorf("{#boundary} block needs a {:catch error, retry} branch before {/boundary}")
+		}
+		return nil, fmt.Errorf("{#boundary} block expected {:catch}, found {%s}", term)
+	}
+	node := &BoundaryBlockNode{Children: children, CatchPos: p.base + p.lastTagStart}
+	names := strings.TrimSpace(strings.TrimPrefix(term, ":catch"))
+	if names != "" {
+		parts := strings.Split(names, ",")
+		if len(parts) > 2 {
+			return nil, fmt.Errorf("{:catch} of {#boundary} takes at most two names: {:catch error, retry}")
+		}
+		for i, part := range parts {
+			name := strings.TrimSpace(part)
+			if !isPlainAwaitBinding(name) {
+				return nil, fmt.Errorf("{:catch} binding of {#boundary} must be one plain JavaScript identifier, got %q", name)
+			}
+			if i == 0 {
+				node.ErrorName = name
+			} else {
+				node.RetryName = name
+			}
+		}
+		if node.ErrorName == node.RetryName {
+			return nil, fmt.Errorf("{:catch} of {#boundary} binds %s twice", node.ErrorName)
+		}
+	}
+	catchChildren, end, err := p.parseSvelteBlockBody()
+	if err != nil {
+		return nil, err
+	}
+	if end != "/boundary" {
+		return nil, fmt.Errorf("{#boundary} block must end with {/boundary}, found {%s}", end)
+	}
+	if catchChildren == nil {
+		catchChildren = []Node{}
+	}
+	node.CatchChildren = catchChildren
+	return node, nil
 }
 
 // scriptAttr returns the value of attribute name on the first <script>

@@ -293,6 +293,9 @@ func ForEachChildList(node sfcast.Node, visit func([]sfcast.Node)) {
 		visit(n.PendingChildren)
 		visit(n.ThenChildren)
 		visit(n.CatchChildren)
+	case *sfcast.BoundaryBlockNode:
+		visit(n.Children)
+		visit(n.CatchChildren)
 	case *sfcast.ComponentNode:
 		for _, children := range n.Slots {
 			visit(children)
@@ -313,6 +316,8 @@ func templateNodeSpan(node sfcast.Node) srcspan.SectionSpan {
 	case *sfcast.EachBlockNode:
 		return n.Span
 	case *sfcast.AwaitBlockNode:
+		return n.Span
+	case *sfcast.BoundaryBlockNode:
 		return n.Span
 	case *sfcast.ComponentNode:
 		return n.Span

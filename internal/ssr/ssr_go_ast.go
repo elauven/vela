@@ -392,6 +392,13 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	ssrRuntimeAddFunc(pkg, "NewJSFor", []*types.Var{v("w", writer)}, []*types.Var{v("", types.NewPointer(jsType))})
 	ssrRuntimeAddFunc(pkg, "EnterContext", []*types.Var{v("w", writer)}, []*types.Var{v("", writer)})
 	ssrRuntimeAddFunc(pkg, "LeaveContext", []*types.Var{v("w", writer)}, nil)
+	// Error boundaries (ssr_runtime/boundary.go, task 091).
+	boundaryName := types.NewTypeName(token.NoPos, pkg, "Boundary", nil)
+	boundaryType := types.NewNamed(boundaryName, types.NewStruct(nil, nil), nil)
+	pkg.Scope().Insert(boundaryName)
+	ssrRuntimeAddFunc(pkg, "BeginBoundary", []*types.Var{v("w", writer)}, []*types.Var{v("", boundaryType)})
+	ssrRuntimeAddFunc(pkg, "EndBoundary", []*types.Var{v("mark", boundaryType)}, nil)
+	ssrRuntimeAddFunc(pkg, "CatchBoundary", []*types.Var{v("w", writer), v("mark", boundaryType), v("err", errorType), v("js", types.NewPointer(jsType)), v("source", stringType)}, []*types.Var{v("", anyType), v("", errorType)})
 	jsMethod("SetContext", []*types.Var{v("key", stringType), v("value", anyType)}, anyType)
 	jsMethod("GetContext", []*types.Var{v("key", stringType)}, anyType)
 	jsMethod("HasContext", []*types.Var{v("key", stringType)}, types.Typ[types.Bool])

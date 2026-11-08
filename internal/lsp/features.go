@@ -363,6 +363,7 @@ var blocks = []struct{ label, snippet string }{
 	{"#await", "{#await ${1:promise}}\n\t$2\n{:then ${3:value}}\n\t$0\n{:catch error}\n\t<p>{error.message}</p>\n{/await}"},
 	{"#key", "{#key ${1:identity}}\n\t$0\n{/key}"},
 	{"#client", "{#client}\n\t$1\n{:else}\n\t$0\n{/client}"},
+	{"#boundary", "{#boundary}\n\t$1\n{:catch ${2:error}, ${3:retry}}\n\t<p>{$2.message}</p>\n\t<button @click={$3}>Retry</button>$0\n{/boundary}"},
 	{":else", "{:else}"},
 	{":else if", "{:else if ${1:condition}}"},
 	{":then", "{:then ${1:value}}"},
@@ -372,6 +373,7 @@ var blocks = []struct{ label, snippet string }{
 	{"/await", "{/await}"},
 	{"/key", "{/key}"},
 	{"/client", "{/client}"},
+	{"/boundary", "{/boundary}"},
 }
 
 // elementDirectives are the attributes offered on an HTML element.
