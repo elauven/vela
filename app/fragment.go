@@ -118,6 +118,9 @@ func (h *Handler) fragment(ctx context.Context, o *outcome, route protocol.Route
 		chain := make([]any, 0, o.rendered+1)
 		for i, l := range o.run.levels[:o.rendered] {
 			entry := map[string]any{"id": l.level.ID, "key": o.keys[i]}
+			if len(l.level.Deps.Keys) > 0 {
+				entry["depends"] = l.level.Deps.Keys
+			}
 			if i >= o.start {
 				// The levels above start are the client's; the fragment
 				// renders from start.

@@ -43,6 +43,44 @@ type Config struct {
 	// viewTransitions: true (task 096): navigations change the page inside
 	// document.startViewTransition.
 	ViewTransitions bool `json:"viewTransitions"`
+	// HistoryCache is the historyCache option of the router (task 097):
+	// true, or {"max": entries, "maxAge": milliseconds}.
+	HistoryCache HistoryCache `json:"historyCache"`
+}
+
+// HistoryCache keeps the data of the last history entries in the client,
+// so back and forward within MaxAge make no request. Max and MaxAge 0 are
+// the client's defaults.
+type HistoryCache struct {
+	Enabled bool
+	Max     int
+	MaxAge  int
+}
+
+// UnmarshalJSON accepts true, false or an object with max and maxAge.
+func (c *HistoryCache) UnmarshalJSON(data []byte) error {
+	switch string(bytes.TrimSpace(data)) {
+	case "true":
+		*c = HistoryCache{Enabled: true}
+		return nil
+	case "false", "null":
+		*c = HistoryCache{}
+		return nil
+	}
+	var v struct {
+		Max    int `json:"max"`
+		MaxAge int `json:"maxAge"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&v); err != nil {
+		return fmt.Errorf("historyCache: %v (want true or {\"max\": 20, \"maxAge\": 300000})", err)
+	}
+	if v.Max < 0 || v.MaxAge < 0 {
+		return fmt.Errorf("historyCache: max and maxAge must not be negative")
+	}
+	*c = HistoryCache{Enabled: true, Max: v.Max, MaxAge: v.MaxAge}
+	return nil
 }
 
 // LoadConfig reads vela.app.json, vela.config.json and go.mod in root and

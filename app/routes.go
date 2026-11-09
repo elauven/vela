@@ -18,8 +18,28 @@ const RootID = "vela-app"
 // Deps declares the dependencies of the loaders of one directory beyond the
 // parameters of its path (L-6): `var Deps = app.Deps{Query: []string{"q"}}`
 // in the mirrored load.go.
+//
+// Keys are names of data the loaders read (task 097), such as "cart":
+// invalidate('cart') in the browser runs the levels that declare it again,
+// with the levels below them, and keeps the levels above. A key is 1 to 64
+// characters of letters, digits and _ - . :
 type Deps struct {
 	Query []string
+	Keys  []string
+}
+
+// ValidDependencyKey reports whether k can be a key of Deps.Keys.
+func ValidDependencyKey(k string) bool {
+	if k == "" || len(k) > 64 {
+		return false
+	}
+	for i := 0; i < len(k); i++ {
+		c := k[i]
+		if !('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '_' || c == '-' || c == '.' || c == ':') {
+			return false
+		}
+	}
+	return true
 }
 
 // RenderMode is the response mode a page declares with

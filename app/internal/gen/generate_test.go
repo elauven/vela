@@ -317,3 +317,31 @@ func TestGenerateViewTransitions(t *testing.T) {
 		t.Fatalf("client.js with viewTransitions:\n%s", got)
 	}
 }
+
+// TestGenerateHistoryCache: "historyCache" in vela.app.json passes the
+// option to start() (task 097).
+func TestGenerateHistoryCache(t *testing.T) {
+	for _, c := range []struct{ config, want string }{
+		{`{"historyCache": true}`, "start({ VelaApp, routes, root: 'vela-app', historyCache: true });"},
+		{`{"historyCache": {"max": 5, "maxAge": 60000}, "viewTransitions": true}`, "start({ VelaApp, routes, root: 'vela-app', viewTransitions: true, historyCache: { max: 5, maxAge: 60000 } });"},
+		{`{"historyCache": false}`, "start({ VelaApp, routes, root: 'vela-app' });"},
+	} {
+		root := testkit.CopyProject(t, goldenProject)
+		writeFile(t, filepath.Join(root, ConfigFile), c.config)
+		if _, diags := Generate(root); len(diags) > 0 {
+			t.Fatalf("%s: %s", c.config, Error(diags))
+		}
+		data, err := os.ReadFile(filepath.Join(root, "src/_app/client.js"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), c.want) {
+			t.Errorf("%s: client.js\n%s", c.config, data)
+		}
+	}
+	root := testkit.CopyProject(t, goldenProject)
+	writeFile(t, filepath.Join(root, ConfigFile), `{"historyCache": {"size": 5}}`)
+	if _, diags := Generate(root); len(diags) == 0 || !strings.Contains(Error(diags).Error(), "historyCache") {
+		t.Fatalf("an unknown field: %v", diags)
+	}
+}

@@ -217,10 +217,14 @@ type Route struct {
 
 // Segment is one chain level (N-5): either Data or Error.
 type Segment struct {
-	ID    string
-	Key   string
-	Data  json.RawMessage // the loader result; nil is null
-	Error *SegmentError
+	ID  string
+	Key string
+	// Depends are the dependency keys of the level (Deps.Keys, task 097),
+	// which invalidate(key) in the client matches. Optional: an older
+	// client ignores it.
+	Depends []string
+	Data    json.RawMessage // the loader result; nil is null
+	Error   *SegmentError
 }
 
 // SegmentError is the error of the Error.vela level that ends a chain (R-3).
@@ -230,15 +234,16 @@ type SegmentError struct {
 }
 
 type wireSegment struct {
-	ID    string          `json:"id"`
-	Key   string          `json:"key"`
-	Data  json.RawMessage `json:"data,omitempty"`
-	Error *SegmentError   `json:"error,omitempty"`
+	ID      string          `json:"id"`
+	Key     string          `json:"key"`
+	Depends []string        `json:"depends,omitempty"`
+	Data    json.RawMessage `json:"data,omitempty"`
+	Error   *SegmentError   `json:"error,omitempty"`
 }
 
 // MarshalJSON writes data, null data, or error, never both.
 func (s Segment) MarshalJSON() ([]byte, error) {
-	w := wireSegment{ID: s.ID, Key: s.Key, Error: s.Error}
+	w := wireSegment{ID: s.ID, Key: s.Key, Depends: s.Depends, Error: s.Error}
 	if s.Error == nil {
 		w.Data = s.Data
 		if w.Data == nil {
@@ -254,7 +259,7 @@ func (s *Segment) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &w); err != nil {
 		return err
 	}
-	*s = Segment{ID: w.ID, Key: w.Key, Error: w.Error}
+	*s = Segment{ID: w.ID, Key: w.Key, Depends: w.Depends, Error: w.Error}
 	if string(w.Data) != "null" {
 		s.Data = w.Data
 	}

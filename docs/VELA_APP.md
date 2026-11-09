@@ -134,6 +134,22 @@ each route directory to the types generated from its Go loaders
 { "extends": "./src/_app/tsconfig.json", "include": ["src"] }
 ```
 
+`vela.app.json` also turns on router features of the generated client
+entry: `"viewTransitions": true` changes pages inside
+`document.startViewTransition`, and `"historyCache": true` (or
+`{ "max": 20, "maxAge": 300000 }`) lets back and forward show recently
+visited pages without a request ([APP.md](APP.md), History cache):
+
+```json
+// vela.app.json
+{ "viewTransitions": true, "historyCache": true }
+```
+
+To refresh only some data, name it in the loaders that read it with
+`var Deps = app.Deps{Keys: []string{"cart"}}` and call
+`invalidate('cart')` from `@govela/app/client` after it changed; the
+levels above the first one that declares `cart` keep their data.
+
 Install `typescript` (5.8 or 6.x) and check with
 `npx vela check --project src --types`; the route types need the app layer
 of this release or later (`github.com/elauven/vela/app/typegen`).

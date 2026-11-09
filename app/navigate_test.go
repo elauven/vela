@@ -389,3 +389,53 @@ func newHandler(t *testing.T, cfg Config) *Handler {
 	}
 	return h
 }
+
+// TestInvalidateKeys: a level that declares Deps.Keys sends them with its
+// segment and in the document, and invalidate(key) in the client — the
+// keys it holds up to the first level that depends on key — runs that
+// level and the levels below it again, not the ones above (task 097).
+func TestInvalidateKeys(t *testing.T) {
+	routes, counts := navRoutes()
+	chain := routes.Routes[0].Chain
+	chain[1].Deps.Keys = []string{"section"}
+	chain[2].Deps.Keys = []string{"item", "cart"}
+	h := newHandler(t, Config{Routes: routes})
+	doc := serve(t, h, http.MethodGet, "/s/1?q=a")
+	var keys []string
+	var depends []string
+	for _, entry := range doc.props.Chain {
+		keys = append(keys, entry["key"].(string))
+		if list, ok := entry["depends"].([]any); ok {
+			for _, k := range list {
+				depends = append(depends, entry["id"].(string)+":"+k.(string))
+			}
+		}
+	}
+	if got := strings.Join(depends, ","); got != "routes/s/Layout:section,routes/s/[id]/Page:item,routes/s/[id]/Page:cart" {
+		t.Fatalf("document depends %q", got)
+	}
+	counts.take()
+	// invalidate('cart'): the page depends on it.
+	resp, _ := navigate(t, h, "/s/1?q=a", dataHeaders(keys[:2]))
+	if resp.Start != 2 || strings.Join(segmentIDs(resp), ",") != "routes/s/[id]/Page" || strings.Join(resp.Segments[0].Depends, ",") != "item,cart" {
+		t.Fatalf("invalidate('cart'): start %d, segments %v", resp.Start, resp.Segments)
+	}
+	// The root layout runs for its head (it sets one), the section layout not.
+	if got := counts.take(); got["routes/s/Layout"] != 0 || got["routes/s/[id]/Page"] != 1 {
+		t.Fatalf("invalidate('cart') ran %v", got)
+	}
+	// invalidate('section'): the section layout and the page below it.
+	resp, _ = navigate(t, h, "/s/1?q=a", dataHeaders(keys[:1]))
+	if resp.Start != 1 || strings.Join(segmentIDs(resp), ",") != "routes/s/Layout,routes/s/[id]/Page" || strings.Join(resp.Segments[0].Depends, ",") != "section" {
+		t.Fatalf("invalidate('section'): start %d, segments %v", resp.Start, segmentIDs(resp))
+	}
+	if got := counts.take(); got["routes/s/Layout"] != 1 || got["routes/s/[id]/Page"] != 1 {
+		t.Fatalf("invalidate('section') ran %v", got)
+	}
+	// An invalid key is a table the handler rejects.
+	bad, _ := navRoutes()
+	bad.Routes[0].Chain[2].Deps.Keys = []string{"no spaces"}
+	if _, err := New(Config{Routes: bad}); err == nil || !strings.Contains(err.Error(), `"no spaces"`) {
+		t.Fatalf("invalid key: %v", err)
+	}
+}

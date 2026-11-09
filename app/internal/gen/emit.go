@@ -294,7 +294,21 @@ func (m *Model) clientJS() []byte {
 	b.WriteString("import { routes } from './routes.js';\n\n")
 	options := ""
 	if m.Config.ViewTransitions {
-		options = ", viewTransitions: true"
+		options += ", viewTransitions: true"
+	}
+	if c := m.Config.HistoryCache; c.Enabled {
+		var limits []string
+		if c.Max > 0 {
+			limits = append(limits, fmt.Sprintf("max: %d", c.Max))
+		}
+		if c.MaxAge > 0 {
+			limits = append(limits, fmt.Sprintf("maxAge: %d", c.MaxAge))
+		}
+		if len(limits) == 0 {
+			options += ", historyCache: true"
+		} else {
+			options += ", historyCache: { " + strings.Join(limits, ", ") + " }"
+		}
 	}
 	fmt.Fprintf(&b, "start({ VelaApp, routes, root: %s%s });\n", jsString(app.RootID), options)
 	return b.Bytes()
